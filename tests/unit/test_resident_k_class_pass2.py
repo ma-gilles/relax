@@ -430,3 +430,44 @@ def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
     assert_matches(np.asarray(folded.scale_aa_per_image), host[:, mask, 1].sum(axis=1))
     assert not np.asarray(folded.wavg_triplet_pixels[:, :, :2]).any()
     assert_matches(np.asarray(folded.wavg_triplet_pixels[:, :, 2]), np.asarray(triplet[:, :, 2]))
+
+
+@requires_resident_gpu
+@pytest.mark.parametrize("streamed", [False, True], ids=["cached", "streamed"])
+def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_production_env, monkeypatch, streamed):
+    """K classes through the row-blocked lone chunks give the whole-chunk pass.
+
+    A streamed lone chunk keeps its rows' projection ids; its statistics map each class's
+    winner back to its rotation (bench 14694988, Class3D K4 100k: a missing table crashed).
+    """
+
+    def run():
+        return _resident(*_k_class_args(3))
+
+    if streamed:
+        monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+    # The per-row adjoint, which the streamed lone chunk implements.
+    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    whole = run()
+    lone_calls = []
+    real_lone = rp._run_lone_resident_chunk
+
+    def spy(*a, **k):
+        lone_calls.append(int(k["spec"].row_capacity))
+        return real_lone(*a, **k)
+
+    monkeypatch.setattr(rp, "_run_lone_resident_chunk", spy)
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "16")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "16")
+    lone = run()
+    assert lone_calls, "the 16-row ladder made no lone chunk"
+
+    np.testing.assert_array_equal(whole.per_class_hard_assignments, lone.per_class_hard_assignments)
+    for a, b in zip(whole.per_class_best_pose_rotation_ids, lone.per_class_best_pose_rotation_ids, strict=True):
+        np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
+    bound = float(np.sqrt(len(whole.class_log_evidence_per_image[0])) * np.finfo(np.float32).eps)
+    for got, want in list(zip(lone.Ft_y, whole.Ft_y)) + list(zip(lone.Ft_ctf, whole.Ft_ctf)):
+        assert _rel_l2(want, got) < bound
+    assert _rel_l2(whole.class_log_evidence_per_image, lone.class_log_evidence_per_image) < 1e-6
+    for field in ("wsum_sigma2_noise", "wsum_img_power", "wsum_norm_correction"):
+        assert _rel_l2(getattr(whole.noise_stats, field), getattr(lone.noise_stats, field)) < bound, field

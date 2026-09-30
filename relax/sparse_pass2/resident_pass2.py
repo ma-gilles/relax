@@ -8017,6 +8017,14 @@ def _run_resident_chunk(
     )
 
     if lone:
+        if stream_projection_fn is not None and n_classes > 1:
+            # A streamed lone chunk keeps its rows' projection ids, class * n_fine_rot +
+            # rotation; the statistics map a winner back to its rotation within the class
+            # through this table, as through a streamed chunk's slot table (bench 14694988:
+            # Class3D K4 100k crashed on a missing table).
+            stage_tables = stage_tables._replace(
+                cache_slot_fine_rot=jnp.arange(n_classes * int(n_fine_rot), dtype=jnp.int32) % jnp.int32(n_fine_rot)
+            )
         return _run_lone_resident_chunk(
             rows,
             operands,
