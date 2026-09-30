@@ -1168,7 +1168,7 @@ def _compute_relion_startup_noise(
 
     Single-optics path: the host F64 estimate is supplied to scoring in
     ``output_dtype`` (F32 in production, F64 for double-scoring diagnostics).
-    With several optics groups (K=1) it returns one spectrum per group, ``[G, n]``
+    With several optics groups it returns one spectrum per group, ``[G, n]``
     radial and ``[G, P]`` pixel noise, on the reference grid for a ``MultiShapeDataset``.
     K=1 takes the source order of its half sets; Class3D (K>1) has no halves and
     takes the micrograph-sorted order (``_relion_class3d_initial_noise_layout``).
@@ -1190,8 +1190,6 @@ def _compute_relion_startup_noise(
     if not multi_shape and np.unique(np.asarray(optics_pixel_sizes)).size != 1:
         raise ValueError("RELION start-up noise with several pixel sizes needs a multi-shape dataset")
     n_optics_groups = int(np.unique(optics_group_ids).size)
-    if n_optics_groups != 1 and not k1:
-        raise ValueError("RELION start-up noise per optics group is implemented for K=1 only")
     group_pixel_sizes = None
     if multi_shape:
         # Optics labels are 1-based rows of the optics table; spectra follow the sorted labels.
