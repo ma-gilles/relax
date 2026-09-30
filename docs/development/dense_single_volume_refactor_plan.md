@@ -318,6 +318,17 @@ statistics and significance data from the result once. Future phase extraction
 should follow this pattern—remove false aliases and forwarding first, then add
 a boundary only when distinct ownership remains.
 
+The first batch-planning pass moved raw pass-2 precision environment detection
+to the precision-policy owner and numbered-half BPREF activation to diagnostics.
+Per-half local and dense batch policies now begin when planning is complete,
+remain live across prior preparation and empty-half selection, and are consumed
+later by scoring. Empty halves still construct neither policy. This is the
+required lifecycle for retaining those containers; other local execution,
+diagnostic and optics objects remain call-site constructions and must be
+audited independently rather than justified by the batching change. The next
+controller step is the empty-half branch, but only if it can be split without a
+broad geometry/context input object or a change to allocation and capture order.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring

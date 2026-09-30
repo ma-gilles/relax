@@ -1180,3 +1180,26 @@ single-volume boundary has 17 parameters.
 - Production totals are 20,747 physical and 18,291 nonblank lines across 307
   functions. `_run_half_estep` is now 632 lines and `refine_single_volume` is
   5,460 lines. Argument-count statistics are unchanged.
+
+## 2026-09-30 — precision, BPREF and batch-policy ownership
+
+- Commit `ab4ea13` centralized the raw float64 pass-2 diagnostic presence check
+  in `helpers.dtype_policy`. Both batch-planning sites retain their original
+  call-time reads, and malformed nonblank requests remain conservatively true
+  until the existing numbered-iteration selector performs validation. Six
+  selector tests and all 44 compact/first-iteration batching tests passed.
+- Commit `9aa666b` moved numbered-half BPREF context mutation, device-signature
+  selection and activation logging into `diagnostics.iteration`. The helper has
+  three explicit inputs and returns the one boolean scoring needs; flush timing
+  remains in the controller. Nineteen focused BPREF tests passed.
+- Commit `177b7de` moved `LocalBatchPolicy` and `DenseBatchPolicy` construction
+  from the engine-call expressions to the point where per-half planning is
+  complete. The retained policies cross prior preparation and are consumed by
+  scoring; empty halves preserve the earlier no-construction path. An AST guard
+  records that lifecycle. Structural, dense and local planning suites passed
+  56 cases, and the combined CPU EM fast guard passed 102 cases in 67.76
+  seconds.
+- Ruff, Python compilation and diff checks passed. Production totals are 20,750
+  physical and 18,290 nonblank lines across 307 functions. `_run_half_estep`
+  is 631 lines and `refine_single_volume` is 5,459 lines. Argument-count
+  statistics remain unchanged and did not drive these boundaries.
