@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "optics-class3d",
-    "source_commit": "main a7d5cc3 + optics Class3D (premultiplied, odd and even aberrations)",
+    "package": "resident-local-parent-probe-20260930",
+    "source_commit": "5b8c074c5a5e8b7c0a12db5252a938aa869ff870",
     "metrics": {
       "files": [
         {
@@ -47,7 +47,7 @@
           "function_count": 24,
           "nonblank_noncomment_lines": 2014,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2235
+          "physical_lines": 2237
         },
         {
           "function_count": 25,
@@ -69,9 +69,9 @@
         },
         {
           "function_count": 2,
-          "nonblank_noncomment_lines": 450,
+          "nonblank_noncomment_lines": 384,
           "path": "relax/refinement/local_search_iteration.py",
-          "physical_lines": 536
+          "physical_lines": 457
         },
         {
           "function_count": 51,
@@ -211,7 +211,7 @@
         },
         {
           "line": 1762,
-          "line_span": 457,
+          "line_span": 459,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
@@ -231,8 +231,8 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 163,
-          "line_span": 374,
+          "line": 161,
+          "line_span": 297,
           "name": "_run_local_search_iteration",
           "parameter_count": 6,
           "path": "relax/refinement/local_search_iteration.py"
@@ -268,8 +268,8 @@
         "large_argument_function_count": 8,
         "maximum_function_line_span": 5582,
         "maximum_parameter_count": 25,
-        "nonblank_noncomment_lines": 18675,
-        "physical_lines": 21160,
+        "nonblank_noncomment_lines": 18609,
+        "physical_lines": 21083,
         "very_large_argument_function_count": 2
       }
     }
