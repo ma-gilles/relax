@@ -8,10 +8,15 @@ their existing casts and coarse-grid reductions.
 from dataclasses import dataclass, field
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.helpers.types import make_relion_stats
+from relax.helpers.half_volume_mstep import (
+    half_volume_accumulator_shape,
+    relion_x_half_accumulators_to_public_layout,
+)
+from relax.helpers.types import make_noise_stats, make_relion_stats
 
 
 @dataclass
@@ -50,6 +55,90 @@ class HalfScoreResult:
     profile_summary: dict | None = None
     mstep_full_half_axis: int | None = None
     mstep_accumulator_shape: tuple[int, int, int] | None = None
+
+
+@dataclass(frozen=True)
+class EmptyHalfResult:
+    """Numerical outputs produced for a halfset with no particles."""
+
+    score: HalfScoreResult
+    class_assignments: np.ndarray
+    class_posterior: np.ndarray
+    class_full_posterior: np.ndarray
+    class_rotation_posterior: np.ndarray
+
+
+def make_empty_half_result(
+    *,
+    image_size: int,
+    padded_volume_shape: tuple[int, int, int],
+    translation_dimension: int,
+    n_rotations: int,
+    n_classes: int,
+    k_class_enabled: bool,
+    x_half_mstep_accumulator_shape: tuple[int, int, int] | None,
+) -> EmptyHalfResult:
+    """Build all numerical outputs for a halfset with no particles.
+
+    The caller remains responsible for publishing this result into its
+    per-half state and diagnostics. Passing an x-half shape selects the RELION
+    accumulator layout; ``None`` selects the ordinary padded-volume layout (or
+    no accumulator for K-class refinement).
+    """
+
+    if k_class_enabled:
+        Ft_y = None
+        Ft_ctf = None
+    elif x_half_mstep_accumulator_shape is not None:
+        x_half_shape = half_volume_accumulator_shape(x_half_mstep_accumulator_shape)
+        flat_shape = (int(np.prod(x_half_shape)),)
+        Ft_y_x_half = jnp.zeros(flat_shape, dtype=jnp.complex128)
+        Ft_ctf_x_half = jnp.zeros(flat_shape, dtype=jnp.complex128)
+        Ft_y, Ft_ctf = relion_x_half_accumulators_to_public_layout(
+            Ft_y_x_half,
+            Ft_ctf_x_half,
+            x_half_mstep_accumulator_shape,
+        )
+    else:
+        flat_shape = (int(np.prod(padded_volume_shape)),)
+        Ft_y = jnp.zeros(flat_shape, dtype=jnp.complex128)
+        Ft_ctf = jnp.zeros(flat_shape, dtype=jnp.complex128)
+
+    hard_assignments = np.zeros(0, dtype=np.int32)
+    class_assignments = np.zeros(0, dtype=np.int32)
+    class_posterior = np.zeros(n_classes, dtype=np.float32)
+    class_full_posterior = np.zeros(n_classes, dtype=np.float32)
+    class_rotation_posterior = np.zeros((n_classes, n_rotations), dtype=np.float32)
+    em_stats = make_relion_stats(
+        log_evidence_per_image=jnp.zeros(0, dtype=jnp.float32),
+        best_log_score_per_image=jnp.zeros(0, dtype=jnp.float32),
+        max_posterior_per_image=jnp.zeros(0, dtype=jnp.float32),
+        rotation_posterior_sums=jnp.zeros(n_rotations, dtype=jnp.float32),
+    )
+    noise_stats = make_noise_stats(
+        wsum_sigma2_noise=jnp.zeros(image_size // 2 + 1, dtype=jnp.float32),
+        wsum_img_power=jnp.zeros(image_size // 2 + 1, dtype=jnp.float32),
+        wsum_sigma2_offset=0.0,
+        sumw=0.0,
+    )
+    return EmptyHalfResult(
+        score=HalfScoreResult(
+            ha=hard_assignments,
+            Ft_y=Ft_y,
+            Ft_ctf=Ft_ctf,
+            em_stats=em_stats,
+            noise_stats=noise_stats,
+            best_pose_rotations=np.zeros((0, 3, 3), dtype=np.float32),
+            best_pose_rotation_eulers=np.zeros((0, 3), dtype=np.float32),
+            best_pose_translations=np.zeros((0, translation_dimension), dtype=np.float32),
+            mstep_full_half_axis=(0 if x_half_mstep_accumulator_shape is not None else None),
+            mstep_accumulator_shape=x_half_mstep_accumulator_shape,
+        ),
+        class_assignments=class_assignments,
+        class_posterior=class_posterior,
+        class_full_posterior=class_full_posterior,
+        class_rotation_posterior=class_rotation_posterior,
+    )
 
 
 def _host_offload_array(value):

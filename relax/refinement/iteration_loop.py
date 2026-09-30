@@ -25,14 +25,15 @@ from recovar.data_io import cryoem_dataset
 
 from relax import sampling
 from relax.classification.k_class_inputs import _select_projector_half_for_class
+from relax.dense.score_outputs import HalfScoreResult as HalfScoreResult
 from relax.dense.score_outputs import (
-    HalfScoreResult,
     PerHalfOutputs,
     _combine_optional_half_accumulators,
     _maybe_host_offload_half0_local_accumulators,
     _record_score_profile,
     _resolve_mstep_accumulator_shape,
     _resolve_mstep_full_half_axis,
+    make_empty_half_result,
 )
 from relax.dense.scoring_policy import (
     _DENSE_EM_STATIC_KWARGS,
@@ -127,7 +128,6 @@ from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.half_volume_mstep import (
     half_volume_accumulator_shape,
     relion_backprojector_volume_shape,
-    relion_x_half_accumulators_to_public_layout,
 )
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import (
@@ -164,7 +164,6 @@ from relax.helpers.resolution import (
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.types import make_noise_stats, make_relion_stats
 from relax.local.local_layout import _selected_rotation_matrices
 from relax.reconstruction.regularization_relion import (
     RELION_MINRES_MAP,
@@ -2830,7 +2829,6 @@ def refine_single_volume(
                 )
             if experiment_datasets[k].n_units == 0:
                 logger.info("Skipping E-step/M-step accumulation for empty half-%d dataset", k + 1)
-                n_shells = int(cryo.image_shape[0] // 2 + 1)
                 n_rot_for_stats = int(
                     rotation_grid_size(local_search_order, **({"symmetry": symmetry} if symmetry != "C1" else {})) if use_local else effective_rotations.shape[0]
                 )
@@ -2852,64 +2850,35 @@ def refine_single_volume(
                     if empty_k1_x_half_mstep
                     else None
                 )
-                if k_class_enabled:
-                    Ft_y_k = None
-                    Ft_ctf_k = None
-                elif empty_k1_x_half_mstep:
-                    empty_x_half_shape = half_volume_accumulator_shape(empty_mstep_accumulator_shape)
-                    empty_x_half_accumulator_shape = (int(np.prod(empty_x_half_shape)),)
-                    Ft_y_x_half = jnp.zeros(empty_x_half_accumulator_shape, dtype=jnp.complex128)
-                    Ft_ctf_x_half = jnp.zeros(empty_x_half_accumulator_shape, dtype=jnp.complex128)
-                    Ft_y_k, Ft_ctf_k = relion_x_half_accumulators_to_public_layout(
-                        Ft_y_x_half,
-                        Ft_ctf_x_half,
-                        empty_mstep_accumulator_shape,
-                    )
-                else:
-                    accumulator_shape = (int(np.prod(padded_volume_shape)),)
-                    Ft_y_k = jnp.zeros(accumulator_shape, dtype=jnp.complex128)
-                    Ft_ctf_k = jnp.zeros(accumulator_shape, dtype=jnp.complex128)
-                ha_k = np.zeros(0, dtype=np.int32)
-                class_assignments[k] = np.zeros(0, dtype=np.int32)
-                class_posterior_per_half[k] = np.zeros(n_classes, dtype=np.float32)
-                class_full_posterior_per_half[k] = np.zeros(n_classes, dtype=np.float32)
-                class_rotation_posterior_per_half[k] = np.zeros((n_classes, n_rot_for_stats), dtype=np.float32)
-                em_stats_k = make_relion_stats(
-                    log_evidence_per_image=jnp.zeros(0, dtype=jnp.float32),
-                    best_log_score_per_image=jnp.zeros(0, dtype=jnp.float32),
-                    max_posterior_per_image=jnp.zeros(0, dtype=jnp.float32),
-                    rotation_posterior_sums=jnp.zeros(n_rot_for_stats, dtype=jnp.float32),
+                empty_half = make_empty_half_result(
+                    image_size=int(cryo.image_shape[0]),
+                    padded_volume_shape=padded_volume_shape,
+                    translation_dimension=current_translations.shape[1],
+                    n_rotations=n_rot_for_stats,
+                    n_classes=n_classes,
+                    k_class_enabled=k_class_enabled,
+                    x_half_mstep_accumulator_shape=empty_mstep_accumulator_shape,
                 )
-                noise_stats_k = make_noise_stats(
-                    wsum_sigma2_noise=jnp.zeros(n_shells, dtype=jnp.float32),
-                    wsum_img_power=jnp.zeros(n_shells, dtype=jnp.float32),
-                    wsum_sigma2_offset=0.0,
-                    sumw=0.0,
-                )
+                empty_result = empty_half.score
+                ha_k = empty_result.ha
+                class_assignments[k] = empty_half.class_assignments
+                class_posterior_per_half[k] = empty_half.class_posterior
+                class_full_posterior_per_half[k] = empty_half.class_full_posterior
+                class_rotation_posterior_per_half[k] = empty_half.class_rotation_posterior
                 coarse_ha[k] = ha_k
-                empty_result = HalfScoreResult(
-                    ha=ha_k,
-                    Ft_y=Ft_y_k,
-                    Ft_ctf=Ft_ctf_k,
-                    em_stats=em_stats_k,
-                    noise_stats=noise_stats_k,
-                    best_pose_rotations=np.zeros((0, 3, 3), dtype=np.float32),
-                    best_pose_rotation_eulers=np.zeros((0, 3), dtype=np.float32),
-                    best_pose_translations=np.zeros((0, current_translations.shape[1]), dtype=np.float32),
-                    mstep_full_half_axis=0 if empty_k1_x_half_mstep else None,
-                    mstep_accumulator_shape=empty_mstep_accumulator_shape,
-                )
                 per_half.update_from(k, empty_result, dtype=_dense_global_scoring_dtype())
+                Ft_y_k = empty_result.Ft_y
+                Ft_ctf_k = empty_result.Ft_ctf
                 if k == 0:
                     Ft_y_0, Ft_ctf_0 = Ft_y_k, Ft_ctf_k
                 else:
                     Ft_y_1, Ft_ctf_1 = Ft_y_k, Ft_ctf_k
                 _parity_dump.collect_e_step(
                     half=k,
-                    em_stats=em_stats_k,
+                    em_stats=empty_result.em_stats,
                     hard_assignment=ha_k,
                     coarse_hard_assignment=coarse_ha[k],
-                    noise_stats=noise_stats_k,
+                    noise_stats=empty_result.noise_stats,
                     Ft_y=Ft_y_k,
                     Ft_ctf=Ft_ctf_k,
                     pose_rotation_eulers=pose_rotation_eulers[k],

@@ -83,6 +83,54 @@ def test_per_half_update_preserves_double_posterior_state_in_double_mode(monkeyp
     assert outs.rotation_posterior[0][0] == _Stats.rotation_posterior_sums[0]
 
 
+@pytest.mark.parametrize(
+    "k_class_enabled,x_half_shape,expected_accumulator_size,expected_full_half_axis",
+    [
+        (True, None, None, None),
+        (False, None, 27, None),
+        (False, (5, 5, 5), 125, 0),
+    ],
+)
+def test_empty_half_score_result_preserves_accumulator_variants(
+    k_class_enabled,
+    x_half_shape,
+    expected_accumulator_size,
+    expected_full_half_axis,
+):
+    empty_half = score_outputs.make_empty_half_result(
+        image_size=8,
+        padded_volume_shape=(3, 3, 3),
+        translation_dimension=2,
+        n_rotations=7,
+        n_classes=3,
+        k_class_enabled=k_class_enabled,
+        x_half_mstep_accumulator_shape=x_half_shape,
+    )
+    result = empty_half.score
+
+    assert result.ha.shape == (0,)
+    assert result.ha.dtype == np.int32
+    assert result.best_pose_rotations.shape == (0, 3, 3)
+    assert result.best_pose_rotation_eulers.shape == (0, 3)
+    assert result.best_pose_translations.shape == (0, 2)
+    assert result.em_stats.rotation_posterior_sums.shape == (7,)
+    assert result.noise_stats.wsum_sigma2_noise.shape == (5,)
+    assert result.mstep_full_half_axis == expected_full_half_axis
+    assert result.mstep_accumulator_shape == x_half_shape
+    assert empty_half.class_assignments.shape == (0,)
+    assert empty_half.class_posterior.shape == (3,)
+    assert empty_half.class_full_posterior.shape == (3,)
+    assert empty_half.class_rotation_posterior.shape == (3, 7)
+    if expected_accumulator_size is None:
+        assert result.Ft_y is None
+        assert result.Ft_ctf is None
+    else:
+        assert result.Ft_y.size == expected_accumulator_size
+        assert result.Ft_ctf.size == expected_accumulator_size
+        np.testing.assert_array_equal(np.asarray(result.Ft_y), 0)
+        np.testing.assert_array_equal(np.asarray(result.Ft_ctf), 0)
+
+
 def test_mstep_full_half_axis_resolver_keeps_common_axis_or_default():
     assert score_outputs._resolve_mstep_full_half_axis([None, None]) == -1
     assert score_outputs._resolve_mstep_full_half_axis([None, 0]) == 0
