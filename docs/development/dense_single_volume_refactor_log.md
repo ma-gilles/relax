@@ -1059,7 +1059,7 @@ single-volume boundary has 17 parameters.
   conflict-free fast-forward with no manual resolutions. Main's intervening
   changes included shared pass-2 fixes and performance work; it did not modify
   `half_scoring.py`.
-- Commit `e37ce66` moved the broad-denominator probe's temporary local dump
+- Commit `57f7aa0` moved the broad-denominator probe's temporary local dump
   environment suppression into `diagnostics.local_debug`. The score-only
   engine call and its explicit pass-object specializations remain in the local
   scorer because extracting them would require a large forwarding signature.
@@ -1077,7 +1077,7 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — exact-local profile publication
 
-- Commit `e3d79aa` moved local profile-history mutation and optional `.npz`
+- Commit `33a4c12` moved local profile-history mutation and optional `.npz`
   capture to `diagnostics.local_debug.record_local_search_profile`. Its four
   inputs are the engine outputs, existing diagnostic policy, half index and
   parent-mode label. Numerical pose, accumulator and score-result publication
@@ -1093,7 +1093,7 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — exact-local pose publication
 
-- Commit `da31bdd` extracted best-pose publication into
+- Commit `6ab623e` extracted best-pose publication into
   `_publish_local_best_poses`, which receives only the persistent half owner and
   local engine result. The final score result remains assembled visibly in the
   scorer; no result wrapper or call-only input container was added.
@@ -1104,3 +1104,16 @@ single-volume boundary has 17 parameters.
 - Production totals are 20,799 physical and 18,350 nonblank lines across 306
   functions. The exact-local one-shape scorer fell from 436 to 422 lines.
   Seven functions still have at least 10 parameters, unchanged.
+
+## 2026-09-30 — rebase onto sampling fix
+
+- Fetched and rebased six continuation commits from `eb20394` onto
+  `origin/main` `0f95551`. There were no conflicts and therefore no manual
+  resolutions. Main's intervening commit replaced NumPy SIMD trigonometric
+  calls in sampling with C-library calls; it did not overlap the refactor
+  files.
+- The denominator suppression, profile publication and pose publication commits
+  were rewritten to `57f7aa0`, `33a4c12` and `6ab623e`. Post-rebase Ruff and
+  Python compilation passed, along with 77 focused local/structural cases and
+  the 102-case CPU EM fast guard in 60.42 seconds with
+  `FFTW/3.3.10-GCC-12.2.0` loaded.
