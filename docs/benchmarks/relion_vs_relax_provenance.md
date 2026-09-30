@@ -291,6 +291,23 @@ RELION against RELION (same band FSC-AUCs):
 | fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 2 | 0.9943 | 0.9929 | 0.9928 |
 | same-command repeat 1 vs same-command repeat 2 | 0.9999 | 0.9998 | 0.9999 |
 
+<a id="synth_ms2_icos_512_autorefine"></a>
+
+### synth_ms2_icos_512 (MS2 capsid, I2, box 512 at 1.0 Å/px, B 15): auto-refine K=1
+
+Status 🟢; quality vs RELION: hit (quality Nyquist-limited (both engines reach 2.0 Å); map gate met vs the same-seed RELION run (0.9997); relax reproduces RELION); matched: yes; GPU: RELION 2x H100, relax 1x H100.
+
+`synth_ms2_icos_512_autorefine`: relax source `b0fdcc4d1`, relax main b0fdcc4 (frozen candidate cand_b0fdcc4, sealed native libraries, pinned recovar 5514ac6), production defaults. Frozen mask `pdb_k1_100k256_c1` (`74253532c379`); masked FSC-AUC over the scorecard band RELION 0.8943, relax 0.9104. Cross-engine: map gate PASS (relax scripts/score_k1_map_gate.py): thresholds (merged >= 0.95, each half >= 0.90) met against 1 of 2 same-command RELION runs; against this job's RELION arm 0.9997/0.9995/0.9995; RELION-vs-RELION band merged 0.9581-0.9581, halves 0.8817-0.8817 / 0.8828-0.8828. New row 2026-09-30 on relax main b0fdcc4: same-node cold pair (job 14702513); relax 10704 s vs RELION MPI 3x4 30829 s. Quality is Nyquist-limited: both engines reach 2.0 Å (Nyquist at 1.0 Å/px), so resolution and FSC-AUC saturate and this row cannot show an accuracy difference (team-lead/user 2026-09-30); it is a speed row. The accuracy test of the EMPIAR-10202 regime is the 0.788 Å/px MS2 fixture (in progress). Seed 43 pair on relax main b0fdcc4 (job 14702513, della-h19g1): relax 1 H100 and 12 CPUs, RELION 2 H100s. Seed 42: relax cold on b0fdcc4 (job 14702543) 8816 s against the earlier RELION arm (job 14621443) 24774 s, 0.36x, separate jobs on the same GPU model; map gate 0.9998 against its same-seed RELION run. Masked GT FSC-AUC (hand-flipped GT, all runs converged to the mirror hand): relax 0.5876 / RELION 0.5876 at s43. HEALPix order: relax max 10 over 34 iterations, RELION max 10 over 34; relax ran uncapped (K=1 HEALPix is uncapped as RELION since 96f33009). Engine-reported final resolution: relax 2.01 Å, RELION 2.01 Å; the table's resolutions are the scorecard band values (masked_fsc.py, frozen mask synth_ms2_icos512_i2). Map gate per RELION run (merged / half1 / half2): relion_s42 0.9581/0.8817/0.8828; this job's RELION arm 0.9997/0.9995/0.9995. Below the RELION-vs-RELION band (reported only): none. `relion.resolution_A` is null: the unmasked half-map FSC stays above 1/7 up to the last measured shell (Nyquist-limited); see the masked value. `relax.resolution_A` is null: the unmasked half-map FSC stays above 1/7 up to the last measured shell (Nyquist-limited); see the masked value. `gt` is null: Nyquist-limited quality; GT comparison reported in the notes only. Jobs: relax 14702513; RELION 14702513.
+
+Timing record: (a) RELION: 2 H100, relion_refine_mpi 3 ranks x 8 threads (24 CPUs, patched build). relax: 1 H100, one process, 12 CPUs. Both in job 14702513 on della-h19g1, started together; no --exclusive. (b) relax main b0fdcc4 production defaults (every RELAX_* and XLA_PYTHON_CLIENT_MEM_FRACTION unset), standalone start-up, empty compile cache, HEALPix uncapped as RELION; --scratch_dir on node-local /tmp for both. (c) Both: arm-script wall (WALL.json) around the whole process, start-up, particle copy, compilation and final writes included. (d) H100 80GB HBM3 on both GPUs (GPU.csv); same node, same time.
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| relion_s42 | — | 0.9581 | 0.8817 | 0.8828 | 0.9803 | 0.9346 | 0.9350 | not met |
+| this job's RELION arm | 14702513 | 0.9997 | 0.9995 | 0.9995 | — | — | — | met |
+
 <a id="pdb_k4_50k_class3d_15it_resident_bench"></a>
 
 ### data_pdb_k4_50k_256 (resident engine): Class3D K=4 (15 iterations, fixture schedule)
