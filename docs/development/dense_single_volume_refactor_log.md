@@ -1276,3 +1276,23 @@ single-volume boundary has 17 parameters.
   functions. `_run_half_estep` is 614 lines and `refine_single_volume` is 5,457
   lines. The added lines make object lifetimes explicit; the unchanged seven
   10+ and two 20+ argument counts were not used to justify the change.
+- The smoke attempt at committed candidate `90bcf40` stopped before fixture
+  verification or submission because this host cannot create
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/smoke_90bcf40_20260930_144538`.
+  No GPU process, job ID or receipt was produced.
+
+## 2026-09-30 — final dense scoring owner lifecycle
+
+- Commit `d36e1f1` removed all constructor expressions from the final all-data
+  dense dispatch. Final sampling, batching and variant policy are invariant and
+  now reused by both halves. Half data, priors, projector execution and optics
+  remain per-half named owners; final dense and final local implementations
+  remain intentionally distinct.
+- Structural and iteration behavior tests passed 58 cases. Three focused final
+  all-data dense/local and post-cap finalization cases passed with the existing
+  complex-cast and gimbal-lock warnings. Ruff, compilation and diff checks
+  passed; CPU EM fast guard passed all 102 cases in 61.39 seconds.
+- Production totals are 20,779 physical and 18,315 nonblank lines across 306
+  functions. `_run_half_estep` remains 614 lines and `refine_single_volume` is
+  5,472 lines. The explicit lifecycle adds 15 physical lines while removing
+  duplicated per-half construction; argument-count statistics are unchanged.

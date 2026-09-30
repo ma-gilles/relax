@@ -353,6 +353,17 @@ optimization target. The next call-site audit is the final all-data dense
 dispatch, where only owners proven invariant across both halves should move to
 final-iteration scope.
 
+The final dense audit now follows that rule: sampling, batching and variant
+selection are built once and reused for both halves; half data, priors,
+projector execution and optics remain separately prepared for each half. The
+final dense call, like both local calls, contains only named owners and no
+constructor expressions. The next controller work should leave these owner
+boundaries intact and inspect final-result publication and final diagnostic
+capture as separate concerns. Extract either only when its inputs can be told
+through the existing result/owner objects plus a few explicit values; do not
+introduce a final-iteration catch-all context merely to shorten
+`refine_single_volume`.
+
 ### 2. Half-scoring specifications and explicit variants
 
 Replace the 63-, 55- and 48-parameter interfaces and dictionary-based scoring
