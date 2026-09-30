@@ -114,6 +114,42 @@ labeled diagnostic only.
 - Refused permanently, with a clear message: `rlnCtfDataAreCtfCorrected` and several different
   `rlnMtfFileName` values.
 
+## RELION binding removal (started 2026-09-29)
+
+User rule (2026-09-29): production code must not rely on RELION code. The compiled binding
+(`relax/relion_bind`, `_relion_bind_core`) stays only as the oracle of unit tests, diagnostics
+and parity tools. Each port keeps RELION's exact semantics and gets a CPU test against the
+binding (integers exact, floats at a measured relative tolerance). A lint test will fail on any
+import of `relion_bind` outside `relax/relion_bind`, `relax/diagnostics`, `relax/reference` and
+`tests`; until the last port lands it carries an allowlist that shrinks with each port.
+
+Production call sites at relax main `93bf20e`; the status column records each port. Every port has a CPU test against
+the binding in `tests/unit/test_*_vs_relion_bind.py` (and `tests/unit/initial_model/`).
+
+| Module | Function | Binding call | Runs that use it | What it computes | Status |
+| --- | --- | --- | --- | --- | --- |
+| `symmetry.py` | `_operators_float64` | `get_symmetry_operators` | every run (C1 hash/point-group code; operators for non-C1) | RELION `SymList` ordered L/R operators and point-group code | ported (`symmetry._operators_float64`) |
+| `sampling.py` | `_get_relion_grid_metadata` | `get_healpix_directions` (C1), `get_healpix_sampling_metadata` (non-C1) | every run | HEALPix NEST directions (rot, tilt), retained pixel ids, psi grid; asymmetric-unit pruning for non-C1 | ported (`healpix_sampling.py`) |
+| `sampling.py` | `get_relion_rotation_grid`, `_get_relion_rotation_grid_eulers_float64` | `get_coarse_orientations` | every run | the coarse (direction, psi) Euler grid in RELION order | ported (`healpix_sampling.py`) |
+| `sampling.py` | oversampled-orientation builder | `get_oversampled_orientations_batch` (NumPy fallback for C1; required for non-C1) | every run (fine pass) | `HealpixSampling::getOrientations` children with random perturbation | ported (`healpix_sampling.py`) |
+| `sampling.py` | inverse scoring matrices | `euler_angles_to_inverse_matrices` (NumPy fallback exists) | every run | `Euler_angles2matrix` then `Matrix2D::inv` | ported (`healpix_sampling.py`) |
+| `sampling.py` | device scoring perturbation | `euler_angles_to_matrix` (NumPy fallback exists) | every run with perturbation | perturbation Euler matrix | ported (`healpix_sampling.py`) |
+| `sampling.py` | `_relion_rnd_unif_scaled_first_draw` | `vdam_rnd_unif_range_sequence` (glibc `ctypes` fallback) | every run (perturbation draw) | `init_random_generator(seed)` then `rnd_unif(low, high)` | ported (`helpers/relion_random.py`) |
+| `relion/relion_projector_setup.py` | `reference_to_relion_projector_half_maps_and_power` | `compute_fourier_transform_map` | `--projector_setup_backend native` and geometry the JAX path does not take (odd box, padding > 2, interpolator 0) | `Projector::computeFourierTransformMap` | open |
+| `reconstruction/regularization_relion.py` | tau2 from reference | `compute_fourier_transform_map` | callers that pass no `projector_power_spectrum` | projector power spectrum | ported (device projector power) |
+| `relion/relion_ctf.py` | exact CTF | `get_ctf_images_batch` | CTF images | `CTF::getFftwImage` | ported by optics (0cbfb8b) |
+| `helpers/expected_accuracy.py` | `estimate_relion_expected_accuracy_from_prepared_inputs` | `vdam_expected_angular_errors` | auto-refine, Class3D, InitialModel, tomo | `MlOptimiser::calculateExpectedAngularErrors` | ported (`helpers/relion_expected_accuracy.py`), wiring open |
+| `helpers/expected_accuracy.py` | `relion_auto_refine_half_orders`, `relion_half1_trial_order`, `relion_class3d_trial_layout` | `auto_refine_randomise_half_orders_mt19937` | auto-refine, Class3D | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
+| `vdam/subset_schedule.py` | subset shuffle | `vdam_randomise_particles_order` | InitialModel | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
+| `vdam/iteration_loop.py` | `refresh_tau2_from_projector_power` | `vdam_projector_power_spectrum` | InitialModel | `MlModel::setFourierTransformMaps` tau2 | ported (device projector power) |
+| `vdam/bootstrap_iref.py` | `compute_bootstrap_iref_via_cpp` | `vdam_bootstrap_iref` | InitialModel | random-angle bootstrap reconstruction (ml_optimiser.cpp:3127-3205) | ported (`vdam/bootstrap_reconstruction.py`), wiring open |
+| `vdam/bootstrap_iref.py` | `postprocess_bootstrap_iref_via_cpp` | `vdam_postprocess_initial_iref` | InitialModel | blobs, low-pass and soft mask with the C `rand()` stream | ported (`vdam/bootstrap_reconstruction.py`), wiring open |
+| `vdam/mstep_single_class.py` | `_get_bindings` and the step-by-step path | `vdam_reweight_grad`, `vdam_first_moment`, `vdam_second_moment`, `vdam_apply_momenta`, `vdam_update_ssnr_arrays_from_bpref`, `vdam_reconstruct_grad` | InitialModel (module required by the default JAX transaction; step path only with dumps/replay or `use_native_transaction=False`) | VDAM M-step | done: production runs the transaction; RELION's steps are `diagnostics/vdam_native_mstep.py` |
+| `relion/relion_vdam_mstep.py` | `_first_moment_initializes`, `relion_vdam_m_step_host` | `vdam_first_moment_initializes`, `vdam_m_step_transaction` (FFT grid < 16) | InitialModel | serial first-moment sum test; small-grid M-step | ported (serial host sum; grids < 16 refused) |
+| `commands/ppca_initial_model.py` | `source_identity` | module file hash | PPCA initial model | provenance hash of the binding | removed (no binding in provenance) |
+
+`commands/build_relion_bind.py` builds the oracle and is a tool, not a production path.
+
 ## Architecture and ownership
 
 `relax/` is the implementation root. Standard refinement and VDAM retain

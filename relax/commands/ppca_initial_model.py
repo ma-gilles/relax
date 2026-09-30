@@ -120,9 +120,7 @@ def source_identity():
     import jax
     import recovar
 
-    from relax.relion_bind import _relion_bind_core as binding
-
-    native = {"relion_binding_sha256": file_hash(binding.__file__)}
+    native = {}
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
 
