@@ -119,12 +119,18 @@ labeled diagnostic only.
   (merged/half1/half2 0.9962/0.9940/0.9945 against two same-command RELION runs), masked GT band
   FSC-AUC 0.9950 vs RELION 0.9946, masked resolution 8.5 A both, wall 400 s vs 784 s (0.51x).
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_7c3ddbe`.
-  OPEN: with `--firstiter_cc` the S3b run passes iteration 1 and then refuses at iteration 2,
-  when group 2's (s = 1.12) Gaussian coarse window (56 px, r_max 25) lies between 2 r_max and
-  2 s r_max (see "Multi-optics on another grid" below): the coarse GEMM projection
-  (`compute_relion_projector_projections_block`), now the global coarse path, does not reproduce
-  RELION's wrapped rows there. InitialModel and single-particle Class3D take one optics group;
-  subtomogram Class3D runs several (et16_k2conf_optics2, three seeds against non-MPI RELION,
+  With `--firstiter_cc` (2026-09-30): group 2's (s = 1.12) Gaussian coarse window (56 px, r_max 25)
+  lies between 2 r_max and 2 s r_max from iteration 2, where RELION's coarse kernel projects and
+  shifts the rows beyond maxR at `i - window` (see "Multi-optics on another grid" below); the coarse
+  GEMM operands now do the same (`helpers.projection.relion_coarse_relabel`, the window's Nyquist
+  row included). S3b against two same-command MPI-scale-patched RELION 3x4 runs (they agree to 1.0):
+  map gate PASS (merged/half1/half2 0.9989/0.9983/0.9982, job 14796180 at 30cfae8), masked GT band
+  FSC-AUC 0.9954 vs RELION 0.9954, masked resolution 8.5 A both; wall 459 s vs 783 s (0.59x) on one
+  H100 node (pair 14762768). GEMM scores match the fused coarse kernel to 2e-7 in the band
+  (`tests/unit/test_relion_coarse_relabel_gpu.py`). Evidence:
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_30cfae8_fcc`.
+  InitialModel and single-particle Class3D take one optics group; subtomogram Class3D runs several
+  (et16_k2conf_optics2, three seeds against non-MPI RELION,
   `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_class3d_20260929`).
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
@@ -386,10 +392,12 @@ group 2 from iteration 3) dropped RELION's N/2..N/2+1/2 ring (shells 50-51). REL
 rounded support and bounds only the rotated reference radius (BP.cuh:322), so the class window now
 backprojects that support and its reference-sphere clip is the exact cut; the multi-optics replay of
 iteration 3 then matches RELION's BPref, and the S3b end-to-end run follows RELION's trajectory
-through iteration 6. Also OPEN: a coarse window strictly between
+through iteration 6. A coarse window strictly between
 2 maxR and about 2 s maxR, where RELION's wrapped coarse rows land inside the
-sphere. Only the fused coarse scorer, the global default, reproduces it. The
-non-fused coarse projection and the local parent pass refuse it.
+sphere: the fused coarse scorer and the coarse GEMM operands reproduce it (the
+projection and the image shift at the relabelled row, `relion_coarse_relabel`).
+Still OPEN: the local parent pass refuses such a window (the S3b `--firstiter_cc`
+run never reaches one); its image-shift relabel belongs in the resident parent probe.
 
 Resolved (2026-09-29, cryo-ET): subtomogram runs write RELION's run files and continue from them (e435bfa4). The half
 rows already map the particles onto the tomo particles.star; data.star now carries rlnOriginZAngst for the 3D offsets.

@@ -7,6 +7,7 @@ import math
 import os
 from functools import partial
 from types import SimpleNamespace
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -330,6 +331,63 @@ def relion_kernel_zero_rows(image_size: int, projector_output_size: int, r_max, 
     label = jnp.asarray(label, jnp.int32)
     zero = label > max_r if relion_kernel == "coarse" else jnp.abs(label) > max_r
     return jnp.broadcast_to(zero[:, None], (n, n // 2 + 1)).reshape(-1)
+
+
+class RelionCoarseRelabel(NamedTuple):
+    """The pixels RELION's coarse diff2 kernel projects and shifts at a relabelled row.
+
+    ``positions`` index the caller's pixel axis (entries of its ``pixel_indices``, or the
+    centred ``image_size x (image_size // 2 + 1)`` grid). ``grid_indices`` are the same
+    pixels' centred indices in a ``grid_size`` square grid whose rows hold the relabelled
+    labels, so the unchanged projector and translate kernels evaluate them there.
+    ``row_shift`` is the relabelled minus the caller's row label, ``-window`` for every pixel.
+    """
+
+    positions: np.ndarray
+    grid_indices: np.ndarray
+    grid_size: int
+    row_shift: int
+
+
+def relion_coarse_relabel(image_size: int, window: int, r_max: int, pixel_indices=None):
+    """RELION's coarse diff2 row relabelling for a window wider than the model sphere, or ``None``.
+
+    The coarse kernel reads FFTW row ``i`` of a ``window``-sized image as ``y = i`` for
+    ``i <= maxR`` and ``y = i - window`` beyond, for the projection and the image shift alike
+    (acc/cuda/cuda_kernels/diff2.cuh:86-90, 163-164), with ``maxR = min(PPref.r_max, window / 2)``
+    (acc/acc_projectorkernel_impl.h:301-310); relax's fused coarse kernel does the same
+    (relion_coarse_diff2_projector_body.inc). In relax's centred layout that moves the
+    positive rows ``maxR < label <= window / 2`` to ``label - window``: the window's Nyquist
+    row ``+window / 2`` (FFTW row ``window / 2``) becomes ``-window / 2``; for a window at the
+    full box that row is centred row 0. Returns ``None`` when ``window / 2 <= maxR`` (no row moves).
+    """
+
+    n = int(image_size)
+    window = int(window)
+    max_r = min(int(r_max), window // 2)
+    if window // 2 <= max_r:
+        return None
+    half_width = n // 2 + 1
+    labels = np.arange(n) - n // 2
+    if window == n:
+        labels[0] = n // 2
+    moved = (labels > max_r) & (labels <= window // 2)
+    if pixel_indices is None:
+        rows, cols = np.nonzero(moved[:, None] & (np.arange(half_width)[None, :] <= window // 2))
+        positions = rows * half_width + cols
+    else:
+        indices = np.asarray(pixel_indices, dtype=np.int64).reshape(-1)
+        positions = np.nonzero(moved[indices // half_width])[0]
+        rows, cols = indices[positions] // half_width, indices[positions] % half_width
+    new_labels = labels[rows] - window
+    grid_size = 2 * int(np.max(np.abs(new_labels), initial=0)) + 2
+    grid_indices = (new_labels + grid_size // 2) * (grid_size // 2 + 1) + cols
+    return RelionCoarseRelabel(
+        positions=positions.astype(np.int32),
+        grid_indices=grid_indices.astype(np.int32),
+        grid_size=int(grid_size),
+        row_shift=-window,
+    )
 
 
 def relion_projector_half_to_texture_full(volume_relion_half: jax.Array) -> jax.Array:
@@ -813,17 +871,37 @@ def compute_relion_projector_projections_block(
     zero_rows = relion_kernel_zero_rows(
         image_size, resolved_output_size, runtime_r_max if projector_capacity else int(r_max), relion_kernel
     )
+    coarse_relabel = None
+    coarse_window = None
     if relion_kernel == "coarse" and zero_rows is not None and not isinstance(rotations_block, jax.core.Tracer):
         from relax.helpers.optics_scale import coarse_rows_wrap_inside
 
-        # Other-grid rotations carry 1 / s (applyScaleDifference).
-        scale = 1.0 / float(np.linalg.norm(np.asarray(rotations_block[0, 0], dtype=np.float64)))
-        if coarse_rows_wrap_inside(resolved_output_size, int(r_max), scale):
-            raise NotImplementedError(
-                f"a {resolved_output_size} px coarse window at scale {scale:.3f} lies between 2 r_max and 2 s r_max "
-                f"(r_max {int(r_max)}): RELION's coarse kernel projects its wrapped outer rows there "
-                "(diff2.cuh:86-90), which only the fused coarse scorer reproduces so far"
+        # RELION's window is the active current size, which a stable-shape caller passes as
+        # its runtime mask size.
+        coarse_window = resolved_output_size
+        if current_image_mask_size is not None and not isinstance(current_image_mask_size, jax.core.Tracer):
+            coarse_window = int(current_image_mask_size)
+        # Other-grid rotations carry 1 / s (applyScaleDifference). Rows can wrap inside the
+        # sphere only for a window wider than 2 r_max, so only then is the scale read (a
+        # device rotation block costs a host sync per block).
+        if coarse_window // 2 > int(r_max) and coarse_rows_wrap_inside(
+            coarse_window,
+            int(r_max),
+            1.0 / float(np.linalg.norm(np.asarray(rotations_block[0, 0], dtype=np.float64))),
+        ):
+            unsupported = (
+                not centered_rows or projector_capacity or runtime_r_max is not None or mask_current_image_disk
+                or persistent_texture is not None or capacity_texture is not None
+                or isinstance(current_image_mask_size, jax.core.Tracer)
             )
+            if unsupported:
+                raise NotImplementedError(
+                    f"a {coarse_window} px coarse window lies between 2 r_max and 2 s r_max "
+                    f"(r_max {int(r_max)}): RELION's coarse kernel projects its relabelled outer rows there "
+                    "(diff2.cuh:86-90); this projection route (a runtime radius, an image-disk mask or "
+                    "uncentred rows) does not reproduce them"
+                )
+            coarse_relabel = relion_coarse_relabel(image_size, coarse_window, int(r_max), pixel_indices)
     if persistent_texture is not None:
         if projector_capacity or runtime_r_max is not None or image_r_max is not None:
             raise ValueError("persistent texture cannot use the runtime capacity/radius route")
@@ -949,6 +1027,34 @@ def compute_relion_projector_projections_block(
         if centered_rows and pixel_indices is not None:
             zero_rows = zero_rows[jnp.asarray(pixel_indices)]
         proj_half = jnp.where(zero_rows, jnp.zeros((), proj_half.dtype), proj_half)
+    if coarse_relabel is not None and coarse_relabel.positions.size:
+        # RELION projects those rows at their relabelled coordinates: the same projector on
+        # a grid that holds them, with the kernel's maxR radius test.
+        grid = int(coarse_relabel.grid_size)
+        max_r = min(int(r_max), int(coarse_window) // 2)
+        if use_texture:
+            moved = _project_relion_projector_texture(
+                volume_relion_half,
+                rotations_block,
+                (grid, grid),
+                r_max=int(r_max),
+                projector_output_size=grid,
+                padding_factor=int(padding_factor),
+                pixel_indices=coarse_relabel.grid_indices,
+                image_r_max=jnp.asarray(max_r, dtype=jnp.int32),
+            )
+        else:
+            moved = project_relion_projector_half_spectrum_centered_rows_at_indices(
+                volume_relion_half,
+                rotations_block,
+                (grid, grid),
+                max_r,
+                int(padding_factor),
+                grid,
+                coarse_relabel.grid_indices,
+                relion_acc_double_floorf_quirk,
+            )
+        proj_half = proj_half.at[:, jnp.asarray(coarse_relabel.positions)].set(moved.astype(proj_half.dtype))
     if dense_scale:
         token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
         n = int(image_shape[0])

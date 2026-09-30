@@ -14,6 +14,7 @@ import numpy as np
 
 from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.optics_noise import pixel_rows
+from relax.helpers.projection import relion_coarse_relabel
 from relax.scoring.coarse_gaussian_gemm import (
     _COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR_ENV,
     _COARSE_GAUSSIAN_GEMM_HYBRID_ENV,
@@ -550,6 +551,43 @@ def _process_relion_exact_coarse_half_image(
     )
 
 
+def relion_coarse_translate(
+    translate_fn,
+    unshifted,
+    translation_angles,
+    score_indices,
+    score_indices_np,
+    image_shape,
+    *,
+    window=None,
+    r_max=None,
+):
+    """Translate score pixels as RELION's coarse diff2 kernel does: ``[batch, translation, pixel]``.
+
+    ``translate_fn`` is a RELION translate kernel (``relion_translate_score_f32/f64``). The
+    kernel shifts the rows it relabels at the relabelled label (acc/cuda/cuda_kernels/diff2.cuh:163-164);
+    with ``window`` (the active current size) and ``r_max`` (the projector's) those pixels are
+    translated on the relabel grid of :func:`relax.helpers.projection.relion_coarse_relabel`.
+    """
+
+    batch_size = int(unshifted.shape[0])
+    n_trans = int(translation_angles.shape[0])
+    shifted = translate_fn(unshifted, translation_angles, score_indices, image_shape).reshape(batch_size, n_trans, -1)
+    relabel = (
+        None if window is None else relion_coarse_relabel(int(image_shape[0]), int(window), int(r_max), score_indices_np)
+    )
+    if relabel is not None and relabel.positions.size:
+        positions = jnp.asarray(relabel.positions)
+        moved = translate_fn(
+            unshifted[:, positions],
+            translation_angles,
+            jnp.asarray(relabel.grid_indices),
+            (relabel.grid_size, relabel.grid_size),
+        ).reshape(batch_size, n_trans, -1)
+        shifted = shifted.at[:, :, positions].set(moved)
+    return shifted
+
+
 def _assemble_relion_exact_coarse_gaussian_operands(
     experiment_dataset,
     processed_direct,
@@ -571,8 +609,16 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     runtime_current_size=None,
     use_float64_scoring: bool = False,
     relion_translation_angle_scale: float = 1.0,
+    coarse_kernel_window: int | None = None,
+    coarse_kernel_r_max: int | None = None,
 ) -> RelionExactCoarseGaussianOperands:
-    """Assemble the single exact-source operand set without generic formulas."""
+    """Assemble the single exact-source operand set without generic formulas.
+
+    ``coarse_kernel_window`` (RELION's coarse window, the active current size) and
+    ``coarse_kernel_r_max`` (the projector's ``r_max``) give the rows RELION's coarse kernel
+    shifts at a relabelled label (:func:`relax.helpers.projection.relion_coarse_relabel`);
+    those pixels are translated there, as their projections are.
+    """
 
     from relax.cuda import kernels as em_cuda_kernels
     from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
@@ -610,12 +656,16 @@ def _assemble_relion_exact_coarse_gaussian_operands(
         angle_fn(translations_source, image_shape, angle_scale=relion_translation_angle_scale),
         dtype=real_dtype,
     )
-    shifted_corrected = translate_fn(
+    shifted_corrected = relion_coarse_translate(
+        translate_fn,
         exact_unshifted_corrected,
         translation_angles,
         score_indices,
+        score_indices_np,
         image_shape,
-    ).reshape(batch_size, int(translation_angles.shape[0]), -1)
+        window=coarse_kernel_window,
+        r_max=coarse_kernel_r_max,
+    )
     return RelionExactCoarseGaussianOperands(
         shifted_corrected=jnp.asarray(shifted_corrected, dtype=complex_dtype),
         pixel_weight=pixel_weight,

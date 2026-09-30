@@ -1173,6 +1173,16 @@ def _compute_k_class_significance_batched(
     )
     use_window = window_spec.use_window
     score_size = int(image_shape[0]) if current_size is None else int(current_size)
+    # RELION's coarse kernel projects and shifts the rows beyond maxR at ``i - window`` inside
+    # the model sphere only for a window between 2 r_max and about 2 s r_max (an optics group on
+    # a coarser grid: its rotations carry 1 / s); the exact coarse operands then shift them there.
+    coarse_kernel_window = None
+    if use_relion_projector and relion_projector_r_max is not None and score_size // 2 > int(relion_projector_r_max):
+        from relax.helpers.optics_scale import coarse_rows_wrap_inside
+
+        rotation_scale = 1.0 / float(np.linalg.norm(np.asarray(rotations, dtype=np.float64).reshape(-1, 3, 3)[0, 0]))
+        if coarse_rows_wrap_inside(score_size, int(relion_projector_r_max), rotation_scale):
+            coarse_kernel_window = score_size
     window_indices = window_spec.score_indices
     n_windowed = window_spec.n_score
     projection_kwargs = window_spec.projection_kwargs()
@@ -3585,6 +3595,8 @@ def _compute_k_class_significance_batched(
                         runtime_current_size=(
                             jnp.asarray(score_size, dtype=jnp.int32) if stable_fourier_window_shapes else None
                         ),
+                        coarse_kernel_window=coarse_kernel_window,
+                        coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
                     )
                     coarse_gaussian_shifted_corrected = exact_operands.shifted_corrected
                     coarse_gaussian_pixel_weight = exact_operands.pixel_weight

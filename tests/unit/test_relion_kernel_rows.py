@@ -111,14 +111,85 @@ def test_coarse_band_is_where_relion_projects_wrapped_rows(scale):
 
 
 @pytest.mark.unit
-def test_non_fused_coarse_projection_refuses_the_band():
+@pytest.mark.parametrize("image_size, window, r_max", [(18, 18, 8), (112, 56, 25), (64, 40, 17), (128, 128, 60)])
+def test_coarse_relabel_is_relions_kernel_row_rule(image_size, window, r_max):
+    """Every window pixel keeps its label or moves to the row RELION's coarse kernel reads it at."""
+    from relax.helpers.projection import relion_coarse_relabel
+
+    relabel = relion_coarse_relabel(image_size, window, r_max)
+    max_r = min(r_max, window // 2)
+    half_width = image_size // 2 + 1
+    moved = dict(zip(relabel.positions.tolist(), relabel.grid_indices.tolist()))
+    grid = relabel.grid_size
+    label = np.arange(image_size) - image_size // 2
+    if window == image_size:
+        label[0] = image_size // 2
+    for row, centred in enumerate(label):
+        # Both window Nyquist labels are FFTW row window / 2 (a layout holds one of them).
+        if not -(window // 2) <= centred <= window // 2:
+            continue
+        i = centred % window  # FFTW row of the window
+        for x in range(window // 2 + 1):
+            xk, yk = _acc_kernel_coordinate(i, x, window, max_r, "coarse")
+            position = row * half_width + x
+            if position in moved:
+                g = moved[position]
+                assert (g % (grid // 2 + 1), g // (grid // 2 + 1) - grid // 2) == (xk, yk), (centred, x)
+            else:
+                assert (xk, yk) == (x, centred), (centred, x)
+    assert relabel.row_shift == -window
+    assert relion_coarse_relabel(image_size, 2 * r_max, r_max) is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("compact", [False, True])
+def test_coarse_projection_in_the_band_projects_relions_relabelled_rows(compact):
+    """In the band (window between 2 r_max and 2 s r_max) RELION projects the rows beyond maxR at
+    ``i - window`` inside the sphere; the block projector must give those values, not zeros."""
+    from relax.helpers.optics_scale import coarse_rows_wrap_inside
+    from relax.helpers.projection import project_relion_projector_half_spectrum_centered_rows
+
+    rng = np.random.default_rng(0)
+    r_max, window, scale = 8, 18, 1.3
+    assert coarse_rows_wrap_inside(window, r_max, scale)
+    projector = jnp.asarray(rng.standard_normal((2 * r_max + 3, 2 * r_max + 3, r_max + 2)) + 0j, dtype=jnp.complex128)
+    rotations = jnp.asarray(Rotation.random(3, random_state=5).as_matrix() / scale)
+    half_width = window // 2 + 1
+    indices = np.arange(window * half_width)
+    if compact:
+        indices = np.sort(rng.choice(indices, size=indices.size // 2, replace=False))
+    coarse, _ = compute_relion_projector_projections_block(
+        projector, rotations, (window, window), r_max=r_max, padding_factor=1, centered_rows=True,
+        projector_output_size=window, relion_texture_interp=False, relion_kernel="coarse",
+        pixel_indices=jnp.asarray(indices, jnp.int32) if compact else None,
+    )
+    coarse = np.asarray(coarse)
+    # Reference: the plain projector on a grid large enough to hold every kernel coordinate.
+    grid = 4 * window
+    plain = np.asarray(
+        project_relion_projector_half_spectrum_centered_rows(projector, rotations, (grid, grid), r_max, 1, grid, False)
+    ).reshape(3, grid, grid // 2 + 1)
+    label = np.arange(window) - window // 2
+    label[0] = window // 2
+    for column, index in enumerate(indices):
+        row, x = divmod(int(index), half_width)
+        xk, yk = _acc_kernel_coordinate(label[row] % window, x, window, r_max, "coarse")
+        assert_matches(coarse[:, column], plain[:, yk + grid // 2, xk])
+    relabelled = [
+        column for column, index in enumerate(indices)
+        if label[int(index) // half_width] > r_max
+    ]
+    assert np.abs(coarse[:, relabelled]).max() > 0  # RELION's wrapped rows are inside the sphere here
+
+
+@pytest.mark.unit
+def test_coarse_projection_band_refuses_routes_that_cannot_relabel():
     rng = np.random.default_rng(0)
     projector = jnp.asarray(rng.standard_normal((2 * 8 + 3, 2 * 8 + 3, 10)) + 0j, dtype=jnp.complex128)
-    kwargs = dict(r_max=8, padding_factor=1, centered_rows=True, relion_texture_interp=False, relion_kernel="coarse")
-    rotations = Rotation.random(2, random_state=5).as_matrix()
-    # 18 px at s = 1.3: 9 > 8 and 9 < 1.3 * sqrt(65).
-    with pytest.raises(NotImplementedError, match="fused coarse scorer"):
-        compute_relion_projector_projections_block(projector, jnp.asarray(rotations / 1.3), (18, 18), projector_output_size=18, **kwargs)
-    # The same window unscaled, and a window past the band, are exact.
-    compute_relion_projector_projections_block(projector, jnp.asarray(rotations), (18, 18), projector_output_size=18, **kwargs)
-    compute_relion_projector_projections_block(projector, jnp.asarray(rotations / 1.1), (20, 20), projector_output_size=20, **kwargs)
+    rotations = jnp.asarray(Rotation.random(2, random_state=5).as_matrix() / 1.3)
+    # Uncentred rows have no centred relabel grid.
+    with pytest.raises(NotImplementedError, match="does not reproduce"):
+        compute_relion_projector_projections_block(
+            projector, rotations, (18, 18), r_max=8, padding_factor=1, centered_rows=False,
+            projector_output_size=18, relion_texture_interp=False, relion_kernel="coarse",
+        )
