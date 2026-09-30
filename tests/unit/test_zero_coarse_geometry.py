@@ -94,6 +94,59 @@ def test_numbered_half_batch_policies_have_a_planning_lifecycle():
     ) == "local_batching"
 
 
+def test_numbered_local_scoring_uses_prepared_owners_not_call_site_constructors():
+    loop = tree("iteration_loop.py")
+    half_step = next(
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.FunctionDef) and node.name == "_run_half_estep"
+    )
+    local_call = next(
+        node
+        for node in ast.walk(half_step)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_local_in_bpref_scope"
+    )
+    assert {
+        keyword.arg: keyword.value.id
+        for keyword in local_call.keywords
+    } == {
+        "half": "local_half",
+        "sampling": "local_sampling",
+        "priors": "local_priors",
+        "batching": "local_batching",
+        "execution": "local_execution",
+        "diagnostics": "local_diagnostics",
+        "optics": "local_optics",
+    }
+
+    constructors = {
+        node.func.id: node.lineno
+        for node in ast.walk(half_step)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id
+        in {
+            "LocalHalfData",
+            "LocalPriorSpec",
+            "LocalBatchPolicy",
+            "LocalExecutionPolicy",
+            "LocalDiagnosticPolicy",
+            "LocalOpticsSpec",
+        }
+    }
+    assert set(constructors) == {
+        "LocalHalfData",
+        "LocalPriorSpec",
+        "LocalBatchPolicy",
+        "LocalExecutionPolicy",
+        "LocalDiagnosticPolicy",
+        "LocalOpticsSpec",
+    }
+    assert all(line < local_call.lineno for line in constructors.values())
+
+
 def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
     scorer = tree("half_scoring.py")
     helper = next(

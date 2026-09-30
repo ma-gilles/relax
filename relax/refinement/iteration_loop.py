@@ -2766,12 +2766,36 @@ def refine_single_volume(
             # complete and remain intact until the selected scorer executes.
             # Empty halves retain the historical early return without creating
             # scoring-only policy objects.
-            local_batching = dense_batching = None
+            local_batching = local_execution = local_diagnostics = dense_batching = None
             if experiment_datasets[k].n_units != 0:
                 if use_local:
                     local_batching = LocalBatchPolicy(
                         max_significants=adaptive.max_significants,
                         safe_batch_sizes=safe_batch_sizes_for_half,
+                    )
+                    local_execution = LocalExecutionPolicy(
+                        disable_adjoint_y=debug.disable_adjoint_y,
+                        disable_adjoint_ctf=debug.disable_adjoint_ctf,
+                        relion_projector_half=relion_projector_half_by_half[k],
+                        relion_projector_r_max=relion_projector_r_max_by_half[k],
+                        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+                        relion_translation_angle_scale=relion_translation_angle_scale,
+                    )
+                    local_diagnostics = LocalDiagnosticPolicy(
+                        iteration=iteration,
+                        debug_iteration=numbered_relion_iteration,
+                        save_intermediates_dir=debug.save_intermediates_dir,
+                        collect_local_search_profile=collect_local_search_profile,
+                        diagnostic_score_only=bool(debug.stop_after_local_search_score_only),
+                        local_profile_history=history.local_profile_history,
+                        bpref_device_signature_active=bpref_device_signature_active,
+                        parent_use_float64_scoring=local_parent_precision[0],
+                        parent_use_float64_projections=local_parent_precision[1],
+                        fine_use_float64_scoring=local_fine_precision[0],
+                        fine_use_float64_projections=local_fine_precision[1],
+                        adaptive_pass2_full_parent=local_adaptive_full_parent,
+                        adaptive_pass2_rotation_only=local_adaptive_rotation_only,
+                        adaptive_pass2_denominator_mode=local_adaptive_denominator_mode,
                     )
                 elif not tomo_halves:
                     dense_batching = DenseBatchPolicy(
@@ -2888,6 +2912,18 @@ def refine_single_volume(
                     original_image_indices=np.zeros(0, dtype=np.int64),
                 )
                 return
+            local_priors = None
+            if use_local and not tomo_halves:
+                local_priors = LocalPriorSpec(
+                    trans_prior_center=local_trans_prior_center,
+                    trans_prior_center_for_engine=trans_prior_center_for_engine,
+                    current_sigma_offset_angstrom=sigma_offset_k,
+                    translation_search_base=translation_search_base,
+                    local_search_translation_prior_mode=(
+                        local_search.local_search_translation_prior_mode
+                    ),
+                    replay_prior_translations=_replay_prior_translations,
+                )
             if tomo_halves:
                 tomo_oversampling = int(state.adaptive_oversampling)
                 tomo_coarse_size = local_pass1_current_size if use_local else coarse_cs
@@ -2953,60 +2989,37 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=not k_class_enabled,
                 )
+                local_half = LocalHalfData(
+                    k=k,
+                    experiment_dataset=experiment_datasets[k],
+                    means_k=means[k],
+                    noise_variance_k=noise_variance_k,
+                    previous_best_rotation_eulers_k=(
+                        relion_half_inputs.previous_best_rotation_eulers[k]
+                    ),
+                    image_corrections_k=relion_half_inputs.image_corrections[k],
+                    scale_corrections_k=relion_half_inputs.scale_corrections[k],
+                    outputs=per_half,
+                    group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
+                    group_count_k=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
+                    optics_group_ids_k=local_optics_values.get("optics_group_ids_k"),
+                )
+                local_optics = LocalOpticsSpec(
+                    noise_radial_k=local_optics_values.get("noise_radial_k"),
+                    coarse_sizing=local_optics_values.get("coarse_sizing"),
+                    class_translation_overrides=local_translation_values.get(
+                        "class_translation_overrides"
+                    ),
+                )
                 score_result = _score_half_local_in_bpref_scope(
-                    half=LocalHalfData(
-                        k=k,
-                        experiment_dataset=experiment_datasets[k],
-                        means_k=means[k],
-                        noise_variance_k=noise_variance_k,
-                        previous_best_rotation_eulers_k=(relion_half_inputs.previous_best_rotation_eulers[k]),
-                        image_corrections_k=relion_half_inputs.image_corrections[k],
-                        scale_corrections_k=relion_half_inputs.scale_corrections[k],
-                        outputs=per_half,
-                        group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
-                        group_count_k=follower_setup.scale_stats_group_count_per_half[k],
-                        scale_correction_data_vs_prior=(scale_correction_data_vs_prior_this_iter),
-                        optics_group_ids_k=local_optics_values.get("optics_group_ids_k"),
-                    ),
+                    half=local_half,
                     sampling=local_sampling,
-                    priors=LocalPriorSpec(
-                        trans_prior_center=local_trans_prior_center,
-                        trans_prior_center_for_engine=trans_prior_center_for_engine,
-                        current_sigma_offset_angstrom=sigma_offset_k,
-                        translation_search_base=translation_search_base,
-                        local_search_translation_prior_mode=(local_search.local_search_translation_prior_mode),
-                        replay_prior_translations=_replay_prior_translations,
-                    ),
+                    priors=local_priors,
                     batching=local_batching,
-                    execution=LocalExecutionPolicy(
-                        disable_adjoint_y=debug.disable_adjoint_y,
-                        disable_adjoint_ctf=debug.disable_adjoint_ctf,
-                        relion_projector_half=relion_projector_half_by_half[k],
-                        relion_projector_r_max=relion_projector_r_max_by_half[k],
-                        source_faithful_spectrum_norm=(source_faithful_spectrum_norm),
-                        relion_translation_angle_scale=(relion_translation_angle_scale),
-                    ),
-                    diagnostics=LocalDiagnosticPolicy(
-                        iteration=iteration,
-                        debug_iteration=numbered_relion_iteration,
-                        save_intermediates_dir=debug.save_intermediates_dir,
-                        collect_local_search_profile=collect_local_search_profile,
-                        diagnostic_score_only=bool(debug.stop_after_local_search_score_only),
-                        local_profile_history=history.local_profile_history,
-                        bpref_device_signature_active=(bpref_device_signature_active),
-                        parent_use_float64_scoring=local_parent_precision[0],
-                        parent_use_float64_projections=local_parent_precision[1],
-                        fine_use_float64_scoring=local_fine_precision[0],
-                        fine_use_float64_projections=local_fine_precision[1],
-                        adaptive_pass2_full_parent=local_adaptive_full_parent,
-                        adaptive_pass2_rotation_only=local_adaptive_rotation_only,
-                        adaptive_pass2_denominator_mode=local_adaptive_denominator_mode,
-                    ),
-                    optics=LocalOpticsSpec(
-                        noise_radial_k=local_optics_values.get("noise_radial_k"),
-                        coarse_sizing=local_optics_values.get("coarse_sizing"),
-                        class_translation_overrides=local_translation_values.get("class_translation_overrides"),
-                    ),
+                    execution=local_execution,
+                    diagnostics=local_diagnostics,
+                    optics=local_optics,
                 )
                 pose_rotations[k] = None
                 coarse_ha[k] = score_result.ha
