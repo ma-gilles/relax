@@ -313,13 +313,13 @@ def _c4_local_case(monkeypatch):
         dtype=np.float32,
         symmetry=SYMMETRY,
     )
-    # The shared runner calls the module-level entry point; give it the run's group.
-    run_local = local_search_iteration._run_local_search_iteration
+    # The shared runner builds the local-iteration owners; give its grid spec the run's group.
+    owners = local_tests.local_iteration_owners
 
-    def run_c4(*args, **kwargs):
-        return run_local(*args, symmetry=SYMMETRY, **kwargs)
+    def owners_c4(*args, **kwargs):
+        return owners(*args, symmetry=SYMMETRY, **kwargs)
 
-    monkeypatch.setattr(local_search_iteration, "_run_local_search_iteration", run_c4)
+    monkeypatch.setattr(local_tests, "local_iteration_owners", owners_c4)
     return local_tests, case
 
 
