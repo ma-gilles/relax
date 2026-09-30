@@ -147,6 +147,53 @@ def test_numbered_local_scoring_uses_prepared_owners_not_call_site_constructors(
     assert all(line < local_call.lineno for line in constructors.values())
 
 
+def test_final_local_scoring_reuses_iteration_owners_across_halves():
+    loop = tree("iteration_loop.py")
+    local_calls = [
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_score_half_local_in_bpref_scope"
+    ]
+    assert len(local_calls) == 2
+    final_call = max(local_calls, key=lambda node: node.lineno)
+    assert {
+        keyword.arg: keyword.value.id
+        for keyword in final_call.keywords
+    } == {
+        "half": "final_local_half",
+        "sampling": "final_local_sampling",
+        "priors": "final_local_priors",
+        "batching": "final_local_batching",
+        "execution": "final_local_execution",
+        "diagnostics": "final_local_diagnostics",
+        "optics": "final_local_optics",
+    }
+
+    final_loop = next(
+        node
+        for node in ast.walk(loop)
+        if isinstance(node, ast.For)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "k"
+        and node.lineno < final_call.lineno < node.end_lineno
+    )
+    iteration_owned = {
+        "LocalSamplingSpec",
+        "LocalBatchPolicy",
+        "LocalDiagnosticPolicy",
+    }
+    assert all(
+        not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in iteration_owned
+        )
+        for node in ast.walk(final_loop)
+    )
+
+
 def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
     scorer = tree("half_scoring.py")
     helper = next(

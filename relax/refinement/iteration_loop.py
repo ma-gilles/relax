@@ -5322,6 +5322,46 @@ def refine_single_volume(
             final_local_adaptive_full_parent = False
             final_local_adaptive_rotation_only = False
             final_local_adaptive_denominator_mode = None
+    final_local_sampling = final_local_batching = final_local_diagnostics = None
+    if final_use_local and not tomo_halves:
+        # These final-pass owners are identical for both halves. Build them
+        # once at final-iteration scope and retain them through both dispatches.
+        final_local_sampling = LocalSamplingSpec(
+            local_search_rotations=final_local_search_rotations,
+            local_search_mstep_rotations=final_local_search_mstep_rotations,
+            local_search_order=final_local_search_order,
+            sigma_rot=final_sigma_rot,
+            sigma_psi=final_sigma_psi,
+            current_translations=final_current_translations,
+            base_translations=final_base_translations,
+            disc_type=options.disc_type,
+            cs_for_engine=final_current_size,
+            local_pass1_current_size=final_local_pass1_current_size,
+            local_search_random_perturbation=final_local_search_random_perturbation,
+            local_search_angular_sampling_deg=final_local_search_angular_sampling_deg,
+            local_parent_oversampling_order=final_local_parent_oversampling_order,
+            symmetry=symmetry,
+        )
+        final_local_batching = LocalBatchPolicy(
+            max_significants=adaptive.max_significants,
+            safe_batch_sizes=_safe_batch_sizes,
+        )
+        final_local_diagnostics = LocalDiagnosticPolicy(
+            iteration=iteration + 1,
+            debug_iteration=final_sampling_relion_iteration,
+            save_intermediates_dir=debug.save_intermediates_dir,
+            collect_local_search_profile=collect_local_search_profile,
+            diagnostic_score_only=False,
+            local_profile_history=history.local_profile_history,
+            bpref_device_signature_active=False,
+            parent_use_float64_scoring=final_local_parent_precision[0],
+            parent_use_float64_projections=final_local_parent_precision[1],
+            fine_use_float64_scoring=final_local_fine_precision[0],
+            fine_use_float64_projections=final_local_fine_precision[1],
+            adaptive_pass2_full_parent=final_local_adaptive_full_parent,
+            adaptive_pass2_rotation_only=final_local_adaptive_rotation_only,
+            adaptive_pass2_denominator_mode=final_local_adaptive_denominator_mode,
+        )
     final_outs = PerHalfOutputs()
     for k in range(2):
         bpref_diagnostics.clear_bpref_contribution_dump_context()
@@ -5466,79 +5506,54 @@ def refine_single_volume(
                     with_log_prior=False,
                     zero_cold_center=False,
                 )
+                final_local_half = LocalHalfData(
+                    k=k,
+                    experiment_dataset=experiment_datasets[k],
+                    means_k=final_join_means[k],
+                    noise_variance_k=final_noise_variance_per_half[k],
+                    previous_best_rotation_eulers_k=(
+                        relion_half_inputs.previous_best_rotation_eulers[k]
+                    ),
+                    image_corrections_k=relion_half_inputs.image_corrections[k],
+                    scale_corrections_k=relion_half_inputs.scale_corrections[k],
+                    outputs=final_outs,
+                    group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
+                    group_count_k=follower_setup.scale_stats_group_count_per_half[k],
+                    scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                    optics_group_ids_k=final_local_optics_values.get("optics_group_ids_k"),
+                )
+                final_local_priors = LocalPriorSpec(
+                    trans_prior_center=final_local_trans_prior_center,
+                    trans_prior_center_for_engine=final_trans_prior_center_for_engine,
+                    current_sigma_offset_angstrom=final_sigma_offset_k,
+                    translation_search_base=translation_search_base,
+                    local_search_translation_prior_mode=(
+                        local_search.local_search_translation_prior_mode
+                    ),
+                    replay_prior_translations=None,
+                )
+                final_local_execution = LocalExecutionPolicy(
+                    disable_adjoint_y=debug.disable_adjoint_y,
+                    disable_adjoint_ctf=debug.disable_adjoint_ctf,
+                    relion_projector_half=final_relion_projector_half_by_half[k],
+                    relion_projector_r_max=final_relion_projector_r_max_by_half[k],
+                    relion_translation_angle_scale=relion_translation_angle_scale,
+                )
+                final_local_optics = LocalOpticsSpec(
+                    noise_radial_k=final_local_optics_values.get("noise_radial_k"),
+                    coarse_sizing=final_local_optics_values.get("coarse_sizing"),
+                    class_translation_overrides=final_local_translation_values.get(
+                        "class_translation_overrides"
+                    ),
+                )
                 final_result = _score_half_local_in_bpref_scope(
-                    half=LocalHalfData(
-                        k=k,
-                        experiment_dataset=experiment_datasets[k],
-                        means_k=final_join_means[k],
-                        noise_variance_k=final_noise_variance_per_half[k],
-                        previous_best_rotation_eulers_k=(relion_half_inputs.previous_best_rotation_eulers[k]),
-                        image_corrections_k=relion_half_inputs.image_corrections[k],
-                        scale_corrections_k=relion_half_inputs.scale_corrections[k],
-                        outputs=final_outs,
-                        group_ids_k=follower_setup.scale_stats_group_ids_per_half[k],
-                        group_count_k=follower_setup.scale_stats_group_count_per_half[k],
-                        scale_correction_data_vs_prior=(previous_data_vs_prior_for_scheduling),
-                        optics_group_ids_k=final_local_optics_values.get("optics_group_ids_k"),
-                    ),
-                    sampling=LocalSamplingSpec(
-                        local_search_rotations=final_local_search_rotations,
-                        local_search_mstep_rotations=(final_local_search_mstep_rotations),
-                        local_search_order=final_local_search_order,
-                        sigma_rot=final_sigma_rot,
-                        sigma_psi=final_sigma_psi,
-                        current_translations=final_current_translations,
-                        base_translations=final_base_translations,
-                        disc_type=options.disc_type,
-                        cs_for_engine=final_current_size,
-                        local_pass1_current_size=final_local_pass1_current_size,
-                        local_search_random_perturbation=(final_local_search_random_perturbation),
-                        local_search_angular_sampling_deg=(final_local_search_angular_sampling_deg),
-                        local_parent_oversampling_order=(final_local_parent_oversampling_order),
-                        symmetry=symmetry,
-                    ),
-                    priors=LocalPriorSpec(
-                        trans_prior_center=final_local_trans_prior_center,
-                        trans_prior_center_for_engine=(final_trans_prior_center_for_engine),
-                        current_sigma_offset_angstrom=final_sigma_offset_k,
-                        translation_search_base=translation_search_base,
-                        local_search_translation_prior_mode=(local_search.local_search_translation_prior_mode),
-                        replay_prior_translations=None,
-                    ),
-                    batching=LocalBatchPolicy(
-                        max_significants=adaptive.max_significants,
-                        safe_batch_sizes=_safe_batch_sizes,
-                    ),
-                    execution=LocalExecutionPolicy(
-                        disable_adjoint_y=debug.disable_adjoint_y,
-                        disable_adjoint_ctf=debug.disable_adjoint_ctf,
-                        relion_projector_half=(final_relion_projector_half_by_half[k]),
-                        relion_projector_r_max=(final_relion_projector_r_max_by_half[k]),
-                        relion_translation_angle_scale=(relion_translation_angle_scale),
-                    ),
-                    diagnostics=LocalDiagnosticPolicy(
-                        iteration=iteration + 1,
-                        debug_iteration=final_sampling_relion_iteration,
-                        save_intermediates_dir=debug.save_intermediates_dir,
-                        collect_local_search_profile=collect_local_search_profile,
-                        diagnostic_score_only=False,
-                        local_profile_history=history.local_profile_history,
-                        bpref_device_signature_active=False,
-                        parent_use_float64_scoring=final_local_parent_precision[0],
-                        parent_use_float64_projections=final_local_parent_precision[1],
-                        fine_use_float64_scoring=final_local_fine_precision[0],
-                        fine_use_float64_projections=final_local_fine_precision[1],
-                        adaptive_pass2_full_parent=final_local_adaptive_full_parent,
-                        adaptive_pass2_rotation_only=final_local_adaptive_rotation_only,
-                        adaptive_pass2_denominator_mode=(
-                            final_local_adaptive_denominator_mode
-                        ),
-                    ),
-                    optics=LocalOpticsSpec(
-                        noise_radial_k=final_local_optics_values.get("noise_radial_k"),
-                        coarse_sizing=final_local_optics_values.get("coarse_sizing"),
-                        class_translation_overrides=(final_local_translation_values.get("class_translation_overrides")),
-                    ),
+                    half=final_local_half,
+                    sampling=final_local_sampling,
+                    priors=final_local_priors,
+                    batching=final_local_batching,
+                    execution=final_local_execution,
+                    diagnostics=final_local_diagnostics,
+                    optics=final_local_optics,
                 )
             else:
                 final_optics_values = _optics_group_kwargs(
