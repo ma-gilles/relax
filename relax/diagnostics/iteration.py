@@ -26,6 +26,7 @@ from relax.dense.scoring_policy import (
     PADDING_FACTOR,
     PROJECTION_PADDING_FACTOR,
 )
+from relax.diagnostics import bpref_diagnostics
 from relax.helpers.env_flags import parse_int_set
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.relion.relion_metadata import _relion_half_plane_shell_counts
@@ -162,6 +163,32 @@ def _bpref_device_signature_active_for_numbered_half(
     if final_all_data:
         return False
     return int(iteration) == target_iteration and int(half) == target_half
+
+
+def _begin_numbered_half_bpref_diagnostics(
+    *,
+    iteration: int,
+    half: int,
+    log,
+) -> bool:
+    """Set the numbered-half diagnostic context and report device capture."""
+
+    bpref_diagnostics.set_bpref_contribution_dump_context(
+        iteration=iteration,
+        half=half,
+    )
+    device_signature_active = _bpref_device_signature_active_for_numbered_half(
+        iteration=iteration,
+        half=half,
+    )
+    log.info(
+        "BPREF_DEVICE_SIGNATURE_ACTIVATION iteration=%d half=%d "
+        "final_all_data=false active=%s",
+        iteration,
+        half,
+        str(device_signature_active).lower(),
+    )
+    return device_signature_active
 
 
 def _save_bpref_accumulators(

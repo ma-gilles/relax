@@ -5,6 +5,40 @@ import numpy as np
 from relax.diagnostics import iteration
 
 
+def test_begin_numbered_half_bpref_diagnostics_sets_context_and_logs(monkeypatch):
+    context = {}
+    messages = []
+    monkeypatch.setattr(
+        iteration.bpref_diagnostics,
+        "set_bpref_contribution_dump_context",
+        lambda **values: context.update(values),
+    )
+    monkeypatch.setattr(
+        iteration,
+        "_bpref_device_signature_active_for_numbered_half",
+        lambda **values: values == {"iteration": 4, "half": 2},
+    )
+    log = SimpleNamespace(info=lambda *values: messages.append(values))
+
+    active = iteration._begin_numbered_half_bpref_diagnostics(
+        iteration=4,
+        half=2,
+        log=log,
+    )
+
+    assert active is True
+    assert context == {"iteration": 4, "half": 2}
+    assert messages == [
+        (
+            "BPREF_DEVICE_SIGNATURE_ACTIVATION iteration=%d half=%d "
+            "final_all_data=false active=%s",
+            4,
+            2,
+            "true",
+        )
+    ]
+
+
 def test_save_dense_replay_manifest_uses_scoring_objects_without_copying_schema(tmp_path):
     half = SimpleNamespace(
         k=1,

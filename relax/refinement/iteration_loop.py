@@ -54,7 +54,7 @@ from relax.diagnostics.frozen_boundary import (
     _restore_diagnostic_frozen_boundary_state,
 )
 from relax.diagnostics.iteration import (
-    _bpref_device_signature_active_for_numbered_half,
+    _begin_numbered_half_bpref_diagnostics,
     _maybe_dump_noise_update_debug,
     _replay_manifest_array,
     _save_bpref_accumulators,
@@ -2559,22 +2559,10 @@ def refine_single_volume(
 
         def _run_half_estep(k):
             nonlocal Ft_y_0, Ft_ctf_0, Ft_y_1, Ft_ctf_1
-            bpref_diagnostics.set_bpref_contribution_dump_context(
+            bpref_device_signature_active = _begin_numbered_half_bpref_diagnostics(
                 iteration=iteration + 1,
                 half=k + 1,
-            )
-            bpref_device_signature_active = (
-                _bpref_device_signature_active_for_numbered_half(
-                    iteration=iteration + 1,
-                    half=k + 1,
-                )
-            )
-            logger.info(
-                "BPREF_DEVICE_SIGNATURE_ACTIVATION iteration=%d half=%d "
-                "final_all_data=false active=%s",
-                iteration + 1,
-                k + 1,
-                str(bpref_device_signature_active).lower(),
+                log=logger,
             )
             noise_variance_k = noise_variance_per_half[k]
             mean_variance_k = _mean_variance_for_scoring_half(mean_variance_per_half, k)
