@@ -257,7 +257,7 @@
       },
       "totals": {
         "file_count": 17,
-        "function_count": 306,
+        "function_count": 307,
         "large_argument_function_count": 7,
         "maximum_function_line_span": 5528,
         "maximum_parameter_count": 22,

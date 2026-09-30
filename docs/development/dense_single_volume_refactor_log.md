@@ -1120,17 +1120,17 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — half E-step diagnostic and sampling ownership
 
-- Commit `7dcf25e` moved deterministic dense replay-manifest schema assembly
+- Commit `8dcd932` moved deterministic dense replay-manifest schema assembly
   and file I/O from `_run_half_estep` to `diagnostics.iteration`. The helper
   reuses the dense half, sampling and prior objects already passed to scoring;
   only previous translations and the perturbation factor remain explicit
   diagnostic inputs. Five focused and end-to-end manifest cases passed.
-- Commit `ee88457` gave half E-step parity capture to
+- Commit `93eea44` gave half E-step parity capture to
   `diagnostics.parity_dump`. Its four inputs are the completed score result,
   the persistent per-half outputs, the dataset and half index. It preserves
   original-stack index mapping and the existing failure fallback. The parity
   and per-half output suites passed all 32 cases.
-- Commit `5effc38` moved iteration-invariant local sampling, dense sampling and
+- Commit `17bfc6d` moved iteration-invariant local sampling, dense sampling and
   dense variant policy construction outside `_run_half_estep`. The same frozen
   objects are now reused by both halves; half-specific data, priors, batching,
   execution and optics remain visibly constructed per half. The four-mode
@@ -1144,3 +1144,20 @@ single-volume boundary has 17 parameters.
   `refine_single_volume` from 5,522 to 5,480 lines. Argument-count statistics
   remain unchanged; these measurements did not choose the extracted
   boundaries.
+
+## 2026-09-30 — rebase onto multi-optics first-iteration support
+
+- `origin/main` advanced from `0f95551` to `64f92d7`. Eleven refactor commits
+  replayed cleanly with no conflicts and no manual resolutions. Main's
+  multi-optics first-iteration implementation and its changes in
+  `firstiter_cc.py`, `half_scoring.py` and `full_refinement.py` were retained
+  unchanged and therefore take priority.
+- The three half E-step implementation commits were rewritten to `8dcd932`,
+  `93eea44` and `17bfc6d`. Post-rebase Ruff and Python compilation passed. The
+  focused diagnostic, controller, sampling and first-iteration compatibility
+  suite passed 61 cases with expected gimbal-lock and complex-cast warnings.
+  CPU EM fast guard passed all 102 cases in 59.75 seconds.
+- Main's production changes move the totals to 20,767 physical and 18,311
+  nonblank lines across 307 functions. The seven 10+ and two 20+ argument
+  counts remain unchanged. `_run_half_estep` remains 652 lines; main's changes
+  account for the remaining snapshot differences.
