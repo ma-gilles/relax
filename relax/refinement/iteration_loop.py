@@ -111,7 +111,11 @@ from relax.helpers.convergence import (
     update_angular_sampling,
     update_refinement_state,
 )
-from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches, _local_search_precision_flags
+from relax.helpers.dtype_policy import (
+    _diagnostic_float64_pass2_matches,
+    _diagnostic_float64_pass2_requested,
+    _local_search_precision_flags,
+)
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.expected_accuracy import (
     RELION_DEFAULT_SIGMA2_FUDGE,
@@ -965,7 +969,7 @@ def refine_single_volume(
         """Reduce batch sizes using the selected phase's pending allocations."""
         use_float64_scoring_for_batch = bool(
             _DENSE_EM_STATIC_KWARGS["use_float64_scoring"]
-            or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
+            or _diagnostic_float64_pass2_requested()
         )
         runtime_free_memory_gb = None
         if compact_k1_relion_layout:
@@ -2598,7 +2602,7 @@ def refine_single_volume(
             compact_precision = not (
                 _DENSE_EM_STATIC_KWARGS["use_float64_scoring"]
                 or _DENSE_EM_STATIC_KWARGS["use_float64_projections"]
-                or os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "").strip()
+                or _diagnostic_float64_pass2_requested()
             )
             if (
                 use_adaptive and not use_local and not k_class_enabled

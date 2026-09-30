@@ -252,6 +252,22 @@ def test_diagnostic_float64_pass2_iteration_selector(monkeypatch):
         dtype_policy_module._diagnostic_float64_pass2_matches(4)
 
 
+def test_diagnostic_float64_pass2_presence_check_defers_validation():
+    assert dtype_policy_module._diagnostic_float64_pass2_requested(environ={}) is False
+    assert (
+        dtype_policy_module._diagnostic_float64_pass2_requested(
+            environ={"RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS": "  "},
+        )
+        is False
+    )
+    assert (
+        dtype_policy_module._diagnostic_float64_pass2_requested(
+            environ={"RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS": "4,bad"},
+        )
+        is True
+    )
+
+
 def test_local_search_precision_defaults_to_production_float32(monkeypatch):
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", False)
     monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_projections", False)

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 OPERAND_PRECISION_CHECK_ENV = "RELAX_EM_OPERAND_PRECISION_CHECK"
 _REPORTED_PRECISION_VIOLATIONS: set[tuple[str, tuple[str, ...]]] = set()
+_FLOAT64_PASS2_ITERATIONS_ENV = "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS"
 
 
 def operand_precision_check_mode() -> str:
@@ -214,17 +215,29 @@ class DensePrecisionPolicy:
         )
 
 
+def _diagnostic_float64_pass2_requested(*, environ=None) -> bool:
+    """Return whether any targeted float64 pass-2 request is present.
+
+    Batch planning needs only the conservative presence check. Validation of
+    the comma-separated iteration list remains in
+    ``_diagnostic_float64_pass2_matches`` at the existing execution boundary.
+    """
+
+    env = os.environ if environ is None else environ
+    return bool(str(env.get(_FLOAT64_PASS2_ITERATIONS_ENV, "")).strip())
+
+
 def _diagnostic_float64_pass2_matches(debug_iteration: int | None) -> bool:
     """Select genuine-f64 pass 2 without perturbing an earlier f32 boundary."""
 
-    raw = os.environ.get("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", "")
+    raw = os.environ.get(_FLOAT64_PASS2_ITERATIONS_ENV, "")
     if debug_iteration is None or not raw.strip():
         return False
     try:
         requested = {int(token.strip()) for token in raw.split(",") if token.strip()}
     except ValueError as exc:
         raise ValueError(
-            "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS must be comma-separated integers"
+            f"{_FLOAT64_PASS2_ITERATIONS_ENV} must be comma-separated integers"
         ) from exc
     return int(debug_iteration) in requested
 
