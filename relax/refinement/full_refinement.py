@@ -1217,7 +1217,7 @@ def _compute_relion_startup_noise(
     return radial, noise
 
 
-def _relion_k1_start_tau2_and_data_vs_prior(
+def _relion_start_tau2_and_data_vs_prior(
     reference_real,
     initial_noise_radial,
     *,
@@ -1225,13 +1225,15 @@ def _relion_k1_start_tau2_and_data_vs_prior(
     volume_shape,
     tau2_fudge: float,
     nr_particles: int,
+    pdf_class: float = 1.0,
 ):
-    """RELION's K=1 start-up tau2 (RECOVAR units) and data_vs_prior (RELION units).
+    """RELION's start-up tau2 (RECOVAR units) and data_vs_prior (RELION units) of one class.
 
     ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557) on the start-up
     reference after ``initialLowPassFilterReferences``, with the initial noise
-    (averaged over optics groups when it has one row per group) and the half set's particle count, as each auto-refine half
-    model counts its own particles. ``reference_real`` is in RECOVAR's frame and
+    (averaged over optics groups when it has one row per group) and the particle count: each
+    auto-refine half model counts its own particles (K=1); a Class3D model counts all of them,
+    with the class's start-up ``pdf_class`` (1/K). ``reference_real`` is in RECOVAR's frame and
     ``initial_noise_radial`` is RELION sigma2 times ``grid_size**4``.
     """
 
@@ -1253,6 +1255,7 @@ def _relion_k1_start_tau2_and_data_vs_prior(
         tau2_fudge=float(tau2_fudge),
         avg_sigma2_noise=sigma2[:n_shells],
         nr_particles=int(nr_particles),
+        pdf_class=float(pdf_class),
     )
     mean_variance = jnp.asarray(
         utils.make_radial_image(tau2 * n4, volume_shape, extend_last_frequency=True)
@@ -3727,6 +3730,7 @@ def main(command=None):
         )
     init_reference_real_for_projector = None
     relion_start_reference_real = None
+    relion_start_class_references_real = None
 
     if frozen_boundary is not None:
         if frozen_boundary.volume_shape != tuple(int(value) for value in ds.volume_shape):
@@ -3829,6 +3833,7 @@ def main(command=None):
             _require_relion_convention_reference(p, class_option)
         per_class_ft = []
         per_class_real_for_projector = []
+        relion_start_class_references_real = []
         for k, p in enumerate(class_paths):
             vol_real = np.asarray(load_relion_volume(p)).astype(_init_volume_dtype)
             assert vol_real.shape == ds.volume_shape, (
@@ -3840,9 +3845,12 @@ def main(command=None):
                 )
                 if _use_initial_projector_real:
                     per_class_real_for_projector.append(filtered_real)
+                relion_start_class_references_real.append(np.asarray(filtered_real, dtype=np.float64))
                 vol_real = filtered_real.astype(_init_volume_dtype, copy=False)
-            elif _use_initial_projector_real:
-                per_class_real_for_projector.append(np.asarray(vol_real, dtype=np.float64))
+            else:
+                relion_start_class_references_real.append(np.asarray(vol_real, dtype=np.float64))
+                if _use_initial_projector_real:
+                    per_class_real_for_projector.append(np.asarray(vol_real, dtype=np.float64))
             vol_ft = np.array(ftu.get_dft3(jnp.asarray(vol_real))).astype(_init_volume_complex_dtype).reshape(-1)
             per_class_ft.append(vol_ft)
             logger.info("Class %d initial volume loaded from %s", k + 1, p)
@@ -4203,14 +4211,14 @@ def main(command=None):
 
     relion_start_data_vs_prior = None
     # RELION's start-up tau2 is defined against RELION's start-up noise.
-    if (
-        relion_start_reference_real is not None
-        and frozen_boundary is None
+    fresh_relion_start = (
+        frozen_boundary is None
         and args.init_noise_from_npz is None
         and args.relion_init_dir is None
         and int(args.init_relion_iteration) == 0
-    ):
-        mean_variance, relion_start_data_vs_prior = _relion_k1_start_tau2_and_data_vs_prior(
+    )
+    if relion_start_reference_real is not None and fresh_relion_start:
+        mean_variance, relion_start_data_vs_prior = _relion_start_tau2_and_data_vs_prior(
             relion_start_reference_real,
             initial_noise_radial,
             grid_size=int(ds.grid_size),
@@ -4221,6 +4229,31 @@ def main(command=None):
         logger.info(
             "RELION start-up tau2/data_vs_prior (initialiseDataVersusPrior): %d shells with data_vs_prior > 3",
             int(np.sum(relion_start_data_vs_prior > 3.0)),
+        )
+    elif relion_start_class_references_real is not None and fresh_relion_start and resume_snapshot is None:
+        # Class3D: each class's start-up data_vs_prior over all particles at pdf_class 1/K. The first
+        # iteration's scale-correction sums take only the shells where it exceeds 3 (ml_optimiser.cpp:10473);
+        # without it every shell entered them (subtomogram Class3D it001 group scales 5.6e-4 off RELION).
+        # The class tau2 volumes are still the loop's own (only the scale gate reads this curve).
+        n_classes = len(relion_start_class_references_real)
+        relion_start_data_vs_prior = np.stack(
+            [
+                _relion_start_tau2_and_data_vs_prior(
+                    reference,
+                    initial_noise_radial,
+                    grid_size=int(ds.grid_size),
+                    volume_shape=ds.volume_shape,
+                    tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
+                    nr_particles=int(ds.n_units),
+                    pdf_class=1.0 / n_classes,
+                )[1]
+                for reference in relion_start_class_references_real
+            ],
+            axis=0,
+        )
+        logger.info(
+            "RELION start-up data_vs_prior per class (initialiseDataVersusPrior): %s shells with data_vs_prior > 3",
+            np.sum(relion_start_data_vs_prior > 3.0, axis=1).tolist(),
         )
 
     if frozen_boundary is not None:

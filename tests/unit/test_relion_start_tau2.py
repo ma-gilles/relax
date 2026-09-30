@@ -1,4 +1,4 @@
-"""RELION start-up tau2 and data_vs_prior (MlModel::initialiseDataVersusPrior) for the K=1 start."""
+"""RELION start-up tau2 and data_vs_prior (MlModel::initialiseDataVersusPrior) for the K=1 and Class3D starts."""
 
 import numpy as np
 import pytest
@@ -74,7 +74,7 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     sigma2 = np.asarray(model["model_optics_group_1"]["rlnSigma2Noise"], dtype=np.float64)
     n_half_particles = int(np.sum(model["model_groups"]["rlnGroupNrParticles"]))
 
-    mean_variance, dvp = run_full_refinement._relion_k1_start_tau2_and_data_vs_prior(
+    mean_variance, dvp = run_full_refinement._relion_start_tau2_and_data_vs_prior(
         reference,
         sigma2 * float(n) ** 4,
         grid_size=n,
@@ -91,3 +91,43 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     np.testing.assert_allclose(dvp[signal], relion_dvp[signal], rtol=5e-6)
     assert_matches(dvp > 3.0, relion_dvp > 3.0)
     assert mean_variance.shape == (n**3,)
+
+
+def test_class3d_start_data_vs_prior_matches_relion_run_it000_model_per_class():
+    """Class3D (K=2): each class's start-up data_vs_prior counts every particle at pdf_class 1/K.
+
+    The first iteration's scale-correction sums take only the shells where it exceeds 3; relax had no
+    Class3D start curve, so every shell entered them (subtomogram Class3D it001 group scales 5.6e-4 off).
+    """
+    import mrcfile
+    from recovar.utils import helpers
+
+    from relax.refinement.mean_helpers import initial_low_pass_filter_references
+
+    model = starfile.read(fixture_file("k2_5k128_relion_os0", "run_it000_model.star"))
+    sigma2 = np.asarray(model["model_optics_group_1"]["rlnSigma2Noise"], dtype=np.float64)
+    n_particles = int(np.sum(model["model_groups"]["rlnGroupNrParticles"]))
+    for k in (1, 2):
+        reference_path = fixture_file("k2_5k128_data", f"reference_init_class{k:03d}_relion.mrc")
+        with mrcfile.open(reference_path, permissive=True) as mrc:
+            pixel_size = float(mrc.voxel_size.x)
+        reference = np.asarray(helpers.load_relion_volume(str(reference_path)), dtype=np.float64)
+        n = reference.shape[0]
+        reference = initial_low_pass_filter_references(
+            reference[None], ori_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
+        )[0]
+        _, dvp = run_full_refinement._relion_start_tau2_and_data_vs_prior(
+            reference,
+            sigma2 * float(n) ** 4,
+            grid_size=n,
+            volume_shape=(n, n, n),
+            tau2_fudge=4.0,
+            nr_particles=n_particles,
+            pdf_class=0.5,
+        )
+        relion = model[f"model_class_{k}"]
+        relion_tau2 = np.asarray(relion["rlnReferenceTau2"], dtype=np.float64)
+        relion_dvp = np.asarray(relion["rlnSsnrMap"], dtype=np.float64)
+        signal = relion_tau2 > 1e-12 * relion_tau2.max()
+        np.testing.assert_allclose(dvp[signal], relion_dvp[signal], rtol=5e-6)
+        assert_matches(dvp > 3.0, relion_dvp > 3.0)
