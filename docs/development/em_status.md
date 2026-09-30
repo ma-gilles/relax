@@ -100,10 +100,10 @@ labeled diagnostic only.
   `RELAX_K1_RELION_EXACT_BPREF_OPERANDS` switches are retired. The `--firstiter_cc` iteration takes
   them too (each shape class's projection matrices, each image's noise row). Qualification on S3b
   (10k particles, 4.25 A/128 px + 5.44 A/112 px), `--no-firstiter_cc` (the reference is on the
-  images' greyscale), same H100 node as MPI-scale-patched RELION 3x4 (job 14746584): map gate PASS
-  (merged/half1/half2 0.9963/0.9942/0.9945 against two same-command RELION runs), masked GT band
-  FSC-AUC 0.9950 vs RELION 0.9946, masked resolution 8.5 A both, wall 402 s vs 772 s (0.52x).
-  Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_61860b0`.
+  images' greyscale), same H100 node as MPI-scale-patched RELION 3x4 (job 14748349): map gate PASS
+  (merged/half1/half2 0.9962/0.9940/0.9945 against two same-command RELION runs), masked GT band
+  FSC-AUC 0.9950 vs RELION 0.9946, masked resolution 8.5 A both, wall 400 s vs 784 s (0.51x).
+  Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_7c3ddbe`.
   OPEN: with `--firstiter_cc` the S3b run passes iteration 1 and then refuses at iteration 2,
   when group 2's (s = 1.12) Gaussian coarse window (56 px, r_max 25) lies between 2 r_max and
   2 s r_max (see "Multi-optics on another grid" below): the coarse GEMM projection
