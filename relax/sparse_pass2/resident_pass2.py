@@ -116,6 +116,7 @@ from relax.local.local_backprojection import (
     compute_local_weighted_sums,
 )
 from relax.relion import relion_ctf
+from relax.relion.optics_aberrations import dataset_needs_exact_ctf
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2.compile_ahead import (
     CompileAheadPool,
@@ -2573,6 +2574,10 @@ def _resident_pass2(
         preserve_bpref_particle_order=preserve_bpref_particle_order,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )
+    if not relion_exact_bpref_operands and dataset_needs_exact_ctf(experiment_dataset):
+        # CTF-premultiplied images, even Zernike terms and magnification (a K>1 pass):
+        # only the exact operand family is built from relax's exact RELION CTF rows.
+        relion_exact_bpref_operands = True
     # A fresh K=1 pass scores its fine diff2 in RELION's native FFT units, on
     # the compact engine's condition (cf218a8): its fresh guard is the
     # unresolved ``source_faithful_spectrum_norm`` argument, and RELION's

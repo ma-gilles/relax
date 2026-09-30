@@ -416,6 +416,8 @@ def _score_direct_kclass_dense(
 ):
     """Run the legacy single-pass K-class dense engine."""
 
+    if dataset_projection_magnification(half.experiment_dataset) is not None:
+        raise NotImplementedError("the single-pass dense engine does not implement anisotropic magnification")
     warn_deprecated_engine(
         "dense",
         "global",
@@ -536,14 +538,20 @@ def _score_adaptive_kclass_dense(
         sparse_pass2=sparse_pass2,
         full_grid_mstep=sampling.coarse_engine == "gemm_dense",
     )
+    # Magnified images (applyAnisoMag): the projection and backprojection matrices carry it.
+    magnification = dataset_projection_magnification(half.experiment_dataset)
+    if magnification is not None:
+        common_kwargs["fine_mstep_rotations_override"] = projection_rotations(
+            common_kwargs["fine_mstep_rotations_override"], 1.0, magnification
+        )
     result = run_dense_k_class_em_adaptive(
         half.experiment_dataset,
         half.means_k,
         half.mean_variance,
         half.noise_variance_k,
-        pass2_grids.coarse_rotations,
+        projection_rotations(pass2_grids.coarse_rotations, 1.0, magnification),
         pass2_grids.coarse_translations,
-        pass2_grids.fine_rotations,
+        projection_rotations(pass2_grids.fine_rotations, 1.0, magnification),
         pass2_grids.fine_translations,
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
@@ -862,8 +870,7 @@ def _score_half_dense_one_shape(
     if variant.k_class_enabled:
         if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
             raise NotImplementedError("K-class refine does not support adjoint ablation flags")
-        if dataset_projection_magnification(half.experiment_dataset) is not None:
-            raise NotImplementedError("K-class refine does not implement anisotropic magnification")
+        magnification = dataset_projection_magnification(half.experiment_dataset)
         # K-class uses RELION's x-half BackProjector accumulator layout by
         # default, matching the K=1 parity path. The explicit selector can
         # still choose the dense full-volume path.
@@ -891,7 +898,15 @@ def _score_half_dense_one_shape(
                 adaptive_os_local,
             ) = _score_kclass_firstiter_cc_pass2(
                 firstiter_data,
-                replace(firstiter_grid, coarse_rotation_ids=sampling.coarse_rotation_ids),
+                replace(
+                    firstiter_grid,
+                    coarse_rotation_ids=sampling.coarse_rotation_ids,
+                    projection_rotations=(
+                        None
+                        if magnification is None
+                        else lambda rotations: projection_rotations(rotations, 1.0, magnification)
+                    ),
+                ),
                 firstiter_policy,
                 firstiter_batching,
                 firstiter_execution,
@@ -922,6 +937,16 @@ def _score_half_dense_one_shape(
                 em_kwargs,
             )
             k_class_mstep_full_half_axis_this_score = None
+        if magnification is not None:
+            # Poses are reported unmagnified; only projection used the magnified matrices.
+            def unmagnified(rotations):
+                return None if rotations is None else reported_rotations(rotations, 1.0, magnification)
+
+            per_class = k_class_result.per_class_best_pose_rotations
+            k_class_result = k_class_result._replace(
+                best_pose_rotations=unmagnified(k_class_result.best_pose_rotations),
+                per_class_best_pose_rotations=None if per_class is None else tuple(map(unmagnified, per_class)),
+            )
         ha_k, Ft_y_k, Ft_ctf_k, em_stats_k, noise_stats_k = _scatter_dense_k_class_result(
             k_class_result,
             k=half.k,

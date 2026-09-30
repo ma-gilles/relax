@@ -18,7 +18,11 @@ from helpers.float_compare import assert_matches
 
 from relax.relion import optics_aberrations as oa
 from relax.relion import relion_ctf
-from relax.relion.relion_metadata import REFINE3D_OPTICS_FEATURES, refuse_unsupported_optics
+from relax.relion.relion_metadata import (
+    CLASS3D_OPTICS_FEATURES,
+    IMPLEMENTED_OPTICS_FEATURES,
+    refuse_unsupported_optics,
+)
 
 BOX = 24
 PIXEL = 1.4
@@ -181,22 +185,30 @@ def test_datasets_without_odd_aberrations_pass_through(tmp_path):
 @pytest.mark.unit
 def test_refinement_accepts_the_implemented_optics_features():
     optics = pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnBeamTiltX": [0.4], "_rlnOddZernike": ["[0.1,0]"]})
-    refuse_unsupported_optics(optics, source="refine3d.star", supported=REFINE3D_OPTICS_FEATURES)
+    refuse_unsupported_optics(optics, source="refine3d.star", supported=IMPLEMENTED_OPTICS_FEATURES)
     with pytest.raises(NotImplementedError, match="rlnBeamTiltX"):
         refuse_unsupported_optics(optics, source="class3d.star")
     refuse_unsupported_optics(
         pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnEvenZernike": ["[0,0.1]"]}),
         source="refine3d.star",
-        supported=REFINE3D_OPTICS_FEATURES,
+        supported=IMPLEMENTED_OPTICS_FEATURES,
     )
     refuse_unsupported_optics(
         pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}),
         source="refine3d.star",
-        supported=REFINE3D_OPTICS_FEATURES,
+        supported=IMPLEMENTED_OPTICS_FEATURES,
     )
     with pytest.raises(NotImplementedError, match="rlnMagMat00"):
         refuse_unsupported_optics(
             pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}), source="class3d.star"
+        )
+    # Class3D takes premultiplied, odd and even aberration data, not magnification.
+    refuse_unsupported_optics(optics, source="class3d.star", supported=CLASS3D_OPTICS_FEATURES)
+    with pytest.raises(NotImplementedError, match="rlnMagMat00"):
+        refuse_unsupported_optics(
+            pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}),
+            source="class3d.star",
+            supported=CLASS3D_OPTICS_FEATURES,
         )
 
 

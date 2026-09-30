@@ -135,8 +135,9 @@ labeled diagnostic only.
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
   demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).
-  Class3D and InitialModel refuse these inputs until they are extended there (including
-  RELION's average-CTF² tau2 correction for premultiplied data).
+  Class3D (K>1) takes the first three, including RELION's average-CTF² correction of
+  data_vs_prior for premultiplied data (`setAverageCTF2`); it refuses magnification (below).
+  InitialModel refuses all four until it has its own qualification against RELION.
   Qualification, 2026-09-30: 10k/256 fixtures under
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_*_k1_10k256_20260929`, one relax run
   (cand_ccb229f, H100) against same-command, same-seed RELION 5.0.1 runs (patched MPI build,
@@ -155,6 +156,28 @@ labeled diagnostic only.
   Its phase matches RELION's code in unit tests. Magnification: relax is 1.2e-4 below the
   three-run band, with 0.998 map agreement against the third RELION run. Whether sub-5e-4 gaps
   where relax's map reproduces a RELION run count as ties is with the user.
+
+  Class3D K=2 qualification, 2026-09-30: 10k/256 fixtures
+  `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_*_k2_10k256_20260930` (first 10k of
+  synth_pdb_k2_50k256_snr05), the synth_pdb_k2 Class3D command at seed 42; one relax run
+  (cand_76ae34a, job 14795328) against four same-command RELION 5.0.1 non-MPI runs, two float
+  builds (14774524-7) and two double-precision back-projection builds (14795376-7). Masked mean
+  GT FSC-AUC (mask `synth_pdb_k2_50k256_snr05_c1`, classes matched to GT by Hungarian
+  assignment; scorer em_work/relax_bench_k1plus_20260925/tools/score_class3d.py); scores in
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/<feature>/score_76ae34a.json`.
+
+  | Feature | Status | relax | RELION float | RELION double | class accuracy relax / RELION |
+  | --- | --- | --- | --- | --- | --- |
+  | Premultiplied | qualified | 0.288584 | 0.284788, 0.287513 | 0.287528, 0.288820 | 0.9531 / 0.9526-0.9567 |
+  | Beam tilt + odd Zernike | provisional | 0.208885 | 0.208436, 0.208290 | 0.209495, 0.209034 | 0.8439 / 0.8433-0.8448 |
+  | Even Zernike | provisional | 0.213436 | 0.213352, 0.213999 | 0.213522, 0.214689 | 0.8494 / 0.8493-0.8536 |
+  | Magnification | refused | 0.208381 | 0.213430, 0.215135 | 0.214712, 0.214480 | 0.8373 / 0.8471-0.8543 |
+
+  Beam tilt and even Zernike are inside the four-run band and 1.5e-4 and 8.6e-5 below the
+  double-accumulation pair. Magnification is 5.0e-3 below every RELION run: relax ties RELION
+  through iteration 10 and the gap grows with resolution (iteration 13 -1.5e-3, 19 -2.5e-3,
+  25 -6.2e-3) at the same current image size, so a frequency-dependent term of the magnified
+  model differs from RELION's. The K=1 provisional magnification result may be the same gap.
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
   (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer
