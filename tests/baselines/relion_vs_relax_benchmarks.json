@@ -4890,11 +4890,11 @@
     "aggregate": "K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class",
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/c0_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/bpd_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
     "relion": {
-     "run": "c0_relion_s29",
-     "fsc_auc": 0.0379,
-     "masked_fsc_auc": 0.0386,
+     "run": "bpd_relion_s29",
+     "fsc_auc": 0.2474,
+     "masked_fsc_auc": 0.2487,
      "res_05_A": 90.67,
      "masked_res_05_A": 90.67
     },
@@ -4906,8 +4906,8 @@
      "masked_res_05_A": 90.67
     },
     "cross": {
-     "fsc_auc": 0.1606,
-     "masked_fsc_auc": 0.1753
+     "fsc_auc": 0.1656,
+     "masked_fsc_auc": 0.1704
     }
    },
    "gt": null,
@@ -4924,13 +4924,19 @@
     "timing_controlled": true
    },
    "notes": [
-    "VDAM refresh 2026-09-29 on relax main 0cbdebd (includes vdamfast's 6f3de9d5 resident image classes): same-node cold pair per seed, relax and RELION build_patched relion_refine --j 12, one H100 and 12 CPUs each; seeds 29/41/53/61/67 (the first seed 2026-09-29, the other four added the same day after the single-seed row missed). The RELION band holds every earlier RELION run of the same command in the row's score plus this refresh's.",
-    "Verdict on the population-weighted masked reference FSC-AUC (the row's metric); mean unmasked FSC-AUC is reported for information.",
-    "seed 29: masked reference FSC-AUC relax 0.0334 / RELION 0.0386 (mean GT 0.0334 / 0.0381); relax-vs-RELION masked X-AUC 0.1753; fixed-seed RELION band (2 runs) masked ref 0.0386-0.2493, mean GT 0.0381-0.2474; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1282 s / RELION 2195 s",
-    "seed 41: masked reference FSC-AUC relax 0.1885 / RELION 0.1898 (mean GT 0.1878 / 0.1886); relax-vs-RELION masked X-AUC 0.5411; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1225 s / RELION 1992 s",
-    "seed 53: masked reference FSC-AUC relax 0.2318 / RELION 0.2326 (mean GT 0.2307 / 0.2315); relax-vs-RELION masked X-AUC 0.6924; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1322 s / RELION 1913 s",
-    "seed 61: masked reference FSC-AUC relax 0.2273 / RELION 0.2118 (mean GT 0.2269 / 0.2110); relax-vs-RELION masked X-AUC 0.3848; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1213 s / RELION 2109 s",
-    "seed 67: masked reference FSC-AUC relax 0.0489 / RELION 0.0275 (mean GT 0.0368 / 0.0290); relax-vs-RELION masked X-AUC 0.2121; occupied classes (> 1%) relax 1 / RELION 1; walls relax 1176 s / RELION 1954 s",
+    "Re-judged 2026-09-30 against RELION 5.0.1 + MPI scale-sum patch + double-precision back-projection accumulation (build relion_patched_bpdouble_20260930, relion_refine --j 12 non-MPI, one fresh run per seed, arms bpd_relion_20260930): RELION's float32 atomic BP accumulation drops increments at low-Pmax iterations, so the float build is not the RELION method's reference for K>1. relax arms, walls and the ratio are the same-node pairs against the float build.",
+    "seed 29: masked reference FSC-AUC relax 0.0334 / RELION 0.2487 (mean GT 0.0334 / 0.2475); relax-vs-RELION masked X-AUC 0.1704; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1282 s / RELION 2195 s",
+    "seed 41: masked reference FSC-AUC relax 0.1885 / RELION 0.1880 (mean GT 0.1878 / 0.1874); relax-vs-RELION masked X-AUC 0.5259; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1225 s / RELION 1992 s",
+    "seed 53: masked reference FSC-AUC relax 0.2318 / RELION 0.2313 (mean GT 0.2307 / 0.2300); relax-vs-RELION masked X-AUC 0.7046; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1322 s / RELION 1913 s",
+    "seed 61: masked reference FSC-AUC relax 0.2273 / RELION 0.2185 (mean GT 0.2269 / 0.2177); relax-vs-RELION masked X-AUC 0.6022; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1213 s / RELION 2109 s",
+    "seed 67: masked reference FSC-AUC relax 0.0489 / RELION 0.0490 (mean GT 0.0368 / 0.0324); relax-vs-RELION masked X-AUC 0.2913; occupied classes (> 1%) relax 1 / RELION 1; walls relax 1176 s / RELION 1954 s",
+    "Earlier record (before the 2026-09-30 refresh): VDAM refresh 2026-09-29 on relax main 0cbdebd (includes vdamfast's 6f3de9d5 resident image classes): same-node cold pair per seed, relax and RELION build_patched relion_refine --j 12, one H100 and 12 CPUs each; seeds 29/41/53/61/67 (the first seed 2026-09-29, the other four added the same day after the single-seed row missed). The RELION band holds every earlier RELION run of the same command in the row's score plus this refresh's.",
+    "Earlier record (before the 2026-09-30 refresh): Verdict on the population-weighted masked reference FSC-AUC (the row's metric); mean unmasked FSC-AUC is reported for information.",
+    "Earlier record (before the 2026-09-30 refresh): seed 29: masked reference FSC-AUC relax 0.0334 / RELION 0.0386 (mean GT 0.0334 / 0.0381); relax-vs-RELION masked X-AUC 0.1753; fixed-seed RELION band (2 runs) masked ref 0.0386-0.2493, mean GT 0.0381-0.2474; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1282 s / RELION 2195 s",
+    "Earlier record (before the 2026-09-30 refresh): seed 41: masked reference FSC-AUC relax 0.1885 / RELION 0.1898 (mean GT 0.1878 / 0.1886); relax-vs-RELION masked X-AUC 0.5411; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1225 s / RELION 1992 s",
+    "Earlier record (before the 2026-09-30 refresh): seed 53: masked reference FSC-AUC relax 0.2318 / RELION 0.2326 (mean GT 0.2307 / 0.2315); relax-vs-RELION masked X-AUC 0.6924; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1322 s / RELION 1913 s",
+    "Earlier record (before the 2026-09-30 refresh): seed 61: masked reference FSC-AUC relax 0.2273 / RELION 0.2118 (mean GT 0.2269 / 0.2110); relax-vs-RELION masked X-AUC 0.3848; occupied classes (> 1%) relax 2 / RELION 2; walls relax 1213 s / RELION 2109 s",
+    "Earlier record (before the 2026-09-30 refresh): seed 67: masked reference FSC-AUC relax 0.0489 / RELION 0.0275 (mean GT 0.0368 / 0.0290); relax-vs-RELION masked X-AUC 0.2121; occupied classes (> 1%) relax 1 / RELION 1; walls relax 1176 s / RELION 1954 s",
     "Earlier record (before the 2026-09-29 refresh): New-generation synthetic fixture synth_pdb_k2_50k256_snr05_20260927 (curated, README in the fixture): 50000 particles, box 256, 2.125 Å/px, noise_level 0.2, total B 40 Å² (README), seed 42.",
     "Earlier record (before the 2026-09-29 refresh): Standalone InitialModel-VDAM from particles only on both engines. RELION command: --iter 200 --grad --denovo_3dref --i particles.star --ctf --flatten_solvent --zero_mask --dont_combine_weights_via_disc --pool 3 --pad 1 --auto_sampling --preread_images --K 2 --sym C1 --particle_diameter 380 --oversampling 1 --healpix_order 1 --offset_range 6 --offset_step 2 --tau2_fudge 4 --grad_write_iter 50 --random_seed 29; relax the same settings with production defaults.",
     "Earlier record (before the 2026-09-29 refresh): ng_relax_s29 (relax f9c8bfd3, job 14573572, della-h20g2): masked GT FSC-AUC relax 0.2633 / RELION 0.2493 (unmasked 0.2616 / 0.2472); relax-vs-RELION X-AUC 0.0757 (masked 0.0787); populations relax [0.5, 0.5] / RELION [0.5, 0.5]; walls relax 2331 s / RELION 2119 s"
@@ -4946,26 +4952,30 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s61/s61",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s67/s67"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/c0_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/bpd_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
     "score_jsons": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_0cb2/out/c0_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_bpd/out/bpd_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json"
     ],
     "relion_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd/s29/relion/output",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s41/s41/relion/output",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s53/s53/relion/output",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s61/s61/relion/output",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s67/s67/relion/output"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd/s29/relion_bpd/output",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s41/s41/relion_bpd/output",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s53/s53/relion_bpd/output",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s61/s61/relion_bpd/output",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s67/s67/relion_bpd/output"
     ],
     "earlier_run_roots": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k/s29"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd/s29",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s41/s41",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s53/s53",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s61/s61",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s67/s67"
     ]
    },
    "mask": {
     "dataset": "synth_pdb_k2_50k256_snr05_c1",
     "sha256": "845d54f8877884441940a2e48aa19edc0ab248821ebc913a2f4288aa6dc2c786"
    },
-   "date": "2026-09-29",
+   "date": "2026-09-30",
    "time_check": {
     "a": "Ratio from the seed-29 same-node pair (job 14676169, della-h19g2): relax and RELION started together as two srun --exact -n1 -c12 --gres=gpu:h100:1 steps, one H100 and 12 CPUs each; RELION build_patched relion_refine --j 12 (non-MPI), relax --j 12. Other seeds: s41 job 14718357 (0.61x); s53 job 14718361 (0.69x); s61 job 14718364 (0.58x); s67 job 14718368 (0.60x).",
     "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
@@ -4973,7 +4983,7 @@
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time for each pair"
    },
    "quality_pass": false,
-   "quality_reason": "masked ref FSC-AUC: worst s29 −0.0051 vs same-seed RELION; below same-seed RELION at 3 of 5 seeds (systematic); inside across-seed band",
+   "quality_reason": "masked ref FSC-AUC: worst s29 −0.2152 vs same-seed RELION; s29/s67 below across-seed RELION band 0.0490246-0.248664",
    "history": [
     {
      "date": "2026-09-28",
@@ -4988,6 +4998,24 @@
      "relion_masked_fsc_auc": 0.2493,
      "quality_pass": true,
      "time_ratio_relax_over_relion": 1.1
+    },
+    {
+     "date": "2026-09-29",
+     "note": "values before the 2026-09-30 refresh",
+     "relax_source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
+     "relax_wall_s": 1282.0,
+     "relion_wall_s": 2195.0,
+     "jobs": [
+      "14676169",
+      "14718357",
+      "14718361",
+      "14718364",
+      "14718368"
+     ],
+     "relax_masked_fsc_auc": 0.0334,
+     "relion_masked_fsc_auc": 0.0386,
+     "quality_pass": false,
+     "time_ratio_relax_over_relion": 0.58
     }
    ]
   },
