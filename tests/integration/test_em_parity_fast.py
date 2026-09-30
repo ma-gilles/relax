@@ -1475,7 +1475,7 @@ def test_em_parity_fast_k1_multioptics_firstiter_cc(tmp_path):
         "--image-fourier-backend",
         "relion_cuda",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
+    proc = run_selected_command(cmd, capture_output=True, text=True, env=gpu_subprocess_env())
     assert proc.returncode == 0, (
         f"relax refine exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
