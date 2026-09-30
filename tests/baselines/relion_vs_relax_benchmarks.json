@@ -7729,6 +7729,112 @@
     "d": "both on NVIDIA H100 80GB HBM3 della-h19-h21 cryoem nodes (RELION della-h19g2, relax della-h21g1; GPU.csv, PROVENANCE.txt)"
    },
    "label": "cryoet w2_15_offsets_large"
+  },
+  {
+   "id": "multioptics_s3b_10k_autorefine",
+   "section": "synthetic",
+   "dataset": "S3b multi-optics simulation (two optics groups: 4.25 Å/128 px at 300 kV, 5.44 Å/112 px at 200 kV)",
+   "label": "S3b multi-optics (feature)",
+   "empiar_id": null,
+   "particles": 10000,
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "auto-refine K=1",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 + MPI scale-sum patch (relax #1), relion_refine_mpi 3 ranks x 4 threads, one H100",
+    "resolution_A": null,
+    "resolution_definition": "scorecard_band",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": 8.5,
+    "wall_s": 784.0,
+    "wall_definition": "arm-script wall of srun relion_refine_mpi (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "14748349"
+    ],
+    "masked_band_auc": 0.9849,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "relax": {
+    "source_sha": "7c3ddbe9eed07d9fbc5b567344b26e44ca863c8f",
+    "source_repo": "relax main 7c3ddbe (onengine's frozen candidate cand_7c3ddbe), default K=1 command with two optics groups",
+    "resolution_A": null,
+    "resolution_definition": "scorecard_band",
+    "masked_resolution_A": 8.5,
+    "wall_s": 400.0,
+    "wall_definition": "arm-script wall of python relax_run.py end to end, cold JAX cache (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "14748349"
+    ],
+    "masked_band_auc": 0.9853,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen"
+   },
+   "gt": {
+    "metric": "masked GT FSC-AUC (masked_fsc.py, frozen mask multioptics_s3b_c1)",
+    "relion": 0.9946,
+    "relax": 0.995
+   },
+   "cross_engine": "map gate PASS: relax vs RELION merged 0.9962 (runs A and B)",
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": 0.51,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "notes": [
+    "Multi-optics feature row (onengine, 2026-09-29/30): the S3b simulation (recovar relion_spa, 10,000 particles, two optics groups on different pixel sizes and boxes) run through relax's default K=1 command, --no-firstiter_cc, against the matching RELION command; map gate PASS, masked GT FSC-AUC 0.9950 vs RELION 0.9946, 0.51x (400 s vs 784 s). Kept off the page by the 10k particle rule."
+   ],
+   "null_reasons": {
+    "relion.resolution_A": "see onengine's score (scorecard band not extracted)",
+    "relax.resolution_A": "see onengine's score (scorecard band not extracted)",
+    "relion.relion_reported_resolution_A": "not extracted",
+    "relion.iterations": "not extracted",
+    "relax.iterations": "not extracted",
+    "cross_engine_masked_band_auc": "not extracted"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/pair_7c3ddbe"
+    ],
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_7c3ddbe/map_gate_nofcc.json",
+    "masked_fsc_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_7c3ddbe/map_gate_nofcc_masked/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_7c3ddbe/masked_nofcc/masked_fsc.json"
+    ],
+    "scorer": "relax scripts/score_k1_map_gate.py",
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/em_work/multioptics_spa_s3_20260924/project"
+   },
+   "date": "2026-09-30",
+   "history": [],
+   "time_check": {
+    "a": "One job (14748349, della-h19g3): relax 1 H100 and 12 CPUs; RELION relion_refine_mpi 3x4 on 1 H100; started together.",
+    "b": "relax main 7c3ddbe default K=1 command (no env overrides), several optics groups in the default path.",
+    "c": "arm-script walls (TERMINAL.json / WALL.json), end to end.",
+    "d": "H100 80GB HBM3, same node."
+   },
+   "mask": {
+    "dataset": "multioptics_s3b_c1",
+    "sha256": "9bddef24ad702b3246c106945cd0b4a8ea075cbef901d6489aa1cd295b518c0c"
+   },
+   "gt_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/gt_band.json",
+   "quality_pass": true,
+   "quality_reason": "map gate met vs 2 of 2 RELION runs; masked GT 0.9950 vs RELION 0.9946",
+   "benchmark": false,
+   "benchmark_note": "multi-optics feature row: 10,000 particles, at the page's 10k cut, so it stays in the JSON (team-lead 2026-09-30)"
   }
  ],
  "initial_model_intro": [
