@@ -123,7 +123,9 @@ labeled diagnostic only.
   when group 2's (s = 1.12) Gaussian coarse window (56 px, r_max 25) lies between 2 r_max and
   2 s r_max (see "Multi-optics on another grid" below): the coarse GEMM projection
   (`compute_relion_projector_projections_block`), now the global coarse path, does not reproduce
-  RELION's wrapped rows there. InitialModel and Class3D take one optics group.
+  RELION's wrapped rows there. InitialModel and single-particle Class3D take one optics group;
+  subtomogram Class3D runs several (et16_k2conf_optics2, three seeds against non-MPI RELION,
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_class3d_20260929`).
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
   demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).

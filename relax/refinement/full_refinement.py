@@ -1846,6 +1846,12 @@ def _validate_tomo_run(args, frozen_boundary, double_image_preprocessing):
         raise SystemExit("subtomogram particles have no float64 scoring diagnostic")
     if args.relion_softmask_reduction != "control":
         raise SystemExit("subtomogram particles have no soft-mask reduction probe")
+    if args.firstiter_cc:
+        # docs/development/em_status.md "Feature gaps": the tomo half pass scores the Gaussian likelihood only.
+        raise SystemExit(
+            "subtomogram particles have no first-iteration cross-correlation yet; pass --no-firstiter_cc "
+            "(the reference must be on the images' greyscale)"
+        )
 
 
 def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:

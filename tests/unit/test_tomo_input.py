@@ -226,3 +226,16 @@ def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
         start, stop = index.image_offsets[p], index.image_offsets[p + 1]
         a = _relion_euler_angles_to_matrix(angles[names.index(name)])[0]
         assert_matches(rotated.projections[start:stop], plain.projections[start:stop] @ a)
+
+
+def test_subtomogram_runs_refuse_the_first_iteration_cross_correlation():
+    """The tomo half pass scores the Gaussian likelihood only (em_status "Feature gaps")."""
+
+    from relax.refinement.full_refinement import _validate_tomo_run
+
+    args = SimpleNamespace(
+        relion_init_dir=None, init_noise_from_npz=None, relion_softmask_reduction="control", firstiter_cc=False
+    )
+    _validate_tomo_run(args, None, False)
+    with pytest.raises(SystemExit, match="no-firstiter_cc"):
+        _validate_tomo_run(SimpleNamespace(**{**vars(args), "firstiter_cc": True}), None, False)

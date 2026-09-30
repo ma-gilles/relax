@@ -100,7 +100,10 @@ relax class3d \
 
 `--ref_star` is the STAR file `relion_refine --ref` reads for Class3D, with one
 `rlnReferenceImage` map per class. `--init_class_volumes a.mrc,b.mrc,...` gives
-the maps directly instead. The run does 25 iterations (`--max_iter`), as the
+the maps directly instead. `--init_volume ref.mrc` is RELION's usual start from one map
+(`relion_refine --ref ref.mrc --K K`): every class starts from it and each particle is
+assigned a random class in the first iteration (in the second with `--firstiter_cc`), from
+`--seed` as RELION does. The run does 25 iterations (`--max_iter`), as the
 RELION GUI does.
 
 ## Subtomogram auto-refine (RELION 5 tilt series)
@@ -116,6 +119,7 @@ relax refine \
   --init_volume Tomo/reference_relion.mrc \
   --particle_diameter_ang 250 \
   --init_resolution 40 \
+  --no-firstiter_cc \
   --seed 1
 ```
 
@@ -124,8 +128,25 @@ written as 2D stacks (its `data_general` block sets
 `rlnTomoSubTomosAre2DStacks 1`), named `particles.star`, and the matching
 `tomograms.star`. The file names in the example are placeholders for your
 Extract and tomogram jobs; link every project directory the two STAR files
-name. relax detects the 2D-stack format and runs the
-per-tilt auto-refine; subtomograms support K=1 only.
+name. relax detects the 2D-stack format and scores every particle over its tilt images.
+Subtomograms have no first-iteration cross-correlation yet, so the reference must be on
+the images' greyscale and `--no-firstiter_cc` is required.
+
+## Subtomogram 3D classification
+
+```bash
+relax class3d \
+  --data_dir Tomo/relax_input \
+  --output Tomo/relax_class3d \
+  --n_classes 2 \
+  --init_volume Tomo/reference_relion.mrc \
+  --particle_diameter_ang 250 \
+  --init_resolution 40 \
+  --no-firstiter_cc \
+  --seed 1
+```
+
+The same inputs as the subtomogram auto-refine.
 
 ## Useful options
 
