@@ -45,6 +45,18 @@ def _fftw_axis(n_full: int, n_half: int) -> np.ndarray:
     return np.where(index < n_half, index, index - n_full)
 
 
+def fftw_window_rows(full_size: int, size: int) -> np.ndarray:
+    """Rows of a full FFTW half image that ``windowFourierTransform`` keeps for ``size`` (fftw.h:809-857).
+
+    Row ``i`` of the window holds logical frequency ``i`` for ``i < size // 2 + 1``, else
+    ``i - size``; the column window is ``[0, size // 2 + 1)``.
+    """
+
+    rows = np.arange(int(size))
+    logical = np.where(rows < int(size) // 2 + 1, rows, rows - int(size))
+    return np.where(logical < 0, logical + int(full_size), logical)
+
+
 def soft_mask_outside_map(volume, radius: float = -1.0, cosine_width: float = 3.0) -> np.ndarray:
     """``softMaskOutsideMap(vol, radius, cosine_width)`` without a noise map (mask.cpp).
 
@@ -271,12 +283,15 @@ def bootstrap_references(
     padding_factor: int,
     minimum_nr_particles: int,
     particle_seed_ids=None,
+    current_size: int = -1,
 ) -> tuple[np.ndarray, relion_random.GlibcRand | None]:
     """The random-orientation bootstrap reconstruction per class, RELION layout ``[K, N, N, N]``.
 
     ``images`` are real-space particles in RELION order; ``ctf_images`` is ``None``
-    without CTF correction, else each particle's ``[N, N // 2 + 1]`` CTF. Returns the
-    references and the C ``rand()`` state the blob draws continue from.
+    without CTF correction, else each particle's full-size ``[N, N // 2 + 1]`` CTF.
+    ``current_size`` (``wsum_model.current_size``; -1 for the full box) windows the
+    images, the CTF and the back-projector. Returns the references and the C
+    ``rand()`` state the blob draws continue from.
     """
 
     images = np.asarray(images, dtype=np.float64)
@@ -297,9 +312,12 @@ def bootstrap_references(
             float(relion_random.rnd_unif(generator)) * 360.0,
         ]
     matrices = euler_angles_to_matrix(eulers)
-    projectors = [BackProjector3D(ori_size, padding_factor) for _ in range(int(nr_classes))]
-    half = ori_size // 2 + 1
-    sign = (-1.0) ** np.add.outer(np.arange(ori_size), np.arange(half))
+    size = int(ori_size) if current_size <= 0 else int(current_size)
+    projectors = [BackProjector3D(ori_size, padding_factor, current_size) for _ in range(int(nr_classes))]
+    # windowFourierTransform to the bootstrap size, then CenterFFTbySign on the window
+    # (the order matters for odd sizes).
+    rows_window = fftw_window_rows(int(ori_size), size)
+    sign = (-1.0) ** np.add.outer(np.arange(size), np.arange(size // 2 + 1))
     batch = 64
     for start in range(0, todo, batch):
         rows = np.arange(start, min(start + batch, todo))
@@ -307,11 +325,11 @@ def bootstrap_references(
         if do_zero_mask:
             stack = np.stack([soft_mask_outside_map(image, radius_px, float(width_mask_edge_px)) for image in stack])
         fimg = np.fft.rfftn(stack, axes=(-2, -1)) / float(ori_size * ori_size)
-        fimg = fimg * sign
+        fimg = fimg[:, rows_window, : size // 2 + 1] * sign
         if ctf_images is None:
             weight = np.ones(fimg.shape)
         else:
-            ctf = np.asarray(ctf_images[rows], dtype=np.float64)
+            ctf = np.asarray(ctf_images[rows], dtype=np.float64)[:, rows_window, : size // 2 + 1]
             fimg = fimg * ctf
             weight = ctf * ctf
         for k in range(int(nr_classes)):

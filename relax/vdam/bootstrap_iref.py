@@ -54,8 +54,9 @@ def compute_bootstrap_iref(
 
     from relax.relion.relion_ctf import relion_ctf_fftw_half
 
-    if current_size > 0 and current_size != ori_size:
-        raise NotImplementedError("the InitialModel bootstrap reconstructs at the full box (current_size -1)")
+    if current_size <= 0:
+        # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
+        current_size = int(np.floor(0.07 * ori_size + 0.5))
     todo = min(max(int(minimum_nr_particles), int(nr_classes) * 5), int(images.shape[0]))
     ctf_images = None
     if do_ctf_correction:
@@ -87,6 +88,7 @@ def compute_bootstrap_iref(
         padding_factor=int(padding_factor),
         minimum_nr_particles=int(minimum_nr_particles),
         particle_seed_ids=particle_seed_ids,
+        current_size=int(current_size),
     )
     return np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64), rand_state
 

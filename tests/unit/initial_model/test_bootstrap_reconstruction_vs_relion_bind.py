@@ -41,10 +41,17 @@ def _relative(actual, expected):
 
 
 @pytest.mark.parametrize(
-    ("size", "padding", "do_ctf", "classes", "n"),
-    [(32, 1, True, 2, 40), (32, 2, False, 1, 40), (24, 2, True, 3, 40), (20, 1, True, 2, 150)],
+    ("size", "padding", "do_ctf", "classes", "n", "current_size"),
+    [
+        (32, 1, True, 2, 40, -1),
+        (32, 2, False, 1, 40, -1),
+        (24, 2, True, 3, 40, -1),
+        (20, 1, True, 2, 150, -1),
+        (32, 1, True, 1, 40, 9),
+        (32, 2, True, 2, 40, 12),
+    ],
 )
-def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n):
+def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n, current_size):
     pixel = 3.0
     case = _case(size, n)
     ctf = _ctf(case, size, pixel) if do_ctf else None
@@ -79,7 +86,7 @@ def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n):
             17,
             padding,
             1,
-            -1,
+            current_size,
             n - 10,
             seeds,
         )
@@ -96,7 +103,7 @@ def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n):
         )
     )
     actual, generator = br.bootstrap_references(
-        images=case["images"], ctf_images=ctf, minimum_nr_particles=n - 10, particle_seed_ids=seeds, **common
+        images=case["images"], ctf_images=ctf, minimum_nr_particles=n - 10, current_size=current_size, particle_seed_ids=seeds, **common
     )
     assert actual.shape == expected.shape
     assert _relative(actual, expected) < RTOL
@@ -105,7 +112,10 @@ def test_bootstrap_and_postprocess_match(size, padding, do_ctf, classes, n):
 
 
 def test_production_bootstrap_with_relax_ctf_matches():
-    """bootstrap_iref's entry points, with relax's own CTF, against the binding (RECOVAR frame)."""
+    """bootstrap_iref's entry points, with relax's own CTF, against the binding (RECOVAR frame).
+
+    The entry point takes RELION's bootstrap size ROUND(0.07 ori_size) when none is given.
+    """
 
     from recovar.utils.helpers import relion_volume_to_recovar
 
@@ -119,7 +129,7 @@ def test_production_bootstrap_with_relax_ctf_matches():
     expected = np.asarray(
         bind.vdam_bootstrap_iref(
             case["images"], case["defU"], case["defV"], case["defAngle"], case["phase_shift"], 300.0, 2.7, 0.1,
-            pixel, size, 2, args["particle_diameter_ang"], 5.0, True, True, 23, 1, 1, -1, 50, None,
+            pixel, size, 2, args["particle_diameter_ang"], 5.0, True, True, 23, 1, 1, int(np.floor(0.07 * size + 0.5)), 50, None,
         )
     )
     expected_post = np.asarray(
