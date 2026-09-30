@@ -109,8 +109,11 @@ labeled diagnostic only.
   2 s r_max (see "Multi-optics on another grid" below): the coarse GEMM projection
   (`compute_relion_projector_projections_block`), now the global coarse path, does not reproduce
   RELION's wrapped rows there. InitialModel and Class3D take one optics group.
-- Not yet supported: CTF-premultiplied particles, beam tilt, higher-order aberrations and
-  magnification.
+- Optics features in Refine3D (K=1): CTF-premultiplied particles
+  (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
+  demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).
+  Class3D and InitialModel refuse these inputs until they are extended there (including
+  RELION's average-CTF² tau2 correction for premultiplied data).
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
   (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer
