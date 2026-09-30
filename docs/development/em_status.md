@@ -95,10 +95,20 @@ labeled diagnostic only.
 ## Feature gaps (moved from the README, 2026-09-29)
 
 - Several optics groups: the default Refine3D (K=1) command runs them, including groups on other
-  pixel sizes and boxes, with or without the first-iteration cross-correlation (2026-09-29). The
-  fresh K=1 pass always uses RELION's powerClass spectrum and exact BPref operands; the
-  `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM` and `RELAX_K1_RELION_EXACT_BPREF_OPERANDS` switches
-  are retired. Qualification: PAIR_RESULT_PENDING. InitialModel and Class3D take one optics group.
+  pixel sizes and boxes, with no settings (2026-09-30). The fresh K=1 pass always uses RELION's
+  powerClass spectrum and exact BPref operands; the `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM` and
+  `RELAX_K1_RELION_EXACT_BPREF_OPERANDS` switches are retired. The `--firstiter_cc` iteration takes
+  them too (each shape class's projection matrices, each image's noise row). Qualification on S3b
+  (10k particles, 4.25 A/128 px + 5.44 A/112 px), `--no-firstiter_cc` (the reference is on the
+  images' greyscale), same H100 node as MPI-scale-patched RELION 3x4 (job 14746584): map gate PASS
+  (merged/half1/half2 0.9963/0.9942/0.9945 against two same-command RELION runs), masked GT band
+  FSC-AUC 0.9950 vs RELION 0.9946, masked resolution 8.5 A both, wall 402 s vs 772 s (0.52x).
+  Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_multioptics_default_20260929/score_61860b0`.
+  OPEN: with `--firstiter_cc` the S3b run passes iteration 1 and then refuses at iteration 2,
+  when group 2's (s = 1.12) Gaussian coarse window (56 px, r_max 25) lies between 2 r_max and
+  2 s r_max (see "Multi-optics on another grid" below): the coarse GEMM projection
+  (`compute_relion_projector_projections_block`), now the global coarse path, does not reproduce
+  RELION's wrapped rows there. InitialModel and Class3D take one optics group.
 - Not yet supported: CTF-premultiplied particles, beam tilt, higher-order aberrations and
   magnification.
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
