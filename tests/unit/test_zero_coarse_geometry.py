@@ -241,6 +241,32 @@ def test_final_dense_scoring_reuses_iteration_owners_across_halves():
     )
 
 
+def test_shared_dense_sampling_owners_preserve_selected_coarse_engine():
+    loop = tree("iteration_loop.py")
+    constructors = {}
+    for node in ast.walk(loop):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if (
+            isinstance(target, ast.Name)
+            and target.id in {"dense_sampling", "final_dense_sampling"}
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id == "DenseSamplingSpec"
+        ):
+            constructors[target.id] = node.value
+
+    assert set(constructors) == {"dense_sampling", "final_dense_sampling"}
+    for constructor in constructors.values():
+        coarse_engine = next(
+            keyword.value
+            for keyword in constructor.keywords
+            if keyword.arg == "coarse_engine"
+        )
+        assert ast.unparse(coarse_engine) == "adaptive.coarse_engine"
+
+
 def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
     scorer = tree("half_scoring.py")
     helper = next(

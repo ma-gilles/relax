@@ -1237,7 +1237,7 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — empty-half result ownership
 
-- Commit `f743b78` moved construction of the empty-half numerical variant from
+- Commit `bbfc29f` moved construction of the empty-half numerical variant from
   `_run_half_estep` to `dense.score_outputs`. The factory has seven explicit
   layout/dimension inputs and returns an `EmptyHalfResult` that stays live while
   the controller publishes class summaries, common score state, accumulators
@@ -1256,12 +1256,12 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — local scoring owner lifecycles
 
-- Commit `577d579` removed all call-expression construction from the numbered
+- Commit `af8810b` removed all call-expression construction from the numbered
   exact-local dispatch. Sampling remains iteration-owned; per-half batching,
   execution and diagnostics begin after nonempty-half planning and survive
   translation-prior preparation; priors, half data and optics begin when their
   inputs become complete. The scorer receives seven named owners.
-- Commit `b75251d` kept final all-data local scoring distinct while moving its
+- Commit `233557b` kept final all-data local scoring distinct while moving its
   truly half-invariant sampling, batching and diagnostic owners outside the
   two-half loop. Per-half data, priors, projector execution and optics remain
   per-half and are all named before dispatch. No input object was broadened and
@@ -1283,7 +1283,7 @@ single-volume boundary has 17 parameters.
 
 ## 2026-09-30 — final dense scoring owner lifecycle
 
-- Commit `d36e1f1` removed all constructor expressions from the final all-data
+- Commit `dfffc83` removed all constructor expressions from the final all-data
   dense dispatch. Final sampling, batching and variant policy are invariant and
   now reused by both halves. Half data, priors, projector execution and optics
   remain per-half named owners; final dense and final local implementations
@@ -1296,3 +1296,35 @@ single-volume boundary has 17 parameters.
   functions. `_run_half_estep` remains 614 lines and `refine_single_volume` is
   5,472 lines. The explicit lifecycle adds 15 physical lines while removing
   duplicated per-half construction; argument-count statistics are unchanged.
+
+## 2026-09-30 — rebase onto selectable dense GEMM support
+
+- `origin/main` advanced from `39a6dc0` to `4a4d75a`; all 27 refactor commits
+  were replayed. Nine conflicts occurred: two source conflicts in
+  `iteration_loop.py` and seven historical snapshot conflicts in
+  `refinement_structure_metrics.json`.
+- Main's selectable dense GEMM work added `coarse_engine` to numbered and final
+  dense sampling at the same sites where this branch moved sampling ownership.
+  Both source conflicts were resolved by retaining main's GEMM selection and
+  projector semantics in the shared sampling owners while keeping the removed
+  per-half constructors removed. No score, support, reduction or dtype choice
+  was changed.
+- Every metrics-only conflict retained main's newer `dense-gemm-optin` snapshot
+  at its historical replay point. The combined-tree snapshot was then
+  regenerated after the rebase. There were no test, plan, prose-log or other
+  production conflicts.
+- The latest implementation commits were rewritten to `bbfc29f` (empty-half
+  result), `af8810b` (numbered local owners), `233557b` (final local owners) and
+  `dfffc83` (final dense owners).
+- A new structural guard verifies that both shared dense sampling owners retain
+  main's `adaptive.coarse_engine`. Post-rebase structural, controller,
+  coarse-engine selection and resident-planner tests passed 152 cases with 13
+  expected CUDA-only skips. Main's dense GEMM coarse-engine suite passed all 23
+  cases, and three focused finalization cases passed with existing warnings.
+  Ruff, compilation, metrics and diff checks passed; CPU EM fast guard passed
+  all 102 cases in 61.39 seconds.
+- The regenerated combined snapshot records 20,809 physical and 18,343
+  nonblank production lines across 307 functions. The seven 10+ and two 20+
+  argument counts remain unchanged. `_run_half_estep` is 614 lines and
+  `refine_single_volume` is 5,478 lines; main's dense GEMM additions account
+  for the difference from the pre-rebase snapshot.
