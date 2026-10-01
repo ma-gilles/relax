@@ -1,7 +1,7 @@
-"""Accounting for current source-faithful local BPref storage, not activation."""
+"""The local-iteration batch planner's BPref staging reserve (accounting, not activation)."""
 import pytest
 
-from relax.local.local_batch_planning import local_source_bpref_staging_bytes
+from relax.helpers.batch_planning import local_source_bpref_staging_bytes
 
 
 @pytest.mark.parametrize("current,compiled_plus_native", [
@@ -34,16 +34,3 @@ def test_local_budget_rejects_invalid_geometry(shape):
     with pytest.raises(ValueError, match="half shape"):
         local_source_bpref_staging_bytes((11, 11, 6), shape)
 
-
-@pytest.mark.parametrize("name", [
-    "RELAX_EXACT_LOCAL_PROJECTOR_CAPACITY", "RELAX_EXACT_LOCAL_BPREF_PROJECTOR_CAPACITY",
-    "RELAX_EXACT_LOCAL_BPREF_TRANSACTION", "RELAX_EXACT_LOCAL_BPREF_PARTICLE_CAPACITY",
-    "RELAX_DISABLE_LOCAL_BIG_JIT", "RELAX_VDAM_EXTERNAL_HOST_REPLAY_LIBRARY",
-    "RELAX_EXACT_LOCAL_PROCESSED_HALF_CACHE_MAX_GB",
-])
-def test_alternate_local_topologies_do_not_use_source_bpref_budget(monkeypatch, name):
-    from relax.local.local_batch_planning import local_source_bpref_planning_supported
-    monkeypatch.setenv(name, "1")
-    assert not local_source_bpref_planning_supported()
-    monkeypatch.setenv(name, "0")
-    assert local_source_bpref_planning_supported()

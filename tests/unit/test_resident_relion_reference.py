@@ -658,3 +658,155 @@ def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, curr
     for name in ("wsum_norm_correction", "wsum_scale_correction_xa", "wsum_scale_correction_aa"):
         assert _rel_l2(getattr(noise_stats, name), mstep[name]) < 1e-6, name
     assert float(noise_stats.sumw) == pytest.approx(mstep["sumw"], rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Local search: RELION's pass-1 parent probe
+# ---------------------------------------------------------------------------
+
+
+def _local_parent_case(current_size: int, noise: float):
+    """``test_resident_local_pass2``'s images and parent layout with a padding-2 projector, and the reference.
+
+    The probe scores the parent grid's candidates (``_parent_layout``) and keeps each image's
+    significant samples; the reference scores the same candidates and keeps RELION's
+    significant set.
+    """
+
+    from test_resident_local_pass2 import _case, _parent_layout
+
+    case = _case()
+    half, r_max = _ppref(case["volume"])
+    case.update(projector_half=jnp.asarray(half, dtype=jnp.complex64), r_max=r_max)
+    noise_full = _tie_free_noise(current_size, noise)
+    case["noise_variance"] = jnp.asarray(noise_full.reshape(-1))
+    parent, translations = _parent_layout()
+    case.update(parent=parent, parent_translations=translations)
+    # A parent layout without posterior bins bins its posterior by its fine rotation ids.
+    posterior_ids = (
+        parent.rotation_ids_flat if parent.rotation_posterior_ids_flat is None else parent.rotation_posterior_ids_flat
+    )
+    n_trans = int(parent.translation_grid.shape[0])
+    image_cells = []
+    for image in range(parent.n_images):
+        rows = np.arange(parent.rotation_offsets[image], parent.rotation_offsets[image + 1])
+        mask = parent.sample_mask_rows(int(rows[0]), int(rows[-1]) + 1)
+        if mask is None:
+            mask = np.ones((rows.size, n_trans), dtype=bool)
+        row, trans = np.nonzero(mask)
+        image_cells.append(np.column_stack([rows[row], trans]))
+    args = {
+        "experiment_dataset": case["dataset"],
+        "fine_rotations_override": np.asarray(parent.rotations_flat),
+        "fine_rotation_parent_override": np.asarray(posterior_ids),
+        "fine_translations_override": np.asarray(parent.translation_grid),
+        "fine_translation_parent_override": np.zeros(n_trans, dtype=np.int64),
+        "translation_log_prior": None,
+        "reconstruction_padding_factor": 2,
+        "adaptive_fraction": 0.999,
+        "group_ids": np.zeros(parent.n_images, dtype=np.int64),
+    }
+    reference = _reference_pass(
+        args,
+        current_size,
+        noise_full,
+        projector={"data": half.astype(np.complex128), "pad": 2, "r_max": r_max},
+        coarse_support=[None] * parent.n_images,
+        rotation_log_prior=np.zeros(int(parent.n_global_rotations)),
+        image_cells=image_cells,
+        fine_rotation_log_prior=np.asarray(parent.rotation_log_priors_flat, dtype=np.float64),
+        fine_translation_log_prior=np.asarray(parent.translation_log_priors, dtype=np.float64),
+        masked_images=_fftw_images(case["dataset"], masked=True),
+    )
+    return case, reference
+
+
+def _run_local_parent_probe(case, current_size: int):
+    """The production pass-1 parent probe (half_scoring's score-only local call) at padding 2."""
+
+    from test_resident_local_pass2 import N_IMAGES, PARENT_ORDER, _prior_eulers
+
+    from relax.refinement import local_search_iteration
+
+    return local_search_iteration._run_local_search_iteration(*local_iteration_owners(
+        case["dataset"],
+        case["volume"],
+        case["noise_variance"],
+        _prior_eulers(N_IMAGES, 20260919),
+        None,
+        PARENT_ORDER,
+        0.35,
+        0.35,
+        case["parent_translations"],
+        np.zeros((N_IMAGES, 2), dtype=np.float32),
+        3.0,
+        "linear_interp",
+        image_batch_size=4,
+        rotation_block_size=64,
+        current_size=current_size,
+        accumulate_noise=False,
+        projection_padding_factor=2,
+        half_spectrum_scoring=True,
+        relion_exact_score_translation=True,
+        projection_relion_texture_interp=None,
+        projection_relion_kernel="coarse",
+        relion_projector_half=case["projector_half"],
+        relion_projector_r_max=case["r_max"],
+        do_gridding_correction=True,
+        return_profile=True,
+        disable_adjoint_y=True,
+        disable_adjoint_ctf=True,
+        reconstruct_significant_only=True,
+        adaptive_fraction=0.999,
+        max_significants=-1,
+        pass2_layout=case["parent"],
+        return_reconstruction_sample_indices=True,
+        apply_max_significants_to_support=True,
+        score_only=True,
+    ))
+
+
+@requires_resident_gpu
+@pytest.mark.parametrize("current_size, noise", [(6, 200.0), (6, 2.0), (8, 200.0)])
+def test_resident_parent_probe_is_relions_local_pass_1(monkeypatch, noise, current_size):
+    """The resident parent probe's significant samples, winners and evidences against the reference.
+
+    The support is the discrete output pass 2 is built from; it is compared exactly except
+    for samples on the significance cutoff: the reference sorts float64 weights, the probe
+    the segmented float32 posterior (as RELION's GPU does), so a cutoff tie may resolve
+    differently (at most one sample per image).
+    """
+
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
+    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
+    monkeypatch.setenv("RELAX_RELION_PROJECTOR_TEXTURE_INTERP", "0")
+    case, reference = _local_parent_case(current_size, noise)
+    out = _run_local_parent_probe(case, current_size)
+    posts = ref.posteriors(reference)
+
+    parent = case["parent"]
+    n_trans = int(parent.translation_grid.shape[0])
+    rotation_ids = np.asarray(parent.rotation_ids_flat, dtype=np.int64)
+    posterior_ids = (
+        rotation_ids
+        if parent.rotation_posterior_ids_flat is None
+        else np.asarray(parent.rotation_posterior_ids_flat, dtype=np.int64)
+    )
+    samples = out.profile_summary["reconstruction_sample_indices_by_image"]
+    assert len(samples) == len(posts)
+    for image, (post, got) in enumerate(zip(posts, samples, strict=True)):
+        kept = post.cells[post.kept]
+        expected = set((posterior_ids[kept[:, 1]] * n_trans + kept[:, 2]).tolist())
+        got = set(np.asarray(got, dtype=np.int64).tolist())
+        assert len(expected ^ got) <= 1, (image, sorted(expected ^ got))
+    best = [post.cells[np.argmax(post.log_weight)] for post in posts]
+    assert_matches(
+        np.asarray(out.hard_assignment, dtype=np.int64),
+        np.array([rotation_ids[b[1]] * n_trans + b[2] for b in best]),
+    )
+    log_z = np.array([np.logaddexp.reduce(post.log_weight) for post in posts])
+    stats = out.relion_stats
+    assert_matches(np.asarray(stats.log_evidence_per_image), log_z, rtol=F32)
+    assert_matches(
+        np.asarray(stats.best_log_score_per_image), np.array([post.log_weight.max() for post in posts]), rtol=F32
+    )

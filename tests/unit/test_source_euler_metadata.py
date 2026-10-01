@@ -1,10 +1,7 @@
 """Source Euler publication preserves RFLOAT metadata without changing score inputs."""
 
-import copy
 import json
 import logging
-from collections import defaultdict
-from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -13,7 +10,6 @@ from helpers.float_compare import assert_matches
 from relax import sampling
 from relax.classification import k_class_results
 from relax.helpers.types import make_relion_stats
-from relax.local import local_bucket_stages as engine
 from relax.local.local_layout import (
     bucket_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
@@ -146,80 +142,3 @@ def test_inactive_class_without_metadata_does_not_erase_winner():
     assert_matches(result.best_pose_eulers_deg, np.stack([eulers[0], eulers[1] + 10]))
 
 
-def test_true_local_winner_gathers_eulers_without_changing_other_buffers():
-    n = 3
-    buffers = engine._LocalPostprocessBuffers(
-        hard_assignment=np.zeros(n, np.int32),
-        log_evidence_per_image=np.zeros(n),
-        best_log_score_per_image=np.zeros(n),
-        max_posterior_per_image=np.zeros(n),
-        rotation_posterior_sums=np.zeros(8),
-        transfer_profile=defaultdict(float),
-        chunk_nonzero_posterior_rows=[],
-        chunk_significant_samples=[],
-        chunk_reconstruction_rows=[],
-        seen_global_rotations=np.zeros(0, bool),
-        seen_nonzero_global_rotations=np.zeros(0, bool),
-        seen_reconstruction_global_rotations=np.zeros(0, bool),
-        best_pose_rotations=np.zeros((n, 3, 3), np.float32),
-        best_pose_translations=np.zeros((n, 2), np.float32),
-        best_pose_rotation_ids=np.zeros(n, np.int32),
-    )
-    old = copy.deepcopy(buffers)
-    buffers.best_pose_eulers_deg = np.zeros((n, 3), np.float64)
-    eulers = np.arange(12, dtype=np.float64).reshape(2, 2, 3) + 2**-37
-    kwargs = dict(
-        image_indices=np.array([2, 0]),
-        local_rotation_ids=np.array([[4, 4], [7, 7]]),
-        local_rotation_mask=np.ones((2, 2), bool),
-        local_rotations=np.tile(np.eye(3, dtype=np.float32), (2, 2, 1, 1)),
-        local_rotation_posterior_ids=None,
-        translation_grid=np.zeros((2, 2), np.float32),
-        n_trans=2,
-        best_argmax=np.array([2, 0]),
-        batch_norm=np.zeros((2, 1)),
-        log_Z=np.zeros(2),
-        best_log_score=np.zeros(2),
-        max_posterior=np.ones(2),
-        probs_sum_t=np.ones((2, 2)),
-        n_significant_samples=None,
-        reconstruction_sample_mask=None,
-        collect_profile_stats=False,
-        reconstruction_row_count=0,
-        reconstruction_take_indices=None,
-        reconstruction_pack_mask=None,
-        host_prefix=True,
-    )
-    engine._postprocess_local_bucket(**kwargs, buffers=old)
-    engine._postprocess_local_bucket(**kwargs, buffers=buffers, local_source_eulers=eulers)
-    assert_matches(buffers.best_pose_eulers_deg[[2, 0]], np.stack([eulers[0, 1], eulers[1, 0]]))
-    for name, value in vars(old).items():
-        if isinstance(value, np.ndarray):
-            assert_matches(getattr(buffers, name), value)
-    assert_matches(eulers, np.arange(12, dtype=np.float64).reshape(2, 2, 3) + 2**-37)
-
-
-def test_loader_reordering_preserves_source_rows_and_legacy_unavailability():
-    from relax.local.local_layout import LocalBucketSpec
-
-    eulers = np.arange(18, dtype=np.float64).reshape(3, 2, 3) + 2**-37
-    bucket = LocalBucketSpec(
-        image_indices=np.array([9, 4, 7]),
-        bucket_image_count=3,
-        bucket_rotation_count=2,
-        actual_rotation_counts=np.array([2, 2, 2]),
-        local_rotation_ids=np.tile([1, 2], (3, 1)),
-        local_rotations=np.tile(np.eye(3, dtype=np.float32), (3, 2, 1, 1)),
-        local_rotation_log_prior=np.zeros((3, 2), np.float32),
-        local_rotation_mask=np.ones((3, 2), bool),
-        translation_log_prior=np.zeros((3, 1), np.float32),
-        local_source_eulers=eulers,
-    )
-    reordered = engine._reorder_bucket_to_indices(bucket, np.array([7, 4, 9]))
-    assert_matches(reordered.local_source_eulers, eulers[[2, 1, 0]])
-    assert_matches(reordered.local_rotations, bucket.local_rotations[[2, 1, 0]])
-    assert reordered.local_source_eulers.dtype == np.float64
-    assert engine._reorder_bucket_to_indices(bucket, bucket.image_indices) is bucket
-
-    legacy = engine._reorder_bucket_to_indices(replace(bucket, local_source_eulers=None), np.array([7, 4, 9]))
-    assert legacy.local_source_eulers is None

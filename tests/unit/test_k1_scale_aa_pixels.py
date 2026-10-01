@@ -3,15 +3,15 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
 )
-from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms, _relion_wavg_sequential_triplet_terms
 from relax.sparse_pass2.sparse_pass2_policy import _relion_wavg_direct_modes
+from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _relion_wavg_rectangle_triplet_terms
 from scripts.analyze_k1_scale_aa_pixels import analyze
-from helpers.float_compare import assert_matches
 
 
 def test_wavg_direct_noise_only_is_independent_from_direct_norm(monkeypatch):
@@ -69,82 +69,6 @@ def test_wavg_direct_residual_preserves_coupled_noise_and_norm(monkeypatch):
         scale_groups_available=True,
         scale_aa_enabled=True,
     ) == (True, True)
-
-
-def test_wavg_sequential_triplet_matches_relion_translation_loop():
-    proj = np.asarray(
-        [[[2.0 + 1.0j, 3.0 - 2.0j], [0.25 - 4.0j, -1.5 + 0.5j]]],
-        dtype=np.complex64,
-    )
-    raw_ctf = np.asarray([[0.75, -0.5]], dtype=np.float32)
-    scale = np.asarray([1.25], dtype=np.float32)
-    shifted = np.asarray(
-        [
-            [
-                [1.0 + 2.0j, 2.0 + 1.0j],
-                [0.0 + 1.0j, 1.0 - 1.0j],
-                [-3.0 + 0.25j, 0.5 + 2.0j],
-            ]
-        ],
-        dtype=np.complex64,
-    )
-    posterior = np.asarray(
-        [[[0.25, 0.5, 0.25], [0.125, 0.75, 0.125]]],
-        dtype=np.float32,
-    )
-
-    result = np.asarray(
-        _relion_wavg_sequential_triplet_terms(
-            proj,
-            raw_ctf,
-            scale,
-            shifted,
-            posterior,
-        )
-    )
-
-    expected = np.zeros(proj.shape + (3,), dtype=np.float32)
-    for image_index in range(proj.shape[0]):
-        for rotation_index in range(proj.shape[1]):
-            for pixel_index in range(proj.shape[2]):
-                ref_real = np.float32(
-                    proj[image_index, rotation_index, pixel_index].real
-                    * np.float32(raw_ctf[image_index, pixel_index] * scale[image_index])
-                )
-                ref_imag = np.float32(
-                    proj[image_index, rotation_index, pixel_index].imag
-                    * np.float32(raw_ctf[image_index, pixel_index] * scale[image_index])
-                )
-                xa_raw = np.float32(0.0)
-                aa_raw = np.float32(0.0)
-                diff2 = np.float32(0.0)
-                for translation_index in range(shifted.shape[1]):
-                    weight = posterior[image_index, rotation_index, translation_index]
-                    trans = shifted[image_index, translation_index, pixel_index]
-                    diff_real = np.float32(ref_real - trans.real)
-                    diff_imag = np.float32(ref_imag - trans.imag)
-                    diff_abs2 = np.float32(
-                        np.float32(diff_real * diff_real)
-                        + np.float32(diff_imag * diff_imag)
-                    )
-                    cross = np.float32(
-                        np.float32(ref_real * trans.real)
-                        + np.float32(ref_imag * trans.imag)
-                    )
-                    ref_abs2 = np.float32(
-                        np.float32(ref_real * ref_real)
-                        + np.float32(ref_imag * ref_imag)
-                    )
-                    xa_raw = np.float32(xa_raw + np.float32(weight * cross))
-                    aa_raw = np.float32(aa_raw + np.float32(weight * ref_abs2))
-                    diff2 = np.float32(diff2 + np.float32(weight * diff_abs2))
-                expected[image_index, rotation_index, pixel_index] = (
-                    np.float32(xa_raw / scale[image_index]),
-                    np.float32(aa_raw / np.float32(scale[image_index] ** 2)),
-                    diff2,
-                )
-
-    assert_matches(result, expected)
 
 
 def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():

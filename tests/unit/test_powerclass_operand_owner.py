@@ -2,13 +2,10 @@
 
 ``_relion_powerclass_packed_image`` repacks centred rfft images into RELION's
 unshifted ``Faux`` layout with RELION's amplitude convention,
-``_relion_powerclass_operands`` adds the CUDA shell map and pixel validity,
-and ``_relion_powerclass_native_spectrum_highres`` feeds the native kernels.
+and ``_relion_powerclass_operands`` adds the CUDA shell map and pixel validity.
 """
 
 from __future__ import annotations
-
-import inspect
 
 import jax.numpy as jnp
 import numpy as np
@@ -16,7 +13,6 @@ import pytest
 from helpers.float_compare import assert_matches, matches
 
 from relax.sparse_pass2 import sparse_pass2_scoring
-from relax.sparse_pass2 import sparse_pass2_scoring as sp
 
 pytestmark = pytest.mark.unit
 
@@ -73,12 +69,3 @@ def test_operands_shell_and_validity_follow_the_cuda_kernel():
     assert ops.relion_image.shape == (2, SIZE * HALF)
 
 
-def test_reproductions_and_native_wrappers_use_the_owners():
-    for name in ("_relion_cuda_powerclass_highres_xi2_half", "_relion_cuda_powerclass_spectrum_highres_norm_units"):
-        source = inspect.getsource(getattr(sp, name))
-        assert source.count("_relion_powerclass_operands(") == 1 and "jnp.roll(" not in source
-    for name in ("_relion_cuda_powerclass_highres_xi2_half_atomic", "_relion_cuda_powerclass_spectrum_norm_units"):
-        source = inspect.getsource(getattr(sp, name))
-        assert source.count("_relion_powerclass_native_spectrum_highres(") == 1 and "cuda_backproject" not in source
-    module_source = inspect.getsource(sp)
-    assert module_source.count("-(image_height // 2),") == 1

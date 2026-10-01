@@ -14,7 +14,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
 from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.half_spectrum import bin_shell_values_jax, make_shell_indices_half
 
@@ -657,38 +656,6 @@ def _relion_powerclass_operands(processed_score_half, *, image_shape, current_si
     )
 
 
-def _relion_powerclass_native_spectrum_highres(processed_score_half, *, image_shape, current_size, runtime_current_size):
-    """Run the native CUDA ``powerClass`` atomics on complex64 packed images.
-
-    Returns the per-image spectrum with the block-tree ``highres_Xi2`` scalar
-    appended, together with ``(image_height, image_width, half_width)``.
-    """
-
-    from relax.cuda import kernels as em_cuda_kernels
-
-    relion_image, _real_dtype, image_height, image_width, half_width = _relion_powerclass_packed_image(
-        processed_score_half, image_shape=image_shape, dtype=jnp.complex64
-    )
-    relion_image = relion_image.astype(jnp.complex64)
-    if runtime_current_size is None:
-        spectrum_and_highres = em_cuda_kernels.relion_powerclass_spectrum_highres_f32(
-            relion_image,
-            xdim=half_width,
-            ydim=image_height,
-            resolution_limit=int(current_size) // 2 + 1,
-        )
-    else:
-        spectrum_and_highres = (
-            em_cuda_kernels.relion_powerclass_spectrum_highres_runtime_f32(
-                relion_image,
-                jnp.asarray(runtime_current_size, dtype=jnp.int32) // 2 + 1,
-                xdim=half_width,
-                ydim=image_height,
-            )
-        )
-    return spectrum_and_highres, image_height, image_width, half_width
-
-
 @partial(jax.jit, static_argnames=("image_shape", "current_size"))
 def _relion_cuda_powerclass_highres_xi2_half(
     processed_score_half,
@@ -753,25 +720,6 @@ def _relion_cuda_powerclass_highres_xi2_half(
     return highres_xi2 * jnp.asarray(0.5, dtype=real_dtype)
 
 
-@partial(jax.jit, static_argnames=("image_shape", "current_size"))
-def _relion_cuda_powerclass_highres_xi2_half_atomic(
-    processed_score_half,
-    *,
-    image_shape,
-    current_size,
-    runtime_current_size=None,
-):
-    """Run the native CUDA powerClass atomics used by exact fine scoring."""
-
-    spectrum_and_highres, _image_height, _image_width, _half_width = _relion_powerclass_native_spectrum_highres(
-        processed_score_half,
-        image_shape=image_shape,
-        current_size=current_size,
-        runtime_current_size=runtime_current_size,
-    )
-    return spectrum_and_highres[:, -1] * jnp.asarray(0.5, dtype=jnp.float32)
-
-
 def _relion_powerclass_highres_xi2_half_to_norm_units(highres_xi2_half, image_shape):
     """Convert RELION's half-Xi2 FFT units to RECOVAR norm N^4 units."""
 
@@ -787,27 +735,6 @@ def _powerclass_norm_units_jit(highres, pixel_count_sq: float):
     highres = highres * jnp.asarray(2.0, dtype=highres.dtype)
     highres = jax.lax.optimization_barrier(highres)
     return highres * jnp.asarray(pixel_count_sq, dtype=highres.dtype)
-
-
-@partial(jax.jit, static_argnames=("image_shape", "current_size"))
-def _relion_cuda_powerclass_highres_norm_units(
-    processed_score_half,
-    *,
-    image_shape,
-    current_size,
-    runtime_current_size=None,
-):
-    """Return source-faithful powerClass high-shell power in RECOVAR N^4 units."""
-
-    return _relion_powerclass_highres_xi2_half_to_norm_units(
-        _relion_cuda_powerclass_highres_xi2_half(
-            processed_score_half,
-            image_shape=image_shape,
-            current_size=current_size,
-            runtime_current_size=runtime_current_size,
-        ),
-        image_shape,
-    )
 
 
 @partial(jax.jit, static_argnames=("image_shape", "current_size"))
@@ -857,55 +784,6 @@ def _relion_cuda_powerclass_spectrum_highres_norm_units(
         jnp.zeros((relion_image.shape[0],), dtype=jnp.float64),
     )
     return high_shell * jnp.asarray((image_height * image_width) ** 2, dtype=jnp.float64)
-
-
-@partial(jax.jit, static_argnames=("image_shape", "current_size"))
-def _relion_cuda_powerclass_spectrum_norm_units(
-    processed_score_half,
-    *,
-    image_shape,
-    current_size,
-    runtime_current_size=None,
-):
-    """Return RELION's atomically binned per-image power spectrum in N^4 units."""
-
-    if deterministic_reductions_enabled():
-        # The CUDA powerClass kernel bins |F|^2 with float atomicAdd per pixel,
-        # so its shell sums vary between launches (verified across processes).
-        # Under the opt-in, bin the identical float32 per-pixel values with the
-        # fixed-order shell reduction instead; same operands, fixed order.
-        relion_image, _real_dtype, image_height, image_width, half_width = _relion_powerclass_packed_image(
-            processed_score_half, image_shape=image_shape, dtype=jnp.complex64
-        )
-        relion_image = relion_image.astype(jnp.complex64)
-        rows = np.arange(image_height, dtype=np.int32)[:, None]
-        columns = np.arange(half_width, dtype=np.int32)[None, :]
-        signed_rows = np.where(rows < half_width, rows, rows - image_height)
-        radius_squared = columns * columns + signed_rows * signed_rows
-        shell = np.rint(np.sqrt(radius_squared.astype(np.float32))).astype(np.int32)
-        valid = (
-            (shell > 0)
-            & (shell < half_width)
-            & ~((columns == 0) & (signed_rows < 0))
-        ).reshape(-1)
-        shell = np.where(valid, shell.reshape(-1), half_width).astype(np.int32)
-        power = relion_image.real * relion_image.real
-        power = jax.lax.optimization_barrier(power)
-        power = power + relion_image.imag * relion_image.imag
-        spectrum = jax.vmap(
-            lambda row: bin_shell_values_jax(row, jnp.asarray(shell), half_width)
-        )(power)
-        return spectrum * jnp.asarray((image_height * image_width) ** 2, dtype=jnp.float32)
-    spectrum_and_highres, image_height, image_width, half_width = _relion_powerclass_native_spectrum_highres(
-        processed_score_half,
-        image_shape=image_shape,
-        current_size=current_size,
-        runtime_current_size=runtime_current_size,
-    )
-    return spectrum_and_highres[:, :half_width] * jnp.asarray(
-        (image_height * image_width) ** 2,
-        dtype=jnp.float32,
-    )
 
 
 def relion_powerclass_noise_presence(

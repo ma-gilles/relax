@@ -3,18 +3,18 @@ from __future__ import annotations
 import inspect
 import logging
 import re
-from helpers.cuda_source import read_all_cuda_source, read_cuda_source
 
 import numpy as np
 import pytest
+from helpers.cuda_source import read_all_cuda_source, read_cuda_source
 from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
-
 import recovar.core.fourier_transform_utils as ftu
 import recovar.core.slicing as slicing
 import recovar.cuda_backproject as cuda_backproject
+
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers import half_volume_mstep
 from relax.reconstruction import regularization_relion
@@ -193,30 +193,6 @@ def test_non_relion_mstep_keeps_dataset_accumulator_dtype(monkeypatch):
 
     assert y_dtype == np.dtype(np.complex64)
     assert ctf_dtype == np.dtype(np.complex64)
-
-
-def test_exact_local_mstep_splits_when_accumulator_dtypes_differ():
-    from relax.local.local_big_jit import _exact_local_mstep_should_split_adjoints
-
-    assert _exact_local_mstep_should_split_adjoints(
-        (259, 259, 259),
-        np.zeros((1, 4), dtype=np.complex128),
-        np.zeros((1, 4), dtype=np.float64),
-        np.zeros((8,), dtype=np.complex128),
-        np.zeros((8,), dtype=np.float64),
-    )
-    assert not _exact_local_mstep_should_split_adjoints(
-        (259, 259, 259),
-        np.zeros((1, 4), dtype=np.complex64),
-        np.zeros((1, 4), dtype=np.complex64),
-        np.zeros((8,), dtype=np.complex64),
-        np.zeros((8,), dtype=np.complex64),
-    )
-    assert _exact_local_mstep_should_split_adjoints(
-        (515, 515, 515),
-        np.zeros((1, 4), dtype=np.complex64),
-        np.zeros((1, 4), dtype=np.complex64),
-    )
 
 
 def test_relion_backprojector_volume_shape_matches_initzeros_formula():
@@ -896,38 +872,6 @@ def test_relion_x_half_cuda_uses_native_floorf_buckets_in_double_mode():
     assert "stride0, stride1,\n                                               relion_half_backproject" in batched_kernel
 
 
-def test_relion_fused_x_half_signature_inertness_gate_rejects_shadow_mismatch():
-    data_accumulator = np.asarray([1.0 + 2.0j], dtype=np.complex64)
-    weight_accumulator = np.asarray([3.0], dtype=np.float32)
-    expected_operands = (
-        np.asarray([[4.0 + 5.0j]], dtype=np.complex64),
-        np.asarray([[6.0]], dtype=np.float32),
-        np.asarray([7], dtype=np.int32),
-        np.asarray([[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]], dtype=np.float32),
-        np.asarray([8], dtype=np.int32),
-        np.asarray([0], dtype=np.int32),
-    )
-    outputs = (
-        data_accumulator,
-        weight_accumulator,
-        *(np.asarray([0], dtype=np.int32) for _ in range(7)),
-        data_accumulator.copy(),
-        weight_accumulator.copy(),
-        *(operand.copy() for operand in expected_operands),
-    )
-    em_cuda_kernels._require_signature_inertness_outputs(outputs, expected_operands)
-
-    mismatched = list(outputs)
-    mismatched[12] = mismatched[12].copy()
-    mismatched[12][0, 0] = np.nextafter(
-        mismatched[12][0, 0], np.float32(np.inf), dtype=np.float32
-    )
-    with pytest.raises(RuntimeError, match="weight_rows"):
-        em_cuda_kernels._require_signature_inertness_outputs(
-            tuple(mismatched), expected_operands
-        )
-
-
 def test_ordinary_indexed_signature_inertness_gate_rejects_shadow_mismatch(monkeypatch):
     volume = jnp.zeros(7 * 7 * 4, dtype=jnp.complex64)
     images = jnp.asarray([[1.0 + 2.0j], [3.0 + 4.0j]], dtype=jnp.complex64)
@@ -1168,89 +1112,6 @@ def test_relion_fused_x_half_radius_uses_native_rotation_convention_at_exact_rim
     assert np.count_nonzero(included_weight) > 0
     assert_matches(excluded_data, np.zeros_like(excluded_data))
     assert_matches(excluded_weight, np.zeros_like(excluded_weight))
-
-
-@pytest.mark.gpu
-def test_relion_fused_x_half_signature_matches_relion_fraction_before_origin_oracle(
-    monkeypatch, custom_cuda_lib, gpu_device
-):
-    """The integer BPref origin must not perturb float32 interpolation fractions."""
-
-    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
-    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
-    image_shape = (256, 256)
-    volume_shape = (99, 99, 99)
-    volume_half_x = volume_shape[2] // 2 + 1
-    volume_size = volume_shape[0] * volume_shape[1] * volume_half_x
-    ky, kx = 7, 11
-    pixel_indices = jnp.asarray(
-        [(ky % image_shape[0]) * (image_shape[1] // 2 + 1) + kx],
-        dtype=jnp.int32,
-    )
-    # Deliberately non-integral device coordinates.  Adding the integer origin
-    # before taking the fraction changes these values by several float32 ulp.
-    rotations = jnp.asarray(
-        [
-            [
-                [0.812345, 0.212345, 0.112345],
-                [0.123456, 0.923456, 0.223456],
-                [0.0, 0.0, 1.0],
-            ]
-        ],
-        dtype=jnp.float32,
-    )
-
-    with cuda_backproject.jax.default_device(gpu_device):
-        outputs = em_cuda_kernels.relion_fused_x_half_backproject_signature_indexed(
-            jnp.zeros(volume_size, dtype=jnp.complex64),
-            jnp.zeros(volume_size, dtype=jnp.float32),
-            jnp.asarray([[1.25 - 0.75j]], dtype=jnp.complex64),
-            jnp.asarray([[2.0]], dtype=jnp.float32),
-            pixel_indices,
-            rotations,
-            jnp.asarray([17], dtype=jnp.int32),
-            jnp.asarray([0], dtype=jnp.int32),
-            image_shape,
-            volume_shape,
-            24.0,
-        )
-
-    row_flags = np.asarray(outputs[4])[0]
-    reached = np.flatnonzero((row_flags & 64) != 0)
-    assert_matches(reached, np.asarray([ky * 25 + kx]))
-    pixel = int(reached[0])
-    source = np.asarray(outputs[5])[0, pixel]
-    coordinates_zyx = source[3:6].astype(np.float32, copy=True)
-    if row_flags[pixel] & 16:
-        coordinates_zyx *= np.float32(-1.0)
-
-    coordinate_floor = np.floor(coordinates_zyx).astype(np.int32)
-    fractions = coordinates_zyx - coordinate_floor.astype(np.float32)
-    complements = np.float32(1.0) - fractions
-    expected_coefficients = []
-    expected_indices = []
-    center = np.asarray([49, 49, 0], dtype=np.int32)
-    strides = np.asarray([99 * 50, 50, 1], dtype=np.int32)
-    for dz in range(2):
-        for dy in range(2):
-            zy_weight = np.float32(
-                (fractions[0] if dz else complements[0])
-                * (fractions[1] if dy else complements[1])
-            )
-            for dx in range(2):
-                expected_coefficients.append(
-                    np.float32(zy_weight * (fractions[2] if dx else complements[2]))
-                )
-                neighbor = coordinate_floor + center + np.asarray([dz, dy, dx])
-                expected_indices.append(int(np.sum(neighbor * strides)))
-
-    assert_matches(
-        np.asarray(outputs[7])[0, pixel], np.asarray(expected_coefficients, dtype=np.float32)
-    )
-    assert_matches(
-        np.asarray(outputs[6])[0, pixel], np.asarray(expected_indices, dtype=np.int32)
-    )
-    assert_matches(np.asarray(outputs[8])[0, pixel], np.ones(8, dtype=np.int32))
 
 
 @pytest.mark.gpu

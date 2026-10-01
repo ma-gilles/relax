@@ -13,8 +13,6 @@ from relax.cuda import (
 from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.half_spectrum import make_half_image_weights
 
-SUPPORTED_IMAGE_MASK_MODES = frozenset({"relion_background_fill", "multiply"})
-
 _JIT_STAGE_GLUE_ENV = "RELAX_EM_JIT_STAGE_GLUE"
 
 
@@ -529,31 +527,3 @@ def prepare_batch_preprocess_operands(
     )
 
 
-def resolve_image_mask_for_half_preprocess(
-    experiment_dataset,
-    image_shape,
-    *,
-    require_mask: bool,
-):
-    """Return the image mask and mode used by native packed-half preprocessing."""
-
-    backend = image_preprocess_backend(experiment_dataset)
-    mask_mode = getattr(backend, "image_mask_mode", "multiply")
-    if mask_mode not in SUPPORTED_IMAGE_MASK_MODES:
-        raise ValueError(
-            "Unsupported image_mask_mode for native half preprocessing: "
-            f"{mask_mode!r}. Expected one of {sorted(SUPPORTED_IMAGE_MASK_MODES)}.",
-        )
-
-    image_mask = getattr(backend, "image_mask", None)
-    if image_mask is None:
-        image_mask = getattr(backend, "mask", None)
-    if image_mask is None:
-        image_mask = getattr(experiment_dataset, "image_mask", None)
-    if image_mask is None:
-        if require_mask:
-            raise ValueError(
-                "score_with_masked_images=True requires an image mask for native half preprocessing",
-            )
-        return np.ones(tuple(image_shape), dtype=np.float32), "none"
-    return image_mask, mask_mode

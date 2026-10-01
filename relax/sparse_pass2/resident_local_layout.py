@@ -31,9 +31,8 @@ differences this module resolves:
 3. **The rotation-posterior histogram bins by parent.** ``rotation_posterior_ids_flat``
    maps each fine row to the coarse/parent rotation whose posterior mass it
    contributes to, over ``n_global_rotations`` bins. When the layout does not
-   carry it, the local engine falls back to the fine ``rotation_ids_flat``; this
-   module reproduces that fallback (see ``local_bucket_stages.py`` lines
-   ~704-709).
+   carry it, the posterior falls back to the fine ``rotation_ids_flat``, as the
+   retired exact local engine did.
 
 Everything here is host planning in plain numpy, plus one ``jax.numpy`` mask
 expander used inside the jitted chunk programs. No scoring, projection or
@@ -175,9 +174,8 @@ def tables_from_local_layout(layout, *, rotation_dtype=np.float32) -> ResidentLo
     row_log_prior = np.asarray(layout.rotation_log_priors_flat, dtype=np.float32).reshape(-1)
     row_rotation_id = np.asarray(layout.rotation_ids_flat, dtype=np.int64).reshape(-1)
 
-    # The bucketed engine bins the rotation posterior by parent id when the
-    # layout carries one and by fine rotation id otherwise
-    # (local_bucket_stages.py ~704-709); the histogram width follows the same
+    # The rotation posterior is binned by parent id when the layout carries one
+    # and by fine rotation id otherwise; the histogram width follows the same
     # choice, so a fine-id fallback needs a table wide enough for those ids.
     posterior_source = getattr(layout, "rotation_posterior_ids_flat", None)
     if posterior_source is None:

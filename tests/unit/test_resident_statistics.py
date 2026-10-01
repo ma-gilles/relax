@@ -20,10 +20,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.helpers.projection import (
-    compute_norm_residual_per_image,
-    compute_scale_correction_terms_per_image,
-)
+from relax.helpers.projection import compute_norm_residual_per_image
 from relax.sparse_pass2.resident_statistics import (
     ChunkStatisticsOperands,
     ResidentStatisticsTables,
@@ -396,10 +393,14 @@ def test_flat_row_scale_terms_match_host_scale_helper():
     scale = rng.random(batch).astype(np.float32) + 0.5
     mask = rng.random(N_PIX) > 0.3
 
-    expected_xa, expected_aa = compute_scale_correction_terms_per_image(
-        jnp.asarray(proj), jnp.asarray(proj_abs2), jnp.asarray(summed), jnp.asarray(ctf),
-        jnp.asarray(nv), jnp.asarray(scale), jnp.asarray(mask),
-    )
+    # RELION's group-scale XA/AA statistics per image with the old scale divided back out,
+    # summed in float64 over the masked pixels that carry mass.
+    safe = np.maximum(scale.astype(np.float64), 1e-30)
+    nv64 = nv.astype(np.float64)[None, None, :]
+    ctf_mass = (ctf != 0.0) & mask[None, None, :]
+    cross_mass = (summed != 0.0) & mask[None, None, :]
+    expected_aa = np.where(ctf_mass, proj_abs2 * ctf * nv64, 0.0).sum(axis=(1, 2)) / safe**2
+    expected_xa = np.where(cross_mass, nv64 * (proj * np.conj(summed)).real, 0.0).sum(axis=(1, 2)) / safe
     row_image = np.repeat(np.arange(batch, dtype=np.int32), n_rot)
     a2_row, xa_row = _flat_row_norm_and_scale_terms(
         jnp.asarray(proj.reshape(batch * n_rot, N_PIX)),
@@ -411,7 +412,6 @@ def test_flat_row_scale_terms_match_host_scale_helper():
     )
     a2 = segment_sum_by_image(a2_row, jnp.asarray(row_image), batch)
     xa = segment_sum_by_image(xa_row, jnp.asarray(row_image), batch)
-    safe = np.maximum(scale.astype(np.float64), 1e-30)
     np.testing.assert_allclose(
         np.asarray(xa, dtype=np.float64) / safe, np.asarray(expected_xa, dtype=np.float64),
         rtol=1e-6, atol=0.0,

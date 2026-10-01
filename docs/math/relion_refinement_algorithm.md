@@ -393,8 +393,8 @@ does not establish equivalent soft M-step contributions.
 
 **Exact local search.**
 [`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py)
-constructs per-image neighborhoods, applies the batch budget and dispatches the
-fine pass to the resident local driver and the parent probe to `local_em_engine.run_local_em_exact`.
+constructs per-image neighborhoods and runs both the fine pass and RELION's pass-1
+parent probe on the device-resident local driver.
 [`local_layout.py`](../../relax/local/local_layout.py)
 builds the per-image hypothesis layout. This route does not use the retired
 sort-and-split union helper formerly described on this page.

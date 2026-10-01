@@ -2602,15 +2602,12 @@ def refine_single_volume(
                         "Compact firstiter K1 batch planning: model_size=%d deferred=%s coarse_staging=%d",
                         model_size, decision.deferred_firstiter_bpref, projector_half.nbytes,
                     )
-            from relax.local.local_batch_planning import (
-                local_source_bpref_planning_supported,
-                local_source_bpref_staging_bytes,
-            )
+            from relax.helpers.batch_planning import local_source_bpref_staging_bytes
+
             if (
                 (use_adaptive or use_local) and not k_class_enabled
                 and not relion_firstiter_cc_this_iter and compact_precision
-                and (local_source_bpref_planning_supported() if use_local
-                     else single_class_bucketed_pass2_selected(firstiter=False))
+                and (use_local or single_class_bucketed_pass2_selected(firstiter=False))
                 and _host_relion_projector_texture_enabled(
                     projector_half, r_max=relion_projector_r_max_by_half[k],
                     padding_factor=PROJECTION_PADDING_FACTOR, allow_float32_cast=True,

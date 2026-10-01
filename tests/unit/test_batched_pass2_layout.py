@@ -1,6 +1,5 @@
 """Exact batch invariance for shared pass-2 orientation construction."""
 
-import weakref
 
 import numpy as np
 import pytest
@@ -10,34 +9,6 @@ from relax import sampling
 from relax.local import local_layout
 
 pytestmark = pytest.mark.unit
-
-
-def test_pass2_buckets_reuse_scoring_rotations_without_mstep_override():
-    layout = local_layout.build_pass2_hypothesis_layout(
-        [None, np.array([0])],
-        n_coarse_rotations=sampling.rotation_grid_size(0),
-        n_coarse_translations=1, nside_level=0,
-        translations=np.zeros((1, 2), dtype=np.float32),
-        translation_step=1.0, oversampling_order=1,
-    )
-    buckets = local_layout.bucket_local_hypothesis_layout(layout, 2, 32)
-    planned = local_layout.LocalBucketSequence(layout, local_layout.plan_local_hypothesis_buckets(layout, 2, 32))
-    first = planned[0]
-    released = weakref.ref(first)
-    del first
-    assert released() is None  # The sequence must not cache materialized buckets.
-    assert len(planned) == len(buckets)
-    assert_matches(planned[-1].local_rotations, buckets[-1].local_rotations)
-    assert_matches(planned[1:][0].local_rotations, buckets[1].local_rotations)
-    for bucket in buckets:
-        assert bucket.local_mstep_rotations is None
-        assert local_layout._local_mstep_rotations(bucket) is bucket.local_rotations
-        for row, image in enumerate(bucket.image_indices):
-            start, stop = layout.rotation_offsets[image:image + 2]
-            assert_matches(
-                local_layout._local_mstep_rotations(bucket)[row, :stop - start],
-                layout.rotations_flat[start:stop],
-            )
 
 
 @pytest.mark.parametrize("order", [0, 1, 2])
@@ -168,37 +139,6 @@ def test_bucket_unification_is_dropped_when_it_would_add_too_many_rows(monkeypat
     # Never below the true per-image neighborhood cardinality.
     for plan in plans:
         assert plan.bucket_rotation_count >= int(np.max(plan.actual_rotation_counts))
-
-
-def test_kclass_bucket_unification_is_dropped_when_it_would_add_too_many_rows(monkeypatch):
-    """K>1 uses its own bucketer, so the bound must be enforced there too.
-
-    ``local_em_engine`` routes ``n_classes > 1`` through
-    ``bucket_class_local_hypothesis_layouts`` rather than the plan-then-materialize
-    path, so a policy applied only to the single-class planner is dead code at K=4 --
-    which is exactly what a 100k/256 K=4 arm showed, unchanged at 12500 buckets and
-    204.8 M padded rows.
-    """
-    n_classes = 4
-    layouts = [_unequal_support_layout() for _ in range(n_classes)]
-    priors = np.zeros(n_classes)
-
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, str(10**12))
-    unified = local_layout.bucket_class_local_hypothesis_layouts(
-        layouts, priors, 2, 32, unify_bucket_sizes=True,
-    )
-    assert len({bucket.bucket_rotation_count for bucket in unified}) == 1
-
-    monkeypatch.setenv(local_layout.EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, "0")
-    split = local_layout.bucket_class_local_hypothesis_layouts(
-        layouts, priors, 2, 32, unify_bucket_sizes=True,
-    )
-    assert len({bucket.bucket_rotation_count for bucket in split}) > 1
-    for bucket in split:
-        # ``actual_rotation_counts`` on a class-segmented bucket is the total across
-        # all class segments, so it is bounded by the whole bucket width.
-        assert bucket.bucket_rotation_count % n_classes == 0
-        assert bucket.bucket_rotation_count >= int(np.max(bucket.actual_rotation_counts))
 
 
 def test_bucket_size_class_cap_rounds_up_and_never_truncates(monkeypatch):

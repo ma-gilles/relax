@@ -5,11 +5,8 @@ import numpy as np
 import pytest
 
 from relax.cuda import kernels as em_cuda_kernels
-from relax.sparse_pass2 import sparse_pass2_posterior as posterior
 
 pytestmark = pytest.mark.unit
-
-_ENV = posterior._SPARSE_PASS2_CUDA_POSTERIOR_ENV
 
 
 def reference_fused_posterior(scores, log_z, *, adaptive_fraction, keep_all=False, external_sum_weight=None):

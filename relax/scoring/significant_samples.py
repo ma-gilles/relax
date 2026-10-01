@@ -27,16 +27,6 @@ class ComplementSignificantSampleIndices(NamedTuple):
         return int(self.total_size) - int(np.asarray(self.excluded_indices).size)
 
 
-def significant_sample_count(samples, total_size: int) -> int:
-    """Return the number of included coarse samples for any support encoding."""
-
-    if samples is None:
-        return int(total_size)
-    if isinstance(samples, ComplementSignificantSampleIndices):
-        return int(samples.size)
-    return int(np.asarray(samples).size)
-
-
 def significant_sample_ids(samples, total_size: int) -> np.ndarray:
     """Materialize included ids for diagnostics or dense fallbacks."""
 

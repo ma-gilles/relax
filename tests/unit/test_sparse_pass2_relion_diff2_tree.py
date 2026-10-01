@@ -11,10 +11,17 @@ from helpers.sparse_pass2_test_support import (
     _relion_cuda_fine_tree_sum,
 )
 
-from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.local.local_big_jit import _validate_relion_exact_fine_diff2_preconditions
-from relax.local.local_bucket_stages import _relion_exact_fine_full_to_compact_lookup
-from relax.sparse_pass2.sparse_pass2_scoring import _RELION_CUDA_FINE_REF3D_BLOCK_SIZE, _RELION_CUDA_POWERCLASS_BLOCK_SIZE, _relion_cuda_fine_diff2_sum, _relion_cuda_fine_diff2_to_scores, _relion_cuda_fine_full_to_compact_lookup, _relion_cuda_fine_pixel_weights, _relion_cuda_powerclass_highres_norm_units, _relion_cuda_powerclass_highres_xi2_half, _score_pass2_bucket_relion_gpu_diff2, _score_pass2_bucket_relion_gpu_diff2_raw
+from relax.sparse_pass2.sparse_pass2_scoring import (
+    _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
+    _RELION_CUDA_POWERCLASS_BLOCK_SIZE,
+    _relion_cuda_fine_diff2_sum,
+    _relion_cuda_fine_diff2_to_scores,
+    _relion_cuda_fine_full_to_compact_lookup,
+    _relion_cuda_fine_pixel_weights,
+    _relion_cuda_powerclass_highres_xi2_half,
+    _score_pass2_bucket_relion_gpu_diff2,
+    _score_pass2_bucket_relion_gpu_diff2_raw,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -229,54 +236,6 @@ def test_relion_cuda_powerclass_highres_preserves_acc_double_precision():
     assert not matches(actual, expected.astype(np.float32).astype(np.float64))
 
 
-def test_relion_cuda_powerclass_norm_units_match_randomized_reference():
-    rng = np.random.default_rng(4021)
-    height = 32
-    centered = (
-        rng.normal(size=(2, height, height // 2 + 1))
-        + 1j * rng.normal(size=(2, height, height // 2 + 1))
-    ).astype(np.complex64) * np.float32(height * height)
-    current_size = 14
-    expected_half = _numpy_cuda_powerclass_highres_half(centered, current_size)
-    expected = np.float32(
-        np.float32(expected_half * np.float32(2.0))
-        * np.float32((height * height) ** 2)
-    )
-
-    actual = np.asarray(
-        _relion_cuda_powerclass_highres_norm_units(
-            jnp.asarray(centered.reshape(2, -1)),
-            image_shape=(height, height),
-            current_size=current_size,
-        )
-    )
-    assert_matches(actual, expected)
-    assert actual.dtype == np.float32
-
-
-@pytest.mark.parametrize("height", [30, 32])
-def test_relion_cuda_powerclass_norm_units_preserve_divide_before_square(height):
-    # One high-shell pixel removes every reduction-order ambiguity. At 30x30,
-    # rounding 1/900 before squaring/rescaling gives the next float32 above 1.
-    # At 32x32, division by 1024 is exact: both orders legitimately give 1.
-    centered = np.zeros((1, height, height // 2 + 1), dtype=np.complex64)
-    centered[0, height // 2, 9] = 1.0  # ky=0, kx=9; above current_size/2=7.
-    expected = np.float32(1.0)
-    if height == 30:
-        expected = np.nextafter(expected, np.float32(2.0))
-
-    actual = np.asarray(
-        _relion_cuda_powerclass_highres_norm_units(
-            jnp.asarray(centered.reshape(1, -1)),
-            image_shape=(height, height),
-            current_size=14,
-        )
-    )
-
-    assert_matches(actual, np.asarray([expected], dtype=np.float32))
-    assert actual.dtype == np.float32
-
-
 def test_relion_cuda_fine_conversion_uses_common_min_and_source_operation_order():
     # Captured case-20 particle 469 values: RELION's candidates differ by one
     # ULP in positive diff2. The large common min must be inserted at the same
@@ -438,41 +397,6 @@ def test_case20_current_grid_lookup_has_relion_56_by_29_topology():
     assert lookup.shape == (56 * 29,)
     assert np.count_nonzero(lookup >= 0) == count
     assert_matches(np.sort(lookup[lookup >= 0]), np.arange(count, dtype=np.int32))
-
-
-def test_full_size_lookup_is_a_bijection_of_the_complete_half_spectrum():
-    image_shape = (8, 8)
-    n_half = image_shape[0] * (image_shape[1] // 2 + 1)
-    window_spec = make_fourier_window_spec(image_shape, image_shape[0], n_half)
-
-    assert window_spec.use_window is False
-    lookup = _relion_exact_fine_full_to_compact_lookup(
-        image_shape,
-        image_shape[0],
-        n_half,
-        window_spec,
-    )
-
-    assert lookup.shape == (n_half,)
-    assert_matches(np.sort(lookup), np.arange(n_half, dtype=np.int32))
-
-    # At full size ``use_window`` is false, but the identity lookup above is a
-    # valid exact-fine representation. The big-JIT gate must therefore depend
-    # only on the exact operand/preprocessing contract.
-    _validate_relion_exact_fine_diff2_preconditions(
-        relion_exact_fine_diff2=True,
-        relion_exact_bpref_operands=True,
-        use_relion_cuda_preprocess=True,
-    )
-
-
-def test_exact_fine_big_jit_still_rejects_missing_exact_preprocessing():
-    with pytest.raises(ValueError, match="exact operands and CUDA preprocessing"):
-        _validate_relion_exact_fine_diff2_preconditions(
-            relion_exact_fine_diff2=True,
-            relion_exact_bpref_operands=True,
-            use_relion_cuda_preprocess=False,
-        )
 
 
 def test_relion_cuda_fine_diff2_handles_zero_pixels_and_nonfinite_scores():

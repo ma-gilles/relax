@@ -1,10 +1,10 @@
 """Device-resident local-search pass 2 (T12).
 
-The exact local engine (:func:`recovar.em.local.local_em_engine.run_local_em_exact`)
-runs the order-4 local iterations and the final all-data iteration of a K=1
-auto-refine. The Phase 0 budget measured those at 313 s and 211 s of a 2113 s
-run with the GPU 93 % idle, because the engine pays host time per bucket and
-recompiles per bucket shape. This module runs the same pass on the
+The retired exact local engine (removed 2026-09-30) ran the order-4 local
+iterations and the final all-data iteration of a K=1 auto-refine. The Phase 0
+budget measured those at 313 s and 211 s of a 2113 s run with the GPU 93 % idle,
+because the engine paid host time per bucket and recompiled per bucket shape.
+This module runs the same pass on the
 device-resident driver's stages: fixed-capacity flat-row chunks, one program
 per capacity class, accumulators that stay on the device and one pull per half.
 
@@ -40,9 +40,9 @@ differences are real and are reported rather than assumed away:
    ``sum |X_t - A|^2 * Minvsigma2`` in one pass and carries the out-of-window
    tail as the ``powerClass`` operand, then converts with RELION's common
    minimum. The posteriors are shift invariant, so the two agree up to float32
-   association; the reported ``log_evidence`` and ``best_log_score`` carry
-   different offsets by construction (``-min_diff2`` here, ``-0.5*batch_norm``
-   there) and are compared as differences, not values.
+   association. The reported ``log_evidence`` and ``best_log_score`` are absolute:
+   the common minimum is added back (pass 2's ``log_score_offset``, the probe's
+   evidences).
 2. **Significance.** The local engine sorts the float64 posterior on the host
    (``_find_significant_mask_full_sort``); this driver uses T7's segmented CUDA
    posterior, which is bitwise against the compact engine's rectangular
@@ -499,7 +499,7 @@ def compute_local_search_resident(
         # Reported before any device work, like require_resident_local_configuration.
         raise ResidentConfigurationUnsupported(str(exc)) from exc
 
-    # ``run_local_em_exact`` uses this flag as passed rather than resolving it
+    # The retired exact local engine used this flag as passed rather than resolving it
     # against the environment, so do the same: it selects RELION's powerClass
     # shell spectrum for the image-power statistics and, with it, the
     # deterministic float64 norm reduction. It does not switch on RELION's
@@ -1144,7 +1144,7 @@ def compute_local_search_resident(
     if np.any(best_row < 0):
         raise RuntimeError("Resident local pass 2: an image has no winning candidate row")
     # RELION's hard assignment counts in the layout's own fine rotation ids,
-    # exactly like ``local_bucket_stages.encode_hard_assignment``; the resident
+    # as the retired exact local engine encoded it; the resident
     # statistics stage's image-local encoding is not that convention.
     hard_assignments = (
         tables.row_rotation_id[best_row].astype(np.int64) * np.int64(n_fine_trans)
@@ -1379,8 +1379,8 @@ def _run_resident_parent_probe(
     float32 posterior with RELION's adaptive-fraction significance and its
     ``maximum_significants`` cap, and returns, per image, the significant
     samples as ``posterior_id * n_trans + t`` in the layout's row order: the
-    ``reconstruction_sample_indices_by_image`` contract of the exact local
-    engine (local_bucket_stages.py), which builds pass 2's support from them.
+    ``reconstruction_sample_indices_by_image`` contract from which the local
+    search builds pass 2's support.
     There is no M-step, so no accumulator, statistic or reconstruction operand
     is formed. A chunk's valid rows are projected into the score window alone
     (``window_union``, through the pass's staged texture), and its support is
@@ -1554,7 +1554,7 @@ def _run_resident_parent_probe(
             keep_all=False,
             use_external_sum_weight=False,
         )
-        device = (mask, best_cell, log_z_out, best_log, max_post, n_significant, weights)
+        device = (mask, best_cell, log_z_out, best_log, max_post, n_significant, weights, scored.min_diff2)
         return chunk, host_chunk, segment_offsets_np, device
 
     def finish(chunk, host_chunk, segment_offsets_np, device):
@@ -1563,9 +1563,9 @@ def _run_resident_parent_probe(
         row_capacity = int(chunk.row_capacity)
         n_valid_rows = int(chunk.n_valid_rows)
         n_valid_images = int(chunk.n_valid_images)
-        mask, best_cell, log_z_out, best_log, max_post, n_significant, weights = device
-        mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, n_sig_np = jax.device_get(
-            (mask, best_cell, log_z_out, best_log, max_post, n_significant)
+        mask, best_cell, log_z_out, best_log, max_post, n_significant, weights, min_diff2 = device
+        mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, n_sig_np, min_diff2_np = jax.device_get(
+            (mask, best_cell, log_z_out, best_log, max_post, n_significant, min_diff2)
         )
         mask_np = np.asarray(mask_np, dtype=bool).reshape(row_capacity, t)[:n_valid_rows]
         image_row_start = segment_offsets_np.astype(np.int64)[:n_valid_images] // t
@@ -1590,8 +1590,11 @@ def _run_resident_parent_probe(
                 int(host_chunk["row_rotation_id"][best_row]) * t + int(best_cell_np[local]) % t
             )
         sl = slice(int(chunk.image_start), int(chunk.image_stop))
-        log_evidence[sl] = np.asarray(log_z_np)[:n_valid_images]
-        best_log_score[sl] = np.asarray(best_log_np)[:n_valid_images]
+        # The scores are centred on RELION's common minimum; the evidences are reported absolute,
+        # as pass 2 reports them (its log_score_offset is -min_diff2).
+        min_diff2_np = np.asarray(min_diff2_np, dtype=np.float64)[:n_valid_images]
+        log_evidence[sl] = np.asarray(log_z_np, dtype=np.float64)[:n_valid_images] - min_diff2_np
+        best_log_score[sl] = np.asarray(best_log_np, dtype=np.float64)[:n_valid_images] - min_diff2_np
         max_posterior[sl] = np.asarray(max_post_np)[:n_valid_images]
         if significant_counts is not None:
             significant_counts[sl] = np.asarray(n_sig_np, dtype=np.int32)[:n_valid_images]

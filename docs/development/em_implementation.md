@@ -116,10 +116,6 @@ shared by the JAX reproductions and the native wrappers
 terms the resident scoring and operand stages need. `_sparse_pass2_window_setup` builds the
 forward-model configuration, score and reconstruction windows, RELION x-half reconstruction
 indices and the windowed-prepare decision of a resident pass.
-In [`local_score_pass`](../../relax/local/local_score_pass.py),
-`_support_from_local_probs` is the one reconstruction-support rule (full-sort
-significance or per-image threshold, else the rotation mask) used by every fused
-score pass ([`test_local_support_owner.py`](../../tests/unit/test_local_support_owner.py)).
 In [`k_class`](../../relax/classification/k_class.py),
 `_override_class_assignments_with_coarse_winner` applies RELION's coarse-grid
 binarization to a pass-2 result (winning class, that class's fine pose, decoded
@@ -223,14 +219,6 @@ reads the `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2` diagnostic switch
 for the three adaptive call sites, and `_coarse_pose_assignments` collapses fine pose
 assignments onto the coarse grid when a fine pass ran
 ([`test_adaptive_engine_call_owner.py`](../../tests/unit/test_adaptive_engine_call_owner.py)).
-In [`local_em_engine`](../../relax/local/local_em_engine.py), the
-exact-local BPref contribution capture binds its fixed operands once per run through
-`_exact_local_bpref_capture_static_kwargs` (raw batch data, CTF parameters, image masks
-and shadow comparisons recorded as absent; padding factors, x-half layout, adjoint radius,
-window indices and shapes from the M-step geometry) and derives each captured bucket's
-candidate mask and prior-free scores through `_bpref_capture_priors`; the fused and big-JIT
-capture sites pass only their per-bucket operands
-([`test_bpref_capture_operands_owner.py`](../../tests/unit/test_bpref_capture_operands_owner.py)).
 [`heterogeneity._fixed_rotation_covariance_images`](../../relax/reference/heterogeneity.py) accumulates the
 fixed-rotation covariance-column update in image space (right-hand side and normal
 operator per rotation) for both the Equinox and the classic accumulator, which only
@@ -239,11 +227,6 @@ convert to half images and back-project. In [`vdam.layout`](../../relax/vdam/lay
 dense and the RELION-x-half BPref converters, and `_bpref_slab_outputs` applies RELION's
 double-precision cast and denormal-weight clamp
 ([`test_covariance_rhs_and_bpref_source_owner.py`](../../tests/unit/test_covariance_rhs_and_bpref_source_owner.py)).
-[`local_debug._requested_dump_rows`](../../relax/diagnostics/local_debug.py) decides once
-whether a local debug dump writes anything (dump directory, pending original image ids,
-requested current sizes and iterations) and which bucket rows it covers; the fused-posterior,
-score and noise-component dump writers only serialize the selected rows
-([`test_debug_dump_rows_owner.py`](../../tests/unit/test_debug_dump_rows_owner.py)).
 [`state_swap_runtime._apply_state_swap_probe`](../../relax/diagnostics/state_swap_runtime.py)
 returns a `_StateSwapValues` named tuple (current size, maps, tau2, noise, poses, sigma offset and
 direction priors in the controller's unpacking order); the unchanged value is built once from the
@@ -298,15 +281,8 @@ named `mean`, `hard_assignments`, `Ft_y`, `Ft_ctf`, `stats`, `noise_stats` and
 `profile` fields. Optional outputs are `None` when their existing flags are
 disabled; changing flags no longer changes tuple positions. The container does
 not copy arrays. Controller and K-class callers read these fields directly.
-The local single-class kernel is
-[`local_em_engine.run_local_em_exact`](../../relax/local/local_em_engine.py).
-
-[`local_batch_planning`](../../relax/local/local_batch_planning.py)
-owns exact-local row limits, environment overrides, automatic boosts and memory
-probes. The engine applies these policies at the same dispatch boundaries;
-reporting imports the planning owner directly. Layout padding stays in
-`local_layout`. The existing device-memory query/cache behavior is preserved,
-including the all-device `nvidia-smi` query; it is not a visibility-aware probe.
+Local searches (the fine pass and RELION's pass-1 parent probe) run on the device-resident
+local pass, [`resident_local_pass2`](../../relax/sparse_pass2/resident_local_pass2.py).
 [`k_class`](../../relax/classification/k_class.py) supplies dense,
 adaptive and local K-class orchestration.
 [`k_class_inputs`](../../relax/classification/k_class_inputs.py) owns
@@ -319,18 +295,6 @@ Class evidence and posterior mass
 must be handled at the K-class level, not inferred from independently normalized
 single-class probabilities.
 
-Fixed-capacity hypothesis packing, call selection and validation belong to
-[`fixed_capacity_local.py`](../../relax/local/fixed_capacity_local.py),
-with the sealed plan/operand/hypothesis binding types. The engine delegates those
-checks at the same pre-JIT boundaries. Callers use the general call-index API;
-the test-only call-0 wrappers are removed. Canonical byte/dtype checks, poisoned-tail
-rejection and authoritative dataset fetch order remain mandatory. Bucket geometry
-and the dtype-preserving adjoint rotation accessor belong to
-[`local_layout.py`](../../relax/local/local_layout.py).
-Both owners import independently of execution modules. The
-[original executor proposal](https://github.com/ma-gilles/recovar-experiments/blob/6d3fbd7905047a6bb48fe483a6fca14995c89cae/docs/math/shared_fixed_capacity_local_executor_plan_20260831.md)
-is archived as historical design context.
-
 Scale-group ID validation and full-axis sizing have one host owner,
 [`helpers/scale_groups.py`](../../relax/helpers/scale_groups.py).
 Local EM, both sparse scorers and the K-class subset router use it. Explicit
@@ -340,41 +304,12 @@ Empty ID arrays retain the existing one-group convention. Engine callers check
 the flattened image axis; the router has no image-count constraint. The helper
 preserves existing casts and errors and imports independently of execution.
 
-External normalization inputs are prepared by
-[`helpers/normalization_inputs.py`](../../relax/helpers/normalization_inputs.py).
-`prepare_local_normalization_inputs` returns named log-Z, log-evidence, Pmax and
-reconstruction-threshold arrays. It owns the local modes' validation order and
-exclusivity; sparse and K-class callers reuse only optional F64 image-vector
-conversion and retain their different semantic checks. This owner prepares inputs;
-posterior arithmetic and normalization kernels remain at their execution sites.
-It preserves input strides and avoids copying already suitable F64 arrays.
-
 Local projector slab normalization has one owner,
 [`relion_projector_setup.prepare_local_projector_slab`](../../relax/relion/relion_projector_setup.py).
 Bucket projection, packed-noise projection and the main BigJIT path accept the
 same three-dimensional slab or singleton class axis. The helper preserves JAX
 dtype conversion and path-specific errors. Radius requirements, pixel selection,
 interpolation, masking and projection execution stay with the callers.
-
-Within `local_em_engine._project_local_bucket`, backend selection is separate
-from shared result assembly. RELION/indexed compact rows use the same score and
-reconstruction gathers; full outputs use the existing window selectors. Weighting
-and precision conversion have one call site. Optional reconstruction and native
-projection arguments remain explicit, with no additional result wrapper.
-`local_em_engine._accumulate_packed_noise_chunk` owns the per-chunk noise shell,
-norm-residual and group-scale accumulation of the exact local M-step for both
-packed projection sources
-([`test_packed_noise_chunk_owner.py`](../../tests/unit/test_packed_noise_chunk_owner.py)).
-
-Sealed VDAM worker and block-chronology replay lives in
-[`helpers/vdam_replay.py`](../../relax/diagnostics/vdam_replay.py).
-It owns NPZ schema validation, four cached loaders, stack-ID joins, worker/launch
-ordering, iteration selectors and physical-row gathers. The local engine calls
-this owner directly while retaining kernel execution and the capture call site.
-Candidate block-map publication and its binary schema share this owner; the CLI
-reader imports the schema while retaining validation/sealing and versions 1/2
-compatibility. Replay defaults, caches, stable ordering and error behavior are
-preserved; importing the helper does not initialize the execution engine.
 
 The exact coarse Gaussian path in
 [`helpers/significance.py`](../../relax/scoring/significance.py)
@@ -508,36 +443,6 @@ its own center array, and the engine center aliases the sigma center.
 Both use `(prior - rounded_old_offset) / pixel_size`, as before. The separate
 `relion_sigma_offset_prior_center` serves sufficient statistics and keeps its
 pixel-space formula without that division.
-
-Split local bucket preparation belongs to
-[`local_preprocessing.prepare_local_bucket`](../../relax/local/local_preprocessing.py).
-It owns mask/cache selection, CTF weighting, translation operands and batch norms;
-`local_big_jit` retains the compiled preprocessing primitive and fused kernel.
-Masked/unmasked reconstruction share one exact BPref translation operation.
-Callers and operand-capture tests import the preparation owner directly. The
-local engine retains execution scheduling and one final `LocalEMResult` assembly;
-profile construction and synchronization run only when requested.
-
-Raw and processed-image cache limits belong to
-[`local_caches.py`](../../relax/local/local_caches.py).
-Bounded RELION projection caches belong to
-[`local_projection_cache.py`](../../relax/local/local_projection_cache.py):
-budget parsing, stable bucket sorting/grouping, rotation-ID mapping and chunked
-projection construction share that owner. `plan_cache` returns a
-`ProjectionCachePlan` containing the ordered buckets, groups and capacity
-metadata. Positive requested capacity still sorts buckets even when the group
-limit subsequently rejects caching. The local engine retains eligibility,
-layout-ID storage, buffer construction, timing, group advancement and release. Only mapped
-valid rows may be consumed; unused capacity keeps its existing uninitialized
-padding. Cache consumers and tests import the owner directly, without engine
-re-exports. Importing it does not initialize execution controllers.
-Profile fields and `LocalBucketProgress` belong to
-[`local_timing.py`](../../relax/local/local_timing.py).
-The reporter owns progress counters, environment cadence and log formatting;
-the engine marks completed buckets and forces the final message at the original
-execution sites. Importing this owner does not load execution modules.
-Their unused local-engine re-exports have been removed. Tests import cache
-limit names directly from their owner.
 
 The former runtime `compute_e_step_weights` API had only test consumers.
 Its materialized dense posterior implementation is preserved in

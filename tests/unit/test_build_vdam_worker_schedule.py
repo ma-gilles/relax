@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import vdam_replay
 from scripts.build_vdam_worker_schedule import load_worker_trace, validate_worker_trace
 
 
@@ -90,130 +89,6 @@ def test_v2_worker_trace_preserves_stack_index_join_key(tmp_path):
     assert_matches(
         schedule["owner_by_sorted_position"], np.arange(30) % 8
     )
-
-
-def test_v2_schedule_resolves_worker_lanes_by_stack_index(tmp_path, monkeypatch):
-    schedule = tmp_path / "schedule.npz"
-    np.savez_compressed(
-        schedule,
-        schema_version=np.int64(2),
-        dataset_particles=np.int64(100),
-        n_threads=np.int64(8),
-        stack_index_by_sorted_position=np.asarray([71, 14, 82], dtype=np.int64),
-        owner_by_sorted_position=np.asarray([6, 2, 5], dtype=np.int64),
-    )
-
-    class Dataset:
-        @staticmethod
-        def original_image_indices_from_local(image_indices):
-            lookup = np.asarray([82, 71, 14], dtype=np.int64)
-            return lookup[np.asarray(image_indices)]
-
-    monkeypatch.setenv(vdam_replay.RELION_VDAM_WORKER_SCHEDULE_ENV, str(schedule))
-    vdam_replay._load_relion_vdam_worker_schedule.cache_clear()
-    lanes = vdam_replay._relion_vdam_worker_lanes_for_images(
-        Dataset(), np.asarray([1, 2, 0], dtype=np.int64)
-    )
-    assert_matches(lanes, np.asarray([6, 2, 5], dtype=np.int32))
-
-
-def test_v2_schedule_rejects_an_untraced_selected_stack_index(tmp_path, monkeypatch):
-    schedule = tmp_path / "schedule.npz"
-    np.savez_compressed(
-        schedule,
-        schema_version=np.int64(2),
-        dataset_particles=np.int64(100),
-        n_threads=np.int64(8),
-        stack_index_by_sorted_position=np.asarray([71], dtype=np.int64),
-        owner_by_sorted_position=np.asarray([6], dtype=np.int64),
-    )
-
-    class Dataset:
-        @staticmethod
-        def original_image_indices_from_local(image_indices):
-            return np.asarray([72], dtype=np.int64)
-
-    monkeypatch.setenv(vdam_replay.RELION_VDAM_WORKER_SCHEDULE_ENV, str(schedule))
-    vdam_replay._load_relion_vdam_worker_schedule.cache_clear()
-    with pytest.raises(ValueError, match=r"missing selected stack indices \[72\]"):
-        vdam_replay._relion_vdam_worker_lanes_for_images(
-            Dataset(), np.asarray([0], dtype=np.int64)
-        )
-
-
-def test_v2_schedule_can_serialize_all_particles_on_one_worker(tmp_path, monkeypatch):
-    schedule = tmp_path / "schedule.npz"
-    np.savez_compressed(
-        schedule,
-        schema_version=np.int64(2),
-        dataset_particles=np.int64(100),
-        n_threads=np.int64(8),
-        stack_index_by_sorted_position=np.asarray([71, 14, 82], dtype=np.int64),
-        owner_by_sorted_position=np.asarray([6, 2, 5], dtype=np.int64),
-    )
-
-    class Dataset:
-        @staticmethod
-        def original_image_indices_from_local(image_indices):
-            return np.asarray([82, 71, 14], dtype=np.int64)[np.asarray(image_indices)]
-
-    monkeypatch.setenv(vdam_replay.RELION_VDAM_WORKER_SCHEDULE_ENV, str(schedule))
-    monkeypatch.setenv(vdam_replay.RELION_VDAM_WORKER_REPLAY_TOPOLOGY_ENV, "single")
-    vdam_replay._load_relion_vdam_worker_schedule.cache_clear()
-    lanes = vdam_replay._relion_vdam_worker_lanes_for_images(
-        Dataset(), np.asarray([1, 2, 0], dtype=np.int64)
-    )
-    assert_matches(lanes, np.zeros(3, dtype=np.int32))
-
-
-def test_v2_schedule_can_also_serialize_rotations(tmp_path, monkeypatch):
-    schedule = tmp_path / "schedule.npz"
-    np.savez_compressed(
-        schedule,
-        schema_version=np.int64(2),
-        dataset_particles=np.int64(100),
-        n_threads=np.int64(8),
-        stack_index_by_sorted_position=np.asarray([71], dtype=np.int64),
-        owner_by_sorted_position=np.asarray([6], dtype=np.int64),
-    )
-
-    class Dataset:
-        @staticmethod
-        def original_image_indices_from_local(image_indices):
-            raise AssertionError("single_rotation must not join later subsets to iteration 1")
-
-    monkeypatch.setenv(vdam_replay.RELION_VDAM_WORKER_SCHEDULE_ENV, str(schedule))
-    monkeypatch.setenv(
-        vdam_replay.RELION_VDAM_WORKER_REPLAY_TOPOLOGY_ENV,
-        "single_rotation",
-    )
-    vdam_replay._load_relion_vdam_worker_schedule.cache_clear()
-    lanes = vdam_replay._relion_vdam_worker_lanes_for_images(
-        Dataset(), np.asarray([0, 1, 2], dtype=np.int64)
-    )
-    assert_matches(lanes, np.zeros(3, dtype=np.int32))
-    assert vdam_replay._relion_vdam_serial_rotation_replay()
-
-    monkeypatch.setenv(
-        vdam_replay.RELION_VDAM_WORKER_REPLAY_TOPOLOGY_ENV,
-        "single_rotation_f64",
-    )
-    assert vdam_replay._relion_vdam_serial_rotation_replay()
-    assert vdam_replay._relion_vdam_float64_accumulator_replay()
-
-    monkeypatch.setenv(
-        vdam_replay.RELION_VDAM_WORKER_REPLAY_TOPOLOGY_ENV,
-        "single_rotation_reverse",
-    )
-    assert vdam_replay._relion_vdam_serial_rotation_replay()
-    assert vdam_replay._relion_vdam_reverse_rotation_replay()
-
-    monkeypatch.setenv(
-        vdam_replay.RELION_VDAM_WORKER_REPLAY_TOPOLOGY_ENV,
-        "single_rotation_sm132",
-    )
-    assert vdam_replay._relion_vdam_serial_rotation_replay()
-    assert vdam_replay._relion_vdam_rotation_replay_stride() == 132
 
 
 def test_worker_trace_rejects_duplicate_sorted_position(tmp_path):

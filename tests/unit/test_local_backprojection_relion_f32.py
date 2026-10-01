@@ -2,16 +2,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
+from helpers.float_compare import assert_matches
 from helpers.mstep_reference import numpy_relion_f32_mstep_sums
 
 from relax.local.local_backprojection import (
     compute_local_mstep_sums,
-    compute_local_noise_scalar_terms,
     compute_local_weighted_sums,
     compute_relion_sequential_mstep_sums,
 )
-from helpers.float_compare import assert_matches
 
 
 def test_relion_f32_sequential_mstep_sums_match_numpy_translation_loop_exactly():
@@ -96,104 +94,6 @@ def test_local_mstep_sums_env_gate_preserves_xfloat_precision(
     expected_value = 0.0 if real_dtype == np.float32 else 1.0
     assert np.asarray(xhalf_y)[0, 0, 0] == expected_value
     assert_matches(np.asarray(normal_ctf), np.array([[[6.0]]], dtype=real_dtype))
-
-
-def test_local_noise_scalar_terms_match_dense_relion_order_exactly():
-    probs = jnp.asarray(
-        [
-            [
-                [0.50000006, 0.125, 0.0],
-                [0.0, 0.06250001, 0.0],
-                [0.03125, 0.0, 0.015625],
-                [0.0, 0.0, 0.0078125],
-                [0.00390625, 0.001953125, 0.0],
-            ],
-            [
-                [0.25, 0.125, 0.0625],
-                [0.03125, 0.015625, 0.0078125],
-                [0.00390625, 0.001953125, 0.0009765625],
-                [0.00048828125, 0.000244140625, 0.0001220703125],
-                [0.00006103515625, 0.0, 0.0],
-            ],
-            [
-                [0.875, 0.0625, 0.03125],
-                [0.015625, 0.0078125, 0.00390625],
-                [0.001953125, 0.0009765625, 0.00048828125],
-                [0.000244140625, 0.0001220703125, 0.00006103515625],
-                [0.000030517578125, 0.0, 0.0],
-            ],
-        ],
-        dtype=jnp.float32,
-    )
-    translation_sqdist = jnp.asarray(
-        [[1.25, 3.5, 8.75], [0.5, 2.0, 7.0], [4.0, 5.0, 6.0]],
-        dtype=jnp.float32,
-    )
-    valid_image_mask = jnp.asarray([True, True, False])
-
-    support_mass = jnp.sum(probs.reshape(probs.shape[0], -1), axis=1).astype(
-        jnp.float32
-    )
-    support_mass = jnp.where(valid_image_mask, support_mass, 0.0)
-    translation_posterior = jnp.sum(probs, axis=1).astype(jnp.float32)
-    noise_sumw_offset = jnp.sum(translation_posterior * translation_sqdist)
-
-    actual = compute_local_noise_scalar_terms(
-        probs,
-        translation_sqdist,
-        valid_image_mask,
-    )
-
-    for actual_value, expected_value in zip(
-        actual,
-        (support_mass, translation_posterior, noise_sumw_offset),
-        strict=True,
-    ):
-        assert_matches(
-            np.asarray(actual_value),
-            np.asarray(expected_value),
-        )
-    assert np.asarray(actual[0]).dtype == np.dtype(np.float32)
-    assert np.asarray(actual[1]).dtype == np.dtype(np.float32)
-    assert np.asarray(actual[0])[-1] == np.float32(0.0)
-
-
-def test_local_noise_scalar_terms_inline_the_mature_big_jit_primitives():
-    probs = jnp.ones((3, 5, 7), dtype=jnp.float32)
-    translation_sqdist = jnp.ones((3, 7), dtype=jnp.float32)
-    valid_image_mask = jnp.asarray([True, True, False])
-
-    def inline_oracle(probs_arg, translation_sqdist_arg, valid_mask_arg):
-        batch_size = probs_arg.shape[0]
-        support_mass = jnp.sum(
-            probs_arg.reshape(batch_size, -1),
-            axis=1,
-        ).astype(jnp.float32)
-        support_mass = jnp.where(valid_mask_arg, support_mass, 0.0)
-        translation_posterior = jnp.sum(probs_arg, axis=1).astype(jnp.float32)
-        noise_sumw_offset = jnp.sum(
-            translation_posterior
-            * jnp.asarray(translation_sqdist_arg, dtype=jnp.float32)
-        )
-        return (
-            support_mass,
-            translation_posterior,
-            noise_sumw_offset,
-        )
-
-    helper_jaxpr = jax.make_jaxpr(compute_local_noise_scalar_terms)(
-        probs,
-        translation_sqdist,
-        valid_image_mask,
-    )
-    oracle_jaxpr = jax.make_jaxpr(inline_oracle)(
-        probs,
-        translation_sqdist,
-        valid_image_mask,
-    )
-
-    assert str(helper_jaxpr) == str(oracle_jaxpr)
-    assert "name=compute_local_noise_scalar_terms" not in str(helper_jaxpr)
 
 
 def test_local_mstep_sums_preserve_promoted_precision_for_mixed_operands(monkeypatch):

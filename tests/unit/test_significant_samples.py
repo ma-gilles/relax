@@ -8,31 +8,10 @@ from helpers.float_compare import assert_matches
 
 from relax.scoring.significant_samples import (
     ComplementSignificantSampleIndices,
-    compact_significant_sample_indices_from_mask,
-    significant_sample_count,
     significant_sample_ids,
 )
 
 pytestmark = pytest.mark.unit
-
-
-@pytest.mark.parametrize(
-    "mask, expected_ids, encoding",
-    [
-        ([], [], type(None)),
-        ([True, True], [0, 1], type(None)),
-        ([False, False], [], np.ndarray),
-        ([False, True, False, True], [1, 3], np.ndarray),
-        ([True, False, True, True], [0, 2, 3], ComplementSignificantSampleIndices),
-    ],
-)
-def test_coarse_support_encoding_preserves_ids_and_count(mask, expected_ids, encoding):
-    samples = compact_significant_sample_indices_from_mask(mask)
-    assert type(samples) is encoding
-    assert significant_sample_count(samples, len(mask)) == len(expected_ids)
-    ids = significant_sample_ids(samples, len(mask))
-    assert ids.dtype == np.int64
-    assert_matches(ids, expected_ids)
 
 
 @pytest.mark.parametrize("protocol", [4, 5])

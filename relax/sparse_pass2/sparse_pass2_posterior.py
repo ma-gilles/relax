@@ -23,9 +23,6 @@ _RELION_FINE_ROTATION_EXECUTION_ORDER_ENV = (
 _RELION_X_HALF_F32_FINE_POSTERIOR_ENV = "RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"
 
 
-_SPARSE_PASS2_CUDA_POSTERIOR_ENV = "RELAX_SPARSE_PASS2_CUDA_POSTERIOR"
-
-
 @jax.jit
 def _normalize_pass2_bucket_with_log_z(scores, log_z):
     """Normalize sparse candidate scores with a precomputed full-grid log-Z."""
@@ -154,6 +151,7 @@ def _relion_f32_fine_posterior(
         sum_weight,
         threshold,
     )
+
 
 
 def _relion_f32_fine_reconstruction_probs(

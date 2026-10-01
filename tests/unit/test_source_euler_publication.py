@@ -4,11 +4,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
-from recovar import utils
-from relax.dense import score_outputs
-from relax.diagnostics import local_debug
 from helpers.float_compare import assert_matches
+from recovar import utils
+
+from relax.dense import score_outputs
 
 pytestmark = pytest.mark.unit
 
@@ -122,82 +121,3 @@ def _layout():
     )
 
 
-@pytest.mark.parametrize("row", [0, 1, 2])
-def test_local_debug_source_eulers_follow_bucket_row_and_actual_count(row):
-    bucket = _bucket()
-    count = int(bucket.actual_rotation_counts[row])
-    original_matrices = bucket.local_rotations.copy()
-    candidate_rows, candidate_classes = local_debug._local_candidate_rows(bucket, row)
-    # A bucket without class segments still addresses exactly the leading rows, and
-    # has no class to attribute its candidates to.
-    assert_matches(candidate_rows, np.arange(count))
-    assert candidate_classes is None
-    metadata = local_debug._local_candidate_metadata(
-        local_layout=_layout(), bucket=bucket, row=row, candidate_rows=candidate_rows,
-    )
-    assert metadata["local_rotation_eulers"].dtype == np.float64
-    assert_matches(metadata["local_rotation_eulers"], bucket.local_source_eulers[row, :count])
-    assert metadata["local_rotation_eulers_source"] == "source_eulers"
-    assert_matches(metadata["local_rotation_matrices"], original_matrices[row, :count])
-    assert_matches(bucket.local_rotations, original_matrices)
-    assert_matches(metadata["local_rotation_ids"], bucket.local_rotation_ids[row, :count])
-    assert_matches(metadata["rotation_mask"], bucket.local_rotation_mask[row, :count])
-    assert metadata["candidate_hidden_over_indices"].shape == (count, 3)
-
-
-@pytest.mark.parametrize("missing", [False, True])
-def test_local_debug_matrix_only_eulers_preserve_legacy_values(missing):
-    bucket = _bucket()
-    if missing:
-        del bucket.local_source_eulers
-    else:
-        bucket.local_source_eulers = None
-    metadata = local_debug._local_candidate_metadata(
-        local_layout=_layout(), bucket=bucket, row=2,
-        candidate_rows=local_debug._local_candidate_rows(bucket, 2)[0],
-    )
-    expected = utils.R_to_relion(bucket.local_rotations[2, :2], degrees=True).astype(np.float32)
-    assert metadata["local_rotation_eulers"].dtype == np.float32
-    assert_matches(metadata["local_rotation_eulers"], expected)
-    assert metadata["local_rotation_eulers_source"] == "matrix_derived"
-
-
-@pytest.mark.parametrize("fused", [False, True])
-def test_debug_dump_publishes_source_angles_and_origin_without_changing_scores(tmp_path, fused):
-    bucket = _bucket()
-    scores = np.arange(36, dtype=np.float32).reshape(3, 4, 3)
-    probs = np.full_like(scores, 0.125)
-    saved_scores, saved_probs = scores.copy(), probs.copy()
-    common = dict(
-        experiment_dataset=SimpleNamespace(original_image_indices_from_local=lambda ids: 100 + ids),
-        local_layout=_layout(),
-        bucket=bucket,
-        image_pre_shifts=np.zeros((3, 2)),
-        scores=scores,
-        probs=probs,
-        log_Z=np.zeros(3),
-        best_log_score=np.zeros(3),
-        max_posterior=np.full(3, 0.125),
-        reconstruction_sample_mask=np.ones_like(scores, dtype=bool),
-        reconstruction_rotation_mask=bucket.local_rotation_mask,
-        n_significant_samples=np.array([9, 3, 6]),
-        current_size=8,
-        debug_iteration=9,
-        dump_dir=tmp_path,
-        pending_targets={100},
-    )
-    if fused:
-        pending = local_debug.maybe_write_debug_fused_posterior_dump(**common, best_argmax=np.zeros(3, dtype=np.int32))
-    else:
-        pending = local_debug.maybe_write_debug_score_dump(**common, reconstruction_probs=probs)
-    assert pending == set()
-    files = list(tmp_path.glob("*.npz"))
-    assert len(files) == 1
-    with np.load(files[0], allow_pickle=False) as dump:
-        assert dump["local_rotation_eulers"].dtype == np.float64
-        assert_matches(dump["local_rotation_eulers"], bucket.local_source_eulers[1, :1])
-        assert dump["local_rotation_eulers_source"].tolist() == ["source_eulers"]
-        assert_matches(dump["local_rotation_matrices"], bucket.local_rotations[1, :1])
-        assert_matches(dump["pass2_scores_raw"], scores[1:2, :1])
-    assert_matches(scores, saved_scores)
-    assert_matches(probs, saved_probs)

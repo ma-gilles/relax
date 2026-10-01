@@ -6,7 +6,6 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.diagnostics.bpref_contribution_replay import BPrefAccumulatorReplay
-from relax.diagnostics.bpref_diagnostics import _bpref_contribution_target_rows
 from scripts.analyze_vdam_bpref_accumulator_boundary import (
     _geometry,
     _inline_projector_replays,
@@ -136,36 +135,3 @@ def test_inline_projector_replay_selects_joint_reconstruction_group():
     assert summary["first_particle_original_index"] == 20
 
 
-@pytest.mark.unit
-def test_bpref_target_rows_accept_slurm_safe_semicolon_list(monkeypatch):
-    dataset = SimpleNamespace(
-        dataset_indices=np.asarray([10, 20, 30, 40], dtype=np.int64)
-    )
-    monkeypatch.setenv(
-        "RELAX_BPREF_CONTRIBUTION_DUMP_ORIGINAL_INDICES",
-        "10; 30;40",
-    )
-
-    selected = _bpref_contribution_target_rows(
-        dataset,
-        np.asarray([0, 1, 2, 3], dtype=np.int64),
-    )
-
-    assert_matches(selected, np.asarray([0, 2, 3], dtype=np.int64))
-
-
-@pytest.mark.unit
-def test_big_jit_bpref_capture_observes_production_tensors_without_disabling_path():
-    # the capture is driven from the engine and recorded by its owner
-    source = "\n".join(
-        (REPO_ROOT / "relax" / name).read_text()
-        for name in ("local/local_em_engine.py", "diagnostics/local_bpref_capture.py")
-    )
-
-    use_big_jit_block = source.split("use_big_jit_buckets = (", 1)[1].split(")\n", 1)[0]
-    assert "bpref_contribution_capture_active" not in use_big_jit_block
-    assert "or bpref_contribution_capture_active" in source
-    assert "big-JIT BPref contribution capture requires returned M-step tensors and scores" in source
-    assert source.count("_maybe_dump_exact_local_bpref_contribution_rows(") >= 3
-    assert "zero_data = jnp.zeros_like(Ft_y[0])" in source
-    assert "zero_weight = jnp.zeros_like(Ft_ctf[0])" in source

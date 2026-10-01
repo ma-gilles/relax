@@ -20,7 +20,6 @@ We use a tiny mock dataset so the test is fast on a login node.
 
 from __future__ import annotations
 
-
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -28,12 +27,12 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
-from helpers.em_arrays import _raw_real_image_2d
-from helpers.fine_grid_significance_reference import _build_fine_grid_significance_mask
-
 import recovar.core as core
 import recovar.core.fourier_transform_utils as ftu
+from helpers.em_arrays import _raw_real_image_2d
+from helpers.fine_grid_significance_reference import _build_fine_grid_significance_mask
 from recovar.core.configs import ForwardModelConfig
+
 from relax.classification.k_class import _fine_support_stats
 from relax.helpers.fourier_window import make_fourier_window_spec
 from relax.helpers.preprocessing import apply_half_translation_phases, half_translation_phase_table
@@ -43,24 +42,39 @@ from relax.local.local_backprojection import (
 )
 from relax.scoring.significant_samples import (
     ComplementSignificantSampleIndices,
-    compact_significant_sample_indices_from_mask,
-    significant_sample_count,
-    significant_sample_ids,
 )
-from relax.scoring.sparse_bucket_arrays import _bucket_pass2_inputs, _coalesce_tail_bucket_sizes, _prepare_per_image_pass2_inputs
+from relax.scoring.sparse_bucket_arrays import (
+    _bucket_pass2_inputs,
+    _coalesce_tail_bucket_sizes,
+    _prepare_per_image_pass2_inputs,
+)
 from relax.sparse_pass2.sparse_pass2_adjoint import _accumulate_adjoint_block_chunked, _adjoint_block_chunk_rows
 from relax.sparse_pass2.sparse_pass2_bucket_io import (
     _half_translation_phase_table_for_indices,
     _prepare_bucket_io,
     _relion_translation_angles_f32,
 )
-from relax.sparse_pass2.sparse_pass2_budget import _max_projected_rotations_per_call_for_pass, _nvidia_smi_visible_device_memory_bytes, _projection_budget_pixels_for_pass, _projection_cache_budget_complex_dtype, _projection_cache_fits_budget, _projection_cache_transient_bytes
-from relax.sparse_pass2.sparse_pass2_policy import _native_dual_weighted_sums_supported_for_operands, _projection_cache_enabled_for_pass
+from relax.sparse_pass2.sparse_pass2_budget import (
+    _max_projected_rotations_per_call_for_pass,
+    _nvidia_smi_visible_device_memory_bytes,
+    _projection_budget_pixels_for_pass,
+    _projection_cache_budget_complex_dtype,
+    _projection_cache_fits_budget,
+    _projection_cache_transient_bytes,
+)
+from relax.sparse_pass2.sparse_pass2_policy import (
+    _native_dual_weighted_sums_supported_for_operands,
+    _projection_cache_enabled_for_pass,
+)
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_projections_block,
     _compute_sparse_pass2_windowed_projections_block,
 )
-from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_corr_img_from_native_noise_variance, _relion_cuda_corr_img_from_rfloat_ctf, _relion_cuda_pixel_correction_from_rfloat_ctf
+from relax.sparse_pass2.sparse_pass2_scoring import (
+    _relion_cuda_corr_img_from_native_noise_variance,
+    _relion_cuda_corr_img_from_rfloat_ctf,
+    _relion_cuda_pixel_correction_from_rfloat_ctf,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -1926,61 +1940,6 @@ def test_fine_rotation_override_can_follow_relion_parent_execution_order():
         np.array([0, 0, 2, 2, 1, 1], dtype=np.int32),
     )
     assert_matches(per_image["oversampled_rots"][0], fine_rotations[expected_indices])
-
-
-def test_bpref_contribution_stop_requires_completed_target_files(monkeypatch, tmp_path):
-    """The diagnostic sentinel fires only after requested files exist."""
-
-    from relax.diagnostics import bpref_diagnostics
-
-    contribution_path = tmp_path / "contribution.npz"
-    device_path = tmp_path / "contribution.device.npz"
-    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET", "1")
-    monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", raising=False)
-
-    with pytest.raises(RuntimeError, match="missing its contribution file"):
-        bpref_diagnostics._maybe_stop_after_bpref_contribution_dump(
-            contribution_path=contribution_path,
-            device_signature_path=None,
-        )
-
-    contribution_path.write_bytes(b"contribution")
-    with pytest.raises(bpref_diagnostics.BPrefContributionDumpComplete) as exc_info:
-        bpref_diagnostics._maybe_stop_after_bpref_contribution_dump(
-            contribution_path=contribution_path,
-            device_signature_path=None,
-        )
-    assert exc_info.value.contribution_path == contribution_path
-    assert exc_info.value.device_signature_path is None
-
-    monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path))
-    with pytest.raises(RuntimeError, match="missing its requested device-signature file"):
-        bpref_diagnostics._maybe_stop_after_bpref_contribution_dump(
-            contribution_path=contribution_path,
-            device_signature_path=device_path,
-        )
-
-    device_path.write_bytes(b"device")
-    with pytest.raises(bpref_diagnostics.BPrefContributionDumpComplete) as exc_info:
-        bpref_diagnostics._maybe_stop_after_bpref_contribution_dump(
-            contribution_path=contribution_path,
-            device_signature_path=device_path,
-        )
-    assert exc_info.value.contribution_path == contribution_path
-    assert exc_info.value.device_signature_path == device_path
-
-
-def test_compact_significance_uses_complement_for_dense_masks():
-    mask = np.ones(16, dtype=bool)
-    mask[[3, 11]] = False
-
-    compact = compact_significant_sample_indices_from_mask(mask)
-
-    assert isinstance(compact, ComplementSignificantSampleIndices)
-    assert_matches(compact.excluded_indices, np.asarray([3, 11], dtype=np.int32))
-    assert compact.total_size == 16
-    assert significant_sample_count(compact, 16) == 14
-    assert_matches(significant_sample_ids(compact, 16), np.flatnonzero(mask))
 
 
 def test_kclass_fine_mask_complement_matches_explicit_dense_support():

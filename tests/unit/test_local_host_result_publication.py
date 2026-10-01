@@ -10,7 +10,6 @@ from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.helpers.types import _stats_array, make_noise_stats, make_relion_stats
-from relax.local.local_layout import LocalHypothesisLayout
 
 pytestmark = pytest.mark.unit
 
@@ -130,40 +129,3 @@ def test_complete_result_publication_matches_device_result(host):
     assert all(isinstance(field, np.ndarray) for field in actual.stats)
 
 
-def test_actual_local_engine_publishes_exact_host_statistics():
-    # Reuse the deterministic tiny EM fixture used by the fast guard.
-    import test_refine_relion_mode as fixture
-
-    dataset = fixture.MockDataset(1, np.random.default_rng(17))
-    layout = LocalHypothesisLayout(
-        n_global_rotations=2,
-        n_pixels=2,
-        n_psi=1,
-        rotation_offsets=np.asarray([0, 2], dtype=np.int64),
-        rotation_ids_flat=np.asarray([0, 1], dtype=np.int32),
-        rotations_flat=np.asarray(fixture._make_rotations(2, seed=99)),
-        rotation_log_priors_flat=np.zeros(2, dtype=np.float32),
-        rotation_counts=np.asarray([2], dtype=np.int32),
-        translation_grid=np.zeros((1, 2), dtype=np.float32),
-        translation_log_priors=np.zeros((1, 1), dtype=np.float32),
-    )
-    args = (
-        dataset,
-        fixture._hermitian_volume(fixture.VOLUME_SHAPE, seed=101),
-        jnp.ones(fixture.IMAGE_SIZE, dtype=jnp.float32),
-        layout,
-        "linear_interp",
-    )
-    kwargs = dict(
-        image_batch_size=1,
-        rotation_block_size=4,
-        current_size=6,
-        accumulate_noise=True,
-        reconstruct_significant_only=False,
-        host_accumulator_finalize=True,
-    )
-    control = fixture.run_local_em_exact(*args, **kwargs)
-    candidate = fixture.run_local_em_exact(*args, **kwargs, host_stats_publication=True)
-    _same_bytes(candidate, control)
-    assert all(isinstance(value, np.ndarray) for value in candidate.stats)
-    assert isinstance(candidate.noise_stats.wsum_norm_correction, np.ndarray)

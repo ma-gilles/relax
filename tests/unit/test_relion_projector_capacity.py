@@ -184,57 +184,6 @@ def test_gpu_invalid_runtime_radius_is_nonfinite_without_oob(radius):
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("output_size", [24, 32])
-@pytest.mark.parametrize("pf", [1, 2])
-@pytest.mark.parametrize("mask_disk", [False, True])
-def test_capacity_compact_support_preserves_positive_nyquist(output_size, pf, mask_disk):
-    """Retain N's full-box support repair through the current capacity owner."""
-    from relax.helpers.projection import (
-        compute_relion_projector_projections_block,
-        prepare_relion_projector_capacity,
-    )
-
-    image_size = 32
-    radius = output_size // 2
-    size = 2 * pf * radius + 3
-    rng = np.random.default_rng(20260908)
-    logical = (
-        rng.standard_normal((size, size, size // 2 + 1))
-        + 1j * rng.standard_normal((size, size, size // 2 + 1))
-    ).astype(np.complex64)
-    rotations = _rotations()
-    indices = np.arange(image_size * (image_size // 2 + 1), dtype=np.int32)
-    rows, cols = np.divmod(indices, image_size // 2 + 1)
-    # Independent transcription of N 7f60f7390's branch support predicate.
-    ky = rows - image_size // 2
-    if output_size == image_size:
-        ky = np.where(rows == 0, radius, ky)
-    support = (ky > -radius) & (ky <= radius) & (cols <= radius)
-    indices = indices[support]
-    assert (0 in indices) == (output_size == image_size)
-    common = dict(
-        image_shape=(image_size, image_size), padding_factor=pf,
-        return_abs2=False, centered_rows=True, dense_scale=False,
-        projector_output_size=output_size, relion_texture_interp=True,
-        mask_current_image_disk=mask_disk,
-    )
-    full, _ = compute_relion_projector_projections_block(
-        jnp.asarray(logical), rotations, r_max=radius, **common,
-    )
-    capacity, runtime_radius = prepare_relion_projector_capacity(
-        jnp.asarray(logical), r_max=radius, physical_size=40, padding_factor=pf,
-    )
-    compact, _ = compute_relion_projector_projections_block(
-        capacity, rotations, r_max=0, runtime_r_max=runtime_radius,
-        projector_capacity=True, pixel_indices=indices, **common,
-    )
-    expected = np.ascontiguousarray(np.asarray(full)[:, indices])
-    assert_matches(np.asarray(compact), expected)
-    if output_size == image_size:
-        assert np.any(np.abs(expected[:, 0]) > 0), "Nyquist check must not be vacuous"
-
-
-@pytest.mark.gpu
 @pytest.mark.parametrize("pf", [1, 2])
 @pytest.mark.parametrize("image_r_max", [None, 11])
 @pytest.mark.parametrize("q,radius", [(32, 14), (64, 20)])

@@ -1,8 +1,8 @@
 """FFI target coverage of the EM CUDA library (split from test_cuda_lib_symbol_check.py, relax split P2)."""
 
 import pytest
-
 from recovar import cuda_backproject as cb
+
 from relax.cuda import kernels as em_cuda_kernels
 
 pytestmark = pytest.mark.unit
@@ -20,8 +20,6 @@ def test_em_ffi_registrations_cover_all_em_target_constants():
     em_targets_in_table = {target for target, _symbol in em_cuda_kernels._FFI_REGISTRATIONS}
     em_optional_targets = {
         *em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS,
-        em_cuda_kernels._TARGET_RELION_WAVG_NATIVE_PREFIX_F32,
-        em_cuda_kernels._TARGET_RELION_WAVG_NATIVE_PREFIX_DEBUG_F32,
         em_cuda_kernels._TARGET_RELION_COARSE_POSTERIOR_TRANSACTION_F32,
         em_cuda_kernels._TARGET_RELION_COARSE_SHARED_PRETRANSLATED_RUNTIME_F32,
     }

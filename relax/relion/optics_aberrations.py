@@ -242,12 +242,6 @@ def _odd_demodulation_table(experiment_dataset, image_shape):
     return cached
 
 
-def dataset_has_odd_aberrations(experiment_dataset, image_shape) -> bool:
-    """Whether some optics group of the dataset's source STAR has beam tilt or odd Zernike terms."""
-
-    return _odd_demodulation_table(experiment_dataset, image_shape) is not None
-
-
 def odd_demodulation_rows(experiment_dataset, image_indices, n_rows=None):
     """``exp(-i phase)`` rows ``[n_rows, P]`` of these images (ones on padding rows), or None.
 
@@ -309,28 +303,6 @@ def demodulate_odd_aberrations(experiment_dataset, processed_half, image_indices
         raise ValueError(f"{processed.shape[0]} processed images for {len(image_indices)} image indices")
     factors = odd_demodulation_rows(experiment_dataset, image_indices).reshape(processed.shape)
     return (processed.astype(jnp.complex128) * factors).astype(processed.dtype)
-
-
-def require_no_odd_aberrations(experiment_dataset, *, where: str) -> None:
-    """Refuse beam tilt / odd Zernike data on a path that reads images without demodulating them."""
-
-    if dataset_has_odd_aberrations(experiment_dataset, tuple(experiment_dataset.image_shape)):
-        raise NotImplementedError(f"{where} does not demodulate beam tilt / odd Zernike aberrations")
-
-
-def require_ordinary_optics(experiment_dataset, *, where: str) -> None:
-    """Refuse CTF-premultiplied or aberrated optics groups on a path that implements neither."""
-
-    from relax.relion.relion_ctf import _relion_exact_ctf_source_star, dataset_has_premultiplied_ctf
-
-    try:
-        _relion_exact_ctf_source_star(experiment_dataset)
-    except ValueError:
-        return  # no source STAR, so no optics table
-    image_shape = tuple(experiment_dataset.image_shape)
-    if dataset_has_premultiplied_ctf(experiment_dataset, image_shape):
-        raise NotImplementedError(f"{where} does not implement CTF-premultiplied images")
-    require_no_odd_aberrations(experiment_dataset, where=where)
 
 
 def relax_projection_magnification(mag_matrix) -> np.ndarray:

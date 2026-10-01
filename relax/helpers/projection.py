@@ -15,7 +15,6 @@ import numpy as np
 from recovar import core
 from recovar.cuda_backproject import cuda_available as _cuda_projection_available
 
-from relax.cuda.kernels import project_indexed
 from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.half_spectrum import bin_shell_values_jax
 from relax.helpers.optics_noise import image_rotation_rows
@@ -472,37 +471,6 @@ def _host_relion_projector_texture_enabled(
         SimpleNamespace(shape=projector_half.shape, dtype=dtype),
         r_max=int(r_max), padding_factor=int(padding_factor), enabled=enabled,
     ))
-
-
-def prepare_relion_projector_capacity(volume_relion_half, *, r_max, physical_size, padding_factor):
-    """Center-pad the original logical texture slab, including its ghost texels."""
-    from recovar.core import slicing
-
-    radius = int(r_max)
-    physical_size = int(physical_size)
-    pf = int(padding_factor)
-    logical = jnp.asarray(volume_relion_half)
-    if (
-        pf not in (1, 2) or physical_size <= 0 or physical_size % 2
-        or not 0 <= radius <= physical_size // 2
-    ):
-        raise ValueError("projector capacity requires padding 1/2 and a radius inside an even physical size")
-    size = 2 * (pf * radius + 1) + 1
-    if logical.dtype != jnp.complex64 or logical.shape != (size, size, size // 2 + 1):
-        raise ValueError("projector capacity requires the original C64 logical half shape including ghost planes")
-    if not _relion_projector_texture_enabled(
-        logical, r_max=radius, padding_factor=pf
-    ) or not slicing._use_cuda(1):
-        raise ValueError("projector capacity requires the existing custom CUDA texture projection route")
-    capacity = pf * physical_size + 3
-    if capacity > 1025:
-        raise ValueError("projector capacity exceeds the CUDA ABI extent")
-    offset = (capacity - size) // 2
-    padded = jnp.pad(
-        logical,
-        ((offset, offset), (offset, offset), (0, capacity // 2 + 1 - logical.shape[2])),
-    )
-    return padded, jnp.asarray(radius, dtype=jnp.int32)
 
 
 def _texture_centered_crop_to_full(
@@ -1115,41 +1083,6 @@ def project_half_spectrum(
     )
 
 
-def project_indexed_half_spectrum(
-    volume,
-    pixel_indices,
-    rotations_block,
-    image_shape,
-    volume_shape,
-    disc_type,
-    *,
-    half_volume: bool = False,
-    max_r=DEFAULT_PROJECTION_MAX_R,
-):
-    """Forward-slice selected packed half-spectrum pixels into compact rows."""
-
-    order = core.decide_order(disc_type)
-    if order > 1:
-        raise ValueError("indexed projection is only supported for nearest/linear interpolation")
-    return project_indexed(
-        volume,
-        pixel_indices,
-        rotations_block,
-        image_shape,
-        volume_shape,
-        order=order,
-        half_volume=half_volume,
-        half_image=True,
-        max_r=None if max_r is DEFAULT_PROJECTION_MAX_R else max_r,
-    )
-
-
-def indexed_projection_available() -> bool:
-    """Return whether the CUDA indexed projection path can be used."""
-
-    return _cuda_projection_available()
-
-
 def compute_projections_block(
     volume,
     rotations_block,
@@ -1301,46 +1234,6 @@ def compute_norm_residual_per_image(
     xa_terms = image_rotation_rows(noise_variance_half) * cross_terms.real
     xa_per_image = jnp.sum(xa_terms, axis=(1, 2))
     return a2_per_image - 2.0 * xa_per_image
-
-
-@jax.jit
-def compute_scale_correction_terms_per_image(
-    proj_half,
-    proj_abs2_half,
-    summed_masked,
-    ctf_probs,
-    noise_variance_half,
-    old_scale,
-    scale_correction_pixel_mask=None,
-):
-    """Return RELION group-scale XA/AA sufficient statistics per image.
-
-    The inputs are the same retained M-step support tensors used by
-    ``compute_norm_residual_per_image``.  The current E-step tensors already
-    include the old group scale in ``XA`` and ``AA``; RELION's scale update
-    accumulators divide those factors back out before summing by group.
-
-    Like ``compute_noise_block``/``compute_norm_residual_per_image``, keeps
-    the inputs' own natural real dtype -- no explicit float32 cast.
-    """
-
-    safe_scale = jnp.maximum(jnp.asarray(old_scale, dtype=proj_abs2_half.real.dtype), 1e-30)
-    ctf_has_mass = ctf_probs != 0.0
-    scale_pixel_mask = None
-    if scale_correction_pixel_mask is not None:
-        scale_pixel_mask = jnp.asarray(scale_correction_pixel_mask, dtype=bool).reshape(-1)
-        ctf_has_mass = ctf_has_mass & scale_pixel_mask[None, None, :]
-    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * image_rotation_rows(noise_variance_half), 0.0)
-    aa_terms = jnp.where(ctf_has_mass, proj_abs2_half * ctf_probs_raw, 0.0)
-    aa_per_image = jnp.sum(aa_terms, axis=(1, 2)) / (safe_scale**2)
-
-    cross_has_mass = summed_masked != 0.0
-    if scale_pixel_mask is not None:
-        cross_has_mass = cross_has_mass & scale_pixel_mask[None, None, :]
-    cross_terms = jnp.where(cross_has_mass, proj_half * jnp.conj(summed_masked), 0.0)
-    xa_terms = image_rotation_rows(noise_variance_half) * cross_terms.real
-    xa_per_image = jnp.sum(xa_terms, axis=(1, 2)) / safe_scale
-    return xa_per_image, aa_per_image
 
 
 def relion_scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells=None):

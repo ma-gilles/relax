@@ -274,7 +274,6 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 | Deprecated engine or route | What still routes to it on main | Resident work needed |
 |---|---|---|
-| Exact local engine (`local/local_em_engine.py` and the other `local/` execution modules; `local_layout` stays) | Only the Refine3D local-search parent probe (score-only, `maximum_significants` cap); a local fine pass the resident checks refuse is an error | A resident score-only local mode with RELION's cap for the parent probe (bigbox) |
 | Generic dense K-class coarse scorer (pass 1: `scoring.significance._compute_k_class_significance_batched`, `_score_block`, `_add_priors`, `_e_step_block_scores_normalized_cc`) | K=1 runs without the fresh BPref order (RELION-seeded or replay starts) and every normalized-CC (`--firstiter_cc`) pass; Class3D and VDAM at every K already score on RELION's exact coarse operands | Exact-operand coarse scoring for those passes, then delete the generic scorer with the temporary `relion_exact_coarse` switch (kspeed; Coarse scorer TODO below) |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
 
@@ -298,8 +297,10 @@ Removal order:
 4. The VDAM exact-local route (done 2026-09-27: `vdam/sparse_pass2_estep.py`, `k_class.run_local_k_class_em`,
    `--pass2_engine local/local_segmented` and the four options only it read are removed; the
    adaptive route is VDAM's only E-step route, and a configuration it refuses is an error).
-5. The exact local engine, `local/local_em_engine.run_local_em_exact` and the `local/` modules only it
-   reaches (about 16k lines by the 2026-09-27 reachability trace), once the resident parent probe lands.
+5. The exact local engine (done 2026-09-30, about 24k lines of `relax/`): the parent probe runs on the
+   resident local pass, and `local/local_em_engine.run_local_em_exact`, the `local/` modules only it reached
+   and the helpers, diagnostics and tests that served it are removed; `local_layout` and the M-step row
+   helpers in `local_backprojection` stay.
 6. Dense `run_em` and the per-image reference (about 4k lines).
 
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)

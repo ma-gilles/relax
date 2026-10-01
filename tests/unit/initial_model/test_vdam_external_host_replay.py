@@ -2,9 +2,8 @@ import ctypes
 import os
 from pathlib import Path
 
-from helpers.cuda_source import read_em_cuda_source
-
 import pytest
+from helpers.cuda_source import read_em_cuda_source
 
 from scripts import run_vdam_exact_native_host_replay
 
@@ -51,16 +50,6 @@ def test_exact_native_host_replay_has_one_shared_abi():
         assert f'("{field}",' in helper_source
 
 
-def test_external_host_replay_is_fresh_process_and_ordered_callback():
-    wrapper = PYTHON_WRAPPER.read_text()
-
-    assert "run_vdam_exact_native_host_replay.py" in wrapper
-    assert "subprocess.run(" in wrapper
-    assert "jax.experimental.io_callback(" in wrapper
-    assert "ordered=True" in wrapper
-    assert "external exact-native host replay cannot mix" in wrapper
-
-
 def test_external_host_replay_requires_exact_ptx_and_protects_outputs():
     helper = HELPER.read_text()
 
@@ -68,21 +57,6 @@ def test_external_host_replay_requires_exact_ptx_and_protects_outputs():
     assert "refusing to overwrite" in helper
     assert "allow_pickle=False" in helper
     assert "clean-process CUDA replay failed" in helper
-
-
-def test_external_host_replay_report_names_include_parent_pid():
-    wrapper = PYTHON_WRAPPER.read_text()
-
-    assert 'f"pid-{os.getpid()}-call-{call:04d}.json"' in wrapper
-
-
-def test_external_host_replay_can_preserve_input_bundles_fail_closed():
-    wrapper = PYTHON_WRAPPER.read_text()
-
-    assert "RELAX_VDAM_EXTERNAL_HOST_REPLAY_CAPTURE_DIR" in wrapper
-    assert 'f"pid-{os.getpid()}-call-{call:04d}-input.npz"' in wrapper
-    assert "refusing to overwrite VDAM host-replay capture" in wrapper
-    assert "shutil.copy2(input_path, capture_path)" in wrapper
 
 
 def test_external_host_replay_can_capture_quiesced_prelaunch_state():
@@ -176,29 +150,3 @@ def test_wavg_bpref_host_gap_is_fail_closed_and_measures_from_wavg_return():
     assert "std::this_thread::sleep_until" in cuda_source
 
 
-def test_wavg_bpref_host_gap_trace_is_targeted_and_fail_closed():
-    cuda_source = read_em_cuda_source()
-    local_engine = LOCAL_ENGINE.read_text()
-    replay_helper = REPLAY_HELPER.read_text()
-
-    assert "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE" in cuda_source
-    assert "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE_PARTICLE_ID" in cuda_source
-    assert "wavg_bpref_intrinsic_gap_ns" in cuda_source
-    assert "wavg_bpref_effective_gap_ns" in cuda_source
-    assert "wavg_host_enqueue_ns" in cuda_source
-    assert "bpref_host_enqueue_ns" in cuda_source
-    assert "wavg_to_bpref_return_ns" in cuda_source
-    assert 'trace << "particle\\ttrace_particle_id\\tworker_lane' in cuda_source
-    assert "callbacks do not contain the requested global particle ID" in cuda_source
-    assert "std::ios::app" in cuda_source
-    assert "if (trace.tellp() == 0)" in cuda_source
-    assert 'VDAM_WAVG_BPREF_HOST_GAP_TRACE_ENV = "RELAX_VDAM_WAVG_BPREF_HOST_GAP_TRACE"' in replay_helper
-    for diagnostic_gate in (
-        "block_trace_active",
-        "host_gap_trace_active",
-        "host_replay_capture_active",
-        "quiesced_prelaunch_capture_active",
-    ):
-        assert diagnostic_gate in replay_helper
-    assert "candidate_trace_active = vdam_replay._relion_vdam_candidate_trace_active(" in local_engine
-    assert "candidate_trace_active=candidate_trace_active," in local_engine

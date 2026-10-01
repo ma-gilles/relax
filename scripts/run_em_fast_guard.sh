@@ -51,15 +51,15 @@ assert str(jax_file).startswith(str(pixi_env) + "/"), (jax_file, pixi_env)
 for helper in (
     "helpers.oversampling", "helpers.half_volume_mstep", "relion.relion_projector_setup",
     "diagnostics.relion_replay", "relion.relion_normalization", "refinement.projector_preparation",
-    "dense.score_outputs", "local.local_batch_planning", "classification.k_class_results", "classification.k_class_inputs", "dense.scoring_policy", "helpers.resolution", "diagnostics.bpref_diagnostics",
-    "helpers.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "scoring.sparse_bucket_arrays", "scoring.compact_candidates", "relion.relion_ctf", "helpers.scale_groups", "helpers.normalization_inputs",
-    "diagnostics.vdam_replay", "relion.vdam_checkpoint", "local.fixed_capacity_local", "local.local_layout", "diagnostics.local_debug", "local.local_projection_cache", "local.local_timing",
+    "dense.score_outputs", "classification.k_class_results", "classification.k_class_inputs", "dense.scoring_policy", "helpers.resolution", "diagnostics.bpref_diagnostics",
+    "helpers.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "scoring.sparse_bucket_arrays", "scoring.compact_candidates", "relion.relion_ctf", "helpers.scale_groups",
+    "relion.vdam_checkpoint", "local.local_layout", "diagnostics.local_debug",
 ):
     importlib.import_module(f"relax.{helper}")
 for diagnostic in ("iteration", "reconstruction"):
     importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
-    "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class", "dense.em_engine", "local.local_em_engine", "local.local_big_jit",
+    "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class", "dense.em_engine",
     "scoring.significance", "sparse_pass2.resident_pass2", "sparse_pass2.dispatch",
     "refinement.firstiter_cc", "refinement.local_search_iteration",
 )
@@ -78,10 +78,6 @@ tests=(
   tests/unit/test_dense_big_jit.py::test_dense_big_jit_pass1_matches_dense_primitives_for_modes
   tests/unit/test_dense_big_jit.py::test_dense_big_jit_mstep_matches_dense_primitives_and_adjoint
   tests/unit/test_dense_big_jit.py::test_dense_big_jit_masks_padded_image_rows
-  tests/unit/test_refine_relion_mode.py::test_run_local_em_exact_matches_dense_engine_on_single_image_local_grid
-  tests/unit/test_refine_relion_mode.py::test_run_local_em_exact_windowed_with_pre_shifts_matches_dense_engine
-  tests/unit/test_refine_relion_mode.py::test_run_local_em_exact_default_path_matches_debug_split_path
-  tests/unit/test_refine_relion_mode.py::test_run_local_em_exact_big_jit_bucket_matches_debug_split
 )
 
 exec "$PYTHON_BIN" -m pytest "${tests[@]}" -q "$@"

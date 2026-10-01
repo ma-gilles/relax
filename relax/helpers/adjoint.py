@@ -81,14 +81,6 @@ def adjoint_slice_volume_windowed(
     )
 
 
-# Same arithmetic, explicit consumption of the accumulator for single-owner updates.
-adjoint_slice_volume_windowed_donating = jax.jit(
-    adjoint_slice_volume_windowed.__wrapped__,
-    static_argnums=(4, 5, 6, 7, 8, 9, 10),
-    donate_argnums=(3,),
-)
-
-
 @partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10))
 def _batch_adjoint_slice_volume_windowed(
     windowed_halves,
@@ -117,52 +109,6 @@ def _batch_adjoint_slice_volume_windowed(
         half_volume=half_volume,
         relion_x_half=relion_x_half,
         **_recovar_clip_kwargs(max_r),
-    )
-
-
-def adjoint_slice_volume_maybe_windowed(
-    half_block,
-    window_indices,
-    rotations_block,
-    volume,
-    image_shape,
-    volume_shape,
-    disc_type,
-    half_image,
-    half_volume=False,
-    *,
-    use_window: bool,
-    max_r=None,
-    relion_x_half=False,
-):
-    """Adjoint-slice either a full half-grid or an indexed Fourier window."""
-
-    if use_window or relion_x_half:
-        if window_indices is None:
-            n_half = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
-            window_indices = jnp.arange(n_half, dtype=jnp.int32)
-        return adjoint_slice_volume_windowed(
-            half_block,
-            window_indices,
-            rotations_block,
-            volume,
-            image_shape,
-            volume_shape,
-            disc_type,
-            half_image,
-            half_volume,
-            max_r,
-            relion_x_half,
-        )
-    return adjoint_slice_volume_half(
-        half_block,
-        rotations_block,
-        volume,
-        image_shape,
-        volume_shape,
-        disc_type,
-        half_image,
-        half_volume,
     )
 
 

@@ -792,7 +792,7 @@ def run_em(
     window_at_box = bool(window_at_box) and relion_firstiter_score_mode != "normalized_cc"
     if window_at_box and current_size is None:
         # The window is RELION's at every size, so the full box is an explicit current size
-        # (as in the exact local engine, local_em_engine.run_local_em_exact).
+        # (as the local search passes it).
         current_size = int(image_shape[0])
     debug_options = _DenseDebugOptions.from_env(current_size)
     # Pad volume in real space for smoother trilinear projection.

@@ -536,63 +536,6 @@ def _validate_fixed_capacity_call_values(
     return values, first_trailing_shape, first_dtype
 
 
-def _pack_fixed_capacity_local_images(
-    plan: _FixedCapacityWholeLocalPlan,
-    values_by_call,
-    *,
-    fill_value=0,
-) -> np.ndarray:
-    """Pack per-image call operands into the plan's stable image axis."""
-
-    values, trailing_shape, dtype = _validate_fixed_capacity_call_values(
-        plan,
-        values_by_call,
-        candidate_rows=False,
-    )
-    packed = np.full(
-        (plan.physical_image_capacity,) + trailing_shape,
-        fill_value,
-        dtype=dtype,
-    )
-    for call_index, value in enumerate(values):
-        start = int(plan.call_image_offsets[call_index])
-        stop = start + int(plan.call_valid_images[call_index])
-        packed[start:stop] = value
-    return packed
-
-
-def _pack_fixed_capacity_local_candidate_rows(
-    plan: _FixedCapacityWholeLocalPlan,
-    values_by_call,
-    *,
-    fill_value=0,
-) -> np.ndarray:
-    """Pack real candidate rows without copying rectangular radix padding."""
-
-    values, trailing_shape, dtype = _validate_fixed_capacity_call_values(
-        plan,
-        values_by_call,
-        candidate_rows=True,
-    )
-    packed = np.full(
-        (plan.physical_row_capacity,) + trailing_shape,
-        fill_value,
-        dtype=dtype,
-    )
-    for call_index, value in enumerate(values):
-        image_start = int(plan.call_image_offsets[call_index])
-        valid_images = int(plan.call_valid_images[call_index])
-        for local_image_index in range(valid_images):
-            global_image_index = image_start + local_image_index
-            row_start = int(plan.row_offsets[global_image_index])
-            row_stop = int(plan.row_offsets[global_image_index + 1])
-            packed[row_start:row_stop] = value[
-                local_image_index,
-                : row_stop - row_start,
-            ]
-    return packed
-
-
 def _plan_consecutive_padded_batches(
     padded_sizes,
     *,
@@ -1105,6 +1048,48 @@ def _estimate_relion_em_batch_sizes(
 
 def _image_backend(ds):
     return getattr(getattr(ds, "image_source", None), "backend", None)
+
+
+def local_source_bpref_staging_bytes(projector_half_shape, accumulator_half_shape):
+    """Additional pending bytes beyond the global texture/BPref-pair budget.
+
+    A local iteration's batch planner (``iteration_loop``) adds this reserve, which was sized
+    for the retired exact local engine and is kept so the resident local pass's batch sizes
+    are unchanged. For the float32, non-capacity K1 source-faithful local route, the global
+    estimate already counts one C64 texture slab and one C64/F32 accumulator
+    pair. Retain the conservative legacy reserve: a full C64 projector cube,
+    two slab-sized native copies, and two additional C64/F32 pairs for output
+    and conversion workspace. The qualified logical-half consuming route now
+    removes the cube, linear texture scratch and separate output pair; this
+    reserve intentionally remains larger until controller-level qualification
+    establishes safe batch headroom. Alternate shapes can still use the legacy
+    route. Projector and accumulator geometries may differ.
+
+    This is allocation accounting, not a route selector or measured peak.
+    The caller must separately qualify lifetime, precision, capacity mode and
+    the live-memory sampling boundary. Batch/image workspaces remain covered
+    by the enclosing planner; do not apply this to diagnostic F64 execution.
+    """
+    def half_voxels(shape):
+        shape = tuple(shape)
+        if (
+            len(shape) != 3
+            or any(int(x) != x or x <= 0 for x in shape)
+            or shape[0] != shape[1]
+            or shape[0] % 2 != 1
+            or shape[2] != shape[0] // 2 + 1
+        ):
+            raise ValueError("expected positive odd (pad, pad, pad//2+1) half shape")
+        return int(shape[0]) * int(shape[1]) * int(shape[2])
+
+    projector_voxels = half_voxels(projector_half_shape)
+    accumulator_voxels = half_voxels(accumulator_half_shape)
+    full_projector_bytes = int(projector_half_shape[0]) ** 3 * np.dtype(np.complex64).itemsize
+    native_staging_bytes = 2 * projector_voxels * np.dtype(np.complex64).itemsize
+    accumulator_workspace_bytes = 2 * accumulator_voxels * (
+        np.dtype(np.complex64).itemsize + np.dtype(np.float32).itemsize
+    )
+    return full_projector_bytes + native_staging_bytes + accumulator_workspace_bytes
 
 
 def safe_coarse_significance_image_batch_size(

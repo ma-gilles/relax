@@ -26,16 +26,16 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
+import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-import recovar.core.fourier_transform_utils as ftu
-from relax.refinement import local_search_iteration
 from relax.local.local_layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
 )
+from relax.refinement import local_search_iteration
 from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps
 from relax.sampling import build_local_search_grid_metadata
 from relax.sparse_pass2 import resident_local_pass2 as rlp
@@ -53,6 +53,7 @@ def _gpu_available():
     if jax.default_backend() != "gpu":
         return False
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     return bool(
@@ -496,109 +497,6 @@ def _parent_layout(seed=20260919):
         dtype=np.float32,
     )
     return parent, translations
-
-
-def _run_probe(case, *, resident: bool, monkeypatch):
-    """RELION's pass-1 parent probe through the production dispatch (half_scoring's call).
-
-    ``resident=False`` hands the dispatcher's call to the exact local engine, the
-    reference the probe replaced, with the arguments the dispatcher gave it.
-    """
-
-    if not resident:
-        from relax.local.local_em_engine import run_local_em_exact
-
-        def exact_engine(dataset, mean, noise_variance, layout, disc_type, **kwargs):
-            if kwargs.get("symmetry_label") == "C1":
-                del kwargs["symmetry_label"]
-            return run_local_em_exact(
-                dataset, mean, noise_variance, layout, disc_type, image_batch_size=4, rotation_block_size=64,
-                use_float64_normalization=True, do_gridding_correction=True, window_at_box=True, **kwargs,
-            )
-
-        monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", exact_engine)
-    parent, translations = _parent_layout()
-    result = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
-        case["dataset"],
-        case["volume"],
-        case["noise_variance"],
-        _prior_eulers(N_IMAGES, 20260919),
-        None,
-        PARENT_ORDER,
-        0.35,
-        0.35,
-        translations,
-        np.zeros((N_IMAGES, 2), dtype=np.float32),
-        3.0,
-        "linear_interp",
-        image_batch_size=4,
-        rotation_block_size=64,
-        current_size=CURRENT_SIZE,
-        accumulate_noise=False,
-        projection_padding_factor=1,
-        half_spectrum_scoring=True,
-        relion_exact_score_translation=True,
-        projection_relion_texture_interp=False,
-        projection_relion_kernel="coarse",
-        relion_projector_half=case["projector_half"],
-        relion_projector_r_max=case["r_max"],
-        do_gridding_correction=True,
-        return_profile=True,
-        disable_adjoint_y=True,
-        disable_adjoint_ctf=True,
-        reconstruct_significant_only=True,
-        adaptive_fraction=0.999,
-        max_significants=-1,
-        pass2_layout=parent,
-        return_reconstruction_sample_indices=True,
-        apply_max_significants_to_support=True,
-        score_only=True,
-    ))
-    return result, parent
-
-
-@requires_resident_gpu
-def test_resident_parent_probe_matches_the_exact_engine(monkeypatch, _resident_local_env):
-    """The resident pass-1 probe keeps the exact engine's significant samples.
-
-    The support is the discrete output pass 2 is built from, so it is compared
-    exactly, except for samples whose weight sits on the float32/float64
-    significance cutoff: the exact engine sorts float64 weights on the host, the
-    resident probe uses the segmented float32 posterior (as RELION GPU does).
-    Winners and the sample-id convention (posterior id x n_trans + t, row order)
-    must agree; a measured tie fraction is allowed on the support.
-    """
-
-    from relax.sparse_pass2.engine_record import take_pass_engines
-
-    case = _case()
-    take_pass_engines()
-    resident, _ = _run_probe(case, resident=True, monkeypatch=monkeypatch)
-    assert take_pass_engines() == ["local_probe:resident"]
-    exact, parent = _run_probe(case, resident=False, monkeypatch=monkeypatch)
-
-    exact_ids = exact.profile_summary["reconstruction_sample_indices_by_image"]
-    resident_ids = resident.profile_summary["reconstruction_sample_indices_by_image"]
-    assert len(exact_ids) == len(resident_ids) == N_IMAGES
-    n_trans = int(np.asarray(parent.translation_grid).shape[0])
-    differing = 0
-    total = 0
-    for image, (a, b) in enumerate(zip(exact_ids, resident_ids, strict=True)):
-        a = np.asarray(a, dtype=np.int64)
-        b = np.asarray(b, dtype=np.int64)
-        # Every id is a parent row of this image and a valid translation.
-        start, stop = int(parent.rotation_offsets[image]), int(parent.rotation_offsets[image + 1])
-        rows = set(np.asarray(parent.rotation_ids_flat[start:stop], dtype=np.int64).tolist())
-        assert set((b // n_trans).tolist()) <= rows
-        # Row order: ids appear in the layout's (row, translation) order.
-        order = {rot: k for k, rot in enumerate(parent.rotation_ids_flat[start:stop])}
-        keys = [(order[int(i // n_trans)], int(i % n_trans)) for i in b]
-        assert keys == sorted(keys)
-        differing += len(set(a.tolist()) ^ set(b.tolist()))
-        total += len(set(a.tolist()) | set(b.tolist()))
-    # Measured on this fixture; the band is the float32 cutoff tie rate.
-    assert differing <= max(1, int(0.01 * total)), (differing, total)
-    assert_matches(np.asarray(exact.hard_assignment), np.asarray(resident.hard_assignment))
 
 
 @requires_resident_gpu

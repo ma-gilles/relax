@@ -148,41 +148,6 @@ def test_beam_tilt_insertion_follows_tilt_helper():
 
 
 @pytest.mark.unit
-def test_demodulation_multiplies_the_conjugate_phase_in_recovar_layout(tmp_path):
-    star = _write_star(tmp_path / "particles.star")
-    dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
-    rng = np.random.default_rng(3)
-    fftw = rng.standard_normal((3, BOX, BOX // 2 + 1)) + 1j * rng.standard_normal((3, BOX, BOX // 2 + 1))
-    # RECOVAR's centered half: the FFTW rows rolled by BOX // 2 (relion_ctf._evaluate_exact_ctf_rows).
-    processed = np.fft.fftshift(fftw, axes=1).reshape(3, -1)
-    order = np.asarray([0, 1, 2])  # optics groups 2, 1, 2
-    demodulated = np.asarray(oa.demodulate_odd_aberrations(dataset, processed, order))
-
-    row = _optics_row(star)
-    phase = oa.zernike_phase_fftw_half(
-        oa.optics_group_odd_coefficients(row, has_odd=True, has_tilt=True), oa.odd_index_to_mn, BOX, PIXEL, BOX
-    )
-    expected = fftw.copy()
-    expected[[0, 2]] *= np.exp(-1j * phase)  # demodulatePhase: obsImage(y, x) *= corr(x, y).conj()
-    assert_matches(demodulated, np.fft.fftshift(expected, axes=1).reshape(3, -1), rtol=1e-13)
-
-    with pytest.raises(NotImplementedError, match="image indices"):
-        oa.demodulate_odd_aberrations(dataset, processed, None)
-    with pytest.raises(NotImplementedError, match="a test path"):
-        oa.require_ordinary_optics(dataset, where="a test path")
-
-
-@pytest.mark.unit
-def test_datasets_without_odd_aberrations_pass_through(tmp_path):
-    star = _write_star(tmp_path / "particles.star", tilt=(0.0, 0.0), odd="[0,0,0,0,0,0]")
-    dataset = SimpleNamespace(particles_file=str(star), image_shape=(BOX, BOX))
-    processed = np.ones((2, BOX * (BOX // 2 + 1)), dtype=np.complex64)
-    assert oa.demodulate_odd_aberrations(dataset, processed, None) is processed
-    assert not oa.dataset_has_odd_aberrations(dataset, (BOX, BOX))
-    oa.require_ordinary_optics(dataset, where="a test path")
-
-
-@pytest.mark.unit
 def test_refinement_accepts_the_implemented_optics_features():
     optics = pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnBeamTiltX": [0.4], "_rlnOddZernike": ["[0.1,0]"]})
     refuse_unsupported_optics(optics, source="refine3d.star", supported=IMPLEMENTED_OPTICS_FEATURES)

@@ -11,7 +11,6 @@ Tests:
 """
 
 import logging
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -20,12 +19,12 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
-from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
-
 import recovar.core.fourier_transform_utils as ftu
-import relax.dense.em_engine as em_engine_module
+from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
+
+import relax.dense.em_engine as em_engine_module
 from relax.dense.em_engine import run_em
 from relax.helpers.adjoint import adjoint_slice_volume_half as _adjoint_slice_volume_half
 from relax.helpers.half_spectrum import (
@@ -162,31 +161,6 @@ def test_shell_binning_maps_arbitrary_out_of_range_indices_to_drop_bin():
 
     assert_matches(actual_jax, np.asarray([2, 0, 3, 0, 4], dtype=np.float32))
     assert_matches(actual_np, np.asarray([2, 0, 3, 0, 4], dtype=np.float32))
-
-
-def test_noise_shell_accumulation_uses_sentinel_safe_binning_helper():
-    repo_root = Path(__file__).resolve().parents[2]
-    safe_binning_markers = {
-        "relax/dense/em_engine.py": "bin_shell_values_jax",
-        "relax/local/local_big_jit.py": "bin_shell_values_jax",
-        "relax/local/local_em_engine.py": "_noise_image_power_shells_and_per_image",
-        "relax/helpers/projection.py": "bin_shell_values_jax",
-    }
-    for rel_path, safe_binning_marker in safe_binning_markers.items():
-        source = (repo_root / rel_path).read_text()
-        assert ".at[shell_indices" not in source
-        assert safe_binning_marker in source
-
-    # The sparse bucketed pass 2 is split across owner modules: no module of the family may
-    # bin shells by scatter, and the family must still reach the sentinel-safe helper.
-    pass2_sources = {
-        path.name: path.read_text()
-        for path in sorted((repo_root / "relax/sparse_pass2").glob("sparse_pass2*.py"))
-    }
-    assert pass2_sources
-    for name, source in pass2_sources.items():
-        assert ".at[shell_indices" not in source, name
-    assert any("bin_shell_values_jax" in source for source in pass2_sources.values())
 
 
 # ---------------------------------------------------------------------------

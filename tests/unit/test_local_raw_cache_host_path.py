@@ -16,13 +16,12 @@ that a source without a host path still works.
 
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
 
 import recovar.data_io.cryoem_dataset as dataset  # noqa: E402
+
 from relax.helpers.batch_fetch import fetch_indexed_batch  # noqa: E402
-from relax.local.local_caches import _fetch_local_raw_rows_once  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -86,44 +85,6 @@ def _dataset():
         dataset_indices=np.arange(N_IMAGES, dtype=np.int32),
         tilt_series_flag=False,
     )
-
-
-@pytest.mark.parametrize(
-    "indices",
-    [
-        np.arange(N_IMAGES, dtype=np.int32),
-        np.asarray([3, 0, 5, 1], dtype=np.int32),      # out of order
-        np.asarray([2, 2, 4, 2], dtype=np.int32),      # repeated
-        np.asarray([4], dtype=np.int32),               # single
-    ],
-)
-def test_host_path_matches_the_batch_pipeline(indices):
-    cryo = _dataset()
-
-    images, ctf, fetched = _fetch_local_raw_rows_once(cryo, indices)
-
-    reference_images, reference_ctf, reference_indices = fetch_indexed_batch(cryo, indices)
-    # The reference route may return its own ordering, so compare row by row through it
-    # rather than assuming the two agree positionally.
-    lookup = {int(i): pos for pos, i in enumerate(np.asarray(reference_indices))}
-    for row, index in enumerate(np.asarray(fetched)):
-        ref_row = lookup[int(index)]
-        assert_matches(images[row], np.asarray(reference_images)[ref_row])
-        assert_matches(ctf[row], np.asarray(reference_ctf)[ref_row])
-    assert_matches(np.asarray(fetched), indices)
-
-
-def test_source_without_a_host_path_still_works(monkeypatch):
-    """A source that does not implement `host_images` keeps the original route."""
-
-    cryo = _dataset()
-    monkeypatch.delattr(type(cryo.image_source), "host_images", raising=True)
-
-    indices = np.asarray([1, 3], dtype=np.int32)
-    images, ctf, fetched = _fetch_local_raw_rows_once(cryo, indices)
-    assert images.shape[0] == indices.size
-    assert ctf.shape[0] == indices.size
-    assert_matches(np.sort(np.asarray(fetched)), np.sort(indices))
 
 
 @pytest.mark.parametrize(
