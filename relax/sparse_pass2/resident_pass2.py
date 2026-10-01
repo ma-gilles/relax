@@ -2494,9 +2494,6 @@ def _resident_pass2(
             relion_f32_normalization_sum_weight is None,
             "the K-class resident pass has no zero-oversampling coarse reuse",
         )
-        # Subtomogram Class3D keeps its per-optics-group noise; the SPA K-class pass has one group.
-        if not dense_gemm_full_grid:
-            _require(optics_group_ids is None or tilt is not None, "the K-class resident pass has one optics group")
 
     n_images = experiment_dataset.n_units
     # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's

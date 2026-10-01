@@ -833,3 +833,64 @@ def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monke
     np.testing.assert_array_equal(captured["optics_group_ids"], optics)
     assert captured["reconstruction_volume_current_size"] == 12
     assert captured["reconstruction_image_radius"] == 5.5
+
+
+def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_with_as_many_groups_as_classes(
+    monkeypatch,
+):
+    """A ``[G, P]`` noise table is per optics group, never per class, even when G equals K.
+
+    With two classes and two optics groups the class-0 subset pass took row 0 as "class 0's
+    noise", so every image backprojected with group 1's spectrum (SPA Class3D, 2026-09-30).
+    """
+    from relax.classification import k_class
+    from relax.sparse_pass2 import dispatch
+
+    captured = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_pass2(dataset, mean, mean_variance, noise_variance, *args, **kwargs):
+        captured.update(kwargs, noise_variance=np.asarray(noise_variance), mean_variance=np.asarray(mean_variance))
+        raise _Stop
+
+    class _Dataset:
+        volume_shape = (16, 16, 16)
+
+        def subset(self, indices):
+            return ("subset", tuple(int(i) for i in indices))
+
+    monkeypatch.setattr(dispatch, "compute_pass2_stats_sparse", fake_pass2)
+    noise = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+    mean_variance = np.array([[1.0] * 4, [2.0] * 4], dtype=np.float32)
+    optics = np.array([0, 1, 1, 0, 1], dtype=np.int32)
+    with pytest.raises(_Stop):
+        k_class._run_sparse_firstiter_global_winner_subset_pass2(
+            _Dataset(),
+            np.zeros((2, 4), dtype=np.complex64),
+            mean_variance,
+            noise,
+            np.zeros((1, 2), dtype=np.float32),
+            np.zeros((1, 3, 3), dtype=np.float32),
+            None,
+            np.zeros((1, 2), dtype=np.float32),
+            np.zeros(1, dtype=np.int64),
+            np.zeros(1, dtype=np.int64),
+            [[np.zeros(1, dtype=np.int64)] * 5] * 2,
+            "linear_interp",
+            coarse_result=SimpleNamespace(class_log_evidence=np.zeros((2, 5))),
+            coarse_class_assignments=np.zeros(5, dtype=np.int32),
+            n_rot_coarse=1,
+            n_fine_trans=1,
+            healpix_order=1,
+            oversampling_order=0,
+            accumulate_noise=True,
+            return_best_pose_details=False,
+            pass2_kwargs={"optics_group_ids": optics},
+        )
+
+    np.testing.assert_array_equal(captured["noise_variance"], noise)
+    np.testing.assert_array_equal(captured["optics_group_ids"], optics)
+    # The per-class mean variance is still the class's own.
+    np.testing.assert_array_equal(captured["mean_variance"], mean_variance[0])

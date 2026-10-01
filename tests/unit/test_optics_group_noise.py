@@ -180,6 +180,30 @@ def test_k1_aggregate_noise_keeps_per_group_weight_sums():
 
 
 @pytest.mark.unit
+def test_k_class_aggregate_noise_sums_per_group_weight_sums_over_classes():
+    """Class3D with several optics groups: each class carries ``[G]`` weight sums; the aggregate
+    is their per-group total, rescaled with the image power when a class's mass is not its
+    responsibility."""
+    from relax.classification import k_class_results as results
+
+    a = make_noise_stats(
+        wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=np.ones((2, 5)),
+        wsum_sigma2_offset=1.0, sumw=np.array([3.0, 1.0]),
+    )
+    b = make_noise_stats(
+        wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=2.0 * np.ones((2, 5)),
+        wsum_sigma2_offset=1.0, sumw=np.array([2.0, 4.0]),
+    )
+    aggregate = results._sum_k_class_noise_stats((a, b), np.array([4.0, 6.0]))
+    assert_matches(np.asarray(aggregate.sumw), [5.0, 5.0])
+    assert_matches(np.asarray(aggregate.wsum_img_power), 3.0 * np.ones((2, 5)))
+    # Responsibilities 2 and 3 against class masses 4 and 6: every class's sums scale by 1/2.
+    rescaled = results._sum_k_class_noise_stats((a, b), np.array([2.0, 3.0]))
+    assert_matches(np.asarray(rescaled.sumw), [2.5, 2.5])
+    assert_matches(np.asarray(rescaled.wsum_img_power), 1.5 * np.ones((2, 5)))
+
+
+@pytest.mark.unit
 def test_sigma_offset_update_uses_the_total_weight_over_optics_groups():
     groups = make_noise_stats(
         wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=np.zeros((2, 5)),
@@ -190,6 +214,30 @@ def test_sigma_offset_update_uses_the_total_weight_over_optics_groups():
                   n_classes=1, state_fallback_offsets_angstrom=np.nan)
     a = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[groups, groups], **kwargs)
     b = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[single, single], **kwargs)
+    assert a.current_sigma_offset_angstrom_per_half == b.current_sigma_offset_angstrom_per_half
+
+
+@pytest.mark.unit
+def test_class3d_sigma_offset_per_class_diagnostic_takes_per_group_weight_sums():
+    """Class3D with several optics groups: each class's noise statistics carry ``[G]`` weight sums."""
+    groups = [
+        make_noise_stats(
+            wsum_sigma2_noise=np.ones((2, 5)), wsum_img_power=np.zeros((2, 5)),
+            wsum_sigma2_offset=w, sumw=np.array(n),
+        )
+        for w, n in ((30.0, [1.0, 2.0]), (30.0, [3.0, 4.0]))
+    ]
+    single = [
+        make_noise_stats(wsum_sigma2_noise=np.ones(5), wsum_img_power=np.zeros(5), wsum_sigma2_offset=30.0, sumw=n)
+        for n in (3.0, 7.0)
+    ]
+    kwargs = dict(current_sigma_offset_angstrom_per_half=[5.0, 5.0], n_classes=2, state_fallback_offsets_angstrom=np.nan)
+    a = noise_updates.update_c1_sigma_offset_from_posterior(
+        noise_stats_per_half=[groups[0], groups[1]], noise_stats_per_half_per_class=[groups, None], **kwargs
+    )
+    b = noise_updates.update_c1_sigma_offset_from_posterior(
+        noise_stats_per_half=[single[0], single[1]], noise_stats_per_half_per_class=[single, None], **kwargs
+    )
     assert a.current_sigma_offset_angstrom_per_half == b.current_sigma_offset_angstrom_per_half
 
 

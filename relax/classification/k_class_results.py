@@ -197,18 +197,21 @@ def _sum_k_class_noise_stats(
             f"{responsibilities.shape[0]} vs {raw_sumw.shape[0]}",
         )
     image_power = np.asarray(aggregate.wsum_img_power, dtype=np.float64)
+    per_group = np.ndim(aggregate.sumw) != 0
+    group_sumw = np.asarray(aggregate.sumw, dtype=np.float64) if per_group else None
     if not np.allclose(raw_sumw, responsibilities, rtol=1e-4, atol=1e-4):
         image_power = np.zeros_like(image_power)
+        group_sumw = None if group_sumw is None else np.zeros_like(group_sumw)
         for stats, responsibility, class_sumw in zip(noise_stats, responsibilities, raw_sumw, strict=True):
             if class_sumw <= 0.0:
                 continue
             image_power += np.asarray(stats.wsum_img_power, dtype=np.float64) * (responsibility / class_sumw)
-    if np.ndim(aggregate.sumw) != 0:
-        # One weight sum per optics group (K=1 only): the class mass is their total, so the
-        # per-group sums stand as they are for the per-group noise update.
-        if len(noise_stats) != 1:
-            raise NotImplementedError("per-optics-group noise statistics are K=1 only")
-        relion_sumw = aggregate.sumw
+            if group_sumw is not None:
+                group_sumw += np.asarray(stats.sumw, dtype=np.float64) * (responsibility / class_sumw)
+    if per_group:
+        # One weight sum per optics group (sumw_group[g]): the classes' per-group masses,
+        # rescaled like the image power when a class's own mass is not its responsibility.
+        relion_sumw = group_sumw
     return aggregate._replace(
         wsum_img_power=(np.asarray if host_arrays else jnp.asarray)(image_power, dtype=aggregate.wsum_img_power.dtype), sumw=relion_sumw
     )

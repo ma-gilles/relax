@@ -119,7 +119,7 @@ def update_c1_sigma_offset_from_posterior(
                 if stats_c is None:
                     continue
                 per_class_w[c] += float(getattr(stats_c, "wsum_sigma2_offset", 0.0))
-                per_class_n[c] += float(getattr(stats_c, "sumw", 0.0))
+                per_class_n[c] += total_sumw(getattr(stats_c, "sumw", 0.0))
         min_sigma2 = 2.0
         per_class_sigma_offset = np.full(n_classes, current_sigma_offset_angstrom, dtype=np.float64)
         for c in range(n_classes):

@@ -649,7 +649,7 @@ def _run_sparse_k_class_adaptive_pass2(
         experiment_dataset,
         means_array[0],
         _select_class_value(mean_variance, 0, n_classes),
-        _select_class_value(noise_variance, 0, n_classes),
+        noise_variance,
         coarse_translations_np,
         sig_sample_indices_by_class[0],
         rotation_log_prior=_class_rotation_prior(0),
@@ -946,7 +946,7 @@ def _run_dense_k_class_score_probe(
                 experiment_dataset,
                 means_array[class_index],
                 _select_class_value(mean_variance, class_index, n_classes),
-                _select_class_value(noise_variance, class_index, n_classes),
+                noise_variance,
                 rotations,
                 translations,
                 disc_type,
@@ -1297,7 +1297,7 @@ class _PerClassSubsetResults:
         if self.per_class_noise is not None:
             self.per_class_noise.append(
                 _zero_subset_noise_stats(
-                    _select_class_value(noise_variance, class_index, n_classes),
+                    noise_variance,
                     n_images=self.n_images,
                     full_group_count=self.full_group_count,
                 ),
@@ -1458,7 +1458,7 @@ def _run_firstiter_global_winner_subset_pass2(
                 subset_dataset,
                 means_array[class_index],
                 _select_class_value(mean_variance, class_index, n_classes),
-                _select_class_value(noise_variance, class_index, n_classes),
+                noise_variance,
                 rotations_np,
                 translations_np,
                 disc_type,
@@ -1675,7 +1675,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             subset_dataset,
             means_array[class_index],
             _select_class_value(mean_variance, class_index, n_classes),
-            _select_class_value(noise_variance, class_index, n_classes),
+            noise_variance,
             coarse_translations_np,
             subset_sig,
             rotation_log_prior=_class_rotation_prior(class_index),
@@ -1787,7 +1787,7 @@ def run_dense_k_class_em(
             experiment_dataset,
             means_array[0],
             _select_class_value(mean_variance, 0, n_classes),
-            _select_class_value(noise_variance, 0, n_classes),
+            noise_variance,
             rotations,
             translations,
             disc_type,
@@ -1867,7 +1867,7 @@ def run_dense_k_class_em(
                 experiment_dataset,
                 means_array[class_index],
                 _select_class_value(mean_variance, class_index, n_classes),
-                _select_class_value(noise_variance, class_index, n_classes),
+                noise_variance,
                 rotations,
                 translations,
                 disc_type,
@@ -2189,14 +2189,14 @@ def run_dense_k_class_em_adaptive(
     means_array = _as_class_means(means)
     n_classes = int(means_array.shape[0])
     log_priors = _class_log_priors(n_classes, class_log_priors)
+    # Per-optics-group noise rows score every class (coarse significance, then the
+    # device-resident pass 2); images on another grid than the reference are K=1 only.
     if (
-        engine_kwargs.get("optics_group_ids") is not None
-        or engine_kwargs.get("reconstruction_volume_current_size") is not None
-    ) and coarse_engine != "gemm_dense" and n_classes != 1:
-        raise NotImplementedError(
-            "per-optics-group noise is implemented for K=1 (coarse significance or the "
-            "firstiter_cc coarse winner, then the device-resident pass 2)"
-        )
+        engine_kwargs.get("reconstruction_volume_current_size") is not None
+        and coarse_engine != "gemm_dense"
+        and n_classes != 1
+    ):
+        raise NotImplementedError("optics groups on another image grid than the reference are implemented for K=1")
 
     coarse_rotations_np = np.asarray(coarse_rotations)
     coarse_translations_np = np.asarray(coarse_translations)
