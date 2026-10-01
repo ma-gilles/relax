@@ -71,6 +71,7 @@ from relax.refinement.local_search_iteration import (
     LocalSearchSupportPolicy,
     _run_local_search_iteration,
 )
+from relax.refinement.optics_shapes import engine_projection_inputs, reconstruction_image_radius, reference_grid_kwargs
 from relax.relion.optics_aberrations import dataset_projection_magnification, projection_rotations, reported_rotations
 from relax.sampling import (
     apply_relion_translation_perturbation,
@@ -412,10 +413,13 @@ def _score_direct_kclass_dense(
     sampling: DenseSamplingSpec,
     priors: DensePriorSpec,
     execution: DenseExecutionPolicy,
+    optics: DenseOpticsSpec,
     em_kwargs,
 ):
     """Run the legacy single-pass K-class dense engine."""
 
+    if optics.projection_scale != 1.0 or optics.reference_current_size is not None:
+        raise NotImplementedError("the single-pass dense engine keeps the images on the reference grid")
     if dataset_projection_magnification(half.experiment_dataset) is not None:
         raise NotImplementedError("the single-pass dense engine does not implement anisotropic magnification")
     warn_deprecated_engine(
@@ -457,6 +461,7 @@ def _score_adaptive_kclass_dense(
     batching: DenseBatchPolicy,
     variant: DenseVariantPolicy,
     execution: DenseExecutionPolicy,
+    optics: DenseOpticsSpec,
     em_kwargs,
     symmetry,
 ):
@@ -538,20 +543,28 @@ def _score_adaptive_kclass_dense(
         sparse_pass2=sparse_pass2,
         full_grid_mstep=sampling.coarse_engine == "gemm_dense",
     )
-    # Magnified images (applyAnisoMag): the projection and backprojection matrices carry it.
-    magnification = dataset_projection_magnification(half.experiment_dataset)
-    if magnification is not None:
-        common_kwargs["fine_mstep_rotations_override"] = projection_rotations(
-            common_kwargs["fine_mstep_rotations_override"], 1.0, magnification
-        )
+    # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag): the
+    # projection and backprojection matrices carry it.
+    projected, grid_kwargs = engine_projection_inputs(
+        half.experiment_dataset,
+        scale=optics.projection_scale,
+        reference_current_size=optics.reference_current_size,
+        rotations={
+            "coarse": pass2_grids.coarse_rotations,
+            "fine": pass2_grids.fine_rotations,
+            "mstep": common_kwargs["fine_mstep_rotations_override"],
+        },
+    )
+    adaptive_em_kwargs.update(grid_kwargs)
+    common_kwargs["fine_mstep_rotations_override"] = projected["mstep"]
     result = run_dense_k_class_em_adaptive(
         half.experiment_dataset,
         half.means_k,
         half.mean_variance,
         half.noise_variance_k,
-        projection_rotations(pass2_grids.coarse_rotations, 1.0, magnification),
+        projected["coarse"],
         pass2_grids.coarse_translations,
-        projection_rotations(pass2_grids.fine_rotations, 1.0, magnification),
+        projected["fine"],
         pass2_grids.fine_translations,
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
@@ -630,7 +643,6 @@ def _score_adaptive_k1_dense(
         adaptive_em_kwargs["group_ids"] = half.group_ids_k
     if relion_x_half_mstep:
         adaptive_em_kwargs["mstep_relion_x_half"] = True
-    adaptive_em_kwargs.update(_reference_grid_kwargs(optics.reference_current_size, optics.projection_scale))
     logger.info(
         "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
         "(oversampling=%d, pass2_backend=%s, skip_significance_pruning=%s, "
@@ -653,30 +665,35 @@ def _score_adaptive_k1_dense(
         sparse_pass2=sparse_pass2,
         full_grid_mstep=sampling.coarse_engine == "gemm_dense",
     )
-    magnification = dataset_projection_magnification(half.experiment_dataset)
-    if optics.projection_scale != 1.0 or magnification is not None:
-        common_kwargs["fine_mstep_rotations_override"] = projection_rotations(
-            common_kwargs["fine_mstep_rotations_override"], optics.projection_scale, magnification
-        )
+    projected, grid_kwargs = engine_projection_inputs(
+        half.experiment_dataset,
+        scale=optics.projection_scale,
+        reference_current_size=optics.reference_current_size,
+        rotations={
+            "coarse": (
+                sampling.coarse_scoring_rotations
+                if sampling.coarse_scoring_rotations is not None
+                and adaptive_os == 0
+                and sparse_pass2
+                and relion_x_half_mstep
+                and variant.firstiter_score_mode_this_iter == "gaussian"
+                and not execution.diagnostic_float64_pass2
+                else pass2_grids.coarse_rotations
+            ),
+            "fine": pass2_grids.fine_rotations,
+            "mstep": common_kwargs["fine_mstep_rotations_override"],
+        },
+    )
+    adaptive_em_kwargs.update(grid_kwargs)
+    common_kwargs["fine_mstep_rotations_override"] = projected["mstep"]
     k1_adaptive_result = run_dense_k_class_em_adaptive(
         half.experiment_dataset,
         means_single,
         half.mean_variance,
         half.noise_variance_k,
-        projection_rotations(
-            sampling.coarse_scoring_rotations
-            if sampling.coarse_scoring_rotations is not None
-            and adaptive_os == 0
-            and sparse_pass2
-            and relion_x_half_mstep
-            and variant.firstiter_score_mode_this_iter == "gaussian"
-            and not execution.diagnostic_float64_pass2
-            else pass2_grids.coarse_rotations,
-            optics.projection_scale,
-            magnification,
-        ),
+        projected["coarse"],
         pass2_grids.coarse_translations,
-        projection_rotations(pass2_grids.fine_rotations, optics.projection_scale, magnification),
+        projected["fine"],
         pass2_grids.fine_translations,
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
@@ -903,12 +920,18 @@ def _score_half_dense_one_shape(
                     coarse_rotation_ids=sampling.coarse_rotation_ids,
                     projection_rotations=(
                         None
-                        if magnification is None
-                        else lambda rotations: projection_rotations(rotations, 1.0, magnification)
+                        if magnification is None and optics.projection_scale == 1.0
+                        else lambda rotations: projection_rotations(rotations, optics.projection_scale, magnification)
                     ),
                 ),
                 firstiter_policy,
-                firstiter_batching,
+                replace(
+                    firstiter_batching,
+                    em_kwargs={
+                        **em_kwargs,
+                        **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                    },
+                ),
                 firstiter_execution,
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
@@ -920,6 +943,7 @@ def _score_half_dense_one_shape(
                 batching,
                 variant,
                 execution,
+                optics,
                 em_kwargs,
                 symmetry,
             )
@@ -934,13 +958,14 @@ def _score_half_dense_one_shape(
                 sampling,
                 priors,
                 execution,
+                optics,
                 em_kwargs,
             )
             k_class_mstep_full_half_axis_this_score = None
-        if magnification is not None:
-            # Poses are reported unmagnified; only projection used the magnified matrices.
+        if optics.projection_scale != 1.0 or magnification is not None:
+            # Poses are reported unscaled and unmagnified; only projection used the transformed matrices.
             def unmagnified(rotations):
-                return None if rotations is None else reported_rotations(rotations, 1.0, magnification)
+                return None if rotations is None else reported_rotations(rotations, optics.projection_scale, magnification)
 
             per_class = k_class_result.per_class_best_pose_rotations
             k_class_result = k_class_result._replace(
@@ -1032,7 +1057,7 @@ def _score_half_dense_one_shape(
                     em_kwargs={
                         **em_kwargs,
                         **({"mstep_relion_x_half": True} if k1_relion_x_half_mstep else {}),
-                        **_reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                        **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
                     },
                 ),
                 replace(firstiter_execution, log_label="K=1 "),
@@ -1135,30 +1160,6 @@ def _score_half_dense_one_shape(
         )
 
     return _score_direct_k1_dense(half, sampling, execution, em_kwargs)
-
-
-def _reconstruction_image_radius(reference_current_size, scale: float):
-    """The M-step's image-space radius for images on another grid.
-
-    RELION's backprojector keeps rotated samples inside the reference model's
-    ``r_max = current_size / 2`` (BackProjector::backproject, ``max_r2``); an image pixel
-    at radius ``|k|`` lands at reference radius ``|k| / s``, so the image-side bound is
-    ``r_max * s``. None keeps the engines' own bound (one grid).
-    """
-    if reference_current_size is None:
-        return None
-    return float(int(reference_current_size) // 2) * float(scale)
-
-
-def _reference_grid_kwargs(reference_current_size, scale: float) -> dict:
-    """Engine kwargs of images on another grid: the reference-model M-step size and image radius."""
-
-    if reference_current_size is None:
-        return {}
-    return {
-        "reconstruction_volume_current_size": int(reference_current_size),
-        "reconstruction_image_radius": _reconstruction_image_radius(reference_current_size, scale),
-    }
 
 
 def _dense_owners_for_shape(
@@ -1284,28 +1285,38 @@ def _score_half_dense(
     if optics.class_batch_overrides is not None and len(optics.class_batch_overrides) != len(experiment_half.classes):
         raise ValueError("class_batch_overrides needs one entry per shape class")
 
-    results = [
-        _score_half_dense_one_shape(
-            *_dense_owners_for_shape(
-                half,
-                sampling,
-                priors,
-                batching,
-                variant,
-                execution,
-                optics,
-                shape_class,
-                index,
-            )
+    owners = [
+        _dense_owners_for_shape(
+            half,
+            sampling,
+            priors,
+            batching,
+            variant,
+            execution,
+            optics,
+            shape_class,
+            index,
         )
         for index, shape_class in enumerate(experiment_half.classes)
     ]
+    results = [_score_half_dense_one_shape(*class_owners) for class_owners in owners]
     merged = optics_shapes.merge_class_results(
         results,
         experiment_half.classes,
         experiment_half.n_units,
         int(experiment_half.image_shape[0]),
     )
+    if variant.k_class_enabled:
+        # The K-class routes report their summaries and best poses in the outputs only.
+        optics_shapes.merge_k_class_outputs(
+            half.outputs,
+            half.k,
+            [class_owners[0].outputs for class_owners in owners],
+            experiment_half.classes,
+            experiment_half.n_units,
+            int(experiment_half.image_shape[0]),
+        )
+        return merged
     half.outputs.best_pose_rotations[half.k] = merged.best_pose_rotations
     half.outputs.best_pose_rotation_eulers[half.k] = merged.best_pose_rotation_eulers
     half.outputs.best_pose_translations[half.k] = merged.best_pose_translations
@@ -1942,7 +1953,7 @@ def _score_half_local_one_shape(
             relion_translation_angle_scale=float(execution.relion_translation_angle_scale),
             projection_scale=float(optics.projection_scale),
             reconstruction_volume_current_size=optics.reference_current_size,
-            reconstruction_image_radius=_reconstruction_image_radius(
+            reconstruction_image_radius=reconstruction_image_radius(
                 optics.reference_current_size,
                 optics.projection_scale,
             ),

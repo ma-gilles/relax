@@ -1774,15 +1774,13 @@ def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir
 
 
 def _validate_multi_shape_run(args, frozen_boundary, double_image_preprocessing):
-    """Optics groups on several image shapes run a fresh K=1 refinement only.
+    """Optics groups on several image shapes run a fresh refinement or classification only.
 
     Their start-up noise is RELION's estimate from the images on the reference grid;
     replay, frozen boundaries, loaded noise and float64 image preprocessing assume
     one image grid and stay refused.
     """
     reasons = []
-    if int(args.n_classes) != 1:
-        reasons.append("n_classes must be 1")
     if args.init_noise_from_npz is not None:
         reasons.append("loaded noise is single-shape")
     if frozen_boundary is not None or args.perturb_replay_relion_dir is not None or args.relion_init_dir is not None:

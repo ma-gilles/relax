@@ -6,8 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from relax.relion.optics_aberrations import projection_rotations
-
 pytestmark = pytest.mark.unit
 OWNERS = Path(__file__).resolve().parents[2] / "relax"
 
@@ -102,6 +100,7 @@ def test_direct_kclass_dense_route_is_an_explicit_five_input_variant():
         "sampling",
         "priors",
         "execution",
+        "optics",
         "em_kwargs",
     ]
     dispatcher = next(
@@ -123,6 +122,7 @@ def test_direct_kclass_dense_route_is_an_explicit_five_input_variant():
         "sampling",
         "priors",
         "execution",
+        "optics",
         "em_kwargs",
     ]
 
@@ -142,6 +142,7 @@ def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
         "batching",
         "variant",
         "execution",
+        "optics",
         "em_kwargs",
         "symmetry",
     ]
@@ -166,6 +167,7 @@ def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
         "batching",
         "variant",
         "execution",
+        "optics",
         "em_kwargs",
         "symmetry",
     ]
@@ -268,9 +270,14 @@ def test_device_matrix_generation_gate(os, local, k, mode, hard, double, expecte
     ],
 )
 def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, override, expected):
+    k1_route = next(
+        node
+        for node in tree("half_scoring.py").body
+        if isinstance(node, ast.FunctionDef) and node.name == "_score_adaptive_k1_dense"
+    )
     calls = [
         n.value
-        for n in ast.walk(tree("half_scoring.py"))
+        for n in ast.walk(k1_route)
         if isinstance(n, ast.Assign)
         and any(isinstance(t, ast.Name) and t.id == "k1_adaptive_result" for t in n.targets)
         and isinstance(n.value, ast.Call)
@@ -278,6 +285,20 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
         and n.value.func.id == "run_dense_k_class_em_adaptive"
     ]
     assert len(calls) == 1
+    # The engine takes the projection matrices of the shared geometry helper ...
+    assert ast.unparse(calls[0].args[4]) == "projected['coarse']"
+    assert ast.unparse(calls[0].args[6]) == "projected['fine']"
+    geometry = [
+        n.value
+        for n in ast.walk(k1_route)
+        if isinstance(n, ast.Assign)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Name)
+        and n.value.func.id == "engine_projection_inputs"
+    ]
+    assert len(geometry) == 1
+    rotations = next(keyword.value for keyword in geometry[0].keywords if keyword.arg == "rotations")
+    operands = {ast.literal_eval(key): value for key, value in zip(rotations.keys, rotations.values)}
     coarse, fine, native = object(), object(), object()
     scope = dict(
         pass2_grids=SimpleNamespace(coarse_rotations=coarse, fine_rotations=fine),
@@ -287,14 +308,10 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
         relion_x_half_mstep=xhalf,
         variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
         execution=SimpleNamespace(diagnostic_float64_pass2=double),
-        # Images on the reference grid without magnification: applyScaleDifference and
-        # applyAnisoMag are the identity.
-        projection_rotations=projection_rotations,
-        optics=SimpleNamespace(projection_scale=1.0),
-        magnification=None,
     )
-    assert evaluate(calls[0].args[4], **scope) is (native if expected else coarse)
-    assert evaluate(calls[0].args[6], **scope) is fine
+    # ... and only the coarse operand's selection depends on the route.
+    assert evaluate(operands["coarse"], **scope) is (native if expected else coarse)
+    assert evaluate(operands["fine"], **scope) is fine
 
 
 def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():

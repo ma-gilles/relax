@@ -2213,13 +2213,8 @@ def run_dense_k_class_em_adaptive(
     n_classes = int(means_array.shape[0])
     log_priors = _class_log_priors(n_classes, class_log_priors)
     # Per-optics-group noise rows score every class (coarse significance, then the
-    # device-resident pass 2); images on another grid than the reference are K=1 only.
-    if (
-        engine_kwargs.get("reconstruction_volume_current_size") is not None
-        and coarse_engine != "gemm_dense"
-        and n_classes != 1
-    ):
-        raise NotImplementedError("optics groups on another image grid than the reference are implemented for K=1")
+    # device-resident pass 2); images on another grid than the reference carry their
+    # scale in the rotations and fill each class's backprojector at the reference size.
 
     coarse_rotations_np = np.asarray(coarse_rotations)
     coarse_translations_np = np.asarray(coarse_translations)

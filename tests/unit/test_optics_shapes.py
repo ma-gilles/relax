@@ -30,6 +30,18 @@ def _half():
 
 
 @pytest.mark.unit
+def test_class_rotation_prior_is_sliced_only_when_per_image():
+    half = _half()
+    small = half.classes[1]
+    per_class = np.arange(2 * 7.0).reshape(2, 7)
+    per_image = np.arange(2 * 5 * 7.0).reshape(2, 5, 7)
+    out = optics_shapes.class_kwargs({"class_rotation_log_prior_k": per_class}, small, 5)
+    assert out["class_rotation_log_prior_k"] is per_class
+    out = optics_shapes.class_kwargs({"class_rotation_log_prior_k": per_image}, small, 5)
+    np.testing.assert_array_equal(out["class_rotation_log_prior_k"], per_image[:, [1, 2]])
+
+
+@pytest.mark.unit
 def test_class_noise_follows_relion_estep_remap():
     half = _half()
     shape_class = half.classes[1]
@@ -166,8 +178,30 @@ def test_score_half_by_shape_places_images_and_adds_sums():
     assert merged.noise_stats.wsum_sigma2_noise.shape == (2, 17)
 
 
+def _write_fake_class_outputs(outputs, k, images, box):
+    # Two Class3D classes; image i is assigned class i % 2, and the sums are per shape class.
+    outputs.class_assignments[k] = (images % 2).astype(np.int32)
+    outputs.class_posterior[k] = np.array([1.0, 2.0])
+    outputs.class_full_posterior[k] = np.array([1.5, 2.5])
+    outputs.class_rotation_posterior[k] = np.ones((2, 3))
+    outputs.best_pose_rotations[k] = np.broadcast_to(np.eye(3), (images.size, 3, 3)) * images[:, None, None]
+    outputs.best_pose_rotation_eulers[k] = np.zeros((images.size, 3)) + images[:, None]
+    outputs.best_pose_translations[k] = np.ones((images.size, 2), dtype=np.float32)
+    outputs.noise_stats_per_class[k] = [
+        make_noise_stats(
+            wsum_sigma2_noise=np.ones((2, box // 2 + 1)) * box**4,
+            wsum_img_power=np.zeros((2, box // 2 + 1)),
+            wsum_sigma2_offset=1.0,
+            sumw=np.full(2, 1.0 + c),
+            wsum_norm_correction=images.astype(float) * 10,
+        )
+        for c in range(2)
+    ]
+
+
 @pytest.mark.unit
-def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
+@pytest.mark.parametrize("k_class_enabled", [False, True])
+def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch, k_class_enabled):
     @dataclass(frozen=True)
     class State:
         adaptive_oversampling: int
@@ -180,6 +214,8 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
     def fake_score(half, sampling, priors, batching, variant, execution, optics):
         seen.append((half, sampling, priors, batching, variant, execution, optics))
         images = np.asarray(half.image_corrections_k).astype(int)
+        if variant.k_class_enabled:
+            _write_fake_class_outputs(half.outputs, half.k, images, half.experiment_dataset.image_shape[0])
         return _fake_result(
             images.size,
             images,
@@ -226,7 +262,7 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         half_scoring.DenseVariantPolicy(
             firstiter_score_mode_this_iter="gaussian",
             firstiter_winner_take_all_this_iter=False,
-            k_class_enabled=False,
+            k_class_enabled=k_class_enabled,
             relion_firstiter_cc_this_iter=False,
         ),
         half_scoring.DenseExecutionPolicy(
@@ -240,12 +276,36 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
 
     merged = half_scoring._score_half_dense(*owners)
 
+    if k_class_enabled:
+        # Class assignments return to the half's image order; the class sums of both shape
+        # classes add; each class's noise sums land on the reference shells.
+        assert_matches(outputs.class_assignments[0], np.arange(5) % 2)
+        np.testing.assert_allclose(outputs.class_posterior[0], [2.0, 4.0])
+        np.testing.assert_allclose(outputs.class_full_posterior[0], [3.0, 5.0])
+        np.testing.assert_allclose(outputs.class_rotation_posterior[0], np.full((2, 3), 2.0))
+        per_class = outputs.noise_stats_per_class[0]
+        assert len(per_class) == 2
+        np.testing.assert_allclose(per_class[1].sumw, [4.0, 4.0])
+        assert per_class[0].wsum_sigma2_noise.shape == (2, 17)
+        expected_norm = np.arange(5.0) * 10
+        expected_norm[[1, 2]] *= (32 / 28) ** 4
+        assert_matches(per_class[0].wsum_norm_correction, expected_norm)
+        # Best poses come from the class outputs, in the half's order and reference pixels.
+        np.testing.assert_allclose(outputs.best_pose_rotation_eulers[0][:, 0], np.arange(5))
+        np.testing.assert_allclose(outputs.best_pose_rotations[0][:, 0, 0], np.arange(5))
+        np.testing.assert_allclose(outputs.best_pose_translations[0][[1, 2]], 1.0 / half.classes[1].translation_factor)
+        np.testing.assert_allclose(outputs.best_pose_translations[0][[0, 3, 4]], 1.0)
+        assert outputs.best_pose_translations[0].dtype == np.float32
+    else:
+        assert outputs.class_assignments[0] is None
+
     assert [getattr(item[0].experiment_dataset, "_dataset", item[0].experiment_dataset) for item in seen] == [
         shape_class.dataset for shape_class in half.classes
     ]
     assert seen[1][0].noise_variance_k.shape == (2, 28 * 28)
     assert_matches(merged.ha, np.arange(5))
-    assert outputs.best_pose_translations[0] is merged.best_pose_translations
+    if not k_class_enabled:
+        assert outputs.best_pose_translations[0] is merged.best_pose_translations
 
 
 @pytest.mark.unit
@@ -438,15 +498,15 @@ def test_class_translation_step_is_in_class_pixels():
 
 @pytest.mark.unit
 def test_class_mstep_image_radius_is_reference_r_max_times_scale():
-    from relax.refinement.half_scoring import _reconstruction_image_radius
+    from relax.refinement.optics_shapes import reconstruction_image_radius
 
     # RELION's backprojector bounds the reference-grid radius by r_max = cs // 2; a class
     # image pixel |k| lands at |k| / s, so the class keeps pixels out to r_max * s.
     shape_class = _half().classes[1]
-    radius = _reconstruction_image_radius(56, shape_class.scale)
+    radius = reconstruction_image_radius(56, shape_class.scale)
     assert radius == pytest.approx(28 * shape_class.scale)
     assert radius != 28.0
-    assert _reconstruction_image_radius(None, shape_class.scale) is None
+    assert reconstruction_image_radius(None, shape_class.scale) is None
 
 
 @pytest.mark.unit
@@ -513,3 +573,128 @@ def test_local_parent_pass_refuses_the_wrapped_coarse_band():
         optics_shapes.require_exact_local_parent_windows({"experiment_dataset": half, "cs_for_engine": 20, "local_pass1_current_size": 18})
     # Pass-1 20 -> class window 26 lies past the band.
     optics_shapes.require_exact_local_parent_windows({"experiment_dataset": half, "cs_for_engine": 20, "local_pass1_current_size": 20})
+
+
+@pytest.mark.unit
+def test_shape_class_engine_inputs_follow_the_class_rules(monkeypatch):
+    from relax.relion import optics_aberrations
+
+    monkeypatch.setattr(optics_aberrations, "dataset_projection_magnification", lambda dataset: None)
+    half = _half()
+    small = half.classes[1]
+    rotations = np.stack([np.eye(3), 2 * np.eye(3)])
+    inputs = optics_shapes.shape_class_engine_inputs(
+        small,
+        half,
+        noise_radial=np.ones((2, 17)) * REF_BOX**4,
+        coarse_rotations=rotations,
+        fine_rotations=rotations,
+        fine_mstep_rotations=None,
+        coarse_translations=np.ones((3, 2)),
+        fine_translations=np.full((4, 2), 2.0),
+        coarse_current_size=16,
+        fine_current_size=24,
+        reference_current_size=None,
+        engine_kwargs={
+            "optics_group_ids": np.array([0, 1, 1, 0, 0]),
+            "coarse_translation_log_prior": np.arange(15.0).reshape(5, 3),
+            "translation_log_prior": np.zeros(4),
+            "reconstruction_group_ids": np.array([0, 1, 2, 3, 0]),
+        },
+    )
+    # applyScaleDifference: the projector divides the matrices by s.
+    np.testing.assert_allclose(inputs.coarse_rotations, rotations / small.scale)
+    np.testing.assert_allclose(inputs.fine_rotations, rotations / small.scale)
+    assert inputs.fine_mstep_rotations is None
+    np.testing.assert_allclose(inputs.fine_translations, 2.0 * small.translation_factor)
+    # The same remap and class rows as the half-level route (class_kwargs).
+    assert (inputs.fine_current_size, inputs.coarse_current_size) == optics_shapes.class_adaptive_sizes(
+        small, 24, 16, None
+    )
+    np.testing.assert_array_equal(inputs.engine_kwargs["optics_group_ids"], [1, 1])
+    np.testing.assert_array_equal(inputs.engine_kwargs["reconstruction_group_ids"], [1, 2])
+    np.testing.assert_allclose(inputs.engine_kwargs["coarse_translation_log_prior"], [[3, 4, 5], [6, 7, 8]])
+    assert inputs.engine_kwargs["translation_log_prior"].shape == (4,)
+    # The backprojector stays on the reference model grid at the reference pass-2 size.
+    assert inputs.engine_kwargs["reconstruction_volume_current_size"] == 24
+    assert inputs.engine_kwargs["reconstruction_image_radius"] == pytest.approx(12 * small.scale)
+    assert inputs.noise_variance.shape == (2, 28 * 28)
+    with pytest.raises(ValueError, match="rebuilt in each shape class"):
+        optics_shapes.shape_class_engine_inputs(
+            small,
+            half,
+            noise_radial=np.ones((2, 17)),
+            coarse_rotations=rotations,
+            fine_rotations=rotations,
+            fine_mstep_rotations=None,
+            coarse_translations=np.ones((3, 2)),
+            fine_translations=np.ones((4, 2)),
+            coarse_current_size=None,
+            fine_current_size=None,
+            reference_current_size=None,
+            engine_kwargs={"image_pre_shifts": np.ones((5, 2))},
+        )
+
+
+def _fake_engine_result(images, box, factor):
+    from relax.classification.k_class_results import KClassEMResult
+
+    n = images.size
+    stats = RelionStats(
+        log_evidence_per_image=images.astype(float),
+        best_log_score_per_image=-images.astype(float),
+        max_posterior_per_image=np.ones(n),
+        rotation_posterior_sums=np.ones(3),
+    )
+    noise = make_noise_stats(
+        wsum_sigma2_noise=np.ones((2, box // 2 + 1)) * box**4,
+        wsum_img_power=np.zeros((2, box // 2 + 1)),
+        wsum_sigma2_offset=1.0,
+        sumw=np.ones(2),
+        wsum_norm_correction=images.astype(float),
+    )
+    return KClassEMResult(
+        new_means=None,
+        Ft_y=np.ones((2, 4)),
+        Ft_ctf=np.ones((2, 4)),
+        per_class_hard_assignments=np.stack([images, images + 100]),
+        class_assignments=images % 2,
+        pose_assignments=images,
+        class_responsibilities=np.stack([images * 0.1, 1 - images * 0.1]),
+        class_posterior_sums=np.array([1.0, 2.0]),
+        stats=stats,
+        per_class_stats=(stats, stats),
+        noise_stats=(noise, noise),
+        aggregate_noise_stats=noise,
+        per_class_best_pose_translations=(np.ones((n, 2)) * factor, np.ones((n, 2)) * factor),
+        best_pose_translations=np.ones((n, 2)) * factor,
+        significant_counts=images + 1,
+        class_mstep_posterior_sums=np.array([0.5, 0.5]),
+    )
+
+
+@pytest.mark.unit
+def test_merge_k_class_engine_results_places_images_and_adds_sums():
+    half = _half()
+    results = [
+        _fake_engine_result(c.image_indices, c.box_size, c.translation_factor) for c in half.classes
+    ]
+    merged = optics_shapes.merge_k_class_engine_results(results, half.classes, half.n_units, REF_BOX)
+    images = np.arange(5)
+    np.testing.assert_array_equal(merged.pose_assignments, images)
+    np.testing.assert_array_equal(merged.class_assignments, images % 2)
+    # [K, N] fields return on their image axis.
+    np.testing.assert_array_equal(merged.per_class_hard_assignments, np.stack([images, images + 100]))
+    np.testing.assert_allclose(merged.class_responsibilities[0], images * 0.1)
+    np.testing.assert_allclose(merged.class_posterior_sums, [2.0, 4.0])
+    np.testing.assert_allclose(merged.class_mstep_posterior_sums, [1.0, 1.0])
+    np.testing.assert_allclose(merged.stats.log_evidence_per_image, images)
+    np.testing.assert_allclose(merged.per_class_stats[1].rotation_posterior_sums, np.full(3, 2.0))
+    # Best translations back in reference pixels; accumulators in reference units.
+    np.testing.assert_allclose(merged.best_pose_translations, 1.0)
+    np.testing.assert_allclose(merged.per_class_best_pose_translations[1], 1.0)
+    np.testing.assert_allclose(merged.Ft_y, 1.0 + (28 / 32) ** 2)
+    np.testing.assert_allclose(merged.Ft_ctf, 1.0 + (28 / 32) ** 4)
+    assert merged.aggregate_noise_stats.wsum_sigma2_noise.shape == (2, 17)
+    np.testing.assert_allclose(merged.noise_stats[0].sumw, [2.0, 2.0])
+    np.testing.assert_array_equal(merged.significant_counts, images + 1)

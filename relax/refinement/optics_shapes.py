@@ -63,7 +63,8 @@ class MultiShapeHalf:
         self.voxel_size = float(voxel_size)
         self.grid_size = self.image_shape[0]
         self.n_units = self.n_images = int(sum(c.image_indices.size for c in self.classes))
-        order = np.concatenate([c.image_indices for c in self.classes])
+        # Class3D's second accumulator is an empty half: no shape classes.
+        order = np.concatenate([c.image_indices for c in self.classes] + [np.zeros(0, dtype=np.int64)])
         if not np.array_equal(np.sort(order), np.arange(self.n_units)):
             raise ValueError("shape classes must partition the half's images")
         # Particle-STAR row of each image, as a loaded dataset's index layout reports it.
@@ -217,7 +218,10 @@ PER_IMAGE_KWARGS = (
     "image_seed_classes",
 )
 # Keywords that may be per image when two-dimensional (image x hypothesis).
-PER_IMAGE_IF_2D_KWARGS = ("translation_log_prior", "rotation_log_prior_k", "class_rotation_log_prior_k")
+PER_IMAGE_IF_2D_KWARGS = ("translation_log_prior", "rotation_log_prior_k")
+# Per-class keywords ([K, hypothesis]) that are per image when three-dimensional
+# ([K, image, hypothesis]).
+PER_CLASS_IMAGE_IF_3D_KWARGS = ("class_rotation_log_prior_k",)
 # Keywords in reference pixels.
 TRANSLATION_KWARGS = (
     "current_translations",
@@ -238,6 +242,15 @@ IMAGE_SIZE_KWARGS = (
 COARSE_SIZE_KWARGS = ("local_pass1_current_size", "firstiter_coarse_current_size")
 
 
+def _class_images(value, shape_class: ShapeClass, n_half: int, name: str):
+    """The class's rows of a per-image array (the half's images on its leading axis)."""
+
+    array = np.asarray(value)
+    if array.ndim == 0 or array.shape[0] != n_half:
+        raise ValueError(f"{name} must have the half's {n_half} images on its leading axis")
+    return array[shape_class.image_indices]
+
+
 def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     """One shape class's keywords: its images, class pixels and class Fourier sizes."""
 
@@ -248,12 +261,13 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
         value = out.get(name)
         if value is None:
             continue
-        array = np.asarray(value)
-        if name in PER_IMAGE_IF_2D_KWARGS and array.ndim != 2:
+        if name in PER_IMAGE_IF_2D_KWARGS and np.ndim(value) != 2:
             continue
-        if array.ndim == 0 or array.shape[0] != n_half:
-            raise ValueError(f"{name} must have the half's {n_half} images on its leading axis")
-        out[name] = array[index]
+        out[name] = _class_images(value, shape_class, n_half, name)
+    for name in PER_CLASS_IMAGE_IF_3D_KWARGS:
+        value = out.get(name)
+        if value is not None and np.ndim(value) == 3:
+            out[name] = np.moveaxis(_class_images(np.moveaxis(np.asarray(value), 1, 0), shape_class, n_half, name), 0, 1)
     for name in TRANSLATION_KWARGS:
         if out.get(name) is not None:
             out[name] = np.asarray(out[name]) * shape_class.translation_factor
@@ -292,6 +306,156 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
         shape_class.dataset if half is None else _engine_dataset(shape_class, half.volume_shape)
     )
     return out
+
+
+def reconstruction_image_radius(reference_current_size, scale: float):
+    """The M-step's image-space radius for images on another grid.
+
+    RELION's backprojector keeps rotated samples inside the reference model's
+    ``r_max = current_size / 2`` (BackProjector::backproject, ``max_r2``); an image pixel
+    at radius ``|k|`` lands at reference radius ``|k| / s``, so the image-side bound is
+    ``r_max * s``. None keeps the engines' own bound (one grid).
+    """
+    if reference_current_size is None:
+        return None
+    return float(int(reference_current_size) // 2) * float(scale)
+
+
+def reference_grid_kwargs(reference_current_size, scale: float) -> dict:
+    """Engine kwargs of images on another grid: the reference-model M-step size and image radius."""
+
+    if reference_current_size is None:
+        return {}
+    return {
+        "reconstruction_volume_current_size": int(reference_current_size),
+        "reconstruction_image_radius": reconstruction_image_radius(reference_current_size, scale),
+    }
+
+
+def engine_projection_inputs(dataset, *, scale, reference_current_size, rotations):
+    """``(projection matrices, engine kwargs)`` for images on ``dataset``'s grid and optics.
+
+    ``rotations`` maps names to pose matrices (None entries stay None); each becomes its
+    projection matrix (``applyScaleDifference`` for ``scale``, ``applyAnisoMag`` for the
+    dataset's magnification). The kwargs are :func:`reference_grid_kwargs`. Every
+    adaptive engine call of a shape class (half scoring and VDAM) takes its geometry here.
+    """
+
+    from relax.relion.optics_aberrations import dataset_projection_magnification, projection_rotations
+
+    magnification = dataset_projection_magnification(dataset)
+    projected = {name: projection_rotations(value, scale, magnification) for name, value in rotations.items()}
+    return projected, reference_grid_kwargs(reference_current_size, scale)
+
+
+# Engine keywords (run_dense_k_class_em_adaptive) whose leading axis is the images.
+ENGINE_PER_IMAGE_KWARGS = (
+    "image_corrections",
+    "scale_corrections",
+    "group_ids",
+    "optics_group_ids",
+    "reconstruction_group_ids",
+    "image_seed_classes",
+)
+# Engine keywords that are per image when two-dimensional (image x hypothesis).
+ENGINE_PER_IMAGE_IF_2D_KWARGS = ("translation_log_prior", "coarse_translation_log_prior", "rotation_log_prior")
+# Engine keywords in reference pixels whose RELION value is rounded in the image's own
+# pixels (ml_optimiser.cpp:6085); a caller rebuilds them per class (see
+# iteration_loop._class_translation_kwargs) instead of scaling the reference values.
+ENGINE_ROUNDED_TRANSLATION_KWARGS = ("image_pre_shifts", "translation_prior_centers")
+
+
+@dataclasses.dataclass(frozen=True)
+class ShapeClassEngineInputs:
+    """One shape class's arguments for ``run_dense_k_class_em_adaptive``."""
+
+    dataset: object
+    noise_variance: np.ndarray
+    coarse_rotations: np.ndarray
+    fine_rotations: np.ndarray
+    fine_mstep_rotations: np.ndarray | None
+    coarse_translations: np.ndarray
+    fine_translations: np.ndarray
+    coarse_current_size: int | None
+    fine_current_size: int | None
+    engine_kwargs: dict
+
+
+def shape_class_engine_inputs(
+    shape_class: ShapeClass,
+    half: MultiShapeHalf,
+    *,
+    noise_radial,
+    coarse_rotations,
+    fine_rotations,
+    fine_mstep_rotations,
+    coarse_translations,
+    fine_translations,
+    coarse_current_size,
+    fine_current_size,
+    reference_current_size,
+    engine_kwargs,
+    coarse_sizing=None,
+) -> ShapeClassEngineInputs:
+    """A shape class's adaptive-engine call from the half's reference-grid arguments.
+
+    Rotations become the class's projection matrices, translations go to class pixels,
+    the pass-1/pass-2 sizes are remapped (``coarse_sizing``, as in :func:`class_kwargs`,
+    gives the class its own adaptive pass-1 size), the noise rows are read from the
+    reference shells, per-image keywords keep the class's rows and the backprojector stays
+    on the reference model grid. Parent maps and Euler overrides index the shared grids
+    and pass through. Results merge with :func:`merge_k_class_engine_results`.
+    """
+
+    n_half = half.n_units
+    kwargs = dict(engine_kwargs)
+    for name in ENGINE_ROUNDED_TRANSLATION_KWARGS:
+        if kwargs.get(name) is not None and np.any(np.asarray(kwargs[name]) != 0):
+            raise ValueError(f"{name} must be rebuilt in each shape class's pixels, not scaled")
+    for name in ENGINE_PER_IMAGE_KWARGS + ENGINE_PER_IMAGE_IF_2D_KWARGS:
+        value = kwargs.get(name)
+        if value is None or (name in ENGINE_PER_IMAGE_IF_2D_KWARGS and np.ndim(value) != 2):
+            continue
+        kwargs[name] = _class_images(value, shape_class, n_half, name)
+    for name in ENGINE_ROUNDED_TRANSLATION_KWARGS:
+        if kwargs.get(name) is not None:
+            kwargs[name] = _class_images(kwargs[name], shape_class, n_half, name)
+    sizes = class_kwargs(
+        {
+            "cs_for_engine": fine_current_size,
+            "firstiter_coarse_current_size": coarse_current_size,
+            "coarse_sizing": coarse_sizing,
+        },
+        shape_class,
+        0,
+    )
+    if reference_current_size is None:
+        # The backprojector's model size: the reference pass-2 size, else the full reference box.
+        reference_current_size = int(half.image_shape[0]) if fine_current_size is None else int(fine_current_size)
+    for name in ("current_size", "reconstruction_current_size"):
+        if kwargs.get(name) is not None:
+            kwargs[name] = optics_scale.group_current_size(kwargs[name], shape_class.box_size, shape_class.scale)
+    dataset = _engine_dataset(shape_class, half.volume_shape)
+    projected, grid_kwargs = engine_projection_inputs(
+        dataset,
+        scale=shape_class.scale,
+        reference_current_size=reference_current_size,
+        rotations={"coarse": coarse_rotations, "fine": fine_rotations, "mstep": fine_mstep_rotations},
+    )
+    kwargs.update(grid_kwargs)
+    factor = shape_class.translation_factor
+    return ShapeClassEngineInputs(
+        dataset=dataset,
+        noise_variance=class_noise_table(noise_radial, shape_class, int(half.image_shape[0])),
+        coarse_rotations=projected["coarse"],
+        fine_rotations=projected["fine"],
+        fine_mstep_rotations=projected["mstep"],
+        coarse_translations=np.asarray(coarse_translations) * factor,
+        fine_translations=np.asarray(fine_translations) * factor,
+        coarse_current_size=sizes["firstiter_coarse_current_size"],
+        fine_current_size=sizes["cs_for_engine"],
+        engine_kwargs=kwargs,
+    )
 
 
 class _ReferenceGridView:
@@ -461,7 +625,6 @@ def merge_class_results(results, classes, n_half, ref_box):
     """One ``HalfScoreResult`` for the half from its shape classes' results."""
 
     from relax.dense.score_outputs import HalfScoreResult
-    from relax.helpers.types import RelionStats
 
     first = results[0]
     for result in results[1:]:
@@ -474,13 +637,7 @@ def merge_class_results(results, classes, n_half, ref_box):
     def per_image(name):
         return place_by_index([getattr(result, name) for result in results], classes, n_half)
 
-    stats = [result.em_stats for result in results]
-    em_stats = RelionStats(
-        log_evidence_per_image=place_by_index([s.log_evidence_per_image for s in stats], classes, n_half),
-        best_log_score_per_image=place_by_index([s.best_log_score_per_image for s in stats], classes, n_half),
-        max_posterior_per_image=place_by_index([s.max_posterior_per_image for s in stats], classes, n_half),
-        rotation_posterior_sums=_sum([np.asarray(s.rotation_posterior_sums, dtype=np.float64) for s in stats]),
-    )
+    em_stats = _merge_relion_stats([result.em_stats for result in results], classes, n_half)
     translations = [
         None if result.best_pose_translations is None
         else np.asarray(result.best_pose_translations) / shape_class.translation_factor
@@ -506,6 +663,155 @@ def merge_class_results(results, classes, n_half, ref_box):
         profile_summary=first.profile_summary,
         mstep_full_half_axis=first.mstep_full_half_axis,
         mstep_accumulator_shape=first.mstep_accumulator_shape,
+    )
+
+
+def merge_k_class_outputs(outputs, k, class_outputs, classes, n_half, ref_box) -> None:
+    """Store the half's K-class summaries in ``outputs[k]`` from its shape classes' outputs.
+
+    Class assignments and best poses return to the half's image order (translations
+    in reference pixels); class and class-rotation posterior sums add; each class's
+    noise sums go to the reference shells as the aggregate ones do (``_merge_noise_stats``).
+    """
+
+    def slots(name):
+        return [getattr(class_out, name)[k] for class_out in class_outputs]
+
+    outputs.class_assignments[k] = place_by_index(slots("class_assignments"), classes, n_half)
+    outputs.best_pose_rotations[k] = place_by_index(slots("best_pose_rotations"), classes, n_half)
+    outputs.best_pose_rotation_eulers[k] = place_by_index(slots("best_pose_rotation_eulers"), classes, n_half)
+    translations = [
+        None if value is None else np.asarray(value) / shape_class.translation_factor
+        for value, shape_class in zip(slots("best_pose_translations"), classes)
+    ]
+    outputs.best_pose_translations[k] = (
+        None
+        if translations[0] is None
+        else place_by_index(translations, classes, n_half).astype(np.asarray(slots("best_pose_translations")[0]).dtype)
+    )
+    for name in ("class_posterior", "class_full_posterior", "class_rotation_posterior"):
+        getattr(outputs, name)[k] = _sum([np.asarray(value, dtype=np.float64) for value in slots(name)])
+    per_class = slots("noise_stats_per_class")
+    if all(stats is None for stats in per_class):
+        outputs.noise_stats_per_class[k] = None
+        return
+    if any(stats is None for stats in per_class) or len({len(stats) for stats in per_class}) != 1:
+        raise ValueError("per-class noise statistics are missing for some shape classes")
+    outputs.noise_stats_per_class[k] = [
+        _merge_noise_stats([stats[c] for stats in per_class], classes, n_half, ref_box)
+        for c in range(len(per_class[0]))
+    ]
+
+
+def _per_image_axis(values, classes, n_half, axis):
+    """Per-image arrays with the images on ``axis``, placed back in the half's image order."""
+
+    if all(value is None for value in values):
+        return None
+    moved = [None if value is None else np.moveaxis(np.asarray(value), axis, 0) for value in values]
+    return np.moveaxis(place_by_index(moved, classes, n_half), 0, axis)
+
+
+def _merge_relion_stats(stats, classes, n_half):
+    from relax.helpers.types import RelionStats
+
+    return RelionStats(
+        log_evidence_per_image=place_by_index([s.log_evidence_per_image for s in stats], classes, n_half),
+        best_log_score_per_image=place_by_index([s.best_log_score_per_image for s in stats], classes, n_half),
+        max_posterior_per_image=place_by_index([s.max_posterior_per_image for s in stats], classes, n_half),
+        rotation_posterior_sums=_sum([np.asarray(s.rotation_posterior_sums, dtype=np.float64) for s in stats]),
+    )
+
+
+def merge_k_class_engine_results(results, classes, n_half, ref_box):
+    """One ``KClassEMResult`` for the half from its shape classes' engine results.
+
+    The shape classes share the pose grids, so pose and rotation indices carry over;
+    per-image fields return to the half's image order (``[K, N]`` fields on their image
+    axis), backprojected sums go to the reference class's units, posterior sums add,
+    noise sums land on the reference shells and best translations return to reference
+    pixels.
+    """
+
+    first = results[0]
+    for result in results[1:]:
+        if (
+            result.mstep_full_half_axis != first.mstep_full_half_axis
+            or result.mstep_accumulator_shape != first.mstep_accumulator_shape
+        ):
+            raise ValueError("shape classes returned different backprojector layouts")
+    if any(result.new_means is not None for result in results):
+        raise NotImplementedError("closed-form class means are not merged across shape classes")
+
+    def per_image(name, axis=0):
+        return _per_image_axis([getattr(r, name) for r in results], classes, n_half, axis)
+
+    def per_class_tuple(name, transform=lambda value, shape_class: value):
+        values = [getattr(r, name) for r in results]
+        if all(value is None for value in values):
+            return None
+        n_classes = len(values[0])
+        return tuple(
+            place_by_index(
+                [np.asarray(transform(np.asarray(value[c]), shape_class)) for value, shape_class in zip(values, classes)],
+                classes,
+                n_half,
+            )
+            for c in range(n_classes)
+        )
+
+    def to_reference_pixels(value, shape_class):
+        return value / shape_class.translation_factor
+
+    def accumulators(name, power):
+        return _sum(
+            [_to_reference_units(np.asarray(getattr(r, name)), c, ref_box, power) for r, c in zip(results, classes)]
+        )
+
+    noise = [r.noise_stats for r in results]
+    if all(value is None for value in noise):
+        noise_stats = None
+    else:
+        if any(value is None for value in noise):
+            raise ValueError("per-class noise statistics are missing for some shape classes")
+        noise_stats = tuple(
+            _merge_noise_stats([value[c] for value in noise], classes, n_half, ref_box) for c in range(len(noise[0]))
+        )
+    best_translations = per_class_tuple("per_class_best_pose_translations", to_reference_pixels)
+    joint_translations = [
+        None if r.best_pose_translations is None else to_reference_pixels(np.asarray(r.best_pose_translations), c)
+        for r, c in zip(results, classes)
+    ]
+    return first._replace(
+        Ft_y=accumulators("Ft_y", 2),
+        Ft_ctf=accumulators("Ft_ctf", 4),
+        per_class_hard_assignments=per_image("per_class_hard_assignments", axis=1),
+        class_assignments=per_image("class_assignments"),
+        pose_assignments=per_image("pose_assignments"),
+        class_responsibilities=per_image("class_responsibilities", axis=1),
+        class_posterior_sums=_sum([np.asarray(r.class_posterior_sums, dtype=np.float64) for r in results]),
+        class_mstep_posterior_sums=_sum(
+            [None if r.class_mstep_posterior_sums is None else np.asarray(r.class_mstep_posterior_sums, np.float64)
+             for r in results]
+        ),
+        stats=_merge_relion_stats([r.stats for r in results], classes, n_half),
+        per_class_stats=tuple(
+            _merge_relion_stats([r.per_class_stats[c] for r in results], classes, n_half)
+            for c in range(len(first.per_class_stats))
+        ),
+        noise_stats=noise_stats,
+        aggregate_noise_stats=_merge_noise_stats([r.aggregate_noise_stats for r in results], classes, n_half, ref_box),
+        per_class_best_pose_rotations=per_class_tuple("per_class_best_pose_rotations"),
+        per_class_best_pose_translations=best_translations,
+        per_class_best_pose_rotation_ids=per_class_tuple("per_class_best_pose_rotation_ids"),
+        per_class_best_pose_eulers_deg=per_class_tuple("per_class_best_pose_eulers_deg"),
+        best_pose_rotations=per_image("best_pose_rotations"),
+        best_pose_translations=_per_image_axis(joint_translations, classes, n_half, 0),
+        best_pose_rotation_ids=per_image("best_pose_rotation_ids"),
+        best_pose_eulers_deg=per_image("best_pose_eulers_deg"),
+        significant_counts=per_image("significant_counts"),
+        profile_summary=first.profile_summary,
+        uncast_log_evidence_per_image=per_image("uncast_log_evidence_per_image"),
     )
 
 
