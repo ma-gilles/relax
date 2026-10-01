@@ -193,6 +193,13 @@ baselines and scientific gates are unchanged.
 | Diagnostics | 1,092 | 1,240 | GT registration, native moment/reference replay and coarse report bookkeeping |
 | **Total** | **8,608** | **8,852** | **244 lines of total headroom** |
 
+Subtomogram InitialModel (October 1, 2026) raises four budgets by exactly the lines it adds, with no
+headroom: controller to 1,896 (+99: `--ios` input, the `TomoDataset` branch, the E-step closure split),
+initialization to 1,071 (+126: tilt-image start-up and seeding, per-image `Aproj R` in the bootstrap),
+sampling to 974 (+24: tilt-image expected accuracy, the subtomogram offset-step rule), E-step to 2,070
+(+134: `tomo_estep.py`) and input/output to 1,348 (+18: subtomogram particle state and 3D offsets);
+`tests/unit/initial_model/test_refactor_invariants.py` holds the ceilings.
+
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
 initialization and wiring, 89 in the loop for optimizer selection, fixed

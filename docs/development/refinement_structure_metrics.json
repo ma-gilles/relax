@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "exact-local-engine-removal-20261001",
-    "source_commit": "709a2f1dfddb5f8063b48093b7168e81d4145370",
+    "package": "subtomogram-initialmodel-firstiter-cc-20261001",
+    "source_commit": "2372613fa2df51b34e2cad72bf0ad2dc23d51b3c",
     "metrics": {
       "files": [
         {
@@ -33,9 +33,9 @@
         },
         {
           "function_count": 64,
-          "nonblank_noncomment_lines": 5110,
+          "nonblank_noncomment_lines": 5098,
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 5647
+          "physical_lines": 5632
         },
         {
           "function_count": 7,
@@ -51,9 +51,9 @@
         },
         {
           "function_count": 25,
-          "nonblank_noncomment_lines": 5562,
+          "nonblank_noncomment_lines": 5563,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6206
+          "physical_lines": 6207
         },
         {
           "function_count": 2,
@@ -110,10 +110,10 @@
           "physical_lines": 1023
         },
         {
-          "function_count": 17,
-          "nonblank_noncomment_lines": 809,
+          "function_count": 23,
+          "nonblank_noncomment_lines": 942,
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 905
+          "physical_lines": 1061
         },
         {
           "function_count": 12,
@@ -124,17 +124,17 @@
       ],
       "large_argument_functions": [
         {
-          "line": 560,
-          "line_span": 207,
-          "name": "score_tomo_half_in_loop",
-          "parameter_count": 25,
+          "line": 319,
+          "line_span": 347,
+          "name": "score_tomo_half",
+          "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         },
         {
-          "line": 288,
-          "line_span": 270,
-          "name": "score_tomo_half",
-          "parameter_count": 22,
+          "line": 713,
+          "line_span": 210,
+          "name": "score_tomo_half_in_loop",
+          "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         },
         {
@@ -183,27 +183,27 @@
       "largest_functions": [
         {
           "line": 628,
-          "line_span": 5579,
+          "line_span": 5580,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2713,
-          "line_span": 2890,
+          "line": 2707,
+          "line_span": 2881,
           "name": "main",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
         },
         {
           "line": 2516,
-          "line_span": 767,
+          "line_span": 768,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 1973,
+          "line": 1967,
           "line_span": 698,
           "name": "_parse_args",
           "parameter_count": 1,
@@ -231,6 +231,13 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
+          "line": 319,
+          "line_span": 347,
+          "name": "score_tomo_half",
+          "parameter_count": 26,
+          "path": "relax/refinement/tomo_half.py"
+        },
+        {
           "line": 161,
           "line_span": 297,
           "name": "_run_local_search_iteration",
@@ -238,17 +245,10 @@
           "path": "relax/refinement/local_search_iteration.py"
         },
         {
-          "line": 288,
-          "line_span": 270,
-          "name": "score_tomo_half",
-          "parameter_count": 22,
-          "path": "relax/refinement/tomo_half.py"
-        },
-        {
-          "line": 560,
-          "line_span": 207,
+          "line": 713,
+          "line_span": 210,
           "name": "score_tomo_half_in_loop",
-          "parameter_count": 25,
+          "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         }
       ],
@@ -264,12 +264,12 @@
       },
       "totals": {
         "file_count": 17,
-        "function_count": 308,
+        "function_count": 314,
         "large_argument_function_count": 8,
-        "maximum_function_line_span": 5579,
-        "maximum_parameter_count": 25,
-        "nonblank_noncomment_lines": 18605,
-        "physical_lines": 21080,
+        "maximum_function_line_span": 5580,
+        "maximum_parameter_count": 26,
+        "nonblank_noncomment_lines": 18727,
+        "physical_lines": 21222,
         "very_large_argument_function_count": 2
       }
     }
