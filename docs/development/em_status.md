@@ -134,11 +134,11 @@ labeled diagnostic only.
   The per-group noise table is never read as per-class (a [G, P] table with G == K was taken as one
   row per class, so every image backprojected with group 1's spectrum). Qualified relative to one
   optics group on the multioptics_k2same_10k128_20260930 fixture (K=2, one reference, --firstiter_cc,
-  against MPI-scale-patched RELION 3x4): the CC iteration matches (maps 2.9e-5, one CC pose tie), and
-  the seed iteration's gap (maps 2.9e-3, SSNR 1.1%) is no larger than the same fixture with one optics
-  group (5.6e-3, 1.8%) or with group 2 given group 1's optics (2.5e-3, 0.9%). That gap is OPEN and
-  not optics-specific: see "Class3D significance cut" below. Optics groups on several image shapes
-  remain K=1 only (`full_refinement._validate_multi_shape_run`). InitialModel takes one optics group.
+  against MPI-scale-patched RELION 3x4): the CC iteration matches (maps 2.9e-5, one CC pose tie). The
+  seed iteration's gap to stock RELION (maps 2.9e-3; 5.6e-3 with one optics group) is stock RELION's
+  float32 backprojection: the double-accumulation RELION build differs from stock by the same 5.6e-3,
+  and relax matches it at 6.6e-5/1.0e-4 (one optics group, iteration 2). Optics groups on several image
+  shapes remain K=1 only (`full_refinement._validate_multi_shape_run`). InitialModel takes one optics group.
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930`.
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
@@ -333,13 +333,14 @@ these are progress measures, not completion. The three recorded real-data K1
 calibration cases remain in the maintained science-equivalence scorecard, while
 the 10202 target is still pending.
 
-Class3D significance cut (OPEN, 2026-09-30): on a seed iteration with flat posteriors (Pmax 0.004,
-about 4500 significant samples per particle; multioptics_k2same_10k128_20260930 with one optics
-group) relax's per-particle significant-sample counts equal RELION's for 75% of particles, Pmax
-differs by 1.5e-4 (median relative) and the class maps are 0.3% low uniformly. Subtomogram Class3D
-(et16) shows hard single-particle switches (each engine Pmax ~1, one fine offset step apart) at it2-4,
-earlier than RELION's own repeats. Both point at the coarse significance cut; under investigation
-against RELION's cut (sort order, double cumulative sum, adaptive-fraction boundary, ties, cap).
+Class3D seed-iteration gap (resolved 2026-10-01): on a seed iteration with flat posteriors (Pmax 0.004,
+about 4500 significant samples per particle) relax's class maps were 0.27% below stock RELION's,
+uniformly. The double-accumulation RELION build (double device backprojection) moves RELION by the same
+5.6e-3 and relax matches it to 1e-4 at iteration 2: stock RELION's float32 accumulation of many small
+weights, not a relax difference. Per-particle significant-sample counts differ for 25% of particles by
+float32-level score differences under flat posteriors (the seed iteration scores one class per
+particle, through the K=1 RELION coarse weight order). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930`
+(diag_oneopt_relion_bpd). Subtomogram Class3D (et16) hard single-particle offset switches remain OPEN.
 
 EMPIAR-10202 (box 800, I1) progress on the resident K=1 engine: iteration 3
 (current size 304) spent 4,530 s per half in the pass-2 M-step on 589ce09, which
