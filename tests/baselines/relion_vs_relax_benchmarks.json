@@ -567,18 +567,19 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "RELION 5.0.1 + MPI scale-sum patch (relax #1), relion_refine_mpi 3 ranks x 4 threads, --gpu on 2 H100s",
+    "version": "RELION 5.0.1 stock (module relion/5.0.1/gcc-11.5.0-gpu, relion_refine_mpi sha256 92cf3ba5 (stock /projects/MOLBIO RELION 5.0.1)), 3 ranks x 4 threads, --gpu on 2 H100s, for the wall; accuracy reference: RELION 5.0.1 + MPI scale-sum patch (relax #1), relion_refine_mpi 3 ranks x 4 threads, --gpu on 2 H100s",
     "resolution_A": 2.512,
     "resolution_definition": "scorecard_band",
     "relion_reported_resolution_A": null,
     "masked_resolution_A": 2.159,
-    "wall_s": 52520.0,
-    "wall_definition": "arm-script wall (WALL.json) of relion_refine_mpi in the pair job",
+    "wall_s": 52831.0,
+    "wall_definition": "arm-script wall (WALL.json) of the row's RELION command rerun with stock RELION, cold, job 14475516 (della-h20g3); /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10202_set6_relion_ref",
     "gpu_model": "H100 80GB",
     "gpu_count": 2,
     "iterations": 27,
     "jobs": [
-     "14640954"
+     "14640954",
+     "14475516"
     ],
     "masked_band_auc": 0.9368,
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
@@ -604,7 +605,7 @@
    "gt": null,
    "cross_engine": "half-vs-half masked FSC-AUC (frozen mask): relax vs patched RELION same half 0.9664/0.9669, cross half 0.9441/0.9435; within relax 0.9548, within RELION 0.9371",
    "cross_engine_masked_band_auc": 0.9435,
-   "time_ratio_relax_over_relion": 0.334,
+   "time_ratio_relax_over_relion": 0.33,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -615,6 +616,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Wall 2026-10-01: speed is quoted against stock RELION 5.0.1 (module relion/5.0.1/gcc-11.5.0-gpu) running the row's RELION command, 52831 s (job 14475516), ratio 0.33x; the patched build's wall (52520.0 s, 0.334x) judged accuracy only.",
     "Same-hardware speed pair (bigbox pair10202_20260928, 2026-09-29): relax 17524 s (15466 s to iteration 26 on main 30a4a0f plus a 2058 s final all-data pass on 2c3a0f4 as a separate cold job) against patched RELION 52520 s on 2 H100s.",
     "Scores against patched RELION (frozen mask empiar10202_set6_i1): masked resolution relax 2.067 Å / RELION 2.159 Å; masked corrected band AUC 0.9546 / 0.9368; unmasked band AUC 0.8262 / 0.7922; unmasked scorecard-band resolution 2.44 / 2.51 Å.",
     "Earlier record (accuracy-only row before the speed pair): Accuracy-only row (team-lead 2026-09-29): the first EMPIAR-10202 row. relax followed one trajectory across three mains (it1-21 6f0b66f, it22-26 cde59d1, final all-data pass on candidate da4f9c3), converging after iteration 26 at HEALPix 9 (RELION converged at iteration 27).",
@@ -677,7 +679,7 @@
    "quality_pass": true,
    "quality_reason": "masked 2.067 vs RELION 2.159 Å; masked AUC 0.955 vs 0.937; cross-half 0.944 vs RELION's own 0.937",
    "time_check": {
-    "a": "RELION: 2 H100, relion_refine_mpi 3 ranks x 4 threads (patched build). relax: 1 H100. Pair job 14640954 on della-h19g2: both arms started together; relax's final all-data pass reran alone in job 14687663 on della-h19g2.",
+    "a": "Speed against stock RELION (user rule 2026-10-01): the row's RELION command with module relion/5.0.1/gcc-11.5.0-gpu, 3 ranks x 4 threads, --gpu on 2 H100s, cold, job 14475516; relax as before (1 H100 80GB). Separate jobs on the same GPU model. Earlier: RELION: 2 H100, relion_refine_mpi 3 ranks x 4 threads (patched build). relax: 1 H100. Pair job 14640954 on della-h19g2: both arms started together; relax's final all-data pass reran alone in job 14687663 on della-h19g2.",
     "b": "relax production defaults on 30a4a0f (final pass on 2c3a0f4, which only fixes the final pass's memory plan); no diagnostic options.",
     "c": "relax 15466 s to iteration 26 plus 2058 s final pass (the separate job restarts, loads the state and compiles cold, so the sum is conservative for relax); RELION end to end.",
     "d": "H100 80GB HBM3 for every arm (GPU.csv); same node type."
@@ -689,6 +691,14 @@
      "relax_masked_resolution_A": 2.108,
      "relion_masked_resolution_A": 2.152,
      "quality_pass": true
+    },
+    {
+     "date": "2026-10-01",
+     "note": "RELION wall from a patched build before the stock-RELION wall rule",
+     "relion_version": "RELION 5.0.1 + MPI scale-sum patch (relax #1), relion_refine_mpi 3 ranks x 4 threads, --gpu on 2 H100s",
+     "relion_wall_s": 52520.0,
+     "relion_wall_definition": "arm-script wall (WALL.json) of relion_refine_mpi in the pair job",
+     "time_ratio_relax_over_relion": 0.334
     }
    ]
   },
