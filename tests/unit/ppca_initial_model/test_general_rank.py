@@ -6,24 +6,26 @@ from recovar.ppca.triangular import pack_upper_tri, unpack_tri_to_full
 from relax.ppca_initial_model.config import Config
 from relax.ppca_initial_model.update import coupled_direction, empty_moments, stochastic_update
 from relax.ppca_initial_model.sgd_update import momentum_step
+from relax.ppca_refinement.residual_statistics import full_float32
 from relax.ppca_refinement.engine import (dense_pose_ppca_score_with_moments_blocked,
     dense_pose_ppca_score_with_moments_factor_once, pose_moment_images)
 
 pytestmark=pytest.mark.unit
 
-@pytest.mark.parametrize('q',[4,10])
+@pytest.mark.parametrize('q',[2,4,10])
 @pytest.mark.parametrize('dtype,tol',[(np.float32,2e-5),(np.float64,2e-11)])
 @pytest.mark.parametrize('engine',[dense_pose_ppca_score_with_moments_blocked,dense_pose_ppca_score_with_moments_factor_once])
 def test_real_gaussian_posterior_and_moment_images(q,dtype,tol,engine):
     rng=np.random.default_rng(198)
     B,T,R,F=2,2,3,17
     y=rng.normal(size=(B,T,F)).astype(dtype)
-    proj=(rng.normal(size=(R,q+1,F))*.12).astype(dtype)
+    # Common images, means and loading prefixes give a matched q2 control.
+    proj=(rng.normal(size=(R,11,F))*.12)[:,:q+1].astype(dtype)
     precision=np.full((B,F),dtype(1/.7),dtype)
     ynorm=np.sum(y*y*precision[:,None],axis=-1)[:,0]
     # Equal y-norm per translation is required by the actual translated-image contract.
     y[:,1]=np.roll(y[:,0],1,axis=-1)
-    result=engine(y*precision[:,None],proj,precision,ynorm)
+    result=full_float32(engine)(y*precision[:,None],proj,precision,ynorm)
     refscore=np.empty((B,T,R),np.float64)
     refalpha=np.empty((B,T,R,q+1),np.float64)
     refG=np.empty((B,T,R,q+1,q+1),np.float64)
@@ -40,7 +42,7 @@ def test_real_gaussian_posterior_and_moment_images(q,dtype,tol,engine):
     np.testing.assert_allclose(result.alpha,refalpha,atol=tol,rtol=tol)
     np.testing.assert_allclose(unpack_tri_to_full(result.G_tri,q+1),refG,atol=tol,rtol=tol)
     posterior=np.exp(refscore-refscore.max(axis=(1,2),keepdims=True));posterior/=posterior.sum(axis=(1,2),keepdims=True)
-    rhs,lhs=pose_moment_images(jnp.asarray(posterior,dtype),result.alpha,result.G_tri,
+    rhs,lhs=full_float32(pose_moment_images)(jnp.asarray(posterior,dtype),result.alpha,result.G_tri,
                               jnp.asarray(y*precision[:,None]),jnp.asarray(precision),rhs_dtype=dtype,lhs_dtype=dtype)
     expected_rhs=np.einsum('btr,btrp,btf->prf',posterior,refalpha,y.astype(np.float64)*precision[:,None])
     expected_lhs=np.einsum('btr,btrpq,bf->rfpq',posterior,refG,precision.astype(np.float64))
