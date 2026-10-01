@@ -9,6 +9,7 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches
 
 from relax import sampling
+from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.local.local_layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
@@ -457,22 +458,77 @@ def test_compensated_block_sums_keep_small_contributions_under_jit():
     assert_matches(np.asarray(total, np.float64), np.full(4, 1.0e6 + 10.0))
 
 
+def _float64_tile_statistics(stream, image_indices, significant):
+    """The streamed engine's tile statistics with every operand and sum in float64 (CPU x64)."""
+    import jax
+
+    from relax.ppca_refinement import full_row_stream as frs
+    from relax.ppca_refinement.engine import _enforce_augmented_x0
+
+    def up(tree):
+        def one(x):
+            if not hasattr(x, "dtype"):
+                return x
+            if jnp.issubdtype(x.dtype, jnp.complexfloating):
+                return x.astype(jnp.complex128)
+            return x.astype(jnp.float64) if jnp.issubdtype(x.dtype, jnp.floating) else x
+
+        return type(tree)(*[one(x) for x in tree])
+
+    with jax.enable_x64(True), jax.default_matmul_precision("highest"):
+        tile32, observation_power, layout = frs._load_tile(stream, image_indices, significant, collect_observation=True)
+        tile, arrays = up(tile32), up(stream.arrays)
+        wide = stream._replace(arrays=arrays)
+        n_images = len(image_indices)
+        capacity = len(stream.block_starts) * stream.rotation_block_size
+        kept = jnp.full((n_images, len(stream.translations), capacity), -jnp.inf, jnp.float64)
+        for start in stream.block_starts[: layout["n_blocks"]]:
+            kept = frs._score_block(arrays, tile, kept, start, static=stream.static,
+                                    block_size=stream.rotation_block_size)
+        posterior = frs._normalize(kept, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size)
+        carry = up(frs._empty_carry(stream, n_images, observation_power))
+        carry, _ = frs._run_pass2(wide, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
+        volume_shape = stream.static.volume_shape
+        weights = make_half_image_weights(stream.static.image_shape)
+        shells = np.asarray(make_shell_indices_half(stream.static.image_shape))
+        residual_num = np.zeros(shells.max() + 1)
+        np.add.at(residual_num, shells, np.asarray(weights * carry.residual_power))
+        return {
+            "rhs": np.asarray(jnp.swapaxes(_enforce_augmented_x0(carry.rhs, volume_shape), 0, 1)),
+            "lhs_tri": np.asarray(jnp.swapaxes(
+                _enforce_augmented_x0(carry.lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
+            "residual_gradient": np.asarray(carry.residual.T),
+            "residual_num": residual_num,
+            "embeddings": np.asarray(carry.embedding[:n_images]),
+        }
+
+
+def _max_error_over_scale(actual, truth):
+    return float(np.max(np.abs(np.asarray(actual, np.complex128) - truth)) / np.max(np.abs(truth)))
+
+
 @pytest.mark.parametrize("q", [4, 10])
-@pytest.mark.parametrize("factor_once", [False, True])
-def test_general_rank_coarse_recompute_matches_dense_reference(q, factor_once):
-    """Exercise real projection, score, moments and streamed pass2 at general rank."""
+def test_general_rank_coarse_recompute_matches_dense_reference(q):
+    """Real projection, score, moments and streamed pass 2 at general rank, against float64.
+
+    The reference is the streamed formulation evaluated in float64. The float32 engine must
+    be no further from it than the independent float32 host-mask path (both of its score
+    formulations), field by field, or within the 1e-6 float32 band.
+    """
     data, mu, W, stream, host = make_tile_problem(q=q)
-    # Reuse the independent host support reference and its established tolerances.
-    expected = full_float32(accumulate_dense_ppca_statistics)(
-        data, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
-        factor_once_score=factor_once, **host)
+    truth = _float64_tile_statistics(stream, np.arange(3), SIGNIFICANT)
     actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
-    # Two float32 formulations: against a float64 run of the streamed formulation on this
-    # problem the reference RHS is off by up to 1.5e-6 of its scale at q=4 and 1.2e-6 at
-    # q=10 (the streamed one by 1.1e-6 and 1.0e-6), above the 1e-6 same-code band.
-    rtol = 3e-6
-    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
-        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)), rtol=rtol)
+    previous = [
+        full_float32(accumulate_dense_ppca_statistics)(
+            data, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
+            factor_once_score=factor_once, **host)
+        for factor_once in (False, True)
+    ]
+    for name, value in truth.items():
+        error = _max_error_over_scale(getattr(actual, name), value)
+        previous_error = max(_max_error_over_scale(getattr(p, name), value) for p in previous)
+        assert error <= max(1e-6, previous_error), (name, error, previous_error)
+    assert_matches(np.asarray(actual.residual_den), np.asarray(previous[0].residual_den))
     assert actual.rhs.shape[-1] == q + 1
     assert actual.lhs_tri.shape[-1] == (q + 1) * (q + 2) // 2
     assert actual.embeddings.shape == (3, q)
