@@ -8369,7 +8369,8 @@
     "seed 1: mean masked GT FSC-AUC relax 0.571353 / RELION 0.571353; class accuracy 0.9965 / 0.9965; per-class masked map FSC-AUC vs same-seed RELION 1.00000 (min); walls relax 4798 s / RELION 7001 s",
     "seed 2: mean masked GT FSC-AUC relax 0.579139 / RELION 0.580080; class accuracy 0.9965 / 0.9965; per-class masked map FSC-AUC vs same-seed RELION 0.99630 (min); walls relax 4889 s / RELION 7052 s",
     "seed 3: mean masked GT FSC-AUC relax 0.583808 / RELION 0.583809; class accuracy 0.994 / 0.994; per-class masked map FSC-AUC vs same-seed RELION 1.00000 (min); walls relax 4889 s / RELION 7062 s",
-    "Speed: relax 4798 s on 1 H100 (cold) against RELION non-MPI seed 1 7001 s on 1 H100 (0.69x), separate jobs on the same GPU model."
+    "Speed: relax 4798 s on 1 H100 (cold) against RELION non-MPI seed 1 7001 s on 1 H100 (0.69x), separate jobs on the same GPU model.",
+    "Wall caveat (etw, 2026-10-01): about 90% of the +25% relax wall since fb1dae4 (3855 s for et13) is the RELION exact expected-accuracy step, whose port on main 38d38bca runs about 30x slower on tilt images (about 50 s per iteration against 1.7 s before; fix owned by bindw); without it these rows would sit near the earlier 0.54-0.55x. New walls follow the fix."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -8537,7 +8538,8 @@
     "seed 2: mean masked GT FSC-AUC relax 0.536748 / RELION 0.537237/0.537222; class accuracy 0.996 / 0.996/0.996; per-class masked map FSC-AUC vs same-seed RELION 0.99853 (min); walls relax 4824 s / RELION 6990 s",
     "seed 3: mean masked GT FSC-AUC relax 0.545976 / RELION 0.544745/0.544768; class accuracy 0.995 / 0.9955/0.9955; per-class masked map FSC-AUC vs same-seed RELION 0.99582 (min); walls relax 4714 s / RELION 6886 s",
     "Speed: relax 4722 s on 1 H100 (cold) against RELION non-MPI seed 1 6875 s on 1 H100 (0.69x), separate jobs on the same GPU model.",
-    "etw (2026-10-01): the maps track RELION to about 1e-5 until one particle hard-switches its fine offset by one step (s1 at iteration 2, s3 at 4) with Pmax about 1 in both engines; under investigation. GT FSC-AUC stays within 0.003 of the oracles."
+    "etw (2026-10-01): the maps track RELION to about 1e-5 until one particle hard-switches its fine offset by one step (s1 at iteration 2, s3 at 4) with Pmax about 1 in both engines; under investigation. GT FSC-AUC stays within 0.003 of the oracles.",
+    "Wall caveat (etw, 2026-10-01): about 90% of the +25% relax wall since fb1dae4 (3855 s for et13) is the RELION exact expected-accuracy step, whose port on main 38d38bca runs about 30x slower on tilt images (about 50 s per iteration against 1.7 s before; fix owned by bindw); without it these rows would sit near the earlier 0.54-0.55x. New walls follow the fix."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
