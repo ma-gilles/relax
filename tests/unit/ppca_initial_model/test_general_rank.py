@@ -3,12 +3,16 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from recovar.ppca.triangular import pack_upper_tri, unpack_tri_to_full
+
 from relax.ppca_initial_model.config import Config
-from relax.ppca_initial_model.update import coupled_direction, empty_moments, stochastic_update
 from relax.ppca_initial_model.sgd_update import momentum_step
+from relax.ppca_initial_model.update import coupled_direction, empty_moments, stochastic_update
+from relax.ppca_refinement.engine import (
+    dense_pose_ppca_score_with_moments_blocked,
+    dense_pose_ppca_score_with_moments_factor_once,
+    pose_moment_images,
+)
 from relax.ppca_refinement.residual_statistics import full_float32
-from relax.ppca_refinement.engine import (dense_pose_ppca_score_with_moments_blocked,
-    dense_pose_ppca_score_with_moments_factor_once, pose_moment_images)
 
 pytestmark=pytest.mark.unit
 

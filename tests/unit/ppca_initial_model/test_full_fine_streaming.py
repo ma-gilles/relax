@@ -481,13 +481,21 @@ def _float64_tile_statistics(stream, image_indices, significant):
         wide = stream._replace(arrays=arrays)
         n_images = len(image_indices)
         capacity = len(stream.block_starts) * stream.rotation_block_size
-        kept = jnp.full((n_images, len(stream.translations), capacity), -jnp.inf, jnp.float64)
+        q = stream.static.basis_size - 1
+        T = len(stream.translations)
+        kept = frs._Kept(
+            jnp.full((capacity, n_images, T), -jnp.inf, jnp.float64),
+            jnp.zeros((capacity, q, n_images, T), jnp.float64),
+            jnp.zeros((capacity, n_images, q * (q + 1) // 2), jnp.float64),
+        )
         for start in stream.block_starts[: layout["n_blocks"]]:
             kept = frs._score_block(arrays, tile, kept, start, static=stream.static,
                                     block_size=stream.rotation_block_size)
-        posterior = frs._normalize(kept, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size)
+        posterior = frs._normalize(
+            kept.score, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size
+        )
         carry = up(frs._empty_carry(stream, n_images, observation_power))
-        carry, _ = frs._run_pass2(wide, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
+        carry = frs._run_pass2(wide, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
         volume_shape = stream.static.volume_shape
         weights = make_half_image_weights(stream.static.image_shape)
         shells = np.asarray(make_shell_indices_half(stream.static.image_shape))
@@ -499,21 +507,21 @@ def _float64_tile_statistics(stream, image_indices, significant):
                 _enforce_augmented_x0(carry.lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
             "residual_gradient": np.asarray(carry.residual.T),
             "residual_num": residual_num,
-            "embeddings": np.asarray(carry.embedding[:n_images]),
+            "embeddings": np.asarray(carry.embedding),
         }
 
 
-def _max_error_over_scale(actual, truth):
-    return float(np.max(np.abs(np.asarray(actual, np.complex128) - truth)) / np.max(np.abs(truth)))
+def _relative_l2(actual, truth):
+    return float(np.linalg.norm(np.asarray(actual, np.complex128) - truth) / np.linalg.norm(truth))
 
 
 @pytest.mark.parametrize("q", [4, 10])
 def test_general_rank_coarse_recompute_matches_dense_reference(q):
     """Real projection, score, moments and streamed pass 2 at general rank, against float64.
 
-    The reference is the streamed formulation evaluated in float64. The float32 engine must
-    be no further from it than the independent float32 host-mask path (both of its score
-    formulations), field by field, or within the 1e-6 float32 band.
+    The reference is the streamed formulation evaluated in float64. The float32 engine's
+    relative L2 error against it must be no larger than that of the independent float32
+    host-mask path (both of its score formulations), field by field, or within 1e-6.
     """
     data, mu, W, stream, host = make_tile_problem(q=q)
     truth = _float64_tile_statistics(stream, np.arange(3), SIGNIFICANT)
@@ -525,8 +533,8 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q):
         for factor_once in (False, True)
     ]
     for name, value in truth.items():
-        error = _max_error_over_scale(getattr(actual, name), value)
-        previous_error = max(_max_error_over_scale(getattr(p, name), value) for p in previous)
+        error = _relative_l2(getattr(actual, name), value)
+        previous_error = max(_relative_l2(getattr(p, name), value) for p in previous)
         assert error <= max(1e-6, previous_error), (name, error, previous_error)
     assert_matches(np.asarray(actual.residual_den), np.asarray(previous[0].residual_den))
     assert actual.rhs.shape[-1] == q + 1
