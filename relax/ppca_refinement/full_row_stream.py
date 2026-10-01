@@ -59,7 +59,6 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.engine import (
     _enforce_augmented_x0,
-    backproject_moment_images,
     compensated_add,
     pose_invariant_score_offset,
 )
@@ -137,10 +136,8 @@ class _MomentCarry(NamedTuple):
     once voxels grow large, a downward bias that grows with images per tile.
     """
 
-    rhs: jax.Array
     lhs_tri: jax.Array
     residual: jax.Array
-    rhs_compensation: jax.Array
     lhs_compensation: jax.Array
     residual_compensation: jax.Array
     residual_power: jax.Array
@@ -459,27 +456,26 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
         residual_power = carry.residual_power + correction * nv
     else:
         residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
-    rhs_block, lhs_block = backproject_moment_images(
-        rhs_images,
+    # The RHS images enter the residual only: neither optimizer reads an RHS
+    # volume, so only the LHS metric and the residual gradient are backprojected.
+    lhs_block = batch_adjoint_slice_volume_maybe_windowed(
         lhs_images,
+        arrays.recon_indices,
         rotations,
+        jnp.zeros_like(carry.lhs_tri),
         static.image_shape,
         static.volume_shape,
-        jnp.zeros_like(carry.rhs),
-        jnp.zeros_like(carry.lhs_tri),
-        disc_type_backproject=static.disc_type,
-        recon_window_indices=arrays.recon_indices,
-        use_recon_window=static.use_recon_window,
-        backprojection_max_r=static.backprojection_max_r,
+        static.disc_type,
+        True,
+        True,
+        use_window=static.use_recon_window,
+        max_r=static.backprojection_max_r,
     )
-    rhs, rhs_compensation = compensated_add(carry.rhs, carry.rhs_compensation, rhs_block)
     lhs_tri, lhs_compensation = compensated_add(carry.lhs_tri, carry.lhs_compensation, lhs_block)
     residual, residual_compensation = compensated_add(carry.residual, carry.residual_compensation, residual_block)
     return carry._replace(
-        rhs=rhs,
         lhs_tri=lhs_tri,
         residual=residual,
-        rhs_compensation=rhs_compensation,
         lhs_compensation=lhs_compensation,
         residual_compensation=residual_compensation,
         residual_power=residual_power,
@@ -730,10 +726,8 @@ def _empty_carry(stream, n_images, observation_power):
     half_size = int(arrays.augmented.shape[1])
     capacity = len(stream.block_starts) * stream.rotation_block_size
     return _MomentCarry(
-        rhs=jnp.zeros((P, half_size), dtype=jnp.complex64),
         lhs_tri=jnp.zeros((tri_size(P), half_size), dtype=jnp.float32),
         residual=jnp.zeros((P, half_size), dtype=jnp.complex64),
-        rhs_compensation=jnp.zeros((P, half_size), dtype=jnp.complex64),
         lhs_compensation=jnp.zeros((tri_size(P), half_size), dtype=jnp.float32),
         residual_compensation=jnp.zeros((P, half_size), dtype=jnp.complex64),
         residual_power=jnp.zeros(arrays.coefficient_noise.shape, jnp.float32) + observation_power,
@@ -766,7 +760,9 @@ def accumulate_full_row_tile(
     ``significant_rows`` holds the packed coarse significant pose ids (or
     ``None``) of each tile image. Returns the same statistics and summary
     diagnostics as the host-mask ``accumulate_dense_ppca_statistics`` call
-    with ``collect_residuals=True``.
+    with ``collect_residuals=True``, except the augmented RHS volume
+    (``rhs`` is ``None``): both InitialModel optimizers read only the LHS
+    metric and the direct residual gradient.
     """
     return accumulate_full_row_tiles(stream, [(image_indices, significant_rows)], enforce_x0=enforce_x0)[0]
 
@@ -802,9 +798,8 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
     _check_finite_posterior(posterior)
     static = stream.static
     n_images = int(tile.y_norm.shape[0])
-    rhs, lhs_tri = carry.rhs, carry.lhs_tri
+    lhs_tri = carry.lhs_tri
     if enforce_x0:
-        rhs = _enforce_augmented_x0(rhs, static.volume_shape)
         lhs_tri = _enforce_augmented_x0(lhs_tri.astype(jnp.complex64), static.volume_shape).real.astype(jnp.float32)
     weights = make_half_image_weights(static.image_shape)
     shells = make_shell_indices_half(static.image_shape)
@@ -852,7 +847,8 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         "pose_entropy_mean": float(host["entropy"] / np.float32(n_images)),
     }
     return AugmentedPPCAStats(
-        rhs=jnp.swapaxes(rhs, 0, 1),
+        # No RHS volume: the streamed statistics feed the direct residual gradient only.
+        rhs=None,
         lhs_tri=jnp.swapaxes(lhs_tri, 0, 1),
         log_likelihood=float(host["log_likelihood"]),
         n_images=n_images,

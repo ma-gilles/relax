@@ -173,9 +173,10 @@ def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_
     )
     actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
     assert actual.diagnostics["engine"] == FULL_ROW_ENGINE
+    assert actual.rhs is None  # the streamed engine produces no RHS volume
     assert actual.n_images == expected.n_images == 3
     assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
-    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
     # Scalar summaries are float32 reductions returned as Python floats.
     assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood))
@@ -227,7 +228,7 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
     )
     actual = accumulate_full_row_tile(stream, np.arange(3), [None] * 3)
     assert actual.diagnostics["supported_image_rows"] == 3 * len(rotations)
-    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
     assert_matches(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"])
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
@@ -241,7 +242,7 @@ def test_pipelined_tiles_match_separate_tiles(tile_problem):
     for (ids, support), actual in zip(tiles, pipelined, strict=True):
         expected = accumulate_full_row_tile(stream, ids, support)
         assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
-        for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+        for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
             assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
 
 
@@ -339,7 +340,7 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
         # Fine rows of the shared grid: children stay contiguous per coarse parent.
         rows = reference.rotation_posterior_ids_flat[begin:end] * 8 + np.arange(end - begin) % 8
         parts[-1].diagnostics["global_rows"] = rows
-    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
         assert_matches(np.asarray(getattr(actual, name)), sum(np.asarray(getattr(p, name)) for p in parts))
     assert_matches(np.asarray(actual.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]))
     assert_matches(np.float32(actual.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)))
@@ -404,9 +405,9 @@ def run(device, tile):
     return _to_device(part, devices[0])
 one = [run(devices[0], tile) for tile in tiles]
 two = list(_on_devices(devices, run, tiles))
-assert two[1].rhs.devices() == {{devices[0]}}
+assert two[1].lhs_tri.devices() == {{devices[0]}}
 for a, b in zip(one, two):
-    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "embeddings"):
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "embeddings"):
         assert_matches(np.asarray(getattr(b, name)), np.asarray(getattr(a, name)))
 print("ok")
 """
@@ -518,7 +519,6 @@ def _float64_tile_statistics(stream, image_indices, significant):
         residual_num = np.zeros(shells.max() + 1)
         np.add.at(residual_num, shells, np.asarray(weights * carry.residual_power))
         return {
-            "rhs": np.asarray(jnp.swapaxes(_enforce_augmented_x0(carry.rhs, volume_shape), 0, 1)),
             "lhs_tri": np.asarray(jnp.swapaxes(
                 _enforce_augmented_x0(carry.lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
             "residual_gradient": np.asarray(carry.residual.T),
@@ -553,8 +553,9 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q):
         previous_error = max(_relative_l2(getattr(p, name), value) for p in previous)
         assert error <= max(1e-6, previous_error), (name, error, previous_error)
     assert_matches(np.asarray(actual.residual_den), np.asarray(previous[0].residual_den))
-    assert actual.rhs.shape[-1] == q + 1
+    assert actual.rhs is None
+    assert actual.residual_gradient.shape[-1] == q + 1
     assert actual.lhs_tri.shape[-1] == (q + 1) * (q + 2) // 2
     assert actual.embeddings.shape == (3, q)
-    assert actual.rhs.dtype == actual.residual_gradient.dtype == jnp.complex64
+    assert actual.residual_gradient.dtype == jnp.complex64
     assert actual.lhs_tri.dtype == actual.embeddings.dtype == jnp.float32

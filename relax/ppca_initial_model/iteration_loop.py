@@ -66,7 +66,8 @@ def _rotation_grid(hp):
 
 def _merge_statistics(parts):
     return AugmentedPPCAStats(
-        rhs=sum(s.rhs for s in parts),
+        # The streamed engine produces no RHS volume (only lhs_tri and the residual gradient are read).
+        rhs=None if any(s.rhs is None for s in parts) else sum(s.rhs for s in parts),
         lhs_tri=sum(s.lhs_tri for s in parts),
         residual_gradient=sum(s.residual_gradient for s in parts),
         residual_num=sum(s.residual_num for s in parts),
@@ -189,7 +190,8 @@ def _to_device(part, device):
     if isinstance(part, DensePPCAEmbeddings):
         return part._replace(embeddings=jax.device_put(part.embeddings, device))
     names = ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings")
-    return dataclasses.replace(part, **{name: jax.device_put(getattr(part, name), device) for name in names})
+    moved = {name: jax.device_put(getattr(part, name), device) for name in names if getattr(part, name) is not None}
+    return dataclasses.replace(part, **moved)
 
 
 def _streams_groups(config):
