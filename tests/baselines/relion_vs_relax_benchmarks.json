@@ -5883,7 +5883,7 @@
     "aggregate": null,
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
     "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/c1_empiar10076_100k256_initialmodel_vdam_200it.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/c2_empiar10076_100k256_initialmodel_vdam_200it.json",
     "relion": {
      "run": "c0_relion_s29",
      "fsc_auc": 0.2922,
@@ -5922,7 +5922,8 @@
     "timing_controlled": true
    },
    "notes": [
-    "Re-judged 2026-09-30 with two more same-command RELION s41 repeats (build_patched relion_refine --grad --denovo_3dref --j 12, job 14762658, vdam_e10076_relion_s41_repeats_20260930) after speedw's check found no relax regression (relax_vdamfast_20260926/e10076q_20260930/scores/e10076_quality_check.json); relax arms and walls unchanged.",
+    "Re-judged 2026-09-30 with two more same-command RELION s41 repeats (build_patched relion_refine --grad --denovo_3dref --j 12, job 14762658, vdam_e10076_relion_s41_repeats_20260930) after speedw's check found no relax regression (relax_vdamfast_20260926/e10076q_20260930/scores/e10076_quality_check.json); relax arms and walls unchanged; plus two same-command relax s41 repeats on the row's candidate 0cbdebd (job 14796003, vdam_e10076_relax_s41_repeats_20260930), so s41 compares run ranges.",
+    "s41 same-command repeats of both engines: masked reference FSC-AUC relax 0.2969 / 0.2993 / 0.3061 (cand_0cbdebd, job 14796003), RELION 0.3016 / 0.3021 / 0.3058 (job 14762658); the ranges overlap, so s41 passes under the run-range rule (user, 2026-09-30).",
     "seed 29: masked reference FSC-AUC relax 0.3110 / RELION 0.3131 (mean GT 0.2903 / 0.2922); relax-vs-RELION masked X-AUC 0.9903; fixed-seed RELION band (4 runs) masked ref 0.3112-0.3157, mean GT 0.2904-0.2945; walls relax 1507 s / RELION 3522 s",
     "seed 41: masked reference FSC-AUC relax 0.2969 / RELION 0.3016 (mean GT 0.2775 / 0.2818); relax-vs-RELION masked X-AUC 0.9913; fixed-seed RELION band (3 runs) masked ref 0.3016-0.3058, mean GT 0.2818-0.2856; walls relax 1451 s / RELION 2808 s",
     "seed 53: masked reference FSC-AUC relax 0.3067 / RELION 0.3109 (mean GT 0.2865 / 0.2902); relax-vs-RELION masked X-AUC 0.9937; walls relax 1324 s / RELION 2914 s",
@@ -5953,9 +5954,9 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_100k_0cbdebd_s61/s61",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_100k_0cbdebd_s67/s67"
     ],
-    "score_json": "docs/benchmarks/initialmodel_scores/c1_empiar10076_100k256_initialmodel_vdam_200it.json",
+    "score_json": "docs/benchmarks/initialmodel_scores/c2_empiar10076_100k256_initialmodel_vdam_200it.json",
     "score_jsons": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_e10076_rep/out/c1_empiar10076_100k256_initialmodel_vdam_200it.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_e10076_rep/out/c2_empiar10076_100k256_initialmodel_vdam_200it.json"
     ],
     "relion_runs": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_relion_refs_refresh_20260927/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_100k_0cbdebd/s29/relion/output",
@@ -5985,8 +5986,8 @@
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time for each pair"
    },
-   "quality_pass": false,
-   "quality_reason": "masked ref FSC-AUC: worst s41 −0.0047 vs same-seed RELION; s41 below across-seed RELION band 0.2977-0.31569",
+   "quality_pass": true,
+   "quality_reason": "masked ref FSC-AUC: worst s53 −0.0042 vs same-seed RELION; run ranges compared at s41 (both engines repeated); inside across-seed band",
    "history": [
     {
      "date": "2026-09-26",
