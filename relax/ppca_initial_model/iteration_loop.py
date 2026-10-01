@@ -232,11 +232,9 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                 tile_ids = np.asarray(ids[begin : begin + config.image_batch_size])
                 support = [None] * len(tile_ids)
                 if embeddings_only:
-                    part = full_row_tile_embeddings(stream, tile_ids, support, recompute=True)
+                    part = full_row_tile_embeddings(stream, tile_ids, support)
                 else:
-                    part = accumulate_full_row_tile(
-                        stream, tile_ids, support, factor_once=len(tile_ids) > 1, recompute=True
-                    )
+                    part = accumulate_full_row_tile(stream, tile_ids, support)
                 parts.append(part)
             if embeddings_only:
                 return DensePPCAEmbeddings(
@@ -357,11 +355,10 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
             members = tile_order[row:tile_end]
             tile_ids = np.asarray(ids)[members]
             significant = [significant_samples[member] for member in members]
-            # A multi-image tile factors the latent Gram once per image/rotation.
             part = (
                 full_row_tile_embeddings(stream, tile_ids, significant)
                 if embeddings_only
-                else accumulate_full_row_tile(stream, tile_ids, significant, factor_once=tile_end - row > 1)
+                else accumulate_full_row_tile(stream, tile_ids, significant)
             )
             return _to_device(part, devices[0])
 

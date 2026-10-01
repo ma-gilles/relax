@@ -10,7 +10,7 @@ import pytest
 from relax.commands.ppca_initial_model import add_args
 from relax.ppca_initial_model import iteration_loop
 from relax.ppca_initial_model.config import Config
-from relax.ppca_refinement.full_row_stream import _add_block_partition_online
+from relax.ppca_refinement.full_row_stream import _normalize
 
 pytestmark = pytest.mark.unit
 
@@ -83,25 +83,29 @@ def test_balanced_stochastic_halves_are_fixed_and_reproducible():
         iteration_loop._select_halves(np.random.default_rng(11), np.arange(3), 3, True)
 
 
-def test_online_partition_normalizes_late_support_and_small_tails():
+def test_tile_normalization_handles_late_support_small_tails_and_ties():
+    # Three (B=2, T=2, R=2) rotation blocks; image 0 has no support in block 0.
     blocks = [
-        np.array([[[-np.inf, -np.inf], [-np.inf, -np.inf]], [[-100, -101], [-102, -103]]], np.float32),
+        np.array([[[-np.inf, -np.inf], [-np.inf, -np.inf]], [[-50, -51], [-52, -53]]], np.float32),
         np.array([[[-12, -14], [-20, -40]], [[0, -2], [-4, -8]]], np.float32),
-        np.array([[[0, -0.1], [-8, -60]], [[-30, -50], [-70, -90]]], np.float32),
+        np.array([[[0, -0.1], [-8, -200]], [[-30, -50], [-70, 0]]], np.float32),
     ]
-    center = jnp.full(2, -jnp.inf, jnp.float32)
-    partition = jnp.zeros(2, jnp.float32)
-    for block in blocks:
-        new_center = jnp.maximum(center, jnp.max(block, axis=(1, 2)))
-        partition = _add_block_partition_online(partition, jnp.asarray(block), center, new_center)
-        center = new_center
-    full = np.concatenate([b.reshape(2, -1) for b in blocks], axis=1)
+    kept = jnp.asarray(np.concatenate(blocks + [np.full((2, 2, 2), -np.inf, np.float32)], axis=2))
+    rows = jnp.asarray([10, 11, 12, 13, 14, 15, 99, 99], jnp.int32)
+    posterior = _normalize(kept, rows, n_blocks=3, block_size=2)
+    full = np.concatenate([b.reshape(2, -1) for b in blocks], axis=1).astype(np.float64)
     expected_center = np.max(full, axis=1)
     expected_partition = np.sum(np.exp(full - expected_center[:, None]), axis=1)
-    np.testing.assert_allclose(np.asarray(center), expected_center, rtol=1e-6, atol=1e-7)
-    np.testing.assert_allclose(np.asarray(partition), expected_partition, rtol=1e-6, atol=1e-7)
-    normalized = np.sum(np.exp(full - np.asarray(center)[:, None]) / np.asarray(partition)[:, None], axis=1)
-    np.testing.assert_allclose(normalized, np.ones(2), rtol=1e-6, atol=1e-7)
+    np.testing.assert_allclose(np.asarray(posterior.center), expected_center, rtol=1e-6, atol=1e-7)
+    np.testing.assert_allclose(np.exp(np.asarray(posterior.centered_logZ)), expected_partition, rtol=1e-6)
+    # First maximum in block order: image 1 ties at 0 in block 1 (row 12, t 0) and block 2 (row 15, t 1).
+    assert np.asarray(posterior.top_rotation).tolist() == [14, 12]
+    assert np.asarray(posterior.top_translation).tolist() == [0, 0]
+    # A pair is active when some translation keeps a nonzero float32 weight; -200 underflows.
+    active = np.asarray(posterior.active)
+    assert active.shape == (2, 8) and not active[:, 6:].any()
+    assert active[0].tolist()[:6] == [False, False, True, True, True, True]
+    assert active[1].tolist()[:6] == [True, True, True, True, True, True]
 
 
 def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
@@ -132,9 +136,8 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         captured.append(kwargs)
         return sentinel
 
-    def part(_stream, ids, support, *, factor_once, recompute):
-        assert _stream is sentinel and support == [None] * len(ids) and recompute
-        assert factor_once == (len(ids) > 1)
+    def part(_stream, ids, support):
+        assert _stream is sentinel and support == [None] * len(ids)
         return SimpleNamespace(
             rhs=jnp.zeros((n_freq, 3), jnp.complex64),
             lhs_tri=jnp.zeros((n_freq, 6), jnp.float32),
@@ -178,7 +181,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     monkeypatch.setattr(
         iteration_loop,
         "full_row_tile_embeddings",
-        lambda _stream, tile_ids, support, *, recompute: SimpleNamespace(
+        lambda _stream, tile_ids, support: SimpleNamespace(
             embeddings=jnp.ones((len(tile_ids), 2), jnp.float32),
             original_image_ids=np.asarray(tile_ids),
             n_images=len(tile_ids),

@@ -163,14 +163,13 @@ def tile_problem():
 
 
 @pytest.mark.parametrize("factor_once", [True, False])
-@pytest.mark.parametrize("recompute", [False, True])
-def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_once, recompute):
+def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_once):
     dataset, mu, W, stream, host = tile_problem
     expected = full_float32(accumulate_dense_ppca_statistics)(
         dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
         factor_once_score=factor_once, **host,
     )
-    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT, factor_once=factor_once, recompute=recompute)
+    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
     assert actual.diagnostics["engine"] == FULL_ROW_ENGINE
     assert actual.n_images == expected.n_images == 3
     assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
@@ -186,11 +185,10 @@ def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
 
 
-@pytest.mark.parametrize("recompute", [False, True])
-def test_device_resident_tile_embeddings_match_host_mask(tile_problem, recompute):
+def test_device_resident_tile_embeddings_match_host_mask(tile_problem):
     dataset, mu, W, stream, host = tile_problem
     expected = full_float32(compute_dense_ppca_embeddings)(dataset, mu, W, **host)
-    actual = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT, recompute=recompute)
+    actual = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT)
     assert actual.n_images == 3 and np.array_equal(actual.original_image_ids, expected.original_image_ids)
     assert_matches(np.asarray(actual.embeddings), np.asarray(expected.embeddings))
 
@@ -225,7 +223,7 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
         factor_once_score=factor_once,
         **{key: value for key, value in host.items() if key != "rotation_translation_mask"},
     )
-    actual = accumulate_full_row_tile(stream, np.arange(3), [None] * 3, factor_once=factor_once, recompute=True)
+    actual = accumulate_full_row_tile(stream, np.arange(3), [None] * 3)
     assert actual.diagnostics["supported_image_rows"] == 3 * len(rotations)
     for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
@@ -304,11 +302,10 @@ def test_moment_image_residuals_match_direct_residual_statistics_f64():
 PRUNED = [np.asarray([0, 1], np.int32), np.asarray([3, 5], np.int32), np.asarray([1, 4], np.int32)]
 
 
-@pytest.mark.parametrize("recompute", [False, True])
-def test_device_resident_union_rows_match_per_image_host_layout(tile_problem, recompute):
+def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
     dataset, mu, W, stream, host = tile_problem
     reference = build_pass2_hypothesis_layout(PRUNED, **LAYOUT_KWARGS)
-    actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED, factor_once=False, recompute=recompute)
+    actual = accumulate_full_row_tile(stream, np.arange(3), PRUNED)
     assert actual.diagnostics["supported_image_rows"] == reference.total_local_rotations == 32
     assert actual.diagnostics["scored_image_rows"] == 3 * 20  # union of 16 rows in four 5-row blocks
     parts = []
@@ -386,7 +383,7 @@ problems = {{d.id: t.make_tile_problem(d) for d in devices}}
 tiles = [(0, 2), (2, 3)]
 def run(device, tile):
     stream = problems[device.id][3]
-    part = accumulate_full_row_tile(stream, np.arange(*tile), t.PRUNED[tile[0]:tile[1]], factor_once=tile[1] - tile[0] > 1)
+    part = accumulate_full_row_tile(stream, np.arange(*tile), t.PRUNED[tile[0]:tile[1]])
     return _to_device(part, devices[0])
 one = [run(devices[0], tile) for tile in tiles]
 two = list(_on_devices(devices, run, tiles))
@@ -469,10 +466,13 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q, factor_once):
     expected = full_float32(accumulate_dense_ppca_statistics)(
         data, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
         factor_once_score=factor_once, **host)
-    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT,
-                                      factor_once=factor_once, recompute=True)
+    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    # Two float32 formulations: against a float64 run of the streamed formulation on this
+    # problem the reference RHS is off by up to 1.5e-6 of its scale at q=4 and 1.2e-6 at
+    # q=10 (the streamed one by 1.1e-6 and 1.0e-6), above the 1e-6 same-code band.
+    rtol = 3e-6
     for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
-        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)), rtol=rtol)
     assert actual.rhs.shape[-1] == q + 1
     assert actual.lhs_tri.shape[-1] == (q + 1) * (q + 2) // 2
     assert actual.embeddings.shape == (3, q)
