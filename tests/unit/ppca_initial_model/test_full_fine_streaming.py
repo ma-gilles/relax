@@ -280,7 +280,10 @@ def _compare_moment_image_residuals(dtype, rtol=None):
         gamma, d["alpha"], d["G_tri"], d["Y1_recon"], d["ctf2_recon"],
         rhs_dtype=d["Y1_recon"].dtype, lhs_dtype=d["ctf2_recon"].dtype,
     )
-    residual, correction_over_w = full_float32(residual_statistics_from_moment_images)(rhs, lhs, d["projections"])
+    # The moment-image form takes component-major projections, (P, R, F).
+    residual, correction_over_w = full_float32(residual_statistics_from_moment_images)(
+        rhs, lhs, jnp.swapaxes(d["projections"], 0, 1)
+    )
     assert np.asarray(correction_over_w).dtype == dtype
     assert_matches(np.asarray(residual), np.asarray(direct / w), rtol=rtol)
     assert_matches(np.asarray(correction_over_w), np.asarray(correction / w), rtol=rtol)
@@ -485,7 +488,7 @@ def _float64_tile_statistics(stream, image_indices, significant):
         T = len(stream.translations)
         kept = frs._Kept(
             jnp.full((capacity, n_images, T), -jnp.inf, jnp.float64),
-            jnp.zeros((capacity, q, n_images, T), jnp.float64),
+            jnp.zeros((q, capacity, n_images, T), jnp.float64),
             jnp.zeros((capacity, n_images, q * (q + 1) // 2), jnp.float64),
         )
         for start in stream.block_starts[: layout["n_blocks"]]:

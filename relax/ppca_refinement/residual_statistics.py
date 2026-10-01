@@ -8,6 +8,7 @@ from functools import wraps
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from recovar.ppca.triangular import unpack_tri_to_full
 
 
@@ -59,16 +60,25 @@ def residual_statistics_from_moment_images(rhs_images, lhs_tri_images, projectio
     """Residual images and noise-power correction from the M-step moment images.
 
     With ``R = sum_bt gamma alpha Y1`` and ``L = sum_bt gamma G ctf2_over_noise``
-    (the augmented RHS and packed LHS images of one rotation block) and the
-    windowed projections ``A`` (``(R, P, F)``), the expected residual of
-    :func:`residual_image_statistics` is ``R_p - sum_q L_pq A_q`` and its
-    correction is ``sum_r [sum_pq L_pq Re(conj(A_p) A_q) - 2 sum_p Re(R_p conj(A_p))]``.
-    Both are linear in ``(R, L)``, so the per-pose contractions are not repeated.
+    (the augmented RHS ``(P, R, F)`` and packed upper LHS ``(tri(P), R, F)``
+    images of one rotation block) and the windowed projections ``A``
+    (``(P, R, F)``), the expected residual of :func:`residual_image_statistics`
+    is ``R_p - sum_q L_pq A_q`` and its correction is
+    ``sum_r [sum_pq L_pq Re(conj(A_p) A_q) - 2 sum_p Re(R_p conj(A_p))]``.
+    Both are linear in ``(R, L)``, so the per-pose contractions are not repeated;
+    the packed ``L`` is read in place, one symmetric entry at a time.
     The images carry whatever pixel metric ``Y1`` and ``ctf2_over_noise`` carry.
     """
     basis_size = rhs_images.shape[0]
-    lhs = unpack_tri_to_full(jnp.moveaxis(lhs_tri_images, 0, -1), basis_size)  # (R, F, P, P)
-    prediction = jnp.einsum("rfpq,rqf->prf", lhs, projections)
-    power = jnp.einsum("rfpq,rpf,rqf->f", lhs, projections.conj(), projections).real
-    cross = jnp.einsum("prf,rpf->f", rhs_images, projections.conj()).real
-    return rhs_images - prediction, power - 2 * cross
+    index = {}
+    for k, (i, j) in enumerate(zip(*np.triu_indices(basis_size))):
+        index[(int(i), int(j))] = index[(int(j), int(i))] = k
+    prediction = jnp.stack(
+        [sum(lhs_tri_images[index[(p, q)]] * projections[q] for q in range(basis_size)) for p in range(basis_size)]
+    )
+    power = sum(
+        (1.0 if i == j else 2.0) * lhs_tri_images[k] * (projections[i].conj() * projections[j]).real
+        for k, (i, j) in enumerate(zip(*np.triu_indices(basis_size)))
+    )
+    cross = (rhs_images * projections.conj()).real
+    return rhs_images - prediction, jnp.sum(power, axis=0) - 2 * jnp.sum(cross, axis=(0, 1))

@@ -25,8 +25,9 @@ Per image tile:
    the augmented backprojection. Nothing of pass 1 is recomputed except the
    projections the residuals need.
 
-Kept operands are rotation-major ``(R, ..., B, T)`` so each GEMM reads and
-writes them in place. Every posterior weight is used: float32 weights of these
+Kept operands are component-major ``(component, R, B, T)``, the layout of the
+projector's output and of the backprojector's input, so each GEMM reads and
+writes them in place and no operand is transposed. Every posterior weight is used: float32 weights of these
 posteriors are nonzero for essentially every (image, rotation) pair.
 
 The formulation is section 14 of ``docs/math/vdam_ppca_algorithm.md``.
@@ -42,6 +43,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from recovar import core
 from recovar.core.configs import ForwardModelConfig
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size
@@ -52,7 +54,6 @@ from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indi
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
-    _project_augmented_half_volumes,
     prepare_dense_ppca_dataset_inputs,
     prepare_dense_ppca_image_batch,
 )
@@ -123,7 +124,7 @@ class _Kept(NamedTuple):
     """Pass-1 results of every tile pose, rotation-major over the row table."""
 
     score: jax.Array  # (capacity, B, T) pose log-scores without the image energy; -inf unsupported
-    latent_mean: jax.Array  # (capacity, q, B, T) posterior latent means
+    latent_mean: jax.Array  # (q, capacity, B, T) posterior latent means
     latent_covariance: jax.Array  # (capacity, B, tri(q)) packed upper (I + H_zz)^-1
 
 
@@ -206,15 +207,18 @@ def full_row_pose_log_prior(
 
 
 def _project(arrays: _StreamArrays, rotations, static: _StreamStatic):
-    """Windowed augmented projections ``(R, P, F)`` of the given rotations."""
-    proj = _project_augmented_half_volumes(
+    """Windowed augmented projections ``(P, R, F)`` of the given rotations, component-major."""
+    kwargs = {} if static.projection_max_r is None else {"max_r": static.projection_max_r}
+    proj = core.batch_slice_volume(
         arrays.augmented,
         rotations,
         static.image_shape,
         static.volume_shape,
         static.disc_type,
-        max_r=static.projection_max_r,
+        half_volume=True,
+        half_image=True,
         relion_texture_interp=static.relion_texture_interp,
+        **kwargs,
     )
     return proj if arrays.score_indices is None else proj[:, :, arrays.score_indices]
 
@@ -224,58 +228,11 @@ def _real_imag(values):
     return jnp.concatenate([values.real, values.imag], axis=-1)
 
 
-def _unit_shift_cholesky(H):
-    """Lower Cholesky factor of ``I + H`` for symmetric ``H`` (..., q, q), unrolled over ``q``.
-
-    Returns the factor as nested lists of batch arrays and ``log det(I + H)``.
-    """
-    q = H.shape[-1]
-    L = [[None] * q for _ in range(q)]
-    log_diagonal = []
-    for j in range(q):
-        s = 1.0 + H[..., j, j]
-        for k in range(j):
-            s = s - L[j][k] * L[j][k]
-        L[j][j] = jnp.sqrt(s)
-        log_diagonal.append(jnp.log(L[j][j]))
-        for i in range(j + 1, q):
-            s = H[..., i, j]
-            for k in range(j):
-                s = s - L[i][k] * L[j][k]
-            L[i][j] = s / L[j][j]
-    return L, 2.0 * sum(log_diagonal)
-
-
-def _forward_substitute(L, b):
-    """``L^-1 b`` for ``b`` (..., q); ``L`` entries broadcast against ``b[..., 0]``."""
-    v = []
-    for i in range(len(L)):
-        s = b[..., i]
-        for k in range(i):
-            s = s - L[i][k] * v[k]
-        v.append(s / L[i][i])
-    return v
-
-
-def _lower_inverse(L):
-    """Entries of ``L^-1`` for a lower-triangular nested-list factor."""
-    q = len(L)
-    inverse = [[None] * q for _ in range(q)]
-    for j in range(q):
-        inverse[j][j] = 1.0 / L[j][j]
-        for i in range(j + 1, q):
-            s = 0.0
-            for k in range(j, i):
-                s = s + L[i][k] * inverse[k][j]
-            inverse[i][j] = -s / L[i][i]
-    return inverse
-
-
 def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     """Pose scores, latent means and covariances for one rotation block.
 
     ``Y1`` is ``(2F, B T)`` (real and imaginary parts), ``ctf2`` ``(F, B)``,
-    ``proj`` ``(R, P, F)`` and ``pose_log_prior`` ``(B, R, T)``. One GEMM gives
+    ``proj`` ``(P, R, F)`` and ``pose_log_prior`` ``(B, R, T)``. One GEMM gives
     ``Re<Y1, A_p>`` for every pose and component (``t_mx`` for ``p = 0``,
     ``g_zx`` otherwise), a second the CTF/noise-weighted ``Re(conj(A_i) A_j)``
     (``nu_mm``, ``h_zm``, ``H_zz``), as in
@@ -284,29 +241,31 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     the algorithm document) the score is
     ``-0.5 [nu_mm - 2 t_mx - |L^-1 b|^2 + log det(I + H_zz)]`` plus the prior,
     the latent mean ``L^-T L^-1 b`` and the covariance ``L^-T L^-1``. Returns
-    score ``(R, B, T)``, means ``(R, q, B, T)`` and packed covariances
+    score ``(R, B, T)``, means ``(q, R, B, T)`` and packed covariances
     ``(R, B, tri(q))``.
     """
-    R, P, F = proj.shape
+    P, R, F = proj.shape
     q = P - 1
     B = n_images
     T = Y1.shape[1] // B
-    inner = jnp.dot(_real_imag(proj).reshape(R * P, 2 * F), Y1, precision=_HIGHEST).reshape(R, P, B, T)
+    inner = jnp.dot(_real_imag(proj).reshape(P * R, 2 * F), Y1, precision=_HIGHEST).reshape(P, R, B, T)
     first, second = np.triu_indices(P)
-    products = proj.real[:, first] * proj.real[:, second] + proj.imag[:, first] * proj.imag[:, second]
-    gram = jnp.dot(products.reshape(R * first.size, F), ctf2, precision=_HIGHEST).reshape(R, first.size, B)
+    products = proj.real[first] * proj.real[second] + proj.imag[first] * proj.imag[second]
+    gram = jnp.dot(products.reshape(first.size * R, F), ctf2, precision=_HIGHEST).reshape(first.size, R, B)
     index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(first, second))}
-    rho = gram[:, index[(0, 0)], :, None] - 2.0 * inner[:, 0]
+    rho = gram[index[(0, 0)], :, :, None] - 2.0 * inner[0]
     prior = jnp.transpose(pose_log_prior, (1, 0, 2))
     if q == 0:
-        return -0.5 * rho + prior, jnp.zeros((R, 0, B, T), inner.dtype), jnp.zeros((R, B, 0), inner.dtype)
-    H = [[gram[:, index[(min(i, j), max(i, j))]] for j in range(1, P)] for i in range(1, P)]
-    L, logdet = _unit_shift_cholesky(H)
+        return -0.5 * rho + prior, jnp.zeros((0, R, B, T), inner.dtype), jnp.zeros((R, B, 0), inner.dtype)
+    # The (rotation, image) factor is materialized once; fusing it into every
+    # translation's substitution would repeat the factorization per pose.
+    H = [[gram[index[(min(i, j), max(i, j))]] for j in range(1, P)] for i in range(1, P)]
+    L, logdet = jax.lax.optimization_barrier(_unit_shift_cholesky(H))
     Lt = [[x if x is None else x[..., None] for x in row] for row in L]
-    b = [inner[:, j] - gram[:, index[(0, j)], :, None] for j in range(1, P)]
+    b = [inner[j] - gram[index[(0, j)], :, :, None] for j in range(1, P)]
     v = _forward_substitute(Lt, b)
     score = -0.5 * (rho - sum(x * x for x in v) + logdet[..., None]) + prior
-    mean = jnp.stack(_back_substitute(Lt, v), axis=1)
+    mean = jnp.stack(_back_substitute(Lt, v), axis=0)
     inverse = _lower_inverse(L)
     covariance = jnp.stack(
         [sum(inverse[k][i] * inverse[k][j] for k in range(j, q)) for i, j in zip(*np.triu_indices(q))], axis=-1
@@ -390,8 +349,12 @@ def _score_block(arrays, tile, kept, start, *, static, block_size):
         arrays.translation_log_prior,
     )
     proj = _project(arrays, arrays.rotations[rows], static)
-    block = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
-    return _Kept(*[jax.lax.dynamic_update_slice_in_dim(k, x, start, axis=0) for k, x in zip(kept, block)])
+    score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
+    return _Kept(
+        score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
+        latent_mean=jax.lax.dynamic_update_slice_in_dim(kept.latent_mean, mean, start, axis=1),
+        latent_covariance=jax.lax.dynamic_update_slice_in_dim(kept.latent_covariance, covariance, start, axis=0),
+    )
 
 
 @partial(jax.jit, static_argnames=("n_blocks", "block_size"))
@@ -419,29 +382,31 @@ def _normalize(score, rows, *, n_blocks, block_size):
 
 
 def _second_moment_sums(gamma, mean, covariance):
-    """``sum_t gamma E[[1, z][1, z]^T]`` packed upper ``(R, tri(P), B)`` per rotation and image."""
-    q = mean.shape[1]
+    """``sum_t gamma E[[1, z][1, z]^T]`` packed upper ``(tri(P), R, B)`` per rotation and image."""
+    q = mean.shape[0]
     cov_index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(*np.triu_indices(q)))}
     entries = []
     for i, j in zip(*np.triu_indices(q + 1)):
         if i == 0:
-            entries.append(gamma if j == 0 else gamma * mean[:, j - 1])
+            entries.append(gamma if j == 0 else gamma * mean[j - 1])
         else:
-            second = covariance[..., cov_index[(i - 1, j - 1)], None] + mean[:, i - 1] * mean[:, j - 1]
+            second = covariance[..., cov_index[(i - 1, j - 1)], None] + mean[i - 1] * mean[j - 1]
             entries.append(gamma * second)
-    return jnp.stack([jnp.sum(x, axis=-1) for x in entries], axis=1)
+    return jnp.stack([jnp.sum(x, axis=-1) for x in entries], axis=0)
 
 
 @partial(jax.jit, static_argnames=("static", "block_size", "moments"), donate_argnums=(0,))
 def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_size, moments):
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
-    score, mean, covariance = (jax.lax.dynamic_slice_in_dim(k, start, block_size, axis=0) for k in kept)
+    score = jax.lax.dynamic_slice_in_dim(kept.score, start, block_size, axis=0)
+    mean = jax.lax.dynamic_slice_in_dim(kept.latent_mean, start, block_size, axis=1)
+    covariance = jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0)
     centered_score = (score - posterior.center[None, :, None]) - posterior.centered_logZ[None, :, None]
     gamma = jnp.exp(centered_score)  # (R, B, T)
     R, B, T = gamma.shape
-    latent_trace = sum(covariance[..., k] for k, (i, j) in enumerate(zip(*np.triu_indices(mean.shape[1]))) if i == j)
+    latent_trace = sum(covariance[..., k] for k, (i, j) in enumerate(zip(*np.triu_indices(mean.shape[0]))) if i == j)
     carry = carry._replace(
-        embedding=carry.embedding + jnp.einsum("rbt,rqbt->bq", gamma, mean, precision=_HIGHEST),
+        embedding=carry.embedding + jnp.einsum("rbt,qrbt->bq", gamma, mean, precision=_HIGHEST),
         rotation_mass=jax.lax.dynamic_update_slice_in_dim(carry.rotation_mass, jnp.sum(gamma, axis=(1, 2)), start, 0),
         latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(gamma * latent_trace[..., None]),
         pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(gamma > 0, gamma * centered_score, 0)),
@@ -450,17 +415,16 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     )
     if not moments:
         return carry
-    P = mean.shape[1] + 1
+    P = mean.shape[0] + 1
     F = tile.ctf2_recon.shape[1]
     rotations = arrays.rotations[_block_rows(tile, start, block_size)]
     proj = _project(arrays, rotations, static)
-    weights = jnp.concatenate([gamma[:, None], gamma[:, None] * mean], axis=1).reshape(R * P, B * T)
-    rhs_parts = jnp.dot(weights, tile.Y1_recon, precision=_HIGHEST).reshape(R, P, 2 * F)
-    rhs_images = jnp.swapaxes(jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:]), 0, 1)  # (P, R, F)
-    sums = _second_moment_sums(gamma, mean, covariance)  # (R, K, B)
-    K = sums.shape[1]
-    lhs_images = jnp.dot(sums.reshape(R * K, B), tile.ctf2_recon, precision=_HIGHEST)
-    lhs_images = jnp.swapaxes(lhs_images.reshape(R, K, F), 0, 1)  # (K, R, F)
+    weights = jnp.concatenate([gamma[None], gamma[None] * mean], axis=0).reshape(P * R, B * T)
+    rhs_parts = jnp.dot(weights, tile.Y1_recon, precision=_HIGHEST).reshape(P, R, 2 * F)
+    rhs_images = jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:])  # (P, R, F)
+    sums = _second_moment_sums(gamma, mean, covariance)  # (K, R, B)
+    K = sums.shape[0]
+    lhs_images = jnp.dot(sums.reshape(K * R, B), tile.ctf2_recon, precision=_HIGHEST).reshape(K, R, F)
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight.
@@ -717,7 +681,7 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int):
     capacity = len(stream.block_starts) * stream.rotation_block_size
     kept = _Kept(
         score=jnp.full((capacity, n_images, T), -jnp.inf, jnp.float32),
-        latent_mean=jnp.zeros((capacity, q, n_images, T), jnp.float32),
+        latent_mean=jnp.zeros((q, capacity, n_images, T), jnp.float32),
         latent_covariance=jnp.zeros((capacity, n_images, tri_size(q)), jnp.float32),
     )
     for start in stream.block_starts[:n_blocks]:

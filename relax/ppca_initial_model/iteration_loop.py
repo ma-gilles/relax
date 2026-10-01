@@ -9,6 +9,7 @@ support, run through the device-resident engine
 """
 
 import dataclasses
+import functools
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -52,6 +53,14 @@ def _json(value):
     if isinstance(value, np.generic):
         return value.item()
     raise TypeError(type(value).__name__)
+
+
+@functools.lru_cache(maxsize=4)
+def _rotation_grid(hp):
+    """The HEALPix order's float32 rotation matrices (read-only); HP4 takes about 0.3 s to build."""
+    rotations = sampling.get_relion_hidden_rotation_grid(hp, matrices=True).astype(np.float32)
+    rotations.flags.writeable = False
+    return rotations
 
 
 def _merge_statistics(parts):
@@ -190,7 +199,7 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
     geometry = GeometryConfig(current_size=2 * radius, q=config.q, volume_domain="fourier_half")
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
-    rotations = sampling.get_relion_hidden_rotation_grid(hp, matrices=True).astype(np.float32)
+    rotations = _rotation_grid(hp)
     canonical_eulers = sampling.get_relion_hidden_rotation_grid(hp, matrices=False)
     rotation_prior = (
         np.asarray(state.direction_prior, np.float32)
