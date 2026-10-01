@@ -1,4 +1,4 @@
-"""Learn one ab-initio q=2 PPCA model from particles and known CTFs."""
+"""Learn one ab-initio PPCA model from particles and known CTFs."""
 
 import argparse
 import dataclasses

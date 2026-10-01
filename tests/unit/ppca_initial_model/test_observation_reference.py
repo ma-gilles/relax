@@ -15,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("dtype,tol", [(np.float32, 2e-5), (np.float64, 2e-11)])
-@pytest.mark.parametrize("q", [0, 2])
+@pytest.mark.parametrize("q", [0, 2, 4, 10])
 @pytest.mark.parametrize("zero_loading", [False, True])
 def test_real_covariance_reference(dtype, tol, q, zero_loading):
     rng = np.random.default_rng(1729)

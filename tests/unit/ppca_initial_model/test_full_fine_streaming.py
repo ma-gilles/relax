@@ -123,16 +123,17 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-def make_tile_problem(device=None):
+def make_tile_problem(device=None, q=2):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
     mu = _half_volume(rng)
-    W = np.stack([_half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1)
+    W = (np.stack([_half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1) if q == 2
+         else np.stack([_half_volume(rng, 0.2) for _ in range(q)], axis=1))
     translation_prior = (-np.sum(shared.translation_grid**2, axis=-1) / 8.0).astype(np.float32)
     common = dict(
         noise_variance=np.full(IMAGE_SHAPE, 40.0, np.float32),
-        geometry=GeometryConfig(current_size=6, q=2, volume_domain="fourier_half"),
+        geometry=GeometryConfig(current_size=6, q=q, volume_domain="fourier_half"),
         # Five-row blocks leave a four-row remainder block.
         schedule=ScheduleConfig(image_batch_size=3, rotation_block_size=5),
         scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
@@ -457,3 +458,23 @@ def test_compensated_block_sums_keep_small_contributions_under_jit():
         plain = plain + jnp.float32(0.01)
     assert np.all(np.asarray(plain) == np.float32(1.0e6))  # the naive float32 sum loses every term
     assert_matches(np.asarray(total, np.float64), np.full(4, 1.0e6 + 10.0))
+
+
+@pytest.mark.parametrize("q", [4, 10])
+@pytest.mark.parametrize("factor_once", [False, True])
+def test_general_rank_coarse_recompute_matches_dense_reference(q, factor_once):
+    """Exercise real projection, score, moments and streamed pass2 at general rank."""
+    data, mu, W, stream, host = make_tile_problem(q=q)
+    # Reuse the independent host support reference and its established tolerances.
+    expected = full_float32(accumulate_dense_ppca_statistics)(
+        data, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
+        factor_once_score=factor_once, **host)
+    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT,
+                                      factor_once=factor_once, recompute=True)
+    for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
+    assert actual.rhs.shape[-1] == q + 1
+    assert actual.lhs_tri.shape[-1] == (q + 1) * (q + 2) // 2
+    assert actual.embeddings.shape == (3, q)
+    assert actual.rhs.dtype == actual.residual_gradient.dtype == jnp.complex64
+    assert actual.lhs_tri.dtype == actual.embeddings.dtype == jnp.float32

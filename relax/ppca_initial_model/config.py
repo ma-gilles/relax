@@ -38,8 +38,8 @@ class Config:
     sgd_learning_rate: float = 0.4
 
     def __post_init__(self):
-        if self.q != 2 or self.seed <= 0 or self.iterations <= 0:
-            raise ValueError("First version requires q=2, positive seed and iteration count")
+        if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
+            raise ValueError("PPCA requires positive integer q, seed and iteration count")
         if not self.stages or self.stages[0][0] != 1:
             raise ValueError("Stages must begin at iteration 1")
         if list(self.stages) != sorted(self.stages) or any(r <= 0 or hp < 0 for _, r, hp in self.stages):
@@ -54,6 +54,8 @@ class Config:
             self.oversampling != 0 or self.fine_devices != 1 or self.stream_full_fine_rows
         ):
             raise ValueError("Coarse recomputation requires oversampling=0 and one device")
+        if self.q > 2 and not self.stream_coarse_recompute:
+            raise ValueError("Higher-rank InitialModel requires the streamed coarse recompute engine")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")
         if self.stochastic_all_iterations and self.stochastic_batch_size is None:

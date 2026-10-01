@@ -189,7 +189,7 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
     h[dc] = np.diag([2, 1, 1])
     gradient = np.zeros((n_freq, 3), np.complex64)
     gradient[dc, 0] = -1
-    monkeypatch.setattr(iteration_loop, "initialize", lambda *_args, **_kwargs: (zero, jnp.ones(3), {"seed": 11}))
+    monkeypatch.setattr(iteration_loop, "initialize", lambda *_args, **_kwargs: (zero, jnp.ones(3, jnp.float32), {"seed": 11}))
     monkeypatch.setattr(iteration_loop, "support_mask", lambda *_args: jnp.ones(shape, jnp.float32))
     # A soft support operation must act once on each output, not twice on the new step.
     monkeypatch.setattr(iteration_loop, "bandlimit_and_mask", lambda value, *_args: value * 0.5)

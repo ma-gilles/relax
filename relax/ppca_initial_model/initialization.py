@@ -1,8 +1,8 @@
 """Float32 VDAM-style random seed maps, with no supplied poses or volumes.
 
 Algorithm section 10: random-angle round-robin reconstructions set the scale
-of positive-minus-half-negative blob fields; three fields map to one mean and
-two normalized contrasts. Native double bootstrap is not called.
+of positive-minus-half-negative blob fields; q+1 fields map to one mean and
+q normalized Helmert contrasts. Native double bootstrap is not called.
 """
 
 import jax.numpy as jnp
@@ -17,10 +17,22 @@ from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
 
 
 def seed_maps_to_model(volumes, *, compute_dtype=jnp.float32):
-    """Exact q=2 mean/contrast construction; empirical covariance divisor is 3."""
+    """Mean and scaled Helmert contrasts preserve covariance with divisor q+1.
+
+    See docs/math/vdam_ppca_algorithm.md, general-rank initialization.
+    The three-map branch preserves the existing q=2 arithmetic exactly.
+    """
     v = jnp.asarray(volumes, compute_dtype)
-    if v.shape[0] != 3:
-        raise ValueError("The selected initializer requires exactly three seed maps (q=2)")
+    count = v.shape[0]
+    if count < 2:
+        raise ValueError("PPCA initialization requires at least two seed maps")
+    if count != 3:
+        mu = jnp.mean(v, axis=0)
+        contrasts = []
+        for j in range(1, count):
+            denominator = jnp.sqrt(jnp.asarray(count * j * (j + 1), compute_dtype))
+            contrasts.append((jnp.sum(v[:j], axis=0) - j * v[j]) / denominator)
+        return jnp.concatenate([mu[None], jnp.stack(contrasts)])
     mu = (v[0] + v[1] + v[2]) / 3
     W = jnp.stack(
         [
@@ -65,13 +77,16 @@ def _blob_field(amplitude, diameter, rng):
 
 
 @full_float32
-def initialize(dataset, *, seed, diameter_ang, batch_size=64):
+def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
     """Return shared half-Fourier theta, inferred shell noise and seed metadata."""
+    if isinstance(q, bool) or not isinstance(q, (int, np.integer)) or q <= 0:
+        raise ValueError("q must be a positive integer")
+    channels = q + 1
     n = dataset.grid_size
     rng = np.random.default_rng(seed)
     ids = rng.permutation(dataset.n_images)[:1000]
     half_shape = ftu.volume_shape_to_half_volume_shape(dataset.volume_shape)
-    rhs = jnp.zeros((3, int(np.prod(half_shape))), jnp.complex64)
+    rhs = jnp.zeros((channels, int(np.prod(half_shape))), jnp.complex64)
     lhs = jnp.zeros(rhs.shape, jnp.float32)
     images_for_noise = []
     radius = max(1, int(np.floor(0.07 * n + 0.5)))
@@ -84,8 +99,8 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64):
             jnp.float32
         )
         rotations = Rotation.random(count, random_state=rng).as_matrix().astype(np.float32)
-        labels = (np.arange(count) + offset) % 3
-        for k in range(3):
+        labels = (np.arange(count) + offset) % channels
+        for k in range(channels):
             select = np.flatnonzero(labels == k)
             if not len(select):
                 continue
@@ -113,7 +128,7 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64):
             lhs = lhs.at[k].add(l.real)
         offset += count
     reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
-    real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((3,) + half_shape), dataset.volume_shape), np.float32)
+    real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), dataset.volume_shape), np.float32)
     diameter = diameter_ang / dataset.voxel_size
     mask = support_mask(n, diameter)
     fields = []
@@ -124,7 +139,7 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64):
             raise ValueError("Random bootstrap produced a zero blob field")
         fields.append(field * (np.std(volume, dtype=np.float32) / sd))
     augmented = seed_maps_to_model(np.stack(fields))
-    theta = ftu.get_dft3_real(augmented).reshape(3, -1).T
+    theta = ftu.get_dft3_real(augmented).reshape(channels, -1).T
     theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
     if not np.all(np.isfinite(np.asarray(theta))) or np.any(np.linalg.norm(np.asarray(theta[:, 1:]), axis=0) == 0):
         raise ValueError("Random initialization requires finite, nonzero loadings")

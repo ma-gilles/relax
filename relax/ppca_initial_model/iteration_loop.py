@@ -479,7 +479,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
     if resume:
         state = checkpoint.load(resume, config, identity)
     else:
-        theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang)
+        theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(
@@ -495,6 +495,10 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             sgd_momentum=jnp.zeros_like(theta) if config.optimizer == "momentum_sgd" else None,
         )
         checkpoint.save(output / "checkpoint_0000.npz", state, config, identity)
+    if state.theta.ndim != 2 or state.theta.shape[1] != config.q + 1:
+        raise ValueError("PPCA model rank differs from the configured q")
+    if state.theta.dtype != jnp.complex64 or state.noise.dtype != jnp.float32:
+        raise TypeError("InitialModel requires production float32 model and noise")
     if dataset.n_images < 4:
         raise ValueError("Both pseudo-halfsets need particles")
     mask = support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)

@@ -1106,3 +1106,15 @@ training model or transform its basis. Similar-volume alignment can reduce
 loading power, but the present shrinkage rule does not guarantee a unique
 relative frame. Common-frame scores address that separate question; they are
 not required for the exploratory per-state shape comparison.
+
+### General-rank initialization
+
+[`seed_maps_to_model`](../../relax/ppca_initial_model/initialization.py) uses K=q+1
+independent data-only random bootstrap seed maps. The mean is their average,
+and contrast j is (sum of the first j seed maps minus j times seed map j)
+divided by sqrt(K j (j+1)), for j=1,...,q. These scaled Helmert rows satisfy
+WW^T = (1/K) sum_k (v_k-mu)(v_k-mu)^T, so Gaussian latent prior covariance
+retains the empirical seed-map covariance at arbitrary rank. The q=2 branch
+keeps the previous reduction order exactly. No ground-truth label, map or pose
+enters the random-angle round-robin bootstrap. Config q defaults to two;
+changing rank does not change the optimizer schedule or observation model.
