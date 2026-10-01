@@ -45,9 +45,20 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   Class3D 25 iterations -4.7%. The coarse kernel `relion_coarse_diff2_projector_f32_kernel` is now
   93% of the E-step's GPU time (85 ms per particle; nsys,
   `em_work/cryoet_vdam_20261001/profile`).
-- Open: qualification against same-seed RELION bands (et09 K=1 VDAM, 3 seeds; et15 K=2; et01
-  Refine3D `--firstiter_cc`, 3 seeds); evidence and job IDs in
-  `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001/HANDOFF.json`.
+- Subtomogram Refine3D `--firstiter_cc` (et01_base, RELION's default command, RELION 5.0.1
+  mpiscale MPI 3x4, H100): masked GT FSC-AUC relax / RELION (two same-seed runs, identical)
+  s1 0.99161 / 0.99162, s2 0.99180 / 0.99180, s3 0.99212 / 0.99223; map gate PASS on every seed
+  (merged cross-engine 0.99998 at s1-s2, 0.99962 at s3); wall 0.43-0.46x. OPEN: the s3 gap of
+  1.1e-4 reproduces in two relax runs (66ff6c8, d6ba262), outside RELION's same-seed range.
+- Subtomogram VDAM K=1 (et09_box64, one optics group, stock seeding, s2): masked GT FSC-AUC
+  0.98808 inside RELION's same-seed range [0.98795, 0.98816]; wall about 2x RELION before the
+  coarse matrices fix.
+- With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
+  particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
+  fixtures keeps classes 2..K empty in both programs (ma-gilles/relax#11). With one optics group
+  per tomogram, as RELION 5 imports, every class is seeded; K>1 tomo VDAM is qualified on
+  fixtures re-labelled that way (in progress, together with InitialModel on several optics groups).
+  Evidence and job IDs: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001/HANDOFF.json`.
 
 ## PPCA coarse optimizer comparison (September 28, 2026)
 
