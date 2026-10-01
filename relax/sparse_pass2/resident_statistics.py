@@ -275,6 +275,11 @@ class ResidentStatisticsConfig:
     # (class, coarse rotation) slots and the statistics carry a class axis
     # (:class:`ResidentClassStatistics`).
     n_classes: int = 1
+    # Sum the float32 translation posterior rows into their images in row buckets
+    # (segment_sum, bucket 128) instead of the scatter-add. The dense GEMM coarse
+    # engine builds its config with this default; the resident passes resolve it
+    # False, and the scatter-add is their image-sum order.
+    float32_bucketed_image_sums: bool = True
 
     def __post_init__(self):
         for name in (
@@ -312,6 +317,7 @@ def resolve_statistics_config(
     source_faithful_spectrum_norm: bool = False,
     n_optics_groups: int = 1,
     n_classes: int = 1,
+    float32_bucketed_image_sums: bool = True,
 ) -> ResidentStatisticsConfig:
     """Build a config, reading the same environment the host tail reads.
 
@@ -344,6 +350,7 @@ def resolve_statistics_config(
         accumulate_scale=bool(accumulate_scale),
         n_optics_groups=int(n_optics_groups),
         n_classes=int(n_classes),
+        float32_bucketed_image_sums=bool(float32_bucketed_image_sums),
     )
 
 
@@ -522,7 +529,9 @@ def _accumulate_chunk_statistics_jit(
     sigma2_offset = stats.sigma2_offset
     translation_posterior = segment_sum_by_image(
         probs, row_image, image_capacity,
-        float32_posterior_bucket_size=128 if probs.dtype == jnp.float32 else None,
+        float32_posterior_bucket_size=(
+            128 if config.float32_bucketed_image_sums and probs.dtype == jnp.float32 else None
+        ),
     )
     if tables.translation_sqdist_ang is not None:
         sqdist = jnp.asarray(tables.translation_sqdist_ang, dtype=jnp.float64)

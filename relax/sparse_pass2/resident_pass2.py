@@ -225,6 +225,10 @@ from relax.sparse_pass2.sparse_pass2_window import (
 logger = logging.getLogger(__name__)
 
 _ROW_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES"
+# The resident pass sums its float32 posterior and norm rows into their images with
+# the scatter-add; the bucketed segment_sum (and its planned scratch) is the dense
+# GEMM coarse engine's.
+_FLOAT32_BUCKETED_IMAGE_SUMS = False
 _IMAGE_CAPACITY_LADDER_ENV = "RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES"
 _MSTEP_BLOCK_ROWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS"
 # Attribution only, default off. Logs one line per chunk with its occupancy,
@@ -1266,7 +1270,7 @@ def _resident_block_residual(summed, probs_sum_t, proj, ctf2_over_nv_recon, row_
     return summed - frefctf_delta
 
 
-@partial(jax.jit, static_argnames=("n_shells", "image_capacity"))
+@partial(jax.jit, static_argnames=("n_shells", "image_capacity", "float32_bucketed_image_sums"))
 def _resident_block_noise_and_norm(
     proj,  # complex [block, P]
     proj_abs2,  # real [block, P]
@@ -1279,11 +1283,15 @@ def _resident_block_noise_and_norm(
     *,
     n_shells: int,
     image_capacity: int,
+    float32_bucketed_image_sums: bool = True,
 ):
     """One row block's noise shells plus its per-image ``A2``/``XA`` partials.
 
     With a per-optics-group noise table each row uses its image's group spectrum
-    and the shells come back per group, ``[G, n_shells]``.
+    and the shells come back per group, ``[G, n_shells]``. The resident passes sum
+    the rows into their images with the scatter-add
+    (``float32_bucketed_image_sums=False``, their statistics config's value); the
+    dense GEMM coarse engine's calls keep the bucketed float32 sums.
     """
 
     if row_optics_groups is None:
@@ -1314,10 +1322,10 @@ def _resident_block_noise_and_norm(
         proj, proj_abs2, summed_masked, ctf_probs, row_noise
     )
     # These nonnegative F32 row terms can occupy thousands of candidate rows
-    # per image. Bucket them before the image sum so atomic addition order does
-    # not lose the same small contributions that the norm correction needs.
-    a2_bucket = 128 if a2_per_row.dtype == jnp.float32 else None
-    xa_bucket = 128 if xa_per_row.dtype == jnp.float32 else None
+    # per image. The bucketed sum keeps atomic addition order from losing the
+    # same small contributions that the norm correction needs.
+    a2_bucket = 128 if float32_bucketed_image_sums and a2_per_row.dtype == jnp.float32 else None
+    xa_bucket = 128 if float32_bucketed_image_sums and xa_per_row.dtype == jnp.float32 else None
     a2_per_image = segment_sum_by_image(
         a2_per_row, row_image_local, int(image_capacity), float32_scalar_bucket_size=a2_bucket,
     )
@@ -1544,7 +1552,9 @@ def _accumulate_chunk_image_terms(
     # --- 1/2. sigma2 offset and support mass -------------------------------
     translation_posterior = segment_sum_by_image(
         probs, row_image, image_capacity,
-        float32_posterior_bucket_size=128 if probs.dtype == jnp.float32 else None,
+        float32_posterior_bucket_size=(
+            128 if config.float32_bucketed_image_sums and probs.dtype == jnp.float32 else None
+        ),
     )
     sigma2_offset = stats.sigma2_offset
     if tables.translation_sqdist_ang is not None:
@@ -3593,7 +3603,9 @@ def _resident_pass2(
             rows_live_during_prepare=True,
             pipelined=tilt is None and _global_chunk_loop_pipelined(stream_projections),
             float32_posterior_buckets=(
-                tilt is None and np.dtype(precision_policy.score_real_dtype) == np.dtype(np.float32)
+                _FLOAT32_BUCKETED_IMAGE_SUMS
+                and tilt is None
+                and np.dtype(precision_policy.score_real_dtype) == np.dtype(np.float32)
             ),
             fixed_bytes=accumulator_bytes,
             max_image_rows=max_image_rows(tables.row_offsets),
@@ -3749,6 +3761,7 @@ def _resident_pass2(
         source_faithful_spectrum_norm=resolved_spectrum_norm,
         n_optics_groups=n_optics_groups,
         n_classes=n_classes,
+        float32_bucketed_image_sums=_FLOAT32_BUCKETED_IMAGE_SUMS,
     )
     stats = make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -6550,16 +6563,18 @@ class _ChunkProgramSpec:
 
 
 class _MstepOnlyStatsConfig(NamedTuple):
-    """The single statistics field the M-step block body reads.
+    """The statistics fields the M-step block body reads.
 
     ``run_resident_mstep_blocks`` runs the M-step alone for a caller that owns
     its own scoring, posterior and statistics (local search, T12). Handing it
-    the shell count in the shape ``_ChunkProgramSpec`` expects keeps one M-step
+    these fields in the shape ``_ChunkProgramSpec`` expects keeps one M-step
     body without making that caller build a full statistics configuration.
+    The local search sums its norm rows into their images with the scatter-add.
     """
 
     n_shells: int
     n_optics_groups: int = 1
+    float32_bucketed_image_sums: bool = False
 
 
 class _ChunkRowArrays(NamedTuple):
@@ -7239,6 +7254,7 @@ def _resident_mstep_block(
         block_optics_groups,
         n_shells=int(spec.stats_config.n_shells),
         image_capacity=int(spec.image_capacity),
+        float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
     )
 
     if spec.presum_adjoint:
@@ -7415,6 +7431,7 @@ def _probe_mstep_block_output_avals(
             row_groups,
             n_shells=int(spec.stats_config.n_shells),
             image_capacity=image_capacity,
+            float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
         )
 
     return jax.eval_shape(

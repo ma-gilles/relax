@@ -875,7 +875,11 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
             )
 
         monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", capture_resident_mass)
+    # The dense GEMM engine sums its float32 image rows in buckets; its control is the
+    # resident pass with the same bucketed sums (the resident default is the scatter-add).
+    monkeypatch.setattr(resident_pass2, "_FLOAT32_BUCKETED_IMAGE_SUMS", True)
     control = call(False)
+    monkeypatch.setattr(resident_pass2, "_FLOAT32_BUCKETED_IMAGE_SUMS", False)
     if diagnostic_path:
         monkeypatch.setattr(resident_pass2, "_accumulate_chunk_image_terms", original_accumulate)
         from relax.dense import gemm_coarse_statistics

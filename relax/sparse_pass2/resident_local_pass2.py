@@ -906,6 +906,7 @@ def compute_local_search_resident(
             accumulate_scale=scale_groups_available,
             source_faithful_spectrum_norm=resolved_spectrum_norm,
             n_optics_groups=n_optics_groups,
+            float32_bucketed_image_sums=False,
         )
         stats = make_resident_statistics(
             stats_config, max_posterior_dtype=precision_policy.score_real_dtype
