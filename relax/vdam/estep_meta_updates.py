@@ -186,11 +186,13 @@ def update_probabilities_from_estep_meta(
         if not np.isfinite(sigma2_offset_sumw) or sigma2_offset_sumw <= 0.0:
             raise ValueError("sigma2_offset_sumw must be positive and finite")
         sigma2_offset = float(state.sigma2_offset) * my_mu
-        # RELION divides by 2*sum_weight for 2D particle translations.
+        # RELION divides by 2*sum_weight for 2D particle translations, 3*sum_weight for
+        # subtomograms' 3D offsets (ml_optimiser.cpp:5222-5231).
         # Its sum_weight is accumulated from the same significant-pruned
         # reconstruction weights as wsum_sigma2_offset, rather than from the
         # unpruned per-image class responsibilities.
-        sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (2.0 * sigma2_offset_sumw)
+        offset_dims = float(meta.get("offset_dims", 2))
+        sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (offset_dims * sigma2_offset_sumw)
         new_state.sigma2_offset = max(float(sigma2_offset), MIN_SIGMA2_OFFSET_ANGSTROM2)
 
     return new_state
@@ -227,6 +229,10 @@ def _update_particle_state_from_estep_meta(
         particle_state.translation_offsets[ids] = base + trans[translation_ids, :2]
         particle_state.pose_assignments = _ensure_field(particle_state.pose_assignments, (N,), np.int32, -1)
         particle_state.pose_assignments[ids] = assignments.astype(np.int32, copy=False)
+
+    if (offsets := meta.get("tomo_offsets_px")) is not None:
+        # Subtomogram particles: RELION's new 3D offset, the rounded old one plus the winning shift.
+        particle_state.translation_offsets[ids] = np.asarray(offsets, dtype=np.float64)
 
     if (rot := meta.get("best_pose_rotations")) is not None:
         particle_state.best_pose_rotations = _ensure_field(particle_state.best_pose_rotations, (N, 3, 3), np.float32)

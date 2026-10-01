@@ -5,6 +5,45 @@ progress. The [task queue](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_co
 contains the active work list; detailed experiment histories live in the private
 `ma-gilles/recovar-experiments` repository.
 
+## Subtomogram InitialModel and first-iteration CC (October 1, 2026)
+
+Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
+(`relax initial_model --ios optimisation_set.star`, RELION's `--grad --denovo_3dref`) and
+`--firstiter_cc` in Refine3D and Class3D. One implementation: the VDAM driver takes a
+`TomoDataset` and scores through the subtomogram Refine3D/Class3D pass
+(`relax/vdam/tomo_estep.py` over `tomo_half.score_tomo_half`).
+
+- Start-up: RELION counts tilt images against `minimum_nr_particles_sigma2_noise` (10,
+  ml_optimiser.cpp:2574, :3058), so the first particle of each optics group gives the noise
+  spectrum and the bootstrap; each of its tilt images backprojects at `Aproj R` with its
+  dose-damped CTF, and the reference gets no blobs or soft mask (:2707). relax matches RELION's
+  `run_it000` (sigma2 noise to 4e-7, class map to 3e-8 relative L2; et09_box64, et15_k2conf_box64 seed 1;
+  `em_work/cryoet_vdam_20261001/checks/bootstrap_vs_relion.py`).
+- E-step: every tilt image backprojects VDAM's residual into its particle's pseudo-halfset slot
+  `class + K * (part_id % 2)`; sigma2_offset divides by 3; auto-sampling keeps at least half the
+  offset step (:9832). A tilt chunk whose (slot, row) projections do not fit is projected and scored
+  a block of image slots at a time (`resident_tilts.tilt_projection_slot_block`).
+- RELION behaviour, reproduced: with one optics group the bootstrap fills class 0 only, and an empty
+  class stays an exact zero map (its tau2 is zero), so K>1 VDAM on one optics group is K=1 plus empty
+  classes in RELION and relax alike (et15 seed 1: class 2 std 0.0 at iterations 0-100 in both,
+  pdf_class at iteration 10 0.655/0.345 relax, 0.643/0.357 RELION). Its tied rotations give single
+  particles tens of thousands of significant samples.
+- `--firstiter_cc`: the coarse pass adds every tilt image's normalized CC on RELION's square
+  current-size crop (DC and x=0 column included), with RELION's 128 atomic additions per image, and
+  keeps the first maximum in RELION's orientation order (`tomo_coarse.particle_coarse_cc_winners`);
+  pass 2 scores its children (`resident_tilts.tilt_cc_scores`: each image's CC operands translated per
+  slot). Class3D's CC iteration is K=1 against class 0 (ml_optimiser.cpp:4389). Iteration 1 of
+  et01_base seed 1 against RELION 5.0.1 (mpiscale build, MPI 3x4, H100), `run_it001_data.star`:
+  orientations identical for 2000/2000 particles, offsets for 1998/2000
+  (`em_work/cryoet_vdam_20261001/cc_it1`). Iteration 1 took 332 s in relax, about 60 min in RELION.
+- Speed (open): at et09 iteration 100 (590 particles, HEALPix 3, 180 3D coarse translations) the
+  relax iteration is 2.1x RELION's (165 s vs about 78 s), 120 s of it the coarse pass: the per-image
+  coarse kernel takes 128 translations per launch, so 180 need two launches that each project all
+  36864 orientations.
+- Open: qualification against same-seed RELION bands (et09 K=1 VDAM, 3 seeds; et15 K=2; et01
+  Refine3D `--firstiter_cc`, 3 seeds); evidence and job IDs in
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001/HANDOFF.json`.
+
 ## PPCA coarse optimizer comparison (September 28, 2026)
 
 The opt-in [PPCA momentum SGD and two-pass coarse route](../math/ppca_momentum_sgd.md)
@@ -197,10 +236,13 @@ labeled diagnostic only.
   been made yet.
 - Refused permanently, with a clear message: `rlnCtfDataAreCtfCorrected` and several different
   `rlnMtfFileName` values.
-- Subtomogram particles (RELION 5 2D stacks) have no first-iteration cross-correlation
-  (`--firstiter_cc`), for K=1 or K>1, which RELION uses when the reference is not on the
-  images' absolute greyscale; they run with `--no-firstiter_cc`. Planned after subtomogram
-  Class3D qualifies (branch `et/tomo-class3d`).
+- Subtomogram particles (RELION 5 2D stacks) run the first-iteration cross-correlation
+  (`--firstiter_cc`) in Refine3D and Class3D since 2026-10-01 (see "Subtomogram InitialModel
+  and first-iteration CC" below); its end-to-end qualification against RELION's default command
+  is running.
+- Subtomogram InitialModel (`relax initial_model --ios`) takes one optics group, as single-particle
+  InitialModel does; RELION's subtomogram VDAM with one optics group leaves classes 2..K empty
+  (below), so a K>1 test needs two optics groups.
 
 ## RELION binding removal (started 2026-09-29)
 

@@ -26,12 +26,18 @@ from relax.helpers.particle_io import (
     assert_reads_from_scratch,
     prepare_particle_reads,
 )
+from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
 from relax.relion import initial_model_io, vdam_checkpoint
-from relax.relion.initial_model_io import _experiment_read_order, _particle_state_from_star, _write_model_star
+from relax.relion.initial_model_io import (
+    _experiment_read_order,
+    _particle_state_from_star,
+    _tomo_particle_state_from_star,
+    _write_model_star,
+)
 from relax.relion.relion_metadata import refuse_unsupported_optics
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
-from relax.vdam.bootstrap_iref import _initial_state_from_particles
+from relax.vdam.bootstrap_iref import _initial_state_from_particles, _initial_state_from_tomo_particles
 from relax.vdam.dense_adapter import (
     prepare_relion_projector_class_inputs,
     run_dense_initial_model_estep,
@@ -58,6 +64,7 @@ from relax.vdam.schedules import (
 )
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
+from relax.vdam.tomo_estep import run_tomo_initial_model_estep
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +98,12 @@ def _native_expectation_step(
     optics_state: NativeOpticsState | None = None,
     *,
     projector_context: dense_adapter._IterationProjectorContext | None = None,
+    tilt_images: dict | None = None,
 ):
+    """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``."""
+
+    tomo = isinstance(dataset, TomoDataset)
+
     def _expectation_step(state: InitialModelState, particle_ids: np.ndarray, halfset_ids: np.ndarray):
         sampling_kwargs = {"defer_fine_rotations": True}  # the adaptive route builds its own grids
         iteration = max(1, int(state.iter))
@@ -107,7 +119,7 @@ def _native_expectation_step(
         pass1_healpix_order = int(sampling_state.healpix_order)
         skip_expected_accuracy = _skip_native_sampling_accuracy_diagnostic()
         if (
-            optics_state is not None
+            (optics_state is not None or tilt_images is not None)
             and not skip_expected_accuracy
             and schedules._should_estimate_native_sampling_accuracy(
                 iteration=iteration,
@@ -134,6 +146,7 @@ def _native_expectation_step(
                 random_seed=int(opts.random_seed),
                 padding_factor=int(opts.padding_factor),
                 sigma2_fudge=DEFAULT_SIGMA2_FUDGE,
+                tilt_images=tilt_images,
             )
         sampling_updated = (
             _prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
@@ -148,6 +161,104 @@ def _native_expectation_step(
         )
         sigma_offset_angstrom = float(np.sqrt(max(float(state.sigma2_offset), 0.0)))
         current_noise_variance = dense_adapter._noise_variance_from_sigma2(state.sigma2_noise, int(state.ori_size))
+        previous_translations = np.asarray(particle_state.translation_offsets, dtype=np.float64).copy()
+        previous_rotations = (
+            None
+            if particle_state.best_pose_rotations is None
+            else np.asarray(particle_state.best_pose_rotations, dtype=np.float64).copy()
+        )
+        previous_classes = np.asarray(particle_state.class_assignments, dtype=np.int32).copy()
+        if particle_state.visited is not None:
+            # RELION's old class number is zero until the first visit. Our
+            # scorer uses zero-based classes, so preserve that distinct old
+            # state only in this change-monitor snapshot, before visits update.
+            previous_classes[~np.asarray(particle_state.visited, dtype=bool)] = -1
+        if tomo:
+            max_significants = schedules._active_relion_initialmodel_max_significants(state, do_grad=do_grad)
+            if prepared_projector_inputs is None:
+                prepared_projector_inputs = prepare_relion_projector_class_inputs(
+                    state, padding_factor=int(opts.padding_factor)
+                )
+            ids = np.asarray(particle_ids, dtype=np.int64)
+            result = run_tomo_initial_model_estep(
+                dataset,
+                state,
+                sampling_plan=sampling_plan,
+                particle_ids=ids,
+                halfset_ids=halfset_ids,
+                previous_offsets_px=previous_translations[ids],
+                noise_variance=current_noise_variance,
+                relion_projector_half_by_class=prepared_projector_inputs[2],
+                relion_projector_r_max=int(prepared_projector_inputs[3]),
+                class_rotation_log_prior=native_sampling._class_rotation_log_prior_for_sampling(
+                    state, sampling_state, int(sampling_plan.healpix_order)
+                ),
+                max_significants=int(max_significants),
+                sigma_offset_angstrom=sigma_offset_angstrom,
+                particle_diameter_ang=float(opts.particle_diameter),
+                padding_factor=int(opts.padding_factor),
+            )
+            effective_image_batch_size = int(opts.image_batch_size)
+        else:
+            result = _spa_estep(
+                state,
+                particle_ids,
+                halfset_ids,
+                sampling_plan=sampling_plan,
+                sampling_state=sampling_state,
+                prepared_projector_inputs=prepared_projector_inputs,
+                noise_variance=current_noise_variance,
+                sigma_offset_angstrom=sigma_offset_angstrom,
+                pass1_healpix_order=pass1_healpix_order,
+                do_grad=do_grad,
+                iteration=iteration,
+            )
+            effective_image_batch_size = int(result.meta.pop("_effective_image_batch_size"))
+            max_significants = int(result.meta.pop("_max_significants"))
+        result.meta.update(
+            random_perturbation=float(sampling_plan.random_perturbation),
+            n_rotations=sampling_plan.n_rotations,
+            n_translations=int(sampling_plan.translations.shape[0]),
+            requested_image_batch_size=int(opts.image_batch_size),
+            effective_image_batch_size=effective_image_batch_size,
+            healpix_order=int(sampling_plan.healpix_order),
+            oversampling=int(sampling_plan.oversampling),
+            offset_range_px=float(sampling_plan.offset_range_px),
+            offset_step_px=float(sampling_plan.offset_step_px),
+            offset_range_angstrom=float(sampling_plan.offset_range_angstrom),
+            offset_step_angstrom=float(sampling_plan.offset_step_angstrom),
+            max_significants=int(max_significants),
+            sigma_offset_angstrom=sigma_offset_angstrom,
+            sigma2_offset_before=float(state.sigma2_offset),
+        )
+        return _after_estep(
+            state,
+            result,
+            sampling_plan=sampling_plan,
+            accuracy_meta=accuracy_meta,
+            skip_expected_accuracy=skip_expected_accuracy,
+            sampling_updated=sampling_updated,
+            iteration=iteration,
+            previous_translations=previous_translations,
+            previous_rotations=previous_rotations,
+            previous_classes=previous_classes,
+        )
+
+    def _spa_estep(
+        state,
+        particle_ids,
+        halfset_ids,
+        *,
+        sampling_plan,
+        sampling_state,
+        prepared_projector_inputs,
+        noise_variance,
+        sigma_offset_angstrom,
+        pass1_healpix_order,
+        do_grad,
+        iteration,
+    ):
+        current_noise_variance = noise_variance
         config = dense_adapter._dense_estep_config(
             dataset,
             opts,
@@ -185,37 +296,26 @@ def _native_expectation_step(
             schedules._active_relion_initialmodel_max_significants(state, do_grad=do_grad),
         )
         config.engine_kwargs["debug_iteration"] = iteration
-        previous_translations = np.asarray(particle_state.translation_offsets, dtype=np.float64).copy()
-        previous_rotations = (
-            None
-            if particle_state.best_pose_rotations is None
-            else np.asarray(particle_state.best_pose_rotations, dtype=np.float64).copy()
-        )
-        previous_classes = np.asarray(particle_state.class_assignments, dtype=np.int32).copy()
-        if particle_state.visited is not None:
-            # RELION's old class number is zero until the first visit. Our
-            # scorer uses zero-based classes, so preserve that distinct old
-            # state only in this change-monitor snapshot, before visits update.
-            previous_classes[~np.asarray(particle_state.visited, dtype=bool)] = -1
         result = run_dense_initial_model_estep(
             dataset, state, config, particle_ids=particle_ids, halfset_ids=halfset_ids
         )
-        result.meta.update(
-            random_perturbation=float(sampling_plan.random_perturbation),
-            n_rotations=sampling_plan.n_rotations,
-            n_translations=int(sampling_plan.translations.shape[0]),
-            requested_image_batch_size=int(opts.image_batch_size),
-            effective_image_batch_size=int(config.image_batch_size),
-            healpix_order=int(sampling_plan.healpix_order),
-            oversampling=int(sampling_plan.oversampling),
-            offset_range_px=float(sampling_plan.offset_range_px),
-            offset_step_px=float(sampling_plan.offset_step_px),
-            offset_range_angstrom=float(sampling_plan.offset_range_angstrom),
-            offset_step_angstrom=float(sampling_plan.offset_step_angstrom),
-            max_significants=int(config.engine_kwargs.get("max_significants", -1)),
-            sigma_offset_angstrom=sigma_offset_angstrom,
-            sigma2_offset_before=float(state.sigma2_offset),
-        )
+        result.meta["_effective_image_batch_size"] = int(config.image_batch_size)
+        result.meta["_max_significants"] = int(config.engine_kwargs.get("max_significants", -1))
+        return result
+
+    def _after_estep(
+        state,
+        result,
+        *,
+        sampling_plan,
+        accuracy_meta,
+        skip_expected_accuracy,
+        sampling_updated,
+        iteration,
+        previous_translations,
+        previous_rotations,
+        previous_classes,
+    ):
         result.meta["sampling_accuracy_estimated"] = accuracy_meta is not None
         result.meta["sampling_accuracy_skipped_by_diagnostic"] = bool(skip_expected_accuracy)
         result.meta["sampling_accuracy_isolated_by_diagnostic"] = bool(
@@ -321,19 +421,35 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         strip_prefix=opts.strip_prefix,
     )
     profile.record("particle_scratch")
-    dataset = load_dataset(
-        opts.fn_img,
-        lazy=not particle_read_policy.preread_images,
-        datadir=opts.datadir,
-        strip_prefix=opts.strip_prefix,
-    )
-    assert_reads_from_scratch(dataset, particle_scratch)
-    if getattr(dataset, "tilt_series_flag", False):
-        raise NotImplementedError("native InitialModel currently supports SPA particle STAR files, not tilt-series")
+    tomo = opts.fn_tomograms is not None
+    tilt_images = None
+    if tomo:
+        # RELION 5 subtomogram 2D stacks (--ios): the particles are the units, each over its tilt images.
+        dataset = load_tomo_dataset(
+            opts.fn_img,
+            opts.fn_tomograms,
+            os.path.join(os.path.dirname(os.path.abspath(opts.outputname)), "particles_2d.star"),
+            datadir=opts.datadir or os.path.dirname(os.path.abspath(opts.fn_img)),
+            lazy=not particle_read_policy.preread_images,
+        )
+        image_dataset = dataset.images
+        n_particles = int(dataset.n_units)
+        tilt_images = tilt_image_accuracy_inputs(dataset.subset(np.arange(n_particles)))
+    else:
+        dataset = image_dataset = load_dataset(
+            opts.fn_img,
+            lazy=not particle_read_policy.preread_images,
+            datadir=opts.datadir,
+            strip_prefix=opts.strip_prefix,
+        )
+        if getattr(dataset, "tilt_series_flag", False):
+            raise NotImplementedError("native InitialModel reads RELION 5 2D stacks (--ios), not tilt-series STAR files")
+        n_particles = int(dataset.n_images)
+    assert_reads_from_scratch(image_dataset, particle_scratch)
     profile.record("dataset_load")
 
-    dense_adapter._configure_relion_image_mask(dataset, opts)
-    optics_state = initial_model_io._native_optics_state(main_star, optics_star, dataset)
+    dense_adapter._configure_relion_image_mask(image_dataset, opts)
+    optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
     continuation = None
     if opts.diagnostic_continue_optimiser is not None:
         continuation = vdam_checkpoint._load_native_vdam_continuation(
@@ -348,27 +464,30 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
                 f"checkpoint={continuation.iteration}, "
                 f"stop={opts.diagnostic_stop_after_iteration}"
             )
-    particle_state = _particle_state_from_star(
-        main_star,
-        dataset,
-        allow_unvisited_class_zero=continuation is not None,
-        nr_classes=int(opts.nr_classes),
+    particle_state = (
+        _tomo_particle_state_from_star(main_star, pixel_size=float(dataset.voxel_size))
+        if tomo
+        else _particle_state_from_star(
+            main_star,
+            dataset,
+            allow_unvisited_class_zero=continuation is not None,
+            nr_classes=int(opts.nr_classes),
+        )
     )
     if continuation is None:
         grad_ini_subset_size, grad_fin_subset_size = (
-            default_subset_sizes_for_3d_initial_model(int(dataset.n_images))
+            default_subset_sizes_for_3d_initial_model(n_particles)
             if opts.pilot_controls is None
-            else opts.pilot_controls.subset_sizes(int(dataset.n_images))
+            else opts.pilot_controls.subset_sizes(n_particles)
         )
         grad_ini_frac = float(opts.grad_ini_frac)
         grad_fin_frac = float(opts.grad_fin_frac)
         continuation_phase_lengths = None
-        sampling_state = _initial_sampling_state(opts, pixel_size=float(dataset.voxel_size))
-        state, optics_group_by_particle = _initial_state_from_particles(
-            dataset,
-            main_star,
-            optics_star,
-            opts,
+        sampling_state = _initial_sampling_state(opts, pixel_size=float(dataset.voxel_size), subtomogram=tomo)
+        state, optics_group_by_particle = (
+            _initial_state_from_tomo_particles(dataset, main_star, opts)
+            if tomo
+            else _initial_state_from_particles(dataset, main_star, optics_star, opts)
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
@@ -429,6 +548,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         sampling_state,
         optics_state,
         projector_context=projector_context,
+        tilt_images=tilt_images,
     )
     profile.record("expectation_setup")
 
@@ -506,7 +626,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     with stable_window_class_history():
         final_state = run_vdam_iterations(
             state,
-            nr_particles=int(dataset.n_images),
+            nr_particles=n_particles,
             optics_group_by_particle=optics_group_by_particle,
             grad_ini_subset_size=grad_ini_subset_size,
             grad_fin_subset_size=grad_fin_subset_size,

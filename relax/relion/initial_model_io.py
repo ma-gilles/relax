@@ -128,6 +128,22 @@ def _image_origin_offsets_pixels_from_star(main_star, dataset) -> np.ndarray:
     return shifts.astype(np.float64, copy=False)
 
 
+def _tomo_particle_state_from_star(main_star, *, pixel_size: float) -> NativeParticleState:
+    """Fresh state of subtomogram particles: their 3D offsets (pixels) from ``rlnOrigin{X,Y,Z}Angst``, class 0."""
+
+    n = int(len(main_star))
+    offsets = np.zeros((n, 3), dtype=np.float64)
+    for axis, label in enumerate(("_rlnOriginXAngst", "_rlnOriginYAngst", "_rlnOriginZAngst")):
+        column = star_column(main_star, label)
+        if column is not None:
+            offsets[:, axis] = np.asarray(column.astype(float).to_numpy(), dtype=np.float64) / float(pixel_size)
+    return NativeParticleState(
+        translation_offsets=offsets,
+        class_assignments=np.zeros(n, dtype=np.int32),
+        max_posterior=np.zeros(n, dtype=np.float32),
+    )
+
+
 def _particle_state_from_star(
     main_star,
     dataset,
@@ -353,9 +369,9 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
     array_rows_token = os.environ.get("RELAX_VDAM_STAR_ARRAY_ROWS", "0").strip()
     if array_rows_token not in {"0", "1"}:
         raise ValueError("RELAX_VDAM_STAR_ARRAY_ROWS must be 0 or 1")
-    n_images = int(getattr(dataset, "n_images", len(main_star)))
+    n_images = int(len(particle_state.translation_offsets))
     if len(main_star) != n_images:
-        raise ValueError(f"STAR table has {len(main_star)} particles but dataset has {n_images} images")
+        raise ValueError(f"STAR table has {len(main_star)} particles but the particle state has {n_images}")
 
     output_order = _experiment_read_order(main_star)
     table = main_star.copy()
@@ -371,6 +387,9 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
     offsets_angstrom = np.asarray(particle_state.translation_offsets, dtype=np.float64) * float(dataset.voxel_size)
     _set_star_column(table, "_rlnOriginXAngst", _format_float_column(offsets_angstrom[:, 0]))
     _set_star_column(table, "_rlnOriginYAngst", _format_float_column(offsets_angstrom[:, 1]))
+    if offsets_angstrom.shape[1] == 3:
+        # Subtomogram particles carry 3D offsets.
+        _set_star_column(table, "_rlnOriginZAngst", _format_float_column(offsets_angstrom[:, 2]))
     if star_column(table, "_rlnOriginX") is not None or star_column(table, "_rlnOriginY") is not None:
         offsets_pixels = np.asarray(particle_state.translation_offsets, dtype=np.float64)
         _set_star_column(table, "_rlnOriginX", _format_float_column(offsets_pixels[:, 0]))

@@ -110,6 +110,8 @@ class NativeSamplingState:
     last_current_resolution: float = 0.0
     orientational_prior_mode: int = RELION_ORIENTATIONAL_PRIOR_NOPRIOR
     uniform_local_orientation_prior: bool = False
+    # Subtomogram particles (2D stacks): updateAngularSampling keeps at least half the step.
+    subtomogram: bool = False
 
     @property
     def offset_range_px(self) -> float:
@@ -130,7 +132,9 @@ def _n_directions_for_healpix_order(healpix_order: int) -> int:
     )
 
 
-def _initial_sampling_state(opts: NativeInitialModelOptions, *, pixel_size: float) -> NativeSamplingState:
+def _initial_sampling_state(
+    opts: NativeInitialModelOptions, *, pixel_size: float, subtomogram: bool = False
+) -> NativeSamplingState:
     pixel_size = float(pixel_size)
     if pixel_size <= 0.0:
         raise ValueError(f"pixel_size must be positive, got {pixel_size}")
@@ -143,6 +147,7 @@ def _initial_sampling_state(opts: NativeInitialModelOptions, *, pixel_size: floa
         offset_step_ori_angstrom=float(opts.offset_step_px) * pixel_size,
         pixel_size=pixel_size,
         max_healpix_order=None if opts.pilot_controls is None else opts.pilot_controls.max_healpix_order,
+        subtomogram=bool(subtomogram),
     )
 
 
@@ -216,6 +221,9 @@ def _relion_update_native_sampling_state(
         )
         * oversampling_factor
     )
+    if sampling_state.subtomogram:
+        # "For subtomogram averaging: use at least half times previous step size" (ml_optimiser.cpp:9832-9834).
+        new_step = max(float(sampling_state.offset_step_angstrom) / 2.0, new_step)
     new_range = 5.0 * float(sampling_state.current_changes_optimal_offsets_angstrom)
     new_range = min(1.3 * float(sampling_state.offset_range_angstrom), new_range)
     new_range = max(new_range, 1.5 * new_step)
@@ -357,7 +365,14 @@ def _estimate_native_sampling_accuracy(
     random_seed: int,
     padding_factor: int,
     sigma2_fudge: float,
+    tilt_images: dict | None = None,
 ) -> dict[str, object] | None:
+    """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
+
+    Subtomogram particles pass ``tilt_images`` (:func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`
+    of every particle, in particle-STAR row order) and no ``optics_state``: each trial sums its tilt
+    images, each with its own ``Aproj`` and dose-damped CTF.
+    """
     n_trials = min(100, int(particle_order.size))
     if n_trials <= 0:
         return None
@@ -396,6 +411,32 @@ def _estimate_native_sampling_accuracy(
         if _isolate_native_sampling_accuracy_diagnostic()
         else estimate_relion_expected_accuracy_from_prepared_inputs
     )
+    if tilt_images is None:
+        optics_kwargs = dict(
+            defocus_u=np.asarray(optics_state.defU, dtype=np.float64),
+            defocus_v=np.asarray(optics_state.defV, dtype=np.float64),
+            defocus_angle=np.asarray(optics_state.defAngle, dtype=np.float64),
+            phase_shift=np.asarray(optics_state.phase_shift, dtype=np.float64),
+            voltage=float(optics_state.voltage),
+            spherical_aberration=float(optics_state.Cs),
+            amplitude_contrast=float(optics_state.Q0),
+            pixel_size=float(optics_state.pixel_size),
+        )
+    else:
+        # The per-particle defocus arrays are unused; one optics group gives the constants.
+        zeros = np.zeros(len(particle_state.translation_offsets), dtype=np.float64)
+        optics_kwargs = dict(
+            defocus_u=zeros,
+            defocus_v=zeros,
+            defocus_angle=zeros,
+            phase_shift=zeros,
+            **{
+                name: float(np.unique(np.asarray(tilt_images[name], dtype=np.float64))[0])
+                for name in ("voltage", "spherical_aberration", "amplitude_contrast")
+            },
+            pixel_size=float(state.pixel_size),
+            tilt_images=tilt_images,
+        )
     accuracy = accuracy_estimator(
         references_relion=refs_relion,
         trial_eulers_deg=eulers,
@@ -403,14 +444,7 @@ def _estimate_native_sampling_accuracy(
         trial_class_ids=class_ids,
         class_weights=np.asarray(state.pdf_class, dtype=np.float64),
         sigma2_noise_relion=np.asarray(state.sigma2_noise[0], dtype=np.float64),
-        defocus_u=np.asarray(optics_state.defU, dtype=np.float64),
-        defocus_v=np.asarray(optics_state.defV, dtype=np.float64),
-        defocus_angle=np.asarray(optics_state.defAngle, dtype=np.float64),
-        phase_shift=np.asarray(optics_state.phase_shift, dtype=np.float64),
-        voltage=float(optics_state.voltage),
-        spherical_aberration=float(optics_state.Cs),
-        amplitude_contrast=float(optics_state.Q0),
-        pixel_size=float(optics_state.pixel_size),
+        **optics_kwargs,
         ori_size=int(state.ori_size),
         current_image_size=current_image_size,
         padding_factor=int(padding_factor),
@@ -429,7 +463,7 @@ def _estimate_native_sampling_accuracy(
     selected_dump_iterations = {
         int(value.strip()) for value in dump_iterations.split(",") if value.strip()
     }
-    if dump_dir and (
+    if dump_dir and optics_state is not None and (
         not selected_dump_iterations or int(state.iter) in selected_dump_iterations
     ):
         dump_path = Path(dump_dir)
@@ -503,8 +537,8 @@ def _record_native_sampling_assignment_changes(
     prev_t = np.asarray(previous_translations, dtype=np.float64)
     curr_t = np.asarray(current_translations, dtype=np.float64)
     current_offsets = compute_relion_offset_changes_angstrom(
-        curr_t[ids, :2],
-        prev_t[ids, :2],
+        curr_t[ids],
+        prev_t[ids],
         float(sampling_state.pixel_size),
     )
     sampling_state.current_changes_optimal_offsets_angstrom = current_offsets

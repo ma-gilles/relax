@@ -119,7 +119,6 @@ relax refine \
   --init_volume Tomo/reference_relion.mrc \
   --particle_diameter_ang 250 \
   --init_resolution 40 \
-  --no-firstiter_cc \
   --seed 1
 ```
 
@@ -129,8 +128,25 @@ written as 2D stacks (its `data_general` block sets
 `tomograms.star`. The file names in the example are placeholders for your
 Extract and tomogram jobs; link every project directory the two STAR files
 name. relax detects the 2D-stack format and scores every particle over its tilt images.
-Subtomograms have no first-iteration cross-correlation yet, so the reference must be on
-the images' greyscale and `--no-firstiter_cc` is required.
+As for single particles, `--firstiter_cc` (the default) starts with RELION's cross-correlation
+iteration; pass `--no-firstiter_cc` when the reference is on the images' greyscale.
+
+## Subtomogram 3D initial model (VDAM)
+
+```bash
+relax initial_model \
+  --ios Tomo/relax_input/optimisation_set.star \
+  --o Tomo/relax_initial_model/run \
+  --K 1 \
+  --sym C1 \
+  --particle-diameter 250
+```
+
+`--ios` takes the RELION 5 optimisation set (its `rlnTomoParticlesFile` and
+`rlnTomoTomogramsFile`, relative to the set's directory), as `relion_refine --ios` does. One
+optics group, as for single particles. With one optics group RELION seeds only the first class
+(the start-up reads the first particle's tilt images alone), and an empty class stays empty:
+`--K 2` then gives one map and an empty class, in RELION and relax alike.
 
 ## Subtomogram 3D classification
 
@@ -142,7 +158,6 @@ relax class3d \
   --init_volume Tomo/reference_relion.mrc \
   --particle_diameter_ang 250 \
   --init_resolution 40 \
-  --no-firstiter_cc \
   --seed 1
 ```
 

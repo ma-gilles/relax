@@ -75,6 +75,8 @@ class NativeInitialModelOptions(InitialModelDefaults):
     """Options for a native InitialModel run; defaults mirror the GUI command."""
 
     fn_img: str
+    # RELION 5 subtomogram 2D stacks (``--ios``): fn_img is the particles STAR, this the tomograms STAR.
+    fn_tomograms: str | None = None
     outputname: str = "ab_initio/run"
     width_mask_edge_px: float = 5.0
     image_fourier_backend: str = "host_numpy"
@@ -133,6 +135,10 @@ class NativeInitialModelOptions(InitialModelDefaults):
                 "diagnostic_continue_optimiser requires diagnostic_stop_after_iteration; "
                 "unbounded continuation is intentionally unsupported"
             )
+        if self.fn_tomograms is not None and (
+            self.optimizer != "vdam" or self.diagnostic_continue_optimiser is not None or not self.do_run_C1
+        ):
+            raise NotImplementedError("subtomogram InitialModel runs RELION's VDAM from scratch, in C1")
         if self.padding_factor not in (1, 2):
             raise NotImplementedError("native InitialModel currently supports RELION GUI --pad 1 or 2 only")
         if not self.do_run_C1 and self.sym_name.lower() != "c1":

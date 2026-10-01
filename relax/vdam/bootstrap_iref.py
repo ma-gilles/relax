@@ -265,3 +265,109 @@ def _initial_state_from_particles(
     profile.record("data_vs_prior")
     profile.report("initial state")
     return state, optics_group_by_particle
+
+
+def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInitialModelOptions):
+    """The de novo start of subtomogram particles (RELION 5 2D stacks): noise, bootstrap and priors.
+
+    ``dataset`` is a :class:`relax.refinement.tomo_half.TomoDataset`; its units are the particles.
+    RELION's start-up loop (calculateSumOfPowerSpectraAndAverageImage, ml_optimiser.cpp:2806-3080)
+    counts tilt images against ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2574), so
+    the first particle of each optics group fills it: its images give the noise spectrum and the
+    bootstrap, each image backprojected at ``Aproj R`` with its own dose-damped CTF
+    (:3010-3047). The reference is low-passed but has no blobs or soft mask (:2707). The initial
+    ``data_vs_prior`` counts particles (ml_model.cpp:1609-1617). Returns ``(state, optics_group_by_particle)``.
+    """
+
+    from relax.helpers.expected_accuracy import _trial_ctf_images
+    from relax.refinement.tomo_half import tilt_image_accuracy_inputs
+
+    ori_size = int(dataset.grid_size)
+    pixel_size = float(dataset.voxel_size)
+    order = _experiment_read_order(particles_table)
+    optics_group_by_particle = initial_model_io._optics_group_indices(particles_table)
+    nr_optics_groups = int(np.unique(optics_group_by_particle).size)
+    if nr_optics_groups != 1:
+        raise NotImplementedError("native InitialModel currently supports one optics group")
+    unit_groups = np.zeros(order.size, dtype=np.int64)
+    units = dataset.startup_units(order, unit_groups=unit_groups, minimum_nr_particles=10)
+    half = dataset.subset(units)
+    images = np.concatenate([dataset.unit_images(unit) for unit in units], axis=0)
+    Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
+        ((0, image) for image in images),
+        ori_size=ori_size,
+        pixel_size=pixel_size,
+        particle_diameter_ang=float(opts.particle_diameter),
+        width_mask_edge_px=int(opts.width_mask_edge_px),
+        do_zero_mask=bool(opts.do_zero_mask),
+        nr_optics_groups=1,
+        minimum_nr_particles=int(images.shape[0]),
+    )
+
+    tilt = tilt_image_accuracy_inputs(half)
+    optics = tuple(
+        float(np.unique(tilt[name])[0]) for name in ("voltage", "spherical_aberration", "amplitude_contrast")
+    )
+    ctf_images = (
+        _trial_ctf_images(
+            np.arange(half.n_units),
+            defocus=None,
+            optics=optics,
+            pixel_size=pixel_size,
+            image_full_size=ori_size,
+            current_image_size=ori_size,
+            tilt_images=tilt,
+        )
+        if bool(opts.do_ctf_correction)
+        else None
+    )
+    # Each image's particle as its position in RELION's order (the seed and the class, part_id_sorted % K).
+    position = np.empty(order.size, dtype=np.int64)
+    position[order] = np.arange(order.size)
+    image_particle = np.repeat(position[units], np.diff(half.unit_image_offsets))
+    iref_relion, _ = bootstrap_reconstruction.bootstrap_references(
+        images=images,
+        ctf_images=ctf_images,
+        ori_size=ori_size,
+        pixel_size=pixel_size,
+        nr_classes=int(opts.nr_classes),
+        particle_diameter_ang=float(opts.particle_diameter),
+        width_mask_edge_px=float(opts.width_mask_edge_px),
+        do_zero_mask=bool(opts.do_zero_mask),
+        random_seed=int(opts.random_seed),
+        padding_factor=int(opts.padding_factor),
+        minimum_nr_particles=int(units.size),
+        current_size=int(np.floor(0.07 * ori_size + 0.5)),
+        image_particle=image_particle,
+        image_projections=half.image_projections,
+    )
+    from recovar.utils.helpers import relion_volume_to_recovar
+
+    iref = np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64)
+
+    state = initialise_denovo_state(
+        ori_size=ori_size,
+        pixel_size=pixel_size,
+        K=int(opts.nr_classes),
+        nr_iter=int(opts.nr_iter),
+        n_directions=_n_directions_for_healpix_order(int(opts.healpix_order)),
+        nr_optics_groups=1,
+        pseudo_halfsets=True,
+        padding_factor=int(opts.padding_factor),
+    )
+    state = seed_noise_from_mavg(state, sigma2_per_group)
+    init_sigma_offset_angstrom = opts.translation_sigma_angstrom if opts.translation_sigma_angstrom is not None else 10.0
+    state.sigma2_offset = float(init_sigma_offset_angstrom) ** 2
+    state.Mavg = Mavg
+    state.Iref = postprocess_bootstrap_iref(
+        iref,
+        rand_state=None,
+        pixel_size=pixel_size,
+        ini_high_ang=float(state.ini_high),
+        particle_diameter_ang=float(opts.particle_diameter),
+        width_mask_edge_px=float(opts.width_mask_edge_px),
+        do_init_blobs=False,
+        is_helical_segment=False,
+    )
+    state = initialise_data_vs_prior_from_references(state, nr_particles=int(dataset.n_units), fix_tau=False)
+    return state, optics_group_by_particle

@@ -1812,7 +1812,9 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         random_seed,
         padding_factor,
         sigma2_fudge,
+        tilt_images,
     ):
+        assert tilt_images is None  # single particles
         event_order.append("estimate_accuracy")
         estimate_calls.append(
             {

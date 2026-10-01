@@ -72,7 +72,7 @@ from relax.refinement.iteration_snapshot import noise_pixel_rows
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files, read_star_blocks
-from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star
+from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star, load_tomo_dataset
 from relax.relion import input_poses, relion_metadata
 from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
@@ -1847,12 +1847,6 @@ def _validate_tomo_run(args, frozen_boundary, double_image_preprocessing):
         raise SystemExit("subtomogram particles have no float64 scoring diagnostic")
     if args.relion_softmask_reduction != "control":
         raise SystemExit("subtomogram particles have no soft-mask reduction probe")
-    if args.firstiter_cc:
-        # docs/development/em_status.md "Feature gaps": the tomo half pass scores the Gaussian likelihood only.
-        raise SystemExit(
-            "subtomogram particles have no first-iteration cross-correlation yet; pass --no-firstiter_cc "
-            "(the reference must be on the images' greyscale)"
-        )
 
 
 def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:
@@ -2931,24 +2925,15 @@ def main(command=None):
     if tomo_run:
         # RELION 5 subtomogram 2D stacks (S4.2): the units are the particles, each over its tilt images.
         _validate_tomo_run(args, frozen_boundary, _double_image_preprocessing)
-        from recovar.data_io.starfile import read_star
-
-        from relax.relion.tomo_input import flatten_relion5_tomo
-
-        tomo_particles_star = os.path.join(args.data_dir, "particles.star")
-        tomo_tomograms_star = os.path.join(args.data_dir, "tomograms.star")
-        flat_star = flatten_relion5_tomo(
-            tomo_particles_star, tomo_tomograms_star, os.path.join(args.output, "particles_2d.star")
-        )
-        tomo_images = load_dataset(
-            str(flat_star),
+        flat_star = os.path.join(args.output, "particles_2d.star")
+        ds = load_tomo_dataset(
+            os.path.join(args.data_dir, "particles.star"),
+            os.path.join(args.data_dir, "tomograms.star"),
+            flat_star,
             datadir=args.data_dir,
             lazy=not particle_read_policy.preread_images,
-            dtype=np.complex64,
-            absent_angles_zero=True,
         )
-        assert_reads_from_scratch(tomo_images, particle_scratch)
-        ds = TomoDataset(tomo_images, read_star(str(flat_star))[0], tomo_particles_star, tomo_tomograms_star)
+        assert_reads_from_scratch(ds.images, particle_scratch)
         logger.info(
             "Subtomogram particles: %d particles over %d tilt images (%s)",
             ds.n_units, int(ds.unit_image_offsets[-1]), flat_star,

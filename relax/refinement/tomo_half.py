@@ -108,20 +108,51 @@ class TomoDataset:
 
         units = np.asarray(units, dtype=np.int64).reshape(-1)
         unit_groups = np.asarray(unit_groups, dtype=np.int64).reshape(-1)
-        all_groups = set(unit_groups.tolist())
-        done = {group: 0 for group in all_groups}
+        group_of = dict(zip(units.tolist(), unit_groups.tolist()))
+        for unit in self.startup_units(units, unit_groups=unit_groups, minimum_nr_particles=minimum_nr_particles):
+            for image in self.unit_images(unit):
+                yield group_of[int(unit)], image
+
+    def startup_units(self, units, *, unit_groups, minimum_nr_particles: int = 10) -> np.ndarray:
+        """The particles (in ``units`` order) whose tilt images RELION's start-up loop reads (:meth:`startup_noise_images`)."""
+
+        units = np.asarray(units, dtype=np.int64).reshape(-1)
+        unit_groups = np.asarray(unit_groups, dtype=np.int64).reshape(-1)
+        done = {group: 0 for group in set(unit_groups.tolist())}
+        taken = []
         for unit, group in zip(units.tolist(), unit_groups.tolist()):
             if done[group] >= int(minimum_nr_particles):
                 continue
-            rows = self.image_rows[self.unit_image_offsets[unit] : self.unit_image_offsets[unit + 1]]
+            taken.append(unit)
+            done[group] += int(self.unit_image_offsets[unit + 1] - self.unit_image_offsets[unit])
+            if all(count >= int(minimum_nr_particles) for count in done.values()):
+                break
+        return np.asarray(taken, dtype=np.int64)
+
+    def unit_images(self, unit) -> np.ndarray:
+        """Particle ``unit``'s real-space tilt images in ``img_id`` order, ``[S, N, N]``."""
+
+        rows = self.image_rows[self.unit_image_offsets[unit] : self.unit_image_offsets[unit + 1]]
+        batches = [
+            np.asarray(batch_images)
             for batch_images, _particles, _local in self.images.image_source.iter_batches(
                 batch_size=int(rows.size), batch_mode="images", subset_indices=rows
-            ):
-                for image in np.asarray(batch_images):
-                    yield group, image
-            done[group] += int(rows.size)
-            if all(count >= int(minimum_nr_particles) for count in done.values()):
-                return
+            )
+        ]
+        return np.concatenate(batches, axis=0)
+
+
+def load_tomo_dataset(particles_star, tomograms_star, flat_star, *, datadir, lazy: bool) -> TomoDataset:
+    """A RELION 5 2D-stack project as a :class:`TomoDataset`; the per-tilt STAR is written to ``flat_star``."""
+
+    from recovar.data_io.cryoem_dataset import load_dataset
+    from recovar.data_io.starfile import read_star
+
+    from relax.relion.tomo_input import flatten_relion5_tomo
+
+    flat_star = flatten_relion5_tomo(particles_star, tomograms_star, flat_star)
+    images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
+    return TomoDataset(images, read_star(str(flat_star))[0], particles_star, tomograms_star)
 
 
 class TomoHalf:
@@ -309,6 +340,10 @@ def score_tomo_half(
     local_rotations=None,
     symmetry: str = "C1",
     unit_seed_classes=None,
+    reconstruction_group_ids=None,
+    reconstruction_group_count=None,
+    mstep_subtract_ctf_projection: bool = False,
+    normalized_cc: bool = False,
 ) -> TomoScoreResult:
     """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search).
 
@@ -334,6 +369,17 @@ def score_tomo_half(
     (``resident_pass2.compute_k_class_pass2_stats_resident``). A global search only. ``unit_seed_classes``
     ``[P]`` is RELION's first iteration from one reference: each particle is scored against that class
     only (``k_class_inputs.seed_iteration_supports``; its other classes have no candidates).
+
+    InitialModel (VDAM, ``relax.vdam.tomo_estep``) passes ``reconstruction_group_ids`` ``[P]``, each
+    particle's pseudo-halfset (RELION's ``part_id % 2``: every tilt image of a particle backprojects into
+    BPref slot ``class + K * group``, acc_ml_optimiser_impl.h:3391-3395), with ``reconstruction_group_count``
+    2, and ``mstep_subtract_ctf_projection``: each tilt image backprojects its residual
+    ``shift(X_i) - CTF_i P_i V`` (BP.cuh ``backproject3D_SGD``).
+
+    ``normalized_cc`` is RELION's ``--firstiter_cc`` iteration (K=1, a global search): every image's
+    normalized CC summed over the particle's tilt images, the coarse winner alone
+    (:func:`relax.scoring.tomo_coarse.particle_coarse_cc_winners`) and its children scored the same
+    way in pass 2, the best cell taking all (``resident_tilts.tilt_cc_scores``); no priors.
     """
 
     import jax.numpy as jnp
@@ -350,6 +396,35 @@ def score_tomo_half(
 
     relion_projector_half = np.asarray(relion_projector_half)
     n_classes = int(relion_projector_half.shape[0]) if relion_projector_half.ndim == 4 else 1
+    if normalized_cc and n_classes > 1:
+        # RELION's Class3D CC iteration is K=1 against the first reference (ml_optimiser.cpp:4389-4402);
+        # the loop copies its model to every class and seeds the classes in the next iteration.
+        if unit_seed_classes is None or np.any(np.asarray(unit_seed_classes) != 0):
+            raise ValueError("a K-class --firstiter_cc iteration scores every particle against class 0")
+        first = score_tomo_half(
+            half,
+            volume=np.asarray(volume)[0],
+            noise_variance=noise_variance,
+            relion_projector_half=relion_projector_half[0],
+            relion_projector_r_max=relion_projector_r_max,
+            sampling=sampling,
+            rotation_log_prior=np.asarray(rotation_log_prior)[0],
+            old_offsets_px=old_offsets_px,
+            sigma_offset_angst=sigma_offset_angst,
+            adaptive_fraction=adaptive_fraction,
+            max_significants=max_significants,
+            unit_groups=unit_groups,
+            padding_factor=padding_factor,
+            scale_corrections=scale_corrections,
+            group_ids=group_ids,
+            scale_correction_group_count=scale_correction_group_count,
+            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
+            reconstruction_current_size=reconstruction_current_size,
+            rotation_index_order=rotation_index_order,
+            symmetry=symmetry,
+            normalized_cc=True,
+        )
+        return dataclasses.replace(first, pass2=_first_class_k_class_output(first.pass2, n_classes, sampling, half.voxel_size))
     if n_classes > 1 and (local_rotations is not None or np.ndim(rotation_log_prior) != 2):
         raise ValueError("a K-class tomo pass is a global search with one rotation log prior per class, [K, R]")
     pixel = float(half.voxel_size)
@@ -400,43 +475,70 @@ def score_tomo_half(
         if n_classes == 1:
             raise ValueError("a seed iteration is a K-class pass")
         (coarse_halves,), (coarse_prior,) = seed_iteration_first_class(relion_projector_half, rotation_log_prior)
-    supports, coarse_pmax = tomo_coarse.particle_coarse_supports(
-        half.images,
-        unit_image_offsets=half.unit_image_offsets,
-        image_projections=half.image_projections,
-        unit_old_offsets_px=old_offsets_px,
-        coarse_eulers_deg=coarse_eulers_deg,
-        random_perturbation=sampling.random_perturbation,
-        angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
-        coarse_translations_px=coarse_px,
-        projector_full=(
-            relion_projector_half_to_texture_full(jnp.asarray(coarse_halves)).astype(jnp.complex64)
-            if np.ndim(coarse_halves) == 3
-            else tuple(
-                relion_projector_half_to_texture_full(jnp.asarray(class_half)).astype(jnp.complex64)
-                for class_half in coarse_halves
-            )
-        ),
-        layout=layout,
-        noise_variance_half=noise_half,
-        rotation_log_prior=coarse_prior,
-        unit_translation_log_prior=unit_coarse_prior,
-        adaptive_fraction=adaptive_fraction,
-        max_significants=max_significants,
-        model_max_r=int(relion_projector_r_max),
-        padding_factor=int(padding_factor),
-        image_size=size,
-        optics_group_ids=image_groups,
-        scale_corrections=image_scale,
-        **(
-            {}
-            if local_rotations is None
-            else {
-                "unit_rotation_ids": local_rotations.unit_rotation_ids,
-                "unit_rotation_log_priors": local_rotations.unit_rotation_log_priors,
-            }
-        ),
-    )
+    if normalized_cc:
+        if n_classes != 1 or local_rotations is not None or symmetry != "C1":
+            raise NotImplementedError("the subtomogram --firstiter_cc iteration is a K=1 global search in C1")
+        from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
+
+        winners, _best_cc = tomo_coarse.particle_coarse_cc_winners(
+            half.images,
+            unit_image_offsets=half.unit_image_offsets,
+            image_projections=half.image_projections,
+            unit_old_offsets_px=old_offsets_px,
+            coarse_eulers_deg=coarse_eulers_deg,
+            relion_order=relion_parent_execution_key(
+                np.asarray(coarse_ids, dtype=np.int64), n_coarse_rot=n_rot, nside_level=sampling.healpix_order
+            ),
+            random_perturbation=sampling.random_perturbation,
+            angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
+            coarse_translations_px=coarse_px,
+            relion_projector_half=relion_projector_half,
+            relion_projector_r_max=int(relion_projector_r_max),
+            padding_factor=int(padding_factor),
+            coarse_size=int(sampling.coarse_size),
+            image_size=size,
+            scale_corrections=image_scale,
+        )
+        supports = [np.asarray([cell], dtype=np.int32) for cell in winners]
+        coarse_pmax = np.ones(half.n_units, dtype=np.float64)
+    else:
+        supports, coarse_pmax = tomo_coarse.particle_coarse_supports(
+            half.images,
+            unit_image_offsets=half.unit_image_offsets,
+            image_projections=half.image_projections,
+            unit_old_offsets_px=old_offsets_px,
+            coarse_eulers_deg=coarse_eulers_deg,
+            random_perturbation=sampling.random_perturbation,
+            angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
+            coarse_translations_px=coarse_px,
+            projector_full=(
+                relion_projector_half_to_texture_full(jnp.asarray(coarse_halves)).astype(jnp.complex64)
+                if np.ndim(coarse_halves) == 3
+                else tuple(
+                    relion_projector_half_to_texture_full(jnp.asarray(class_half)).astype(jnp.complex64)
+                    for class_half in coarse_halves
+                )
+            ),
+            layout=layout,
+            noise_variance_half=noise_half,
+            rotation_log_prior=coarse_prior,
+            unit_translation_log_prior=unit_coarse_prior,
+            adaptive_fraction=adaptive_fraction,
+            max_significants=max_significants,
+            model_max_r=int(relion_projector_r_max),
+            padding_factor=int(padding_factor),
+            image_size=size,
+            optics_group_ids=image_groups,
+            scale_corrections=image_scale,
+            **(
+                {}
+                if local_rotations is None
+                else {
+                    "unit_rotation_ids": local_rotations.unit_rotation_ids,
+                    "unit_rotation_log_priors": local_rotations.unit_rotation_log_priors,
+                }
+            ),
+        )
     if unit_seed_classes is not None:
         supports = seed_iteration_supports(supports, unit_seed_classes, n_classes)
     tilt = tilt_pass_inputs(
@@ -480,7 +582,9 @@ def score_tomo_half(
         group_ids=image_group_ids,
         scale_correction_group_count=scale_correction_group_count,
         scale_correction_data_vs_prior=scale_correction_data_vs_prior,
-        normalization_score_mode="gaussian",
+        normalization_score_mode="normalized_cc" if normalized_cc else "gaussian",
+        relion_firstiter_score_mode="normalized_cc" if normalized_cc else "gaussian",
+        relion_firstiter_winner_take_all=bool(normalized_cc),
         return_score_log_z=True,
         return_source_eulers=True,
         fine_source_eulers_override=fine_eulers,
@@ -502,6 +606,10 @@ def score_tomo_half(
         source_faithful_spectrum_norm=True,
         optics_group_ids=image_groups if np.asarray(noise_variance).ndim == 2 else None,
         tilt=tilt,
+        # The candidate tables are the particles', so a reconstruction group is a particle's.
+        reconstruction_group_ids=None if reconstruction_group_ids is None else np.asarray(reconstruction_group_ids, dtype=np.int32),
+        reconstruction_group_count=None if reconstruction_group_count is None else int(reconstruction_group_count),
+        mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
         **(
             {}
             if local_rotations is None
@@ -557,6 +665,51 @@ def score_tomo_half(
     )
 
 
+def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, pixel_size: float):
+    """A K=1 tilt pass as the K-class pass with every candidate in class 0 (``ResidentKClassPass2Output``).
+
+    What the K-class pass of a single-class iteration returns: the other classes have no candidates,
+    so their evidence and best scores are ``-inf``, their poses ``-1`` and their accumulators and sums zero.
+    """
+
+    from relax.classification.k_class import _sparse_pose_ids_to_fine_grid
+    from relax.sparse_pass2.resident_pass2 import ResidentKClassPass2Output
+
+    _, _, fine_px, _ = tomo_translation_grids(sampling, pixel_size)
+    stats = pass2.relion_stats
+    others = n_classes - 1
+
+    def by_class(first, fill):
+        first = np.asarray(first)
+        return np.concatenate([first[None], np.full((others,) + first.shape, fill, dtype=first.dtype)])
+
+    def class_tuple(first):
+        return None if first is None else (first,) + tuple(np.zeros_like(np.asarray(first)) for _ in range(others))
+
+    rotation_ids = np.asarray(pass2.best_rotation_indices, dtype=np.int64)
+    hard = _sparse_pose_ids_to_fine_grid(pass2.hard_assignment, rotation_ids, int(fine_px.shape[0]))
+    rotation_sums = np.asarray(stats.rotation_posterior_sums, dtype=np.float64)
+    return ResidentKClassPass2Output(
+        Ft_y=(pass2.Ft_y,) + tuple(np.zeros_like(np.asarray(pass2.Ft_y)) for _ in range(others)),
+        Ft_ctf=(pass2.Ft_ctf,) + tuple(np.zeros_like(np.asarray(pass2.Ft_ctf)) for _ in range(others)),
+        class_log_evidence_per_image=by_class(np.asarray(stats.log_evidence_per_image, dtype=np.float64), -np.inf),
+        class_best_log_score_per_image=by_class(
+            np.asarray(stats.best_log_score_per_image, dtype=np.float64), -np.inf
+        ),
+        per_class_hard_assignments=by_class(np.asarray(hard, dtype=np.int64), -1),
+        stats=stats,
+        class_rotation_posterior_sums=by_class(rotation_sums, 0.0),
+        class_reconstruction_posterior_sums=np.asarray(
+            [float(pass2.noise_stats.sumw)] + [0.0] * others, dtype=np.float64
+        ),
+        noise_stats=pass2.noise_stats,
+        per_class_best_pose_rotations=class_tuple(pass2.best_rotations),
+        per_class_best_pose_translations=class_tuple(pass2.best_translations),
+        per_class_best_pose_rotation_ids=class_tuple(rotation_ids),
+        per_class_best_pose_eulers_deg=class_tuple(pass2.source_eulers),
+    )
+
+
 def score_tomo_half_in_loop(
     half: TomoHalf,
     *,
@@ -584,6 +737,7 @@ def score_tomo_half_in_loop(
     class_log_priors=None,
     class_rotation_log_prior=None,
     unit_seed_classes=None,
+    normalized_cc: bool = False,
 ):
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
 
@@ -601,7 +755,8 @@ def score_tomo_half_in_loop(
     pass folds them (``k_class._rotation_prior_with_class_log_prior``). The class outputs go to
     ``outputs`` through the SPA K-class adapters (``_class_segmented_em_result``,
     ``_scatter_dense_k_class_result``). ``unit_seed_classes`` are the particles' classes in RELION's
-    first iteration from one reference (:func:`score_tomo_half`).
+    first iteration from one reference (:func:`score_tomo_half`). ``normalized_cc`` is the
+    ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
     """
 
     from relax.dense.score_outputs import HalfScoreResult
@@ -703,6 +858,7 @@ def score_tomo_half_in_loop(
         local_rotations=local_rotations,
         symmetry=symmetry,
         unit_seed_classes=unit_seed_classes,
+        normalized_cc=normalized_cc,
     )
     pass2 = result.pass2
     mstep_size = sampling.fine_size if reconstruction_current_size is None else int(reconstruction_current_size)

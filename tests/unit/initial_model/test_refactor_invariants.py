@@ -311,7 +311,9 @@ class TestLayoutGoldenValues:
 # and the accounting contract. Current audited counts are documented there.
 LOC_BUDGETS = {
     # Coarse SGD adds shared schedule/prior/occupancy controls (+142 from 1655).
-    "controller": (1797, (
+    # Subtomogram InitialModel (2026-10-01, etvdam): the driver's --ios input, the TomoDataset branch and the
+    # E-step closure split into its single-particle and subtomogram calls (+99): a real raise, no headroom.
+    "controller": (1896, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -322,14 +324,19 @@ LOC_BUDGETS = {
     # diagnostics/vdam_native_mstep.py the same day (-240 lines there). bootstrap_iref.py
     # now builds the bootstrap's CTF rows itself (+4), and the bootstrap windows images,
     # CTF and back-projector to RELION's ROUND(0.07 ori_size) (+18).
-    "initialization": (945, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
-    "sampling_layout": (950, ("native_sampling.py", "layout.py")),
+    # Subtomogram InitialModel (2026-10-01): the tilt-image start-up and seeding in bootstrap_iref.py and
+    # per-image Aproj R in the bootstrap reconstruction (+126): a real raise, no headroom.
+    "initialization": (1071, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
+    "sampling_layout": (974, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
     # (1846 counted lines at integration, with the shared projector setup). The reviewed
     # uniform-prior metadata adds 36 lines to the upstream 1900-line ceiling.
-    "estep": (1936, (
+    # Subtomogram InitialModel's E-step adapter tomo_estep.py (+134, 2026-10-01): a real raise, no headroom.
+    "estep": (2070, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
+        "tomo_estep.py",
     )),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
@@ -341,7 +348,8 @@ LOC_BUDGETS = {
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
-    "input_output": (1330, (
+    # Subtomogram particle state and 3D offsets in the data STAR (+18, 2026-10-01).
+    "input_output": (1348, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),

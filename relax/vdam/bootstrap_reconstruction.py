@@ -284,6 +284,8 @@ def bootstrap_references(
     minimum_nr_particles: int,
     particle_seed_ids=None,
     current_size: int = -1,
+    image_particle=None,
+    image_projections=None,
 ) -> tuple[np.ndarray, relion_random.GlibcRand | None]:
     """The random-orientation bootstrap reconstruction per class, RELION layout ``[K, N, N, N]``.
 
@@ -292,12 +294,27 @@ def bootstrap_references(
     ``current_size`` (``wsum_model.current_size``; -1 for the full box) windows the
     images, the CTF and the back-projector. Returns the references and the C
     ``rand()`` state the blob draws continue from.
+
+    Subtomogram particles (2D stacks) pass one row of ``images`` and ``ctf_images`` per tilt
+    image, ``image_particle`` (the image's particle, its position in RELION's order) and
+    ``image_projections`` (the image's ``Aproj``). Every particle in ``image_particle`` is
+    done: each of its images backprojects at ``Aproj R``, ``R`` the particle's random
+    rotation (the generator is reseeded per image with the particle's seed, so its tilts
+    share it), into class ``particle % K`` (ml_optimiser.cpp:2986-3047).
     """
 
     images = np.asarray(images, dtype=np.float64)
     n_images = images.shape[0]
-    todo = max(int(minimum_nr_particles), int(nr_classes) * 5)
-    todo = min(todo, n_images)
+    tilt = image_particle is not None
+    if tilt:
+        image_particle = np.asarray(image_particle, dtype=np.int64).reshape(-1)
+        image_projections = np.asarray(image_projections, dtype=np.float64)
+        if image_particle.shape != (n_images,) or image_projections.shape != (n_images, 3, 3):
+            raise ValueError("tilt images need one particle and one Aproj each")
+        todo = int(image_particle.max()) + 1 if n_images else 0
+    else:
+        todo = max(int(minimum_nr_particles), int(nr_classes) * 5)
+        todo = min(todo, n_images)
     seeds = np.arange(todo) if particle_seed_ids is None else np.asarray(particle_seed_ids, dtype=np.int64)
     if seeds.size < todo:
         raise ValueError("particle_seed_ids must contain at least minimum_nr_particles entries")
@@ -312,6 +329,11 @@ def bootstrap_references(
             float(relion_random.rnd_unif(generator)) * 360.0,
         ]
     matrices = euler_angles_to_matrix(eulers)
+    image_class = np.arange(todo)
+    if tilt:
+        matrices = np.einsum("nij,njk->nik", image_projections, matrices[image_particle])
+        image_class = image_particle
+        todo = n_images
     size = int(ori_size) if current_size <= 0 else int(current_size)
     projectors = [BackProjector3D(ori_size, padding_factor, current_size) for _ in range(int(nr_classes))]
     # windowFourierTransform to the bootstrap size, then CenterFFTbySign on the window
@@ -333,7 +355,7 @@ def bootstrap_references(
             fimg = fimg * ctf
             weight = ctf * ctf
         for k in range(int(nr_classes)):
-            mine = (rows % int(nr_classes)) == k
+            mine = (image_class[rows] % int(nr_classes)) == k
             if np.any(mine):
                 projectors[k].backproject(fimg[mine], matrices[rows[mine]], weight[mine])
     return np.asarray([projector.reconstruct() for projector in projectors]), generator

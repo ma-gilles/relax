@@ -674,6 +674,32 @@ def _run_sparse_k_class_adaptive_pass2(
         _dataset_image_count(experiment_dataset),
         mstep_s,
     )
+    return single_class_pass2_em_result(
+        result,
+        n_fine_trans=n_fine_trans,
+        accumulate_noise=accumulate_noise,
+        return_best_pose_details=return_best_pose_details,
+        profile_summary={
+            "sparse_adaptive_probe_s": np.float64(0.0),
+            "sparse_adaptive_mstep_s": np.float64(mstep_s),
+        },
+        mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
+        mstep_accumulator_shape=mstep_accumulator_shape,
+    )
+
+
+def single_class_pass2_em_result(
+    result,
+    *,
+    n_fine_trans: int,
+    accumulate_noise: bool,
+    return_best_pose_details: bool,
+    mstep_full_half_axis,
+    mstep_accumulator_shape,
+    profile_summary=None,
+) -> KClassEMResult:
+    """The K-class result of one K=1 resident pass 2 (``SparsePass2Output``; SPA images or tomo particles)."""
+
     return _assemble_result(
         class_log_evidence=np.asarray(result.relion_stats.log_evidence_per_image, dtype=np.float64)[None],
         new_means=None,
@@ -688,12 +714,9 @@ def _run_sparse_k_class_adaptive_pass2(
         per_class_best_pose_rotations=[result.best_rotations] if return_best_pose_details else None,
         per_class_best_pose_translations=[result.best_translations] if return_best_pose_details else None,
         per_class_best_pose_rotation_ids=[result.best_rotation_indices] if return_best_pose_details else None,
-        profile_summary={
-            "sparse_adaptive_probe_s": np.float64(0.0),
-            "sparse_adaptive_mstep_s": np.float64(mstep_s),
-        },
+        profile_summary=profile_summary,
         host_accumulators=True,
-        mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
+        mstep_full_half_axis=mstep_full_half_axis,
         mstep_accumulator_shape=mstep_accumulator_shape,
     )
 

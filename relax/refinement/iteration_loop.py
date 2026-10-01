@@ -2915,6 +2915,7 @@ def refine_single_volume(
                     class_log_priors=class_log_priors if k_class_enabled else None,
                     class_rotation_log_prior=class_rotation_log_prior_k if k_class_enabled else None,
                     unit_seed_classes=seed_classes_k,
+                    normalized_cc=firstiter_score_mode_this_iter == "normalized_cc",
                 )
                 ha_k = score_result.ha
                 Ft_y_k = score_result.Ft_y

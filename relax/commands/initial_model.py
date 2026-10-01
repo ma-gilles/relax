@@ -129,7 +129,13 @@ def make_parser() -> argparse.ArgumentParser:
         description="Run RECOVAR's RELION-equivalent InitialModel/VDAM refinement.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--i", dest="fn_img", required=True, help="Input particle STAR file")
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--i", dest="fn_img", help="Input particle STAR file")
+    inputs.add_argument(
+        "--ios",
+        dest="fn_optimisation_set",
+        help="RELION 5 subtomogram optimisation set (particles and tomograms STAR files, 2D stacks)",
+    )
     parser.add_argument("--o", dest="outputname", default="ab_initio/run", help="Output prefix")
     parser.add_argument("--nr-iter", "--nr_iter", dest="nr_iter", type=_positive_int, default=DEFAULTS.nr_iter)
     parser.add_argument(
@@ -490,6 +496,17 @@ def _require_custom_cuda_runtime() -> dict[str, object]:
     return report
 
 
+def _input_files(args: argparse.Namespace) -> dict[str, object]:
+    """``fn_img`` (and ``fn_tomograms`` for ``--ios``, as relion_refine reads an optimisation set)."""
+
+    if args.fn_optimisation_set is None:
+        return {"fn_img": args.fn_img, "fn_tomograms": None}
+    from relax.relion.tomo_input import read_optimisation_set
+
+    particles, tomograms = read_optimisation_set(args.fn_optimisation_set)
+    return {"fn_img": str(particles), "fn_tomograms": str(tomograms)}
+
+
 def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
     backend = args.image_fourier_backend
     if backend == "auto":
@@ -506,7 +523,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,
-        "fn_img": args.fn_img,
+        **_input_files(args),
         "outputname": args.outputname,
         "nr_iter": args.nr_iter,
         "nr_classes": args.nr_classes,

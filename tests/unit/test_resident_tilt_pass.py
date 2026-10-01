@@ -249,3 +249,149 @@ def _assert_noise_stats_match(want, got):
         # 3.5e-9 on 2aeae7f (job 14696158).
         assert measured < 1e-7, field
     assert abs(float(want.sumw) - float(got.sumw)) <= 1e-6 * abs(float(want.sumw))
+
+
+# ---------------------------------------------------------------------------
+# InitialModel (VDAM): residual backprojection into pseudo-halfset slots
+# ---------------------------------------------------------------------------
+
+
+def _vdam_options(n_units):
+    """VDAM's E-step options: residual BPref, each particle's pseudo-halfset (RELION's part_id % 2)."""
+
+    return dict(
+        mstep_subtract_ctf_projection=True,
+        reconstruction_group_ids=(np.arange(n_units) % 2).astype(np.int32),
+        reconstruction_group_count=2,
+    )
+
+
+def _assert_accumulators_match(spa_Ft_y, spa_Ft_ctf, tomo_Ft_y, tomo_Ft_ctf):
+    assert len(spa_Ft_y) == len(tomo_Ft_y) == 2
+    for slot in range(2):
+        # A residual BPref cancels most of the image sum, so its float32 atomic repeat spread is wider than the
+        # plain BPref's 1e-7 (_assert_tilt_pass_matches_spa): on a local H100 (2026-09-30) a same-code repeat
+        # moved one slot by 2.9e-8 and the slot-blocked pass differed by 3.8e-8 and 1.1e-7 in two runs;
+        # the CTF weights keep the 1e-7 band.
+        assert _rel_l2(spa_Ft_y[slot], tomo_Ft_y[slot]) < 3e-7, f"Ft_y slot {slot}"
+        assert _rel_l2(spa_Ft_ctf[slot], tomo_Ft_ctf[slot]) < 1e-7, f"Ft_ctf slot {slot}"
+
+
+@requires_resident_gpu
+def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_env, monkeypatch):  # noqa: F811
+    """VDAM's E-step through the tilt runner, one image per particle, is the SPA VDAM pass.
+
+    Each image backprojects its residual into its pseudo-halfset's BPref slot; the SPA pass backprojects
+    every row here (no per-projection sums), as the tilt runner does. The residual must change the map.
+    """
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    n_images = args["experiment_dataset"].n_units
+    vdam = dict(args, **_vdam_options(n_images))
+    spa = rp._resident_pass2(**vdam)
+    tomo = rp._resident_pass2(**dict(vdam, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
+    for field in ("hard_assignment", "best_fine_rotation_indices"):
+        assert_matches(getattr(spa.finalized, field), getattr(tomo.finalized, field), err_msg=field)
+    _assert_accumulators_match(spa.Ft_y, spa.Ft_ctf, tomo.Ft_y, tomo.Ft_ctf)
+    _assert_noise_stats_match(spa.noise_stats, tomo.noise_stats)
+
+    plain = rp._resident_pass2(
+        **dict(args, translation_log_prior=None, reconstruction_group_ids=None, reconstruction_group_count=None),
+        tilt=_one_image_tilt_inputs(args),
+    )
+    # The two slots partition the particles; the residual moves Ft_y and leaves the CTF weights.
+    assert _rel_l2(plain.Ft_ctf[0], np.asarray(tomo.Ft_ctf[0]) + np.asarray(tomo.Ft_ctf[1])) < 1e-6
+    assert _rel_l2(plain.Ft_y[0], np.asarray(tomo.Ft_y[0]) + np.asarray(tomo.Ft_y[1])) > 1e-3
+
+
+@requires_resident_gpu
+def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(_resident_production_env, monkeypatch):  # noqa: F811
+    """K=2 VDAM through the tilt runner, one image per particle, is the SPA K-class VDAM pass (slots class + K * half)."""
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    vdam = dict(args, **_vdam_options(args["experiment_dataset"].n_units))
+    spa = _resident(vdam, volumes, supports, priors)
+    tomo = _resident(
+        dict(vdam, translation_log_prior=None, tilt=_one_image_tilt_inputs(args)), volumes, supports, priors
+    )
+    assert_matches(spa.per_class_hard_assignments, tomo.per_class_hard_assignments)
+    for k in range(2):
+        _assert_accumulators_match(spa.Ft_y[k], spa.Ft_ctf[k], tomo.Ft_y[k], tomo.Ft_ctf[k])
+    _assert_noise_stats_match(spa.noise_stats, tomo.noise_stats)
+
+
+@requires_resident_gpu
+def test_slot_blocked_tilt_projections_are_the_one_block_pass(_resident_production_env, monkeypatch):  # noqa: F811
+    """A chunk projected one image slot at a time (its projections do not fit at once) is the one-block pass.
+
+    The running diff2 keeps its slot order across blocks and each accumulator its slot order, so the
+    discrete state is exact, the scores equal and the maps and sums inside the repeat band. K=2 with
+    VDAM's pseudo-halfsets exercises every accumulator slot.
+    """
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.sparse_pass2 import resident_tilts
+
+    monkeypatch.setattr(rp, "_PRESUM_ADJOINT_FREE_FRACTION", 0.0)
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    supports = [class_supports[:n_units] for class_supports in supports]
+    vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
+    whole = _resident(vdam, volumes, supports, priors)
+    monkeypatch.setattr(resident_tilts, "tilt_projection_slot_block", lambda *a, **k: 1)
+    blocked = _resident(vdam, volumes, supports, priors)
+
+    assert_matches(whole.per_class_hard_assignments, blocked.per_class_hard_assignments)
+    for field in ("class_log_evidence_per_image", "class_best_log_score_per_image", "class_rotation_posterior_sums"):
+        assert_matches(np.asarray(getattr(whole, field)), np.asarray(getattr(blocked, field)), err_msg=field)
+    for k in range(2):
+        _assert_accumulators_match(whole.Ft_y[k], whole.Ft_ctf[k], blocked.Ft_y[k], blocked.Ft_ctf[k])
+    _assert_noise_stats_match(whole.noise_stats, blocked.noise_stats)
+
+
+# ---------------------------------------------------------------------------
+# The --firstiter_cc iteration (normalized CC, winner takes all)
+# ---------------------------------------------------------------------------
+
+
+@requires_resident_gpu
+def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_production_env):  # noqa: F811
+    """The CC iteration through the tilt runner, one image per particle, is the SPA CC pass.
+
+    The tilt runner translates each image's resident CC operands per slot (RELION's score translation) where
+    the SPA pass builds its translated CC tiles per chunk; both score with RELION's fine CC reduction and keep
+    each unit's best cell, then backproject it with the Gaussian M-step.
+    """
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    args = dict(
+        _driver_fixture_args(),
+        score_with_masked_images=True,
+        relion_firstiter_score_mode="normalized_cc",
+        relion_firstiter_winner_take_all=True,
+        relion_exact_fine_normalized_cc=True,
+    )
+    spa = rp._resident_pass2(**args)
+    tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args))
+    for field in ("hard_assignment", "best_fine_rotation_indices"):
+        assert_matches(getattr(spa.finalized, field), getattr(tomo.finalized, field), err_msg=field)
+    # The CC scores are float32 (the evidence offset is added in float64): compare them at float32.
+    for field in ("best_log_score_per_image", "max_posterior_per_image"):
+        assert_matches(
+            np.float32(getattr(spa.finalized, field)), np.float32(getattr(tomo.finalized, field)), err_msg=field
+        )
+    assert _rel_l2(spa.Ft_y[0], tomo.Ft_y[0]) < 1e-7
+    assert _rel_l2(spa.Ft_ctf[0], tomo.Ft_ctf[0]) < 1e-7

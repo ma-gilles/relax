@@ -228,8 +228,8 @@ def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
         assert_matches(rotated.projections[start:stop], plain.projections[start:stop] @ a)
 
 
-def test_subtomogram_runs_refuse_the_first_iteration_cross_correlation():
-    """The tomo half pass scores the Gaussian likelihood only (em_status "Feature gaps")."""
+def test_subtomogram_runs_take_the_first_iteration_cross_correlation():
+    """Subtomogram Refine3D and Class3D run RELION's CC iteration (score_tomo_half normalized_cc)."""
 
     from relax.refinement.full_refinement import _validate_tomo_run
 
@@ -237,5 +237,7 @@ def test_subtomogram_runs_refuse_the_first_iteration_cross_correlation():
         relion_init_dir=None, init_noise_from_npz=None, relion_softmask_reduction="control", firstiter_cc=False
     )
     _validate_tomo_run(args, None, False)
-    with pytest.raises(SystemExit, match="no-firstiter_cc"):
-        _validate_tomo_run(SimpleNamespace(**{**vars(args), "firstiter_cc": True}), None, False)
+    for n_classes in (1, 2):
+        _validate_tomo_run(SimpleNamespace(**{**vars(args), "firstiter_cc": True, "n_classes": n_classes}), None, False)
+    with pytest.raises(SystemExit, match="soft-mask"):
+        _validate_tomo_run(SimpleNamespace(**{**vars(args), "relion_softmask_reduction": "probe"}), None, False)

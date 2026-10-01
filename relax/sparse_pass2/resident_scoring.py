@@ -724,8 +724,51 @@ def score_tilt_image_rows(
     image's diff2 is added to the row's float32 running sum: RELION initialises the weights
     to zero and every image's kernel adds its ``diff2 + initial`` (acc_ml_optimiser_impl.h:1437-1438
     and the ``img_id`` loop from :1490; diff2.cuh:323-328). The minimum, weights and
-    significance then see only the per-particle sums.
+    significance then see only the per-particle sums. One call over every slot is
+    :func:`tilt_image_rows_raw_diff2` and :func:`tilt_rows_scores_from_raw`; a chunk whose projections
+    do not fit at once runs the first over blocks of slots, carrying the running sum.
     """
+
+    raw_sum = tilt_image_rows_raw_diff2(
+        project_slot,
+        slot_image_ids,
+        chunk_image,
+        chunk_corr,
+        chunk_initial_diff2,
+        candidate_mask,
+        row_is_valid,
+        half_weights=half_weights,
+        image_translation_angles=image_translation_angles,
+        full_to_compact=full_to_compact,
+        logical_current_size=logical_current_size,
+    )
+    return tilt_rows_scores_from_raw(
+        raw_sum,
+        row_unit_local,
+        row_log_prior,
+        unit_translation_prior,
+        candidate_mask,
+        row_is_valid,
+        unit_capacity=unit_capacity,
+    )
+
+
+def tilt_image_rows_raw_diff2(
+    project_slot,  # callable: (slot int32 [], image int32 [C_R]) -> complex64 [C_R, N], slot local to slot_image_ids
+    slot_image_ids,  # int32 [S_b, C_R] the visited slots' chunk-local images of each row
+    chunk_image,
+    chunk_corr,
+    chunk_initial_diff2,
+    candidate_mask,
+    row_is_valid,
+    *,
+    half_weights,
+    image_translation_angles,
+    full_to_compact,
+    logical_current_size,
+    running=None,  # float32 [C_R, T] the earlier slots' sum, or None (zeros)
+):
+    """The rows' float32 diff2 summed over the visited slots, in slot order, added to ``running``."""
 
     slot_image_ids = jnp.asarray(slot_image_ids, dtype=jnp.int32)
 
@@ -748,9 +791,18 @@ def score_tilt_image_rows(
 
     chunk_live = _translation_chunk_live(candidate_mask, row_is_valid)
 
-    zeros = jnp.zeros((slot_image_ids.shape[1], int(image_translation_angles.shape[1])), dtype=jnp.float32)
+    if running is None:
+        running = jnp.zeros((slot_image_ids.shape[1], int(image_translation_angles.shape[1])), dtype=jnp.float32)
     slots = jnp.arange(slot_image_ids.shape[0], dtype=jnp.int32)
-    raw_sum, _ = jax.lax.scan(add_slot, zeros, (slots, slot_image_ids))
+    raw_sum, _ = jax.lax.scan(add_slot, running, (slots, slot_image_ids))
+    return raw_sum
+
+
+def tilt_rows_scores_from_raw(
+    raw_sum, row_unit_local, row_log_prior, unit_translation_prior, candidate_mask, row_is_valid, *, unit_capacity: int
+):
+    """The particles' flat-row scores from their rows' diff2 summed over every tilt image."""
+
     return _flat_rows_scores(
         raw_sum,
         jnp.asarray(row_unit_local, dtype=jnp.int32),

@@ -2501,8 +2501,8 @@ def _resident_pass2(
     n_units = n_images if tilt is None else int(np.asarray(tilt.unit_image_offsets).size - 1)
     if tilt is not None:
         _require(
-            not firstiter_cc and relion_f32_normalization_sum_weight is None,
-            "subtomogram particles run the Gaussian fine pass without zero-oversampling reuse",
+            relion_f32_normalization_sum_weight is None,
+            "subtomogram particles run the fine pass without zero-oversampling reuse",
         )
         _require(
             int(np.asarray(tilt.unit_image_offsets)[-1]) == n_images,
@@ -2596,7 +2596,7 @@ def _resident_pass2(
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         use_float64_scoring=use_float64_scoring,
         has_ctf_rfloat=relion_exact_bpref_operands,
-    )
+    ) and not (firstiter_cc and tilt is not None)  # a tilt CC pass translates its score image (resident_tilts)
     native_fft_size = int(np.prod(image_shape))
     relion_wavg_atomic_direct_noise, relion_wavg_atomic_direct_norm = _relion_wavg_direct_modes(
         accumulate_noise=bool(accumulate_noise),
@@ -3310,7 +3310,8 @@ def _resident_pass2(
     # reserving them anyway left a 0.38 GiB chunk budget at EMPIAR-10202
     # iteration 2 (box 800, bigbox 14446465).
     reserved_operand_bytes = 0
-    if _resident_operands_requested() and not firstiter_cc:
+    # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
+    if _resident_operands_requested() and (not firstiter_cc or tilt is not None):
         operand_bytes, operand_peak_bytes = _resident_half_operand_sizes(
             n_images=n_images,
             n_windowed=n_windowed,
@@ -3549,9 +3550,25 @@ def _resident_pass2(
     # each of its rows is projected once per image slot; the M-step's translated tiles are sized per
     # chunk in translation blocks (resident_tilts.run_tilt_chunk, mstep_translation_blocks).
     plan_translations = n_fine_trans if tilt is None else int(tilt.slot_capacity)
-    row_projection_factor = (1 if tilt is None else int(tilt.slot_capacity)) * gathered_row_copies
+    tilt_slot_block = None
     if tilt is not None:
-        from relax.sparse_pass2.resident_tilts import tilt_capacity_ladders
+        from relax.sparse_pass2.resident_tilts import tilt_capacity_ladders, tilt_projection_slot_block
+
+        # A particle whose rows' projections over all its images do not fit is projected, scored and
+        # backprojected a block of image slots at a time (resident_tilts.run_tilt_chunk).
+        tilt_slot_block = tilt_projection_slot_block(
+            max_image_rows(tables.row_offsets),
+            slot_capacity=int(tilt.slot_capacity),
+            slot_row_bytes=(
+                _STREAM_PEAK_COPIES * int(projection_bytes_per_rotation)
+                if stream_projections
+                else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
+            )
+            * gathered_row_copies,
+            budget_bytes=resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes),
+        )
+    row_projection_factor = (1 if tilt is None else int(tilt_slot_block)) * gathered_row_copies
+    if tilt is not None:
 
         row_ladder_start, _ = tilt_capacity_ladders(
             row_ladder_start, (1,), slot_capacity=int(tilt.slot_capacity)
@@ -3812,11 +3829,13 @@ def _resident_pass2(
         precision_policy=precision_policy,
         optics_groups_np=optics_groups_np,
         relion_native_fine_units=relion_native_fine_units,
+        allow_normalized_cc=tilt is not None,
     )
     # The --firstiter_cc iteration scores the compact engine's translated
     # normalized-CC tiles, which only the per-chunk preparation builds; it is
     # one iteration at a small current size.
-    if _resident_operands_requested() and not firstiter_cc:
+    # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
+    if _resident_operands_requested() and (not firstiter_cc or tilt is not None):
         operand_bytes, operand_peak_bytes = _resident_half_operand_sizes(
             n_images=n_images,
             n_windowed=n_windowed,
@@ -4114,6 +4133,9 @@ def _resident_pass2(
             stats_config=stats_config,
             use_translate_sum_kernel=True,
             n_classes=n_classes,
+            # VDAM: each tilt image backprojects its residual (cuda_kernel_backproject3D_SGD per image).
+            mstep_subtract_ctf_projection=bool(mstep_subtract_ctf_projection),
+            firstiter_cc=bool(firstiter_cc),
         )
         unit_image_offsets = np.asarray(tilt.unit_image_offsets, dtype=np.int64)
         for chunk in chunks:
@@ -4150,6 +4172,8 @@ def _resident_pass2(
                 tile_budget_bytes=_max_translation_tile_bytes_for_pass(
                     device_memory_bytes, has_external_normalization=False
                 ),
+                slot_block=tilt_slot_block,
+                score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
             )
             Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
     deferred = _global_chunk_loop_pipelined(stream_projections)
@@ -7068,6 +7092,21 @@ def _resident_chunk_posterior_firstiter_cc(
         n_fine_trans=n_fine_trans,
         block_rows=int(spec.mstep_block_rows),
     )
+    return _winner_take_all_posterior(
+        scored,
+        rows,
+        image_capacity=image_capacity,
+        cuda_backproject=cuda_backproject,
+        row_is_valid=row_is_valid,
+        kernel_row_image_ids=kernel_row_image_ids,
+    )
+
+
+def _winner_take_all_posterior(
+    scored, rows, *, image_capacity: int, cuda_backproject, row_is_valid, kernel_row_image_ids
+) -> _ChunkPosterior:
+    """The ``--firstiter_cc`` posterior of a chunk's normalized-CC scores (one segment per image or particle)."""
+
     scores = jnp.asarray(scored.scores, dtype=jnp.float32)
     scores_flat = scores.reshape(-1)
     log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
