@@ -52,6 +52,7 @@ def _rectangular_operands(rng, *, batch_size, rotation_count, translation_count,
 
 def _cuda_backproject(monkeypatch, custom_cuda_lib):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -309,6 +310,7 @@ def test_flat_rows_wavg_all_padding_rows_leave_operands_untouched(
 
 def test_flat_rows_wavg_fails_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")

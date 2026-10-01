@@ -6,12 +6,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
+from recovar import cuda_backproject as cb
 from scipy.spatial.transform import Rotation
 
-from recovar import cuda_backproject as cb
 from relax.cuda import kernels as em_cuda_kernels
 from relax.helpers.projection import relion_projector_half_to_texture_full
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
