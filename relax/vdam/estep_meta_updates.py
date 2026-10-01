@@ -272,3 +272,7 @@ def _update_particle_state_from_estep_meta(
 
     if (pmax := meta.get("max_posterior_per_image")) is not None:
         particle_state.max_posterior[ids] = np.asarray(pmax, dtype=np.float32).reshape(-1)
+
+    if (nsig := meta.get("significant_counts")) is not None:
+        particle_state.significant_counts = _ensure_field(particle_state.significant_counts, (N,), np.int32, 0)
+        particle_state.significant_counts[ids] = np.asarray(nsig, dtype=np.int32).reshape(-1)

@@ -122,6 +122,8 @@ class NativeParticleState:
     visited: np.ndarray | None = None
     best_pose_eulers_deg: np.ndarray | None = None
     best_pose_eulers_valid: np.ndarray | None = None
+    # RELION's rlnNrOfSignificantSamples: the coarse cut's pre-tie rank of the last E-step.
+    significant_counts: np.ndarray | None = None
 
 
 @dataclass(frozen=True)

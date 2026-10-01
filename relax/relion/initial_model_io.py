@@ -399,6 +399,8 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
     _set_star_column(table, "_rlnClassNumber", class_numbers)
     _set_star_column(table, "_rlnRandomSubset", _initial_model_random_subsets(main_star))
     _set_star_column(table, "_rlnMaxValueProbDistribution", _format_float_column(particle_state.max_posterior))
+    if particle_state.significant_counts is not None:
+        _set_star_column(table, "_rlnNrOfSignificantSamples", np.asarray(particle_state.significant_counts, np.int64))
 
     has_rotations = (
         particle_state.best_pose_rotation_ids is not None

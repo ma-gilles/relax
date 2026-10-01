@@ -349,7 +349,8 @@ LOC_BUDGETS = {
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
     # Subtomogram particle state and 3D offsets in the data STAR (+18, 2026-10-01).
-    "input_output": (1348, (
+    # +2: initial_model_io writes RELION's rlnNrOfSignificantSamples column (2026-10-01).
+    "input_output": (1350, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),
