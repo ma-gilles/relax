@@ -263,7 +263,9 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     L, logdet = jax.lax.optimization_barrier(_unit_shift_cholesky(H))
     Lt = [[x if x is None else x[..., None] for x in row] for row in L]
     b = [inner[j] - gram[index[(0, j)], :, :, None] for j in range(1, P)]
-    v = _forward_substitute(Lt, b)
+    # Materialize each substitution stage: a fused consumer would otherwise
+    # recompute the whole chain for every latent component it writes.
+    v = jax.lax.optimization_barrier(_forward_substitute(Lt, b))
     score = -0.5 * (rho - sum(x * x for x in v) + logdet[..., None]) + prior
     mean = jnp.stack(_back_substitute(Lt, v), axis=0)
     inverse = _lower_inverse(L)
@@ -293,6 +295,11 @@ def _unit_shift_cholesky(H):
             for k in range(j):
                 s = s - L[i][k] * L[j][k]
             L[i][j] = s / L[j][j]
+        # Materialize column j: later columns read it many times, and XLA would
+        # otherwise duplicate its whole dependency chain into each reader.
+        column = jax.lax.optimization_barrier([L[i][j] for i in range(j, q)])
+        for i in range(j, q):
+            L[i][j] = column[i - j]
     return L, 2.0 * sum(log_diagonal)
 
 
@@ -330,6 +337,9 @@ def _lower_inverse(L):
             for k in range(j, i):
                 s = s + L[i][k] * inverse[k][j]
             inverse[i][j] = -s / L[i][i]
+        column = jax.lax.optimization_barrier([inverse[i][j] for i in range(j, q)])
+        for i in range(j, q):
+            inverse[i][j] = column[i - j]
     return inverse
 
 
