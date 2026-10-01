@@ -13,6 +13,27 @@ from pathlib import Path
 import numpy as np
 
 
+DEFAULT_MAPS = ("000_8c9c.mrc", "007_8c95.mrc", "015_8c8x.mrc")
+
+
+def validate_state_inputs(source, counts, maps=None):
+    """Resolve ordered source maps and require one positive integer count per state."""
+    names = DEFAULT_MAPS if maps is None else tuple(maps)
+    counts = tuple(counts)
+    if not names or len(counts) != len(names):
+        raise ValueError("counts must contain one entry per map")
+    if any(isinstance(count, (bool, np.bool_)) or not isinstance(count, (int, np.integer))
+           or count <= 0 for count in counts):
+        raise ValueError("counts must be positive integers")
+    paths = [Path(source) / name for name in names]
+    if len(set(path.resolve() for path in paths)) != len(paths):
+        raise ValueError("maps must identify distinct files")
+    for path in paths:
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    return paths, counts
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
@@ -38,8 +59,11 @@ def effective_volumes(raw_volumes, voxel_size, box, *, atomic_solvent_correction
 
 def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
             atomic_solvent_correction=False, solvent_contrast_a=0.8,
-            solvent_contrast_B=2000.0, atomic_bfactor=0.0):
+            solvent_contrast_B=2000.0, atomic_bfactor=0.0, maps=None):
     import os
+
+    maps, counts = validate_state_inputs(source, counts, maps)
+    n_states = len(maps)
 
     import jax.numpy as jnp
     from recovar import core
@@ -59,7 +83,6 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
     training, evaluation = output / "training", output / "evaluation"
     training.mkdir()
     evaluation.mkdir()
-    maps = [Path(source) / name for name in ["000_8c9c.mrc", "007_8c95.mrc", "015_8c8x.mrc"]]
     volumes, voxel_size = simulator.generate_volumes_from_mrcs(maps, box)
     # Same common normalization as generate_synthetic_dataset, not per-state.
     scale = np.float32(1 / np.mean(np.linalg.norm(volumes, axis=-1)))
@@ -70,7 +93,7 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
         atomic_bfactor=atomic_bfactor,
     )
     rng = np.random.default_rng(seed)
-    labels = rng.permutation(np.repeat(np.arange(3), counts))
+    labels = rng.permutation(np.repeat(np.arange(n_states), counts))
     n = len(labels)
     rotations = Rotation.random(n, random_state=rng).as_matrix().astype(np.float32)
     # Existing simulator's standard random-sampling workflow uses zero shifts.
@@ -110,10 +133,10 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
         noise_variance=noise,
         volumes_fourier=volumes,
     )
-    real_volumes = np.asarray(ftu.get_idft3(jnp.asarray(volumes.reshape(3, box, box, box)))).real
+    real_volumes = np.asarray(ftu.get_idft3(jnp.asarray(volumes.reshape(n_states, box, box, box)))).real
     for k, volume in enumerate(real_volumes):
         helpers.write_mrc(str(evaluation / f"state{k}.mrc"), volume, voxel_size=voxel_size)
-    normalized = real_volumes.reshape(3, -1)
+    normalized = real_volumes.reshape(n_states, -1)
     normalized = normalized / np.linalg.norm(normalized, axis=1)[:, None]
     probe_count = min(n, 128)
     probe = CryoEMDataset(
@@ -195,7 +218,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--source", default="/home/mg6942/mytigress/cryobench2/Ribosembly/vols/128_org")
-    parser.add_argument("--counts", type=int, nargs=3, default=[6667, 6667, 6666])
+    parser.add_argument("--maps", nargs="+", default=None,
+                        help="Ordered source MRC names or paths; defaults to the original three states")
+    parser.add_argument("--counts", type=int, nargs="+", default=[6667, 6667, 6666],
+                        help="One positive particle count per source map")
     parser.add_argument("--box", type=int, default=64)
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--noise-level", type=float, default=0.01, help="Simulator noise_level parameter")
@@ -209,7 +235,7 @@ def main():
             atomic_solvent_correction=args.atomic_solvent_correction,
             solvent_contrast_a=args.solvent_contrast_a,
             solvent_contrast_B=args.solvent_contrast_b,
-            atomic_bfactor=args.atomic_bfactor)
+            atomic_bfactor=args.atomic_bfactor, maps=args.maps)
 
 
 if __name__ == "__main__":
