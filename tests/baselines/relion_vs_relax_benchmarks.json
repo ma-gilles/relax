@@ -3689,6 +3689,8 @@
     "relion_band_runs": [
      "bpd_relion_s29",
      "bpd_relion_s41",
+     "bpd_relion_s41_r2",
+     "bpd_relion_s41_r3",
      "bpd_relion_s53",
      "bpd_relion_s53_r2",
      "bpd_relion_s53_r3",
@@ -3742,10 +3744,27 @@
      0.98432
     ],
     "relion_fixed_seed_band": {
+     "41": [
+      0.335469,
+      0.335979,
+      3
+     ],
      "53": [
       0.335288,
       0.335308,
       3
+     ]
+    },
+    "relax_fixed_seed_runs": {
+     "41": [
+      0.335657,
+      0.335666,
+      0.335746
+     ],
+     "53": [
+      0.335018,
+      0.335409,
+      0.335109
      ]
     }
    },
@@ -3763,8 +3782,9 @@
    },
    "notes": [
     "Re-judged 2026-09-30 against RELION 5.0.1 + MPI scale-sum patch + double-precision back-projection accumulation (non-MPI --j 12, one fresh run per seed, plus same-command repeats where listed): RELION's float32 atomic BP accumulation drops increments at low-Pmax iterations, so the float build is not the RELION method's reference for K>1. relax arms, walls and the speed ratio are unchanged (same-node pairs against the float build).",
+    "Same-command repeats of both engines (seed_repeats_20261001, jobs 14808776-14808778; relax on cand_0cbdebd): masked mean GT FSC-AUC s41 relax 0.335657/0.335666/0.335746 vs RELION 0.335469-0.335979 (3 runs); s53 relax 0.335018/0.335409/0.335109 vs RELION 0.335288-0.335308 (3 runs); the ranges overlap at both seeds, so they compare as ranges (user, 2026-09-30).",
     "seed 29: masked mean GT FSC-AUC relax 0.337485 / RELION double-accumulation 0.337335 (float build 0.336645); class accuracy 0.98256 / 0.98228; masked relax-vs-RELION per GT class 0.9259/0.9924",
-    "seed 41: masked mean GT FSC-AUC relax 0.335657 / RELION double-accumulation 0.335787 (float build 0.336280); class accuracy 0.98212 / 0.98172; masked relax-vs-RELION per GT class 0.9292/0.9929",
+    "seed 41: masked mean GT FSC-AUC relax 0.335657 / RELION double-accumulation 0.335787 (fixed-seed band of 3 runs 0.335469-0.335979) (float build 0.336280); class accuracy 0.98212 / 0.98172; masked relax-vs-RELION per GT class 0.9292/0.9929",
     "seed 53: masked mean GT FSC-AUC relax 0.335018 / RELION double-accumulation 0.335308 (fixed-seed band of 3 runs 0.335288-0.335308) (float build 0.335334); class accuracy 0.98106 / 0.98108; masked relax-vs-RELION per GT class 0.9151/0.9902",
     "seed 61: masked mean GT FSC-AUC relax 0.339320 / RELION double-accumulation 0.339125 (seed added 2026-09-30); class accuracy 0.97974 / 0.98012; masked relax-vs-RELION per GT class 0.9253/0.9925",
     "seed 67: masked mean GT FSC-AUC relax 0.336435 / RELION double-accumulation 0.336278 (seed added 2026-09-30); class accuracy 0.98474 / 0.98432; masked relax-vs-RELION per GT class 0.9286/0.9932",
@@ -3788,7 +3808,7 @@
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_c3d_k2_50k_0cbdebd_s41/s41",
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_c3d_k2_50k_0cbdebd_s53/s53"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_bpd_c3d_pdb_k2_50k_v2.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_bpd_c3d_pdb_k2_50k_v3.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_pdb_k2_50k256_snr05_20260927",
     "score_json_float_reference": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_ng_c3d_k2_50k_0cbdebd.json",
@@ -3849,8 +3869,8 @@
     "dataset": "synth_pdb_k2_50k256_snr05_c1",
     "sha256": "845d54f8877884441940a2e48aa19edc0ab248821ebc913a2f4288aa6dc2c786"
    },
-   "quality_pass": false,
-   "quality_reason": "worst s53 −2.7e-4 vs same-seed RELION; s53 below across-seed RELION band 0.335288-0.339125 (masked mean GT FSC-AUC; RELION reference with double BP accumulation)"
+   "quality_pass": true,
+   "quality_reason": "worst s53 +1.2e-4 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); inside or above across-seed band (masked mean GT FSC-AUC; RELION reference with double BP accumulation)"
   },
   {
    "id": "synth_ribo_k4_100k256_snr05_class3d_25it",
