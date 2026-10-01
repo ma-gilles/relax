@@ -225,7 +225,6 @@ def relion_cuda_f32_coarse_log_weights(
         "adaptive_fraction",
         "max_significants",
         "tie_score_ulps",
-        "filter_positive_before_sort",
     ),
 )
 def relion_cuda_f32_coarse_posterior(
@@ -235,7 +234,6 @@ def relion_cuda_f32_coarse_posterior(
     max_significants=500,
     tie_score_ulps=0,
     min_diff2_offsets=None,
-    filter_positive_before_sort=False,
 ):
     """Reproduce RELION CUDA coarse-weight and significance arithmetic.
 
@@ -243,7 +241,10 @@ def relion_cuda_f32_coarse_posterior(
     (float32 in the deployed build), shifts their maximum to 50, applies
     ``expf``, radix-sorts positive weights in ascending order, and uses an
     inclusive float32 scan to select the lower-tail cutoff.  The surviving
-    weights remain normalized by the full, pre-pruning sum.
+    weights remain normalized by the full, pre-pruning sum. This cut has that
+    definition with float64 cumulative sums, found by radix select instead of a
+    sort (:func:`relax.cuda.kernels.relion_coarse_cut_f32`); the float32 scan's
+    rounding is not reproduced (its CUB order was not RELION's either).
 
     RELION constructs each coarse log weight as ``prior + min_diff2 - diff2``
     before finding the maximum and adding the exponentiation offset. Although
@@ -257,11 +258,6 @@ def relion_cuda_f32_coarse_posterior(
     ``tie_score_ulps`` optionally absorbs a small score-level atomic-rounding
     envelope below that exact cutoff. It is an explicit diagnostic control;
     production InitialModel keeps the exact threshold comparison.
-
-    ``filter_positive_before_sort`` explicitly selects RELION's native
-    positive-only CUB primitive. Its fixed-size sort/scan outputs are
-    right-aligned so all downstream indexing remains unchanged. It defaults
-    off until a separate GPU parity/performance gate accepts it.
     """
 
     tie_score_ulps = int(tie_score_ulps)
@@ -282,6 +278,8 @@ def relion_cuda_f32_coarse_posterior(
     has_finite = jnp.isfinite(best)
     safe_best = jnp.where(has_finite, best, jnp.float32(0.0))
     exponent_add = jnp.float32(50.0) - safe_best
+    max_significants = int(max_significants) if max_significants is not None else 0
+    n_samples = scores_f32.shape[1]
     use_native_cuda = False
     if jax.default_backend() == "gpu":
         from recovar import cuda_backproject
@@ -290,61 +288,35 @@ def relion_cuda_f32_coarse_posterior(
 
         use_native_cuda = cuda_backproject.custom_cuda_requested()
     if use_native_cuda:
-        finite_scores = jnp.where(finite, scores_f32, -jnp.inf)
-        # One launch sequence per batch: the same per-row CUB sort and Ampere
-        # scan as the scalar primitives, enqueued without a per-row XLA loop.
         raw_weights = em_cuda_kernels.relion_exponentiate_batched_f32(
-            finite_scores,
+            jnp.where(finite, scores_f32, -jnp.inf),
             exponent_add,
         )
-        if filter_positive_before_sort:
-            sorted_weights, cumulative = jax.vmap(
-                em_cuda_kernels.relion_cub_positive_sort_scan_f32,
-            )(raw_weights)
-        else:
-            sorted_weights, cumulative = (
-                em_cuda_kernels.relion_cub_sort_scan_batched_f32(raw_weights)
-            )
-    else:
-        shifted = jnp.where(
-            finite,
-            scores_f32 + exponent_add[:, None],
-            -jnp.inf,
-        )
-        raw_weights = jnp.where(
-            shifted < jnp.float32(-88.0),
-            jnp.float32(0.0),
-            jnp.exp(shifted),
-        )
-        raw_weights = jnp.where(
-            finite & jnp.isfinite(raw_weights),
+        sum_weight, threshold, cutoff_count = em_cuda_kernels.relion_coarse_cut_f32(
             raw_weights,
-            jnp.float32(0.0),
+            adaptive_fraction=float(adaptive_fraction),
+            max_significants=max_significants,
         )
-
-        # Keep a CPU reference path for isolated unit tests. The live opt-in
-        # route is CUDA-only and uses RELION's exact CUB primitives above.
+    else:
+        # The CUDA cut's definition, by sort, for the CPU unit tests.
+        shifted = jnp.where(finite, scores_f32 + exponent_add[:, None], -jnp.inf)
+        raw_weights = jnp.where(shifted < jnp.float32(-88.0), jnp.float32(0.0), jnp.exp(shifted))
+        raw_weights = jnp.where(finite & jnp.isfinite(raw_weights), raw_weights, jnp.float32(0.0))
         sorted_weights = jnp.sort(raw_weights, axis=1)
-        cumulative = jnp.cumsum(sorted_weights, axis=1, dtype=jnp.float32)
-    sum_weight = cumulative[:, -1]
+        cumulative = jnp.cumsum(sorted_weights.astype(jnp.float64), axis=1)
+        sum_weight = cumulative[:, -1].astype(jnp.float32)
+        tail_target = _relion_cuda_f32_tail_target(sum_weight, adaptive_fraction).astype(jnp.float64)
+        threshold_idx = jax.vmap(
+            lambda row, target: jnp.searchsorted(row, target, side="right"),
+        )(cumulative, tail_target).astype(jnp.int32)
+        positive_count = jnp.sum(raw_weights > jnp.float32(0.0), axis=1).astype(jnp.int32)
+        threshold_idx = jnp.maximum(threshold_idx, jnp.int32(n_samples) - positive_count)
+        threshold_idx = jnp.minimum(threshold_idx, jnp.int32(n_samples - 1))
+        if max_significants > 0:
+            threshold_idx = jnp.maximum(threshold_idx, jnp.int32(n_samples - max_significants))
+        threshold = sorted_weights[jnp.arange(scores_f32.shape[0]), threshold_idx]
+        cutoff_count = jnp.int32(n_samples) - threshold_idx
     has_mass = has_finite & jnp.isfinite(sum_weight) & (sum_weight > jnp.float32(0.0))
-    tail_target = _relion_cuda_f32_tail_target(sum_weight, adaptive_fraction)
-    threshold_idx = jax.vmap(
-        lambda row, target: jnp.searchsorted(row, target, side="right"),
-    )(cumulative, tail_target)
-
-    n_samples = scores_f32.shape[1]
-    positive_count = jnp.sum(raw_weights > jnp.float32(0.0), axis=1).astype(jnp.int32)
-    first_positive = jnp.asarray(n_samples, dtype=jnp.int32) - positive_count
-    threshold_idx = jnp.maximum(threshold_idx.astype(jnp.int32), first_positive)
-    threshold_idx = jnp.minimum(threshold_idx, jnp.asarray(n_samples - 1, dtype=jnp.int32))
-    if max_significants is not None and int(max_significants) > 0:
-        threshold_idx = jnp.maximum(
-            threshold_idx,
-            jnp.asarray(n_samples - int(max_significants), dtype=jnp.int32),
-        )
-
-    threshold = sorted_weights[jnp.arange(scores_f32.shape[0]), threshold_idx]
     mask = has_mass[:, None] & (raw_weights > jnp.float32(0.0)) & (
         raw_weights >= threshold[:, None]
     )
@@ -383,11 +355,7 @@ def relion_cuda_f32_coarse_posterior(
             jnp.float32(0.0),
         )
     n_significant = jnp.sum(mask, axis=1).astype(jnp.int32)
-    cutoff_count = jnp.where(
-        has_mass,
-        jnp.asarray(n_samples, dtype=jnp.int32) - threshold_idx,
-        jnp.int32(0),
-    )
+    cutoff_count = jnp.where(has_mass, cutoff_count, jnp.int32(0))
     return probabilities, mask, n_significant, cutoff_count, sum_weight, threshold
 
 

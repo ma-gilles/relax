@@ -755,6 +755,44 @@ def relion_cub_sort_scan_batched_f32(
     )(values)
 
 
+def relion_coarse_cut_f32(
+    weights: jax.Array,
+    *,
+    adaptive_fraction: float,
+    max_significants: int,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """RELION's coarse significance cut of posterior-weight rows, by radix select.
+
+    ``weights`` are a batch of rows of zero or positive float32 weights. Returns,
+    per row, the float32 sum of the positive weights, the cut weight (the first
+    ascending positive weight whose cumulative sum exceeds RELION's float32 tail
+    target ``(1 - adaptive_fraction) * sum``, cumulative sums in float64), and the
+    number of positive samples from the cut upwards (RELION's pre-tie rank), with
+    RELION's ``maximum_significants`` floor when ``max_significants > 0``. A row
+    without positive weights returns zeros.
+    """
+
+    if weights.dtype != jnp.float32 or weights.ndim != 2:
+        raise TypeError(f"weights must be a float32 matrix, got {weights.dtype} {weights.shape}")
+    if weights.shape[0] < 1 or weights.shape[1] < 1:
+        raise ValueError(f"weights must be nonempty, got {weights.shape}")
+    if jax.default_backend() != "gpu":
+        raise RuntimeError("RELION coarse cut requires a JAX GPU backend")
+    if not custom_cuda_requested():
+        raise RuntimeError("RELION coarse cut was requested but custom CUDA is disabled")
+    _ensure_ffi()
+
+    rows = weights.shape[0]
+    return jax.ffi.ffi_call(
+        _TARGET_RELION_COARSE_CUT_F32,
+        (
+            jax.ShapeDtypeStruct((rows,), jnp.float32),
+            jax.ShapeDtypeStruct((rows,), jnp.float32),
+            jax.ShapeDtypeStruct((rows,), jnp.int32),
+        ),
+    )(weights, fraction=np.float32(adaptive_fraction), maxsig=np.int64(max_significants))
+
+
 def _require_sparse_pass2_cuda_backend(label: str) -> None:
     if jax.default_backend() != "gpu":
         raise RuntimeError(f"{label} requires a JAX GPU backend")
@@ -5214,6 +5252,9 @@ _TARGET_RELION_CUB_POSITIVE_SORT_SCAN_F32 = (
 )
 
 
+_TARGET_RELION_COARSE_CUT_F32 = "cuda_relion_coarse_cut_f32"
+
+
 _TARGET_RELION_WAVG_ROTATION_ATOMIC_TRIPLET_ADD_F32 = (
     "cuda_relion_wavg_rotation_atomic_triplet_add_f32"
 )
@@ -5568,6 +5609,7 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (_TARGET_RELION_DIVIDE_BATCHED_F32, "RelionDivideBatchedF32"),
     (_TARGET_RELION_CUB_SORT_SCAN_F32, "RelionCubSortScanF32"),
     (_TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32, "RelionCubSortScanBatchedF32"),
+    (_TARGET_RELION_COARSE_CUT_F32, "RelionCoarseCutF32"),
     (
         _TARGET_RELION_CUB_POSITIVE_SORT_SCAN_F32,
         "RelionCubPositiveSortScanF32",

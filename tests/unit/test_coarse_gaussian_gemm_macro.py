@@ -1682,12 +1682,8 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
         max_significants,
         tie_score_ulps,
         min_diff2_offsets,
-        filter_positive_before_sort=None,
     ):
         del adaptive_fraction, max_significants, tie_score_ulps
-        assert filter_positive_before_sort is (
-            False if compact_expected and not force_fallback else None
-        )
         scores = jnp.asarray(score_values, dtype=jnp.float32)
         posterior_inputs.append(np.asarray(scores))
         assert_matches(

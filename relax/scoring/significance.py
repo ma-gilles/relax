@@ -4537,16 +4537,6 @@ def _compute_k_class_significance_batched(
                         ).reshape(batch_size, -1)
                         # The RELION-order log weights already carry min_diff2.
                         posterior_min_diff2_offsets = None
-                    posterior_kwargs = {}
-                    if compact_hybrid_scores is not None:
-                        # Stage 1's positive-only primitive is the exact
-                        # correctness oracle, but its current sequential vmap
-                        # performs one device-to-host count synchronization per
-                        # image.  The intended runtime path instead scans this
-                        # much smaller fixed-capacity table in one shape-stable
-                        # computation; positive-count clamping below the CUB call
-                        # still excludes exact-zero candidates from support.
-                        posterior_kwargs["filter_positive_before_sort"] = False
                     (
                         batch_weights,
                         batch_sig_mask,
@@ -4560,7 +4550,6 @@ def _compute_k_class_significance_batched(
                         max_significants=max_significants,
                         tie_score_ulps=int(relion_f32_coarse_tie_ulps),
                         min_diff2_offsets=posterior_min_diff2_offsets,
-                        **posterior_kwargs,
                     )
                     if relion_exact_coarse_weight_order:
                         # RELION publishes the coarse winner from these weights.

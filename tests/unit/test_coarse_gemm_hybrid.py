@@ -880,58 +880,30 @@ def test_compact_hybrid_gpu_positive_oracle_and_fixed_capacity_support(
             max_significants=7,
             tie_score_ulps=0,
         )
-        dense_positive = oversampling.relion_cuda_f32_coarse_posterior(
+        dense_posterior = oversampling.relion_cuda_f32_coarse_posterior(
             dense.posterior_scores_flat,
             min_diff2_offsets=dense.min_diff2_offsets,
-            filter_positive_before_sort=True,
             **posterior_kwargs,
         )
-        compact_positive = oversampling.relion_cuda_f32_coarse_posterior(
+        compact_posterior = oversampling.relion_cuda_f32_coarse_posterior(
             compact.posterior_scores_flat,
             min_diff2_offsets=compact.min_diff2_offsets,
-            filter_positive_before_sort=True,
             **posterior_kwargs,
         )
-        compact_fixed = oversampling.relion_cuda_f32_coarse_posterior(
-            compact.posterior_scores_flat,
-            min_diff2_offsets=compact.min_diff2_offsets,
-            filter_positive_before_sort=False,
-            **posterior_kwargs,
-        )
-        jax.block_until_ready((dense_positive, compact_positive, compact_fixed))
+        jax.block_until_ready((dense_posterior, compact_posterior))
 
     dense_support = tuple(
         np.flatnonzero(row).astype(np.int32)
-        for row in np.asarray(dense_positive[1], dtype=bool)
+        for row in np.asarray(dense_posterior[1], dtype=bool)
     )
-    compact_positive_support = (
-        map_coarse_gemm_hybrid_compact_mask_to_global_pose_ids(
-            compact,
-            np.asarray(compact_positive[1], dtype=bool),
-        )
-    )
-    compact_fixed_support = map_coarse_gemm_hybrid_compact_mask_to_global_pose_ids(
+    compact_support = map_coarse_gemm_hybrid_compact_mask_to_global_pose_ids(
         compact,
-        np.asarray(compact_fixed[1], dtype=bool),
+        np.asarray(compact_posterior[1], dtype=bool),
     )
-    for dense_ids, positive_ids, fixed_ids in zip(
-        dense_support,
-        compact_positive_support,
-        compact_fixed_support,
-        strict=True,
-    ):
-        assert_matches(positive_ids, dense_ids)
-        assert_matches(fixed_ids, dense_ids)
+    for dense_ids, compact_ids in zip(dense_support, compact_support, strict=True):
+        assert_matches(compact_ids, dense_ids)
     for field_index in (2, 3, 5):
         assert_matches(
-            np.asarray(compact_positive[field_index]),
-            np.asarray(dense_positive[field_index]),
+            np.asarray(compact_posterior[field_index]),
+            np.asarray(dense_posterior[field_index]),
         )
-    assert_matches(
-        np.asarray(compact_fixed[2]),
-        np.asarray(dense_positive[2]),
-    )
-    assert_matches(
-        np.asarray(compact_fixed[3]),
-        np.asarray(dense_positive[3]),
-    )

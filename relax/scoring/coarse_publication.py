@@ -131,7 +131,6 @@ def _posterior_statistics(values, raw_max, source_blocks, *, adaptive_fraction, 
         max_significants=max_significants,
         tie_score_ulps=tie_score_ulps,
         min_diff2_offsets=-raw_max,
-        filter_positive_before_sort=False,
     )
     winner = jnp.argmax(probabilities, axis=1)
     best = jnp.argmax(values, axis=1)

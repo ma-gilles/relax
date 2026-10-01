@@ -885,3 +885,256 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<ffi::AnyBuffer>()
 );
 
+
+// ---------------------------------------------------------------------------
+// RELION's coarse significance cut by radix select (no sort, no scan).
+//
+// RELION sorts a row's positive weights ascending, scans them in float32 and
+// cuts at the first sample whose cumulative weight exceeds
+// (1 - adaptive_fraction) * sum. This selects the same sample by its float bits,
+// eight bits per pass, from per-bin counts and float64 per-bin masses: the cut
+// has RELION's definition with float64 cumulative sums in place of the float32
+// scan (whose order is not RELION's either once zeros are kept in the row).
+// Positive float32 bit patterns order like the values; zeros are skipped. The
+// float64 bin masses are atomic sums, so their last bits are unordered.
+// ---------------------------------------------------------------------------
+
+constexpr int kRelionCutBins = 256;
+constexpr int kRelionCutBlock = 256;
+constexpr int kRelionCutWarps = kRelionCutBlock / 32;
+constexpr int kRelionCutSpan = 65536;
+
+// One pass of the select: bins of bits [24 - 8 pass, 32 - 8 pass) of the weights
+// whose higher bits equal the row's prefix. ``with_mass`` adds the float64 mass.
+__global__ void relion_coarse_cut_histogram_kernel(
+    const float* weights, int count, int pass, const uint32_t* prefix,
+    const int32_t* active, bool with_mass, uint32_t* bin_count, double* bin_mass, int row_base)
+{
+    const int row = row_base + static_cast<int>(blockIdx.y);
+    if (active != nullptr && active[row] == 0) return;
+    __shared__ uint32_t counts[kRelionCutWarps][kRelionCutBins];
+    __shared__ double masses[kRelionCutWarps][kRelionCutBins];
+    const int warp = threadIdx.x / 32;
+    for (int i = threadIdx.x; i < kRelionCutWarps * kRelionCutBins; i += blockDim.x) {
+        counts[i / kRelionCutBins][i % kRelionCutBins] = 0u;
+        masses[i / kRelionCutBins][i % kRelionCutBins] = 0.0;
+    }
+    __syncthreads();
+    const float* row_weights = weights + static_cast<int64_t>(row) * count;
+    const int begin = static_cast<int>(blockIdx.x) * kRelionCutSpan;
+    const int end = min(count, begin + kRelionCutSpan);
+    const int shift = 24 - 8 * pass;
+    const uint32_t row_prefix = prefix[row];
+    for (int i = begin + threadIdx.x; i < end; i += blockDim.x) {
+        const float weight = row_weights[i];
+        const uint32_t bits = __float_as_uint(weight);
+        if (!(weight > 0.0f)) continue;
+        if (pass > 0 && (bits >> (shift + 8)) != row_prefix) continue;
+        const uint32_t bin = (bits >> shift) & 0xffu;
+        atomicAdd(&counts[warp][bin], 1u);
+        if (with_mass) atomicAdd(&masses[warp][bin], static_cast<double>(weight));
+    }
+    __syncthreads();
+    for (int bin = threadIdx.x; bin < kRelionCutBins; bin += blockDim.x) {
+        uint32_t c = 0u;
+        double m = 0.0;
+        for (int w = 0; w < kRelionCutWarps; ++w) {
+            c += counts[w][bin];
+            m += masses[w][bin];
+        }
+        if (c == 0u) continue;
+        atomicAdd(bin_count + static_cast<int64_t>(row) * kRelionCutBins + bin, c);
+        if (with_mass) atomicAdd(bin_mass + static_cast<int64_t>(row) * kRelionCutBins + bin, m);
+    }
+}
+
+// Per row: choose the bin holding the cut sample and narrow the prefix. On the
+// first pass the row's sum and RELION's float32 tail target are formed. When the
+// target is not reached (float32 target above the float64 sum) the cut is the
+// largest weight, as RELION's threshold index clamps to the last sample.
+__global__ void relion_coarse_cut_mass_decide_kernel(
+    int rows, int pass, float fraction, const uint32_t* bin_count, const double* bin_mass,
+    uint32_t* prefix, double* low, double* target, int32_t* above,
+    float* sum_weight, float* threshold, int32_t* cutoff)
+{
+    const int row = static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (row >= rows) return;
+    const uint32_t* counts = bin_count + static_cast<int64_t>(row) * kRelionCutBins;
+    const double* masses = bin_mass + static_cast<int64_t>(row) * kRelionCutBins;
+    if (pass == 0) {
+        double total = 0.0;
+        for (int b = 0; b < kRelionCutBins; ++b) total += masses[b];
+        const float total_f32 = static_cast<float>(total);
+        sum_weight[row] = total_f32;
+        // _relion_cuda_f32_tail_target: (1 - textToFloat(fraction)) * sum, narrowed to XFLOAT.
+        target[row] = static_cast<double>(static_cast<float>(
+            (1.0 - static_cast<double>(fraction)) * static_cast<double>(total_f32)));
+        low[row] = 0.0;
+        above[row] = 0;
+        prefix[row] = 0u;
+    }
+    const double tail = target[row];
+    double cumulative = low[row];
+    int chosen = -1, last = -1;
+    for (int b = 0; b < kRelionCutBins; ++b) {
+        if (counts[b] == 0u) continue;
+        last = b;
+        if (cumulative + masses[b] > tail) { chosen = b; break; }
+        cumulative += masses[b];
+    }
+    if (chosen < 0) {
+        if (last < 0) {  // no positive weight: has_mass is false downstream
+            threshold[row] = 0.0f;
+            cutoff[row] = 0;
+            prefix[row] = 0xffffffffu;
+            return;
+        }
+        chosen = last;
+        cumulative -= masses[last];
+    }
+    int32_t greater = above[row];
+    for (int b = chosen + 1; b < kRelionCutBins; ++b) greater += static_cast<int32_t>(counts[b]);
+    above[row] = greater;
+    low[row] = cumulative;
+    const uint32_t narrowed = (prefix[row] << 8) | static_cast<uint32_t>(chosen);
+    prefix[row] = narrowed;
+    if (pass < 3) return;
+    // The final bin holds the samples equal to the cut value. The cut is the first
+    // of them, in ascending order, whose cumulative weight exceeds the target.
+    const float value = __uint_as_float(narrowed);
+    const int64_t ties = static_cast<int64_t>(counts[chosen]);
+    const double estimate = floor((tail - cumulative) / static_cast<double>(value)) + 1.0;
+    int64_t first = estimate >= static_cast<double>(ties) ? ties : (estimate <= 1.0 ? 1 : static_cast<int64_t>(estimate));
+    while (first > 1 && cumulative + static_cast<double>(first - 1) * value > tail) --first;
+    while (first < ties && cumulative + static_cast<double>(first) * value <= tail) ++first;
+    threshold[row] = value;
+    cutoff[row] = static_cast<int32_t>(greater + ties - first + 1);
+}
+
+// RELION's maximum_significants floor on the threshold index: rows whose cut keeps
+// more than ``maxsig`` samples cut at the maxsig-th largest weight instead.
+__global__ void relion_coarse_cut_rank_start_kernel(
+    int rows, int64_t maxsig, const int32_t* cutoff, int32_t* active, uint32_t* prefix, int32_t* above)
+{
+    const int row = static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (row >= rows) return;
+    active[row] = cutoff[row] > maxsig ? 1 : 0;
+    prefix[row] = 0u;
+    above[row] = 0;
+}
+
+__global__ void relion_coarse_cut_rank_decide_kernel(
+    int rows, int pass, int64_t maxsig, const int32_t* active, const uint32_t* bin_count,
+    uint32_t* prefix, int32_t* above, float* threshold, int32_t* cutoff)
+{
+    const int row = static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (row >= rows || active[row] == 0) return;
+    const uint32_t* counts = bin_count + static_cast<int64_t>(row) * kRelionCutBins;
+    int64_t greater = above[row];
+    int chosen = 0;
+    for (int b = kRelionCutBins - 1; b >= 0; --b) {
+        if (greater + counts[b] >= maxsig) { chosen = b; break; }
+        greater += counts[b];
+    }
+    above[row] = static_cast<int32_t>(greater);
+    prefix[row] = (prefix[row] << 8) | static_cast<uint32_t>(chosen);
+    if (pass < 3) return;
+    threshold[row] = __uint_as_float(prefix[row]);
+    cutoff[row] = static_cast<int32_t>(maxsig);
+}
+
+ffi::Error RelionCoarseCutF32Impl(
+    cudaStream_t stream, ffi::AnyBuffer weights, float fraction, int64_t maxsig,
+    ffi::Result<ffi::AnyBuffer> sum_weight, ffi::Result<ffi::AnyBuffer> threshold,
+    ffi::Result<ffi::AnyBuffer> cutoff)
+{
+    const auto dims = weights.dimensions();
+    if (weights.element_type() != ffi::DataType::F32 || dims.size() != 2 || dims[0] < 1 ||
+        dims[1] < 1 || dims[1] > static_cast<int64_t>(std::numeric_limits<int>::max()) ||
+        !std::isfinite(fraction) || fraction <= 0.0f || fraction > 1.0f)
+        return ffi::Error::InvalidArgument(
+            "RelionCoarseCutF32: weights must be a nonempty F32 matrix and 0 < fraction <= 1");
+    const int rows = static_cast<int>(dims[0]);
+    const int count = static_cast<int>(dims[1]);
+    for (auto* out : {&sum_weight, &threshold, &cutoff}) {
+        const auto out_dims = (*out)->dimensions();
+        if (out_dims.size() != 1 || out_dims[0] != rows)
+            return ffi::Error::InvalidArgument("RelionCoarseCutF32: outputs must have one value per row");
+    }
+    if (sum_weight->element_type() != ffi::DataType::F32 ||
+        threshold->element_type() != ffi::DataType::F32 ||
+        cutoff->element_type() != ffi::DataType::S32)
+        return ffi::Error::InvalidArgument("RelionCoarseCutF32: outputs are F32, F32, S32");
+
+    const size_t bins = static_cast<size_t>(rows) * kRelionCutBins;
+    const size_t bytes = bins * (sizeof(double) + sizeof(uint32_t)) +
+                         static_cast<size_t>(rows) * (2 * sizeof(double) + 3 * sizeof(int32_t));
+    void* storage = nullptr;
+    cudaError_t error = cudaMallocAsync(&storage, bytes, stream);
+    if (error != cudaSuccess)
+        return ffi::Error::Internal(std::string("RelionCoarseCutF32 cudaMallocAsync: ") + cudaGetErrorString(error));
+    double* bin_mass = static_cast<double*>(storage);
+    double* low = bin_mass + bins;
+    double* target = low + rows;
+    uint32_t* bin_count = reinterpret_cast<uint32_t*>(target + rows);
+    uint32_t* prefix = bin_count + bins;
+    int32_t* above = reinterpret_cast<int32_t*>(prefix + rows);
+    int32_t* active = above + rows;
+    const float* input = static_cast<const float*>(weights.untyped_data());
+    float* sums = static_cast<float*>(sum_weight->untyped_data());
+    float* cuts = static_cast<float*>(threshold->untyped_data());
+    int32_t* counts_out = static_cast<int32_t*>(cutoff->untyped_data());
+    const unsigned row_blocks = static_cast<unsigned>((rows + 127) / 128);
+    const unsigned spans = static_cast<unsigned>((count + kRelionCutSpan - 1) / kRelionCutSpan);
+
+    auto histogram = [&](int pass, const int32_t* row_active, bool with_mass) {
+        cudaError_t e = cudaMemsetAsync(bin_count, 0, bins * sizeof(uint32_t), stream);
+        if (e == cudaSuccess && with_mass) e = cudaMemsetAsync(bin_mass, 0, bins * sizeof(double), stream);
+        for (int row_base = 0; row_base < rows && e == cudaSuccess; row_base += kRelionMaxGridRows) {
+            const dim3 grid(spans, static_cast<unsigned>(std::min(kRelionMaxGridRows, rows - row_base)));
+            relion_coarse_cut_histogram_kernel<<<grid, kRelionCutBlock, 0, stream>>>(
+                input, count, pass, prefix, row_active, with_mass, bin_count, bin_mass, row_base);
+            e = cudaGetLastError();
+        }
+        return e;
+    };
+    for (int pass = 0; pass < 4 && error == cudaSuccess; ++pass) {
+        // Pass 0 reads no prefix; it is written by the pass-0 decision.
+        if (pass == 0) error = cudaMemsetAsync(prefix, 0, static_cast<size_t>(rows) * sizeof(uint32_t), stream);
+        if (error == cudaSuccess) error = histogram(pass, nullptr, true);
+        if (error == cudaSuccess) {
+            relion_coarse_cut_mass_decide_kernel<<<row_blocks, 128, 0, stream>>>(
+                rows, pass, fraction, bin_count, bin_mass, prefix, low, target, above, sums, cuts, counts_out);
+            error = cudaGetLastError();
+        }
+    }
+    if (maxsig > 0 && error == cudaSuccess) {
+        relion_coarse_cut_rank_start_kernel<<<row_blocks, 128, 0, stream>>>(
+            rows, maxsig, counts_out, active, prefix, above);
+        error = cudaGetLastError();
+        for (int pass = 0; pass < 4 && error == cudaSuccess; ++pass) {
+            error = histogram(pass, active, false);
+            if (error == cudaSuccess) {
+                relion_coarse_cut_rank_decide_kernel<<<row_blocks, 128, 0, stream>>>(
+                    rows, pass, maxsig, active, bin_count, prefix, above, cuts, counts_out);
+                error = cudaGetLastError();
+            }
+        }
+    }
+    const cudaError_t free_error = cudaFreeAsync(storage, stream);
+    if (error == cudaSuccess) error = free_error;
+    return error == cudaSuccess ? ffi::Error::Success()
+                                : ffi::Error::Internal(std::string("RelionCoarseCutF32: ") + cudaGetErrorString(error));
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    RelionCoarseCutF32, RelionCoarseCutF32Impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Arg<ffi::AnyBuffer>()
+        .Attr<float>("fraction")
+        .Attr<int64_t>("maxsig")
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);

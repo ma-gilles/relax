@@ -101,7 +101,6 @@ def test_posterior_policy_is_forwarded_without_hardcoded_probe_values(one_winner
         assert call["adaptive_fraction"] == 0.975
         assert call["max_significants"] == 7
         assert call["tie_score_ulps"] == 2
-        assert call["filter_positive_before_sort"] is False
 
 
 @pytest.mark.parametrize("rows", [[0, 0], [0], [0, 3], [-1, 2], [0.0, 2.0]])

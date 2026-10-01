@@ -1,7 +1,5 @@
 """RELION CUDA float32 coarse-posterior significance tests."""
 
-import inspect
-
 import numpy as np
 from helpers.float_compare import assert_matches
 
@@ -35,13 +33,14 @@ def _numpy_reference(scores, adaptive_fraction, max_significants):
         raw = np.where(finite & np.isfinite(raw), raw, np.float32(0.0))
         positive = raw[raw > 0.0]
         ordered = np.sort(positive)
-        cumulative = np.cumsum(ordered, dtype=np.float32)
-        total = cumulative[-1]
+        # RELION's cut definition with float64 cumulative sums (relion_coarse_cut_f32).
+        cumulative = np.cumsum(ordered.astype(np.float64))
+        total = np.float32(cumulative[-1])
         parsed_fraction = np.float32(adaptive_fraction)
         target = np.float32(
             (np.float64(1.0) - np.float64(parsed_fraction)) * np.float64(total)
         )
-        threshold_index = int(np.searchsorted(cumulative, target, side="right"))
+        threshold_index = min(int(np.searchsorted(cumulative, np.float64(target), side="right")), len(ordered) - 1)
         if max_significants is not None and max_significants > 0:
             threshold_index = max(threshold_index, len(ordered) - max_significants)
         threshold = ordered[threshold_index]
@@ -82,32 +81,6 @@ def test_relion_cuda_f32_coarse_posterior_matches_numpy_reference():
         # NumPy and XLA's expf/divide sequences can differ by two final
         # binary32 ULPs. Support, rank, and cutoff remain exact above.
         np.testing.assert_array_max_ulp(actual_value, expected_value, maxulp=2)
-
-
-def test_relion_cuda_f32_coarse_positive_filter_is_explicit_and_default_off():
-    signature = inspect.signature(relion_cuda_f32_coarse_posterior.__wrapped__)
-    assert signature.parameters["filter_positive_before_sort"].default is False
-
-    scores = np.asarray(
-        [[4.0, -40.0, -50.0, -100.0, -np.inf, 3.0]],
-        dtype=np.float32,
-    )
-    default = relion_cuda_f32_coarse_posterior(
-        scores,
-        adaptive_fraction=0.8,
-        max_significants=4,
-    )
-    positive_filter = relion_cuda_f32_coarse_posterior(
-        scores,
-        adaptive_fraction=0.8,
-        max_significants=4,
-        filter_positive_before_sort=True,
-    )
-    for default_value, filtered_value in zip(default, positive_filter):
-        assert_matches(
-            np.asarray(default_value),
-            np.asarray(filtered_value),
-        )
 
 
 def test_relion_cuda_f32_coarse_log_weights_preserves_boundary_ulp():
