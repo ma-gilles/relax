@@ -1,7 +1,10 @@
 # Local-search implementation lessons
 
-The current implementation lives in [local/](../relax/local); refinement
-scheduling lives in [refinement/](../relax/refinement). Follow the
+The current implementation is the device-resident local pass,
+[resident_local_pass2.py](../relax/sparse_pass2/resident_local_pass2.py), with the
+hypothesis layout in [local/local_layout.py](../relax/local/local_layout.py); the exact
+local engine these lessons came from was removed on 2026-09-30. Refinement scheduling
+lives in [refinement/](../relax/refinement). Follow the
 [EM validation ladder](development/em_parity_runbook.md#validation-ladder)
 for current checks. Historical timings below are not current qualification.
 
