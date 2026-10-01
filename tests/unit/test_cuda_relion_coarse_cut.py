@@ -92,3 +92,34 @@ def test_coarse_cut_places_the_cut_inside_a_tied_run(monkeypatch, custom_cuda_li
     assert_matches(total, ref_total)
     assert_matches(cutoff, ref_cutoff)
     assert_matches(threshold, ref_threshold)
+
+
+@pytest.mark.gpu
+def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda_lib, gpu_device):
+    """RELION's CUB sort and float32 scan, the reference: the same cut rank at pass-1 row sizes.
+
+    The float32 scan's rounding can move a cut by a sample in principle; on 17 K15-sized rows
+    (11.6 M weights, bench 14827636) and two K15/K4 replays the ranks were equal.
+    """
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    from relax.cuda import kernels as em_cuda_kernels
+    from relax.helpers.oversampling import _relion_cuda_f32_tail_target
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    weights = _rows(np.random.default_rng(2026), 4, 2_000_000)
+    fraction = 0.999
+    total, _, cutoff = _cut(weights, fraction, -1, gpu_device)
+    with jax.default_device(gpu_device):
+        matrix = jnp.asarray(weights)
+        _, cumulative = em_cuda_kernels.relion_cub_sort_scan_batched_f32(matrix)
+        target = _relion_cuda_f32_tail_target(cumulative[:, -1], fraction)
+        index = jax.vmap(lambda row, t: jnp.searchsorted(row, t, side="right"))(cumulative, target)
+        index = jnp.maximum(index, weights.shape[1] - jnp.sum(matrix > 0, axis=1))
+        cub_total, cub_cutoff = jax.device_get((cumulative[:, -1], weights.shape[1] - index))
+    assert_matches(total, np.asarray(cub_total), rtol=1e-6)
+    assert np.all(np.abs(cutoff.astype(np.int64) - np.asarray(cub_cutoff, np.int64)) <= 1)
+

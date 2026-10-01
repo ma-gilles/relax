@@ -53,8 +53,10 @@ def _relion_f32_fine_posterior(
     The reference GPU path shifts its float32 log weights so the maximum is
     50, applies ``expf``, sorts the raw weights in ascending order, and obtains
     both ``sum_weight`` and the lower-tail significance cutoff from a float32
-    cumulative scan.  Surviving weights are divided by the full pre-pruning
-    ``sum_weight``; they are intentionally not renormalized afterward.
+    cumulative scan; the cut here has that definition with float64 cumulative
+    sums (:func:`relax.cuda.kernels.relion_coarse_cut_f32`).  Surviving weights
+    are divided by the full pre-pruning ``sum_weight``; they are intentionally
+    not renormalized afterward.
     """
 
     scores_f32 = jnp.asarray(scores, dtype=jnp.float32)
@@ -75,16 +77,14 @@ def _relion_f32_fine_posterior(
         # RELION computes ``50 - weights_max`` once in XFLOAT, then its CUDA
         # kernel evaluates ``expf(score + add)``.  Reassociating this as
         # ``exp(score - best + 50)`` changes hundreds of thousands of raw
-        # weights at the iteration-2 case-22 boundary.  Its deployed sm_80
-        # scan policy also remains observable when the same binary is JITed
-        # on Hopper, so the CUDA primitive pins that policy explicitly.
+        # weights at the iteration-2 case-22 boundary.
         finite_scores = jnp.where(finite, flat_scores, -jnp.inf)
         raw_weights = em_cuda_kernels.relion_exponentiate_batched_f32(
             finite_scores,
             exponent_add,
         )
-        sorted_weights, cumulative = (
-            em_cuda_kernels.relion_cub_sort_scan_batched_f32(raw_weights)
+        fine_sum_weight, cut_weight, _ = em_cuda_kernels.relion_coarse_cut_f32(
+            raw_weights, adaptive_fraction=float(adaptive_fraction), max_significants=0
         )
     else:
         shifted = jnp.where(
@@ -102,9 +102,14 @@ def _relion_f32_fine_posterior(
             raw_weights,
             jnp.float32(0.0),
         )
+        # The CUDA cut's definition (float64 cumulative sums), by sort, for the CPU unit tests.
         sorted_weights = jnp.sort(raw_weights, axis=1)
-        cumulative = jnp.cumsum(sorted_weights, axis=1, dtype=jnp.float32)
-    fine_sum_weight = cumulative[:, -1]
+        cumulative = jnp.cumsum(sorted_weights.astype(jnp.float64), axis=1)
+        fine_sum_weight = cumulative[:, -1].astype(jnp.float32)
+        cut_index = jax.vmap(lambda row, target: jnp.searchsorted(row, target, side="right"))(
+            cumulative, _relion_cuda_f32_tail_target(fine_sum_weight, adaptive_fraction).astype(jnp.float64)
+        )
+        cut_weight = sorted_weights[jnp.arange(flat_scores.shape[0]), jnp.minimum(cut_index, cumulative.shape[1] - 1)]
     if normalization_sum_weight is None:
         sum_weight = fine_sum_weight
     else:
@@ -118,15 +123,7 @@ def _relion_f32_fine_posterior(
         threshold = jnp.zeros_like(sum_weight)
         mask_flat = has_mass[:, None] & finite & (raw_weights > jnp.float32(0.0))
     else:
-        tail_target = _relion_cuda_f32_tail_target(fine_sum_weight, adaptive_fraction)
-        threshold_idx = jax.vmap(
-            lambda row, target: jnp.searchsorted(row, target, side="right")
-        )(
-            cumulative,
-            tail_target,
-        )
-        threshold_idx = jnp.minimum(threshold_idx, cumulative.shape[1] - 1)
-        threshold = sorted_weights[jnp.arange(flat_scores.shape[0]), threshold_idx]
+        threshold = cut_weight
         mask_flat = has_mass[:, None] & finite & (raw_weights >= threshold[:, None])
     safe_sum_weight = jnp.where(has_mass, sum_weight, jnp.float32(1.0))
     if use_native_cuda:
