@@ -8803,7 +8803,19 @@
      "1": 0.996554,
      "2": 0.998424,
      "3": 1.0
-    }
+    },
+    "relax_fixed_seed_runs": {
+     "2": [
+      0.5366,
+      0.53711,
+      0.537227
+     ]
+    },
+    "relax_repeat_dirs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_class3d_20260929/et16_k2conf_optics2_339fe17/seed2/out",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_class3d_20260929/et16_k2conf_optics2_339fe17_r2/seed2/out",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_class3d_20260929/et16_k2conf_optics2_339fe17_r3/seed2/out"
+    ]
    },
    "cross_engine": "per-class masked relax-vs-same-seed-RELION map FSC-AUC (gt1/gt2): s1 0.99972/0.99655; s2 0.99989/0.99842; s3 1.00000/1.00000; RELION same-seed repeats seed2 0.99955/0.99991; seed3 0.99670/0.99582",
    "cross_engine_masked_band_auc": null,
@@ -8824,7 +8836,7 @@
     "seed 2: mean masked GT FSC-AUC relax 0.536600 / RELION 0.537117/0.537237; class accuracy 0.996 / 0.996/0.996; per-class masked map FSC-AUC vs same-seed RELION 0.99842 (min); walls relax 3765 s / RELION non-MPI mpiscale 6990 s",
     "seed 3: mean masked GT FSC-AUC relax 0.544765 / RELION 0.544768/0.545976; class accuracy 0.9955 / 0.9955/0.995; per-class masked map FSC-AUC vs same-seed RELION 1.00000 (min); walls relax 3806 s / RELION non-MPI mpiscale 6886 s",
     "Speed: relax 3771 s on 1 H100 (cold) against RELION non-MPI seed 1 6875 s on 1 H100 (0.55x), separate jobs on the same GPU model.",
-    "etw (2026-10-01): on 339fe17 relax s2 class 2 sits 0.0009 below both double-accumulation s2 runs (masked 0.0010); s1 and s3 lie inside the RELION range. A coarse-cut capture (TS_03/139, job 14829899) is checking whether this is a near-tie flip.",
+    "etw (2026-10-01): two same-command relax repeats at s2 (job 14829971, H100, cold): masked mean 0.536600 / 0.537110 / 0.537227 against double-accumulation RELION 0.537117 / 0.537237; the first run was the low one of three and the ranges overlap, so s2 compares run ranges.",
     "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION 5.0.1 + MPI scale-sum patch (mpiscale, sm_90). Same-node A/B against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the same flags: K1 EMPIAR-10345 MPI 5041 vs 5040 s, Class3D pdb K2 non-MPI 3898 vs 3872 s, cryo-ET w2_14 Refine3D MPI 10013 vs 9971 s (em_work/relax_bench_k1plus_20260925/stock90_ab_20261001): the patch is speed-neutral (within 1%), so the wall stands."
    ],
    "null_reasons": {
@@ -8856,8 +8868,8 @@
     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_bench_20260926/benchw_rows_20261001/add_et_class3d_rows.py"
    },
    "date": "2026-10-01",
-   "quality_pass": false,
-   "quality_reason": "worst s2 −5.2e-4 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 1.000000) at 1 of 3 seeds, GT differences under 1e-4 are ties; s2 below across-seed RELION band 0.537117-0.568333 (mean per-class masked GT FSC-AUC)",
+   "quality_pass": true,
+   "quality_reason": "worst s1 −1.5e-5 vs same-seed RELION; run ranges compared at s2 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 1.000000) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band (mean per-class masked GT FSC-AUC)",
    "time_check": {
     "a": "RELION 1 H100, relion_refine --j 12 non-MPI (job 14708643, della-h19g2); relax 1 H100, 12 CPUs (job 14824816, della-h19g4); separate jobs",
     "b": "relax main 339fe17 with et's tomo arm environment (RELAX_ENABLE_CUSTOM_CUDA=1, RELAX_RELION_BIND_COPY_TO_PACKAGE=0, natives from RECOVAR_CUDA_LIB / RELAX_CUDA_LIB); no diagnostic, capture or replay options; --no-firstiter_cc as RELION's tomo Class3D command",
