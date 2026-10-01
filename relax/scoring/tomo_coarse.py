@@ -400,6 +400,70 @@ def particle_coarse_significance(
     )
 
 
+def _batch_scoring_rotations(
+    units,
+    offsets,
+    image_projections,
+    coarse_eulers_deg,
+    unit_rotation_rows,
+    random_perturbation,
+    angular_sampling_deg,
+    *,
+    p_pad: int,
+    slots: int,
+    r_pad: int,
+    pass1_rotations,
+) -> jax.Array:
+    """A coarse batch's scorer matrices on the device, ``[P_pad, S, R_pad, 3, 3]`` float32.
+
+    Every tilt image has its own matrices, ``make_eulers_3D`` with its left matrix
+    (:func:`relax.sampling._relion_adaptive_pass1_rotations`). A global search builds the whole
+    batch's images in one call; a local search builds each particle's own rotations. A particle's
+    rotations beyond its own count repeat its last one, and padded slots and particles are zero.
+    """
+
+    from relax.refinement import tomo_particles
+
+    counts = np.diff(offsets)[np.asarray(units)]
+    slot = np.arange(slots)[None, :]
+    if unit_rotation_rows is None:
+        images = np.concatenate([np.arange(offsets[unit], offsets[unit + 1]) for unit in units])
+        left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+        built = jnp.asarray(
+            pass1_rotations(coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left),
+            dtype=jnp.float32,
+        )
+        n_rot = int(built.shape[1])
+        # Each slot's image row in ``built`` (padded slots read row 0 and are zeroed below).
+        rows = np.zeros((p_pad, slots), dtype=np.int64)
+        rows[: len(units)] = np.where(slot < counts[:, None], (np.cumsum(counts) - counts)[:, None] + slot, 0)
+        rot = np.minimum(np.arange(r_pad), n_rot - 1)
+        full_valid = np.zeros((p_pad, slots), dtype=bool)
+        full_valid[: len(units)] = slot < counts[:, None]
+        return _lay_out_rotations(built, jnp.asarray(rows), jnp.asarray(rot), jnp.asarray(full_valid))
+    else:
+        per_unit = []
+        for unit, unit_rows in zip(units, unit_rotation_rows):
+            images = np.arange(offsets[unit], offsets[unit + 1])
+            left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+            built = jnp.asarray(
+                pass1_rotations(coarse_eulers_deg[unit_rows], random_perturbation, angular_sampling_deg, left_matrices=left),
+                dtype=jnp.float32,
+            )
+            rot = jnp.asarray(np.minimum(np.arange(r_pad), int(built.shape[1]) - 1))
+            per_unit.append(jnp.pad(built[:, rot], ((0, slots - images.size), (0, 0), (0, 0), (0, 0))))
+        # jnp.pad zero-fills the padded slots; padded particles are zeros.
+        return jnp.stack(per_unit + [jnp.zeros_like(per_unit[0])] * (p_pad - len(units)))
+
+
+@jax.jit
+def _lay_out_rotations(built, rows, rot, valid):
+    """``built[rows, rot]`` with invalid slots zeroed, as one device program (one output buffer)."""
+
+    laid_out = built[rows[:, :, None], rot[None, None, :]]
+    return jnp.where(valid[:, :, None, None, None], laid_out, jnp.zeros((), laid_out.dtype))
+
+
 def particle_coarse_supports(
     experiment_dataset,
     *,
@@ -550,24 +614,27 @@ def particle_coarse_supports(
             pmax_by_unit[int(unit)] = float(particle_pmax[i])
 
     for units, r_pad, p_pad, slot_block in batches:
-        # Host operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
+        # Operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
         # last one, padded slots and particles carry zero weight (their diff2 adds zeros and is not read).
-        rotations = np.zeros((p_pad, slots, r_pad, 3, 3), dtype=np.float32)
+        # The scorer matrices are built and laid out on the device (_batch_scoring_rotations).
         angles = np.zeros((p_pad, slots, n_coarse_trans, 2), dtype=np.float32)
         image_index = np.zeros((p_pad, slots), dtype=np.int64)
         image_valid = np.zeros((p_pad, slots), dtype=bool)
+        rotations = _batch_scoring_rotations(
+            units,
+            offsets,
+            image_projections,
+            coarse_eulers_deg,
+            None if not local else [unit_rotations[unit] for unit in units],
+            random_perturbation,
+            angular_sampling_deg,
+            p_pad=p_pad,
+            slots=slots,
+            r_pad=r_pad,
+            pass1_rotations=_relion_adaptive_pass1_rotations,
+        )
         for p, unit in enumerate(units):
             images = np.arange(offsets[unit], offsets[unit + 1])
-            left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
-            unit_rot = _relion_adaptive_pass1_rotations(
-                coarse_eulers_deg if not local else coarse_eulers_deg[unit_rotations[unit]],
-                random_perturbation,
-                angular_sampling_deg,
-                left_matrices=left,
-            )
-            n_rot = int(rotation_counts[unit])
-            rotations[p, : images.size, :n_rot] = np.asarray(unit_rot, dtype=np.float32)
-            rotations[p, : images.size, n_rot:] = np.asarray(unit_rot, dtype=np.float32)[:, -1:]
             angles[p, : images.size] = tomo_particles.tilt_translation_angles(
                 coarse_translations_px,
                 old[unit : unit + 1],
@@ -591,7 +658,7 @@ def particle_coarse_supports(
                 total = _particles_coarse_diff2(
                     total,
                     class_projector,
-                    jnp.asarray(rotations[:, block]),
+                    rotations[:, block],
                     batch_unshifted[:, block],
                     batch_weight[:, block],
                     batch_initial[:, block],

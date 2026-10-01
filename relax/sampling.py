@@ -747,12 +747,13 @@ def _relion_adaptive_pass1_rotations(
     return _relion_device_scoring_rotations_f32(source_eulers_deg, right_matrix)
 
 
-def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_matrices) -> np.ndarray | None:
+def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_matrices) -> jax.Array | None:
     """Tilt images' coarse scorer matrices, ``[B, N, 3, 3]``: ``make_eulers_3D`` with one left matrix per image.
 
     RELION's pass-1 plan of a tilt image passes ``MBL`` (its ``Aproj`` times the optics scale)
     to the device as float (acc_ml_optimiser_impl.h:1086-1116); with a left matrix the inverse
-    is the float32 adjugate, not the transpose. ``None`` on CPU, like the SPA path.
+    is the float32 adjugate, not the transpose. ``None`` on CPU, like the SPA path. The float32
+    matrices stay on the device (the coarse pass consumes them there; no host round trip).
     """
 
     if jax.default_backend() != "gpu":
@@ -768,7 +769,7 @@ def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_mat
         jnp.asarray(np.asarray(left_matrices, dtype=np.float32).reshape(-1, 3, 3)),
         do_right=right_matrix is not None,
     )
-    return np.asarray(jax.device_get(rotations), dtype=np.float32)
+    return rotations
 
 
 def apply_relion_rotation_perturbation_to_eulers(

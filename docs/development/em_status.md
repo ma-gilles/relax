@@ -39,7 +39,12 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
 - Speed (open): at et09 iteration 100 (590 particles, HEALPix 3, 180 3D coarse translations) the
   relax iteration is 2.1x RELION's (165 s vs about 78 s), 120 s of it the coarse pass: the per-image
   coarse kernel takes 128 translations per launch, so 180 need two launches that each project all
-  36864 orientations.
+  36864 orientations. The coarse pass also pulled every particle's tilt-image matrices to the host
+  (a sync per particle); they now stay on the device, built once per particle batch (identical
+  coarse cut): one late et09 E-step (1000 particles) 137 s -> 107 s, coarse 120 s -> 89 s, et13
+  Class3D 25 iterations -4.7%. The coarse kernel `relion_coarse_diff2_projector_f32_kernel` is now
+  93% of the E-step's GPU time (85 ms per particle; nsys,
+  `em_work/cryoet_vdam_20261001/profile`).
 - Open: qualification against same-seed RELION bands (et09 K=1 VDAM, 3 seeds; et15 K=2; et01
   Refine3D `--firstiter_cc`, 3 seeds); evidence and job IDs in
   `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001/HANDOFF.json`.
