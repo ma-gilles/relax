@@ -54,6 +54,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.native_sources import check as check_native_sources  # noqa: E402
 from scripts.native_sources import check_imports  # noqa: E402
+
 TIERS_DIR = REPO_ROOT / "tests" / "tiers"
 RUN_BASE = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers")
 BUDGET_S = {"smoke": 5 * 60, "medium": 2 * 3600, "long": 8 * 3600}
@@ -283,17 +284,24 @@ def _durations() -> dict[str, int]:
     return json.loads((TIERS_DIR / "gpu_file_seconds.json").read_text())["seconds"]
 
 
-def smoke_touched_split(touched: list[str], replay_seconds: float) -> tuple[list[str], list[str]]:
+def smoke_touched_split(
+    touched: list[str], replay_seconds: float, changed: list[str] = ()
+) -> tuple[list[str], list[str]]:
     """Touched GPU files that fit smoke's budget beside the replays, and the rest (for medium).
 
-    Files are taken shortest first by their recorded wall (tests/tiers/gpu_file_seconds.json,
-    10 s when unrecorded) while the smoke GPU total stays within BUDGET_S["smoke"]; the medium
-    tier's unit sweep runs every GPU file, so a deferred file is still tested there.
+    The change's own GPU test files (added or modified, in ``changed``) always run: a new test
+    file has no recorded wall and used to sort among the importers, so the budget could defer
+    the one test written for the change (2026-09-30). The importers then fill the remaining
+    budget shortest first by their recorded wall (tests/tiers/gpu_file_seconds.json, 10 s when
+    unrecorded) while the smoke GPU total stays within BUDGET_S["smoke"]; the medium tier's unit
+    sweep runs every GPU file, so a deferred file is still tested there.
     """
     seconds = _durations()
     room = BUDGET_S["smoke"] - replay_seconds
-    kept, deferred = [], []
-    for f in sorted(touched, key=lambda f: (seconds.get(f, 10), f)):
+    own = sorted(set(touched) & set(changed))
+    kept, deferred = list(own), []
+    room -= sum(seconds.get(f, 10) for f in own)
+    for f in sorted(set(touched) - set(own), key=lambda f: (seconds.get(f, 10), f)):
         cost = seconds.get(f, 10)
         if cost <= room:
             kept.append(f)
@@ -368,7 +376,8 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
             sum(FAST_CASE_SECONDS[c] for c in SMOKE_REPLAYS),
         )
         items = [guard, merge_units, replays]
-        touched, deferred = smoke_touched_split(touched_gpu_tests(src, changed_paths(src, base)), replays.seconds)
+        changed = changed_paths(src, base)
+        touched, deferred = smoke_touched_split(touched_gpu_tests(src, changed), replays.seconds, changed)
         if deferred:
             print(f"smoke budget: {len(deferred)} touched GPU file(s) deferred to the medium tier: {', '.join(deferred)}")
         if touched:

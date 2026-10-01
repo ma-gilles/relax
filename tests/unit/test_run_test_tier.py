@@ -326,6 +326,18 @@ def test_smoke_defers_touched_gpu_files_over_its_budget(monkeypatch):
     assert deferred == ["tests/unit/big.py"]
 
 
+def test_smoke_always_runs_the_changes_own_gpu_test_files(monkeypatch):
+    """An added or modified GPU test file runs in smoke even when the importers fill the budget."""
+    seconds = {"tests/unit/a.py": 30, "tests/unit/b.py": 50, "tests/unit/own_slow.py": 400}
+    monkeypatch.setattr(run_test_tier, "_durations", lambda: seconds)
+    touched = ["tests/unit/a.py", "tests/unit/b.py", "tests/unit/new.py", "tests/unit/own_slow.py", "tests/unit/z.py"]
+    changed = ["relax/helpers/projection.py", "tests/unit/new.py", "tests/unit/own_slow.py"]
+    kept, deferred = run_test_tier.smoke_touched_split(touched, replay_seconds=200, changed=changed)
+    assert set(kept) >= {"tests/unit/new.py", "tests/unit/own_slow.py"}
+    # The own files used the room (100 s): every importer is deferred to medium.
+    assert deferred == ["tests/unit/a.py", "tests/unit/b.py", "tests/unit/z.py"]
+
+
 def test_gpu_files_include_skipif_gated_resident_tests():
     files = set(run_test_tier.gpu_test_files(REPO_ROOT))
     assert {"tests/unit/test_resident_pass2_driver.py", "tests/unit/test_resident_local_pass2.py"} <= files
