@@ -1103,7 +1103,28 @@ def test_k1_coarse_gaussian_exact_operand_flags_honor_default_and_opt_out(monkey
     assembler = operands_source[assembler_start : operands_source.index("\ndef ", assembler_start + 1)]
     assert "_relion_exact_ctf_half_from_source_star(" in assembler
     assert "pixel_indices=score_indices_np" in assembler
-    assert "shifted_corrected = translate_fn(" in assembler
+    # The exact operands are translated by relion_coarse_translate: the RELION translate kernel over
+    # the score pixels, plus RELION's relabelled rows only inside the coarse wrap band (7427a936).
+    assert "shifted_corrected = relion_coarse_translate(" in assembler
+    assert "window=coarse_kernel_window" in assembler
+    calls = []
+
+    def fake_translate(images, angles, indices, image_shape):
+        calls.append((np.asarray(indices).size, tuple(image_shape)))
+        return jnp.repeat(jnp.asarray(images)[:, None, :], angles.shape[0], axis=1).reshape(-1, images.shape[1])
+
+    images = jnp.ones((2, 5), dtype=jnp.complex64)
+    angles = jnp.zeros((3, 2), dtype=jnp.float32)
+    indices = np.arange(5, dtype=np.int32)
+    shifted = relion_coarse_operands.relion_coarse_translate(
+        fake_translate, images, angles, jnp.asarray(indices), indices, (8, 8)
+    )
+    assert shifted.shape == (2, 3, 5) and calls == [(5, (8, 8))]
+    # Outside the band (window <= 2 r_max) no row moves: still the one kernel call.
+    relion_coarse_operands.relion_coarse_translate(
+        fake_translate, images, angles, jnp.asarray(indices), indices, (8, 8), window=8, r_max=4
+    )
+    assert calls == [(5, (8, 8))] * 2
     # P3-I: the elementwise operand chain that used to sit inline here now
     # lives in _relion_exact_coarse_operands, which the assembler calls as
     # jax.jit of the same function. The expression itself is unchanged and
