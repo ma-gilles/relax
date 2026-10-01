@@ -191,7 +191,10 @@ def relion_cuda_f32_coarse_log_weights(
     raw = jnp.asarray(raw_scores, dtype=jnp.float32)
     if raw.ndim != 3:
         raise ValueError(f"raw_scores must have shape (batch, rotations, translations), got {raw.shape}")
-    rotation_prior = jnp.asarray(rotation_log_prior, dtype=jnp.float32).reshape(-1)
+    rotation_prior = jnp.asarray(rotation_log_prior, dtype=jnp.float32)
+    # One prior row for every image ([R]) or each image's own ([batch, R], a local search).
+    rotation_prior = rotation_prior.reshape(-1) if rotation_prior.ndim < 2 else rotation_prior
+    rotation_prior_rows = jnp.broadcast_to(rotation_prior, (raw.shape[0], rotation_prior.shape[-1]))
     translation_prior = jnp.asarray(translation_log_prior, dtype=jnp.float32)
     if translation_prior.ndim == 1:
         translation_prior = jnp.broadcast_to(
@@ -200,18 +203,18 @@ def relion_cuda_f32_coarse_log_weights(
         )
     if translation_prior.ndim != 2:
         raise ValueError("translation_log_prior must be one- or two-dimensional")
-    if raw.shape[1:] != (rotation_prior.shape[0], translation_prior.shape[1]):
+    if raw.shape[1:] != (rotation_prior.shape[-1], translation_prior.shape[1]):
         raise ValueError(
             "raw-score and prior topology mismatch: "
             f"raw={raw.shape}, rotation={rotation_prior.shape}, translation={translation_prior.shape}",
         )
 
-    finite = jnp.isfinite(raw) & jnp.isfinite(rotation_prior)[None, :, None]
+    finite = jnp.isfinite(raw) & jnp.isfinite(rotation_prior_rows)[:, :, None]
     finite &= jnp.isfinite(translation_prior)[:, None, :]
     raw_best = jnp.max(jnp.where(finite, raw, -jnp.inf), axis=(1, 2))
     min_diff2 = -raw_best
     diff2 = -raw
-    prior_sum = rotation_prior[None, :, None] + translation_prior[:, None, :]
+    prior_sum = rotation_prior_rows[:, :, None] + translation_prior[:, None, :]
     log_weights = (prior_sum + min_diff2[:, None, None]) - diff2
     return jnp.where(finite, log_weights, -jnp.inf)
 

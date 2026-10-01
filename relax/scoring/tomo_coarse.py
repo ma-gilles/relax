@@ -373,21 +373,23 @@ def particle_coarse_significance(
     (``mask [P, R * T]``, ``n_significant``, ``pmax``, ``winner``, ...).
     """
 
-    from relax.scoring.coarse_publication import _dense_prior_scores, _posterior_statistics
+    from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights
+    from relax.scoring.coarse_publication import _posterior_statistics
 
+    # RELION's left-to-right float32 order pdf_orientation + pdf_offset + min_diff2 - diff2
+    # (cuda_kernel_weights_exponent_coarse). Adding the priors to the absolute scores first and the
+    # min_diff2 offset afterwards rounds differently and can move near-tie cells across the
+    # significance cut (relax.helpers.oversampling.relion_cuda_f32_coarse_log_weights).
     raw = -jnp.asarray(particle_diff2, dtype=jnp.float32)
     n_particles = int(raw.shape[0])
-    if rotation_log_prior is not None and np.ndim(rotation_log_prior) == 2:
-        # _dense_prior_scores' additions in its order, with a per-particle rotation prior.
-        values = raw + jnp.float32(0.0)
-        values = values + jnp.asarray(rotation_log_prior, jnp.float32)[:, :, None]
-        values = values + jnp.asarray(translation_log_prior, jnp.float32)[:, None, :]
-        values = values.reshape(n_particles, -1)
-    else:
-        values = _dense_prior_scores(
-            raw, jnp.float32(0.0), rotation_log_prior, translation_log_prior, jnp.int32(n_particles)
-        )
-    raw_max = jnp.max(raw.reshape(n_particles, -1), axis=1)
+    rotation_prior = (
+        jnp.zeros(raw.shape[1], jnp.float32) if rotation_log_prior is None else jnp.asarray(rotation_log_prior)
+    )
+    values = relion_cuda_f32_coarse_log_weights(
+        raw, rotation_prior, jnp.asarray(translation_log_prior, jnp.float32)
+    ).reshape(n_particles, -1)
+    # The log weights already carry min_diff2: no further offset.
+    raw_max = jnp.zeros(n_particles, jnp.float32)
     return _posterior_statistics(
         values,
         raw_max,
