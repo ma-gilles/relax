@@ -13,6 +13,11 @@ The arithmetic keeps RELION's host double operations and their order: the CPU
 (fftw.cpp:842-906) and the per-image serial SNR sum. Each step reseeds RELION's
 generator with ``random_seed + part_id``, so a trial draws the same numbers at
 every step; they are drawn once here (:mod:`relax.helpers.relion_random`).
+The projections, shifts and per-step SNR sums run in float64 on the default JAX
+device, every trial image of a chunk at once; the projection matrices, the step
+schedule and the stopping rule stay on the host. The SNR of a trial is summed over
+its images and pixels in the device's reduction order rather than RELION's serial
+order (float64 rounding, far below the ``pvalue`` step).
 ``relax.relion_bind`` is the unit-test oracle
 (``tests/unit/test_relion_expected_accuracy_vs_relion_bind.py``).
 """
@@ -20,7 +25,10 @@ every step; they are drawn once here (:mod:`relax.helpers.relion_random`).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers import relion_random
@@ -104,74 +112,103 @@ class _Projector:
         self.pixel_y = y[row_index].astype(np.float64)
         self.shape = (size, half)
 
-    def project(self, matrices):
-        """``get2DFourierTransform(F, A)`` for ``[M, 3, 3]`` ``A``; returns ``[M, H, W]`` real and imag."""
+    def a_inv(self, matrices):
+        """``A^-1 * padding_factor`` of ``[M, 3, 3]`` ``A`` (host float64, matrix2d.h:1108-1123)."""
 
-        a_inv = _inverse3(np.asarray(matrices, dtype=np.float64)) * self.padding_factor
-        x, y = self.pixel_x[None, :], self.pixel_y[None, :]
-        xp = a_inv[:, 0, 0, None] * x + a_inv[:, 0, 1, None] * y
-        yp = a_inv[:, 1, 0, None] * x + a_inv[:, 1, 1, None] * y
-        zp = a_inv[:, 2, 0, None] * x + a_inv[:, 2, 1, None] * y
-        inside = (xp * xp + yp * yp + zp * zp) <= self.r_max_ref_2
-        negative = xp < 0
-        xp = np.where(negative, -xp, xp)
-        yp = np.where(negative, -yp, yp)
-        zp = np.where(negative, -zp, zp)
-        x0 = np.floor(xp)
-        y0 = np.floor(yp)
-        z0 = np.floor(zp)
-        fx, fy, fz = xp - x0, yp - y0, zp - z0
-        nz, ny, nx = self.data.shape
-        x0 = x0.astype(np.int64)
-        y0 = y0.astype(np.int64) + ny // 2
-        z0 = z0.astype(np.int64) + nz // 2
-        inside &= (x0 >= 0) & (x0 + 1 < nx) & (y0 >= 0) & (y0 + 1 < ny) & (z0 >= 0) & (z0 + 1 < nz)
-        x0 = np.where(inside, x0, 0)
-        y0 = np.where(inside, y0, 0)
-        z0 = np.where(inside, z0, 0)
+        return _inverse3(np.asarray(matrices, dtype=np.float64)) * self.padding_factor
 
-        def interpolate(values):
-            d000, d001 = values[z0, y0, x0], values[z0, y0, x0 + 1]
-            d010, d011 = values[z0, y0 + 1, x0], values[z0, y0 + 1, x0 + 1]
-            d100, d101 = values[z0 + 1, y0, x0], values[z0 + 1, y0, x0 + 1]
-            d110, d111 = values[z0 + 1, y0 + 1, x0], values[z0 + 1, y0 + 1, x0 + 1]
-            # LIN_INTERP(a, l, h) = l + (h - l) * a, nested as projector.cpp:733-740.
-            dx00 = d000 + (d001 - d000) * fx
-            dx01 = d100 + (d101 - d100) * fx
-            dx10 = d010 + (d011 - d010) * fx
-            dx11 = d110 + (d111 - d110) * fx
-            dxy0 = dx00 + (dx10 - dx00) * fy
-            dxy1 = dx01 + (dx11 - dx01) * fy
-            return dxy0 + (dxy1 - dxy0) * fz
+    def device(self):
+        """The slab's real and imaginary planes and the visited pixels, on the JAX device."""
 
-        real = np.where(inside, interpolate(self.real), 0.0)
-        imag = interpolate(self.imag)
-        imag = np.where(inside, np.where(negative, -imag, imag), 0.0)
-        out_real = np.zeros((matrices.shape[0], self.shape[0] * self.shape[1]))
-        out_imag = np.zeros_like(out_real)
-        out_real[:, self.pixel_flat] = real
-        out_imag[:, self.pixel_flat] = imag
-        return out_real.reshape(-1, *self.shape), out_imag.reshape(-1, *self.shape)
+        return (
+            jnp.asarray(self.real.reshape(-1)),
+            jnp.asarray(self.imag.reshape(-1)),
+            jnp.asarray(self.pixel_x),
+            jnp.asarray(self.pixel_y),
+            jnp.asarray(self.pixel_flat),
+        )
 
 
-def _shift(real, imag, oridim, xshift, yshift):
-    """``shiftImageInFourierTransform(in, out, oridim, xshift, yshift)`` in 2-D, per image."""
+@partial(jax.jit, static_argnames=("data_shape", "n_full", "r_max_ref_2"))
+def _project(real, imag, pixel_x, pixel_y, pixel_flat, a_inv, *, data_shape, n_full, r_max_ref_2):
+    """``get2DFourierTransform(F, A)`` for ``[M, 3, 3]`` ``a_inv``; ``[M, H * W]`` real and imag.
 
-    size, half = real.shape[-2:]
-    xs = np.asarray(xshift, dtype=np.float64) / -float(oridim)
-    ys = np.asarray(yshift, dtype=np.float64) / -float(oridim)
-    unchanged = (np.abs(xs) < _EQUAL_ACCURACY) & (np.abs(ys) < _EQUAL_ACCURACY)
-    rows = np.arange(size)
-    y = np.where(rows < half, rows, rows - size).astype(np.float64)
-    x = np.arange(half, dtype=np.float64)
+    ``Projector::project`` (projector.cpp:630-790) at the pixels it visits: the
+    rotated coordinate, the radius test, the Hermitian flip for ``xp < 0`` and
+    RELION's nested ``LIN_INTERP`` (projector.cpp:733-740).
+    """
+
+    x, y = pixel_x[None, :], pixel_y[None, :]
+    xp = a_inv[:, 0, 0, None] * x + a_inv[:, 0, 1, None] * y
+    yp = a_inv[:, 1, 0, None] * x + a_inv[:, 1, 1, None] * y
+    zp = a_inv[:, 2, 0, None] * x + a_inv[:, 2, 1, None] * y
+    inside = (xp * xp + yp * yp + zp * zp) <= r_max_ref_2
+    negative = xp < 0
+    xp = jnp.where(negative, -xp, xp)
+    yp = jnp.where(negative, -yp, yp)
+    zp = jnp.where(negative, -zp, zp)
+    x0 = jnp.floor(xp)
+    y0 = jnp.floor(yp)
+    z0 = jnp.floor(zp)
+    fx, fy, fz = xp - x0, yp - y0, zp - z0
+    nz, ny, nx = data_shape
+    x0 = x0.astype(jnp.int64)
+    y0 = y0.astype(jnp.int64) + ny // 2
+    z0 = z0.astype(jnp.int64) + nz // 2
+    inside &= (x0 >= 0) & (x0 + 1 < nx) & (y0 >= 0) & (y0 + 1 < ny) & (z0 >= 0) & (z0 + 1 < nz)
+    base = jnp.where(inside, (z0 * ny + y0) * nx + x0, 0)
+    step_y, step_z = nx, ny * nx
+
+    def interpolate(values):
+        d000, d001 = values[base], values[base + 1]
+        d010, d011 = values[base + step_y], values[base + step_y + 1]
+        d100, d101 = values[base + step_z], values[base + step_z + 1]
+        d110, d111 = values[base + step_z + step_y], values[base + step_z + step_y + 1]
+        dx00 = d000 + (d001 - d000) * fx
+        dx01 = d100 + (d101 - d100) * fx
+        dx10 = d010 + (d011 - d010) * fx
+        dx11 = d110 + (d111 - d110) * fx
+        dxy0 = dx00 + (dx10 - dx00) * fy
+        dxy1 = dx01 + (dx11 - dx01) * fy
+        return dxy0 + (dxy1 - dxy0) * fz
+
+    out_real = jnp.where(inside, interpolate(real), 0.0)
+    out_imag = interpolate(imag)
+    out_imag = jnp.where(inside, jnp.where(negative, -out_imag, out_imag), 0.0)
+    zeros = jnp.zeros((a_inv.shape[0], n_full), dtype=jnp.float64)
+    return zeros.at[:, pixel_flat].set(out_real), zeros.at[:, pixel_flat].set(out_imag)
+
+
+@partial(jax.jit, static_argnames=("shape", "oridim"))
+def _shift(real, imag, xshift, yshift, *, shape, oridim):
+    """``shiftImageInFourierTransform(in, out, oridim, xshift, yshift)`` in 2-D for ``[M, H * W]`` images (fftw.cpp:842-906)."""
+
+    size, half = shape
+    xs = xshift / -float(oridim)
+    ys = yshift / -float(oridim)
+    unchanged = (jnp.abs(xs) < _EQUAL_ACCURACY) & (jnp.abs(ys) < _EQUAL_ACCURACY)
+    rows = jnp.arange(size)
+    y = jnp.where(rows < half, rows, rows - size).astype(jnp.float64)
+    x = jnp.arange(half, dtype=jnp.float64)
     dotp = 2 * _PI * (x[None, None, :] * xs[:, None, None] + y[None, :, None] * ys[:, None, None])
-    b, a = np.sin(dotp), np.cos(dotp)
+    b, a = jnp.sin(dotp).reshape(-1, size * half), jnp.cos(dotp).reshape(-1, size * half)
     ac = a * real
     bd = b * imag
     ab_cd = (a + b) * (real + imag)
-    out_real = np.where(unchanged[:, None, None], real, ac - bd)
-    out_imag = np.where(unchanged[:, None, None], imag, ab_cd - ac - bd)
+    out_real = jnp.where(unchanged[:, None], real, ac - bd)
+    out_imag = jnp.where(unchanged[:, None], imag, ab_cd - ac - bd)
     return out_real, out_imag
+
+
+@partial(jax.jit, static_argnames=("n_trials",))
+def _trial_snr(f1_real, f1_imag, f2_real, f2_imag, ctf, valid, denominator, image_trial, *, n_trials):
+    """``my_snr += norm(F1 - F2) / (2 fudge sigma)`` of each trial over its images' pixels."""
+
+    if ctf is not None:
+        f2_real, f2_imag = f2_real * ctf, f2_imag * ctf
+    diff_real, diff_imag = f1_real - f2_real, f1_imag - f2_imag
+    terms = jnp.where(valid[None, :], (diff_real * diff_real + diff_imag * diff_imag) / denominator[None, :], 0.0)
+    return jax.ops.segment_sum(jnp.sum(terms, axis=1), image_trial, num_segments=n_trials)
 
 
 def _schedule(mode: int) -> tuple[np.ndarray, np.ndarray, int]:
@@ -217,19 +254,7 @@ def _snr_terms(image_size, full_size, sigma2_noise, sigma2_fudge, remap_image_si
     return valid, denominator
 
 
-def _serial_snr(diff_real, diff_imag, valid, denominator, image_offsets):
-    """``my_snr += norm(F1 - F2) / (2 fudge sigma)`` over images then pixels, in RELION's order."""
-
-    terms = np.where(valid, (diff_real * diff_real + diff_imag * diff_imag) / denominator, 0.0)
-    terms = terms.reshape(terms.shape[0], -1)
-    snr = np.empty(image_offsets.size - 1)
-    for trial in range(snr.size):
-        block = terms[image_offsets[trial] : image_offsets[trial + 1]].reshape(-1)
-        snr[trial] = np.cumsum(block)[-1] if block.size else 0.0
-    return snr
-
-
-_CHUNK_VALUES = 1 << 22
+_CHUNK_VALUES = 1 << 25
 
 
 def _trial_chunks(counts, max_images: int) -> list[np.ndarray]:
@@ -247,52 +272,61 @@ def _trial_chunks(counts, max_images: int) -> list[np.ndarray]:
     return chunks
 
 
-def _chunk_errors(projector, matrices, *, rows, counts, eulers, draws, ctf, aproj, image_full_size, valid, denominator):
-    """Angular and translational errors of one chunk of trials (``rows`` are their images)."""
+def _chunk_errors(projector, device, matrices, *, rows, counts, eulers, draws, ctf, aproj, image_full_size, valid, denominator):
+    """Angular and translational errors of one chunk of trials (``rows`` are their images).
+
+    Every image of the chunk is projected and scored at each step; a trial's error is
+    the first step whose SNR is not ``<= pvalue`` (``while (my_snr <= pvalue)`` stops on
+    anything else, NaN included), as when only the still-searching trials are scored.
+    """
 
     n_trials = counts.size
-    image_trial = np.repeat(np.arange(n_trials), counts)
-    f1_real, f1_imag = projector.project(matrices(eulers, rows))
+    image_trial = jnp.asarray(np.repeat(np.arange(n_trials), counts))
+    real, imag, pixel_x, pixel_y, pixel_flat = device
+    project = partial(
+        _project, real, imag, pixel_x, pixel_y, pixel_flat,
+        data_shape=tuple(int(v) for v in projector.data.shape),
+        n_full=int(projector.shape[0] * projector.shape[1]),
+        r_max_ref_2=float(projector.r_max_ref_2),
+    )
+    ctf = None if ctf is None else jnp.asarray(ctf.reshape(ctf.shape[0], -1))
+    valid = jnp.asarray(valid.reshape(-1))
+    denominator = jnp.asarray(denominator.reshape(-1))
+    snr_of = partial(_trial_snr, ctf=ctf, valid=valid, denominator=denominator, image_trial=image_trial, n_trials=n_trials)
+    f1_real, f1_imag = project(jnp.asarray(projector.a_inv(matrices(eulers, rows))))
     f1_ctf_real, f1_ctf_imag = (f1_real, f1_imag) if ctf is None else (f1_real * ctf, f1_imag * ctf)
+    column = np.where(draws < 0.3333, 0, np.where(draws < 0.6667, 1, 2))
     errors = []
     for mode in (0, 1):
         angles, shifts, n_scored = _schedule(mode)
         result = np.full(n_trials, angles[n_scored] if mode == 0 else shifts[n_scored])
         active = np.ones(n_trials, dtype=bool)
         for step in range(n_scored):
-            local = np.flatnonzero(active[image_trial])
-            if local.size == 0:
+            if not active.any():
                 break
-            ran = draws[local]
             if mode == 0:
-                perturbed = eulers[local].copy()
-                column = np.where(ran < 0.3333, 0, np.where(ran < 0.6667, 1, 2))
-                perturbed[np.arange(local.size), column] += angles[step]
-                f2_real, f2_imag = projector.project(matrices(perturbed, rows[local]))
+                perturbed = eulers.copy()
+                perturbed[np.arange(eulers.shape[0]), column] += angles[step]
+                f2_real, f2_imag = project(jnp.asarray(projector.a_inv(matrices(perturbed, rows))))
             else:
                 if aproj is not None:
                     # Experiment::getTranslationInTiltSeries (exp_model.cpp:105-113).
-                    x3 = np.where(ran < 0.3333, shifts[step], 0.0)
-                    y3 = np.where((ran >= 0.3333) & (ran < 0.6667), shifts[step], 0.0)
-                    z3 = np.where(ran >= 0.6667, shifts[step], 0.0)
-                    a = aproj[local]
-                    xshift = a[:, 0, 0] * x3 + a[:, 0, 1] * y3 + a[:, 0, 2] * z3
-                    yshift = a[:, 1, 0] * x3 + a[:, 1, 1] * y3 + a[:, 1, 2] * z3
+                    x3 = np.where(draws < 0.3333, shifts[step], 0.0)
+                    y3 = np.where((draws >= 0.3333) & (draws < 0.6667), shifts[step], 0.0)
+                    z3 = np.where(draws >= 0.6667, shifts[step], 0.0)
+                    xshift = aproj[:, 0, 0] * x3 + aproj[:, 0, 1] * y3 + aproj[:, 0, 2] * z3
+                    yshift = aproj[:, 1, 0] * x3 + aproj[:, 1, 1] * y3 + aproj[:, 1, 2] * z3
                 else:
-                    xshift = np.where(ran < 0.5, shifts[step], 0.0)
-                    yshift = np.where(ran < 0.5, 0.0, shifts[step])
-                f2_real, f2_imag = _shift(f1_real[local], f1_imag[local], image_full_size, -xshift, -yshift)
-            if ctf is not None:
-                f2_real, f2_imag = f2_real * ctf[local], f2_imag * ctf[local]
-            trials = np.flatnonzero(active)
-            local_offsets = np.concatenate([[0], np.cumsum(counts[trials])]).astype(np.int64)
-            snr = _serial_snr(
-                f1_ctf_real[local] - f2_real, f1_ctf_imag[local] - f2_imag, valid, denominator, local_offsets
-            )
-            # ``while (my_snr <= pvalue)`` stops on anything else, NaN included.
-            done = trials[~(snr <= PVALUE)]
+                    xshift = np.where(draws < 0.5, shifts[step], 0.0)
+                    yshift = np.where(draws < 0.5, 0.0, shifts[step])
+                f2_real, f2_imag = _shift(
+                    f1_real, f1_imag, jnp.asarray(-xshift), jnp.asarray(-yshift),
+                    shape=projector.shape, oridim=int(image_full_size),
+                )
+            snr = np.asarray(snr_of(f1_ctf_real, f1_ctf_imag, f2_real, f2_imag))
+            done = active & ~(snr <= PVALUE)
             result[done] = angles[step] if mode == 0 else shifts[step]
-            active[done] = False
+            active &= ~done
         errors.append(result)
     return errors
 
@@ -392,11 +426,13 @@ def expected_angular_errors(
         if pdf[k] < 0.01:
             continue
         projector = _Projector(projector_data[k], int(projector_r_max), int(padding_factor), int(current_image_size))
+        device = projector.device()
         errors = [np.empty(n_trials), np.empty(n_trials)]
         for chunk in chunks:
             rows = np.concatenate([np.arange(trial_image_offsets[t], trial_image_offsets[t + 1]) for t in chunk])
             chunk_errors = _chunk_errors(
                 projector,
+                device,
                 matrices,
                 rows=rows,
                 counts=counts[chunk],
