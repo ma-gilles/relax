@@ -504,6 +504,15 @@ relax against each same-command RELION run (band FSC-AUC over the scorecard band
 | relion_s42 | — | 0.9581 | 0.8817 | 0.8828 | 0.9803 | 0.9346 | 0.9350 | not met |
 | this job's RELION arm | 14702513 | 0.9997 | 0.9995 | 0.9995 | — | — | — | met |
 
+### synth_ms2_icos_448_b40 (MS2 capsid, I2, box 448 at 0.788 Å/px, B 40; EMPIAR-10202-like regime) (relax `7d1af75ac`)
+
+relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
+
+| RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| relion_s1 | 14756175 | 0.9967 | 0.9956 | 0.9954 | 0.9976 | 0.9966 | 0.9965 | met |
+| relion_s2 | 14781366 | 0.9703 | 0.9021 | 0.9012 | — | — | — | met |
+
 ## Code references
 
 - `scripts/summarize_em_k1_realdata_science_equivalence.py`: scorecard validation, FSC band metrics, provenance gates, and rendering.
