@@ -9,11 +9,10 @@
 //
 // Every per-element formula is copied from the XLA path.  Order-independent
 // reductions (max, argmax with smallest index, mask counts) are exact.  The
-// RELION significance boundary reuses the same cub::DeviceRadixSort::SortKeys
-// and pinned Ampere inclusive scan as RelionCubSortScanBatchedF32Impl, so the
-// float32 sum_weight and threshold are bitwise identical to that path.  The
-// only order-dependent quantity is the float64 log-sum-exp of the log-Z
-// handler, which uses a fixed block tree instead of XLA's reduction tree.
+// RELION significance boundary is relion_coarse_cut_f32's definition (RELION's
+// cut with float64 cumulative sums, by radix select; block_radix_cut), one block
+// per row or segment, with no sort, scan or host round trip.  The float64 bin
+// masses and the log-sum-exp of the log-Z handler are the order-dependent sums.
 //
 // The same two handlers also exist in a segmented form for the device-resident
 // pass-2 data model, in which image i owns a contiguous run of a flat cell
@@ -23,11 +22,7 @@
 //   SparsePass2SegmentedPosteriorF32 <-> SparsePass2PosteriorF32 per segment
 //
 // Both call the shared bodies below on the segment's slice, so flattening a
-// rectangular row into a segment reproduces the rectangular outputs bitwise.
-// See the segmented section for the one host synchronization it needs.
-//
-// This header is included from cuda_backproject.cu after
-// relion_ampere_inclusive_sum_f32 is defined.
+// rectangular row into a segment reproduces the rectangular outputs.
 
 namespace recovar_sparse_pass2_posterior {
 
@@ -262,46 +257,91 @@ __global__ void exponentiate_kernel(
     exponentiate_cell(state[index / n], scores[index], raw_weights + index, probs + index);
 }
 
-// Shared RELION significance boundary for one already sorted/scanned row.
-// ``n == 0`` is the empty-segment case of the segmented handler; the
-// rectangular handler always passes ``n >= 1`` and reaches the same code.
-__device__ __forceinline__ void threshold_body(
-    const float* row_sorted, const float* row_cumulative, int64_t n,
-    float external_sum_weight, float adaptive_fraction, int keep_all,
-    int use_external_sum_weight, RowState& s,
-    float* sum_weight_slot, float* threshold_slot)
+// RELION's significance cut of one row or segment's raw weights, by radix select over the
+// positive weights' float bits (relion_coarse_cut_f32_launch's definition, one block per row):
+// eight bits per pass from per-bin counts and float64 masses, then the first weight of the
+// cut value's tied run whose cumulative weight exceeds the float32 tail target. Every thread
+// of the block must call it; the results are valid in every thread on return.
+struct BlockCut
 {
-    const float fine_sum_weight = n > 0 ? row_cumulative[n - 1] : 0.0f;
-    const float sum_weight = use_external_sum_weight
-        ? external_sum_weight
-        : fine_sum_weight;
-    const bool has_mass = s.has_finite && isfinite(sum_weight) && sum_weight > 0.0f;
-    float threshold = 0.0f;
-    if (!keep_all && n > 0)
+    uint32_t counts[256];
+    double masses[256];
+    double low;
+    double target;
+    double total;
+    uint32_t prefix;
+    int empty;
+    float cut;
+};
+
+__device__ void block_radix_cut(const float* weights, int64_t n, float fraction, BlockCut& c)
+{
+    if (threadIdx.x == 0) { c.prefix = 0u; c.low = 0.0; c.empty = 0; c.cut = 0.0f; c.total = 0.0; }
+    for (int pass = 0; pass < 4; ++pass)
     {
-        // _relion_cuda_f32_tail_target: float32 fraction widened to float64,
-        // multiplied by the float64 widening of the float32 fine sum, narrowed.
-        const float tail_target = static_cast<float>(
-            (1.0 - static_cast<double>(adaptive_fraction)) * static_cast<double>(fine_sum_weight));
-        // jnp.searchsorted(row, target, side="right") with JAX's default scan
-        // method: ceil(log2(n + 1)) halving steps on [low, high) using
-        // unsigned (low + high) / 2, moving left when target < row[mid].
-        int32_t low = 0;
-        int32_t high = static_cast<int32_t>(n);
-        const int levels = static_cast<int>(ceil(log2(static_cast<double>(n) + 1.0)));
-        for (int level = 0; level < levels; ++level)
+        for (int b = threadIdx.x; b < 256; b += blockDim.x) { c.counts[b] = 0u; c.masses[b] = 0.0; }
+        __syncthreads();
+        const int shift = 24 - 8 * pass;
+        const uint32_t prefix = c.prefix;
+        if (!c.empty)
+            for (int64_t i = threadIdx.x; i < n; i += blockDim.x)
+            {
+                const float weight = weights[i];
+                if (!(weight > 0.0f)) continue;
+                const uint32_t bits = __float_as_uint(weight);
+                if (pass > 0 && (bits >> (shift + 8)) != prefix) continue;
+                const uint32_t bin = (bits >> shift) & 0xffu;
+                atomicAdd(&c.counts[bin], 1u);
+                atomicAdd(&c.masses[bin], static_cast<double>(weight));
+            }
+        __syncthreads();
+        if (threadIdx.x == 0 && !c.empty)
         {
-            const uint32_t mid_u = (static_cast<uint32_t>(low) + static_cast<uint32_t>(high)) / 2u;
-            int32_t mid = static_cast<int32_t>(mid_u);
-            int32_t clamped = mid < 0 ? 0 : (mid > static_cast<int32_t>(n) - 1 ? static_cast<int32_t>(n) - 1 : mid);
-            const bool go_left = tail_target < row_cumulative[clamped];
-            if (go_left) high = mid; else low = mid;
+            if (pass == 0)
+            {
+                double total = 0.0;
+                for (int b = 0; b < 256; ++b) total += c.masses[b];
+                c.total = total;
+                // _relion_cuda_f32_tail_target on the float32 sum.
+                c.target = static_cast<double>(static_cast<float>(
+                    (1.0 - static_cast<double>(fraction)) * static_cast<double>(static_cast<float>(total))));
+            }
+            double cumulative = c.low;
+            int chosen = -1, last = -1;
+            for (int b = 0; b < 256; ++b)
+            {
+                if (c.counts[b] == 0u) continue;
+                last = b;
+                if (cumulative + c.masses[b] > c.target) { chosen = b; break; }
+                cumulative += c.masses[b];
+            }
+            if (chosen < 0 && last < 0) c.empty = 1;
+            else
+            {
+                if (chosen < 0) { chosen = last; cumulative -= c.masses[last]; }
+                c.low = cumulative;
+                c.prefix = (c.prefix << 8) | static_cast<uint32_t>(chosen);
+                if (pass == 3)
+                {
+                    // The cut value is reached inside its tied run (the threshold, as a value).
+                    c.cut = __uint_as_float(c.prefix);
+                }
+            }
         }
-        int32_t threshold_index = high;
-        if (threshold_index > static_cast<int32_t>(n) - 1) threshold_index = static_cast<int32_t>(n) - 1;
-        if (threshold_index < 0) threshold_index = 0;
-        threshold = row_sorted[threshold_index];
+        __syncthreads();
     }
+}
+
+// The rest of RELION's boundary: the normalizing sum (the coarse pass's, or this pass's own)
+// and the row state the normalization reads. ``n == 0`` is an empty segment.
+__device__ __forceinline__ void cut_body(
+    const BlockCut& c, int64_t n, float external_sum_weight, int keep_all,
+    int use_external_sum_weight, RowState& s, float* sum_weight_slot, float* threshold_slot)
+{
+    const float fine_sum_weight = n > 0 ? static_cast<float>(c.total) : 0.0f;
+    const float sum_weight = use_external_sum_weight ? external_sum_weight : fine_sum_weight;
+    const bool has_mass = s.has_finite && isfinite(sum_weight) && sum_weight > 0.0f;
+    const float threshold = (!keep_all && n > 0) ? c.cut : 0.0f;
     s.has_mass = has_mass;
     s.safe_sum_weight = has_mass ? sum_weight : 1.0f;
     s.threshold = threshold;
@@ -310,19 +350,18 @@ __device__ __forceinline__ void threshold_body(
     *threshold_slot = threshold;
 }
 
-__global__ void threshold_kernel(
-    const float* sorted, const float* cumulative, const float* external_sum_weight,
-    int64_t rows, int64_t n, float adaptive_fraction, int keep_all, int use_external_sum_weight,
-    RowState* state, float* sum_weight_out, float* threshold_out)
+constexpr int kCutThreads = 256;
+
+__global__ void row_cut_kernel(
+    const float* raw_weights, const float* external_sum_weight, int64_t n, float adaptive_fraction,
+    int keep_all, int use_external_sum_weight, RowState* state, float* sum_weight_out, float* threshold_out)
 {
-    const int64_t row_index = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (row_index >= rows) return;
-    RowState s = state[row_index];
-    threshold_body(sorted + row_index * n, cumulative + row_index * n, n,
-                   external_sum_weight[row_index], adaptive_fraction, keep_all,
-                   use_external_sum_weight, s, sum_weight_out + row_index,
-                   threshold_out + row_index);
-    state[row_index] = s;
+    __shared__ BlockCut c;
+    const int64_t row = blockIdx.x;
+    block_radix_cut(raw_weights + row * n, n, adaptive_fraction, c);
+    if (threadIdx.x != 0) return;
+    cut_body(c, n, external_sum_weight[row], keep_all, use_external_sum_weight, state[row],
+             sum_weight_out + row, threshold_out + row);
 }
 
 // Shared normalization / pruning body.  All pointers are already offset to the
@@ -405,8 +444,6 @@ ffi::Error posterior_impl(
     ffi::Result<ffi::AnyBuffer> sum_weight,
     ffi::Result<ffi::AnyBuffer> threshold,
     ffi::Result<ffi::AnyBuffer> raw_weights,
-    ffi::Result<ffi::AnyBuffer> sorted,
-    ffi::Result<ffi::AnyBuffer> cumulative,
     ffi::Result<ffi::AnyBuffer> row_state)
 {
     int64_t rows = 0, n = 0;
@@ -431,8 +468,7 @@ ffi::Error posterior_impl(
         return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: per-row outputs must have shape (B,) with the documented dtypes");
     if (!full_ok(*probs, ffi::DataType::F64) || !full_ok(*normalized, ffi::DataType::F32) ||
         !full_ok(*reconstruction, ffi::DataType::F32) || !full_ok(*mask, ffi::DataType::PRED) ||
-        !full_ok(*raw_weights, ffi::DataType::F32) || !full_ok(*sorted, ffi::DataType::F32) ||
-        !full_ok(*cumulative, ffi::DataType::F32))
+        !full_ok(*raw_weights, ffi::DataType::F32))
         return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: full outputs must match the scores shape with the documented dtypes");
     if (row_state->element_type() != ffi::DataType::U8 || row_state->dimensions().size() != 2 ||
         row_state->dimensions()[0] != rows || row_state->dimensions()[1] != static_cast<int64_t>(sizeof(RowState)))
@@ -441,8 +477,6 @@ ffi::Error posterior_impl(
     const float* scores_ptr = static_cast<const float*>(scores.untyped_data());
     RowState* state_ptr = static_cast<RowState*>(row_state->untyped_data());
     float* raw_ptr = static_cast<float*>(raw_weights->untyped_data());
-    float* sorted_ptr = static_cast<float*>(sorted->untyped_data());
-    float* cumulative_ptr = static_cast<float*>(cumulative->untyped_data());
 
     row_max_kernel<<<static_cast<int>(rows), kRowThreads, 0, stream>>>(
         scores_ptr, static_cast<const double*>(log_z.untyped_data()), n, state_ptr,
@@ -463,48 +497,13 @@ ffi::Error posterior_impl(
     if (error != cudaSuccess)
         return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 exponentiate: ") + cudaGetErrorString(error));
 
-    // Same CUB radix sort and pinned Ampere inclusive scan as
-    // RelionCubSortScanBatchedF32Impl, row by row on the caller's stream.
-    const int row_count = static_cast<int>(n);
-    size_t sort_bytes = 0;
-    size_t scan_bytes = 0;
-    error = cub::DeviceRadixSort::SortKeys(
-        nullptr, sort_bytes, raw_ptr, sorted_ptr, row_count, 0, sizeof(float) * 8, stream);
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 sort query: ") + cudaGetErrorString(error));
-    error = relion_ampere_inclusive_sum_f32(nullptr, scan_bytes, sorted_ptr, cumulative_ptr, row_count, stream);
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 scan query: ") + cudaGetErrorString(error));
-    void* temporary = nullptr;
-    const size_t temporary_bytes = std::max<size_t>(1, std::max(sort_bytes, scan_bytes));
-    error = cudaMallocAsync(&temporary, temporary_bytes, stream);
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 cudaMallocAsync: ") + cudaGetErrorString(error));
-    for (int64_t row = 0; row < rows && error == cudaSuccess; ++row)
-    {
-        const int64_t offset = row * n;
-        error = cub::DeviceRadixSort::SortKeys(
-            temporary, sort_bytes, raw_ptr + offset, sorted_ptr + offset, row_count,
-            0, sizeof(float) * 8, stream);
-        if (error == cudaSuccess)
-            error = relion_ampere_inclusive_sum_f32(
-                temporary, scan_bytes, sorted_ptr + offset, cumulative_ptr + offset, row_count, stream);
-    }
-    const cudaError_t free_error = cudaFreeAsync(temporary, stream);
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 sort/scan: ") + cudaGetErrorString(error));
-    if (free_error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 cudaFreeAsync: ") + cudaGetErrorString(free_error));
-
-    constexpr int row_threads = 128;
-    const int row_blocks = static_cast<int>((rows + row_threads - 1) / row_threads);
-    threshold_kernel<<<row_blocks, row_threads, 0, stream>>>(
-        sorted_ptr, cumulative_ptr, static_cast<const float*>(external_sum_weight.untyped_data()),
-        rows, n, adaptive_fraction, static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
+    row_cut_kernel<<<static_cast<int>(rows), kCutThreads, 0, stream>>>(
+        raw_ptr, static_cast<const float*>(external_sum_weight.untyped_data()), n, adaptive_fraction,
+        static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
         state_ptr, static_cast<float*>(sum_weight->untyped_data()), static_cast<float*>(threshold->untyped_data()));
     error = cudaGetLastError();
     if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 threshold: ") + cudaGetErrorString(error));
+        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 cut: ") + cudaGetErrorString(error));
 
     normalize_kernel<<<static_cast<int>(rows), kRowThreads, 0, stream>>>(
         scores_ptr, raw_ptr, state_ptr, n,
@@ -532,43 +531,10 @@ ffi::Error posterior_impl(
 //
 // Every formula is the shared body of the rectangular path, called on the
 // segment's slice, so flattening a rectangular row into a segment reproduces
-// the rectangular outputs bitwise.  Two consequences of that choice:
-//
-//   * The significance boundary sorts each segment's weights and scans them,
-//     and the sort_scan_mode attribute selects how those two run.  Mode 0 is
-//     the oracle: the per-segment cub::DeviceRadixSort::SortKeys plus
-//     relion_ampere_inclusive_sum_f32 of the rectangular path, one call each
-//     per nonempty segment, every output bitwise equal to the rectangular
-//     handler's.  Mode 1 replaces the sorts by one
-//     cub::DeviceSegmentedRadixSort::SortKeys for the whole chunk; a radix
-//     sort is an exact permutation, so the sorted keys stay bitwise identical
-//     and only the launch structure changes.  Mode 2 also replaces the scans
-//     by segmented_inclusive_sum_kernel, one block per segment.  Modes 3 and 4
-//     repeat 1 and 2 with cub::DeviceSegmentedSort, which partitions segments
-//     by size; it sorts the same keys, but its host dispatch copies the group
-//     sizes back and synchronizes the stream inside CUB
-//     (dispatch_segmented_sort.cuh, CUB 2.7.0), so it cannot be part of a
-//     device-resident call and exists for measurement, not for the default.
-//   * Modes 0 and 1 still need the segment lengths on the host, because the
-//     CUB scan takes its item count as a host argument and that count is what
-//     fixes the float32 decoupled-lookback summation order the boundary is
-//     defined by: sum_weight is cumulative[n - 1] and the threshold is a
-//     searchsorted over the same array.  Those two modes copy segment_offsets
-//     back and synchronize the stream once per call.  Mode 2 has no host round
-//     trip at all, at the price of a different float32 summation order: its
-//     cumulative array, sum_weight and threshold may differ from mode 0 by a
-//     few ULP, which can move the significance boundary of an image whose
-//     threshold sits on a near-tie.  Mode 2 is therefore not bitwise with the
-//     rectangular handler; its agreement is a measured, reported property, not
-//     a contract, and mode 0 remains the oracle every test compares against.
-//   * The launch geometry of every mode is capacity-only: each kernel is
-//     launched at the static segment count, the scratch is sized at the static
-//     cell count, and n_valid_images is read only on the device, so nothing on
-//     the host depends on the chunk's occupancy.  Modes 0 and 1 enqueue the
-//     max and exponentiate kernels, and the CUB scratch allocation, before
-//     they synchronize, so the device is working on this call's own kernels
-//     while the host waits.  The log-Z handler needs no lengths on the host
-//     and stays device-resident in every mode.
+// the rectangular outputs.  The significance boundary is block_radix_cut, one
+// block per segment, so the handler has no host round trip, and its launch
+// geometry is capacity-only: each kernel is launched at the static segment
+// count and n_valid_images is read only on the device.
 //
 // Empty segments and images at or beyond n_valid_images produce exactly the
 // values the rectangular path produces for an all -inf row.  Cells covered by
@@ -664,8 +630,7 @@ __global__ void segmented_max_kernel(
 __global__ void segmented_exponentiate_kernel(
     const float* scores, const int32_t* offsets, const SegmentState* state,
     int n_segments, int64_t n_cells, float* raw_weights, double* probs,
-    float* sorted, float* cumulative, float* normalized, float* reconstruction,
-    bool* mask)
+    float* normalized, float* reconstruction, bool* mask)
 {
     __shared__ int shared_segment;
     const int64_t first = static_cast<int64_t>(blockIdx.x) * blockDim.x;
@@ -697,8 +662,6 @@ __global__ void segmented_exponentiate_kernel(
         // here because the normalize kernel only walks live segments.
         raw_weights[index] = 0.0f;
         probs[index] = 0.0;
-        sorted[index] = 0.0f;
-        cumulative[index] = 0.0f;
         normalized[index] = 0.0f;
         reconstruction[index] = 0.0f;
         mask[index] = false;
@@ -707,100 +670,19 @@ __global__ void segmented_exponentiate_kernel(
     exponentiate_cell(state[segment].row, scores[index], raw_weights + index, probs + index);
 }
 
-// Device-side monotone clamp of the segment table.
-//
-// Modes 1 and 2 hand segment_offsets straight to CUB, and the host no longer
-// reads them, so the defensive check the readback used to perform has to run on
-// the device: a malformed table must not make the segmented sort address cells
-// outside the buffers.  n_segments + 1 is a few hundred entries, so one thread
-// walking them costs less than the launch.
-__global__ void clamp_segment_offsets_kernel(
-    const int32_t* offsets, int n_segments, int64_t n_cells, int32_t* clamped)
+__global__ void segmented_cut_kernel(
+    const float* raw_weights, const float* external_sum_weight, int n_segments, float adaptive_fraction,
+    int keep_all, int use_external_sum_weight, SegmentState* state, float* sum_weight_out, float* threshold_out)
 {
-    if (blockIdx.x != 0 || threadIdx.x != 0) return;
-    int64_t previous = 0;
-    for (int i = 0; i <= n_segments; ++i)
-    {
-        int64_t value = static_cast<int64_t>(offsets[i]);
-        if (value < previous) value = previous;
-        if (value > n_cells) value = n_cells;
-        clamped[i] = static_cast<int32_t>(value);
-        previous = value;
-    }
-}
-
-// One block per segment, tile-serial float32 inclusive sum (mode 2).
-//
-// This replaces the per-segment CUB scan, whose item count is a host argument.
-// The order is fixed by the launch geometry alone: each thread sums its
-// kScanItemsPerThread consecutive cells, a block scan combines the thread
-// totals, and the block carries a running prefix from tile to tile.  It is
-// therefore reproducible for a given segment length, but it is NOT the
-// decoupled-lookback order of relion_ampere_inclusive_sum_f32, so the float32
-// cumulative array, sum_weight and the significance threshold can differ from
-// modes 0 and 1 by a few ULP.  The sorted keys are unaffected (a radix sort is
-// an exact permutation).
-constexpr int kScanThreads = 256;
-constexpr int kScanItemsPerThread = 4;
-
-__global__ void segmented_inclusive_sum_kernel(
-    const float* input, const int32_t* offsets, const int32_t* n_valid_images,
-    int n_segments, int64_t n_cells, float* output)
-{
-    using BlockScan = cub::BlockScan<float, kScanThreads>;
-    __shared__ typename BlockScan::TempStorage temporary;
-    __shared__ float running_prefix;
+    __shared__ BlockCut c;
     const int segment = blockIdx.x;
-    const int valid_count = clamp_valid_count(*n_valid_images, n_segments);
-    int64_t begin = 0, n = 0;
-    segment_extent(offsets, segment, valid_count, n_cells, begin, n);
-    if (n <= 0) return;
-    if (threadIdx.x == 0) running_prefix = 0.0f;
-    __syncthreads();
-    constexpr int64_t tile = static_cast<int64_t>(kScanThreads) * kScanItemsPerThread;
-    for (int64_t base = 0; base < n; base += tile)
-    {
-        const int64_t thread_begin =
-            base + static_cast<int64_t>(threadIdx.x) * kScanItemsPerThread;
-        float items[kScanItemsPerThread];
-        float thread_total = 0.0f;
-#pragma unroll
-        for (int i = 0; i < kScanItemsPerThread; ++i)
-        {
-            const int64_t index = thread_begin + i;
-            items[i] = index < n ? input[begin + index] : 0.0f;
-            thread_total += items[i];
-        }
-        float thread_prefix = 0.0f;
-        float block_aggregate = 0.0f;
-        BlockScan(temporary).ExclusiveSum(thread_total, thread_prefix, block_aggregate);
-        float accumulated = running_prefix + thread_prefix;
-#pragma unroll
-        for (int i = 0; i < kScanItemsPerThread; ++i)
-        {
-            const int64_t index = thread_begin + i;
-            accumulated += items[i];
-            if (index < n) output[begin + index] = accumulated;
-        }
-        __syncthreads();
-        if (threadIdx.x == 0) running_prefix += block_aggregate;
-        __syncthreads();
-    }
-}
-
-__global__ void segmented_threshold_kernel(
-    const float* sorted, const float* cumulative, const float* external_sum_weight,
-    int n_segments, float adaptive_fraction, int keep_all, int use_external_sum_weight,
-    SegmentState* state, float* sum_weight_out, float* threshold_out)
-{
-    const int segment = static_cast<int>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (segment >= n_segments) return;
-    SegmentState s = state[segment];
-    threshold_body(sorted + s.begin, cumulative + s.begin, s.n,
-                   external_sum_weight[segment], adaptive_fraction, keep_all,
-                   use_external_sum_weight, s.row, sum_weight_out + segment,
-                   threshold_out + segment);
-    state[segment] = s;
+    const int64_t begin = state[segment].begin;
+    const int64_t n = state[segment].n;
+    block_radix_cut(raw_weights + begin, n, adaptive_fraction, c);
+    if (threadIdx.x != 0) return;
+    cut_body(c, n, external_sum_weight[segment], keep_all, use_external_sum_weight, state[segment].row,
+             sum_weight_out + segment, threshold_out + segment);
 }
 
 __global__ void segmented_normalize_kernel(
@@ -899,7 +781,6 @@ ffi::Error segmented_posterior_impl(
     float adaptive_fraction,
     int64_t keep_all,
     int64_t use_external_sum_weight,
-    int64_t sort_scan_mode,
     ffi::AnyBuffer scores,
     ffi::AnyBuffer segment_offsets,
     ffi::AnyBuffer n_valid_images,
@@ -917,8 +798,6 @@ ffi::Error segmented_posterior_impl(
     ffi::Result<ffi::AnyBuffer> sum_weight,
     ffi::Result<ffi::AnyBuffer> threshold,
     ffi::Result<ffi::AnyBuffer> raw_weights,
-    ffi::Result<ffi::AnyBuffer> sorted,
-    ffi::Result<ffi::AnyBuffer> cumulative,
     ffi::Result<ffi::AnyBuffer> segment_state)
 {
     int64_t n_cells = 0;
@@ -956,9 +835,7 @@ ffi::Error segmented_posterior_impl(
         !segmented_flat_ok(*normalized, ffi::DataType::F32, n_cells) ||
         !segmented_flat_ok(*reconstruction, ffi::DataType::F32, n_cells) ||
         !segmented_flat_ok(*mask, ffi::DataType::PRED, n_cells) ||
-        !segmented_flat_ok(*raw_weights, ffi::DataType::F32, n_cells) ||
-        !segmented_flat_ok(*sorted, ffi::DataType::F32, n_cells) ||
-        !segmented_flat_ok(*cumulative, ffi::DataType::F32, n_cells))
+        !segmented_flat_ok(*raw_weights, ffi::DataType::F32, n_cells))
         return ffi::Error::InvalidArgument(
             "SparsePass2SegmentedPosteriorF32: per-cell outputs must hold n_cells elements with the documented dtypes");
     if (segment_state->element_type() != ffi::DataType::U8 ||
@@ -972,12 +849,7 @@ ffi::Error segmented_posterior_impl(
     const int32_t* offsets_ptr = static_cast<const int32_t*>(segment_offsets.untyped_data());
     SegmentState* state_ptr = static_cast<SegmentState*>(segment_state->untyped_data());
     float* raw_ptr = static_cast<float*>(raw_weights->untyped_data());
-    float* sorted_ptr = static_cast<float*>(sorted->untyped_data());
-    float* cumulative_ptr = static_cast<float*>(cumulative->untyped_data());
 
-    // Stage 1 and 2 need nothing from the host: launch them, and reserve the
-    // CUB scratch at the static cell count, before the offsets readback, so the
-    // device works on this call's own kernels while the host waits for it.
     segmented_max_kernel<<<static_cast<int>(n_segments), kRowThreads, 0, stream>>>(
         scores_ptr, offsets_ptr,
         static_cast<const int32_t*>(n_valid_images.untyped_data()),
@@ -998,7 +870,7 @@ ffi::Error segmented_posterior_impl(
             "SparsePass2SegmentedPosteriorF32: launch grid exceeds CUDA limit");
     segmented_exponentiate_kernel<<<static_cast<int>(block_count), threads, 0, stream>>>(
         scores_ptr, offsets_ptr, state_ptr, static_cast<int>(n_segments), n_cells,
-        raw_ptr, static_cast<double*>(probs->untyped_data()), sorted_ptr, cumulative_ptr,
+        raw_ptr, static_cast<double*>(probs->untyped_data()),
         static_cast<float*>(normalized->untyped_data()),
         static_cast<float*>(reconstruction->untyped_data()),
         static_cast<bool*>(mask->untyped_data()));
@@ -1007,176 +879,8 @@ ffi::Error segmented_posterior_impl(
         return ffi::Error::Internal(
             std::string("SparsePass2SegmentedPosteriorF32 exponentiate: ") + cudaGetErrorString(error));
 
-    // Scratch for the sort and the scan, sized at the capacity: a query at
-    // n_cells bounds every segment of this chunk, so the allocation and its
-    // query are the same for every chunk of a capacity class instead of
-    // following the longest segment of this one.
-    const int capacity_count = static_cast<int>(n_cells);
-    const int segment_count = static_cast<int>(n_segments);
-    const int mode = sort_scan_mode <= 0 ? 0 : (sort_scan_mode >= 4 ? 4 : static_cast<int>(sort_scan_mode));
-    // Which CUB primitive sorts the chunk, and who scans it.  Both segmented
-    // primitives produce the same sorted keys as the per-segment sort (a sort
-    // is an exact permutation); they differ only in how they spread segments
-    // over the device, which matters because the resident capacity classes
-    // range from ten thousand to seven hundred thousand cells per segment.
-    const bool segmented_sort = mode >= 1;
-    const bool partitioned_sort = mode >= 3;
-    const bool device_scan = mode == 2 || mode == 4;
-    size_t sort_bytes = 0;
-    size_t scan_bytes = 0;
-    if (partitioned_sort)
-        error = cub::DeviceSegmentedSort::SortKeys(
-            nullptr, sort_bytes, raw_ptr, sorted_ptr, capacity_count, segment_count,
-            offsets_ptr, offsets_ptr + 1, stream);
-    else if (segmented_sort)
-        error = cub::DeviceSegmentedRadixSort::SortKeys(
-            nullptr, sort_bytes, raw_ptr, sorted_ptr, capacity_count, segment_count,
-            offsets_ptr, offsets_ptr + 1, 0, sizeof(float) * 8, stream);
-    else
-        error = cub::DeviceRadixSort::SortKeys(
-            nullptr, sort_bytes, raw_ptr, sorted_ptr, capacity_count, 0, sizeof(float) * 8, stream);
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 sort query: ") + cudaGetErrorString(error));
-    if (!device_scan)
-    {
-        error = relion_ampere_inclusive_sum_f32(
-            nullptr, scan_bytes, sorted_ptr, cumulative_ptr, capacity_count, stream);
-        if (error != cudaSuccess)
-            return ffi::Error::Internal(
-                std::string("SparsePass2SegmentedPosteriorF32 scan query: ") + cudaGetErrorString(error));
-    }
-    // The segmented modes give CUB a device-side monotone clamp of the
-    // offsets, because the host no longer validates the table it hands to the
-    // sort.
-    const size_t offsets_bytes =
-        segmented_sort ? (static_cast<size_t>(n_segments) + 1) * sizeof(int32_t) : 0;
-    const size_t cub_bytes = std::max<size_t>(1, std::max(sort_bytes, scan_bytes));
-    const size_t aligned_cub_bytes = (cub_bytes + 255) & ~static_cast<size_t>(255);
-    void* temporary = nullptr;
-    const size_t temporary_bytes = aligned_cub_bytes + offsets_bytes;
-    error = cudaMallocAsync(&temporary, temporary_bytes, stream);
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 cudaMallocAsync: ") + cudaGetErrorString(error));
-    int32_t* clamped_offsets =
-        offsets_bytes == 0
-            ? nullptr
-            : reinterpret_cast<int32_t*>(static_cast<char*>(temporary) + aligned_cub_bytes);
-
-    if (segmented_sort)
-    {
-        // One segmented sort for the whole chunk.  A sort is an exact
-        // permutation of its keys, so every segment's sorted run is bitwise
-        // what the per-segment sort of mode 0 produces; only the launch
-        // structure changes (one dispatch instead of one per segment, and no
-        // host copy of the offsets).  Cells covered by no segment are left as
-        // the exponentiate kernel wrote them.
-        clamp_segment_offsets_kernel<<<1, 1, 0, stream>>>(
-            offsets_ptr, segment_count, n_cells, clamped_offsets);
-        error = cudaGetLastError();
-        if (error == cudaSuccess && partitioned_sort)
-            error = cub::DeviceSegmentedSort::SortKeys(
-                temporary, sort_bytes, raw_ptr, sorted_ptr, capacity_count, segment_count,
-                clamped_offsets, clamped_offsets + 1, stream);
-        else if (error == cudaSuccess)
-            error = cub::DeviceSegmentedRadixSort::SortKeys(
-                temporary, sort_bytes, raw_ptr, sorted_ptr, capacity_count, segment_count,
-                clamped_offsets, clamped_offsets + 1, 0, sizeof(float) * 8, stream);
-        if (error != cudaSuccess)
-        {
-            cudaFreeAsync(temporary, stream);
-            return ffi::Error::Internal(
-                std::string("SparsePass2SegmentedPosteriorF32 segmented sort: ") +
-                cudaGetErrorString(error));
-        }
-    }
-
-    if (device_scan)
-    {
-        // One segmented scan for the whole chunk: no host round trip is left
-        // in this handler.  See segmented_inclusive_sum_kernel for the order
-        // this changes.
-        segmented_inclusive_sum_kernel<<<segment_count, kScanThreads, 0, stream>>>(
-            sorted_ptr, offsets_ptr,
-            static_cast<const int32_t*>(n_valid_images.untyped_data()),
-            segment_count, n_cells, cumulative_ptr);
-        error = cudaGetLastError();
-        if (error != cudaSuccess)
-        {
-            cudaFreeAsync(temporary, stream);
-            return ffi::Error::Internal(
-                std::string("SparsePass2SegmentedPosteriorF32 segmented scan: ") +
-                cudaGetErrorString(error));
-        }
-    }
-    else
-    {
-        // The one host round trip of the per-segment-scan modes: that CUB scan
-        // takes its item count on the host, and that count is what fixes the
-        // float32 summation order the significance boundary is defined by.
-        // n_valid_images is NOT read back: segments at or past it carry no
-        // cells on the device (segment_extent clamps them), and sorting or
-        // scanning a range the device treats as empty writes only into scratch
-        // that the threshold body never reads for that segment.
-        std::vector<int32_t> host_offsets(static_cast<size_t>(n_segments) + 1, 0);
-        error = cudaMemcpyAsync(host_offsets.data(), offsets_ptr,
-                                host_offsets.size() * sizeof(int32_t),
-                                cudaMemcpyDeviceToHost, stream);
-        if (error == cudaSuccess) error = cudaStreamSynchronize(stream);
-        if (error != cudaSuccess)
-        {
-            cudaFreeAsync(temporary, stream);
-            return ffi::Error::Internal(
-                std::string("SparsePass2SegmentedPosteriorF32 offset readback: ") + cudaGetErrorString(error));
-        }
-        int64_t previous = 0;
-        for (size_t i = 0; i < host_offsets.size(); ++i)
-        {
-            const int64_t offset = host_offsets[i];
-            if (offset < previous || offset > n_cells)
-            {
-                cudaFreeAsync(temporary, stream);
-                return ffi::Error::InvalidArgument(
-                    "SparsePass2SegmentedPosteriorF32: segment_offsets must be nondecreasing within [0, n_cells]");
-            }
-            previous = offset;
-        }
-
-        // Same CUB radix sort and pinned Ampere inclusive scan as the
-        // rectangular handler, once per nonempty segment on the caller's
-        // stream.  Mode 1 has already sorted, so it runs the scan alone.
-        for (int64_t segment = 0; segment < n_segments && error == cudaSuccess; ++segment)
-        {
-            const int64_t begin = host_offsets[static_cast<size_t>(segment)];
-            const int64_t length = host_offsets[static_cast<size_t>(segment) + 1] - begin;
-            if (length <= 0) continue;
-            const int cell_count = static_cast<int>(length);
-            if (!segmented_sort)
-                error = cub::DeviceRadixSort::SortKeys(
-                    temporary, sort_bytes, raw_ptr + begin, sorted_ptr + begin, cell_count,
-                    0, sizeof(float) * 8, stream);
-            if (error == cudaSuccess)
-                error = relion_ampere_inclusive_sum_f32(
-                    temporary, scan_bytes, sorted_ptr + begin, cumulative_ptr + begin,
-                    cell_count, stream);
-        }
-    }
-    {
-        const cudaError_t free_error = cudaFreeAsync(temporary, stream);
-        if (error != cudaSuccess)
-            return ffi::Error::Internal(
-                std::string("SparsePass2SegmentedPosteriorF32 sort/scan: ") + cudaGetErrorString(error));
-        if (free_error != cudaSuccess)
-            return ffi::Error::Internal(
-                std::string("SparsePass2SegmentedPosteriorF32 cudaFreeAsync: ") + cudaGetErrorString(free_error));
-    }
-
-    constexpr int segment_threads = 128;
-    const int segment_blocks = static_cast<int>((n_segments + segment_threads - 1) / segment_threads);
-    segmented_threshold_kernel<<<segment_blocks, segment_threads, 0, stream>>>(
-        sorted_ptr, cumulative_ptr,
-        static_cast<const float*>(external_sum_weight.untyped_data()),
+    segmented_cut_kernel<<<static_cast<int>(n_segments), kCutThreads, 0, stream>>>(
+        raw_ptr, static_cast<const float*>(external_sum_weight.untyped_data()),
         static_cast<int>(n_segments), adaptive_fraction,
         static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
         state_ptr, static_cast<float*>(sum_weight->untyped_data()),
@@ -1184,7 +888,7 @@ ffi::Error segmented_posterior_impl(
     error = cudaGetLastError();
     if (error != cudaSuccess)
         return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 threshold: ") + cudaGetErrorString(error));
+            std::string("SparsePass2SegmentedPosteriorF32 cut: ") + cudaGetErrorString(error));
 
     segmented_normalize_kernel<<<static_cast<int>(n_segments), kRowThreads, 0, stream>>>(
         scores_ptr, raw_ptr, state_ptr,
@@ -1233,8 +937,6 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
 );
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
@@ -1254,14 +956,11 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Attr<float>("adaptive_fraction")
         .Attr<int64_t>("keep_all")
         .Attr<int64_t>("use_external_sum_weight")
-        .Attr<int64_t>("sort_scan_mode")
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
