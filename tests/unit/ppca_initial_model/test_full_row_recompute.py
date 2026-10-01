@@ -132,6 +132,9 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         captured.append(kwargs)
         return sentinel
 
+    def tiles(_stream, items):
+        return [part(_stream, ids, support) for ids, support in items]
+
     def part(_stream, ids, support):
         assert _stream is sentinel and support == [None] * len(ids)
         return SimpleNamespace(
@@ -156,7 +159,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         )
 
     monkeypatch.setattr(iteration_loop, "prepare_full_row_stream", prepare)
-    monkeypatch.setattr(iteration_loop, "accumulate_full_row_tile", part)
+    monkeypatch.setattr(iteration_loop, "accumulate_full_row_tiles", tiles)
     ids = np.arange(5)
     config = Config(
         stages=((1, 2, 0),),

@@ -20,6 +20,7 @@ from relax.ppca_refinement.dense_dataset import (
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
     accumulate_full_row_tile,
+    accumulate_full_row_tiles,
     coarse_support_mask,
     full_row_pose_log_prior,
     full_row_tile_embeddings,
@@ -230,6 +231,18 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
     assert_matches(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"])
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
+
+
+def test_pipelined_tiles_match_separate_tiles(tile_problem):
+    """Loading the next tile during the current tile's passes changes no tile's statistics."""
+    _dataset, _mu, _W, stream, _host = tile_problem
+    tiles = [(np.arange(2), PRUNED[:2]), (np.arange(2, 3), PRUNED[2:])]
+    pipelined = accumulate_full_row_tiles(stream, tiles)
+    for (ids, support), actual in zip(tiles, pipelined, strict=True):
+        expected = accumulate_full_row_tile(stream, ids, support)
+        assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
+        for name in ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+            assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
 
 
 def test_full_row_stream_rejects_parents_outside_coarse_grid(tile_problem):

@@ -41,6 +41,7 @@ from relax.ppca_refinement.dense_dataset import (
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
     accumulate_full_row_tile,
+    accumulate_full_row_tiles,
     full_row_tile_embeddings,
     prepare_full_row_stream,
 )
@@ -191,8 +192,30 @@ def _to_device(part, device):
     return dataclasses.replace(part, **{name: jax.device_put(getattr(part, name), device) for name in names})
 
 
-@full_float32
+def _streams_groups(config):
+    return config.oversampling == 0 and config.stream_coarse_recompute
+
+
 def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
+    """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``."""
+    if _streams_groups(config):
+        return _expectation(dataset, state, config, [ids], iteration, embeddings_only=embeddings_only)[0]
+    return _expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only)
+
+
+def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False):
+    """:func:`expectation` of each id group (the pseudo-halves), one result per group.
+
+    The streamed coarse-recompute path prepares the model once for all groups
+    and pipelines their image tiles; every other path runs group by group.
+    """
+    if not _streams_groups(config):
+        return [expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only) for ids in groups]
+    return _expectation(dataset, state, config, groups, iteration, embeddings_only=embeddings_only)
+
+
+@full_float32
+def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
     radius, hp = config.stage(iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = min(radius, dataset.grid_size // 2 - 1)
@@ -236,33 +259,39 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
                 schedule=schedule,
                 scoring=scoring,
             )
-            parts = []
-            for begin in range(0, len(ids), config.image_batch_size):
-                tile_ids = np.asarray(ids[begin : begin + config.image_batch_size])
-                support = [None] * len(tile_ids)
-                if embeddings_only:
-                    part = full_row_tile_embeddings(stream, tile_ids, support)
-                else:
-                    part = accumulate_full_row_tile(stream, tile_ids, support)
-                parts.append(part)
+            # Here ``ids`` is the list of id groups; each group is cut into image tiles.
+            tiles = [
+                (group, np.asarray(ids_group[begin : begin + config.image_batch_size]))
+                for group, ids_group in enumerate(ids)
+                for begin in range(0, len(ids_group), config.image_batch_size)
+            ]
             if embeddings_only:
-                return DensePPCAEmbeddings(
-                    jnp.concatenate([part.embeddings for part in parts]),
-                    np.concatenate([part.original_image_ids for part in parts]),
-                    sum(part.n_images for part in parts),
+                parts = [full_row_tile_embeddings(stream, tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles]
+            else:
+                parts = accumulate_full_row_tiles(stream, [(tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles])
+            results = []
+            for group in range(len(ids)):
+                group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
+                if embeddings_only:
+                    results.append(DensePPCAEmbeddings(
+                        jnp.concatenate([part.embeddings for part in group_parts]),
+                        np.concatenate([part.original_image_ids for part in group_parts]),
+                        sum(part.n_images for part in group_parts),
+                    ))
+                    continue
+                stats = _merge_statistics(group_parts)
+                stats.diagnostics.update(
+                    {
+                        "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
+                        "coarse_omitted_mass_bound": 0.0,
+                        "canonical_euler_count": len(canonical_eulers),
+                        "engine": "full_row_coarse_recompute",
+                        "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
+                        "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
+                    }
                 )
-            stats = _merge_statistics(parts)
-            stats.diagnostics.update(
-                {
-                    "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in parts),
-                    "coarse_omitted_mass_bound": 0.0,
-                    "canonical_euler_count": len(canonical_eulers),
-                    "engine": "full_row_coarse_recompute",
-                    "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in parts),
-                    "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in parts),
-                }
-            )
-            return stats
+                results.append(stats)
+            return results
         function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
         options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
         stats = function(
@@ -525,7 +554,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
-        stats = [expectation(dataset, state, config, ids, iteration) for ids in halves]
+        stats = expectation_groups(dataset, state, config, halves, iteration)
         if config.optimizer == "momentum_sgd":
             radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
             _, proposed_momentum, diagnostics = momentum_step(

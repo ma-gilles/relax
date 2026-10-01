@@ -699,10 +699,13 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int):
             stream.arrays, tile, kept, start, static=stream.static, block_size=stream.rotation_block_size
         )
     posterior = _normalize(kept.score, tile.rows, n_blocks=n_blocks, block_size=stream.rotation_block_size)
+    return kept, posterior
+
+
+def _check_finite_posterior(posterior: _Posterior):
     finite = jax.device_get((jnp.all(jnp.isfinite(posterior.center)), jnp.all(jnp.isfinite(posterior.centered_logZ))))
     if not all(finite):
         raise ValueError("Every full-row image needs a finite supported pose and partition")
-    return kept, posterior
 
 
 def _run_pass2(stream, tile, kept, posterior, n_blocks, carry, *, moments):
@@ -765,18 +768,40 @@ def accumulate_full_row_tile(
     diagnostics as the host-mask ``accumulate_dense_ppca_statistics`` call
     with ``collect_residuals=True``.
     """
+    return accumulate_full_row_tiles(stream, [(image_indices, significant_rows)], enforce_x0=enforce_x0)[0]
+
+
+@full_float32
+def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool = True) -> list[AugmentedPPCAStats]:
+    """:func:`accumulate_full_row_tile` for each ``(image_indices, significant_rows)`` in ``tiles``.
+
+    The next tile's images are read and preprocessed while the device runs the
+    current tile's passes; one tile's pose-kept buffers are live at a time.
+    """
     with jax.default_device(stream.device):
-        return _accumulate_full_row_tile(stream, image_indices, significant_rows, enforce_x0=enforce_x0)
+        loaded = _load_tile(stream, *tiles[0], collect_observation=True) if tiles else None
+        results = []
+        for index, (image_indices, _significant) in enumerate(tiles):
+            pending = _enqueue_full_row_tile(stream, *loaded)
+            loaded = (
+                _load_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
+            )
+            results.append(_finish_full_row_tile(stream, image_indices, *pending, enforce_x0=enforce_x0))
+        return results
 
 
-def _accumulate_full_row_tile(stream, image_indices, significant_rows, *, enforce_x0):
-    tile, observation_power, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=True)
+def _enqueue_full_row_tile(stream, tile, observation_power, layout):
+    """Dispatch both passes of one loaded tile without waiting for the device."""
     kept, posterior = _score_tile(stream, tile, layout["n_blocks"])
+    carry = _empty_carry(stream, int(tile.y_norm.shape[0]), observation_power)
+    carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
+    return tile, layout, posterior, carry
+
+
+def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, *, enforce_x0):
+    _check_finite_posterior(posterior)
     static = stream.static
     n_images = int(tile.y_norm.shape[0])
-    carry = _empty_carry(stream, n_images, observation_power)
-    carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
-    del kept
     rhs, lhs_tri = carry.rhs, carry.lhs_tri
     if enforce_x0:
         rhs = _enforce_augmented_x0(rhs, static.volume_shape)
@@ -846,6 +871,7 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
     with jax.default_device(stream.device):
         tile, _, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=False)
         kept, posterior = _score_tile(stream, tile, layout["n_blocks"])
+        _check_finite_posterior(posterior)
         n_images = int(tile.y_norm.shape[0])
         carry = _empty_carry(stream, n_images, jnp.float32(0))
         carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=False)
