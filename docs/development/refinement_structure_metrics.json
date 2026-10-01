@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "resident-local-parent-probe-20260930",
-    "source_commit": "5b8c074c5a5e8b7c0a12db5252a938aa869ff870",
+    "package": "exact-local-engine-removal-20261001",
+    "source_commit": "709a2f1dfddb5f8063b48093b7168e81d4145370",
     "metrics": {
       "files": [
         {
@@ -51,9 +51,9 @@
         },
         {
           "function_count": 25,
-          "nonblank_noncomment_lines": 5566,
+          "nonblank_noncomment_lines": 5562,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6209
+          "physical_lines": 6206
         },
         {
           "function_count": 2,
@@ -183,7 +183,7 @@
       "largest_functions": [
         {
           "line": 628,
-          "line_span": 5582,
+          "line_span": 5579,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
@@ -197,7 +197,7 @@
         },
         {
           "line": 2516,
-          "line_span": 770,
+          "line_span": 767,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
@@ -266,10 +266,10 @@
         "file_count": 17,
         "function_count": 308,
         "large_argument_function_count": 8,
-        "maximum_function_line_span": 5582,
+        "maximum_function_line_span": 5579,
         "maximum_parameter_count": 25,
-        "nonblank_noncomment_lines": 18609,
-        "physical_lines": 21083,
+        "nonblank_noncomment_lines": 18605,
+        "physical_lines": 21080,
         "very_large_argument_function_count": 2
       }
     }
