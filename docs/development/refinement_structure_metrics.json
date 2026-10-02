@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "tomo-coarse-gemm-scorer-20261002",
-    "source_commit": "422433ed33c13a6848c8b0a6fb10ff89fb76466d",
+    "package": "model-current-resolution-angstrom-20261002",
+    "source_commit": "562d536488bc3b922729243f6c049d24e6eb9560",
     "metrics": {
       "files": [
         {
@@ -107,7 +107,7 @@
           "function_count": 39,
           "nonblank_noncomment_lines": 871,
           "path": "relax/refinement/run_files.py",
-          "physical_lines": 1023
+          "physical_lines": 1025
         },
         {
           "function_count": 23,
@@ -276,7 +276,7 @@
         "maximum_function_line_span": 5580,
         "maximum_parameter_count": 26,
         "nonblank_noncomment_lines": 18978,
-        "physical_lines": 21522,
+        "physical_lines": 21524,
         "very_large_argument_function_count": 2
       }
     }
