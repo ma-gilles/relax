@@ -9,9 +9,17 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def momentum_step(theta, previous, gradient, lhs_tri, active, *, learning_rate, floor):
+def metric_trace(lhs_tri, p):
+    """Per-frequency trace ``sum_k LHS_kk`` of packed upper ``(n_frequency, tri(p))`` metrics."""
+    tri_i, tri_j = np.triu_indices(p)
+    return jnp.sum(jnp.asarray(lhs_tri)[:, np.flatnonzero(tri_i == tri_j)], axis=-1)
+
+
+def momentum_step(theta, previous, gradient, trace, active, *, learning_rate, floor):
     """Return an unprojected step and momentum in raw full-real FFT units.
 
+    ``trace`` is the per-frequency trace of the augmented LHS metric
+    (:func:`metric_trace`, or a trace-only stream's ``metric_trace``).
     One scalar bounds every positive-semidefinite augmented block by its trace.
     Trace is invariant under rotations of the two loading coordinates; a
     diagonal maximum or separate loading scales would break that symmetry.
@@ -20,28 +28,24 @@ def momentum_step(theta, previous, gradient, lhs_tri, active, *, learning_rate, 
     theta = jnp.asarray(theta)
     previous = jnp.asarray(previous)
     gradient = jnp.asarray(gradient)
-    lhs_tri = jnp.asarray(lhs_tri)
+    trace = jnp.asarray(trace)
     active = jnp.asarray(active, bool)
     if theta.ndim != 2 or gradient.shape != theta.shape or previous.shape != theta.shape:
         raise ValueError("PPCA model, momentum and gradient must have the same [frequency, channel] shape")
-    p = theta.shape[1]
-    if lhs_tri.shape != (theta.shape[0], p * (p + 1) // 2) or active.shape != (theta.shape[0],):
+    if trace.shape != (theta.shape[0],) or active.shape != (theta.shape[0],):
         raise ValueError("PPCA curvature or active Fourier support has the wrong shape")
     if theta.dtype != jnp.complex64 or previous.dtype != theta.dtype or gradient.dtype != theta.dtype:
         raise TypeError("Production PPCA model, momentum and gradient must be complex64")
-    if lhs_tri.dtype != jnp.float32:
+    if trace.dtype != jnp.float32:
         raise TypeError("Production PPCA curvature must be float32")
     if not np.isfinite(learning_rate) or learning_rate <= 0 or not np.isfinite(floor) or floor <= 0:
         raise ValueError("Learning rate and curvature floor must be finite and positive")
 
-    tri_i, tri_j = np.triu_indices(p)
-    diagonal = np.flatnonzero(tri_i == tri_j)
-    trace = jnp.sum(lhs_tri[:, diagonal], axis=-1)
     trace_max = jnp.max(jnp.where(active, trace, 0.0))
     max_curvature = jnp.maximum(trace_max, jnp.asarray(floor, jnp.float32))
     # A zero-curvature batch cannot provide an update, including stale velocity.
     has_data = trace_max > 0
-    if not bool(jnp.all(jnp.isfinite(gradient))) or not bool(jnp.all(jnp.isfinite(lhs_tri))):
+    if not bool(jnp.all(jnp.isfinite(gradient))) or not bool(jnp.all(jnp.isfinite(trace))):
         raise ValueError("Nonfinite PPCA gradient or curvature")
     if bool(jnp.min(jnp.where(active, trace, 0.0)) < -32 * jnp.finfo(jnp.float32).eps * max_curvature):
         raise ValueError("Materially negative PPCA curvature trace")

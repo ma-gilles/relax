@@ -28,7 +28,7 @@ from relax.local.local_layout import build_pass2_hypothesis_layout
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
-from relax.ppca_initial_model.sgd_update import momentum_step
+from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
@@ -40,6 +40,7 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
+    TracePPCAStats,
     accumulate_full_row_tile,
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
@@ -75,10 +76,11 @@ def _direction_ids(hp):
 
 
 def _merge_statistics(parts):
-    return AugmentedPPCAStats(
+    trace_only = all(isinstance(s, TracePPCAStats) for s in parts)
+    fields = dict(
         # The streamed engine produces no RHS volume (only lhs_tri and the residual gradient are read).
         rhs=None if any(s.rhs is None for s in parts) else sum(s.rhs for s in parts),
-        lhs_tri=sum(s.lhs_tri for s in parts),
+        lhs_tri=None if trace_only else sum(s.lhs_tri for s in parts),
         residual_gradient=sum(s.residual_gradient for s in parts),
         residual_num=sum(s.residual_num for s in parts),
         residual_den=sum(s.residual_den for s in parts),
@@ -94,6 +96,16 @@ def _merge_statistics(parts):
             },
         },
     )
+    if trace_only:
+        return TracePPCAStats(metric_trace=sum(s.metric_trace for s in parts), **fields)
+    return AugmentedPPCAStats(**fields)
+
+
+def _curvature_trace(stats, p):
+    """Momentum SGD's per-frequency metric trace summed over the halves."""
+    if all(isinstance(s, TracePPCAStats) for s in stats):
+        return sum(s.metric_trace for s in stats)
+    return metric_trace(sum(s.lhs_tri for s in stats), p)
 
 
 def _select_halves(rng, order, count, balanced):
@@ -199,8 +211,10 @@ def _to_device(part, device):
     """Move a tile's merged arrays to the device that merges tiles in order."""
     if isinstance(part, DensePPCAEmbeddings):
         return part._replace(embeddings=jax.device_put(part.embeddings, device))
-    names = ("rhs", "lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings")
-    moved = {name: jax.device_put(getattr(part, name), device) for name in names if getattr(part, name) is not None}
+    names = ("rhs", "lhs_tri", "metric_trace", "residual_gradient", "residual_num", "residual_den", "embeddings")
+    moved = {
+        name: jax.device_put(getattr(part, name), device) for name in names if getattr(part, name, None) is not None
+    }
     return dataclasses.replace(part, **moved)
 
 
@@ -270,6 +284,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 geometry=geometry,
                 schedule=schedule,
                 scoring=scoring,
+                # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
+                metric_trace_only=config.optimizer == "momentum_sgd",
             )
             # Here ``ids`` is the list of id groups; each group is cut into image tiles.
             tiles = [
@@ -392,6 +408,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 geometry=geometry,
                 schedule=schedule,
                 scoring=scoring,
+                metric_trace_only=config.optimizer == "momentum_sgd",
                 device=device,
             )
             for device in devices
@@ -573,7 +590,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 state.theta,
                 state.sgd_momentum,
                 sum(result.residual_gradient for result in stats),
-                sum(result.lhs_tri for result in stats),
+                _curvature_trace(stats, config.q + 1),
                 sgd_radii <= radius,
                 learning_rate=config.sgd_learning_rate,
                 floor=metric_floor(dataset.grid_size),

@@ -19,6 +19,7 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
+    TracePPCAStats,
     accumulate_full_row_tile,
     accumulate_full_row_tiles,
     coarse_support_mask,
@@ -125,7 +126,7 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-def make_tile_problem(device=None, q=2):
+def make_tile_problem(device=None, q=2, metric_trace_only=False):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
@@ -145,7 +146,7 @@ def make_tile_problem(device=None, q=2):
         rotations=shared.rotations_flat, translations=shared.translation_grid,
         rotation_log_prior=shared.rotation_log_priors_flat, translation_log_prior=translation_prior,
         rotation_parent=shared.rotation_posterior_ids_flat, translation_parent=parent,
-        n_coarse_rotations=3, n_coarse_translations=3, device=device, **common,
+        n_coarse_rotations=3, n_coarse_translations=3, device=device, metric_trace_only=metric_trace_only, **common,
     )
     host = dict(
         rotations=shared.rotations_flat, translations=shared.translation_grid,
@@ -186,6 +187,25 @@ def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_
     for key in ("best_rotation_idx", "best_translation_idx", "n_significant_per_image"):
         assert np.array_equal(np.asarray(actual.diagnostics[key]), np.asarray(expected.diagnostics[key]))
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
+
+
+def test_trace_only_stream_matches_host_mask_metric_trace(tile_problem):
+    """Momentum SGD's trace-only metric is the trace of the host-mask LHS; every other statistic is unchanged."""
+    dataset, mu, W, _stream, host = tile_problem
+    expected = full_float32(accumulate_dense_ppca_statistics)(
+        dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **host,
+    )
+    stream = make_tile_problem(metric_trace_only=True)[3]
+    actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    assert isinstance(actual, TracePPCAStats) and actual.lhs_tri is None and actual.rhs is None
+    P = W.shape[1] + 1
+    lhs = np.asarray(expected.lhs_tri, np.float64)
+    trace = sum(lhs[:, k] for k, (i, j) in enumerate(zip(*np.triu_indices(P))) if i == j)
+    assert np.asarray(actual.metric_trace).shape == (lhs.shape[0],)
+    assert_matches(np.asarray(actual.metric_trace), trace.astype(np.float32))
+    for name in ("residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
+    assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood))
 
 
 def test_device_resident_tile_embeddings_match_host_mask(tile_problem):

@@ -38,6 +38,7 @@ Tests compare the engine against the host-mask reference
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 from functools import partial
 from typing import NamedTuple
@@ -68,6 +69,19 @@ from relax.ppca_refinement.residual_statistics import full_float32, residual_sta
 
 FULL_ROW_ENGINE = "full_row_device_resident"
 
+
+@dataclasses.dataclass(frozen=True)
+class TracePPCAStats(AugmentedPPCAStats):
+    """Streamed statistics whose LHS metric is only its per-frequency trace.
+
+    Momentum SGD reads the augmented metric only through ``sum_p LHS_pp``
+    (``docs/math/ppca_momentum_sgd.md``), so its streams backproject that one
+    channel: ``lhs_tri`` is ``None`` and ``metric_trace`` has shape
+    ``(n_frequency,)``.
+    """
+
+    metric_trace: jax.Array | None = None
+
 _HIGHEST = jax.lax.Precision.HIGHEST
 
 
@@ -82,6 +96,7 @@ class _StreamStatic(NamedTuple):
     relion_texture_interp: bool
     use_recon_window: bool
     basis_size: int
+    metric_trace_only: bool  # backproject sum_p LHS_pp instead of every packed LHS channel
 
 
 class _StreamArrays(NamedTuple):
@@ -138,7 +153,7 @@ class _MomentCarry(NamedTuple):
     once voxels grow large, a downward bias that grows with images per tile.
     """
 
-    lhs_tri: jax.Array
+    lhs_tri: jax.Array  # (tri(P), half) packed LHS, or (1, half) its trace under metric_trace_only
     residual: jax.Array
     lhs_compensation: jax.Array
     residual_compensation: jax.Array
@@ -460,6 +475,11 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
         residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
     # The RHS images enter the residual only: neither optimizer reads an RHS
     # volume, so only the LHS metric and the residual gradient are backprojected.
+    if static.metric_trace_only:
+        # The adjoint is linear per channel, so the trace of the LHS volume is the
+        # adjoint of the per-pose trace images.
+        tri_i, tri_j = np.triu_indices(P)
+        lhs_images = jnp.sum(lhs_images[np.flatnonzero(tri_i == tri_j)], axis=0, keepdims=True)
     lhs_block = batch_adjoint_slice_volume_maybe_windowed(
         lhs_images,
         arrays.recon_indices,
@@ -502,9 +522,14 @@ def prepare_full_row_stream(
     schedule: ScheduleConfig,
     scoring: ScoringConfig,
     disc_type: str = "linear_interp",
+    metric_trace_only: bool = False,
     device=None,
 ) -> FullRowStream:
-    """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles."""
+    """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
+
+    With ``metric_trace_only`` the tiles return :class:`TracePPCAStats`: the
+    LHS metric is backprojected only as its per-frequency trace.
+    """
     device = jax.local_devices()[0] if device is None else device
     with jax.default_device(device):
         return _prepare_full_row_stream(
@@ -524,6 +549,7 @@ def prepare_full_row_stream(
             schedule=schedule,
             scoring=scoring,
             disc_type=disc_type,
+            metric_trace_only=metric_trace_only,
             device=device,
         )
 
@@ -546,6 +572,7 @@ def _prepare_full_row_stream(
     schedule,
     scoring,
     disc_type,
+    metric_trace_only,
     device,
 ) -> FullRowStream:
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
@@ -613,6 +640,7 @@ def _prepare_full_row_stream(
         relion_texture_interp=bool(scoring.relion_texture_interp),
         use_recon_window=bool(resolved.use_window),
         basis_size=int(resolved.q) + 1,
+        metric_trace_only=bool(metric_trace_only),
     )
     return FullRowStream(
         dataset=experiment_dataset,
@@ -738,10 +766,11 @@ def _empty_carry(stream, n_images, observation_power):
     P = static.basis_size
     half_size = int(arrays.augmented.shape[1])
     capacity = len(stream.block_starts) * stream.rotation_block_size
+    metric_channels = 1 if static.metric_trace_only else tri_size(P)
     return _MomentCarry(
-        lhs_tri=jnp.zeros((tri_size(P), half_size), dtype=jnp.float32),
+        lhs_tri=jnp.zeros((metric_channels, half_size), dtype=jnp.float32),
         residual=jnp.zeros((P, half_size), dtype=jnp.complex64),
-        lhs_compensation=jnp.zeros((tri_size(P), half_size), dtype=jnp.float32),
+        lhs_compensation=jnp.zeros((metric_channels, half_size), dtype=jnp.float32),
         residual_compensation=jnp.zeros((P, half_size), dtype=jnp.complex64),
         residual_power=jnp.zeros(arrays.coefficient_noise.shape, jnp.float32) + observation_power,
         embedding=jnp.zeros((n_images, P - 1), jnp.float32),
@@ -775,7 +804,8 @@ def accumulate_full_row_tile(
     diagnostics as the host-mask ``accumulate_dense_ppca_statistics`` call
     with ``collect_residuals=True``, except the augmented RHS volume
     (``rhs`` is ``None``): both InitialModel optimizers read only the LHS
-    metric and the direct residual gradient.
+    metric and the direct residual gradient. A ``metric_trace_only`` stream
+    returns :class:`TracePPCAStats`, whose metric is the LHS trace alone.
     """
     return accumulate_full_row_tiles(stream, [(image_indices, significant_rows)], enforce_x0=enforce_x0)[0]
 
@@ -864,10 +894,9 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         "latent_covariance_trace_mean": float(host["latent"] / np.float32(n_images)),
         "pose_entropy_mean": float(host["entropy"] / np.float32(n_images)),
     }
-    return AugmentedPPCAStats(
+    fields = dict(
         # No RHS volume: the streamed statistics feed the direct residual gradient only.
         rhs=None,
-        lhs_tri=jnp.swapaxes(lhs_tri, 0, 1),
         log_likelihood=float(host["log_likelihood"]),
         n_images=n_images,
         residual_gradient=carry.residual.T,
@@ -877,6 +906,9 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         original_image_ids=original_ids,
         diagnostics=diagnostics,
     )
+    if static.metric_trace_only:
+        return TracePPCAStats(lhs_tri=None, metric_trace=lhs_tri[0], **fields)
+    return AugmentedPPCAStats(lhs_tri=jnp.swapaxes(lhs_tri, 0, 1), **fields)
 
 
 @full_float32

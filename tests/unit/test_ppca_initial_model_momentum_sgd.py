@@ -15,7 +15,7 @@ from relax.ppca_initial_model import iteration_loop
 from relax.ppca_initial_model.checkpoint import load, save
 from relax.ppca_initial_model.config import Config
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, support_mask
-from relax.ppca_initial_model.sgd_update import momentum_step
+from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_refinement.residual_statistics import residual_image_statistics
 
@@ -24,6 +24,10 @@ pytestmark = pytest.mark.unit
 
 def _pack(matrix):
     return matrix[..., np.triu_indices(matrix.shape[-1])[0], np.triu_indices(matrix.shape[-1])[1]]
+
+
+def _trace(matrix):
+    return np.trace(matrix, axis1=-2, axis2=-1).astype(np.float32)
 
 
 def _loss(theta, hessian, rhs):
@@ -39,17 +43,17 @@ def test_augmented_quadratic_descent_and_duplicate_batch_invariance():
     target = np.array([[1, 0.5j, -0.6], [0.3, -0.4j, 0.2]], np.complex64)
     rhs = np.einsum("fij,fj->fi", h, target)
     gradient = rhs - np.einsum("fij,fj->fi", h, theta)
-    packed = _pack(h)
+    trace = _trace(h)
     before = _loss(theta, h, rhs)
     updated, velocity, info = momentum_step(
-        theta, np.zeros_like(theta), gradient, packed, np.ones(2, bool), learning_rate=0.4, floor=1e-7
+        theta, np.zeros_like(theta), gradient, trace, np.ones(2, bool), learning_rate=0.4, floor=1e-7
     )
     expected = np.float32(0.04 / np.max(np.trace(h, axis1=-2, axis2=-1))) * gradient
     np.testing.assert_allclose(velocity, expected, rtol=1e-6, atol=1e-7)
     assert _loss(np.asarray(updated), h, rhs) < before
     assert info["curvature_trace_max"] == pytest.approx(float(np.max(np.trace(h, axis1=-2, axis2=-1))))
     duplicated, _, _ = momentum_step(
-        theta, np.zeros_like(theta), 2 * gradient, 2 * packed, np.ones(2, bool), learning_rate=0.4, floor=1e-7
+        theta, np.zeros_like(theta), 2 * gradient, 2 * trace, np.ones(2, bool), learning_rate=0.4, floor=1e-7
     )
     np.testing.assert_allclose(duplicated, updated, rtol=1e-6, atol=1e-7)
 
@@ -69,12 +73,12 @@ def test_latent_orthogonal_rotation_moves_model_and_momentum_together(reflection
     transform = np.eye(3, dtype=np.float32)
     transform[1:, 1:] = q
     active = np.array([True, True, False, True])
-    updated, velocity, info = momentum_step(theta, old, gradient, _pack(h), active, learning_rate=0.4, floor=1e-7)
+    updated, velocity, info = momentum_step(theta, old, gradient, _trace(h), active, learning_rate=0.4, floor=1e-7)
     rotated, rotated_velocity, rotated_info = momentum_step(
         theta @ transform,
         old @ transform,
         gradient @ transform,
-        _pack(np.einsum("ip,fij,jq->fpq", transform, h, transform)),
+        _trace(np.einsum("ip,fij,jq->fpq", transform, h, transform)),
         active,
         learning_rate=0.4,
         floor=1e-7,
@@ -88,7 +92,7 @@ def test_latent_orthogonal_rotation_moves_model_and_momentum_together(reflection
 def test_q0_units_zero_curvature_and_signed_step():
     theta = np.zeros((2, 1), np.complex64)
     gradient = np.array([[-12], [100]], np.complex64)
-    curvature = np.array([[6], [0]], np.float32)
+    curvature = np.array([6, 0], np.float32)
     result, velocity, info = momentum_step(
         theta, theta, gradient, curvature, np.array([True, False]), learning_rate=0.5, floor=1e-7
     )
@@ -108,12 +112,19 @@ def test_q0_units_zero_curvature_and_signed_step():
     np.testing.assert_allclose(no_velocity, theta, atol=1e-7)
 
 
+def test_metric_trace_sums_the_packed_diagonal():
+    rng = np.random.default_rng(9)
+    a = rng.normal(size=(5, 4, 4)).astype(np.float32)
+    h = a @ np.swapaxes(a, -1, -2)
+    np.testing.assert_allclose(metric_trace(_pack(h), 4), _trace(h), rtol=1e-6)
+
+
 def test_velocity_uses_the_same_fourier_band_as_model():
     shape = (8, 8, 8)
     n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
     radii = np.asarray(ftu.get_grid_of_radial_distances_real(shape, rounded=False)).reshape(-1)
     gradient = jnp.ones((n_freq, 3), jnp.complex64)
-    curvature = np.tile(_pack(np.eye(3, dtype=np.float32)), (n_freq, 1))
+    curvature = np.full(n_freq, 3, np.float32)
     theta = jnp.zeros_like(gradient)
     _, raw_velocity, _ = momentum_step(theta, theta, gradient, curvature, radii <= 2, learning_rate=0.4, floor=1e-7)
     mask = support_mask(8, diameter_px=5)

@@ -139,7 +139,7 @@ def test_momentum_rank_reference_and_dtype(q):
     gradient = (rng.normal(size=(F, p)) + 1j * rng.normal(size=(F, p))).astype(np.complex64)
     old = theta * np.float32(0.01)
     out, velocity, _ = momentum_step(
-        theta, old, gradient, pack_upper_tri(h), np.ones(F, bool), learning_rate=1.2, floor=0.1
+        theta, old, gradient, np.trace(h, axis1=-2, axis2=-1), np.ones(F, bool), learning_rate=1.2, floor=0.1
     )
     expected = np.float32(0.9) * old + np.float32(0.12) * gradient / np.max(np.trace(h, axis1=-2, axis2=-1))
     np.testing.assert_allclose(velocity, expected, atol=2e-7, rtol=2e-6)
