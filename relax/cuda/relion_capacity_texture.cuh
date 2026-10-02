@@ -436,3 +436,111 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
 );
+
+// ProjectRelionHalfCapacityTexture at a list of crop pixels, scaled and real-packed: row n of the
+// output is [Re p_n(pixel_0..P-1) * scale | Im p_n(pixel_0..P-1) * scale], the operand layout of
+// the coarse GEMM scorer. Each listed pixel is projected with project_texture_kernel<true, true>'s
+// arithmetic (the image-radius test included); a pixel index of -1 is a zero row entry. This is the
+// projection plus the crop gather and the dense scale of compute_relion_projector_projections_block,
+// without the full crop and the real/imaginary copies.
+__global__ void __launch_bounds__(BLOCK_SIZE)
+project_capacity_texture_compact_packed_kernel(
+    cudaTextureObject_t texReal, cudaTextureObject_t texImag,
+    float* __restrict__ out, const float* __restrict__ rot, const int32_t* __restrict__ crop_index,
+    int n_compact, int image_h, int image_w, int tex_yinit, int tex_zinit, int upsampling,
+    int maxR2_padded, const int32_t* image_radius, float scale)
+{
+    __shared__ float R[6];
+    const int img_idx = blockIdx.x;
+    const int j = blockIdx.y * BLOCK_SIZE + threadIdx.x;
+    if (threadIdx.x < 6) R[threadIdx.x] = rot[img_idx * 6 + threadIdx.x];
+    __syncthreads();
+    if (j >= n_compact) return;
+    float* row = out + static_cast<int64_t>(img_idx) * 2 * n_compact;
+    const int pix = crop_index[j];
+    float re = 0.0f, im = 0.0f;
+    bool live = pix >= 0;
+    if (live) {
+        const int radius = *image_radius;
+        if (radius < 0 || radius > image_h / 2) {
+            row[j] = nanf("");
+            row[n_compact + j] = nanf("");
+            return;
+        }
+        const int padded_radius = radius * upsampling;
+        const int max_r2 = min(maxR2_padded, padded_radius * padded_radius);
+        const int k0_idx = pix / image_w;
+        const int k1_idx = pix % image_w;
+        const float k0_unscaled = (float)(k0_idx == 0 ? image_h / 2 : k0_idx - image_h / 2);
+        const float k1_unscaled = (float)k1_idx;
+        const float rk0 = (R[3] * k1_unscaled + R[0] * k0_unscaled) * (float)upsampling;
+        const float rk1 = (R[4] * k1_unscaled + R[1] * k0_unscaled) * (float)upsampling;
+        const float rk2 = (R[5] * k1_unscaled + R[2] * k0_unscaled) * (float)upsampling;
+        if ((int)(rk0 * rk0 + rk1 * rk1 + rk2 * rk2) <= max_r2) {
+            float xp = rk0, yp = rk1, zp = rk2, imag_sign = 1.0f;
+            if (xp < 0.0f) { xp = -xp; yp = -yp; zp = -zp; imag_sign = -1.0f; }
+            re = tex3D<float>(texReal, xp + 0.5f, yp - (float)tex_yinit + 0.5f, zp - (float)tex_zinit + 0.5f);
+            im = imag_sign * tex3D<float>(texImag, xp + 0.5f, yp - (float)tex_yinit + 0.5f, zp - (float)tex_zinit + 0.5f);
+        }
+    }
+    // compute_relion_projector_projections_block's complex64 * float32 dense scale, per component.
+    row[j] = __fmul_rn(re, scale);
+    row[n_compact + j] = __fmul_rn(im, scale);
+}
+
+ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
+    cudaStream_t stream, int64_t owner_handle, int64_t image_h, int64_t image_w, float scale,
+    ffi::AnyBuffer rot, ffi::AnyBuffer image_radius, ffi::AnyBuffer crop_index, ffi::Result<ffi::AnyBuffer> output)
+{
+    const auto r = rot.dimensions();
+    const auto c = crop_index.dimensions();
+    const auto o = output->dimensions();
+    if (rot.element_type() != ffi::DataType::F32 || output->element_type() != ffi::DataType::F32 ||
+        image_radius.element_type() != ffi::DataType::S32 || image_radius.dimensions().size() != 0 ||
+        crop_index.element_type() != ffi::DataType::S32 || c.size() != 1 || c[0] <= 0)
+        return ffi::Error::InvalidArgument(
+            "ProjectRelionHalfCapacityTextureCompactPacked: F32 rotations, S32 image radius and crop index, F32 output");
+    if (r.size() != 2 || r[1] != 6 || r[0] <= 0 || r[0] > 65535 ||
+        image_h <= 0 || image_h != image_w || image_h % 2 != 0 || image_h > 4096 ||
+        o.size() != 2 || o[0] != r[0] || o[1] != 2 * c[0] || r[0] * o[1] > std::numeric_limits<int>::max())
+        return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: invalid geometry");
+    std::shared_ptr<CapacityRelionHalfTextureF32> owner;
+    {
+        std::lock_guard<std::mutex> lock(capacity_relion_half_texture_f32_mutex);
+        const auto found = capacity_relion_half_texture_f32_registry.find(static_cast<uint64_t>(owner_handle));
+        if (found == capacity_relion_half_texture_f32_registry.end())
+            return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: owner handle is not live");
+        owner = found->second;
+    }
+    if (!owner->acquire_call())
+        return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: owner is closing");
+    struct Release { CapacityRelionHalfTextureF32* owner; ~Release() { owner->release_call(); } } release{owner.get()};
+
+    // The geometry of ProjectRelionHalfCapacityTextureImpl.
+    const float max_r2 = (float)((owner->half_z / 2 - 1) * (owner->half_z / 2 - 1));
+    const int maxR = (int)floorf(sqrtf(max_r2) + 0.5f);
+    const int n_compact = static_cast<int>(c[0]);
+    dim3 grid((int)r[0], (n_compact + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    project_capacity_texture_compact_packed_kernel<<<grid, BLOCK_SIZE, 0, stream>>>(
+        owner->texture_real, owner->texture_imag, static_cast<float*>(output->untyped_data()),
+        static_cast<const float*>(rot.untyped_data()), static_cast<const int32_t*>(crop_index.untyped_data()),
+        n_compact, (int)image_h, (int)(image_w / 2 + 1), -(maxR + 1), -(maxR + 1), owner->padding_factor,
+        maxR * maxR, static_cast<const int32_t*>(image_radius.untyped_data()), scale);
+    const cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
+    return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    ProjectRelionHalfCapacityTextureCompactPacked, ProjectRelionHalfCapacityTextureCompactPackedImpl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Attr<int64_t>("owner_handle")
+        .Attr<int64_t>("image_h")
+        .Attr<int64_t>("image_w")
+        .Attr<float>("scale")
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);

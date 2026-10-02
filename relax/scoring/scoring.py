@@ -967,7 +967,9 @@ def _relion_coarse_gemm_terms(
     Returns ``X = Re(conj(w y) . p)`` as ``[B, T, R]``, the model energy
     ``A = w . |p|^2`` as ``[B, R]``, the image energy ``C = w . |y|^2`` as
     ``[B, T]`` and the active-image mask; images past ``actual_image_count``
-    carry zero weight. ``X`` is one real GEMM over ``[Re, Im]``-packed operands
+    carry zero weight. ``projected_reference`` is complex ``[R, P]`` or already
+    packed as float ``[R, 2 P]`` (``[Re | Im]``,
+    :func:`relax.helpers.projection.project_relion_coarse_packed_rows`). ``X`` is one real GEMM over ``[Re, Im]``-packed operands
     (the complex product's imaginary half is never formed) and ``A`` is a second
     GEMM. Both run at ``wide`` precision with an explicit full-precision dot
     algorithm (float32 never falls to TF32).
@@ -980,8 +982,14 @@ def _relion_coarse_gemm_terms(
     weight = jnp.where(active[:, None], pixel_weight, 0).astype(wide)
     shifted_re = jnp.where(active[:, None, None], shifted_corrected.real, 0).astype(wide)
     shifted_im = jnp.where(active[:, None, None], shifted_corrected.imag, 0).astype(wide)
-    reference_re = projected_reference.real.astype(wide)
-    reference_im = projected_reference.imag.astype(wide)
+    if jnp.iscomplexobj(projected_reference):
+        reference_re = projected_reference.real.astype(wide)
+        reference_im = projected_reference.imag.astype(wide)
+        reference_packed = jnp.concatenate([reference_re, reference_im], axis=-1)
+    else:
+        reference_packed = projected_reference.astype(wide)
+        n_pixels = reference_packed.shape[-1] // 2
+        reference_re, reference_im = reference_packed[..., :n_pixels], reference_packed[..., n_pixels:]
 
     # float32 names its full-precision algorithm so it never falls to TF32;
     # binary64 dots are always binary64, and XLA's small-dot emitters reject
@@ -995,7 +1003,6 @@ def _relion_coarse_gemm_terms(
         [shifted_re * weight[:, None, :], shifted_im * weight[:, None, :]],
         axis=-1,
     ).reshape(n_images * n_trans, -1)
-    reference_packed = jnp.concatenate([reference_re, reference_im], axis=-1)
     cross = jax.lax.dot(
         weighted_packed,
         reference_packed.T,

@@ -3524,6 +3524,35 @@ class RelionCapacityHalfTextureF32:
         self._last_output = output
         return output
 
+    def project_compact_packed(
+        self,
+        rotation_matrices: jax.Array,
+        crop_index: jax.Array,
+        *,
+        image_shape: Tuple[int, int],
+        image_r_max: jax.Array,
+        scale: float,
+    ) -> jax.Array:
+        """F32 ``[rotation, 2 P]``: :meth:`project` at the crop pixels ``crop_index`` ``[P]`` (-1 for a zero entry),
+        times ``scale``, real parts then imaginary parts (the coarse GEMM scorer's packed operand)."""
+
+        if self.closed:
+            raise RuntimeError("the persistent capacity projector texture is closed")
+        rotation_matrices = jnp.asarray(rotation_matrices)
+        if rotation_matrices.dtype != jnp.float32 or rotation_matrices.ndim != 3 or rotation_matrices.shape[1:] != (3, 3):
+            raise ValueError("rotation_matrices must be F32 [rotation,3,3]")
+        _ensure_optional_ffi(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED)
+        output = _project_relion_half_capacity_texture_compact_packed(
+            rotation_matrices,
+            jnp.asarray(image_r_max, dtype=jnp.int32),
+            jnp.asarray(crop_index, dtype=jnp.int32),
+            owner_handle=self._handle,
+            image_shape=(int(image_shape[0]), int(image_shape[1])),
+            scale=float(scale),
+        )
+        self._last_output = output
+        return output
+
     def close_after(self, completion) -> None:
         """Destroy after a concrete result depending on the last use is ready.
 
@@ -3623,6 +3652,22 @@ def _project_relion_half_capacity_texture(rotation_matrices, image_r_max, *, own
         image_h=np.int64(image_shape[0]),
         image_w=np.int64(image_shape[1]),
         has_image_radius=np.int64(bool(has_image_radius)),
+    )
+
+
+@functools.partial(jax.jit, static_argnames=("owner_handle", "image_shape", "scale"))
+def _project_relion_half_capacity_texture_compact_packed(
+    rotation_matrices, image_r_max, crop_index, *, owner_handle, image_shape, scale
+):
+    output = jax.ShapeDtypeStruct((rotation_matrices.shape[0], 2 * crop_index.shape[0]), jnp.float32)
+    return jax.ffi.ffi_call(_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED, output, vmap_method="sequential")(
+        _rot_to_compact(rotation_matrices, jnp.float32),
+        image_r_max,
+        crop_index,
+        owner_handle=np.int64(owner_handle),
+        image_h=np.int64(image_shape[0]),
+        image_w=np.int64(image_shape[1]),
+        scale=np.float32(scale),
     )
 
 
@@ -4947,6 +4992,7 @@ _TARGET_PROJECT_RELION_HALF_RUNTIME = "cuda_project_relion_half_runtime"
 
 _TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS = "cuda_project_relion_half_image_radius"
 _TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE = "cuda_project_relion_half_capacity_texture"
+_TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED = "cuda_project_relion_half_capacity_texture_compact_packed"
 
 
 _TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32 = "cuda_relion_projector_half_texture_f32"
@@ -5616,6 +5662,10 @@ _OPTIONAL_FFI_REGISTRATIONS = {
     _TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE: (
         "ProjectRelionHalfCapacityTexture",
         "A persistent capacity projector texture requires ProjectRelionHalfCapacityTexture; explicitly rebuild the custom CUDA library",
+    ),
+    _TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED: (
+        "ProjectRelionHalfCapacityTextureCompactPacked",
+        "Packed coarse GEMM rows require ProjectRelionHalfCapacityTextureCompactPacked; explicitly rebuild the custom CUDA library",
     ),
     _TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF: (
         "RelionVdamMstepFusedProjectorCapacityXHalf",

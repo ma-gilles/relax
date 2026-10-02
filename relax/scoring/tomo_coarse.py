@@ -202,7 +202,8 @@ _SIGNIFICANCE_BATCH_BYTES = 512 << 20
 def _coarse_gemm_projections(
     projector_half, rotations, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int, texture=None
 ):
-    """The score-window rows ``[N, P]`` of a RELION ``PPref`` half at ``rotations`` ``[N, 3, 3]``.
+    """The score-window rows of a RELION ``PPref`` half at ``rotations`` ``[N, 3, 3]`` (see
+    :func:`_score_window_projections` for the two layouts).
 
     The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
     RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
@@ -243,8 +244,19 @@ def _coarse_capacity_texture(projector_half, layout: CoarseScoreLayout, *, model
 def _score_window_projections(
     projector_half, rotations, score_indices, *, image_shape, current_size, model_max_r, padding_factor, texture
 ):
-    from relax.helpers.projection import compute_relion_projector_projections_block
+    """Score-window projections: float32 ``[N, 2 P]`` packed ``[Re | Im]`` straight from ``texture`` where it
+    serves, else complex64 ``[N, P]``; the GEMM scorer takes either."""
 
+    from relax.helpers.projection import (
+        compute_relion_projector_projections_block,
+        project_relion_coarse_packed_rows,
+        relion_coarse_packed_rows_serve,
+    )
+
+    if texture is not None and relion_coarse_packed_rows_serve(image_shape[0], current_size, model_max_r):
+        return project_relion_coarse_packed_rows(
+            texture, rotations, score_indices, image_shape=image_shape, projector_output_size=int(current_size)
+        )
     projected, _abs2 = compute_relion_projector_projections_block(
         projector_half,
         rotations,

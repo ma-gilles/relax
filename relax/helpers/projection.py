@@ -534,19 +534,9 @@ def _texture_centered_crop_to_full_jit(
     return full.at[:, full_indices].set(crop.reshape((projection_crop.shape[0], -1)))
 
 
-def _texture_centered_crop_at_indices(
-    projection_crop,
-    pixel_indices,
-    *,
-    image_shape,
-    projector_output_size: int,
-    mask_current_image_disk: bool = False,
-    current_image_mask_size=None,
-):
-    """Gather centered full-image pixels directly from a CUDA projection crop."""
+def _centered_crop_indices(pixel_indices, *, image_size: int, crop_size: int):
+    """Flat crop-grid indices of centred full-image half pixels, with their signed row ``ky`` and column."""
 
-    image_size = int(image_shape[0])
-    crop_size = int(projector_output_size)
     full_x_half = image_size // 2 + 1
     crop_x_half = crop_size // 2 + 1
     indices = jnp.asarray(pixel_indices, dtype=jnp.int32)
@@ -567,7 +557,22 @@ def _texture_centered_crop_at_indices(
             0,
             ky + crop_size // 2,
         )
-    crop_indices = crop_rows * crop_x_half + cols
+    return crop_rows * crop_x_half + cols, ky, cols
+
+
+def _texture_centered_crop_at_indices(
+    projection_crop,
+    pixel_indices,
+    *,
+    image_shape,
+    projector_output_size: int,
+    mask_current_image_disk: bool = False,
+    current_image_mask_size=None,
+):
+    """Gather centered full-image pixels directly from a CUDA projection crop."""
+
+    crop_size = int(projector_output_size)
+    crop_indices, ky, cols = _centered_crop_indices(pixel_indices, image_size=int(image_shape[0]), crop_size=crop_size)
     selected = projection_crop.reshape((projection_crop.shape[0], -1))[:, crop_indices]
     if not mask_current_image_disk:
         return selected
@@ -1024,14 +1029,57 @@ def compute_relion_projector_projections_block(
             )
         proj_half = proj_half.at[:, jnp.asarray(coarse_relabel.positions)].set(moved.astype(proj_half.dtype))
     if dense_scale:
-        token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
-        n = int(image_shape[0])
-        scale = {"-N2": -(n**2), "N2": float(n**2)}.get(token)
-        if scale is None:
-            raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
-        proj_half = proj_half * scale
+        proj_half = proj_half * _dense_means_scale(int(image_shape[0]))
     proj_abs2_half = jnp.abs(proj_half) ** 2 if return_abs2 else None
     return proj_half, proj_abs2_half
+
+
+def _dense_means_scale(image_size: int):
+    """The dense-means projection scale, ``-N^2`` unless ``RELAX_DENSE_MEANS_SCALE`` selects ``N2``."""
+
+    token = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
+    scale = {"-N2": -(image_size**2), "N2": float(image_size**2)}.get(token)
+    if scale is None:
+        raise ValueError(f"Unsupported RELAX_DENSE_MEANS_SCALE={token!r}")
+    return scale
+
+
+def relion_coarse_packed_rows_serve(image_size: int, projector_output_size: int, r_max: int) -> bool:
+    """Whether :func:`project_relion_coarse_packed_rows` reproduces this coarse projection: no coarse-kernel
+    row of the window is zeroed or relabelled (the window lies within the model sphere)."""
+
+    return relion_kernel_zero_rows(int(image_size), int(projector_output_size), int(r_max), "coarse") is None
+
+
+def project_relion_coarse_packed_rows(
+    capacity_texture, rotations_block, pixel_indices, *, image_shape, projector_output_size: int
+):
+    """F32 ``[N, 2 P]``: the dense-scaled coarse projections ``p`` that
+    :func:`compute_relion_projector_projections_block` returns (``centered_rows``, ``dense_scale``,
+    ``pixel_indices``, ``relion_kernel="coarse"``, ``capacity_texture``) at ``pixel_indices`` ``[P]``, packed
+    as ``[Re p | Im p]``, the coarse GEMM scorer's reference operand, in one kernel (no crop gather, scale or
+    split). Only where :func:`relion_coarse_packed_rows_serve` holds.
+    """
+
+    crop_size = int(projector_output_size)
+    crop_indices, _ky, _cols = _centered_crop_indices(pixel_indices, image_size=int(image_shape[0]), crop_size=crop_size)
+    project = partial(
+        capacity_texture.project_compact_packed,
+        crop_index=crop_indices,
+        image_shape=(crop_size, crop_size),
+        image_r_max=jnp.asarray(crop_size // 2, jnp.int32),
+        scale=float(_dense_means_scale(int(image_shape[0]))),
+    )
+    n_rotations = int(rotations_block.shape[0])
+    if n_rotations <= _HALF_STORAGE_MAX_ROTATIONS:
+        return project(rotations_block)
+    return jnp.concatenate(
+        [
+            project(rotations_block[start : start + _HALF_STORAGE_MAX_ROTATIONS])
+            for start in range(0, n_rotations, _HALF_STORAGE_MAX_ROTATIONS)
+        ],
+        axis=0,
+    )
 
 
 def project_half_spectrum(

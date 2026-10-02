@@ -203,9 +203,45 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
             assert_matches(np.asarray(batched[b]), np.asarray(single), err_msg=f"image {b}")
 
 
+def _gemm_fixture(rng, *, n_images=3, n_rot=256, n_trans=200):
+    """A box-32 projector half, random rotations, images, weights, d0 and translation phases on the GPU."""
+
+    from relax.helpers.projection import relion_projector_half_to_texture_full
+
+    box, size, pad, max_r = 32, 32, 2, 16
+    layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
+    n_px = int(layout.score_indices_np.size)
+    side = 2 * max_r * pad + 3
+    half = jnp.asarray(
+        (rng.normal(size=(side, side, side // 2 + 1)) + 1j * rng.normal(size=(side, side, side // 2 + 1))).astype(np.complex64)
+    )
+    q = rng.normal(size=(n_images * n_rot, 4))
+    q /= np.linalg.norm(q, axis=1, keepdims=True)
+    w, x, y, z = q.T
+    rotations = np.stack(
+        [
+            np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
+            np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
+            np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
+        ],
+        -2,
+    ).astype(np.float32)
+    return dict(
+        box=box, pad=pad, max_r=max_r, layout=layout, half=half,
+        full=relion_projector_half_to_texture_full(half).astype(jnp.complex64),
+        rotations=rotations, n_images=n_images, n_rot=n_rot,
+        images=(rng.normal(size=(n_images, n_px)) + 1j * rng.normal(size=(n_images, n_px))).astype(np.complex64),
+        weight=rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32),
+        initial=rng.uniform(10.0, 20.0, size=n_images).astype(np.float32),
+        angles=rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32),
+    )
+
+
 @pytest.mark.gpu
-def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device):
-    """The coarse pass's GEMM scorer against the fused direct-square kernel, image by image.
+@pytest.mark.parametrize("persistent_texture", [False, True], ids=["complex_rows", "packed_rows"])
+def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persistent_texture):
+    """The coarse pass's GEMM scorer against the fused direct-square kernel, image by image, on the
+    complex projections and on the packed rows a persistent texture projects.
 
     The two round differently (the expansion d0 + 0.5 A + 0.5 C - X against RELION's sum of
     squares), so they agree to a few float32 ULP of the terms' scale, not bitwise: 1.8e-6 of
@@ -215,54 +251,69 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device):
     import jax
 
     from relax.cuda.kernels import custom_cuda_requested
-    from relax.helpers.projection import relion_projector_half_to_texture_full
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
-    rng = np.random.default_rng(17)
-    box, size, pad, max_r = 32, 32, 2, 16
-    layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
-    n_px = int(layout.score_indices_np.size)
-    side = 2 * max_r * pad + 3
     with jax.default_device(gpu_device):
-        half = jnp.asarray(
-            (rng.normal(size=(side, side, side // 2 + 1)) + 1j * rng.normal(size=(side, side, side // 2 + 1))).astype(np.complex64)
+        f = _gemm_fixture(np.random.default_rng(17))
+        layout = f["layout"]
+        texture = (
+            tomo_coarse._coarse_capacity_texture(f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"])
+            if persistent_texture else None
         )
-        full = relion_projector_half_to_texture_full(half).astype(jnp.complex64)
-        n_images, n_rot, n_trans = 3, 256, 200
-        q = rng.normal(size=(n_images * n_rot, 4))
-        q /= np.linalg.norm(q, axis=1, keepdims=True)
-        w, x, y, z = q.T
-        rotations = np.stack(
-            [
-                np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
-                np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
-                np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
-            ],
-            -2,
-        ).astype(np.float32)
-        images = (rng.normal(size=(n_images, n_px)) + 1j * rng.normal(size=(n_images, n_px))).astype(np.complex64)
-        weight = rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32)
-        initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
-        angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
+        assert (texture is not None) == persistent_texture
         projected = tomo_coarse._coarse_gemm_projections(
-            half, jnp.asarray(rotations), layout, model_max_r=max_r, padding_factor=pad
-        ).reshape(n_images, n_rot, -1)
+            f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"],
+            texture=texture,
+        ).reshape(f["n_images"], f["n_rot"], -1)
+        assert projected.dtype == (jnp.float32 if persistent_texture else jnp.complex64)
         gemm = np.asarray(
             tomo_coarse._images_coarse_gemm_diff2(
-                projected, jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
-                jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(box, box),
+                projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
+                jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(f["box"], f["box"]),
             )
         )
-        rotations = rotations.reshape(n_images, n_rot, 3, 3)
-        for b in range(n_images):
+        if texture is not None:
+            texture.close()
+        rotations = f["rotations"].reshape(f["n_images"], f["n_rot"], 3, 3)
+        for b in range(f["n_images"]):
             direct = np.asarray(
                 tomo_coarse.tilt_image_coarse_diff2(
-                    full, rotations[b], images[b], weight[b], initial[b], angles[b], layout,
-                    model_max_r=max_r, padding_factor=pad,
+                    f["full"], rotations[b], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b], layout,
+                    model_max_r=f["max_r"], padding_factor=f["pad"],
                 )
             )
             assert_matches(gemm[b], direct, rtol=1e-5, err_msg=f"image {b}")
+
+
+@pytest.mark.gpu
+def test_packed_rows_are_the_complex_projections_split(gpu_device):
+    """The persistent texture's packed ``[Re | Im]`` rows are the complex coarse projections (the same texture
+    reads and dense scale, in one kernel), so the GEMM's reference operand does not change."""
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        f = _gemm_fixture(np.random.default_rng(23), n_images=1, n_rot=300)
+        layout, rotations = f["layout"], jnp.asarray(f["rotations"])
+        texture = tomo_coarse._coarse_capacity_texture(f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"])
+        assert texture is not None
+        packed = np.asarray(
+            tomo_coarse._coarse_gemm_projections(
+                f["half"], rotations, layout, model_max_r=f["max_r"], padding_factor=f["pad"], texture=texture
+            )
+        )
+        texture.close()
+        complex_rows = np.asarray(
+            tomo_coarse._coarse_gemm_projections(f["half"], rotations, layout, model_max_r=f["max_r"], padding_factor=f["pad"])
+        )
+    assert packed.shape == (complex_rows.shape[0], 2 * complex_rows.shape[1])
+    assert np.count_nonzero(complex_rows) > complex_rows.size // 2
+    assert_matches(packed, np.concatenate([complex_rows.real, complex_rows.imag], axis=-1))
 
 
 def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
