@@ -342,10 +342,12 @@ def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
         assert_matches(np.asarray(batched["pmax"][p]), np.asarray(alone["pmax"][0]))
 
 
-def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatch):
+@pytest.mark.parametrize("flushes", ["one_flush", "flush_per_particle"])
+def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatch, flushes):
     """Class3D: every image is scored against each class; the particle's (class, rotation, translation) weights
     are cut once (convertAllSquaredDifferencesToWeights sorts all classes' weights together), and each cell
-    goes back to its class's support."""
+    goes back to its class's support. One particle per batch and flush exercises the deferred readback and
+    the compaction-size guess (exact first, then guessed, recompacted on overflow)."""
 
     rng = np.random.default_rng(11)
     offsets = np.array([0, 2, 5, 6])
@@ -388,6 +390,10 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
     monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)
+    if flushes == "flush_per_particle":
+        batches = tomo_coarse._coarse_batches
+        monkeypatch.setattr(tomo_coarse, "_coarse_batches", lambda *a, **k: batches(*a, **{**k, "budget_bytes": 1}))
+        monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 1)
     layout = tomo_coarse.CoarseScoreLayout(
         (8, 8), 6, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(40)
     )
@@ -413,7 +419,10 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         image_size=8,
     )
     assert len(supports) == 2 and all(len(class_supports) == 3 for class_supports in supports)
-    (diff2, rotation_prior, translation_prior), = captured
+    assert len(captured) == (1 if flushes == "one_flush" else 3)
+    diff2 = np.concatenate([c[0] for c in captured])
+    translation_prior = np.concatenate([c[2] for c in captured])
+    rotation_prior = captured[0][1]
     r_pad = diff2.shape[1] // 2
     # The classes' rotations side by side, each padded at -inf.
     assert_matches(rotation_prior.reshape(2, r_pad)[:, :n_rot], class_prior)

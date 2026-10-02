@@ -697,10 +697,14 @@ def particle_coarse_supports(
     supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
     last_total = None
     pending = []
+    # The last flush's device results, read back by the next flush: by then the GPU holds the batches
+    # queued after them, so the readback waits for nothing and the host's bookkeeping overlaps them.
+    in_flight = None
+    # The flush's compaction size, a guess from the previous flush's significant cells (2x margin); a
+    # flush whose cells overflow it is compacted again at its exact size.
+    cells_capacity = 0
 
-    def flush():
-        if not pending:
-            return
+    def dispatch():
         units_all = np.concatenate([u for u, _ in pending])
         totals = jnp.concatenate([t for _, t in pending], axis=0)
         pending.clear()
@@ -729,12 +733,24 @@ def particle_coarse_supports(
         )
         # The significant cells are compacted on the device; only their ids come back (the dense mask is
         # K * R * T booleans per particle).
-        counts = np.asarray(jnp.sum(stats["mask"], axis=1, dtype=jnp.int32), dtype=np.int64)
-        flat = _significant_cells(stats["mask"], capacity=max(1, 1 << int(max(int(counts.sum()), 1) - 1).bit_length()))
-        flat = np.asarray(flat, dtype=np.int64)[: int(counts.sum())]
-        particle_pmax = np.asarray(stats["pmax"], dtype=np.float64)
+        counts = jnp.sum(stats["mask"], axis=1, dtype=jnp.int32)
+        flat = _significant_cells(stats["mask"], capacity=cells_capacity) if cells_capacity else None
+        for value in (counts, flat, stats["pmax"]):
+            if value is not None:
+                value.copy_to_host_async()
+        return units_all, stats["mask"], counts, flat, stats["pmax"]
+
+    def collect(units_all, mask, counts, flat, pmax):
+        nonlocal cells_capacity
+        counts = np.asarray(counts, dtype=np.int64)
+        n_significant = int(counts.sum())
+        if flat is None or n_significant > int(flat.shape[0]):
+            flat = _significant_cells(mask, capacity=max(1, 1 << (max(n_significant, 1) - 1).bit_length()))
+        cells_capacity = max(int(cells_capacity), 1 << max(2 * n_significant - 1, 1).bit_length())
+        flat = np.asarray(flat, dtype=np.int64)[:n_significant]
+        particle_pmax = np.asarray(pmax, dtype=np.float64)
         cell_offsets = np.concatenate([[0], np.cumsum(counts)])
-        n_cells = int(stats["mask"].shape[1])
+        n_cells = int(mask.shape[1])
         for i, unit in enumerate(units_all):
             all_cells = flat[cell_offsets[i] : cell_offsets[i + 1]] - i * n_cells
             cell_class = all_cells // (r_pad_all * n_coarse_trans)
@@ -746,6 +762,18 @@ def particle_coarse_supports(
                     cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
                 supports[class_index][int(unit)] = cells.astype(np.int32)
             pmax_by_unit[int(unit)] = float(particle_pmax[i])
+
+    def flush(*, last=False):
+        """Dispatch the pending particles' significance, then read back the previous flush's."""
+
+        nonlocal in_flight
+        dispatched = dispatch() if pending else None
+        if in_flight is not None:
+            collect(*in_flight)
+        in_flight = dispatched
+        if last and in_flight is not None:
+            collect(*in_flight)
+            in_flight = None
 
     for units, r_pad, p_pad, slot_block in batches:
         # Operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
@@ -814,7 +842,7 @@ def particle_coarse_supports(
         del unshifted, weight, initial, batch_unshifted, batch_weight, batch_initial
         if sum(int(u.size) for u, _ in pending) >= significance_batch:
             flush()
-    flush()
+    flush(last=True)
     for texture in class_textures:
         if texture is not None:
             # The flush read every batch's significance back, so the last projection has completed.
