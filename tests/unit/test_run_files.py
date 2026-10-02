@@ -423,8 +423,9 @@ def test_run_files_use_relion_blocks_and_keep_input_columns(tmp_path):
     model = read_star_blocks(tmp_path / "out" / "run_it005_half1_model.star")
     assert {"model_general", "model_classes", "model_class_1", "model_groups", "model_optics_group_1"} <= set(model)
     assert model["model_classes"]["rlnReferenceImage"] == ["run_it005_half1_class001.mrc"]
-    # RELION's current resolution is reciprocal Angstrom (ml_model.cpp: 1./current_resolution).
-    assert float(model["model_general"]["rlnCurrentResolution"]) == pytest.approx(1.0 / 7.123456789)
+    # model.star carries Angstrom: MlModel::write stores 1./current_resolution of its reciprocal-Angstrom
+    # member (ml_model.cpp:633), and readStar inverts it back (ml_model.cpp:202).
+    assert float(model["model_general"]["rlnCurrentResolution"]) == pytest.approx(7.123456789)
 
     data = read_star_blocks(tmp_path / "out" / "run_it005_data.star")
     particles = data["particles"]

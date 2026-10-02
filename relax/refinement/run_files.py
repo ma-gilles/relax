@@ -426,9 +426,11 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
     frame = float(snapshot.ori_size) ** 4
     norm_frame = float(snapshot.ori_size) ** 2
     state = snapshot.state_fields
+    # RELION writes Angstrom here (MlModel::write, ml_model.cpp:633 writes 1./current_resolution of its
+    # reciprocal-Angstrom member); the state already holds Angstrom. 999 A marks no estimate yet.
     current_resolution = float(state["current_resolution"])
-    inverse_resolution = (
-        0.0 if not np.isfinite(current_resolution) or current_resolution <= 0 else 1.0 / current_resolution
+    resolution_angstrom = (
+        current_resolution if np.isfinite(current_resolution) and current_resolution > 0 else 999.0
     )
     halves = (None,) if snapshot.k_class else (1, 2)
     paths = []
@@ -442,7 +444,7 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             ("rlnReferenceDimensionality", 3),
             ("rlnDataDimensionality", 2),
             ("rlnOriginalImageSize", int(snapshot.ori_size)),
-            ("rlnCurrentResolution", inverse_resolution),
+            ("rlnCurrentResolution", resolution_angstrom),
             ("rlnCurrentImageSize", int(snapshot.current_size)),
             ("rlnPaddingFactor", float(settings.padding_factor)),
             ("rlnIsHelix", False),
