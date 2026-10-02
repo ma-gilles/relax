@@ -250,7 +250,8 @@ labeled diagnostic only.
   CPU); scores in `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/`
   (`score_seeds.json`, `score_seeds2_relax.json`, `score_seeds3.json`). Benchmark multi-seed rule:
   every relax run is inside or above the across-seed RELION band [0.205033, 0.211092], and relax
-  is not below its same-seed RELION run at three of five seeds.
+  is not below its same-seed RELION run at three of five seeds. It is below at s42 and s29; the
+  worst seed is s29 at -1.7e-3. The reference is RELION CPU, not RELION GPU, because of relax#12.
 
   | Seed | relax (masked mean GT FSC-AUC) | RELION CPU | relax vs same-seed RELION |
   | --- | --- | --- | --- |
