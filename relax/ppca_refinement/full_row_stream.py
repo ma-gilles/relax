@@ -37,6 +37,7 @@ Tests compare the engine against the host-mask reference
 
 from __future__ import annotations
 
+import functools
 from functools import partial
 from typing import NamedTuple
 
@@ -586,7 +587,7 @@ def _prepare_full_row_stream(
     )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
     block_size = int(schedule.rotation_block_size)
-    block_starts = tuple(jnp.asarray(start, dtype=jnp.int32) for start in range(0, n_rot, block_size))
+    block_starts = _block_starts(n_rot, block_size, device)
     # The sentinel row (identity rotation, zero prior) has the all-unsupported
     # coarse parent R_coarse: it pads the last block of every tile.
     sentinel_rotation = np.eye(3, dtype=np.float32)[None]
@@ -628,6 +629,12 @@ def _prepare_full_row_stream(
         rotation_parent=rotation_parent,
         device=device,
     )
+
+
+@functools.lru_cache(maxsize=8)
+def _block_starts(n_rot: int, block_size: int, device) -> tuple[jax.Array, ...]:
+    """Device scalars of every block start; built once per grid (hundreds of transfers at HP4)."""
+    return tuple(jax.device_put(np.int32(start), device) for start in range(0, n_rot, block_size))
 
 
 def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collect_observation: bool):

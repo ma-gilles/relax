@@ -64,6 +64,16 @@ def _rotation_grid(hp):
     return rotations
 
 
+@functools.lru_cache(maxsize=4)
+def _direction_ids(hp):
+    """Index of each rotation's (rot, tilt) direction on the order-``hp`` grid (read-only; a sort of every rotation)."""
+    eulers = sampling.get_relion_hidden_rotation_grid(hp, matrices=False)
+    _, direction_ids = np.unique(eulers[:, :2], axis=0, return_inverse=True)
+    direction_ids = direction_ids.reshape(-1)
+    direction_ids.flags.writeable = False
+    return direction_ids
+
+
 def _merge_statistics(parts):
     return AugmentedPPCAStats(
         # The streamed engine produces no RHS volume (only lhs_tri and the residual gradient are read).
@@ -626,8 +636,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         if not np.all(np.isfinite(np.asarray(theta))):
             raise ValueError("Nonfinite PPCA model")
         hp = config.stage(iteration)[1]
-        eulers = sampling.get_relion_hidden_rotation_grid(hp, matrices=False)
-        _, direction_ids = np.unique(eulers[:, :2], axis=0, return_inverse=True)
+        direction_ids = _direction_ids(hp)
         masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
         direction_mass = np.bincount(direction_ids, weights=masses)
         multiplicity = np.bincount(direction_ids)
@@ -635,7 +644,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         old_prior = (
             state.direction_prior
             if state.direction_order == hp and state.direction_prior is not None
-            else np.full(len(eulers), 1 / len(eulers), np.float32)
+            else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
         )
         direction_prior = (beta * old_prior + (1 - beta) * estimated).astype(np.float32)
         state = State(
