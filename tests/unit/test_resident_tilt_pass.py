@@ -152,7 +152,10 @@ def test_one_image_particles_reproduce_the_spa_k_class_pass(_resident_production
     for field in ("log_evidence_per_image", "best_log_score_per_image", "max_posterior_per_image"):
         assert_matches(np.asarray(getattr(spa.stats, field)), np.asarray(getattr(tomo.stats, field)), err_msg=field)
     for k in range(2):
-        assert _rel_l2(spa.Ft_y[k], tomo.Ft_y[k]) < 1e-7, f"Ft_y class {k}"
+        # The SPA pass repeated alone reaches Ft_y relL2 1.0e-7 (class 1, atomic accumulation order; local A100
+        # probe of 2026-10-02, 3 SPA + 3 tilt runs: SPA vs SPA 6.1e-8-1.0e-7, SPA vs tilt 5.9e-8-7.3e-8; medium
+        # 14864305 saw SPA vs tilt 1.21e-7). Bound 2e-7 = twice that repeat band (user decision, 2026-10-02).
+        assert _rel_l2(spa.Ft_y[k], tomo.Ft_y[k]) < 2e-7, f"Ft_y class {k}"
         assert _rel_l2(spa.Ft_ctf[k], tomo.Ft_ctf[k]) < 1e-7, f"Ft_ctf class {k}"
     _assert_noise_stats_match(spa.noise_stats, tomo.noise_stats)
 
