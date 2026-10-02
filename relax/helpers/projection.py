@@ -49,14 +49,17 @@ def project_relion_projector_half_spectrum(
     from relax.relion.relion_project import relion_project_half
 
     image_size = int(image_shape[0])
-    project_one = lambda R: relion_project_half(
-        volume_relion_half,
-        R,
-        image_size,
-        int(r_max),
-        int(padding_factor),
-        relion_acc_double_floorf_quirk,
-    )
+
+    def project_one(R):
+        return relion_project_half(
+            volume_relion_half,
+            R,
+            image_size,
+            int(r_max),
+            int(padding_factor),
+            relion_acc_double_floorf_quirk,
+        )
+
     proj_fftw = jax.vmap(project_one)(rotations_block)
 
     return proj_fftw.reshape((rotations_block.shape[0], -1))
