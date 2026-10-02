@@ -122,7 +122,7 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         direct = initial[b] + 0.5 * np.einsum(
             "p,rtp->rt", weight[b].astype(np.float64), np.abs(projected[b][:, None, :] - shifted[None]) ** 2
         )
-        assert_matches(got[b], direct.astype(np.float32), rtol=1e-5)
+        assert_matches(got[b], direct.T.astype(np.float32), rtol=1e-5)  # translation-major
 
 
 def test_coarse_batches_share_one_shape_within_the_budget():
@@ -283,7 +283,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
                     model_max_r=f["max_r"], padding_factor=f["pad"],
                 )
             )
-            assert_matches(gemm[b], direct, rtol=1e-5, err_msg=f"image {b}")
+            assert_matches(gemm[b].T, direct, rtol=1e-5, err_msg=f"image {b}")
 
 
 @pytest.mark.gpu
@@ -359,7 +359,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         per_rot = jnp.sum(rotations, axis=(3, 4)) + class_value * jnp.arange(rotations.shape[2], dtype=jnp.float32)
         image = initial[:, :, None, None] + per_rot[:, :, :, None] + angles[:, :, None, :, 0] + jnp.sum(weight, axis=2)[:, :, None, None]
         for slot in range(image.shape[1]):
-            total = total + image[:, slot]
+            total = total + image[:, slot].swapaxes(1, 2)  # the pass accumulates translation-major
         return total
 
     def operands(experiment_dataset, image_start, image_stop, layout, **kwargs):

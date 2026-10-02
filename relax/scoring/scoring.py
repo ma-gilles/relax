@@ -1024,7 +1024,7 @@ def _relion_coarse_gemm_terms(
 
 @partial(
     jax.jit,
-    static_argnames=("n_images", "n_trans", "image_shape", "volume_shape", "float64"),
+    static_argnames=("n_images", "n_trans", "image_shape", "volume_shape", "float64", "translation_major"),
 )
 def _relion_coarse_gaussian_gemm_scores_jit(
     projected_reference,
@@ -1039,6 +1039,7 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     image_shape: tuple[int, int],
     volume_shape: tuple[int, int, int],
     float64: bool = False,
+    translation_major: bool = False,
 ):
     """Score exact RELION coarse operands with two real-packed GEMMs.
 
@@ -1047,6 +1048,8 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     :func:`_relion_coarse_gemm_terms`. ``RELAX_COARSE_GEMM_FLOAT64=1``
     promotes the stored operands to binary64 instead, for measuring the
     expansion's cancellation; float32 is the production arithmetic.
+    Scores are ``[B, R, T]``, or ``[B, T, R]`` (the GEMM's own layout, the same
+    values) with ``translation_major``.
     """
 
     del projected_reference_abs2, image_shape, volume_shape
@@ -1063,12 +1066,20 @@ def _relion_coarse_gaussian_gemm_scores_jit(
     )
     initial = jnp.where(active, initial_diff2, 0).astype(wide)
     half = jnp.asarray(0.5, dtype=wide)
-    scores = (
-        cross.swapaxes(1, 2)
-        - half * model_energy[:, :, None]
-        - half * image_energy[:, None, :]
-        - initial[:, None, None]
-    )
+    if translation_major:
+        scores = (
+            cross
+            - half * model_energy[:, None, :]
+            - half * image_energy[:, :, None]
+            - initial[:, None, None]
+        )
+    else:
+        scores = (
+            cross.swapaxes(1, 2)
+            - half * model_energy[:, :, None]
+            - half * image_energy[:, None, :]
+            - initial[:, None, None]
+        )
     return jnp.where(active[:, None, None], scores, 0).astype(out_dtype)
 
 

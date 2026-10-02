@@ -1063,22 +1063,13 @@ def project_relion_coarse_packed_rows(
 
     crop_size = int(projector_output_size)
     crop_indices, _ky, _cols = _centered_crop_indices(pixel_indices, image_size=int(image_shape[0]), crop_size=crop_size)
-    project = partial(
-        capacity_texture.project_compact_packed,
-        crop_index=crop_indices,
+    # One launch for any number of rotations (no per-launch chunks to concatenate).
+    return capacity_texture.project_compact_packed(
+        rotations_block,
+        crop_indices,
         image_shape=(crop_size, crop_size),
         image_r_max=jnp.asarray(crop_size // 2, jnp.int32),
         scale=float(_dense_means_scale(int(image_shape[0]))),
-    )
-    n_rotations = int(rotations_block.shape[0])
-    if n_rotations <= _HALF_STORAGE_MAX_ROTATIONS:
-        return project(rotations_block)
-    return jnp.concatenate(
-        [
-            project(rotations_block[start : start + _HALF_STORAGE_MAX_ROTATIONS])
-            for start in range(0, n_rotations, _HALF_STORAGE_MAX_ROTATIONS)
-        ],
-        axis=0,
     )
 
 

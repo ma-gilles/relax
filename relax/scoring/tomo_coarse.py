@@ -277,7 +277,8 @@ def _score_window_projections(
 
 @partial(jax.jit, static_argnames=("image_shape",))
 def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices, *, image_shape):
-    """Coarse diff2 ``[N, R, T]`` of ``N`` tilt images with their own projections ``[N, R, P]`` and phases ``[N, T, 2]``.
+    """Coarse diff2 ``[N, T, R]`` (translation-major) of ``N`` tilt images with their own projections ``[N, R, P]``
+    and phases ``[N, T, 2]``.
 
     Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.scoring._relion_coarse_gaussian_gemm_scores_jit`,
     RELION's ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on its shifted pixels from RELION's
@@ -302,6 +303,7 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
             n_trans=n_trans,
             image_shape=image_shape,
             volume_shape=(1, 1, 1),
+            translation_major=True,
         )
         return -scores[0]
 
@@ -320,7 +322,9 @@ def _coarse_gemm_slot_block(
     added in slot order.
 
     ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
-    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]`` are the whole batch's; ``total`` ``[P, R, T]``.
+    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]`` are the whole batch's; ``total`` ``[P, T, R]`` is
+    translation-major, the GEMM's layout (the per-cell values do not depend on it), and is transposed once per
+    batch rather than once per image.
     """
 
     block = slice(int(first), int(first) + int(count))
@@ -347,12 +351,12 @@ def _coarse_gemm_slot_block(
         score_indices,
         image_shape=image_shape,
     )
-    return _add_image_diff2_in_slot_order(total, image_diff2.reshape(n_particles, n_slots, n_rot, -1))
+    return _add_image_diff2_in_slot_order(total, image_diff2.reshape(n_particles, n_slots, -1, n_rot))
 
 
 @jax.jit
 def _add_image_diff2_in_slot_order(total, image_diff2):
-    """``total`` ``[P, R, T]`` plus the particles' images' diff2 ``[P, S, R, T]``, slot by slot (``img_id`` order)."""
+    """``total`` plus the particles' images' diff2 ``[P, S, ...]``, slot by slot (``img_id`` order)."""
 
     for slot in range(int(image_diff2.shape[1])):
         total = total + image_diff2[:, slot]
@@ -783,7 +787,7 @@ def particle_coarse_supports(
         batch_angles = jnp.asarray(angles)
         class_totals = []
         for class_index, class_projector in enumerate(class_projectors):
-            total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
+            total = jnp.zeros((p_pad, n_coarse_trans, r_pad), dtype=jnp.float32)
             for first in range(0, slots, slot_block):
                 total = _coarse_gemm_slot_block(
                     total,
@@ -802,7 +806,7 @@ def particle_coarse_supports(
                     padding_factor=int(padding_factor),
                     texture=class_textures[class_index],
                 )
-            class_totals.append(total[: units.size])
+            class_totals.append(total[: units.size].swapaxes(1, 2))
             last_total = total
         # K>1: [P, K * R_pad, T], class-major along the rotation axis.
         pending.append((units, class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)))

@@ -500,9 +500,11 @@ ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
         crop_index.element_type() != ffi::DataType::S32 || c.size() != 1 || c[0] <= 0)
         return ffi::Error::InvalidArgument(
             "ProjectRelionHalfCapacityTextureCompactPacked: F32 rotations, S32 image radius and crop index, F32 output");
-    if (r.size() != 2 || r[1] != 6 || r[0] <= 0 || r[0] > 65535 ||
+    // One block row per rotation on grid x (up to 2^31 - 1), so a slot block's rotations take one launch;
+    // the pixel blocks on grid y.
+    if (r.size() != 2 || r[1] != 6 || r[0] <= 0 || r[0] > std::numeric_limits<int>::max() ||
         image_h <= 0 || image_h != image_w || image_h % 2 != 0 || image_h > 4096 ||
-        o.size() != 2 || o[0] != r[0] || o[1] != 2 * c[0] || r[0] * o[1] > std::numeric_limits<int>::max())
+        o.size() != 2 || o[0] != r[0] || o[1] != 2 * c[0] || (c[0] + BLOCK_SIZE - 1) / BLOCK_SIZE > 65535)
         return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: invalid geometry");
     std::shared_ptr<CapacityRelionHalfTextureF32> owner;
     {
