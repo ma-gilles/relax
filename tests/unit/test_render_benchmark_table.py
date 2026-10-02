@@ -128,12 +128,12 @@ def test_one_table_with_workflow_subheaders_in_order():
     """The results page is one table; rows sit under bold workflow subheaders (EM K=1, Class3D, VDAM K=1, VDAM K>1,
     Cryo-ET)."""
     table = load_and_validate(DEFAULT_JSON)
-    rendered = render_markdown(table)
+    rendered = render_markdown(table).split("## Feature checks")[0]
     assert rendered.count(TABLE_HEADER[0]) == 1
     titles = ["**EM auto-refine (K=1)**", "**Class3D (K>1)**", "**VDAM (K=1)**", "**VDAM (K>1)**", "**Cryo-ET**"]
     positions = [rendered.index(title) for title in titles]
     assert positions == sorted(positions)
-    for row in (r for r in table["rows"] if r.get("benchmark", True)):
+    for row in (r for r in table["rows"] if r.get("benchmark", True) and r["section"] != "feature_checks"):
         at = rendered.index(f"#{row['id']})")
         if row.get("table") == "cryoet":
             title = "**Cryo-ET**"
@@ -332,4 +332,40 @@ def test_row_tie_tolerance_needs_evidence_and_only_widens_its_row(tmp_path):
     row["tie_tolerance"] = {"value": 1e-3, "evidence": "x.json", "decision": "user"}
     path.write_text(json.dumps(table))
     with pytest.raises(ValueError, match="tie_tolerance"):
+        load_and_validate(path)
+
+
+@pytest.mark.unit
+def test_feature_checks_render_in_their_own_section_by_flag_only(tmp_path):
+    """Feature-check rows (section feature_checks, user 2026-10-02) render after the headline table in their own section
+    whose intro lists each row's reference, and on the provenance page; the headline 10k rule is unchanged."""
+    table = load_and_validate(DEFAULT_JSON)
+    results, provenance = render_markdown(table), render_provenance(table)
+    headline, features_page = results.split("## Feature checks")
+    features = [r for r in table["rows"] if r["section"] == "feature_checks"]
+    assert any(r["id"] == "multioptics_s3b_10k_autorefine" for r in features)
+    assert features_page.count(TABLE_HEADER[0]) == 1
+    for row in features:
+        assert f"#{row['id']})" not in headline and f"#{row['id']})" in features_page
+        assert f"- **{row.get('label', row['dataset'])}**: {row['feature_reference']}" in features_page
+        assert '<a id="' + row["id"] + '"></a>' in provenance.split("## Feature checks")[1]
+    raw = json.loads(DEFAULT_JSON.read_text())
+    row = next(r for r in raw["rows"] if r["section"] == "feature_checks")
+    del row["feature_reference"]
+    path = tmp_path / "table.json"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="feature_reference"):
+        load_and_validate(path)
+    raw = json.loads(DEFAULT_JSON.read_text())
+    row = next(r for r in raw["rows"] if r["section"] == "feature_checks")
+    row["benchmark"] = True
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="not a headline benchmark"):
+        load_and_validate(path)
+    raw = json.loads(DEFAULT_JSON.read_text())
+    row = next(r for r in raw["rows"] if r["section"] == "feature_checks")
+    row["section"] = "synthetic"
+    row.pop("feature_reference")
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="debug fixture"):
         load_and_validate(path)

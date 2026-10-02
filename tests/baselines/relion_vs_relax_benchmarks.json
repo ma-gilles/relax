@@ -9008,7 +9008,7 @@
   },
   {
    "id": "multioptics_s3b_10k_autorefine",
-   "section": "synthetic",
+   "section": "feature_checks",
    "dataset": "S3b multi-optics simulation (two optics groups: 4.25 Å/128 px at 300 kV, 5.44 Å/112 px at 200 kV)",
    "label": "S3b multi-optics (feature)",
    "empiar_id": null,
@@ -9072,7 +9072,7 @@
     "timing_controlled": true
    },
    "notes": [
-    "Multi-optics feature row (onengine, 2026-09-29/30): the S3b simulation (recovar relion_spa, 10,000 particles, two optics groups on different pixel sizes and boxes) run through relax's default K=1 command, --no-firstiter_cc, against the matching RELION command; map gate PASS, masked GT FSC-AUC 0.9950 vs RELION 0.9946, 0.51x (400 s vs 784 s). Kept off the page by the 10k particle rule."
+    "Multi-optics feature row (onengine, 2026-09-29/30): the S3b simulation (recovar relion_spa, 10,000 particles, two optics groups on different pixel sizes and boxes) run through relax's default K=1 command, --no-firstiter_cc, against the matching RELION command; map gate PASS, masked GT FSC-AUC 0.9950 vs RELION 0.9946, 0.51x (400 s vs 784 s). Moved to the Feature checks section (user, 2026-10-02)."
    ],
    "null_reasons": {
     "relion.resolution_A": "see onengine's score (scorecard band not extracted)",
@@ -9109,8 +9109,252 @@
    "gt_band_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/k1/pdb_k1_100k/scores/gt_band.json",
    "quality_pass": true,
    "quality_reason": "map gate met vs 2 of 2 RELION runs; masked GT 0.9950 vs RELION 0.9946",
-   "benchmark": false,
-   "benchmark_note": "multi-optics feature row: 10,000 particles, at the page's 10k cut, so it stays in the JSON (team-lead 2026-09-30)"
+   "feature_reference": "several optics groups (pixel sizes and boxes) in the default K=1 auto-refine: RELION 5.0.1 + MPI scale-sum patch, relion_refine_mpi 3 ranks x 4 threads on one H100, same job as relax (accuracy and wall)"
+  },
+  {
+   "id": "optics_mag_k2_10k256_class3d_25it",
+   "section": "feature_checks",
+   "dataset": "optics_mag_k2_10k256 (synth_pdb_k2_50k256_snr05 particles re-imaged with anisotropic magnification, one optics group, MagMat [[1.015, 0.004], [0.004, 0.990]])",
+   "label": "optics_mag_k2_10k256 (feature)",
+   "empiar_id": null,
+   "particles": 10000,
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 2,
+   "workflow": "Class3D K=2 with anisotropic magnification (25 iterations, --firstiter_cc, two initial references, seeds 42/29/53/61/67)",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "stock RELION 5.0.1 f2c1a38 built for sm_90 (relion_stock_sm90_20261001), relion_refine --j 12 --gpu 0 (non-MPI), one H100, for the wall; accuracy reference: stock RELION 5.0.1 f2c1a38 CPU build (relion_clean_f2c1a384/build_clean_pinned), relion_refine --j 32, no --gpu, non-MPI (the CPU path applies applyScaleDifference, relax#12); seed 42 run twice (bit-identical)",
+    "resolution_A": null,
+    "resolution_definition": "engine_current_resolution",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": null,
+    "wall_definition": "arm-script wall (WALL.json) of relion_refine, cold, same 2-GPU job as relax",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 25,
+    "jobs": [],
+    "masked_band_auc": null,
+    "quality_reference_jobs": [
+     "14824531",
+     "14824532",
+     "14835481",
+     "14835482",
+     "14852025",
+     "14852026"
+    ]
+   },
+   "relax": {
+    "source_sha": "a7683d504b7d6e795f6a2826f3b16e945fcfdfca",
+    "source_repo": "relax main a7683d50 for the wall (frozen candidate newrows_20261002/cand_a7683d5); accuracy seeds on bindw's cand_460ff32 (main fd64ead + the K>1 magnification commit that landed as 0b0b238, relax/classification identical)",
+    "resolution_A": null,
+    "resolution_definition": "engine_current_resolution",
+    "masked_resolution_A": null,
+    "wall_s": null,
+    "wall_definition": "arm-script wall (WALL.json) of relax Class3D end to end, empty JAX cache (cold), same 2-GPU job as RELION",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 25,
+    "jobs": [],
+    "masked_band_auc": null,
+    "quality_jobs": [
+     "14835479",
+     "14835480",
+     "14852027"
+    ]
+   },
+   "gt": {
+    "metric": "mean per-class GT FSC-AUC (plain mean over the 2 GT classes), masked with the frozen mask synth_pdb_k2_50k256_snr05_c1 (classes matched to GT by Hungarian on unmasked AUC; tools/score_class3d.py); RELION reference = stock RELION 5.0.1 CPU",
+    "relion": 0.211077,
+    "relax": 0.209362,
+    "relion_band": [
+     0.205033,
+     0.211092
+    ],
+    "relax_per_seed": {
+     "29": 0.209362,
+     "42": 0.206533,
+     "53": 0.211691,
+     "61": 0.210088,
+     "67": 0.208088
+    },
+    "relion_per_seed": {
+     "29": [
+      0.211077
+     ],
+     "42": [
+      0.211092,
+      0.211092
+     ],
+     "53": [
+      0.210008
+     ],
+     "61": [
+      0.205033
+     ],
+     "67": [
+      0.20525
+     ]
+    },
+    "relax_runs_per_seed": {
+     "29": [
+      0.209362,
+      0.209036
+     ],
+     "42": [
+      0.206533,
+      0.207609,
+      0.209553
+     ],
+     "53": [
+      0.211691,
+      0.211337
+     ],
+     "61": [
+      0.210088
+     ],
+     "67": [
+      0.208088
+     ]
+    },
+    "class_accuracy_relax_per_seed": {
+     "29": [
+      0.8379,
+      0.8368
+     ],
+     "42": [
+      0.8371,
+      0.8335,
+      0.8366
+     ],
+     "53": [
+      0.8431,
+      0.8434
+     ],
+     "61": [
+      0.8411
+     ],
+     "67": [
+      0.8383
+     ]
+    },
+    "class_accuracy_relion_per_seed": {
+     "29": [
+      0.8359
+     ],
+     "42": [
+      0.8455,
+      0.8455
+     ],
+     "53": [
+      0.8395
+     ],
+     "61": [
+      0.8342
+     ],
+     "67": [
+      0.8371
+     ]
+    },
+    "unmasked_relax_per_seed": {
+     "29": [
+      0.204257,
+      0.203855
+     ],
+     "42": [
+      0.201666,
+      0.202424,
+      0.204487
+     ],
+     "53": [
+      0.206855,
+      0.206132
+     ],
+     "61": [
+      0.20499
+     ],
+     "67": [
+      0.203038
+     ]
+    },
+    "unmasked_relion_per_seed": {
+     "29": [
+      0.206136
+     ],
+     "42": [
+      0.206078,
+      0.206078
+     ],
+     "53": [
+      0.205103
+     ],
+     "61": [
+      0.199739
+     ],
+     "67": [
+      0.199953
+     ]
+    }
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": null,
+   "matched": "no",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Class3D K=2 magnification feature row (bindw, relax#12; team-lead 2026-10-02): relax accepts an anisotropic magnification matrix for K>1 (landed 0b0b238). Accuracy from bindw's five-seed set against stock RELION CPU (its GPU path skips applyScaleDifference, so it is not the accuracy reference); bindw's arms ran four to a node, so their walls are not used.",
+    "relax command: class3d --n_classes 2 --max_iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --init_resolution 60 --tau2_fudge 4 --particle_diameter_ang 380 --firstiter_cc --apply-initial-lowpass --ref_star reference_init_classes_relion.star --seed S; RELION: relion_refine --K 2 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --pool 3 --dont_combine_weights_via_disc --random_seed S.",
+    "seed 29: mean masked GT FSC-AUC relax 0.209362/0.209036 / RELION CPU 0.211077; class accuracy 0.8379/0.8368 vs 0.8359",
+    "seed 42: mean masked GT FSC-AUC relax 0.206533/0.207609/0.209553 / RELION CPU 0.211092/0.211092; class accuracy 0.8371/0.8335/0.8366 vs 0.8455/0.8455",
+    "seed 53: mean masked GT FSC-AUC relax 0.211691/0.211337 / RELION CPU 0.210008; class accuracy 0.8431/0.8434 vs 0.8395",
+    "seed 61: mean masked GT FSC-AUC relax 0.210088 / RELION CPU 0.205033; class accuracy 0.8411 vs 0.8342",
+    "seed 67: mean masked GT FSC-AUC relax 0.208088 / RELION CPU 0.205250; class accuracy 0.8383 vs 0.8371"
+   ],
+   "null_reasons": {
+    "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "relion.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "relax.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "relax.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
+    "cross_engine_masked_band_auc": "Class3D has no gold-standard half maps; no scorecard-band cross-engine value",
+    "relax.wall_s": "dedicated cold wall pair pending (team-lead 2026-10-02)",
+    "relax.resolution_A": "taken from the wall pair, pending",
+    "relion.wall_s": "dedicated cold wall pair pending (team-lead 2026-10-02)",
+    "relion.resolution_A": "taken from the wall pair, pending",
+    "time_ratio_relax_over_relion": "pending: dedicated cold pair relax + stock GPU RELION non-MPI in one 2-GPU job (job 14868266)",
+    "cross_engine": "relax-vs-RELION map FSC-AUC not computed for this feature row"
+   },
+   "mask": {
+    "dataset": "synth_pdb_k2_50k256_snr05_c1",
+    "sha256": "845d54f8877884441940a2e48aa19edc0ab248821ebc913a2f4288aa6dc2c786"
+   },
+   "evidence": {
+    "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag"
+    ],
+    "score_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/score_seeds.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/score_seeds3.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/score_seeds2_relax.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/score_cpu.json"
+    ],
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_mag_k2_10k256_20260930",
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newrows_20261002/tools/c3d_feature_row.py",
+    "spec": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newrows_20261002/specs/mag.json"
+   },
+   "date": "2026-10-02",
+   "quality_pass": true,
+   "quality_reason": "mean masked GT FSC-AUC vs stock RELION CPU: worst s29 −0.0017 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside or above across-seed band",
+   "feature_reference": "anisotropic magnification in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips applyScaleDifference, relax#12) for accuracy, 5 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (dedicated cold pair, seed 42)"
   }
  ],
  "initial_model_intro": [

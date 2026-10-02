@@ -33,6 +33,11 @@ against a reference and against each other. The resolution cells are the FSC 0.5
 against that reference (definition ``IM_RESOLUTION``), Masked X-AUC is the masked
 relax-vs-RELION FSC-AUC, and the other FSC-AUCs go to the row note and the
 per-run comparison section (``render_initialmodel_comparisons``).
+
+Rows with ``"section": "feature_checks"`` are feature-qualification checks (user, 2026-10-02): small fixtures that
+qualify one relax feature against the RELION configuration that handles it correctly. They render in their own
+"Feature checks" section after the headline table and on the provenance page, outside the headline benchmarks and
+their 10k-particle rule; each carries ``feature_reference``, the one-line reference the section intro lists.
 """
 
 import argparse
@@ -59,6 +64,13 @@ ENGINE_FIELDS = (
 ROW_FIELDS = ("gt", "cross_engine", "cross_engine_masked_band_auc", "time_ratio_relax_over_relion", "mask")
 MASKED_DEFINITION = "relion_postprocess_masked_frozen"
 SECTIONS = (("real", "Real data"), ("synthetic", "Synthetic data"))
+FEATURE_SECTION = "feature_checks"
+FEATURE_TITLE = "Feature checks"
+FEATURE_INTRO = (
+    "Feature-qualification checks, separate from the headline benchmarks above (whose 10k-particle rule is unchanged):"
+    " small synthetic fixtures (up to 10k particles) that qualify one relax feature against the RELION configuration that"
+    " handles that feature correctly. Status marks and the multi-seed rule read as above; each row's accuracy reference:"
+)
 IM_SECTIONS = (("real", "InitialModel (VDAM): real data"), ("synthetic", "InitialModel (VDAM): synthetic data"))
 IM_ENGINE_FIELDS = ("wall_s", "gpu_model", "gpu_count", "iterations")
 IM_ROW_FIELDS = ("time_ratio_relax_over_relion", "mask")
@@ -100,6 +112,7 @@ STATUS_LEGEND = (
     " provenance note). The page lists full-size"
     " datasets only: single-particle and VDAM rows need more than 10k particles (smaller fixtures are for testing and"
     " debugging and stay in the JSON with benchmark: false); cryo-ET rows count from 1k particles (about 40 tilts each)."
+    " Feature-qualification checks on small fixtures have their own section, Feature checks, after the table."
 )
 # One-line legends on the results page; the full definitions render on the provenance page.
 LETTER_LEGEND = {
@@ -157,7 +170,16 @@ def load_and_validate(path, registry=DEFAULT_REGISTRY):
 
 def _validate_page_scope(row):
     """Single-particle and VDAM rows with at most 10k particles are debug fixtures (user, 2026-09-27): they carry
-    benchmark: false and a benchmark_note, and neither page renders them. Cryo-ET rows count from 1k particles."""
+    benchmark: false and a benchmark_note, and neither page renders them. Cryo-ET rows count from 1k particles.
+    Feature-check rows (section feature_checks) render in their own section instead, by that explicit flag only: they
+    carry a one-line feature_reference and no benchmark flag."""
+    if _is_feature(row):
+        ref = row.get("feature_reference")
+        if not ref or "\n" in ref:
+            raise ValueError(f"{row['id']}: a feature-check row needs a one-line feature_reference")
+        if "benchmark" in row:
+            raise ValueError(f"{row['id']}: a feature-check row is not a headline benchmark; drop its benchmark flag")
+        return
     small = row.get("table") != "cryoet" and int(row.get("particles") or 0) <= DEBUG_MAX_PARTICLES
     flag = row.get("benchmark", True)
     if flag not in (True, False):
@@ -188,10 +210,14 @@ def _is_initialmodel(row):
     return row.get("table") == "initialmodel"
 
 
+def _is_feature(row):
+    return row.get("section") == FEATURE_SECTION
+
+
 def _validate_initialmodel(row, masks):
     """InitialModel rows: aligned-map FSC-AUCs with a reason for every missing value."""
     rid = row["id"]
-    if row["section"] not in dict(IM_SECTIONS):
+    if row["section"] not in dict(IM_SECTIONS) and not _is_feature(row):
         raise ValueError(f"{rid}: unknown section {row['section']!r}")
     if row["matched"] not in MATCHED:
         raise ValueError(f"{rid}: matched must be one of {MATCHED}")
@@ -254,7 +280,7 @@ def _validate_per_reference(row):
 
 def _validate_row(row, definitions):
     rid = row["id"]
-    if row["section"] not in dict(SECTIONS):
+    if row["section"] not in dict(SECTIONS) and not _is_feature(row):
         raise ValueError(f"{rid}: unknown section {row['section']!r}")
     if row["matched"] not in MATCHED:
         raise ValueError(f"{rid}: matched must be one of {MATCHED}")
@@ -312,17 +338,35 @@ def render_markdown(table):
         "",
         *TABLE_HEADER,
     ]
-    for key, title in CATEGORIES:
-        rows = [row for row in _page_rows(table) if _category(row) == key]
-        if rows:
-            lines.append(f"| | **{title}** | | | | | | | | |")
-            lines += [_line(row, letters) for row in rows]
+    lines += _grouped_lines(_page_rows(table), letters)
+    features = _feature_rows(table)
+    if features:
+        lines += ["", f"## {FEATURE_TITLE}", "", FEATURE_INTRO, ""]
+        lines += [f"- **{row.get('label', row['dataset'])}**: {row['feature_reference']}" for row in features]
+        lines += ["", *TABLE_HEADER, *_grouped_lines(features, letters)]
     return "\n".join(lines) + "\n"
 
 
+def _grouped_lines(rows, letters):
+    """Table lines of ``rows`` under bold workflow subheaders, in CATEGORIES order."""
+    lines = []
+    for key, title in CATEGORIES:
+        group = [row for row in rows if _category(row) == key]
+        if group:
+            lines.append(f"| | **{title}** | | | | | | | | |")
+            lines += [_line(row, letters) for row in group]
+    return lines
+
+
 def _page_rows(table):
-    """Rows rendered on both pages; debug fixtures (benchmark: false) stay in the JSON only."""
-    return [row for row in table["rows"] if row.get("benchmark", True)]
+    """Headline rows rendered on both pages; debug fixtures (benchmark: false) stay in the JSON only and feature checks
+    render in their own section (``_feature_rows``)."""
+    return [row for row in table["rows"] if row.get("benchmark", True) and not _is_feature(row)]
+
+
+def _feature_rows(table):
+    """Feature-check rows (section feature_checks), rendered after the headline table and on the provenance page."""
+    return [row for row in table["rows"] if _is_feature(row)]
 
 
 def _category(row):
@@ -496,6 +540,7 @@ def render_provenance(table):
         for s, title in SECTIONS
     ]
     groups += [(title, [r for r in im_rows if r["section"] == s]) for s, title in IM_SECTIONS]
+    groups.append((FEATURE_TITLE, _feature_rows(table)))
     for title, rows in groups:
         if not rows:
             continue
