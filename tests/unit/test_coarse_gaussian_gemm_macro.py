@@ -2699,3 +2699,101 @@ def test_coarse_gaussian_gemm_cached_block_rows_fit_and_balance():
     assert significance._coarse_gaussian_gemm_cached_block_rows(
         4_608, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
     ) == 4_608
+
+
+@pytest.mark.parametrize("exact_weight_order", [False, True])
+def test_coarse_gemm_pass1_batch_is_the_per_class_block_loop(exact_weight_order):
+    """The one-program pass 1 equals class-then-block GEMM scores, priors and running reductions.
+
+    Three classes of five cached rotations in blocks of two (a padded tail block), two of
+    three images live: the support values keep the class-major, rotation, translation
+    layout (pre-prior with ``exact_weight_order``), and the logsumexps, the best pose and
+    class, and each class's best pose are those of the scores with every prior added.
+    """
+
+    n_classes, n_rot, block, n_images, n_trans, n_pixels = 3, 5, 2, 3, 2, 7
+    rng = np.random.default_rng(20261002)
+    cache = jnp.asarray(
+        (rng.normal(size=(n_classes, n_rot, n_pixels)) + 1j * rng.normal(size=(n_classes, n_rot, n_pixels))).astype(
+            np.complex64
+        )
+    )
+    shifted = jnp.asarray(
+        (rng.normal(size=(n_images, n_trans, n_pixels)) + 1j * rng.normal(size=(n_images, n_trans, n_pixels))).astype(
+            np.complex64
+        )
+    )
+    weight = jnp.asarray(rng.uniform(0.1, 1.0, size=(n_images, n_pixels)).astype(np.float32))
+    initial = jnp.asarray(rng.uniform(0.0, 2.0, size=n_images).astype(np.float32))
+    class_prior = rng.normal(size=n_classes).astype(np.float32)
+    rotation_prior = np.pad(rng.normal(size=(n_classes, n_rot)).astype(np.float32), ((0, 0), (0, 1)))
+    translation_prior = jnp.asarray(rng.normal(size=(n_images, n_trans)).astype(np.float32))
+    prior_terms = tuple(
+        (
+            jnp.asarray(class_prior[k]),
+            tuple(jnp.asarray(rotation_prior[k, r0 : r0 + block]) for r0 in range(0, n_rot + 1, block)),
+        )
+        for k in range(n_classes)
+    )
+    constants = (
+        jnp.full(n_images, -jnp.inf, dtype=jnp.float32),
+        jnp.zeros(n_images, dtype=jnp.float32),
+        jnp.zeros(n_images, dtype=jnp.int32),
+    )
+    values, raw_max, (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_pose) = (
+        significance._coarse_gemm_pass1_batch(
+            cache,
+            shifted,
+            weight,
+            initial,
+            2,
+            prior_terms,
+            translation_prior,
+            constants,
+            n_rot=n_rot,
+            rotation_block_size=block,
+            n_trans=n_trans,
+            image_shape=(4, 4),
+            volume_shape=(4, 4, 4),
+            float64=False,
+            exact_weight_order=exact_weight_order,
+            return_class_best=True,
+        )
+    )
+
+    # Reference: every class's whole score table from the public GEMM scorer.
+    raw = np.stack(
+        [
+            np.asarray(
+                scoring._relion_coarse_gaussian_gemm_scores(
+                    cache[k], jnp.abs(cache[k]) ** 2, shifted, weight, initial, 2,
+                    image_shape=(4, 4), volume_shape=(4, 4, 4),
+                )
+            )
+            for k in range(n_classes)
+        ],
+        axis=1,
+    )  # [B, K, R, T]
+    with_prior = (
+        raw
+        + class_prior[None, :, None, None]
+        + rotation_prior[None, :, :n_rot, None]
+        + np.asarray(translation_prior)[:, None, None, :]
+    )
+    expected_values = (raw if exact_weight_order else with_prior).reshape(n_images, -1)
+    assert_matches(np.asarray(values), expected_values)
+    assert_matches(np.asarray(raw_max), raw.reshape(n_images, -1).max(axis=1))
+    flat = with_prior.astype(np.float64).reshape(n_images, n_classes, -1)
+    log_z = np.log(np.exp(flat - flat.max(axis=(1, 2), keepdims=True)).sum(axis=(1, 2))) + flat.max(axis=(1, 2))
+    assert_matches(np.asarray(global_max) + np.log(np.asarray(global_sum)), log_z, rtol=1e-6)
+    for k in range(n_classes):
+        class_log_z = np.log(np.exp(flat[:, k] - flat[:, k].max(axis=1, keepdims=True)).sum(axis=1)) + flat[:, k].max(
+            axis=1
+        )
+        assert_matches(np.asarray(class_max[k]) + np.log(np.asarray(class_sum[k])), class_log_z, rtol=1e-6)
+        assert_matches(np.asarray(class_best_pose[k]), flat[:, k].argmax(axis=1))
+        assert_matches(np.asarray(class_best[k]), flat[:, k].max(axis=1))
+    best_score, best_pose, best_class = (np.asarray(x) for x in best)
+    assert_matches(best_class, flat.reshape(n_images, -1).argmax(axis=1) // (n_rot * n_trans))
+    assert_matches(best_pose, flat.reshape(n_images, -1).argmax(axis=1) % (n_rot * n_trans))
+    assert_matches(best_score, flat.reshape(n_images, -1).max(axis=1))
