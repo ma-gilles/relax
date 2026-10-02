@@ -237,10 +237,29 @@ labeled diagnostic only.
   | Magnification | refused | 0.208381 | 0.213430, 0.215135 | 0.214712, 0.214480 | 0.8373 / 0.8471-0.8543 |
 
   Beam tilt and even Zernike are inside the four-run band and 1.5e-4 and 8.6e-5 below the
-  double-accumulation pair. Magnification is 5.0e-3 below every RELION run: relax ties RELION
-  through iteration 10 and the gap grows with resolution (iteration 13 -1.5e-3, 19 -2.5e-3,
-  25 -6.2e-3) at the same current image size, so a frequency-dependent term of the magnified
-  model differs from RELION's. The K=1 provisional magnification result may be the same gap.
+  double-accumulation pair.
+
+  Magnification (K>1) is refused: FAIL against stock RELION CPU (2026-10-01). RELION's GPU
+  classification scores pass 1 without the optics group's magnification and scale difference
+  (predefined coarse projector plans, relax#12), so the GPU runs above are not the reference;
+  relax applies them in every pass, as RELION's CPU path and its GPU auto-refine do (relax K=1
+  auto-refine on this fixture equals RELION GPU K=1 in 100% of iteration-1 poses). Reference:
+  stock RELION 5.0.1 f2c1a38 on the CPU (no `--gpu`, `--j 32`, deterministic: `--j 24` gives the
+  same run bit for bit); relax cand_460ff32 (main fd64ead with magnification accepted), jobs
+  14835479, 14835480 (relax), 14824531, 14835481, 14835482 (RELION CPU); scores in
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/score_seeds.json`.
+
+  | Seed | relax (masked mean GT FSC-AUC) | RELION CPU | relax |
+  | --- | --- | --- | --- |
+  | 42 | 0.206533, 0.207609, 0.209553 (repeats) | 0.211092 | below, no overlap |
+  | 29 | 0.209362 | 0.211077 | below |
+  | 53 | 0.211691 | 0.210008 | above |
+
+  relax is below at two of three seeds. Iteration-1 poses: relax and RELION CPU agree for
+  98.6-98.9% of particles at each seed, against 99.24% for relax (and RELION GPU) vs RELION CPU
+  on the even Zernike fixture, where RELION CPU itself is 2.4-3.7e-3 below RELION GPU and relax
+  (0.210942 vs 0.213352-0.214689). Open: whether the extra iteration-1 disagreement is
+  numerics or a magnification term.
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
   (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer
