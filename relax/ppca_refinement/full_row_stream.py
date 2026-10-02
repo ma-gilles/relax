@@ -120,6 +120,9 @@ def _gemm(static):
 # Window pixels per GEMM row multiple on GPU streams: unaligned fp32 operands (2F = 3002 at
 # 10076) select cuBLAS's align1 kernels, about 4% slower on A100 (jobs/local_*/gemm_align).
 _GEMM_ALIGN = 4
+# (image, translation) columns per multiple on GPU streams: B T = 4350 at 10076 leaves the TF32
+# GEMMs on align1 tensor-core kernels, 1.7x slower on A100 than at 4352 (proto3/gemm_tf32_align.py).
+_SHIFT_ALIGN = 8
 
 
 class _StreamStatic(NamedTuple):
@@ -164,9 +167,9 @@ class _TileArrays(NamedTuple):
 
     coarse_mask: jax.Array  # (B, R_coarse + 1, T_coarse) bool significant coarse poses; last row False
     rows: jax.Array  # (capacity,) int32 sorted union of supported fine rows, padded with the sentinel R
-    Y1: jax.Array  # (2F, B * T) float32 [Re; Im] of the weighted shifted score images
+    Y1: jax.Array  # (2F, B * T) float32 [Re; Im] of the weighted shifted score images (GPU: B T padded)
     ctf2: jax.Array  # (F, B) float32 score CTF^2 / noise
-    Y1_recon: jax.Array  # (B * T, 2F) float32 [Re, Im] of the reconstruction images
+    Y1_recon: jax.Array  # (B * T, 2F) float32 [Re, Im] of the reconstruction images (GPU: B T padded)
     ctf2_recon: jax.Array  # (B, F) float32
     y_norm: jax.Array  # (B,)
 
@@ -474,10 +477,9 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
         with_products=True,
     )
     R, F = planar.shape[1], planar.shape[2] // 2
-    B = tile.y_norm.shape[0]
-    T = tile.Y1.shape[1] // B
-    inner = jnp.dot(planar.reshape(P * R, 2 * F), tile.Y1, precision=_gemm(static)).reshape(P, R, B, T)
-    gram = jnp.dot(products.reshape(-1, F), tile.ctf2, precision=_gemm(static)).reshape(-1, R, B)
+    # (P, R, B T padded): the epilogue reads each row's B T columns and ignores the padding.
+    inner = jnp.dot(planar.reshape(P * R, 2 * F), tile.Y1, precision=_gemm(static)).reshape(P, R, -1)
+    gram = jnp.dot(products.reshape(-1, F), tile.ctf2, precision=_gemm(static)).reshape(-1, R, tile.ctf2.shape[1])
     tables = (
         arrays.rotation_parent,
         arrays.rotation_log_prior,
@@ -556,7 +558,9 @@ def _second_moment_sums(gamma, mean, covariance):
 def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_size, moments):
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
     if static.cuda_kernels:
-        weights, sums, carry = _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size)
+        weights, sums, carry = _posterior_block_cuda(
+            carry, arrays, kept, posterior, start, static, block_size, tile.Y1_recon.shape[0]
+        )
     else:
         weights, sums, carry = _posterior_block(carry, arrays, kept, posterior, start, block_size)
     if not moments:
@@ -638,7 +642,7 @@ def _posterior_block(carry, arrays, kept, posterior, start, block_size):
     return weights, _second_moment_sums(gamma, mean, covariance), carry
 
 
-def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size):
+def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size, row_length):
     """:func:`_posterior_block` with the per-pose stage in relax's CUDA kernel.
 
     The kernel sums over translations per (rotation, image); the remaining reductions over
@@ -654,6 +658,7 @@ def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_s
         arrays.shift_squared,
         start,
         block_size=block_size,
+        row_length=row_length,
     )
     q = static.basis_size - 1
     covariance = jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0)
@@ -927,17 +932,20 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
     table[: rows.size] = rows
     unsupported = np.zeros((coarse.shape[0], 1, coarse.shape[2]), dtype=bool)
     Y1, ctf2, Y1_recon, ctf2_recon = batch.Y1_score, batch.ctf2_score, batch.Y1_recon, batch.ctf2_recon
+    shift_pad = 0
     if stream.static.cuda_kernels:
-        # Zero operands at the padding pixels of the GEMM window: they add exact zeros.
+        # Zero operands at the padding pixels of the GEMM window and the padding (image,
+        # translation) columns of the shift axis: they add exact zeros.
         pad = stream.arrays.gemm_window.shape[0] - ctf2.shape[1]
         Y1, Y1_recon = (jnp.pad(x, ((0, 0), (0, 0), (0, pad))) for x in (Y1, Y1_recon))
         ctf2, ctf2_recon = (jnp.pad(x, ((0, 0), (0, pad))) for x in (ctf2, ctf2_recon))
+        shift_pad = -(Y1.shape[0] * Y1.shape[1]) % _SHIFT_ALIGN
     tile = _TileArrays(
         coarse_mask=jnp.asarray(np.concatenate([coarse, unsupported], axis=1)),
         rows=jnp.asarray(table),
-        Y1=_real_imag(Y1).reshape(-1, 2 * ctf2.shape[1]).T,
+        Y1=jnp.pad(_real_imag(Y1).reshape(-1, 2 * ctf2.shape[1]).T, ((0, 0), (0, shift_pad))),
         ctf2=ctf2.T,
-        Y1_recon=_real_imag(Y1_recon).reshape(-1, 2 * ctf2_recon.shape[1]),
+        Y1_recon=jnp.pad(_real_imag(Y1_recon).reshape(-1, 2 * ctf2_recon.shape[1]), ((0, shift_pad), (0, 0))),
         ctf2_recon=ctf2_recon,
         y_norm=batch.y_norm,
     )

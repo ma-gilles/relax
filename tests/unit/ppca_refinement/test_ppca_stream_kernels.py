@@ -155,7 +155,7 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
     from relax.cuda.kernels import ppca_latent_epilogue_f32, ppca_posterior_prep_f32
 
     rng = np.random.default_rng(11 + q + T)
-    R, B, cap, start = 16, 6, 48, 16
+    R, B, cap, start, pad = 16, 6, 48, 16, 3
     inner, gram = _latent_problem(rng, q, R, B, T)
     rows, tables = _prior_tables(rng, R, B, T, n_rows=40)
     shift2 = rng.uniform(0.0, 20.0, T).astype(np.float32)
@@ -244,7 +244,8 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
         kept = frs._empty_kept(cap, B, T, q, jnp.float32)
         kept = frs._Kept(
             *ppca_latent_epilogue_f32(
-                jnp.asarray(inner, jnp.float32),
+                # The GEMM's padded shift axis: row (p, r) holds b T + t, then junk the kernel ignores.
+                jnp.asarray(np.concatenate([inner.reshape(P, R, B * T), np.full((P, R, pad), 7.0)], -1), jnp.float32),
                 jnp.asarray(gram, jnp.float32),
                 jnp.asarray(rows),
                 tuple(jnp.asarray(t) for t in tables),
@@ -266,8 +267,12 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
                 jnp.asarray(shift2),
                 jnp.int32(start),
                 block_size=R,
+                row_length=B * T + pad,
             )
         )
+    # Padding columns of the weights are zero (they meet zero rows of the RHS GEMM operand).
+    assert weights.shape == (P, R, B * T + pad) and np.all(weights[..., B * T :] == 0)
+    weights = weights[..., : B * T].reshape(P, R, B, T)
     rows_of = slice(start, start + R)
     # Rows outside the block keep their initial values.
     assert np.all(np.isneginf(epilogue.score[:start])) and np.all(np.isneginf(epilogue.score[start + R :]))

@@ -171,12 +171,13 @@ __device__ __forceinline__ int packed(int i, int j, int n) {  // np.triu_indices
 }
 
 // grid ceil(R * B / 4), 128 threads: warp w handles pair (r, b) = divmod(blockIdx.x * 4 + w, B).
-// inner (P, R, B, T); gram (K, R, B) packed upper over P; start (1,) device row offset of the block.
+// inner (P, R, ld): row (p, r) holds column b * T + t, padded to ld >= B * T (the GEMM's aligned
+// shift axis); gram (K, R, B) packed upper over P; start (1,) device row offset of the block.
 // score (cap, B, T), mean (Q, cap, B, T), cov (cap, B, tri(Q)), part_max / part_sum (cap, B),
 // part_arg (cap, B) are written at rows start .. start + R.
 template <int Q>
 __global__ void __launch_bounds__(128) latent_epilogue_kernel(
-    int R, int B, int T, int cap, const float* __restrict__ inner, const float* __restrict__ gram,
+    int R, int B, int T, int ld, int cap, const float* __restrict__ inner, const float* __restrict__ gram,
     PriorTables prior, const int* __restrict__ start_ptr, float* __restrict__ score, float* __restrict__ mean,
     float* __restrict__ cov, float* __restrict__ part_max, int* __restrict__ part_arg,
     float* __restrict__ part_sum) {
@@ -250,8 +251,8 @@ __global__ void __launch_bounds__(128) latent_epilogue_kernel(
     float best = -INFINITY;
     int best_t = T;
     for (int t = lane; t < T; t += 32) {
-        const long at = pair * T + t;
-        const long stride = RB * T;
+        const long at = (long)r * ld + (long)b * T + t;
+        const long stride = (long)R * ld;
         const float i0 = inner[at];
         const float rho = g00 - 2.f * i0;
         const float pose_prior =
@@ -305,12 +306,12 @@ __global__ void __launch_bounds__(128) latent_epilogue_kernel(
 // ---------------------------------------------------------------------------------------------
 
 // grid ceil(R * B / 4), 128 threads. Reads kept rows start .. start + R; center, logZ (B,);
-// shift2 (T,). weights (P, R, B, T): gamma, gamma E z_j. sums (K, R, B): sum_t gamma E[a_i a_j]
+// shift2 (T,). weights (P, R, ld): gamma, gamma E z_j at column b * T + t, zero up to ld >= B * T. sums (K, R, B): sum_t gamma E[a_i a_j]
 // for a = [1, z] packed upper. partial (2, R, B): -sum gamma log-gamma terms (pose entropy) and
 // sum gamma |shift|^2; count (R, B): poses with gamma > 1e-3.
 template <int Q>
 __global__ void __launch_bounds__(128) posterior_prep_kernel(
-    int R, int B, int T, int cap, const float* __restrict__ score, const float* __restrict__ mean,
+    int R, int B, int T, int ld, int cap, const float* __restrict__ score, const float* __restrict__ mean,
     const float* __restrict__ cov, const float* __restrict__ center, const float* __restrict__ logZ,
     const float* __restrict__ shift2, const int* __restrict__ start_ptr, float* __restrict__ weights,
     float* __restrict__ sums, float* __restrict__ partial, int* __restrict__ count) {
@@ -340,10 +341,10 @@ __global__ void __launch_bounds__(128) posterior_prep_kernel(
         float z[Q > 0 ? Q : 1];
 #pragma unroll
         for (int i = 0; i < Q; i++) z[i] = mean[((long)i * capB + out_pair) * T + t];
-        const long w = pair * T + t;
+        const long w = (long)(pair / B) * ld + (long)b * T + t;
         weights[w] = gamma;
 #pragma unroll
-        for (int i = 0; i < Q; i++) weights[(long)(i + 1) * RB * T + w] = gamma * z[i];
+        for (int i = 0; i < Q; i++) weights[(long)(i + 1) * R * ld + w] = gamma * z[i];
         int k = 0;
 #pragma unroll
         for (int i = 0; i < P; i++) {
@@ -465,24 +466,30 @@ cudaError_t dispatch_latent(int q, Args... args) {
 
 template <int Q>
 struct LaunchEpilogue {
-    static cudaError_t run(cudaStream_t stream, int R, int B, int T, int cap, const float* inner, const float* gram,
-                           PriorTables prior, const int* start, float* score, float* mean, float* cov,
-                           float* part_max, int* part_arg, float* part_sum) {
+    static cudaError_t run(cudaStream_t stream, int R, int B, int T, int ld, int cap, const float* inner,
+                           const float* gram, PriorTables prior, const int* start, float* score, float* mean,
+                           float* cov, float* part_max, int* part_arg, float* part_sum) {
         const long pairs = (long)R * B;
         latent_epilogue_kernel<Q><<<(unsigned)((pairs + 3) / 4), 128, 0, stream>>>(
-            R, B, T, cap, inner, gram, prior, start, score, mean, cov, part_max, part_arg, part_sum);
+            R, B, T, ld, cap, inner, gram, prior, start, score, mean, cov, part_max, part_arg, part_sum);
         return cudaGetLastError();
     }
 };
 
 template <int Q>
 struct LaunchPrep {
-    static cudaError_t run(cudaStream_t stream, int R, int B, int T, int cap, const float* score, const float* mean,
-                           const float* cov, const float* center, const float* logZ, const float* shift2,
-                           const int* start, float* weights, float* sums, float* partial, int* count) {
+    static cudaError_t run(cudaStream_t stream, int R, int B, int T, int ld, int cap, const float* score,
+                           const float* mean, const float* cov, const float* center, const float* logZ,
+                           const float* shift2, const int* start, float* weights, float* sums, float* partial,
+                           int* count) {
         const long pairs = (long)R * B;
+        cudaError_t err = cudaSuccess;
+        if (ld > (long)B * T)  // the padding columns multiply zero rows of the RHS GEMM operand: keep them zero
+            err = cudaMemset2DAsync(weights + (long)B * T, (size_t)ld * sizeof(float), 0,
+                                    (size_t)(ld - (long)B * T) * sizeof(float), (size_t)(Q + 1) * R, stream);
+        if (err != cudaSuccess) return err;
         posterior_prep_kernel<Q><<<(unsigned)((pairs + 3) / 4), 128, 0, stream>>>(
-            R, B, T, cap, score, mean, cov, center, logZ, shift2, start, weights, sums, partial, count);
+            R, B, T, ld, cap, score, mean, cov, center, logZ, shift2, start, weights, sums, partial, count);
         return cudaGetLastError();
     }
 };
@@ -512,11 +519,11 @@ ffi::Error PpcaLatentEpilogueF32Impl(cudaStream_t stream, ffi::AnyBuffer inner, 
     const auto nd = inner.dimensions(), gd = gram.dimensions(), sd = score->dimensions();
     const auto md = mean->dimensions(), cd = cov->dimensions(), xd = part_max->dimensions();
     const auto cm = coarse_mask.dimensions();
-    if (nd.size() != 4 || gd.size() != 3 || sd.size() != 3 || md.size() != 4 || cd.size() != 3 || xd.size() != 2 ||
+    if (nd.size() != 3 || gd.size() != 3 || sd.size() != 3 || md.size() != 4 || cd.size() != 3 || xd.size() != 2 ||
         cm.size() != 3)
         return ffi::Error::InvalidArgument("PpcaLatentEpilogueF32: operand rank mismatch");
-    const int64_t P = nd[0], R = nd[1], B = nd[2], T = nd[3], Q = P - 1, cap = sd[0];
-    if (Q > s::kMaxLatent || gd[0] != P * (P + 1) / 2 || gd[1] != R || gd[2] != B || sd[1] != B || sd[2] != T ||
+    const int64_t P = nd[0], R = nd[1], ld = nd[2], B = sd[1], T = sd[2], Q = P - 1, cap = sd[0];
+    if (Q > s::kMaxLatent || ld < B * T || gd[0] != P * (P + 1) / 2 || gd[1] != R || gd[2] != B || sd[1] != B || sd[2] != T ||
         md[0] != Q || md[1] != cap || md[2] != B || md[3] != T || cd[0] != cap || cd[1] != B ||
         cd[2] != Q * (Q + 1) / 2 || xd[0] != cap || xd[1] != B || rows.dimensions()[0] != R || cm[0] != B ||
         translation_parent.dimensions()[0] != T || translation_log_prior.dimensions()[0] != T)
@@ -529,7 +536,7 @@ ffi::Error PpcaLatentEpilogueF32Impl(cudaStream_t stream, ffi::AnyBuffer inner, 
                          static_cast<const float*>(translation_log_prior.untyped_data()),
                          static_cast<const bool*>(coarse_mask.untyped_data()), (int)cm[1], (int)cm[2]};
     cudaError_t err = s::dispatch_latent<s::LaunchEpilogue>(
-        (int)Q, stream, (int)R, (int)B, (int)T, (int)cap, static_cast<const float*>(inner.untyped_data()),
+        (int)Q, stream, (int)R, (int)B, (int)T, (int)ld, (int)cap, static_cast<const float*>(inner.untyped_data()),
         static_cast<const float*>(gram.untyped_data()), prior, static_cast<const int*>(start.untyped_data()),
         static_cast<float*>(score->untyped_data()), static_cast<float*>(mean->untyped_data()),
         static_cast<float*>(cov->untyped_data()), static_cast<float*>(part_max->untyped_data()),
@@ -541,7 +548,7 @@ ffi::Error PpcaLatentEpilogueF32Impl(cudaStream_t stream, ffi::AnyBuffer inner, 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaLatentEpilogueF32, PpcaLatentEpilogueF32Impl,
                               ffi::Ffi::Bind()
                                   .Ctx<ffi::PlatformStream<cudaStream_t>>()
-                                  .Arg<ffi::AnyBuffer>()   /* inner (P, R, B, T)            */
+                                  .Arg<ffi::AnyBuffer>()   /* inner (P, R, ld >= B T)       */
                                   .Arg<ffi::AnyBuffer>()   /* gram (K, R, B)                */
                                   .Arg<ffi::AnyBuffer>()   /* rows (R,)                     */
                                   .Arg<ffi::AnyBuffer>()   /* rotation parent (n + 1,)      */
@@ -577,16 +584,16 @@ ffi::Error PpcaPosteriorPrepF32Impl(cudaStream_t stream, int64_t block_size, ffi
         return ffi::Error::InvalidArgument("PpcaPosteriorPrepF32: operand dtype mismatch");
     const auto sd = score.dimensions(), md = mean.dimensions(), wd = weights->dimensions();
     const auto kd = sums->dimensions();
-    if (sd.size() != 3 || md.size() != 4 || wd.size() != 4 || kd.size() != 3)
+    if (sd.size() != 3 || md.size() != 4 || wd.size() != 3 || kd.size() != 3)
         return ffi::Error::InvalidArgument("PpcaPosteriorPrepF32: operand rank mismatch");
-    const int64_t cap = sd[0], B = sd[1], T = sd[2], Q = md[0], P = Q + 1, R = block_size;
-    if (Q > s::kMaxLatent || md[1] != cap || md[2] != B || md[3] != T || wd[0] != P || wd[1] != R || wd[2] != B ||
-        wd[3] != T || kd[0] != P * (P + 1) / 2 || kd[1] != R || kd[2] != B || center.dimensions()[0] != B ||
+    const int64_t cap = sd[0], B = sd[1], T = sd[2], Q = md[0], P = Q + 1, R = block_size, ld = wd[2];
+    if (Q > s::kMaxLatent || md[1] != cap || md[2] != B || md[3] != T || wd[0] != P || wd[1] != R ||
+        ld < B * T || kd[0] != P * (P + 1) / 2 || kd[1] != R || kd[2] != B || center.dimensions()[0] != B ||
         logZ.dimensions()[0] != B || shift2.dimensions()[0] != T)
         return ffi::Error::InvalidArgument("PpcaPosteriorPrepF32: shape mismatch (or latent rank above 16)");
     if (R == 0 || B == 0 || T == 0) return ffi::Error::Success();
     cudaError_t err = s::dispatch_latent<s::LaunchPrep>(
-        (int)Q, stream, (int)R, (int)B, (int)T, (int)cap, static_cast<const float*>(score.untyped_data()),
+        (int)Q, stream, (int)R, (int)B, (int)T, (int)ld, (int)cap, static_cast<const float*>(score.untyped_data()),
         static_cast<const float*>(mean.untyped_data()), static_cast<const float*>(cov.untyped_data()),
         static_cast<const float*>(center.untyped_data()), static_cast<const float*>(logZ.untyped_data()),
         static_cast<const float*>(shift2.untyped_data()), static_cast<const int*>(start.untyped_data()),
@@ -607,7 +614,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaPosteriorPrepF32, PpcaPosteriorPrepF32Impl,
                                   .Arg<ffi::AnyBuffer>()   /* centered logZ (B,)       */
                                   .Arg<ffi::AnyBuffer>()   /* shift^2 (T,)             */
                                   .Arg<ffi::AnyBuffer>()   /* start (1,)               */
-                                  .Ret<ffi::AnyBuffer>()   /* weights (P, R, B, T)     */
+                                  .Ret<ffi::AnyBuffer>()   /* weights (P, R, ld)       */
                                   .Ret<ffi::AnyBuffer>()   /* sums (K, R, B)           */
                                   .Ret<ffi::AnyBuffer>()   /* partial (2, R, B)        */
                                   .Ret<ffi::AnyBuffer>()); /* count (R, B)             */

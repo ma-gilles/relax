@@ -5408,7 +5408,8 @@ def ppca_window_project_f32(
 def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
     """Pass-1 pose scores, latent means and covariances of one rotation block, in place in ``kept``.
 
-    ``inner`` ``(P, R, B, T)`` holds ``Re<A_p, Y_bt>`` and ``gram`` ``(tri(P), R, B)`` the
+    ``inner`` ``(P, R, ld)`` holds ``Re<A_p, Y_bt>`` at column ``b T + t`` (``ld >= B T``: the
+    score GEMM's aligned shift axis; the padding is ignored) and ``gram`` ``(tri(P), R, B)`` the
     CTF/noise-weighted ``Re(conj(A_i) A_j)``; ``rows`` ``(R,)`` the block's fine rows and
     ``prior_tables`` ``(rotation_parent, rotation_log_prior, translation_parent,
     translation_log_prior, coarse_mask)`` the pose log-prior of
@@ -5441,11 +5442,13 @@ def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
 
 
 def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, centered_logZ, shift_squared, start,
-                            *, block_size: int):
+                            *, block_size: int, row_length: int | None = None):
     """Pass-2 posterior weights and moment sums of the kept rows ``start .. start + block_size``.
 
     With ``gamma = exp((score - center) - centered_logZ)`` per pose, returns the weights
-    ``(P, R, B, T)`` ``[gamma, gamma E z_1, ...]``, the packed upper translation sums
+    ``(P, R, row_length)`` ``[gamma, gamma E z_1, ...]`` at column ``b T + t``, zero in the
+    padding up to ``row_length`` (default ``B T``; the RHS GEMM's aligned shift axis), the packed
+    upper translation sums
     ``(tri(P), R, B)`` of ``gamma E[a_i a_j]`` for ``a = [1, z]``
     (:func:`relax.ppca_refinement.full_row_stream._second_moment_sums`), the partial diagnostics
     ``(2, R, B)`` (``-sum_t gamma log-gamma`` over ``gamma > 0`` and ``sum_t gamma |shift|^2``) and
@@ -5456,8 +5459,11 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
     cap, B, T = kept_score.shape
     q = kept_mean.shape[0]
     P, R = q + 1, int(block_size)
+    row_length = B * T if row_length is None else int(row_length)
+    if row_length < B * T:
+        raise ValueError("row_length must hold every (image, translation) column")
     out_types = (
-        jax.ShapeDtypeStruct((P, R, B, T), jnp.float32),
+        jax.ShapeDtypeStruct((P, R, row_length), jnp.float32),
         jax.ShapeDtypeStruct((P * (P + 1) // 2, R, B), jnp.float32),
         jax.ShapeDtypeStruct((2, R, B), jnp.float32),
         jax.ShapeDtypeStruct((R, B), jnp.int32),
