@@ -216,7 +216,7 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
                 dtype(0),
                 jnp.zeros((B,), jnp.int32),
             )
-            arrays = frs._StreamArrays(*([None] * 11))._replace(shift_squared=jnp.asarray(shift2, dtype))
+            arrays = frs._StreamArrays(**dict.fromkeys(frs._StreamArrays._fields))._replace(shift_squared=jnp.asarray(shift2, dtype))
             weights, sums, carry = frs._posterior_block(carry, arrays, kept, posterior, start, R)
             return {
                 "score": score,
