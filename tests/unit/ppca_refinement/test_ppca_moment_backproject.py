@@ -1,4 +1,4 @@
-"""Voxel-major CUDA moment backprojection against recovar's windowed adjoint (float64 reference)."""
+"""Fused CUDA PPCA residuals and moment backprojection against the XLA statistics and recovar's adjoint."""
 
 import numpy as np
 import pytest
@@ -9,9 +9,10 @@ import jax.numpy as jnp
 
 from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
 from relax.helpers.fourier_window import make_fourier_window_spec
+from relax.ppca_refinement.residual_statistics import residual_statistics_from_moment_images
 
 IMAGE_SHAPE, VOLUME_SHAPE = (32, 32), (32, 32, 32)
-HALF = 32 * 32 * 17
+N_HALF, HALF = 32 * 17, 32 * 32 * 17
 
 
 def _rotations(rng, n):
@@ -28,20 +29,32 @@ def _rotations(rng, n):
     ).astype(np.float32)
 
 
-def _recovar(images, indices, rotations, max_r, dtype):
-    return batch_adjoint_slice_volume_maybe_windowed(
-        images,
-        indices,
-        rotations,
-        jnp.zeros((images.shape[0], HALF), dtype),
-        IMAGE_SHAPE,
-        VOLUME_SHAPE,
-        "linear_interp",
-        True,
-        True,
-        use_window=True,
-        max_r=max_r,
-    )
+def _reference(lhs, rhs_parts, projections, indices, rotations, max_r, metric_trace):
+    """XLA residual statistics and recovar's windowed adjoint, in the dtype of the operands."""
+    F = indices.size
+    rhs = jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:])
+    residual, correction = residual_statistics_from_moment_images(rhs, lhs, projections[:, :, indices])
+    if metric_trace:
+        P = rhs.shape[0]
+        i, j = np.triu_indices(P)
+        lhs = jnp.sum(lhs[np.flatnonzero(i == j)], axis=0, keepdims=True)
+
+    def adjoint(images):
+        return batch_adjoint_slice_volume_maybe_windowed(
+            images,
+            indices,
+            rotations,
+            jnp.zeros((images.shape[0], HALF), images.dtype),
+            IMAGE_SHAPE,
+            VOLUME_SHAPE,
+            "linear_interp",
+            True,
+            True,
+            use_window=True,
+            max_r=max_r,
+        )
+
+    return np.asarray(adjoint(lhs)), np.asarray(adjoint(residual)), np.asarray(correction)
 
 
 def _relative_l2(actual, truth):
@@ -49,60 +62,74 @@ def _relative_l2(actual, truth):
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("n_real,n_complex", [(15, 5), (66, 11), (1, 5)])
-def test_moment_backprojection_matches_recovar_adjoint(n_real, n_complex, custom_cuda_lib, gpu_device, monkeypatch):
-    """Every channel is recovar's adjoint up to float32 summation order; groups of 32 lanes hold all channels.
+@pytest.mark.parametrize("P,metric_trace", [(5, False), (11, False), (5, True), (11, True)])
+def test_moment_scatter_matches_xla_statistics_and_recovar_adjoint(
+    P, metric_trace, custom_cuda_lib, gpu_device, monkeypatch
+):
+    """Each output against the float64 reference; error at most twice the float32 reference's own.
 
-    Both float32 results are compared with recovar's float64 adjoint of the same images: the
-    voxel-major kernel's relative L2 error may be at most twice recovar's own float32 error
-    (on one 512-rotation HP4 block the two measured 3.04e-6 and 3.05e-6).
+    The float32 reference is the XLA residual statistics and recovar's channel-major atomic
+    adjoint; on one 512-rotation HP4 block the backprojection errors of the two measured
+    3.04e-6 and 3.05e-6 against float64. Metric channels (all packed, or their trace), the
+    residual and the noise-power correction are checked; padding lanes stay zero.
     """
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda.kernels import ppca_moment_backproject_f32
+    from relax.cuda.kernels import ppca_moment_scatter_f32
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
     monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
-    spec = make_fourier_window_spec(IMAGE_SHAPE, 28, 32 * 17, square=False, include_recon_window=True)
+    spec = make_fourier_window_spec(IMAGE_SHAPE, 28, N_HALF, square=False, include_recon_window=True)
     rng = np.random.default_rng(5)
-    rotations = _rotations(rng, 48)
+    R, K = 48, P * (P + 1) // 2
+    rotations = _rotations(rng, R)
     indices = np.asarray(spec.recon_indices, np.int32)
     F = indices.size
-    real = rng.standard_normal((n_real, 48, F)).astype(np.float32)
-    complex_ = (rng.standard_normal((n_complex, 48, F)) + 1j * rng.standard_normal((n_complex, 48, F))).astype(
-        np.complex64
-    )
-    real[0, 3] = 0.0  # all-zero pixels of one channel and one whole rotation still scatter the others
+    lhs = rng.standard_normal((K, R, F)).astype(np.float32)
+    rhs_parts = rng.standard_normal((P, R, 2 * F)).astype(np.float32)
+    projections = (rng.standard_normal((P, R, N_HALF)) + 1j * rng.standard_normal((P, R, N_HALF))).astype(np.complex64)
+    lhs[:, 3] = 0.0  # one rotation of all-zero metric images still scatters its residual
     with jax.default_device(gpu_device):
-        out = np.asarray(
-            ppca_moment_backproject_f32(
-                jnp.asarray(real),
-                jnp.asarray(complex_),
-                jnp.asarray(indices),
-                jnp.asarray(rotations),
-                image_shape=IMAGE_SHAPE,
-                volume_shape=VOLUME_SHAPE,
-                max_r=spec.max_r,
-            )
+        moments, correction = ppca_moment_scatter_f32(
+            jnp.asarray(lhs),
+            jnp.asarray(rhs_parts),
+            jnp.asarray(projections),
+            jnp.asarray(indices),
+            jnp.asarray(rotations),
+            image_shape=IMAGE_SHAPE,
+            volume_shape=VOLUME_SHAPE,
+            max_r=spec.max_r,
+            metric_trace=metric_trace,
         )
-        reference32 = [np.asarray(_recovar(x, indices, rotations, spec.max_r, x.dtype)) for x in (real, complex_)]
+        moments, correction = np.asarray(moments), np.asarray(correction)
+        reference32 = _reference(
+            jnp.asarray(lhs),
+            jnp.asarray(rhs_parts),
+            jnp.asarray(projections),
+            indices,
+            rotations,
+            spec.max_r,
+            metric_trace,
+        )
         with jax.enable_x64(True):
-            reference64 = [
-                np.asarray(_recovar(x, indices, rotations.astype(np.float64), spec.max_r, dtype))
-                for x, dtype in (
-                    (real.astype(np.float64), jnp.float64),
-                    (complex_.astype(np.complex128), jnp.complex128),
-                )
-            ]
-    groups = -(-(n_real + 2 * n_complex) // 32)
-    assert out.shape == (groups, HALF, 32)
-    flat = np.transpose(out, (1, 0, 2)).reshape(HALF, groups * 32)
-    got_real = flat[:, :n_real].T
-    pairs = flat[:, n_real : n_real + 2 * n_complex].reshape(HALF, n_complex, 2)
-    got_complex = (pairs[..., 0] + 1j * pairs[..., 1]).T
-    assert np.all(flat[:, n_real + 2 * n_complex :] == 0.0)  # padding lanes stay zero
-    for got, ref32, ref64 in zip((got_real, got_complex), reference32, reference64, strict=True):
-        recovar_error = _relative_l2(ref32, ref64)
-        assert 0 < recovar_error < 1e-5
-        assert _relative_l2(got, ref64) <= 2 * recovar_error
+            reference64 = _reference(
+                jnp.asarray(lhs, jnp.float64),
+                jnp.asarray(rhs_parts, jnp.float64),
+                jnp.asarray(projections, jnp.complex128),
+                indices,
+                rotations.astype(np.float64),
+                spec.max_r,
+                metric_trace,
+            )
+    metric = 1 if metric_trace else K
+    groups = -(-(metric + 2 * P) // 32)
+    assert moments.shape == (groups, HALF, 32) and correction.shape == (F,)
+    flat = np.transpose(moments, (1, 0, 2)).reshape(HALF, groups * 32)
+    pairs = flat[:, metric : metric + 2 * P].reshape(HALF, P, 2)
+    got = (flat[:, :metric].T, (pairs[..., 0] + 1j * pairs[..., 1]).T, correction)
+    assert np.all(flat[:, metric + 2 * P :] == 0.0)
+    for value, ref32, ref64 in zip(got, reference32, reference64, strict=True):
+        reference_error = _relative_l2(ref32, ref64)
+        assert 0 < reference_error < 1e-5
+        assert _relative_l2(value, ref64) <= 2 * reference_error

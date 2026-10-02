@@ -1,18 +1,20 @@
-// PPCA M-step moment backprojection into a voxel-major accumulator.
+// PPCA M-step residuals and moment backprojection into a voxel-major accumulator.
 //
-// Scatters the windowed half-image moment images of one rotation block (real LHS channels and
-// complex residual channels) into a half volume, with the targets and weights of recovar's
+// For one rotation block of the streamed PPCA engine, forms the expected residual images
+// R_p - sum_q L_pq A_q and the noise-power correction from the LHS images L, RHS images R and
+// projections A (residual_statistics_from_moment_images), and scatters the metric channels and the
+// residual into a half volume with the targets and weights of recovar's
 // batch_backproject_indexed_kernel<float, 1, HALF_VOL, HALF_IMG> (linear interpolation,
 // RELION-centred half volume and half image, no x-fold, unit upsampling): every windowed
 // half-image pixel scatters trilinearly at its rotated frequency and, off the self-conjugate
 // columns, at its Hermitian partner; targets with kz < 0 fold to their Hermitian partner.
 //
-// The accumulator is (groups, V, 32): channel c lives in lane c % 32 of group c / 32 (the real
-// channels, then the real and imaginary parts of each complex channel). One warp handles 32
-// pixels of one rotation: each lane first expands its own pixel's targets, then for every pixel
-// the warp adds one channel per lane, so each target is one warp-wide atomic to one 128-byte voxel
-// row instead of one scattered atomic per channel. Only the float32 association order of each
-// voxel's sum differs from recovar's channel-major atomics.
+// The accumulator is (groups, V, 32): channel c lives in lane c % 32 of group c / 32 (the metric
+// channels, then the real and imaginary parts of each residual channel). One warp handles 32
+// pixels of one rotation: each lane first expands its own pixel's targets and channel values,
+// then for every pixel the warp adds one channel per lane, so each target is one warp-wide atomic
+// to one 128-byte voxel row instead of one scattered atomic per channel. Only float32 association
+// orders differ from the XLA residual statistics and recovar's channel-major atomics.
 #pragma once
 
 namespace ppca_moment_bp {
@@ -130,15 +132,25 @@ struct Collect {
     }
 };
 
-// grid: (ceil(n_pix / (32 kWarps)), n_rot). real (n_real, n_rot, n_pix); complex (n_cplx, n_rot, n_pix);
-// out (groups, V, 32), zero on entry.
-__global__ void __launch_bounds__(32 * kWarps) moment_backproject_kernel(
-    Geometry g, const float* __restrict__ rot, const int* __restrict__ pix_idx, const float* __restrict__ real_images,
-    const float2* __restrict__ cplx_images, int n_real, int n_cplx, float* __restrict__ out) {
+__device__ __forceinline__ int packed_index(int i, int j, int P) {  // np.triu_indices(P) order, i <= j
+    return i * P - (i * (i - 1)) / 2 + (j - i);
+}
+
+// grid: (ceil(F / (32 kWarps)), R). lhs (K, R, F) packed upper LHS images; rhs (P, R, 2F) [Re | Im] RHS
+// images; proj (P, R, n_half) projections on the whole half image (pix_idx windows them). Per pixel the
+// residual R_p - sum_q L_pq A_q and the noise-power correction
+// sum_pq L_pq Re(conj A_p A_q) - 2 sum_p Re(R_p conj A_p) are formed in registers; the correction is
+// summed over rotations into correction (F,), and the metric channels (the K packed LHS images, or their
+// trace) and the residual's real/imaginary parts are scattered into out (G, V, 32). out and correction
+// are zero on entry.
+__global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
+    Geometry g, const float* __restrict__ rot, const int* __restrict__ pix_idx, const float* __restrict__ lhs,
+    const float* __restrict__ rhs, const float2* __restrict__ proj, int P, int n_half, int metric_trace,
+    float* __restrict__ out, float* __restrict__ correction) {
+    extern __shared__ float s_value[];  // [kWarps][32][channels]
     __shared__ int s_offset[kWarps][32][kMaxTargets];
     __shared__ float s_weight[kWarps][32][kMaxTargets];
     __shared__ int s_count[kWarps][32];
-    __shared__ float s_value[kWarps][32][33];
     __shared__ float R[6];
     const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
     const int r = blockIdx.y;
@@ -146,37 +158,56 @@ __global__ void __launch_bounds__(32 * kWarps) moment_backproject_kernel(
     __syncthreads();
     const int base = (blockIdx.x * kWarps + warp) * 32;
     if (base >= g.n_pix) return;
-    const int p = base + lane;
+    const int f = base + lane;
+    const int K = P * (P + 1) / 2;
+    const int metric = metric_trace ? 1 : K;
+    const int channels = metric + 2 * P;
+    float* value = s_value + (warp * 32 + lane) * channels;
     Collect collect(g, s_offset[warp][lane], s_weight[warp][lane]);
-    if (p < g.n_pix) pixel_targets(g, R, pix_idx[p], collect);
-    s_count[warp][lane] = collect.n;
-    const int channels = n_real + 2 * n_cplx;
-    const long stride = (long)g.n_rot * g.n_pix;
-    const long at = (long)r * g.n_pix + p;
-    const long V = (long)g.N0 * g.N1 * g.N2_eff;
-    for (int group = 0; group * 32 < channels; group++) {
-        const int width = min(32, channels - group * 32);
-        // Channel values of the warp's pixels, one coalesced load per channel.
-        for (int k = 0; k < width; k++) {
-            const int c = group * 32 + k;
-            float v = 0.f;
-            if (p < g.n_pix) {
-                if (c < n_real) {
-                    v = real_images[c * stride + at];
-                } else {
-                    const float2 z = cplx_images[((c - n_real) >> 1) * stride + at];
-                    v = ((c - n_real) & 1) ? z.y : z.x;
-                }
+    if (f < g.n_pix) {
+        pixel_targets(g, R, pix_idx[f], collect);
+        const long F = g.n_pix;
+        const long at = (long)r * F + f;
+        const long lhs_stride = (long)g.n_rot * F;
+        const float* L = lhs + at;
+        const int pixel = pix_idx[f];
+        float trace = 0.f, power = 0.f, cross = 0.f;
+        for (int i = 0; i < P; i++) {
+            const float2 Ai = proj[((long)i * g.n_rot + r) * n_half + pixel];
+            const float Rre = rhs[((long)i * g.n_rot + r) * 2 * F + f];
+            const float Rim = rhs[((long)i * g.n_rot + r) * 2 * F + F + f];
+            float pre = 0.f, pim = 0.f;
+            for (int j = 0; j < P; j++) {
+                const float2 Aj = proj[((long)j * g.n_rot + r) * n_half + pixel];
+                const float Lij = L[packed_index(min(i, j), max(i, j), P) * lhs_stride];
+                pre += Lij * Aj.x;
+                pim += Lij * Aj.y;
+                if (j >= i) power += (j == i ? 1.f : 2.f) * Lij * (Ai.x * Aj.x + Ai.y * Aj.y);
             }
-            s_value[warp][lane][k] = v;
+            value[metric + 2 * i] = Rre - pre;
+            value[metric + 2 * i + 1] = Rim - pim;
+            cross += Rre * Ai.x + Rim * Ai.y;
+            const float Lii = L[packed_index(i, i, P) * lhs_stride];
+            trace += Lii;
         }
-        __syncwarp();
+        if (metric_trace) value[0] = trace;
+        else
+            for (int k = 0; k < K; k++) value[k] = L[k * lhs_stride];
+        atomicAdd(&correction[f], power - 2.f * cross);
+    } else {
+        for (int c = 0; c < channels; c++) value[c] = 0.f;
+    }
+    s_count[warp][lane] = collect.n;
+    __syncwarp();
+    const long V = (long)g.N0 * g.N1 * g.N2_eff;
+    const int first_imag = metric + 1;  // residual parts alternate re, im
+    for (int group = 0; group * 32 < channels; group++) {
         const int c = group * 32 + lane;
-        const bool active = lane < width;
-        const bool imag = active && c >= n_real && ((c - n_real) & 1);
+        const bool active = c < channels;
+        const bool imag = active && c >= metric && ((c - first_imag) & 1) == 0;
         float* vol = out + group * V * 32;
         for (int j = 0; j < 32; j++) {
-            const float v = active ? s_value[warp][j][lane] : 0.f;
+            const float v = active ? s_value[(warp * 32 + j) * channels + c] : 0.f;
             if (__all_sync(0xffffffffu, v == 0.f)) continue;  // adds nothing
             const int n = s_count[warp][j];
             for (int t = 0; t < n; t++) {
@@ -185,39 +216,44 @@ __global__ void __launch_bounds__(32 * kWarps) moment_backproject_kernel(
                 if (active) atomicAdd(&vol[(long)(o & 0x7fffffff) * 32 + lane], x);
             }
         }
-        __syncwarp();
     }
 }
 
 }  // namespace ppca_moment_bp
 
-ffi::Error PpcaMomentBackprojectF32Impl(cudaStream_t stream, int64_t image_h, int64_t image_w, int64_t full_image_w,
-                                        int64_t N0, int64_t N1, int64_t N2, int64_t max_r2_x4,
-                                        ffi::AnyBuffer real_images, ffi::AnyBuffer cplx_images,
-                                        ffi::AnyBuffer pixel_indices, ffi::AnyBuffer rot,
-                                        ffi::Result<ffi::AnyBuffer> out) {
+ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_t image_w, int64_t full_image_w,
+                                    int64_t N0, int64_t N1, int64_t N2, int64_t max_r2_x4, int64_t metric_trace,
+                                    ffi::AnyBuffer lhs, ffi::AnyBuffer rhs, ffi::AnyBuffer proj,
+                                    ffi::AnyBuffer pixel_indices, ffi::AnyBuffer rot,
+                                    ffi::Result<ffi::AnyBuffer> out, ffi::Result<ffi::AnyBuffer> correction) {
     namespace m = ppca_moment_bp;
-    if (real_images.element_type() != ffi::DataType::F32 || cplx_images.element_type() != ffi::DataType::C64 ||
-        pixel_indices.element_type() != ffi::DataType::S32 || rot.element_type() != ffi::DataType::F32 ||
-        out->element_type() != ffi::DataType::F32)
+    if (lhs.element_type() != ffi::DataType::F32 || rhs.element_type() != ffi::DataType::F32 ||
+        proj.element_type() != ffi::DataType::C64 || pixel_indices.element_type() != ffi::DataType::S32 ||
+        rot.element_type() != ffi::DataType::F32 || out->element_type() != ffi::DataType::F32 ||
+        correction->element_type() != ffi::DataType::F32)
         return ffi::Error::InvalidArgument(
-            "PpcaMomentBackprojectF32: expected F32 real images, C64 complex images, S32 indices, F32 rotations");
-    const auto rd = real_images.dimensions(), cd = cplx_images.dimensions(), pd = pixel_indices.dimensions();
-    const auto qd = rot.dimensions(), od = out->dimensions();
-    if (rd.size() != 3 || cd.size() != 3 || pd.size() != 1 || qd.size() != 2 || od.size() != 3 || qd[1] != 6 ||
-        rd[1] != qd[0] || cd[1] != qd[0] || rd[2] != pd[0] || cd[2] != pd[0] || od[2] != 32)
+            "PpcaMomentScatterF32: expected F32 lhs/rhs, C64 projections, S32 indices, F32 rotations and outputs");
+    const auto ld = lhs.dimensions(), rd = rhs.dimensions(), pd = proj.dimensions();
+    const auto id = pixel_indices.dimensions(), qd = rot.dimensions(), od = out->dimensions();
+    const auto cd = correction->dimensions();
+    if (ld.size() != 3 || rd.size() != 3 || pd.size() != 3 || id.size() != 1 || qd.size() != 2 || od.size() != 3 ||
+        cd.size() != 1)
+        return ffi::Error::InvalidArgument("PpcaMomentScatterF32: operand rank mismatch");
+    const int64_t P = rd[0], R = qd[0], F = id[0];
+    if (ld[0] != P * (P + 1) / 2 || ld[1] != R || ld[2] != F || rd[1] != R || rd[2] != 2 * F || pd[0] != P ||
+        pd[1] != R || qd[1] != 6 || od[2] != 32 || cd[0] != F)
         return ffi::Error::InvalidArgument(
-            "PpcaMomentBackprojectF32: expected real (C_r,R,F), complex (C_c,R,F), indices (F,), rotations (R,6), "
-            "out (G,V,32)");
-    const int64_t channels = rd[0] + 2 * cd[0];
+            "PpcaMomentScatterF32: expected lhs (tri(P),R,F), rhs (P,R,2F), proj (P,R,n_half), indices (F,), "
+            "rotations (R,6), out (G,V,32), correction (F,)");
+    const int64_t channels = (metric_trace ? 1 : P * (P + 1) / 2) + 2 * P;
     const int64_t V = N0 * N1 * (N2 / 2 + 1);
     if (od[0] != (channels + 31) / 32 || od[1] != V)
-        return ffi::Error::InvalidArgument("PpcaMomentBackprojectF32: output groups or volume size mismatch");
-    if (V * 32 >= (int64_t(1) << 31) || N0 * N1 * (N2 / 2 + 1) >= (int64_t(1) << 31))
-        return ffi::Error::InvalidArgument("PpcaMomentBackprojectF32: volume too large for 31-bit voxel offsets");
+        return ffi::Error::InvalidArgument("PpcaMomentScatterF32: output groups or volume size mismatch");
+    if (V >= (int64_t(1) << 31) / 32)
+        return ffi::Error::InvalidArgument("PpcaMomentScatterF32: volume too large for 31-bit voxel offsets");
     m::Geometry g;
-    g.n_rot = (int)qd[0];
-    g.n_pix = (int)pd[0];
+    g.n_rot = (int)R;
+    g.n_pix = (int)F;
     g.image_h = (int)image_h;
     g.image_w = (int)image_w;
     g.full_image_w = (int)full_image_w;
@@ -229,21 +265,26 @@ ffi::Error PpcaMomentBackprojectF32Impl(cudaStream_t stream, int64_t image_h, in
     g.c1 = (float)(N1 / 2);
     g.c2 = (float)(N2 / 2);
     g.max_r2 = max_r2_x4 >= 0 ? (float)max_r2_x4 / 4.f : -1.f;
+    const size_t smem = (size_t)m::kWarps * 32 * channels * sizeof(float);
     cudaError_t err = cudaMemsetAsync(out->untyped_data(), 0, od[0] * od[1] * od[2] * sizeof(float), stream);
-    if (err == cudaSuccess && g.n_rot > 0 && g.n_pix > 0 && channels > 0) {
+    if (err == cudaSuccess) err = cudaMemsetAsync(correction->untyped_data(), 0, F * sizeof(float), stream);
+    // The static target tables add to the per-pixel channel values: opt in whenever any is dynamic.
+    if (err == cudaSuccess)
+        err = cudaFuncSetAttribute(m::moment_scatter_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+    if (err == cudaSuccess && R > 0 && F > 0) {
         dim3 grid((g.n_pix + 32 * m::kWarps - 1) / (32 * m::kWarps), g.n_rot);
-        m::moment_backproject_kernel<<<grid, 32 * m::kWarps, 0, stream>>>(
+        m::moment_scatter_kernel<<<grid, 32 * m::kWarps, smem, stream>>>(
             g, static_cast<const float*>(rot.untyped_data()), static_cast<const int*>(pixel_indices.untyped_data()),
-            static_cast<const float*>(real_images.untyped_data()),
-            static_cast<const float2*>(cplx_images.untyped_data()), (int)rd[0], (int)cd[0],
-            static_cast<float*>(out->untyped_data()));
+            static_cast<const float*>(lhs.untyped_data()), static_cast<const float*>(rhs.untyped_data()),
+            static_cast<const float2*>(proj.untyped_data()), (int)P, (int)pd[2], (int)metric_trace,
+            static_cast<float*>(out->untyped_data()), static_cast<float*>(correction->untyped_data()));
         err = cudaGetLastError();
     }
     if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
     return ffi::Error::Success();
 }
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaMomentBackprojectF32, PpcaMomentBackprojectF32Impl,
+XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaMomentScatterF32, PpcaMomentScatterF32Impl,
                               ffi::Ffi::Bind()
                                   .Ctx<ffi::PlatformStream<cudaStream_t>>()
                                   .Attr<int64_t>("image_h")
@@ -253,8 +294,11 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaMomentBackprojectF32, PpcaMomentBackprojectF32
                                   .Attr<int64_t>("N1")
                                   .Attr<int64_t>("N2")
                                   .Attr<int64_t>("max_r2_x4")
-                                  .Arg<ffi::AnyBuffer>()   /* real images    */
-                                  .Arg<ffi::AnyBuffer>()   /* complex images */
-                                  .Arg<ffi::AnyBuffer>()   /* pixel indices  */
-                                  .Arg<ffi::AnyBuffer>()   /* rotations      */
-                                  .Ret<ffi::AnyBuffer>()); /* (G, V, 32)     */
+                                  .Attr<int64_t>("metric_trace")
+                                  .Arg<ffi::AnyBuffer>()   /* lhs (tri(P), R, F)     */
+                                  .Arg<ffi::AnyBuffer>()   /* rhs (P, R, 2F)         */
+                                  .Arg<ffi::AnyBuffer>()   /* proj (P, R, n_half)    */
+                                  .Arg<ffi::AnyBuffer>()   /* pixel indices (F,)     */
+                                  .Arg<ffi::AnyBuffer>()   /* rotations (R, 6)       */
+                                  .Ret<ffi::AnyBuffer>()   /* moments (G, V, 32)     */
+                                  .Ret<ffi::AnyBuffer>()); /* correction (F,)        */

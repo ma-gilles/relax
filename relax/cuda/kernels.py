@@ -5167,7 +5167,7 @@ _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32 = (
 
 
 _TARGET_DUAL_WEIGHTED_SUMS_F32 = "cuda_dual_weighted_sums_f32"
-_TARGET_PPCA_MOMENT_BACKPROJECT_F32 = "relax_ppca_moment_backproject_f32"
+_TARGET_PPCA_MOMENT_SCATTER_F32 = "relax_ppca_moment_scatter_f32"
 
 
 _TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32 = "cuda_dual_weighted_sums_pairs_f32"
@@ -5293,42 +5293,52 @@ def dual_weighted_sums_f32(
     )(probabilities, first_values, second_values)
 
 
-def ppca_moment_backproject_f32(
-    real_images: jax.Array,
-    complex_images: jax.Array,
+def ppca_moment_scatter_f32(
+    lhs_images: jax.Array,
+    rhs_parts: jax.Array,
+    projections: jax.Array,
     pixel_indices: jax.Array,
     rotation_matrices: jax.Array,
     *,
     image_shape,
     volume_shape,
     max_r,
-) -> jax.Array:
-    """Backproject PPCA moment images of one rotation block into a ``(groups, V, 32)`` half volume.
+    metric_trace: bool,
+) -> tuple[jax.Array, jax.Array]:
+    """PPCA residuals of one rotation block and their backprojection with the metric images.
 
-    ``real_images`` ``(C_r, R, F)`` float32 and ``complex_images`` ``(C_c, R, F)``
-    complex64 are windowed half images (``pixel_indices`` into the half image) of
-    the rotations ``(R, 3, 3)``. Channel ``c`` of the result (the real channels, then
-    the real and imaginary parts of each complex channel) is lane ``c % 32`` of group
-    ``c // 32``. Each channel equals recovar's linear-interpolation
-    ``batch_backproject_indexed`` (half volume, half image, no RELION x-fold, unit
-    upsampling) into a zero volume, up to the float32 order of each voxel's sum.
+    ``lhs_images`` ``(tri(P), R, F)`` packed upper LHS images and ``rhs_parts``
+    ``(P, R, 2F)`` RHS images (real parts, then imaginary parts) on the window
+    ``pixel_indices`` of the half image; ``projections`` ``(P, R, n_half)`` on the whole
+    half image; rotations ``(R, 3, 3)``. Returns ``(groups, V, 32)`` half volumes holding the
+    metric channels (the packed LHS, or its trace with ``metric_trace``) and the real and
+    imaginary parts of the residual ``R_p - sum_q L_pq A_q`` (channel ``c`` is lane ``c % 32``
+    of group ``c // 32``), and the noise-power correction ``(F,)``
+    ``sum_r [sum_pq L_pq Re(conj A_p A_q) - 2 sum_p Re(R_p conj A_p)]`` of
+    :func:`relax.ppca_refinement.residual_statistics.residual_statistics_from_moment_images`.
+    Each channel is recovar's linear-interpolation ``batch_backproject_indexed`` (half volume,
+    half image, no RELION x-fold, unit upsampling) into a zero volume, up to float32 order.
     """
 
     _ensure_ffi()
-    real_images = jnp.asarray(real_images)
-    complex_images = jnp.asarray(complex_images)
-    if real_images.dtype != jnp.float32 or complex_images.dtype != jnp.complex64:
-        raise ValueError("ppca_moment_backproject_f32 expects float32 real and complex64 complex images")
+    lhs_images, rhs_parts, projections = (jnp.asarray(x) for x in (lhs_images, rhs_parts, projections))
+    if lhs_images.dtype != jnp.float32 or rhs_parts.dtype != jnp.float32 or projections.dtype != jnp.complex64:
+        raise ValueError("ppca_moment_scatter_f32 expects float32 LHS/RHS images and complex64 projections")
     kw, _, _ = cuda_backproject.ffi_kwargs(image_shape, volume_shape, 1, True, True, max_r, None)
     if int(kw["upsampling"]) != 1:
-        raise ValueError("ppca_moment_backproject_f32 supports unit upsampling only")
+        raise ValueError("ppca_moment_scatter_f32 supports unit upsampling only")
     rot6 = cuda_backproject.rot_to_compact(jnp.asarray(rotation_matrices), jnp.float32)
-    channels = real_images.shape[0] + 2 * complex_images.shape[0]
+    P = rhs_parts.shape[0]
+    channels = (1 if metric_trace else P * (P + 1) // 2) + 2 * P
     N0, N1, N2 = (int(n) for n in volume_shape)
-    out_type = jax.ShapeDtypeStruct((-(-channels // 32), N0 * N1 * (N2 // 2 + 1), 32), jnp.float32)
-    return jax.ffi.ffi_call(_TARGET_PPCA_MOMENT_BACKPROJECT_F32, out_type, vmap_method="sequential")(
-        real_images,
-        complex_images,
+    out_types = (
+        jax.ShapeDtypeStruct((-(-channels // 32), N0 * N1 * (N2 // 2 + 1), 32), jnp.float32),
+        jax.ShapeDtypeStruct((lhs_images.shape[2],), jnp.float32),
+    )
+    return jax.ffi.ffi_call(_TARGET_PPCA_MOMENT_SCATTER_F32, out_types, vmap_method="sequential")(
+        lhs_images,
+        rhs_parts,
+        projections,
         jnp.asarray(pixel_indices, jnp.int32).reshape(-1),
         rot6,
         image_h=kw["image_h"],
@@ -5338,6 +5348,7 @@ def ppca_moment_backproject_f32(
         N1=kw["N1"],
         N2=kw["N2"],
         max_r2_x4=kw["max_r2_x4"],
+        metric_trace=np.int64(int(metric_trace)),
     )
 
 
@@ -5550,7 +5561,7 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         "RelionWavgSequentialRuntimeTripletF32",
     ),
     (_TARGET_DUAL_WEIGHTED_SUMS_F32, "DualWeightedSumsF32"),
-    (_TARGET_PPCA_MOMENT_BACKPROJECT_F32, "PpcaMomentBackprojectF32"),
+    (_TARGET_PPCA_MOMENT_SCATTER_F32, "PpcaMomentScatterF32"),
     (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32, "DualWeightedSumsPairsF32"),
     (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32, "DualWeightedSumsPairsRowsF32"),
 )

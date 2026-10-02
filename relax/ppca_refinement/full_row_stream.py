@@ -53,7 +53,7 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size
 from recovar.reconstruction import noise as noise_utils
 
-from relax.cuda.kernels import ppca_moment_backproject_f32
+from relax.cuda.kernels import ppca_moment_scatter_f32
 from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
@@ -225,8 +225,14 @@ def full_row_pose_log_prior(
 
 def _project(arrays: _StreamArrays, rotations, static: _StreamStatic):
     """Windowed augmented projections ``(P, R, F)`` of the given rotations, component-major."""
+    proj = _project_half(arrays, rotations, static)
+    return proj if arrays.score_indices is None else proj[:, :, arrays.score_indices]
+
+
+def _project_half(arrays: _StreamArrays, rotations, static: _StreamStatic):
+    """Augmented projections ``(P, R, n_half)`` on the whole half image."""
     kwargs = {} if static.projection_max_r is None else {"max_r": static.projection_max_r}
-    proj = core.batch_slice_volume(
+    return core.batch_slice_volume(
         arrays.augmented,
         rotations,
         static.image_shape,
@@ -237,7 +243,6 @@ def _project(arrays: _StreamArrays, rotations, static: _StreamStatic):
         relion_texture_interp=static.relion_texture_interp,
         **kwargs,
     )
-    return proj if arrays.score_indices is None else proj[:, :, arrays.score_indices]
 
 
 def _real_imag(values):
@@ -447,31 +452,48 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     P = mean.shape[0] + 1
     F = tile.ctf2_recon.shape[1]
     rotations = arrays.rotations[_block_rows(tile, start, block_size)]
-    proj = _project(arrays, rotations, static)
     weights = jnp.concatenate([gamma[None], gamma[None] * mean], axis=0).reshape(P * R, B * T)
     rhs_parts = jnp.dot(weights, tile.Y1_recon, precision=_HIGHEST).reshape(P, R, 2 * F)
-    rhs_images = jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:])  # (P, R, F)
     sums = _second_moment_sums(gamma, mean, covariance)  # (K, R, B)
     K = sums.shape[0]
     lhs_images = jnp.dot(sums.reshape(K * R, B), tile.ctf2_recon, precision=_HIGHEST).reshape(K, R, F)
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
-    # statistics are already divided by that weight.
-    residual_images, correction = residual_statistics_from_moment_images(rhs_images, lhs_images, proj)
+    # statistics are already divided by that weight. The RHS images enter the
+    # residual only: neither optimizer reads an RHS volume, so only the LHS
+    # metric and the residual gradient are backprojected.
     indices = arrays.score_indices
+    window = indices
+    if window is None:
+        n_half = int(static.image_shape[0]) * (int(static.image_shape[1]) // 2 + 1)
+        window = jnp.arange(n_half, dtype=jnp.int32)
+    if static.cuda_moments:
+        block, correction = ppca_moment_scatter_f32(
+            lhs_images,
+            rhs_parts,
+            _project_half(arrays, rotations, static),
+            window,
+            rotations,
+            image_shape=static.image_shape,
+            volume_shape=static.volume_shape,
+            max_r=static.backprojection_max_r,
+            metric_trace=static.metric_trace_only,
+        )
+    else:
+        proj = _project(arrays, rotations, static)
+        rhs_images = jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:])  # (P, R, F)
+        residual_images, correction = residual_statistics_from_moment_images(rhs_images, lhs_images, proj)
+        if static.metric_trace_only:
+            # The adjoint is linear per channel, so the trace of the LHS volume is the
+            # adjoint of the per-pose trace images.
+            tri_i, tri_j = np.triu_indices(P)
+            lhs_images = jnp.sum(lhs_images[np.flatnonzero(tri_i == tri_j)], axis=0, keepdims=True)
+        block = _backproject_moments(lhs_images, residual_images, window, rotations, static)
     nv = jnp.broadcast_to(arrays.coefficient_noise, (carry.residual_power.size,))
     if indices is None:
         residual_power = carry.residual_power + correction * nv
     else:
         residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
-    # The RHS images enter the residual only: neither optimizer reads an RHS
-    # volume, so only the LHS metric and the residual gradient are backprojected.
-    if static.metric_trace_only:
-        # The adjoint is linear per channel, so the trace of the LHS volume is the
-        # adjoint of the per-pose trace images.
-        tri_i, tri_j = np.triu_indices(P)
-        lhs_images = jnp.sum(lhs_images[np.flatnonzero(tri_i == tri_j)], axis=0, keepdims=True)
-    block = _backproject_moments(lhs_images, residual_images, indices, rotations, static)
     moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
     return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
 
@@ -495,24 +517,10 @@ def _unpack_moments(moments, static):
 def _backproject_moments(real_images, complex_images, indices, rotations, static):
     """``(groups, half, 32)`` linear-interpolation adjoint of one block's windowed half-image moment images.
 
-    Real channels ``(C_r, R, F)`` then complex channels ``(C_c, R, F)`` (real and imaginary
-    parts interleaved), into zero half volumes. GPU streams use one warp-wide CUDA scatter per
-    target (:func:`relax.cuda.kernels.ppca_moment_backproject_f32`); other platforms the
-    shared windowed adjoint per channel type, interleaved.
+    Real channels ``(C_r, R, F)`` then the real and imaginary parts of the complex channels
+    ``(C_c, R, F)``, into zero half volumes, with the shared windowed adjoint per channel type:
+    the layout :func:`relax.cuda.kernels.ppca_moment_scatter_f32` produces on GPU streams.
     """
-    if indices is None:
-        n_half = int(static.image_shape[0]) * (int(static.image_shape[1]) // 2 + 1)
-        indices = jnp.arange(n_half, dtype=jnp.int32)
-    if static.cuda_moments:
-        return ppca_moment_backproject_f32(
-            real_images,
-            complex_images,
-            indices,
-            rotations,
-            image_shape=static.image_shape,
-            volume_shape=static.volume_shape,
-            max_r=static.backprojection_max_r,
-        )
     half = int(np.prod(static.volume_shape[:2])) * (int(static.volume_shape[2]) // 2 + 1)
 
     def adjoint(images, dtype):
