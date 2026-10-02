@@ -84,6 +84,26 @@ def _compute_sparse_pass2_projections_block(
         raise ValueError("pixel_indices select the RELION projector's pixels; no RELION projector was given")
 
     def _project(rotations):
+        if (
+            relion_projector_runtime_r_max is not None
+            and relion_kernel == "fine"
+            and relion_projector_texture is None
+            and relion_projector_capacity_texture is None
+        ):
+            return _capacity_projections_block(
+                relion_projector_half,
+                rotations,
+                pixel_indices,
+                relion_projector_runtime_r_max,
+                relion_projector_image_size,
+                image_shape=tuple(int(v) for v in image_shape),
+                r_max=int(relion_projector_r_max),
+                padding_factor=int(projection_padding_factor),
+                return_abs2=bool(return_abs2),
+                relion_texture_interp=projection_relion_texture_interp,
+                projector_output_size=projector_output_size,
+                mask_current_image_disk=projection_mask_current_image_disk,
+            )
         if use_relion_projector:
             return _compute_relion_projector_projections_block(
                 relion_projector_half,
@@ -163,6 +183,57 @@ def _compute_sparse_pass2_projections_block(
     if any(abs2_chunk is None for abs2_chunk in abs2_chunks):
         raise RuntimeError("Inconsistent projection abs2 chunks")
     return proj_half, jnp.concatenate(abs2_chunks, axis=0)
+
+
+@partial(
+    jax.jit,
+    static_argnames=(
+        "image_shape", "r_max", "padding_factor", "return_abs2", "relion_texture_interp",
+        "projector_output_size", "mask_current_image_disk",
+    ),
+)
+def _capacity_projections_block(
+    relion_projector_half,
+    rotations,
+    pixel_indices,
+    runtime_r_max,
+    image_size,
+    *,
+    image_shape,
+    r_max,
+    padding_factor,
+    return_abs2,
+    relion_texture_interp,
+    projector_output_size,
+    mask_current_image_disk,
+):
+    """The capacity route's fine-kernel block as one program per shape.
+
+    Called eagerly, its radius masks, kernel call, crop gather and row zeroing
+    dispatched about twenty small programs per block; a VDAM pass builds its
+    projection cache in a dozen blocks every iteration. The operations are the
+    same (``_compute_relion_projector_projections_block``); only the coarse
+    kernel's row relabel reads the rotations on the host, so it stays eager.
+    """
+
+    return _compute_relion_projector_projections_block(
+        relion_projector_half,
+        rotations,
+        image_shape,
+        r_max=r_max,
+        padding_factor=padding_factor,
+        return_abs2=return_abs2,
+        centered_rows=True,
+        dense_scale=True,
+        relion_texture_interp=relion_texture_interp,
+        projector_output_size=projector_output_size,
+        relion_kernel="fine",
+        mask_current_image_disk=mask_current_image_disk,
+        pixel_indices=pixel_indices,
+        projector_capacity=True,
+        runtime_r_max=runtime_r_max,
+        current_image_mask_size=image_size,
+    )
 
 
 def _projection_kwargs_for_relion_score_window(
