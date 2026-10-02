@@ -89,6 +89,7 @@ def relion_vdam_m_step_device(
     r_max,
     first_initializes_h0,
     first_initializes_h1,
+    average_ctf2=None,
     *,
     ori_size: int,
     padding_factor: int = 1,
@@ -205,11 +206,13 @@ def relion_vdam_m_step_device(
     invalid_sigma = jnp.any(~((inverse_sigma > 1e-20) | (inverse_sigma == 0.0)))
     sigma2 = jnp.where(inverse_sigma > 1e-20, counts / inverse_sigma, 0.0)
     shell_tau = tau2[shell_lookup]
-    inverse_tau = jnp.where(
-        shell_tau > 0.0,
-        1.0 / (float(padding_factor**3) * fudge * shell_tau),
-        1.0 / (0.001 * w0),
-    )
+    inverse_tau = 1.0 / (float(padding_factor**3) * fudge * shell_tau)
+    if average_ctf2 is not None:
+        # CTF-premultiplied images: tau2's inverse divided by their average CTF^2
+        # (setAverageCTF2, ml_optimiser.cpp:5697-5740; backprojector.cpp:1277-1279).
+        shell_ctf2 = jnp.asarray(average_ctf2, real_dtype)[shell_lookup]
+        inverse_tau = jnp.where(shell_ctf2 > 0.0, inverse_tau * (1.0 / jnp.where(shell_ctf2 > 0.0, shell_ctf2, 1.0)), inverse_tau)
+    inverse_tau = jnp.where(shell_tau > 0.0, inverse_tau, 1.0 / (0.001 * w0))
     evidence = w0 / inverse_tau
     data_vs_prior = shell_sum(evidence)
     data_vs_prior = jnp.where(
@@ -344,6 +347,7 @@ def relion_vdam_m_step_host(
     compute_dtype=jnp.float64,
     recovar_layout: bool = False,
     device_volumes: bool = False,
+    average_ctf2=None,
 ):
     """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16).
 
@@ -360,6 +364,9 @@ def relion_vdam_m_step_host(
     returned ``iref`` and moments stay on the device; the shell spectra and
     flags come back to the host. VDAM keeps its volumes on the device across
     iterations this way instead of reading back and re-uploading them.
+    ``average_ctf2`` (``[ori_size // 2 + 1]``, CTF-premultiplied images only,
+    :func:`relax.relion.relion_ctf.premultiplied_average_ctf2`) corrects the SSNR's tau2
+    as RELION's ``updateSSNRarrays`` does; the reconstruction keeps the uncorrected tau2.
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if ori_size * padding_factor < 16:
@@ -413,6 +420,7 @@ def relion_vdam_m_step_host(
         np.int32(r_max),
         np.bool_(first0),
         np.bool_(first1),
+        None if average_ctf2 is None else np.asarray(average_ctf2, np.float64),
         ori_size=ori_size,
         padding_factor=padding_factor,
         pseudo_halfsets=pseudo,

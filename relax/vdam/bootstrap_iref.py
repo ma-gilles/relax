@@ -45,6 +45,7 @@ def compute_bootstrap_iref(
     minimum_nr_particles: int = 1000,
     particle_seed_ids: np.ndarray | None = None,
     particle_positions: np.ndarray | None = None,
+    image_gamma_offsets=None,
 ):
     """RELION's random-orientation bootstrap reference per class, in RECOVAR's frame.
 
@@ -52,6 +53,9 @@ def compute_bootstrap_iref(
     ``particle_positions`` are the images' particles' positions in RELION's order (default
     ``0..n-1``): each orientation's seed and its class, position % K
     (:func:`relax.vdam.bootstrap_reconstruction.bootstrap_references`).
+    ``image_gamma_offsets`` is ``(image_group [n], {group: even Zernike gamma offset or None})``
+    for optics groups with even aberrations (:func:`_bootstrap_gamma_offsets`); CTF-premultiplied
+    images are multiplied by the CTF once more, as RELION's start-up does (ml_optimiser.cpp:3337-3341).
     Returns ``(Iref, rand_state)``: the C ``rand()`` stream where the particle loop
     leaves it, which :func:`postprocess_bootstrap_iref` continues for the blobs.
     """
@@ -79,7 +83,19 @@ def compute_bootstrap_iref(
                 np.asarray(phase_shift, dtype=np.float64)[:todo],
             ]
         )
-        ctf_images = relion_ctf_fftw_half(params, int(ori_size), float(pixel_size))
+        if image_gamma_offsets is None:
+            ctf_images = relion_ctf_fftw_half(params, int(ori_size), float(pixel_size))
+        else:
+            # Each optics group's even Zernike phase (ObservationModel::getGammaOffset), as
+            # RELION's start-up CTF::getFftwImage applies it (ml_optimiser.cpp:3306-3307).
+            image_group, gamma_by_group = image_gamma_offsets
+            image_group = np.asarray(image_group)[:todo]
+            ctf_images = np.empty((todo, int(ori_size), int(ori_size) // 2 + 1), dtype=np.float64)
+            for group, gamma in gamma_by_group.items():
+                rows = image_group == group
+                ctf_images[rows] = relion_ctf_fftw_half(
+                    params[rows], int(ori_size), float(pixel_size), gamma_offset=gamma
+                )
     iref_relion, rand_state = bootstrap_reconstruction.bootstrap_references(
         images=np.asarray(images[:todo], dtype=np.float64),
         ctf_images=ctf_images,
@@ -97,6 +113,35 @@ def compute_bootstrap_iref(
         current_size=int(current_size),
     )
     return np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64), rand_state
+
+
+def _bootstrap_gamma_offsets(dataset, image_indices, ori_size: int):
+    """``(image_group, {group: gamma})`` for the bootstrap CTF, or None without even Zernike terms.
+
+    The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
+    use them (:func:`relax.relion.relion_ctf._optics_group_ctf_geometry`). Magnification is
+    refused upstream for InitialModel.
+    """
+
+    from recovar.data_io.starfile import star_column
+
+    from relax.relion import relion_ctf
+    from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+
+    if not dataset_needs_exact_ctf(dataset):
+        return None
+    _, cache = relion_ctf._exact_ctf_source_cache(dataset, (int(ori_size), int(ori_size)))
+    original = np.asarray(relion_ctf.original_image_indices(dataset, np.asarray(image_indices, dtype=np.int64)))
+    groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
+    gamma_by_group = {}
+    for group in np.unique(groups):
+        gamma, mag = relion_ctf._optics_group_ctf_geometry(cache, int(group), int(ori_size))
+        if mag is not None:
+            raise NotImplementedError("InitialModel does not implement anisotropic magnification")
+        gamma_by_group[int(group)] = gamma
+    if all(gamma is None for gamma in gamma_by_group.values()):
+        return None
+    return groups, gamma_by_group
 
 
 def postprocess_bootstrap_iref(
@@ -218,6 +263,7 @@ def _initial_state_from_particles(
         current_size=-1,
         minimum_nr_particles=int(bootstrap_positions.size),
         particle_positions=bootstrap_positions,
+        image_gamma_offsets=_bootstrap_gamma_offsets(dataset, bootstrap_order, ori_size),
     )
     iref, rand_state = (None, None) if override_path else compute_bootstrap_iref(**bootstrap_kwargs)
     profile.record("bootstrap")

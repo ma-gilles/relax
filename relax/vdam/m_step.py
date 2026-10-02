@@ -105,6 +105,7 @@ def vdam_m_step(
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
     mstep_compute_dtype: Literal["float32", "float64"] = "float32",
+    average_ctf2=None,
 ) -> InitialModelState:
     """Full VDAM M-step over K classes.
 
@@ -128,5 +129,6 @@ def vdam_m_step(
             grad_min_resol_shell=grad_min_resol_shell,
             padding_factor=padding_factor,
             mstep_compute_dtype=mstep_compute_dtype,
+            average_ctf2=average_ctf2,
         )
     return out

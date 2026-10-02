@@ -207,6 +207,11 @@ positions), sampling to 1,003 (+29: the expected accuracy per group, recombined)
 (+47: per-group noise rows and update) and input/output to 1,381 (+31: per-particle optics, one noise
 table per group, `relion_startup_positions`).
 
+Optics features in InitialModel (October 2, 2026) raise three budgets by the lines added: controller
+to 1,932 (+22: the optics gate, the premultiplied flag, the subset's average CTF^2), initialization to
+1,133 (+46: the bootstrap CTF with each optics group's even Zernike gamma) and sampling to 1,009 (+6:
+the trials' optics-table CTFs in the expected accuracy).
+
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
 initialization and wiring, 89 in the loop for optimizer selection, fixed

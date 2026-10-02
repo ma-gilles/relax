@@ -360,6 +360,7 @@ def run_vdam_iterations(
                 tau2_fudge_factor=current.tau2_fudge_factor,
                 padding_factor=projector_padding_factor,
                 mstep_compute_dtype=mstep_compute_dtype,
+                average_ctf2=meta.get("premultiplied_average_ctf2"),
             )
         else:
             from relax.sgd_initial_model.optimizer import sgd_m_step

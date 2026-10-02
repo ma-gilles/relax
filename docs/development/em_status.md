@@ -238,7 +238,21 @@ labeled diagnostic only.
   Class3D (K>1) takes all four, including RELION's average-CTF² correction of
   data_vs_prior for premultiplied data (`setAverageCTF2`); magnification is qualified against
   stock RELION on the CPU (below).
-  InitialModel refuses all four until it has its own qualification against RELION.
+  InitialModel (single particles, 2026-10-02) takes premultiplied particles, odd and even
+  aberrations: the bootstrap CTF with each group's even Zernike gamma, the expected accuracy with the
+  trials' optics-table CTFs, the M-step's average-CTF² SSNR correction (RELION's updateSSNRarrays
+  oracle takes avgctf2); magnification and subtomograms stay refused. Iteration 1 against stock RELION
+  non-MPI: map relative L2 7.1e-5 (premult), 1.4e-5 (btilt), 5.5e-7 (evenz). End to end (relax c26e7b7,
+  jobs 14859714/16/18; stock RELION r1 14859713/15/17, r2 14862958-60; H100; 181e99d scorer, same-seed
+  pairs, `em_work/cryoet_vdam_20261001/scores/optics_k1_ss`), masked GT FSC-AUC relax / RELION range:
+  premult 0.4404 / [0.4395, 0.4406], 0.0566 / [0.0570, 0.0636], 0.4456 / [0.4455, 0.4463]; btilt
+  0.0714 / [0.0598, 0.0895], 0.4442 / [0.4443, 0.4444], 0.4403 / [0.4402, 0.4402]; evenz 0.3787 /
+  [0.4390, 0.4468], 0.4436 / [0.4434, 0.4437], 0.4398 / [0.4396, 0.4396] (seeds 1-3): inside or above
+  at two of three seeds per feature. premult s2 and btilt s1 fail to converge in BOTH programs (about
+  0.06 against 0.44), so they are weak evidence and the verdict rests on the converged seeds: premult
+  s1, s3 inside; btilt s2 1.1e-4 below, s3 above; evenz s2 inside, s3 above. OPEN: evenz s1 6e-2
+  below, where RELION's own r1-r2 agreement is only 0.60 (a chaotic seed); two relax same-seed
+  repeats settle it (job 14869744). Walls equal RELION's (464-669 s vs 436-570 s).
   Qualification, 2026-09-30: 10k/256 fixtures under
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_*_k1_10k256_20260929`, one relax run
   (cand_ccb229f, H100) against same-command, same-seed RELION 5.0.1 runs (patched MPI build,

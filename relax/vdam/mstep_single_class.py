@@ -224,6 +224,7 @@ def vdam_m_step_single_class(
     grad_min_resol_shell: float | None = None,
     padding_factor: int = 1,
     mstep_compute_dtype: Literal["float32", "float64"] = "float32",
+    average_ctf2=None,
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
     :func:`relax.relion.relion_vdam_mstep.relion_vdam_m_step_host`.
@@ -233,6 +234,7 @@ def vdam_m_step_single_class(
 
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
+    ``average_ctf2``: the E-step's CTF-premultiplied average CTF^2 (SSNR tau2 correction), or None.
     """
     _validate_mstep_precision_route(mstep_compute_dtype)
     if mstep_compute_dtype == "float32":
@@ -247,7 +249,9 @@ def vdam_m_step_single_class(
     min_resol_shell = _grad_min_resol_shell_from_state(state, grad_min_resol_shell)
     from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
 
-    transaction = partial(relion_vdam_m_step_host, recovar_layout=True, device_volumes=True)
+    transaction = partial(
+        relion_vdam_m_step_host, recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2
+    )
     if mstep_compute_dtype == "float32":
         transaction = partial(transaction, compute_dtype=np.float32)
     return _run_m_step_transaction(

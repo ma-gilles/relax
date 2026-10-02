@@ -255,3 +255,32 @@ def test_pure_device_rejects_unsupported_small_fft():
             padding_factor=1,
             pseudo_halfsets=True,
         )
+
+
+@pytest.mark.parametrize("padding", [1, 2])
+def test_average_ctf2_divides_invtau2_as_relion_update_ssnr_arrays(bind, padding):
+    """setAverageCTF2's spectrum in updateSSNRarrays (backprojector.cpp:1277-1279) against RELION."""
+
+    if "avgctf2:" not in (bind.vdam_update_ssnr_arrays_from_bpref.__doc__ or ""):
+        pytest.skip("the RELION binding predates the avgctf2 oracle argument")
+    case = _case(size=16, padding=padding, radius=6, pseudo=True)
+    average_ctf2 = np.linspace(0.3, 1.7, case["ori_size"] // 2 + 1)
+    average_ctf2[3] = 0.0  # RELION keeps invtau2 where avgctf2 is not positive
+    for spectrum in (None, average_ctf2):
+        _tau2, _sigma2, relion_dvp, relion_coverage = bind.vdam_update_ssnr_arrays_from_bpref(
+            case["weight_h0"],
+            case["fsc_reconstruct"],
+            case["tau2"],
+            case["tau2_fudge"],
+            case["ori_size"],
+            padding,
+            1,
+            case["r_max"],
+            False,
+            False,
+            spectrum is not None,
+            avgctf2=spectrum,
+        )
+        result = relion_vdam_m_step_host(**case, average_ctf2=spectrum)
+        assert_matches(np.asarray(result["data_vs_prior"]), np.asarray(relion_dvp), rtol=1e-12)
+        assert_matches(np.asarray(result["fourier_coverage"]), np.asarray(relion_coverage), rtol=1e-12)

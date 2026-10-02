@@ -604,6 +604,9 @@ OPTICS_FEATURE_LABELS = {
     "magnification": ("rlnMagMat00", "rlnMagMat01", "rlnMagMat10", "rlnMagMat11"),
 }
 IMPLEMENTED_OPTICS_FEATURES = frozenset({"ctf_premultiplied", "odd_aberrations", "even_aberrations", "magnification"})
+# InitialModel (VDAM, single particles): premultiplied images and odd and even aberrations through the
+# K-class adaptive route; magnification stays refused (the VDAM E-step does not magnify its projections).
+INITIAL_MODEL_OPTICS_FEATURES = IMPLEMENTED_OPTICS_FEATURES - {"magnification"}
 
 
 def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:

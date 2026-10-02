@@ -27,14 +27,14 @@ from relax.helpers.particle_io import (
     prepare_particle_reads,
 )
 from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
-from relax.relion import initial_model_io, vdam_checkpoint
+from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
 from relax.relion.initial_model_io import (
     _experiment_read_order,
     _particle_state_from_star,
     _tomo_particle_state_from_star,
     _write_model_star,
 )
-from relax.relion.relion_metadata import refuse_unsupported_optics
+from relax.relion.relion_metadata import INITIAL_MODEL_OPTICS_FEATURES, refuse_unsupported_optics
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
 from relax.vdam.bootstrap_iref import _initial_state_from_particles, _initial_state_from_tomo_particles
@@ -100,11 +100,14 @@ def _native_expectation_step(
     projector_context: dense_adapter._IterationProjectorContext | None = None,
     tilt_images: dict | None = None,
     optics_group_ids: np.ndarray | None = None,
+    premultiplied_ctf: bool = False,
 ):
     """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``.
 
     ``optics_group_ids`` (several optics groups only) gives each particle-STAR row's zero-based
     group: its image is scored with its group's noise row and adds to its group's noise sums.
+    ``premultiplied_ctf``: some images are CTF-premultiplied, so each E-step records the subset's
+    average CTF^2 for the M-step's SSNR.
     """
 
     tomo = isinstance(dataset, TomoDataset)
@@ -153,6 +156,7 @@ def _native_expectation_step(
                 sigma2_fudge=DEFAULT_SIGMA2_FUDGE,
                 tilt_images=tilt_images,
                 optics_group_ids=optics_group_ids,
+                experiment_dataset=None if tomo else dataset,
             )
         sampling_updated = (
             _prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
@@ -222,6 +226,15 @@ def _native_expectation_step(
             )
             effective_image_batch_size = int(result.meta.pop("_effective_image_batch_size"))
             max_significants = int(result.meta.pop("_max_significants"))
+            if premultiplied_ctf:
+                # The subset's average CTF^2 corrects the M-step's SSNR (setAverageCTF2 over
+                # this iteration's images, ml_optimiser.cpp:5697-5740).
+                result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
+                    [dataset.subset(np.asarray(particle_ids, dtype=np.int64))],
+                    [None],
+                    int(state.current_size) if int(state.current_size) > 0 else int(state.ori_size),
+                    int(state.ori_size),
+                )
         result.meta.update(
             random_perturbation=float(sampling_plan.random_perturbation),
             n_rotations=sampling_plan.n_rotations,
@@ -417,7 +430,13 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     profile.record("validation")
 
     main_star, optics_star = read_star(opts.fn_img)
-    refuse_unsupported_optics(optics_star, source=str(opts.fn_img))
+    # Single particles take CTF-premultiplied images and odd and even aberrations, as Class3D does;
+    # magnification and subtomograms take none.
+    refuse_unsupported_optics(
+        optics_star,
+        source=str(opts.fn_img),
+        supported=frozenset() if opts.fn_tomograms is not None else INITIAL_MODEL_OPTICS_FEATURES,
+    )
     particle_order = _experiment_read_order(main_star)
     profile.record("input_star")
     particle_read_policy = ParticleReadPolicy(
@@ -563,6 +582,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         projector_context=projector_context,
         tilt_images=tilt_images,
         optics_group_ids=optics_group_by_particle if int(np.unique(optics_group_by_particle).size) > 1 else None,
+        premultiplied_ctf=(not tomo)
+        and relion_ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape)),
     )
     profile.record("expectation_setup")
 

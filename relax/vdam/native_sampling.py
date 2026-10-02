@@ -26,6 +26,7 @@ from relax.helpers.expected_accuracy import (
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
+from relax.relion.optics_aberrations import expected_accuracy_optics
 from relax.vdam.native_options import InitialModelDefaults, NativeInitialModelOptions
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 
@@ -368,6 +369,7 @@ def _estimate_native_sampling_accuracy(
     sigma2_fudge: float,
     tilt_images: dict | None = None,
     optics_group_ids: np.ndarray | None = None,
+    experiment_dataset=None,
 ) -> dict[str, object] | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
@@ -377,6 +379,9 @@ def _estimate_native_sampling_accuracy(
     (``optics_group_ids``, each particle's zero-based group) every trial takes its group's noise
     spectrum and CTF constants, as RELION does per particle; the estimate runs once per group on
     that group's trials and the per-class means are recombined with the trial counts.
+    Single particles pass ``experiment_dataset`` for the trials' optics-table CTFs
+    (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`: CTF^2 of premultiplied
+    images, even Zernike terms); None without optics-table terms.
     """
     n_trials = min(100, int(particle_order.size))
     if n_trials <= 0:
@@ -435,6 +440,7 @@ def _estimate_native_sampling_accuracy(
                 spherical_aberration=group_constant(optics_state.Cs, ids, "Cs"),
                 amplitude_contrast=group_constant(optics_state.Q0, ids, "amplitude contrast"),
                 pixel_size=float(optics_state.pixel_size),
+                optics=None if experiment_dataset is None else expected_accuracy_optics(experiment_dataset, ids),
             )
         else:
             # The per-particle defocus arrays are unused; the group's images give the constants.

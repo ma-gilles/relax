@@ -1814,6 +1814,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         sigma2_fudge,
         tilt_images,
         optics_group_ids,
+        experiment_dataset,
     ):
         assert tilt_images is None  # single particles
         assert optics_group_ids is None  # one optics group

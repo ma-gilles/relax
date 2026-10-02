@@ -96,8 +96,9 @@ def test_one_time_conversion_only_changes_m_owned_state(K):
 @pytest.mark.parametrize("dtype", ["float64", "float32"])
 def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, tmp_path, dtype):
     state = _state()
-    dataset = SimpleNamespace(n_images=20, voxel_size=1.0, tilt_series_flag=False)
+    dataset = SimpleNamespace(n_images=20, voxel_size=1.0, tilt_series_flag=False, image_shape=(8, 8))
     monkeypatch.setattr(driver, "read_star", lambda _: (pd.DataFrame(index=range(20)), None))
+    monkeypatch.setattr(driver.relion_ctf, "dataset_has_premultiplied_ctf", lambda *a: False)
     monkeypatch.setattr(driver, "load_dataset", lambda *a, **k: dataset)
     monkeypatch.setattr(driver, "prepare_particle_reads", lambda *a, **k: None)
     monkeypatch.setattr(dense_adapter, "_configure_relion_image_mask", lambda *a: None)

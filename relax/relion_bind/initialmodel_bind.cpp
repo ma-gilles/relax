@@ -422,7 +422,8 @@ static py::tuple vdam_update_ssnr_arrays_from_bpref(
     int r_max,
     bool update_tau2_with_fsc,
     bool is_whole_instead_of_half,
-    bool correct_tau2_by_avgctf2
+    bool correct_tau2_by_avgctf2,
+    py::object avgctf2_in
 ) {
     BackProjector bp = make_empty_backprojector(ori_size, padding_factor, "C1", interpolator);
     bp.weight = numpy_to_real_3d(weight_in);
@@ -452,6 +453,14 @@ static py::tuple vdam_update_ssnr_arrays_from_bpref(
     MultidimArray<RFLOAT> fourier_coverage(n_shells);
     MultidimArray<RFLOAT> avgctf2(n_shells);
     avgctf2.initConstant(1.0);
+    if (!avgctf2_in.is_none()) {
+        // MlOptimiser::setAverageCTF2's spectrum (ml_optimiser.cpp:5697-5740), supplied by the caller.
+        auto avg = py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(avgctf2_in);
+        auto avg_buf = avg.request();
+        double* avg_ptr = (double*)avg_buf.ptr;
+        for (long s = 0; s < n_shells && s < (long)avg_buf.size; s++)
+            DIRECT_A1D_ELEM(avgctf2, s) = (RFLOAT)avg_ptr[s];
+    }
 
     bp.updateSSNRarrays(
         (RFLOAT)tau2_fudge,
@@ -1879,8 +1888,10 @@ fsc_estimate=1.
           py::arg("update_tau2_with_fsc") = false,
           py::arg("is_whole_instead_of_half") = false,
           py::arg("correct_tau2_by_avgctf2") = false,
+          py::arg("avgctf2") = py::none(),
           R"doc(
 BackProjector::updateSSNRarrays for an already-accumulated VDAM BPref.
+``avgctf2`` (with correct_tau2_by_avgctf2) is setAverageCTF2's spectrum; None keeps 1.
 Returns (tau2, sigma2, data_vs_prior, fourier_coverage).
 )doc");
 

@@ -315,7 +315,9 @@ LOC_BUDGETS = {
     # E-step closure split into its single-particle and subtomogram calls (+99): a real raise, no headroom.
     # Several optics groups on one image grid (2026-10-01, etvdam): the E-step closure's optics-group ids
     # and the momentum-SGD refusal (+14): a real raise, no headroom.
-    "controller": (1910, (
+    # Optics features (2026-10-02): the optics gate, the premultiplied flag and the subset's average
+    # CTF^2 for the M-step (+22): a real raise.
+    "controller": (1932, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -330,10 +332,12 @@ LOC_BUDGETS = {
     # per-image Aproj R in the bootstrap reconstruction (+126): a real raise, no headroom.
     # Several optics groups (2026-10-01): RELION's per-group start-up particles for the noise and the
     # bootstrap, the bootstrap's per-image optics and its class positions (+16): a real raise.
-    "initialization": (1087, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    # Optics features (2026-10-02): the bootstrap CTF with each group's even Zernike gamma (+46).
+    "initialization": (1133, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
     # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
     # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
-    "sampling_layout": (1003, ("native_sampling.py", "layout.py")),
+    # Optics features (2026-10-02): the trials' optics-table CTFs in the expected accuracy (+6).
+    "sampling_layout": (1009, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
     # (1846 counted lines at integration, with the shared projector setup). The reviewed
