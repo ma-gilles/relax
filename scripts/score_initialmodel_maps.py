@@ -1,28 +1,26 @@
 """Aligned FSC scoring of VDAM InitialModel final maps (RELION and relax/RECOVAR arms).
 
-InitialModel maps have an arbitrary orientation and handedness, so every map is
-rigidly registered (HEALPix-2 seed with x-mirror, then the continuous rigid fit
-of relax.diagnostics.gt_registration; contrast sign fixed at +1) before any FSC.
+InitialModel maps have an arbitrary orientation and handedness, so every map is rigidly registered before any FSC with
+relax.diagnostics.gt_registration.fit_rigid_both_hands: both hands fitted with proper rotations, three coarse starts on the
+HEALPix-2 grid, the low-pass fit, then the fine stage (refine_rigid_fit); contrast sign fixed at +1. The hand is chosen on
+the full-spectrum FSC-AUC.
 
-All arrays are RELION file-frame arrays read raw with mrcfile. relax-frame files
-(simulator GT class maps) are negated into that frame; the frozen masks share the
-voxel layout of both frames (docs/benchmarks/masked_fsc_method.md).
+All arrays are RELION file-frame arrays read raw with mrcfile. relax-frame files (simulator GT class maps) are negated into
+that frame; the frozen masks share the voxel layout of both frames (docs/benchmarks/masked_fsc_method.md).
 
-Per arm: one rigid transform is fitted from the arm's population-weighted class
-mean to the reference mean (GT mean for synthetic data, RELION's auto-refine map
-for real data) and applied to every class (classes of one run share a frame).
-Classes are matched to reference classes, and arms to each other, by the
-Hungarian assignment on unmasked FSC-AUC.
+Per arm: the population-weighted class mean is registered to the reference mean (GT mean for synthetic data, RELION's
+auto-refine map for real data), and for K > 1 every class is also registered on its own to the reference mean (a consensus
+of different states registers poorly; 2026-10-01). Each (class, reference class) pair is scored with its best candidate
+transform (consensus or class fit, either hand) by unmasked FSC-AUC; classes are then matched to reference classes by the
+Hungarian assignment. Arm pairs: b's consensus is registered onto a's reference-frame consensus with the same routine.
 
-FSC: shell FSC as scripts/fsc_metrics.shell_fsc (rounded radius, shells up to
-n//2 - 2). FSC-AUC: normalized trapezoid over shells 1..end, as
-scripts/evaluate_kclass_gt._normalized_fsc_auc. Resolution: first shell below
-the threshold, box * pixel / shell.
+FSC: shell FSC as scripts/fsc_metrics.shell_fsc (rounded radius, shells up to n//2 - 2). FSC-AUC: normalized trapezoid over
+shells 1..end, as scripts/evaluate_kclass_gt._normalized_fsc_auc. Resolution: first shell below the threshold, box * pixel /
+shell.
 
 Usage: python scripts/score_initialmodel_maps.py CONFIG.json OUT_DIR [--cells a,b] [--workers N]
-
-The benchmark rows of docs/benchmarks/relion_vs_relax.md were scored with
-docs/benchmarks/initialmodel_scores/config.json (CPU; PYTHONPATH at the checkout).
+(--workers parallelizes the registrations inside a cell; spawned processes, PYTHONPATH at the checkout.)
+The benchmark rows of docs/benchmarks/relion_vs_relax.md were scored with configs listed in each row's evidence (CPU).
 """
 
 from __future__ import annotations
@@ -30,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import multiprocessing
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -40,11 +39,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from relax.diagnostics.gt_metrics import relion_alignment_rotations
-from relax.diagnostics.gt_registration import (
-    RigidFitControls,
-    align_volume_rigid_to_reference,
-    apply_rigid_volume_transform,
-)
+from relax.diagnostics.gt_registration import apply_rigid_volume_transform, fit_rigid_both_hands
 
 APPLY_ORDER = 3
 
@@ -123,29 +118,55 @@ def res(fsc, thr, n, px):
     return float(n * px / (below[0] + 1))
 
 
-def fit(moving, reference, rotations):
-    t0 = time.time()
-    al = align_volume_rigid_to_reference(moving, reference, rotations, controls=RigidFitControls(allow_mirror=True))
-    rec = {
-        "fit_lowpass_corr": float(al.score),
-        "full_res_corr_order1": float(al.corr),
-        "mirror_x": bool(al.mirror_x),
-        "translation_voxels": [float(t) for t in al.translation_voxels],
-        "rotation_matrix": np.asarray(al.rotation_matrix).tolist(),
-        "optimizer_success": bool(al.receipt.optimizer_success),
-        "translation_outside_quarter_box": bool(al.receipt.translation_outside_quarter_box),
-        "seconds": round(time.time() - t0, 1),
+class _Fitted:
+    """A rigid transform as a record (from a worker, JSON-able): rotation, translation, mirror along array axis 0."""
+
+    def __init__(self, rec):
+        self.rotation_matrix = np.asarray(rec["rotation_matrix"])
+        self.translation_voxels = np.asarray(rec["translation_voxels"])
+        self.mirror_x = bool(rec["mirror_x"])
+
+    def __call__(self, vol):
+        return apply_rigid_volume_transform(
+            vol, self.rotation_matrix, self.translation_voxels, mirror_x=self.mirror_x, order=APPLY_ORDER
+        )
+
+
+def _register_both_hands(mv, tg, required=True):
+    """{hand: record} from the shared registration (relax.diagnostics.gt_registration.fit_rigid_both_hands)."""
+    fits = fit_rigid_both_hands(mv, tg, relion_alignment_rotations(2))
+    if required and set(fits) != {"proper", "mirror"}:
+        raise ValueError(f"registration failed in hand(s) {sorted({'proper', 'mirror'} - set(fits))}")
+    return {
+        h: {
+            "rotation_matrix": f.rotation_matrix.tolist(),
+            "translation_voxels": [float(t) for t in f.translation_voxels],
+            "mirror_x": f.mirror_x,
+            "fit_lowpass_corr": f.lowpass_score,
+            "start_lowpass_corrs": list(f.start_lowpass_scores),
+            "failed_starts": list(f.failed_starts),
+            "fine_start_corr": f.fine_start_score,
+            "fine_corr": f.fine_score,
+            "fine_evaluations": f.fine_evaluations,
+        }
+        for h, f in fits.items()
     }
-    return al, rec
 
 
-def apply(vol, al):
-    return apply_rigid_volume_transform(
-        vol, al.rotation_matrix, al.translation_voxels, mirror_x=al.mirror_x, order=APPLY_ORDER
-    )
+def _fit_task(task):
+    """One registration (both hands) of the moving map (a population-weighted sum of class maps, or one class map) onto the
+    target (the mean of target maps in their frame). Runs in a worker process; reads its own maps. Returns [(key + hand, record)]."""
+    key, moving, weights, targets, frame, mean_path = task
+    mv = np.tensordot(np.asarray(weights, dtype=np.float64), np.asarray([read(p)[0] for p in moving]), axes=1)
+    tg = read(mean_path, frame)[0] if mean_path else np.mean([read(p, frame)[0] for p in targets], axis=0)
+    try:
+        recs = _register_both_hands(mv, tg, required=key[1] == "consensus")
+    except ValueError as exc:
+        raise ValueError(f"{key}: {exc}") from exc
+    return [((*key, hand), rec) for hand, rec in recs.items()]
 
 
-def score_cell(cell):
+def score_cell(cell, fit_workers=1):
     t0 = time.time()
     K = int(cell["K"])
     ref_paths = cell["reference"]["paths"]
@@ -165,29 +186,80 @@ def score_cell(cell):
         if sha256(cell["mask"]["path"]) != cell["mask"]["sha256"]:
             raise ValueError(f"{cell['id']}: mask sha mismatch")
     sh = Shells(n)
-    rotations = relion_alignment_rotations(2)
     ref_ft = [sh.ft(v) for v in ref_vols]
     ref_ft_m = [sh.ft(v * mask) for v in ref_vols] if mask is not None else None
 
     arms = {}
     aligned = {}
+    R = len(ref_vols)
+    frame = cell["reference"]["frame"]
+    # Registration (2026-10-01 fix): a K>1 run's classes need not share the population-weighted consensus's best fit (a
+    # consensus of different assembly states registers poorly), so every class is also fitted on its own to the reference
+    # mean. Each (class, reference class) pair is scored with its best candidate transform (consensus or class fit, either
+    # hand) by unmasked FSC-AUC before the Hungarian match.
+    tasks, pops_by = [], {}
     for arm in cell["arms"]:
-        maps = [read(p)[0] for p in arm["maps"]]
-        if len(maps) != K:
-            raise ValueError(f"{cell['id']} {arm['label']}: {len(maps)} maps for K={K}")
+        if len(arm["maps"]) != K:
+            raise ValueError(f"{cell['id']} {arm['label']}: {len(arm['maps'])} maps for K={K}")
         pops = model_populations(arm["model_star"], K) if K > 1 else np.array([1.0])
-        w = pops / pops.sum()
-        consensus = np.tensordot(w, np.asarray(maps), axes=1)
-        al, fit_rec = fit(consensus, ref_mean, rotations)
-        vols = [apply(v, al) for v in maps]
-        fts = [sh.ft(v) for v in vols]
-        fts_m = [sh.ft(v * mask) for v in vols] if mask is not None else None
-        aligned[arm["label"]] = {"fts": fts, "fts_m": fts_m, "pops": pops, "vols": vols}
-        # vs reference, Hungarian over classes (reference classes = GT classes)
-        R = len(ref_vols)
-        curves = [[sh.fsc(fts[i], ref_ft[j]) for j in range(R)] for i in range(K)]
-        aucs = np.array([[auc(c) for c in row] for row in curves])
+        pops_by[arm["label"]] = pops
+        w = (pops / pops.sum()).tolist()
+        tasks.append(((arm["label"], "consensus", None), arm["maps"], w, ref_paths, frame, ref_mean_path))
+        if K > 1:
+            for i in range(K):
+                tasks.append(
+                    ((arm["label"], "class_to_mean", i), [arm["maps"][i]], [1.0], ref_paths, frame, ref_mean_path)
+                )
+    if fit_workers > 1:
+        # spawn, not fork: the parent has initialized JAX (multithreaded), which a forked child may deadlock on
+        with ProcessPoolExecutor(max_workers=fit_workers, mp_context=multiprocessing.get_context("spawn")) as ex:
+            fits = dict(r for rs in ex.map(_fit_task, tasks) for r in rs)
+    else:
+        fits = dict(r for rs in map(_fit_task, tasks) for r in rs)
+    for arm in cell["arms"]:
+        lab = arm["label"]
+        maps = [read(p)[0] for p in arm["maps"]]
+        pops = pops_by[lab]
+        cons = {h: _Fitted(fits[(lab, "consensus", None, h)]) for h in ("proper", "mirror")}
+        cons_vols = {h: [t(v) for v in maps] for h, t in cons.items()}
+        # the consensus hand used for pair frames and unmatched classes: the hand whose consensus matches the reference mean best
+        hand = max(
+            cons,
+            key=lambda h: auc(
+                sh.fsc(sh.ft(np.tensordot(pops / pops.sum(), np.asarray(cons_vols[h]), axes=1)), sh.ft(ref_mean))
+            ),
+        )
+        fit_rec = {
+            "hand": hand,
+            **fits[(lab, "consensus", None, hand)],
+            "other_hand": fits[(lab, "consensus", None, "mirror" if hand == "proper" else "proper")],
+        }
+        vols = cons_vols[hand]
+        cands = {i: [(f"consensus_{h}", t, cons_vols[h][i]) for h, t in cons.items()] for i in range(K)}
+        for (flab, kind, i, h), rec in fits.items():
+            if flab == lab and kind != "consensus":
+                a_i = _Fitted(rec)
+                cands[i].append((f"{kind}_{h}", a_i, a_i(maps[i])))
+        best = {}
+        curves = [[None] * R for _ in range(K)]
+        aucs = np.zeros((K, R))
+        for i in range(K):
+            for j in range(R):
+                opts = [(src, v) for src, _, v in cands[i]]
+                scored = [(auc(sh.fsc(sh.ft(v), ref_ft[j])), src, v) for src, v in opts]
+                a_best, src, v = max(scored, key=lambda t: t[0])
+                aucs[i, j], best[(i, j)] = a_best, (src, v)
+                curves[i][j] = sh.fsc(sh.ft(v), ref_ft[j])
         rows, cols = linear_sum_assignment(-aucs)
+        matched_vol = {i: best[(i, j)][1] for i, j in zip(rows, cols)}
+        fts = [sh.ft(matched_vol.get(i, vols[i])) for i in range(K)]
+        fts_m = [sh.ft(matched_vol.get(i, vols[i]) * mask) for i in range(K)] if mask is not None else None
+        aligned[lab] = {
+            "fts": fts,
+            "fts_m": fts_m,
+            "pops": pops,
+            "vols": [matched_vol.get(i, vols[i]) for i in range(K)],
+        }
         per_class = []
         for i, j in zip(rows, cols):
             entry = {
@@ -195,6 +267,7 @@ def score_cell(cell):
                 "reference_class": int(j + 1),
                 "population": float(pops[i]),
                 "fsc_auc": float(aucs[i, j]),
+                "transform": best[(i, j)][0],
                 "res_05_A": res(curves[i][j], 0.5, n, px),
                 "res_0143_A": res(curves[i][j], 0.143, n, px),
                 "fsc": [round(float(x), 5) for x in curves[i][j]],
@@ -227,14 +300,23 @@ def score_cell(cell):
             "map_sha256": [sha256(p) for p in arm["maps"]],
             "populations": pops.tolist(),
             "fit_to_reference": fit_rec,
+            "class_fits": {
+                f"{kind}:{i + 1}:{h}": rec
+                for (flab, kind, i, h), rec in fits.items()
+                if flab == arm["label"] and kind != "consensus"
+            },
             "vs_reference": {"per_class": per_class, **summary},
         }
 
     pairs = []
     labels = [a["label"] for a in cell["arms"]]
     arm_cfg = {x["label"]: x for x in cell["arms"]}
+    # Optional cell "pairs": [[a, b], ...] restricts the cross-arm comparisons (all pairs by default).
+    wanted = {frozenset(p) for p in cell.get("pairs", [])}
     for ia in range(len(labels)):
         for ib in range(ia + 1, len(labels)):
+            if wanted and frozenset((labels[ia], labels[ib])) not in wanted:
+                continue
             a, b = aligned[labels[ia]], aligned[labels[ib]]
             # Pair frame: b's raw consensus is fitted directly onto a's reference-frame consensus, so the
             # pair's agreement does not depend on how well either map registers to the reference; b then
@@ -242,10 +324,17 @@ def score_cell(cell):
             raw_b = [read(p)[0] for p in arm_cfg[labels[ib]]["maps"]]
             wb = b["pops"] / b["pops"].sum()
             wa = a["pops"] / a["pops"].sum()
-            al, fit_rec = fit(
-                np.tensordot(wb, np.asarray(raw_b), axes=1), np.tensordot(wa, np.asarray(a["vols"]), axes=1), rotations
+            cons_a = np.tensordot(wa, np.asarray(a["vols"]), axes=1)
+            recs = _register_both_hands(np.tensordot(wb, np.asarray(raw_b), axes=1), cons_a)
+            cons_a_ft = sh.ft(cons_a)
+            hand = max(
+                recs,
+                key=lambda h: auc(
+                    sh.fsc(sh.ft(_Fitted(recs[h])(np.tensordot(wb, np.asarray(raw_b), axes=1))), cons_a_ft)
+                ),
             )
-            b_vols = [apply(v, al) for v in raw_b]
+            al, fit_rec = _Fitted(recs[hand]), {"hand": hand, **recs[hand]}
+            b_vols = [al(v) for v in raw_b]
             b_fts = [sh.ft(v) for v in b_vols]
             curves = [[sh.fsc(a["fts"][i], b_fts[j]) for j in range(K)] for i in range(K)]
             aucs = np.array([[auc(c) for c in row] for row in curves])
@@ -282,7 +371,7 @@ def score_cell(cell):
         "reference": {**cell["reference"], "sha256": [sha256(p) for p in ref_paths]},
         "mask": cell.get("mask"),
         "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
-        "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
+        "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; diagnostic_via_reference_frame uses the per-class reference-frame maps.",
         "arms": arms,
         "pairs": pairs,
         "seconds": round(time.time() - t0, 1),
@@ -290,9 +379,9 @@ def score_cell(cell):
 
 
 def _run(args):
-    cell, out = args
+    cell, out, fit_workers = args
     try:
-        result = score_cell(cell)
+        result = score_cell(cell, fit_workers)
     except Exception as exc:  # recorded, never hidden
         import traceback
 
@@ -314,12 +403,11 @@ def main():
         cells = [c for c in cells if c["id"] in keep]
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    jobs = [(c, str(out / f"{c['id']}.json")) for c in cells]
     ok = True
-    with ProcessPoolExecutor(max_workers=a.workers) as ex:
-        for cid, good in ex.map(_run, jobs):
-            print(cid, "ok" if good else "ERROR", flush=True)
-            ok &= good
+    for c in cells:  # cells in sequence; --workers parallelizes the registrations inside a cell
+        cid, good = _run((c, str(out / f"{c['id']}.json"), a.workers))
+        print(cid, "ok" if good else "ERROR", flush=True)
+        ok &= good
     sys.exit(0 if ok else 1)
 
 

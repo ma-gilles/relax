@@ -407,3 +407,116 @@ def align_volume_rigid_to_reference(
         translation_voxels=x[3:].copy(),
         receipt=receipt,
     )
+
+
+@dataclass(frozen=True)
+class RigidHandFit:
+    """One hand of fit_rigid_both_hands: apply with apply_rigid_volume_transform(volume, rotation_matrix,
+    translation_voxels, mirror_x=mirror_x)."""
+
+    rotation_matrix: np.ndarray
+    translation_voxels: np.ndarray
+    mirror_x: bool
+    lowpass_score: float
+    start_lowpass_scores: tuple[float, ...]
+    failed_starts: tuple[str, ...]
+    fine_start_score: float
+    fine_score: float
+    fine_evaluations: int
+
+
+def refine_rigid_fit(
+    volume: np.ndarray,
+    reference: np.ndarray,
+    rotation_matrix: np.ndarray,
+    translation_voxels: np.ndarray,
+    *,
+    mirror_x: bool = False,
+    shell: int = 16,
+    samples: int = 48,
+    maxiter: int = 35,
+    maxfev: int = 1600,
+) -> tuple[np.ndarray, np.ndarray, float, float, int]:
+    """Fine stage: Powell on the continuous objective low-passed at ``shell`` and sampled on a ``samples``^3 grid, from
+    a coarser fit. The default fit scores shell 8 on 25^3 points; that leaves sub-voxel and sub-degree misfits which
+    move a full-spectrum FSC by up to 0.13 FSC-AUC and make it jitter between equivalent starts (2026-10-01).
+    Returns (rotation, translation, start score, final score, evaluations); the start is kept if Powell does not improve it."""
+    moving, target = _volume(volume), _volume(reference)
+    mirror = np.diag([-1.0 if mirror_x else 1.0, 1.0, 1.0])
+    score = _continuous_score(moving, target, shell, samples)
+    x0 = np.r_[
+        Rotation.from_matrix(_rotation(rotation_matrix)).as_rotvec(), np.asarray(translation_voxels, dtype=np.float64)
+    ]
+
+    def objective(x):
+        return -score(Rotation.from_rotvec(x[:3]).as_matrix() @ mirror, x[3:])
+
+    start = objective(x0)
+    fit = optimize.minimize(
+        objective, x0, method="Powell", options={"maxiter": maxiter, "maxfev": maxfev, "xtol": 1e-5, "ftol": 1e-8}
+    )
+    x = fit.x if np.isfinite(fit.fun) and np.isfinite(fit.x).all() and fit.fun <= start else x0
+    return (
+        Rotation.from_rotvec(x[:3]).as_matrix(),
+        x[3:].copy(),
+        -float(start),
+        -float(min(fit.fun, start)),
+        int(fit.nfev),
+    )
+
+
+def fit_rigid_both_hands(
+    volume: np.ndarray,
+    reference: np.ndarray,
+    rotations: np.ndarray,
+    *,
+    starts: int = 3,
+    controls: RigidFitControls = RigidFitControls(allow_mirror=False),
+    fine_shell: int = 16,
+    fine_samples: int = 48,
+) -> dict[str, RigidHandFit]:
+    """Register a map in both hands, for scorers that compare maps of unknown hand and orientation (InitialModel / VDAM).
+
+    The low-pass objective barely separates a map from its mirror image, so each hand ("proper", "mirror": the map
+    reflected along array axis 0) is fitted with proper rotations only and the caller chooses the hand on the
+    full-spectrum quantity it scores. Each hand runs ``starts`` independent starts (the best coarse seed of each
+    interleaved slice ``rotations[k::starts]``), keeps the start with the best fit objective (never a reference score),
+    then runs refine_rigid_fit. A hand whose every start fails (e.g. a near-empty class map with no norm left inside the
+    box) is omitted; the caller decides whether that is fatal.
+    """
+    if controls.allow_mirror:
+        raise ValueError("fit_rigid_both_hands fits each hand with proper rotations; pass allow_mirror=False controls")
+    grid = np.asarray(rotations, dtype=np.float64)
+    moving, target = _volume(volume), _volume(reference)
+    out: dict[str, RigidHandFit] = {}
+    for hand, vol in (("proper", moving), ("mirror", np.ascontiguousarray(moving[::-1]))):
+        fits, failed = [], []
+        for k in range(starts):
+            try:
+                fits.append(align_volume_rigid_to_reference(vol, target, grid[k::starts], controls=controls))
+            except ValueError as exc:
+                failed.append(repr(exc))
+        if not fits:
+            continue
+        best = max(fits, key=lambda a: float(a.score))
+        rot, tr, s0, s1, nfev = refine_rigid_fit(
+            moving,
+            target,
+            best.rotation_matrix,
+            best.translation_voxels,
+            mirror_x=hand == "mirror",
+            shell=fine_shell,
+            samples=fine_samples,
+        )
+        out[hand] = RigidHandFit(
+            rotation_matrix=rot,
+            translation_voxels=tr,
+            mirror_x=hand == "mirror",
+            lowpass_score=float(best.score),
+            start_lowpass_scores=tuple(float(a.score) for a in fits),
+            failed_starts=tuple(failed),
+            fine_start_score=s0,
+            fine_score=s1,
+            fine_evaluations=nfev,
+        )
+    return out

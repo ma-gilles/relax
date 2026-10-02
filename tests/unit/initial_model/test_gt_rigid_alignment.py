@@ -308,3 +308,75 @@ def test_transform_json_schema_is_closed(transform, mutation):
 def test_transform_apply_rejects_incompatible_grid_or_gt(transform, shape, voxel, gt):
     with pytest.raises(ValueError):
         transform.apply(np.zeros(shape), voxel_size=voxel, gt_sha256=gt)
+
+
+@pytest.mark.parametrize("hand", [False, True])
+def test_both_hands_fine_fit_recovers_subvoxel_subdegree_transform(hand, save):
+    """VDAM scorer registration (2026-10-01): a sub-degree rotation, sub-voxel shift and optional mirror must be recovered
+    to the exact-inverse floor, and the hand must be decidable on the full-spectrum fit, not the low-pass score."""
+    from relax.diagnostics.gt_metrics import centered_correlation, relion_alignment_rotations
+
+    reference = analytic_volume()
+    rotation = Rotation.from_rotvec(
+        np.deg2rad(0.37) * np.array([0.48, -0.6, 0.64]) / np.linalg.norm([0.48, -0.6, 0.64])
+    )
+    mirror = np.diag([-1.0 if hand else 1.0, 1.0, 1.0])
+    transform = rotation.as_matrix() @ mirror
+    translation = np.array([0.31, -0.42, 0.27])
+    moving = analytic_volume(transform=transform, translation=translation)
+    fits = rigid.fit_rigid_both_hands(moving, reference, relion_alignment_rotations(2))
+    assert set(fits) == {"proper", "mirror"}
+    corr = {
+        h: centered_correlation(
+            rigid.apply_rigid_volume_transform(
+                moving, f.rotation_matrix, f.translation_voxels, mirror_x=f.mirror_x, order=3
+            ),
+            reference,
+        )
+        for h, f in fits.items()
+    }
+    chosen = max(corr, key=corr.get)
+    floor = centered_correlation(
+        rigid.apply_rigid_volume_transform(
+            moving, transform.T @ mirror, -transform.T @ translation, mirror_x=hand, order=3
+        ),
+        reference,
+    )
+    fit = fits[chosen]
+    angle = float(np.degrees(Rotation.from_matrix(fit.rotation_matrix @ (transform.T @ mirror).T).magnitude()))
+    shift = float(np.linalg.norm(fit.translation_voxels + transform.T @ translation))
+    save(
+        "both_hands_fine_hand" + str(int(hand)),
+        {
+            "chosen": chosen,
+            "corr": corr,
+            "floor": floor,
+            "angle_deg": angle,
+            "shift_voxels": shift,
+            "fine_score": fit.fine_score,
+            "lowpass_score": fit.lowpass_score,
+        },
+    )
+    assert chosen == ("mirror" if hand else "proper")
+    assert corr[chosen] >= floor - 1e-4
+    assert angle < 0.2 and shift < 0.05  # control limits of the fine stage (the coarse fit's are 2 deg and 0.5 voxel)
+
+
+def test_both_hands_fine_fit_is_start_independent():
+    """Each start alone, refined, lands on the same transform to well below the scorer's resolution."""
+    from relax.diagnostics.gt_metrics import centered_correlation, relion_alignment_rotations
+
+    reference = analytic_volume()
+    moving = analytic_volume(
+        transform=Rotation.from_rotvec([0.31, -0.42, 0.27]).as_matrix(), translation=np.array([2.25, -3.5, 1.125])
+    )
+    grid = relion_alignment_rotations(2)
+    corrs = []
+    for k in range(3):
+        f = rigid.fit_rigid_both_hands(moving, reference, grid[k::3], starts=1)["proper"]
+        corrs.append(
+            centered_correlation(
+                rigid.apply_rigid_volume_transform(moving, f.rotation_matrix, f.translation_voxels, order=3), reference
+            )
+        )
+    assert max(corrs) - min(corrs) < 1e-4, corrs
