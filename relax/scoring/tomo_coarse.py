@@ -10,11 +10,12 @@ the significance cut sees one diff2 per particle hypothesis.
 
 relax reuses the SPA pieces: the RELION CUDA preprocessing with no pre-shift and no norm
 correction (RELION neither translates nor normalises a tomo image, :429-476), the exact
-coarse operands, and the fused coarse projector with each image's own poses, all images of
-a batch of particles in one launch. The fused projector takes at most 128 translations, so
-each image is scored in translation chunks;
-RELION runs one 1024-thread block for 515 translations. The chunks change only the
-float32 order of the pixel sums, the same class as RELION's own atomic lane order.
+coarse operands, RELION's score translation, and the SPA coarse GEMM scorer (RELION's
+``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on each image's own projections,
+a block of a batch's images per call. The GEMM expansion rounds differently from RELION's
+direct square, so a near-tie at the significance cut can move, as for SPA VDAM K>1.
+:func:`tilt_image_coarse_diff2` (the fused direct-square kernel) is the reference the tests
+compare it with.
 See PLAN.md "S4.2 implementation ladder" in the cryo-ET coordination directory.
 """
 
@@ -27,7 +28,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-# The fused coarse projector's translation capacity (one 128-thread block).
+# The fused coarse projector's translation capacity (one 128-thread block): the direct reference.
 _FUSED_TRANSLATION_CAPACITY = 128
 
 
@@ -191,83 +192,98 @@ def particle_coarse_diff2(image_diff2_in_slot_order):
     return total
 
 
-# Bytes of per-image coarse diff2 ([images, R, T] float32) one batched call materialises.
-_COARSE_BATCH_BYTES = 512 << 20
+# Bytes of per-image projections ([images, R, P] complex64) and coarse diff2 ([images, R, T] float32) one call holds.
+_COARSE_BATCH_BYTES = 2 << 30
+
+# Bytes of particles' summed diff2 ([P, K * R, T] float32) one significance call cuts.
+_SIGNIFICANCE_BATCH_BYTES = 512 << 20
 
 
-@partial(jax.jit, static_argnames=("current_size", "physical_image_size", "model_max_r", "padding_factor", "n_chunks"))
-def _particles_coarse_diff2(
-    total,
-    projector_full,
-    rotations,
-    unshifted,
-    pixel_weight,
-    initial_diff2,
-    translation_angles,
-    full_to_compact,
-    *,
-    current_size: int,
-    physical_image_size: int,
-    model_max_r: int,
-    padding_factor: int,
-    n_chunks: int,
-):
-    """``total`` ``[P, R, T]`` plus the particles' images' coarse diff2, added in slot order.
+def _coarse_gemm_projections(projector_half, rotations, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int):
+    """The score-window rows ``[N, P]`` of a RELION ``PPref`` half at ``rotations`` ``[N, 3, 3]``.
 
-    ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
-    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]`` are the particles' tilt images (or a block of
-    their slots) with each image's own poses; every image of the call is scored in one launch per
-    translation chunk (:func:`relax.cuda.kernels.relion_coarse_diff2_projector_per_image_f32`, the
-    per-image arithmetic of :func:`tilt_image_coarse_diff2`). A padded slot or particle has zero
-    pixel weight and zero initial diff2, so it adds exact zeros.
+    The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
+    RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
+    """
+
+    from relax.helpers.projection import compute_relion_projector_projections_block
+
+    projected, _abs2 = compute_relion_projector_projections_block(
+        projector_half,
+        rotations,
+        layout.image_shape,
+        r_max=int(model_max_r),
+        padding_factor=int(padding_factor),
+        return_abs2=False,
+        centered_rows=True,
+        dense_scale=True,
+        projector_output_size=int(layout.current_size),
+        pixel_indices=layout.score_indices_np,
+        relion_texture_interp=True,
+        relion_kernel="coarse",
+    )
+    return projected
+
+
+@partial(jax.jit, static_argnames=("image_shape",))
+def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices, *, image_shape):
+    """Coarse diff2 ``[N, R, T]`` of ``N`` tilt images with their own projections ``[N, R, P]`` and phases ``[N, T, 2]``.
+
+    Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.scoring._relion_coarse_gaussian_gemm_scores_jit`,
+    RELION's ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on its shifted pixels from RELION's
+    score translation; a zero-weight padded image scores zero.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
+    from relax.scoring.scoring import _relion_coarse_gaussian_gemm_scores_jit
 
-    n_particles, n_slots, n_rot = (int(n) for n in rotations.shape[:3])
-    capacity = _FUSED_TRANSLATION_CAPACITY
+    n_trans = int(translation_angles.shape[1])
 
-    def flat(values):
-        return values.reshape((n_particles * n_slots,) + values.shape[2:])
+    def one(reference, image, weight, initial, angles):
+        shifted = em_cuda_kernels.relion_translate_score_f32(image[None], angles, score_indices, image_shape)
+        scores = _relion_coarse_gaussian_gemm_scores_jit(
+            reference,
+            None,
+            shifted.reshape(1, n_trans, -1),
+            weight[None],
+            initial.reshape(1),
+            jnp.int32(1),
+            n_images=1,
+            n_trans=n_trans,
+            image_shape=image_shape,
+            volume_shape=(1, 1, 1),
+        )
+        return -scores[0]
 
-    image_diff2 = jnp.concatenate(
-        [
-            em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
-                projector_full,
-                flat(rotations),
-                flat(unshifted),
-                flat(translation_angles[:, :, chunk * capacity : (chunk + 1) * capacity]),
-                flat(pixel_weight),
-                flat(initial_diff2),
-                full_to_compact,
-                current_size=current_size,
-                physical_image_size=physical_image_size,
-                model_max_r=model_max_r,
-                padding_factor=padding_factor,
-            ).reshape(n_particles, n_slots, n_rot, -1)
-            for chunk in range(n_chunks)
-        ],
-        axis=3,
-    )
-    for slot in range(n_slots):
+    return jax.vmap(one)(projected, unshifted, pixel_weight, initial_diff2, translation_angles)
+
+
+@jax.jit
+def _add_image_diff2_in_slot_order(total, image_diff2):
+    """``total`` ``[P, R, T]`` plus the particles' images' diff2 ``[P, S, R, T]``, slot by slot (``img_id`` order)."""
+
+    for slot in range(int(image_diff2.shape[1])):
         total = total + image_diff2[:, slot]
     return total
 
 
-def _coarse_batches(rotation_counts, *, n_slots: int, n_trans: int, budget_bytes: int = _COARSE_BATCH_BYTES):
-    """Batches of consecutive particles for :func:`_particles_coarse_diff2`: ``(units, R_pad, P_pad, slot_block)``.
+def _coarse_batches(
+    rotation_counts, *, n_slots: int, n_trans: int, n_pixels: int = 0, budget_bytes: int = _COARSE_BATCH_BYTES
+):
+    """Batches of consecutive particles for the coarse GEMM scorer: ``(units, R_pad, P_pad, slot_block)``.
 
     One shape for the whole pass, so one program compiles: ``R_pad`` is the largest rotation count
-    rounded up to a multiple of 128 (the kernel's main segment), and ``P_pad`` particles of
-    ``slot_block`` slots per call keep ``P_pad * slot_block * R_pad * T`` float32 within ``budget_bytes``
-    (a particle whose images exceed it is scored ``slot_block`` slots at a time).
+    rounded up to a multiple of 128, and ``P_pad`` particles of
+    ``slot_block`` slots per call keep each image's ``R_pad`` projected rows of ``n_pixels`` complex64 pixels
+    and its ``R_pad * T`` float32 diff2 within ``budget_bytes`` (a particle whose images exceed it is scored
+    ``slot_block`` slots at a time).
     """
 
     counts = np.asarray(rotation_counts, dtype=np.int64)
     if counts.size == 0:
         return []
     r_pad = -(-int(np.max(counts)) // 128) * 128
-    per_image = r_pad * int(n_trans) * 4
+    per_image = r_pad * (int(n_trans) * 4 + int(n_pixels) * 8)
     slot_block = int(min(n_slots, max(1, int(budget_bytes) // per_image)))
     p_pad = max(1, int(budget_bytes) // (int(n_slots) * per_image)) if slot_block == n_slots else 1
     p_pad = min(p_pad, int(counts.size))
@@ -474,7 +490,7 @@ def particle_coarse_supports(
     random_perturbation,
     angular_sampling_deg,
     coarse_translations_px,
-    projector_full,
+    projector_half,
     layout: CoarseScoreLayout,
     noise_variance_half,
     rotation_log_prior,
@@ -514,7 +530,7 @@ def particle_coarse_supports(
     from relax.refinement import tomo_particles
     from relax.sampling import _relion_adaptive_pass1_rotations
 
-    class_projectors = tuple(projector_full) if isinstance(projector_full, (tuple, list)) else (projector_full,)
+    class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
     if n_classes > 1 and (
         unit_rotation_ids is not None or rotation_log_prior is None or np.ndim(rotation_log_prior) != 2
@@ -557,17 +573,19 @@ def particle_coarse_supports(
             )
         return operand_block
 
-    n_chunks = -(-n_coarse_trans // _FUSED_TRANSLATION_CAPACITY)
     unit_rotations = [None if not local else np.asarray(unit_rotation_ids[u], dtype=np.int64) for u in range(n_units)]
     for u, rows in enumerate(unit_rotations):
         if local and (rows.size == 0 or np.any(np.diff(rows) <= 0)):
             raise ValueError(f"particle {u}'s local rotations must be ascending and non-empty")
     rotation_counts = [coarse_eulers_deg.shape[0] if rows is None else rows.size for rows in unit_rotations]
-    batches = _coarse_batches(rotation_counts, n_slots=slots, n_trans=n_coarse_trans)
+    batches = _coarse_batches(
+        rotation_counts, n_slots=slots, n_trans=n_coarse_trans, n_pixels=int(layout.score_indices_np.size)
+    )
+    score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
     r_pad_all = batches[0][1] if batches else 0
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
-    significance_batch = max(1, _COARSE_BATCH_BYTES // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
+    significance_batch = max(1, _SIGNIFICANCE_BATCH_BYTES // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
     supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
     pending = []
 
@@ -655,21 +673,26 @@ def particle_coarse_supports(
             total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
             for first in range(0, slots, slot_block):
                 block = slice(first, first + slot_block)
-                total = _particles_coarse_diff2(
-                    total,
+                n_block = int(rotations[:, block].shape[1])
+                n_images = p_pad * n_block
+                projected = _coarse_gemm_projections(
                     class_projector,
-                    rotations[:, block],
-                    batch_unshifted[:, block],
-                    batch_weight[:, block],
-                    batch_initial[:, block],
-                    jnp.asarray(angles[:, block]),
-                    layout.full_to_compact,
-                    current_size=int(layout.current_size),
-                    physical_image_size=int(layout.image_shape[0]),
+                    jnp.asarray(rotations[:, block].reshape(n_images * r_pad, 3, 3)),
+                    layout,
                     model_max_r=int(model_max_r),
                     padding_factor=int(padding_factor),
-                    n_chunks=int(n_chunks),
+                ).reshape(n_images, r_pad, -1)
+                image_diff2 = _images_coarse_gemm_diff2(
+                    projected,
+                    batch_unshifted[:, block].reshape(n_images, -1),
+                    batch_weight[:, block].reshape(n_images, -1),
+                    batch_initial[:, block].reshape(n_images),
+                    jnp.asarray(angles[:, block].reshape(n_images, n_coarse_trans, 2)),
+                    score_indices,
+                    image_shape=tuple(layout.image_shape),
                 )
+                del projected
+                total = _add_image_diff2_in_slot_order(total, image_diff2.reshape(p_pad, n_block, r_pad, n_coarse_trans))
             class_totals.append(total[: units.size])
         # K>1: [P, K * R_pad, T], class-major along the rotation axis.
         pending.append((units, class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)))

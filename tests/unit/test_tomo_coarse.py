@@ -1,4 +1,4 @@
-"""Subtomogram coarse pass (S4.2, CPU): translation chunks and the per-particle sum, with a stand-in kernel.
+"""Subtomogram coarse pass (S4.2): the per-image GEMM scorer, the per-particle sum and the cut, with stand-ins on CPU.
 
 The per-image operands and the kernel are the SPA ones; relion_dump_it1_forced (em_work/cryoet_s42_20260925,
 check_p3_p4.py) compares the whole pass with RELION's dumped coarse diff2 on the GPU.
@@ -84,46 +84,45 @@ def test_particle_significance_cuts_the_summed_diff2_with_its_3d_offset_prior():
         assert int(got["n_significant"][p]) == int(expected.sum())
 
 
-def _fake_per_image_projector(projector_full, rotations, images, angles, weight, initial, full_to_compact, **kwargs):
-    # [B, R, Tc]: each image's own rotations and phases, plus its initial diff2 and a weight term.
-    per_rot = jnp.sum(rotations, axis=(2, 3))
-    return initial[:, None, None] + per_rot[:, :, None] + angles[:, None, :, 0] + jnp.sum(weight, axis=1)[:, None, None]
-
-
-def test_particles_are_scored_with_each_images_poses_and_summed_in_slot_order(monkeypatch):
-    monkeypatch.setattr(em_cuda_kernels, "relion_coarse_diff2_projector_per_image_f32", _fake_per_image_projector)
+def test_images_add_in_slot_order():
     rng = np.random.default_rng(7)
-    n_particles, n_slots, n_rot, n_trans = 2, 3, 5, 300  # three translation chunks
-    rotations = rng.normal(size=(n_particles, n_slots, n_rot, 3, 3)).astype(np.float32)
-    angles = rng.normal(size=(n_particles, n_slots, n_trans, 2)).astype(np.float32)
-    weight = rng.uniform(size=(n_particles, n_slots, 4)).astype(np.float32)
-    initial = rng.uniform(1.0, 2.0, size=(n_particles, n_slots)).astype(np.float32)
-    total = tomo_coarse._particles_coarse_diff2.__wrapped__(
-        jnp.zeros((n_particles, n_rot, n_trans), jnp.float32),
-        None,
-        jnp.asarray(rotations),
-        jnp.zeros((n_particles, n_slots, 4), jnp.complex64),
-        jnp.asarray(weight),
-        jnp.asarray(initial),
-        jnp.asarray(angles),
-        jnp.zeros(1, jnp.int32),
-        current_size=6,
-        physical_image_size=8,
-        model_max_r=3,
-        padding_factor=2,
-        n_chunks=3,
+    image_diff2 = rng.uniform(1000.0, 1010.0, size=(2, 3, 5, 9)).astype(np.float32)
+    total = np.asarray(tomo_coarse._add_image_diff2_in_slot_order(jnp.zeros((2, 5, 9), jnp.float32), jnp.asarray(image_diff2)))
+    expected = np.zeros((2, 5, 9), np.float32)
+    for s in range(3):
+        expected = (expected + image_diff2[:, s]).astype(np.float32)
+    assert_matches(total, expected)
+
+
+def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monkeypatch):
+    """Per image: initial + 0.5 sum w |p_r - y_t|^2 over its own projections and shifted pixels."""
+
+    rng = np.random.default_rng(13)
+    n_images, n_rot, n_trans, n_px = 3, 6, 5, 11
+    projected = (rng.normal(size=(n_images, n_rot, n_px)) + 1j * rng.normal(size=(n_images, n_rot, n_px))).astype(np.complex64)
+    images = (rng.normal(size=(n_images, n_px)) + 1j * rng.normal(size=(n_images, n_px))).astype(np.complex64)
+    weight = rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32)
+    initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
+    angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
+
+    def shift(image, translation_angles, pixel_indices, image_shape):
+        # A stand-in phase per translation: y_t = image * exp(i * (tx + ty)).
+        phase = jnp.exp(1j * (translation_angles[:, 0] + translation_angles[:, 1])).astype(jnp.complex64)
+        return (image[0][None, :] * phase[:, None]).reshape(n_trans, -1)
+
+    monkeypatch.setattr(em_cuda_kernels, "relion_translate_score_f32", shift)
+    got = np.asarray(
+        tomo_coarse._images_coarse_gemm_diff2.__wrapped__(
+            jnp.asarray(projected), jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
+            jnp.arange(n_px, dtype=jnp.int32), image_shape=(8, 8),
+        )
     )
-    for p in range(n_particles):
-        expected = np.zeros((n_rot, n_trans), np.float32)
-        for s in range(n_slots):
-            image = (
-                initial[p, s]
-                + rotations[p, s].sum(axis=(1, 2))[:, None]
-                + angles[p, s][None, :, 0]
-                + weight[p, s].sum()
-            ).astype(np.float32)
-            expected = (expected + image).astype(np.float32)
-        assert_matches(np.asarray(total[p]), expected)
+    for b in range(n_images):
+        shifted = images[b][None, :] * np.exp(1j * angles[b].sum(axis=1))[:, None]
+        direct = initial[b] + 0.5 * np.einsum(
+            "p,rtp->rt", weight[b].astype(np.float64), np.abs(projected[b][:, None, :] - shifted[None]) ** 2
+        )
+        assert_matches(got[b], direct.astype(np.float32), rtol=1e-5)
 
 
 def test_coarse_batches_share_one_shape_within_the_budget():
@@ -204,6 +203,67 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
             assert_matches(np.asarray(batched[b]), np.asarray(single), err_msg=f"image {b}")
 
 
+@pytest.mark.gpu
+def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device):
+    """The coarse pass's GEMM scorer against the fused direct-square kernel, image by image.
+
+    The two round differently (the expansion d0 + 0.5 A + 0.5 C - X against RELION's sum of
+    squares), so they agree to the float32 band of the scale of the terms, not bitwise.
+    """
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+    from relax.helpers.projection import relion_projector_half_to_texture_full
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    rng = np.random.default_rng(17)
+    box, size, pad, max_r = 32, 32, 2, 16
+    layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
+    n_px = int(layout.score_indices_np.size)
+    side = 2 * max_r * pad + 3
+    with jax.default_device(gpu_device):
+        half = jnp.asarray(
+            (rng.normal(size=(side, side, side // 2 + 1)) + 1j * rng.normal(size=(side, side, side // 2 + 1))).astype(np.complex64)
+        )
+        full = relion_projector_half_to_texture_full(half).astype(jnp.complex64)
+        n_images, n_rot, n_trans = 3, 256, 200
+        q = rng.normal(size=(n_images * n_rot, 4))
+        q /= np.linalg.norm(q, axis=1, keepdims=True)
+        w, x, y, z = q.T
+        rotations = np.stack(
+            [
+                np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], -1),
+                np.stack([2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], -1),
+                np.stack([2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)], -1),
+            ],
+            -2,
+        ).astype(np.float32)
+        images = (rng.normal(size=(n_images, n_px)) + 1j * rng.normal(size=(n_images, n_px))).astype(np.complex64)
+        weight = rng.uniform(0.1, 1.0, size=(n_images, n_px)).astype(np.float32)
+        initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
+        angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
+        projected = tomo_coarse._coarse_gemm_projections(
+            half, jnp.asarray(rotations), layout, model_max_r=max_r, padding_factor=pad
+        ).reshape(n_images, n_rot, -1)
+        gemm = np.asarray(
+            tomo_coarse._images_coarse_gemm_diff2(
+                projected, jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
+                jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(box, box),
+            )
+        )
+        rotations = rotations.reshape(n_images, n_rot, 3, 3)
+        for b in range(n_images):
+            direct = np.asarray(
+                tomo_coarse.tilt_image_coarse_diff2(
+                    full, rotations[b], images[b], weight[b], initial[b], angles[b], layout,
+                    model_max_r=max_r, padding_factor=pad,
+                )
+            )
+            assert_matches(gemm[b], direct, err_msg=f"image {b}")
+
+
 def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
     """A local search's batch: per-particle rotation priors, padded rotations (a -inf prior) never significant."""
 
@@ -239,10 +299,18 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     offsets = np.array([0, 2, 5, 6])
     n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
 
-    def fake(projector_full, rotations, images, angles, weight, initial, full_to_compact, **kwargs):
-        # Each class shifts its diff2 by its own "projector" value, so the classes compete.
-        return _fake_per_image_projector(None, rotations, images, angles, weight, initial, full_to_compact) + (
-            projector_full * jnp.arange(rotations.shape[1], dtype=jnp.float32)[None, :, None]
+    def fake_projections(class_value, rotations, layout, **kwargs):
+        # One "pixel" per row: the rotation's sum plus the class's own value times the row index in its image,
+        # so the classes compete.
+        rows = jnp.arange(rotations.shape[0], dtype=jnp.float32) % n_rot_pad[0]
+        return (jnp.sum(rotations, axis=(1, 2)) + class_value * rows)[:, None].astype(jnp.complex64)
+
+    def fake_diff2(projected, unshifted, weight, initial, angles, score_indices, *, image_shape):
+        return (
+            initial[:, None, None]
+            + jnp.real(projected[:, :, 0])[:, :, None]
+            + angles[:, None, :, 0]
+            + jnp.sum(weight, axis=1)[:, None, None]
         )
 
     def operands(experiment_dataset, image_start, image_stop, layout, **kwargs):
@@ -268,7 +336,9 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     from relax import sampling
 
     monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", pass1_rotations)
-    monkeypatch.setattr(em_cuda_kernels, "relion_coarse_diff2_projector_per_image_f32", fake)
+    n_rot_pad = [-(-n_rot // 128) * 128]
+    monkeypatch.setattr(tomo_coarse, "_coarse_gemm_projections", fake_projections)
+    monkeypatch.setattr(tomo_coarse, "_images_coarse_gemm_diff2", fake_diff2)
     monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
     monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)
     layout = tomo_coarse.CoarseScoreLayout(
@@ -284,7 +354,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         random_perturbation=0.0,
         angular_sampling_deg=15.0,
         coarse_translations_px=rng.uniform(-1.0, 1.0, size=(n_trans, 3)),
-        projector_full=(jnp.float32(0.3), jnp.float32(-0.2)),
+        projector_half=(jnp.float32(0.3), jnp.float32(-0.2)),
         layout=layout,
         noise_variance_half=None,
         rotation_log_prior=class_prior,

@@ -380,7 +380,6 @@ def score_tomo_half(
 
     from relax import sampling as relax_sampling
     from relax.classification.k_class_inputs import seed_iteration_first_class, seed_iteration_supports
-    from relax.helpers.projection import relion_projector_half_to_texture_full
     from relax.scoring import tomo_coarse
     from relax.sparse_pass2.resident_pass2 import (
         compute_k_class_pass2_stats_resident,
@@ -504,13 +503,10 @@ def score_tomo_half(
             random_perturbation=sampling.random_perturbation,
             angular_sampling_deg=relax_sampling.relion_angular_sampling_deg(sampling.healpix_order),
             coarse_translations_px=coarse_px,
-            projector_full=(
-                relion_projector_half_to_texture_full(jnp.asarray(coarse_halves)).astype(jnp.complex64)
+            projector_half=(
+                jnp.asarray(coarse_halves)
                 if np.ndim(coarse_halves) == 3
-                else tuple(
-                    relion_projector_half_to_texture_full(jnp.asarray(class_half)).astype(jnp.complex64)
-                    for class_half in coarse_halves
-                )
+                else tuple(jnp.asarray(class_half) for class_half in coarse_halves)
             ),
             layout=layout,
             noise_variance_half=noise_half,
