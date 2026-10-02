@@ -202,43 +202,6 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     __syncwarp();
     const long V = (long)g.N0 * g.N1 * g.N2_eff;
     const int first_imag = metric + 1;  // residual parts alternate re, im
-#if __CUDA_ARCH__ >= 900
-    // 16-byte vector atomics: eight lanes cover one voxel's 32-channel row, so the warp adds four
-    // targets of a pixel per instruction (a quarter of the atomic instructions of one lane per channel).
-    const int quad = lane & 7, sub = lane >> 3;
-    for (int group = 0; group * 32 < channels; group++) {
-        const int c0 = group * 32 + 4 * quad;
-        bool active[4], imag[4];
-#pragma unroll
-        for (int k = 0; k < 4; k++) {
-            active[k] = c0 + k < channels;
-            imag[k] = active[k] && c0 + k >= metric && ((c0 + k - first_imag) & 1) == 0;
-        }
-        float* vol = out + group * V * 32;
-        for (int j = 0; j < 32; j++) {
-            float v[4];
-            bool nonzero = false;
-#pragma unroll
-            for (int k = 0; k < 4; k++) {
-                v[k] = active[k] ? s_value[(warp * 32 + j) * channels + c0 + k] : 0.f;
-                nonzero |= v[k] != 0.f;
-            }
-            if (!__any_sync(0xffffffffu, nonzero)) continue;  // adds nothing
-            const int n = s_count[warp][j];
-            for (int t0 = 0; t0 < n; t0 += 4) {
-                const int t = t0 + sub;
-                if (t >= n || !active[0]) continue;
-                const int o = s_offset[warp][j][t];
-                const float w = s_weight[warp][j][t];
-                const float4 x = make_float4(w * ((imag[0] && o < 0) ? -v[0] : v[0]),
-                                             w * ((imag[1] && o < 0) ? -v[1] : v[1]),
-                                             w * ((imag[2] && o < 0) ? -v[2] : v[2]),
-                                             w * ((imag[3] && o < 0) ? -v[3] : v[3]));
-                atomicAdd(reinterpret_cast<float4*>(&vol[(long)(o & 0x7fffffff) * 32 + 4 * quad]), x);
-            }
-        }
-    }
-#else
     for (int group = 0; group * 32 < channels; group++) {
         const int c = group * 32 + lane;
         const bool active = c < channels;
@@ -255,7 +218,6 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
             }
         }
     }
-#endif
 }
 
 }  // namespace ppca_moment_bp

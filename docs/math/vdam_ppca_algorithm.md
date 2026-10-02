@@ -1010,8 +1010,7 @@ scientific contract; runnable code alone does not establish recovery.
   of a warp forms its own pixel's expected residual and noise correction from
   the block's moment images and projections, and expands the pixel's trilinear
   and Hermitian-partner targets, as RECOVAR's windowed adjoint does; then the
-  warp adds one channel per lane (four targets per instruction with 16-byte
-  atomics on Hopper), so each target costs one warp-wide atomic on one 128-byte
+  warp adds one channel per lane, so each target costs one warp-wide atomic on one 128-byte
   row instead of one scattered atomic per channel. Every channel is RECOVAR's
   adjoint up to the float32 order of each voxel's sum; on one HP4 block both are
   3.0e-6 from a float64 adjoint. The 10076 block's backprojection drops from
@@ -1051,7 +1050,8 @@ scientific contract; runnable code alone does not establish recovery.
   to float64. On A100 the four GEMMs are now about 84% of the busy device time
   of a 10076 update. Reading image tiles ahead on a worker thread (within an
   update, and the next update's first tile) was measured and dropped: no
-  steady-state change in paired A100 updates.
+  steady-state change in paired A100 updates. 16-byte vector atomics in the
+  Hopper scatter were dropped too: 4% of the scatter, no update-level change.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
