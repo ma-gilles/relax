@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "optics-class3d-magnification",
-    "source_commit": "main bc31839 + Class3D magnification",
+    "package": "initialmodel-optics-groups-20261002",
+    "source_commit": "58b9f709177cdad453510738454deb1c0edf2ded",
     "metrics": {
       "files": [
         {
@@ -111,9 +111,9 @@
         },
         {
           "function_count": 23,
-          "nonblank_noncomment_lines": 942,
+          "nonblank_noncomment_lines": 934,
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 1061
+          "physical_lines": 1054
         },
         {
           "function_count": 12,
@@ -124,14 +124,14 @@
       ],
       "large_argument_functions": [
         {
-          "line": 319,
+          "line": 312,
           "line_span": 347,
           "name": "score_tomo_half",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         },
         {
-          "line": 713,
+          "line": 706,
           "line_span": 210,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
@@ -231,7 +231,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 319,
+          "line": 312,
           "line_span": 347,
           "name": "score_tomo_half",
           "parameter_count": 26,
@@ -245,7 +245,7 @@
           "path": "relax/refinement/local_search_iteration.py"
         },
         {
-          "line": 713,
+          "line": 706,
           "line_span": 210,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
@@ -268,8 +268,8 @@
         "large_argument_function_count": 8,
         "maximum_function_line_span": 5580,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 18723,
-        "physical_lines": 21218,
+        "nonblank_noncomment_lines": 18715,
+        "physical_lines": 21211,
         "very_large_argument_function_count": 2
       }
     }
