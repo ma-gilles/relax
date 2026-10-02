@@ -679,17 +679,22 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
     return tile, batch.observation_power, layout
 
 
-def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int):
-    """Pass 1 and the tile normalization; returns the kept results and the posterior summary."""
+def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, kept: _Kept | None = None):
+    """Pass 1 and the tile normalization; returns the kept results and the posterior summary.
+
+    ``kept`` may be the previous tile's buffer of the same shape: pass 1 overwrites
+    every row of the first ``n_blocks`` blocks, and nothing reads the rows after them.
+    """
     n_images = int(tile.y_norm.shape[0])
     T = int(stream.translations.shape[0])
     q = stream.static.basis_size - 1
     capacity = len(stream.block_starts) * stream.rotation_block_size
-    kept = _Kept(
-        score=jnp.full((capacity, n_images, T), -jnp.inf, jnp.float32),
-        latent_mean=jnp.zeros((q, capacity, n_images, T), jnp.float32),
-        latent_covariance=jnp.zeros((capacity, n_images, tri_size(q)), jnp.float32),
-    )
+    if kept is None or kept.score.shape != (capacity, n_images, T):
+        kept = _Kept(
+            score=jnp.full((capacity, n_images, T), -jnp.inf, jnp.float32),
+            latent_mean=jnp.zeros((q, capacity, n_images, T), jnp.float32),
+            latent_covariance=jnp.zeros((capacity, n_images, tri_size(q)), jnp.float32),
+        )
     for start in stream.block_starts[:n_blocks]:
         kept = _score_block(
             stream.arrays, tile, kept, start, static=stream.static, block_size=stream.rotation_block_size
@@ -771,27 +776,32 @@ def accumulate_full_row_tile(
 def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool = True) -> list[AugmentedPPCAStats]:
     """:func:`accumulate_full_row_tile` for each ``(image_indices, significant_rows)`` in ``tiles``.
 
-    The next tile's images are read and preprocessed while the device runs the
-    current tile's passes; one tile's pose-kept buffers are live at a time.
+    While the device runs tile k's passes, the host finishes tile k-1 (its
+    statistics are complete) and reads and preprocesses tile k+1. Consecutive
+    tiles of one shape reuse one pose-kept buffer, so a single tile's worth is live.
     """
     with jax.default_device(stream.device):
         loaded = _load_tile(stream, *tiles[0], collect_observation=True) if tiles else None
-        results = []
+        results, kept, previous = [], None, None
         for index, (image_indices, _significant) in enumerate(tiles):
-            pending = _enqueue_full_row_tile(stream, *loaded)
+            pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
+            if previous is not None:
+                results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
             loaded = (
                 _load_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
             )
-            results.append(_finish_full_row_tile(stream, image_indices, *pending, enforce_x0=enforce_x0))
+            previous = (image_indices, *pending)
+        if previous is not None:
+            results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
         return results
 
 
-def _enqueue_full_row_tile(stream, tile, observation_power, layout):
-    """Dispatch both passes of one loaded tile without waiting for the device."""
-    kept, posterior = _score_tile(stream, tile, layout["n_blocks"])
+def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
+    """Dispatch both passes of one loaded tile without waiting for the device; returns its kept buffer too."""
+    kept, posterior = _score_tile(stream, tile, layout["n_blocks"], kept)
     carry = _empty_carry(stream, int(tile.y_norm.shape[0]), observation_power)
     carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
-    return tile, layout, posterior, carry
+    return (tile, layout, posterior, carry), kept
 
 
 def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, *, enforce_x0):

@@ -235,9 +235,10 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
 
 
 def test_pipelined_tiles_match_separate_tiles(tile_problem):
-    """Loading the next tile during the current tile's passes changes no tile's statistics."""
+    """Pipelining (next tile loaded, previous finished, kept buffer reused) changes no tile's statistics."""
     _dataset, _mu, _W, stream, _host = tile_problem
-    tiles = [(np.arange(2), PRUNED[:2]), (np.arange(2, 3), PRUNED[2:])]
+    # Two equal-size tiles share one kept buffer; the last, smaller one gets its own.
+    tiles = [(np.arange(2), PRUNED[:2]), (np.arange(1, 3), PRUNED[1:]), (np.arange(2, 3), PRUNED[2:])]
     pipelined = accumulate_full_row_tiles(stream, tiles)
     for (ids, support), actual in zip(tiles, pipelined, strict=True):
         expected = accumulate_full_row_tile(stream, ids, support)
