@@ -461,7 +461,9 @@ def relion_translate_score_f32(
     """Translate score images with RELION's accelerated float32 arithmetic.
 
     ``translation_angles`` contains RELION's per-translation ``(tx, ty)``
-    radians. ``pixel_indices`` use RECOVAR's centered half-spectrum layout.
+    radians, ``[T, 2]`` shared by the batch or ``[B, T, 2]`` per image (one
+    launch for a subtomogram's tilt images, each with its own phases).
+    ``pixel_indices`` use RECOVAR's centered half-spectrum layout.
     The CUDA primitive evaluates ``sincosf(x*tx + y*ty)`` and the explicit
     real/imaginary products used by RELION's fine Gaussian scorer. The output
     is flattened in image-major, translation-major order to match
@@ -481,9 +483,13 @@ def relion_translate_score_f32(
         raise TypeError(f"pixel_indices must be int32, got {pixel_indices.dtype}")
     if images.ndim != 2:
         raise ValueError(f"images must have shape (batch, pixels), got {images.shape}")
-    if translation_angles.ndim != 2 or translation_angles.shape[1:] != (2,):
+    if not (
+        (translation_angles.ndim == 2 and translation_angles.shape[1:] == (2,))
+        or (translation_angles.ndim == 3 and translation_angles.shape[0] == images.shape[0]
+            and translation_angles.shape[2:] == (2,))
+    ):
         raise ValueError(
-            "translation_angles must have shape (translations, 2), got "
+            "translation_angles must have shape (translations, 2) or (batch, translations, 2), got "
             f"{translation_angles.shape}"
         )
     if pixel_indices.shape != (images.shape[1],):
@@ -505,7 +511,7 @@ def relion_translate_score_f32(
     half_width = image_w // 2 + 1
     out_type = jax.ShapeDtypeStruct(
         (
-            images.shape[0] * translation_angles.shape[0],
+            images.shape[0] * translation_angles.shape[-2],
             images.shape[1],
         ),
         jnp.complex64,

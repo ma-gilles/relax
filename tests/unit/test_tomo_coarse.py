@@ -105,10 +105,10 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
     initial = rng.uniform(10.0, 20.0, size=n_images).astype(np.float32)
     angles = rng.uniform(-0.2, 0.2, size=(n_images, n_trans, 2)).astype(np.float32)
 
-    def shift(image, translation_angles, pixel_indices, image_shape):
-        # A stand-in phase per translation: y_t = image * exp(i * (tx + ty)).
-        phase = jnp.exp(1j * (translation_angles[:, 0] + translation_angles[:, 1])).astype(jnp.complex64)
-        return (image[0][None, :] * phase[:, None]).reshape(n_trans, -1)
+    def shift(images, translation_angles, pixel_indices, image_shape):
+        # A stand-in phase per image and translation: y_bt = image_b * exp(i * (tx + ty)), [B * T, P].
+        phase = jnp.exp(1j * (translation_angles[..., 0] + translation_angles[..., 1])).astype(jnp.complex64)
+        return (images[:, None, :] * phase[:, :, None]).reshape(-1, images.shape[1])
 
     monkeypatch.setattr(em_cuda_kernels, "relion_translate_score_f32", shift)
     got = np.asarray(

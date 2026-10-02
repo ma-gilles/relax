@@ -367,6 +367,33 @@ def test_relion_translate_score_f32_matches_float32_reference(
 
 
 @pytest.mark.gpu
+def test_relion_translate_score_f32_per_image_angles_are_each_images_own_launch(gpu_device):
+    """``[B, T, 2]`` angles (a subtomogram's tilt images, one launch) give each image's ``[T, 2]`` result."""
+
+    from relax.cuda import kernels as em_cuda_kernels
+
+    rng = np.random.default_rng(5)
+    image_shape = (16, 16)
+    pixel_indices = jnp.asarray(rng.choice(16 * 9, size=40, replace=False).astype(np.int32))
+    images = (rng.normal(size=(3, 40)) + 1j * rng.normal(size=(3, 40))).astype(np.complex64)
+    angles = rng.uniform(-0.3, 0.3, size=(3, 7, 2)).astype(np.float32)
+    with jax.default_device(gpu_device):
+        batched = np.asarray(
+            em_cuda_kernels.relion_translate_score_f32(jnp.asarray(images), jnp.asarray(angles), pixel_indices, image_shape)
+        )
+        alone = [
+            np.asarray(
+                em_cuda_kernels.relion_translate_score_f32(
+                    jnp.asarray(images[b : b + 1]), jnp.asarray(angles[b]), pixel_indices, image_shape
+                )
+            )
+            for b in range(3)
+        ]
+    assert batched.shape == (3 * 7, 40)
+    assert_matches(batched, np.concatenate(alone))
+
+
+@pytest.mark.gpu
 def test_relion_translate_score_f32_matches_sealed_relion_values(
     monkeypatch,
     custom_cuda_lib,

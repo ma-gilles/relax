@@ -288,14 +288,17 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     from relax.cuda import kernels as em_cuda_kernels
     from relax.scoring.scoring import _relion_coarse_gaussian_gemm_scores_jit
 
-    n_trans = int(translation_angles.shape[1])
+    n_images, n_trans = (int(n) for n in translation_angles.shape[:2])
+    # Every image's translations in one launch, each with its own phases.
+    shifted_all = em_cuda_kernels.relion_translate_score_f32(
+        unshifted, translation_angles, score_indices, image_shape
+    ).reshape(n_images, n_trans, -1)
 
-    def one(reference, image, weight, initial, angles):
-        shifted = em_cuda_kernels.relion_translate_score_f32(image[None], angles, score_indices, image_shape)
+    def one(reference, shifted, weight, initial):
         scores = _relion_coarse_gaussian_gemm_scores_jit(
             reference,
             None,
-            shifted.reshape(1, n_trans, -1),
+            shifted[None],
             weight[None],
             initial.reshape(1),
             jnp.int32(1),
@@ -307,7 +310,7 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
         )
         return -scores[0]
 
-    return jax.vmap(one)(projected, unshifted, pixel_weight, initial_diff2, translation_angles)
+    return jax.vmap(one)(projected, shifted_all, pixel_weight, initial_diff2)
 
 
 @partial(

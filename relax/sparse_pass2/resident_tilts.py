@@ -628,10 +628,10 @@ def tilt_cc_scores(
                 units_images = unit_slot_images[slot]
                 valid_units = units_images >= 0
                 safe = jnp.asarray(np.where(valid_units, units_images, 0), dtype=jnp.int32)
-                tiles = jax.lax.map(
-                    lambda pair: em_cuda_kernels.relion_translate_score_f32(pair[0][None], pair[1], pixels, shape),
-                    (score_input[safe], block_angles[safe]),
-                )  # [C_U, T_b, N]
+                # [C_U, T_b, N]: the slot's images with their own phases, one launch.
+                tiles = em_cuda_kernels.relion_translate_score_f32(
+                    score_input[safe], block_angles[safe], pixels, shape
+                ).reshape(safe.shape[0], index.size, -1)
                 images = jnp.asarray(np.where(slot_image_ids[slot] >= 0, slot_image_ids[slot], 0), dtype=jnp.int32)
                 has_image = jnp.asarray(slot_image_ids[slot] >= 0) & row_is_valid
                 projections = jax.lax.dynamic_slice_in_dim(cache, (slot - start) * row_capacity, row_capacity, axis=0)
@@ -974,10 +974,8 @@ def _slot_view_arrays(fields, wavg_window, safe, valid, angles, rect_indices, ex
         name: _gather_rows(values, safe, valid, fill=_SLOT_VIEW_FILL.get(name, 0)) for name, values in fields.items()
     }
     window = _gather_rows(wavg_window, safe, valid)
-    translated = jax.lax.map(
-        lambda pair: relion_cuda_translate_wavg_norm_window(pair[0][None], pair[1], rect_indices, image_shape)[0],
-        (window, angles),
-    )
+    # The slot's images with their own phases, one launch ([C, T, W]).
+    translated = relion_cuda_translate_wavg_norm_window(window, angles, rect_indices, image_shape)
     translated = jnp.where(valid[:, None, None], translated, jnp.zeros((), translated.dtype))
     return gathered, translated, translated[:, :, exact_positions]
 

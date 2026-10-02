@@ -482,6 +482,7 @@ def relion_cuda_translate_wavg_norm_window(
 
     ``window_pixels`` is ``processed_score_half[:, window_indices]``; callers
     that keep only the Wavg window of each image resident translate it here.
+    ``translation_angles`` is ``[T, 2]`` or ``[B, T, 2]`` (each image's own).
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -497,7 +498,7 @@ def relion_cuda_translate_wavg_norm_window(
     )
     return translated.reshape(
         window_pixels.shape[0],
-        translation_angles.shape[0],
+        translation_angles.shape[-2],
         window_indices.shape[0],
     )
 
