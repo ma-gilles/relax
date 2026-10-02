@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import NamedTuple
 
@@ -1040,20 +1041,31 @@ def accumulate_full_row_tiles(
 ) -> list[AugmentedPPCAStats]:
     """:func:`accumulate_full_row_tile` for each ``(image_indices, significant_rows)`` in ``tiles``.
 
-    While the device runs tile k's passes, the host finishes tile k-1 (its
-    statistics are complete) and reads and preprocesses tile k+1. Consecutive
-    tiles of one shape reuse one pose-kept buffer, so a single tile's worth is live.
-    ``first_batch`` is the first tile's :func:`read_tile_batch`, when it was read ahead.
+    A worker thread reads tile k+1's images while tile k is dispatched: dispatch
+    waits for the device once its queue is full, so a read started after it would
+    leave the device idle for the read's remainder. While the device runs tile k's
+    passes, the host finishes tile k-1 (its statistics are complete) and
+    preprocesses tile k+1. Consecutive tiles of one shape reuse one pose-kept
+    buffer, so a single tile's worth is live. ``first_batch`` is the first tile's
+    :func:`read_tile_batch`, when it was read ahead.
     """
-    with jax.default_device(stream.device):
+    with jax.default_device(stream.device), ThreadPoolExecutor(max_workers=1) as reader:
+        reads = [
+            reader.submit(read_tile_batch, stream.dataset, image_indices, stream.image_batch_size)
+            for image_indices, _significant in tiles[1:2]
+        ]
         loaded = _load_tile(stream, *tiles[0], collect_observation=True, batch=first_batch) if tiles else None
         results, kept, previous = [], None, None
         for index, (image_indices, _significant) in enumerate(tiles):
+            if index + 2 < len(tiles):
+                reads.append(reader.submit(read_tile_batch, stream.dataset, tiles[index + 2][0], stream.image_batch_size))
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
             if previous is not None:
                 results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
             loaded = (
-                _load_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
+                _load_tile(stream, *tiles[index + 1], collect_observation=True, batch=reads[index].result())
+                if index + 1 < len(tiles)
+                else None
             )
             previous = (image_indices, *pending)
         if previous is not None:
