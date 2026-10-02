@@ -300,7 +300,9 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     offsets = np.array([0, 2, 5, 6])
     n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
 
-    def fake_block(total, class_value, rotations, unshifted, weight, initial, angles, score_indices, **kwargs):
+    def fake_block(total, class_value, rotations, unshifted, weight, initial, angles, score_indices, *, first, count, **kwargs):
+        block = slice(first, first + count)
+        rotations, weight, initial, angles = rotations[:, block], weight[:, block], initial[:, block], angles[:, block]
         # Each image adds its initial diff2, its rotation's sum, its angle and its weight; each class shifts its
         # diff2 by its own "projector" value times the rotation index, so the classes compete.
         per_rot = jnp.sum(rotations, axis=(3, 4)) + class_value * jnp.arange(rotations.shape[2], dtype=jnp.float32)

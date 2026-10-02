@@ -298,18 +298,22 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
 
 @partial(
     jax.jit,
-    static_argnames=("image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
+    static_argnames=("first", "count", "image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
 )
 def _coarse_gemm_slot_block(
     total, projector_half, rotations, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices,
-    *, image_shape, current_size, model_max_r, padding_factor, texture,
+    *, first, count, image_shape, current_size, model_max_r, padding_factor, texture,
 ):
-    """One batch's slot block in one program: each image's projections, its GEMM diff2, added in slot order.
+    """One batch's slots ``first:first + count`` in one program: each image's projections, its GEMM diff2,
+    added in slot order.
 
     ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
-    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]``; ``total`` ``[P, R, T]``.
+    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]`` are the whole batch's; ``total`` ``[P, R, T]``.
     """
 
+    block = slice(int(first), int(first) + int(count))
+    rotations, unshifted, pixel_weight = rotations[:, block], unshifted[:, block], pixel_weight[:, block]
+    initial_diff2, translation_angles = initial_diff2[:, block], translation_angles[:, block]
     n_particles, n_slots, n_rot = (int(n) for n in rotations.shape[:3])
     n_images = n_particles * n_slots
     projected = _score_window_projections(
@@ -750,20 +754,22 @@ def particle_coarse_supports(
         batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
         batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
         batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
+        batch_angles = jnp.asarray(angles)
         class_totals = []
         for class_index, class_projector in enumerate(class_projectors):
             total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
             for first in range(0, slots, slot_block):
-                block = slice(first, first + slot_block)
                 total = _coarse_gemm_slot_block(
                     total,
                     class_projector,
-                    jnp.asarray(rotations[:, block]),
-                    batch_unshifted[:, block],
-                    batch_weight[:, block],
-                    batch_initial[:, block],
-                    jnp.asarray(angles[:, block]),
+                    rotations,
+                    batch_unshifted,
+                    batch_weight,
+                    batch_initial,
+                    batch_angles,
                     score_indices,
+                    first=int(first),
+                    count=int(min(slot_block, slots - first)),
                     image_shape=tuple(layout.image_shape),
                     current_size=int(layout.current_size),
                     model_max_r=int(model_max_r),
