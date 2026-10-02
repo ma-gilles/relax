@@ -61,6 +61,16 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.030, 2 component(s), captures 0.732 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
+  "etbench_et09_box64_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/et09_box64/masks/etbench_et09_box64_c1/MASK.json",
+   "mask_sha256": "e3c35b1a410c052715362019b1226c6ed432930365d73cc3ea59fe45bf07654a",
+   "symmetry": "C1",
+   "box": 64,
+   "pixel_size_A": 4.25,
+   "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.088, 1 component(s), captures 0.924 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
   "etbench_et13_k2conf_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/et13_k2conf/masks/etbench_et13_k2conf_c1/MASK.json",
    "mask_sha256": "4db4aa8693eb71eb6bb6d88c610aa0a7f6bb1473b0dc296271cad8eca3f03b37",
@@ -70,6 +80,16 @@
    "source_role": "ground truth (class mean for K=2), simulator output on optics group 1's grid",
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.065, 1 component(s), captures 0.899 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
+  "etbench_et15_k2conf_box64_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/et15_k2conf_box64/masks/etbench_et15_k2conf_box64_c1/MASK.json",
+   "mask_sha256": "7645b7fca1a18983db4ebf71fc9c4d320ea36d5b60ac4a11a80bd3342ca5f1c9",
+   "symmetry": "C1",
+   "box": 64,
+   "pixel_size_A": 8.5,
+   "source_role": "ground truth class mean, simulator output (64 px @ 8.5 A)",
+   "generation": "adopted",
+   "sanity": "PASS: box fraction 0.092, 1 component(s), captures 0.848 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
   "etbench_et16_k2conf_optics2_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/et16_k2conf_optics2/masks/etbench_et16_k2conf_optics2_c1/MASK.json",
