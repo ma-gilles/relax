@@ -132,7 +132,8 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         captured.append(kwargs)
         return sentinel
 
-    def tiles(_stream, items):
+    def tiles(_stream, items, *, first_batch=None):
+        assert first_batch is None
         return [part(_stream, ids, support) for ids, support in items]
 
     def part(_stream, ids, support):
@@ -200,3 +201,60 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     assert dense_called == [True]
     with pytest.raises(ValueError, match="oversampling=0"):
         Config(oversampling=1, stream_coarse_recompute=True)
+
+
+def test_streamed_run_reads_each_next_first_tile_ahead(tmp_path, monkeypatch):
+    """Update k+1's first tile is read while update k runs, for exactly the ids update k+1 selects."""
+    shape = (4, 4, 4)
+    n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
+    zero = jnp.zeros((n_freq, 3), jnp.complex64)
+    monkeypatch.setattr(iteration_loop, "initialize", lambda *_a, **_k: (zero, jnp.ones(3, jnp.float32), {"seed": 1}))
+    monkeypatch.setattr(iteration_loop, "support_mask", lambda *_args: jnp.ones(shape, jnp.float32))
+    monkeypatch.setattr(iteration_loop, "bandlimit_and_mask", lambda value, *_args: value)
+    monkeypatch.setattr(iteration_loop.sampling, "get_relion_hidden_rotation_grid", lambda *_a, **_k: np.zeros((1, 3)))
+    reads, calls = [], []
+
+    def read(dataset, ids, batch_size):
+        reads.append(np.asarray(ids))
+        return ("batch", np.asarray(ids))
+
+    def groups(_dataset, _state, _config, halves, iteration, *, first_batch=None):
+        calls.append((iteration, [np.asarray(h) for h in halves], first_batch))
+        return [
+            SimpleNamespace(
+                residual_gradient=jnp.zeros((n_freq, 3), jnp.complex64),
+                metric_trace=jnp.ones(n_freq, jnp.float32),
+                lhs_tri=None,
+                rhs=None,
+                residual_num=jnp.ones(3, jnp.float32),
+                residual_den=jnp.ones(3, jnp.float32),
+                original_image_ids=np.asarray(ids),
+                n_images=len(ids),
+                log_likelihood=0.0,
+                diagnostics={
+                    "offset_second_sum_px2": 2.0,
+                    "rotation_mass": np.array([float(len(ids))]),
+                    "latent_covariance_trace_mean": 1.0,
+                    "pose_entropy_mean": 0.0,
+                    "pmax_mean": 1.0,
+                },
+            )
+            for ids in halves
+        ]
+
+    monkeypatch.setattr(iteration_loop, "read_tile_batch", read)
+    monkeypatch.setattr(iteration_loop, "expectation_groups", groups)
+    monkeypatch.setattr(iteration_loop, "_curvature_trace", lambda stats, p: sum(s.metric_trace for s in stats))
+    dataset = SimpleNamespace(n_images=40, grid_size=4, volume_shape=shape, voxel_size=1.0)
+    config = Config(
+        iterations=3, stages=((1, 1, 0),), optimizer="momentum_sgd", oversampling=0, stream_coarse_recompute=True,
+        image_batch_size=3, stochastic_batch_size=8, stochastic_all_iterations=True, skip_final_embeddings=True,
+    )
+    iteration_loop.run(dataset, config, tmp_path, {"fixture": "tiny"}, diameter_ang=2.0)
+    assert [c[0] for c in calls] == [1, 2, 3]
+    assert calls[0][2] is None  # nothing was read ahead of the first update
+    assert len(reads) == 2  # none after the last update
+    for (_iteration, halves, first_batch), ids in zip(calls[1:], reads, strict=True):
+        np.testing.assert_array_equal(ids, halves[0][:3])
+        assert first_batch[0] == "batch"
+        np.testing.assert_array_equal(first_batch[1], ids)

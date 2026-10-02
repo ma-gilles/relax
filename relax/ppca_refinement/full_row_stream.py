@@ -859,16 +859,31 @@ def _block_starts(n_rot: int, block_size: int, device) -> tuple[jax.Array, ...]:
     return tuple(jax.device_put(np.int32(start), device) for start in range(0, n_rot, block_size))
 
 
-def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collect_observation: bool):
+def read_tile_batch(dataset, image_indices, image_batch_size: int):
+    """The dataset batch (images and CTF parameters as read) of one full-row tile.
+
+    Reading does not depend on the model or the noise, so a caller may read a later tile's batch
+    ahead (on another thread) and pass it to :func:`accumulate_full_row_tiles` as ``first_batch``.
+    """
+    image_indices = np.asarray(image_indices)
+    if image_indices.size > image_batch_size:
+        raise ValueError("A full-row tile must fit one image batch")
+    batches = list(dataset.iter_batches(image_batch_size, indices=image_indices, by_image=False))
+    if len(batches) != 1:
+        raise RuntimeError("Expected exactly one image batch per full-row tile")
+    return image_indices, batches[0]
+
+
+def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collect_observation: bool, batch=None):
     image_indices = np.asarray(image_indices)
     if len(significant_rows) != image_indices.size:
         raise ValueError("One coarse support row is required per tile image")
-    if image_indices.size > stream.image_batch_size:
-        raise ValueError("A full-row tile must fit one image batch")
-    batches = list(stream.dataset.iter_batches(stream.image_batch_size, indices=image_indices, by_image=False))
-    if len(batches) != 1:
-        raise RuntimeError("Expected exactly one image batch per full-row tile")
-    batch_data, _rots, _trans, ctf_params, _noise, _particle_indices, indices = batches[0]
+    if batch is None:
+        batch = read_tile_batch(stream.dataset, image_indices, stream.image_batch_size)
+    read_indices, batch = batch
+    if not np.array_equal(read_indices, image_indices):
+        raise ValueError("The batch read ahead belongs to other images than this tile")
+    batch_data, _rots, _trans, ctf_params, _noise, _particle_indices, indices = batch
     batch_data, ctf_params = jax.device_put((batch_data, ctf_params), stream.device)
     batch = prepare_dense_ppca_image_batch(
         stream.dataset,
@@ -1020,15 +1035,18 @@ def accumulate_full_row_tile(
 
 
 @full_float32
-def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool = True) -> list[AugmentedPPCAStats]:
+def accumulate_full_row_tiles(
+    stream: FullRowStream, tiles, *, enforce_x0: bool = True, first_batch=None
+) -> list[AugmentedPPCAStats]:
     """:func:`accumulate_full_row_tile` for each ``(image_indices, significant_rows)`` in ``tiles``.
 
     While the device runs tile k's passes, the host finishes tile k-1 (its
     statistics are complete) and reads and preprocesses tile k+1. Consecutive
     tiles of one shape reuse one pose-kept buffer, so a single tile's worth is live.
+    ``first_batch`` is the first tile's :func:`read_tile_batch`, when it was read ahead.
     """
     with jax.default_device(stream.device):
-        loaded = _load_tile(stream, *tiles[0], collect_observation=True) if tiles else None
+        loaded = _load_tile(stream, *tiles[0], collect_observation=True, batch=first_batch) if tiles else None
         results, kept, previous = [], None, None
         for index, (image_indices, _significant) in enumerate(tiles):
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
