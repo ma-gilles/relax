@@ -285,3 +285,56 @@ def test_gpu_wide_slab_takes_the_half_storage_kernel_and_matches_the_persistent_
     kx = np.arange(q // 2 + 1)[None, :]
     inside = ((ky**2 + kx**2) < (q // 2 - 1) ** 2).reshape(-1)
     assert_matches(staged[:, inside], np.asarray(wide)[:, inside])
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("pf", [1, 2])
+@pytest.mark.parametrize("logical_size, physical_size", [(30, 32), (34, 40), (56, 56), (62, 64)])
+def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_size, physical_size):
+    """The stable-window resident pass projects a center-padded slab into the physical crop.
+
+    Its windowed rows (score and reconstruction windows of the physical class) equal the
+    logical-crop projection of the logical slab: pixels outside the logical crop are zero
+    either way (relax/relion/relion_project.py).
+    """
+    from relax.sparse_pass2.resident_pass2 import center_pad_relion_projector_half
+    from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+        _compute_sparse_pass2_windowed_projections_block,
+        projection_window_union,
+    )
+
+    image_size, radius = 96, logical_size // 2
+    size = 2 * pf * radius + 3
+    rng = np.random.default_rng(logical_size * 10 + pf)
+    logical = jnp.asarray(
+        (rng.standard_normal((size, size, size // 2 + 1)) + 1j * rng.standard_normal((size, size, size // 2 + 1))).astype(
+            np.complex64
+        )
+    )
+    half = image_size // 2 + 1
+    rows, cols = np.meshgrid(np.arange(image_size), np.arange(half), indexing="ij")
+    ky, kx = rows - image_size // 2, cols
+    inside = kx * kx + ky * ky <= (physical_size // 2) ** 2
+    score = np.flatnonzero(inside.ravel()).astype(np.int32)
+    recon = np.flatnonzero((inside & ~((kx == 0) & (ky == 0))).ravel()).astype(np.int32)
+    rotations = _rotations()
+    common = dict(
+        image_shape=(image_size, image_size), proj_volume_shape=None, disc_type="linear_interp",
+        score_indices=score, recon_indices=recon, relion_projector_r_max=None, projection_padding_factor=pf,
+        relion_texture_interp=True, mask_current_image_disk=False,
+    )
+
+    def project(slab, r_max, output_size, **extra):
+        union = projection_window_union(score, recon, image_shape=(image_size, image_size), projector_output_size=output_size)
+        args = dict(common, relion_projector_r_max=r_max, projector_output_size=output_size, window_union=union, **extra)
+        return _compute_sparse_pass2_windowed_projections_block(None, rotations, relion_projector_half=slab, **args)
+
+    expected = project(logical, radius, logical_size)
+    padded = center_pad_relion_projector_half(logical, logical_r_max=radius, physical_size=physical_size, padding_factor=pf)
+    got = project(
+        padded, 0, physical_size,
+        relion_projector_runtime_r_max=jnp.asarray(radius, jnp.int32),
+        relion_projector_image_size=jnp.asarray(logical_size, jnp.int32),
+    )
+    for g, e in zip(got, expected, strict=True):
+        assert_matches(np.asarray(g), np.asarray(e), err_msg=f"L={logical_size}, P={physical_size}, pf={pf}")
