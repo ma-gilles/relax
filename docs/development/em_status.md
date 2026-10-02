@@ -53,7 +53,12 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   direct-square kernel (job 14863136): et09 K=1 coarse 78.3 -> 37.9 s (E-step 95.7 -> 55.7 s), et15 K=2 coarse
   433.5 -> 133.6 s (E-step 448.7 -> 148.5 s); every particle's coarse support is identical, Pmax within 1.1e-2
   relative (p99 3.5e-3, the expansion's float32 rounding). The scorer's GEMM runs near the float32 peak; the
-  projection is texture-bound.
+  projection is texture-bound. Translating every tilt image of a block in one launch with its own phases
+  (`relion_translate_score_f32` with `[B, T, 2]` angles; coarse scorer and the tilt pass-2 Wavg window) brings the
+  same A/B (job 14864249) to et09 E-step 95.7 -> 45.9 s (pass 2 16.2 -> 7.6 s) and et15 448.4 -> 143.2 s, supports
+  again identical. et09_box64 K=1 seed 2 end to end on one H100 (job 14864247): 6391 s, against 18434 s for relax
+  before this work and 9955 / 8858 s for stock RELION; per-iteration average Pmax tracks the earlier relax run
+  (it200 0.659 vs 0.658; RELION 0.669-0.670).
 - Subtomogram Refine3D `--firstiter_cc` (et01_base, RELION's default command, RELION 5.0.1
   mpiscale MPI 3x4, H100): masked GT FSC-AUC relax / RELION (two same-seed runs, identical)
   s1 0.99161 / 0.99162, s2 0.99180 / 0.99180, s3 0.99212 / 0.99223; map gate PASS on every seed
