@@ -57,17 +57,22 @@ def update_noise_from_estep_meta(
     do_grad: bool,
     mu: float = DEFAULT_GRAD_MU,
 ) -> InitialModelState:
-    """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴)."""
+    """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴).
+
+    One optics group's sums are ``[n]`` with a scalar ``noise_sumw``; several groups give
+    ``[G, n]`` sums and ``[G]`` weights, and each group with noise sums is updated on its own
+    (``maximizationOtherParameters``, ml_optimiser.cpp:6316-6372: a group whose sums are zero
+    keeps its spectrum).
+    """
     wsum_sigma2_noise = _posterior_sums_from_meta(meta, "wsum_sigma2_noise")
     wsum_img_power = _posterior_sums_from_meta(meta, "wsum_img_power")
     wsum_noise_a2 = _posterior_sums_from_meta(meta, "wsum_noise_a2")
     wsum_noise_xa = _posterior_sums_from_meta(meta, "wsum_noise_xa")
-    noise_sumw = meta.get("noise_sumw")
-    if noise_sumw is not None:
-        noise_sumw = float(noise_sumw)
+    noise_sumw = _posterior_sums_from_meta(meta, "noise_sumw")
     if wsum_sigma2_noise is None or wsum_img_power is None or noise_sumw is None:
         return state
-    if noise_sumw <= 0.0 or not np.isfinite(noise_sumw):
+    total_sumw = float(np.sum(noise_sumw))
+    if total_sumw <= 0.0 or not np.all(np.isfinite(noise_sumw)):
         return state
     my_mu = _my_mu(mu, do_grad, state.subset_size)
 
@@ -76,8 +81,19 @@ def update_noise_from_estep_meta(
             f"wsum_sigma2_noise and wsum_img_power shape mismatch: {wsum_sigma2_noise.shape} vs {wsum_img_power.shape}"
         )
     expected_shells = int(state.ori_size) // 2 + 1
-    if wsum_sigma2_noise.shape != (expected_shells,):
-        raise ValueError(f"noise weighted sums must have shape ({expected_shells},), got {wsum_sigma2_noise.shape}")
+    new_sigma2 = np.asarray(state.sigma2_noise, dtype=np.float64).copy()
+    if new_sigma2.ndim != 2 or new_sigma2.shape[1] != expected_shells:
+        raise ValueError(f"sigma2_noise must have shape (G, {expected_shells}), got {new_sigma2.shape}")
+    n_groups = int(new_sigma2.shape[0])
+    per_group = wsum_sigma2_noise.ndim == 2
+    expected = (n_groups, expected_shells) if per_group else (expected_shells,)
+    if wsum_sigma2_noise.shape != expected or (per_group and noise_sumw.shape != (n_groups,)):
+        raise ValueError(
+            f"noise weighted sums must have shape {expected} with {n_groups if per_group else 'one'} weight(s), "
+            f"got {wsum_sigma2_noise.shape} and {noise_sumw.shape}"
+        )
+    if not per_group and n_groups != 1:
+        raise ValueError(f"{n_groups} optics groups need per-group noise sums")
     if not np.all(np.isfinite(wsum_sigma2_noise)) or not np.all(np.isfinite(wsum_img_power)):
         summaries = [
             vdam_noise._array_finite_summary("wsum_sigma2_noise", wsum_sigma2_noise),
@@ -90,26 +106,31 @@ def update_noise_from_estep_meta(
 
     from relax.reconstruction import noise_relion
 
-    sigma2_relion_units = np.asarray(
-        noise_relion.normalize_wsum_to_sigma2_noise(
-            wsum_sigma2_noise, wsum_img_power, float(noise_sumw), (int(state.ori_size), int(state.ori_size))
-        ),
-        dtype=np.float64,
-    ) / float(int(state.ori_size) ** 4)
-    if not np.all(np.isfinite(sigma2_relion_units)) or np.any(sigma2_relion_units <= 0.0):
-        raise ValueError("updated sigma2_noise must be positive and finite")
-
+    wsum_rows = wsum_sigma2_noise.reshape(-1, expected_shells)
+    power_rows = wsum_img_power.reshape(-1, expected_shells)
+    sumw_rows = noise_sumw.reshape(-1)
     new_state = replace(state)
-    new_sigma2 = np.asarray(state.sigma2_noise, dtype=np.float64).copy()
-    if new_sigma2.ndim != 2 or new_sigma2.shape[1] != expected_shells:
-        raise ValueError(f"sigma2_noise must have shape (G, {expected_shells}), got {new_sigma2.shape}")
-    new_state.sigma2_noise = new_sigma2 * my_mu + (1.0 - my_mu) * sigma2_relion_units[None, :]
+    for g in range(n_groups):
+        if np.sum(wsum_rows[g]) == 0.0:
+            continue
+        if sumw_rows[g] <= 0.0:
+            raise ValueError(f"optics group {g + 1} has noise sums but no weight")
+        sigma2_relion_units = np.asarray(
+            noise_relion.normalize_wsum_to_sigma2_noise(
+                wsum_rows[g], power_rows[g], float(sumw_rows[g]), (int(state.ori_size), int(state.ori_size))
+            ),
+            dtype=np.float64,
+        ) / float(int(state.ori_size) ** 4)
+        if not np.all(np.isfinite(sigma2_relion_units)) or np.any(sigma2_relion_units <= 0.0):
+            raise ValueError("updated sigma2_noise must be positive and finite")
+        new_sigma2[g] = new_sigma2[g] * my_mu + (1.0 - my_mu) * sigma2_relion_units
+    new_state.sigma2_noise = new_sigma2
     vdam_noise._maybe_dump_noise_update_boundary(
         state,
         new_state,
         wsum_sigma2_noise=wsum_sigma2_noise,
         wsum_img_power=wsum_img_power,
-        noise_sumw=float(noise_sumw),
+        noise_sumw=float(total_sumw) if not per_group else noise_sumw,
         wsum_noise_a2=wsum_noise_a2,
         wsum_noise_xa=wsum_noise_xa,
     )

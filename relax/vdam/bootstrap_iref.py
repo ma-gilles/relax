@@ -14,7 +14,7 @@ import numpy as np
 
 from relax.relion import initial_model_io
 from relax.relion.initial_model_io import _experiment_read_order
-from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2
+from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
 from relax.vdam import bootstrap_reconstruction, output
 from relax.vdam.init import initialise_data_vs_prior_from_references, initialise_denovo_state, seed_noise_from_mavg
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -29,9 +29,9 @@ def compute_bootstrap_iref(
     defV: np.ndarray,
     defAngle: np.ndarray,
     phase_shift: np.ndarray,
-    voltage: float,
-    Cs: float,
-    Q0: float,
+    voltage,
+    Cs,
+    Q0,
     pixel_size: float,
     ori_size: int,
     nr_classes: int,
@@ -44,9 +44,14 @@ def compute_bootstrap_iref(
     current_size: int = -1,
     minimum_nr_particles: int = 1000,
     particle_seed_ids: np.ndarray | None = None,
+    particle_positions: np.ndarray | None = None,
 ):
     """RELION's random-orientation bootstrap reference per class, in RECOVAR's frame.
 
+    ``voltage``, ``Cs`` and ``Q0`` are scalars or one value per image (its optics group's).
+    ``particle_positions`` are the images' particles' positions in RELION's order (default
+    ``0..n-1``): each orientation's seed and its class, position % K
+    (:func:`relax.vdam.bootstrap_reconstruction.bootstrap_references`).
     Returns ``(Iref, rand_state)``: the C ``rand()`` stream where the particle loop
     leaves it, which :func:`postprocess_bootstrap_iref` continues for the blobs.
     """
@@ -66,9 +71,9 @@ def compute_bootstrap_iref(
                 np.asarray(defU, dtype=np.float64)[:todo],
                 np.asarray(defV, dtype=np.float64)[:todo],
                 np.asarray(defAngle, dtype=np.float64)[:todo],
-                voltage * ones,
-                Cs * ones,
-                Q0 * ones,
+                np.broadcast_to(np.asarray(voltage, dtype=np.float64), (images.shape[0],))[:todo],
+                np.broadcast_to(np.asarray(Cs, dtype=np.float64), (images.shape[0],))[:todo],
+                np.broadcast_to(np.asarray(Q0, dtype=np.float64), (images.shape[0],))[:todo],
                 0.0 * ones,
                 ones,
                 np.asarray(phase_shift, dtype=np.float64)[:todo],
@@ -88,6 +93,7 @@ def compute_bootstrap_iref(
         padding_factor=int(padding_factor),
         minimum_nr_particles=int(minimum_nr_particles),
         particle_seed_ids=particle_seed_ids,
+        particle_positions=particle_positions,
         current_size=int(current_size),
     )
     return np.asarray([relion_volume_to_recovar(vol) for vol in iref_relion], dtype=np.float64), rand_state
@@ -155,14 +161,17 @@ def _initial_state_from_particles(
     order = _experiment_read_order(main_star)
     optics_group_by_particle = initial_model_io._optics_group_indices(main_star)
     nr_optics_groups = int(np.unique(optics_group_by_particle).size)
-    if nr_optics_groups != 1:
-        raise NotImplementedError("native InitialModel currently supports one optics group")
+    ordered_groups = optics_group_by_particle[order]
+    ones = np.ones(order.size, dtype=np.int64)
     profile.record("setup")
 
+    # The start-up loop's particles (relion_startup_positions): each optics group's first
+    # quota of particles in RELION's order, for the noise spectra and for the bootstrap.
+    noise_order = order[relion_startup_positions(ordered_groups, ones, int(opts.sigma2_min_particles))]
     Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
         _image_sigma2_iter(
             dataset,
-            order,
+            noise_order,
             optics_group_by_particle,
             batch_size=max(1, int(opts.image_batch_size)),
         ),
@@ -176,12 +185,14 @@ def _initial_state_from_particles(
     )
     profile.record("average_unaligned")
 
-    bootstrap_count = min(len(order), int(opts.bootstrap_min_particles))
-    bootstrap_order = order[:bootstrap_count]
+    # A particle's position in RELION's order is its part_id: its random orientation's seed and
+    # its class (part_id % K) in the bootstrap (ml_optimiser.cpp:3254-3270).
+    bootstrap_positions = relion_startup_positions(ordered_groups, ones, int(opts.bootstrap_min_particles))
+    bootstrap_order = order[bootstrap_positions]
     images = _load_raw_images(dataset, bootstrap_order, batch_size=max(1, int(opts.image_batch_size)))
     profile.record("raw_images")
     sorted_star = main_star.iloc[bootstrap_order]
-    voltage, Cs, Q0, pixel_size = initial_model_io._single_optics_scalars(sorted_star, optics_star, dataset)
+    voltage, Cs, Q0, pixel_size = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
     profile.record("optics_metadata")
 
     # RELAX_INITIAL_IREF_OVERRIDE (parity hook): RELION's iter000 ref replaces the bootstrap below.
@@ -205,7 +216,8 @@ def _initial_state_from_particles(
         random_seed=int(opts.random_seed),
         padding_factor=int(opts.padding_factor),
         current_size=-1,
-        minimum_nr_particles=int(opts.bootstrap_min_particles),
+        minimum_nr_particles=int(bootstrap_positions.size),
+        particle_positions=bootstrap_positions,
     )
     iref, rand_state = (None, None) if override_path else compute_bootstrap_iref(**bootstrap_kwargs)
     profile.record("bootstrap")
@@ -287,32 +299,28 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     order = _experiment_read_order(particles_table)
     optics_group_by_particle = initial_model_io._optics_group_indices(particles_table)
     nr_optics_groups = int(np.unique(optics_group_by_particle).size)
-    if nr_optics_groups != 1:
-        raise NotImplementedError("native InitialModel currently supports one optics group")
-    unit_groups = np.zeros(order.size, dtype=np.int64)
-    units = dataset.startup_units(order, unit_groups=unit_groups, minimum_nr_particles=10)
+    units = dataset.startup_units(order, unit_groups=optics_group_by_particle[order], minimum_nr_particles=10)
     half = dataset.subset(units)
-    images = np.concatenate([dataset.unit_images(unit) for unit in units], axis=0)
+    unit_images = [dataset.unit_images(unit) for unit in units]
+    images = np.concatenate(unit_images, axis=0)
+    image_groups = np.repeat(optics_group_by_particle[units], [block.shape[0] for block in unit_images])
     Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
-        ((0, image) for image in images),
+        zip(image_groups.tolist(), images),
         ori_size=ori_size,
         pixel_size=pixel_size,
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=int(opts.width_mask_edge_px),
         do_zero_mask=bool(opts.do_zero_mask),
-        nr_optics_groups=1,
+        nr_optics_groups=nr_optics_groups,
         minimum_nr_particles=int(images.shape[0]),
     )
 
     tilt = tilt_image_accuracy_inputs(half)
-    optics = tuple(
-        float(np.unique(tilt[name])[0]) for name in ("voltage", "spherical_aberration", "amplitude_contrast")
-    )
     ctf_images = (
         _trial_ctf_images(
             np.arange(half.n_units),
             defocus=None,
-            optics=optics,
+            optics=None,
             pixel_size=pixel_size,
             image_full_size=ori_size,
             current_image_size=ori_size,
@@ -351,7 +359,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
         K=int(opts.nr_classes),
         nr_iter=int(opts.nr_iter),
         n_directions=_n_directions_for_healpix_order(int(opts.healpix_order)),
-        nr_optics_groups=1,
+        nr_optics_groups=nr_optics_groups,
         pseudo_halfsets=True,
         padding_factor=int(opts.padding_factor),
     )

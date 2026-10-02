@@ -382,6 +382,8 @@ def run_adaptive_initial_model_estep(
         reconstruction_padding_factor=int(group_kwargs["reconstruction_padding_factor"]),
         projection_mask_current_image_disk=bool(group_kwargs["projection_mask_current_image_disk"]),
         image_pre_shifts=group_kwargs.get("image_pre_shifts"),
+        # Several optics groups: each image's row of the [G, P] noise table.
+        optics_group_ids=group_kwargs.get("optics_group_ids"),
         translation_prior_centers=group_kwargs.get("translation_prior_centers"),
         # RELION reuses the coarse pdf_offset for every oversampled child.
         translation_log_prior=coarse_translation_log_prior,

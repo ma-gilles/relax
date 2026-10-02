@@ -188,7 +188,7 @@ def _ave_pmax_from_meta(meta: dict) -> float | None:
             if normalization_mass is not None:
                 normalization_mass = float(np.sum(np.asarray(normalization_mass, dtype=np.float64)))
             elif meta.get("noise_sumw") is not None:
-                normalization_mass = float(meta["noise_sumw"])
+                normalization_mass = float(np.sum(np.asarray(meta["noise_sumw"], dtype=np.float64)))
             if normalization_mass is not None:
                 _, average, _ = _relion_optimizer_average_pmax([arr], [normalization_mass])
                 return average

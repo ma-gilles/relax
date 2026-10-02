@@ -91,7 +91,13 @@ def _group_local_kwargs(
         out["translation_log_prior"] = _select_image_rows(
             prior, image_indices, n_images=n_images, name="translation_log_prior"
         )
-    for name in ("image_pre_shifts", "image_corrections", "scale_corrections", "translation_prior_centers"):
+    for name in (
+        "image_pre_shifts",
+        "image_corrections",
+        "scale_corrections",
+        "translation_prior_centers",
+        "optics_group_ids",
+    ):
         out[name] = _select_image_rows(out.get(name), image_indices, n_images=n_images, name=name)
     return out
 
@@ -267,7 +273,8 @@ def _estep_meta(halfset_results: dict[int, Any]) -> dict[str, Any]:
             add_class_total("class_posterior_sums_full", full_sums)
         per_class_noise = getattr(result, "noise_stats", None)
         if per_class_noise is not None:
-            support = np.asarray([float(stats.sumw) for stats in per_class_noise], dtype=np.float64)
+            # A class's support over all its optics groups (sumw is [G] with several groups).
+            support = np.asarray([float(np.sum(stats.sumw)) for stats in per_class_noise], dtype=np.float64)
             meta[f"halfset_{h}_class_reconstruction_support_sums"] = support
             add_class_total("class_reconstruction_support_sums", support)
         if getattr(result, "class_assignments", None) is not None:
@@ -282,10 +289,15 @@ def _estep_meta(halfset_results: dict[int, Any]) -> dict[str, Any]:
         if noise_stats is not None:
             half = {
                 "wsum_sigma2_offset": float(noise_stats.wsum_sigma2_offset),
-                "sigma2_offset_sumw": float(noise_stats.sumw),
+                # Several optics groups give [G, n] noise sums and [G] weights (sumw_group).
+                "sigma2_offset_sumw": float(np.sum(np.asarray(noise_stats.sumw, dtype=np.float64))),
                 "wsum_sigma2_noise": np.asarray(noise_stats.wsum_sigma2_noise, dtype=np.float64),
                 "wsum_img_power": np.asarray(noise_stats.wsum_img_power, dtype=np.float64),
-                "noise_sumw": float(noise_stats.sumw),
+                "noise_sumw": (
+                    float(noise_stats.sumw)
+                    if np.ndim(noise_stats.sumw) == 0
+                    else np.asarray(noise_stats.sumw, dtype=np.float64)
+                ),
             }
             if getattr(noise_stats, "wsum_noise_a2", None) is not None:
                 half["wsum_noise_a2"] = np.asarray(noise_stats.wsum_noise_a2, dtype=np.float64)

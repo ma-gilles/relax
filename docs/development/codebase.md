@@ -200,6 +200,13 @@ sampling to 974 (+24: tilt-image expected accuracy, the subtomogram offset-step 
 (+134: `tomo_estep.py`) and input/output to 1,348 (+18: subtomogram particle state and 3D offsets);
 `tests/unit/initial_model/test_refactor_invariants.py` holds the ceilings.
 
+Several optics groups on one image grid (October 1, 2026) raises five budgets by the lines added, with
+no headroom: controller to 1,910 (+14: the E-step's optics-group ids, the momentum-SGD refusal),
+initialization to 1,087 (+16: per-group start-up particles, per-image bootstrap optics and class
+positions), sampling to 1,003 (+29: the expected accuracy per group, recombined), E-step to 2,121
+(+47: per-group noise rows and update) and input/output to 1,381 (+31: per-particle optics, one noise
+table per group, `relion_startup_positions`).
+
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
 initialization and wiring, 89 in the loop for optimizer selection, fixed

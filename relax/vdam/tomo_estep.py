@@ -90,13 +90,15 @@ def run_tomo_initial_model_estep(
     sigma_offset_angstrom: float,
     particle_diameter_ang: float,
     padding_factor: int,
+    optics_group_ids=None,
 ) -> DenseInitialModelEstepResult:
     """One VDAM E-step over the subset's particles, both pseudo-halfsets in one pass.
 
     ``particle_ids`` are particle-STAR rows (the dataset's units) and ``halfset_ids`` their
     pseudo-halfsets; ``previous_offsets_px`` ``[P, 3]`` the subset's previous 3D offsets (pixels);
     ``class_rotation_log_prior`` ``[K, R]`` VDAM's joint class/direction prior in RELION's
-    direction-major order. The metadata carries the particles' new offsets
+    direction-major order. With several optics groups ``noise_variance`` is ``[G, N^2]`` and
+    ``optics_group_ids`` gives every particle-STAR row's group. The metadata carries the particles' new offsets
     (``tomo_offsets_px``: RELION's rounded old offset plus the winning shift).
     """
 
@@ -139,7 +141,11 @@ def run_tomo_initial_model_estep(
         sigma_offset_angst=float(sigma_offset_angstrom),
         adaptive_fraction=0.999,
         max_significants=int(max_significants),
-        unit_groups=np.zeros(particle_ids.size, dtype=np.int32),
+        unit_groups=(
+            np.zeros(particle_ids.size, dtype=np.int32)
+            if optics_group_ids is None
+            else np.asarray(optics_group_ids, dtype=np.int32)[particle_ids]
+        ),
         padding_factor=int(padding_factor),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2,

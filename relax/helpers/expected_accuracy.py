@@ -253,12 +253,16 @@ def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, image_full_si
     Evaluated on the full image by :func:`relax.relion.relion_ctf.relion_ctf_fftw_half` and
     windowed to the current size. A tilt image with a cumulative dose takes RELION's dose
     damping (ctf.h:219-233) through :func:`relax.relion.tomo_input.relion_tomo_damping`.
+    ``optics=None`` takes each tilt image's own optics constants (its optics group's).
     """
 
     from relax.relion.relion_ctf import relion_ctf_fftw_half
     from relax.relion.tomo_input import fftw_half_freq_sq, relion_tomo_damping
 
-    voltage, cs, q0 = optics
+    if optics is not None:
+        voltage, cs, q0 = optics
+    elif tilt_images is None:
+        raise ValueError("single-particle trial CTFs need the optics constants")
     if tilt_images is None:
         du, dv, da, phase = (np.asarray(values, dtype=np.float64)[trial_local] for values in defocus)
         ones = np.ones(trial_local.size)
@@ -270,6 +274,11 @@ def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, image_full_si
         c = np.asarray(tilt_images["image_ctf"], dtype=np.float64)[images]
         dosed = c[:, 6] >= 0.0
         ones = np.ones(images.size)
+        if optics is None:
+            voltage, cs, q0 = (
+                np.asarray(tilt_images[name], dtype=np.float64)[images]
+                for name in ("voltage", "spherical_aberration", "amplitude_contrast")
+            )
         params = np.column_stack(
             [c[:, 0], c[:, 1], c[:, 2], voltage * ones, cs * ones, q0 * ones, np.where(dosed, 0.0, c[:, 3]), c[:, 4], c[:, 5]]
         )

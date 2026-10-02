@@ -313,7 +313,9 @@ LOC_BUDGETS = {
     # Coarse SGD adds shared schedule/prior/occupancy controls (+142 from 1655).
     # Subtomogram InitialModel (2026-10-01, etvdam): the driver's --ios input, the TomoDataset branch and the
     # E-step closure split into its single-particle and subtomogram calls (+99): a real raise, no headroom.
-    "controller": (1896, (
+    # Several optics groups on one image grid (2026-10-01, etvdam): the E-step closure's optics-group ids
+    # and the momentum-SGD refusal (+14): a real raise, no headroom.
+    "controller": (1910, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -326,16 +328,20 @@ LOC_BUDGETS = {
     # CTF and back-projector to RELION's ROUND(0.07 ori_size) (+18).
     # Subtomogram InitialModel (2026-10-01): the tilt-image start-up and seeding in bootstrap_iref.py and
     # per-image Aproj R in the bootstrap reconstruction (+126): a real raise, no headroom.
-    "initialization": (1071, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    # Several optics groups (2026-10-01): RELION's per-group start-up particles for the noise and the
+    # bootstrap, the bootstrap's per-image optics and its class positions (+16): a real raise.
+    "initialization": (1087, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
     # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
-    "sampling_layout": (974, ("native_sampling.py", "layout.py")),
+    # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
+    "sampling_layout": (1003, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
     # (1846 counted lines at integration, with the shared projector setup). The reviewed
     # uniform-prior metadata adds 36 lines to the upstream 1900-line ceiling.
     # Subtomogram InitialModel's E-step adapter tomo_estep.py (+134, 2026-10-01): a real raise, no headroom.
     # +4: estep_meta_updates keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
-    "estep": (2074, (
+    # Several optics groups (2026-10-01): per-group noise rows, ids and the per-group noise update (+47).
+    "estep": (2121, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),
@@ -351,7 +357,9 @@ LOC_BUDGETS = {
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
     # Subtomogram particle state and 3D offsets in the data STAR (+18, 2026-10-01).
     # +2: initial_model_io writes RELION's rlnNrOfSignificantSamples column (2026-10-01).
-    "input_output": (1350, (
+    # Several optics groups (2026-10-01): per-particle optics, one model.star noise table per group and
+    # the shared start-up selection relion_startup_positions (+31).
+    "input_output": (1381, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),
@@ -451,7 +459,7 @@ print(parent_elapsed, initial_model_elapsed)
 
 # Module ownership and adapter routing.
 
-STAR_ADAPTER = ("_optics_group_indices", "_single_optics_scalars", "_phase_shift", "_native_optics_state", "_particle_state_from_star", "_write_model_star", "_write_data_star", "_stack_star_pair", "_experiment_read_order")
+STAR_ADAPTER = ("_optics_group_indices", "_particle_optics", "_phase_shift", "_native_optics_state", "_particle_state_from_star", "_write_model_star", "_write_data_star", "_stack_star_pair", "_experiment_read_order")
 SAMPLING = ("NativeSamplingPlan", "NativeSamplingState", "_build_sampling_plan", "_initial_sampling_state", "_estimate_native_sampling_accuracy", "_relion_update_native_sampling_state", "_prepare_native_sampling_for_iteration", "_random_perturbation_for_iteration")
 
 

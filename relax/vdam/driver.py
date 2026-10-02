@@ -99,8 +99,13 @@ def _native_expectation_step(
     *,
     projector_context: dense_adapter._IterationProjectorContext | None = None,
     tilt_images: dict | None = None,
+    optics_group_ids: np.ndarray | None = None,
 ):
-    """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``."""
+    """VDAM's E-step closure; ``dataset`` is a ``TomoDataset`` for subtomogram particles, with ``tilt_images``.
+
+    ``optics_group_ids`` (several optics groups only) gives each particle-STAR row's zero-based
+    group: its image is scored with its group's noise row and adds to its group's noise sums.
+    """
 
     tomo = isinstance(dataset, TomoDataset)
 
@@ -147,6 +152,7 @@ def _native_expectation_step(
                 padding_factor=int(opts.padding_factor),
                 sigma2_fudge=DEFAULT_SIGMA2_FUDGE,
                 tilt_images=tilt_images,
+                optics_group_ids=optics_group_ids,
             )
         sampling_updated = (
             _prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
@@ -197,6 +203,7 @@ def _native_expectation_step(
                 sigma_offset_angstrom=sigma_offset_angstrom,
                 particle_diameter_ang=float(opts.particle_diameter),
                 padding_factor=int(opts.padding_factor),
+                optics_group_ids=optics_group_ids,
             )
             effective_image_batch_size = int(opts.image_batch_size)
         else:
@@ -269,6 +276,10 @@ def _native_expectation_step(
             class_log_priors=np.zeros(int(state.K), dtype=np.float64),
             pass1_healpix_order=pass1_healpix_order,
         )
+        if optics_group_ids is not None:
+            config = replace(
+                config, engine_kwargs={**config.engine_kwargs, "optics_group_ids": np.asarray(optics_group_ids, dtype=np.int32)}
+            )
         if prepared_projector_inputs is not None:
             prepared_means, prepared_variance, prepared_half, prepared_r_max = (
                 prepared_projector_inputs
@@ -522,6 +533,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         )
         sampling_state = continuation.sampling_state
     state = _prepare_mstep_state_precision(state, opts.mstep_compute_dtype)
+    if opts.optimizer == "momentum_sgd" and int(np.unique(optics_group_by_particle).size) > 1:
+        raise NotImplementedError("the momentum-SGD InitialModel takes one optics group")
     if opts.optimizer == "momentum_sgd":
         from relax.sgd_initial_model.noise import corner_white_sigma2, initialize_sgd_noise
         from relax.vdam.bootstrap_iref import _load_raw_images
@@ -549,6 +562,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         optics_state,
         projector_context=projector_context,
         tilt_images=tilt_images,
+        optics_group_ids=optics_group_by_particle if int(np.unique(optics_group_by_particle).size) > 1 else None,
     )
     profile.record("expectation_setup")
 

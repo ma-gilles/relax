@@ -123,6 +123,32 @@ def _rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_siz
     return out
 
 
+def relion_startup_positions(unit_groups, unit_sizes, minimum_nr_particles: int) -> np.ndarray:
+    """Positions (in RELION's order) of the units its start-up loop reads, ``[n_taken]``.
+
+    ``calculateSumOfPowerSpectraAndAverageImage`` (ml_optimiser.cpp:3072-3366) walks the particles
+    in order, skips a particle whose optics group already holds ``minimum_nr_particles`` images,
+    counts every image of the particles it reads (``unit_sizes``: 1 for single particles, the tilt
+    images of a subtomogram) and stops once every group is full. The noise spectra and the
+    de novo bootstrap both read exactly these particles.
+    """
+
+    unit_groups = np.asarray(unit_groups, dtype=np.int64).reshape(-1)
+    unit_sizes = np.asarray(unit_sizes, dtype=np.int64).reshape(-1)
+    if unit_sizes.shape != unit_groups.shape:
+        raise ValueError(f"unit_sizes {unit_sizes.shape} must match unit_groups {unit_groups.shape}")
+    done = {group: 0 for group in set(unit_groups.tolist())}
+    taken = []
+    for position, (group, size) in enumerate(zip(unit_groups.tolist(), unit_sizes.tolist())):
+        if done[group] >= int(minimum_nr_particles):
+            continue
+        taken.append(position)
+        done[group] += int(size)
+        if all(count >= int(minimum_nr_particles) for count in done.values()):
+            break
+    return np.asarray(taken, dtype=np.int64)
+
+
 def compute_avg_unaligned_and_sigma2(
     image_iter: Iterator[Tuple[int, np.ndarray]],
     *,

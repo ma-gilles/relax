@@ -193,7 +193,16 @@ labeled diagnostic only.
   seed iteration's gap to stock RELION (maps 2.9e-3; 5.6e-3 with one optics group) is stock RELION's
   float32 backprojection: the double-accumulation RELION build differs from stock by the same 5.6e-3,
   and relax matches it at 6.6e-5/1.0e-4 (one optics group, iteration 2). Optics groups on several image
-  shapes remain K=1 only (`full_refinement._validate_multi_shape_run`). InitialModel takes one optics group.
+  shapes remain K=1 only (`full_refinement._validate_multi_shape_run`). InitialModel (VDAM, single
+  particles and subtomograms) takes several optics groups on one image grid (2026-10-02): RELION's
+  per-group start-up particles for the noise and the bootstrap (`relion_startup_positions`), each
+  image scored with its group's noise row, the noise updated per group, the expected accuracy per
+  group. Start-up against stock RELION non-MPI: every group's sigma2_noise to 4e-7, class maps to
+  1.5e-8 (et15 with one group per tomogram) and exactly (SPA two groups). End to end, masked GT
+  FSC-AUC (181e99d scorer) inside or above stock RELION's same-seed range at all three seeds on
+  et09 with one group per tomogram (8 groups, K=1); the SPA two-group K=2 fixture collapses to one
+  class in both programs (a plumbing check only). Groups on other grids stay refused (etw's
+  multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`.
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930`.
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
@@ -281,9 +290,10 @@ labeled diagnostic only.
   (`--firstiter_cc`) in Refine3D and Class3D since 2026-10-01 (see "Subtomogram InitialModel
   and first-iteration CC" below); its end-to-end qualification against RELION's default command
   is running.
-- Subtomogram InitialModel (`relax initial_model --ios`) takes one optics group, as single-particle
-  InitialModel does; RELION's subtomogram VDAM with one optics group leaves classes 2..K empty
-  (below), so a K>1 test needs two optics groups.
+- Subtomogram InitialModel (`relax initial_model --ios`) takes several optics groups on one image
+  grid (above). RELION's subtomogram VDAM with one optics group leaves classes 2..K empty (below), so
+  K>1 tests use one optics group per tomogram, as RELION 5 imports (et15_ogtomo; the recovar tomo
+  simulator writes that by default since recovar 24e3fa27b).
 
 ## RELION binding removal (started 2026-09-29)
 

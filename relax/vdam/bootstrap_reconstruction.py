@@ -283,6 +283,7 @@ def bootstrap_references(
     padding_factor: int,
     minimum_nr_particles: int,
     particle_seed_ids=None,
+    particle_positions=None,
     current_size: int = -1,
     image_particle=None,
     image_projections=None,
@@ -293,7 +294,11 @@ def bootstrap_references(
     without CTF correction, else each particle's full-size ``[N, N // 2 + 1]`` CTF.
     ``current_size`` (``wsum_model.current_size``; -1 for the full box) windows the
     images, the CTF and the back-projector. Returns the references and the C
-    ``rand()`` state the blob draws continue from.
+    ``rand()`` state the blob draws continue from. ``particle_positions`` (default ``0..n-1``)
+    are the particles' positions in RELION's order (``part_id_sorted``): the class is the
+    position modulo K, and without ``particle_seed_ids`` the position is also the seed's
+    ``part_id`` (the order is not shuffled before the start-up loop). With several optics
+    groups the start-up particles are not a prefix of the order.
 
     Subtomogram particles (2D stacks) pass one row of ``images`` and ``ctf_images`` per tilt
     image, ``image_particle`` (the image's particle, its position in RELION's order) and
@@ -315,7 +320,10 @@ def bootstrap_references(
     else:
         todo = max(int(minimum_nr_particles), int(nr_classes) * 5)
         todo = min(todo, n_images)
-    seeds = np.arange(todo) if particle_seed_ids is None else np.asarray(particle_seed_ids, dtype=np.int64)
+    positions = np.arange(todo) if particle_positions is None else np.asarray(particle_positions, dtype=np.int64)
+    if not tilt and positions.size < todo:
+        raise ValueError("particle_positions must give every bootstrap particle a position")
+    seeds = positions if particle_seed_ids is None else np.asarray(particle_seed_ids, dtype=np.int64)
     if seeds.size < todo:
         raise ValueError("particle_seed_ids must contain at least minimum_nr_particles entries")
     radius_px = float(particle_diameter_ang) / (2.0 * float(pixel_size))
@@ -329,7 +337,7 @@ def bootstrap_references(
             float(relion_random.rnd_unif(generator)) * 360.0,
         ]
     matrices = euler_angles_to_matrix(eulers)
-    image_class = np.arange(todo)
+    image_class = positions[:todo]
     if tilt:
         matrices = np.einsum("nij,njk->nik", image_projections, matrices[image_particle])
         image_class = image_particle

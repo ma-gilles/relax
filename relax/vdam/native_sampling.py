@@ -22,6 +22,7 @@ from relax.helpers.convergence import (
     relion_mpi_hidden_variable_change_is_small,
 )
 from relax.helpers.expected_accuracy import (
+    _combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
     estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
@@ -366,12 +367,16 @@ def _estimate_native_sampling_accuracy(
     padding_factor: int,
     sigma2_fudge: float,
     tilt_images: dict | None = None,
+    optics_group_ids: np.ndarray | None = None,
 ) -> dict[str, object] | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
     Subtomogram particles pass ``tilt_images`` (:func:`relax.refinement.tomo_half.tilt_image_accuracy_inputs`
     of every particle, in particle-STAR row order) and no ``optics_state``: each trial sums its tilt
-    images, each with its own ``Aproj`` and dose-damped CTF.
+    images, each with its own ``Aproj`` and dose-damped CTF. With several optics groups
+    (``optics_group_ids``, each particle's zero-based group) every trial takes its group's noise
+    spectrum and CTF constants, as RELION does per particle; the estimate runs once per group on
+    that group's trials and the per-class means are recombined with the trial counts.
     """
     n_trials = min(100, int(particle_order.size))
     if n_trials <= 0:
@@ -411,50 +416,74 @@ def _estimate_native_sampling_accuracy(
         if _isolate_native_sampling_accuracy_diagnostic()
         else estimate_relion_expected_accuracy_from_prepared_inputs
     )
-    if tilt_images is None:
-        optics_kwargs = dict(
-            defocus_u=np.asarray(optics_state.defU, dtype=np.float64),
-            defocus_v=np.asarray(optics_state.defV, dtype=np.float64),
-            defocus_angle=np.asarray(optics_state.defAngle, dtype=np.float64),
-            phase_shift=np.asarray(optics_state.phase_shift, dtype=np.float64),
-            voltage=float(optics_state.voltage),
-            spherical_aberration=float(optics_state.Cs),
-            amplitude_contrast=float(optics_state.Q0),
-            pixel_size=float(optics_state.pixel_size),
+    def group_constant(values, trials, name):
+        unique = np.unique(np.broadcast_to(np.asarray(values, dtype=np.float64), (len(particle_state.translation_offsets),))[trials])
+        if unique.size != 1:
+            raise ValueError(f"the expected-accuracy trials of one optics group have several {name} values")
+        return float(unique[0])
+
+    def estimate(trials, sigma2_noise_relion):
+        """The estimate over the trials at positions ``trials`` (one optics group's)."""
+        ids = trial_particle_ids[trials]
+        if tilt_images is None:
+            optics_kwargs = dict(
+                defocus_u=np.asarray(optics_state.defU, dtype=np.float64),
+                defocus_v=np.asarray(optics_state.defV, dtype=np.float64),
+                defocus_angle=np.asarray(optics_state.defAngle, dtype=np.float64),
+                phase_shift=np.asarray(optics_state.phase_shift, dtype=np.float64),
+                voltage=group_constant(optics_state.voltage, ids, "voltage"),
+                spherical_aberration=group_constant(optics_state.Cs, ids, "Cs"),
+                amplitude_contrast=group_constant(optics_state.Q0, ids, "amplitude contrast"),
+                pixel_size=float(optics_state.pixel_size),
+            )
+        else:
+            # The per-particle defocus arrays are unused; the group's images give the constants.
+            zeros = np.zeros(len(particle_state.translation_offsets), dtype=np.float64)
+            offsets = np.asarray(tilt_images["image_offsets"], dtype=np.int64)
+            images = np.concatenate([np.arange(offsets[p], offsets[p + 1]) for p in ids])
+            optics_kwargs = dict(
+                defocus_u=zeros,
+                defocus_v=zeros,
+                defocus_angle=zeros,
+                phase_shift=zeros,
+                **{
+                    name: float(np.unique(np.asarray(tilt_images[name], dtype=np.float64)[images])[0])
+                    for name in ("voltage", "spherical_aberration", "amplitude_contrast")
+                },
+                pixel_size=float(state.pixel_size),
+                tilt_images=tilt_images,
+            )
+        return accuracy_estimator(
+            references_relion=refs_relion,
+            trial_eulers_deg=eulers[trials],
+            trial_local_indices=ids,
+            trial_class_ids=class_ids[trials],
+            class_weights=np.asarray(state.pdf_class, dtype=np.float64),
+            sigma2_noise_relion=np.asarray(sigma2_noise_relion, dtype=np.float64),
+            **optics_kwargs,
+            ori_size=int(state.ori_size),
+            current_image_size=current_image_size,
+            padding_factor=int(padding_factor),
+            sigma2_fudge=float(sigma2_fudge),
+            random_seed=int(random_seed),
+            do_ctf_correction=True,
+            # RELION seeds these trials with Experiment's internal ``part_id``,
+            # not the original input-table row ids carried by RECOVAR's dataset.
+            random_seed_particle_ids=random_seed_particle_ids[trials],
         )
+
+    sigma2_noise = np.asarray(state.sigma2_noise, dtype=np.float64)
+    if sigma2_noise.shape[0] == 1:
+        accuracy = estimate(np.arange(n_trials), sigma2_noise[0])
     else:
-        # The per-particle defocus arrays are unused; one optics group gives the constants.
-        zeros = np.zeros(len(particle_state.translation_offsets), dtype=np.float64)
-        optics_kwargs = dict(
-            defocus_u=zeros,
-            defocus_v=zeros,
-            defocus_angle=zeros,
-            phase_shift=zeros,
-            **{
-                name: float(np.unique(np.asarray(tilt_images[name], dtype=np.float64))[0])
-                for name in ("voltage", "spherical_aberration", "amplitude_contrast")
-            },
-            pixel_size=float(state.pixel_size),
-            tilt_images=tilt_images,
+        if optics_group_ids is None:
+            raise ValueError(f"{sigma2_noise.shape[0]} optics groups need each particle's optics group")
+        trial_groups = np.asarray(optics_group_ids, dtype=np.int64)[trial_particle_ids]
+        accuracy = _combine_group_expected_accuracies(
+            [estimate(np.flatnonzero(trial_groups == g), sigma2_noise[g]) for g in np.unique(trial_groups)],
+            trial_particle_ids,
+            random_seed_particle_ids,
         )
-    accuracy = accuracy_estimator(
-        references_relion=refs_relion,
-        trial_eulers_deg=eulers,
-        trial_local_indices=trial_particle_ids,
-        trial_class_ids=class_ids,
-        class_weights=np.asarray(state.pdf_class, dtype=np.float64),
-        sigma2_noise_relion=np.asarray(state.sigma2_noise[0], dtype=np.float64),
-        **optics_kwargs,
-        ori_size=int(state.ori_size),
-        current_image_size=current_image_size,
-        padding_factor=int(padding_factor),
-        sigma2_fudge=float(sigma2_fudge),
-        random_seed=int(random_seed),
-        do_ctf_correction=True,
-        # RELION seeds these trials with Experiment's internal ``part_id``,
-        # not the original input-table row ids carried by RECOVAR's dataset.
-        random_seed_particle_ids=random_seed_particle_ids,
-    )
     dump_dir = os.environ.get("RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR", "").strip()
     dump_iterations = os.environ.get(
         "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS",
@@ -490,9 +519,9 @@ def _estimate_native_sampling_accuracy(
             defV=np.asarray(optics_state.defV, dtype=np.float64),
             defAngle=np.asarray(optics_state.defAngle, dtype=np.float64),
             phase_shift=np.asarray(optics_state.phase_shift, dtype=np.float64),
-            voltage=np.asarray(float(optics_state.voltage), dtype=np.float64),
-            Cs=np.asarray(float(optics_state.Cs), dtype=np.float64),
-            Q0=np.asarray(float(optics_state.Q0), dtype=np.float64),
+            voltage=np.asarray(optics_state.voltage, dtype=np.float64),
+            Cs=np.asarray(optics_state.Cs, dtype=np.float64),
+            Q0=np.asarray(optics_state.Q0, dtype=np.float64),
             pixel_size=np.asarray(float(optics_state.pixel_size), dtype=np.float64),
             ori_size=np.asarray(int(state.ori_size), dtype=np.int64),
             current_image_size=np.asarray(current_image_size, dtype=np.int64),

@@ -128,11 +128,15 @@ class NativeParticleState:
 
 @dataclass(frozen=True)
 class NativeOpticsState:
-    """Scalar optics plus per-particle CTF parameters for the SPA InitialModel path."""
+    """Per-particle optics and CTF parameters for the SPA InitialModel path.
 
-    voltage: float
-    Cs: float
-    Q0: float
+    ``voltage``, ``Cs`` and ``Q0`` are each particle's optics-group constants (a scalar stands for
+    one shared value).
+    """
+
+    voltage: np.ndarray | float
+    Cs: np.ndarray | float
+    Q0: np.ndarray | float
     pixel_size: float
     defU: np.ndarray
     defV: np.ndarray

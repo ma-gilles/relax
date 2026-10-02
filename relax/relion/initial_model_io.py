@@ -25,39 +25,45 @@ def _optics_group_indices(main_star) -> np.ndarray:
     return indices.astype(np.int64, copy=False)
 
 
-def _single_optics_scalars(main_star, optics_star, ds) -> tuple[float, float, float, float]:
-    """Return voltage, Cs, amplitude contrast, and pixel size.
+def _particle_optics(main_star, optics_star, ds) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """Each particle's voltage, Cs and amplitude contrast (its optics group's), and the pixel size.
 
-    The current C++ bootstrap binding takes scalar optics parameters. To avoid
-    wrong native output, reject genuinely multi-optics inputs until the binding
-    grows per-particle voltage/Cs/Q0 support.
+    Optics groups may differ in their CTF constants but must share the image pixel size and
+    box: groups on other grids are not supported by InitialModel.
     """
 
     pixel_size = float(ds.voxel_size)
+    names = ("_rlnVoltage", "_rlnSphericalAberration", "_rlnAmplitudeContrast")
     if optics_star is None:
-        required = ("_rlnVoltage", "_rlnSphericalAberration", "_rlnAmplitudeContrast")
-        missing = [name for name in required if name not in main_star.columns]
+        missing = [name for name in names if name not in main_star.columns]
         if missing:
             raise ValueError(
                 "native InitialModel needs voltage/Cs/amplitude contrast in the STAR file; "
                 f"missing {', '.join(missing)}"
             )
-        values = tuple(float(main_star[name].astype(float).iloc[0]) for name in required)
+        values = [np.asarray(main_star[name].astype(float).to_numpy(), dtype=np.float64) for name in names]
         return values[0], values[1], values[2], pixel_size
 
-    groups = _optics_group_indices(main_star)
-    if np.unique(groups).size != 1 or len(optics_star) != 1:
-        raise NotImplementedError(
-            "native InitialModel bootstrap currently supports one optics group; "
-            "multi-optics support needs per-particle optics in the RELION bootstrap binding"
-        )
-    row = optics_star.iloc[0]
-    return (
-        float(row["_rlnVoltage"]),
-        float(row["_rlnSphericalAberration"]),
-        float(row["_rlnAmplitudeContrast"]),
-        pixel_size,
-    )
+    for name in ("_rlnImagePixelSize", "_rlnImageSize"):
+        if name in optics_star.columns and np.unique(optics_star[name].astype(float).to_numpy()).size != 1:
+            raise NotImplementedError(
+                "native InitialModel supports optics groups on one image grid; "
+                f"the optics table has several {name[4:]} values"
+            )
+    labels = optics_star["_rlnOpticsGroup"].to_numpy() if "_rlnOpticsGroup" in optics_star.columns else [1]
+    if "_rlnOpticsGroup" in main_star.columns:
+        particle_labels = main_star["_rlnOpticsGroup"].to_numpy()
+    else:
+        if len(optics_star) != 1:
+            raise ValueError("particles without _rlnOpticsGroup need a one-row optics table")
+        particle_labels = np.full(len(main_star), labels[0])
+    row_of = {str(label): row for row, label in enumerate(labels)}
+    missing = sorted({str(label) for label in particle_labels} - set(row_of))
+    if missing:
+        raise ValueError(f"particles name optics groups missing from the optics table: {', '.join(missing)}")
+    rows = np.asarray([row_of[str(label)] for label in particle_labels], dtype=np.int64)
+    values = [np.asarray(optics_star[name].astype(float).to_numpy(), dtype=np.float64)[rows] for name in names]
+    return values[0], values[1], values[2], pixel_size
 
 
 def _phase_shift(main_star) -> np.ndarray:
@@ -67,15 +73,15 @@ def _phase_shift(main_star) -> np.ndarray:
 
 
 def _native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
-    voltage, Cs, Q0, pixel_size = _single_optics_scalars(main_star, optics_star, dataset)
+    voltage, Cs, Q0, pixel_size = _particle_optics(main_star, optics_star, dataset)
     required = ("_rlnDefocusU", "_rlnDefocusV", "_rlnDefocusAngle")
     missing = [name for name in required if name not in main_star.columns]
     if missing:
         raise ValueError(f"native InitialModel needs per-particle CTF columns: {', '.join(missing)}")
     return NativeOpticsState(
-        voltage=float(voltage),
-        Cs=float(Cs),
-        Q0=float(Q0),
+        voltage=voltage,
+        Cs=Cs,
+        Q0=Q0,
         pixel_size=float(pixel_size),
         defU=np.asarray(main_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
         defV=np.asarray(main_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
@@ -319,12 +325,11 @@ def _write_model_star(path: str, state: InitialModelState, class_mrcs: tuple[str
             lines.append(f"\n\ndata_model_pdf_orient_class_{k + 1}\n\nloop_\n_rlnOrientationDistribution #1\n")
             lines.extend(f"{float(p):.12g}\n" for p in pdf_direction[k])
 
-    lines.append(
-        "\n\ndata_model_optics_group_1\n\nloop_\n_rlnSpectralIndex #1\n_rlnResolution #2\n_rlnSigma2Noise #3\n"
-    )
-    lines.extend(
-        f"{int(shell)} 0 {float(sigma2):.12g}\n" for shell, sigma2 in enumerate(np.asarray(state.sigma2_noise)[0])
-    )
+    for g, spectrum in enumerate(np.asarray(state.sigma2_noise)):
+        lines.append(
+            f"\n\ndata_model_optics_group_{g + 1}\n\nloop_\n_rlnSpectralIndex #1\n_rlnResolution #2\n_rlnSigma2Noise #3\n"
+        )
+        lines.extend(f"{int(shell)} 0 {float(sigma2):.12g}\n" for shell, sigma2 in enumerate(spectrum))
 
     with open(path, "w") as f:
         f.writelines(lines)

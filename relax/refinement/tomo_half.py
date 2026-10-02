@@ -116,18 +116,11 @@ class TomoDataset:
     def startup_units(self, units, *, unit_groups, minimum_nr_particles: int = 10) -> np.ndarray:
         """The particles (in ``units`` order) whose tilt images RELION's start-up loop reads (:meth:`startup_noise_images`)."""
 
+        from relax.relion.initial_noise import relion_startup_positions
+
         units = np.asarray(units, dtype=np.int64).reshape(-1)
-        unit_groups = np.asarray(unit_groups, dtype=np.int64).reshape(-1)
-        done = {group: 0 for group in set(unit_groups.tolist())}
-        taken = []
-        for unit, group in zip(units.tolist(), unit_groups.tolist()):
-            if done[group] >= int(minimum_nr_particles):
-                continue
-            taken.append(unit)
-            done[group] += int(self.unit_image_offsets[unit + 1] - self.unit_image_offsets[unit])
-            if all(count >= int(minimum_nr_particles) for count in done.values()):
-                break
-        return np.asarray(taken, dtype=np.int64)
+        sizes = self.unit_image_offsets[units + 1] - self.unit_image_offsets[units]
+        return units[relion_startup_positions(unit_groups, sizes, minimum_nr_particles)]
 
     def unit_images(self, unit) -> np.ndarray:
         """Particle ``unit``'s real-space tilt images in ``img_id`` order, ``[S, N, N]``."""
