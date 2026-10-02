@@ -41,10 +41,9 @@ from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import (
     parse_env_int_set,
     parse_env_strict_flag,
-    parse_env_true_flag,
+    refuse_retired_envs,
 )
 from relax.helpers.optics_noise import noise_rows
-from relax.helpers.projection import compute_projections_block
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
     _K1_RELION_EXACT_COMPACT_PREPROCESS_ENV,
@@ -127,7 +126,13 @@ from relax.scoring.significant_samples import compact_significant_sample_indices
 _SIGNIFICANCE_SCORE_CACHE_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE"
 _SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
 _SIGNIFICANCE_SCORE_CACHE_DEFAULT_MAX_GB = 2.0
-_SIGNIFICANCE_FUSED_PASS1_ENV = "RELAX_PASS1_FUSED"
+# Switches of removed pass-1 routes: a run that still sets one is refused (refuse_retired_envs).
+_RETIRED_PASS1_ENVS = {
+    "RELAX_PASS1_FUSED": (
+        "removed on 2026-10-02 with the fused pass-1 block; pass 1 is one program per image batch "
+        "(_coarse_pass1_blocks)"
+    ),
+}
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
 _FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV = (
     "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
@@ -760,16 +765,6 @@ def _dense_projection_scale(image_shape) -> float:
     return scale
 
 
-def _pass1_fused_enabled() -> bool:
-    """Whether the fused-pass1 fast path is enabled.
-
-    Off by default while the path is being validated. Set
-    ``RELAX_PASS1_FUSED=1`` to opt in. Bit-identical to the unfused path
-    when active (same ops, same order, same dtypes).
-    """
-    return parse_env_true_flag(_SIGNIFICANCE_FUSED_PASS1_ENV)
-
-
 @lru_cache(maxsize=8)
 def _pass1_batch_constants(batch_size: int, enable_x64: bool):
     """The coarse pass's per-batch initial values, built once per batch size.
@@ -788,119 +783,6 @@ def _pass1_batch_constants(batch_size: int, enable_x64: bool):
         jnp.zeros(batch_size, dtype=jnp.float64),
         jnp.zeros(batch_size, dtype=jnp.int32),
     )
-
-
-@partial(
-    jax.jit,
-    static_argnames=(
-        "image_shape",
-        "proj_volume_shape",
-        "volume_shape",
-        "disc_type",
-        "use_window",
-        "use_float64_scoring",
-        "rotation_block_size",
-        "batch_size",
-        "n_trans",
-        "n_windowed",
-        "max_r_static",
-    ),
-)
-def _fused_score_priors_logsumexp_block(
-    mean_for_proj,
-    rots_b,
-    shifted_data,
-    batch_norm,
-    ctf2_data,
-    half_weights_for_score,
-    window_indices,
-    rotation_log_prior_block,
-    translation_log_prior_per_image,
-    class_log_prior_scalar,
-    valid_count,
-    class_max,
-    class_sum,
-    global_max,
-    global_sum,
-    *,
-    image_shape: tuple,
-    proj_volume_shape: tuple,
-    volume_shape: tuple,
-    disc_type: str,
-    use_window: bool,
-    use_float64_scoring: bool,
-    rotation_block_size: int,
-    batch_size: int,
-    n_trans: int,
-    n_windowed: int,
-    max_r_static,
-):
-    """Fused pass-1 inner block: project + score + pad-mask + priors + 2× logsumexp.
-
-    Replaces 4-5 separate JIT dispatches per (image_batch, class, rotation_block)
-    with a single compiled boundary. JAX inlines the @jit-d leaf functions
-    (compute_projections_block, _e_step_block_scores_windowed, _update_logsumexp)
-    when traced from inside another @jit, so this is bit-identical to the
-    unfused path while saving ~150ms of per-batch host-side dispatch at
-    50k/256 K=1 (~16s/iter → ~2-4s/iter for pass1).
-    """
-    proj_kwargs = {}
-    if use_window and max_r_static is not None:
-        proj_kwargs["max_r"] = max_r_static
-    proj_half_b, proj_abs2_half_b = compute_projections_block(
-        mean_for_proj,
-        rots_b,
-        image_shape,
-        proj_volume_shape,
-        disc_type,
-        **proj_kwargs,
-    )
-
-    if use_window:
-        proj_w = proj_half_b[:, window_indices]
-        proj_abs2_w = proj_abs2_half_b[:, window_indices]
-        if not use_float64_scoring:
-            proj_w = proj_w.astype(jnp.complex64)
-            proj_abs2_w = proj_abs2_w.astype(jnp.float32)
-        scores = _e_step_block_scores_windowed(
-            shifted_data,
-            batch_norm,
-            ctf2_data,
-            proj_w * half_weights_for_score,
-            proj_abs2_w * half_weights_for_score,
-            half_weights_for_score,
-            batch_size,
-            n_trans,
-            n_windowed,
-            image_shape,
-            volume_shape,
-        )
-    else:
-        if not use_float64_scoring:
-            proj_half_b = proj_half_b.astype(jnp.complex64)
-            proj_abs2_half_b = proj_abs2_half_b.astype(jnp.float32)
-        scores = _e_step_block_scores(
-            shifted_data,
-            ctf2_data,
-            proj_half_b * half_weights_for_score,
-            proj_abs2_half_b * half_weights_for_score,
-            batch_size,
-            n_trans,
-        )
-
-    # Padding mask: -inf for rotations beyond valid_count (= n_rot - r0).
-    pad_mask = jnp.arange(rotation_block_size)[None, :, None] < valid_count
-    neg_inf = jnp.asarray(-jnp.inf, dtype=scores.dtype)
-    scores = jnp.where(pad_mask, scores, neg_inf)
-
-    # Priors: class scalar + rotation block + per-image translation.
-    scores = scores + jnp.asarray(class_log_prior_scalar, dtype=scores.real.dtype)
-    scores = scores + rotation_log_prior_block[None, :, None]
-    scores = scores + translation_log_prior_per_image[:, None, :]
-
-    class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
-    global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
-    return scores, class_max, class_sum, global_max, global_sum
 
 
 @jax.jit
@@ -1194,6 +1076,7 @@ def _compute_k_class_significance_batched(
     with its own group's spectrum (:mod:`relax.helpers.optics_noise`).
     """
 
+    refuse_retired_envs(_RETIRED_PASS1_ENVS)
     if return_class_second and not return_class_best:
         raise ValueError("return_class_second requires return_class_best")
     if return_relion_f32_normalization and (
@@ -1226,9 +1109,7 @@ def _compute_k_class_significance_batched(
     )
     from relax.helpers.projection import relion_kernel_zero_rows
     from relax.scoring.scoring import (
-        _e_step_block_scores,
         _e_step_block_scores_normalized_cc,
-        _e_step_block_scores_windowed,
         _e_step_block_scores_windowed_normalized_cc,
         _relion_coarse_normalized_cc_gemm_scores_jit,
         _relion_coarse_normalized_cc_rescore,
@@ -4129,24 +4010,6 @@ def _compute_k_class_significance_batched(
                 )
             )
             cached_class_score_blocks = [] if cache_score_blocks else None
-            # ``RELAX_PASS1_FUSED=1`` swaps the per-block 4-5 separate JIT
-            # dispatches (project/score, padding-mask, add-priors, 2× logsumexp)
-            # for one fused @jit call. Bit-identical when active; disabled if any
-            # debug-dump path is on so per-block pre/post-prior captures still
-            # have access to intermediate scores.
-            use_fused_pass1 = (
-                _pass1_fused_enabled()
-                and score_mode == "gaussian"
-                and not use_relion_projector
-                and dump_target_pre_prior_blocks_per_class is None
-                and dump_target_with_prior_blocks_per_class is None
-            )
-            if relion_f32_coarse_support_enabled and use_fused_pass1:
-                raise RuntimeError(
-                    "RELION float32 coarse support requires access to pre-prior "
-                    "scores for min_diff2 offset reconstruction"
-                )
-
             # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
             # min_diff2 - diff2`` left to right (cuda_kernel_weights_exponent_coarse).
             # Adding the priors to the absolute scores and the min_diff2 offset
@@ -4172,21 +4035,6 @@ def _compute_k_class_significance_batched(
                     dtype=jnp.float32,
                 )
 
-            # Precompute fused-path inputs once per batch (constant across class/block).
-            if use_fused_pass1:
-                _fused_half_weights = half_weights_windowed if use_window else half_weights
-                _fused_max_r_static = projection_kwargs.get("max_r", None) if use_window else None
-                _fused_window_indices = window_indices if use_window else jnp.zeros(0, dtype=jnp.int32)
-                if translation_log_prior is None:
-                    _fused_trans_lp_per_image = jnp.zeros((batch_size, n_trans), dtype=score_real_dtype)
-                elif translation_log_prior.ndim == 1:
-                    _fused_trans_lp_per_image = jnp.broadcast_to(
-                        jnp.asarray(batch_translation_log_prior, dtype=score_real_dtype),
-                        (batch_size, n_trans),
-                    )
-                else:
-                    _fused_trans_lp_per_image = jnp.asarray(batch_translation_log_prior, dtype=score_real_dtype)
-
             # Pass 1 of the coarse GEMM scorers is one program per batch
             # (_coarse_pass1_blocks): over the cached projections in one call, or
             # one call per class and rotation block on its projection when the
@@ -4196,7 +4044,6 @@ def _compute_k_class_significance_batched(
             pass1_program = (
                 (coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
                 and collect_significance
-                and not use_fused_pass1
                 and not track_class_second
                 and compact_hybrid_scores is None
                 and coarse_gaussian_gemm_hybrid_batch_result is None
@@ -4308,181 +4155,142 @@ def _compute_k_class_significance_batched(
                 for block_index in range(score_block_count):
                     r0 = block_index * rotation_block_size
                     r1 = r0 + rotation_block_size
-                    if use_fused_pass1:
-                        valid_count = jnp.asarray(min(rotation_block_size, n_rot - r0), dtype=jnp.int32)
-                        if rotation_log_prior_padded is None:
-                            rot_lp_block = jnp.zeros(rotation_block_size, dtype=score_real_dtype)
-                        else:
-                            rot_lp_block = jnp.asarray(
-                                rotation_log_prior_padded[class_index, r0:r1], dtype=score_real_dtype
+                    scores = _score_block(
+                        class_index,
+                        mean_for_proj,
+                        rotations_padded[r0:r1],
+                        shifted_data,
+                        batch_norm,
+                        ctf2_data,
+                        batch_size,
+                        rotation_start=r0,
+                    )
+                    direct_scores_for_diagnostic = coarse_gemm_direct_capture["scores"]
+                    if (
+                        coarse_gemm_diagnostic_positions is not None
+                        and direct_scores_for_diagnostic is None
+                    ):
+                        raise RuntimeError(
+                            "coarse GEMM diagnostic did not capture the paired "
+                            "direct-square score block",
+                        )
+                    if r1 > n_rot:
+                        valid = n_rot - r0
+                        valid_rotation = (
+                            jnp.arange(rotation_block_size)[None, :, None] < valid
+                        )
+                        scores = jnp.where(valid_rotation, scores, -jnp.inf)
+                        if direct_scores_for_diagnostic is not None:
+                            direct_scores_for_diagnostic = jnp.where(
+                                valid_rotation,
+                                direct_scores_for_diagnostic,
+                                -jnp.inf,
                             )
-                        scores, class_max, class_sum, global_max, global_sum = _fused_score_priors_logsumexp_block(
-                            mean_for_proj,
-                            rotations_padded[r0:r1],
-                            shifted_data,
-                            batch_norm,
-                            ctf2_data,
-                            _fused_half_weights,
-                            _fused_window_indices,
-                            rot_lp_block,
-                            _fused_trans_lp_per_image,
-                            float(class_log_priors_np[class_index]),
-                            valid_count,
-                            class_max,
-                            class_sum,
-                            global_max,
-                            global_sum,
-                            image_shape=image_shape,
-                            proj_volume_shape=proj_volume_shape,
-                            volume_shape=volume_shape,
-                            disc_type=disc_type,
-                            use_window=use_window,
-                            use_float64_scoring=use_float64_scoring,
-                            rotation_block_size=int(rotation_block_size),
-                            batch_size=int(batch_size),
-                            n_trans=int(n_trans),
-                            n_windowed=int(n_windowed) if use_window else 0,
-                            max_r_static=_fused_max_r_static,
+                    if (
+                        relion_raw_score_max is not None
+                        and coarse_gaussian_gemm_hybrid_batch_result is None
+                    ):
+                        relion_raw_score_max = jnp.maximum(
+                            relion_raw_score_max,
+                            jnp.max(scores.reshape(batch_size, -1), axis=1),
                         )
-                        if cached_score_blocks is not None:
-                            cached_score_blocks.append(scores)
-                    else:
-                        scores = _score_block(
-                            class_index,
-                            mean_for_proj,
-                            rotations_padded[r0:r1],
-                            shifted_data,
-                            batch_norm,
-                            ctf2_data,
-                            batch_size,
-                            rotation_start=r0,
+                    # Capture pre-prior raw scores for dump targets BEFORE _add_priors.
+                    # scores shape: (batch_size, rotation_block_size, n_trans).
+                    # For comparison vs RELION exp_Mweight_diff2, recovar's score is
+                    # -0.5 * residual where residual = sum_pixel((proj*ctf - shifted_img)² - |img|²)
+                    # / sigma² × half_weights. RELION's diff2 has the same core term
+                    # plus the per-image Xi2/2 constant. Per-pose RELATIVE differences
+                    # cancel the constant, so direct diff is meaningful.
+                    if dump_target_pre_prior_blocks_per_class is not None:
+                        actual_rot = min(rotation_block_size, n_rot - r0)
+                        dump_target_pre_prior_blocks_per_class[class_index].append(
+                            np.asarray(
+                                scores[dump_target_local_positions, :actual_rot, :],
+                                dtype=np.float64,
+                            )
                         )
-                        direct_scores_for_diagnostic = coarse_gemm_direct_capture["scores"]
-                        if (
-                            coarse_gemm_diagnostic_positions is not None
-                            and direct_scores_for_diagnostic is None
-                        ):
+                    if coarse_gemm_macro_pre_prior_blocks is not None:
+                        actual_rot = min(rotation_block_size, n_rot - r0)
+                        target_rows = coarse_gemm_diagnostic_positions
+                        coarse_gemm_macro_pre_prior_blocks[class_index].append(
+                            scores[target_rows, :actual_rot, :]
+                        )
+                        coarse_gemm_direct_pre_prior_blocks[class_index].append(
+                            direct_scores_for_diagnostic[
+                                target_rows,
+                                :actual_rot,
+                                :,
+                            ]
+                        )
+                    if coarse_gemm_pre_prior_stream_state is not None:
+                        if direct_scores_for_diagnostic is None:
                             raise RuntimeError(
-                                "coarse GEMM diagnostic did not capture the paired "
-                                "direct-square score block",
+                                "coarse GEMM pre-prior streaming diagnostic "
+                                "requires the paired direct-square score block",
                             )
-                        if r1 > n_rot:
-                            valid = n_rot - r0
-                            valid_rotation = (
-                                jnp.arange(rotation_block_size)[None, :, None] < valid
+                        coarse_gemm_pre_prior_stream_state = (
+                            update_coarse_gemm_streaming_state(
+                                coarse_gemm_pre_prior_stream_state,
+                                direct_scores_for_diagnostic,
+                                scores,
+                                candidate_offset=(
+                                    class_index * n_rot * n_trans
+                                    + r0 * n_trans
+                                ),
+                                actual_image_count=actual_batch_size,
                             )
-                            scores = jnp.where(valid_rotation, scores, -jnp.inf)
-                            if direct_scores_for_diagnostic is not None:
-                                direct_scores_for_diagnostic = jnp.where(
-                                    valid_rotation,
-                                    direct_scores_for_diagnostic,
-                                    -jnp.inf,
-                                )
-                        if (
-                            relion_raw_score_max is not None
-                            and coarse_gaussian_gemm_hybrid_batch_result is None
-                        ):
-                            relion_raw_score_max = jnp.maximum(
-                                relion_raw_score_max,
-                                jnp.max(scores.reshape(batch_size, -1), axis=1),
+                        )
+                    pre_prior_scores = scores
+                    if not (
+                        coarse_gaussian_gemm_hybrid_batch_result is not None
+                        and coarse_gaussian_gemm_hybrid_batch_result.scores_include_priors
+                    ):
+                        scores = _add_priors(scores, class_index, r0, r1, batch_translation_log_prior)
+                    if direct_scores_for_diagnostic is not None:
+                        direct_scores_for_diagnostic = _add_priors(
+                            direct_scores_for_diagnostic,
+                            class_index,
+                            r0,
+                            r1,
+                            batch_translation_log_prior,
+                        )
+                        if coarse_gemm_stream_state is not None:
+                            coarse_gemm_stream_state = update_coarse_gemm_streaming_state(
+                                coarse_gemm_stream_state,
+                                direct_scores_for_diagnostic,
+                                scores,
+                                candidate_offset=(
+                                    class_index * n_rot * n_trans + r0 * n_trans
+                                ),
+                                actual_image_count=actual_batch_size,
                             )
-                        # Capture pre-prior raw scores for dump targets BEFORE _add_priors.
-                        # scores shape: (batch_size, rotation_block_size, n_trans).
-                        # For comparison vs RELION exp_Mweight_diff2, recovar's score is
-                        # -0.5 * residual where residual = sum_pixel((proj*ctf - shifted_img)² - |img|²)
-                        # / sigma² × half_weights. RELION's diff2 has the same core term
-                        # plus the per-image Xi2/2 constant. Per-pose RELATIVE differences
-                        # cancel the constant, so direct diff is meaningful.
-                        if dump_target_pre_prior_blocks_per_class is not None:
-                            actual_rot = min(rotation_block_size, n_rot - r0)
-                            dump_target_pre_prior_blocks_per_class[class_index].append(
-                                np.asarray(
-                                    scores[dump_target_local_positions, :actual_rot, :],
-                                    dtype=np.float64,
-                                )
-                            )
-                        if coarse_gemm_macro_pre_prior_blocks is not None:
-                            actual_rot = min(rotation_block_size, n_rot - r0)
-                            target_rows = coarse_gemm_diagnostic_positions
-                            coarse_gemm_macro_pre_prior_blocks[class_index].append(
+                        actual_rot = min(rotation_block_size, n_rot - r0)
+                        target_rows = coarse_gemm_diagnostic_positions
+                        if target_rows is not None:
+                            coarse_gemm_macro_with_prior_blocks[class_index].append(
                                 scores[target_rows, :actual_rot, :]
                             )
-                            coarse_gemm_direct_pre_prior_blocks[class_index].append(
+                            coarse_gemm_direct_with_prior_blocks[class_index].append(
                                 direct_scores_for_diagnostic[
                                     target_rows,
                                     :actual_rot,
                                     :,
                                 ]
                             )
-                        if coarse_gemm_pre_prior_stream_state is not None:
-                            if direct_scores_for_diagnostic is None:
-                                raise RuntimeError(
-                                    "coarse GEMM pre-prior streaming diagnostic "
-                                    "requires the paired direct-square score block",
-                                )
-                            coarse_gemm_pre_prior_stream_state = (
-                                update_coarse_gemm_streaming_state(
-                                    coarse_gemm_pre_prior_stream_state,
-                                    direct_scores_for_diagnostic,
-                                    scores,
-                                    candidate_offset=(
-                                        class_index * n_rot * n_trans
-                                        + r0 * n_trans
-                                    ),
-                                    actual_image_count=actual_batch_size,
-                                )
+                    if dump_target_with_prior_blocks_per_class is not None:
+                        actual_rot = min(rotation_block_size, n_rot - r0)
+                        dump_target_with_prior_blocks_per_class[class_index].append(
+                            np.asarray(
+                                scores[dump_target_local_positions, :actual_rot, :],
+                                dtype=np.float64,
                             )
-                        pre_prior_scores = scores
-                        if not (
-                            coarse_gaussian_gemm_hybrid_batch_result is not None
-                            and coarse_gaussian_gemm_hybrid_batch_result.scores_include_priors
-                        ):
-                            scores = _add_priors(scores, class_index, r0, r1, batch_translation_log_prior)
-                        if direct_scores_for_diagnostic is not None:
-                            direct_scores_for_diagnostic = _add_priors(
-                                direct_scores_for_diagnostic,
-                                class_index,
-                                r0,
-                                r1,
-                                batch_translation_log_prior,
-                            )
-                            if coarse_gemm_stream_state is not None:
-                                coarse_gemm_stream_state = update_coarse_gemm_streaming_state(
-                                    coarse_gemm_stream_state,
-                                    direct_scores_for_diagnostic,
-                                    scores,
-                                    candidate_offset=(
-                                        class_index * n_rot * n_trans + r0 * n_trans
-                                    ),
-                                    actual_image_count=actual_batch_size,
-                                )
-                            actual_rot = min(rotation_block_size, n_rot - r0)
-                            target_rows = coarse_gemm_diagnostic_positions
-                            if target_rows is not None:
-                                coarse_gemm_macro_with_prior_blocks[class_index].append(
-                                    scores[target_rows, :actual_rot, :]
-                                )
-                                coarse_gemm_direct_with_prior_blocks[class_index].append(
-                                    direct_scores_for_diagnostic[
-                                        target_rows,
-                                        :actual_rot,
-                                        :,
-                                    ]
-                                )
-                        if dump_target_with_prior_blocks_per_class is not None:
-                            actual_rot = min(rotation_block_size, n_rot - r0)
-                            dump_target_with_prior_blocks_per_class[class_index].append(
-                                np.asarray(
-                                    scores[dump_target_local_positions, :actual_rot, :],
-                                    dtype=np.float64,
-                                )
-                            )
-                        if cached_score_blocks is not None:
-                            cached_score_blocks.append(
-                                pre_prior_scores if relion_exact_coarse_weight_order else scores,
-                            )
-                        class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
-                        global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
+                        )
+                    if cached_score_blocks is not None:
+                        cached_score_blocks.append(
+                            pre_prior_scores if relion_exact_coarse_weight_order else scores,
+                        )
+                    class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
+                    global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
                     flat_scores = scores.reshape(batch_size, -1)
                     block_best = jnp.max(flat_scores, axis=1)
                     block_argmax = jnp.argmax(flat_scores, axis=1)

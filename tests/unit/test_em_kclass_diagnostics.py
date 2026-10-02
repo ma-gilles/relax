@@ -684,34 +684,17 @@ def test_kclass_significance_dump_uses_original_index_mapper(monkeypatch, tmp_pa
 # Pass1 fused gate (env-var contract)
 # ----------------------------------------------------------------------
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        (None, False),         # unset → off (174b4c09 ships with default off while validated)
-        ("", False),
-        ("0", False),
-        ("no", False),
-        ("false", False),
-        ("1", True),
-        ("true", True),
-        ("TRUE", True),        # case-insensitive
-        ("yes", True),
-        ("YES", True),
-        ("on", True),
-        ("On", True),
-    ],
-)
-def test_pass1_fused_enabled_env_var_contract(monkeypatch, value, expected):
-    """``RELAX_PASS1_FUSED`` is the public opt-in for the fused pass1
-    path; the K-class call site at ``use_fused_pass1 = ...`` reads it.
-    The string contract is stable: 1/true/yes/on are truthy
-    (case-insensitive), anything else is off, unset is off.
-    """
-    if value is None:
-        monkeypatch.delenv("RELAX_PASS1_FUSED", raising=False)
-    else:
-        monkeypatch.setenv("RELAX_PASS1_FUSED", value)
-    assert sig_mod._pass1_fused_enabled() is expected
+@pytest.mark.parametrize("value", ["", "0", "1"])
+def test_removed_pass1_fused_switch_is_refused(monkeypatch, value):
+    """``RELAX_PASS1_FUSED`` (the fused pass-1 block) was removed on 2026-10-02: setting it, to
+    anything, refuses the run instead of silently running the default."""
+
+    monkeypatch.setenv("RELAX_PASS1_FUSED", value)
+    with pytest.raises(ValueError, match="RELAX_PASS1_FUSED was removed"):
+        sig_mod._compute_k_class_significance_batched(
+            None, None, None, None, None, None, class_log_priors=None, adaptive_fraction=None,
+            max_significants=None, image_batch_size=None, rotation_block_size=None, current_size=None,
+        )
 
     # K1 adaptive scoring uses this same K-class significance path.
 

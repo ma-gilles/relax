@@ -107,6 +107,10 @@ for detailed module contracts. Start with the boundary being changed:
 | Coarse/sparse scoring | [`scoring/significance.py`](../../relax/scoring/significance.py), [`sparse_pass2/resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) |
 
 Coarse window metadata is published by `scoring/coarse_publication.py`.
+Pass 1 (the coarse pass) scores, adds the priors and reduces an image batch in one program,
+`scoring.significance._coarse_pass1_blocks` (see [EM status](em_status.md), "Pass 1 as one program per
+image batch"). Removed pass-1 switches are refused when set (`_RETIRED_PASS1_ENVS`,
+`helpers.env_flags.refuse_retired_envs`): `RELAX_PASS1_FUSED` (fused per-block program, 2026-10-02).
 Live BPref execution modes are selected by `sparse_pass2/sparse_pass2_policy.py`;
 capture scopes and shadow comparisons stay with the diagnostic owners.
 

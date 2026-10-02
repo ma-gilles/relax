@@ -502,6 +502,8 @@ projection cache does not fit the budget, and scores the exact-operand normalize
 passes with RELION's coarse CC. The per-class loop still serves the generic scorer above (K=1 runs
 without the fresh order, and their CC passes), the opt-in coarse backends and the per-block
 diagnostics, pending the generic scorer's move and the backends' deletion.
+Removed (2026-10-02, team-lead's deletion list D1): the opt-in fused per-block pass-1 program
+(`RELAX_PASS1_FUSED`, `_fused_score_priors_logsumexp_block`); setting the switch is refused.
 
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
 and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take

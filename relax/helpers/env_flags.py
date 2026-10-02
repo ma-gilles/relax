@@ -123,3 +123,17 @@ def parse_env_capacity_ladder(name: str, default: tuple) -> tuple:
     if not values or list(values) != sorted(values) or values[0] <= 0:
         raise ValueError(f"{name} must be an increasing list of positive integers, got {raw!r}")
     return values
+
+
+def refuse_retired_envs(retired: dict[str, str]) -> None:
+    """Refuse a run that sets a removed switch: ``retired`` maps each name to why it is gone.
+
+    A removed switch that is silently ignored would run the default while the caller
+    believes it selected something else.
+    """
+
+    present = sorted(name for name in retired if name in os.environ)
+    if present:
+        raise ValueError(
+            "; ".join(f"{name} was {retired[name]}" for name in present) + ". Unset it to run the default."
+        )

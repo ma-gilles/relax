@@ -688,7 +688,6 @@ def _completion_metadata(recovar_dir: Path | None, label: str) -> dict[str, Any]
                 "RELAX_K_CLASS_DENSE_PASS2_SMALL_DATASET_IMAGES",
                 "RELAX_K_CLASS_DENSE_PASS2_SMALL_DATASET_MEAN_SUPPORT_FRACTION",
                 "RELAX_RELION_EM_BATCH_PROJECTION_FRACTION",
-                "RELAX_PASS1_FUSED",
                 "RELAX_DISABLE_LOCAL_BIG_JIT",
                 "RELAX_LOCAL_BUCKET_QUANTUM",
                 "EM_COMPLETION_TIMING_PROBE",
