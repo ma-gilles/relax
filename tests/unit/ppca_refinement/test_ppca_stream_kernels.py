@@ -96,7 +96,22 @@ def test_window_project_matches_recovar_slice(P, custom_cuda_lib, gpu_device, mo
             max_r=spec.max_r,
             with_products=False,
         )
+        # A window padded with -1 (the GPU GEMM alignment) projects zeros there.
+        padded = ppca_window_project_f32(
+            jnp.asarray(volumes.T.copy()),
+            jnp.asarray(np.concatenate([indices, np.full(3, -1, np.int32)])),
+            jnp.asarray(rotations),
+            image_shape=IMAGE_SHAPE,
+            volume_shape=VOLUME_SHAPE,
+            max_r=spec.max_r,
+            with_products=True,
+        )
     planar, products = np.asarray(planar), np.asarray(products)
+    padded_planar, padded_products = (np.asarray(x) for x in padded)
+    assert np.all(padded_planar[..., F : F + 3] == 0) and np.all(padded_planar[..., 2 * F + 3 :] == 0)
+    assert np.all(padded_products[..., F:] == 0)
+    assert_matches(padded_planar[..., :F], planar[..., :F])
+    assert_matches(padded_planar[..., F + 3 : 2 * F + 3], planar[..., F:])
     assert planar.shape == (P, 40, 2 * F) and products.shape == (P * (P + 1) // 2, 40, F)
     assert np.asarray(empty[1]).shape == (0,)
     assert_matches(np.asarray(empty[0]), planar)

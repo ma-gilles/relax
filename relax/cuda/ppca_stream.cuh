@@ -51,7 +51,7 @@ struct ProjectGeometry {
 };
 
 // grid (ceil(F / 128), R), 128 threads; dynamic shared memory 128 * P float2.
-// vol (V, P) float2 voxel-major; rot (R, 6); pix (F,) windowed half-image pixels.
+// vol (V, P) float2 voxel-major; rot (R, 6); pix (F,) windowed half-image pixels, -1 for padding.
 // planar (P, R, 2F): [Re | Im] per component and rotation. products (K, R, F) or null.
 __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, const float2* __restrict__ vol,
                                                              const float* __restrict__ rot,
@@ -67,11 +67,11 @@ __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, 
     if (f >= g.n_pix) return;
     const long F = g.n_pix;
     float2* value = s_value + threadIdx.x * P;
-    const int orig_pix = pix[f];
+    const int orig_pix = max(pix[f], 0);  // a negative index is padding: zero projection
     const int k0_idx = orig_pix / g.image_w, k1_idx = orig_pix % g.image_w;
     const float k0 = (float)(k0_idx - g.image_h / 2);
     const float k1 = (k1_idx * 2 == g.full_image_w) ? (float)(-k1_idx) : (float)k1_idx;
-    bool zero = g.max_r2 >= 0.f && k0 * k0 + k1 * k1 > g.max_r2;
+    bool zero = pix[f] < 0 || (g.max_r2 >= 0.f && k0 * k0 + k1 * k1 > g.max_r2);
     // Fixed slots (d0, d1, d2) keep the targets in registers; skipped neighbours carry weight 0,
     // and adding 0 * v leaves each sum exactly as recovar's skip does.
     int offset[8];

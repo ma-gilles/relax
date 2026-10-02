@@ -518,10 +518,11 @@ def _float64_tile_statistics(stream, image_indices, significant):
         return type(tree)(*[one(x) for x in tree])
 
     with jax.enable_x64(True), jax.default_matmul_precision("highest"):
-        tile32, observation_power, layout = frs._load_tile(stream, image_indices, significant, collect_observation=True)
-        tile, arrays = up(tile32), up(stream.arrays)
         # The CUDA stream kernels are float32-only; the float64 truth runs the XLA formulation.
-        wide = stream._replace(arrays=arrays, static=stream.static._replace(cuda_kernels=False))
+        xla = stream._replace(static=stream.static._replace(cuda_kernels=False))
+        tile32, observation_power, layout = frs._load_tile(xla, image_indices, significant, collect_observation=True)
+        tile, arrays = up(tile32), up(stream.arrays)
+        wide = xla._replace(arrays=arrays)
         n_images = len(image_indices)
         capacity = len(stream.block_starts) * stream.rotation_block_size
         q = stream.static.basis_size - 1

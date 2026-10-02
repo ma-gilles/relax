@@ -5312,7 +5312,7 @@ def ppca_moment_scatter_f32(
 
     ``lhs_images`` ``(tri(P), R, F)`` packed upper LHS images and ``rhs_parts``
     ``(P, R, 2F)`` RHS images (real parts, then imaginary parts) on the window
-    ``pixel_indices`` of the half image; ``projections`` ``(P, R, 2F)`` on the same window in the
+    ``pixel_indices`` of the half image (``-1`` pads: no contribution); ``projections`` ``(P, R, 2F)`` on the same window in the
     same planar layout (:func:`ppca_window_project_f32`); rotations ``(R, 3, 3)``. Returns ``(groups, V, 32)`` half volumes holding the
     metric channels (the packed LHS, or its trace with ``metric_trace``) and the real and
     imaginary parts of the residual ``R_p - sum_q L_pq A_q`` (channel ``c`` is lane ``c % 32``
@@ -5368,7 +5368,7 @@ def ppca_window_project_f32(
     """Windowed augmented projections of one rotation block, planar, with their packed pair products.
 
     ``volume_voxel_major`` ``(V, P)`` complex64 holds the ``P`` half volumes voxel-major;
-    ``pixel_indices`` ``(F,)`` window the half image; rotations ``(R, 3, 3)``. Returns
+    ``pixel_indices`` ``(F,)`` window the half image (``-1`` pads: zero output); rotations ``(R, 3, 3)``. Returns
     ``(P, R, 2F)`` float32 with the real parts of each component's windowed projection, then its
     imaginary parts, and, with ``with_products``, ``(tri(P), R, F)`` ``Re(conj(A_i) A_j)`` for the
     packed upper pairs (``np.triu_indices`` order), else an empty ``(0,)`` array. Each projection is

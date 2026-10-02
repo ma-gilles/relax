@@ -6,6 +6,7 @@ import pytest
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
+from helpers.float_compare import assert_matches
 
 from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
 from relax.helpers.fourier_window import make_fourier_window_spec
@@ -104,6 +105,27 @@ def test_moment_scatter_matches_xla_statistics_and_recovar_adjoint(
             metric_trace=metric_trace,
         )
         moments, correction = np.asarray(moments), np.asarray(correction)
+        # A window padded with -1 (the GPU GEMM alignment) ignores whatever the operands hold there.
+        junk = 5
+
+        def pad(x, width):
+            return np.concatenate([x[..., :width], rng.standard_normal(x.shape[:-1] + (junk,))], axis=-1)
+
+        planar = np.concatenate([windowed.real, windowed.imag], axis=-1)
+        padded_moments, padded_correction = ppca_moment_scatter_f32(
+            jnp.asarray(pad(lhs, F), jnp.float32),
+            jnp.asarray(np.concatenate([pad(rhs_parts[..., :F], F), pad(rhs_parts[..., F:], F)], -1), jnp.float32),
+            jnp.asarray(np.concatenate([pad(planar[..., :F], F), pad(planar[..., F:], F)], -1), jnp.float32),
+            jnp.asarray(np.concatenate([indices, np.full(junk, -1, np.int32)])),
+            jnp.asarray(rotations),
+            image_shape=IMAGE_SHAPE,
+            volume_shape=VOLUME_SHAPE,
+            max_r=spec.max_r,
+            metric_trace=metric_trace,
+        )
+        assert np.all(np.asarray(padded_correction)[F:] == 0)
+        assert_matches(np.asarray(padded_correction)[:F], correction)
+        assert_matches(np.asarray(padded_moments), moments)
         reference32 = _reference(
             jnp.asarray(lhs),
             jnp.asarray(rhs_parts),

@@ -164,7 +164,7 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     const int channels = metric + 2 * P;
     float* value = s_value + (warp * 32 + lane) * channels;
     Collect collect(g, s_offset[warp][lane], s_weight[warp][lane]);
-    if (f < g.n_pix) {
+    if (f < g.n_pix && pix_idx[f] >= 0) {  // a negative index is padding: no channels, no targets
         pixel_targets(g, R, pix_idx[f], collect);
         const long F = g.n_pix;
         const long at = (long)r * F + f;

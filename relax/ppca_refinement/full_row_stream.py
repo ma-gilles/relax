@@ -90,6 +90,9 @@ class TracePPCAStats(AugmentedPPCAStats):
     metric_trace: jax.Array | None = None
 
 _HIGHEST = jax.lax.Precision.HIGHEST
+# Window pixels per GEMM row multiple on GPU streams: unaligned fp32 operands (2F = 3002 at
+# 10076) select cuBLAS's align1 kernels, about 4% slower on A100 (jobs/local_*/gemm_align).
+_GEMM_ALIGN = 4
 
 
 class _StreamStatic(NamedTuple):
@@ -120,6 +123,9 @@ class _StreamArrays(NamedTuple):
     rotation_parent: jax.Array  # (R + 1,) int32 coarse rotation of each fine row; sentinel -> R_coarse
     translation_parent: jax.Array  # (T,) int32 coarse translation of each fine shift
     score_indices: jax.Array | None  # score window in the packed half image
+    # CUDA path: the score window (every pixel without one) padded with -1 to a multiple of
+    # _GEMM_ALIGN pixels, so the GEMM operands' rows are 16-byte aligned. None off GPU.
+    gemm_window: jax.Array | None
     recon_indices: jax.Array | None  # reconstruction window
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
@@ -413,6 +419,14 @@ def _window(arrays, static):
     return jnp.arange(int(static.image_shape[0]) * (int(static.image_shape[1]) // 2 + 1), dtype=jnp.int32)
 
 
+def _gemm_window(score_indices, image_shape) -> jax.Array:
+    """The score window padded with -1 (no pixel) to a multiple of :data:`_GEMM_ALIGN`."""
+    n_half = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
+    window = np.arange(n_half, dtype=np.int32) if score_indices is None else np.asarray(score_indices, np.int32)
+    pad = -window.size % _GEMM_ALIGN
+    return jnp.asarray(np.concatenate([window, np.full(pad, -1, np.int32)]))
+
+
 def _score_block_cuda(arrays, tile, kept, start, rows, static):
     """:func:`_latent_block` with the projections and its elementwise stages in relax's CUDA kernels.
 
@@ -424,7 +438,7 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
     P = static.basis_size
     planar, products = ppca_window_project_f32(
         arrays.augmented_voxel_major,
-        _window(arrays, static),
+        arrays.gemm_window,
         arrays.rotations[rows],
         image_shape=static.image_shape,
         volume_shape=static.volume_shape,
@@ -532,8 +546,8 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     # residual only: neither optimizer reads an RHS volume, so only the LHS
     # metric and the residual gradient are backprojected.
     indices = arrays.score_indices
-    window = _window(arrays, static)
     if static.cuda_kernels:
+        window = arrays.gemm_window
         projections, _ = ppca_window_project_f32(
             arrays.augmented_voxel_major,
             window,
@@ -554,7 +568,9 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
             max_r=static.backprojection_max_r,
             metric_trace=static.metric_trace_only,
         )
+        correction = correction[: _window(arrays, static).shape[0]]  # padding pixels carry none
     else:
+        window = _window(arrays, static)
         proj = _project(arrays, rotations, static)
         rhs_images = jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:])  # (P, R, F)
         residual_images, correction = residual_statistics_from_moment_images(rhs_images, lhs_images, proj)
@@ -794,6 +810,7 @@ def _prepare_full_row_stream(
     arrays = _StreamArrays(
         augmented=resolved.augmented_half_volumes,
         augmented_voxel_major=jnp.asarray(resolved.augmented_half_volumes).T.copy() if cuda_kernels else None,
+        gemm_window=_gemm_window(resolved.score_indices, resolved.image_shape) if cuda_kernels else None,
         rotations=jnp.asarray(np.concatenate([rotations, sentinel_rotation])),
         rotation_log_prior=jnp.asarray(np.append(np.asarray(rotation_log_prior, dtype=np.float32), np.float32(0))),
         translation_log_prior=jnp.asarray(np.asarray(translation_log_prior, dtype=np.float32)),
@@ -871,13 +888,19 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
     table = np.full(capacity, stream.rotation_parent.size, dtype=np.int32)
     table[: rows.size] = rows
     unsupported = np.zeros((coarse.shape[0], 1, coarse.shape[2]), dtype=bool)
+    Y1, ctf2, Y1_recon, ctf2_recon = batch.Y1_score, batch.ctf2_score, batch.Y1_recon, batch.ctf2_recon
+    if stream.static.cuda_kernels:
+        # Zero operands at the padding pixels of the GEMM window: they add exact zeros.
+        pad = stream.arrays.gemm_window.shape[0] - ctf2.shape[1]
+        Y1, Y1_recon = (jnp.pad(x, ((0, 0), (0, 0), (0, pad))) for x in (Y1, Y1_recon))
+        ctf2, ctf2_recon = (jnp.pad(x, ((0, 0), (0, pad))) for x in (ctf2, ctf2_recon))
     tile = _TileArrays(
         coarse_mask=jnp.asarray(np.concatenate([coarse, unsupported], axis=1)),
         rows=jnp.asarray(table),
-        Y1=_real_imag(batch.Y1_score).reshape(-1, 2 * batch.ctf2_score.shape[1]).T,
-        ctf2=batch.ctf2_score.T,
-        Y1_recon=_real_imag(batch.Y1_recon).reshape(-1, 2 * batch.ctf2_recon.shape[1]),
-        ctf2_recon=batch.ctf2_recon,
+        Y1=_real_imag(Y1).reshape(-1, 2 * ctf2.shape[1]).T,
+        ctf2=ctf2.T,
+        Y1_recon=_real_imag(Y1_recon).reshape(-1, 2 * ctf2_recon.shape[1]),
+        ctf2_recon=ctf2_recon,
         y_norm=batch.y_norm,
     )
     # Exact per-image rows versus the scored union, for the wasted-work record.
