@@ -134,8 +134,27 @@ def _image_origin_offsets_pixels_from_star(main_star, dataset) -> np.ndarray:
     return shifts.astype(np.float64, copy=False)
 
 
+def _star_source_poses(main_star, n: int) -> dict:
+    """The STAR's input orientations as particle-state fields (none without ``rlnAngle*`` columns): RELION's
+    expected accuracy and change monitor use them until a particle's first visit (ml_optimiser.cpp:9505-9507)."""
+    columns = [star_column(main_star, f"_rlnAngle{name}") for name in ("Rot", "Tilt", "Psi")]
+    if all(column is None for column in columns):
+        return {}
+    if any(column is None for column in columns):
+        raise ValueError("STAR file must provide all Euler-angle columns (_rlnAngleRot, _rlnAngleTilt, _rlnAnglePsi)")
+    eulers = np.stack([np.asarray(column.astype(float).to_numpy(), dtype=np.float64) for column in columns], axis=1)
+    if not np.all(np.isfinite(eulers)):
+        raise ValueError("STAR Euler angles must be finite")
+    return dict(
+        best_pose_rotations=np.asarray(R_from_relion(eulers, degrees=True), dtype=np.float32),
+        best_pose_eulers_deg=eulers,
+        best_pose_eulers_valid=np.ones(n, dtype=bool),
+    )
+
+
 def _tomo_particle_state_from_star(main_star, *, pixel_size: float) -> NativeParticleState:
-    """Fresh state of subtomogram particles: their 3D offsets (pixels) from ``rlnOrigin{X,Y,Z}Angst``, class 0."""
+    """Fresh state of subtomogram particles: their 3D offsets (pixels) from ``rlnOrigin{X,Y,Z}Angst``, class 0,
+    and the input orientations (:func:`_star_source_poses`)."""
 
     n = int(len(main_star))
     offsets = np.zeros((n, 3), dtype=np.float64)
@@ -147,6 +166,7 @@ def _tomo_particle_state_from_star(main_star, *, pixel_size: float) -> NativePar
         translation_offsets=offsets,
         class_assignments=np.zeros(n, dtype=np.int32),
         max_posterior=np.zeros(n, dtype=np.float32),
+        **_star_source_poses(main_star, n),
     )
 
 
@@ -246,34 +266,13 @@ def _particle_state_from_star(
     else:
         visited = max_posterior > 0.0
 
-    angle_names = ("_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi")
-    angle_columns = tuple(star_column(main_star, name) for name in angle_names)
-    if any(column is not None for column in angle_columns) and not all(column is not None for column in angle_columns):
-        missing = [name for name, column in zip(angle_names, angle_columns) if column is None]
-        raise ValueError(f"STAR file must provide all Euler-angle columns; missing {', '.join(missing)}")
-    best_pose_rotations = None
-    source_eulers = None
-    if all(column is not None for column in angle_columns):
-        eulers = np.stack(
-            [np.asarray(column.astype(float).to_numpy(), dtype=np.float64) for column in angle_columns],
-            axis=1,
-        )
-        if not np.all(np.isfinite(eulers)):
-            raise ValueError("STAR Euler angles must be finite")
-        # RELION keeps the input metadata orientations available before every
-        # gradient subset has been visited. Sampling-accuracy estimation uses
-        # those orientations, then replaces rows as fresh E-step poses arrive.
-        best_pose_rotations = np.asarray(R_from_relion(eulers, degrees=True), dtype=np.float32)
-        source_eulers = eulers.copy()
     return NativeParticleState(
         translation_offsets=_image_origin_offsets_pixels_from_star(main_star, dataset),
         class_assignments=class_assignments,
         max_posterior=max_posterior,
         pose_assignments=np.full(n_images, -1, dtype=np.int32),
-        best_pose_rotations=best_pose_rotations,
-        best_pose_eulers_deg=source_eulers,
-        best_pose_eulers_valid=(None if source_eulers is None else np.ones(n_images, dtype=bool)),
         visited=visited,
+        **_star_source_poses(main_star, n_images),
     )
 
 

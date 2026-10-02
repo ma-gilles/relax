@@ -5,12 +5,12 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
-
-from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
-from relax.relion import initial_model_io
-from relax.vdam.state import NativeParticleState
-from recovar.utils.helpers import R_from_relion, R_to_relion
 from helpers.float_compare import assert_matches
+from recovar.utils.helpers import R_from_relion, R_to_relion
+
+from relax.relion import initial_model_io
+from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
+from relax.vdam.state import NativeParticleState
 
 pytestmark = pytest.mark.unit
 
@@ -69,6 +69,27 @@ def test_input_star_source_is_valid_before_first_visit():
     assert not value.visited[0] and value.best_pose_eulers_valid[0]
     assert_matches(native_sampling._best_eulers_from_particle_state(value, [0], rotation_grid_order=0), eulers)
     assert value.best_pose_rotations.dtype == np.float32
+
+
+def test_subtomogram_input_star_source_is_valid_before_first_visit():
+    # RELION's expected accuracy uses an unvisited subtomogram's input angles (ml_optimiser.cpp:9505);
+    # without them relax skipped the estimate until every trial particle had been visited.
+    eulers = np.array([[-112.22566303733562, 128.19451794974998, 133.69290541708725], [48.46, 98.49, 31.66]])
+    frame = pd.DataFrame(
+        dict(
+            _rlnTomoParticleName=["TS_01/3", "TS_03/3"],
+            _rlnOriginXAngst=[2.27, 0.98],
+            _rlnOriginYAngst=[0.68, 2.47],
+            _rlnOriginZAngst=[0.90, 0.48],
+            _rlnAngleRot=eulers[:, 0],
+            _rlnAngleTilt=eulers[:, 1],
+            _rlnAnglePsi=eulers[:, 2],
+        )
+    )
+    value = initial_model_io._tomo_particle_state_from_star(frame, pixel_size=4.25)
+    assert value.best_pose_eulers_valid.all() and value.best_pose_rotations.dtype == np.float32
+    assert_matches(native_sampling._best_eulers_from_particle_state(value, [1, 0], rotation_grid_order=0), eulers[[1, 0]])
+    assert_matches(value.translation_offsets[0], np.array([2.27, 0.68, 0.90]) / 4.25)
 
 
 @pytest.mark.parametrize("fault", ["narrow", "shape", "nan", "valid_shape", "valid_dtype"])

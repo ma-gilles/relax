@@ -67,6 +67,12 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
 - Subtomogram VDAM K=1 (et09_box64, one optics group, stock seeding, s2): masked GT FSC-AUC
   0.98808 inside RELION's same-seed range [0.98795, 0.98816]; wall about 2x RELION before the
   coarse matrices fix.
+- Subtomogram VDAM expected accuracy (2026-10-02): relax dropped the particle STAR's input angles, so it
+  skipped RELION's expected accuracy until every trial particle had been visited (et09: iteration 60)
+  and searched translations coarser from iteration 30 (offset step 3.0 A vs 2.125 / 1.06 / 0.66 A at
+  iterations 30 / 40 / 50), which raised the mid-run Pmax (0.94-0.96 vs RELION 0.76-0.85 at it30-60).
+  Unvisited particles now keep their input angles, as in RELION (ml_optimiser.cpp:9505). Re-run of
+  et09 K=1 (one and eight groups) and et15 K=2 against RELION pending.
 - With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
   particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
   fixtures keeps classes 2..K empty in both programs (ma-gilles/relax#11). With one optics group
@@ -217,7 +223,8 @@ labeled diagnostic only.
   class in both programs (a plumbing check only). Subtomogram K=2 on et15 with one group per
   tomogram (4 groups; relax 0de4063 job 14835375, stock RELION r1 14817602 and r2 14835377, one H100
   each), population-weighted masked GT FSC-AUC relax / RELION same-seed range: s1 0.98391 /
-  [0.98378, 0.98387] (above), s2 0.98202 / [0.98211, 0.98212] (9e-5 below, OPEN), s3 0.98240 /
+  [0.98378, 0.98387] (above), s2 0.98202 / [0.98211, 0.98212] (9e-5 below; OPEN until rerun, as these relax runs predate the subtomogram
+  expected-accuracy fix below), s3 0.98240 /
   [0.98234, 0.98242] (inside); class populations equal RELION's to 1e-3 at every seed; wall
   52542 / 48365 / 54054 s against RELION 35984-39046 s (1.33-1.41x). Groups on other grids stay
   refused (etw's multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`
