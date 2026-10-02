@@ -2290,6 +2290,30 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         controlled_scores,
     )
 
+    def traced_designed_scores(projected, projected_abs2, shifted, weight, initial, actual_image_count, **_kwargs):
+        """designed_scores in jnp for the one-program pass 1, which traces its scorer."""
+
+        del projected_abs2, weight, initial
+        codes = jnp.real(projected[:, 0])
+        class_index = jnp.floor(codes / 100.0)
+        rotation_index = jnp.round((codes - class_index * 100.0) / 10.0)
+        valid = (codes <= 1000.0)[None, :]
+        lanes = jnp.arange(shifted.shape[0])
+        image_id = (jnp.round(jnp.max(jnp.real(shifted), axis=(1, 2))) - 1)[:, None]
+        live = (lanes < actual_image_count)[:, None] & valid
+        base = live & (class_index == 0)[None, :] & (rotation_index == 0)[None, :]
+        t0 = jnp.where(base, 0.0, -4.0)
+        t0 = jnp.where(live & (image_id == 0) & ((class_index == 1) & (rotation_index == 0))[None, :], -0.05, t0)
+        t0 = jnp.where(live & (image_id == 1) & ((class_index == 0) & (rotation_index == 1))[None, :], -0.05, t0)
+        t1 = jnp.full(t0.shape, -4.0)
+        t1 = jnp.where(live & (image_id == 1) & ((class_index == 0) & (rotation_index == 1))[None, :], -0.1, t1)
+        t1 = jnp.where(live & (image_id == 1) & ((class_index == 0) & (rotation_index == 0))[None, :], -0.05, t1)
+        return jnp.stack([t0, t1], axis=-1).astype(jnp.float32)
+
+    # The one-program pass 1 (significance._coarse_pass1_blocks) traces its scorer.
+    monkeypatch.setattr(significance, "_relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
+    jax.clear_caches()
+
     original_pad = significance._pad_significance_preprocess_inputs
     poison_tail = {"enabled": False}
 
