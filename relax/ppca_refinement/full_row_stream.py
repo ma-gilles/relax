@@ -25,6 +25,11 @@ Per image tile:
    the augmented backprojection. Nothing of pass 1 is recomputed except the
    projections the residuals need.
 
+On GPU streams the elementwise stages around the GEMMs run in relax's CUDA
+kernels (:func:`_score_block_cuda`, :func:`_posterior_block_cuda`, the window
+projector and the moment scatter); the XLA formulation is the CPU path and the
+tests' float64 reference.
+
 Kept operands are component-major ``(component, R, B, T)``, the layout of the
 projector's output and of the backprojector's input, so each GEMM reads and
 writes them in place and no operand is transposed. Every posterior weight is

@@ -1006,14 +1006,17 @@ scientific contract; runnable code alone does not establish recovery.
   trace channel alone (`TracePPCAStats`, `ppca_momentum_sgd.md`).
   On GPU the metric and residual images of a block are backprojected together
   into one voxel-major half volume of 32-float voxel rows
-  ([ppca_moment_backproject_f32](../../relax/cuda/kernels.py)): each lane
-  of a warp expands its own pixel's trilinear and Hermitian-partner targets, as
-  RECOVAR's windowed adjoint does, then the warp adds one channel per lane, so
-  each target costs one warp-wide atomic on one 128-byte row instead of one
-  scattered atomic per channel. Every channel is RECOVAR's adjoint up to the
-  float32 order of each voxel's sum; on one HP4 block both are 3.0e-6 from a
-  float64 adjoint. The 10076 block's backprojection drops from 2.9 ms to 0.75 ms
-  on A100. Other platforms use RECOVAR's adjoint per channel type.
+  ([ppca_moment_scatter_f32](../../relax/cuda/kernels.py)): each lane
+  of a warp forms its own pixel's expected residual and noise correction from
+  the block's moment images and projections, and expands the pixel's trilinear
+  and Hermitian-partner targets, as RECOVAR's windowed adjoint does; then the
+  warp adds one channel per lane (four targets per instruction with 16-byte
+  atomics on Hopper), so each target costs one warp-wide atomic on one 128-byte
+  row instead of one scattered atomic per channel. Every channel is RECOVAR's
+  adjoint up to the float32 order of each voxel's sum; on one HP4 block both are
+  3.0e-6 from a float64 adjoint. The 10076 block's backprojection drops from
+  2.9 ms to 0.75 ms on A100. Other platforms use RECOVAR's adjoint per channel
+  type and the XLA residual statistics.
   The controller streams both pseudo-halves through one prepared model,
   dispatching each tile before finishing the previous one, with one reused
   pose-kept buffer. Paired local A100 replays of the live checkpoints
@@ -1022,6 +1025,33 @@ scientific contract; runnable code alone does not establish recovery.
   about 15.5 s to 6.3 s, every scoped PPCA gate passing; the two large GEMMs
   run at 88-94% of A100 float32 peak. 3xTF32 contractions were measured and
   rejected: no closer to float64 than float32 on the 11-state statistics.
+- Fused GPU stages (October 2, 2026). On GPU streams the elementwise work
+  around the four GEMMs runs in relax CUDA kernels
+  ([ppca_stream.cuh](../../relax/cuda/ppca_stream.cuh)); the XLA formulation above
+  stays the CPU path and the float64 reference of the tests. The window
+  projector ([ppca_window_project_f32](../../relax/cuda/kernels.py)) evaluates
+  all `P` components of a voxel-major model copy at once, at the score-window
+  pixels only, into the planar `[Re | Im]` GEMM operand and the packed products
+  `Re(conj(A_i) A_j)` of the Gram GEMM; it replaces RECOVAR's per-component
+  projection loop, whose XLA loop predicate synchronized the host every block.
+  The latent epilogue ([ppca_latent_epilogue_f32](../../relax/cuda/kernels.py))
+  writes the scores, latent means and covariances in place into the kept
+  buffers, and per (rotation, image) the maximum score over translations, the
+  first maximizing translation and `sum_t exp(score - maximum)`; the tile
+  normalization reduces these partials
+  ([_normalize_partials](../../relax/ppca_refinement/full_row_stream.py)), with the
+  same first-maximum order, instead of every kept score. The posterior
+  preparation ([ppca_posterior_prep_f32](../../relax/cuda/kernels.py)) forms the
+  weights `gamma [1, E z]` and the translation sums of `gamma E[a a^T]`; the
+  embedding, rotation mass and latent trace follow from those sums. The GEMM
+  window is padded with zero pixels to a multiple of four so every GEMM row is
+  16-byte aligned. Posterior-weight diagnostics (rotation mass, top posterior)
+  differ from the host-mask routine by a few 1e-6 because float32 scores carry
+  rounding relative to their magnitude; the fused order is the closer of the two
+  to float64. The streamed controller reads each image tile on a worker thread
+  while the previous tile is dispatched, and the next update's first tile during
+  the current update (its selection depends only on the random state). On A100
+  the four GEMMs are now about 84% of the busy device time of a 10076 update.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
