@@ -48,10 +48,12 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
+from recovar.core.slicing import decide_order
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size
 from recovar.reconstruction import noise as noise_utils
 
+from relax.cuda.kernels import ppca_moment_backproject_f32
 from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
@@ -97,6 +99,7 @@ class _StreamStatic(NamedTuple):
     use_recon_window: bool
     basis_size: int
     metric_trace_only: bool  # backproject sum_p LHS_pp instead of every packed LHS channel
+    cuda_moments: bool  # backproject the moment images with relax's CUDA kernel (GPU streams)
 
 
 class _StreamArrays(NamedTuple):
@@ -153,10 +156,10 @@ class _MomentCarry(NamedTuple):
     once voxels grow large, a downward bias that grows with images per tile.
     """
 
-    lhs_tri: jax.Array  # (tri(P), half) packed LHS, or (1, half) its trace under metric_trace_only
-    residual: jax.Array
-    lhs_compensation: jax.Array
-    residual_compensation: jax.Array
+    # (groups, half, 32) voxel-major moment volumes: the metric channels (packed LHS, or its
+    # trace under metric_trace_only), then the real and imaginary parts of each residual channel.
+    moments: jax.Array
+    moments_compensation: jax.Array
     residual_power: jax.Array
     embedding: jax.Array  # (B, q)
     rotation_mass: jax.Array  # (capacity,) per row-table position
@@ -456,20 +459,6 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     # statistics are already divided by that weight.
     residual_images, correction = residual_statistics_from_moment_images(rhs_images, lhs_images, proj)
     indices = arrays.score_indices
-    # The half-image adjoint supplies conjugate scatters itself.
-    residual_block = batch_adjoint_slice_volume_maybe_windowed(
-        residual_images,
-        indices,
-        rotations,
-        jnp.zeros_like(carry.residual),
-        static.image_shape,
-        static.volume_shape,
-        static.disc_type,
-        True,
-        True,
-        use_window=indices is not None,
-        max_r=static.backprojection_max_r,
-    )
     nv = jnp.broadcast_to(arrays.coefficient_noise, (carry.residual_power.size,))
     if indices is None:
         residual_power = carry.residual_power + correction * nv
@@ -482,28 +471,72 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
         # adjoint of the per-pose trace images.
         tri_i, tri_j = np.triu_indices(P)
         lhs_images = jnp.sum(lhs_images[np.flatnonzero(tri_i == tri_j)], axis=0, keepdims=True)
-    lhs_block = batch_adjoint_slice_volume_maybe_windowed(
-        lhs_images,
-        arrays.recon_indices,
-        rotations,
-        jnp.zeros_like(carry.lhs_tri),
-        static.image_shape,
-        static.volume_shape,
-        static.disc_type,
-        True,
-        True,
-        use_window=static.use_recon_window,
-        max_r=static.backprojection_max_r,
-    )
-    lhs_tri, lhs_compensation = compensated_add(carry.lhs_tri, carry.lhs_compensation, lhs_block)
-    residual, residual_compensation = compensated_add(carry.residual, carry.residual_compensation, residual_block)
-    return carry._replace(
-        lhs_tri=lhs_tri,
-        residual=residual,
-        lhs_compensation=lhs_compensation,
-        residual_compensation=residual_compensation,
-        residual_power=residual_power,
-    )
+    block = _backproject_moments(lhs_images, residual_images, indices, rotations, static)
+    moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
+    return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
+
+
+def _moment_groups(static):
+    """Groups of 32 voxel-major channels: the metric channels and the residual's real/imaginary parts."""
+    P = static.basis_size
+    metric = 1 if static.metric_trace_only else tri_size(P)
+    return -(-(metric + 2 * P) // 32)
+
+
+def _unpack_moments(moments, static):
+    """Metric ``(channels, half)`` and residual gradient ``(half, P)`` of ``(groups, half, 32)`` moment volumes."""
+    P = static.basis_size
+    metric = 1 if static.metric_trace_only else tri_size(P)
+    flat = jnp.transpose(moments, (1, 0, 2)).reshape(moments.shape[1], -1)
+    residual = flat[:, metric : metric + 2 * P].reshape(-1, P, 2)
+    return flat[:, :metric].T, jax.lax.complex(residual[..., 0], residual[..., 1])
+
+
+def _backproject_moments(real_images, complex_images, indices, rotations, static):
+    """``(groups, half, 32)`` linear-interpolation adjoint of one block's windowed half-image moment images.
+
+    Real channels ``(C_r, R, F)`` then complex channels ``(C_c, R, F)`` (real and imaginary
+    parts interleaved), into zero half volumes. GPU streams use one warp-wide CUDA scatter per
+    target (:func:`relax.cuda.kernels.ppca_moment_backproject_f32`); other platforms the
+    shared windowed adjoint per channel type, interleaved.
+    """
+    if indices is None:
+        n_half = int(static.image_shape[0]) * (int(static.image_shape[1]) // 2 + 1)
+        indices = jnp.arange(n_half, dtype=jnp.int32)
+    if static.cuda_moments:
+        return ppca_moment_backproject_f32(
+            real_images,
+            complex_images,
+            indices,
+            rotations,
+            image_shape=static.image_shape,
+            volume_shape=static.volume_shape,
+            max_r=static.backprojection_max_r,
+        )
+    half = int(np.prod(static.volume_shape[:2])) * (int(static.volume_shape[2]) // 2 + 1)
+
+    def adjoint(images, dtype):
+        return batch_adjoint_slice_volume_maybe_windowed(
+            images,
+            indices,
+            rotations,
+            jnp.zeros((images.shape[0], half), dtype),
+            static.image_shape,
+            static.volume_shape,
+            static.disc_type,
+            True,
+            True,
+            use_window=True,
+            max_r=static.backprojection_max_r,
+        )
+
+    real = adjoint(real_images, real_images.dtype)
+    complex_volume = adjoint(complex_images, complex_images.dtype)
+    channels = [real.T, jnp.stack([complex_volume.real.T, complex_volume.imag.T], axis=-1).reshape(half, -1)]
+    flat = jnp.concatenate(channels, axis=1)
+    groups = -(-flat.shape[1] // 32)
+    flat = jnp.pad(flat, ((0, 0), (0, groups * 32 - flat.shape[1])))
+    return jnp.transpose(flat.reshape(half, groups, 32), (1, 0, 2))
 
 
 def prepare_full_row_stream(
@@ -643,7 +676,10 @@ def _prepare_full_row_stream(
         use_recon_window=bool(resolved.use_window),
         basis_size=int(resolved.q) + 1,
         metric_trace_only=bool(metric_trace_only),
+        cuda_moments=device.platform == "gpu",
     )
+    if static.cuda_moments and decide_order(static.disc_type) != 1:
+        raise ValueError("The CUDA moment backprojection supports linear interpolation only")
     return FullRowStream(
         dataset=experiment_dataset,
         arrays=arrays,
@@ -768,12 +804,10 @@ def _empty_carry(stream, n_images, observation_power):
     P = static.basis_size
     half_size = int(arrays.augmented.shape[1])
     capacity = len(stream.block_starts) * stream.rotation_block_size
-    metric_channels = 1 if static.metric_trace_only else tri_size(P)
+    moments = (_moment_groups(static), half_size, 32)
     return _MomentCarry(
-        lhs_tri=jnp.zeros((metric_channels, half_size), dtype=jnp.float32),
-        residual=jnp.zeros((P, half_size), dtype=jnp.complex64),
-        lhs_compensation=jnp.zeros((metric_channels, half_size), dtype=jnp.float32),
-        residual_compensation=jnp.zeros((P, half_size), dtype=jnp.complex64),
+        moments=jnp.zeros(moments, dtype=jnp.float32),
+        moments_compensation=jnp.zeros(moments, dtype=jnp.float32),
         residual_power=jnp.zeros(arrays.coefficient_noise.shape, jnp.float32) + observation_power,
         embedding=jnp.zeros((n_images, P - 1), jnp.float32),
         rotation_mass=jnp.zeros((capacity,), jnp.float32),
@@ -848,7 +882,7 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
     _check_finite_posterior(posterior)
     static = stream.static
     n_images = int(tile.y_norm.shape[0])
-    lhs_tri = carry.lhs_tri
+    lhs_tri, residual = _unpack_moments(carry.moments, static)
     if enforce_x0:
         lhs_tri = _enforce_augmented_x0(lhs_tri.astype(jnp.complex64), static.volume_shape).real.astype(jnp.float32)
     weights = make_half_image_weights(static.image_shape)
@@ -901,7 +935,7 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         rhs=None,
         log_likelihood=float(host["log_likelihood"]),
         n_images=n_images,
-        residual_gradient=carry.residual.T,
+        residual_gradient=residual,
         residual_num=residual_num,
         residual_den=residual_den,
         embeddings=carry.embedding,

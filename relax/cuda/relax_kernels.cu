@@ -10070,3 +10070,6 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 // Flat-row translate-and-sum for the device-resident pass-2 M-step
 // (needs relion_score_translate_f32's phase and rotation).
 #include "relion_translate_sum.cuh"
+
+// PPCA M-step moment backprojection (voxel-major accumulator, warp-wide channel atomics).
+#include "ppca_moment_backproject.cuh"

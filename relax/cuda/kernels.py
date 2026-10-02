@@ -5167,6 +5167,7 @@ _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32 = (
 
 
 _TARGET_DUAL_WEIGHTED_SUMS_F32 = "cuda_dual_weighted_sums_f32"
+_TARGET_PPCA_MOMENT_BACKPROJECT_F32 = "relax_ppca_moment_backproject_f32"
 
 
 _TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32 = "cuda_dual_weighted_sums_pairs_f32"
@@ -5292,6 +5293,54 @@ def dual_weighted_sums_f32(
     )(probabilities, first_values, second_values)
 
 
+def ppca_moment_backproject_f32(
+    real_images: jax.Array,
+    complex_images: jax.Array,
+    pixel_indices: jax.Array,
+    rotation_matrices: jax.Array,
+    *,
+    image_shape,
+    volume_shape,
+    max_r,
+) -> jax.Array:
+    """Backproject PPCA moment images of one rotation block into a ``(groups, V, 32)`` half volume.
+
+    ``real_images`` ``(C_r, R, F)`` float32 and ``complex_images`` ``(C_c, R, F)``
+    complex64 are windowed half images (``pixel_indices`` into the half image) of
+    the rotations ``(R, 3, 3)``. Channel ``c`` of the result (the real channels, then
+    the real and imaginary parts of each complex channel) is lane ``c % 32`` of group
+    ``c // 32``. Each channel equals recovar's linear-interpolation
+    ``batch_backproject_indexed`` (half volume, half image, no RELION x-fold, unit
+    upsampling) into a zero volume, up to the float32 order of each voxel's sum.
+    """
+
+    _ensure_ffi()
+    real_images = jnp.asarray(real_images)
+    complex_images = jnp.asarray(complex_images)
+    if real_images.dtype != jnp.float32 or complex_images.dtype != jnp.complex64:
+        raise ValueError("ppca_moment_backproject_f32 expects float32 real and complex64 complex images")
+    kw, _, _ = cuda_backproject.ffi_kwargs(image_shape, volume_shape, 1, True, True, max_r, None)
+    if int(kw["upsampling"]) != 1:
+        raise ValueError("ppca_moment_backproject_f32 supports unit upsampling only")
+    rot6 = cuda_backproject.rot_to_compact(jnp.asarray(rotation_matrices), jnp.float32)
+    channels = real_images.shape[0] + 2 * complex_images.shape[0]
+    N0, N1, N2 = (int(n) for n in volume_shape)
+    out_type = jax.ShapeDtypeStruct((-(-channels // 32), N0 * N1 * (N2 // 2 + 1), 32), jnp.float32)
+    return jax.ffi.ffi_call(_TARGET_PPCA_MOMENT_BACKPROJECT_F32, out_type, vmap_method="sequential")(
+        real_images,
+        complex_images,
+        jnp.asarray(pixel_indices, jnp.int32).reshape(-1),
+        rot6,
+        image_h=kw["image_h"],
+        image_w=kw["image_w"],
+        full_image_w=kw["full_image_w"],
+        N0=kw["N0"],
+        N1=kw["N1"],
+        N2=kw["N2"],
+        max_r2_x4=kw["max_r2_x4"],
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────
 # EM CUDA library (relax split seam S3/S4): librelax_cuda.so, built from recovar/em/cuda
 # ──────────────────────────────────────────────────────────────────────
@@ -5307,6 +5356,7 @@ _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "relion_posterior.cuh",
     "sparse_pass2_posterior.cuh",
     "relion_translate_sum.cuh",
+    "ppca_moment_backproject.cuh",
     "relion_capacity_texture.cuh",
     "relion_coarse_diff2_projector_body.inc",
     str(include_dir() / "recovar_cuda_common.cuh"),
@@ -5500,6 +5550,7 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         "RelionWavgSequentialRuntimeTripletF32",
     ),
     (_TARGET_DUAL_WEIGHTED_SUMS_F32, "DualWeightedSumsF32"),
+    (_TARGET_PPCA_MOMENT_BACKPROJECT_F32, "PpcaMomentBackprojectF32"),
     (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32, "DualWeightedSumsPairsF32"),
     (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32, "DualWeightedSumsPairsRowsF32"),
 )

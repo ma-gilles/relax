@@ -539,10 +539,11 @@ def _float64_tile_statistics(stream, image_indices, significant):
         shells = np.asarray(make_shell_indices_half(stream.static.image_shape))
         residual_num = np.zeros(shells.max() + 1)
         np.add.at(residual_num, shells, np.asarray(weights * carry.residual_power))
+        lhs_tri, residual = frs._unpack_moments(carry.moments, stream.static)
         return {
             "lhs_tri": np.asarray(jnp.swapaxes(
-                _enforce_augmented_x0(carry.lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
-            "residual_gradient": np.asarray(carry.residual.T),
+                _enforce_augmented_x0(lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
+            "residual_gradient": np.asarray(residual),
             "residual_num": residual_num,
             "embeddings": np.asarray(carry.embedding),
         }

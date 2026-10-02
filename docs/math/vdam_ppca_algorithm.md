@@ -1004,6 +1004,16 @@ scientific contract; runnable code alone does not establish recovery.
   both optimizers read only the LHS metric and the direct residual gradient.
   Momentum SGD reads only the metric trace, so its streams backproject the
   trace channel alone (`TracePPCAStats`, `ppca_momentum_sgd.md`).
+  On GPU the metric and residual images of a block are backprojected together
+  into one voxel-major half volume of 32-float voxel rows
+  ([ppca_moment_backproject_f32](../../relax/cuda/kernels.py)): each lane
+  of a warp expands its own pixel's trilinear and Hermitian-partner targets, as
+  RECOVAR's windowed adjoint does, then the warp adds one channel per lane, so
+  each target costs one warp-wide atomic on one 128-byte row instead of one
+  scattered atomic per channel. Every channel is RECOVAR's adjoint up to the
+  float32 order of each voxel's sum; on one HP4 block both are 3.0e-6 from a
+  float64 adjoint. The 10076 block's backprojection drops from 2.9 ms to 0.75 ms
+  on A100. Other platforms use RECOVAR's adjoint per channel type.
   The controller streams both pseudo-halves through one prepared model,
   dispatching each tile before finishing the previous one, with one reused
   pose-kept buffer. Paired local A100 replays of the live checkpoints
