@@ -303,8 +303,9 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
     with caplog.at_level(logging.WARNING, logger=iteration_loop.__name__):
         iteration_loop.run(dataset, auto, tmp_path / "run", identity, diameter_ang=2.0,
                            resume=tmp_path / "checkpoint_0001.npz")
-    assert "resumed fp32 checkpoint under auto (fp32)" in caplog.text  # CPU resolves auto to fp32
+    resolved = iteration_loop._gemm_precision_used(auto)  # tf32 on an sm_80+ default device, else fp32
+    assert f"resumed fp32 checkpoint under auto ({resolved})" in caplog.text
     records = [json.loads(line) for line in (tmp_path / "run" / "iterations.jsonl").read_text().splitlines()]
     assert [r["iteration"] for r in records] == [2, 3]
-    assert all(r["resumed_from_gemm_precision"] == "fp32" and r["gemm_precision"] == "fp32" for r in records)
+    assert all(r["resumed_from_gemm_precision"] == "fp32" and r["gemm_precision"] == resolved for r in records)
     assert checkpoint.saved_gemm_precision(tmp_path / "run" / "checkpoint_0003.npz") == "auto"
