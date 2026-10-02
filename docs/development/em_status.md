@@ -628,6 +628,19 @@ RELION's next iteration at its 6-decimal STAR rounding (class-2 weight within 4.
 alternating sign; class assignment 100%). Evidence and tools:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/HANDOFF.json`.
 
+VDAM K>1 benchmark misses (2026-10-02): synth_pdb_k2 50k/256 (s41/s61/s67) and ribosembly K15 s61
+were closed by same-command repeats (both engines are bimodal there). One-iteration replays at pdb K2
+s67 from double-accumulation RELION checkpoints (it10/20/50/100/150, the same particle subset in every
+arm) put relax-vs-RELION inside the spread between two RELION builds (float and double accumulation)
+from the same input: class assignment 100% in every pair, populations within 3e-6, mean Pmax and
+significant-count differences of either sign. Best pose and Pmax per particle are near-ties under flat
+posteriors (the two RELION builds disagree on 12-100% of best poses after one step). Stock RELION
+`--continue` restarts the subset shuffle from the input order (`sorted_idx` is not checkpointed), so a
+matched replay needs the same order on both sides. Low-priority open item: relax's per-class tau2
+after one step differs from RELION's by 2e-5 to 1.6e-4 relative while the two RELION builds agree
+exactly (reference power spectrum precision; `refresh_tau2_from_projector_power`). Table:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/etw_vdam_k2_onestep_20261002/compare2_s67_it{10,20,50,100,150}.json`.
+
 VDAM defaults (2026-09-25, landed from the vdamspeed stack): RELION's ternary max/min in the JAX
 M-step FSC estimate; the exact K=1 pass 2 always packs flat local rows; the float32 JAX M-step
 transaction is the only default route (float64 stays a diagnostic); one projector setup, the device
