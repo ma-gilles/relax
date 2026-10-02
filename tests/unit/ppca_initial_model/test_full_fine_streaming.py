@@ -497,7 +497,7 @@ def test_compensated_block_sums_keep_small_contributions_under_jit():
 
 
 def _float64_tile_statistics(stream, image_indices, significant):
-    """The streamed engine's tile statistics with every operand and sum in float64 (CPU x64)."""
+    """The streamed engine's tile statistics with every operand and sum in float64 (x64, XLA moments)."""
     import jax
 
     from relax.ppca_refinement import full_row_stream as frs
@@ -516,7 +516,8 @@ def _float64_tile_statistics(stream, image_indices, significant):
     with jax.enable_x64(True), jax.default_matmul_precision("highest"):
         tile32, observation_power, layout = frs._load_tile(stream, image_indices, significant, collect_observation=True)
         tile, arrays = up(tile32), up(stream.arrays)
-        wide = stream._replace(arrays=arrays)
+        # The CUDA moment kernel is float32-only; the float64 truth runs the XLA moments.
+        wide = stream._replace(arrays=arrays, static=stream.static._replace(cuda_moments=False))
         n_images = len(image_indices)
         capacity = len(stream.block_starts) * stream.rotation_block_size
         q = stream.static.basis_size - 1
@@ -527,7 +528,7 @@ def _float64_tile_statistics(stream, image_indices, significant):
             jnp.zeros((capacity, n_images, q * (q + 1) // 2), jnp.float64),
         )
         for start in stream.block_starts[: layout["n_blocks"]]:
-            kept = frs._score_block(arrays, tile, kept, start, static=stream.static,
+            kept = frs._score_block(arrays, tile, kept, start, static=wide.static,
                                     block_size=stream.rotation_block_size)
         posterior = frs._normalize(
             kept.score, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size
