@@ -91,9 +91,11 @@ from relax.helpers.half_spectrum import (
     mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.helpers.half_volume_mstep import (
+    crop_public_full_volume,
     crop_relion_x_half_accumulator,
     finalize_half_volume_bpref,
     half_volume_accumulator_shape,
+    physical_bpref_finalize_applies,
     relion_backprojector_volume_shape,
     relion_x_half_accumulators_to_public_layout,
     relion_x_half_mstep_accumulator_dtypes,
@@ -2285,6 +2287,58 @@ def _stable_window_physical_class(image_size: int, current_size: int, quantum: i
     return chosen
 
 
+def _capacity_projection_applies(
+    *,
+    use_relion_projector,
+    class_projector_halves,
+    relion_projector_r_max,
+    projection_padding_factor,
+    projection_kwargs,
+    physical_current_size,
+) -> bool:
+    """Whether a stable-window pass can project its fine rotations at the physical class.
+
+    The capacity projection (``project_relion_half_capacity``, the half-storage
+    texture kernel with runtime radii) serves complex64 RELION projector slabs
+    at padding 1 or 2, through the texture interpolator, without RELION's exact
+    image-disk mask (the kernel applies the rotated radius test itself). The
+    logical crop and model radius must fit the physical class.
+    """
+
+    if not use_relion_projector or jax.default_backend() != "gpu":
+        return False
+    if projection_kwargs.get("mask_current_image_disk") or projection_kwargs.get("relion_texture_interp") is False:
+        return False
+    output_size = projection_kwargs.get("projector_output_size")
+    padding = int(projection_padding_factor)
+    if output_size is None or padding not in (1, 2) or int(physical_current_size) % 2:
+        return False
+    r_max = int(relion_projector_r_max)
+    if not (0 < r_max <= int(physical_current_size) // 2 and int(output_size) <= int(physical_current_size)):
+        return False
+    logical_shape = (2 * padding * r_max + 3, 2 * padding * r_max + 3, padding * r_max + 2)
+    return all(
+        half is not None and half.dtype == jnp.complex64 and tuple(half.shape) == logical_shape
+        for half in class_projector_halves
+    )
+
+
+def center_pad_relion_projector_half(half, *, logical_r_max: int, physical_size: int, padding_factor: int):
+    """Center-pad a logical RELION projector slab, ghost planes included, to the physical class.
+
+    ``project_relion_half_capacity`` takes a ``(pf Q + 3, pf Q + 3, pf Q // 2 + 2)``
+    slab for a physical crop of ``Q`` pixels; the logical slab sits centered on
+    z and y and at the start of x, and the zeros around it are never sampled
+    within the logical radius.
+    """
+
+    size = int(padding_factor) * int(physical_size) + 3
+    logical = 2 * int(padding_factor) * int(logical_r_max) + 3
+    offset = (size - logical) // 2
+    x_pad = size // 2 + 1 - (int(padding_factor) * int(logical_r_max) + 2)
+    return jnp.pad(jnp.asarray(half), ((offset, offset), (offset, offset), (0, x_pad)))
+
+
 def _resident_stable_window_plan(
     image_shape,
     *,
@@ -3209,6 +3263,38 @@ def _resident_pass2(
         current_size=current_size,
     )
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
+    # Stable windows also project at the physical class: a center-padded capacity
+    # slab into the physical crop, with RELION's logical model and image radii as
+    # runtime values (_capacity_projection). The projection programs then keep one
+    # shape per class instead of compiling at every logical current size.
+    projection_halves = class_projector_halves
+    projection_r_max = relion_projector_r_max
+    capacity_projection_kwargs = {}
+    if stable_window_plan is not None and _capacity_projection_applies(
+        use_relion_projector=use_relion_projector,
+        class_projector_halves=class_projector_halves,
+        relion_projector_r_max=relion_projector_r_max,
+        projection_padding_factor=projection_padding_factor,
+        projection_kwargs=projection_kwargs,
+        physical_current_size=int(stable_window_plan.physical_current_size),
+    ):
+        physical_size = int(stable_window_plan.physical_current_size)
+        projection_halves = [
+            center_pad_relion_projector_half(
+                half,
+                logical_r_max=int(relion_projector_r_max),
+                physical_size=physical_size,
+                padding_factor=int(projection_padding_factor),
+            )
+            for half in class_projector_halves
+        ]
+        # The capacity route takes the model radius at runtime; its static radius is the sentinel 0.
+        projection_r_max = 0
+        capacity_projection_kwargs = {
+            "relion_projector_runtime_r_max": jnp.asarray(int(relion_projector_r_max), dtype=jnp.int32),
+            "relion_projector_image_size": jnp.asarray(int(projection_kwargs["projector_output_size"]), dtype=jnp.int32),
+        }
+        projection_kwargs["projector_output_size"] = physical_size
 
     fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
     # The RELION projector computes only the windows' pixels, not full half rows.
@@ -3243,11 +3329,12 @@ def _resident_pass2(
             ),
             output_complex_dtype=precision_policy.score_complex_dtype,
             output_abs2_dtype=precision_policy.score_real_dtype,
-            relion_projector_half=class_projector_halves[class_index],
-            relion_projector_r_max=relion_projector_r_max,
+            relion_projector_half=projection_halves[class_index],
+            relion_projector_r_max=projection_r_max,
             projection_padding_factor=projection_padding_factor,
             window_union=fine_window_union,
             output_rows=n_rows,
+            **capacity_projection_kwargs,
             **projection_kwargs,
         )
         recon, recon_abs2 = precision_policy.cast_local_noise_projection_scores(recon, recon_abs2)
@@ -3437,10 +3524,11 @@ def _resident_pass2(
                 recon_indices=None,
                 max_projected_rotations=rows_per_call,
                 output_complex_dtype=precision_policy.score_complex_dtype,
-                relion_projector_half=class_projector_halves[class_index],
-                relion_projector_r_max=relion_projector_r_max,
+                relion_projector_half=projection_halves[class_index],
+                relion_projector_r_max=projection_r_max,
                 projection_padding_factor=projection_padding_factor,
                 window_union=union_window_union,
+                **capacity_projection_kwargs,
                 **projection_kwargs,
             )[0]
 
@@ -4309,9 +4397,18 @@ def _resident_pass2(
     # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
     # Hermitian enforcement, then applyPointGroupSymmetry on BPref, per class.
     # C1 is the x=0 enforcement alone.
+    # A stable-window C1 pass finalizes at its physical cube and crops the public
+    # volume, so the finalize programs keep the physical class's shapes across
+    # logical current sizes (they compiled at every logical size before).
+    logical_recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
+    cropped = program_recon_volume_shape != logical_recon_volume_shape
+    finalize_physical = cropped and physical_bpref_finalize_applies(
+        program_recon_volume_shape, logical_recon_volume_shape, symmetry_label
+    )
+    finalize_shape = program_recon_volume_shape if finalize_physical else logical_recon_volume_shape
     Ft_y_out, Ft_ctf_out = [], []
     for class_Ft_y, class_Ft_ctf in zip(Ft_y_total, Ft_ctf_total):
-        if program_recon_volume_shape != tuple(int(v) for v in recon_volume_shape):
+        if cropped and not finalize_physical:
             class_Ft_y = crop_relion_x_half_accumulator(class_Ft_y, program_recon_volume_shape, recon_volume_shape)
             class_Ft_ctf = crop_relion_x_half_accumulator(
                 class_Ft_ctf, program_recon_volume_shape, recon_volume_shape
@@ -4319,7 +4416,7 @@ def _resident_pass2(
         class_Ft_y, class_Ft_ctf = finalize_half_volume_bpref(
             class_Ft_y,
             class_Ft_ctf,
-            recon_volume_shape,
+            finalize_shape,
             logger=logger,
             label="Resident pass-2",
             symmetry_label=symmetry_label,
@@ -4328,8 +4425,13 @@ def _resident_pass2(
         class_Ft_y, class_Ft_ctf = relion_x_half_accumulators_to_public_layout(
             class_Ft_y,
             class_Ft_ctf,
-            recon_volume_shape,
+            finalize_shape,
         )
+        if finalize_physical:
+            class_Ft_y = crop_public_full_volume(class_Ft_y, program_recon_volume_shape, logical_recon_volume_shape)
+            class_Ft_ctf = crop_public_full_volume(
+                class_Ft_ctf, program_recon_volume_shape, logical_recon_volume_shape
+            )
         Ft_y_out.append(class_Ft_y)
         Ft_ctf_out.append(class_Ft_ctf)
 

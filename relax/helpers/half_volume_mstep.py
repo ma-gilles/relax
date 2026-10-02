@@ -432,6 +432,52 @@ def crop_relion_x_half_accumulator(
     ].reshape(-1)
 
 
+def physical_bpref_finalize_applies(physical_volume_shape, logical_volume_shape, symmetry_label) -> bool:
+    """Whether a stable-window pass can finalize its BPref at the physical cube and crop afterwards.
+
+    C1 only (the x=0 enforcement is then the whole finalize), and only while
+    neither cube takes the large-grid host or native-half branches, so the
+    physical and logical paths run the same device programs.
+    """
+
+    if str(symmetry_label).strip().upper() != "C1":
+        return False
+    for shape in (physical_volume_shape, logical_volume_shape):
+        voxels = int(np.prod(tuple(int(v) for v in shape)))
+        if _large_relion_x_half_host_x0_enabled(voxels) or _large_relion_x_half_to_native_half_enabled(voxels):
+            return False
+    return True
+
+
+def crop_public_full_volume(values, physical_volume_shape, logical_volume_shape):
+    """Crop a centered public full ``(x, y, z)`` accumulator to its logical odd cube.
+
+    The full-layout counterpart of :func:`crop_relion_x_half_accumulator`: the
+    x=0 enforcement and the x-half expansion only pair voxels with their
+    centered mirrors, so finalizing the physical cube and cropping it leaves
+    the logical voxels as finalizing the cropped cube would. No arithmetic.
+    """
+
+    physical_size = int(tuple(physical_volume_shape)[0])
+    logical_size = int(tuple(logical_volume_shape)[0])
+    if (
+        len(set(int(v) for v in physical_volume_shape)) != 1
+        or len(set(int(v) for v in logical_volume_shape)) != 1
+        or logical_size > physical_size
+        or physical_size % 2 == 0
+        or logical_size % 2 == 0
+    ):
+        raise ValueError(
+            "stable RELION BPref cropping requires nested odd cubic shapes, "
+            f"got physical={tuple(physical_volume_shape)}, logical={tuple(logical_volume_shape)}"
+        )
+    if int(values.size) != physical_size**3:
+        raise ValueError(f"full accumulator has {values.size} entries, expected {physical_size**3}")
+    start = (physical_size - logical_size) // 2
+    grid = values.reshape((physical_size, physical_size, physical_size))
+    return grid[start : start + logical_size, start : start + logical_size, start : start + logical_size].reshape(-1)
+
+
 def _relion_x_half_volume_to_native_half_host(volume_flat, recon_volume_shape):
     """Host implementation of the RELION x-half to RECOVAR native-half repack."""
 

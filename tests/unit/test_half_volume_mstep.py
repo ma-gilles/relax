@@ -1340,3 +1340,36 @@ def test_enforce_half_volume_x0_uses_host_path_for_large_grids(monkeypatch):
     assert isinstance(got_ctf, np.ndarray)
     np.testing.assert_allclose(got_y, expected_y, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(got_ctf, expected_ctf, rtol=1e-6, atol=1e-6)
+
+
+@pytest.mark.parametrize("logical, physical", [(9, 13), (21, 29), (23, 23)])
+def test_physical_finalize_then_crop_matches_crop_then_finalize(logical, physical):
+    """A stable-window pass may finalize its physical BPref cube and crop the public volume.
+
+    The x=0 enforcement and the x-half expansion pair each voxel only with its centered
+    mirror, so the logical voxels do not depend on the order of the crop, even with
+    nonzero values in the physical tail.
+    """
+
+    logger = logging.getLogger("test")
+    physical_shape, logical_shape = (physical,) * 3, (logical,) * 3
+    half = physical * physical * (physical // 2 + 1)
+    Ft_y = jnp.asarray(_random_complex((half,), seed=physical))
+    Ft_ctf = jnp.asarray(np.random.default_rng(logical).random(half).astype(np.float32))
+    assert half_volume_mstep.physical_bpref_finalize_applies(physical_shape, logical_shape, "C1")
+    assert not half_volume_mstep.physical_bpref_finalize_applies(physical_shape, logical_shape, "D2")
+
+    def finalize(y, c, shape):
+        y, c = half_volume_mstep.finalize_half_volume_bpref(
+            y, c, shape, logger=logger, label="test", symmetry_label="C1", relion_x_half=True
+        )
+        return half_volume_mstep.relion_x_half_accumulators_to_public_layout(y, c, shape)
+
+    crop = half_volume_mstep.crop_relion_x_half_accumulator
+    expected = finalize(crop(Ft_y, physical_shape, logical_shape), crop(Ft_ctf, physical_shape, logical_shape), logical_shape)
+    got = [
+        half_volume_mstep.crop_public_full_volume(v, physical_shape, logical_shape)
+        for v in finalize(Ft_y, Ft_ctf, physical_shape)
+    ]
+    for g, e in zip(got, expected, strict=True):
+        assert_matches(np.asarray(g), np.asarray(e))

@@ -43,6 +43,8 @@ def _compute_sparse_pass2_projections_block(
     projector_output_size: int | None = None,
     relion_projector_capacity_texture=None,
     pixel_indices=None,
+    relion_projector_runtime_r_max=None,
+    relion_projector_image_size=None,
     **projection_kwargs,
 ):
     """One rotation block's projections, full half-spectrum rows or, with ``pixel_indices``, those pixels.
@@ -50,6 +52,14 @@ def _compute_sparse_pass2_projections_block(
     ``pixel_indices`` (RELION projector only) are centered-row half-spectrum
     pixels: the projector gathers them from its crop instead of expanding the
     crop to the full half, the same values the full row holds there.
+
+    ``relion_projector_runtime_r_max`` and ``relion_projector_image_size`` (int32
+    scalars, with ``relion_projector_r_max`` the static sentinel 0) project a
+    center-padded capacity slab into a ``projector_output_size`` capacity crop with
+    the logical model and image radii as runtime values
+    (:func:`~relax.cuda.kernels.project_relion_half_capacity`), so the programs
+    keep one shape across logical current sizes; the logical pixels hold the
+    logical projection (``relax/relion/relion_project.py``).
     """
 
     projection_kwargs = dict(projection_kwargs)
@@ -90,6 +100,15 @@ def _compute_sparse_pass2_projections_block(
                 relion_kernel=relion_kernel,
                 mask_current_image_disk=projection_mask_current_image_disk,
                 pixel_indices=pixel_indices,
+                **(
+                    {
+                        "projector_capacity": True,
+                        "runtime_r_max": relion_projector_runtime_r_max,
+                        "current_image_mask_size": relion_projector_image_size,
+                    }
+                    if relion_projector_runtime_r_max is not None
+                    else {}
+                ),
                 **({"persistent_texture": relion_projector_texture} if relion_projector_texture is not None else {}),
                 **(
                     {"capacity_texture": relion_projector_capacity_texture}
