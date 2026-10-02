@@ -58,9 +58,10 @@ def add_args(parser):
     parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
     parser.add_argument(
         "--ppca-gemm-precision",
-        choices=("fp32", "tf32"),
-        default="fp32",
-        help="streamed-engine GEMMs: exact float32 (default) or TF32 tensor cores with float32 accumulation",
+        choices=("auto", "fp32", "tf32"),
+        default="auto",
+        help="streamed-engine GEMMs: auto (default; tf32 on sm_80+ GPUs, else fp32), tf32 (TF32 tensor cores, "
+        "float32 accumulation) or fp32 (exact float32)",
     )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")

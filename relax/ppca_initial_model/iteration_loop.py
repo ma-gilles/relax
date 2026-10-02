@@ -45,6 +45,7 @@ from relax.ppca_refinement.full_row_stream import (
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
     prepare_full_row_stream,
+    resolve_gemm_precision,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -216,6 +217,13 @@ def _to_device(part, device):
         name: jax.device_put(getattr(part, name), device) for name in names if getattr(part, name, None) is not None
     }
     return dataclasses.replace(part, **moved)
+
+
+def _gemm_precision_used(config):
+    """The stream GEMM precision of this run's updates; the host-mask engines multiply in fp32."""
+    if not (config.stream_coarse_recompute or config.stream_full_fine_rows):
+        return "fp32"
+    return resolve_gemm_precision(config.gemm_precision, _fine_devices(config)[0])
 
 
 def _streams_groups(config):
@@ -687,7 +695,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "half_counts": [s.n_images for s in stats],
                 "radius": radius,
                 "healpix_order": config.stage(iteration)[1],
-                "gemm_precision": config.gemm_precision,
+                "gemm_precision": _gemm_precision_used(config),
                 "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step,
                 "fudge": fudge,
                 "noise": noise,

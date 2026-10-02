@@ -239,6 +239,7 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
         geometry=host["geometry"],
         schedule=host["schedule"],
         scoring=host["scoring"],
+        gemm_precision="fp32",  # the float32 equivalence check; TF32 is judged by science
     )
     expected = full_float32(accumulate_dense_ppca_statistics)(
         dataset,
@@ -612,8 +613,8 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q):
     assert actual.lhs_tri.dtype == actual.embeddings.dtype == jnp.float32
 
 
-def test_tf32_stream_gemms_are_opt_in_and_gpu_only(tile_problem):
-    """``gemm_precision="tf32"`` changes the stream GEMMs on Ampere+ GPUs and is refused elsewhere.
+def test_tf32_stream_gemms_need_ampere_and_auto_selects_them(tile_problem):
+    """``"tf32"`` changes the stream GEMMs on sm_80+ GPUs and is refused elsewhere; ``"auto"`` picks it there.
 
     TF32 keeps 10 mantissa bits, so its statistics leave the float32 run's noise (about 1e-7);
     whether that is acceptable is decided by end-to-end science, not here.
@@ -627,8 +628,10 @@ def test_tf32_stream_gemms_are_opt_in_and_gpu_only(tile_problem):
     if not capable:
         with pytest.raises(ValueError, match="compute capability"):
             make_tile_problem(gemm_precision="tf32")
+        assert make_tile_problem(gemm_precision="auto")[3].static.gemm_precision == "fp32"
         return
     _dataset, _mu, _W, stream, _host = tile_problem
+    assert make_tile_problem(gemm_precision="auto")[3].static.gemm_precision == "tf32"
     fp32 = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
     tf32 = accumulate_full_row_tile(make_tile_problem(gemm_precision="tf32")[3], np.arange(3), SIGNIFICANT)
     assert fp32.diagnostics["gemm_precision"] == "fp32" and tf32.diagnostics["gemm_precision"] == "tf32"

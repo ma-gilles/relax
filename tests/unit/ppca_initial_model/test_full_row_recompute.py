@@ -203,7 +203,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
 
 
 def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
-    """--ppca-gemm-precision defaults to fp32, tf32 needs a streamed engine, older checkpoints load as fp32."""
+    """--ppca-gemm-precision defaults to auto, tf32 needs a streamed engine, older checkpoints load as fp32."""
     import dataclasses
     import json
 
@@ -212,7 +212,8 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
     parser = argparse.ArgumentParser()
     add_args(parser)
     required = ["manifest.json", "--output", "out"]
-    assert parser.parse_args(required).ppca_gemm_precision == "fp32"
+    assert parser.parse_args(required).ppca_gemm_precision == "auto"
+    assert parser.parse_args([*required, "--ppca-gemm-precision", "fp32"]).ppca_gemm_precision == "fp32"
     assert parser.parse_args([*required, "--ppca-gemm-precision", "tf32"]).ppca_gemm_precision == "tf32"
     with pytest.raises(SystemExit):
         parser.parse_args([*required, "--ppca-gemm-precision", "bf16"])
@@ -220,8 +221,8 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
         Config(gemm_precision="tf32")
     with pytest.raises(ValueError, match="fp32 or tf32"):
         Config(gemm_precision="bf16", oversampling=0, stream_coarse_recompute=True)
-    config = Config(q=2, oversampling=0, stream_coarse_recompute=True)
-    assert config.gemm_precision == "fp32"
+    assert Config().gemm_precision == "auto"  # the host-mask engines ignore it
+    config = Config(q=2, oversampling=0, stream_coarse_recompute=True, gemm_precision="fp32")
     shape = (4, 4, 4)
     n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
     state = iteration_loop.State(
@@ -238,5 +239,23 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
     saved["metadata"] = np.asarray(json.dumps(meta))
     np.savez(path, **saved)
     assert checkpoint.load(path, config, {"fixture": "tiny"}).iteration == 0
+    # Resuming such a run under the new default changes its precision: the configuration must say so.
+    with pytest.raises(ValueError, match="identity mismatch"):
+        checkpoint.load(path, dataclasses.replace(config, gemm_precision="auto"), {"fixture": "tiny"})
     with pytest.raises(ValueError, match="identity mismatch"):
         checkpoint.load(path, dataclasses.replace(config, gemm_precision="tf32"), {"fixture": "tiny"})
+
+
+def test_auto_gemm_precision_resolves_by_device():
+    import jax
+
+    from relax.ppca_refinement.full_row_stream import resolve_gemm_precision
+
+    cpu = jax.devices("cpu")[0]
+    assert resolve_gemm_precision("auto", cpu) == "fp32"
+    assert resolve_gemm_precision("fp32", cpu) == "fp32"
+    with pytest.raises(ValueError, match="compute capability"):
+        resolve_gemm_precision("tf32", cpu)
+    with pytest.raises(ValueError, match="gemm_precision"):
+        resolve_gemm_precision("bf16", cpu)
+    assert iteration_loop._gemm_precision_used(Config()) == "fp32"  # host-mask engines

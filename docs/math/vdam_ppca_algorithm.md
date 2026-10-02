@@ -1052,13 +1052,39 @@ scientific contract; runnable code alone does not establish recovery.
   update, and the next update's first tile) was measured and dropped: no
   steady-state change in paired A100 updates. 16-byte vector atomics in the
   Hopper scatter were dropped too: 4% of the scatter, no update-level change.
-  The four stream GEMMs take one precision setting
-  (`Config.gemm_precision`, `--ppca-gemm-precision`): `fp32`, the default,
-  multiplies in full float32 (cuBLAS SIMT FFMA kernels, no TF32); `tf32` uses
-  one TF32 tensor-core pass with float32 accumulation on GPUs of compute
-  capability 8.0 or later. TF32 is judged by end-to-end science against the
-  fp32 seed-to-seed spread, not by the float64 tile tests. The setting is in the
-  checkpoint configuration and every update's log record.
+  The four stream GEMMs (score, Gram, RHS and LHS images) take one precision
+  setting (`Config.gemm_precision`, `--ppca-gemm-precision`, resolved by
+  [resolve_gemm_precision](../../relax/ppca_refinement/full_row_stream.py)):
+  `tf32` is one TF32 tensor-core pass with float32 accumulation, `fp32` the full
+  float32 products (cuBLAS SIMT FFMA kernels), and `auto`, the default, is tf32 on
+  GPUs of compute capability 8.0 or later and fp32 elsewhere (V100, CPU). The
+  resolved value is in every update's log record and the stream diagnostics; the
+  checkpoint configuration keeps the requested one, so a run checkpointed before
+  the setting existed resumes only with `--ppca-gemm-precision fp32`. TF32 leaves
+  the float32 equivalence tests (a bug check for the fp32 path) and was adopted on
+  end-to-end science (October 2, 2026; H100 job 14880649, three selection seeds
+  per arm, harness `relax_ppca_dense_speed_20261001/harness5`): per-state
+  shared-frame FSC over shells 1-15 against GT, pose median, and latent
+  between-state R^2 on the fixed 1100-particle eleven-state evaluation subset.
+
+  | Eleven-state q10 arm, end of run | fp32 (seeds 101/102/103) | tf32 (seeds 101/102/103) |
+  | --- | --- | --- |
+  | VDAM from GT, 150 updates: state FSC | .787 / .828 / .772 | .768 / .833 / .777 |
+  | same: worst state FSC | .618 / .639 / .609 | .589 / .653 / .610 |
+  | same: pose median, fraction under 10 deg | 4.24 / 4.31 / 4.46 deg, .845-.854 | 4.22 / 4.26 / 4.44 deg, .850-.863 |
+  | same: latent R^2 | .118 / .126 / .126 | .120 / .115 / .127 |
+  | SGD from GT, 150 updates: state FSC | .967 / .967 / .967 | .967 / .967 / .967 |
+  | same: pose median | 3.81 / 3.80 / 3.85 deg | 3.81 / 3.83 / 3.85 deg |
+  | VDAM from CP4000, 300 updates: state FSC | .156 / .144 / .092 | .124 / .133 / .124 |
+  | SGD from CP4000, 300 updates: state FSC | .244 / .246 / .246 | .244 / .246 / .246 |
+
+  The GT start scores .983 state FSC, 3.8 deg pose median and latent R^2 .584; VDAM
+  drifts from it under both precisions by the same amount (its stochastic step),
+  SGD holds it. Same-seed fp32/tf32 final mean maps agree more closely (FSC .95,
+  VDAM from GT; .9999 for 10076 VDAM) than fp32 seeds agree with each other (.79;
+  .91), and the last-50-update log-likelihoods match to four significant figures.
+  Per update on H100, tf32 is 1.89x faster for 10076 VDAM (4.81 to 2.54 s) and
+  1.56-1.75x for the eleven-state arms; on A100 2.37x for 10076 VDAM (11.4 to 4.81 s).
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it

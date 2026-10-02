@@ -95,7 +95,23 @@ class TracePPCAStats(AugmentedPPCAStats):
     metric_trace: jax.Array | None = None
 
 _HIGHEST = jax.lax.Precision.HIGHEST
-GEMM_PRECISIONS = ("fp32", "tf32")
+GEMM_PRECISIONS = ("auto", "fp32", "tf32")
+
+
+def tf32_capable(device) -> bool:
+    """TF32 tensor cores: a GPU of compute capability 8.0 or later."""
+    return device.platform == "gpu" and float(getattr(device, "compute_capability", "0")) >= 8.0
+
+
+def resolve_gemm_precision(requested: str, device) -> str:
+    """The stream GEMM precision used on ``device``: ``"auto"`` is tf32 where TF32 tensor cores exist, else fp32."""
+    if requested not in GEMM_PRECISIONS:
+        raise ValueError(f"gemm_precision must be one of {GEMM_PRECISIONS}")
+    if requested == "auto":
+        return "tf32" if tf32_capable(device) else "fp32"
+    if requested == "tf32" and not tf32_capable(device):
+        raise ValueError("TF32 stream GEMMs need a GPU of compute capability 8.0 or later")
+    return requested
 
 
 def _gemm(static):
@@ -121,7 +137,7 @@ class _StreamStatic(NamedTuple):
     # GPU streams run relax's fused CUDA stages (windowed projection, latent epilogue, posterior
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
-    gemm_precision: str  # "fp32" (exact float32 products) or "tf32" (TF32 tensor-core products, GPU only)
+    gemm_precision: str  # resolved: "fp32" (exact float32 products) or "tf32" (TF32 tensor cores, sm_80+)
 
 
 class _StreamArrays(NamedTuple):
@@ -722,16 +738,18 @@ def prepare_full_row_stream(
     scoring: ScoringConfig,
     disc_type: str = "linear_interp",
     metric_trace_only: bool = False,
-    gemm_precision: str = "fp32",
+    gemm_precision: str = "auto",
     device=None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
 
     With ``metric_trace_only`` the tiles return :class:`TracePPCAStats`: the
     LHS metric is backprojected only as its per-frequency trace.
-    ``gemm_precision`` (:data:`GEMM_PRECISIONS`) sets the four stream GEMMs: ``"fp32"``
-    exact float32 products, ``"tf32"`` TF32 tensor-core products with float32
-    accumulation (a GPU of compute capability 8.0 or later).
+    ``gemm_precision`` (:data:`GEMM_PRECISIONS`) sets the four stream GEMMs: ``"tf32"`` one
+    TF32 tensor-core pass with float32 accumulation (GPUs of compute capability 8.0 or later),
+    ``"fp32"`` exact float32 products, ``"auto"`` (the default) tf32 where available, else fp32
+    (:func:`resolve_gemm_precision`); section 14 of ``docs/math/vdam_ppca_algorithm.md`` records
+    the science comparison behind the default.
     """
     device = jax.local_devices()[0] if device is None else device
     with jax.default_device(device):
@@ -780,12 +798,7 @@ def _prepare_full_row_stream(
     gemm_precision,
     device,
 ) -> FullRowStream:
-    if gemm_precision not in GEMM_PRECISIONS:
-        raise ValueError(f"gemm_precision must be one of {GEMM_PRECISIONS}")
-    if gemm_precision == "tf32" and (
-        device.platform != "gpu" or float(getattr(device, "compute_capability", "0")) < 8.0
-    ):
-        raise ValueError("TF32 stream GEMMs need a GPU of compute capability 8.0 or later")
+    gemm_precision = resolve_gemm_precision(gemm_precision, device)
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
         raise ValueError("Full-row streaming supports unit image scale and no class prior")
     if scoring.score_with_masked_images or scoring.relion_unit_half_weights or not scoring.full_real_observation:

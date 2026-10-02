@@ -80,6 +80,21 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   fixtures re-labelled that way (in progress, together with InitialModel on several optics groups).
   Evidence and job IDs: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001/HANDOFF.json`.
 
+## PPCA dense speed and TF32 default (October 2, 2026)
+
+The streamed PPCA engine's fused GPU stages are on relax main (`c6a83a8f`,
+`751ae47a`): a 10076 q4/HP4 VDAM update takes 11.0 s on A100 and 4.9 s on H100
+in fp32, against 41.5 s and 18.5 s for the September control (3.8-4.5x A100,
+3.3-4.0x H100, every scoped PPCA gate passing). The four fp32 GEMMs then take
+84% of the busy device time. The stream GEMMs now default to TF32 on sm_80+
+(`--ppca-gemm-precision auto`; fp32 on V100 and as a switch), adopted because
+eleven-state runs from GT and from CP4000 and 10076 runs stay inside the fp32
+seed-to-seed spread on GT state FSC, pose accuracy, latent R^2 and
+log-likelihood (table in [section 14](../math/vdam_ppca_algorithm.md)). TF32
+makes a 10076 VDAM update 1.9x faster on H100 (2.5 s) and 2.4x on A100 (4.8 s),
+about 8.6x the September control on A100. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ppca_dense_speed_20261001/HANDOFF.json`.
+
 ## PPCA coarse optimizer comparison (September 28, 2026)
 
 The opt-in [PPCA momentum SGD and two-pass coarse route](../math/ppca_momentum_sgd.md)
