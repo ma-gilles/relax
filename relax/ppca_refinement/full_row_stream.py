@@ -264,7 +264,9 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     T = Y1.shape[1] // B
     inner = jnp.dot(_real_imag(proj).reshape(P * R, 2 * F), Y1, precision=_HIGHEST).reshape(P, R, B, T)
     first, second = np.triu_indices(P)
-    products = proj.real[first] * proj.real[second] + proj.imag[first] * proj.imag[second]
+    # Static component slices: an index-array gather here lowers to a strided gather fusion.
+    real, imag = proj.real, proj.imag
+    products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
     gram = jnp.dot(products.reshape(first.size * R, F), ctf2, precision=_HIGHEST).reshape(first.size, R, B)
     index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(first, second))}
     rho = gram[index[(0, 0)], :, :, None] - 2.0 * inner[0]
