@@ -126,7 +126,7 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-def make_tile_problem(device=None, q=2, metric_trace_only=False):
+def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision="fp32"):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
@@ -146,7 +146,8 @@ def make_tile_problem(device=None, q=2, metric_trace_only=False):
         rotations=shared.rotations_flat, translations=shared.translation_grid,
         rotation_log_prior=shared.rotation_log_priors_flat, translation_log_prior=translation_prior,
         rotation_parent=shared.rotation_posterior_ids_flat, translation_parent=parent,
-        n_coarse_rotations=3, n_coarse_translations=3, device=device, metric_trace_only=metric_trace_only, **common,
+        n_coarse_rotations=3, n_coarse_translations=3, device=device, metric_trace_only=metric_trace_only,
+        gemm_precision=gemm_precision, **common,
     )
     host = dict(
         rotations=shared.rotations_flat, translations=shared.translation_grid,
@@ -609,3 +610,29 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q):
     assert actual.embeddings.shape == (3, q)
     assert actual.residual_gradient.dtype == jnp.complex64
     assert actual.lhs_tri.dtype == actual.embeddings.dtype == jnp.float32
+
+
+def test_tf32_stream_gemms_are_opt_in_and_gpu_only(tile_problem):
+    """``gemm_precision="tf32"`` changes the stream GEMMs on Ampere+ GPUs and is refused elsewhere.
+
+    TF32 keeps 10 mantissa bits, so its statistics leave the float32 run's noise (about 1e-7);
+    whether that is acceptable is decided by end-to-end science, not here.
+    """
+    import jax
+
+    device = jax.local_devices()[0]
+    capable = device.platform == "gpu" and float(getattr(device, "compute_capability", "0")) >= 8.0
+    with pytest.raises(ValueError, match="gemm_precision"):
+        make_tile_problem(gemm_precision="bf16")
+    if not capable:
+        with pytest.raises(ValueError, match="compute capability"):
+            make_tile_problem(gemm_precision="tf32")
+        return
+    _dataset, _mu, _W, stream, _host = tile_problem
+    fp32 = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    tf32 = accumulate_full_row_tile(make_tile_problem(gemm_precision="tf32")[3], np.arange(3), SIGNIFICANT)
+    assert fp32.diagnostics["gemm_precision"] == "fp32" and tf32.diagnostics["gemm_precision"] == "tf32"
+    for name in ("lhs_tri", "residual_gradient", "embeddings"):
+        a, b = np.asarray(getattr(fp32, name)), np.asarray(getattr(tf32, name))
+        assert np.all(np.isfinite(b))
+        assert _relative_l2(b, a.astype(np.complex128)) > 1e-5, name  # the switch reaches the GEMMs

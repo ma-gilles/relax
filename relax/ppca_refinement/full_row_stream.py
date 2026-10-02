@@ -95,6 +95,12 @@ class TracePPCAStats(AugmentedPPCAStats):
     metric_trace: jax.Array | None = None
 
 _HIGHEST = jax.lax.Precision.HIGHEST
+GEMM_PRECISIONS = ("fp32", "tf32")
+
+
+def _gemm(static):
+    """Precision of the four stream GEMMs: full float32, or one TF32 tensor-core pass with float32 accumulation."""
+    return jax.lax.DotAlgorithmPreset.TF32_TF32_F32 if static.gemm_precision == "tf32" else _HIGHEST
 # Window pixels per GEMM row multiple on GPU streams: unaligned fp32 operands (2F = 3002 at
 # 10076) select cuBLAS's align1 kernels, about 4% slower on A100 (jobs/local_*/gemm_align).
 _GEMM_ALIGN = 4
@@ -115,6 +121,7 @@ class _StreamStatic(NamedTuple):
     # GPU streams run relax's fused CUDA stages (windowed projection, latent epilogue, posterior
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
+    gemm_precision: str  # "fp32" (exact float32 products) or "tf32" (TF32 tensor-core products, GPU only)
 
 
 class _StreamArrays(NamedTuple):
@@ -453,8 +460,8 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
     R, F = planar.shape[1], planar.shape[2] // 2
     B = tile.y_norm.shape[0]
     T = tile.Y1.shape[1] // B
-    inner = jnp.dot(planar.reshape(P * R, 2 * F), tile.Y1, precision=_HIGHEST).reshape(P, R, B, T)
-    gram = jnp.dot(products.reshape(-1, F), tile.ctf2, precision=_HIGHEST).reshape(-1, R, B)
+    inner = jnp.dot(planar.reshape(P * R, 2 * F), tile.Y1, precision=_gemm(static)).reshape(P, R, B, T)
+    gram = jnp.dot(products.reshape(-1, F), tile.ctf2, precision=_gemm(static)).reshape(-1, R, B)
     tables = (
         arrays.rotation_parent,
         arrays.rotation_log_prior,
@@ -543,8 +550,8 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     F = tile.ctf2_recon.shape[1]
     K = sums.shape[0]
     rotations = arrays.rotations[_block_rows(tile, start, block_size)]
-    rhs_parts = jnp.dot(weights.reshape(P * R, -1), tile.Y1_recon, precision=_HIGHEST).reshape(P, R, 2 * F)
-    lhs_images = jnp.dot(sums.reshape(K * R, -1), tile.ctf2_recon, precision=_HIGHEST).reshape(K, R, F)
+    rhs_parts = jnp.dot(weights.reshape(P * R, -1), tile.Y1_recon, precision=_gemm(static)).reshape(P, R, 2 * F)
+    lhs_images = jnp.dot(sums.reshape(K * R, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(K, R, F)
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight. The RHS images enter the
@@ -715,12 +722,16 @@ def prepare_full_row_stream(
     scoring: ScoringConfig,
     disc_type: str = "linear_interp",
     metric_trace_only: bool = False,
+    gemm_precision: str = "fp32",
     device=None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
 
     With ``metric_trace_only`` the tiles return :class:`TracePPCAStats`: the
     LHS metric is backprojected only as its per-frequency trace.
+    ``gemm_precision`` (:data:`GEMM_PRECISIONS`) sets the four stream GEMMs: ``"fp32"``
+    exact float32 products, ``"tf32"`` TF32 tensor-core products with float32
+    accumulation (a GPU of compute capability 8.0 or later).
     """
     device = jax.local_devices()[0] if device is None else device
     with jax.default_device(device):
@@ -742,6 +753,7 @@ def prepare_full_row_stream(
             scoring=scoring,
             disc_type=disc_type,
             metric_trace_only=metric_trace_only,
+            gemm_precision=gemm_precision,
             device=device,
         )
 
@@ -765,8 +777,15 @@ def _prepare_full_row_stream(
     scoring,
     disc_type,
     metric_trace_only,
+    gemm_precision,
     device,
 ) -> FullRowStream:
+    if gemm_precision not in GEMM_PRECISIONS:
+        raise ValueError(f"gemm_precision must be one of {GEMM_PRECISIONS}")
+    if gemm_precision == "tf32" and (
+        device.platform != "gpu" or float(getattr(device, "compute_capability", "0")) < 8.0
+    ):
+        raise ValueError("TF32 stream GEMMs need a GPU of compute capability 8.0 or later")
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
         raise ValueError("Full-row streaming supports unit image scale and no class prior")
     if scoring.score_with_masked_images or scoring.relion_unit_half_weights or not scoring.full_real_observation:
@@ -837,6 +856,7 @@ def _prepare_full_row_stream(
         basis_size=int(resolved.q) + 1,
         metric_trace_only=bool(metric_trace_only),
         cuda_kernels=cuda_kernels,
+        gemm_precision=str(gemm_precision),
     )
     if static.cuda_kernels and (decide_order(static.disc_type) != 1 or static.relion_texture_interp):
         raise ValueError("The CUDA stream kernels support linear interpolation without RELION texture lookup only")
@@ -1092,6 +1112,7 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
     original_ids = stream.dataset.original_image_indices_from_local(np.asarray(image_indices))
     diagnostics = {
         "engine": FULL_ROW_ENGINE,
+        "gemm_precision": static.gemm_precision,
         "rotation_block_size": stream.rotation_block_size,
         "pmax_mean": float(jnp.mean(jnp.asarray(pmax))),
         "nsig_mean": float(jnp.mean(jnp.asarray(host["n_significant"]))),

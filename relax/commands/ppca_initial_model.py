@@ -56,6 +56,12 @@ def add_args(parser):
         help="Skip the separate all-particle embedding E-step after the final update",
     )
     parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
+    parser.add_argument(
+        "--ppca-gemm-precision",
+        choices=("fp32", "tf32"),
+        default="fp32",
+        help="streamed-engine GEMMs: exact float32 (default) or TF32 tensor cores with float32 accumulation",
+    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
@@ -175,6 +181,7 @@ def main(args=None):
         skip_final_embeddings=args.skip_final_embeddings,
         optimizer=args.optimizer,
         sgd_learning_rate=args.sgd_learning_rate,
+        gemm_precision=args.ppca_gemm_precision,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
     data, manifest, identity = load_training(args.manifest)

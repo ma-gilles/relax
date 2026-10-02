@@ -286,6 +286,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 scoring=scoring,
                 # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
                 metric_trace_only=config.optimizer == "momentum_sgd",
+                gemm_precision=config.gemm_precision,
             )
             # Here ``ids`` is the list of id groups; each group is cut into image tiles.
             tiles = [
@@ -409,6 +410,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 schedule=schedule,
                 scoring=scoring,
                 metric_trace_only=config.optimizer == "momentum_sgd",
+                gemm_precision=config.gemm_precision,
                 device=device,
             )
             for device in devices
@@ -685,6 +687,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "half_counts": [s.n_images for s in stats],
                 "radius": radius,
                 "healpix_order": config.stage(iteration)[1],
+                "gemm_precision": config.gemm_precision,
                 "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step,
                 "fudge": fudge,
                 "noise": noise,

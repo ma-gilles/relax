@@ -200,3 +200,43 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     assert dense_called == [True]
     with pytest.raises(ValueError, match="oversampling=0"):
         Config(oversampling=1, stream_coarse_recompute=True)
+
+
+def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
+    """--ppca-gemm-precision defaults to fp32, tf32 needs a streamed engine, older checkpoints load as fp32."""
+    import dataclasses
+    import json
+
+    from relax.ppca_initial_model import checkpoint
+
+    parser = argparse.ArgumentParser()
+    add_args(parser)
+    required = ["manifest.json", "--output", "out"]
+    assert parser.parse_args(required).ppca_gemm_precision == "fp32"
+    assert parser.parse_args([*required, "--ppca-gemm-precision", "tf32"]).ppca_gemm_precision == "tf32"
+    with pytest.raises(SystemExit):
+        parser.parse_args([*required, "--ppca-gemm-precision", "bf16"])
+    with pytest.raises(ValueError, match="streamed engines"):
+        Config(gemm_precision="tf32")
+    with pytest.raises(ValueError, match="fp32 or tf32"):
+        Config(gemm_precision="bf16", oversampling=0, stream_coarse_recompute=True)
+    config = Config(q=2, oversampling=0, stream_coarse_recompute=True)
+    assert config.gemm_precision == "fp32"
+    shape = (4, 4, 4)
+    n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
+    state = iteration_loop.State(
+        jnp.zeros((n_freq, 3), jnp.complex64), iteration_loop.empty_moments(jnp.zeros((n_freq, 3), jnp.complex64)),
+        jnp.ones(3, jnp.float32), 0, np.arange(8), np.random.default_rng(1).bit_generator.state, 2.0, 1, {"seed": 1},
+    )
+    path = tmp_path / "old.npz"
+    checkpoint.save(path, state, config, {"fixture": "tiny"})
+    # A checkpoint written before the field existed: drop it from the stored configuration.
+    with np.load(path, allow_pickle=False) as arrays:
+        saved = {k: arrays[k] for k in arrays.files}
+    meta = json.loads(str(saved["metadata"]))
+    meta["config"].pop("gemm_precision")
+    saved["metadata"] = np.asarray(json.dumps(meta))
+    np.savez(path, **saved)
+    assert checkpoint.load(path, config, {"fixture": "tiny"}).iteration == 0
+    with pytest.raises(ValueError, match="identity mismatch"):
+        checkpoint.load(path, dataclasses.replace(config, gemm_precision="tf32"), {"fixture": "tiny"})

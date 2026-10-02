@@ -25,6 +25,11 @@ def canonical(value):
     return json.loads(json.dumps(value, sort_keys=True))
 
 
+def _with_config_defaults(saved):
+    """A saved configuration with fields added after it was written at their defaults (fp32 GEMMs)."""
+    return {"gemm_precision": "fp32", **saved}
+
+
 def save(path, state, config, identity):
     path = Path(path)
     metadata = {
@@ -70,7 +75,7 @@ def load(path, config, identity):
         meta = json.loads(str(arrays["metadata"]))
         if (
             meta["schema"] != 1
-            or meta["config"] != canonical(dataclasses.asdict(config))
+            or _with_config_defaults(meta["config"]) != canonical(dataclasses.asdict(config))
             or meta["identity"] != canonical(identity)
         ):
             raise ValueError("Checkpoint input/configuration/source identity mismatch")

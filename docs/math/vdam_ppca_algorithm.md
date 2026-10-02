@@ -1052,6 +1052,13 @@ scientific contract; runnable code alone does not establish recovery.
   update, and the next update's first tile) was measured and dropped: no
   steady-state change in paired A100 updates. 16-byte vector atomics in the
   Hopper scatter were dropped too: 4% of the scatter, no update-level change.
+  The four stream GEMMs take one precision setting
+  (`Config.gemm_precision`, `--ppca-gemm-precision`): `fp32`, the default,
+  multiplies in full float32 (cuBLAS SIMT FFMA kernels, no TF32); `tf32` uses
+  one TF32 tensor-core pass with float32 accumulation on GPUs of compute
+  capability 8.0 or later. TF32 is judged by end-to-end science against the
+  fp32 seed-to-seed spread, not by the float64 tile tests. The setting is in the
+  checkpoint configuration and every update's log record.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it

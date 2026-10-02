@@ -36,6 +36,9 @@ class Config:
     skip_final_embeddings: bool = False
     optimizer: str = "vdam"
     sgd_learning_rate: float = 0.4
+    # Precision of the streamed engine's four GEMMs: "fp32" (exact float32 products, the default)
+    # or "tf32" (TF32 tensor-core products with float32 accumulation; GPUs of compute capability 8.0+).
+    gemm_precision: str = "fp32"
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -73,6 +76,10 @@ class Config:
             raise ValueError("Optimizer must be vdam or momentum_sgd")
         if not np.isfinite(self.sgd_learning_rate) or self.sgd_learning_rate <= 0:
             raise ValueError("Momentum SGD learning rate must be finite and positive")
+        if self.gemm_precision not in ("fp32", "tf32"):
+            raise ValueError("GEMM precision must be fp32 or tf32")
+        if self.gemm_precision != "fp32" and not (self.stream_coarse_recompute or self.stream_full_fine_rows):
+            raise ValueError("TF32 GEMMs apply to the streamed engines only")
 
     def stage(self, iteration):
         return next((r, hp) for start, r, hp in reversed(self.stages) if start <= iteration)
