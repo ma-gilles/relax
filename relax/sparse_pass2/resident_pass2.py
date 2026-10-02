@@ -199,6 +199,7 @@ from relax.sparse_pass2.sparse_pass2_posterior import (
 from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_windowed_projections_block,
     _projection_kwargs_for_relion_score_window,
+    capacity_projection_window_union,
     projection_window_union,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
@@ -2323,6 +2324,24 @@ def _capacity_projection_applies(
     )
 
 
+def _pass_window_union(
+    score_indices, recon_indices=None, *, image_shape, projector_output_size, capacity_logical_output_size
+):
+    """The pass's projection window union: the logical crop's, or its capacity form for a capacity projection."""
+
+    if capacity_logical_output_size is None:
+        return projection_window_union(
+            score_indices, recon_indices, image_shape=image_shape, projector_output_size=projector_output_size
+        )
+    return capacity_projection_window_union(
+        score_indices,
+        recon_indices,
+        image_shape=image_shape,
+        logical_output_size=capacity_logical_output_size,
+        physical_output_size=projector_output_size,
+    )
+
+
 def center_pad_relion_projector_half(half, *, logical_r_max: int, physical_size: int, padding_factor: int):
     """Center-pad a logical RELION projector slab, ghost planes included, to the physical class.
 
@@ -3270,6 +3289,7 @@ def _resident_pass2(
     projection_halves = class_projector_halves
     projection_r_max = relion_projector_r_max
     capacity_projection_kwargs = {}
+    capacity_logical_output_size = None
     if stable_window_plan is not None and _capacity_projection_applies(
         use_relion_projector=use_relion_projector,
         class_projector_halves=class_projector_halves,
@@ -3294,16 +3314,18 @@ def _resident_pass2(
             "relion_projector_runtime_r_max": jnp.asarray(int(relion_projector_r_max), dtype=jnp.int32),
             "relion_projector_image_size": jnp.asarray(int(projection_kwargs["projector_output_size"]), dtype=jnp.int32),
         }
+        capacity_logical_output_size = int(projection_kwargs["projector_output_size"])
         projection_kwargs["projector_output_size"] = physical_size
 
     fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
     # The RELION projector computes only the windows' pixels, not full half rows.
     fine_window_union = (
-        projection_window_union(
+        _pass_window_union(
             window_indices,
             recon_window_indices,
             image_shape=image_shape,
             projector_output_size=int(projection_kwargs["projector_output_size"]),
+            capacity_logical_output_size=capacity_logical_output_size,
         )
         if projection_kwargs.get("projector_output_size") is not None
         else None
@@ -3498,10 +3520,11 @@ def _resident_pass2(
     elif union_indices is not None:
         cache_t0 = time.time()
         union_window_union = (
-            projection_window_union(
+            _pass_window_union(
                 union_indices_np,
                 image_shape=image_shape,
                 projector_output_size=int(projection_kwargs["projector_output_size"]),
+                capacity_logical_output_size=capacity_logical_output_size,
             )
             if projection_kwargs.get("projector_output_size") is not None
             else None

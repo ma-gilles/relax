@@ -294,12 +294,14 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
     """The stable-window resident pass projects a center-padded slab into the physical crop.
 
     Its windowed rows (score and reconstruction windows of the physical class) equal the
-    logical-crop projection of the logical slab: pixels outside the logical crop are zero
-    either way (relax/relion/relion_project.py).
+    logical-crop projection of the logical slab: window pixels outside the logical crop,
+    RELION's ky = -L/2 row among them, take the zero column either way
+    (capacity_projection_window_union; relax/relion/relion_project.py).
     """
     from relax.sparse_pass2.resident_pass2 import center_pad_relion_projector_half
     from relax.sparse_pass2.sparse_pass2_projection_blocks import (
         _compute_sparse_pass2_windowed_projections_block,
+        capacity_projection_window_union,
         projection_window_union,
     )
 
@@ -324,17 +326,53 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
         relion_texture_interp=True, mask_current_image_disk=False,
     )
 
-    def project(slab, r_max, output_size, **extra):
-        union = projection_window_union(score, recon, image_shape=(image_size, image_size), projector_output_size=output_size)
+    def project(slab, r_max, output_size, union, **extra):
         args = dict(common, relion_projector_r_max=r_max, projector_output_size=output_size, window_union=union, **extra)
         return _compute_sparse_pass2_windowed_projections_block(None, rotations, relion_projector_half=slab, **args)
 
-    expected = project(logical, radius, logical_size)
+    shape = (image_size, image_size)
+    expected = project(
+        logical, radius, logical_size,
+        projection_window_union(score, recon, image_shape=shape, projector_output_size=logical_size),
+    )
     padded = center_pad_relion_projector_half(logical, logical_r_max=radius, physical_size=physical_size, padding_factor=pf)
     got = project(
         padded, 0, physical_size,
+        capacity_projection_window_union(
+            score, recon, image_shape=shape, logical_output_size=logical_size, physical_output_size=physical_size
+        ),
         relion_projector_runtime_r_max=jnp.asarray(radius, jnp.int32),
         relion_projector_image_size=jnp.asarray(logical_size, jnp.int32),
     )
     for g, e in zip(got, expected, strict=True):
         assert_matches(np.asarray(g), np.asarray(e), err_msg=f"L={logical_size}, P={physical_size}, pf={pf}")
+
+
+@pytest.mark.parametrize("logical_size, physical_size", [(30, 32), (34, 40), (56, 56)])
+def test_capacity_window_union_takes_the_logical_pixels(logical_size, physical_size):
+    """Each window pixel takes the same projected pixel, or the zero column, as the logical union."""
+    from relax.sparse_pass2.sparse_pass2_projection_blocks import (
+        capacity_projection_window_union,
+        projection_window_union,
+    )
+
+    image_size = 96
+    half = image_size // 2 + 1
+    rows, cols = np.meshgrid(np.arange(image_size), np.arange(half), indexing="ij")
+    ky, kx = rows - image_size // 2, cols
+    window = np.flatnonzero((kx * kx + ky * ky <= (physical_size // 2) ** 2).ravel()).astype(np.int32)
+    shape = (image_size, image_size)
+    logical = projection_window_union(window, image_shape=shape, projector_output_size=logical_size)
+    capacity = capacity_projection_window_union(
+        window, image_shape=shape, logical_output_size=logical_size, physical_output_size=physical_size
+    )
+    physical = projection_window_union(window, image_shape=shape, projector_output_size=physical_size)
+    assert capacity.indices.shape == physical.indices.shape
+    assert capacity.projector_output_size == physical_size
+
+    def taken(union):
+        # A "projection" whose value at a pixel is the pixel's index + 1, plus the zero column.
+        row = np.append(np.asarray(union.indices) + 1, 0)
+        return row[np.asarray(union.score_take)]
+
+    np.testing.assert_array_equal(taken(capacity), taken(logical))

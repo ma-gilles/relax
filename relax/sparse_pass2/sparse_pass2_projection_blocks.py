@@ -350,6 +350,46 @@ def projection_window_union(
     )
 
 
+def capacity_projection_window_union(
+    score_indices, recon_indices=None, *, image_shape, logical_output_size, physical_output_size
+) -> ProjectionWindowUnion:
+    """The window union of a capacity projection: logical pixels, physical-class shapes.
+
+    A projection into the physical crop holds pixels the logical crop does not
+    have, RELION's ky = -L/2 row among them (its crop keeps the positive Nyquist
+    row), so membership stays the logical crop's: every other window pixel takes
+    the zero column. The in-crop index list is padded, by repeating its last
+    pixel, to the physical crop's union size, so the projection programs keep one
+    shape per physical class. The padded pixels are projected and never taken.
+    """
+
+    logical = projection_window_union(
+        score_indices, recon_indices, image_shape=image_shape, projector_output_size=int(logical_output_size)
+    )
+    physical = projection_window_union(
+        score_indices, recon_indices, image_shape=image_shape, projector_output_size=int(physical_output_size)
+    )
+    indices = np.asarray(logical.indices, dtype=np.int64)
+    n_padded = int(physical.indices.shape[0])
+    if indices.size == 0 or indices.size > n_padded:
+        raise ValueError(
+            f"a capacity window union needs a nonempty logical union inside the physical one "
+            f"({indices.size} logical, {n_padded} physical pixels)"
+        )
+    padded = np.pad(indices, (0, n_padded - indices.size), mode="edge")
+
+    def retake(take):
+        take = np.asarray(take, dtype=np.int64)
+        return jnp.asarray(np.where(take == indices.size, n_padded, take), dtype=jnp.int32)
+
+    return ProjectionWindowUnion(
+        indices=jnp.asarray(padded, dtype=jnp.int32),
+        score_take=retake(logical.score_take),
+        recon_take=None if logical.recon_take is None else retake(logical.recon_take),
+        projector_output_size=int(physical_output_size),
+    )
+
+
 def window_union_applies(window_union, *, relion_projector: bool, projection_kwargs) -> bool:
     """Whether ``window_union`` describes this RELION projector's crop."""
 
