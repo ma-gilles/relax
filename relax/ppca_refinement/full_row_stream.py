@@ -27,8 +27,9 @@ Per image tile:
 
 Kept operands are component-major ``(component, R, B, T)``, the layout of the
 projector's output and of the backprojector's input, so each GEMM reads and
-writes them in place and no operand is transposed. Every posterior weight is used: float32 weights of these
-posteriors are nonzero for essentially every (image, rotation) pair.
+writes them in place and no operand is transposed. Every posterior weight is
+used: float32 weights of these posteriors are nonzero for essentially every
+(image, rotation) pair.
 
 The formulation is section 14 of ``docs/math/vdam_ppca_algorithm.md``.
 Tests compare the engine against the host-mask reference

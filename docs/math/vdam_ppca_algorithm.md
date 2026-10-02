@@ -966,9 +966,11 @@ scientific contract; runnable code alone does not establish recovery.
   keeps one block shape for every support pattern. Each rotation block is one
   jitted program per pass with no host round trip. `fine_stream_rows` records
   scored image-rows against exact support.
-  Scores, moments, the float32 centered normalizer, the first-maximum top pose
-  and block accumulation order are those of the host-mask dense routine.
-  Unit tests compare both routines against the independent local layout.
+  The scores and moments are those of the host-mask dense routine, evaluated
+  in another float32 order (below). Unit tests compare both routines against
+  the independent local layout, and the general-rank test checks that the
+  streamed engine is no further from a float64 evaluation than the host-mask
+  routine.
   With one score and reconstruction window, the expected residual and its
   noise correction are linear in the block's M-step images
   `R = sum gamma alpha Y1` and `L = sum gamma G CTF^2/sigma^2`: the residual is
@@ -986,6 +988,28 @@ scientific contract; runnable code alone does not establish recovery.
   direction 6.5e-7, exact selected IDs and noise). The tile is now mostly
   GPU-bound (adjoints and contractions); larger rotation blocks are a further
   measured config choice, not a default change.
+- GEMM-shaped streamed engine (October 1, 2026). Pass 1 forms, per rotation
+  block, every pose's inner products `Re<Y1_bt, A_rp>` (``t_mx`` and ``g_zx``)
+  as one real GEMM of the `[Re; Im]` projections against the shifted images,
+  and the CTF/noise-weighted products `Re(conj(A_i) A_j)` (``nu_mm``, ``h_zm``,
+  ``H_zz``) as a second; the score uses the unrolled Cholesky factor `L` of
+  `I + H_zz`: `-0.5 [nu_mm - 2 t_mx - |L^-1 b|^2 + log det(I + H_zz)]`.
+  Pass 1 keeps the tile's scores, latent means `L^-T L^-1 b` and covariances
+  `L^-T L^-1` on the device (component-major, the projector's and
+  backprojector's layout), so pass 2 recomputes nothing: the posterior weights
+  and kept moments form the M-step images with two more GEMMs. Every float32
+  weight is used; on the live 10076 and 11-state updates essentially every
+  (image, rotation) pair has a nonzero float32 weight, so skipping zero weights
+  saves nothing. The streamed statistics carry no RHS volume (`rhs` is `None`):
+  both optimizers read only the LHS metric and the direct residual gradient.
+  The controller streams both pseudo-halves through one prepared model,
+  dispatching each tile before finishing the previous one, with one reused
+  pose-kept buffer. Paired local A100 replays of the live checkpoints
+  (`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ppca_dense_speed_20261001/`):
+  10076 q4/HP4 from about 42 s to 16 s per update and 11-state q10/HP3 from
+  about 15.5 s to 6.3 s, every scoped PPCA gate passing; the two large GEMMs
+  run at 88-94% of A100 float32 peak. 3xTF32 contractions were measured and
+  rejected: no closer to float64 than float32 on the 11-state statistics.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
@@ -993,9 +1017,9 @@ scientific contract; runnable code alone does not establish recovery.
   into weight differences. It is carried as `score_offset`
   ([pose_invariant_score_offset](../../relax/ppca_refinement/engine.py)) and
   added back only to absolute values (log-likelihood, reported top scores).
-- Every PPCA M-step volume sum (RHS, LHS, residual gradient) backprojects each
-  rotation block into zero volumes and adds it to the running sum with Kahan
-  compensation ([compensated_add](../../relax/ppca_refinement/engine.py)): the
+- Every PPCA M-step volume sum (RHS, LHS, residual gradient; the streamed
+  engine forms no RHS) backprojects each rotation block into zero volumes and
+  adds it to the running sum with Kahan compensation ([compensated_add](../../relax/ppca_refinement/engine.py)): the
   streamed engine, the host-mask dense accumulation and exact-local PPCA. A
   single float32 atomic accumulator rounds away posterior-tail contributions
   once voxels grow: against a float64 accumulation of the same block images,
