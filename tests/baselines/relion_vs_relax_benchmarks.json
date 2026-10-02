@@ -4905,7 +4905,7 @@
     "timing_controlled": true
    },
    "notes": [
-    "Miss, s61 repeats pending (2026-10-02): relax s61 (62ab6ae) masked reference FSC-AUC 0.0931 is below same-seed RELION 0.1616 and the across-seed RELION band (single runs at s61). Queued two relax repeats on main 62ab6ae and one double-accumulation RELION repeat at s61: job 14865049 (scoring 14867646); the run-range rule is applied when they finish.",
+    "Same-seed repeats 2026-10-02 at s61 (team-lead, run-range rule) on main 62ab6ae (seed_repeats_20261002_62ab6ae/vdam_k15_s61, job 14865049): relax r3 and one double-accumulation RELION run r2. relax r2 hit a GPU out-of-memory error at iteration ~151 (RESOURCE_EXHAUSTED 2.07 GiB in the resident pass-2 projection gather) and was rerun as r4 (job 14869727).",
     "Relax arms rerun 2026-10-02 on main 62ab6ae (team-lead), each seed on its own H100 (two or three seeds per job) with the row arms' exact command (--j 12), cold on one H100 + 12 CPUs (refresh_20260927/vdam_ribo_k15_62ab6ae); RELION walls and maps are the earlier same-node pair runs (build_patched walls, double-accumulation maps), also cold on H100.",
     "Rescored 2026-10-01 with the fixed VDAM scorer (tools/score_vdam.py): every class is also registered on its own (to the reference mean and, for K*R <= 16, to each reference class), in both hands, three coarse starts each; each (class, reference class) pair uses its best registration by unmasked FSC-AUC before the Hungarian match. The earlier consensus-only registration (one fit of the population-weighted mean, hand chosen at low pass) misregistered K>1 classes; regression test tools/test_score_vdam_pair.py (incl. a phase-randomized and a white-noise control class, both < 0.05).",
     "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION build_patched (RELION 5.0.1 f2c1a38 plus env-gated debug dumps, CUDA arch 80). Same-node A/B on VDAM pdb K2 s29 against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the mpiscale flags: build_patched 1864 s vs stock 2226 s, and with the GPUs swapped 2143 s vs 2195 s (stock slower by 19% and 2.4%; em_work/relax_bench_k1plus_20260925/stock90_ab_20261001/vdam_pdbk2), so the quoted RELION walls are the fastest RELION tested.",
@@ -4913,7 +4913,7 @@
     "seed 29: masked reference FSC-AUC relax 0.1812 / RELION 0.1853 (mean GT 0.0526 / 0.0542); relax-vs-RELION masked X-AUC 0.4652; same-command RELION runs (3) masked ref 0.1853/0.1611/0.1840; occupied classes (> 1%) relax 4 / RELION 4; walls relax 6060 s / RELION 9732 s",
     "seed 41: masked reference FSC-AUC relax 0.1230 / RELION 0.1188 (mean GT 0.0486 / 0.0474); same-command RELION runs (3) masked ref 0.1188/0.1196/0.1226; occupied classes (> 1%) relax 6 / RELION 5; walls relax 4782 s / RELION 10458 s",
     "seed 53: masked reference FSC-AUC relax 0.1356 / RELION 0.1382 (mean GT 0.0397 / 0.0403); occupied classes (> 1%) relax 3 / RELION 3; walls relax 4032 s / RELION 8489 s",
-    "seed 61: masked reference FSC-AUC relax 0.0931 / RELION 0.1616 (mean GT 0.0401 / 0.0486); occupied classes (> 1%) relax 5 / RELION 5; walls relax 5140 s / RELION 10776 s",
+    "seed 61: masked reference FSC-AUC relax 0.0931 / RELION 0.1616 (mean GT 0.0401 / 0.0486); same-command RELION runs (2) masked ref 0.1616/0.0723; same-command relax runs (2) masked ref 0.0931/0.0710; occupied classes (> 1%) relax 5 / RELION 5; walls relax 5140 s / RELION 10776 s",
     "seed 67: masked reference FSC-AUC relax 0.1429 / RELION 0.1507 (mean GT 0.0400 / 0.0451); occupied classes (> 1%) relax 4 / RELION 5; walls relax 6289 s / RELION 15620 s",
     "Earlier record (before the 2026-10-02 refresh): Refresh 2026-09-27 on relax main ddf88c8: same-node cold pair (job 14547786), both arms started together; the row quotes seed 29.",
     "Earlier record (before the 2026-10-02 refresh): Wall by 50-iteration block (output mtimes, seed 29): relax 17/65/210/331 min vs RELION 5/20/57/73 min; the gap grows with the finer late-iteration sampling. No per-phase timing was logged in this run.",
@@ -4939,7 +4939,8 @@
     "score_json": "docs/benchmarks/initialmodel_scores/bpd2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
     "score_jsons": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_rescore_20261001/out/bpd2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_rescore_20261001/out/r62_ribosembly_k15_50k256_initialmodel_vdam_200it.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_rescore_20261001/out/r62_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/vdam_rescore_20261001/out/rep62_ribosembly_k15_50k256_initialmodel_vdam_200it_s61.json"
     ],
     "relion_runs": [
      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k15_0cbdebd_s29/s29/relion_bpd/output",
@@ -4967,8 +4968,8 @@
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
     "d": "H100 80GB HBM3 for every arm (GPU.csv per arm); relax and RELION in different jobs"
    },
-   "quality_pass": false,
-   "quality_reason": "masked ref FSC-AUC: worst s61 −0.0685 vs same-seed RELION; s61 below across-seed RELION band 0.118837-0.185312",
+   "quality_pass": true,
+   "quality_reason": "masked ref FSC-AUC: worst s67 −0.0077 vs same-seed RELION; run ranges compared at s61 (both engines repeated); inside across-seed band",
    "history": [
     {
      "date": "2026-09-26",
@@ -9127,16 +9128,18 @@
    "status": "current",
    "relion": {
     "version": "stock RELION 5.0.1 f2c1a38 built for sm_90 (relion_stock_sm90_20261001), relion_refine --j 12 --gpu 0 (non-MPI), one H100, for the wall; accuracy reference: stock RELION 5.0.1 f2c1a38 CPU build (relion_clean_f2c1a384/build_clean_pinned), relion_refine --j 32, no --gpu, non-MPI (the CPU path applies applyScaleDifference, relax#12); seed 42 run twice (bit-identical)",
-    "resolution_A": null,
+    "resolution_A": 15.542857,
     "resolution_definition": "engine_current_resolution",
-    "relion_reported_resolution_A": null,
+    "relion_reported_resolution_A": 15.542857,
     "masked_resolution_A": null,
-    "wall_s": null,
+    "wall_s": 737,
     "wall_definition": "arm-script wall (WALL.json) of relion_refine, cold, same 2-GPU job as relax",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
-    "jobs": [],
+    "jobs": [
+     "14868266"
+    ],
     "masked_band_auc": null,
     "quality_reference_jobs": [
      "14824531",
@@ -9150,15 +9153,17 @@
    "relax": {
     "source_sha": "a7683d504b7d6e795f6a2826f3b16e945fcfdfca",
     "source_repo": "relax main a7683d50 for the wall (frozen candidate newrows_20261002/cand_a7683d5); accuracy seeds on bindw's cand_460ff32 (main fd64ead + the K>1 magnification commit that landed as 0b0b238, relax/classification identical)",
-    "resolution_A": null,
+    "resolution_A": 15.542857,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": null,
+    "wall_s": 397,
     "wall_definition": "arm-script wall (WALL.json) of relax Class3D end to end, empty JAX cache (cold), same 2-GPU job as RELION",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
-    "jobs": [],
+    "jobs": [
+     "14868266"
+    ],
     "masked_band_auc": null,
     "quality_jobs": [
      "14835479",
@@ -9168,8 +9173,8 @@
    },
    "gt": {
     "metric": "mean per-class GT FSC-AUC (plain mean over the 2 GT classes), masked with the frozen mask synth_pdb_k2_50k256_snr05_c1 (classes matched to GT by Hungarian on unmasked AUC; tools/score_class3d.py); RELION reference = stock RELION 5.0.1 CPU",
-    "relion": 0.211077,
-    "relax": 0.209362,
+    "relion": 0.211092,
+    "relax": 0.206533,
     "relion_band": [
      0.205033,
      0.211092
@@ -9301,17 +9306,18 @@
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": null,
-   "matched": "no",
+   "time_ratio_relax_over_relion": 0.54,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": false
+    "timing_controlled": true
    },
    "notes": [
+    "Speed (team-lead 2026-10-02): dedicated cold pair, seed 42, relax 397 s vs stock GPU RELION non-MPI 737 s (0.54x), one 2-GPU job.",
     "Class3D K=2 magnification feature row (bindw, relax#12; team-lead 2026-10-02): relax accepts an anisotropic magnification matrix for K>1 (landed 0b0b238). Accuracy from bindw's five-seed set against stock RELION CPU (its GPU path skips applyScaleDifference, so it is not the accuracy reference); bindw's arms ran four to a node, so their walls are not used.",
     "relax command: class3d --n_classes 2 --max_iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --init_resolution 60 --tau2_fudge 4 --particle_diameter_ang 380 --firstiter_cc --apply-initial-lowpass --ref_star reference_init_classes_relion.star --seed S; RELION: relion_refine --K 2 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 2 --particle_diameter 380 --ini_high 60 --firstiter_cc --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --pool 3 --dont_combine_weights_via_disc --random_seed S.",
     "seed 29: mean masked GT FSC-AUC relax 0.209362/0.209036 / RELION CPU 0.211077; class accuracy 0.8379/0.8368 vs 0.8359",
@@ -9326,11 +9332,6 @@
     "relax.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
     "relax.masked_band_auc": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
     "cross_engine_masked_band_auc": "Class3D has no gold-standard half maps; no scorecard-band cross-engine value",
-    "relax.wall_s": "dedicated cold wall pair pending (team-lead 2026-10-02)",
-    "relax.resolution_A": "taken from the wall pair, pending",
-    "relion.wall_s": "dedicated cold wall pair pending (team-lead 2026-10-02)",
-    "relion.resolution_A": "taken from the wall pair, pending",
-    "time_ratio_relax_over_relion": "pending: dedicated cold pair relax + stock GPU RELION non-MPI in one 2-GPU job (job 14868266)",
     "cross_engine": "relax-vs-RELION map FSC-AUC not computed for this feature row"
    },
    "mask": {
@@ -9349,12 +9350,20 @@
     ],
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_mag_k2_10k256_20260930",
     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newrows_20261002/tools/c3d_feature_row.py",
-    "spec": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newrows_20261002/specs/mag.json"
+    "spec": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newrows_20261002/specs/mag.json",
+    "wall_pair": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/newrows_20261002/c3d_mag_wall"
    },
    "date": "2026-10-02",
    "quality_pass": true,
    "quality_reason": "mean masked GT FSC-AUC vs stock RELION CPU: worst s29 −0.0017 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside or above across-seed band",
-   "feature_reference": "anisotropic magnification in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips applyScaleDifference, relax#12) for accuracy, 5 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (dedicated cold pair, seed 42)"
+   "feature_reference": "anisotropic magnification in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips applyScaleDifference, relax#12) for accuracy, 5 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (dedicated cold pair, seed 42)",
+   "time_check": {
+    "a": "One job (14868266): relax 1 H100 + 12 CPUs, stock RELION relion_refine --j 12 --gpu 0 non-MPI on 1 H100 + 12 CPUs; started together, seed 42.",
+    "b": "relax main a7683d50 production defaults; stock RELION 5.0.1 GPU build (not the accuracy reference: the GPU path skips applyScaleDifference, relax#12).",
+    "c": "arm-script walls (WALL.json), end to end, both cold.",
+    "d": "H100 80GB HBM3 for both arms, same node."
+   },
+   "history": []
   }
  ],
  "initial_model_intro": [
