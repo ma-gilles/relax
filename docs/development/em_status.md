@@ -45,6 +45,15 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   Class3D 25 iterations -4.7%. The coarse kernel `relion_coarse_diff2_projector_f32_kernel` is now
   93% of the E-step's GPU time (85 ms per particle; nsys,
   `em_work/cryoet_vdam_20261001/profile`).
+- The subtomogram coarse pass now scores each tilt image with the SPA coarse GEMM scorer
+  (`tomo_coarse._images_coarse_gemm_diff2`, `scoring._relion_coarse_gaussian_gemm_scores_jit`): the persistent
+  projector texture writes the GEMM's packed `[Re | Im]` reference rows in one launch per slot block
+  (`ProjectRelionHalfCapacityTextureCompactPacked`), diff2 is summed translation-major in `img_id` order and each
+  significance flush is read back after the next is dispatched. Late E-step on one H100, same node, against the
+  direct-square kernel (job 14863136): et09 K=1 coarse 78.3 -> 37.9 s (E-step 95.7 -> 55.7 s), et15 K=2 coarse
+  433.5 -> 133.6 s (E-step 448.7 -> 148.5 s); every particle's coarse support is identical, Pmax within 1.1e-2
+  relative (p99 3.5e-3, the expansion's float32 rounding). The scorer's GEMM runs near the float32 peak; the
+  projection is texture-bound.
 - Subtomogram Refine3D `--firstiter_cc` (et01_base, RELION's default command, RELION 5.0.1
   mpiscale MPI 3x4, H100): masked GT FSC-AUC relax / RELION (two same-seed runs, identical)
   s1 0.99161 / 0.99162, s2 0.99180 / 0.99180, s3 0.99212 / 0.99223; map gate PASS on every seed
