@@ -132,7 +132,7 @@ struct Collect {
     }
 };
 
-__device__ __forceinline__ int packed_index(int i, int j, int P) {  // np.triu_indices(P) order, i <= j
+__host__ __device__ constexpr int packed_index(int i, int j, int P) {  // np.triu_indices(P) order, i <= j
     return i * P - (i * (i - 1)) / 2 + (j - i);
 }
 
@@ -142,12 +142,14 @@ __device__ __forceinline__ int packed_index(int i, int j, int P) {  // np.triu_i
 // sum_pq L_pq Re(conj A_p A_q) - 2 sum_p Re(R_p conj A_p) are formed in registers; the correction is
 // summed over rotations into correction (F,), and the metric channels (the K packed LHS images, or their
 // trace) and the residual's real/imaginary parts are scattered into out (G, V, 32). out and correction
-// are zero on entry.
+// are zero on entry. Templated on P so a pixel's projections and packed LHS sit in registers; each lane's
+// channel values are stored with an odd stride so the lanes' stores do not share banks.
+template <int P>
 __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     Geometry g, const float* __restrict__ rot, const int* __restrict__ pix_idx, const float* __restrict__ lhs,
-    const float* __restrict__ rhs, const float* __restrict__ proj, int P, int metric_trace,
+    const float* __restrict__ rhs, const float* __restrict__ proj, int metric_trace, int stride,
     float* __restrict__ out, float* __restrict__ correction) {
-    extern __shared__ float s_value[];  // [kWarps][32][channels]
+    extern __shared__ float s_value[];  // [kWarps][32][stride], stride = channels | 1
     __shared__ int s_offset[kWarps][32][kMaxTargets];
     __shared__ float s_weight[kWarps][32][kMaxTargets];
     __shared__ int s_count[kWarps][32];
@@ -159,28 +161,36 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     const int base = (blockIdx.x * kWarps + warp) * 32;
     if (base >= g.n_pix) return;
     const int f = base + lane;
-    const int K = P * (P + 1) / 2;
+    constexpr int K = P * (P + 1) / 2;
     const int metric = metric_trace ? 1 : K;
     const int channels = metric + 2 * P;
-    float* value = s_value + (warp * 32 + lane) * channels;
+    float* value = s_value + (warp * 32 + lane) * stride;
     Collect collect(g, s_offset[warp][lane], s_weight[warp][lane]);
     if (f < g.n_pix && pix_idx[f] >= 0) {  // a negative index is padding: no channels, no targets
         pixel_targets(g, R, pix_idx[f], collect);
         const long F = g.n_pix;
         const long at = (long)r * F + f;
         const long lhs_stride = (long)g.n_rot * F;
-        const float* L = lhs + at;
-        float trace = 0.f, power = 0.f, cross = 0.f;
+        float Lr[K];
+        float2 A[P];
+#pragma unroll
+        for (int k = 0; k < K; k++) Lr[k] = lhs[at + k * lhs_stride];
+#pragma unroll
         for (int i = 0; i < P; i++) {
-            const long Arow_i = ((long)i * g.n_rot + r) * 2 * F;
-            const float2 Ai = make_float2(proj[Arow_i + f], proj[Arow_i + F + f]);
+            const long Arow = ((long)i * g.n_rot + r) * 2 * F;
+            A[i] = make_float2(proj[Arow + f], proj[Arow + F + f]);
+        }
+        float trace = 0.f, power = 0.f, cross = 0.f;
+#pragma unroll
+        for (int i = 0; i < P; i++) {
+            const float2 Ai = A[i];
             const float Rre = rhs[((long)i * g.n_rot + r) * 2 * F + f];
             const float Rim = rhs[((long)i * g.n_rot + r) * 2 * F + F + f];
             float pre = 0.f, pim = 0.f;
+#pragma unroll
             for (int j = 0; j < P; j++) {
-                const long Arow_j = ((long)j * g.n_rot + r) * 2 * F;
-                const float2 Aj = make_float2(proj[Arow_j + f], proj[Arow_j + F + f]);
-                const float Lij = L[packed_index(min(i, j), max(i, j), P) * lhs_stride];
+                const float2 Aj = A[j];
+                const float Lij = Lr[packed_index(i < j ? i : j, i < j ? j : i, P)];
                 pre += Lij * Aj.x;
                 pim += Lij * Aj.y;
                 if (j >= i) power += (j == i ? 1.f : 2.f) * Lij * (Ai.x * Aj.x + Ai.y * Aj.y);
@@ -188,12 +198,14 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
             value[metric + 2 * i] = Rre - pre;
             value[metric + 2 * i + 1] = Rim - pim;
             cross += Rre * Ai.x + Rim * Ai.y;
-            const float Lii = L[packed_index(i, i, P) * lhs_stride];
-            trace += Lii;
+            trace += Lr[packed_index(i, i, P)];
         }
-        if (metric_trace) value[0] = trace;
-        else
-            for (int k = 0; k < K; k++) value[k] = L[k * lhs_stride];
+        if (metric_trace) {
+            value[0] = trace;
+        } else {
+#pragma unroll
+            for (int k = 0; k < K; k++) value[k] = Lr[k];
+        }
         atomicAdd(&correction[f], power - 2.f * cross);
     } else {
         for (int c = 0; c < channels; c++) value[c] = 0.f;
@@ -208,7 +220,7 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
         const bool imag = active && c >= metric && ((c - first_imag) & 1) == 0;
         float* vol = out + group * V * 32;
         for (int j = 0; j < 32; j++) {
-            const float v = active ? s_value[(warp * 32 + j) * channels + c] : 0.f;
+            const float v = active ? s_value[(warp * 32 + j) * stride + c] : 0.f;
             if (__all_sync(0xffffffffu, v == 0.f)) continue;  // adds nothing
             const int n = s_count[warp][j];
             for (int t = 0; t < n; t++) {
@@ -217,6 +229,37 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
                 if (active) atomicAdd(&vol[(long)(o & 0x7fffffff) * 32 + lane], x);
             }
         }
+    }
+}
+
+template <int P>
+cudaError_t launch_scatter_p(cudaStream_t stream, size_t smem, Geometry g, const float* rot, const int* pix,
+                             const float* lhs, const float* rhs, const float* proj, int metric_trace, int stride,
+                             float* out, float* correction) {
+    // The static target tables add to the per-pixel channel values: opt in whenever any is dynamic.
+    cudaError_t err =
+        cudaFuncSetAttribute(moment_scatter_kernel<P>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+    if (err != cudaSuccess) return err;
+    dim3 grid((g.n_pix + 32 * kWarps - 1) / (32 * kWarps), g.n_rot);
+    moment_scatter_kernel<P>
+        <<<grid, 32 * kWarps, smem, stream>>>(g, rot, pix, lhs, rhs, proj, metric_trace, stride, out, correction);
+    return cudaGetLastError();
+}
+
+inline cudaError_t launch_scatter(int P, cudaStream_t stream, size_t smem, Geometry g, const float* rot,
+                                  const int* pix, const float* lhs, const float* rhs, const float* proj,
+                                  int metric_trace, int stride, float* out, float* correction) {
+    switch (P) {
+#define PPCA_SCATTER_CASE(N) \
+    case N:                  \
+        return launch_scatter_p<N>(stream, smem, g, rot, pix, lhs, rhs, proj, metric_trace, stride, out, correction);
+        PPCA_SCATTER_CASE(1) PPCA_SCATTER_CASE(2) PPCA_SCATTER_CASE(3) PPCA_SCATTER_CASE(4) PPCA_SCATTER_CASE(5)
+        PPCA_SCATTER_CASE(6) PPCA_SCATTER_CASE(7) PPCA_SCATTER_CASE(8) PPCA_SCATTER_CASE(9) PPCA_SCATTER_CASE(10)
+        PPCA_SCATTER_CASE(11) PPCA_SCATTER_CASE(12) PPCA_SCATTER_CASE(13) PPCA_SCATTER_CASE(14) PPCA_SCATTER_CASE(15)
+        PPCA_SCATTER_CASE(16) PPCA_SCATTER_CASE(17)
+#undef PPCA_SCATTER_CASE
+        default:
+            return cudaErrorInvalidValue;
     }
 }
 
@@ -266,21 +309,19 @@ ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_
     g.c1 = (float)(N1 / 2);
     g.c2 = (float)(N2 / 2);
     g.max_r2 = max_r2_x4 >= 0 ? (float)max_r2_x4 / 4.f : -1.f;
-    const size_t smem = (size_t)m::kWarps * 32 * channels * sizeof(float);
+    if (P < 1 || P > 17) return ffi::Error::InvalidArgument("PpcaMomentScatterF32: basis size outside 1..17");
+    const int stride = (int)(channels | 1);
+    const size_t smem = (size_t)m::kWarps * 32 * stride * sizeof(float);
     cudaError_t err = cudaMemsetAsync(out->untyped_data(), 0, od[0] * od[1] * od[2] * sizeof(float), stream);
     if (err == cudaSuccess) err = cudaMemsetAsync(correction->untyped_data(), 0, F * sizeof(float), stream);
-    // The static target tables add to the per-pixel channel values: opt in whenever any is dynamic.
-    if (err == cudaSuccess)
-        err = cudaFuncSetAttribute(m::moment_scatter_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-    if (err == cudaSuccess && R > 0 && F > 0) {
-        dim3 grid((g.n_pix + 32 * m::kWarps - 1) / (32 * m::kWarps), g.n_rot);
-        m::moment_scatter_kernel<<<grid, 32 * m::kWarps, smem, stream>>>(
-            g, static_cast<const float*>(rot.untyped_data()), static_cast<const int*>(pixel_indices.untyped_data()),
-            static_cast<const float*>(lhs.untyped_data()), static_cast<const float*>(rhs.untyped_data()),
-            static_cast<const float*>(proj.untyped_data()), (int)P, (int)metric_trace,
-            static_cast<float*>(out->untyped_data()), static_cast<float*>(correction->untyped_data()));
-        err = cudaGetLastError();
-    }
+    if (err == cudaSuccess && R > 0 && F > 0)
+        err = m::launch_scatter((int)P, stream, smem, g, static_cast<const float*>(rot.untyped_data()),
+                                static_cast<const int*>(pixel_indices.untyped_data()),
+                                static_cast<const float*>(lhs.untyped_data()),
+                                static_cast<const float*>(rhs.untyped_data()),
+                                static_cast<const float*>(proj.untyped_data()), (int)metric_trace, stride,
+                                static_cast<float*>(out->untyped_data()),
+                                static_cast<float*>(correction->untyped_data()));
     if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
     return ffi::Error::Success();
 }
