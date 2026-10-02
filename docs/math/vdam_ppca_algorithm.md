@@ -1002,6 +1002,8 @@ scientific contract; runnable code alone does not establish recovery.
   (image, rotation) pair has a nonzero float32 weight, so skipping zero weights
   saves nothing. The streamed statistics carry no RHS volume (`rhs` is `None`):
   both optimizers read only the LHS metric and the direct residual gradient.
+  Momentum SGD reads only the metric trace, so its streams backproject the
+  trace channel alone (`TracePPCAStats`, `ppca_momentum_sgd.md`).
   The controller streams both pseudo-halves through one prepared model,
   dispatching each tile before finishing the previous one, with one reused
   pose-kept buffer. Paired local A100 replays of the live checkpoints

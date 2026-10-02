@@ -48,6 +48,15 @@ the normalized learning-rate step, with no bias correction. There is no
 split-half disagreement gate, second-moment adaptation, explicit map prior,
 class occupancy factor, positivity clamp or posterior rewhitening.
 
+Only \(\operatorname{tr}H_f\) is read, so the streamed full-row engine forms
+just that channel for momentum SGD: each pose's LHS images are summed over the
+diagonal of the packed block and backprojected once, instead of backprojecting
+all \((q+1)(q+2)/2\) packed channels. The backprojection is linear per
+channel, so this is the same trace up to float32 summation order. The result is
+[`TracePPCAStats`](../../relax/ppca_refinement/full_row_stream.py)
+(`metric_trace`, no `lhs_tri`); other statistics paths pass their packed metric
+through [`metric_trace`](../../relax/ppca_initial_model/sgd_update.py).
+
 The controller applies the existing common real-space solvent mask and
 Fourier bandlimit once to the proposed velocity for storage, and once to the
 old model plus the unprojected proposed velocity for the new model. The soft
