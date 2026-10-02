@@ -200,8 +200,14 @@ labeled diagnostic only.
   1.5e-8 (et15 with one group per tomogram) and exactly (SPA two groups). End to end, masked GT
   FSC-AUC (181e99d scorer) inside or above stock RELION's same-seed range at all three seeds on
   et09 with one group per tomogram (8 groups, K=1); the SPA two-group K=2 fixture collapses to one
-  class in both programs (a plumbing check only). Groups on other grids stay refused (etw's
-  multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`.
+  class in both programs (a plumbing check only). Subtomogram K=2 on et15 with one group per
+  tomogram (4 groups; relax 0de4063 job 14835375, stock RELION r1 14817602 and r2 14835377, one H100
+  each), population-weighted masked GT FSC-AUC relax / RELION same-seed range: s1 0.98391 /
+  [0.98378, 0.98387] (above), s2 0.98202 / [0.98211, 0.98212] (9e-5 below, OPEN), s3 0.98240 /
+  [0.98234, 0.98242] (inside); class populations equal RELION's to 1e-3 at every seed; wall
+  52542 / 48365 / 54054 s against RELION 35984-39046 s (1.33-1.41x). Groups on other grids stay
+  refused (etw's multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`
+  (`scores/et15_og_k2`).
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930`.
 - Class3D (K>1) on optics groups of several image shapes (2026-10-01): each half is scored per shape
   class and merged (`optics_shapes.merge_k_class_outputs`), as K=1 is. Qualified on
