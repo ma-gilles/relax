@@ -71,8 +71,26 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   skipped RELION's expected accuracy until every trial particle had been visited (et09: iteration 60)
   and searched translations coarser from iteration 30 (offset step 3.0 A vs 2.125 / 1.06 / 0.66 A at
   iterations 30 / 40 / 50), which raised the mid-run Pmax (0.94-0.96 vs RELION 0.76-0.85 at it30-60).
-  Unvisited particles now keep their input angles, as in RELION (ml_optimiser.cpp:9505). Re-run of
-  et09 K=1 (one and eight groups) and et15 K=2 against RELION pending.
+  Unvisited particles now keep their input angles, as in RELION (ml_optimiser.cpp:9505). Re-run at
+  1a107f5 (main 7412fd8 + this fix + VDAM optics; one H100 per arm, cold; stock RELION non-MPI; masked GT
+  FSC-AUC, 181e99d scorer), relax / RELION same-seed range:
+
+  | Case | s1 | s2 | s3 | Wall relax / RELION |
+  | --- | --- | --- | --- | --- |
+  | et09 K=1, one group | 0.98877 / [0.98875, 0.98879] | 0.98823, 0.98821 / [0.98824, 0.98839] | 0.98805 / [0.98733, 0.98739] | 0.53-0.71x |
+  | et09 K=1, 8 groups | 0.98843 / [0.98841, 0.98848] | 0.98806 / [0.98803, 0.98809] | 0.98811 / [0.98816, 0.98817] | 0.66-0.73x |
+  | et15 K=2, 4 groups | 0.98394 / [0.98378, 0.98387] | 0.98203 / [0.98211, 0.98212] | 0.98244 / [0.98234, 0.98242] | 0.42-0.45x |
+
+  Translation sampling now follows RELION step for step (et09 s2). The mid-run Pmax still differs (relax
+  0.67-0.77 vs RELION 0.76-0.79 at it40-70): one-iteration continuations from RELION's own checkpoints with
+  RELION's sampling perturbation (diagnostic `--diagnostic-continue-input-order`, subtomograms included) match
+  RELION at it10, 20, 30, 40, 60, 70 and 80 (average Pmax within 2e-3, best poses equal for 98-100% of the
+  subset, map one-step difference 0.5-4e-3 of a 4-20e-2 step), so it is trajectory divergence, not a per-step
+  difference (RELION's own `--continue` at it050 departs from its run: tau2_fudge 4.0, step size 0.3).
+  Inside or above at two of three seeds in each case. OPEN: et09 one-group s2 (both relax runs 1-3e-5
+  below) and et15 s2 (8e-5 below; relax repeats running, benchw). Evidence:
+  `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_vdam_ogtomo_20261002`,
+  `em_work/cryoet_vdam_20261001/tomo_cont`.
 - With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
   particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
   fixtures keeps classes 2..K empty in both programs (ma-gilles/relax#11). With one optics group
@@ -238,8 +256,8 @@ labeled diagnostic only.
   class in both programs (a plumbing check only). Subtomogram K=2 on et15 with one group per
   tomogram (4 groups; relax 0de4063 job 14835375, stock RELION r1 14817602 and r2 14835377, one H100
   each), population-weighted masked GT FSC-AUC relax / RELION same-seed range: s1 0.98391 /
-  [0.98378, 0.98387] (above), s2 0.98202 / [0.98211, 0.98212] (9e-5 below; OPEN until rerun, as these relax runs predate the subtomogram
-  expected-accuracy fix below), s3 0.98240 /
+  [0.98378, 0.98387] (above), s2 0.98202 / [0.98211, 0.98212] (9e-5 below; these relax runs predate the subtomogram expected-accuracy
+  fix, re-run above), s3 0.98240 /
   [0.98234, 0.98242] (inside); class populations equal RELION's to 1e-3 at every seed; wall
   52542 / 48365 / 54054 s against RELION 35984-39046 s (1.33-1.41x). Groups on other grids stay
   refused (etw's multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`
@@ -272,9 +290,9 @@ labeled diagnostic only.
   [0.4390, 0.4468], 0.4436 / [0.4434, 0.4437], 0.4398 / [0.4396, 0.4396] (seeds 1-3): inside or above
   at two of three seeds per feature. premult s2 and btilt s1 fail to converge in BOTH programs (about
   0.06 against 0.44), so they are weak evidence and the verdict rests on the converged seeds: premult
-  s1, s3 inside; btilt s2 1.1e-4 below, s3 above; evenz s2 inside, s3 above. OPEN: evenz s1 6e-2
-  below, where RELION's own r1-r2 agreement is only 0.60 (a chaotic seed); two relax same-seed
-  repeats settle it (job 14869744). Walls equal RELION's (464-669 s vs 436-570 s).
+  s1, s3 inside; btilt s2 1.1e-4 below, s3 above; evenz s2 inside, s3 above. evenz s1 (first run 6e-2
+  below, RELION's own r1-r2 agreement only 0.60) is a chaotic seed: two relax same-seed repeats (job
+  14869744) score 0.44279 and 0.44277, inside RELION's range. Walls equal RELION's (464-669 s vs 436-570 s).
   Qualification, 2026-09-30: 10k/256 fixtures under
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_*_k1_10k256_20260929`, one relax run
   (cand_ccb229f, H100) against same-command, same-seed RELION 5.0.1 runs (patched MPI build,
