@@ -604,8 +604,6 @@ OPTICS_FEATURE_LABELS = {
     "magnification": ("rlnMagMat00", "rlnMagMat01", "rlnMagMat10", "rlnMagMat11"),
 }
 IMPLEMENTED_OPTICS_FEATURES = frozenset({"ctf_premultiplied", "odd_aberrations", "even_aberrations", "magnification"})
-# Class3D (K>1): magnification stays refused; its K=2 qualification is below RELION's band (2026-09-30).
-CLASS3D_OPTICS_FEATURES = IMPLEMENTED_OPTICS_FEATURES - {"magnification"}
 
 
 def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:
@@ -615,7 +613,7 @@ def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) ->
     by its beam tilt and odd Zernike phase, adds the even Zernike terms to the CTF phase
     and applies the anisotropic magnification to every projection (``obs_model.cpp``).
     ``supported`` names the :data:`OPTICS_FEATURE_LABELS` the job implements
-    (Refine3D: :data:`IMPLEMENTED_OPTICS_FEATURES`, Class3D: :data:`CLASS3D_OPTICS_FEATURES`); a table that uses any other one
+    (Refine3D and Class3D: :data:`IMPLEMENTED_OPTICS_FEATURES`); a table that uses any other one
     raises instead of being silently ignored. Columns that have no effect (zero tilt
     and coefficients, identity magnification, ``rlnCtfDataAreCtfPremultiplied 0``) are
     accepted.

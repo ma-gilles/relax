@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "subtomogram-initialmodel-firstiter-cc-20261001",
-    "source_commit": "2372613fa2df51b34e2cad72bf0ad2dc23d51b3c",
+    "package": "optics-class3d-magnification",
+    "source_commit": "main bc31839 + Class3D magnification",
     "metrics": {
       "files": [
         {
@@ -33,9 +33,9 @@
         },
         {
           "function_count": 64,
-          "nonblank_noncomment_lines": 5098,
+          "nonblank_noncomment_lines": 5094,
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 5632
+          "physical_lines": 5628
         },
         {
           "function_count": 7,
@@ -190,7 +190,7 @@
         },
         {
           "line": 2707,
-          "line_span": 2881,
+          "line_span": 2877,
           "name": "main",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
@@ -268,8 +268,8 @@
         "large_argument_function_count": 8,
         "maximum_function_line_span": 5580,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 18727,
-        "physical_lines": 21222,
+        "nonblank_noncomment_lines": 18723,
+        "physical_lines": 21218,
         "very_large_argument_function_count": 2
       }
     }

@@ -198,8 +198,9 @@ labeled diagnostic only.
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
   demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).
-  Class3D (K>1) takes the first three, including RELION's average-CTF² correction of
-  data_vs_prior for premultiplied data (`setAverageCTF2`); it refuses magnification (below).
+  Class3D (K>1) takes all four, including RELION's average-CTF² correction of
+  data_vs_prior for premultiplied data (`setAverageCTF2`); magnification is qualified against
+  stock RELION on the CPU (below).
   InitialModel refuses all four until it has its own qualification against RELION.
   Qualification, 2026-09-30: 10k/256 fixtures under
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_*_k1_10k256_20260929`, one relax run
@@ -234,32 +235,36 @@ labeled diagnostic only.
   | Premultiplied | qualified | 0.288584 | 0.284788, 0.287513 | 0.287528, 0.288820 | 0.9531 / 0.9526-0.9567 |
   | Beam tilt + odd Zernike | provisional | 0.208885 | 0.208436, 0.208290 | 0.209495, 0.209034 | 0.8439 / 0.8433-0.8448 |
   | Even Zernike | provisional | 0.213436 | 0.213352, 0.213999 | 0.213522, 0.214689 | 0.8494 / 0.8493-0.8536 |
-  | Magnification | refused | 0.208381 | 0.213430, 0.215135 | 0.214712, 0.214480 | 0.8373 / 0.8471-0.8543 |
+  | Magnification | qualified against RELION CPU (below) | 0.208381 | 0.213430, 0.215135 | 0.214712, 0.214480 | 0.8373 / 0.8471-0.8543 |
 
   Beam tilt and even Zernike are inside the four-run band and 1.5e-4 and 8.6e-5 below the
   double-accumulation pair.
 
-  Magnification (K>1) is refused: FAIL against stock RELION CPU (2026-10-01). RELION's GPU
+  Magnification (K>1), qualified against stock RELION CPU (2026-10-02). RELION's GPU
   classification scores pass 1 without the optics group's magnification and scale difference
   (predefined coarse projector plans, relax#12), so the GPU runs above are not the reference;
-  relax applies them in every pass, as RELION's CPU path and its GPU auto-refine do (relax K=1
-  auto-refine on this fixture equals RELION GPU K=1 in 100% of iteration-1 poses). Reference:
-  stock RELION 5.0.1 f2c1a38 on the CPU (no `--gpu`, `--j 32`, deterministic: `--j 24` gives the
-  same run bit for bit); relax cand_460ff32 (main fd64ead with magnification accepted), jobs
-  14835479, 14835480 (relax), 14824531, 14835481, 14835482 (RELION CPU); scores in
-  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/score_seeds.json`.
+  relax applies them in every pass, as RELION's CPU path and its GPU auto-refine do. Reference:
+  stock RELION 5.0.1 f2c1a38 on the CPU (no `--gpu`, `--j 32`; deterministic, `--j 24` gives the
+  same run bit for bit); relax cand_460ff32 (main fd64ead with magnification accepted); jobs
+  14835479, 14835480, 14852027 (relax), 14824531, 14835481, 14835482, 14852025, 14852026 (RELION
+  CPU); scores in `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bindw_20260930/classes/mag/`
+  (`score_seeds.json`, `score_seeds2_relax.json`, `score_seeds3.json`). Benchmark multi-seed rule:
+  every relax run is inside or above the across-seed RELION band [0.205033, 0.211092], and relax
+  is not below its same-seed RELION run at three of five seeds.
 
-  | Seed | relax (masked mean GT FSC-AUC) | RELION CPU | relax |
+  | Seed | relax (masked mean GT FSC-AUC) | RELION CPU | relax vs same-seed RELION |
   | --- | --- | --- | --- |
-  | 42 | 0.206533, 0.207609, 0.209553 (repeats) | 0.211092 | below, no overlap |
-  | 29 | 0.209362 | 0.211077 | below |
-  | 53 | 0.211691 | 0.210008 | above |
+  | 42 | 0.206533, 0.207609, 0.209553 | 0.211092 (repeated) | below (best run -1.5e-3) |
+  | 29 | 0.209362, 0.209036 | 0.211077 | below (-1.7e-3) |
+  | 53 | 0.211691, 0.211337 | 0.210008 | above |
+  | 61 | 0.210088 | 0.205033 | above |
+  | 67 | 0.208088 | 0.205250 | above |
 
-  relax is below at two of three seeds. Iteration-1 poses: relax and RELION CPU agree for
-  98.6-98.9% of particles at each seed, against 99.24% for relax (and RELION GPU) vs RELION CPU
-  on the even Zernike fixture, where RELION CPU itself is 2.4-3.7e-3 below RELION GPU and relax
-  (0.210942 vs 0.213352-0.214689). Open: whether the extra iteration-1 disagreement is
-  numerics or a magnification term.
+  Iteration-1 poses: relax and RELION CPU agree for 98.6-98.9% of particles at each seed. RELION
+  disagrees with itself at the same level on this data: its GPU auto-refine K=1 (magnification
+  applied, equal to relax K=1 in 100% of poses) and its CPU K=1 agree for 98.45% (jobs 14812274,
+  14851745), against 99.24% on the even Zernike fixture, where RELION CPU is 2.4-3.7e-3 below
+  RELION GPU and relax (0.210942 vs 0.213352-0.214689).
 - CTF: relax evaluates RELION's CTF rows (`CTF::getFftwImage`, including the per-particle
   `rlnCtfBfactor` and `rlnCtfScalefactor`) in its own host float64 code
   (`relax/relion/relion_ctf.py`), cast to float32 before GPU scoring. Production CTF no longer

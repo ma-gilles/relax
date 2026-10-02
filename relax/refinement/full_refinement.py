@@ -3024,11 +3024,7 @@ def main(command=None):
     relion_metadata.refuse_unsupported_optics(
         our_star.get("optics") if isinstance(our_star, dict) else None,
         source="particles.star",
-        supported=(
-            relion_metadata.IMPLEMENTED_OPTICS_FEATURES
-            if int(args.n_classes) == 1
-            else relion_metadata.CLASS3D_OPTICS_FEATURES
-        ),
+        supported=relion_metadata.IMPLEMENTED_OPTICS_FEATURES,
     )
     # Keep the input-STAR particle identities available for replay mapping.
     # RELION data STAR rows can be permuted relative to this table, so callers

@@ -18,11 +18,7 @@ from helpers.float_compare import assert_matches
 
 from relax.relion import optics_aberrations as oa
 from relax.relion import relion_ctf
-from relax.relion.relion_metadata import (
-    CLASS3D_OPTICS_FEATURES,
-    IMPLEMENTED_OPTICS_FEATURES,
-    refuse_unsupported_optics,
-)
+from relax.relion.relion_metadata import IMPLEMENTED_OPTICS_FEATURES, refuse_unsupported_optics
 
 BOX = 24
 PIXEL = 1.4
@@ -166,14 +162,6 @@ def test_refinement_accepts_the_implemented_optics_features():
     with pytest.raises(NotImplementedError, match="rlnMagMat00"):
         refuse_unsupported_optics(
             pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}), source="class3d.star"
-        )
-    # Class3D takes premultiplied, odd and even aberration data, not magnification.
-    refuse_unsupported_optics(optics, source="class3d.star", supported=CLASS3D_OPTICS_FEATURES)
-    with pytest.raises(NotImplementedError, match="rlnMagMat00"):
-        refuse_unsupported_optics(
-            pd.DataFrame({"_rlnOpticsGroup": [1], "_rlnMagMat00": [1.01]}),
-            source="class3d.star",
-            supported=CLASS3D_OPTICS_FEATURES,
         )
 
 
