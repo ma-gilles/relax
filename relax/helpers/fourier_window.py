@@ -18,6 +18,8 @@ underlying CUDA image grid.
 See ``docs/math/plan_relion_parity.md``, Phase 3.
 """
 
+import contextlib
+import contextvars
 import os
 from dataclasses import dataclass, replace
 from functools import partial
@@ -37,14 +39,46 @@ STABLE_FOURIER_WINDOW_QUANTUM_ENV = (
     "RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM"
 )
 DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM = 8
+# VDAM's class step (relax.vdam.driver). A new physical class compiles the resident
+# pass programs again (about 5 s each), while padding the window costs VDAM's small
+# subsets almost nothing: at 10k/256 the late E-step took 1.40 s per iteration at
+# class 144 against 1.41 s at 120. Quantum 24 visits 4 classes instead of 11 and cut
+# the 200-iteration wall 439 -> 384 s (10k/256, same node, job 14867921); on
+# EMPIAR-10076 10k it was 577 -> 562 s (14876259). Class3D and auto-refine keep 8.
+VDAM_STABLE_FOURIER_WINDOW_QUANTUM = 24
+
+
+# The quantum of the refinement in progress (``stable_fourier_window_quantum_scope``),
+# None outside one.
+_REFINEMENT_QUANTUM: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "relax_stable_fourier_window_quantum", default=None
+)
+
+
+@contextlib.contextmanager
+def stable_fourier_window_quantum_scope(quantum: int | None):
+    """Run one refinement with its own physical-size quantum (None keeps the default)."""
+
+    if quantum is not None and (int(quantum) < 2 or int(quantum) % 2):
+        raise ValueError(f"the stable Fourier-window quantum must be an even integer >= 2, got {quantum!r}")
+    token = _REFINEMENT_QUANTUM.set(None if quantum is None else int(quantum))
+    try:
+        yield
+    finally:
+        _REFINEMENT_QUANTUM.reset(token)
 
 
 def stable_fourier_window_quantum() -> int:
-    """Return the shared physical-size quantum for stable EM windows."""
+    """Return the shared physical-size quantum for stable EM windows.
+
+    The environment variable overrides; otherwise the quantum of the refinement
+    in progress (:func:`stable_fourier_window_quantum_scope`), else the default.
+    """
 
     raw = os.environ.get(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "").strip()
     if not raw:
-        return DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+        scoped = _REFINEMENT_QUANTUM.get()
+        return DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM if scoped is None else scoped
     try:
         quantum = int(raw)
     except ValueError as exc:

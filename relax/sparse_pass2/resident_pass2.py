@@ -85,6 +85,7 @@ from relax.helpers.fourier_window import (
     make_stable_fourier_window_shape_plan,
     stable_fourier_window_current_size,
     stable_fourier_window_quantum,
+    stable_fourier_window_quantum_scope,
 )
 from relax.helpers.half_spectrum import (
     make_relion_noise_shell_indices_half,
@@ -2255,7 +2256,7 @@ _STABLE_WINDOW_CLASSES_RUN: contextvars.ContextVar[dict | None] = contextvars.Co
 
 
 @contextlib.contextmanager
-def stable_window_class_history():
+def stable_window_class_history(quantum: int | None = None):
     """Let the passes of one refinement reuse each other's physical window classes.
 
     RELION's current size settles by steps of two around its final value (80,
@@ -2266,11 +2267,16 @@ def stable_window_class_history():
     larger. The class is capacity only (the logical window is unchanged), so
     this changes shapes, not RELION's cutoffs; the history is per refinement,
     so a run's shapes do not depend on what else the process ran.
+
+    ``quantum`` is the refinement's class step
+    (:func:`~relax.helpers.fourier_window.stable_fourier_window_quantum_scope`);
+    None keeps the default.
     """
 
     token = _STABLE_WINDOW_CLASSES_RUN.set({})
     try:
-        yield
+        with stable_fourier_window_quantum_scope(quantum):
+            yield
     finally:
         _STABLE_WINDOW_CLASSES_RUN.reset(token)
 

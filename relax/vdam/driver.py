@@ -21,11 +21,8 @@ from relax.diagnostics.vdam_mstep_replay import (
     INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
     _maybe_replay_iteration_references,
 )
-from relax.helpers.particle_io import (
-    ParticleReadPolicy,
-    assert_reads_from_scratch,
-    prepare_particle_reads,
-)
+from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
+from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, prepare_particle_reads
 from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
 from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
 from relax.relion.initial_model_io import (
@@ -657,8 +654,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             )
     profile.record("iteration_setup")
 
-    # One stable-window class history for the run, as refinements have.
-    with stable_window_class_history():
+    # One stable-window class history for the run, as refinements have, on VDAM's ladder.
+    with stable_window_class_history(quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM):
         final_state = run_vdam_iterations(
             state,
             nr_particles=n_particles,

@@ -3,7 +3,13 @@
 import numpy as np
 import pytest
 
-from relax.helpers.fourier_window import make_stable_fourier_window_shape_plan
+from relax.helpers.fourier_window import (
+    DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+    STABLE_FOURIER_WINDOW_QUANTUM_ENV,
+    VDAM_STABLE_FOURIER_WINDOW_QUANTUM,
+    make_stable_fourier_window_shape_plan,
+    stable_fourier_window_quantum,
+)
 from relax.sparse_pass2.resident_pass2 import _stable_window_physical_class, stable_window_class_history
 
 pytestmark = pytest.mark.unit
@@ -20,6 +26,27 @@ def test_a_new_class_reuses_a_run_class_at_most_one_quantum_larger():
         assert _stable_window_physical_class(128, 80, 16) == 80
     with stable_window_class_history():
         assert _stable_window_physical_class(128, 80, 8) == 80  # a new refinement starts empty
+
+
+def test_a_refinement_runs_on_its_own_quantum(monkeypatch):
+    monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raising=False)
+    assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    with stable_window_class_history(quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM):
+        quantum = stable_fourier_window_quantum()
+        assert quantum == VDAM_STABLE_FOURIER_WINDOW_QUANTUM == 24
+        # The 10k/256 VDAM ramp: 56 at iteration 1, then 30, 66, 82, 104, 114.
+        chosen = [_stable_window_physical_class(256, size, quantum) for size in (56, 30, 66, 82, 104, 114)]
+        assert chosen == [72, 72, 72, 96, 120, 120]
+        monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "16")
+        assert stable_fourier_window_quantum() == 16  # the environment overrides
+        monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV)
+    assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    with stable_window_class_history():
+        assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    for bad in (0, 7):
+        with pytest.raises(ValueError, match="even integer"):
+            with stable_window_class_history(quantum=bad):
+                pass
 
 
 def test_an_explicit_physical_class_keeps_the_logical_window():
