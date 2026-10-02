@@ -420,6 +420,12 @@ def make_parser() -> argparse.ArgumentParser:
         "--diagnostic-stop-after-iteration", type=_positive_int,
         help="Diagnostic stopping iteration; nr_iter still controls the full schedule.",
     )
+    parser.add_argument(
+        "--diagnostic-continue-input-order", action="store_true",
+        # Hidden: diagnostic continuation only. Draws the next subset from the input order, as stock RELION
+        # --continue does, so a one-iteration comparison scores the same particles.
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -523,6 +529,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,
+        "diagnostic_continue_input_order": bool(args.diagnostic_continue_input_order),
         **_input_files(args),
         "outputname": args.outputname,
         "nr_iter": args.nr_iter,

@@ -21,6 +21,7 @@ from relax.diagnostics.vdam_mstep_replay import (
     INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV,
     _maybe_replay_iteration_references,
 )
+from relax.diagnostics.vdam_tomo_continuation import tomo_checkpoint_particle_state
 from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, prepare_particle_reads
 from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
@@ -492,7 +493,9 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
                 f"stop={opts.diagnostic_stop_after_iteration}"
             )
     particle_state = (
-        _tomo_particle_state_from_star(main_star, pixel_size=float(dataset.voxel_size))
+        (tomo_checkpoint_particle_state if continuation is not None else _tomo_particle_state_from_star)(
+            main_star, pixel_size=float(dataset.voxel_size)
+        )
         if tomo
         else _particle_state_from_star(
             main_star,
@@ -533,10 +536,11 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             raise NotImplementedError(
                 "diagnostic native VDAM continuation currently supports one optics group"
             )
-        state = restore_subset_order_for_continuation(
+        # Diagnostic: stock RELION --continue reshuffles from the input order (sorted_idx is not checkpointed).
+        state = continuation.state if opts.diagnostic_continue_input_order else restore_subset_order_for_continuation(
             continuation.state,
             through_iteration=int(continuation.iteration),
-            nr_particles=int(dataset.n_images),
+            nr_particles=int(n_particles),
             optics_group_by_particle=optics_group_by_particle,
             grad_ini_subset_size=grad_ini_subset_size,
             grad_fin_subset_size=grad_fin_subset_size,

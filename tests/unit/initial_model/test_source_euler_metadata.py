@@ -8,6 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
+from relax.diagnostics import vdam_tomo_continuation
 from relax.relion import initial_model_io
 from relax.vdam import adaptive_estep, estep_meta_updates, native_sampling
 from relax.vdam.state import NativeParticleState
@@ -90,6 +91,22 @@ def test_subtomogram_input_star_source_is_valid_before_first_visit():
     assert value.best_pose_eulers_valid.all() and value.best_pose_rotations.dtype == np.float32
     assert_matches(native_sampling._best_eulers_from_particle_state(value, [1, 0], rotation_grid_order=0), eulers[[1, 0]])
     assert_matches(value.translation_offsets[0], np.array([2.27, 0.68, 0.90]) / 4.25)
+
+
+def test_subtomogram_checkpoint_state_reads_class_and_pmax():
+    # A diagnostic continuation's data STAR: class 0 marks a particle not yet visited.
+    frame = pd.DataFrame(
+        dict(
+            _rlnTomoParticleName=["TS_01/1", "TS_01/2"],
+            _rlnOriginXAngst=[0.0, 4.25], _rlnOriginYAngst=[0.0, 0.0], _rlnOriginZAngst=[0.0, 0.0],
+            _rlnAngleRot=[1.0, 2.0], _rlnAngleTilt=[3.0, 4.0], _rlnAnglePsi=[5.0, 6.0],
+            _rlnClassNumber=[0, 1], _rlnMaxValueProbDistribution=[0.0, 0.75],
+        )
+    )
+    value = vdam_tomo_continuation.tomo_checkpoint_particle_state(frame, pixel_size=4.25)
+    assert value.visited.tolist() == [False, True] and value.class_assignments.tolist() == [0, 0]
+    assert_matches(value.max_posterior, np.array([0.0, 0.75], np.float32))
+    assert initial_model_io._tomo_particle_state_from_star(frame, pixel_size=4.25).visited is None
 
 
 @pytest.mark.parametrize("fault", ["narrow", "shape", "nan", "valid_shape", "valid_dtype"])

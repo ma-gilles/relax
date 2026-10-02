@@ -89,6 +89,7 @@ class NativeInitialModelOptions(InitialModelDefaults):
     # surface: the caller must also stop at checkpoint_iteration + 1.
     diagnostic_continue_optimiser: str | None = None
     diagnostic_stop_after_iteration: int | None = None
+    diagnostic_continue_input_order: bool = False
 
     def validate_run(self) -> None:
         """Check supported settings before loading particles or creating run state."""
@@ -135,10 +136,8 @@ class NativeInitialModelOptions(InitialModelDefaults):
                 "diagnostic_continue_optimiser requires diagnostic_stop_after_iteration; "
                 "unbounded continuation is intentionally unsupported"
             )
-        if self.fn_tomograms is not None and (
-            self.optimizer != "vdam" or self.diagnostic_continue_optimiser is not None or not self.do_run_C1
-        ):
-            raise NotImplementedError("subtomogram InitialModel runs RELION's VDAM from scratch, in C1")
+        if self.fn_tomograms is not None and (self.optimizer != "vdam" or not self.do_run_C1):
+            raise NotImplementedError("subtomogram InitialModel runs RELION's VDAM in C1")
         if self.padding_factor not in (1, 2):
             raise NotImplementedError("native InitialModel currently supports RELION GUI --pad 1 or 2 only")
         if not self.do_run_C1 and self.sym_name.lower() != "c1":
