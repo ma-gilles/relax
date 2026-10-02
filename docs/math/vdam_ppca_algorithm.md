@@ -1239,3 +1239,171 @@ retains the empirical seed-map covariance at arbitrary rank. The q=2 branch
 keeps the previous reduction order exactly. No ground-truth label, map or pose
 enters the random-angle round-robin bootstrap. Config q defaults to two;
 changing rank does not change the optimizer schedule or observation model.
+
+## 16. Subtomogram (cryo-ET) PPCA: design (October 2, 2026)
+
+*Design, not yet implemented.* The aim is the pose-free PPCA initial model of
+sections 4-15 for RELION 5 subtomograms (2D tilt stacks), with both optimizers,
+on the streamed engine of section 14. Tomographic input, geometry, CTF and dose
+follow the subtomogram Refine3D/VDAM path that relax qualifies against RELION
+([tomo_particles.py](../../relax/refinement/tomo_particles.py),
+[tomo_half.py](../../relax/refinement/tomo_half.py),
+[tomo_input.py](../../relax/relion/tomo_input.py)). RECOVAR's known-pose
+cryo-ET PPCA (shared latent and contrast per particle) is prior art for the
+per-particle shared quantities only.
+
+### 16.1 Observation model
+
+Particle `i` has visible tilt images `k in V_i`, each with RELION's projection
+matrix `Aproj_ik` (tilt-series rotation times the subtomogram matrix), its own
+depth-corrected CTF with `rlnCtfScalefactor` and cumulative-dose damping
+(RELION's exact CTF rows, `relion_ctf`), written `C_ik`. The particle has one
+pose `phi = (R, t)` with `t` a 3D shift in pixels, one latent `z_i`, and unit
+contrast (as SPA PPCA's first version). Tilt `k` is sliced at the rotation
+`Aproj_ik R` (in RECOVAR's convention this is the matrix product of the two
+RELION matrices; `_relion_mstep_rotations_from_eulers` with `left_matrices`
+returns the same) and shifted by `s_ik(t) = [Aproj_ik t]_{1,2}`
+(`tilt_image_shifts`):
+
+\[
+y_{ik}=A_{ik\phi}(\mu+Wz_i)+\epsilon_{ik},\qquad
+A_{ik\phi}=C_{ik}\,S_{s_{ik}(t)}\,P(\mathrm{Aproj}_{ik}R),\qquad
+z_i\sim\mathcal N(0,I_q).
+\]
+
+Noise is independent across tilt images, with spectrum `Sigma` in the
+coefficient units of section 14. The first version uses one spectrum for every
+tilt image; RELION's model is one per optics group (one per tomogram on our
+fixtures), with dose entering through the CTF, not the noise. Tiles are single
+tomograms (16.4), so a per-group spectrum later changes only the tile's noise row
+and the per-group noise sums.
+
+### 16.2 The latent is shared: sum the tilts before integrating it out
+
+Stacking the visible tilts, `y_i = [y_ik]_k` and `A_{i phi} = [A_{ik phi}]_k`,
+section 4 applies unchanged with block-diagonal `D_i`. With
+`r_k = y_ik - A_ik mu` and `B_k = A_ik W`,
+
+\[
+M=I_q+\sum_{k\in V_i}\operatorname{Re}(B_k^*DB_k),\qquad
+b=\sum_{k\in V_i}\operatorname{Re}(B_k^*Dr_k),\qquad
+\ell_{i\phi}=-\tfrac12\Big\{\sum_k r_k^*Dr_k-b^TM^{-1}b+\log\det M\Big\}.
+\]
+
+The five inner-product statistics of the streamed engine (`t_mx`, `g_zx`,
+`nu_mm`, `h_zm`, `H_zz`) are sums over tilts; the Cholesky factor, score,
+latent mean `M^-1 b` and covariance `M^-1` are formed once per particle and
+pose. Summing per-tilt PPCA scores instead would give each tilt its own `z`
+(a different model with `|V_i|` log-determinants). As in SPA, the Gram terms do
+not depend on `t`, since shifts are unimodular phases. The posterior over poses
+is one softmax per particle; the rotation and 3D translation priors are
+per particle.
+
+### 16.3 Statistics, noise and optimizers
+
+With the particle's `gamma`, `alpha` and `G` (section 5), every visible tilt
+backprojects at its own rotation `Aproj_ik R`: the LHS metric is
+`sum_i sum_phi gamma sum_k P^*(Aproj_ik R)[C_ik^2/Sigma] ⊗ G` and the direct
+residual gradient is the adjoint of each tilt's expected residual image,
+`gamma [alpha_a Y1_k - sum_b G_ab (C^2/Sigma) A_b]`, exactly the per-pose
+moment images of section 14 with one image per tilt. These are the same
+`AugmentedPPCAStats` / `TracePPCAStats` volumes, so VDAM's coupled update and
+momentum SGD are used unchanged. Batches, pseudo-halves (stable particle id
+parity) and the subset schedule count particles, not tilt images.
+
+The noise update averages the expected residual power (with the posterior
+covariance term of section 10) over visible tilt images: each tilt image is
+one noise observation in the denominator. The offset variance is
+`sum gamma |t|^2 / (3 count)` in 3D, with the same floor and 0.9 subset
+smoothing as SPA. The initial noise is the unaligned estimator of section 10
+over the bootstrap's tilt images.
+
+### 16.4 Mapping onto the streamed GEMMs
+
+A **tilt group** is a set of particles whose images come from one fixed list of
+frame matrices `{Aproj_f}_{f=1..K}`: the particles of one tomogram when they
+share the subtomogram matrix (the simulator writes none, so every particle of a
+tomogram does). Image tiles are drawn from one group. A particle's invisible
+frames get zero operands, which add exact zeros to every GEMM and to the scatter.
+Particles with individual subtomogram orientations form groups of one, which is
+correct but shares no projections.
+
+The tilt index joins the GEMM contraction axis, ordered `(frame, [Re | Im], pixel)`:
+
+| Operand | SPA (section 14) | Subtomogram tile |
+| --- | --- | --- |
+| projections (window projector, `with_products`) | `(P R, 2F)`, rows `R_r` | `(P R, K 2F)`, rows `Aproj_f R_r`, frame minor |
+| `Y1` | `(2F, B T)` | `(K 2F, B T)`: `[Re; Im](C_bf y_bf e^{-2 pi i x . s_bf(t)/N} / Sigma)`, zero if `f` not visible |
+| `ctf2` | `(F, B)` | `(K F, B)`: `C_bf^2 / Sigma`, zero if not visible |
+| pair products (Gram GEMM) | `(tri R, F)` | `(tri R, K F)` |
+| pass 2 `rhs_parts`, `lhs_images` | `(P, R, 2F)`, `(tri, R, F)` | `(P, R K, 2F)`, `(tri, R K, F)` |
+| moment scatter rotations | `R` | `R K` (`Aproj_f R_r`) |
+
+The GEMM outputs keep their SPA shapes, `inner (P, R, B, T)` and
+`gram (tri, R, B)`, so the latent epilogue, tile normalization and posterior
+preparation are reused as they are. Pass 2 reshapes the same two GEMM outputs
+to `R K` rows, and the moment scatter backprojects them with the expanded
+rotations. A one-frame group with `Aproj = I` and a 2D shift grid is exactly the
+SPA tile. Per-image 3D-to-2D phases replace SPA's shared translation table when
+`Y1` is built (`tilt_translation_angles` geometry, one table per tilt image).
+
+Cost per tile and pass is `2 P R (K 2F)(B T)` GEMM flops, `K` times an SPA tile
+of the same `B T`, plus `R K` window projections shared by the tile's `B`
+particles. Example: `K = 41`, radius 31 at box 64 (`2F` about 3000), HEALPix 3
+(`R = 36864`), the 3D grid of radius 2 and step 1 px (`T = 33`): about `9e11`
+flops per particle and pass, about `2e15` for a 1,000-particle all-data update
+(seconds on an H100 in TF32). Early stages (radius 4-16, HEALPix 1-2) are
+10-1000 times cheaper. Device memory per tile: `Y1` is `4 K 2F B T` bytes
+(130 MB at `B = 8`) and the kept scores and moments `(1 + q) R B T` floats
+(117 MB at `q = 2`).
+
+### 16.5 Initialization and pose search
+
+The `q + 1` random seed maps and their Helmert mapping (section 15) are reused.
+The bootstrap draws random particles until about 1,000 tilt images are read,
+gives each particle one random rotation and backprojects each visible tilt at
+`Aproj_ik R` with its exact CTF, round-robin over the seed maps by particle.
+
+The first version scores the full rotation grid of each stage with
+`--oversampling 0 --stream-coarse-recompute` (the full-row stream with one
+coarse parent). The oversampled path needs a coarse significance pass; the
+SPA one runs the host-mask dense engine, which has no tilt axis. A coarse pass
+through the same tilt stream is the follow-up, if the full grid is too slow.
+
+### 16.6 Implementation boundary and checks
+
+- `full_row_stream.py`: a tile may carry `K` frame matrices; projection and
+  scatter rotations expand block rows by frames; operands and pass-2 images
+  flatten `(frame, pixel)`; the tile loader is a stream argument; the noise
+  denominator counts tilt images. The SPA path keeps its shapes and arithmetic.
+- New `relax/ppca_initial_model/tomo.py`: tilt groups and tile order, the tilt
+  tile loader (exact CTF rows, per-image phases), the tilt bootstrap and initial
+  noise, and the controller's tilt expectation.
+- `TomoDataset` additionally records each image's frame and each particle's
+  tomogram (additive).
+- `iteration_loop.py` routes a tilt dataset through these and uses 3D offsets;
+  the command reads an optimisation set; simulator truth stays outside training.
+
+Checks, in this order: (1) on CPU against a brute-force float64 model on a tiny
+problem (box 10, `q = 2`, three particles with four tilts each, one with a hidden
+tilt, several rotations and 3D shifts): the marginal log-likelihood
+`log N(y_i; A mu, A W W^T A^* + Sigma)` per pose from the dense joint covariance
+(no Woodbury), posterior weights, latent moments, LHS, residual gradient and
+noise sums from dense adjoints; (2) a one-frame identity group equals the SPA
+tile; (3) dropping a hidden tilt equals zeroing it; (4) a known 3D offset is
+recovered by the score maximum. Then the GPU path against the XLA path, and the
+science of the next subsection.
+
+### 16.7 Science plan
+
+Judged against ground truth with seed-to-seed spread as the noise band (there
+is no RELION reference): per-state FSC against GT after rigid registration
+(class-mean states `mu + W zbar_c` from final pose-marginal embeddings, section
+11), state recovery from the embeddings, and pose error against GT after one
+global alignment. Baseline: subtomogram VDAM K-class with K equal to the state
+count (`relax initial_model --ios`). Fixture: `generate_relion5_tomo_dataset`,
+one optics group per tomogram, unit contrast, total B 30-50 A^2 set once by the
+preset, multiple states (the et15 5nrl path or a three-state path), with pixel
+size and SNR chosen so that a true-pose reconstruction is not Nyquist-limited.
+Small decisive runs first: a few hundred particles, a GT-initialized arm per
+optimizer (it must hold GT), then random initializations.
