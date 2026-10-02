@@ -91,10 +91,11 @@ def test_moment_scatter_matches_xla_statistics_and_recovar_adjoint(
     projections = (rng.standard_normal((P, R, N_HALF)) + 1j * rng.standard_normal((P, R, N_HALF))).astype(np.complex64)
     lhs[:, 3] = 0.0  # one rotation of all-zero metric images still scatters its residual
     with jax.default_device(gpu_device):
+        windowed = projections[:, :, indices]
         moments, correction = ppca_moment_scatter_f32(
             jnp.asarray(lhs),
             jnp.asarray(rhs_parts),
-            jnp.asarray(projections),
+            jnp.asarray(np.concatenate([windowed.real, windowed.imag], axis=-1)),
             jnp.asarray(indices),
             jnp.asarray(rotations),
             image_shape=IMAGE_SHAPE,

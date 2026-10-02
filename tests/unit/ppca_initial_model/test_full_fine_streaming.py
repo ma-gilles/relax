@@ -181,9 +181,11 @@ def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
     # Scalar summaries are float32 reductions returned as Python floats.
     assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood))
-    for key in ("rotation_mass", "offset_second_sum_px2", "latent_covariance_trace_mean",
-                "pose_entropy_mean", "pmax_mean", "max_posterior_per_image"):
+    for key in ("offset_second_sum_px2", "latent_covariance_trace_mean", "pose_entropy_mean"):
         assert_matches(np.float32(actual.diagnostics[key]), np.float32(expected.diagnostics[key]))
+    truth = _float64_diagnostics(stream, np.arange(3), SIGNIFICANT)
+    for key in ("rotation_mass", "max_posterior_per_image"):
+        _assert_matches_or_more_accurate(actual.diagnostics[key], expected.diagnostics[key], truth[key])
     for key in ("best_rotation_idx", "best_translation_idx", "n_significant_per_image"):
         assert np.array_equal(np.asarray(actual.diagnostics[key]), np.asarray(expected.diagnostics[key]))
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
@@ -250,7 +252,8 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
     assert actual.diagnostics["supported_image_rows"] == 3 * len(rotations)
     for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
-    assert_matches(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"])
+    truth = _float64_diagnostics(stream, np.arange(3), [None] * 3)["rotation_mass"]
+    _assert_matches_or_more_accurate(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"], truth)
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
 
 
@@ -368,7 +371,8 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
     expected_mass = np.zeros(24, np.float32)
     for p in parts:
         np.add.at(expected_mass, p.diagnostics["global_rows"], np.asarray(p.diagnostics["rotation_mass"]))
-    assert_matches(actual.diagnostics["rotation_mass"], expected_mass)
+    truth = _float64_diagnostics(stream, np.arange(3), PRUNED)["rotation_mass"]
+    _assert_matches_or_more_accurate(actual.diagnostics["rotation_mass"], expected_mass, truth)
     assert np.all(actual.diagnostics["rotation_mass"][16:] == 0)
     for key in ("offset_second_sum_px2",):
         assert_matches(np.float32(actual.diagnostics[key]), np.float32(sum(p.diagnostics[key] for p in parts)))
@@ -516,17 +520,13 @@ def _float64_tile_statistics(stream, image_indices, significant):
     with jax.enable_x64(True), jax.default_matmul_precision("highest"):
         tile32, observation_power, layout = frs._load_tile(stream, image_indices, significant, collect_observation=True)
         tile, arrays = up(tile32), up(stream.arrays)
-        # The CUDA moment kernel is float32-only; the float64 truth runs the XLA moments.
-        wide = stream._replace(arrays=arrays, static=stream.static._replace(cuda_moments=False))
+        # The CUDA stream kernels are float32-only; the float64 truth runs the XLA formulation.
+        wide = stream._replace(arrays=arrays, static=stream.static._replace(cuda_kernels=False))
         n_images = len(image_indices)
         capacity = len(stream.block_starts) * stream.rotation_block_size
         q = stream.static.basis_size - 1
         T = len(stream.translations)
-        kept = frs._Kept(
-            jnp.full((capacity, n_images, T), -jnp.inf, jnp.float64),
-            jnp.zeros((q, capacity, n_images, T), jnp.float64),
-            jnp.zeros((capacity, n_images, q * (q + 1) // 2), jnp.float64),
-        )
+        kept = frs._empty_kept(capacity, n_images, T, q, jnp.float64)
         for start in stream.block_starts[: layout["n_blocks"]]:
             kept = frs._score_block(arrays, tile, kept, start, static=wide.static,
                                     block_size=stream.rotation_block_size)
@@ -541,13 +541,38 @@ def _float64_tile_statistics(stream, image_indices, significant):
         residual_num = np.zeros(shells.max() + 1)
         np.add.at(residual_num, shells, np.asarray(weights * carry.residual_power))
         lhs_tri, residual = frs._unpack_moments(carry.moments, stream.static)
+        rotation_mass = np.zeros(stream.rotation_parent.size)
+        rotation_mass[layout["rows"]] = np.asarray(carry.rotation_mass)[: layout["rows"].size]
+        pmax = np.exp(np.asarray(posterior.top_score - posterior.center) - np.asarray(posterior.centered_logZ))
         return {
             "lhs_tri": np.asarray(jnp.swapaxes(
                 _enforce_augmented_x0(lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
             "residual_gradient": np.asarray(residual),
             "residual_num": residual_num,
             "embeddings": np.asarray(carry.embedding),
+            "diagnostics": {"rotation_mass": rotation_mass, "max_posterior_per_image": pmax},
         }
+
+
+def _float64_diagnostics(stream, image_indices, significant):
+    return _float64_tile_statistics(stream, image_indices, significant)["diagnostics"]
+
+
+def _assert_matches_or_more_accurate(actual, host, truth):
+    """``actual`` matches the float32 ``host`` value (band 1e-6), or is no further than it from float64 ``truth``.
+
+    Posterior-weight diagnostics carry the float32 rounding of the pose scores (relative to their
+    magnitude) through ``exp``, so two float32 association orders can differ by a few 1e-6 while
+    both stay that close to float64. A different order passes only by being at least as accurate.
+    """
+
+    def band(a, b):
+        a, b = np.asarray(a, np.float64), np.asarray(b, np.float64)
+        return float(np.max(np.abs(a - b)) / max(np.max(np.abs(a)), np.max(np.abs(b))))
+
+    if band(actual, host) <= 1e-6:
+        return
+    assert band(actual, truth) <= band(host, truth), (band(actual, host), band(actual, truth), band(host, truth))
 
 
 def _relative_l2(actual, truth):
@@ -571,6 +596,7 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q):
             factor_once_score=factor_once, **host)
         for factor_once in (False, True)
     ]
+    truth.pop("diagnostics")
     for name, value in truth.items():
         error = _relative_l2(getattr(actual, name), value)
         previous_error = max(_relative_l2(getattr(p, name), value) for p in previous)

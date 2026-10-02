@@ -53,7 +53,12 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.ppca.triangular import tri_size
 from recovar.reconstruction import noise as noise_utils
 
-from relax.cuda.kernels import ppca_moment_scatter_f32
+from relax.cuda.kernels import (
+    ppca_latent_epilogue_f32,
+    ppca_moment_scatter_f32,
+    ppca_posterior_prep_f32,
+    ppca_window_project_f32,
+)
 from relax.helpers.adjoint import batch_adjoint_slice_volume_maybe_windowed
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
@@ -99,13 +104,16 @@ class _StreamStatic(NamedTuple):
     use_recon_window: bool
     basis_size: int
     metric_trace_only: bool  # backproject sum_p LHS_pp instead of every packed LHS channel
-    cuda_moments: bool  # backproject the moment images with relax's CUDA kernel (GPU streams)
+    # GPU streams run relax's fused CUDA stages (windowed projection, latent epilogue, posterior
+    # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
+    cuda_kernels: bool
 
 
 class _StreamArrays(NamedTuple):
     """Device operands fixed for one expectation (model, grids, priors)."""
 
     augmented: jax.Array  # (P, half_volume) complex64 [mu, W_1..W_q]
+    augmented_voxel_major: jax.Array | None  # (half_volume, P) for the CUDA projector; None off GPU
     rotations: jax.Array  # (R + 1, 3, 3) float32 fine rotation grid and a sentinel row
     rotation_log_prior: jax.Array  # (R + 1,) float32
     translation_log_prior: jax.Array  # (T,) float32
@@ -145,6 +153,11 @@ class _Kept(NamedTuple):
     score: jax.Array  # (capacity, B, T) pose log-scores without the image energy; -inf unsupported
     latent_mean: jax.Array  # (q, capacity, B, T) posterior latent means
     latent_covariance: jax.Array  # (capacity, B, tri(q)) packed upper (I + H_zz)^-1
+    # Per (row, image) over translations, written by the CUDA epilogue: maximum score, first
+    # maximizing translation and sum of exp(score - maximum). The XLA path leaves them unused.
+    part_max: jax.Array  # (capacity, B)
+    part_arg: jax.Array  # (capacity, B) int32
+    part_sum: jax.Array  # (capacity, B)
 
 
 class _MomentCarry(NamedTuple):
@@ -375,6 +388,8 @@ def _block_rows(tile, start, size: int):
 def _score_block(arrays, tile, kept, start, *, static, block_size):
     """Pass 1 for one rotation block, written into the kept tile results."""
     rows = _block_rows(tile, start, block_size)
+    if static.cuda_kernels:
+        return _score_block_cuda(arrays, tile, kept, start, rows, static)
     prior = full_row_pose_log_prior(
         tile.coarse_mask,
         arrays.rotation_parent[rows],
@@ -384,11 +399,51 @@ def _score_block(arrays, tile, kept, start, *, static, block_size):
     )
     proj = _project(arrays, arrays.rotations[rows], static)
     score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
-    return _Kept(
+    return kept._replace(
         score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
         latent_mean=jax.lax.dynamic_update_slice_in_dim(kept.latent_mean, mean, start, axis=1),
         latent_covariance=jax.lax.dynamic_update_slice_in_dim(kept.latent_covariance, covariance, start, axis=0),
     )
+
+
+def _window(arrays, static):
+    """Score-window pixels of the packed half image (every pixel without a window)."""
+    if arrays.score_indices is not None:
+        return arrays.score_indices
+    return jnp.arange(int(static.image_shape[0]) * (int(static.image_shape[1]) // 2 + 1), dtype=jnp.int32)
+
+
+def _score_block_cuda(arrays, tile, kept, start, rows, static):
+    """:func:`_latent_block` with the projections and its elementwise stages in relax's CUDA kernels.
+
+    The projector writes the planar ``[Re | Im]`` score operand and the pair products of the
+    Gram GEMM; the epilogue writes the scores, latent moments and the per-row normalization
+    partials into the kept buffers in place. The pose log-prior is evaluated per pose from the
+    same tables as :func:`full_row_pose_log_prior`.
+    """
+    P = static.basis_size
+    planar, products = ppca_window_project_f32(
+        arrays.augmented_voxel_major,
+        _window(arrays, static),
+        arrays.rotations[rows],
+        image_shape=static.image_shape,
+        volume_shape=static.volume_shape,
+        max_r=static.projection_max_r,
+        with_products=True,
+    )
+    R, F = planar.shape[1], planar.shape[2] // 2
+    B = tile.y_norm.shape[0]
+    T = tile.Y1.shape[1] // B
+    inner = jnp.dot(planar.reshape(P * R, 2 * F), tile.Y1, precision=_HIGHEST).reshape(P, R, B, T)
+    gram = jnp.dot(products.reshape(-1, F), tile.ctf2, precision=_HIGHEST).reshape(-1, R, B)
+    tables = (
+        arrays.rotation_parent,
+        arrays.rotation_log_prior,
+        arrays.translation_parent,
+        arrays.translation_log_prior,
+        tile.coarse_mask,
+    )
+    return _Kept(*ppca_latent_epilogue_f32(inner, gram, rows, tables, start, kept))
 
 
 @partial(jax.jit, static_argnames=("n_blocks", "block_size"))
@@ -415,6 +470,32 @@ def _normalize(score, rows, *, n_blocks, block_size):
     )
 
 
+@partial(jax.jit, static_argnames=("n_blocks", "block_size"))
+def _normalize_partials(kept, rows, *, n_blocks, block_size):
+    """:func:`_normalize` from the CUDA epilogue's per-(row, image) partials.
+
+    The partition is ``sum_r part_sum[r] exp(part_max[r] - center)``. Among the rows whose
+    maximum is the image maximum, the top pose is the smallest (block, translation, row) key,
+    the first maximum in :func:`_normalize`'s order.
+    """
+    n = n_blocks * block_size
+    part_max, part_arg, part_sum = kept.part_max[:n], kept.part_arg[:n], kept.part_sum[:n]
+    T = kept.score.shape[2]
+    center = jnp.max(part_max, axis=0)
+    centered_logZ = jnp.log(jnp.sum(part_sum * jnp.exp(part_max - center[None]), axis=0))
+    position = jnp.arange(n, dtype=jnp.int32)[:, None]
+    key = (position // block_size) * (T * block_size) + part_arg * block_size + position % block_size
+    first = jnp.min(jnp.where(part_max == center[None], key, jnp.iinfo(jnp.int32).max), axis=0)
+    block, rest = first // (T * block_size), first % (T * block_size)
+    return _Posterior(
+        center=center,
+        centered_logZ=centered_logZ,
+        top_score=center,
+        top_rotation=rows[block * block_size + rest % block_size],
+        top_translation=(rest // block_size).astype(jnp.int32),
+    )
+
+
 def _second_moment_sums(gamma, mean, covariance):
     """``sum_t gamma E[[1, z][1, z]^T]`` packed upper ``(tri(P), R, B)`` per rotation and image."""
     q = mean.shape[0]
@@ -432,46 +513,40 @@ def _second_moment_sums(gamma, mean, covariance):
 @partial(jax.jit, static_argnames=("static", "block_size", "moments"), donate_argnums=(0,))
 def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_size, moments):
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
-    score = jax.lax.dynamic_slice_in_dim(kept.score, start, block_size, axis=0)
-    mean = jax.lax.dynamic_slice_in_dim(kept.latent_mean, start, block_size, axis=1)
-    covariance = jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0)
-    centered_score = (score - posterior.center[None, :, None]) - posterior.centered_logZ[None, :, None]
-    gamma = jnp.exp(centered_score)  # (R, B, T)
-    R, B, T = gamma.shape
-    latent_trace = sum(covariance[..., k] for k, (i, j) in enumerate(zip(*np.triu_indices(mean.shape[0]))) if i == j)
-    carry = carry._replace(
-        embedding=carry.embedding + jnp.einsum("rbt,qrbt->bq", gamma, mean, precision=_HIGHEST),
-        rotation_mass=jax.lax.dynamic_update_slice_in_dim(carry.rotation_mass, jnp.sum(gamma, axis=(1, 2)), start, 0),
-        latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(gamma * latent_trace[..., None]),
-        pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(gamma > 0, gamma * centered_score, 0)),
-        offset_second_sum=carry.offset_second_sum + jnp.sum(gamma * arrays.shift_squared),
-        n_significant=carry.n_significant + jnp.sum(gamma > 1e-3, axis=(0, 2)).astype(jnp.int32),
-    )
+    if static.cuda_kernels:
+        weights, sums, carry = _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size)
+    else:
+        weights, sums, carry = _posterior_block(carry, arrays, kept, posterior, start, block_size)
     if not moments:
         return carry
-    P = mean.shape[0] + 1
+    P = static.basis_size
+    R = block_size
     F = tile.ctf2_recon.shape[1]
-    rotations = arrays.rotations[_block_rows(tile, start, block_size)]
-    weights = jnp.concatenate([gamma[None], gamma[None] * mean], axis=0).reshape(P * R, B * T)
-    rhs_parts = jnp.dot(weights, tile.Y1_recon, precision=_HIGHEST).reshape(P, R, 2 * F)
-    sums = _second_moment_sums(gamma, mean, covariance)  # (K, R, B)
     K = sums.shape[0]
-    lhs_images = jnp.dot(sums.reshape(K * R, B), tile.ctf2_recon, precision=_HIGHEST).reshape(K, R, F)
+    rotations = arrays.rotations[_block_rows(tile, start, block_size)]
+    rhs_parts = jnp.dot(weights.reshape(P * R, -1), tile.Y1_recon, precision=_HIGHEST).reshape(P, R, 2 * F)
+    lhs_images = jnp.dot(sums.reshape(K * R, -1), tile.ctf2_recon, precision=_HIGHEST).reshape(K, R, F)
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight. The RHS images enter the
     # residual only: neither optimizer reads an RHS volume, so only the LHS
     # metric and the residual gradient are backprojected.
     indices = arrays.score_indices
-    window = indices
-    if window is None:
-        n_half = int(static.image_shape[0]) * (int(static.image_shape[1]) // 2 + 1)
-        window = jnp.arange(n_half, dtype=jnp.int32)
-    if static.cuda_moments:
+    window = _window(arrays, static)
+    if static.cuda_kernels:
+        projections, _ = ppca_window_project_f32(
+            arrays.augmented_voxel_major,
+            window,
+            rotations,
+            image_shape=static.image_shape,
+            volume_shape=static.volume_shape,
+            max_r=static.projection_max_r,
+            with_products=False,
+        )
         block, correction = ppca_moment_scatter_f32(
             lhs_images,
             rhs_parts,
-            _project_half(arrays, rotations, static),
+            projections,
             window,
             rotations,
             image_shape=static.image_shape,
@@ -496,6 +571,59 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
         residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
     moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
     return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
+
+
+def _posterior_block(carry, arrays, kept, posterior, start, block_size):
+    """Posterior weights ``(P, R, B, T)``, translation moment sums ``(tri(P), R, B)`` and diagnostics."""
+    score = jax.lax.dynamic_slice_in_dim(kept.score, start, block_size, axis=0)
+    mean = jax.lax.dynamic_slice_in_dim(kept.latent_mean, start, block_size, axis=1)
+    covariance = jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0)
+    centered_score = (score - posterior.center[None, :, None]) - posterior.centered_logZ[None, :, None]
+    gamma = jnp.exp(centered_score)  # (R, B, T)
+    diagonal = [k for k, (i, j) in enumerate(zip(*np.triu_indices(mean.shape[0]))) if i == j]
+    latent_trace = sum((covariance[..., k] for k in diagonal), jnp.zeros(covariance.shape[:2], covariance.dtype))
+    carry = carry._replace(
+        embedding=carry.embedding + jnp.einsum("rbt,qrbt->bq", gamma, mean, precision=_HIGHEST),
+        rotation_mass=jax.lax.dynamic_update_slice_in_dim(carry.rotation_mass, jnp.sum(gamma, axis=(1, 2)), start, 0),
+        latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(gamma * latent_trace[..., None]),
+        pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(gamma > 0, gamma * centered_score, 0)),
+        offset_second_sum=carry.offset_second_sum + jnp.sum(gamma * arrays.shift_squared),
+        n_significant=carry.n_significant + jnp.sum(gamma > 1e-3, axis=(0, 2)).astype(jnp.int32),
+    )
+    weights = jnp.concatenate([gamma[None], gamma[None] * mean], axis=0)
+    return weights, _second_moment_sums(gamma, mean, covariance), carry
+
+
+def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size):
+    """:func:`_posterior_block` with the per-pose stage in relax's CUDA kernel.
+
+    The kernel sums over translations per (rotation, image); the remaining reductions over
+    rotations and images are small. ``sums`` entry ``(0, 0)`` is the posterior mass and entries
+    ``(0, j)`` the latent-mean sums, so the embedding, rotation mass and latent trace come from them.
+    """
+    weights, sums, partial, count = ppca_posterior_prep_f32(
+        kept.score,
+        kept.latent_mean,
+        kept.latent_covariance,
+        posterior.center,
+        posterior.centered_logZ,
+        arrays.shift_squared,
+        start,
+        block_size=block_size,
+    )
+    q = static.basis_size - 1
+    covariance = jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0)
+    latent_trace = sum(covariance[..., k] for k, (i, j) in enumerate(zip(*np.triu_indices(q))) if i == j)
+    mass = sums[0]  # (R, B)
+    carry = carry._replace(
+        embedding=carry.embedding + jnp.sum(sums[1 : q + 1], axis=1).T,
+        rotation_mass=jax.lax.dynamic_update_slice_in_dim(carry.rotation_mass, jnp.sum(mass, axis=1), start, 0),
+        latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(mass * latent_trace),
+        pose_entropy_sum=carry.pose_entropy_sum + jnp.sum(partial[0]),
+        offset_second_sum=carry.offset_second_sum + jnp.sum(partial[1]),
+        n_significant=carry.n_significant + jnp.sum(count, axis=0),
+    )
+    return weights, sums, carry
 
 
 def _moment_groups(static):
@@ -662,8 +790,10 @@ def _prepare_full_row_stream(
     # The sentinel row (identity rotation, zero prior) has the all-unsupported
     # coarse parent R_coarse: it pads the last block of every tile.
     sentinel_rotation = np.eye(3, dtype=np.float32)[None]
+    cuda_kernels = device.platform == "gpu"
     arrays = _StreamArrays(
         augmented=resolved.augmented_half_volumes,
+        augmented_voxel_major=jnp.asarray(resolved.augmented_half_volumes).T.copy() if cuda_kernels else None,
         rotations=jnp.asarray(np.concatenate([rotations, sentinel_rotation])),
         rotation_log_prior=jnp.asarray(np.append(np.asarray(rotation_log_prior, dtype=np.float32), np.float32(0))),
         translation_log_prior=jnp.asarray(np.asarray(translation_log_prior, dtype=np.float32)),
@@ -684,10 +814,10 @@ def _prepare_full_row_stream(
         use_recon_window=bool(resolved.use_window),
         basis_size=int(resolved.q) + 1,
         metric_trace_only=bool(metric_trace_only),
-        cuda_moments=device.platform == "gpu",
+        cuda_kernels=cuda_kernels,
     )
-    if static.cuda_moments and decide_order(static.disc_type) != 1:
-        raise ValueError("The CUDA moment backprojection supports linear interpolation only")
+    if static.cuda_kernels and (decide_order(static.disc_type) != 1 or static.relion_texture_interp):
+        raise ValueError("The CUDA stream kernels support linear interpolation without RELION texture lookup only")
     return FullRowStream(
         dataset=experiment_dataset,
         arrays=arrays,
@@ -772,17 +902,29 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, kept: _
     q = stream.static.basis_size - 1
     capacity = len(stream.block_starts) * stream.rotation_block_size
     if kept is None or kept.score.shape != (capacity, n_images, T):
-        kept = _Kept(
-            score=jnp.full((capacity, n_images, T), -jnp.inf, jnp.float32),
-            latent_mean=jnp.zeros((q, capacity, n_images, T), jnp.float32),
-            latent_covariance=jnp.zeros((capacity, n_images, tri_size(q)), jnp.float32),
-        )
+        kept = _empty_kept(capacity, n_images, T, q, jnp.float32)
     for start in stream.block_starts[:n_blocks]:
         kept = _score_block(
             stream.arrays, tile, kept, start, static=stream.static, block_size=stream.rotation_block_size
         )
-    posterior = _normalize(kept.score, tile.rows, n_blocks=n_blocks, block_size=stream.rotation_block_size)
-    return kept, posterior
+    return kept, _tile_posterior(kept, tile.rows, n_blocks, stream.rotation_block_size, stream.static)
+
+
+def _empty_kept(capacity: int, n_images: int, n_translations: int, q: int, dtype) -> _Kept:
+    return _Kept(
+        score=jnp.full((capacity, n_images, n_translations), -jnp.inf, dtype),
+        latent_mean=jnp.zeros((q, capacity, n_images, n_translations), dtype),
+        latent_covariance=jnp.zeros((capacity, n_images, tri_size(q)), dtype),
+        part_max=jnp.full((capacity, n_images), -jnp.inf, dtype),
+        part_arg=jnp.zeros((capacity, n_images), jnp.int32),
+        part_sum=jnp.zeros((capacity, n_images), dtype),
+    )
+
+
+def _tile_posterior(kept: _Kept, rows, n_blocks: int, block_size: int, static: _StreamStatic) -> _Posterior:
+    if static.cuda_kernels:
+        return _normalize_partials(kept, rows, n_blocks=n_blocks, block_size=block_size)
+    return _normalize(kept.score, rows, n_blocks=n_blocks, block_size=block_size)
 
 
 def _check_finite_posterior(posterior: _Posterior):

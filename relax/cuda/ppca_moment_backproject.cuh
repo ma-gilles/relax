@@ -137,7 +137,7 @@ __device__ __forceinline__ int packed_index(int i, int j, int P) {  // np.triu_i
 }
 
 // grid: (ceil(F / (32 kWarps)), R). lhs (K, R, F) packed upper LHS images; rhs (P, R, 2F) [Re | Im] RHS
-// images; proj (P, R, n_half) projections on the whole half image (pix_idx windows them). Per pixel the
+// images; proj (P, R, 2F) [Re | Im] projections on the same window. Per pixel the
 // residual R_p - sum_q L_pq A_q and the noise-power correction
 // sum_pq L_pq Re(conj A_p A_q) - 2 sum_p Re(R_p conj A_p) are formed in registers; the correction is
 // summed over rotations into correction (F,), and the metric channels (the K packed LHS images, or their
@@ -145,7 +145,7 @@ __device__ __forceinline__ int packed_index(int i, int j, int P) {  // np.triu_i
 // are zero on entry.
 __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     Geometry g, const float* __restrict__ rot, const int* __restrict__ pix_idx, const float* __restrict__ lhs,
-    const float* __restrict__ rhs, const float2* __restrict__ proj, int P, int n_half, int metric_trace,
+    const float* __restrict__ rhs, const float* __restrict__ proj, int P, int metric_trace,
     float* __restrict__ out, float* __restrict__ correction) {
     extern __shared__ float s_value[];  // [kWarps][32][channels]
     __shared__ int s_offset[kWarps][32][kMaxTargets];
@@ -170,15 +170,16 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
         const long at = (long)r * F + f;
         const long lhs_stride = (long)g.n_rot * F;
         const float* L = lhs + at;
-        const int pixel = pix_idx[f];
         float trace = 0.f, power = 0.f, cross = 0.f;
         for (int i = 0; i < P; i++) {
-            const float2 Ai = proj[((long)i * g.n_rot + r) * n_half + pixel];
+            const long Arow_i = ((long)i * g.n_rot + r) * 2 * F;
+            const float2 Ai = make_float2(proj[Arow_i + f], proj[Arow_i + F + f]);
             const float Rre = rhs[((long)i * g.n_rot + r) * 2 * F + f];
             const float Rim = rhs[((long)i * g.n_rot + r) * 2 * F + F + f];
             float pre = 0.f, pim = 0.f;
             for (int j = 0; j < P; j++) {
-                const float2 Aj = proj[((long)j * g.n_rot + r) * n_half + pixel];
+                const long Arow_j = ((long)j * g.n_rot + r) * 2 * F;
+                const float2 Aj = make_float2(proj[Arow_j + f], proj[Arow_j + F + f]);
                 const float Lij = L[packed_index(min(i, j), max(i, j), P) * lhs_stride];
                 pre += Lij * Aj.x;
                 pim += Lij * Aj.y;
@@ -228,11 +229,11 @@ ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_
                                     ffi::Result<ffi::AnyBuffer> out, ffi::Result<ffi::AnyBuffer> correction) {
     namespace m = ppca_moment_bp;
     if (lhs.element_type() != ffi::DataType::F32 || rhs.element_type() != ffi::DataType::F32 ||
-        proj.element_type() != ffi::DataType::C64 || pixel_indices.element_type() != ffi::DataType::S32 ||
+        proj.element_type() != ffi::DataType::F32 || pixel_indices.element_type() != ffi::DataType::S32 ||
         rot.element_type() != ffi::DataType::F32 || out->element_type() != ffi::DataType::F32 ||
         correction->element_type() != ffi::DataType::F32)
         return ffi::Error::InvalidArgument(
-            "PpcaMomentScatterF32: expected F32 lhs/rhs, C64 projections, S32 indices, F32 rotations and outputs");
+            "PpcaMomentScatterF32: expected F32 lhs/rhs/projections, S32 indices, F32 rotations and outputs");
     const auto ld = lhs.dimensions(), rd = rhs.dimensions(), pd = proj.dimensions();
     const auto id = pixel_indices.dimensions(), qd = rot.dimensions(), od = out->dimensions();
     const auto cd = correction->dimensions();
@@ -241,9 +242,9 @@ ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_
         return ffi::Error::InvalidArgument("PpcaMomentScatterF32: operand rank mismatch");
     const int64_t P = rd[0], R = qd[0], F = id[0];
     if (ld[0] != P * (P + 1) / 2 || ld[1] != R || ld[2] != F || rd[1] != R || rd[2] != 2 * F || pd[0] != P ||
-        pd[1] != R || qd[1] != 6 || od[2] != 32 || cd[0] != F)
+        pd[1] != R || pd[2] != 2 * F || qd[1] != 6 || od[2] != 32 || cd[0] != F)
         return ffi::Error::InvalidArgument(
-            "PpcaMomentScatterF32: expected lhs (tri(P),R,F), rhs (P,R,2F), proj (P,R,n_half), indices (F,), "
+            "PpcaMomentScatterF32: expected lhs (tri(P),R,F), rhs (P,R,2F), proj (P,R,2F), indices (F,), "
             "rotations (R,6), out (G,V,32), correction (F,)");
     const int64_t channels = (metric_trace ? 1 : P * (P + 1) / 2) + 2 * P;
     const int64_t V = N0 * N1 * (N2 / 2 + 1);
@@ -276,7 +277,7 @@ ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_
         m::moment_scatter_kernel<<<grid, 32 * m::kWarps, smem, stream>>>(
             g, static_cast<const float*>(rot.untyped_data()), static_cast<const int*>(pixel_indices.untyped_data()),
             static_cast<const float*>(lhs.untyped_data()), static_cast<const float*>(rhs.untyped_data()),
-            static_cast<const float2*>(proj.untyped_data()), (int)P, (int)pd[2], (int)metric_trace,
+            static_cast<const float*>(proj.untyped_data()), (int)P, (int)metric_trace,
             static_cast<float*>(out->untyped_data()), static_cast<float*>(correction->untyped_data()));
         err = cudaGetLastError();
     }
@@ -297,7 +298,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaMomentScatterF32, PpcaMomentScatterF32Impl,
                                   .Attr<int64_t>("metric_trace")
                                   .Arg<ffi::AnyBuffer>()   /* lhs (tri(P), R, F)     */
                                   .Arg<ffi::AnyBuffer>()   /* rhs (P, R, 2F)         */
-                                  .Arg<ffi::AnyBuffer>()   /* proj (P, R, n_half)    */
+                                  .Arg<ffi::AnyBuffer>()   /* proj (P, R, 2F)        */
                                   .Arg<ffi::AnyBuffer>()   /* pixel indices (F,)     */
                                   .Arg<ffi::AnyBuffer>()   /* rotations (R, 6)       */
                                   .Ret<ffi::AnyBuffer>()   /* moments (G, V, 32)     */

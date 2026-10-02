@@ -10073,3 +10073,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 // PPCA M-step moment backprojection (voxel-major accumulator, warp-wide channel atomics).
 #include "ppca_moment_backproject.cuh"
+
+// Fused elementwise stages of the streamed PPCA engine (windowed projection, latent epilogue,
+// posterior weights and moment sums).
+#include "ppca_stream.cuh"

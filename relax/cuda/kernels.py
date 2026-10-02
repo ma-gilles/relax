@@ -5168,6 +5168,9 @@ _TARGET_RELION_TRANSLATE_SUM_FLAT_ROWS_F32 = (
 
 _TARGET_DUAL_WEIGHTED_SUMS_F32 = "cuda_dual_weighted_sums_f32"
 _TARGET_PPCA_MOMENT_SCATTER_F32 = "relax_ppca_moment_scatter_f32"
+_TARGET_PPCA_WINDOW_PROJECT_F32 = "relax_ppca_window_project_f32"
+_TARGET_PPCA_LATENT_EPILOGUE_F32 = "relax_ppca_latent_epilogue_f32"
+_TARGET_PPCA_POSTERIOR_PREP_F32 = "relax_ppca_posterior_prep_f32"
 
 
 _TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32 = "cuda_dual_weighted_sums_pairs_f32"
@@ -5309,8 +5312,8 @@ def ppca_moment_scatter_f32(
 
     ``lhs_images`` ``(tri(P), R, F)`` packed upper LHS images and ``rhs_parts``
     ``(P, R, 2F)`` RHS images (real parts, then imaginary parts) on the window
-    ``pixel_indices`` of the half image; ``projections`` ``(P, R, n_half)`` on the whole
-    half image; rotations ``(R, 3, 3)``. Returns ``(groups, V, 32)`` half volumes holding the
+    ``pixel_indices`` of the half image; ``projections`` ``(P, R, 2F)`` on the same window in the
+    same planar layout (:func:`ppca_window_project_f32`); rotations ``(R, 3, 3)``. Returns ``(groups, V, 32)`` half volumes holding the
     metric channels (the packed LHS, or its trace with ``metric_trace``) and the real and
     imaginary parts of the residual ``R_p - sum_q L_pq A_q`` (channel ``c`` is lane ``c % 32``
     of group ``c // 32``), and the noise-power correction ``(F,)``
@@ -5322,8 +5325,8 @@ def ppca_moment_scatter_f32(
 
     _ensure_ffi()
     lhs_images, rhs_parts, projections = (jnp.asarray(x) for x in (lhs_images, rhs_parts, projections))
-    if lhs_images.dtype != jnp.float32 or rhs_parts.dtype != jnp.float32 or projections.dtype != jnp.complex64:
-        raise ValueError("ppca_moment_scatter_f32 expects float32 LHS/RHS images and complex64 projections")
+    if any(x.dtype != jnp.float32 for x in (lhs_images, rhs_parts, projections)):
+        raise ValueError("ppca_moment_scatter_f32 expects float32 LHS/RHS images and planar projections")
     kw, _, _ = cuda_backproject.ffi_kwargs(image_shape, volume_shape, 1, True, True, max_r, None)
     if int(kw["upsampling"]) != 1:
         raise ValueError("ppca_moment_scatter_f32 supports unit upsampling only")
@@ -5352,6 +5355,125 @@ def ppca_moment_scatter_f32(
     )
 
 
+def ppca_window_project_f32(
+    volume_voxel_major: jax.Array,
+    pixel_indices: jax.Array,
+    rotation_matrices: jax.Array,
+    *,
+    image_shape,
+    volume_shape,
+    max_r,
+    with_products: bool,
+) -> tuple[jax.Array, jax.Array]:
+    """Windowed augmented projections of one rotation block, planar, with their packed pair products.
+
+    ``volume_voxel_major`` ``(V, P)`` complex64 holds the ``P`` half volumes voxel-major;
+    ``pixel_indices`` ``(F,)`` window the half image; rotations ``(R, 3, 3)``. Returns
+    ``(P, R, 2F)`` float32 with the real parts of each component's windowed projection, then its
+    imaginary parts, and, with ``with_products``, ``(tri(P), R, F)`` ``Re(conj(A_i) A_j)`` for the
+    packed upper pairs (``np.triu_indices`` order), else an empty ``(0,)`` array. Each projection is
+    recovar's linear-interpolation ``batch_slice_volume`` (half volume, half image, unit
+    upsampling) at the windowed pixels, up to float32 association.
+    """
+
+    _ensure_ffi()
+    volume_voxel_major = jnp.asarray(volume_voxel_major)
+    if volume_voxel_major.dtype != jnp.complex64:
+        raise ValueError("ppca_window_project_f32 expects complex64 volumes")
+    kw, _, _ = cuda_backproject.ffi_kwargs(image_shape, volume_shape, 1, True, True, max_r, None)
+    if int(kw["upsampling"]) != 1:
+        raise ValueError("ppca_window_project_f32 supports unit upsampling only")
+    rot6 = cuda_backproject.rot_to_compact(jnp.asarray(rotation_matrices), jnp.float32)
+    pixel_indices = jnp.asarray(pixel_indices, jnp.int32).reshape(-1)
+    P, R, F = volume_voxel_major.shape[1], rot6.shape[0], pixel_indices.shape[0]
+    out_types = (
+        jax.ShapeDtypeStruct((P, R, 2 * F), jnp.float32),
+        jax.ShapeDtypeStruct((P * (P + 1) // 2, R, F) if with_products else (0,), jnp.float32),
+    )
+    return jax.ffi.ffi_call(_TARGET_PPCA_WINDOW_PROJECT_F32, out_types, vmap_method="sequential")(
+        volume_voxel_major,
+        rot6,
+        pixel_indices,
+        image_h=kw["image_h"],
+        image_w=kw["image_w"],
+        full_image_w=kw["full_image_w"],
+        N0=kw["N0"],
+        N1=kw["N1"],
+        N2=kw["N2"],
+        max_r2_x4=kw["max_r2_x4"],
+        with_products=np.int64(int(with_products)),
+    )
+
+
+def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
+    """Pass-1 pose scores, latent means and covariances of one rotation block, in place in ``kept``.
+
+    ``inner`` ``(P, R, B, T)`` holds ``Re<A_p, Y_bt>`` and ``gram`` ``(tri(P), R, B)`` the
+    CTF/noise-weighted ``Re(conj(A_i) A_j)``; ``rows`` ``(R,)`` the block's fine rows and
+    ``prior_tables`` ``(rotation_parent, rotation_log_prior, translation_parent,
+    translation_log_prior, coarse_mask)`` the pose log-prior of
+    :func:`relax.ppca_refinement.full_row_stream.full_row_pose_log_prior`. ``kept`` is
+    ``(score, mean, covariance, part_max, part_arg, part_sum)`` of shapes ``(cap, B, T)``,
+    ``(q, cap, B, T)``, ``(cap, B, tri(q))`` and ``(cap, B)``; rows ``start .. start + R`` are
+    overwritten (the buffers are aliased, so a donated ``kept`` is updated in place) with the
+    formulation of :func:`relax.ppca_refinement.full_row_stream._latent_block` and each
+    (rotation, image)'s maximum score, first maximizing translation and
+    ``sum_t exp(score - maximum)``. Latent rank at most 16.
+    """
+
+    _ensure_ffi()
+    kept = tuple(kept)
+    out_types = tuple(jax.ShapeDtypeStruct(x.shape, x.dtype) for x in kept)
+    first = 9
+    return jax.ffi.ffi_call(
+        _TARGET_PPCA_LATENT_EPILOGUE_F32,
+        out_types,
+        input_output_aliases={first + i: i for i in range(len(kept))},
+        vmap_method="sequential",
+    )(
+        inner,
+        gram,
+        jnp.asarray(rows, jnp.int32),
+        *prior_tables,
+        jnp.reshape(jnp.asarray(start, jnp.int32), (1,)),
+        *kept,
+    )
+
+
+def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, centered_logZ, shift_squared, start,
+                            *, block_size: int):
+    """Pass-2 posterior weights and moment sums of the kept rows ``start .. start + block_size``.
+
+    With ``gamma = exp((score - center) - centered_logZ)`` per pose, returns the weights
+    ``(P, R, B, T)`` ``[gamma, gamma E z_1, ...]``, the packed upper translation sums
+    ``(tri(P), R, B)`` of ``gamma E[a_i a_j]`` for ``a = [1, z]``
+    (:func:`relax.ppca_refinement.full_row_stream._second_moment_sums`), the partial diagnostics
+    ``(2, R, B)`` (``-sum_t gamma log-gamma`` over ``gamma > 0`` and ``sum_t gamma |shift|^2``) and
+    the count ``(R, B)`` of poses with ``gamma > 1e-3``.
+    """
+
+    _ensure_ffi()
+    cap, B, T = kept_score.shape
+    q = kept_mean.shape[0]
+    P, R = q + 1, int(block_size)
+    out_types = (
+        jax.ShapeDtypeStruct((P, R, B, T), jnp.float32),
+        jax.ShapeDtypeStruct((P * (P + 1) // 2, R, B), jnp.float32),
+        jax.ShapeDtypeStruct((2, R, B), jnp.float32),
+        jax.ShapeDtypeStruct((R, B), jnp.int32),
+    )
+    return jax.ffi.ffi_call(_TARGET_PPCA_POSTERIOR_PREP_F32, out_types, vmap_method="sequential")(
+        kept_score,
+        kept_mean,
+        kept_covariance,
+        center,
+        centered_logZ,
+        shift_squared,
+        jnp.reshape(jnp.asarray(start, jnp.int32), (1,)),
+        block_size=np.int64(R),
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────
 # EM CUDA library (relax split seam S3/S4): librelax_cuda.so, built from recovar/em/cuda
 # ──────────────────────────────────────────────────────────────────────
@@ -5368,6 +5490,7 @@ _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "sparse_pass2_posterior.cuh",
     "relion_translate_sum.cuh",
     "ppca_moment_backproject.cuh",
+    "ppca_stream.cuh",
     "relion_capacity_texture.cuh",
     "relion_coarse_diff2_projector_body.inc",
     str(include_dir() / "recovar_cuda_common.cuh"),
@@ -5562,6 +5685,9 @@ _FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     ),
     (_TARGET_DUAL_WEIGHTED_SUMS_F32, "DualWeightedSumsF32"),
     (_TARGET_PPCA_MOMENT_SCATTER_F32, "PpcaMomentScatterF32"),
+    (_TARGET_PPCA_WINDOW_PROJECT_F32, "PpcaWindowProjectF32"),
+    (_TARGET_PPCA_LATENT_EPILOGUE_F32, "PpcaLatentEpilogueF32"),
+    (_TARGET_PPCA_POSTERIOR_PREP_F32, "PpcaPosteriorPrepF32"),
     (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32, "DualWeightedSumsPairsF32"),
     (_TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32, "DualWeightedSumsPairsRowsF32"),
 )
