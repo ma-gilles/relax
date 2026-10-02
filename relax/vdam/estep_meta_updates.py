@@ -115,15 +115,15 @@ def update_noise_from_estep_meta(
             continue
         if sumw_rows[g] <= 0.0:
             raise ValueError(f"optics group {g + 1} has noise sums but no weight")
-        sigma2_relion_units = np.asarray(
-            noise_relion.normalize_wsum_to_sigma2_noise(
-                wsum_rows[g], power_rows[g], float(sumw_rows[g]), (int(state.ori_size), int(state.ori_size))
-            ),
-            dtype=np.float64,
-        ) / float(int(state.ori_size) ** 4)
-        if not np.all(np.isfinite(sigma2_relion_units)) or np.any(sigma2_relion_units <= 0.0):
+        shape = (int(state.ori_size), int(state.ori_size))
+        wsum_g = noise_relion.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)
+        # RELION blends, then applies its floors (ml_optimiser.cpp:5255-5282): a shell without data decays by mu.
+        new_sigma2[g] = noise_relion.apply_relion_sigma2_floors(
+            new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4),
+            ctf_premultiplied="premultiplied_average_ctf2" in meta,
+        )
+        if not np.all(np.isfinite(new_sigma2[g])) or np.any(new_sigma2[g] <= 0.0):
             raise ValueError("updated sigma2_noise must be positive and finite")
-        new_sigma2[g] = new_sigma2[g] * my_mu + (1.0 - my_mu) * sigma2_relion_units
     new_state.sigma2_noise = new_sigma2
     vdam_noise._maybe_dump_noise_update_boundary(
         state,

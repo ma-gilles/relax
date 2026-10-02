@@ -8,7 +8,25 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, image_shape, *, ctf_premultiplied=False):
+def apply_relion_sigma2_floors(sigma2, *, unit: float = 1.0, ctf_premultiplied: bool = False) -> np.ndarray:
+    """RELION's two thresholds on an updated noise spectrum (ml_optimiser.cpp:5272-5282).
+
+    The floor 1e-15 for CTF-premultiplied data, then for n > 0 a value below 1e-14 takes the
+    previous shell's (already updated) value. ``unit`` scales the thresholds to the spectrum's
+    units (``box**4`` for relax's native units, 1 for RELION's).
+    """
+    out = np.array(sigma2)  # a writable host copy in the caller's dtype
+    if ctf_premultiplied:
+        out = np.maximum(out, 1e-15 * unit)
+    for i in range(1, len(out)):
+        if out[i] < 1e-14 * unit:
+            out[i] = out[i - 1]
+    return out
+
+
+def normalize_wsum_to_sigma2_noise(
+    wsum_sigma2_noise, wsum_img_power, sumw, image_shape, *, ctf_premultiplied=False, apply_floors=True
+):
     """Convert posterior-weighted noise accumulators to per-shell noise variance.
 
     Implements RELION's M-step noise update from ``maximizationOtherParameters``
@@ -85,11 +103,9 @@ def normalize_wsum_to_sigma2_noise(wsum_sigma2_noise, wsum_img_power, sumw, imag
     # - Floor at 1e-15, only for CTF-premultiplied data ("Watch out for all-zero sigma2").
     # - For n > 0, a value below 1e-14 takes the previous shell's (already updated) value
     #   ("With unequal box sizes ... set sigma2_noise to the value in the previous pixel").
-    box4 = float(image_shape[0]) ** 4
-    sigma2_np = np.array(sigma2)  # a writable host copy: np.asarray of a device array is read-only
-    if ctf_premultiplied:
-        sigma2_np = np.maximum(sigma2_np, 1e-15 * box4)
-    for i in range(1, len(sigma2_np)):
-        if sigma2_np[i] < 1e-14 * box4:
-            sigma2_np[i] = sigma2_np[i - 1]
-    return jnp.asarray(sigma2_np)
+    # ``apply_floors=False`` leaves them to a caller that blends first (VDAM's running average).
+    if not apply_floors:
+        return sigma2
+    return jnp.asarray(
+        apply_relion_sigma2_floors(sigma2, unit=float(image_shape[0]) ** 4, ctf_premultiplied=ctf_premultiplied)
+    )

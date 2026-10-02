@@ -123,6 +123,29 @@ def test_noise_update_per_group_and_empty_group_keeps_its_spectrum():
     np.testing.assert_array_equal(updated.sigma2_noise[2], 2.0)
 
 
+def test_noise_floors_follow_the_running_average():
+    # RELION blends first, then copies the previous shell into values below 1e-14 (ml_optimiser.cpp:5255-5282):
+    # a shell without data (beyond the Nyquist of a group on another grid) decays by mu.
+    shells = 9
+    rng = np.random.default_rng(3)
+    wsum = np.abs(rng.standard_normal(shells)) * 1e6
+    power = np.abs(rng.standard_normal(shells)) * 1e6
+    wsum[6:] = 0.0
+    power[6:] = 0.0
+    state = _state(1)
+    state.sigma2_noise = np.full((1, shells), 1e-10)
+    updated = update_noise_from_estep_meta(
+        state, dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=10.0), do_grad=True, mu=0.9
+    )
+    np.testing.assert_allclose(updated.sigma2_noise[0, 6:], 0.9e-10, rtol=1e-15)
+    state.sigma2_noise = np.full((1, shells), 1e-14)
+    updated = update_noise_from_estep_meta(
+        state, dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=10.0), do_grad=True, mu=0.9
+    )
+    # 0.9e-14 is below 1e-14: those shells take shell 5's updated value.
+    np.testing.assert_allclose(updated.sigma2_noise[0, 6:], updated.sigma2_noise[0, 5], rtol=1e-15)
+
+
 class _Particles:
     def __init__(self, n):
         self.translation_offsets = np.zeros((n, 2))
