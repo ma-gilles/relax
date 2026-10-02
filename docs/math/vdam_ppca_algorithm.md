@@ -1048,10 +1048,10 @@ scientific contract; runnable code alone does not establish recovery.
   16-byte aligned. Posterior-weight diagnostics (rotation mass, top posterior)
   differ from the host-mask routine by a few 1e-6 because float32 scores carry
   rounding relative to their magnitude; the fused order is the closer of the two
-  to float64. The streamed controller reads each image tile on a worker thread
-  while the previous tile is dispatched, and the next update's first tile during
-  the current update (its selection depends only on the random state). On A100
-  the four GEMMs are now about 84% of the busy device time of a 10076 update.
+  to float64. On A100 the four GEMMs are now about 84% of the busy device time
+  of a 10076 update. Reading image tiles ahead on a worker thread (within an
+  update, and the next update's first tile) was measured and dropped: no
+  steady-state change in paired A100 updates.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it

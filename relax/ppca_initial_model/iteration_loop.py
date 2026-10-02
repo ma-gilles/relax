@@ -45,7 +45,6 @@ from relax.ppca_refinement.full_row_stream import (
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
     prepare_full_row_stream,
-    read_tile_batch,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -230,27 +229,19 @@ def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False
     return _expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only)
 
 
-def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False, first_batch=None):
+def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False):
     """:func:`expectation` of each id group (the pseudo-halves), one result per group.
 
     The streamed coarse-recompute path prepares the model once for all groups
     and pipelines their image tiles; every other path runs group by group.
-    ``first_batch`` is the streamed path's first tile, read ahead (:func:`_first_tile_ids`).
     """
     if not _streams_groups(config):
         return [expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only) for ids in groups]
-    return _expectation(
-        dataset, state, config, groups, iteration, embeddings_only=embeddings_only, first_batch=first_batch
-    )
-
-
-def _first_tile_ids(config, groups):
-    """Images of the streamed path's first tile for these id groups."""
-    return np.asarray(groups[0][: config.image_batch_size])
+    return _expectation(dataset, state, config, groups, iteration, embeddings_only=embeddings_only)
 
 
 @full_float32
-def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, first_batch=None):
+def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
     radius, hp = config.stage(iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = min(radius, dataset.grid_size // 2 - 1)
@@ -305,9 +296,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
             if embeddings_only:
                 parts = [full_row_tile_embeddings(stream, tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles]
             else:
-                parts = accumulate_full_row_tiles(
-                    stream, [(tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles], first_batch=first_batch
-                )
+                parts = accumulate_full_row_tiles(stream, [(tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles])
             results = []
             for group in range(len(ids)):
                 group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
@@ -584,10 +573,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         else None
     )
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
-    # The streamed path reads the next update's first image tile while this update runs: the
-    # selection depends only on the random state, and reading only on the image ids.
-    reader = ThreadPoolExecutor(max_workers=1) if _streams_groups(config) else None
-    read_ahead = None
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -598,20 +583,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
-        first_batch = None
-        if read_ahead is not None:
-            ids, future = read_ahead
-            if not np.array_equal(ids, _first_tile_ids(config, halves)):
-                raise RuntimeError("The tile read ahead differs from this update's selection")
-            first_batch, read_ahead = future.result(), None
-        if reader is not None and iteration < end:
-            following = np.random.default_rng()
-            following.bit_generator.state = rng.bit_generator.state
-            next_count = config.schedule(iteration + 1, dataset.n_images)[0]
-            _, next_halves = _select_halves(following, state.order, next_count, config.balanced_stochastic_halves)
-            ids = _first_tile_ids(config, next_halves)
-            read_ahead = (ids, reader.submit(read_tile_batch, dataset, ids, config.image_batch_size))
-        stats = expectation_groups(dataset, state, config, halves, iteration, first_batch=first_batch)
+        stats = expectation_groups(dataset, state, config, halves, iteration)
         if config.optimizer == "momentum_sgd":
             radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
             _, proposed_momentum, diagnostics = momentum_step(
@@ -761,8 +733,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
         if stop_file is not None and Path(stop_file).exists():
             break
-    if reader is not None:
-        reader.shutdown(wait=True, cancel_futures=True)
     if state.iteration == config.iterations and not config.skip_final_embeddings:
         ids = np.arange(dataset.n_images)
         final = expectation(dataset, state, config, ids, config.iterations, embeddings_only=True)
