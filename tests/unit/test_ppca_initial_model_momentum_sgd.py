@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from recovar.core import fourier_transform_utils as ftu
 from helpers.float_compare import assert_matches, assert_trees_match
+from recovar.core import fourier_transform_utils as ftu
 
 from relax.commands.ppca_initial_model import add_args
 from relax.ppca_initial_model import iteration_loop

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 HEAD = "ef4d73b5bffed1f70accdcc662a481f13056b82e"
 TOTAL_VISITS = 1_800_000
 BATCHES = (10, 300, 3000)
@@ -37,6 +36,7 @@ def main():
         return
 
     import jax
+
     from relax.commands.ppca_initial_model import load_training
     from relax.ppca_initial_model import iteration_loop
     from relax.ppca_initial_model.config import Config

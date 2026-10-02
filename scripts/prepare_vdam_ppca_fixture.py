@@ -12,7 +12,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 DEFAULT_MAPS = ("000_8c9c.mrc", "007_8c95.mrc", "015_8c8x.mrc")
 
 

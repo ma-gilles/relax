@@ -4,12 +4,10 @@ import dataclasses
 import hashlib
 import json
 import os
-from pathlib import Path
-import sys
 import time
+from pathlib import Path
 
 import numpy as np
-
 
 TOTAL_VISITS = 1_800_000
 BATCHES = (10, 300, 3000)
@@ -134,9 +132,10 @@ def main():
             assert counts.tolist() == [2, 2, 2, 2]
         print("visit milestones and batch counts passed")
         return
+    import jax.numpy as jnp
+
     from relax.commands.ppca_initial_model import load_training
     from relax.ppca_initial_model import checkpoint, iteration_loop
-    import jax.numpy as jnp
 
     source, fixture, root, source_meta, receipt = verify_context()
     mode = os.environ["PPCA_SWEEP_MODE"]
