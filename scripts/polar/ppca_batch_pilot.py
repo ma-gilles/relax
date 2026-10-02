@@ -58,10 +58,17 @@ def main():
         template_noise = np.asarray(saved["noise"])
         template_order = np.asarray(saved["order"])
     template = Config(**{**metadata["config"], "stages": tuple(tuple(s) for s in metadata["config"]["stages"])})
-    if (template.optimizer != "momentum_sgd" or template.q != 2 or template.seed != 11
-            or template.sgd_learning_rate != 1.2 or template.stages != ((1, 31, 3),)
-            or template.stochastic_batch_size != 300 or template.iterations != 6000
-            or not template.stochastic_all_iterations or not template.balanced_stochastic_halves):
+    if (
+        template.optimizer != "momentum_sgd"
+        or template.q != 2
+        or template.seed != 11
+        or template.sgd_learning_rate != 1.2
+        or template.stages != ((1, 31, 3),)
+        or template.stochastic_batch_size != 300
+        or template.iterations != 6000
+        or not template.stochastic_all_iterations
+        or not template.balanced_stochastic_halves
+    ):
         raise ValueError("Template is not the exact noise-1 HP3 SGD protocol")
     manifest = fixture / "training/manifest.json"
     data, fixture_meta, manifest_identity = load_training(manifest)
@@ -69,38 +76,61 @@ def main():
         raise ValueError("Wrong timing-only fixture")
     results = []
     for batch in BATCHES:
-        config = dataclasses.replace(template, iterations=planned_updates(batch),
-                                     stochastic_batch_size=batch, checkpoint_interval=1)
+        config = dataclasses.replace(
+            template, iterations=planned_updates(batch), stochastic_batch_size=batch, checkpoint_interval=1
+        )
         output = run_root / f"batch{batch}"
         identity = {**manifest_identity, "pilot": True, "batch": batch, "source_head": HEAD}
-        state = iteration_loop.run(data, config, output, identity,
-                                   fixture_meta["particle_diameter_ang"], stop_after=0)
+        state = iteration_loop.run(data, config, output, identity, fixture_meta["particle_diameter_ang"], stop_after=0)
         theta = np.asarray(state.theta)
         initial_rel_l2 = float(np.linalg.norm(theta - template_theta) / np.linalg.norm(template_theta))
-        if (initial_rel_l2 > 1e-5 or not np.array_equal(np.asarray(state.noise), template_noise)
-                or not np.array_equal(state.order, template_order)
-                or state.rng_state != metadata["rng_state"]):
+        if (
+            initial_rel_l2 > 1e-5
+            or not np.array_equal(np.asarray(state.noise), template_noise)
+            or not np.array_equal(state.order, template_order)
+            or state.rng_state != metadata["rng_state"]
+        ):
             raise ValueError(f"Unmatched timing CP0 for batch {batch}: {initial_rel_l2}")
-        result = iteration_loop.run(data, config, output, identity,
-                                    fixture_meta["particle_diameter_ang"],
-                                    resume=output / "checkpoint_0000.npz", stop_after=PILOT_UPDATES)
+        result = iteration_loop.run(
+            data,
+            config,
+            output,
+            identity,
+            fixture_meta["particle_diameter_ang"],
+            resume=output / "checkpoint_0000.npz",
+            stop_after=PILOT_UPDATES,
+        )
         if result.iteration != PILOT_UPDATES:
             raise ValueError("Pilot ended early")
         rows = [json.loads(line) for line in (output / "iterations.jsonl").read_text().splitlines()]
         if len(rows) != PILOT_UPDATES or any(r["half_counts"] != [batch // 2] * 2 for r in rows):
             raise ValueError("Pilot batch audit failed")
-        results.append({"batch": batch, "planned_updates": config.iterations,
-                        "particle_visits": batch * config.iterations,
-                        "cp0_theta_rel_l2": initial_rel_l2,
-                        "update_seconds": [r["elapsed_seconds"] for r in rows],
-                        "steady_median_seconds": float(np.median([r["elapsed_seconds"] for r in rows[2:]])),
-                        "posterior_pmax_last": float(np.mean([p["pmax_mean"] for p in rows[-1]["posterior"]])),
-                        "last_checkpoint_sha256": sha(output / f"checkpoint_{PILOT_UPDATES:04d}.npz")})
+        results.append(
+            {
+                "batch": batch,
+                "planned_updates": config.iterations,
+                "particle_visits": batch * config.iterations,
+                "cp0_theta_rel_l2": initial_rel_l2,
+                "update_seconds": [r["elapsed_seconds"] for r in rows],
+                "steady_median_seconds": float(np.median([r["elapsed_seconds"] for r in rows[2:]])),
+                "posterior_pmax_last": float(np.mean([p["pmax_mean"] for p in rows[-1]["posterior"]])),
+                "last_checkpoint_sha256": sha(output / f"checkpoint_{PILOT_UPDATES:04d}.npz"),
+            }
+        )
         print(json.dumps(results[-1]), flush=True)
-    (run_root / "pilot.json").write_text(json.dumps({"schema": "ppca_batch_pilot_v1",
-                                               "source_head": HEAD, "fixture_manifest_sha256": sha(manifest),
-                                               "template_cp0_sha256": sha(template_cp), "results": results},
-                                              indent=2) + "\n")
+    (run_root / "pilot.json").write_text(
+        json.dumps(
+            {
+                "schema": "ppca_batch_pilot_v1",
+                "source_head": HEAD,
+                "fixture_manifest_sha256": sha(manifest),
+                "template_cp0_sha256": sha(template_cp),
+                "results": results,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 if __name__ == "__main__":

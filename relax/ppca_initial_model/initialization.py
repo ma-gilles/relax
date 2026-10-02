@@ -128,7 +128,9 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
             lhs = lhs.at[k].add(l.real)
         offset += count
     reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
-    real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), dataset.volume_shape), np.float32)
+    real = np.asarray(
+        ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), dataset.volume_shape), np.float32
+    )
     diameter = diameter_ang / dataset.voxel_size
     mask = support_mask(n, diameter)
     fields = []

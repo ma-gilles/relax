@@ -27,16 +27,19 @@ def test_six_maps_preserve_order_and_counts(tmp_path):
     assert sum(counts) == 100000
 
 
-@pytest.mark.parametrize("counts,names", [
-    ([1], ["a.mrc", "b.mrc"]),
-    ([], []),
-    ([0], ["a.mrc"]),
-    ([-1], ["a.mrc"]),
-    ([1.5], ["a.mrc"]),
-    ([True], ["a.mrc"]),
-    ([np.bool_(True)], ["a.mrc"]),
-    ([1, 1], ["a.mrc", "a.mrc"]),
-])
+@pytest.mark.parametrize(
+    "counts,names",
+    [
+        ([1], ["a.mrc", "b.mrc"]),
+        ([], []),
+        ([0], ["a.mrc"]),
+        ([-1], ["a.mrc"]),
+        ([1.5], ["a.mrc"]),
+        ([True], ["a.mrc"]),
+        ([np.bool_(True)], ["a.mrc"]),
+        ([1, 1], ["a.mrc", "a.mrc"]),
+    ],
+)
 def test_invalid_states_rejected_without_creating_output(tmp_path, counts, names):
     (tmp_path / "a.mrc").touch()
     output = tmp_path / "output"
