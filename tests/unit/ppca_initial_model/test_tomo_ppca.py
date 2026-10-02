@@ -331,6 +331,7 @@ def test_identity_frame_tile_is_the_single_particle_tile():
         geometry=GeometryConfig(current_size=6, q=2, volume_domain="fourier_half"),
         schedule=ScheduleConfig(image_batch_size=3, rotation_block_size=2),
         scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
+        gemm_precision="fp32",
     )
     # _TinyData's identity CTF: give the tilt particles the same unit CTF.
     unit = _particles(
