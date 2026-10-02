@@ -334,7 +334,8 @@ LOC_BUDGETS = {
     # (1846 counted lines at integration, with the shared projector setup). The reviewed
     # uniform-prior metadata adds 36 lines to the upstream 1900-line ceiling.
     # Subtomogram InitialModel's E-step adapter tomo_estep.py (+134, 2026-10-01): a real raise, no headroom.
-    "estep": (2070, (
+    # +4: estep_meta_updates keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
+    "estep": (2074, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),
