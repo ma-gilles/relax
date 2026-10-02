@@ -5,10 +5,9 @@ import mrcfile
 import numpy as np
 import pandas as pd
 import pytest
-
+from helpers.float_compare import assert_matches
 from recovar.data_io import cryoem_dataset, load_utils, metadata_readers
 from recovar.data_io.starfile import StarFile, write_star
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 PIXEL = 1.6375
@@ -177,8 +176,8 @@ def test_cs_scaling_preserves_serialized_pixel_value(tmp_path):
 
 def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch):
     from relax.helpers.resolution import shell_index_to_resolution_angstrom
-    from relax.vdam import bootstrap_iref, dense_adapter, native_options, native_sampling
     from relax.relion import initial_model_io
+    from relax.vdam import bootstrap_iref, dense_adapter, native_options, native_sampling
 
     path = _star(tmp_path)
     sf = StarFile.load(path)
