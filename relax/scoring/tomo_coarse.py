@@ -347,6 +347,13 @@ def _add_image_diff2_in_slot_order(total, image_diff2):
     return total
 
 
+@partial(jax.jit, static_argnames=("capacity",))
+def _significant_cells(mask, *, capacity: int):
+    """Flat ids (row-major over ``mask`` ``[P, N]``) of its true cells, ascending, padded to ``capacity``."""
+
+    return jnp.nonzero(mask.reshape(-1), size=capacity, fill_value=-1)[0]
+
+
 def _coarse_batches(
     rotation_counts, *, n_slots: int, n_trans: int, n_pixels: int = 0, budget_bytes: int = _COARSE_BATCH_BYTES
 ):
@@ -704,9 +711,16 @@ def particle_coarse_supports(
             adaptive_fraction=adaptive_fraction,
             max_significants=max_significants,
         )
-        masks, particle_pmax = np.asarray(stats["mask"]), np.asarray(stats["pmax"], dtype=np.float64)
+        # The significant cells are compacted on the device; only their ids come back (the dense mask is
+        # K * R * T booleans per particle).
+        counts = np.asarray(jnp.sum(stats["mask"], axis=1, dtype=jnp.int32), dtype=np.int64)
+        flat = _significant_cells(stats["mask"], capacity=max(1, 1 << int(max(int(counts.sum()), 1) - 1).bit_length()))
+        flat = np.asarray(flat, dtype=np.int64)[: int(counts.sum())]
+        particle_pmax = np.asarray(stats["pmax"], dtype=np.float64)
+        cell_offsets = np.concatenate([[0], np.cumsum(counts)])
+        n_cells = int(stats["mask"].shape[1])
         for i, unit in enumerate(units_all):
-            all_cells = np.flatnonzero(masks[i])
+            all_cells = flat[cell_offsets[i] : cell_offsets[i + 1]] - i * n_cells
             cell_class = all_cells // (r_pad_all * n_coarse_trans)
             for class_index in range(n_classes):
                 cells = all_cells[cell_class == class_index] - class_index * r_pad_all * n_coarse_trans
