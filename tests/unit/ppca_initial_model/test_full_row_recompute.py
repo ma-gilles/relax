@@ -203,7 +203,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
 
 
 def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
-    """--ppca-gemm-precision defaults to auto, tf32 needs a streamed engine, older checkpoints load as fp32."""
+    """--ppca-gemm-precision defaults to auto, tf32 needs a streamed engine; precision is not checkpoint identity."""
     import dataclasses
     import json
 
@@ -238,12 +238,12 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
     meta["config"].pop("gemm_precision")
     saved["metadata"] = np.asarray(json.dumps(meta))
     np.savez(path, **saved)
-    assert checkpoint.load(path, config, {"fixture": "tiny"}).iteration == 0
-    # Resuming such a run under the new default changes its precision: the configuration must say so.
+    assert checkpoint.saved_gemm_precision(path) == "fp32"
+    for precision in ("fp32", "auto", "tf32"):  # a runtime setting: any value resumes
+        assert checkpoint.load(path, dataclasses.replace(config, gemm_precision=precision), {"fixture": "tiny"})
+    # Model-defining fields still have to match.
     with pytest.raises(ValueError, match="identity mismatch"):
-        checkpoint.load(path, dataclasses.replace(config, gemm_precision="auto"), {"fixture": "tiny"})
-    with pytest.raises(ValueError, match="identity mismatch"):
-        checkpoint.load(path, dataclasses.replace(config, gemm_precision="tf32"), {"fixture": "tiny"})
+        checkpoint.load(path, dataclasses.replace(config, rotation_block_size=4), {"fixture": "tiny"})
 
 
 def test_auto_gemm_precision_resolves_by_device():
@@ -259,3 +259,52 @@ def test_auto_gemm_precision_resolves_by_device():
     with pytest.raises(ValueError, match="gemm_precision"):
         resolve_gemm_precision("bf16", cpu)
     assert iteration_loop._gemm_precision_used(Config()) == "fp32"  # host-mask engines
+
+
+def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, caplog):
+    """An fp32 checkpoint resumes under auto; the warning and every update record name the change."""
+    import dataclasses
+    import json
+    import logging
+
+    from relax.ppca_initial_model import checkpoint
+
+    shape = (4, 4, 4)
+    n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
+    monkeypatch.setattr(iteration_loop, "support_mask", lambda *_args: jnp.ones(shape, jnp.float32))
+    monkeypatch.setattr(iteration_loop, "bandlimit_and_mask", lambda value, *_args: value)
+    monkeypatch.setattr(iteration_loop.sampling, "get_relion_hidden_rotation_grid", lambda *_a, **_k: np.zeros((1, 3)))
+
+    def groups(_dataset, _state, _config, halves, _iteration, **_kwargs):
+        return [
+            SimpleNamespace(
+                residual_gradient=jnp.zeros((n_freq, 3), jnp.complex64), metric_trace=jnp.ones(n_freq, jnp.float32),
+                lhs_tri=None, rhs=None, residual_num=jnp.ones(3, jnp.float32), residual_den=jnp.ones(3, jnp.float32),
+                original_image_ids=np.asarray(ids), n_images=len(ids), log_likelihood=0.0,
+                diagnostics={"offset_second_sum_px2": 2.0, "rotation_mass": np.array([float(len(ids))]),
+                             "latent_covariance_trace_mean": 1.0, "pose_entropy_mean": 0.0, "pmax_mean": 1.0},
+            )
+            for ids in halves
+        ]
+
+    monkeypatch.setattr(iteration_loop, "expectation_groups", groups)
+    monkeypatch.setattr(iteration_loop, "_curvature_trace", lambda stats, p: sum(s.metric_trace for s in stats))
+    dataset = SimpleNamespace(n_images=40, grid_size=4, volume_shape=shape, voxel_size=1.0)
+    fp32 = Config(iterations=3, stages=((1, 1, 0),), optimizer="momentum_sgd", oversampling=0,
+                  stream_coarse_recompute=True, stochastic_batch_size=8, stochastic_all_iterations=True,
+                  skip_final_embeddings=True, gemm_precision="fp32")
+    theta = jnp.zeros((n_freq, 3), jnp.complex64)
+    state = iteration_loop.State(theta, None, jnp.ones(3, jnp.float32), 1, np.arange(40),
+                                 np.random.default_rng(1).bit_generator.state, 2.0, 1, {"seed": 1},
+                                 sgd_momentum=jnp.zeros_like(theta))
+    identity = {"fixture": "tiny"}
+    checkpoint.save(tmp_path / "checkpoint_0001.npz", state, fp32, identity)
+    auto = dataclasses.replace(fp32, gemm_precision="auto")
+    with caplog.at_level(logging.WARNING, logger=iteration_loop.__name__):
+        iteration_loop.run(dataset, auto, tmp_path / "run", identity, diameter_ang=2.0,
+                           resume=tmp_path / "checkpoint_0001.npz")
+    assert "resumed fp32 checkpoint under auto (fp32)" in caplog.text  # CPU resolves auto to fp32
+    records = [json.loads(line) for line in (tmp_path / "run" / "iterations.jsonl").read_text().splitlines()]
+    assert [r["iteration"] for r in records] == [2, 3]
+    assert all(r["resumed_from_gemm_precision"] == "fp32" and r["gemm_precision"] == "fp32" for r in records)
+    assert checkpoint.saved_gemm_precision(tmp_path / "run" / "checkpoint_0003.npz") == "auto"

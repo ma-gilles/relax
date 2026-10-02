@@ -11,6 +11,7 @@ support, run through the device-resident engine
 import dataclasses
 import functools
 import json
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -49,6 +50,7 @@ from relax.ppca_refinement.full_row_stream import (
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
+logger = logging.getLogger(__name__)
 
 def _json(value):
     if isinstance(value, (np.ndarray, jnp.ndarray)):
@@ -550,8 +552,15 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         stop_file=None, log_direction_prior=True):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    resumed_precision = None
     if resume:
         state = checkpoint.load(resume, config, identity)
+        saved = checkpoint.saved_gemm_precision(resume)
+        if saved != config.gemm_precision:
+            resumed_precision = saved
+            logger.warning(
+                "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
+            )
     else:
         theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         rng = np.random.default_rng(config.seed + 1)
@@ -696,6 +705,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "radius": radius,
                 "healpix_order": config.stage(iteration)[1],
                 "gemm_precision": _gemm_precision_used(config),
+                **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),
                 "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step,
                 "fudge": fudge,
                 "noise": noise,

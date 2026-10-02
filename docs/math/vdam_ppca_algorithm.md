@@ -1059,8 +1059,10 @@ scientific contract; runnable code alone does not establish recovery.
   float32 products (cuBLAS SIMT FFMA kernels), and `auto`, the default, is tf32 on
   GPUs of compute capability 8.0 or later and fp32 elsewhere (V100, CPU). The
   resolved value is in every update's log record and the stream diagnostics; the
-  checkpoint configuration keeps the requested one, so a run checkpointed before
-  the setting existed resumes only with `--ppca-gemm-precision fp32`. TF32 leaves
+  checkpoint configuration keeps the requested one. Precision is a runtime setting,
+  not part of the checkpoint's configuration identity: a run resumes under any
+  value (checkpoints from before the setting count as fp32), and the update
+  records then carry `resumed_from_gemm_precision`. TF32 leaves
   the float32 equivalence tests (a bug check for the fp32 path) and was adopted on
   end-to-end science (October 2, 2026; H100 job 14880649, three selection seeds
   per arm, harness `relax_ppca_dense_speed_20261001/harness5`): per-state

@@ -25,9 +25,19 @@ def canonical(value):
     return json.loads(json.dumps(value, sort_keys=True))
 
 
-def _with_config_defaults(saved):
-    """A saved configuration with fields added after it was written at their defaults (fp32 GEMMs)."""
-    return {"gemm_precision": "fp32", **saved}
+# Runtime settings: they change how later updates are computed, not the model a checkpoint
+# holds, so a run may resume under a different value (the controller logs the change).
+RUNTIME_CONFIG_FIELDS = ("gemm_precision",)
+
+
+def _identity_config(config_dict):
+    return {key: value for key, value in config_dict.items() if key not in RUNTIME_CONFIG_FIELDS}
+
+
+def saved_gemm_precision(path):
+    """The stream GEMM precision setting a checkpoint was written under (fp32 before the setting existed)."""
+    with np.load(path, allow_pickle=False) as arrays:
+        return json.loads(str(arrays["metadata"]))["config"].get("gemm_precision", "fp32")
 
 
 def save(path, state, config, identity):
@@ -75,7 +85,7 @@ def load(path, config, identity):
         meta = json.loads(str(arrays["metadata"]))
         if (
             meta["schema"] != 1
-            or _with_config_defaults(meta["config"]) != canonical(dataclasses.asdict(config))
+            or _identity_config(meta["config"]) != _identity_config(canonical(dataclasses.asdict(config)))
             or meta["identity"] != canonical(identity)
         ):
             raise ValueError("Checkpoint input/configuration/source identity mismatch")
