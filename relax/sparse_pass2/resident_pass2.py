@@ -3389,8 +3389,8 @@ def _resident_pass2(
 
         With K>1 each class projects its own ids from its own reference into
         the one set of arrays (:func:`project_rows_by_class`); a class's call is
-        padded to a whole number of stream quanta so the projection programs
-        see few distinct lengths, as the K=1 stream does.
+        padded to :func:`class_call_length` so the projection programs see few
+        distinct lengths.
         """
 
         ids = np.asarray(ids, dtype=np.int64)
@@ -3401,7 +3401,6 @@ def _resident_pass2(
             fine_grid[jnp.asarray(ids % n_fine_rot, dtype=jnp.int32)],
             ids // n_fine_rot,
             n_rows=int(n_rows),
-            call_length=lambda n: -(-n // _STREAM_SLOT_QUANTUM) * _STREAM_SLOT_QUANTUM,
         )
 
     # The whole fine grid is cached when it fits. At healpix order 3 and a real

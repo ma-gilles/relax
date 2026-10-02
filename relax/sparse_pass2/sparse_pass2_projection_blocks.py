@@ -396,17 +396,32 @@ def _compute_sparse_pass2_windowed_projections_block(
     return score_proj, recon_proj, recon_abs2
 
 
-def project_rows_by_class(project, matrices, row_class, *, n_rows: int, call_length):
+def class_call_length(n_rows: int) -> int:
+    """Rotations one class's projection call projects for its ``n_rows`` rows.
+
+    The rows rounded up to a multiple of an eighth of the power of two at or above them, at
+    least 256: the programs see eight lengths per octave and a call of more than 256 rows
+    projects at most a quarter more than its rows. A whole 8192-rotation stream quantum per class projected up to
+    ``K * 8191`` padding rotations per K>1 chunk (K15 VDAM it150: 19-21 s of every 120 s
+    of the main thread in the streamed projections, e2e job 14881673).
+    """
+
+    n_rows = int(n_rows)
+    quantum = max(256, (1 << int(n_rows - 1).bit_length()) // 8)
+    return -(-n_rows // quantum) * quantum
+
+
+def project_rows_by_class(project, matrices, row_class, *, n_rows: int):
     """``(score, recon, |recon|^2)`` of every row, each projected from its own class's reference.
 
     ``project(matrices, class_index=, n_rows=, outputs=, output_row_ids=, finalize=)`` is a
     windowed projector (:func:`_compute_sparse_pass2_windowed_projections_block` behind the
     caller's units). Each class projects its own rows in one call, padded with copies of its
-    first rotation to ``call_length(n)`` rotations so the programs see few distinct lengths;
-    every call writes its rows in place into one set of ``n_rows``-long arrays and drops the
-    padding. So the K>1 projections of a chunk are one ``n_rows`` copy, as at K=1: the
-    classes' padded calls were concatenated and gathered before, up to ``K * call_length``
-    rows next to the gather, outside the chunk plan (K15 VDAM OOM at it151, 62ab6ae).
+    first rotation to :func:`class_call_length` rotations so the programs see few distinct
+    lengths; every call writes its rows in place into one set of ``n_rows``-long arrays and
+    drops the padding. So the K>1 projections of a chunk are one ``n_rows`` copy, as at K=1: the
+    classes' padded calls were concatenated and gathered before, up to ``K`` padded calls
+    next to the gather, outside the chunk plan (K15 VDAM OOM at it151, 62ab6ae).
     ``finalize`` is true on the last call only, so a caller's per-array finishing step
     sees every row exactly once.
     """
@@ -416,7 +431,7 @@ def project_rows_by_class(project, matrices, row_class, *, n_rows: int, call_len
     outputs = None
     for call, class_index in enumerate(classes):
         positions = np.flatnonzero(row_class == class_index)
-        n_call = int(call_length(positions.size))
+        n_call = class_call_length(positions.size)
         n_pad = n_call - positions.size
         padded = np.concatenate([positions, np.full(n_pad, positions[0], dtype=np.int64)])
         row_ids = np.concatenate([positions, int(n_rows) + np.arange(n_pad, dtype=np.int64)])

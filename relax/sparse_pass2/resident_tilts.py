@@ -669,20 +669,16 @@ def project_slot_rows(project_rotations, slot_matrices, entry_class, *, n_classe
     """The ``(score, recon, |recon|^2)`` projections of every (slot, row) entry, each from its row's class.
 
     ``project_rotations(matrices, class_index=k)`` projects from class ``k``'s reference. With K>1 each
-    class projects only its own entries (``entry_class``), in one call padded to a multiple of an
-    eighth of its power-of-two size, so calls see few distinct lengths, written in place at the
+    class projects only its own entries (``entry_class``), in one call padded to
+    :func:`class_call_length`, written in place at the
     entries' ``slot * C_R + row`` positions (:func:`project_rows_by_class`).
     """
 
     if int(n_classes) == 1:
         return project_rotations(slot_matrices)
-    def call_length(n):
-        quantum = max(256, (1 << int(n - 1).bit_length()) // 8)
-        return -(-n // quantum) * quantum
-
     entry_class = np.asarray(entry_class, dtype=np.int64)
     return project_rows_by_class(
-        project_rotations, np.asarray(slot_matrices), entry_class, n_rows=entry_class.size, call_length=call_length
+        project_rotations, np.asarray(slot_matrices), entry_class, n_rows=entry_class.size
     )
 
 
