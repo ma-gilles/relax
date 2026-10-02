@@ -192,8 +192,7 @@ labeled diagnostic only.
   against MPI-scale-patched RELION 3x4): the CC iteration matches (maps 2.9e-5, one CC pose tie). The
   seed iteration's gap to stock RELION (maps 2.9e-3; 5.6e-3 with one optics group) is stock RELION's
   float32 backprojection: the double-accumulation RELION build differs from stock by the same 5.6e-3,
-  and relax matches it at 6.6e-5/1.0e-4 (one optics group, iteration 2). Optics groups on several image
-  shapes remain K=1 only (`full_refinement._validate_multi_shape_run`). InitialModel (VDAM, single
+  and relax matches it at 6.6e-5/1.0e-4 (one optics group, iteration 2). InitialModel (VDAM, single
   particles and subtomograms) takes several optics groups on one image grid (2026-10-02): RELION's
   per-group start-up particles for the noise and the bootstrap (`relion_startup_positions`), each
   image scored with its group's noise row, the noise updated per group, the expected accuracy per
@@ -204,6 +203,15 @@ labeled diagnostic only.
   class in both programs (a plumbing check only). Groups on other grids stay refused (etw's
   multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`.
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930`.
+- Class3D (K>1) on optics groups of several image shapes (2026-10-01): each half is scored per shape
+  class and merged (`optics_shapes.merge_k_class_outputs`), as K=1 is. Qualified on
+  multioptics_k2_10k128_20260930 (K=2, 128 px at 4.25 A and 112 px at 5.44 A, --firstiter_cc), one
+  seed (1), against stock RELION 5.0.1 on the CPU as the reference, whose classification pass applies
+  the scale difference (ma-gilles/relax#12): masked GT FSC-AUC 0.4659 vs 0.4612, class accuracy 0.7134
+  vs 0.7105 (two identical CPU runs); relax-vs-RELION per-class cross FSC-AUC 0.970/0.976. RELION's GPU run, which skips the
+  scale difference in pass 1, reaches 0.3880/0.6102. VDAM on several shapes is not wired yet; its
+  engine-level loop will use `optics_shapes.shape_class_engine_inputs` and `merge_k_class_engine_results`.
+  Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930/score_twoshape_68d7ea1_out.json`.
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
   demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).
