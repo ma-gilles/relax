@@ -208,7 +208,8 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device):
     """The coarse pass's GEMM scorer against the fused direct-square kernel, image by image.
 
     The two round differently (the expansion d0 + 0.5 A + 0.5 C - X against RELION's sum of
-    squares), so they agree to the float32 band of the scale of the terms, not bitwise.
+    squares), so they agree to a few float32 ULP of the terms' scale, not bitwise: 1.8e-6 of
+    the largest diff2 measured on this fixture (job 14856295), checked at 1e-5.
     """
 
     import jax
@@ -261,7 +262,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device):
                     model_max_r=max_r, padding_factor=pad,
                 )
             )
-            assert_matches(gemm[b], direct, err_msg=f"image {b}")
+            assert_matches(gemm[b], direct, rtol=1e-5, err_msg=f"image {b}")
 
 
 def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
