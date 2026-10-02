@@ -60,6 +60,7 @@ Feature-qualification checks, separate from the headline benchmarks above (whose
 
 - **S3b multi-optics (feature)**: several optics groups (pixel sizes and boxes) in the default K=1 auto-refine: RELION 5.0.1 + MPI scale-sum patch, relion_refine_mpi 3 ranks x 4 threads on one H100, same job as relax (accuracy and wall)
 - **optics_mag_k2_10k256 (feature)**: anisotropic magnification in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips applyScaleDifference, relax#12) for accuracy, 5 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (dedicated cold pair, seed 42)
+- **multioptics_k2_10k128 (feature)**: several image shapes (two optics groups, 128 px / 112 px) in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips the scale difference, relax#12) for accuracy, 3 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (cold pairs in one 2-GPU job, seed 1 quoted)
 
 | | Dataset | N / box | RELION res (Å) | relax res (Å) | Quality vs RELION | RELION wall | relax wall | Ratio | Date |
 | --- | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- |
@@ -67,3 +68,4 @@ Feature-qualification checks, separate from the headline benchmarks above (whose
 | 🟢 | S3b multi-optics (feature) <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#multioptics_s3b_10k_autorefine) | 10,000 / 128 | — / 8.50 | — / 8.50 | map gate met vs 2 of 2 RELION runs; masked GT 0.9950 vs RELION 0.9946 | 13 min | 7 min | 0.51x | 2026-09-30 |
 | | **Class3D (K>1)** | | | | | | | | |
 | 🟢 | optics_mag_k2_10k256 (feature) <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#optics_mag_k2_10k256_class3d_25it) | 10,000 / 256 | 15.54 d / — | 15.54 d / — | mean masked GT FSC-AUC vs stock RELION CPU: worst s29 −0.0017 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside or above across-seed band | 12 min | 7 min | 0.54x | 2026-10-02 |
+| 🟠 | multioptics_k2_10k128 (feature) <sub>synthetic</sub> [notes](relion_vs_relax_provenance.md#multioptics_k2_10k128_class3d_25it) | 10,000 / 128 | 11.10 d / — | — / — | mean masked GT FSC-AUC vs stock RELION CPU: worst s3 +2.9e-4 vs same-seed RELION; inside or above across-seed band | 12 min | 21 min | 1.74x | 2026-10-02 |

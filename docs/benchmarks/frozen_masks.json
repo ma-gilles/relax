@@ -551,6 +551,16 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.047, 1 component(s), captures 0.903 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
+  "multioptics_k2_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_masks_20260930/multioptics_k2_c1/MASK.json",
+   "mask_sha256": "d9cecab1f444a7fbc14a41b7049230dacb88eede8cb9aeabe497a978778c2bbf",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "source_role": "voxelwise max of the two class ground truths (reference_gt_class00{1,2}.mrc, relax file frame)",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.069, 1 component(s), captures 0.871 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
   "multioptics_s3b_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_masks_20260929/multioptics_s3b_c1/MASK.json",
    "mask_sha256": "9bddef24ad702b3246c106945cd0b4a8ea075cbef901d6489aa1cd295b518c0c",
