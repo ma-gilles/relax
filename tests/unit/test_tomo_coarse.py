@@ -300,19 +300,14 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     offsets = np.array([0, 2, 5, 6])
     n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
 
-    def fake_projections(class_value, rotations, layout, **kwargs):
-        # One "pixel" per row: the rotation's sum plus the class's own value times the row index in its image,
-        # so the classes compete.
-        rows = jnp.arange(rotations.shape[0], dtype=jnp.float32) % n_rot_pad[0]
-        return (jnp.sum(rotations, axis=(1, 2)) + class_value * rows)[:, None].astype(jnp.complex64)
-
-    def fake_diff2(projected, unshifted, weight, initial, angles, score_indices, *, image_shape):
-        return (
-            initial[:, None, None]
-            + jnp.real(projected[:, :, 0])[:, :, None]
-            + angles[:, None, :, 0]
-            + jnp.sum(weight, axis=1)[:, None, None]
-        )
+    def fake_block(total, class_value, rotations, unshifted, weight, initial, angles, score_indices, **kwargs):
+        # Each image adds its initial diff2, its rotation's sum, its angle and its weight; each class shifts its
+        # diff2 by its own "projector" value times the rotation index, so the classes compete.
+        per_rot = jnp.sum(rotations, axis=(3, 4)) + class_value * jnp.arange(rotations.shape[2], dtype=jnp.float32)
+        image = initial[:, :, None, None] + per_rot[:, :, :, None] + angles[:, :, None, :, 0] + jnp.sum(weight, axis=2)[:, :, None, None]
+        for slot in range(image.shape[1]):
+            total = total + image[:, slot]
+        return total
 
     def operands(experiment_dataset, image_start, image_stop, layout, **kwargs):
         n = int(image_stop) - int(image_start)
@@ -337,9 +332,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     from relax import sampling
 
     monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", pass1_rotations)
-    n_rot_pad = [-(-n_rot // 128) * 128]
-    monkeypatch.setattr(tomo_coarse, "_coarse_gemm_projections", fake_projections)
-    monkeypatch.setattr(tomo_coarse, "_images_coarse_gemm_diff2", fake_diff2)
+    monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
     monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)
     layout = tomo_coarse.CoarseScoreLayout(

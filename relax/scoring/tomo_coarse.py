@@ -199,28 +199,66 @@ _COARSE_BATCH_BYTES = 2 << 30
 _SIGNIFICANCE_BATCH_BYTES = 512 << 20
 
 
-def _coarse_gemm_projections(projector_half, rotations, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int):
+def _coarse_gemm_projections(
+    projector_half, rotations, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int, texture=None
+):
     """The score-window rows ``[N, P]`` of a RELION ``PPref`` half at ``rotations`` ``[N, 3, 3]``.
 
     The projection the SPA coarse GEMM scorer reads (significance.py ``_project_relion_compact_score_rows``):
     RELION's texture interpolation with the coarse diff2 kernel's row rule, in ``layout``'s score pixels.
+    ``texture`` is the half's :class:`relax.cuda.kernels.RelionCapacityHalfTextureF32`, staged once per pass.
     """
 
+    return _score_window_projections(
+        projector_half,
+        rotations,
+        jnp.asarray(layout.score_indices_np, dtype=jnp.int32),
+        image_shape=tuple(layout.image_shape),
+        current_size=int(layout.current_size),
+        model_max_r=int(model_max_r),
+        padding_factor=int(padding_factor),
+        texture=texture,
+    )
+
+
+def _coarse_capacity_texture(projector_half, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int):
+    """The half's persistent projector texture when the half-storage kernel serves it, else ``None``."""
+
+    from relax.helpers.projection import relion_capacity_texture_serves
+
+    projector_half = jnp.asarray(projector_half)
+    if jax.default_backend() != "gpu" or not relion_capacity_texture_serves(
+        projector_half,
+        r_max=int(model_max_r),
+        padding_factor=int(padding_factor),
+        projector_output_size=int(layout.current_size),
+        relion_texture_interp=True,
+    ):
+        return None
+    from relax.cuda.kernels import RelionCapacityHalfTextureF32
+
+    return RelionCapacityHalfTextureF32(projector_half, int(model_max_r), padding_factor=int(padding_factor))
+
+
+def _score_window_projections(
+    projector_half, rotations, score_indices, *, image_shape, current_size, model_max_r, padding_factor, texture
+):
     from relax.helpers.projection import compute_relion_projector_projections_block
 
     projected, _abs2 = compute_relion_projector_projections_block(
         projector_half,
         rotations,
-        layout.image_shape,
+        image_shape,
         r_max=int(model_max_r),
         padding_factor=int(padding_factor),
         return_abs2=False,
         centered_rows=True,
         dense_scale=True,
-        projector_output_size=int(layout.current_size),
-        pixel_indices=layout.score_indices_np,
+        projector_output_size=int(current_size),
+        pixel_indices=score_indices,
         relion_texture_interp=True,
         relion_kernel="coarse",
+        capacity_texture=texture,
     )
     return projected
 
@@ -256,6 +294,44 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
         return -scores[0]
 
     return jax.vmap(one)(projected, unshifted, pixel_weight, initial_diff2, translation_angles)
+
+
+@partial(
+    jax.jit,
+    static_argnames=("image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
+)
+def _coarse_gemm_slot_block(
+    total, projector_half, rotations, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices,
+    *, image_shape, current_size, model_max_r, padding_factor, texture,
+):
+    """One batch's slot block in one program: each image's projections, its GEMM diff2, added in slot order.
+
+    ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
+    ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]``; ``total`` ``[P, R, T]``.
+    """
+
+    n_particles, n_slots, n_rot = (int(n) for n in rotations.shape[:3])
+    n_images = n_particles * n_slots
+    projected = _score_window_projections(
+        projector_half,
+        rotations.reshape(n_images * n_rot, 3, 3),
+        score_indices,
+        image_shape=image_shape,
+        current_size=current_size,
+        model_max_r=model_max_r,
+        padding_factor=padding_factor,
+        texture=texture,
+    ).reshape(n_images, n_rot, -1)
+    image_diff2 = _images_coarse_gemm_diff2(
+        projected,
+        unshifted.reshape(n_images, -1),
+        pixel_weight.reshape(n_images, -1),
+        initial_diff2.reshape(n_images),
+        translation_angles.reshape(n_images, translation_angles.shape[2], 2),
+        score_indices,
+        image_shape=image_shape,
+    )
+    return _add_image_diff2_in_slot_order(total, image_diff2.reshape(n_particles, n_slots, n_rot, -1))
 
 
 @jax.jit
@@ -582,11 +658,17 @@ def particle_coarse_supports(
         rotation_counts, n_slots=slots, n_trans=n_coarse_trans, n_pixels=int(layout.score_indices_np.size)
     )
     score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
+    # Each class's projector texture, staged once for the pass (the SPA coarse path's capacity texture).
+    class_textures = [
+        _coarse_capacity_texture(class_projector, layout, model_max_r=int(model_max_r), padding_factor=int(padding_factor))
+        for class_projector in class_projectors
+    ]
     r_pad_all = batches[0][1] if batches else 0
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
     significance_batch = max(1, _SIGNIFICANCE_BATCH_BYTES // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
     supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
+    last_total = None
     pending = []
 
     def flush():
@@ -669,31 +751,27 @@ def particle_coarse_supports(
         batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
         batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
         class_totals = []
-        for class_projector in class_projectors:
+        for class_index, class_projector in enumerate(class_projectors):
             total = jnp.zeros((p_pad, r_pad, n_coarse_trans), dtype=jnp.float32)
             for first in range(0, slots, slot_block):
                 block = slice(first, first + slot_block)
-                n_block = int(rotations[:, block].shape[1])
-                n_images = p_pad * n_block
-                projected = _coarse_gemm_projections(
+                total = _coarse_gemm_slot_block(
+                    total,
                     class_projector,
-                    jnp.asarray(rotations[:, block].reshape(n_images * r_pad, 3, 3)),
-                    layout,
-                    model_max_r=int(model_max_r),
-                    padding_factor=int(padding_factor),
-                ).reshape(n_images, r_pad, -1)
-                image_diff2 = _images_coarse_gemm_diff2(
-                    projected,
-                    batch_unshifted[:, block].reshape(n_images, -1),
-                    batch_weight[:, block].reshape(n_images, -1),
-                    batch_initial[:, block].reshape(n_images),
-                    jnp.asarray(angles[:, block].reshape(n_images, n_coarse_trans, 2)),
+                    jnp.asarray(rotations[:, block]),
+                    batch_unshifted[:, block],
+                    batch_weight[:, block],
+                    batch_initial[:, block],
+                    jnp.asarray(angles[:, block]),
                     score_indices,
                     image_shape=tuple(layout.image_shape),
+                    current_size=int(layout.current_size),
+                    model_max_r=int(model_max_r),
+                    padding_factor=int(padding_factor),
+                    texture=class_textures[class_index],
                 )
-                del projected
-                total = _add_image_diff2_in_slot_order(total, image_diff2.reshape(p_pad, n_block, r_pad, n_coarse_trans))
             class_totals.append(total[: units.size])
+            last_total = total
         # K>1: [P, K * R_pad, T], class-major along the rotation axis.
         pending.append((units, class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)))
         # Only operands_for keeps the block, so a new block is allocated after the old one is freed.
@@ -701,6 +779,10 @@ def particle_coarse_supports(
         if sum(int(u.size) for u, _ in pending) >= significance_batch:
             flush()
     flush()
+    for texture in class_textures:
+        if texture is not None:
+            # The flush read every batch's significance back, so the last projection has completed.
+            texture.close_after(last_total)
     class_supports = [[supports[k][u] for u in range(n_units)] for k in range(n_classes)]
     return class_supports[0] if n_classes == 1 else class_supports, np.asarray(
         [pmax_by_unit[u] for u in range(n_units)], dtype=np.float64
