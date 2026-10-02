@@ -472,6 +472,17 @@ K=1 runs without the fresh order (RELION-seeded or replay starts) and every norm
 `_e_step_block_scores_normalized_cc`). Owner kspeed: move them, then delete the generic scorer and
 the temporary `relion_exact_coarse` switch (`relax.classification.k_class`) together.
 
+Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer and
+RELION's float32 coarse support, every class and rotation block of an image batch is scored, given its
+priors and reduced (class and global logsumexps, best pose and class) in one jitted program
+(`relax.scoring.significance._coarse_gemm_pass1_batch`) instead of the per-class, per-block eager loop.
+H100 replay of ribosembly K15 50k it150 -> 151 (job 14877086): warm E-step 33.6 -> 30.4 s (RELION it151
+40.1 s), K4 25.7 -> 25.1 s, K1 10.0 -> 9.9 s; every image's significant-sample count equal to the loop's.
+The per-class loop still serves (a) the coarse GEMM scorer when its projection cache does not fit the
+budget, (b) every normalized-CC (`--firstiter_cc`) pass and (c) the generic scorer above, plus the opt-in
+coarse backends and per-block diagnostics, pending the change that routes (a)-(c) through the program and
+deletes the opt-in backends.
+
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
 and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take
 every slab whose texels fit the staging kernel's int32 indexing (box 800 at padding 2 is 1603 x
