@@ -563,6 +563,7 @@ def _centered_crop_indices(pixel_indices, *, image_size: int, crop_size: int):
     return crop_rows * crop_x_half + cols, ky, cols
 
 
+@partial(jax.jit, static_argnames=("image_shape", "projector_output_size", "mask_current_image_disk"))
 def _texture_centered_crop_at_indices(
     projection_crop,
     pixel_indices,
@@ -572,7 +573,11 @@ def _texture_centered_crop_at_indices(
     mask_current_image_disk: bool = False,
     current_image_mask_size=None,
 ):
-    """Gather centered full-image pixels directly from a CUDA projection crop."""
+    """Gather centered full-image pixels directly from a CUDA projection crop.
+
+    One program per shape: called eagerly, its index arithmetic, gather and mask
+    compiled about eight primitive programs for every new window size.
+    """
 
     crop_size = int(projector_output_size)
     crop_indices, ky, cols = _centered_crop_indices(pixel_indices, image_size=int(image_shape[0]), crop_size=crop_size)
@@ -786,7 +791,7 @@ def _project_relion_projector_texture(
         return _texture_centered_crop_at_indices(
             projection_crop,
             pixel_indices,
-            image_shape=image_shape,
+            image_shape=tuple(int(v) for v in image_shape),
             projector_output_size=int(projector_output_size),
             mask_current_image_disk=bool(mask_current_image_disk),
             current_image_mask_size=current_image_mask_size,

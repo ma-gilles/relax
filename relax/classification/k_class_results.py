@@ -114,6 +114,12 @@ def _summed_sumw(noise_stats):
     return np.sum([np.asarray(value, dtype=np.float64) for value in values], axis=0)
 
 
+@jax.jit
+def _stacked_sum(values):
+    # One program per shape; the eager stack and sum compiled two.
+    return jnp.sum(jnp.stack(values, axis=0), axis=0)
+
+
 def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=False) -> NoiseStats | None:
     if not noise_stats:
         return None
@@ -134,7 +140,7 @@ def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=
             return None
         if any(value is None for value in values):
             raise ValueError(f"Cannot aggregate mixed missing/present noise field {name}")
-        return jnp.sum(jnp.stack([jnp.asarray(value) for value in values], axis=0), axis=0)
+        return _stacked_sum(tuple(jnp.asarray(value) for value in values))
 
     summed_sigma2_noise = _sum_field("wsum_sigma2_noise")
     return make_noise_stats(

@@ -4599,10 +4599,13 @@ def _class_accumulators(result, class_index: int):
     if int(result.n_slot_groups) == 1:
         return result.Ft_y[k], result.Ft_ctf[k]
     slots = [k + n_classes * group for group in range(int(result.n_slot_groups))]
-    return (
-        jnp.stack([result.Ft_y[a] for a in slots], axis=0),
-        jnp.stack([result.Ft_ctf[a] for a in slots], axis=0),
-    )
+    return _stack_slot_pair(tuple(result.Ft_y[a] for a in slots), tuple(result.Ft_ctf[a] for a in slots))
+
+
+@jax.jit
+def _stack_slot_pair(Ft_y, Ft_ctf):
+    # One program per shape; the two eager stacks compiled six.
+    return jnp.stack(Ft_y, axis=0), jnp.stack(Ft_ctf, axis=0)
 
 
 class _ResidentPass2Result(NamedTuple):

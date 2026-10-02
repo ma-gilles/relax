@@ -473,6 +473,12 @@ def crop_public_full_volume(values, physical_volume_shape, logical_volume_shape)
         )
     if int(values.size) != physical_size**3:
         raise ValueError(f"full accumulator has {values.size} entries, expected {physical_size**3}")
+    return _crop_centered_cube(values, physical_size=physical_size, logical_size=logical_size)
+
+
+@partial(jax.jit, static_argnames=("physical_size", "logical_size"))
+def _crop_centered_cube(values, *, physical_size: int, logical_size: int):
+    # One program per (physical, logical) pair; the eager slices compiled three.
     start = (physical_size - logical_size) // 2
     grid = values.reshape((physical_size, physical_size, physical_size))
     return grid[start : start + logical_size, start : start + logical_size, start : start + logical_size].reshape(-1)
