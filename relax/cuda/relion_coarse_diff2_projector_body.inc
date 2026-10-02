@@ -22,6 +22,10 @@
         pixels_per_chunk * EULERS_PER_BLOCK];
     __shared__ float2 shared_images[kRelionCoarseDiff2BlockSize];
     __shared__ float shared_weights[kRelionCoarseDiff2BlockSize];
+    // The chunk's pixel coordinates, decoded once per block instead of once per
+    // translation lane: (y << 16) | x, or -1 for a pixel outside the image or the
+    // compact map.  The arithmetic per scored pixel is unchanged.
+    __shared__ int shared_pixel_xy[pixels_per_chunk];
     __shared__ float shared_lane_partials[
         CANONICAL_REDUCTION && !SINGLE_LANE_CANONICAL
         ? EULERS_PER_BLOCK * kRelionCoarseDiff2BlockSize
@@ -153,6 +157,21 @@
                 local_rotation] = reference;
         }
 
+        if (threadIdx.x < pixels_per_chunk) {
+            const int full_pixel = chunk_start + static_cast<int>(threadIdx.x);
+            int packed = -1;
+            if (full_pixel < full_pixel_count) {
+                const int compact_pixel = full_to_compact[full_pixel];
+                if (compact_pixel >= 0 && compact_pixel < compact_pixel_count) {
+                    const int x = full_pixel % current_half_width;
+                    const int native_y = full_pixel / current_half_width;
+                    const int y = native_y > max_r ? native_y - current_size : native_y;
+                    packed = (y << 16) | x;
+                }
+            }
+            shared_pixel_xy[threadIdx.x] = packed;
+        }
+
         if (chunk_start % kRelionCoarseDiff2BlockSize == 0) {
             const int image_full_pixel = chunk_start + threadIdx.x;
             const int compact_pixel = image_full_pixel < full_pixel_count
@@ -181,16 +200,10 @@
             for (int pixel_in_chunk = first_pixel_in_chunk;
                  pixel_in_chunk < pixels_per_chunk;
                  pixel_in_chunk += pixel_stride) {
-                const int full_pixel = chunk_start + pixel_in_chunk;
-                if (full_pixel >= full_pixel_count) break;
-                const int compact_pixel = full_to_compact[full_pixel];
-                if (compact_pixel < 0 || compact_pixel >= compact_pixel_count)
-                    continue;
-                const int x = full_pixel % current_half_width;
-                const int native_y = full_pixel / current_half_width;
-                const int y = native_y > max_r
-                    ? native_y - current_size
-                    : native_y;
+                const int packed = shared_pixel_xy[pixel_in_chunk];
+                if (packed == -1) continue;
+                const int x = packed & 0xffff;
+                const int y = packed >> 16;
                 const int shared_pixel =
                     pixel_in_chunk +
                     chunk_start % kRelionCoarseDiff2BlockSize;
