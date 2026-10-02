@@ -22,6 +22,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.refinement import tomo_particles
+from relax.sparse_pass2.sparse_pass2_projection_blocks import project_rows_by_class
 from relax.sparse_pass2.sparse_pass2_wavg import weighted_image_power_from_shells
 
 
@@ -669,27 +670,20 @@ def project_slot_rows(project_rotations, slot_matrices, entry_class, *, n_classe
 
     ``project_rotations(matrices, class_index=k)`` projects from class ``k``'s reference. With K>1 each
     class projects only its own entries (``entry_class``), in one call padded to a multiple of an
-    eighth of its power-of-two size, so calls see few distinct lengths; the entries are then gathered
-    back to the ``slot * C_R + row`` order.
+    eighth of its power-of-two size, so calls see few distinct lengths, written in place at the
+    entries' ``slot * C_R + row`` positions (:func:`project_rows_by_class`).
     """
 
     if int(n_classes) == 1:
         return project_rotations(slot_matrices)
-    from relax.sparse_pass2 import resident_pass2 as rp
+    def call_length(n):
+        quantum = max(256, (1 << int(n - 1).bit_length()) // 8)
+        return -(-n // quantum) * quantum
 
     entry_class = np.asarray(entry_class, dtype=np.int64)
-    parts = []
-    gather_rows = np.empty(entry_class.size, dtype=np.int64)
-    offset = 0
-    for class_index in np.unique(entry_class):
-        positions = np.flatnonzero(entry_class == class_index)
-        quantum = max(256, (1 << int(positions.size - 1).bit_length()) // 8)
-        n_call = -(-positions.size // quantum) * quantum
-        padded = np.concatenate([positions, np.full(n_call - positions.size, positions[0])])
-        parts.append(project_rotations(np.asarray(slot_matrices)[padded], class_index=int(class_index)))
-        gather_rows[positions] = offset + np.arange(positions.size)
-        offset += n_call
-    return rp._gather_stream_parts(tuple(parts), jnp.asarray(gather_rows, dtype=jnp.int32), n_rows=entry_class.size)
+    return project_rows_by_class(
+        project_rotations, np.asarray(slot_matrices), entry_class, n_rows=entry_class.size, call_length=call_length
+    )
 
 
 class SlotMstepTables(NamedTuple):

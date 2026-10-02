@@ -1281,9 +1281,10 @@ def project_resident_live_rows(
         )
         if pixel_indices is not None:
             proj_block = with_zero_column(proj_block)
+        rows = jnp.arange(start, start + int(proj_block.shape[0]), dtype=jnp.int32)
         if recon_indices is None:
             score_proj = _place_score_window_block(
-                score_proj, proj_block, score_indices, np.int32(start), output_complex_dtype=output_complex_dtype
+                score_proj, proj_block, score_indices, rows, output_complex_dtype=output_complex_dtype
             )
         else:
             score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
@@ -1293,7 +1294,7 @@ def project_resident_live_rows(
                 proj_block,
                 score_indices,
                 recon_indices,
-                np.int32(start),
+                rows,
                 output_complex_dtype=output_complex_dtype,
                 output_abs2_dtype=output_abs2_dtype,
             )

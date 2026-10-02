@@ -1274,6 +1274,92 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
         assert not np.any(np.asarray(full)[7:])
 
 
+def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch):
+    """K>1 streamed projections fill one set of row-capacity arrays, inside the chunk plan.
+
+    A K15 VDAM chunk (62ab6ae, it151) ran out of memory gathering its classes' padded calls:
+    every class with a few rows still projected a whole stream quantum, and the calls were
+    concatenated and gathered next to the output, ``K * quantum`` rows past the plan's
+    ``_STREAM_PEAK_COPIES * row_capacity``. Here 15 classes of 3 rows each pad to a 16-row
+    quantum (240 rows of calls) in a 64-row chunk: the live projection arrays stay within
+    the plan's two row-capacity copies, and every row holds its own class's projection.
+    """
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+    from relax.sparse_pass2 import sparse_pass2_projection_blocks
+    from relax.sparse_pass2.sparse_pass2_budget import _projection_cache_transient_bytes
+    from relax.sparse_pass2.sparse_pass2_projection_blocks import project_rows_by_class
+
+    n_classes, rows_per_class, row_capacity, quantum, chunk_rotations = 15, 3, 64, 16, 8
+    score_indices = jnp.asarray([0, 2], dtype=jnp.int32)
+    recon_indices = jnp.asarray([1, 5, 3], dtype=jnp.int32)
+    baseline = {}
+    peak = [0]
+
+    def fake_project(volume_block, rotations_block, image_shape, volume_shape, disc_type, **kwargs):
+        del image_shape, volume_shape, disc_type
+        # Row value 10 * row id + pixel, plus 1000 * the class (the volume's value).
+        proj = (
+            jnp.asarray(rotations_block[:, 0, 0], dtype=jnp.float32)[:, None] * 10.0
+            + jnp.arange(6, dtype=jnp.float32)[None, :]
+            + 1000.0 * jnp.real(volume_block[0])
+        ).astype(jnp.complex64)
+        live = sum(int(x.nbytes) for x in jax.live_arrays()) - baseline["bytes"]
+        peak[0] = max(peak[0], live)
+        return proj, None
+
+    monkeypatch.setattr(sparse_pass2_projection_blocks, "_compute_projections_block", fake_project)
+    row_class = np.repeat(np.arange(n_classes), rows_per_class)
+    n_valid = row_class.size
+    matrices = np.zeros((n_valid, 3, 3), dtype=np.float32)
+    matrices[:, 0, 0] = np.arange(n_valid, dtype=np.float32)
+    volumes = [jnp.full(VOLUME_SIZE, float(k), dtype=jnp.complex64) for k in range(n_classes)]
+    finalized = []
+
+    def project(matrices, *, class_index, n_rows, outputs, output_row_ids, finalize):
+        finalized.append(bool(finalize))
+        return _compute_sparse_pass2_windowed_projections_block(
+            volumes[class_index],
+            jnp.asarray(matrices),
+            IMAGE_SHAPE,
+            VOLUME_SHAPE,
+            "linear_interp",
+            score_indices=score_indices,
+            recon_indices=recon_indices,
+            max_projected_rotations=chunk_rotations,
+            output_rows=n_rows,
+            outputs=outputs,
+            output_row_ids=output_row_ids,
+        )
+
+    baseline["bytes"] = sum(int(x.nbytes) for x in jax.live_arrays())
+    score, recon, recon_abs2 = project_rows_by_class(
+        project,
+        matrices,
+        row_class,
+        n_rows=row_capacity,
+        call_length=lambda n: -(-n // quantum) * quantum,
+    )
+
+    assert finalized == [False] * (n_classes - 1) + [True]
+    assert score.shape == (row_capacity, 2) and recon.shape == (row_capacity, 3)
+    expected = 10.0 * np.arange(n_valid)[:, None] + 1000.0 * row_class[:, None]
+    assert_matches(np.asarray(score.real)[:n_valid], expected + np.asarray([0.0, 2.0]))
+    assert_matches(np.asarray(recon.real)[:n_valid], expected + np.asarray([1.0, 5.0, 3.0]))
+    assert_matches(np.asarray(recon_abs2)[:n_valid], (expected + np.asarray([1.0, 5.0, 3.0])) ** 2)
+    for values in (score, recon, recon_abs2):
+        assert not np.any(np.asarray(values)[n_valid:])
+    bytes_per_rotation = _projection_cache_transient_bytes(
+        1, int(score_indices.size), projection_complex_dtype=np.complex64, include_abs2=False
+    ) + _projection_cache_transient_bytes(
+        1, int(recon_indices.size), projection_complex_dtype=np.complex64, include_abs2=True
+    )
+    plan_bytes = rp._STREAM_PEAK_COPIES * row_capacity * bytes_per_rotation
+    # The live arrays at a projector call: the outputs, the call's padded rotations, the
+    # previous chunk being dropped. The concatenate-and-gather held 240 rows of calls.
+    assert peak[0] <= plan_bytes, (peak[0], plan_bytes)
+
+
 def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypatch):
     from relax.sparse_pass2 import (
         sparse_pass2_projection_blocks,

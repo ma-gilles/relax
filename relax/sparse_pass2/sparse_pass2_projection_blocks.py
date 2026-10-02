@@ -9,9 +9,6 @@ Radius propagation: ``docs/math/sparse_projection_radius.md``.
 from __future__ import annotations
 
 import logging
-
-logger = logging.getLogger(__name__)
-
 from functools import partial
 from typing import NamedTuple
 
@@ -24,6 +21,8 @@ from relax.helpers.projection import (
     compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
 )
 from relax.sparse_pass2.sparse_pass2_budget import _MAX_PROJECTED_ROTATIONS_ENV, _optional_positive_int_env
+
+logger = logging.getLogger(__name__)
 
 
 def _compute_sparse_pass2_projections_block(
@@ -209,6 +208,8 @@ def _compute_sparse_pass2_windowed_projections_block(
     projection_padding_factor: int = 1,
     window_union: "ProjectionWindowUnion | None" = None,
     output_rows: int | None = None,
+    outputs=None,
+    output_row_ids=None,
     **projection_kwargs,
 ):
     """Project in capped chunks and retain only score/reconstruction windows.
@@ -216,6 +217,12 @@ def _compute_sparse_pass2_windowed_projections_block(
     ``output_rows`` (at least the number of rotations) makes the outputs that
     many rows long, zero past the projected rotations, so a caller that needs
     a fixed-length array never pads a second copy.
+
+    ``output_row_ids`` (host int ``[n_rotations]``, ascending and distinct) puts
+    rotation ``i`` at that output row instead of row ``i``; an id at or past the
+    output length is dropped. ``outputs`` (``(score, recon, |recon|^2)`` from an
+    earlier call, donated) are written into instead of zero-filled new arrays,
+    so several calls fill one set of arrays (:func:`project_rows_by_class`).
 
     With ``window_union`` (:func:`projection_window_union` of these windows) a
     RELION projector projects only the union's pixels and the windows are
@@ -243,9 +250,18 @@ def _compute_sparse_pass2_windowed_projections_block(
     recon_indices = None if recon_indices is None else jnp.asarray(recon_indices, dtype=jnp.int32)
 
     n_rotations = int(rotations_block.shape[0])
-    n_output_rows = n_rotations if output_rows is None else int(output_rows)
-    if n_output_rows < n_rotations:
-        raise ValueError(f"output_rows={n_output_rows} is fewer than the {n_rotations} rotations")
+    if outputs is not None:
+        n_output_rows = int(outputs[0].shape[0])
+    else:
+        n_output_rows = n_rotations if output_rows is None else int(output_rows)
+    if output_row_ids is None:
+        if n_output_rows < n_rotations:
+            raise ValueError(f"output_rows={n_output_rows} is fewer than the {n_rotations} rotations")
+        output_row_ids = np.arange(n_rotations, dtype=np.int32)
+    else:
+        output_row_ids = np.asarray(output_row_ids, dtype=np.int32)
+        if output_row_ids.shape != (n_rotations,) or np.any(np.diff(output_row_ids) <= 0):
+            raise ValueError("output_row_ids must be one ascending, distinct row per rotation")
     if max_projected_rotations is None:
         chunk_ranges = [(0, n_rotations)]
     else:
@@ -258,7 +274,7 @@ def _compute_sparse_pass2_windowed_projections_block(
     # Each chunk's windows are written into the outputs in place: concatenating
     # the chunks held a streamed chunk's projections twice, outside every plan
     # (bench 14572645, K=1 50k/256 at current size 178: 7.70 GiB).
-    score_proj = recon_proj = recon_abs2 = None
+    score_proj, recon_proj, recon_abs2 = (None, None, None) if outputs is None else outputs
     for start, stop in chunk_ranges:
         proj_chunk, _ = _compute_sparse_pass2_projections_block(
             mean_for_proj,
@@ -276,7 +292,10 @@ def _compute_sparse_pass2_windowed_projections_block(
         )
         if pixel_indices is not None:
             proj_chunk = with_zero_column(proj_chunk)
-        if score_proj is None:
+        if score_proj is not None:
+            complex_dtype = score_proj.dtype
+            abs2_dtype = None if recon_abs2 is None else recon_abs2.dtype
+        else:
             complex_dtype = jnp.dtype(proj_chunk.dtype if output_complex_dtype is None else output_complex_dtype)
             abs2_dtype = jnp.dtype(
                 jnp.finfo(complex_dtype).dtype if output_abs2_dtype is None else output_abs2_dtype
@@ -285,9 +304,10 @@ def _compute_sparse_pass2_windowed_projections_block(
             if recon_indices is not None:
                 recon_proj = jnp.zeros((n_output_rows, int(recon_indices.shape[0])), dtype=complex_dtype)
                 recon_abs2 = jnp.zeros((n_output_rows, int(recon_indices.shape[0])), dtype=abs2_dtype)
+        rows = jnp.asarray(output_row_ids[start:stop])
         if recon_indices is None:
             score_proj = _place_score_window_block(
-                score_proj, proj_chunk, score_indices, np.int32(start), output_complex_dtype=complex_dtype
+                score_proj, proj_chunk, score_indices, rows, output_complex_dtype=complex_dtype
             )
         else:
             score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
@@ -297,12 +317,47 @@ def _compute_sparse_pass2_windowed_projections_block(
                 proj_chunk,
                 score_indices,
                 recon_indices,
-                np.int32(start),
+                rows,
                 output_complex_dtype=complex_dtype,
                 output_abs2_dtype=abs2_dtype,
             )
         del proj_chunk
     return score_proj, recon_proj, recon_abs2
+
+
+def project_rows_by_class(project, matrices, row_class, *, n_rows: int, call_length):
+    """``(score, recon, |recon|^2)`` of every row, each projected from its own class's reference.
+
+    ``project(matrices, class_index=, n_rows=, outputs=, output_row_ids=, finalize=)`` is a
+    windowed projector (:func:`_compute_sparse_pass2_windowed_projections_block` behind the
+    caller's units). Each class projects its own rows in one call, padded with copies of its
+    first rotation to ``call_length(n)`` rotations so the programs see few distinct lengths;
+    every call writes its rows in place into one set of ``n_rows``-long arrays and drops the
+    padding. So the K>1 projections of a chunk are one ``n_rows`` copy, as at K=1: the
+    classes' padded calls were concatenated and gathered before, up to ``K * call_length``
+    rows next to the gather, outside the chunk plan (K15 VDAM OOM at it151, 62ab6ae).
+    ``finalize`` is true on the last call only, so a caller's per-array finishing step
+    sees every row exactly once.
+    """
+
+    row_class = np.asarray(row_class, dtype=np.int64)
+    classes = np.unique(row_class)
+    outputs = None
+    for call, class_index in enumerate(classes):
+        positions = np.flatnonzero(row_class == class_index)
+        n_call = int(call_length(positions.size))
+        n_pad = n_call - positions.size
+        padded = np.concatenate([positions, np.full(n_pad, positions[0], dtype=np.int64)])
+        row_ids = np.concatenate([positions, int(n_rows) + np.arange(n_pad, dtype=np.int64)])
+        outputs = project(
+            matrices[padded],
+            class_index=int(class_index),
+            n_rows=int(n_rows),
+            outputs=outputs,
+            output_row_ids=row_ids,
+            finalize=call == classes.size - 1,
+        )
+    return outputs
 
 
 class ProjectionWindowUnion(NamedTuple):
@@ -408,12 +463,17 @@ def with_zero_column(proj_block):
     return jnp.pad(proj_block, ((0, 0), (0, 1)))
 
 
-@partial(jax.jit, static_argnames=("output_complex_dtype",), donate_argnums=(0,))
-def _place_score_window_block(score_proj, proj_block, score_indices, start, *, output_complex_dtype):
-    """Write one projector block's score window into ``score_proj`` (donated) at row ``start``."""
+def _place_rows(values, block, rows):
+    """``values`` with ``block``'s rows written at ``rows`` (ascending, distinct); rows past the end are dropped."""
 
-    score_block = proj_block[:, score_indices].astype(output_complex_dtype)
-    return jax.lax.dynamic_update_slice(score_proj, score_block, (jnp.asarray(start, dtype=jnp.int32), jnp.int32(0)))
+    return values.at[rows].set(block, mode="drop", indices_are_sorted=True, unique_indices=True)
+
+
+@partial(jax.jit, static_argnames=("output_complex_dtype",), donate_argnums=(0,))
+def _place_score_window_block(score_proj, proj_block, score_indices, rows, *, output_complex_dtype):
+    """Write one projector block's score window into ``score_proj`` (donated) at ``rows``."""
+
+    return _place_rows(score_proj, proj_block[:, score_indices].astype(output_complex_dtype), rows)
 
 
 @partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype"), donate_argnums=(0, 1, 2))
@@ -424,22 +484,20 @@ def _place_windowed_projection_block(
     proj_block,  # [Q, N_half]
     score_indices,
     recon_indices,
-    start,  # int32 scalar, runtime
+    rows,  # int32 [Q], runtime: ascending output rows, past the end dropped
     *,
     output_complex_dtype,
     output_abs2_dtype,
 ):
-    """Window one projector block and write it, with ``|recon|^2``, into the rows at ``start``."""
+    """Window one projector block and write it, with ``|recon|^2``, into ``rows``."""
 
     score_block = proj_block[:, score_indices].astype(output_complex_dtype)
     recon_block = proj_block[:, recon_indices].astype(output_complex_dtype)
     abs2_block = (jnp.abs(recon_block) ** 2).astype(output_abs2_dtype)
-    start = jnp.asarray(start, dtype=jnp.int32)
-    zero = jnp.int32(0)
     return (
-        jax.lax.dynamic_update_slice(score_proj, score_block, (start, zero)),
-        jax.lax.dynamic_update_slice(recon_proj, recon_block, (start, zero)),
-        jax.lax.dynamic_update_slice(recon_abs2, abs2_block, (start, zero)),
+        _place_rows(score_proj, score_block, rows),
+        _place_rows(recon_proj, recon_block, rows),
+        _place_rows(recon_abs2, abs2_block, rows),
     )
 
 

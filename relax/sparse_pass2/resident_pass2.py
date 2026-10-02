@@ -200,6 +200,7 @@ from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _compute_sparse_pass2_windowed_projections_block,
     _projection_kwargs_for_relion_score_window,
     capacity_projection_window_union,
+    project_rows_by_class,
     projection_window_union,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
@@ -3331,10 +3332,15 @@ def _resident_pass2(
         else None
     )
 
-    def project_fine_rotations(rotations, class_index=0, n_rows=None):
+    def project_fine_rotations(
+        rotations, class_index=0, n_rows=None, *, outputs=None, output_row_ids=None, finalize=True
+    ):
         """(score, recon, |recon|^2) projections of ``rotations``, as the cache holds them.
 
         ``n_rows`` makes them that many rows long, zero past the rotations.
+        ``outputs`` and ``output_row_ids`` write into earlier arrays at those rows
+        (:func:`project_rows_by_class`); ``finalize`` applies the cache's units to
+        the whole arrays, once, on the call that completes them.
         """
 
         score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
@@ -3356,9 +3362,13 @@ def _resident_pass2(
             projection_padding_factor=projection_padding_factor,
             window_union=fine_window_union,
             output_rows=n_rows,
+            outputs=outputs,
+            output_row_ids=output_row_ids,
             **capacity_projection_kwargs,
             **projection_kwargs,
         )
+        if not finalize:
+            return score, recon, recon_abs2
         recon, recon_abs2 = precision_policy.cast_local_noise_projection_scores(recon, recon_abs2)
         if relion_native_fine_units:
             # Score rows only, for the cached and the streamed paths alike; the
@@ -3371,34 +3381,22 @@ def _resident_pass2(
 
         The arrays are ``n_rows`` long, zero past the ids.
 
-        With K>1 each class projects its own ids from its own reference; a
-        class's call is padded to a whole number of stream quanta so the
-        projection programs see few distinct lengths, as the K=1 stream does.
+        With K>1 each class projects its own ids from its own reference into
+        the one set of arrays (:func:`project_rows_by_class`); a class's call is
+        padded to a whole number of stream quanta so the projection programs
+        see few distinct lengths, as the K=1 stream does.
         """
 
         ids = np.asarray(ids, dtype=np.int64)
         if n_classes == 1:
             return project_fine_rotations(fine_grid[jnp.asarray(ids, dtype=jnp.int32)], n_rows=int(n_rows))
-        klass = ids // n_fine_rot
-        parts = []
-        # Each id's row in the concatenation of the classes' padded calls. The
-        # padded calls are kept whole, so every array here has a quantized
-        # length and the gather compiles once per (classes, lengths) class
-        # rather than once per chunk.
-        gather_rows = np.empty(ids.size, dtype=np.int64)
-        offset = 0
-        for class_index in np.unique(klass):
-            positions = np.flatnonzero(klass == class_index)
-            class_ids = ids[positions] % n_fine_rot
-            n_call = -(-class_ids.size // _STREAM_SLOT_QUANTUM) * _STREAM_SLOT_QUANTUM
-            padded = np.full(n_call, class_ids[0], dtype=np.int64)
-            padded[: class_ids.size] = class_ids
-            parts.append(
-                project_fine_rotations(fine_grid[jnp.asarray(padded, dtype=jnp.int32)], int(class_index))
-            )
-            gather_rows[positions] = offset + np.arange(class_ids.size)
-            offset += n_call
-        return _gather_stream_parts(tuple(parts), jnp.asarray(gather_rows, dtype=jnp.int32), n_rows=int(n_rows))
+        return project_rows_by_class(
+            project_fine_rotations,
+            fine_grid[jnp.asarray(ids % n_fine_rot, dtype=jnp.int32)],
+            ids // n_fine_rot,
+            n_rows=int(n_rows),
+            call_length=lambda n: -(-n // _STREAM_SLOT_QUANTUM) * _STREAM_SLOT_QUANTUM,
+        )
 
     # The whole fine grid is cached when it fits. At healpix order 3 and a real
     # current size it does not (294912 rotations at 136 px is ~40 GiB), so each
@@ -5019,22 +5017,6 @@ def _resident_operands_fit(operand_peak_bytes, available_bytes) -> bool:
     """
 
     return int(operand_peak_bytes) <= resident_operands_max_bytes(available_bytes)
-
-
-@partial(jax.jit, static_argnames=("n_rows",))
-def _gather_stream_parts(parts, gather_rows, *, n_rows):
-    """The fields of the classes' padded projection calls, concatenated and gathered by row.
-
-    Each field is ``n_rows`` long, zero past the gathered rows, formed in the
-    same program so the chunk never holds a gathered and a padded copy.
-    """
-
-    def gathered(field):
-        values = jnp.concatenate([part[field] for part in parts], axis=0)[gather_rows]
-        widths = [(0, int(n_rows) - int(gather_rows.shape[0]))] + [(0, 0)] * (values.ndim - 1)
-        return jnp.pad(values, widths)
-
-    return tuple(gathered(field) for field in range(3))
 
 
 def _stream_projection_budget_bytes(
