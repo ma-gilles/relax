@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers import score_diagnostics
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics import coarse_score_diagnostics
 from relax.helpers.projection_cache import build_projection_cache
@@ -16,7 +17,6 @@ from relax.relion import relion_ctf
 from relax.scoring import coarse_gaussian_gemm, scoring, significance
 from relax.scoring.coarse_gemm_streaming import COARSE_GEMM_STREAMING_SCHEMA
 from relax.scoring.significant_samples import significant_sample_ids
-from helpers.float_compare import assert_matches
 
 
 def _macro_operands(*, real_dtype, n_images=4, n_trans=3, n_rotations=5, n_pixels=11):
@@ -1200,6 +1200,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     """The opt-in cache owns projections once and only serves later blocks."""
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import projection as projection_helpers
     for name, value in {
@@ -1375,6 +1376,7 @@ def test_live_k1_hybrid_reuses_exact_scores_in_both_significance_passes(
     """Selected and exact-full-direct hybrid scores are reused in both passes."""
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import oversampling, preprocessing
     from relax.helpers import projection as projection_helpers
@@ -2145,6 +2147,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     """Live K-class pass preserves layout, priors, support, and both tail masks."""
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import projection as projection_helpers
     from relax.sparse_pass2 import sparse_pass2_scoring

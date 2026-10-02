@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.relion import relion_ctf
 from relax.scoring import coarse_publication as pub
@@ -12,7 +13,6 @@ from relax.scoring.coarse_gemm_hybrid import (
     assemble_coarse_gemm_hybrid_compact_scores_f32,
 )
 from relax.scoring.coarse_partition import CoarseRowResult
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -243,6 +243,7 @@ def test_actual_significance_engine_publishes_identical_complete_state(
     from pathlib import Path
 
     from recovar import cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import oversampling, projection
     from relax.scoring import coarse_partition, significance

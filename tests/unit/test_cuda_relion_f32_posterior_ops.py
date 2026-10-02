@@ -82,6 +82,7 @@ def test_relion_f32_posterior_cuda_primitives_preserve_float32_chain(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -128,6 +129,7 @@ def test_batched_relion_f32_posterior_primitives_match_scalar_rows(
     gpu_device,
 ):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -204,6 +206,7 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
     """
 
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -230,6 +233,7 @@ def test_batched_cub_sort_scan_matches_scalar_rows_at_pass1_sizes(
 
 def test_relion_f32_posterior_cuda_primitives_fail_closed_without_gpu(monkeypatch):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setattr(cuda_backproject.jax, "default_backend", lambda: "cpu")

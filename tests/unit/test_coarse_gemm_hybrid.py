@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.scoring.coarse_gemm_hybrid import (
     CoarseGemmHybridBlockSelection,
@@ -19,7 +20,6 @@ from relax.scoring.coarse_gemm_hybrid import (
     update_coarse_gemm_hybrid_interval_state,
     validate_coarse_gemm_hybrid_block_selection_for_rescore,
 )
-from helpers.float_compare import assert_matches, matches
 
 pytestmark = pytest.mark.unit
 
@@ -831,6 +831,7 @@ def test_compact_hybrid_gpu_positive_oracle_and_fixed_capacity_support(
     """Compact scores retain dense positive-only support on the live CUB path."""
 
     from recovar import cuda_backproject
+
     from relax.helpers import oversampling
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
