@@ -2701,8 +2701,52 @@ def test_coarse_gaussian_gemm_cached_block_rows_fit_and_balance():
     ) == 4_608
 
 
+def _pass1_case(seed=20261002):
+    n_classes, n_rot, block, n_images, n_trans, n_pixels = 3, 5, 2, 3, 2, 7
+    rng = np.random.default_rng(seed)
+    complex_normal = lambda *shape: (rng.normal(size=shape) + 1j * rng.normal(size=shape)).astype(np.complex64)  # noqa: E731
+    case = dict(
+        n_classes=n_classes, n_rot=n_rot, block=block, n_images=n_images, n_trans=n_trans,
+        cache=jnp.asarray(complex_normal(n_classes, n_rot, n_pixels)),
+        shifted=jnp.asarray(complex_normal(n_images, n_trans, n_pixels)),
+        weight=jnp.asarray(rng.uniform(0.1, 1.0, size=(n_images, n_pixels)).astype(np.float32)),
+        initial=jnp.asarray(rng.uniform(0.0, 2.0, size=n_images).astype(np.float32)),
+        class_prior=rng.normal(size=n_classes).astype(np.float32),
+        rotation_prior=np.pad(rng.normal(size=(n_classes, n_rot)).astype(np.float32), ((0, 0), (0, 1))),
+        translation_prior=jnp.asarray(rng.normal(size=(n_images, n_trans)).astype(np.float32)),
+    )
+    case["blocks"] = tuple(
+        (k, r0, min(block, n_rot - r0), block) for k in range(n_classes) for r0 in range(0, n_rot, block)
+    )
+    case["prior_terms"] = tuple(
+        (jnp.asarray(case["class_prior"][k]), jnp.asarray(case["rotation_prior"][k, r0 : r0 + block]))
+        for k, r0, _, _ in case["blocks"]
+    )
+    case["state"] = significance._pass1_initial_state(
+        (
+            jnp.full(n_images, -jnp.inf, dtype=jnp.float32),
+            jnp.zeros(n_images, dtype=jnp.float32),
+            jnp.zeros(n_images, dtype=jnp.int32),
+        ),
+        n_classes,
+    )
+    return case
+
+
+def _pass1_static(case, score_kind, exact_weight_order):
+    return dict(
+        n_trans=case["n_trans"],
+        image_shape=(4, 4),
+        volume_shape=(4, 4, 4),
+        float64=False,
+        score_kind=score_kind,
+        exact_weight_order=exact_weight_order,
+        return_class_best=True,
+    )
+
+
 @pytest.mark.parametrize("exact_weight_order", [False, True])
-def test_coarse_gemm_pass1_batch_is_the_per_class_block_loop(exact_weight_order):
+def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
     """The one-program pass 1 equals class-then-block GEMM scores, priors and running reductions.
 
     Three classes of five cached rotations in blocks of two (a padded tail block), two of
@@ -2711,63 +2755,29 @@ def test_coarse_gemm_pass1_batch_is_the_per_class_block_loop(exact_weight_order)
     class, and each class's best pose are those of the scores with every prior added.
     """
 
-    n_classes, n_rot, block, n_images, n_trans, n_pixels = 3, 5, 2, 3, 2, 7
-    rng = np.random.default_rng(20261002)
-    cache = jnp.asarray(
-        (rng.normal(size=(n_classes, n_rot, n_pixels)) + 1j * rng.normal(size=(n_classes, n_rot, n_pixels))).astype(
-            np.complex64
-        )
+    case = _pass1_case()
+    n_classes, n_rot, n_images, n_trans = case["n_classes"], case["n_rot"], case["n_images"], case["n_trans"]
+    state, values = significance._coarse_pass1_blocks(
+        case["state"],
+        case["cache"],
+        case["shifted"],
+        case["weight"],
+        case["initial"],
+        2,
+        case["prior_terms"],
+        case["translation_prior"],
+        blocks=case["blocks"],
+        **_pass1_static(case, "gaussian", exact_weight_order),
     )
-    shifted = jnp.asarray(
-        (rng.normal(size=(n_images, n_trans, n_pixels)) + 1j * rng.normal(size=(n_images, n_trans, n_pixels))).astype(
-            np.complex64
-        )
-    )
-    weight = jnp.asarray(rng.uniform(0.1, 1.0, size=(n_images, n_pixels)).astype(np.float32))
-    initial = jnp.asarray(rng.uniform(0.0, 2.0, size=n_images).astype(np.float32))
-    class_prior = rng.normal(size=n_classes).astype(np.float32)
-    rotation_prior = np.pad(rng.normal(size=(n_classes, n_rot)).astype(np.float32), ((0, 0), (0, 1)))
-    translation_prior = jnp.asarray(rng.normal(size=(n_images, n_trans)).astype(np.float32))
-    prior_terms = tuple(
-        (
-            jnp.asarray(class_prior[k]),
-            tuple(jnp.asarray(rotation_prior[k, r0 : r0 + block]) for r0 in range(0, n_rot + 1, block)),
-        )
-        for k in range(n_classes)
-    )
-    constants = (
-        jnp.full(n_images, -jnp.inf, dtype=jnp.float32),
-        jnp.zeros(n_images, dtype=jnp.float32),
-        jnp.zeros(n_images, dtype=jnp.int32),
-    )
-    values, raw_max, (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_pose) = (
-        significance._coarse_gemm_pass1_batch(
-            cache,
-            shifted,
-            weight,
-            initial,
-            2,
-            prior_terms,
-            translation_prior,
-            constants,
-            n_rot=n_rot,
-            rotation_block_size=block,
-            n_trans=n_trans,
-            image_shape=(4, 4),
-            volume_shape=(4, 4, 4),
-            float64=False,
-            exact_weight_order=exact_weight_order,
-            return_class_best=True,
-        )
-    )
+    (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_pose), raw_max = state
 
     # Reference: every class's whole score table from the public GEMM scorer.
     raw = np.stack(
         [
             np.asarray(
                 scoring._relion_coarse_gaussian_gemm_scores(
-                    cache[k], jnp.abs(cache[k]) ** 2, shifted, weight, initial, 2,
-                    image_shape=(4, 4), volume_shape=(4, 4, 4),
+                    case["cache"][k], jnp.abs(case["cache"][k]) ** 2, case["shifted"], case["weight"],
+                    case["initial"], 2, image_shape=(4, 4), volume_shape=(4, 4, 4),
                 )
             )
             for k in range(n_classes)
@@ -2776,12 +2786,12 @@ def test_coarse_gemm_pass1_batch_is_the_per_class_block_loop(exact_weight_order)
     )  # [B, K, R, T]
     with_prior = (
         raw
-        + class_prior[None, :, None, None]
-        + rotation_prior[None, :, :n_rot, None]
-        + np.asarray(translation_prior)[:, None, None, :]
+        + case["class_prior"][None, :, None, None]
+        + case["rotation_prior"][None, :, :n_rot, None]
+        + np.asarray(case["translation_prior"])[:, None, None, :]
     )
     expected_values = (raw if exact_weight_order else with_prior).reshape(n_images, -1)
-    assert_matches(np.asarray(values), expected_values)
+    assert_matches(np.asarray(jnp.concatenate(values, axis=1)), expected_values)
     assert_matches(np.asarray(raw_max), raw.reshape(n_images, -1).max(axis=1))
     flat = with_prior.astype(np.float64).reshape(n_images, n_classes, -1)
     log_z = np.log(np.exp(flat - flat.max(axis=(1, 2), keepdims=True)).sum(axis=(1, 2))) + flat.max(axis=(1, 2))
@@ -2797,3 +2807,47 @@ def test_coarse_gemm_pass1_batch_is_the_per_class_block_loop(exact_weight_order)
     assert_matches(best_class, flat.reshape(n_images, -1).argmax(axis=1) // (n_rot * n_trans))
     assert_matches(best_pose, flat.reshape(n_images, -1).argmax(axis=1) % (n_rot * n_trans))
     assert_matches(best_score, flat.reshape(n_images, -1).max(axis=1))
+
+
+@pytest.mark.parametrize("score_kind", ["gaussian", "normalized_cc"])
+def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
+    """A pass whose cache does not fit calls the program once per block on that block's projection.
+
+    Folding the blocks one call at a time, each with its projected rows (zero past the
+    block's rotations, as a padded rotation block projects), gives the one-call values and
+    state, for the Gaussian GEMM scores and RELION's normalized CC.
+    """
+
+    case = _pass1_case(seed=7)
+    static = _pass1_static(case, score_kind, False)
+    common = (case["shifted"], case["weight"], case["initial"], 2)
+    whole_state, whole_values = significance._coarse_pass1_blocks(
+        case["state"], case["cache"], *common, case["prior_terms"], case["translation_prior"],
+        blocks=case["blocks"], **static,
+    )
+    state, values = case["state"], []
+    for block, terms in zip(case["blocks"], case["prior_terms"]):
+        class_index, r0, rows, block_rows = block
+        reference = jnp.pad(case["cache"][class_index, r0 : r0 + rows], ((0, block_rows - rows), (0, 0)))
+        state, block_values = significance._coarse_pass1_blocks(
+            state, (reference,), *common, (terms,), case["translation_prior"], blocks=(block,), **static,
+        )
+        values.extend(block_values)
+    assert_matches(np.asarray(jnp.concatenate(values, axis=1)), np.asarray(jnp.concatenate(whole_values, axis=1)))
+    for got, want in zip(jax.tree_util.tree_leaves(state), jax.tree_util.tree_leaves(whole_state)):
+        assert_matches(np.asarray(got), np.asarray(want))
+    if score_kind == "normalized_cc":
+        # No priors: the CC values are the scorer's own.
+        cc = np.stack(
+            [
+                np.asarray(
+                    scoring._relion_coarse_normalized_cc_gemm_scores_jit(
+                        case["cache"][k], case["shifted"], case["weight"], 2, n_images=case["n_images"],
+                        n_trans=case["n_trans"],
+                    )
+                )
+                for k in range(case["n_classes"])
+            ],
+            axis=1,
+        ).reshape(case["n_images"], -1)
+        assert_matches(np.asarray(jnp.concatenate(values, axis=1)), cc)

@@ -119,6 +119,7 @@ from relax.scoring.scoring import (
     _e_step_block_scores,
     _e_step_block_scores_windowed,
     _relion_coarse_gaussian_gemm_scores_jit,
+    _relion_coarse_normalized_cc_gemm_scores_jit,
     _update_logsumexp,
 )
 from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
@@ -921,76 +922,99 @@ def _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, t
     return scores
 
 
+def _pass1_initial_state(batch_constants, n_classes: int):
+    """The running pass-1 reductions of one image batch before its first block (``_coarse_pass1_blocks``).
+
+    ``batch_constants`` are the batch's ``(-inf, 0.0, 0)`` rows. The raw score
+    maximum starts at float32 ``-inf``.
+    """
+
+    neg_inf_f, zeros_f64, zeros_i32 = batch_constants
+    per_class = int(n_classes)
+    return (
+        (neg_inf_f, zeros_f64),
+        ((neg_inf_f,) * per_class, (zeros_f64,) * per_class),
+        (neg_inf_f, zeros_i32, zeros_i32),
+        ((neg_inf_f,) * per_class, (zeros_i32,) * per_class),
+        jnp.full(neg_inf_f.shape, -jnp.inf, dtype=jnp.float32),
+    )
+
+
 @partial(
     jax.jit,
     static_argnames=(
-        "n_rot",
-        "rotation_block_size",
+        "blocks",
         "n_trans",
         "image_shape",
         "volume_shape",
         "float64",
+        "score_kind",
         "exact_weight_order",
         "return_class_best",
     ),
 )
-def _coarse_gemm_pass1_batch(
-    projection_cache,
+def _coarse_pass1_blocks(
+    state,
+    references,
     shifted_corrected,
     pixel_weight,
     initial_diff2,
     actual_image_count,
     prior_terms,
     translation_log_prior,
-    batch_constants,
     *,
-    n_rot: int,
-    rotation_block_size: int,
+    blocks: tuple,
     n_trans: int,
     image_shape: tuple,
     volume_shape: tuple,
     float64: bool,
+    score_kind: str,
     exact_weight_order: bool,
     return_class_best: bool,
 ):
-    """Pass 1 of one image batch over every class and rotation block of the cached coarse GEMM scorer.
+    """Pass 1 of one image batch over ``blocks`` of the coarse GEMM scorers, folded into ``state``.
 
     One program instead of the per-class, per-block eager loop of
-    :func:`_compute_k_class_significance_batched`: the same statements, in the
-    same class-then-block order, so the same values. Each block's scores are the
-    cached projections' GEMM scores (:func:`_relion_coarse_gaussian_gemm_scores_jit`),
-    the padded tail rows are ``-inf``, the class, rotation and translation priors
-    are added (:func:`_add_coarse_prior_terms`) and the class and global
-    logsumexps, the best pose and, with ``return_class_best``, each class's best
-    pose are updated block by block. ``prior_terms[k]`` holds class ``k``'s prior
-    scalar and its rotation-prior blocks (``None`` without a rotation prior), as
-    the loop builds them; ``batch_constants`` its ``(-inf, 0.0, 0)`` starting rows.
+    :func:`_compute_k_class_significance_batched`, with the same statements in
+    the same class-then-block order, so the same values. ``blocks`` holds static
+    ``(class_index, rotation_start, rows, block_rows)`` entries. ``references`` is
+    the ``[K, R, P]`` cached projection table (each block reads its rows from it)
+    or a tuple of one projected ``[block_rows, P]`` block per entry; a pass whose
+    cache does not fit, and every ``--firstiter_cc`` pass, calls this once per
+    block with its projection. ``score_kind`` is ``"gaussian"`` (the cached or
+    projected rows' GEMM scores, :func:`_relion_coarse_gaussian_gemm_scores_jit`,
+    with ``initial_diff2``) or ``"normalized_cc"`` (RELION's coarse CC,
+    :func:`_relion_coarse_normalized_cc_gemm_scores_jit`; no priors, as RELION's
+    ``--firstiter_cc`` scores have none). The padded tail rows are ``-inf``; the
+    Gaussian scores get the class, rotation and translation priors
+    (:func:`_add_coarse_prior_terms`, ``prior_terms[i]`` = block ``i``'s class
+    scalar and rotation-prior block or ``None``); then the class and global
+    logsumexps, the best pose and class and, with ``return_class_best``, each
+    class's best pose are updated block by block.
 
-    Returns the support pass's ``[B, K * n_rot * T]`` values (the pre-prior scores
-    with ``exact_weight_order``, the prior-added ones otherwise), the raw score
-    maximum, the global and per-class running ``(max, sum)``, the best score,
-    pose and class, and the per-class best scores and poses (empty without
-    ``return_class_best``). With several images per batch K15 ran 400+ eager
-    programs per batch and the host stalled on the device queue while the
-    device idled between batches (K15 50k, nsys 14868231).
+    ``state`` is :func:`_pass1_initial_state` or an earlier call's state:
+    ``((global max, sum), (class maxima, class sums), (best score, pose, class),
+    (class best scores, poses), raw score maximum)``. Returns the new state and
+    one ``[B, rows * T]`` support value block per entry (the pre-prior scores with
+    ``exact_weight_order``, the prior-added ones otherwise). At K15, 400+ eager
+    programs per batch kept the host behind the device queue while the device
+    idled between batches (K15 50k, nsys 14868231).
     """
 
-    neg_inf_f, zeros_f64, zeros_i32 = batch_constants
+    (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_argmax), raw_score_max = state
+    best_score, best_argmax, best_class = best
+    class_max, class_sum = list(class_max), list(class_sum)
+    class_best, class_best_argmax = list(class_best), list(class_best_argmax)
     batch_size = int(shifted_corrected.shape[0])
-    n_blocks = -(-int(n_rot) // int(rotation_block_size))
-    global_max, global_sum = neg_inf_f, zeros_f64
-    best_score, best_argmax, best_class = neg_inf_f, zeros_i32, zeros_i32
-    raw_score_max = jnp.full(batch_size, -jnp.inf, dtype=jnp.float32)
-    class_max_values, class_sum_values, class_best, class_best_argmax, values = [], [], [], [], []
-    for class_index, (class_log_prior, rotation_prior_blocks) in enumerate(prior_terms):
-        class_max, class_sum = neg_inf_f, zeros_f64
-        previous_best, previous_best_argmax = neg_inf_f, zeros_i32
-        for block_index in range(n_blocks):
-            r0 = block_index * int(rotation_block_size)
-            rows = min(int(rotation_block_size), int(n_rot) - r0)
-            reference = jax.lax.dynamic_slice_in_dim(projection_cache[class_index], r0, rows, axis=0)
-            if rows < int(rotation_block_size):
-                reference = jnp.pad(reference, ((0, int(rotation_block_size) - rows), (0, 0)))
+    values = []
+    for block_index, (class_index, r0, rows, block_rows) in enumerate(blocks):
+        if isinstance(references, tuple):
+            reference = references[block_index]
+        else:
+            reference = jax.lax.dynamic_slice_in_dim(references[class_index], r0, rows, axis=0)
+            if rows < block_rows:
+                reference = jnp.pad(reference, ((0, block_rows - rows), (0, 0)))
+        if score_kind == "gaussian":
             scores = _relion_coarse_gaussian_gemm_scores_jit(
                 reference,
                 None,
@@ -1004,43 +1028,50 @@ def _coarse_gemm_pass1_batch(
                 volume_shape=volume_shape,
                 float64=float64,
             )
-            if rows < int(rotation_block_size):
-                scores = jnp.where(jnp.arange(int(rotation_block_size))[None, :, None] < rows, scores, -jnp.inf)
-            raw_score_max = jnp.maximum(raw_score_max, jnp.max(scores.reshape(batch_size, -1), axis=1))
-            pre_prior_scores = scores
-            scores = _add_coarse_prior_terms(
-                scores,
-                class_log_prior,
-                None if rotation_prior_blocks is None else rotation_prior_blocks[block_index],
-                translation_log_prior,
+        elif score_kind == "normalized_cc":
+            scores = _relion_coarse_normalized_cc_gemm_scores_jit(
+                jnp.asarray(reference, dtype=jnp.complex64),
+                shifted_corrected,
+                pixel_weight,
+                actual_image_count,
+                n_images=batch_size,
+                n_trans=int(n_trans),
             )
-            values.append((pre_prior_scores if exact_weight_order else scores)[:, :rows, :].reshape(batch_size, -1))
-            class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
-            global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
-            flat_scores = scores.reshape(batch_size, -1)
-            block_best = jnp.max(flat_scores, axis=1)
-            block_argmax = jnp.argmax(flat_scores, axis=1)
-            improved = block_best > best_score
-            best_score = jnp.where(improved, block_best, best_score)
-            best_argmax = jnp.where(improved, block_argmax + r0 * int(n_trans), best_argmax)
-            best_class = jnp.where(improved, class_index, best_class)
-            if return_class_best:
-                class_improved = block_best > previous_best
-                previous_best = jnp.where(class_improved, block_best, previous_best)
-                previous_best_argmax = jnp.where(class_improved, block_argmax + r0 * int(n_trans), previous_best_argmax)
-        class_max_values.append(class_max)
-        class_sum_values.append(class_sum)
+        else:
+            raise ValueError(f"unknown coarse score kind {score_kind!r}")
+        if rows < block_rows:
+            scores = jnp.where(jnp.arange(block_rows)[None, :, None] < rows, scores, -jnp.inf)
+        raw_score_max = jnp.maximum(raw_score_max, jnp.max(scores.reshape(batch_size, -1), axis=1))
+        pre_prior_scores = scores
+        if score_kind == "gaussian":
+            class_log_prior, rotation_log_prior_block = prior_terms[block_index]
+            scores = _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, translation_log_prior)
+        values.append((pre_prior_scores if exact_weight_order else scores)[:, :rows, :].reshape(batch_size, -1))
+        class_max[class_index], class_sum[class_index] = _update_logsumexp(
+            class_max[class_index], class_sum[class_index], scores
+        )
+        global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
+        flat_scores = scores.reshape(batch_size, -1)
+        block_best = jnp.max(flat_scores, axis=1)
+        block_argmax = jnp.argmax(flat_scores, axis=1)
+        improved = block_best > best_score
+        best_score = jnp.where(improved, block_best, best_score)
+        best_argmax = jnp.where(improved, block_argmax + r0 * int(n_trans), best_argmax)
+        best_class = jnp.where(improved, class_index, best_class)
         if return_class_best:
-            class_best.append(previous_best)
-            class_best_argmax.append(previous_best_argmax)
-    return (
-        jnp.concatenate(values, axis=1),
-        raw_score_max,
+            class_improved = block_best > class_best[class_index]
+            class_best[class_index] = jnp.where(class_improved, block_best, class_best[class_index])
+            class_best_argmax[class_index] = jnp.where(
+                class_improved, block_argmax + r0 * int(n_trans), class_best_argmax[class_index]
+            )
+    state = (
         (global_max, global_sum),
-        (tuple(class_max_values), tuple(class_sum_values)),
+        (tuple(class_max), tuple(class_sum)),
         (best_score, best_argmax, best_class),
         (tuple(class_best), tuple(class_best_argmax)),
+        raw_score_max,
     )
+    return state, tuple(values)
 
 
 def _significance_score_cache_enabled(n_images, n_classes, n_rot, n_trans, *, use_float64_scoring: bool) -> bool:
@@ -4156,16 +4187,15 @@ def _compute_k_class_significance_batched(
                 else:
                     _fused_trans_lp_per_image = jnp.asarray(batch_translation_log_prior, dtype=score_real_dtype)
 
-            # The cached coarse GEMM scorer's pass 1 is one program per batch
-            # (_coarse_gemm_pass1_batch); the loop below remains for the other
-            # scorers and for the diagnostics that read its per-block scores.
+            # Pass 1 of the coarse GEMM scorers is one program per batch
+            # (_coarse_pass1_blocks): over the cached projections in one call, or
+            # one call per class and rotation block on its projection when the
+            # cache does not fit and for --firstiter_cc. The loop below remains
+            # for the other scorers and the diagnostics that read per-block scores.
             batched_support_values = None
-            if (
-                coarse_gaussian_gemm_macro_enabled
-                and coarse_gaussian_gemm_projection_cache is not None
-                and relion_f32_coarse_support_enabled
+            pass1_program = (
+                (coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
                 and collect_significance
-                and not exact_cc_enabled
                 and not use_fused_pass1
                 and not track_class_second
                 and compact_hybrid_scores is None
@@ -4175,49 +4205,95 @@ def _compute_k_class_significance_batched(
                 and coarse_gemm_pre_prior_stream_state is None
                 and dump_target_pre_prior_blocks_per_class is None
                 and dump_target_with_prior_blocks_per_class is None
-            ):
+            )
+            if pass1_program:
                 if pass1_prior_terms is None:
                     pass1_prior_terms = tuple(
-                        (
-                            jnp.asarray(class_log_priors_np[class_index], dtype=jnp.float32),
-                            None
-                            if rotation_log_prior_padded is None
-                            else tuple(
-                                jnp.asarray(
-                                    rotation_log_prior_padded[
-                                        class_index, r0 : r0 + rotation_block_size
-                                    ]
-                                )
-                                for r0 in range(0, n_rot_padded, rotation_block_size)
-                            ),
+                        tuple(
+                            (
+                                jnp.asarray(class_log_priors_np[class_index], dtype=jnp.float32),
+                                None
+                                if rotation_log_prior_padded is None
+                                else jnp.asarray(
+                                    rotation_log_prior_padded[class_index, r0 : r0 + rotation_block_size]
+                                ),
+                            )
+                            for r0 in range(0, n_rot_padded, rotation_block_size)
                         )
                         for class_index in range(n_classes)
                     )
-                (
-                    batched_support_values,
-                    relion_raw_score_max,
-                    (global_max, global_sum),
-                    (class_max_tuple, class_sum_tuple),
-                    (best_score_batch, best_argmax_batch, best_class_batch),
-                    (class_best_tuple, class_best_argmax_tuple),
-                ) = _coarse_gemm_pass1_batch(
-                    coarse_gaussian_gemm_projection_cache,
-                    jnp.asarray(coarse_gaussian_shifted_corrected, dtype=jnp.complex64),
-                    jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
-                    jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
-                    actual_batch_size,
-                    pass1_prior_terms,
-                    batch_translation_log_prior,
-                    (neg_inf_f, zeros_f64, zeros_i32),
-                    n_rot=int(n_rot),
-                    rotation_block_size=int(rotation_block_size),
+                pass1_blocks = tuple(
+                    (class_index, r0, min(rotation_block_size, n_rot - r0), int(rotation_block_size))
+                    for class_index in range(n_classes)
+                    for r0 in range(0, n_rot, rotation_block_size)
+                )
+                if exact_cc_enabled:
+                    pass1_operands = (exact_cc_shifted, jnp.asarray(exact_cc_pixel_weight, dtype=jnp.float32), None)
+                else:
+                    pass1_operands = (
+                        jnp.asarray(coarse_gaussian_shifted_corrected, dtype=jnp.complex64),
+                        jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
+                        jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
+                    )
+                pass1_static = dict(
                     n_trans=int(n_trans),
                     image_shape=tuple(int(value) for value in image_shape),
                     volume_shape=tuple(int(value) for value in volume_shape),
                     float64=_coarse_gemm_float64_requested(),
+                    score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
                     exact_weight_order=relion_exact_coarse_weight_order,
                     return_class_best=bool(return_class_best),
                 )
+                pass1_state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), n_classes)
+                if coarse_gaussian_gemm_projection_cache is not None and not exact_cc_enabled:
+                    pass1_state, pass1_values = _coarse_pass1_blocks(
+                        pass1_state,
+                        coarse_gaussian_gemm_projection_cache,
+                        *pass1_operands,
+                        actual_batch_size,
+                        tuple(
+                            pass1_prior_terms[class_index][r0 // rotation_block_size]
+                            for class_index, r0, _, _ in pass1_blocks
+                        ),
+                        batch_translation_log_prior,
+                        blocks=pass1_blocks,
+                        **pass1_static,
+                    )
+                else:
+                    pass1_values = []
+                    for class_index, r0, rows, block_rows in pass1_blocks:
+                        rots_b = rotations_padded[r0 : r0 + block_rows]
+                        if exact_cc_enabled:
+                            reference, _ = _project_block_once(
+                                class_index, means_for_proj[class_index], rots_b, rotation_start=r0
+                            )
+                            if use_window and not projector_returns_compact:
+                                reference = reference[:, window_indices]
+                        else:
+                            reference, _ = _project_coarse_gemm_block_once(
+                                class_index, means_for_proj[class_index], rots_b
+                            )
+                        pass1_state, block_values = _coarse_pass1_blocks(
+                            pass1_state,
+                            (reference,),
+                            *pass1_operands,
+                            actual_batch_size,
+                            (pass1_prior_terms[class_index][r0 // rotation_block_size],),
+                            batch_translation_log_prior,
+                            blocks=((class_index, r0, rows, block_rows),),
+                            **pass1_static,
+                        )
+                        pass1_values.extend(block_values)
+                batched_support_values = jnp.concatenate(pass1_values, axis=1)
+                (
+                    (global_max, global_sum),
+                    (class_max_tuple, class_sum_tuple),
+                    (best_score_batch, best_argmax_batch, best_class_batch),
+                    (class_best_tuple, class_best_argmax_tuple),
+                    pass1_raw_score_max,
+                ) = pass1_state
+                if relion_raw_score_max is not None:
+                    relion_raw_score_max = pass1_raw_score_max
                 class_max_values = list(class_max_tuple)
                 class_sum_values = list(class_sum_tuple)
                 if return_class_best:
@@ -4642,7 +4718,11 @@ def _compute_k_class_significance_batched(
                 if compact_hybrid_scores is not None:
                     batch_values = compact_hybrid_scores.posterior_scores_flat
                 elif batched_support_values is not None:
-                    batch_values = batched_support_values
+                    batch_values = (
+                        batched_support_values
+                        if relion_f32_coarse_support_enabled
+                        else jnp.exp(batched_support_values - global_log_z[:, None])
+                    )
                 else:
                     for class_index, mean_for_proj in enumerate(means_for_proj):
                         class_weight_blocks = []
