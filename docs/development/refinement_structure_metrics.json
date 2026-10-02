@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "model-current-resolution-angstrom-20261002",
-    "source_commit": "562d536488bc3b922729243f6c049d24e6eb9560",
+    "package": "ppca-subtomogram-tilt-groups-20261002",
+    "source_commit": "be905d6be50a25318a98e527c42d1b0b98922453",
     "metrics": {
       "files": [
         {
@@ -111,9 +111,9 @@
         },
         {
           "function_count": 23,
-          "nonblank_noncomment_lines": 930,
+          "nonblank_noncomment_lines": 933,
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 1050
+          "physical_lines": 1054
         },
         {
           "function_count": 12,
@@ -124,14 +124,14 @@
       ],
       "large_argument_functions": [
         {
-          "line": 312,
+          "line": 316,
           "line_span": 343,
           "name": "score_tomo_half",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         },
         {
-          "line": 702,
+          "line": 706,
           "line_span": 210,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
@@ -238,7 +238,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 312,
+          "line": 316,
           "line_span": 343,
           "name": "score_tomo_half",
           "parameter_count": 26,
@@ -252,7 +252,7 @@
           "path": "relax/refinement/local_search_iteration.py"
         },
         {
-          "line": 702,
+          "line": 706,
           "line_span": 210,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
@@ -275,8 +275,8 @@
         "large_argument_function_count": 9,
         "maximum_function_line_span": 5580,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 18978,
-        "physical_lines": 21524,
+        "nonblank_noncomment_lines": 18981,
+        "physical_lines": 21528,
         "very_large_argument_function_count": 2
       }
     }
