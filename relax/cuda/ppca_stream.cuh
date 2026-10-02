@@ -170,7 +170,17 @@ __device__ __forceinline__ int packed(int i, int j, int n) {  // np.triu_indices
     return i * n - (i * (i - 1)) / 2 + (j - i);
 }
 
-// grid ceil(R * B / 4), 128 threads: warp w handles pair (r, b) = divmod(blockIdx.x * 4 + w, B).
+// Shared-memory floats per (rotation, image) pair: the packed lower Cholesky factor, log det,
+// g00 and g0 (odd, so the per-lane writes of phase 1 do not share banks).
+template <int Q>
+__host__ __device__ constexpr int factor_stride() {
+    return (Q * (Q + 1) / 2 + Q + 2) | 1;
+}
+
+// grid ceil(R * B / 128), 128 threads; warp w of block x handles the 32 pairs (r, b) = divmod(p, B),
+// p = (4 x + w) 32 + 0..31. Phase 1: each lane factors I + H of its own pair (Cholesky, log det,
+// covariance) and leaves the factor in shared memory, so no factor is computed twice. Phase 2:
+// for each of the 32 pairs in turn the lanes run over translations.
 // inner (P, R, ld): row (p, r) holds column b * T + t, padded to ld >= B * T (the GEMM's aligned
 // shift axis); gram (K, R, B) packed upper over P; start (1,) device row offset of the block.
 // score (cap, B, T), mean (Q, cap, B, T), cov (cap, B, tri(Q)), part_max / part_sum (cap, B),
@@ -183,121 +193,155 @@ __global__ void __launch_bounds__(128) latent_epilogue_kernel(
     float* __restrict__ part_sum) {
     constexpr int P = Q + 1;
     constexpr int TQ = Q * (Q + 1) / 2;
-    const int lane = threadIdx.x & 31;
-    const long pair = (long)blockIdx.x * 4 + (threadIdx.x >> 5);
-    if (pair >= (long)R * B) return;
-    const int r = (int)(pair / B), b = (int)(pair % B);
-    const int start = *start_ptr;
+    constexpr int S = factor_stride<Q>();
+    extern __shared__ float s_factor[];  // [4 warps][32 pairs][S]
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
     const long RB = (long)R * B;
-    auto G = [&](int i, int j) { return gram[(long)packed(i, j, P) * RB + pair]; };
-    // Cholesky of I + H (H_ij = Gram of latent components i + 1, j + 1), as _unit_shift_cholesky.
-    float L[Q > 0 ? Q : 1][Q > 0 ? Q : 1];
-    float logdet = 0.f;
+    const long pair0 = ((long)blockIdx.x * 4 + warp) * 32;
+    if (pair0 >= RB) return;
+    const int start = *start_ptr;
+    float* factors = s_factor + (long)warp * 32 * S;
+    {
+        // Phase 1: lane's own pair. Cholesky of I + H (H_ij = Gram of latent components i + 1, j + 1),
+        // as _unit_shift_cholesky.
+        const long pair = pair0 + lane;
+        if (pair < RB) {
+            auto G = [&](int i, int j) { return gram[(long)packed(i, j, P) * RB + pair]; };
+            float L[Q > 0 ? Q : 1][Q > 0 ? Q : 1];
+            float logdet = 0.f;
 #pragma unroll
-    for (int j = 0; j < Q; j++) {
-        float s = 1.f + G(j + 1, j + 1);
+            for (int j = 0; j < Q; j++) {
+                float s = 1.f + G(j + 1, j + 1);
 #pragma unroll
-        for (int k = 0; k < j; k++) s = s - L[j][k] * L[j][k];
-        L[j][j] = sqrtf(s);
-        logdet = logdet + logf(L[j][j]);
+                for (int k = 0; k < j; k++) s = s - L[j][k] * L[j][k];
+                L[j][j] = sqrtf(s);
+                logdet = logdet + logf(L[j][j]);
 #pragma unroll
-        for (int i = j + 1; i < Q; i++) {
-            float s2 = G(j + 1, i + 1);
+                for (int i = j + 1; i < Q; i++) {
+                    float s2 = G(j + 1, i + 1);
 #pragma unroll
-            for (int k = 0; k < j; k++) s2 = s2 - L[i][k] * L[j][k];
-            L[i][j] = s2 / L[j][j];
-        }
-    }
-    logdet = 2.f * logdet;
-    const float g00 = G(0, 0);
-    float g0[Q > 0 ? Q : 1];
-#pragma unroll
-    for (int j = 0; j < Q; j++) g0[j] = G(0, j + 1);
-    const long out_pair = (long)(start + r) * B + b;
-    if (Q > 0) {
-        // Covariance (L^-T L^-1) packed upper, as _lower_inverse and the covariance stack.
-        float inv[Q > 0 ? Q : 1][Q > 0 ? Q : 1];
-#pragma unroll
-        for (int j = 0; j < Q; j++) {
-            inv[j][j] = 1.f / L[j][j];
-#pragma unroll
-            for (int i = j + 1; i < Q; i++) {
-                float s = 0.f;
-#pragma unroll
-                for (int k = j; k < i; k++) s = s + L[i][k] * inv[k][j];
-                inv[i][j] = -s / L[i][i];
+                    for (int k = 0; k < j; k++) s2 = s2 - L[i][k] * L[j][k];
+                    L[i][j] = s2 / L[j][j];
+                }
             }
-        }
-        int k = 0;
+            float* f = factors + lane * S;
+            int k = 0;
 #pragma unroll
-        for (int i = 0; i < Q; i++) {
+            for (int i = 0; i < Q; i++) {
 #pragma unroll
-            for (int j = i; j < Q; j++, k++) {
-                if (lane == (k & 31)) {
-                    float s = 0.f;
+                for (int j = 0; j <= i; j++, k++) f[k] = L[i][j];
+            }
+            f[TQ] = 2.f * logdet;
+            f[TQ + 1] = G(0, 0);
 #pragma unroll
-                    for (int m = j; m < Q; m++) s = s + inv[m][i] * inv[m][j];
-                    cov[out_pair * TQ + k] = s;
+            for (int j = 0; j < Q; j++) f[TQ + 2 + j] = G(0, j + 1);
+            if (Q > 0) {
+                // Covariance (L^-T L^-1) packed upper, as _lower_inverse and the covariance stack.
+                const int r = (int)(pair / B), b = (int)(pair % B);
+                const long out_pair = (long)(start + r) * B + b;
+                float inv[Q > 0 ? Q : 1][Q > 0 ? Q : 1];
+#pragma unroll
+                for (int j = 0; j < Q; j++) {
+                    inv[j][j] = 1.f / L[j][j];
+#pragma unroll
+                    for (int i = j + 1; i < Q; i++) {
+                        float s = 0.f;
+#pragma unroll
+                        for (int m = j; m < i; m++) s = s + L[i][m] * inv[m][j];
+                        inv[i][j] = -s / L[i][i];
+                    }
+                }
+                int c = 0;
+#pragma unroll
+                for (int i = 0; i < Q; i++) {
+#pragma unroll
+                    for (int j = i; j < Q; j++, c++) {
+                        float s = 0.f;
+#pragma unroll
+                        for (int m = j; m < Q; m++) s = s + inv[m][i] * inv[m][j];
+                        cov[out_pair * TQ + c] = s;
+                    }
                 }
             }
         }
     }
-    const int row = prior.rows[r];
-    const int coarse_row = prior.rotation_parent[row];
-    const float row_prior = prior.rotation_log_prior[row];
-    const bool* mask = prior.coarse_mask + ((long)b * prior.coarse_rotations_plus_one + coarse_row) *
-                                               prior.coarse_translations;
-    const long capB = (long)cap * B;
-    float best = -INFINITY;
-    int best_t = T;
-    for (int t = lane; t < T; t += 32) {
-        const long at = (long)r * ld + (long)b * T + t;
-        const long stride = (long)R * ld;
-        const float i0 = inner[at];
-        const float rho = g00 - 2.f * i0;
-        const float pose_prior =
-            mask[prior.translation_parent[t]] ? row_prior + prior.translation_log_prior[t] : -INFINITY;
-        float s;
-        if (Q == 0) {
-            s = -0.5f * rho + pose_prior;
-        } else {
-            float v[Q > 0 ? Q : 1];
-            float norm = 0.f;
-#pragma unroll
+    __syncwarp();
+    for (int slot = 0; slot < 32; slot++) {
+        const long pair = pair0 + slot;
+        if (pair >= RB) break;
+        const int r = (int)(pair / B), b = (int)(pair % B);
+        const long out_pair = (long)(start + r) * B + b;
+        const float* f = factors + slot * S;
+        float L[Q > 0 ? Q : 1][Q > 0 ? Q : 1];
+        {
+            int k = 0;
+    #pragma unroll
             for (int i = 0; i < Q; i++) {
-                float x = inner[at + (long)(i + 1) * stride] - g0[i];
-#pragma unroll
-                for (int k = 0; k < i; k++) x = x - L[i][k] * v[k];
-                v[i] = x / L[i][i];
-                norm = norm + v[i] * v[i];
-            }
-            s = -0.5f * (rho - norm + logdet) + pose_prior;
-            float z[Q > 0 ? Q : 1];
-#pragma unroll
-            for (int i = Q - 1; i >= 0; i--) {
-                float x = v[i];
-#pragma unroll
-                for (int k = i + 1; k < Q; k++) x = x - L[k][i] * z[k];
-                z[i] = x / L[i][i];
-                mean[((long)i * capB + out_pair) * T + t] = z[i];
+    #pragma unroll
+                for (int j = 0; j <= i; j++, k++) L[i][j] = f[k];
             }
         }
-        score[out_pair * T + t] = s;
-        if (s > best) {
-            best = s;
-            best_t = t;
+        const float logdet = f[TQ], g00 = f[TQ + 1];
+        float g0[Q > 0 ? Q : 1];
+    #pragma unroll
+        for (int j = 0; j < Q; j++) g0[j] = f[TQ + 2 + j];
+        const int row = prior.rows[r];
+        const int coarse_row = prior.rotation_parent[row];
+        const float row_prior = prior.rotation_log_prior[row];
+        const bool* mask = prior.coarse_mask + ((long)b * prior.coarse_rotations_plus_one + coarse_row) *
+                                                   prior.coarse_translations;
+        const long capB = (long)cap * B;
+        float best = -INFINITY;
+        int best_t = T;
+        for (int t = lane; t < T; t += 32) {
+            const long at = (long)r * ld + (long)b * T + t;
+            const long stride = (long)R * ld;
+            const float i0 = inner[at];
+            const float rho = g00 - 2.f * i0;
+            const float pose_prior =
+                mask[prior.translation_parent[t]] ? row_prior + prior.translation_log_prior[t] : -INFINITY;
+            float s;
+            if (Q == 0) {
+                s = -0.5f * rho + pose_prior;
+            } else {
+                float v[Q > 0 ? Q : 1];
+                float norm = 0.f;
+    #pragma unroll
+                for (int i = 0; i < Q; i++) {
+                    float x = inner[at + (long)(i + 1) * stride] - g0[i];
+    #pragma unroll
+                    for (int k = 0; k < i; k++) x = x - L[i][k] * v[k];
+                    v[i] = x / L[i][i];
+                    norm = norm + v[i] * v[i];
+                }
+                s = -0.5f * (rho - norm + logdet) + pose_prior;
+                float z[Q > 0 ? Q : 1];
+    #pragma unroll
+                for (int i = Q - 1; i >= 0; i--) {
+                    float x = v[i];
+    #pragma unroll
+                    for (int k = i + 1; k < Q; k++) x = x - L[k][i] * z[k];
+                    z[i] = x / L[i][i];
+                    mean[((long)i * capB + out_pair) * T + t] = z[i];
+                }
+            }
+            score[out_pair * T + t] = s;
+            if (s > best) {
+                best = s;
+                best_t = t;
+            }
         }
-    }
-    const float m = warp_max(best);
-    const int arg = warp_min(best == m ? best_t : T);
-    float e = 0.f;
-    if (m != -INFINITY)
-        for (int t = lane; t < T; t += 32) e += expf(score[out_pair * T + t] - m);
-    e = warp_sum(e);
-    if (lane == 0) {
-        part_max[out_pair] = m;
-        part_arg[out_pair] = arg == T ? 0 : arg;
-        part_sum[out_pair] = e;
+        const float m = warp_max(best);
+        const int arg = warp_min(best == m ? best_t : T);
+        float e = 0.f;
+        if (m != -INFINITY)
+            for (int t = lane; t < T; t += 32) e += expf(score[out_pair * T + t] - m);
+        e = warp_sum(e);
+        if (lane == 0) {
+            part_max[out_pair] = m;
+            part_arg[out_pair] = arg == T ? 0 : arg;
+            part_sum[out_pair] = e;
+        }
     }
 }
 
@@ -470,7 +514,11 @@ struct LaunchEpilogue {
                            const float* gram, PriorTables prior, const int* start, float* score, float* mean,
                            float* cov, float* part_max, int* part_arg, float* part_sum) {
         const long pairs = (long)R * B;
-        latent_epilogue_kernel<Q><<<(unsigned)((pairs + 3) / 4), 128, 0, stream>>>(
+        const size_t smem = (size_t)4 * 32 * factor_stride<Q>() * sizeof(float);
+        cudaError_t err = cudaFuncSetAttribute(latent_epilogue_kernel<Q>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                               (int)smem);
+        if (err != cudaSuccess) return err;
+        latent_epilogue_kernel<Q><<<(unsigned)((pairs + 127) / 128), 128, smem, stream>>>(
             R, B, T, ld, cap, inner, gram, prior, start, score, mean, cov, part_max, part_arg, part_sum);
         return cudaGetLastError();
     }
