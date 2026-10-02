@@ -233,7 +233,14 @@ def euler_matrix_to_angles(matrices) -> np.ndarray:
     sign_sb = np.where(np.abs(sin_gamma) < _FLT_EPSILON, sign_small, np.where(sin_gamma > 0, sgn_12, -sgn_12))
     beta = libm.atan2(sign_sb * abs_sb, a[:, 2, 2])
     upright = a[:, 2, 2] >= 0
-    singular_gamma = np.where(upright, libm.atan2(-a[:, 1, 0], a[:, 0, 0]), libm.atan2(a[:, 1, 0], -a[:, 0, 0]))
+    # The singular branch's atan2 only for the rows that take it (the C-library atan2 is slow).
+    singular = np.flatnonzero(~regular)
+    singular_gamma = np.zeros_like(gamma)
+    singular_gamma[singular] = np.where(
+        upright[singular],
+        libm.atan2(-a[singular, 1, 0], a[singular, 0, 0]),
+        libm.atan2(a[singular, 1, 0], -a[singular, 0, 0]),
+    )
     alpha = np.where(regular, alpha, 0.0)
     beta = np.where(regular, beta, np.where(upright, 0.0, _PI))
     gamma = np.where(regular, gamma, singular_gamma)

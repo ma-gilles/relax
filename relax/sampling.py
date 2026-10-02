@@ -1223,6 +1223,14 @@ def get_oversampled_translation_grid(parent_translations, pixel_offset, oversamp
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=8)
+def _relion_order_rotation_grid(order: int, symmetry: str) -> np.ndarray:
+    # VDAM asks for the same unperturbed grid every iteration; read-only, callers get copies.
+    R = utils.R_from_relion(healpix_sampling.coarse_orientations(order, symmetry), degrees=True)
+    R.setflags(write=False)
+    return R
+
+
 def get_relion_rotation_grid(
     order,
     *,
@@ -1241,15 +1249,15 @@ def get_relion_rotation_grid(
     order for source-level InitialModel parity.
     """
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    relion_euler = healpix_sampling.coarse_orientations(int(order), symmetry)
-    R = utils.R_from_relion(relion_euler, degrees=True)
+    R = _relion_order_rotation_grid(int(order), symmetry)
     if rotation_index_order == "relion":
-        return R
+        return R.copy()
     if rotation_index_order != "recovar":
         raise ValueError(f"rotation_index_order must be 'recovar' or 'relion', got {rotation_index_order!r}")
     n_dir = int(_get_relion_grid_metadata(int(order), symmetry)["n_pixels"])
     n_psi = R.shape[0] // n_dir
-    return R.reshape(n_dir, n_psi, 3, 3).transpose(1, 0, 2, 3).reshape(-1, 3, 3)
+    reordered = R.reshape(n_dir, n_psi, 3, 3).transpose(1, 0, 2, 3).reshape(-1, 3, 3)
+    return reordered if reordered.flags.writeable else reordered.copy()
 
 
 def get_relion_hidden_rotation_grid(
