@@ -1087,6 +1087,26 @@ scientific contract; runnable code alone does not establish recovery.
   .91), and the last-50-update log-likelihoods match to four significant figures.
   Per update on H100, tf32 is 1.89x faster for 10076 VDAM (4.81 to 2.54 s) and
   1.56-1.75x for the eleven-state arms; on A100 2.37x for 10076 VDAM (11.4 to 4.81 s).
+- A per-shell separable VDAM metric was tried and rejected (October 2, 2026). It
+  would cut the streamed scatter at `P = 11` from 88 to 23 channels: backproject
+  only the metric trace `t(v)` (the momentum-SGD channel) and take the PxP
+  structure per shell from the image-domain pair sums
+  `S_s = sum_(r,b) sum_t gamma E[a a^T] sum_(f in s) CTF_b(f)^2 / sigma^2(f)`, so that
+  `M(v) = t(v) S_s(v) / tr S_s(v)` needs one eigendecomposition per shell.
+  The real minibatch metric is far from separable. Each voxel sees the few
+  images whose central slices pass through it, so on a 300-image eleven-state
+  batch the per-voxel unit-trace metric differs from its shell model by 60%
+  (trace-weighted relative Frobenius error). A per-voxel diagonal with
+  per-shell correlations still differs by 56%. The resulting direction
+  differs from the full one by 35% (shells 0-4) to 120% (shells 25-29).
+  From the GT start, with 150 VDAM updates and seeds 101/102/103 on H100
+  (jobs 14896113 and 14896230), the full metric scored state FSC
+  .769 / .826 / .768, pose median 4.2-4.4 deg and latent R^2 .12-.13. The
+  separable metric scored .10 / .08 / .10, pose median 131-133 deg and
+  R^2 .01 (after 50 updates it was already at .73 against .82). The
+  update time fell only from 0.76 s to 0.60 s. Evidence: the harness
+  `relax_ppca_dense_speed_20261001/harness5` (`metric_queue.py`,
+  `metric_separability.py`). VDAM keeps the full per-voxel metric.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
