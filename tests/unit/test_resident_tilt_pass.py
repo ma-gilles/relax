@@ -19,6 +19,13 @@ from test_resident_pass2_driver import (
 
 pytestmark = pytest.mark.unit
 
+# The float32 BPref atomics' repeat band for the SPA-vs-tilt accumulator comparisons (Ft_y, Ft_ctf).
+# The SPA pass repeated alone reaches relL2 1.0e-7 (local A100 probe, 2026-10-02: 3 SPA + 3 tilt runs,
+# SPA vs SPA 6.1e-8-1.0e-7, SPA vs tilt 3.5e-8-7.4e-8); bindw's job 14869734 measured Ft_ctf up to
+# 7.4e-8 at main; medium 14864305 failed at 1.21e-7 (Ft_y) and ppcaspeed's run at 1.03e-7. Twice the
+# repeat band, user decision of 2026-10-02.
+_BPREF_ATOMIC_BAND = 2e-7
+
 
 def _one_image_tilt_inputs(args):
     from relax.sparse_pass2.resident_tilts import TiltPassInputs
@@ -102,9 +109,9 @@ def _assert_tilt_pass_matches_spa(spa, tomo):
         den = float(np.linalg.norm(a))
         return float(np.linalg.norm(a - b) / den) if den else 0.0
 
-    # The resident driver's repeat band (test_resident_driver_repeats_itself): float32 BPref atomics.
-    assert rel_l2(spa.Ft_y[0], tomo.Ft_y[0]) < 1e-7
-    assert rel_l2(spa.Ft_ctf[0], tomo.Ft_ctf[0]) < 1e-7
+    # The float32 BPref atomics' repeat band (_BPREF_ATOMIC_BAND).
+    assert rel_l2(spa.Ft_y[0], tomo.Ft_y[0]) < _BPREF_ATOMIC_BAND
+    assert rel_l2(spa.Ft_ctf[0], tomo.Ft_ctf[0]) < _BPREF_ATOMIC_BAND
     for field in (
         "wsum_sigma2_noise",
         "wsum_img_power",
@@ -152,11 +159,8 @@ def test_one_image_particles_reproduce_the_spa_k_class_pass(_resident_production
     for field in ("log_evidence_per_image", "best_log_score_per_image", "max_posterior_per_image"):
         assert_matches(np.asarray(getattr(spa.stats, field)), np.asarray(getattr(tomo.stats, field)), err_msg=field)
     for k in range(2):
-        # The SPA pass repeated alone reaches Ft_y relL2 1.0e-7 (class 1, atomic accumulation order; local A100
-        # probe of 2026-10-02, 3 SPA + 3 tilt runs: SPA vs SPA 6.1e-8-1.0e-7, SPA vs tilt 5.9e-8-7.3e-8; medium
-        # 14864305 saw SPA vs tilt 1.21e-7). Bound 2e-7 = twice that repeat band (user decision, 2026-10-02).
-        assert _rel_l2(spa.Ft_y[k], tomo.Ft_y[k]) < 2e-7, f"Ft_y class {k}"
-        assert _rel_l2(spa.Ft_ctf[k], tomo.Ft_ctf[k]) < 1e-7, f"Ft_ctf class {k}"
+        assert _rel_l2(spa.Ft_y[k], tomo.Ft_y[k]) < _BPREF_ATOMIC_BAND, f"Ft_y class {k}"
+        assert _rel_l2(spa.Ft_ctf[k], tomo.Ft_ctf[k]) < _BPREF_ATOMIC_BAND, f"Ft_ctf class {k}"
     _assert_noise_stats_match(spa.noise_stats, tomo.noise_stats)
 
 
@@ -273,11 +277,11 @@ def _assert_accumulators_match(spa_Ft_y, spa_Ft_ctf, tomo_Ft_y, tomo_Ft_ctf):
     assert len(spa_Ft_y) == len(tomo_Ft_y) == 2
     for slot in range(2):
         # A residual BPref cancels most of the image sum, so its float32 atomic repeat spread is wider than the
-        # plain BPref's 1e-7 (_assert_tilt_pass_matches_spa): on a local H100 (2026-09-30) a same-code repeat
-        # moved one slot by 2.9e-8 and the slot-blocked pass differed by 3.8e-8 and 1.1e-7 in two runs;
-        # the CTF weights keep the 1e-7 band.
+        # plain BPref's (_BPREF_ATOMIC_BAND): on a local H100 (2026-09-30) a same-code repeat moved one slot by
+        # 2.9e-8 and the slot-blocked pass differed by 3.8e-8 and 1.1e-7 in two runs; the CTF weights keep
+        # the plain band.
         assert _rel_l2(spa_Ft_y[slot], tomo_Ft_y[slot]) < 3e-7, f"Ft_y slot {slot}"
-        assert _rel_l2(spa_Ft_ctf[slot], tomo_Ft_ctf[slot]) < 1e-7, f"Ft_ctf slot {slot}"
+        assert _rel_l2(spa_Ft_ctf[slot], tomo_Ft_ctf[slot]) < _BPREF_ATOMIC_BAND, f"Ft_ctf slot {slot}"
 
 
 @requires_resident_gpu
@@ -396,5 +400,5 @@ def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_produ
         assert_matches(
             np.float32(getattr(spa.finalized, field)), np.float32(getattr(tomo.finalized, field)), err_msg=field
         )
-    assert _rel_l2(spa.Ft_y[0], tomo.Ft_y[0]) < 1e-7
-    assert _rel_l2(spa.Ft_ctf[0], tomo.Ft_ctf[0]) < 1e-7
+    assert _rel_l2(spa.Ft_y[0], tomo.Ft_y[0]) < _BPREF_ATOMIC_BAND
+    assert _rel_l2(spa.Ft_ctf[0], tomo.Ft_ctf[0]) < _BPREF_ATOMIC_BAND
