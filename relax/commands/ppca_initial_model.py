@@ -16,7 +16,9 @@ from relax.ppca_initial_model.config import Config
 
 
 def add_args(parser):
-    parser.add_argument("manifest", help="Training-only fixture manifest")
+    parser.add_argument("manifest", nargs="?", help="Training-only fixture manifest (single particles)")
+    parser.add_argument("--ios", help="RELION 5 optimisation set of subtomogram particles (2D stacks) instead")
+    parser.add_argument("--particle-diameter", type=float, help="Particle diameter in Angstrom (with --ios)")
     parser.add_argument("-o", "--output", required=True)
     parser.add_argument("--q", type=int, default=2)
     parser.add_argument("--seed", type=int, default=11)
@@ -123,6 +125,28 @@ def load_training(path):
     return data, manifest, {"manifest_sha256": file_hash(path)}
 
 
+def load_tilt_training(ios, output):
+    """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16).
+
+    Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
+    enter training; the particles' input angles and offsets are not read.
+    """
+    from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
+    from relax.refinement.tomo_half import load_tomo_dataset
+    from relax.relion.tomo_input import read_optimisation_set
+
+    particles_star, tomograms_star = read_optimisation_set(ios)
+    tomo = load_tomo_dataset(
+        particles_star,
+        tomograms_star,
+        Path(output) / "particles_2d.star",
+        datadir=str(Path(particles_star).resolve().parent),
+        lazy=False,
+    )
+    identity = {"ios_sha256": file_hash(ios), "particles_sha256": file_hash(particles_star)}
+    return tilt_particles_from_tomo_dataset(tomo), identity
+
+
 def source_identity():
     import jax
     import recovar
@@ -185,10 +209,19 @@ def main(args=None):
         gemm_precision=args.ppca_gemm_precision,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
-    data, manifest, identity = load_training(args.manifest)
-    identity["source"] = source_identity()
+    if (args.ios is None) == (args.manifest is None):
+        raise ValueError("Give either a training manifest or --ios")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
+    if args.ios:
+        if args.particle_diameter is None:
+            raise ValueError("--ios needs --particle-diameter")
+        data, identity = load_tilt_training(args.ios, output)
+        diameter = args.particle_diameter
+    else:
+        data, manifest, identity = load_training(args.manifest)
+        diameter = manifest["particle_diameter_ang"]
+    identity["source"] = source_identity()
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")
     if args.resume:
@@ -204,7 +237,7 @@ def main(args=None):
         config,
         output,
         identity,
-        manifest["particle_diameter_ang"],
+        diameter,
         resume=args.resume,
         stop_after=args.stop_after,
         stop_file=args.stop_file,

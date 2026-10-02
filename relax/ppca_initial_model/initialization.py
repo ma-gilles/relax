@@ -127,35 +127,8 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
             rhs = rhs.at[k].add(r)
             lhs = lhs.at[k].add(l.real)
         offset += count
-    reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
-    real = np.asarray(
-        ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), dataset.volume_shape), np.float32
-    )
-    diameter = diameter_ang / dataset.voxel_size
-    mask = support_mask(n, diameter)
-    fields = []
-    for volume in real:
-        field = _blob_field(volume, diameter, rng) - np.float32(0.5) * _blob_field(volume, diameter, rng)
-        sd = np.std(field, dtype=np.float32)
-        if sd <= 0:
-            raise ValueError("Random bootstrap produced a zero blob field")
-        fields.append(field * (np.std(volume, dtype=np.float32) / sd))
-    augmented = seed_maps_to_model(np.stack(fields))
-    theta = ftu.get_dft3_real(augmented).reshape(channels, -1).T
-    theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
-    if not np.all(np.isfinite(np.asarray(theta))) or np.any(np.linalg.norm(np.asarray(theta[:, 1:]), axis=0) == 0):
-        raise ValueError("Random initialization requires finite, nonzero loadings")
-    # Existing estimator deliberately uses host float64 accumulation/metadata.
-    _, sigma = compute_avg_unaligned_and_sigma2(
-        iter(images_for_noise),
-        ori_size=n,
-        pixel_size=dataset.voxel_size,
-        particle_diameter_ang=diameter_ang,
-        width_mask_edge_px=5,
-        do_zero_mask=False,
-        nr_optics_groups=1,
-    )
-    noise = relion_to_coefficient_variance(sigma[0], dataset.image_shape)
+    theta = seed_model(rhs, lhs, dataset.volume_shape, dataset.voxel_size, diameter_ang, radius, rng)
+    noise = initial_noise(images_for_noise, dataset.image_shape, dataset.voxel_size, diameter_ang)
     return (
         theta,
         noise,
@@ -168,3 +141,42 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
             "noise_initializer": "deliberate host float64; coefficient spectrum float32",
         },
     )
+
+
+def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
+    """Seed maps from the bootstrap reconstructions ``rhs / lhs`` (one per channel), as half-Fourier theta."""
+    channels = rhs.shape[0]
+    n = volume_shape[0]
+    half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
+    reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
+    real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), volume_shape), np.float32)
+    diameter = diameter_ang / voxel_size
+    mask = support_mask(n, diameter)
+    fields = []
+    for volume in real:
+        field = _blob_field(volume, diameter, rng) - np.float32(0.5) * _blob_field(volume, diameter, rng)
+        sd = np.std(field, dtype=np.float32)
+        if sd <= 0:
+            raise ValueError("Random bootstrap produced a zero blob field")
+        fields.append(field * (np.std(volume, dtype=np.float32) / sd))
+    augmented = seed_maps_to_model(np.stack(fields))
+    theta = ftu.get_dft3_real(augmented).reshape(channels, -1).T
+    theta = bandlimit_and_mask(theta, volume_shape, radius, mask)
+    if not np.all(np.isfinite(np.asarray(theta))) or np.any(np.linalg.norm(np.asarray(theta[:, 1:]), axis=0) == 0):
+        raise ValueError("Random initialization requires finite, nonzero loadings")
+    return theta
+
+
+def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang):
+    """Unaligned start-up noise of ``(group, real-space image)`` pairs, as coefficient variance (section 10)."""
+    # Existing estimator deliberately uses host float64 accumulation/metadata.
+    _, sigma = compute_avg_unaligned_and_sigma2(
+        iter(images_for_noise),
+        ori_size=image_shape[0],
+        pixel_size=voxel_size,
+        particle_diameter_ang=diameter_ang,
+        width_mask_edge_px=5,
+        do_zero_mask=False,
+        nr_optics_groups=1,
+    )
+    return relion_to_coefficient_variance(sigma[0], image_shape)

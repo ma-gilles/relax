@@ -37,7 +37,8 @@ class TomoDataset:
 
     ``images`` is the loaded flat per-tilt dataset (:func:`relax.relion.tomo_input.flatten_relion5_tomo`).
     Particle ``u`` owns images ``image_rows[unit_image_offsets[u]:unit_image_offsets[u + 1]]`` of it, in
-    ``img_id`` order, with RELION's ``Aproj`` in ``image_projections``.
+    ``img_id`` order, with RELION's ``Aproj`` in ``image_projections``, its tilt-series frame in
+    ``image_frames`` and the particle's tomogram in ``unit_tomogram``.
     """
 
     def __init__(self, images, flat_rows, particles_star, tomograms_star):
@@ -62,6 +63,9 @@ class TomoDataset:
         spans = [np.arange(index.image_offsets[p], index.image_offsets[p + 1]) for p in order]
         self.image_rows = np.concatenate([geometry.rows[s] for s in spans]).astype(np.int64)
         self.image_projections = np.concatenate([geometry.projections[s] for s in spans])
+        # Frame of each image in its tilt series and tomogram of each particle (PPCA tilt groups).
+        self.image_frames = np.concatenate([geometry.frames[s] for s in spans]).astype(np.int64)
+        self.unit_tomogram = np.asarray(star_column(particles, "rlnTomoName", required=True)).astype(str)
         optics = np.asarray(star_column(particles, "rlnOpticsGroup", required=True), dtype=np.int64)
         if not np.array_equal(optics, index.optics_group[order]):
             raise ValueError("the per-tilt STAR's optics groups disagree with the particle STAR's")

@@ -1370,7 +1370,18 @@ coarse parent). The oversampled path needs a coarse significance pass; the
 SPA one runs the host-mask dense engine, which has no tilt axis. A coarse pass
 through the same tilt stream is the follow-up, if the full grid is too slow.
 
-### 16.6 Implementation boundary and checks
+### 16.6 First-version limits
+
+Approved for the first version (October 2, 2026), each to be lifted separately:
+
+1. One noise spectrum for every tilt image. Real data has one optics group per
+   tomogram, so per-group noise (a tile-level noise row and per-group noise sums)
+   follows soon.
+2. Unit contrast. A per-particle contrast shared by its tilts is not modeled.
+3. Full rotation grid per stage only (`--oversampling 0
+   --stream-coarse-recompute`); no coarse significance pass.
+
+### 16.7 Implementation boundary and checks
 
 - `full_row_stream.py`: a tile may carry `K` frame matrices; projection and
   scatter rotations expand block rows by frames; operands and pass-2 images
@@ -1394,7 +1405,7 @@ tile; (3) dropping a hidden tilt equals zeroing it; (4) a known 3D offset is
 recovered by the score maximum. Then the GPU path against the XLA path, and the
 science of the next subsection.
 
-### 16.7 Science plan
+### 16.8 Science plan
 
 Judged against ground truth with seed-to-seed spread as the noise band (there
 is no RELION reference): per-state FSC against GT after rigid registration

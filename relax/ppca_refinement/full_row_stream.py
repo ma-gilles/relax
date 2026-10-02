@@ -163,15 +163,22 @@ class _StreamArrays(NamedTuple):
 
 
 class _TileArrays(NamedTuple):
-    """Device operands for one image tile, uploaded once per tile."""
+    """Device operands for one image tile, uploaded once per tile.
+
+    A subtomogram tile (section 16.4 of ``docs/math/vdam_ppca_algorithm.md``) has ``K`` tilt
+    frames shared by its particles: the pixel axis of every operand is ``(frame, pixel)``, frame
+    major, and ``frames`` holds the frame matrices ``Aproj_f``. A single-particle tile has
+    ``frames=None`` and ``K = 1``.
+    """
 
     coarse_mask: jax.Array  # (B, R_coarse + 1, T_coarse) bool significant coarse poses; last row False
     rows: jax.Array  # (capacity,) int32 sorted union of supported fine rows, padded with the sentinel R
-    Y1: jax.Array  # (2F, B * T) float32 [Re; Im] of the weighted shifted score images (GPU: B T padded)
-    ctf2: jax.Array  # (F, B) float32 score CTF^2 / noise
-    Y1_recon: jax.Array  # (B * T, 2F) float32 [Re, Im] of the reconstruction images (GPU: B T padded)
-    ctf2_recon: jax.Array  # (B, F) float32
+    Y1: jax.Array  # (K 2F, B * T) float32 [Re; Im] of the weighted shifted score images, per frame (GPU: B T padded)
+    ctf2: jax.Array  # (K F, B) float32 score CTF^2 / noise
+    Y1_recon: jax.Array  # (B * T, K 2F) float32 [Re, Im] of the reconstruction images, per frame (GPU: B T padded)
+    ctf2_recon: jax.Array  # (B, K F) float32
     y_norm: jax.Array  # (B,)
+    frames: jax.Array | None = None  # (K, 3, 3) float32 tilt frame matrices; None for single particles
 
 
 class _Posterior(NamedTuple):
@@ -236,6 +243,11 @@ class FullRowStream(NamedTuple):
     rotation_block_size: int
     rotation_parent: np.ndarray  # (R,) host copy for the per-tile row union
     device: object  # the jax device holding this stream's operands and running its tiles
+    # Reads one tile: ``(stream, image_indices, significant_rows, collect_observation=...)`` ->
+    # ``(_TileArrays, observation_power, layout)``; ``None`` is the single-particle reader
+    # (:func:`_load_tile`). Subtomogram particles read their tilt images
+    # (:func:`relax.ppca_initial_model.tomo.load_tilt_tile`).
+    tile_loader: object = None
 
 
 def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_translations: int) -> np.ndarray:
@@ -303,8 +315,9 @@ def _real_imag(values):
 def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     """Pose scores, latent means and covariances for one rotation block.
 
-    ``Y1`` is ``(2F, B T)`` (real and imaginary parts), ``ctf2`` ``(F, B)``,
-    ``proj`` ``(P, R, F)`` and ``pose_log_prior`` ``(B, R, T)``. One GEMM gives
+    ``Y1`` is ``(K 2F, B T)`` (real and imaginary parts per frame), ``ctf2``
+    ``(K F, B)``, ``proj`` ``(P, R, K, F)`` and ``pose_log_prior`` ``(B, R, T)``;
+    the frame sum is part of each GEMM's contraction (``K = 1`` for single particles). One GEMM gives
     ``Re<Y1, A_p>`` for every pose and component (``t_mx`` for ``p = 0``,
     ``g_zx`` otherwise), a second the CTF/noise-weighted ``Re(conj(A_i) A_j)``
     (``nu_mm``, ``h_zm``, ``H_zz``), as in
@@ -316,16 +329,16 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     score ``(R, B, T)``, means ``(q, R, B, T)`` and packed covariances
     ``(R, B, tri(q))``.
     """
-    P, R, F = proj.shape
+    P, R = proj.shape[:2]
     q = P - 1
     B = n_images
     T = Y1.shape[1] // B
-    inner = jnp.dot(_real_imag(proj).reshape(P * R, 2 * F), Y1, precision=_HIGHEST).reshape(P, R, B, T)
+    inner = jnp.dot(_real_imag(proj).reshape(P * R, -1), Y1, precision=_HIGHEST).reshape(P, R, B, T)
     first, second = np.triu_indices(P)
     # Static component slices: an index-array gather here lowers to a strided gather fusion.
     real, imag = proj.real, proj.imag
     products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
-    gram = jnp.dot(products.reshape(first.size * R, F), ctf2, precision=_HIGHEST).reshape(first.size, R, B)
+    gram = jnp.dot(products.reshape(first.size * R, -1), ctf2, precision=_HIGHEST).reshape(first.size, R, B)
     index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(first, second))}
     rho = gram[index[(0, 0)], :, :, None] - 2.0 * inner[0]
     prior = jnp.transpose(pose_log_prior, (1, 0, 2))
@@ -421,6 +434,21 @@ def _block_rows(tile, start, size: int):
     return jax.lax.dynamic_slice_in_dim(tile.rows, start, size, axis=0)
 
 
+def _n_frames(tile) -> int:
+    return 1 if tile.frames is None else int(tile.frames.shape[0])
+
+
+def _frame_rotations(tile, rotations):
+    """Projection rotations ``Aproj_f R_r`` of a block's rows, ``(R K, 3, 3)`` with the frame minor.
+
+    Single-particle tiles project at the rows' own rotations.
+    """
+    if tile.frames is None:
+        return rotations
+    expanded = jnp.einsum("fab,rbc->rfac", tile.frames, rotations, precision=_HIGHEST)
+    return expanded.reshape(-1, 3, 3)
+
+
 @partial(jax.jit, static_argnames=("static", "block_size"), donate_argnums=(2,))
 def _score_block(arrays, tile, kept, start, *, static, block_size):
     """Pass 1 for one rotation block, written into the kept tile results."""
@@ -434,7 +462,8 @@ def _score_block(arrays, tile, kept, start, *, static, block_size):
         arrays.rotation_log_prior[rows],
         arrays.translation_log_prior,
     )
-    proj = _project(arrays, arrays.rotations[rows], static)
+    proj = _project(arrays, _frame_rotations(tile, arrays.rotations[rows]), static)
+    proj = proj.reshape(proj.shape[0], rows.shape[0], _n_frames(tile), proj.shape[-1])
     score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
     return kept._replace(
         score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
@@ -470,16 +499,19 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
     planar, products = ppca_window_project_f32(
         arrays.augmented_voxel_major,
         arrays.gemm_window,
-        arrays.rotations[rows],
+        _frame_rotations(tile, arrays.rotations[rows]),
         image_shape=static.image_shape,
         volume_shape=static.volume_shape,
         max_r=static.projection_max_r,
         with_products=True,
     )
-    R, F = planar.shape[1], planar.shape[2] // 2
+    # Rows are (rotation, frame) with the frame minor, so each rotation's frames are one GEMM row.
+    R = rows.shape[0]
     # (P, R, B T padded): the epilogue reads each row's B T columns and ignores the padding.
-    inner = jnp.dot(planar.reshape(P * R, 2 * F), tile.Y1, precision=_gemm(static)).reshape(P, R, -1)
-    gram = jnp.dot(products.reshape(-1, F), tile.ctf2, precision=_gemm(static)).reshape(-1, R, tile.ctf2.shape[1])
+    inner = jnp.dot(planar.reshape(P * R, -1), tile.Y1, precision=_gemm(static)).reshape(P, R, -1)
+    gram = jnp.dot(products.reshape(products.shape[0] * R, -1), tile.ctf2, precision=_gemm(static)).reshape(
+        -1, R, tile.ctf2.shape[1]
+    )
     tables = (
         arrays.rotation_parent,
         arrays.rotation_log_prior,
@@ -566,12 +598,13 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     if not moments:
         return carry
     P = static.basis_size
-    R = block_size
-    F = tile.ctf2_recon.shape[1]
+    # One image per (rotation, frame), frame minor: the GEMM outputs' rows split into frames.
+    R = block_size * _n_frames(tile)
+    F = tile.ctf2_recon.shape[1] // _n_frames(tile)
     K = sums.shape[0]
-    rotations = arrays.rotations[_block_rows(tile, start, block_size)]
-    rhs_parts = jnp.dot(weights.reshape(P * R, -1), tile.Y1_recon, precision=_gemm(static)).reshape(P, R, 2 * F)
-    lhs_images = jnp.dot(sums.reshape(K * R, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(K, R, F)
+    rotations = _frame_rotations(tile, arrays.rotations[_block_rows(tile, start, block_size)])
+    rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=_gemm(static)).reshape(P, R, 2 * F)
+    lhs_images = jnp.dot(sums.reshape(K * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(K, R, F)
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight. The RHS images enter the
@@ -745,8 +778,13 @@ def prepare_full_row_stream(
     metric_trace_only: bool = False,
     gemm_precision: str = "auto",
     device=None,
+    tile_loader=None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
+
+    ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
+    (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
+    volume shapes and the original ids of its images.
 
     With ``metric_trace_only`` the tiles return :class:`TracePPCAStats`: the
     LHS metric is backprojected only as its per-frequency trace.
@@ -778,6 +816,7 @@ def prepare_full_row_stream(
             metric_trace_only=metric_trace_only,
             gemm_precision=gemm_precision,
             device=device,
+            tile_loader=tile_loader,
         )
 
 
@@ -802,6 +841,7 @@ def _prepare_full_row_stream(
     metric_trace_only,
     gemm_precision,
     device,
+    tile_loader,
 ) -> FullRowStream:
     gemm_precision = resolve_gemm_precision(gemm_precision, device)
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
@@ -839,8 +879,10 @@ def _prepare_full_row_stream(
     )
     if not same_window:
         raise ValueError("Full-row residuals require one score and reconstruction window")
-    forward_config = ForwardModelConfig.from_dataset(
-        experiment_dataset, disc_type=disc_type, process_fn=experiment_dataset.process_images
+    forward_config = (
+        ForwardModelConfig.from_dataset(experiment_dataset, disc_type=disc_type, process_fn=experiment_dataset.process_images)
+        if tile_loader is None
+        else None
     )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
     block_size = int(schedule.rotation_block_size)
@@ -893,6 +935,7 @@ def _prepare_full_row_stream(
         rotation_block_size=block_size,
         rotation_parent=rotation_parent,
         device=device,
+        tile_loader=tile_loader,
     )
 
 
@@ -902,12 +945,38 @@ def _block_starts(n_rot: int, block_size: int, device) -> tuple[jax.Array, ...]:
     return tuple(jax.device_put(np.int32(start), device) for start in range(0, n_rot, block_size))
 
 
+def _read_tile(stream: FullRowStream, image_indices, significant_rows, *, collect_observation: bool):
+    """One tile's operands, observation power and layout, from the stream's tile reader."""
+    if len(significant_rows) != np.asarray(image_indices).size:
+        raise ValueError("One coarse support row is required per tile image")
+    if np.asarray(image_indices).size > stream.image_batch_size:
+        raise ValueError("A full-row tile must fit one image batch")
+    loader = _load_tile if stream.tile_loader is None else stream.tile_loader
+    return loader(stream, image_indices, significant_rows, collect_observation=collect_observation)
+
+
+def tile_support(stream: FullRowStream, significant_rows):
+    """Coarse support mask with its unsupported sentinel row, padded row table and layout of one tile."""
+    coarse = coarse_support_mask(significant_rows, stream.n_coarse_rotations, stream.n_coarse_translations)
+    rows = tile_fine_rows(coarse, stream.rotation_parent)
+    n_blocks = -(-rows.size // stream.rotation_block_size)
+    capacity = len(stream.block_starts) * stream.rotation_block_size
+    table = np.full(capacity, stream.rotation_parent.size, dtype=np.int32)
+    table[: rows.size] = rows
+    unsupported = np.zeros((coarse.shape[0], 1, coarse.shape[2]), dtype=bool)
+    # Exact per-image rows versus the scored union, for the wasted-work record.
+    supported = np.any(coarse, axis=2)[:, stream.rotation_parent].sum()
+    layout = {
+        "rows": rows,
+        "n_blocks": n_blocks,
+        "scored_rows": int(n_blocks * stream.rotation_block_size),
+        "supported_image_rows": int(supported),
+    }
+    return jnp.asarray(np.concatenate([coarse, unsupported], axis=1)), jnp.asarray(table), layout
+
+
 def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collect_observation: bool):
     image_indices = np.asarray(image_indices)
-    if len(significant_rows) != image_indices.size:
-        raise ValueError("One coarse support row is required per tile image")
-    if image_indices.size > stream.image_batch_size:
-        raise ValueError("A full-row tile must fit one image batch")
     batches = list(stream.dataset.iter_batches(stream.image_batch_size, indices=image_indices, by_image=False))
     if len(batches) != 1:
         raise RuntimeError("Expected exactly one image batch per full-row tile")
@@ -924,13 +993,7 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
         indices,
         collect_observation=collect_observation,
     )
-    coarse = coarse_support_mask(significant_rows, stream.n_coarse_rotations, stream.n_coarse_translations)
-    rows = tile_fine_rows(coarse, stream.rotation_parent)
-    n_blocks = -(-rows.size // stream.rotation_block_size)
-    capacity = len(stream.block_starts) * stream.rotation_block_size
-    table = np.full(capacity, stream.rotation_parent.size, dtype=np.int32)
-    table[: rows.size] = rows
-    unsupported = np.zeros((coarse.shape[0], 1, coarse.shape[2]), dtype=bool)
+    coarse_mask, table, layout = tile_support(stream, significant_rows)
     Y1, ctf2, Y1_recon, ctf2_recon = batch.Y1_score, batch.ctf2_score, batch.Y1_recon, batch.ctf2_recon
     shift_pad = 0
     if stream.static.cuda_kernels:
@@ -941,22 +1004,18 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
         ctf2, ctf2_recon = (jnp.pad(x, ((0, 0), (0, pad))) for x in (ctf2, ctf2_recon))
         shift_pad = -(Y1.shape[0] * Y1.shape[1]) % _SHIFT_ALIGN
     tile = _TileArrays(
-        coarse_mask=jnp.asarray(np.concatenate([coarse, unsupported], axis=1)),
-        rows=jnp.asarray(table),
+        coarse_mask=coarse_mask,
+        rows=table,
         Y1=jnp.pad(_real_imag(Y1).reshape(-1, 2 * ctf2.shape[1]).T, ((0, 0), (0, shift_pad))),
         ctf2=ctf2.T,
         Y1_recon=jnp.pad(_real_imag(Y1_recon).reshape(-1, 2 * ctf2_recon.shape[1]), ((0, shift_pad), (0, 0))),
         ctf2_recon=ctf2_recon,
         y_norm=batch.y_norm,
     )
-    # Exact per-image rows versus the scored union, for the wasted-work record.
-    supported = np.any(coarse, axis=2)[:, stream.rotation_parent].sum()
-    layout = {
-        "rows": rows,
-        "n_blocks": n_blocks,
-        "scored_rows": int(n_blocks * stream.rotation_block_size),
-        "supported_image_rows": int(supported),
-    }
+    layout.update(
+        n_observations=int(image_indices.size),
+        original_ids=stream.dataset.original_image_indices_from_local(image_indices),
+    )
     return tile, batch.observation_power, layout
 
 
@@ -1074,14 +1133,14 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
     tiles of one shape reuse one pose-kept buffer, so a single tile's worth is live.
     """
     with jax.default_device(stream.device):
-        loaded = _load_tile(stream, *tiles[0], collect_observation=True) if tiles else None
+        loaded = _read_tile(stream, *tiles[0], collect_observation=True) if tiles else None
         results, kept, previous = [], None, None
         for index, (image_indices, _significant) in enumerate(tiles):
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
             if previous is not None:
                 results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
             loaded = (
-                _load_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
+                _read_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
             )
             previous = (image_indices, *pending)
         if previous is not None:
@@ -1108,7 +1167,8 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
     shells = make_shell_indices_half(static.image_shape)
     n_shells = int(np.max(np.asarray(shells))) + 1
     residual_num = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * carry.residual_power)
-    residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * n_images)
+    # Every observed image counts once: a subtomogram particle observes each of its visible tilts.
+    residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * layout["n_observations"])
     # Scores exclude the pose-invariant image constant; the absolute log-partition adds it back.
     logZ = posterior.center + posterior.centered_logZ + pose_invariant_score_offset(tile.y_norm)
     host = jax.device_get(
@@ -1130,7 +1190,7 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
     rotation_mass = np.zeros(stream.rotation_parent.size, np.float32)
     rotation_mass[layout["rows"]] = host["rotation_mass"][: layout["rows"].size]
     finite = np.isfinite(host["top_centered_score"])
-    original_ids = stream.dataset.original_image_indices_from_local(np.asarray(image_indices))
+    original_ids = layout["original_ids"]
     diagnostics = {
         "engine": FULL_ROW_ENGINE,
         "gemm_precision": static.gemm_precision,
@@ -1171,12 +1231,10 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
 def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_rows) -> DensePPCAEmbeddings:
     """Pose-marginal embeddings of one full-row tile, as ``compute_dense_ppca_embeddings``."""
     with jax.default_device(stream.device):
-        tile, _, layout = _load_tile(stream, image_indices, significant_rows, collect_observation=False)
+        tile, _, layout = _read_tile(stream, image_indices, significant_rows, collect_observation=False)
         kept, posterior = _score_tile(stream, tile, layout["n_blocks"])
         _check_finite_posterior(posterior)
         n_images = int(tile.y_norm.shape[0])
         carry = _empty_carry(stream, n_images, jnp.float32(0))
         carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=False)
-        image_indices = np.asarray(image_indices, dtype=np.int64)
-        original_ids = stream.dataset.original_image_indices_from_local(image_indices)
-        return DensePPCAEmbeddings(carry.embedding, original_ids, int(image_indices.size))
+        return DensePPCAEmbeddings(carry.embedding, layout["original_ids"], n_images)

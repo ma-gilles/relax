@@ -31,6 +31,7 @@ from relax.ppca_initial_model.initialization import bandlimit_and_mask, initiali
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
+from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
 from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
@@ -266,8 +267,14 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         else np.full(len(rotations), 1 / len(rotations), np.float32)
     )
     rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
-    translations = sampling.get_relion_translation_grid(
-        max_pixel=config.shift_range, pixel_offset=config.shift_step
+    tilts = isinstance(dataset, TiltParticles)
+    if tilts and not _streams_groups(config):
+        raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (oversampling 0, stream_coarse_recompute)")
+    translations = (
+        # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
+        sampling.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
+        if tilts
+        else sampling.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
     ).astype(np.float32)
     prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
     prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
@@ -297,12 +304,21 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
                 metric_trace_only=config.optimizer == "momentum_sgd",
                 gemm_precision=config.gemm_precision,
+                tile_loader=load_tilt_tile if tilts else None,
             )
-            # Here ``ids`` is the list of id groups; each group is cut into image tiles.
+            # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
+            # group each for subtomogram particles.
             tiles = [
-                (group, np.asarray(ids_group[begin : begin + config.image_batch_size]))
+                (group, np.asarray(tile))
                 for group, ids_group in enumerate(ids)
-                for begin in range(0, len(ids_group), config.image_batch_size)
+                for tile in (
+                    tilt_tiles(dataset, ids_group, config.image_batch_size)
+                    if tilts
+                    else [
+                        ids_group[begin : begin + config.image_batch_size]
+                        for begin in range(0, len(ids_group), config.image_batch_size)
+                    ]
+                )
             ]
             if embeddings_only:
                 parts = [full_row_tile_embeddings(stream, tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles]
@@ -562,7 +578,8 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
             )
     else:
-        theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
+        initializer = initialize_tilts if isinstance(dataset, TiltParticles) else initialize
+        theta, noise, info = initializer(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(
@@ -660,7 +677,9 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 selected=selected,
             )
             raise
-        offset = sum(s.diagnostics["offset_second_sum_px2"] for s in stats) / (2 * count)
+        # Mean squared offset per dimension: 2D in-plane shifts, 3D subtomogram shifts.
+        dimensions = 3 if isinstance(dataset, TiltParticles) else 2
+        offset = sum(s.diagnostics["offset_second_sum_px2"] for s in stats) / (dimensions * count)
         beta = 0 if count == dataset.n_images else 0.9
         offset_variance = max(2.0 / dataset.voxel_size**2, beta * state.offset_variance + (1 - beta) * offset)
         if (
