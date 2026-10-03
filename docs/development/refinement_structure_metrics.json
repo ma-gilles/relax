@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "ppca-subtomogram-noise-groups-20261003",
-    "source_commit": "6c6986d420bb36ed36a91edd1228fd3cec857ce1",
+    "package": "vdam-deferred-fine-rows-20261003",
+    "source_commit": "7a43da425c3ce050c79cd83d84c2462854c0197f",
     "metrics": {
       "files": [
         {
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 22,
-          "nonblank_noncomment_lines": 2036,
+          "nonblank_noncomment_lines": 2038,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2257
+          "physical_lines": 2259
         },
         {
           "function_count": 25,
@@ -159,6 +159,13 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
+          "line": 128,
+          "line_span": 59,
+          "name": "_adaptive_pass2_grids",
+          "parameter_count": 10,
+          "path": "relax/refinement/half_scoring.py"
+        },
+        {
           "line": 966,
           "line_span": 45,
           "name": "_safe_batch_sizes",
@@ -224,14 +231,14 @@
           "path": "relax/refinement/full_refinement.py"
         },
         {
-          "line": 1782,
+          "line": 1784,
           "line_span": 459,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 723,
+          "line": 725,
           "line_span": 449,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
@@ -279,11 +286,11 @@
       "totals": {
         "file_count": 17,
         "function_count": 327,
-        "large_argument_function_count": 10,
+        "large_argument_function_count": 11,
         "maximum_function_line_span": 5578,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 19019,
-        "physical_lines": 21583,
+        "nonblank_noncomment_lines": 19021,
+        "physical_lines": 21585,
         "very_large_argument_function_count": 2
       }
     }
