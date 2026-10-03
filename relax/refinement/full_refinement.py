@@ -15,6 +15,7 @@ import argparse
 import importlib
 import json
 import logging
+import math
 import os
 import platform
 import re
@@ -107,10 +108,7 @@ _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax.scoring.significance",
 )
 _INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV = "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE"
-_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV = (
-    "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
-)
-_FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN = "4e-6"
+_FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN = 4e-6
 _K1_RELION_LIVE_INITIAL_NOISE_ENV = "RELAX_K1_RELION_LIVE_INITIAL_NOISE"
 _STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER_ENV = (
     "RELAX_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER"
@@ -159,14 +157,17 @@ def _configure_relion_firstiter_controls(
     *,
     firstiter_cc: bool,
     n_classes: int,
+    tree_rescore_max_margin: str = "auto",
     environ: MutableMapping[str, str] | None = None,
-) -> tuple[bool, bool]:
+) -> tuple[bool, float | None]:
     """Resolve the narrow K=1 firstiter-CC parity defaults.
 
+    Returns whether the initial projector takes the real reference and the coarse-tree
+    top-2 rescore margin (``RelionParityOptions.firstiter_cc_tree_rescore_max_margin``).
     RELION Class3D also uses first-iteration CC, but the exact coarse-tree
     replay currently supports only K=1.  Keep K>1 and non-firstiter callers
-    unchanged.  Explicit environment values always win; ``off`` disables the
-    tree replay after its K=1 default is enabled.
+    unchanged. ``tree_rescore_max_margin`` (``--firstiter_cc_tree_rescore_max_margin``)
+    is ``auto`` (4e-6 for K=1 with --firstiter_cc, else off), ``off`` or a margin.
     """
 
     environment = os.environ if environ is None else environ
@@ -186,13 +187,22 @@ def _configure_relion_firstiter_controls(
             f"got {initial_projector_token!r}"
         )
 
-    tree_margin_defaulted = False
-    if use_k1_defaults and _FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV not in environment:
-        environment[_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV] = (
-            _FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN
-        )
-        tree_margin_defaulted = True
-    return use_initial_projector_real, tree_margin_defaulted
+    token = str(tree_rescore_max_margin).strip().lower()
+    if token == "auto":
+        margin = _FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN if use_k1_defaults else None
+    elif token == "off":
+        margin = None
+    else:
+        try:
+            margin = float(token)
+        except ValueError:
+            margin = float("nan")
+        if not (math.isfinite(margin) and margin >= 0.0):
+            raise SystemExit(
+                "--firstiter_cc_tree_rescore_max_margin must be auto, off or a finite non-negative float, "
+                f"got {tree_rescore_max_margin!r}"
+            )
+    return use_initial_projector_real, margin
 
 
 def _assert_expected_repo_imports() -> None:
@@ -2437,6 +2447,13 @@ def _parse_args(argv=None):
         "reproduce a RELION run without it.",
     )
     parser.add_argument(
+        "--firstiter_cc_tree_rescore_max_margin",
+        default="auto",
+        help="--firstiter_cc K=1: rescore an image's top two coarse CC poses on RELION's coarse tree "
+        "when their scores differ by at most this margin. auto (default) is 4e-6 for K=1 and off for "
+        "K>1; off disables it.",
+    )
+    parser.add_argument(
         "--apply-initial-lowpass",
         dest="apply_initial_lowpass",
         action=argparse.BooleanOptionalAction,
@@ -3696,15 +3713,15 @@ def main(command=None):
                 "for the post-iter1 low-pass",
                 relion_firstiter_ini_high_angstrom,
             )
-    _use_initial_projector_real, _tree_margin_defaulted = _configure_relion_firstiter_controls(
+    _use_initial_projector_real, firstiter_cc_tree_rescore_max_margin = _configure_relion_firstiter_controls(
         firstiter_cc=bool(args.firstiter_cc),
         n_classes=int(args.n_classes),
+        tree_rescore_max_margin=args.firstiter_cc_tree_rescore_max_margin,
     )
-    if _tree_margin_defaulted:
+    if firstiter_cc_tree_rescore_max_margin is not None:
         logger.info(
-            "RELION K=1 firstiter_cc: defaulting %s=%s",
-            _FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV,
-            _FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN,
+            "RELION firstiter_cc: coarse-tree top-2 rescore max_margin=%g",
+            firstiter_cc_tree_rescore_max_margin,
         )
     if _use_initial_projector_real:
         logger.info(
@@ -4902,6 +4919,7 @@ def main(command=None):
                     frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
                 ),
                 preserve_bpref_particle_order=use_fresh_auto_refine_order,
+                firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
             ),
             local_search=LocalSearchOptions(
                 auto_local_healpix_order=sampling_kwargs["auto_local_healpix_order"],

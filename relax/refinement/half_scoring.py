@@ -341,6 +341,8 @@ class DenseExecutionPolicy:
     preserve_bpref_particle_order: bool = False
     source_faithful_spectrum_norm: bool = False
     relion_translation_angle_scale: float = 1.0
+    # The K=1 --firstiter_cc coarse-tree top-2 rescore margin (RelionParityOptions); None is off.
+    firstiter_cc_tree_rescore_max_margin: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -821,6 +823,8 @@ def _score_half_dense_one_shape(
         em_kwargs["preserve_bpref_particle_order"] = True
     if execution.source_faithful_spectrum_norm:
         em_kwargs["source_faithful_spectrum_norm"] = True
+    if execution.firstiter_cc_tree_rescore_max_margin is not None:
+        em_kwargs["firstiter_cc_tree_rescore_max_margin"] = float(execution.firstiter_cc_tree_rescore_max_margin)
     if float(execution.relion_translation_angle_scale) != 1.0:
         if variant.k_class_enabled:
             raise ValueError("the RELION model/optics translation-angle scale is K=1-only")

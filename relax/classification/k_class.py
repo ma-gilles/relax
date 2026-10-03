@@ -1116,6 +1116,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         score_mode="normalized_cc",
         relion_coarse_gaussian_default=bool(engine_kwargs.get("relion_exact_coarse", False)),
         require_plain_gemm_coarse=bool(engine_kwargs.get("require_plain_gemm_coarse", False)),
+        tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
         collect_significance=_significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
             debug_iteration=engine_kwargs.get("debug_iteration"),
@@ -2529,6 +2530,7 @@ def run_dense_k_class_em_adaptive(
                 )
             ),
             require_plain_gemm_coarse=coarse_engine == "gemm_hybrid",
+            tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
         )

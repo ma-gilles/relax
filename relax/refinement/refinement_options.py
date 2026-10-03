@@ -9,6 +9,7 @@ See ``docs/math/relion_refinement_algorithm.md`` for the execution map.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
@@ -100,6 +101,9 @@ class RelionParityOptions:
     use_per_half_mean_variance: bool = False
     preserve_bpref_particle_order: bool = False
     allow_replayed_bpref_particle_order: bool = False
+    # K=1 --firstiter_cc: rescore an image's top two coarse CC poses on RELION's
+    # coarse tree when their margin is at most this (the CLI default is 4e-6); None is off.
+    firstiter_cc_tree_rescore_max_margin: float | None = None
 
     def __post_init__(self):
         if self.image_fourier_backend not in {
@@ -112,6 +116,10 @@ class RelionParityOptions:
                 "'host_numpy', 'jax_gpu', or 'relion_cuda', "
                 f"got {self.image_fourier_backend!r}"
             )
+
+        margin = self.firstiter_cc_tree_rescore_max_margin
+        if margin is not None and not (math.isfinite(float(margin)) and float(margin) >= 0.0):
+            raise ValueError(f"firstiter_cc_tree_rescore_max_margin must be a finite non-negative float, got {margin!r}")
 
         if self.perturb_replay_max_iter is not None and self.perturb_replay_max_iter < 0:
             raise ValueError(

@@ -2593,7 +2593,7 @@ def refine_single_volume(
                     from relax.scoring.significance import _global_pass1_relion_projector_texture_enabled
                     if (projector_half.dtype == np.dtype(np.complex64)
                         and _global_pass1_relion_projector_texture_enabled()
-                        and not os.environ.get("RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN", "").strip()):
+                        and parity.firstiter_cc_tree_rescore_max_margin is None):
                         significance_safe_batch_sizes_for_half = partial(
                             safe_batch_sizes_for_half,
                             score_projector_staging_bytes=int(projector_half.nbytes),
@@ -3134,6 +3134,7 @@ def refine_single_volume(
                     preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
                     source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                     relion_translation_angle_scale=relion_translation_angle_scale,
+                    firstiter_cc_tree_rescore_max_margin=parity.firstiter_cc_tree_rescore_max_margin,
                 )
                 dense_optics = DenseOpticsSpec(
                     noise_radial_k=optics_values.get("noise_radial_k"),
@@ -5756,6 +5757,7 @@ def refine_single_volume(
                         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
                         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                         relion_translation_angle_scale=relion_translation_angle_scale,
+                        firstiter_cc_tree_rescore_max_margin=parity.firstiter_cc_tree_rescore_max_margin,
                     ),
                     optics=DenseOpticsSpec(
                         noise_radial_k=final_optics_values.get("noise_radial_k"),

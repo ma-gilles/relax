@@ -6948,10 +6948,6 @@ class TestRelionModeSmokeTest:
         dataset.process_images_half = fake_relion_process_half
         rotations = _make_rotations(2, seed=6322)
         translations = jnp.zeros((1, 2), dtype=jnp.float32)
-        monkeypatch.setenv(
-            "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN",
-            "4e-6",
-        )
         monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
         monkeypatch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
         monkeypatch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
@@ -7065,6 +7061,7 @@ class TestRelionModeSmokeTest:
             return_class_best=True,
             relion_coarse_gaussian_default=gemm_mode != "legacy",
             require_plain_gemm_coarse=gemm_mode == "selected",
+            tree_rescore_max_margin=4e-6,
         )
 
         if exact_gemm:

@@ -923,10 +923,9 @@ def test_relion_acc_candidate_dump_envs_are_forwarded(tmp_path):
     )
 
 
-def test_firstiter_projector_and_tree_interventions_are_forwarded(tmp_path):
+def test_firstiter_projector_intervention_is_forwarded(tmp_path):
     extra_env = {
         "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "1",
-        "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "4e-6",
     }
     proc, scratch = _dry_run_launcher(tmp_path, case="24", extra_env=extra_env)
 

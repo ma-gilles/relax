@@ -143,7 +143,6 @@
   "RECOVAR_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE": "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE",
   "RECOVAR_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE": "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE",
   "RECOVAR_FINAL_ALL_DATA_USE_MERGED_REFERENCE": "RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE",
-  "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN",
   "RECOVAR_GATHER": "RELAX_GATHER",
   "RECOVAR_GIT_HEAD": "RELAX_GIT_HEAD",
   "RECOVAR_GLOBAL_WINNER_SUMMARY_DISPATCH_ORACLE_SHA256": "RELAX_GLOBAL_WINNER_SUMMARY_DISPATCH_ORACLE_SHA256",
@@ -660,6 +659,8 @@
   "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
   "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
   "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
-  "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores"
+  "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "removed on 2026-10-02; the K=1 --firstiter_cc coarse-tree top-2 rescore margin is the run option --firstiter_cc_tree_rescore_max_margin (RelionParityOptions.firstiter_cc_tree_rescore_max_margin; default 4e-6 for K=1)",
+  "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "removed on 2026-10-02; the K=1 --firstiter_cc coarse-tree top-2 rescore margin is the run option --firstiter_cc_tree_rescore_max_margin (RelionParityOptions.firstiter_cc_tree_rescore_max_margin; default 4e-6 for K=1)"
  }
 }

@@ -87,9 +87,6 @@ _SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
 _SIGNIFICANCE_SCORE_CACHE_DEFAULT_MAX_GB = 2.0
 _RETIRED_BACKEND_REASON = "removed on 2026-10-02 with the opt-in coarse scorers; the coarse GEMM scorer is the only one"
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
-_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV = (
-    "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN"
-)
 _K1_COARSE_GAUSSIAN_FFI_ENV = "RECOVAR_K1_COARSE_GAUSSIAN_FFI"
 _K1_COARSE_GAUSSIAN_SINCOSF_ENV = "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF"
 _COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = (
@@ -474,23 +471,6 @@ def _global_pass1_relion_projector_texture_enabled() -> bool:
         _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV,
         default=True,
     )
-
-
-def _firstiter_cc_tree_top2_rescore_max_margin() -> float | None:
-    """Return the near-tie margin for RELION coarse-tree replay."""
-
-    token = os.environ.get(_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV, "").strip()
-    if not token:
-        return None
-    if token.lower() in {"off", "none", "disable", "disabled"}:
-        return None
-    margin = float(token)
-    if not np.isfinite(margin) or margin < 0.0:
-        raise ValueError(
-            f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} must be a finite "
-            f"non-negative float, got {token!r}",
-        )
-    return margin
 
 
 def _dense_projection_scale(image_shape) -> float:
@@ -973,6 +953,7 @@ def _compute_k_class_significance_batched(
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     require_plain_gemm_coarse: bool = False,
+    tree_rescore_max_margin: float | None = None,
 ):
     """Find significant samples from one posterior over ``class x rotation x translation``.
 
@@ -1140,9 +1121,12 @@ def _compute_k_class_significance_batched(
         and not coarse_texture_interp
         and _relion_acc_double_floorf_quirk_enabled()
     )
-    tree_rescore_max_margin = _firstiter_cc_tree_top2_rescore_max_margin()
-    # The environment setting spans the full process, while only iteration 1
-    # uses normalized CC.  Later Gaussian iterations must remain unaffected.
+    if tree_rescore_max_margin is not None and not (
+        np.isfinite(tree_rescore_max_margin) and tree_rescore_max_margin >= 0.0
+    ):
+        raise ValueError(f"tree_rescore_max_margin must be a finite non-negative float, got {tree_rescore_max_margin!r}")
+    # The margin is a run option, while only iteration 1 uses normalized CC.
+    # Later Gaussian iterations must remain unaffected.
     tree_rescore_enabled = (
         tree_rescore_max_margin is not None and score_mode == "normalized_cc"
     )
@@ -1577,27 +1561,27 @@ def _compute_k_class_significance_batched(
     if tree_rescore_enabled:
         if n_classes != 1:
             raise ValueError(
-                f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} currently "
+                "the coarse-tree top-2 rescore (tree_rescore_max_margin) currently "
                 "supports K=1 only",
             )
         if not return_class_best:
             raise ValueError(
-                f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
+                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                 "return_class_best=True",
             )
         if use_float64_scoring:
             raise ValueError(
-                f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
+                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                 "production float32 scoring",
             )
         if not use_relion_projector or not coarse_texture_interp:
             raise ValueError(
-                f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
+                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                 "the supplied RELION projector with texture interpolation",
             )
         if not half_spectrum_scoring:
             raise ValueError(
-                f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
+                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                 "half-spectrum scoring",
             )
         from recovar import cuda_backproject
@@ -1612,7 +1596,7 @@ def _compute_k_class_significance_batched(
             or not cuda_backproject.cuda_available()
         ):
             raise RuntimeError(
-                f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
+                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                 "the custom CUDA backend",
             )
         coarse_gaussian_projector_full = jnp.asarray(
@@ -1642,7 +1626,7 @@ def _compute_k_class_significance_batched(
             dtype=jnp.float32,
         )
         logger.warning(
-            "Opt-in RELION coarse-tree top-2 rescore enabled: max_margin=%g current_size=%d",
+            "RELION coarse-tree top-2 rescore: max_margin=%g current_size=%d",
             tree_rescore_max_margin,
             score_size,
         )
@@ -2476,7 +2460,7 @@ def _compute_k_class_significance_batched(
             if score_mode == "normalized_cc" and tree_rescore_enabled and not exact_cc_enabled:
                 if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
                     raise ValueError(
-                        f"{_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN_ENV} requires "
+                        "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                         "RELION CUDA image preprocessing",
                     )
                 exact_cc_preprocess_kwargs = dict(relion_preprocess_kwargs)
