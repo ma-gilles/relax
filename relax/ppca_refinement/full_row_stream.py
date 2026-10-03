@@ -338,7 +338,6 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     ``(R, B, tri(q))``.
     """
     P, R = proj.shape[:2]
-    q = P - 1
     B = n_images
     T = Y1.shape[1] // B
     inner = jnp.dot(_real_imag(proj).reshape(P * R, -1), Y1, precision=_HIGHEST).reshape(P, R, B, T)
@@ -347,6 +346,15 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     real, imag = proj.real, proj.imag
     products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
     gram = jnp.dot(products.reshape(first.size * R, -1), ctf2, precision=_HIGHEST).reshape(first.size, R, B)
+    return _latent_scores(inner, gram, pose_log_prior)
+
+
+def _latent_scores(inner, gram, pose_log_prior):
+    """:func:`_latent_block` from its two GEMM outputs: ``inner`` ``(P, R, B, T)`` and the packed upper
+    ``gram`` ``(tri(P), R, B)``."""
+    P, R, B, T = inner.shape
+    q = P - 1
+    first, second = np.triu_indices(P)
     index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(first, second))}
     rho = gram[index[(0, 0)], :, :, None] - 2.0 * inner[0]
     prior = jnp.transpose(pose_log_prior, (1, 0, 2))
@@ -615,6 +623,15 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     lhs_images = jnp.dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(
         n_moments, R, F
     )
+    return _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
+
+
+def _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations):
+    """Backproject one block's M-step images into the carry: the packed LHS metric images ``(tri(P), R, F)``
+    and the planar RHS images ``(P, R, 2F)`` at ``rotations`` ``(R, 3, 3)``, as residual images, and their
+    noise-power correction."""
+    P = static.basis_size
+    F = lhs_images.shape[2]
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight. The RHS images enter the

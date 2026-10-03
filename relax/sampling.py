@@ -1187,20 +1187,21 @@ def infer_translation_step(translations: np.ndarray) -> float:
 def get_oversampled_translation_grid(parent_translations, pixel_offset, oversampling_order=1):
     """Generate a finer translation grid by subdividing each parent cell.
 
-    Each parent translation cell is subdivided into ``4**oversampling_order``
-    child cells, with centers evenly spaced within the parent cell.
+    Each parent translation cell is subdivided into ``(2**oversampling_order)**D``
+    child cells (``D`` = 2 or 3 dimensions), with centers evenly spaced within the
+    parent cell.
 
     Args:
-        parent_translations: float (N, 2) parent translation grid points.
+        parent_translations: float (N, D) parent translation grid points.
         pixel_offset: float, step size between parent grid points (pixels).
         oversampling_order: int, number of subdivision levels (default 1).
 
     Returns:
-        fine_translations: float (N * 4**oversampling_order, 2).
-        parent_map: int (N * 4**oversampling_order,) index into parent_translations.
+        fine_translations: float (N * (2**oversampling_order)**D, D), parent-major.
+        parent_map: int (N * (2**oversampling_order)**D,) index into parent_translations.
     """
     parent_translations = np.asarray(parent_translations)
-    n_parents = len(parent_translations)
+    n_parents, n_dims = parent_translations.shape
     n_subdiv = 2**oversampling_order  # per dimension
     fine_offset = pixel_offset / n_subdiv
 
@@ -1209,11 +1210,11 @@ def get_oversampled_translation_grid(parent_translations, pixel_offset, oversamp
         pixel_offset / 2 - fine_offset / 2,
         n_subdiv,
     )
-    dx, dy = np.meshgrid(half_offsets, half_offsets, indexing="ij")
-    child_offsets = np.stack([dx.ravel(), dy.ravel()], axis=-1)  # (4**os, 2)
-    n_children = n_subdiv**2
+    grids = np.meshgrid(*([half_offsets] * n_dims), indexing="ij")
+    child_offsets = np.stack([g.ravel() for g in grids], axis=-1)  # (n_subdiv**D, D)
+    n_children = n_subdiv**n_dims
 
-    fine_translations = (parent_translations[:, None, :] + child_offsets[None, :, :]).reshape(-1, 2)
+    fine_translations = (parent_translations[:, None, :] + child_offsets[None, :, :]).reshape(-1, n_dims)
     parent_map = np.repeat(np.arange(n_parents), n_children)
     return fine_translations, parent_map
 

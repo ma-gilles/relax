@@ -1189,6 +1189,30 @@ scientific contract; runnable code alone does not establish recovery.
   EMPIAR-10076 stage (`test_an_80_gb_card_keeps_the_requested_tile_at_every_stage`),
   and the controller's statistics do not depend on the tile size beyond float32
   reduction order (`test_controller_statistics_do_not_depend_on_the_tile_size`).
+- Adaptive oversampling, order 1 (October 3, 2026; engine only, not yet in the
+  controller, which still refuses oversampling > 0). This is RELION's two-pass
+  scheme with per-image work, and replaces the tile-union design rejected above
+  ([oversampled_stream](../../relax/ppca_refinement/oversampled_stream.py)).
+  Pass 1 is the dense stream at the stage's order N over every rotation and
+  shift. Each image's coarse (rotation, translation) samples are sorted by
+  posterior weight. The largest are kept until their sum exceeds the adaptive
+  fraction (0.999) of the image's mass, at most `max_significant` of them (RELION's
+  `--maxsig`, 100 x classes for gradient runs, so 100 for PPCA), together with every
+  weight at least the last one counted (`ml_optimiser.cpp:9602-9716`). Pass 2 scores
+  the children of each kept sample only: 8 child rotations (HEALPix N+1 directions
+  and half psi steps) times 4 child shifts in 2D or 8 in 3D (half steps), RELION's
+  oversampled grid, each with its coarse parent's rotation and translation
+  log-priors (RELION evaluates both at the coarse sample, `ml_optimiser.cpp:9434`).
+  The posterior over those poses and the latent variable, and every statistic, are
+  the dense stream's restricted to them; the rotation mass (for the direction
+  prior) is summed into the order-N parents. Each kept sample is one job (image,
+  coarse rotation, coarse translation), laid out image-major with `max_significant`
+  slots per image and run in fixed-size chunks.
+  The test (`test_oversampled_stream.py`) compares the result with the dense
+  stream over the whole child grid, with each image's kept samples as its coarse
+  support. They match within float32 reduction order, on CPU and on GPU, for
+  single particles (metric and trace-only) and tilt series. With fraction 1 and
+  no cap, every coarse sample is kept and the result is the dense child grid.
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials
