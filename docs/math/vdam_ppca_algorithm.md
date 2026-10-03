@@ -1578,3 +1578,71 @@ With one seed the two arms are within the earlier three-seed spread (16.9). The
 estimate tracks the contrast (r .74) but overstates its spread (sd .25 against
 .144). The option stays off by default.
 
+
+## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)
+
+Started from the ground-truth model, momentum SGD holds it and VDAM does not: on
+the eleven-state fixture (q = 10, a fixed 300-particle batch on every update) the
+state FSC falls from .983 to .77-.83 in 150 updates (section 14 table). The first
+quantity to move is the loading power (13x in 10 updates, with latent posterior
+covariance trace 3.3 to 0.8); noise, offset variance, step and fudge stay constant.
+
+Mechanism. The coupled direction of section 6.2 makes `theta + d_h` the
+unregularized M-step of pseudo-half `h`. With 150 images per half its loading
+power is 6-330x the GT loadings', its noise power scales as 1/N, and a pooled
+1800-image M-step at GT is unbiased in scale: GT is close to the full-data maximum
+likelihood. VDAM's update moves `theta` toward the gated moving average of these
+M-steps with step .5, so its moving average spans about `subset / step`
+particles. VDAM's own schedule uses late subsets of 10% of the data (10,000 here),
+a window of about 20,000 particles; the fixed 300-particle batch shrinks it to
+about 600. The gate does not compensate: with fudge 4 it stays at .8-.9 where the
+half-M-step Wiener factor is .1-.5. Once noise enters the loadings, the next
+M-step reproduces 60-75% of it, because the E-step fits the latent coordinates to
+it. Momentum SGD's per-voxel step is `lr * trace / max trace`, .005-.4 of a Newton
+step, so it barely moves the noise-dominated shells. Evidence:
+`em_work/relax_ppca_vdamdrift_20261003` (`HANDOFF.json`, replays
+`analysis/diag_directions.py`, jobs 14907807 and 14907965).
+
+Rule. The PPCA VDAM step is multiplied by
+[`Config.step_factor`](../../relax/ppca_initial_model/config.py), `min(1, count /
+scheduled count)`, where the scheduled count is VDAM's own subset size for the
+iteration (`compute_subset_size`, all particles on the final iteration). The factor
+is exactly one on VDAM's own schedule, so default runs are unchanged; only runs
+whose `stochastic_batch_size` is below VDAM's subset take smaller steps, restoring
+VDAM's particle window. Every update logs it as `vdam_step_factor`. The native
+VDAM InitialModel is not affected.
+
+| Eleven-state GT start, 150 tf32 updates, seeds 101/102/103 | State FSC | Worst state | Latent R^2 |
+| --- | --- | --- | --- |
+| VDAM (factor 1) | .768/.833/.777 | .59-.65 | .12 |
+| step x0.1 | .928/.927/.926 | .80 | .46 |
+| step x0.03 | .964/.963/.964 | .89 | .59-.60 |
+| batch-share rule (factor .038-.040 here; seed 101 at update 4125) | .959/.956/.956 | .87 | .56-.58 |
+| momentum SGD | .967 | .90 | .40 |
+
+The state FSC rises monotonically as the step falls (x0.1 .927, x.038-.040 .956, x0.03
+.964). The rule's factor is .038-.040 here because these updates sit in VDAM's middle
+phase, where its subset is still growing (7,467-7,942 particles); in the final phase
+it is 300/10,000 = .03.
+
+Under the rule the state FSC still declines slowly and levels off: seed 101 over
+450 updates reads .970, .959, .950, .942, .938, .935, .934 every 75 updates
+(latent R^2 .60 to .48). On the cryo-ET random start (seed 11, default schedule)
+the factor is one on all 200 updates and the run matches the control (state
+FSC-AUC .723, specificity .120, latent nearest-centroid .910). Jobs 14908906,
+14910785, 14914173, 14919430.
+
+Rejected. A Wiener shell gate and a gate-free update (both a multiplicative
+shrinkage of the M-step output, which compounds through EM: the loading fixed
+point `W = phi M(W)` shrinks or collapses) and an empirical-Bayes per-shell
+Gaussian prior on the VDAM directions (the prior's precision exceeds the batch
+metric at weak shells and the first-moment average overshoots: the mean's
+high-frequency FSC against GT turns negative on the cryo-ET start). Removing
+the gate on the cryo-ET random start lowered specificity from .12-.14 to .08 and
+nearest-centroid accuracy from .90-.92 to .84, so the gate stays. The cryo-ET GT
+start drifts on VDAM's own schedule: with 399 particles the full-data maximum
+likelihood itself fits noise beyond shell 19 (per-coefficient loading SNR .03-.2),
+and SGD's GT hold there is the slowness of its high-shell steps. That needs a
+regularizer, not a step rule: the same shell prior under momentum SGD (lr 1.2)
+scored FSC-AUC .993 from the cryo-ET GT start but collapsed from a random start
+(.04, job 14915796).
