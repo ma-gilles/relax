@@ -344,6 +344,36 @@ def _centered_full_half_axis_mask(shape, axis, dtype):
     return jnp.broadcast_to(keep.reshape(mask_shape), shape)
 
 
+def _relion_x_half_multiplicity_in_native_half(volume_shape, axis):
+    """How many of RELION's stored entries each entry of a native packed half stands for.
+
+    RELION's shell loops visit every stored entry of its half, ``k_axis >= 0`` along ``axis``, once. A native
+    packed half keeps the last axis' non-negative frequencies instead, and holds, for each of RELION's
+    entries, either that entry or its Hermitian mate. Where the last-axis frequency has a distinct mate (not
+    0, not an even axis' Nyquist), an entry stands for one of RELION's entries, or for two when its mate
+    lies in RELION's half as well: the ``k_axis = 0`` plane, and an even axis' Nyquist plane. On the last
+    axis' own-mate planes both mates are stored, and only those RELION stores count. The entries standing
+    for two take the value of one of them for both, so the plane must be Hermitian, as RELION's
+    ``enforceHermitianSymmetry`` leaves ``k_axis = 0``.
+
+    Returns int8 counts (0, 1 or 2) that broadcast over the packed half of ``volume_shape``.
+    """
+
+    axis = int(axis)
+    n_axis = int(volume_shape[axis])
+    n_last = int(volume_shape[-1])
+    coords = np.arange(-(n_axis // 2), n_axis - n_axis // 2, dtype=np.int64)
+    nyquist = (coords == -(n_axis // 2)) if n_axis % 2 == 0 else np.zeros(n_axis, dtype=bool)
+    stored = (coords >= 0) | nyquist
+    own_mate_plane = (coords == 0) | nyquist
+    last = np.arange(n_last // 2 + 1, dtype=np.int64)
+    last_own_mate = (last == 0) | ((n_last % 2 == 0) & (last == n_last // 2))
+    multiplicity = np.where(last_own_mate[None, :], stored[:, None], 1 + own_mate_plane[:, None]).astype(np.int8)
+    shape = [1, 1, n_last // 2 + 1]
+    shape[axis] = n_axis
+    return multiplicity.reshape(shape)
+
+
 @functools.partial(
     jax.jit,
     static_argnames=(
@@ -399,6 +429,13 @@ def _padded_shell_sums_device(
     shell_index = jnp.minimum(rounded.astype(jnp.int32), ori_half)
     if is_half_layout:
         included = radius_included
+        if full_half_axis != 2:
+            # A native half repacked from RELION x-half storage: RELION's half is along full_half_axis.
+            multiplicity = _relion_x_half_multiplicity_in_native_half(radial_volume_shape, full_half_axis)
+            included = included * jnp.broadcast_to(
+                jnp.asarray(multiplicity, dtype=jnp.float64),
+                radial_shape,
+            ).reshape(-1)
     else:
         # RELION iterates the stored half-complex axis only. For native RECOVAR
         # full volumes that axis is last; for full volumes expanded from RELION
@@ -440,11 +477,12 @@ def _compute_relion_weight_shell_stats(
         Shell binning rule. RELION's SSNR/tau2 update path uses ``round``
         while the Wiener reconstruct / current-size path uses ``floor``.
     full_half_axis : {-3, -2, -1, 0, 1, 2}
-        Axis that corresponds to the RELION half-complex packed dimension
-        when ``weight`` is a full Hermitian-expanded volume. Native RECOVAR
-        full volumes use the last axis (default). Full volumes expanded from
-        RELION x-half storage and transposed into RECOVAR public layout use
-        axis 0.
+        Axis that corresponds to the RELION half-complex packed dimension.
+        Native RECOVAR volumes use the last axis (default). Volumes expanded
+        or repacked from RELION x-half storage and transposed into RECOVAR
+        public layout use axis 0, as a full volume or as a packed half: a
+        packed half then counts its entries as RELION's half along that axis
+        does (:func:`_relion_x_half_multiplicity_in_native_half`).
 
     Returns
     -------
@@ -566,16 +604,36 @@ def _compute_relion_weight_shell_stats(
             else:
                 shell_index_np = np.floor(padded_dist_np / padding_factor).astype(np.int32)
             shell_index_np = np.minimum(shell_index_np, ori_half)
+            multiplicity_np = None
             if not is_half_layout:
                 radius_included_np = radius_included_np & _centered_full_half_axis_mask_np(
                     radial_shape,
                     full_half_axis,
                 )
+            elif full_half_axis != 2:
+                multiplicity_np = _relion_x_half_multiplicity_in_native_half(radial_volume_shape, full_half_axis)
+                radius_included_np &= multiplicity_np > 0
+            weight_grid_np = np.asarray(weight).reshape(radial_shape)
             shell_sum_np, shell_count_np = _numpy_bincount_shell_stats(
                 shell_index_np,
-                np.asarray(weight).reshape(radial_shape),
+                weight_grid_np,
                 radius_included_np,
             )
+            if multiplicity_np is not None:
+                # The entries that stand for two of RELION's lie on a few planes; count those once more.
+                other_axes = tuple(a for a in range(3) if a != full_half_axis)
+                for plane in np.flatnonzero(np.any(multiplicity_np == 2, axis=other_axes)):
+                    plane_index = [slice(None)] * 3
+                    plane_index[full_half_axis] = int(plane)
+                    plane_index = tuple(plane_index)
+                    twice = np.broadcast_to(multiplicity_np == 2, radial_shape)[plane_index]
+                    plane_sum, plane_count = _numpy_bincount_shell_stats(
+                        shell_index_np[plane_index],
+                        weight_grid_np[plane_index],
+                        radius_included_np[plane_index] & twice,
+                    )
+                    shell_sum_np = shell_sum_np + plane_sum
+                    shell_count_np = shell_count_np + plane_count
         else:
             shell_sum, shell_count = _padded_shell_sums_device(
                 weight,
@@ -623,6 +681,12 @@ def _compute_relion_weight_shell_stats(
                 relion_grid_shape,
                 full_half_axis,
                 jnp.float64,
+            ).reshape(-1)
+        elif full_half_axis != 2:
+            multiplicity = _relion_x_half_multiplicity_in_native_half(volume_shape, full_half_axis)
+            included = included * jnp.broadcast_to(
+                jnp.asarray(multiplicity, dtype=jnp.float64),
+                fourier_transform_utils.volume_shape_to_half_volume_shape(volume_shape),
             ).reshape(-1)
 
     if shell_sum_np is None:
