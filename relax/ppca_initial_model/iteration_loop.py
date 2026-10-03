@@ -387,6 +387,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
+        step_factor = config.step_factor(iteration, dataset.n_images)
         rng = np.random.default_rng()
         rng.bit_generator.state = state.rng_state
         # Persistent random order; each iteration takes a fresh uniformly selected batch.
@@ -429,7 +430,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 jnp.stack(directions),
                 jnp.stack(coverage),
                 shells,
-                step=step,
+                step=step * step_factor,
                 fudge=fudge,
                 image_size=dataset.grid_size,
             )
@@ -505,7 +506,8 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "gemm_precision": _gemm_precision_used(config),
                 **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),
                 **({"resumed_from_source": resumed_source} if resumed_source is not None else {}),
-                "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step,
+                "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step * step_factor,
+                "vdam_step_factor": step_factor,
                 "fudge": fudge,
                 "noise": noise,
                 "metric": metric_info,

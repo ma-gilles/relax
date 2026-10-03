@@ -110,6 +110,20 @@ class Config:
         if self.preread_images not in ("auto", "on", "off"):
             raise ValueError("Image preread must be auto, on or off")
 
+    def step_factor(self, iteration, n_images):
+        """``min(1, count / scheduled count)``: the factor on VDAM's step for a batch below its own subset.
+
+        VDAM's step and subset schedules together set how many particles its moving average spans
+        (about subset / step). A fixed ``stochastic_batch_size`` below VDAM's subset size shortens that
+        window; scaling the step by the batch's share of the scheduled subset restores it
+        (docs/math/vdam_ppca_algorithm.md section 17). It is one for VDAM's own schedule.
+        """
+        phases = compute_phase_lengths(self.iterations)
+        first, last = default_subset_sizes_for_3d_initial_model(n_images)
+        scheduled = compute_subset_size(iteration, phases, first, last, n_images, self.iterations)
+        scheduled = n_images if scheduled < 0 or iteration == self.iterations else min(scheduled, n_images)
+        return min(1.0, self.schedule(iteration, n_images)[0] / scheduled)
+
     def stage(self, iteration):
         return next((r, hp) for start, r, hp in reversed(self.stages) if start <= iteration)
 
