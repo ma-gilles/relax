@@ -9288,7 +9288,7 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_multioptics_default_20260929/score_7c3ddbe/masked_nofcc/masked_fsc.json"
     ],
     "scorer": "relax scripts/score_k1_map_gate.py",
-    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/multioptics_spa_s3_20260924/project"
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_10k_20260924/project"
    },
    "date": "2026-09-30",
    "history": [],
