@@ -984,7 +984,7 @@ scientific contract; runnable code alone does not establish recovery.
   Performance record (September 25, 2026): the host-mask route spent about
   74% of each r16/HP3 16-image tile idle on host mask/prior construction and
   about 54k eager launches. One paired A100 CP113-to-114 update (Slurm job
-  14423310, `/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/devres/qual/`)
+  14423310, `em_fixtures/ppca_evidence_20261003/em_work/ppca_speed_20260925/devres/qual/paired_cp114_devres_14423310`)
   took 761 s with the frozen host-mask stream and 189 s with this engine at
   R512, passing every scoped PPCA gate (LHS relL2 1.3e-7, gradient 5.3e-7,
   direction 6.5e-7, exact selected IDs and noise). The tile is now mostly
@@ -1021,11 +1021,12 @@ scientific contract; runnable code alone does not establish recovery.
   The controller streams both pseudo-halves through one prepared model,
   dispatching each tile before finishing the previous one, with one reused
   pose-kept buffer. Paired local A100 replays of the live checkpoints
-  (`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ppca_dense_speed_20261001/`):
+  (`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/local_final_20261001`):
   10076 q4/HP4 from about 42 s to 16 s per update and 11-state q10/HP3 from
   about 15.5 s to 6.3 s, every scoped PPCA gate passing; the two large GEMMs
   run at 88-94% of A100 float32 peak. 3xTF32 contractions were measured and
-  rejected: no closer to float64 than float32 on the 11-state statistics.
+  rejected: no closer to float64 than float32 on the 11-state statistics
+  (`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/local_a100_20261001`).
 - Fused GPU stages (October 2, 2026). On GPU streams the elementwise work
   around the four GEMMs runs in relax CUDA kernels
   ([ppca_stream.cuh](../../relax/cuda/ppca_stream.cuh)); the XLA formulation above
@@ -1067,7 +1068,7 @@ scientific contract; runnable code alone does not establish recovery.
   records then carry `resumed_from_gemm_precision`. TF32 leaves
   the float32 equivalence tests (a bug check for the fp32 path) and was adopted on
   end-to-end science (October 2, 2026; H100 job 14880649, three selection seeds
-  per arm, harness `relax_ppca_dense_speed_20261001/harness5`): per-state
+  per arm, harness `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/harness5`): per-state
   shared-frame FSC over shells 1-15 against GT, pose median, and latent
   between-state R^2 on the fixed 1100-particle eleven-state evaluation subset.
 
@@ -1107,8 +1108,9 @@ scientific contract; runnable code alone does not establish recovery.
   separable metric scored .10 / .08 / .10, pose median 131-133 deg and
   R^2 .01 (after 50 updates it was already at .73 against .82). The
   update time fell only from 0.76 s to 0.60 s. Evidence: the harness
-  `relax_ppca_dense_speed_20261001/harness5` (`metric_queue.py`,
-  `metric_separability.py`). VDAM keeps the full per-voxel metric.
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/harness5` (`metric_queue.py`,
+  `metric_separability.py`) and the runs under `jobs/slurm_sepmetric_gt_h100_20261002`
+  and `jobs/slurm_sepmetric2_gt_h100_20261002` beside it. VDAM keeps the full per-voxel metric.
 - Oversampling 1 on the streamed engine was measured and rejected (October 3,
   2026). In that path, a pass 1 over the coarse grid keeps each image's 0.999
   posterior mass, and pass 2 scores the 2x-finer children (HEALPix N+1, half
@@ -1134,7 +1136,7 @@ scientific contract; runnable code alone does not establish recovery.
 
   For the current controller's schedule, the dense HP 3/4 grid stays the
   default. Evidence is in
-  `relax_ppca_dense_speed_20261001/jobs/local_os1_smoke_20261002`.
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/local_os1_smoke_20261002`.
   [Config](../../relax/ppca_initial_model/config.py) and the
   `relax ppca_initial_model` command therefore default to the dense stream:
   oversampling 0, `stream_coarse_recompute`, image batch 150 and rotation
@@ -1165,7 +1167,8 @@ scientific contract; runnable code alone does not establish recovery.
   A finished tile is released before the next one is read. A stage is planned
   once, from its shapes, and the plan is logged ("PPCA tile plan", in the
   command's run.log). Each update records the planned size as `tile_images`.
-  On an emulated 16 GB H100 (job 14939163; r31/HP3 cryo-ET, 41 tilts, batch
+  On an emulated 16 GB H100 (job 14939163,
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_gpuport_20261003/della_ppca_fb33c09`; r31/HP3 cryo-ET, 41 tilts, batch
   150) the r31 stage plans 33 particles (block programs 2.13 GiB) and SGD and
   VDAM complete at a 15.3-15.6 GiB nvidia-smi peak, where the count without the block programs had run out
   of memory in the score block.
@@ -1181,7 +1184,7 @@ scientific contract; runnable code alone does not establish recovery.
   `pass2_row_fraction`.
   The 50% threshold exists because compacting perturbs a trajectory even when it
   keeps nearly every row. A snapshot that compacted at any kept share (H100 job
-  14919588; GT-started eleven-state VDAM, 150 updates, seeds 101/102/103) visited
+  14919588, `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/slurm_rowskip_gt_h100_20261003`; GT-started eleven-state VDAM, 150 updates, seeds 101/102/103) visited
   97-99.9% of rows and moved state FSC from .771 / .832 / .766 to
   .767 / .825 / .748 and latent R^2 from .118 / .133 / .131 to .111 / .123 / .132.
   With the threshold, these SPA tiles run in place and their output equals no
