@@ -489,3 +489,30 @@ def test_controller_noise_groups_match_brute_force():
     assert np.asarray(stats.residual_num).shape == truth["residual_num"].shape and truth["residual_num"].shape[0] == 2
     assert_matches(np.asarray(stats.residual_num), truth["residual_num"], rtol=rtol)
     assert_matches(np.asarray(stats.residual_den), truth["residual_den"], rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "columns, refused",
+    [
+        ({}, False),
+        ({"rlnCtfDataAreCtfPremultiplied": "1"}, True),
+        ({"rlnBeamTiltX": "0.5"}, True),
+        ({"rlnMagMat00": "1.01", "rlnMagMat01": "0", "rlnMagMat10": "0", "rlnMagMat11": "1"}, True),
+    ],
+)
+def test_subtomogram_training_refuses_unapplied_optics(tmp_path, columns, refused):
+    """The --ios loader fails closed on optics features it would otherwise ignore for every tilt."""
+    from relax.commands.ppca_initial_model import refuse_unsupported_tilt_optics
+
+    labels = ["rlnOpticsGroup", "rlnImagePixelSize", *columns]
+    values = ["1", "8.5", *columns.values()]
+    star = tmp_path / "particles.star"
+    star.write_text(
+        "data_optics\n\nloop_\n" + "".join(f"_{label} #{k + 1}\n" for k, label in enumerate(labels))
+        + " ".join(values) + "\n\n\ndata_particles\n\nloop_\n_rlnTomoParticleName #1\n_rlnOpticsGroup #2\nTS_01/1 1\n"
+    )
+    if refused:
+        with pytest.raises(NotImplementedError, match="does not implement"):
+            refuse_unsupported_tilt_optics(star)
+    else:
+        refuse_unsupported_tilt_optics(star)
