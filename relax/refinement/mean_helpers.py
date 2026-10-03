@@ -1444,97 +1444,71 @@ def _reconstruct_class_maps(
     return shared_classes
 
 
-def _postprocess_numbered_maps(
-    means,
-    settings: ReconstructionSettings,
-    *,
-    n_classes,
-    class_axis,
-    iteration,
-    current_size,
-    relion_firstiter_cc_this_iter,
-) -> list:
-    """Capture, first-CC filter and solvent-flatten the two solved slots in turn.
+def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index, iteration, current_size, n_classes):
+    """Write one solved slot before filtering and masking when ``RELAX_PREMASK_DUMP_DIR`` is set."""
+    _premask_dump = os.environ.get("RELAX_PREMASK_DUMP_DIR")
+    if _premask_dump:
+        from relax.diagnostics.reconstruction import write_premask_mean
 
-    Each slot is one flat K1 half map, or a Class3D stack when ``class_axis``;
-    the filter and the flatten then act on each class of the stack. The mask
-    radius and construction are common. The flatten implementation is the one
-    execution difference: K1 host-stages box-scale results and consumes its
-    mask, while a class stack is flattened on the device with one mask.
-    """
-    for k in range(2):
-        # Diagnostic: dump pre-mask Wiener output when env var set.
-        _premask_dump = os.environ.get("RELAX_PREMASK_DUMP_DIR")
-        if _premask_dump:
-            from relax.diagnostics.reconstruction import write_premask_mean
+        write_premask_mean(
+            mean, output_dir=_premask_dump, half_index=half_index, iteration=iteration,
+            current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
+            volume_shape=settings.volume_shape, n_classes=n_classes,
+        )
 
-            write_premask_mean(
-                means[k], output_dir=_premask_dump, half_index=k, iteration=iteration,
-                current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
-                volume_shape=settings.volume_shape, n_classes=n_classes,
-            )
 
-        # RELION filters Iref inside maximizationOtherParameters, then calls
-        # solventFlatten from the outer iteration loop.  These operations do
-        # not commute: masking in real space after the Fourier low-pass adds a
-        # small, deterministic high-shell tail.
-        if relion_firstiter_cc_this_iter:
-            if class_axis:
-                means[k] = jnp.stack(
-                    [
-                        _apply_relion_initial_lowpass_filter(
-                            means[k][class_idx],
-                            settings.volume_shape,
-                            settings.voxel_size,
-                            settings.first_iteration_lowpass_angstrom,
-                            filter_edgewidth=settings.fmask_edge,
-                        )
-                        for class_idx in range(n_classes)
-                    ],
-                    axis=0,
-                )
-            else:
-                means[k] = _apply_relion_initial_lowpass_filter(
-                    means[k],
-                    settings.volume_shape,
-                    settings.voxel_size,
-                    settings.first_iteration_lowpass_angstrom,
-                    filter_edgewidth=settings.fmask_edge,
-                )
-        if (
-            settings.particle_diameter_angstrom is not None
-            and settings.particle_diameter_angstrom > 0
-        ):
-            flatten_radius = settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
-            solvent_mask = _make_relion_solvent_mask(
+def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
+    """Return whether a particle diameter is set, so new references are solvent-flattened."""
+    return settings.particle_diameter_angstrom is not None and settings.particle_diameter_angstrom > 0
+
+
+def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
+    """Build the soft spherical solvent mask of the particle diameter in ``dtype``."""
+    flatten_radius = settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
+    return _make_relion_solvent_mask(
+        settings.volume_shape,
+        radius=flatten_radius,
+        radius_p=flatten_radius + settings.width_mask_edge,
+        offset=jnp.zeros(3),
+        dtype=dtype,
+    )
+
+
+def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes):
+    """Apply the first-CC initial low-pass to every class and restack."""
+    return jnp.stack(
+        [
+            _apply_relion_initial_lowpass_filter(
+                class_maps[class_idx],
                 settings.volume_shape,
-                radius=flatten_radius,
-                radius_p=flatten_radius + settings.width_mask_edge,
-                offset=jnp.zeros(3),
-                dtype=(means[k][0] if class_axis else means[k]).real.dtype,
+                settings.voxel_size,
+                settings.first_iteration_lowpass_angstrom,
+                filter_edgewidth=settings.fmask_edge,
             )
-            if class_axis:
-                flattened_classes = []
-                for class_idx in range(n_classes):
-                    vol_real = fourier_transform_utils.get_idft3(
-                        means[k][class_idx].reshape(settings.volume_shape)
-                    )
-                    flattened_classes.append(
-                        fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
-                    )
-                means[k] = jnp.stack(flattened_classes, axis=0)
-            else:
-                means[k] = _apply_relion_solvent_flatten_k1(
-                    means[k], solvent_mask, settings.volume_shape, half_index=k,
-                )
-                if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
-                    solvent_mask = None
-    if relion_firstiter_cc_this_iter and settings.first_iteration_lowpass_angstrom is not None:
+            for class_idx in range(n_classes)
+        ],
+        axis=0,
+    )
+
+
+def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
+    """Solvent-flatten every class on the device with one mask and restack."""
+    flattened_classes = []
+    for class_idx in range(n_classes):
+        vol_real = fourier_transform_utils.get_idft3(class_maps[class_idx].reshape(volume_shape))
+        flattened_classes.append(
+            fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
+        )
+    return jnp.stack(flattened_classes, axis=0)
+
+
+def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
+    """Report the first-CC initial low-pass once all slots are postprocessed."""
+    if settings.first_iteration_lowpass_angstrom is not None:
         logger.info(
             "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
             float(settings.first_iteration_lowpass_angstrom),
         )
-    return means
 
 
 def reconstruct_numbered_k1_halfmaps(
@@ -1554,18 +1528,41 @@ def reconstruct_numbered_k1_halfmaps(
     Numerators, denominators and priors are ordered half pairs; each prior is
     a shell curve. The private solve frame owns promoted priors, host
     completion and the retained half-0 numerator boundary. Both solves finish
-    before premask capture, initial filtering and solvent flattening. Return
-    ready maps for installation.
+    before each half is captured, first-CC filtered and solvent-flattened in
+    turn. The flatten host-stages box-scale results and consumes its mask.
+    Return ready maps for installation.
     """
     means = _reconstruct_k1_maps(
         numerators_by_half, denominators_by_half, tau_by_half, settings,
         current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
         retained_first_numerator=retained_first_numerator,
     )
-    return _postprocess_numbered_maps(
-        means, settings, n_classes=1, class_axis=False, iteration=iteration, current_size=current_size,
-        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-    )
+    for k in range(2):
+        _capture_premask_mean(
+            means[k], settings, half_index=k, iteration=iteration, current_size=current_size, n_classes=1,
+        )
+        # RELION filters Iref inside maximizationOtherParameters, then calls
+        # solventFlatten from the outer iteration loop.  These operations do
+        # not commute: masking in real space after the Fourier low-pass adds a
+        # small, deterministic high-shell tail.
+        if relion_firstiter_cc_this_iter:
+            means[k] = _apply_relion_initial_lowpass_filter(
+                means[k],
+                settings.volume_shape,
+                settings.voxel_size,
+                settings.first_iteration_lowpass_angstrom,
+                filter_edgewidth=settings.fmask_edge,
+            )
+        if _solvent_flatten_requested(settings):
+            solvent_mask = _numbered_solvent_mask(settings, dtype=means[k].real.dtype)
+            means[k] = _apply_relion_solvent_flatten_k1(
+                means[k], solvent_mask, settings.volume_shape, half_index=k,
+            )
+            if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
+                solvent_mask = None
+    if relion_firstiter_cc_this_iter:
+        _log_first_cc_lowpass(settings)
+    return means
 
 
 def reconstruct_numbered_class_maps(
@@ -1586,8 +1583,9 @@ def reconstruct_numbered_class_maps(
     curve. All class solves finish before premask capture, initial filtering
     and solvent flattening.
     Return a two-entry list of particle-execution slots, not scientific
-    halves. Each slot is captured, filtered and flattened in turn; the entries
-    alias the shared stack when neither filtering nor flattening applies.
+    halves. Each slot is captured, then every class is first-CC filtered, then
+    every class is flattened on the device with one mask; the entries alias
+    the shared stack when neither filtering nor flattening applies.
     """
     shared_classes = _reconstruct_class_maps(
         combined_numerators, combined_denominators, tau_by_class, settings,
@@ -1596,10 +1594,19 @@ def reconstruct_numbered_class_maps(
     )
     means = [shared_classes, shared_classes]
     del shared_classes
-    return _postprocess_numbered_maps(
-        means, settings, n_classes=n_classes, class_axis=True, iteration=iteration, current_size=current_size,
-        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-    )
+    for k in range(2):
+        _capture_premask_mean(
+            means[k], settings, half_index=k, iteration=iteration, current_size=current_size, n_classes=n_classes,
+        )
+        # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
+        if relion_firstiter_cc_this_iter:
+            means[k] = _lowpass_class_stack(means[k], settings, n_classes)
+        if _solvent_flatten_requested(settings):
+            solvent_mask = _numbered_solvent_mask(settings, dtype=means[k][0].real.dtype)
+            means[k] = _flatten_class_stack(means[k], solvent_mask, settings.volume_shape, n_classes)
+    if relion_firstiter_cc_this_iter:
+        _log_first_cc_lowpass(settings)
+    return means
 
 
 @dataclass(frozen=True)

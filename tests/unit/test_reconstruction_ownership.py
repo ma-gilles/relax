@@ -46,20 +46,29 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     source = inspect.getsource(iteration_loop_module.refine_single_volume)
     settings = source.index("reconstruction_settings = ReconstructionSettings(")
     loop = source.index("while (schedule.force_max_iter_after_convergence")
-    for operation_name, solve_name in (
-        ("reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps"),
-        ("reconstruct_numbered_class_maps", "_reconstruct_class_maps"),
+    for operation_name, solve_name, filter_name, flatten_name in (
+        (
+            "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
+            "_apply_relion_initial_lowpass_filter", "_apply_relion_solvent_flatten_k1",
+        ),
+        ("reconstruct_numbered_class_maps", "_reconstruct_class_maps", "_lowpass_class_stack", "_flatten_class_stack"),
     ):
         reconstruction = source.index(operation_name + "(", loop)
-        operation = inspect.getsource(getattr(mean_helpers_module, operation_name))
-        assert operation.index(solve_name + "(") < operation.index("_postprocess_numbered_maps(")
         assert settings < loop < reconstruction
-    postprocess = inspect.getsource(mean_helpers_module._postprocess_numbered_maps)
-    premask = postprocess.index("write_premask_mean(")
-    initial_filter = postprocess.index("_apply_relion_initial_lowpass_filter(", premask)
-    flatten = postprocess.index("_make_relion_solvent_mask(", initial_filter)
-    assert premask < initial_filter < flatten
-    assert postprocess.count("flatten_radius = ") == 1
+        operation = inspect.getsource(getattr(mean_helpers_module, operation_name))
+        solve = operation.index(solve_name + "(")
+        premask = operation.index("_capture_premask_mean(", solve)
+        initial_filter = operation.index(filter_name + "(", premask)
+        solvent_mask = operation.index("_numbered_solvent_mask(", initial_filter)
+        flatten = operation.index(flatten_name + "(", solvent_mask)
+        assert solve < premask < initial_filter < solvent_mask < flatten
+        assert operation.count("_log_first_cc_lowpass(settings)") == 1
+        assert "flatten_radius" not in operation and "class_axis" not in operation
+    assert not hasattr(mean_helpers_module, "_postprocess_numbered_maps")
+    assert "write_premask_mean(" in inspect.getsource(mean_helpers_module._capture_premask_mean)
+    mask_source = inspect.getsource(mean_helpers_module._numbered_solvent_mask)
+    assert mask_source.count("flatten_radius = ") == 1 and "_make_relion_solvent_mask(" in mask_source
+    assert inspect.getsource(mean_helpers_module).count("_make_relion_solvent_mask(") == 2
     assert source.count("ReconstructionSettings(") == 1
 
 
