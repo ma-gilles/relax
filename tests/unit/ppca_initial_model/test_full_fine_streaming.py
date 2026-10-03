@@ -1,6 +1,5 @@
 """Streamed full rotation rows versus the independent local layout and host-mask engine."""
 
-from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
@@ -384,76 +383,6 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
         actual.diagnostics["n_significant_per_image"],
         np.concatenate([np.asarray(p.diagnostics["n_significant_per_image"]) for p in parts]),
     )
-
-
-def test_device_workers_keep_item_order_and_full_float32():
-    import jax
-
-    from relax.ppca_initial_model.iteration_loop import _coarse_significance, _on_devices
-
-    device = jax.devices()[0]
-    seen = list(_on_devices([device, device], lambda _d, item: (item, jax.config.jax_default_matmul_precision), range(7)))
-    assert seen == [(item, "highest") for item in range(7)]
-
-    class _Result:
-        def __init__(self, ids):
-            self.significant_sample_indices = [np.asarray([i]) for i in ids]
-
-    chunks = []
-    rows = _coarse_significance([device] * 3, 4, np.arange(21), lambda ids: chunks.append(ids) or _Result(ids))
-    # Chunks start on image-batch boundaries, so every batch keeps its one-device images.
-    assert [c.tolist()[0] for c in chunks] == [0, 8, 16] and all(len(c) % 4 == 0 for c in chunks[:-1])
-    assert [int(r[0]) for r in rows] == list(range(21))
-
-
-def test_two_devices_reproduce_one_device_tiles():
-    """Tiles on two (forced CPU) devices match one device and merge on the first."""
-    import os
-    import subprocess
-    import sys
-
-    here = Path(__file__).resolve().parent
-    script = f"""
-import sys
-sys.path[:0] = [{str(here.parent.parent)!r}, {str(here)!r}]
-import jax
-import numpy as np
-import test_full_fine_streaming as t
-from helpers.float_compare import assert_matches
-from relax.ppca_initial_model.iteration_loop import _on_devices, _to_device
-from relax.ppca_refinement.full_row_stream import accumulate_full_row_tile
-devices = jax.devices()
-assert len(devices) == 2
-problems = {{d.id: t.make_tile_problem(d) for d in devices}}
-tiles = [(0, 2), (2, 3)]
-def run(device, tile):
-    stream = problems[device.id][3]
-    part = accumulate_full_row_tile(stream, np.arange(*tile), t.PRUNED[tile[0]:tile[1]])
-    return _to_device(part, devices[0])
-one = [run(devices[0], tile) for tile in tiles]
-two = list(_on_devices(devices, run, tiles))
-assert two[1].lhs_tri.devices() == {{devices[0]}}
-for a, b in zip(one, two):
-    for name in ("lhs_tri", "residual_gradient", "residual_num", "embeddings"):
-        assert_matches(np.asarray(getattr(b, name)), np.asarray(getattr(a, name)))
-print("ok")
-"""
-    env = {**os.environ, "XLA_FLAGS": "--xla_force_host_platform_device_count=2", "JAX_PLATFORMS": "cpu",
-           "CUDA_VISIBLE_DEVICES": ""}
-    result = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=600)
-    assert result.returncode == 0 and result.stdout.strip().endswith("ok"), result.stderr[-3000:]
-
-
-def test_support_tile_order_groups_similar_support_and_keeps_full_rows():
-    from relax.ppca_initial_model.iteration_loop import _support_tile_order
-
-    assert _support_tile_order([None, None, None], 4, 3, 2).tolist() == [0, 1, 2]
-    # Packed ids are rotation * 3 + translation; supports {0}, {3}, {0, 1}, {3, 2}, {0}.
-    significant = [np.asarray([0, 1]), np.asarray([9]), np.asarray([2, 3]), np.asarray([10, 6]), np.asarray([1])]
-    order = _support_tile_order(significant, 4, 3, 2)
-    assert sorted(order.tolist()) == list(range(5))
-    tiles = [set(order[i:i + 2].tolist()) for i in range(0, 5, 2)]
-    assert {0, 4} in tiles  # the two single-rotation {0} images share one tile
 
 
 def test_fine_score_functions_share_the_shifted_frame():

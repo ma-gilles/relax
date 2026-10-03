@@ -1,11 +1,9 @@
 """Pose-free PPCA controller; algorithm sections 9–10 and plan package E.
 
-Global coarse PPCA scores are recomputed every iteration. Fine candidates are
-the exact oversampled 0.999 coarse support, without any extra fine pruning.
-Per-image LocalHypothesisLayout rows run through the shared host-mask dense
-statistics path; streamed rows of the shared fine grid, with the same per-image
-support, run through the device-resident engine
-(:mod:`relax.ppca_refinement.full_row_stream`), recorded as ``fine_engine``.
+Every update scores the full pose grid of its stage (no oversampling; section 14 of
+``docs/math/vdam_ppca_algorithm.md`` records why) on the device-resident stream
+(:mod:`relax.ppca_refinement.full_row_stream`), or, with ``stream_coarse_recompute``
+off, on the host-mask dense engine that serves as its float32 reference (q <= 2).
 """
 
 import dataclasses
@@ -13,7 +11,6 @@ import functools
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import jax
@@ -25,7 +22,6 @@ from recovar.ppca.triangular import unpack_tri_to_full
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax import sampling
-from relax.local.local_layout import build_pass2_hypothesis_layout
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
@@ -37,13 +33,10 @@ from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, Scoring
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
     accumulate_dense_ppca_statistics,
-    compute_dense_ppca_adaptive_significance,
     compute_dense_ppca_embeddings,
 )
 from relax.ppca_refinement.full_row_stream import (
-    FULL_ROW_ENGINE,
     TracePPCAStats,
-    accumulate_full_row_tile,
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
     prepare_full_row_stream,
@@ -127,110 +120,15 @@ def _select_halves(rng, order, count, balanced):
     return selected, [selected[selected % 2 == half] for half in range(2)]
 
 
-def _fine_devices(config):
-    devices = jax.local_devices()
-    if len(devices) < config.fine_devices:
-        raise ValueError(f"fine_devices={config.fine_devices} but only {len(devices)} local devices are visible")
-    return devices[: config.fine_devices]
-
-
-def _on_devices(devices, function, items):
-    """Yield ``function(device, item)`` in item order, running item k on device k mod n.
-
-    Image tiles and coarse chunks are independent, so each device gets one
-    worker thread that runs its items in order. JAX keeps the matmul precision
-    per thread, so workers re-enter full float32. One device runs inline.
-    """
-    if len(devices) == 1:
-        for item in items:
-            yield function(devices[0], item)
-        return
-    executors = [ThreadPoolExecutor(max_workers=1) for _ in devices]
-    try:
-        futures = [
-            executors[k % len(devices)].submit(full_float32(function), devices[k % len(devices)], item)
-            for k, item in enumerate(items)
-        ]
-        for future in futures:
-            yield future.result()
-    finally:
-        for executor in executors:
-            executor.shutdown(wait=True, cancel_futures=True)
-
-
-def _coarse_significance(devices, batch_size, ids, significance):
-    """Coarse significant samples per image; chunks split only at image-batch boundaries.
-
-    Every image batch therefore holds the same images and shapes as on one device.
-    """
-    batches = -(-len(ids) // batch_size)
-    chunk = batch_size * -(-batches // len(devices))
-    chunks = [ids[start:start + chunk] for start in range(0, len(ids), chunk)]
-
-    def run(device, chunk_ids):
-        with jax.default_device(device):
-            return significance(chunk_ids).significant_sample_indices
-
-    return [row for part in _on_devices(devices, run, chunks) for row in part]
-
-
-def _support_tile_order(significant, n_coarse_rotations, n_translations, tile):
-    """Image order whose consecutive tiles have small unions of supported coarse rotations.
-
-    Tiles score their images' union of rows, so grouping images with similar
-    support removes work without changing any image's exact support. Each tile
-    starts from the remaining image with the least support and adds, one at a
-    time, the image that grows the tile's union least (ties: lowest position).
-    Identical supports (for example full rows) keep the selection order.
-    """
-    support = np.zeros((len(significant), n_coarse_rotations), bool)
-    for image, samples in enumerate(significant):
-        if samples is None:
-            support[image] = True
-        else:
-            support[image, np.unique(np.asarray(samples, np.int64) // n_translations)] = True
-    if np.all(support == support[:1]):
-        return np.arange(len(significant))
-    bits = np.packbits(support, axis=1)
-    counts = np.bitwise_count(bits).sum(axis=1)
-    remaining = np.ones(len(significant), bool)
-    order = []
-    while remaining.any():
-        candidates = np.flatnonzero(remaining)
-        seed = candidates[np.argmin(counts[candidates])]
-        remaining[seed] = False
-        union, group = bits[seed].copy(), [seed]
-        while len(group) < tile and remaining.any():
-            candidates = np.flatnonzero(remaining)
-            growth = np.bitwise_count(bits[candidates] & ~union).sum(axis=1)
-            chosen = candidates[np.argmin(growth)]
-            remaining[chosen] = False
-            union |= bits[chosen]
-            group.append(chosen)
-        order.extend(group)
-    return np.asarray(order)
-
-
-def _to_device(part, device):
-    """Move a tile's merged arrays to the device that merges tiles in order."""
-    if isinstance(part, DensePPCAEmbeddings):
-        return part._replace(embeddings=jax.device_put(part.embeddings, device))
-    names = ("rhs", "lhs_tri", "metric_trace", "residual_gradient", "residual_num", "residual_den", "embeddings")
-    moved = {
-        name: jax.device_put(getattr(part, name), device) for name in names if getattr(part, name, None) is not None
-    }
-    return dataclasses.replace(part, **moved)
-
-
 def _gemm_precision_used(config):
-    """The stream GEMM precision of this run's updates; the host-mask engines multiply in fp32."""
-    if not (config.stream_coarse_recompute or config.stream_full_fine_rows):
+    """The stream GEMM precision of this run's updates; the host-mask engine multiplies in fp32."""
+    if not config.stream_coarse_recompute:
         return "fp32"
-    return resolve_gemm_precision(config.gemm_precision, _fine_devices(config)[0])
+    return resolve_gemm_precision(config.gemm_precision, jax.local_devices()[0])
 
 
 def _streams_groups(config):
-    return config.oversampling == 0 and config.stream_coarse_recompute
+    return config.stream_coarse_recompute
 
 
 def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
@@ -269,7 +167,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
-        raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (oversampling 0, stream_coarse_recompute)")
+        raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
     translations = (
         # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
         sampling.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
@@ -284,314 +182,114 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
-    if config.oversampling == 0:
-        if config.stream_coarse_recompute:
-            # One artificial coarse parent represents the full coarse pose grid.
-            # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
-            # own stream (its noise enters the operands); single particles have one group.
-            streams = [
-                prepare_full_row_stream(
-                    dataset,
-                    mu,
-                    W,
-                    noise_variance=group_nv,
-                    rotations=rotations,
-                    translations=translations,
-                    rotation_log_prior=rotation_log_prior,
-                    translation_log_prior=np.asarray(prior),
-                    rotation_parent=np.zeros(len(rotations), np.int32),
-                    translation_parent=np.zeros(len(translations), np.int32),
-                    n_coarse_rotations=1,
-                    n_coarse_translations=1,
-                    geometry=geometry,
-                    schedule=schedule,
-                    scoring=scoring,
-                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
-                    metric_trace_only=config.optimizer == "momentum_sgd",
-                    gemm_precision=config.gemm_precision,
-                    tile_loader=load_tilt_tile if tilts else None,
-                )
-                for group_nv in nvs
-            ]
-            # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
-            # group and one noise group each for subtomogram particles.
-            tiles = [
-                (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
-                for group, ids_group in enumerate(ids)
-                for tile in (
-                    tilt_tiles(dataset, ids_group, config.image_batch_size)
-                    if tilts
-                    else [
-                        ids_group[begin : begin + config.image_batch_size]
-                        for begin in range(0, len(ids_group), config.image_batch_size)
-                    ]
-                )
-            ]
-            parts = [None] * len(tiles)
-            for noise_group, stream in enumerate(streams):
-                members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
-                items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
-                if embeddings_only:
-                    done = [full_row_tile_embeddings(stream, *item) for item in items]
-                else:
-                    done = accumulate_full_row_tiles(stream, items) if items else []
-                for k, part in zip(members, done):
-                    parts[k] = part
-            noise_owner = [owner for _, owner, _ in tiles]
-            tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
-            results = []
-            for group in range(len(ids)):
-                group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
-                if embeddings_only:
-                    results.append(DensePPCAEmbeddings(
-                        jnp.concatenate([part.embeddings for part in group_parts]),
-                        np.concatenate([part.original_image_ids for part in group_parts]),
-                        sum(part.n_images for part in group_parts),
-                    ))
-                    continue
-                stats = _merge_statistics(group_parts)
-                if tilts:
-                    # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
-                    owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]
-                    stats = dataclasses.replace(
-                        stats,
-                        **{
-                            name: jnp.stack([
-                                sum(
-                                    (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
-                                    jnp.zeros_like(getattr(group_parts[0], name)),
-                                )
-                                for g in range(len(streams))
-                            ])
-                            for name in ("residual_num", "residual_den")
-                        },
-                    )
-                stats.diagnostics.update(
-                    {
-                        "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
-                        "coarse_omitted_mass_bound": 0.0,
-                        "canonical_euler_count": len(canonical_eulers),
-                        "engine": "full_row_coarse_recompute",
-                        "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
-                        "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
-                    }
-                )
-                results.append(stats)
-            return results
-        function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
-        options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
-        stats = function(
-            dataset,
-            mu,
-            W,
-            rotations=rotations,
-            translations=translations,
-            translation_log_prior=np.asarray(prior),
-            rotation_log_prior=rotation_log_prior,
-            **options,
-            **common,
-        )
-        if not embeddings_only:
-            stats.diagnostics.update({"coarse_omitted_mass_bound": 0.0, "canonical_euler_count": len(canonical_eulers)})
-        return stats
-    devices = _fine_devices(config)
-    coarse_options = {key: value for key, value in common.items() if key != "image_indices"}
-    significant_samples = _coarse_significance(
-        devices,
-        config.image_batch_size,
-        ids,
-        lambda chunk_ids: compute_dense_ppca_adaptive_significance(
-            dataset,
-            mu,
-            W,
-            rotations=rotations,
-            translations=translations,
-            translation_log_prior=np.asarray(prior),
-            rotation_log_prior=rotation_log_prior,
-            adaptive_fraction=config.target_mass,
-            max_significants=-1,
-            image_indices=chunk_ids,
-            **coarse_options,
-        ),
-    )
-    children_per_parent = 8 ** config.oversampling
-    full_rotation_count = len(rotations) * children_per_parent
-    # Opt-in: stream the shared fine grid; each image's support is its device prior.
-    stream_full = bool(config.stream_full_fine_rows)
-    layout = build_pass2_hypothesis_layout(
-        [None] if stream_full else significant_samples,
-        len(rotations),
-        len(translations),
-        hp,
-        translations,
-        oversampling_order=config.oversampling,
-        translation_step=config.shift_step,
-        rotation_log_prior=rotation_log_prior,
-        rotation_index_order="relion",
-        allow_empty=False,
-    )
-    if stream_full:
-        fine_grid, fine_translation_parent = sampling.get_oversampled_translation_grid(
-            translations, config.shift_step, oversampling_order=config.oversampling,
-        )
-        if not np.array_equal(np.asarray(fine_grid, np.float32), layout.translation_grid):
-            raise RuntimeError("Streamed fine translation grid differs from the exact local layout")
-        if not np.array_equal(
-            layout.rotation_posterior_ids_flat, np.repeat(np.arange(len(rotations)), children_per_parent)
-        ):
-            raise RuntimeError("Streamed fine rotation rows must keep contiguous children per coarse parent")
-    stats = None
-    coarse_mass = np.zeros(len(rotations), np.float32)
-    stream_rows = {"supported": 0, "scored": 0}
-    fine_prior = -np.sum(layout.translation_grid**2, axis=-1) / (2 * state.offset_variance)
-    fine_prior = fine_prior - np.log(np.sum(np.exp(fine_prior)))
-    tile_limit = min(config.fine_image_tile_size, config.image_batch_size)
-    if stream_full:
-        # One upload of the model, fine grids and priors per device; each tile
-        # then expands its coarse support to fine poses on its device.
-        streams = {
-            device.id: prepare_full_row_stream(
+    if config.stream_coarse_recompute:
+        # One artificial coarse parent represents the full coarse pose grid.
+        # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
+        # own stream (its noise enters the operands); single particles have one group.
+        streams = [
+            prepare_full_row_stream(
                 dataset,
                 mu,
                 W,
-                noise_variance=nv,
-                rotations=layout.rotations_flat,
-                translations=layout.translation_grid,
-                rotation_log_prior=layout.rotation_log_priors_flat,
-                translation_log_prior=fine_prior.astype(np.float32),
-                rotation_parent=layout.rotation_posterior_ids_flat,
-                translation_parent=fine_translation_parent,
-                n_coarse_rotations=len(rotations),
-                n_coarse_translations=len(translations),
+                noise_variance=group_nv,
+                rotations=rotations,
+                translations=translations,
+                rotation_log_prior=rotation_log_prior,
+                translation_log_prior=np.asarray(prior),
+                rotation_parent=np.zeros(len(rotations), np.int32),
+                translation_parent=np.zeros(len(translations), np.int32),
+                n_coarse_rotations=1,
+                n_coarse_translations=1,
                 geometry=geometry,
                 schedule=schedule,
                 scoring=scoring,
+                # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
                 metric_trace_only=config.optimizer == "momentum_sgd",
                 gemm_precision=config.gemm_precision,
-                device=device,
+                tile_loader=load_tilt_tile if tilts else None,
             )
-            for device in devices
-        }
-
-        tile_order = _support_tile_order(significant_samples, len(rotations), len(translations), tile_limit)
-
-        def run_tile(device, tile):
-            row, tile_end = tile
-            stream = streams[device.id]
-            members = tile_order[row:tile_end]
-            tile_ids = np.asarray(ids)[members]
-            significant = [significant_samples[member] for member in members]
-            part = (
-                full_row_tile_embeddings(stream, tile_ids, significant)
-                if embeddings_only
-                else accumulate_full_row_tile(stream, tile_ids, significant)
+            for group_nv in nvs
+        ]
+        # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
+        # group and one noise group each for subtomogram particles.
+        tiles = [
+            (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
+            for group, ids_group in enumerate(ids)
+            for tile in (
+                tilt_tiles(dataset, ids_group, config.image_batch_size)
+                if tilts
+                else [
+                    ids_group[begin : begin + config.image_batch_size]
+                    for begin in range(0, len(ids_group), config.image_batch_size)
+                ]
             )
-            return _to_device(part, devices[0])
-
-        # Tiles are merged below in their original order whatever device ran them.
-        tile_parts = _on_devices(
-            devices, run_tile, [(start, min(start + tile_limit, len(ids))) for start in range(0, len(ids), tile_limit)]
-        )
-    row = 0
-    while row < len(ids):
-        if stream_full:
-            begin, end = 0, full_rotation_count
-            tile_end = min(row + tile_limit, len(ids))
-        else:
-            begin = int(layout.rotation_offsets[row])
-            end = begin + int(layout.rotation_counts[row])
-            tile_end = row + 1
-        if not stream_full and tile_limit > 1 and end - begin == full_rotation_count:
-            # The dense engine shares projections within an image batch. Group
-            # only identical full-grid rotation rows; the per-image translation
-            # masks still exclude every coarse-rejected pose exactly.
-            while tile_end < min(row + tile_limit, len(ids)):
-                other_begin = int(layout.rotation_offsets[tile_end])
-                other_end = other_begin + int(layout.rotation_counts[tile_end])
-                if other_end - other_begin != full_rotation_count or not (
-                    np.array_equal(layout.rotation_ids_flat[begin:end], layout.rotation_ids_flat[other_begin:other_end])
-                    and np.array_equal(layout.rotations_flat[begin:end], layout.rotations_flat[other_begin:other_end])
-                    and np.array_equal(layout.rotation_log_priors_flat[begin:end], layout.rotation_log_priors_flat[other_begin:other_end])
-                    and np.array_equal(layout.rotation_posterior_ids_flat[begin:end], layout.rotation_posterior_ids_flat[other_begin:other_end])
-                ):
-                    break
-                tile_end += 1
-        if stream_full:
-            part = next(tile_parts)
-        else:
-            if tile_end == row + 1:
-                mask = layout.sample_mask_rows(begin, end)
+        ]
+        parts = [None] * len(tiles)
+        for noise_group, stream in enumerate(streams):
+            members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
+            items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
+            if embeddings_only:
+                done = [full_row_tile_embeddings(stream, *item) for item in items]
             else:
-                mask = np.stack([
-                    layout.sample_mask_rows(int(layout.rotation_offsets[index]), int(layout.rotation_offsets[index + 1]))
-                    for index in range(row, tile_end)
-                ])
-            function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
-            options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
-            if not embeddings_only and tile_end - row > 1:
-                # Score the real multi-image tile with one latent factorization
-                # per image/rotation and aggregate its posterior before adjoint.
-                options["factor_once_score"] = True
-            part = function(
-                dataset,
-                mu,
-                W,
-                rotations=layout.rotations_flat[begin:end],
-                translations=layout.translation_grid,
-                rotation_translation_mask=mask,
-                rotation_log_prior=layout.rotation_log_priors_flat[begin:end],
-                translation_log_prior=fine_prior.astype(np.float32),
-                noise_variance=nv,
-                geometry=geometry,
-                schedule=schedule,
-                scoring=scoring,
-                image_indices=np.asarray(ids[row:tile_end]),
-                **options,
+                done = accumulate_full_row_tiles(stream, items) if items else []
+            for k, part in zip(members, done):
+                parts[k] = part
+        noise_owner = [owner for _, owner, _ in tiles]
+        tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
+        results = []
+        for group in range(len(ids)):
+            group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
+            if embeddings_only:
+                results.append(DensePPCAEmbeddings(
+                    jnp.concatenate([part.embeddings for part in group_parts]),
+                    np.concatenate([part.original_image_ids for part in group_parts]),
+                    sum(part.n_images for part in group_parts),
+                ))
+                continue
+            stats = _merge_statistics(group_parts)
+            if tilts:
+                # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
+                owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]
+                stats = dataclasses.replace(
+                    stats,
+                    **{
+                        name: jnp.stack([
+                            sum(
+                                (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
+                                jnp.zeros_like(getattr(group_parts[0], name)),
+                            )
+                            for g in range(len(streams))
+                        ])
+                        for name in ("residual_num", "residual_den")
+                    },
+                )
+            stats.diagnostics.update(
+                {
+                    "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
+                    "coarse_omitted_mass_bound": 0.0,
+                    "canonical_euler_count": len(canonical_eulers),
+                    "engine": "full_row_coarse_recompute",
+                    "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
+                    "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
+                }
             )
-        if embeddings_only:
-            stats = part if stats is None else type(part)(
-                jnp.concatenate([stats.embeddings, part.embeddings]),
-                np.concatenate([stats.original_image_ids, part.original_image_ids]),
-                stats.n_images + part.n_images,
-            )
-        else:
-            np.add.at(coarse_mass, layout.rotation_posterior_ids_flat[begin:end], part.diagnostics["rotation_mass"])
-            if stream_full:
-                stream_rows["supported"] += part.diagnostics["supported_image_rows"]
-                stream_rows["scored"] += part.diagnostics["scored_image_rows"]
-            stats = part if stats is None else _merge_statistics([stats, part])
-        row = tile_end
-    if stream_full:
-        # Per-image outputs return to selection order; sums are order-free.
-        restore = np.argsort(tile_order)
-        if embeddings_only:
-            stats = stats._replace(embeddings=stats.embeddings[restore], original_image_ids=stats.original_image_ids[restore])
-        else:
-            stats = dataclasses.replace(
-                stats, embeddings=stats.embeddings[restore], original_image_ids=stats.original_image_ids[restore]
-            )
-    if embeddings_only:
-        return stats
-    if config.fine_image_tile_size > 1 and len(ids) > 1:
-        # The reference path merges per-particle results, retaining only these
-        # four aggregate diagnostics. A single tiled call must expose the same
-        # controller-facing result rather than its dense-engine internals.
-        summary_keys = ("offset_second_sum_px2", "latent_covariance_trace_mean", "pose_entropy_mean", "pmax_mean")
-        summary = {key: stats.diagnostics[key] for key in summary_keys}
-        stats.diagnostics.clear()
-        stats.diagnostics.update(summary)
-    stats.diagnostics.update(
-        {
-            "coarse_omitted_mass_bound": 1 - config.target_mass,
-            "fine_pruning": False,
-            "rotation_mass": coarse_mass,
-            "fine_rotation_count": stream_rows["supported"] if stream_full else layout.total_local_rotations,
-            "fine_engine": FULL_ROW_ENGINE if stream_full else "dense_host_mask",
-            # Image-rows scored by tile unions (with block padding) versus exact support.
-            "fine_stream_rows": {**stream_rows, "devices": len(devices)} if stream_full else None,
-            "canonical_euler_count": len(canonical_eulers),
-        }
+            results.append(stats)
+        return results
+    function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
+    options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
+    stats = function(
+        dataset,
+        mu,
+        W,
+        rotations=rotations,
+        translations=translations,
+        translation_log_prior=np.asarray(prior),
+        rotation_log_prior=rotation_log_prior,
+        **options,
+        **common,
     )
+    if not embeddings_only:
+        stats.diagnostics.update({"coarse_omitted_mass_bound": 0.0, "canonical_euler_count": len(canonical_eulers)})
     return stats
 
 
@@ -780,10 +478,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                             "pose_entropy_mean",
                             "pmax_mean",
                             "coarse_omitted_mass_bound",
-                            "fine_rotation_count",
-                            "fine_pruning",
-                            "fine_engine",
-                            "fine_stream_rows",
                         )
                     }
                     for s in stats

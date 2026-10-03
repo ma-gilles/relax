@@ -964,8 +964,10 @@ scientific contract; runnable code alone does not establish recovery.
   so a row outside an image's own support is `-inf` for that image and adds
   exact zeros. A fixed-capacity row table padded with a masked sentinel row
   keeps one block shape for every support pattern. Each rotation block is one
-  jitted program per pass with no host round trip. `fine_stream_rows` records
-  scored image-rows against exact support.
+  jitted program per pass with no host round trip. The InitialModel controller
+  now runs only the one-parent case, the full grid (oversampling 0; see the
+  rejected oversampling note below); the stream keeps general coarse parents,
+  which its unit tests exercise.
   The scores and moments are those of the host-mask dense routine, evaluated
   in another float32 order (below). Unit tests compare both routines against
   the independent local layout, and the general-rank test checks that the
