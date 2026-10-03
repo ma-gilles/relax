@@ -138,6 +138,53 @@ def test_coarse_batches_share_one_shape_within_the_budget():
     assert (r_pad, p_pad, slot_block) == (4608, 1, 6)
 
 
+def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_share(monkeypatch):
+    """The cryoet_s1 iteration-1 half-2 coarse pass on a 16 GB P100 (Polar 413469): 600 particles of 41 tilt images,
+    4608 rotations, 81 translations, 278 score pixels, complex128 projector without a texture. The fixed 2 GiB batch
+    at 8 B per pixel asked for one 6.42 GiB program buffer with 6.6 GiB physically free and ran out of memory."""
+
+    from relax.helpers import projection
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1 << 30
+    rotations, slots, trans, pixels = 4608, 41, 81, 278
+    # The JAX fallback holds the rows in the projector's complex dtype and one temporary: 32 B a complex128 pixel.
+    assert tomo_coarse._coarse_projection_bytes_per_pixel(
+        [None], np.complex128, image_size=128, current_size=26, model_max_r=24
+    ) == 32
+    assert tomo_coarse._coarse_projection_bytes_per_pixel(
+        [None], np.complex64, image_size=128, current_size=26, model_max_r=24
+    ) == 16
+    monkeypatch.setattr(projection, "relion_coarse_packed_rows_serve", lambda *a: True)
+    assert tomo_coarse._coarse_projection_bytes_per_pixel(
+        [object()], np.complex64, image_size=128, current_size=26, model_max_r=24
+    ) == 8
+
+    # The device share: a quarter of what the allocator can still hand out (6.6 GiB free beside half 1's state).
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: int(6.6 * gib))
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(9.8 * gib))
+    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    share = tomo_coarse._coarse_batch_bytes()
+    assert share == int(0.25 * 6.6 * gib)
+    batches = tomo_coarse._coarse_batches(
+        [rotations] * 600, n_slots=slots, n_trans=trans, n_pixels=pixels, projection_bytes_per_pixel=32,
+        budget_bytes=share,
+    )
+    _, r_pad, p_pad, slot_block = batches[0]
+    actual_bytes_per_image = r_pad * (trans * 4 + pixels * 32)  # the program buffer of Polar 413469, per image
+    assert p_pad * slot_block * actual_bytes_per_image <= share
+    # The old accounting (8 B per pixel, a fixed 2 GiB) let 4 particles x 41 slots through: the 6.42 GiB buffer,
+    # which the 32 B model overstates by 1.1% (31.6 B a pixel measured).
+    ((_, _, old_p_pad, old_slot_block), *_) = tomo_coarse._coarse_batches(
+        [rotations] * 600, n_slots=slots, n_trans=trans, n_pixels=pixels, budget_bytes=2 * gib
+    )
+    assert old_p_pad * old_slot_block * actual_bytes_per_image == pytest.approx(6892094720, rel=0.02)
+    # Unknown device readings keep the fixed cap.
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: None)
+    assert tomo_coarse._coarse_batch_bytes() == tomo_coarse._COARSE_BATCH_BYTES
+
+
 @pytest.mark.gpu
 def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
     """The batched per-image launch and one call per image score every (image, rotation, translation) alike."""
