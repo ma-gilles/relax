@@ -16,28 +16,8 @@ from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.optics_noise import pixel_rows
 from relax.helpers.projection import relion_coarse_relabel
 from relax.scoring.coarse_gaussian_gemm import (
-    _K1_RELION_EXACT_COARSE_OPERANDS_ENV,
     _K1_RELION_F32_COARSE_SUPPORT_ENV,
 )
-
-_RELION_ACC_DOUBLE_FLOORF_QUIRK_ENV = "RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK"
-
-
-_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS_ENV = (
-    "RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"
-)
-
-
-_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE_ENV = (
-    "RELAX_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE"
-)
-
-
-_K1_RELION_EXACT_COMPACT_PREPROCESS_ENV = (
-    "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS"
-)
-
-
 
 
 def _repeat_pad_batch_axis(value, target_size: int):
@@ -59,147 +39,12 @@ def _repeat_pad_batch_axis(value, target_size: int):
     )
 
 
-def _relion_acc_double_floorf_quirk_enabled() -> bool:
-    """Match RELION's texture-free ACC projector coordinate flooring."""
-
-    return parse_env_strict_flag(_RELION_ACC_DOUBLE_FLOORF_QUIRK_ENV)
-
-
-def _k1_relion_exact_coarse_operands_enabled(*, default: bool = False) -> bool:
-    """Return whether coarse Gaussian scoring uses native RFLOAT CTF operands."""
-
-    return parse_env_strict_flag(_K1_RELION_EXACT_COARSE_OPERANDS_ENV, default=default)
-
-
-def _k1_relion_exact_coarse_skip_generic_operands_enabled(
-    *,
-    default: bool = False,
-) -> bool:
-    """Return whether exact coarse operands bypass overwritten generic operands."""
-
-    return parse_env_strict_flag(_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS_ENV, default=default)
-
-
-def _resolve_k1_relion_exact_coarse_skip_generic_operands(
-    *,
-    requested: bool,
-    exact_coarse_operands_enabled: bool,
-) -> bool:
-    """Resolve the exact-source-only operand path, failing closed."""
-
-    if requested and not exact_coarse_operands_enabled:
-        raise ValueError(
-            f"{_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS_ENV}=1 requires "
-            f"effective {_K1_RELION_EXACT_COARSE_OPERANDS_ENV}=1 Gaussian scoring",
-        )
-    return bool(requested and exact_coarse_operands_enabled)
-
-
-def _k1_relion_exact_coarse_assembly_profile_enabled(
-    *,
-    default: bool = False,
-) -> bool:
-    """Return whether exact-coarse call-count diagnostics are published."""
-
-    return parse_env_strict_flag(_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE_ENV, default=default)
-
-
-def _k1_relion_exact_compact_preprocess_enabled(
-    *,
-    default: bool = False,
-) -> bool:
-    """Return whether exact compact scoring skips unused generic preprocessing."""
-
-    return parse_env_strict_flag(_K1_RELION_EXACT_COMPACT_PREPROCESS_ENV, default=default)
-
-
-def _resolve_k1_relion_exact_compact_preprocess(
-    *,
-    requested: bool,
-    exact_coarse_skip_generic_operands_enabled: bool,
-    exact_coarse_operands_enabled: bool,
-    score_mode: str,
-    coarse_gaussian_gemm_macro_enabled: bool = False,
-) -> bool:
-    """Resolve the exact+compact preprocessing specialization.
-
-    The coarse GEMM scorer reads only the exact coarse operands, so the generic
-    half-image FFT, CTF and translated score image go unbuilt.
-    """
-
-    if not requested:
-        return False
-    prefix = f"{_K1_RELION_EXACT_COMPACT_PREPROCESS_ENV}=1 requires"
-    if not exact_coarse_skip_generic_operands_enabled:
-        raise ValueError(
-            f"{prefix} {_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS_ENV}=1",
-        )
-    if not exact_coarse_operands_enabled:
-        raise ValueError(f"{prefix} {_K1_RELION_EXACT_COARSE_OPERANDS_ENV}=1")
-    if not coarse_gaussian_gemm_macro_enabled:
-        raise ValueError(f"{prefix} the coarse GEMM scorer")
-    if score_mode != "gaussian":
-        raise ValueError(f"{prefix} score_mode='gaussian'")
-    return True
-
-
 def _k1_relion_f32_coarse_support_enabled(*, default: bool = False) -> bool:
     """Return whether the RELION CUDA float32 coarse support is active."""
 
     return parse_env_strict_flag(_K1_RELION_F32_COARSE_SUPPORT_ENV, default=default)
 
 
-def _relion_coarse_sincosf_operands(
-    unshifted_score_weighted,
-    score_weight_half,
-    half_weights,
-    score_indices,
-    score_active_mask,
-):
-    """Assemble the coarse sincosf operands of one image batch.
-
-    These are the statements of RELION's coarse sincosf operand assembly, less
-    the translate FFI call that consumes ``unshifted_corrected`` and the
-    reshape of its result, which stay with the caller in
-    :func:`_relion_coarse_gaussian_square_operands_sincosf`. ``pixel_weight``
-    does not depend on the FFI output, so it is produced here rather than
-    after the call.
-
-    :data:`_relion_coarse_sincosf_operand_program` is ``jax.jit`` of this exact
-    function and the only caller path, one program call per coarse image batch
-    instead of one dispatch per primitive. The eager function stays as the
-    unit tests' reference: the two share their source, so the only difference
-    is that XLA sees the whole chain at once. Nothing here reduces along an
-    axis and no multiply feeds an add, so that cannot re-associate an
-    expression or contract a multiply-add.
-    """
-
-    square_score_weight = score_weight_half[:, score_indices]
-    square_score_weight = jnp.where(
-        score_active_mask[None, :],
-        square_score_weight,
-        jnp.zeros((), dtype=square_score_weight.dtype),
-    )
-    square_unshifted_weighted = unshifted_score_weighted[:, score_indices]
-    nonzero_weight = square_score_weight != 0.0
-    safe_weight = jnp.where(nonzero_weight, square_score_weight, 1.0)
-    unshifted_corrected = square_unshifted_weighted / safe_weight
-    unshifted_corrected = jnp.where(
-        nonzero_weight,
-        unshifted_corrected,
-        jnp.zeros((), dtype=unshifted_corrected.dtype),
-    )
-    use_float64 = unshifted_corrected.dtype == jnp.complex128
-    complex_dtype = jnp.complex128 if use_float64 else jnp.complex64
-    real_dtype = jnp.float64 if use_float64 else jnp.float32
-    pixel_weight = square_score_weight * half_weights[score_indices][None, :]
-    return (
-        jnp.asarray(unshifted_corrected, dtype=complex_dtype),
-        jnp.asarray(pixel_weight, dtype=real_dtype),
-    )
-
-
-_relion_coarse_sincosf_operand_program = jax.jit(_relion_coarse_sincosf_operands)
 
 
 def _relion_exact_coarse_operands(
@@ -391,114 +236,6 @@ def assemble_relion_cc_coarse_operands(
     )
 
 
-def _relion_coarse_gaussian_square_operands(
-    shifted_half,
-    score_weight_half,
-    half_weights,
-    score_indices,
-    score_active_mask,
-    *,
-    batch_size: int,
-    n_trans: int,
-):
-    """Derive RELION square-difference operands from accepted score inputs."""
-
-    square_score_weight = score_weight_half[:, score_indices]
-    square_score_weight = jnp.where(
-        score_active_mask[None, :],
-        square_score_weight,
-        jnp.zeros((), dtype=square_score_weight.dtype),
-    )
-    square_shifted_weighted = shifted_half.reshape(
-        batch_size,
-        n_trans,
-        -1,
-    )[:, :, score_indices]
-    nonzero_weight = square_score_weight != 0.0
-    safe_weight = jnp.where(nonzero_weight, square_score_weight, 1.0)
-    shifted_corrected = square_shifted_weighted / safe_weight[:, None, :]
-    shifted_corrected = jnp.where(
-        nonzero_weight[:, None, :],
-        shifted_corrected,
-        jnp.zeros((), dtype=shifted_corrected.dtype),
-    )
-    pixel_weight = square_score_weight * half_weights[score_indices][None, :]
-    output_complex_dtype = (
-        jnp.complex128 if shifted_corrected.dtype == jnp.complex128 else jnp.complex64
-    )
-    output_real_dtype = jnp.float64 if output_complex_dtype == jnp.complex128 else jnp.float32
-    return (
-        jnp.asarray(shifted_corrected, dtype=output_complex_dtype),
-        jnp.asarray(pixel_weight, dtype=output_real_dtype),
-    )
-
-
-def _relion_coarse_gaussian_square_operands_sincosf(
-    unshifted_score_weighted,
-    score_weight_half,
-    half_weights,
-    score_indices,
-    score_active_mask,
-    translations,
-    image_shape,
-    *,
-    translation_phase_source=None,
-    relion_translation_angle_scale=1.0,
-    return_unshifted=False,
-):
-    """Build corrected coarse images with RELION's CUDA sin/cos path."""
-
-    from relax.cuda import kernels as em_cuda_kernels
-    from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f64
-    score_indices = jnp.asarray(score_indices, dtype=jnp.int32)
-    if translation_phase_source is None:
-        translation_phase_source = translations
-    unshifted_corrected, pixel_weight = _relion_coarse_sincosf_operand_program(
-        unshifted_score_weighted,
-        score_weight_half,
-        half_weights,
-        score_indices,
-        score_active_mask,
-    )
-    # ``unshifted_corrected`` arrives already cast, and that cast is to
-    # complex128 exactly when the uncast quotient is complex128, so this test
-    # selects the same dtypes the assembly used.
-    use_float64 = unshifted_corrected.dtype == jnp.complex128
-    complex_dtype = jnp.complex128 if use_float64 else jnp.complex64
-    real_dtype = jnp.float64 if use_float64 else jnp.float32
-    angle_dtype = np.float64 if use_float64 else np.float32
-    translation_angles = np.asarray(
-        _relion_translation_angles_f64(
-            translation_phase_source,
-            image_shape,
-            angle_scale=relion_translation_angle_scale,
-        ),
-        dtype=angle_dtype,
-    )
-    translate_score = (
-        em_cuda_kernels.relion_translate_score_f64
-        if use_float64
-        else em_cuda_kernels.relion_translate_score_f32
-    )
-    shifted_corrected = translate_score(
-        jnp.asarray(unshifted_corrected, dtype=complex_dtype),
-        jnp.asarray(translation_angles, dtype=real_dtype),
-        score_indices,
-        image_shape,
-    )
-    result = (
-        shifted_corrected.reshape(
-            unshifted_corrected.shape[0],
-            len(translations),
-            unshifted_corrected.shape[1],
-        ),
-        pixel_weight,
-    )
-    if return_unshifted:
-        return (*result, unshifted_corrected)
-    return result
-
-
 class RelionExactCoarseGaussianOperands(NamedTuple):
     """Exact-source operands consumed by both EM and InitialModel scoring."""
 
@@ -520,10 +257,7 @@ def _process_relion_exact_coarse_half_image(
     """Run the one canonical per-image RELION FFT used by exact coarse scoring."""
 
     if relion_preprocess_kwargs is None:
-        raise ValueError(
-            f"{_K1_RELION_EXACT_COARSE_OPERANDS_ENV} requires RELION CUDA "
-            "image preprocessing",
-        )
+        raise ValueError("RELION's exact coarse operands require RELION's CUDA image preprocessing")
     from relax.helpers.preprocessing import process_half_image
 
     exact_preprocess_kwargs = dict(relion_preprocess_kwargs)

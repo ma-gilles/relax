@@ -22,6 +22,7 @@ from relax.refinement.half_inputs import HalfInputState
 
 pytest.importorskip("jax")
 import healpy as hp
+import jax
 import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _hermitian_volume, _make_rotations
@@ -2773,18 +2774,6 @@ def test_global_pass1_relion_projector_texture_defaults_to_texture(monkeypatch):
         significance._global_pass1_relion_projector_texture_enabled()
 
 
-def test_global_pass1_relion_projector_floorf_quirk_gate(monkeypatch):
-    from relax.scoring import significance
-
-    monkeypatch.delenv("RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK", raising=False)
-    assert not significance._relion_acc_double_floorf_quirk_enabled()
-    monkeypatch.setenv("RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK", "1")
-    assert significance._relion_acc_double_floorf_quirk_enabled()
-    monkeypatch.setenv("RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK", "invalid")
-    with pytest.raises(ValueError, match="RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK"):
-        significance._relion_acc_double_floorf_quirk_enabled()
-
-
 def test_texture_centered_crop_masks_current_image_disk():
     from relax.helpers.projection import _texture_centered_crop_to_full
 
@@ -4036,6 +4025,49 @@ def test_dense_engine_routes_relion_cuda_norm_and_shift_before_fft(rng):
     assert captured["apply_image_mask"] is True
 
 
+def _exact_pass1_on_cpu(monkeypatch):
+    """Let pass 1 reach its per-batch preprocessing on CPU: it otherwise needs a CUDA GPU."""
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    import relax.scoring.significance as significance_module
+
+    monkeypatch.setattr(significance_module.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
+    monkeypatch.setenv("RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE", "0")
+
+
+def _exact_pass1_inputs(monkeypatch, *, n_images=2, n_classes=1):
+    """A pass-1 call on the CPU exact-operand harness (helpers.exact_pass1_harness): the
+    dataset, the means, the noise and the projector keywords."""
+
+    from helpers.exact_pass1_harness import ExactPass1Dataset, coded_class_projectors, install_exact_pass1_mocks
+
+    install_exact_pass1_mocks(monkeypatch)
+    dataset = ExactPass1Dataset(np.arange(n_images), box=IMAGE_SHAPE[0])
+    projector = dict(
+        relion_projector_half=coded_class_projectors(n_classes),
+        relion_projector_r_max=1,
+        relion_projector_texture_interp=True,
+        half_spectrum_scoring=True,
+    )
+    return (
+        dataset,
+        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
+        jnp.ones(dataset.image_size, dtype=jnp.float32),
+        projector,
+    )
+
+
+# RELION Projector::data geometry for r_max=1 at padding 1: 2 * (r_max + 1) + 1 = 5.
+_EXACT_PASS1_PROJECTOR = dict(
+    relion_projector_half=jnp.zeros((1, 5, 5, 3), dtype=jnp.complex64),
+    relion_projector_r_max=1,
+    relion_projector_texture_interp=True,
+    half_spectrum_scoring=True,
+)
+
+
 def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
     rng,
     monkeypatch,
@@ -4043,7 +4075,7 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
     dataset = MockDataset(1, rng)
     dataset.image_source.backend.image_mask_mode = "relion_background_fill"
     dataset.image_source.backend.relion_fourier_backend = "relion_cuda"
-    monkeypatch.setenv("RECOVAR_K1_COARSE_GAUSSIAN_FFI", "1")
+    _exact_pass1_on_cpu(monkeypatch)
     captured = {}
 
     class _CapturedStrictPreprocess(RuntimeError):
@@ -4074,6 +4106,7 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
             image_pre_shifts=np.asarray([[1.0, -1.0]], dtype=np.float32),
             score_mode="normalized_cc",
             collect_significance=False,
+            **_EXACT_PASS1_PROJECTOR,
         )
 
     assert_matches(captured["batch"], dataset._images)
@@ -4082,7 +4115,8 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
     assert captured["apply_image_mask"] is True
 
 
-def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng):
+def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monkeypatch):
+    _exact_pass1_on_cpu(monkeypatch)
     dataset = MockDataset(1, rng)
     dataset.image_source.backend.image_mask_mode = "relion_background_fill"
     dataset.image_source.backend.relion_fourier_backend = "relion_cuda"
@@ -4114,6 +4148,7 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng):
             image_corrections=np.asarray([0.8], dtype=np.float32),
             scale_corrections=np.asarray([2.0], dtype=np.float32),
             image_pre_shifts=np.asarray([[1.0, -1.0]], dtype=np.float32),
+            **_EXACT_PASS1_PROJECTOR,
         )
 
     assert_matches(captured["batch"], dataset._images)
@@ -6047,11 +6082,14 @@ class TestRelionModeSmokeTest:
         import relax.refinement.iteration_loop as refine_mod
 
         recorded = {"particle_diameter": None}
-        original_compute_coarse_image_size = refine_mod.compute_coarse_image_size
+
+        class _Recorded(RuntimeError):
+            pass
 
         def wrap_compute_coarse_image_size(*args, **kwargs):
+            # Stop here: the mock half sets have no RELION CUDA preprocessing for pass 1.
             recorded["particle_diameter"] = kwargs.get("particle_diameter")
-            return original_compute_coarse_image_size(*args, **kwargs)
+            raise _Recorded
 
         monkeypatch.setattr(
             refine_mod,
@@ -6059,25 +6097,26 @@ class TestRelionModeSmokeTest:
             wrap_compute_coarse_image_size,
         )
 
-        refine_single_volume(
-            half_datasets,
-            init_volume,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
-            translations,
-            options=RefinementOptions(
-                disc_type="linear_interp",
-                schedule=RefinementSchedule(
-                    max_iter=1,
-                    init_current_size=16,
-                    init_healpix_order=1,
-                    max_healpix_order=2,
-                    particle_diameter_ang=200.0,
+        with pytest.raises(_Recorded):
+            refine_single_volume(
+                half_datasets,
+                init_volume,
+                jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+                jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
+                translations,
+                options=RefinementOptions(
+                    disc_type="linear_interp",
+                    schedule=RefinementSchedule(
+                        max_iter=1,
+                        init_current_size=16,
+                        init_healpix_order=1,
+                        max_healpix_order=2,
+                        particle_diameter_ang=200.0,
+                    ),
+                    batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=20),
+                    adaptive=AdaptiveOptions(adaptive_oversampling=1),
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=20),
-                adaptive=AdaptiveOptions(adaptive_oversampling=1),
-            ),
-        )
+            )
 
         assert recorded["particle_diameter"] == pytest.approx(200.0)
 
@@ -6337,19 +6376,20 @@ class TestRelionModeSmokeTest:
 
     def test_significance_batched_supports_padded_rotation_log_prior(
         self,
-        half_datasets,
-        init_volume,
+        monkeypatch,
         translations,
     ):
         """Rotation priors should work even when the last block is padded."""
         rotations = _make_rotations(5, seed=19)
+        dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
         sig_rot_any, n_sig, ha, _, _, _ = _compute_k_class_significance_batched(
-            half_datasets[0],
-            init_volume[None, :],
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            dataset,
+            means,
+            noise,
             rotations,
             translations,
             "linear_interp",
+            **projector,
             class_log_priors=np.zeros(1, dtype=np.float64),
             adaptive_fraction=0.999,
             max_significants=-1,
@@ -6360,79 +6400,8 @@ class TestRelionModeSmokeTest:
         )
 
         assert sig_rot_any.shape == (1, rotations.shape[0])
-        assert n_sig.shape == (half_datasets[0].n_units,)
-        assert ha.shape == (half_datasets[0].n_units,)
-
-    def test_k_class_significance_manual_ppref_bypasses_texture_selector(
-        self,
-        half_datasets,
-        monkeypatch,
-    ):
-        """Strict coarse scoring must call the manual PPref leaf directly."""
-        from relax.helpers import projection as projection_helpers
-
-        manual_calls = []
-
-        def fake_manual(
-            projector_half,
-            rotations,
-            image_shape,
-            r_max,
-            padding_factor,
-            output_size,
-            relion_acc_double_floorf_quirk,
-        ):
-            manual_calls.append(
-                (
-                    projector_half.shape,
-                    rotations.shape,
-                    r_max,
-                    padding_factor,
-                    output_size,
-                    relion_acc_double_floorf_quirk,
-                )
-            )
-            n_half = int(image_shape[0] * (image_shape[1] // 2 + 1))
-            return jnp.ones((rotations.shape[0], n_half), dtype=jnp.complex64)
-
-        def fail_texture_selector(*_args, **_kwargs):
-            raise AssertionError("manual coarse PPref scoring reached the texture selector")
-
-        monkeypatch.setattr(
-            projection_helpers,
-            "project_relion_projector_half_spectrum_centered_rows",
-            fake_manual,
-        )
-        monkeypatch.setattr(
-            projection_helpers,
-            "compute_relion_projector_projections_block",
-            fail_texture_selector,
-        )
-
-        dataset = half_datasets[0]
-        rotations = _make_rotations(3, seed=20)
-        _compute_k_class_significance_batched(
-            dataset,
-            jnp.zeros((1, VOLUME_SIZE), dtype=jnp.complex64),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            rotations,
-            jnp.zeros((1, 2), dtype=jnp.float32),
-            "linear_interp",
-            class_log_priors=np.zeros(1, dtype=np.float64),
-            adaptive_fraction=1.0,
-            max_significants=1,
-            image_batch_size=dataset.n_units,
-            rotation_block_size=2,
-            current_size=None,
-            relion_projector_half=jnp.zeros((1, 3, 3, 2), dtype=jnp.complex64),
-            relion_projector_r_max=1,
-            relion_projector_texture_interp=False,
-            collect_significance=False,
-            return_class_best=True,
-        )
-
-        assert manual_calls
-        assert all(not call[-1] for call in manual_calls)
+        assert n_sig.shape == (dataset.n_units,)
+        assert ha.shape == (dataset.n_units,)
 
     @pytest.mark.parametrize("current_size", [4, 6])
     @pytest.mark.parametrize("score_mode", ["gaussian", "normalized_cc"])
@@ -6448,13 +6417,35 @@ class TestRelionModeSmokeTest:
         """Windowed texture scoring must not materialize full projection rows."""
         from relax.helpers import projection as projection_helpers
         from relax.helpers.fourier_window import make_fourier_window_spec
+        from relax.scoring import significance as significance_module
 
+        dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
+        window = make_fourier_window_spec(
+            IMAGE_SHAPE,
+            current_size,
+            IMAGE_SHAPE[0] * (IMAGE_SHAPE[1] // 2 + 1),
+            score_square=score_mode == "normalized_cc",
+            score_include_dc=score_mode == "normalized_cc",
+        )
+        if score_mode == "gaussian":
+            # The coarse GEMMs read the square layout planned over the window's rows.
+            layout = significance_module._plan_coarse_gaussian_square_layout(
+                IMAGE_SHAPE,
+                current_size,
+                np.asarray(window.score_indices_np, dtype=np.int32),
+                stable_fourier_window_shapes=stable_fourier_window_shapes,
+            )
+            expected = np.asarray(layout.score_indices_np, dtype=np.int32)
+            expected_output_size = layout.physical_current_size
+        else:
+            expected = np.asarray(window.score_indices, dtype=np.int32)
+            expected_output_size = current_size
         calls = []
 
         def fake_texture(projector_half, rotations, image_shape, **kwargs):
             pixel_indices = kwargs.get("pixel_indices")
             assert isinstance(pixel_indices, np.ndarray)
-            assert kwargs["projector_output_size"] == current_size
+            assert kwargs["projector_output_size"] == expected_output_size
             expected_mask_size = current_size if stable_fourier_window_shapes else None
             assert kwargs["current_image_mask_size"] == expected_mask_size
             calls.append(np.asarray(pixel_indices, dtype=np.int32))
@@ -6471,12 +6462,11 @@ class TestRelionModeSmokeTest:
             fake_texture,
         )
 
-        dataset = half_datasets[0]
         rotations = _make_rotations(3, seed=201)
         _compute_k_class_significance_batched(
             dataset,
-            jnp.zeros((1, VOLUME_SIZE), dtype=jnp.complex64),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            means,
+            noise,
             rotations,
             jnp.zeros((1, 2), dtype=jnp.float32),
             "linear_interp",
@@ -6488,227 +6478,24 @@ class TestRelionModeSmokeTest:
             current_size=current_size,
             score_mode=score_mode,
             stable_fourier_window_shapes=stable_fourier_window_shapes,
-            half_spectrum_scoring=True,
-            relion_projector_half=jnp.zeros((1, 3, 3, 2), dtype=jnp.complex64),
-            relion_projector_r_max=1,
-            relion_projector_texture_interp=True,
             collect_significance=False,
             return_class_best=True,
+            **projector,
         )
 
-        expected = np.asarray(
-            make_fourier_window_spec(
-                IMAGE_SHAPE,
-                current_size,
-                IMAGE_SHAPE[0] * (IMAGE_SHAPE[1] // 2 + 1),
-                score_square=score_mode == "normalized_cc",
-                score_include_dc=score_mode == "normalized_cc",
-            ).score_indices,
-            dtype=np.int32,
-        )
         assert calls
         for requested in calls:
             assert_matches(requested, expected)
 
-    def test_significance_batched_matches_run_em_with_pre_shifts_scales_and_projection_padding(
-        self,
-        half_datasets,
-        init_volume,
-        monkeypatch,
-    ):
-        """Adaptive pass 1 must score with the same corrections as the dense engine."""
-        dataset = half_datasets[0]
-        rotations = _make_rotations(5, seed=23)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]],
-            dtype=jnp.float32,
-        )
-        init_noise = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        init_tau = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
-        image_corrections = np.array([0.8, 1.2], dtype=np.float32)
-        scale_corrections = np.array([1.1, 0.9], dtype=np.float32)
-        image_pre_shifts = np.array([[1.5, -0.5], [-1.0, 1.25]], dtype=np.float32)
-        current_size = 6
-
-        em_result = run_em(
-            dataset,
-            init_volume,
-            init_tau,
-            init_noise,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=dataset.n_units,
-            rotation_block_size=rotations.shape[0],
-            current_size=current_size,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            score_with_masked_images=True,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-        _ = em_result.mean
-        expected_ha = em_result.hard_assignments
-        _ = em_result.Ft_y
-        _ = em_result.Ft_ctf
-        del em_result
-
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "off")
-        _, _, actual_ha, _, _, _ = _compute_k_class_significance_batched(
-            dataset,
-            init_volume[None, :],
-            init_noise,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=np.zeros(1, dtype=np.float64),
-            adaptive_fraction=0.999,
-            max_significants=-1,
-            image_batch_size=dataset.n_units,
-            rotation_block_size=rotations.shape[0],
-            current_size=current_size,
-            score_with_masked_images=True,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-
-        assert_matches(np.asarray(actual_ha), np.asarray(expected_ha))
-
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "force")
-        cached_result = _compute_k_class_significance_batched(
-            dataset,
-            init_volume[None, :],
-            init_noise,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=np.zeros(1, dtype=np.float64),
-            adaptive_fraction=0.999,
-            max_significants=-1,
-            image_batch_size=dataset.n_units,
-            rotation_block_size=2,
-            current_size=current_size,
-            score_with_masked_images=True,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "off")
-        uncached_result = _compute_k_class_significance_batched(
-            dataset,
-            init_volume[None, :],
-            init_noise,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=np.zeros(1, dtype=np.float64),
-            adaptive_fraction=0.999,
-            max_significants=-1,
-            image_batch_size=dataset.n_units,
-            rotation_block_size=2,
-            current_size=current_size,
-            score_with_masked_images=True,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-        for cached, uncached in zip(cached_result[:4], uncached_result[:4]):
-            assert_matches(np.asarray(cached), np.asarray(uncached))
-        for cached_sig, uncached_sig in zip(cached_result[4][0], uncached_result[4][0]):
-            if cached_sig is None or uncached_sig is None:
-                assert cached_sig is uncached_sig
-            else:
-                assert_matches(cached_sig, uncached_sig)
-        _assert_significance_stats_allclose(cached_result[5], uncached_result[5])
-
-    def test_k_class_significance_score_cache_matches_uncached_path(
-        self,
-        half_datasets,
-        init_volume,
-        monkeypatch,
-    ):
-        """The K-class significance score cache must be exact, not approximate."""
-        dataset = half_datasets[0]
-        means = jnp.stack([init_volume, init_volume * jnp.asarray(1.01, dtype=init_volume.dtype)])
-        rotations = _make_rotations(5, seed=31)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, -1.0]],
-            dtype=jnp.float32,
-        )
-        class_log_priors = np.log(np.array([0.55, 0.45], dtype=np.float64))
-        rotation_log_prior = np.stack(
-            [
-                np.linspace(0.0, -0.2, rotations.shape[0], dtype=np.float32),
-                np.linspace(-0.1, 0.1, rotations.shape[0], dtype=np.float32),
-            ],
-            axis=0,
-        )
-        translation_log_prior = np.array([0.0, -0.05, -0.2], dtype=np.float32)
-        common_kwargs = dict(
-            class_log_priors=class_log_priors,
-            adaptive_fraction=0.999,
-            max_significants=-1,
-            image_batch_size=dataset.n_units,
-            rotation_block_size=2,
-            current_size=6,
-            score_with_masked_images=True,
-            rotation_log_prior=rotation_log_prior,
-            translation_log_prior=translation_log_prior,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "force")
-        cached_result = _compute_k_class_significance_batched(
-            dataset,
-            means,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            rotations,
-            translations,
-            "linear_interp",
-            **common_kwargs,
-        )
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", "off")
-        uncached_result = _compute_k_class_significance_batched(
-            dataset,
-            means,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            rotations,
-            translations,
-            "linear_interp",
-            **common_kwargs,
-        )
-
-        for cached, uncached in zip(cached_result[:4], uncached_result[:4]):
-            assert_matches(np.asarray(cached), np.asarray(uncached))
-        for cached_by_class, uncached_by_class in zip(cached_result[4], uncached_result[4]):
-            for cached_sig, uncached_sig in zip(cached_by_class, uncached_by_class):
-                if cached_sig is None or uncached_sig is None:
-                    assert cached_sig is uncached_sig
-                else:
-                    assert_matches(cached_sig, uncached_sig)
-        _assert_significance_stats_allclose(cached_result[5], uncached_result[5])
-
     def test_k_class_significance_tail_padding_preserves_outputs(
         self,
-        half_datasets,
-        init_volume,
+        monkeypatch,
     ):
-        dataset = half_datasets[0]
-        means = jnp.stack([init_volume, init_volume * jnp.asarray(1.01, dtype=init_volume.dtype)])
+        if jax.default_backend() == "gpu":
+            # On a GPU the padded extent changes the float32 reductions; the null band is
+            # test_em_stage_glue_programs.test_coarse_pad_env_flag_stays_inside_the_null_band_on_gpu.
+            pytest.skip("CPU-only contract")
+        dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch, n_classes=2)
         rotations = _make_rotations(3, seed=312)
         translations = jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32)
         common_kwargs = dict(
@@ -6719,16 +6506,17 @@ class TestRelionModeSmokeTest:
             current_size=6,
             score_with_masked_images=True,
             translation_log_prior=np.asarray([[0.0, -0.1], [-0.2, 0.0]], dtype=np.float32),
-            image_pre_shifts=np.asarray([[0.25, -0.5], [-0.75, 0.5]], dtype=np.float32),
-            half_spectrum_scoring=True,
+            # RELION's CUDA preprocessing shifts by whole pixels.
+            image_pre_shifts=np.asarray([[1.0, -1.0], [-2.0, 1.0]], dtype=np.float32),
             return_class_best=True,
             return_class_second=True,
+            **projector,
         )
 
         unpadded = _compute_k_class_significance_batched(
             dataset,
             means,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            noise,
             rotations,
             translations,
             "linear_interp",
@@ -6739,7 +6527,7 @@ class TestRelionModeSmokeTest:
         padded = _compute_k_class_significance_batched(
             dataset,
             means,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            noise,
             rotations,
             translations,
             "linear_interp",
@@ -6748,168 +6536,17 @@ class TestRelionModeSmokeTest:
             **common_kwargs,
         )
 
+        from relax.scoring.significant_samples import significant_sample_ids
+
         for expected, actual in zip(unpadded[:4], padded[:4]):
             assert_matches(np.asarray(actual), np.asarray(expected))
+        n_samples = int(rotations.shape[0]) * int(translations.shape[0])
         for expected_by_class, actual_by_class in zip(unpadded[4], padded[4]):
             for expected, actual in zip(expected_by_class, actual_by_class):
-                assert_matches(np.asarray(actual), np.asarray(expected))
+                assert_matches(
+                    significant_sample_ids(actual, n_samples), significant_sample_ids(expected, n_samples)
+                )
         _assert_significance_stats_allclose(padded[5], unpadded[5])
-
-    def test_k_class_firstiter_cc_significance_matches_per_class_run_em(
-        self,
-        half_datasets,
-        init_volume,
-    ):
-        """Joint firstiter-CC significance must match the old per-class probe."""
-        dataset = half_datasets[0]
-        means = jnp.stack([init_volume, init_volume * jnp.asarray(1.01, dtype=init_volume.dtype)])
-        rotations = _make_rotations(5, seed=41)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, -1.0]],
-            dtype=jnp.float32,
-        )
-        noise = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        tau = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
-        class_log_priors = np.log(np.array([0.55, 0.45], dtype=np.float64))
-        rotation_log_prior = np.stack(
-            [
-                np.linspace(0.0, -0.2, rotations.shape[0], dtype=np.float32),
-                np.linspace(-0.1, 0.1, rotations.shape[0], dtype=np.float32),
-            ],
-            axis=0,
-        )
-        image_corrections = np.array([0.8, 1.2], dtype=np.float32)
-        scale_corrections = np.array([1.1, 0.9], dtype=np.float32)
-        image_pre_shifts = np.array([[1.5, -0.5], [-1.0, 1.25]], dtype=np.float32)
-        common_kwargs = dict(
-            image_batch_size=dataset.n_units,
-            rotation_block_size=rotations.shape[0],
-            current_size=6,
-            score_with_masked_images=True,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-
-        expected_hard = []
-        expected_best = []
-        for class_index in range(means.shape[0]):
-            result = run_em(
-                dataset,
-                means[class_index],
-                tau,
-                noise,
-                rotations,
-                translations,
-                "linear_interp",
-                return_stats=True,
-                accumulate_noise=False,
-                disable_adjoint_y=True,
-                disable_adjoint_ctf=True,
-                score_only=True,
-                class_log_prior=float(class_log_priors[class_index]),
-                rotation_log_prior=rotation_log_prior[class_index],
-                relion_firstiter_score_mode="normalized_cc",
-                relion_firstiter_winner_take_all=True,
-                **common_kwargs,
-            )
-            expected_hard.append(np.asarray(result.hard_assignments, dtype=np.int32))
-            expected_best.append(np.asarray(result.stats.best_log_score_per_image, dtype=np.float32))
-
-        *_, full_stats = _compute_k_class_significance_batched(
-            dataset,
-            means,
-            noise,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=class_log_priors,
-            adaptive_fraction=1.0,
-            max_significants=1,
-            rotation_log_prior=rotation_log_prior,
-            collect_significance=False,
-            return_class_best=True,
-            return_class_second=True,
-            score_mode="normalized_cc",
-            **common_kwargs,
-        )
-
-        assert_matches(
-            np.asarray(full_stats["class_hard_assignments"], dtype=np.int32),
-            np.stack(expected_hard, axis=0),
-        )
-        np.testing.assert_allclose(
-            np.asarray(full_stats["class_best_log_score_per_image"], dtype=np.float32),
-            np.stack(expected_best, axis=0),
-            rtol=1e-6,
-            atol=1e-6,
-        )
-        second_scores = np.asarray(full_stats["class_second_best_log_score_per_image"], dtype=np.float32)
-        np.testing.assert_array_less(
-            second_scores,
-            np.asarray(full_stats["class_best_log_score_per_image"], dtype=np.float32),
-        )
-        offset_free_best = np.asarray(
-            full_stats["class_best_offset_free_log_score_per_image"],
-            dtype=np.float32,
-        )
-        offset_free_second = np.asarray(
-            full_stats["class_second_best_offset_free_log_score_per_image"],
-            dtype=np.float32,
-        )
-        np.testing.assert_array_less(offset_free_second, offset_free_best)
-        assert np.all(
-            np.asarray(full_stats["class_second_hard_assignments"], dtype=np.int32)
-            != np.asarray(full_stats["class_hard_assignments"], dtype=np.int32)
-        )
-
-        # A multi-block scan must retain the same global runner-up as the
-        # single-block reference, including when the previous block's winner
-        # becomes the second-best pose.
-        chunked_kwargs = dict(common_kwargs)
-        chunked_kwargs["rotation_block_size"] = 2
-        *_, chunked_stats = _compute_k_class_significance_batched(
-            dataset,
-            means,
-            noise,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=class_log_priors,
-            adaptive_fraction=1.0,
-            max_significants=1,
-            rotation_log_prior=rotation_log_prior,
-            collect_significance=False,
-            return_class_best=True,
-            return_class_second=True,
-            score_mode="normalized_cc",
-            **chunked_kwargs,
-        )
-        assert_matches(
-            np.asarray(chunked_stats["class_hard_assignments"], dtype=np.int32),
-            np.asarray(full_stats["class_hard_assignments"], dtype=np.int32),
-        )
-        assert_matches(
-            np.asarray(chunked_stats["class_second_hard_assignments"], dtype=np.int32),
-            np.asarray(full_stats["class_second_hard_assignments"], dtype=np.int32),
-        )
-        np.testing.assert_allclose(
-            np.asarray(chunked_stats["class_second_best_log_score_per_image"], dtype=np.float32),
-            np.asarray(full_stats["class_second_best_log_score_per_image"], dtype=np.float32),
-            rtol=1e-6,
-            atol=1e-6,
-        )
-        assert_matches(
-            np.asarray(chunked_stats["class_best_offset_free_log_score_per_image"], dtype=np.float32),
-            offset_free_best,
-        )
-        assert_matches(
-            np.asarray(chunked_stats["class_second_best_offset_free_log_score_per_image"], dtype=np.float32),
-            offset_free_second,
-        )
 
     @pytest.mark.parametrize(
         "original_scores, rescored_scores, expected_pose, expected_ties, expected_changes",
@@ -6918,7 +6555,6 @@ class TestRelionModeSmokeTest:
             ((1.0, 1.0 - 2e-7), (0.5, 0.75), 1, 0, "all"),
         ],
     )
-    @pytest.mark.parametrize("gemm_mode", ["legacy", "default", "selected"])
     def test_k1_firstiter_cc_tree_top2_rescore_replaces_bounded_winner(
         self,
         half_datasets,
@@ -6929,7 +6565,6 @@ class TestRelionModeSmokeTest:
         expected_pose,
         expected_ties,
         expected_changes,
-        gemm_mode,
         request,
     ):
         """The direct-texture replay replaces every bounded native winner."""
@@ -7017,25 +6652,21 @@ class TestRelionModeSmokeTest:
             "_e_step_block_scores_windowed_normalized_cc",
             fake_gemm_scores,
         )
-        # The exact-operand CC scorer serves every RELION-preprocessed pass, the
-        # default and an explicitly selected engine alike; "legacy" runs without it.
-        exact_gemm = gemm_mode != "legacy"
-        if exact_gemm:
-            def fake_cc_gemm_scores(_proj, _shifted, _weight, _count, *, n_images, n_trans):
-                return jnp.broadcast_to(
-                    jnp.asarray(original_scores, dtype=jnp.float32)[None, :, None],
-                    (n_images, 2, n_trans),
-                )
-
-            # The pass-1 program (significance) and the scorer module each bind the scorer.
-            clear_pass1_programs(request)
-            for module in (scoring_module, significance_module):
-                monkeypatch.setattr(module, "_relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
-            monkeypatch.setattr(
-                em_cuda_kernels,
-                "relion_translate_score_f32",
-                lambda images, _angles, _indices, _shape: images,
+        def fake_cc_gemm_scores(_proj, _shifted, _weight, _count, *, n_images, n_trans):
+            return jnp.broadcast_to(
+                jnp.asarray(original_scores, dtype=jnp.float32)[None, :, None],
+                (n_images, 2, n_trans),
             )
+
+        # The pass-1 program (significance) and the scorer module each bind the scorer.
+        clear_pass1_programs(request)
+        for module in (scoring_module, significance_module):
+            monkeypatch.setattr(module, "_relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
+        monkeypatch.setattr(
+            em_cuda_kernels,
+            "relion_translate_score_f32",
+            lambda images, _angles, _indices, _shape: images,
+        )
         monkeypatch.setattr(
             scoring_module,
             "_relion_coarse_normalized_cc_rescore",
@@ -7062,15 +6693,10 @@ class TestRelionModeSmokeTest:
             score_mode="normalized_cc",
             collect_significance=False,
             return_class_best=True,
-            relion_coarse_gaussian_default=gemm_mode != "legacy",
-            require_plain_gemm_coarse=gemm_mode == "selected",
             tree_rescore_max_margin=4e-6,
         )
 
-        if exact_gemm:
-            assert full_stats["executed_coarse_backend"] == "exact_cc_gemm"
-        else:
-            assert full_stats["executed_coarse_backend"] != "exact_cc_gemm"
+        assert full_stats["executed_coarse_backend"] == "exact_cc_gemm"
         assert_matches(
             np.asarray(full_stats["class_hard_assignments"]),
             np.full((1, dataset.n_units), expected_pose, dtype=np.int32),
@@ -7088,125 +6714,8 @@ class TestRelionModeSmokeTest:
             "winner_changes": expected_changes,
         }
 
-    @pytest.mark.parametrize(
-        "with_image_corr,with_scale_corr,with_pre_shifts",
-        [
-            (False, False, False),  # baseline
-            (True,  False, False),  # image only
-            (False, True,  False),  # scale only
-            (False, False, True),   # shifts only
-            (True,  True,  False),  # image + scale
-            (True,  False, True),   # image + shifts
-            (False, True,  True),   # scale + shifts
-            (True,  True,  True),   # all three (original failing case)
-        ],
-    )
-    def test_k_class_gaussian_significance_matches_per_class_run_em(
-        self,
-        half_datasets,
-        init_volume,
-        with_image_corr,
-        with_scale_corr,
-        with_pre_shifts,
-    ):
-        """Joint gaussian K-class significance must match per-class run_em scoring.
-
-        Companion to test_k_class_firstiter_cc_significance_matches_per_class_run_em,
-        but for the gaussian score_mode that InitialModel uses for iter-2+ scoring.
-        Parametrized across (corrections, priors) to isolate where the K-class
-        gaussian path diverges from em_engine.run_em on identical inputs.
-        """
-        dataset = half_datasets[0]
-        means = jnp.stack([init_volume, init_volume * jnp.asarray(1.01, dtype=init_volume.dtype)])
-        rotations = _make_rotations(5, seed=41)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, -1.0]],
-            dtype=jnp.float32,
-        )
-        noise = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        tau = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
-        # Priors are always on — the [False-True] case in the prior bisect
-        # established that priors do NOT break parity, so the residual is
-        # purely in the corrections.
-        class_log_priors = np.log(np.array([0.55, 0.45], dtype=np.float64))
-        rotation_log_prior = np.stack(
-            [
-                np.linspace(0.0, -0.2, rotations.shape[0], dtype=np.float32),
-                np.linspace(-0.1, 0.1, rotations.shape[0], dtype=np.float32),
-            ],
-            axis=0,
-        )
-        image_corrections = np.array([0.8, 1.2], dtype=np.float32) if with_image_corr else None
-        scale_corrections = np.array([1.1, 0.9], dtype=np.float32) if with_scale_corr else None
-        image_pre_shifts = np.array([[1.5, -0.5], [-1.0, 1.25]], dtype=np.float32) if with_pre_shifts else None
-        common_kwargs = dict(
-            image_batch_size=dataset.n_units,
-            rotation_block_size=rotations.shape[0],
-            current_size=6,
-            score_with_masked_images=True,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            image_pre_shifts=image_pre_shifts,
-            half_spectrum_scoring=True,
-            projection_padding_factor=2,
-            use_float64_scoring=True,
-        )
-
-        expected_hard = []
-        expected_best = []
-        for class_index in range(means.shape[0]):
-            result = run_em(
-                dataset,
-                means[class_index],
-                tau,
-                noise,
-                rotations,
-                translations,
-                "linear_interp",
-                return_stats=True,
-                accumulate_noise=False,
-                disable_adjoint_y=True,
-                disable_adjoint_ctf=True,
-                score_only=True,
-                class_log_prior=float(class_log_priors[class_index]),
-                rotation_log_prior=rotation_log_prior[class_index],
-                **common_kwargs,
-            )
-            expected_hard.append(np.asarray(result.hard_assignments, dtype=np.int32))
-            expected_best.append(np.asarray(result.stats.best_log_score_per_image, dtype=np.float32))
-
-        *_, full_stats = _compute_k_class_significance_batched(
-            dataset,
-            means,
-            noise,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=class_log_priors,
-            adaptive_fraction=1.0,
-            max_significants=1,
-            rotation_log_prior=rotation_log_prior,
-            collect_significance=False,
-            return_class_best=True,
-            score_mode="gaussian",
-            **common_kwargs,
-        )
-
-        assert_matches(
-            np.asarray(full_stats["class_hard_assignments"], dtype=np.int32),
-            np.stack(expected_hard, axis=0),
-        )
-        np.testing.assert_allclose(
-            np.asarray(full_stats["class_best_log_score_per_image"], dtype=np.float32),
-            np.stack(expected_best, axis=0),
-            rtol=1e-6,
-            atol=1e-6,
-        )
-
     def test_k_class_significance_dump_emits_target_files(
         self,
-        half_datasets,
-        init_volume,
         monkeypatch,
         tmp_path,
     ):
@@ -7218,8 +6727,7 @@ class TestRelionModeSmokeTest:
         with ``RELAX_SIGNIFICANCE_DUMP_DIR`` and the matching original-index
         target set.
         """
-        dataset = half_datasets[0]
-        means = jnp.stack([init_volume, init_volume * jnp.asarray(1.01, dtype=init_volume.dtype)])
+        dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch, n_classes=2)
         rotations = _make_rotations(5, seed=31)
         translations = jnp.array([[0.0, 0.0], [1.0, 0.0]], dtype=jnp.float32)
         class_log_priors = np.log(np.array([0.55, 0.45], dtype=np.float64))
@@ -7235,7 +6743,7 @@ class TestRelionModeSmokeTest:
         _compute_k_class_significance_batched(
             dataset,
             means,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            noise,
             rotations,
             translations,
             "linear_interp",
@@ -7246,6 +6754,7 @@ class TestRelionModeSmokeTest:
             rotation_block_size=2,
             current_size=6,
             score_with_masked_images=False,
+            **projector,
         )
 
         files = sorted(dump_dir.glob("*.npz"))
@@ -7265,14 +6774,11 @@ class TestRelionModeSmokeTest:
 
     def test_k_class_score_probe_ignores_dump_env_when_significance_is_not_collected(
         self,
-        half_datasets,
-        init_volume,
         monkeypatch,
         tmp_path,
     ):
         """Score-only K-class probes must not abort when a dump env is set."""
-        dataset = half_datasets[0]
-        means = jnp.stack([init_volume, init_volume * jnp.asarray(1.01, dtype=init_volume.dtype)])
+        dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch, n_classes=2)
         rotations = _make_rotations(5, seed=37)
         translations = jnp.array([[0.0, 0.0], [1.0, 0.0]], dtype=jnp.float32)
         class_log_priors = np.log(np.array([0.55, 0.45], dtype=np.float64))
@@ -7284,7 +6790,7 @@ class TestRelionModeSmokeTest:
         *_, full_stats = _compute_k_class_significance_batched(
             dataset,
             means,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            noise,
             rotations,
             translations,
             "linear_interp",
@@ -7297,6 +6803,7 @@ class TestRelionModeSmokeTest:
             score_with_masked_images=False,
             collect_significance=False,
             return_class_best=True,
+            **projector,
         )
 
         assert not list(dump_dir.glob("*.npz"))
@@ -8165,8 +7672,8 @@ class TestRelionModeSmokeTest:
                 disc_type,
             )
             assert kwargs.get("preserve_bpref_particle_order", False) == preserve_order
-            # The mock datasets have no RELION CUDA preprocessing: only a fresh start asks.
-            assert kwargs["relion_exact_coarse"] is preserve_order
+            # Pass 1 always scores the exact operands; the removed switch is not passed.
+            assert "relion_exact_coarse" not in kwargs
             half_idx = call_idx["value"]
             call_idx["value"] += 1
             fine_mstep_prune_values.append(kwargs.get("relion_fine_mstep_prune"))

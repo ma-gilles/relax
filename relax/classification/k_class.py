@@ -1114,8 +1114,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             False,
         ),
         score_mode="normalized_cc",
-        relion_coarse_gaussian_default=bool(engine_kwargs.get("relion_exact_coarse", False)),
-        require_plain_gemm_coarse=bool(engine_kwargs.get("require_plain_gemm_coarse", False)),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
         collect_significance=_significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
@@ -2185,6 +2183,10 @@ def run_dense_k_class_em_adaptive(
         defers to ``RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
         the strict-parity default is RELION texture interpolation.
     """
+    if "relion_exact_coarse" in engine_kwargs:
+        raise TypeError(
+            "relion_exact_coarse was removed on 2026-10-02: pass 1 always scores RELION's exact coarse operands"
+        )
     # Lazy import to avoid the formatter stripping a top-level name that is
     # only referenced inside this function.
     from relax.scoring.significance import _compute_k_class_significance_batched
@@ -2445,9 +2447,6 @@ def run_dense_k_class_em_adaptive(
         coarse_probe_kwargs["rotation_block_size"] = sig_rbs
         coarse_probe_kwargs["relion_firstiter_score_mode"] = "normalized_cc"
         coarse_probe_kwargs["relion_firstiter_winner_take_all"] = True
-        if coarse_engine == "gemm_hybrid":
-            coarse_probe_kwargs["relion_exact_coarse"] = True
-            coarse_probe_kwargs["require_plain_gemm_coarse"] = True
         coarse_probe_kwargs["coarse_relion_projector_texture_interp"] = (
             coarse_relion_projector_texture_interp
         )
@@ -2551,15 +2550,6 @@ def run_dense_k_class_em_adaptive(
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
             translation_phase_source=coarse_translation_phase_source,
-            # The exact-operand coarse path (em_status coarse-scorer TODO): the
-            # Refine3D, Class3D and VDAM routes ask for it (relion_exact_coarse); the
-            # generic dense scorer stays for every normalized-CC pass until it moves.
-            relion_coarse_gaussian_default=bool(
-                coarse_engine == "gemm_hybrid" or engine_kwargs.get(
-                    "relion_exact_coarse", engine_kwargs.get("preserve_bpref_particle_order", False)
-                )
-            ),
-            require_plain_gemm_coarse=coarse_engine == "gemm_hybrid",
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
@@ -2663,7 +2653,6 @@ def run_dense_k_class_em_adaptive(
 
     mask_t0 = time.time()
     pass2_kwargs = dict(engine_kwargs)
-    pass2_kwargs.pop("relion_exact_coarse", None)  # a pass-1 choice
     if reuse_zero_oversampling_coarse_state:
         pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
         pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
