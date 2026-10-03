@@ -17,7 +17,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${ROOT}/.pixi/envs/default/bin/python"
 RELION_SRC_DIR="${RELION_SRC_DIR:-/scratch/gpfs/GILLES/mg6942/relion/src}"
 CUDA_MODULE="${CUDA_MODULE:-cudatoolkit/12.8}"
-ARCH='-gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90'
+# RELAX_NATIVE_CUDA_ARCH overrides the A100/H100 gencode list (e.g. sm_60/sm_70 for Polar's P100/V100).
+DEFAULT_ARCH='-gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90'
+ARCH="${RELAX_NATIVE_CUDA_ARCH:-${DEFAULT_ARCH}}"
 test -x "${PY}" || { echo "missing pixi environment at ${PY}" >&2; exit 2; }
 mkdir -p "${OUT}/relion_bind"
 OUT="$(cd "${OUT}" && pwd)"
@@ -53,6 +55,7 @@ record = {
     "source_head": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip(),
     "source_dirty": bool(subprocess.check_output(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"], text=True).strip()),
     "cuda_module": module,
+    "cuda_arch": __import__("os").environ.get("RELAX_NATIVE_CUDA_ARCH") or "default (sm_80, sm_90)",
     "sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in libs},
     "paths": {p.name: str(p) for p in libs},
 }
