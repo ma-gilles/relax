@@ -192,7 +192,8 @@ def particle_coarse_diff2(image_diff2_in_slot_order):
     return total
 
 
-# Bytes of per-image projections ([images, R, P] complex64) and coarse diff2 ([images, R, T] float32) one call holds.
+# Bytes of per-image projections ([images, R, P]) and coarse diff2 ([images, R, T] float32) one call holds, at most
+# (_coarse_batch_bytes caps it by what the device can still hand out).
 _COARSE_BATCH_BYTES = 2 << 30
 
 # Bytes of particles' summed diff2 ([P, K * R, T] float32) one significance call cuts.
@@ -374,22 +375,28 @@ def _significant_cells(mask, *, capacity: int):
 
 
 def _coarse_batches(
-    rotation_counts, *, n_slots: int, n_trans: int, n_pixels: int = 0, budget_bytes: int = _COARSE_BATCH_BYTES
+    rotation_counts,
+    *,
+    n_slots: int,
+    n_trans: int,
+    n_pixels: int = 0,
+    projection_bytes_per_pixel: int = 8,
+    budget_bytes: int = _COARSE_BATCH_BYTES,
 ):
     """Batches of consecutive particles for the coarse GEMM scorer: ``(units, R_pad, P_pad, slot_block)``.
 
     One shape for the whole pass, so one program compiles: ``R_pad`` is the largest rotation count
     rounded up to a multiple of 128, and ``P_pad`` particles of
-    ``slot_block`` slots per call keep each image's ``R_pad`` projected rows of ``n_pixels`` complex64 pixels
-    and its ``R_pad * T`` float32 diff2 within ``budget_bytes`` (a particle whose images exceed it is scored
-    ``slot_block`` slots at a time).
+    ``slot_block`` slots per call keep each image's ``R_pad`` projected rows of ``n_pixels`` pixels at
+    ``projection_bytes_per_pixel`` (:func:`_coarse_projection_bytes_per_pixel`) and its ``R_pad * T`` float32
+    diff2 within ``budget_bytes`` (a particle whose images exceed it is scored ``slot_block`` slots at a time).
     """
 
     counts = np.asarray(rotation_counts, dtype=np.int64)
     if counts.size == 0:
         return []
     r_pad = -(-int(np.max(counts)) // 128) * 128
-    per_image = r_pad * (int(n_trans) * 4 + int(n_pixels) * 8)
+    per_image = r_pad * (int(n_trans) * 4 + int(n_pixels) * int(projection_bytes_per_pixel))
     slot_block = int(min(n_slots, max(1, int(budget_bytes) // per_image)))
     p_pad = max(1, int(budget_bytes) // (int(n_slots) * per_image)) if slot_block == n_slots else 1
     p_pad = min(p_pad, int(counts.size))
@@ -408,12 +415,8 @@ _OPERAND_IMAGE_BATCH = 1024
 _COARSE_OPERAND_BLOCK_BYTES = 4 << 30
 
 
-def _coarse_operand_block_bytes() -> int:
-    """At most ``_COARSE_OPERAND_BLOCK_BYTES`` and a quarter of what the device can still hand out.
-
-    The coarse pass runs next to the refinement's resident state; a fixed 4 GiB block did not fit
-    beside it at iteration 12 of a 5k-particle box-256 run (etbench w2_02_n5k, 3.09 GiB refused).
-    """
+def _device_share_bytes(cap: int) -> int:
+    """At most ``cap`` and a quarter of what the device can still hand out (``cap`` when unknown)."""
 
     from relax.sparse_pass2.sparse_pass2_budget import (
         _device_free_memory_bytes,
@@ -426,8 +429,48 @@ def _coarse_operand_block_bytes() -> int:
         _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
     )
     if available is None:
-        return _COARSE_OPERAND_BLOCK_BYTES
-    return int(min(_COARSE_OPERAND_BLOCK_BYTES, max(256 << 20, 0.25 * float(available))))
+        return int(cap)
+    return int(min(int(cap), max(256 << 20, 0.25 * float(available))))
+
+
+def _coarse_operand_block_bytes() -> int:
+    """At most ``_COARSE_OPERAND_BLOCK_BYTES`` and a quarter of what the device can still hand out.
+
+    The coarse pass runs next to the refinement's resident state; a fixed 4 GiB block did not fit
+    beside it at iteration 12 of a 5k-particle box-256 run (etbench w2_02_n5k, 3.09 GiB refused).
+    """
+
+    return _device_share_bytes(_COARSE_OPERAND_BLOCK_BYTES)
+
+
+def _coarse_batch_bytes() -> int:
+    """At most ``_COARSE_BATCH_BYTES`` and a quarter of what the device can still hand out.
+
+    A fixed 2 GiB batch, next to half 1's resident state on a 16 GB P100, asked for a 6.42 GiB program
+    buffer and ran out of memory (Polar 413469, cryoet_s1 iteration 1, half 2).
+    """
+
+    return _device_share_bytes(_COARSE_BATCH_BYTES)
+
+
+def _coarse_projection_bytes_per_pixel(
+    class_textures, projector_dtype, *, image_size, current_size, model_max_r
+) -> int:
+    """Device bytes one projected score pixel takes in :func:`_coarse_gemm_slot_block`.
+
+    The texture's packed float32 ``[Re | Im]`` rows take 8 bytes. The JAX projection the pass falls back to
+    (no texture: a complex128 projector, or a window the packed rows do not serve) holds its rows in the
+    projector's complex dtype and a temporary of the same size: 6.42 GiB for 164 images x 4608 rotations x
+    (81 translations x 4 B + 278 pixels x 32 B) with a complex128 projector (Polar 413469).
+    """
+
+    from relax.helpers.projection import relion_coarse_packed_rows_serve
+
+    if all(t is not None for t in class_textures) and relion_coarse_packed_rows_serve(
+        int(image_size), int(current_size), int(model_max_r)
+    ):
+        return 8
+    return 2 * int(np.dtype(projector_dtype).itemsize)
 
 
 @partial(jax.jit, donate_argnums=(0,))
@@ -684,15 +727,26 @@ def particle_coarse_supports(
         if local and (rows.size == 0 or np.any(np.diff(rows) <= 0)):
             raise ValueError(f"particle {u}'s local rotations must be ascending and non-empty")
     rotation_counts = [coarse_eulers_deg.shape[0] if rows is None else rows.size for rows in unit_rotations]
-    batches = _coarse_batches(
-        rotation_counts, n_slots=slots, n_trans=n_coarse_trans, n_pixels=int(layout.score_indices_np.size)
-    )
-    score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
     # Each class's projector texture, staged once for the pass (the SPA coarse path's capacity texture).
     class_textures = [
         _coarse_capacity_texture(class_projector, layout, model_max_r=int(model_max_r), padding_factor=int(padding_factor))
         for class_projector in class_projectors
     ]
+    batches = _coarse_batches(
+        rotation_counts,
+        n_slots=slots,
+        n_trans=n_coarse_trans,
+        n_pixels=int(layout.score_indices_np.size),
+        projection_bytes_per_pixel=_coarse_projection_bytes_per_pixel(
+            class_textures,
+            jnp.asarray(class_projectors[0]).dtype,
+            image_size=int(layout.image_shape[0]),
+            current_size=int(layout.current_size),
+            model_max_r=int(model_max_r),
+        ),
+        budget_bytes=_coarse_batch_bytes(),
+    )
+    score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
     r_pad_all = batches[0][1] if batches else 0
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.

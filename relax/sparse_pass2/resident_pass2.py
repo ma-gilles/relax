@@ -158,6 +158,7 @@ from relax.sparse_pass2.resident_significance import (
     fine_rotation_children,
     resident_candidate_tables,
     resident_significance_csr,
+    significant_coarse_parents,
 )
 from relax.sparse_pass2.resident_statistics import (
     FinalizedStatistics,
@@ -3230,8 +3231,28 @@ def _resident_pass2(
     )
 
     # ---- projection cache (same admission and build as the compact engine) -
-    # K>1 caches every class's fine grid, class k at k * n_fine_rot.
-    n_projections = n_classes * n_fine_rot
+    # K>1 caches every class's fine grid, class k at k * n_fine_rot; when the
+    # significant coarse parents' children are far fewer, only they are cached
+    # (_significant_projection_slots), class k at k * capacity.
+    projection_slots = None
+    if tilt is None and not presum_adjoint and coarse_reuse is None and coarse_rotation_ids is None:
+        projection_slots = _significant_projection_slots(
+            class_supports,
+            n_images=n_units,
+            n_coarse_rot=n_coarse_rot,
+            n_coarse_trans=n_coarse_trans,
+            n_fine_rot=n_fine_rot,
+            children=fine_rotation_children(
+                n_coarse_rot=n_coarse_rot,
+                nside_level=nside_level,
+                oversampling_order=oversampling_order,
+                random_perturbation=random_perturbation,
+                fine_rotation_parent_override=fine_rotation_parent_override,
+                symmetry_label=symmetry_label,
+            ),
+        )
+    cache_rows_per_class = n_fine_rot if projection_slots is None else int(projection_slots.capacity)
+    n_projections = projection_cache_rows(n_classes, n_fine_rot, projection_slots)
     (
         _projection_complex_dtype,
         _projection_budget_pixels,
@@ -3326,6 +3347,19 @@ def _resident_pass2(
         projection_kwargs["projector_output_size"] = physical_size
 
     fine_grid = jnp.asarray(fine_rotations_override, dtype=precision_policy.score_real_dtype)
+    # The cache's rotations, class-major: every class's fine grid, or the cached slots' rotations.
+    cache_grid = (
+        fine_grid
+        if projection_slots is None
+        else fine_grid[jnp.asarray(projection_slots.slot_projection % n_fine_rot, dtype=jnp.int32)]
+    )
+
+    def class_cache_rotations(class_index):
+        if projection_slots is None:
+            return fine_grid
+        start = int(class_index) * cache_rows_per_class
+        return cache_grid[start : start + cache_rows_per_class]
+
     # The RELION projector computes only the windows' pixels, not full half rows.
     fine_window_union = (
         _pass_window_union(
@@ -3484,7 +3518,7 @@ def _resident_pass2(
     union_cache = None
     if not stream_projections and union_indices is not None:
         union_cache = _allocate_projection_cache_blocks(
-            n_classes * int(n_fine_rot), int(union_indices.shape[0]), precision_policy.score_complex_dtype
+            n_projections, int(union_indices.shape[0]), precision_policy.score_complex_dtype
         )
         if union_cache is None:
             logger.info(
@@ -3504,6 +3538,8 @@ def _resident_pass2(
             )
     stream_keeps_chunk_operands = tilt is None and (stream_projections or operands_yield_to_cache)
     if stream_projections:
+        # Streamed chunks project their own rows' rotations by projection id.
+        projection_slots = None
         score_cache = recon_cache = recon_abs2_cache = None
         union_indices = union_score_take = union_recon_take = None
         logger.info(
@@ -3537,13 +3573,13 @@ def _resident_pass2(
         # after the chunk's gather (score_resident_chunk), and the recon window
         # keeps RECOVAR units, as in the three-cache build.
         rows_per_call = _projection_cache_build_max_rotations_per_call(
-            max_projected_rotations_per_projection_call, int(n_fine_rot)
-        ) or int(n_fine_rot)
+            max_projected_rotations_per_projection_call, cache_rows_per_class
+        ) or cache_rows_per_class
 
         def project_union_rows(class_index, start, stop):
             return _compute_sparse_pass2_windowed_projections_block(
                 class_means_for_proj[class_index],
-                fine_grid[start:stop],
+                class_cache_rotations(class_index)[start:stop],
                 image_shape,
                 proj_volume_shape,
                 disc_type,
@@ -3562,7 +3598,7 @@ def _resident_pass2(
         score_cache = build_projection_cache_in_place(
             project_union_rows,
             n_classes=n_classes,
-            n_rows_per_class=int(n_fine_rot),
+            n_rows_per_class=cache_rows_per_class,
             n_pixels=int(union_indices.shape[0]),
             rows_per_call=rows_per_call,
             dtype=precision_policy.score_complex_dtype,
@@ -3583,14 +3619,17 @@ def _resident_pass2(
         cache_t0 = time.time()
         if n_classes == 1:
             score_cache, recon_cache, recon_abs2_cache = project_fine_rotations(
-                fine_rotations_override
+                fine_rotations_override if projection_slots is None else class_cache_rotations(0)
             )
         else:
             # Each class's caches are written into the three caches in place,
             # so only one class's caches are ever transient, not a second copy.
             caches = None
             for class_index in range(n_classes):
-                class_cache = project_fine_rotations(fine_rotations_override, class_index)
+                class_cache = project_fine_rotations(
+                    fine_rotations_override if projection_slots is None else class_cache_rotations(class_index),
+                    class_index,
+                )
                 if caches is None:
                     caches = [
                         jnp.zeros((n_classes * int(a.shape[0]),) + tuple(a.shape[1:]), dtype=a.dtype)
@@ -3851,7 +3890,16 @@ def _resident_pass2(
     )
     coarse_parent_np = np.asarray(fine_rotation_parent_override, dtype=np.int32)
     cached_slot_fine_rot = None
-    if n_classes > 1:
+    if projection_slots is not None:
+        # Indexed by cache row: the slot's fine rotation and (class, coarse rotation) mass slot.
+        slot_rotation = projection_slots.slot_projection % n_fine_rot
+        slot_class = projection_slots.slot_projection // n_fine_rot
+        mstep_grid = mstep_grid[jnp.asarray(slot_rotation, dtype=jnp.int32)]
+        coarse_parent_np = (
+            coarse_parent_np[slot_rotation] + slot_class.astype(np.int32) * np.int32(n_coarse_rot)
+        ).astype(np.int32)
+        cached_slot_fine_rot = jnp.asarray(slot_rotation, dtype=jnp.int32)
+    elif n_classes > 1:
         # Indexed by projection id: the M-step rotation is the class's fine
         # rotation, and the rotation-mass slot is (class, coarse rotation).
         mstep_grid = jnp.tile(mstep_grid, (n_classes, 1, 1))
@@ -4317,6 +4365,7 @@ def _resident_pass2(
             stream_projection_fn=project_ids if stream_projections else None,
             n_fine_rot=n_fine_rot,
             cache_slot_fine_rot=cached_slot_fine_rot,
+            slot_of_projection=None if projection_slots is None else projection_slots.slot_of_projection,
             fine_translation_parent_device=fine_translation_parent_device,
             mstep_grid=mstep_grid,
             coarse_parent_grid=coarse_parent_grid,
@@ -5081,6 +5130,93 @@ def _cached_row_capacity_ladder(row_ladder, *, bytes_per_row, max_gather_bytes):
     return kept
 
 
+class _ProjectionSlots(NamedTuple):
+    """A whole-pass cache that holds only the significant coarse parents' fine rotations.
+
+    ``slot_projection`` [n_classes * capacity] is each cache row's projection id
+    (``class * n_fine_rot + rotation``), class-major with ``capacity`` rows per
+    class (a class's spare rows repeat its first id and are never read).
+    ``slot_of_projection`` [n_classes * n_fine_rot] is each projection id's row,
+    -1 where it is not cached.
+    """
+
+    capacity: int
+    slot_projection: np.ndarray
+    slot_of_projection: np.ndarray
+
+
+_MIN_PROJECTION_SLOTS = 4096
+
+
+def projection_cache_rows(n_classes: int, n_fine_rot: int, slots: "_ProjectionSlots | None") -> int:
+    """Rows of a whole-pass projection cache: each class's slot capacity, or each class's whole fine grid."""
+
+    return int(n_classes) * (int(n_fine_rot) if slots is None else int(slots.capacity))
+
+
+def _projection_slot_capacity(n_needed: int, n_fine_rot: int) -> int | None:
+    """Rows per class for ``n_needed`` cached rotations, or None when it would exceed half the grid.
+
+    A power of two, so the chunk programs, which take the cache as an operand,
+    see few cache shapes; inside one refinement a capacity it already used up
+    to twice as large is reused rather than compiling a smaller one.
+    """
+
+    size = max(_MIN_PROJECTION_SLOTS, 1 << max(int(n_needed) - 1, 0).bit_length())
+    history = _STABLE_WINDOW_CLASSES_RUN.get()
+    if history is not None:
+        used = history.setdefault(("projection_slots", int(n_fine_rot)), set())
+        reusable = [capacity for capacity in used if size <= capacity <= 2 * size]
+        size = min(reusable) if reusable else size
+    if 2 * size > int(n_fine_rot):
+        return None
+    if history is not None:
+        used.add(size)
+    return size
+
+
+def _significant_projection_slots(
+    class_supports, *, n_images: int, n_coarse_rot: int, n_coarse_trans: int, n_fine_rot: int, children
+) -> _ProjectionSlots | None:
+    """The cache rows a pass reads: the fine children of every class's significant coarse parents.
+
+    RELION projects only each particle's significant orientations; the whole
+    fine grid is 294912 rotations at HEALPix order 2 with oversampling, and a
+    late VDAM iteration's 1000 images keep a few thousand coarse parents. The
+    candidate rows of a class are exactly the children of its images' significant
+    coarse rotations (:func:`csr_candidate_rows_per_image`: an empty support takes
+    parent 0), so caching those children serves every row with the same
+    projection (:func:`~relax.sparse_pass2.resident_significance.significant_coarse_parents`).
+    None (cache the whole grid) when a class has no device CSR or an image whose
+    support takes every parent, or when the children's capacity exceeds half the grid.
+    """
+
+    child_offsets, child_ids = (np.asarray(value, dtype=np.int64) for value in children)
+    class_rotations = []
+    for support in class_supports:
+        parents = significant_coarse_parents(
+            support, n_images=n_images, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans
+        )
+        if parents is None:
+            return None
+        counts = child_offsets[parents + 1] - child_offsets[parents]
+        starts = np.repeat(child_offsets[parents] - np.cumsum(counts) + counts, counts)
+        class_rotations.append(np.unique(child_ids[starts + np.arange(int(counts.sum()))]))
+    capacity = _projection_slot_capacity(max(rotations.size for rotations in class_rotations), n_fine_rot)
+    if capacity is None:
+        return None
+    n_classes = len(class_rotations)
+    slot_projection = np.empty(n_classes * capacity, dtype=np.int64)
+    slot_of_projection = np.full(n_classes * int(n_fine_rot), -1, dtype=np.int32)
+    for class_index, rotations in enumerate(class_rotations):
+        rows = slot_projection[class_index * capacity : (class_index + 1) * capacity]
+        rows[:] = rotations[0] if rotations.size else 0
+        rows[: rotations.size] = rotations
+        rows += class_index * int(n_fine_rot)
+        slot_of_projection[rows[: rotations.size]] = class_index * capacity + np.arange(rotations.size, dtype=np.int32)
+    return _ProjectionSlots(capacity, slot_projection, slot_of_projection)
+
+
 def _stream_slot_count(n_unique: int, row_capacity: int) -> int:
     """Projection-call length for ``n_unique`` rotations: a quantum multiple, capped."""
 
@@ -5145,20 +5281,27 @@ def _stream_chunk_projections(
     )
 
 
-def _row_projection_ids(host_chunk, n_fine_rot: int | None) -> np.ndarray:
+def _row_projection_ids(host_chunk, n_fine_rot: int | None, slot_of_projection=None) -> np.ndarray:
     """Each row's projection: its fine rotation, offset by ``class * n_fine_rot`` for K>1.
 
     The class-stacked projection caches and grids hold class ``k``'s fine grid at
     ``k * n_fine_rot``, so every consumer that gathers by a row's rotation id
-    gathers its class's projection with the same statement.
+    gathers its class's projection with the same statement. With a
+    significant-parent cache (``slot_of_projection``, :class:`_ProjectionSlots`)
+    the id is the projection's cache row instead; padded rows take row 0.
     """
 
     row_fine_rot = np.asarray(host_chunk["row_fine_rot"], dtype=np.int64)
-    if n_fine_rot is None:
+    if n_fine_rot is not None:
+        row_fine_rot = row_fine_rot + np.asarray(host_chunk["row_class"], dtype=np.int64) * int(n_fine_rot)
+    if slot_of_projection is None:
         return row_fine_rot.astype(np.int32)
-    return (row_fine_rot + np.asarray(host_chunk["row_class"], dtype=np.int64) * int(n_fine_rot)).astype(
-        np.int32
-    )
+    n_valid_rows = int(host_chunk["n_valid_rows"])
+    slots = np.zeros(row_fine_rot.shape, dtype=np.int32)
+    slots[:n_valid_rows] = slot_of_projection[row_fine_rot[:n_valid_rows]]
+    if bool(np.any(slots[:n_valid_rows] < 0)):
+        raise RuntimeError("a candidate row's fine rotation is not in the significant-parent projection cache")
+    return slots
 
 
 def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int, place) -> _ChunkClassLayout:
@@ -5213,7 +5356,9 @@ def _chunk_host_rows(tables: CandidateTableBlocks, chunk):
     return block_tables, host_chunk, local_chunk
 
 
-def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=None) -> _ChunkRowArrays:
+def _make_chunk_row_arrays(
+    tables, chunk, n_fine_trans, *, place, n_fine_rot=None, slot_of_projection=None
+) -> _ChunkRowArrays:
     """One chunk's row-aligned inputs, on the device or as avals.
 
     Everything here is host NumPy over the plan, so the aval placement costs
@@ -5247,7 +5392,10 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=Non
     placed = place.many(
         {
             "row_image_local": (host_chunk["row_image_local"], jnp.int32),
-            "row_fine_rot": (_row_projection_ids(host_chunk, n_fine_rot if n_classes > 1 else None), jnp.int32),
+            "row_fine_rot": (
+                _row_projection_ids(host_chunk, n_fine_rot if n_classes > 1 else None, slot_of_projection),
+                jnp.int32,
+            ),
             "row_log_prior": (host_chunk["row_log_prior"], jnp.float32),
             "row_mask_bits": (host_chunk["row_mask_bits"], jnp.uint32),
             "row_mask_mode": (host_chunk["row_mask_mode"], jnp.int8),
@@ -8193,6 +8341,7 @@ def _run_resident_chunk(
     stream_projection_fn=None,
     n_fine_rot=None,
     cache_slot_fine_rot=None,
+    slot_of_projection=None,
     window_indices,
     recon_window_indices,
     relion_x_half_recon_indices,
@@ -8278,7 +8427,8 @@ def _run_resident_chunk(
 
     n_classes = int(tables.n_classes)
     rows = _make_chunk_row_arrays(
-        tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot
+        tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot,
+        slot_of_projection=slot_of_projection,
     )
     lone = lone_block_rows is not None and row_capacity > int(lone_block_rows)
     if stream_projection_fn is not None and not lone:
@@ -8497,7 +8647,7 @@ def _run_resident_chunk(
             stage_tables,
             spec=spec,
             host_projection_ids=_row_projection_ids(
-                _chunk_host_rows(tables, chunk)[1], n_fine_rot if n_classes > 1 else None
+                _chunk_host_rows(tables, chunk)[1], n_fine_rot if n_classes > 1 else None, slot_of_projection
             ),
             n_valid_rows=n_valid_rows,
             block_rows=int(lone_block_rows),

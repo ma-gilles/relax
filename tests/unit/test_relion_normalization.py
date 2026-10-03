@@ -219,3 +219,35 @@ class TestRelionNormalization:
         assert got.avg_norm_correction_per_half[0] == pytest.approx(5.0)
         assert got.zero_norm_residual_counts == [1, 1]
         assert np.all(np.isfinite(np.asarray(got.image_corrections_per_half[0])))
+
+
+def test_scale_clamp_and_normalisation_follow_relion_for_any_sign():
+    """ml_optimiser.cpp:5131-5156: clamp to [median / 5, 5 median] by if / else-if, then mean one.
+
+    All-negative signal products (a poor first reference) come out at positive scales, as RELION's do
+    (a tiny premultiplied tomo case: RELION's it001 groups at 1.000000 from xa / aa of -0.65 and -0.31).
+    """
+
+    from relax.relion.relion_normalization import relion_clamped_scale_corrections
+
+    def relion(scale, counts):
+        scale = list(map(float, scale))
+        median = sorted(scale)[len(scale) // 2]
+        for i, value in enumerate(scale):
+            if value > 5.0 * median:
+                scale[i] = 5.0 * median
+            elif value < median / 5.0:
+                scale[i] = median / 5.0
+        avg = sum(c * v for c, v in zip(counts, scale)) / sum(counts)
+        return [v / avg for v in scale]
+
+    for scale, counts in (
+        ([-0.652924, -0.305618], [30, 30]),
+        ([1.2, 0.9, 7.0, 0.1], [10, 20, 30, 40]),
+        ([-0.5, 0.4, 1.1], [5, 5, 5]),
+    ):
+        got = relion_clamped_scale_corrections(np.asarray(scale), np.asarray(counts, dtype=float))
+        np.testing.assert_allclose(got, relion(scale, counts), rtol=1e-12)
+    np.testing.assert_allclose(
+        relion_clamped_scale_corrections(np.array([-0.652924, -0.305618]), np.array([30.0, 30.0])), [1.0, 1.0]
+    )

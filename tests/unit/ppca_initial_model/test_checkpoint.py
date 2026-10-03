@@ -1,4 +1,4 @@
-"""Checkpoint contracts reject altered inputs, policy and source."""
+"""Checkpoint contracts reject altered inputs and policy; the source is provenance only."""
 
 import dataclasses
 
@@ -53,12 +53,40 @@ def test_checkpoint_preserves_state_and_rejects_mismatch(tmp_path):
     assert restored.radius == state.radius
     assert restored.initialization == state.initialization
     assert restored.direction_order == state.direction_order
-    for bad in [{"input": "changed", "source": "def"}, {"input": "abc", "source": "changed"}]:
-        with pytest.raises(ValueError, match="identity mismatch"):
-            load(path, config, bad)
+    # The source is provenance: a run resumes after a code update. The inputs and model must match.
+    assert load(path, config, {"input": "abc", "source": "changed"}).iteration == 7
+    assert load(path, config, {"input": "abc"}).iteration == 7
+    with pytest.raises(ValueError, match="identity mismatch"):
+        load(path, config, {"input": "changed", "source": "def"})
     with pytest.raises(ValueError, match="identity mismatch"):
         load(path, dataclasses.replace(config, seed=12), identity)
     assert not path.with_suffix(".tmp").exists()
+
+
+def test_checkpoint_with_retired_settings_resumes_only_at_their_default(tmp_path):
+    """A checkpoint written while the contrast estimate existed resumes if it was off (section 16.10)."""
+    import json
+
+    theta = jnp.ones((5, 3), jnp.complex64)
+    state = State(theta, None, jnp.ones(3, jnp.float32), 3, np.arange(8), {}, 2.0, 4, {}, sgd_momentum=0 * theta)
+    config = Config(optimizer="momentum_sgd")
+    path = tmp_path / "checkpoint.npz"
+    save(path, state, config, {"input": "abc"})
+
+    def with_settings(name, **settings):
+        with np.load(path, allow_pickle=False) as arrays:
+            arrays = dict(arrays)
+        metadata = json.loads(str(arrays["metadata"]))
+        metadata["config"].update(settings)
+        arrays["metadata"] = json.dumps(metadata)
+        out = tmp_path / name
+        np.savez(out, **arrays)
+        return out
+
+    retired = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
+    assert load(with_settings("off.npz", **retired), config, {"input": "abc"}).iteration == 3
+    with pytest.raises(ValueError, match="identity mismatch"):
+        load(with_settings("on.npz", **{**retired, "contrast_estimate": True}), config, {"input": "abc"})
 
 
 def test_pilot_schedule_and_final_all_data():
@@ -108,3 +136,37 @@ def test_rejected_resume_preserves_existing_run_metadata(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="identity mismatch"):
         command.main(["manifest.json", "-o", str(output), "--resume", str(resume)])
     assert receipt.read_bytes() == b'{"original":true}\n'
+
+
+def test_run_resumes_across_a_source_change(tmp_path, monkeypatch, caplog):
+    """A run resumes from a checkpoint written by other source and logs that source; other inputs still refuse."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.checkpoint import saved_source
+
+    shape = (4, 4, 4)
+    n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
+    config = Config(iterations=2)
+    theta = jnp.zeros((n_freq, 3), jnp.complex64)
+    state = State(
+        theta, iteration_loop.empty_moments(theta), jnp.ones(3, jnp.float32), 1, np.arange(8),
+        np.random.default_rng(1).bit_generator.state, 2.0, 1, {"seed": 1},
+    )
+    path = tmp_path / "checkpoint_0001.npz"
+    save(path, state, config, {"fixture": "tiny", "source": {"head": "old"}})
+    assert saved_source(path) == {"head": "old"}
+
+    def stop(*_args, **_kwargs):  # the resume itself is what is tested; stop at the first E-step
+        raise RuntimeError("expectation reached")
+
+    monkeypatch.setattr(iteration_loop, "expectation_groups", stop)
+    data = type("Data", (), {"n_images": 8, "grid_size": 4, "voxel_size": 1.0, "volume_shape": shape})()
+    with caplog.at_level("WARNING", logger=iteration_loop.logger.name), pytest.raises(
+        RuntimeError, match="expectation reached"
+    ):
+        iteration_loop.run(data, config, tmp_path / "out", {"fixture": "tiny", "source": {"head": "new"}}, 4.0,
+                           resume=path)
+    assert "other source" in caplog.text and '"old"' in caplog.text
+    with pytest.raises(ValueError, match="identity mismatch"):
+        iteration_loop.run(data, config, tmp_path / "out", {"fixture": "other", "source": {"head": "new"}}, 4.0,
+                           resume=path)
+

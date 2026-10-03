@@ -188,7 +188,9 @@ for detailed module contracts. Start with the boundary being changed:
 Coarse window metadata is published by `scoring/coarse_publication.py`.
 Pass 1 (the coarse pass) scores, adds the priors and reduces an image batch in one program,
 `scoring.significance._coarse_pass1_blocks` (see [EM status](em_status.md), "Pass 1 as one program per
-image batch"). The coarse GEMM scorer is its only Gaussian scorer; the fused, native-texture and
+image batch") on RELION's exact coarse operands only: pass 1 needs a CUDA GPU and RELION's CUDA image
+preprocessing, and the generic dense coarse scorer was removed on 2026-10-02 (its arithmetic is the test
+oracle `tests/helpers/generic_coarse_reference.py`). The coarse GEMM scorer is its only Gaussian scorer; the fused, native-texture and
 rectangular coarse scorers, the certified K=1 GEMM hybrid (`coarse_gemm_hybrid`, `coarse_partition`,
 `coarse_device_*`), the fused pass-1 block and the paired and streaming GEMM score captures
 (`coarse_gemm_streaming`) were removed on 2026-10-02, and their switches are listed as retired in
@@ -325,6 +327,11 @@ Optics features in InitialModel (October 2, 2026) raise three budgets by the lin
 to 1,932 (+22: the optics gate, the premultiplied flag, the subset's average CTF^2), initialization to
 1,133 (+46: the bootstrap CTF with each optics group's even Zernike gamma) and sampling to 1,009 (+6:
 the trials' optics-table CTFs in the expected accuracy).
+
+RELION's per-particle `rlnLogLikeliContribution` in InitialModel's data.star (October 3, 2026), which
+VDAM had copied from its input STAR, raises controller to 1,942 (+10: dLL from the E-step's log
+evidence), E-step to 2,148 (+27: the evidence through the E-step meta and
+`estep_meta_updates.relion_log_likelihood_contributions`) and input/output to 1,382 (+1: the writer).
 
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise

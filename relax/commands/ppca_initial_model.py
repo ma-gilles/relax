@@ -27,19 +27,26 @@ def add_args(parser):
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--stages", help="JSON list of [first iteration, Fourier radius, HEALPix order]")
-    parser.add_argument("--oversampling", type=int, default=1)
+    parser.add_argument(
+        "--oversampling",
+        type=int,
+        default=0,
+        help="0 only: oversampling > 0 measured slower than the dense grid (vdam_ppca_algorithm.md section 14)",
+    )
     parser.add_argument("--shift-range", type=float, default=6)
     parser.add_argument("--shift-step", type=float, default=2)
-    parser.add_argument("--image-batch-size", type=int, default=16)
-    parser.add_argument("--rotation-block-size", type=int, default=128)
+    parser.add_argument("--image-batch-size", type=int, default=150)
+    parser.add_argument("--rotation-block-size", type=int, default=512)
     parser.add_argument("--fine-image-tile-size", type=int, default=1,
                         help="Batch identical full-support fine rows; 1 keeps the reference path")
     parser.add_argument("--stream-full-fine-rows", action="store_true",
                         help="Stream rows of the shared fine grid with exact per-image support masks on the device")
     parser.add_argument(
         "--stream-coarse-recompute",
-        action="store_true",
-        help="Recompute coarse PPCA score blocks in pass 2; use image/rotation batch-size flags",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="GPU stream over the full pose grid (default); --no-stream-coarse-recompute selects the host-mask "
+        "dense reference engine (q <= 2)",
     )
     parser.add_argument("--fine-devices", type=int, default=1,
                         help="Local GPUs for the streamed pass; image tiles are split across them")
@@ -74,6 +81,13 @@ def add_args(parser):
         default="auto",
         help="particle images in host memory: auto (default; read the stack once when it takes at most a "
         "quarter of the job's memory), on, or off (read each tile from disk)",
+    )
+    parser.add_argument(
+        "--ppca-pass2-mass-floor",
+        type=float,
+        default=1e-10,
+        help="pass 2 skips pose rows on which every image of a tile has less posterior mass (default 1e-10, "
+        "applied when at most half the rows remain; 0: none skipped)",
     )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
@@ -209,6 +223,22 @@ def load_training(path, preread_images="auto"):
     return data, manifest, {"manifest_sha256": file_hash(path)}
 
 
+def refuse_unsupported_tilt_optics(particles_star):
+    """Refuse the optics features of subtomogram particles that relax does not apply per tilt.
+
+    relion_refine applies CTF premultiplication, odd and even aberrations and anisotropic
+    magnification to every tilt image; the per-tilt STAR relax reads carries none of them, so a
+    particle STAR that uses one fails instead of being trained on silently wrong images (the
+    subtomogram Refine3D/Class3D guard, :data:`relax.relion.relion_metadata.TOMO_OPTICS_FEATURES`).
+    """
+    from recovar.data_io.starfile import read_star
+
+    from relax.relion.relion_metadata import TOMO_OPTICS_FEATURES, refuse_unsupported_optics
+
+    _, optics = read_star(str(particles_star))
+    refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_OPTICS_FEATURES)
+
+
 def load_tilt_training(ios, output):
     """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16).
 
@@ -220,6 +250,7 @@ def load_tilt_training(ios, output):
     from relax.relion.tomo_input import read_optimisation_set
 
     particles_star, tomograms_star = read_optimisation_set(ios)
+    refuse_unsupported_tilt_optics(particles_star)
     tomo = load_tomo_dataset(
         particles_star,
         tomograms_star,
@@ -227,8 +258,31 @@ def load_tilt_training(ios, output):
         datadir=str(Path(particles_star).resolve().parent),
         lazy=False,
     )
-    identity = {"ios_sha256": file_hash(ios), "particles_sha256": file_hash(particles_star)}
+    identity = {
+        "ios_sha256": file_hash(ios),
+        "particles_sha256": file_hash(particles_star),
+        "tomograms_sha256": file_hash(tomograms_star),
+        "tilt_series_sha256": tilt_series_hash(tomograms_star),
+    }
     return tilt_particles_from_tomo_dataset(tomo), identity
+
+
+def tilt_series_hash(tomograms_star):
+    """One sha256 of the tilt-series STAR files a tomograms STAR names (their per-tilt geometry, CTF and dose).
+
+    The particles and tomograms STAR files do not identify the tilt geometry: an edited tilt series leaves them
+    unchanged, so the checkpoint identity also carries this hash and a run does not resume across such an edit.
+    """
+    import hashlib
+
+    from recovar.data_io.starfile import read_star, star_column
+
+    table, _ = read_star(str(tomograms_star))
+    root = Path(tomograms_star).parent
+    digest = hashlib.sha256()
+    for name in sorted({str(f) for f in star_column(table, "rlnTomoTiltSeriesStarFile", required=True)}):
+        digest.update(f"{name}\0{file_hash(root / name)}\0".encode())
+    return digest.hexdigest()
 
 
 def source_identity():
@@ -246,10 +300,19 @@ def source_identity():
     # Includes untracked implementation files; a clean HEAD alone is insufficient.
     files = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
     files += sorted((repo / "relax/ppca_refinement").glob("*.py"))
-    files += [Path(__file__), repo / "relax/relion/relion_project.py", repo / "pixi.lock"]
+    files += [Path(__file__), repo / "relax/relion/relion_project.py"]
+    # A plain file snapshot or an installed package has no lock file or git checkout; the file
+    # hashes identify the source on their own.
+    files += [path for path in (repo / "pixi.lock",) if path.is_file()]
     recovar_stats = Path(recovar.__file__).resolve().parent / "ppca/pose_accumulators.py"
+    try:
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        head = None
     return {
-        "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip(),
+        "head": head,
         "files": {str(p.relative_to(repo)): file_hash(p) for p in files},
         "recovar_stats": {"path": str(recovar_stats), "sha256": file_hash(recovar_stats)},
         "native": native,
@@ -262,7 +325,10 @@ def main(args=None):
         add_args(parser)
         args = parser.parse_args(args)
     import os
+    import sys
 
+    # The run's INFO lines (tile plans, compiled tile sizes, resumes) reach the job log, as in Refine3D.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 
     activate_recovar_compilation_cache()
@@ -292,6 +358,7 @@ def main(args=None):
         sgd_learning_rate=args.sgd_learning_rate,
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
+        pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
     if (args.ios is None) == (args.manifest is None):

@@ -412,6 +412,10 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
 `TomoDataset` and scores through the subtomogram Refine3D/Class3D pass
 (`relax/vdam/tomo_estep.py` over `tomo_half.score_tomo_half`).
 
+Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax arms of the rows below from
+`em_work/cryoet_vdam_20261001` (et09/et15 optics-group, optics K1, spa_k2same, multishape, subtomogram Refine3D
+`--firstiter_cc`); their scores are retained in `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/`.
+
 - Start-up: RELION counts tilt images against `minimum_nr_particles_sigma2_noise` (10,
   ml_optimiser.cpp:2574, :3058), so the first particle of each optics group gives the noise
   spectrum and the bootstrap; each of its tilt images backprojects at `Aproj R` with its
@@ -458,11 +462,33 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   again identical. et09_box64 K=1 seed 2 end to end on one H100 (job 14864247): 6391 s, against 18434 s for relax
   before this work and 9955 / 8858 s for stock RELION; per-iteration average Pmax tracks the earlier relax run
   (it200 0.659 vs 0.658; RELION 0.669-0.670).
-- Subtomogram Refine3D `--firstiter_cc` (et01_base, RELION's default command, RELION 5.0.1
-  mpiscale MPI 3x4, H100): masked GT FSC-AUC relax / RELION (two same-seed runs, identical)
-  s1 0.99161 / 0.99162, s2 0.99180 / 0.99180, s3 0.99212 / 0.99223; map gate PASS on every seed
-  (merged cross-engine 0.99998 at s1-s2, 0.99962 at s3); wall 0.43-0.46x. OPEN: the s3 gap of
-  1.1e-4 reproduces in two relax runs (66ff6c8, d6ba262), outside RELION's same-seed range.
+- Subtomogram Refine3D `--firstiter_cc` (RELION's default command; RELION 5.0.1 mpiscale MPI 3x4, H100;
+  relax accuracy-only arms on A100). Masked GT FSC-AUC on main 22ea0b2 against RELION's same-seed range
+  (stock r1/r2, eto_plain also r3/r4, plus the double-BP build where run):
+  | case | RELION range | relax 22ea0b2 | pre-d28c258 relax |
+  | --- | --- | --- | --- |
+  | et01_base s1 | 0.991616-0.991619 | 0.991596 (-2.0e-5) | 0.991610 |
+  | et01_base s2 | 0.991803 | 0.991802 (-6e-7) | 0.991800 |
+  | et01_base s3 | 0.992231-0.992234 | 0.992243 (+9e-6) | 0.992118 |
+  | eto_plain s1 | 0.85743-0.85762 | 0.85836 (+7.4e-4) | 0.85626 |
+  | eto_plain s2 | 0.86155-0.86171 | 0.86163 (inside) | 0.86130 |
+  | eto_plain s3 | 0.86394-0.86398 | 0.86387 (-6.9e-5) | 0.86388 |
+  The pre-d28c258 arms (coarse CC pass projected in double, not RELION's float texture) moved 2-8 particles at
+  the deterministic CC iteration 1 and sat below RELION in 4 of 6 rows; on main iteration 1 moves 0, or 1 at
+  RELION's own near-tie rate, and the residuals have both signs. A one-step replay from RELION's eto_plain s1
+  iteration-1 state (state-swap all_relion, uninterrupted noise) leaves iteration 2's half-1 map 8.7e-3 from
+  RELION's: one particle (TS_02/68) keeps one more coarse sample at the 0.999 significance cut and moves 6
+  degrees, two others change their sample count; the next step (2 -> 3) agrees to 5.5e-5. RELION's own
+  same-seed runs flip 1-2 particles at that cut in iteration 2 (up to 49 by iteration 6, s2 r1 vs r2), so
+  relax's residual source is RELION's run-to-run cut flips, amplified by the trajectory. PASSING (2026-10-03):
+  with RELION's r1-r4 and double-BP runs relax is not below at most seeds (eto_plain s2 inside, s1 above, s3
+  6.9e-5 below; et01 one seed above, two within 2e-5 below a range of width <= 3e-6) and its residuals have both
+  signs at RELION's cut-flip rate. Main's later 3e28f96 (group scale clamp) changes behaviour only when a group's
+  scale median or mean is <= 0, which these plain fixtures never reach, and 30860a4 is premultiplied-only, so the
+  22ea0b2 arms stand. Wall 0.43-0.46x (et01, H100, earlier arms). The relax maps of these arms were lost in the
+  2026-10-03 cleanup incident; the scores are retained in
+  `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/` (et01_cc_main_22ea0b2.json,
+  eto_plain_relax_22ea0b2.json, eto_plain_relion_r3r4.json, eto_plain_relion_bpd.json, SHA256SUMS).
 - Subtomogram VDAM K=1 (et09_box64, one optics group, stock seeding, s2): masked GT FSC-AUC
   0.98808 inside RELION's same-seed range [0.98795, 0.98816]; wall about 2x RELION before the
   coarse matrices fix.
@@ -487,9 +513,15 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   subset, map one-step difference 0.5-4e-3 of a 4-20e-2 step), so it is trajectory divergence, not a per-step
   difference (RELION's own `--continue` at it050 departs from its run: tau2_fudge 4.0, step size 0.3).
   Inside or above at two of three seeds in each case. OPEN: et09 one-group s2 (both relax runs 1-3e-5
-  below) and et15 s2 (8e-5 below; relax repeats running, benchw). Evidence:
+  below) and et15 s2 (relax 0.98203 / 0.98205 / 0.98209 vs RELION [0.98211, 0.98212]), pending one more
+  stock RELION run at each (job 14914672). A replay audit of both seeds found no per-step defect: one
+  iteration from RELION's checkpoints (it010, 100, 190; RELION's sampling perturbation) has RELION's
+  update scale (per-shell projection 0.993-1.001), tau2 equal at RELION's print precision, populations
+  to 1e-6 and best poses for 99.6-100% of the subset; a float64 M-step changes the step by 3e-7. The
+  remaining one-step difference comes from the E-step (per-particle Pmax 1e-6 to 1e-3, noise sums 1e-5
+  to 5e-4, no sign), against final-map gaps of 2-8e-5 and seed-to-seed spreads of about 2e-3. Evidence:
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_vdam_ogtomo_20261002`,
-  `em_work/cryoet_vdam_20261001/tomo_cont`.
+  `em_work/cryoet_vdam_20261001/{tomo_cont,audit}`.
 - With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
   particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
   fixtures keeps classes 2..K empty in both programs (ma-gilles/relax#11). With one optics group
@@ -876,7 +908,6 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 | Deprecated engine or route | What still routes to it on main | Resident work needed |
 |---|---|---|
-| Generic dense K-class coarse scorer (pass 1: `scoring.significance._compute_k_class_significance_batched`, `_score_block`, `_add_priors`, `_e_step_block_scores_normalized_cc`) | K=1 runs without the fresh BPref order (RELION-seeded or replay starts) and every normalized-CC (`--firstiter_cc`) pass; Class3D and VDAM at every K already score on RELION's exact coarse operands | Exact-operand coarse scoring for those passes, then delete the generic scorer with the temporary `relion_exact_coarse` switch (kspeed; Coarse scorer TODO below) |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
 
 Removal order:
@@ -908,15 +939,18 @@ Removal order:
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
 and pins none of these.
 
-Coarse scorer TODO (team-lead, 2026-09-27): one coarse path for every K. Class3D and VDAM at every
-K score pass 1 on RELION's exact coarse operands (`relion_exact_coarse`, set by
-`relax.refinement.half_scoring` and `relax.vdam.adaptive_estep`), and fresh K=1 Refine3D does too.
-K=1 runs without the fresh order (RELION-seeded or replay starts) and every normalized-CC pass
-(`--firstiter_cc`) still take the generic dense K-class scorer in
-`relax.scoring.significance._compute_k_class_significance_batched` (`_score_block`, `_add_priors`,
-`_e_step_block_scores_normalized_cc`). Owner speedw (from kspeed, team-lead 2026-10-02): move them,
-then delete the generic scorer and the temporary `relion_exact_coarse` switch
-(`relax.classification.k_class`) together.
+One coarse path for every K (done 2026-10-02, speedw; team-lead decision: pass 1 is CUDA-only, like
+pass 2): every pass 1 scores RELION's exact coarse operands in the pass-1 program, the Gaussian passes
+with the coarse GEMMs and the `--firstiter_cc` passes with RELION's coarse CC.
+`relax.scoring.significance._require_exact_pass1_operands` refuses a pass without the supplied RELION
+texture projector, half-spectrum float32 scoring or the custom CUDA backend, and the batch loop refuses
+data without RELION's CUDA image preprocessing. The generic dense scorer (`_score_block`, `_add_priors`,
+the score cache, the generic preprocessing and operands, the manual and dense coarse projectors), the
+`relion_exact_coarse` switch and the switches that selected those paths are removed (retired in
+`relax/renamed_environment.json`). The generic scorer's arithmetic stays as a float64 test oracle
+(`tests/helpers/generic_coarse_reference.py`, `tests/unit/test_pass1_program_generic_reference.py`), and
+`tests/helpers/exact_pass1_harness.py` runs pass 1 on CPU for the significance unit tests. The generic
+kernels in `relax/scoring/scoring.py` stay while dense `run_em` (deprecated, item 6) uses them.
 
 Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer, every
 class and rotation block of an image batch is scored, given its priors and reduced (class and global
@@ -935,8 +969,8 @@ near the 4e-6 ties differ (noise1_50k 63 vs 14 winner changes, pdb_k1_100k 18 vs
 lands identically (run_it001_data.star poses equal between the arms; versus RELION's it001, 5 of 50000
 and 0 of 100000 particles differ in both arms, RELION-vs-RELION 3 of 50000); both arms meet the map
 gate against every RELION run, masked GT FSC-AUC noise1 0.679361 vs 0.679342 (RELION 0.679354),
-pdb 0.692246 vs 0.692217 (RELION 0.692196). The per-class loop still serves the generic scorer above
-(datasets without RELION's CUDA preprocessing), pending its removal.
+pdb 0.692246 vs 0.692217 (RELION 0.692196). The per-class loop went with the generic scorer
+(One coarse path for every K, above).
 Removed (2026-10-02, team-lead's deletion list D1-D5, D7), each switch refused when set
 (`relax/renamed_environment.json` "retired", checked when relax is imported): the fused per-block pass-1
 program (`RELAX_PASS1_FUSED`); the fused-projector coarse scorer family (`RECOVAR_K1_COARSE_FUSED_PROJECTOR`,
@@ -1298,6 +1332,18 @@ also split at iteration 3 (0.981). A two-line patch (use `wsum_signal_product.si
 corrections to 4e-5; jobs 14456979, 14457083). Patched build, patch, verification and report draft:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_mpi_scale_20260926/` (run with
 `SLURM_MPI_TYPE=pmix_v3`). Class3D benchmark references should be non-MPI RELION or this patched build.
+
+K4 5k/128 seed 29 score shift (2026-10-03, closed as a tie): main scored masked GT FSC-AUC 0.475817 against
+0.476104 for the 09-27 run and both RELION builds. Bisect over the 271 relax commits since ddf88c8: the first
+change is a9c89cb (K-class M-step sums each projection's rows, then backprojects once), which moves relax
+toward double-accumulation RELION (iteration-2 class maps 7.5e-7 from it, against 1.15e-5 for per-row
+backprojection and 1.55e-5 for stock RELION) and still scores 0.476104. The drop is one particle
+(2254@particles.128.mrcs) taking a different pose at iteration 4, and later unrelated commits toggle it on
+and off. Its coarse posterior puts 0.9990002 or 0.9989997 of the mass on the top coarse sample against
+RELION's adaptive fraction 0.999 (margin about 2e-7, a few float32 ulps): one or two coarse samples are
+significant, and the fine winner follows. RELION keeps one (rlnNrOfSignificantSamples 1, pose with Pmax
+0.8263). Enabling the capture alone swaps the side. A float tie, not a relax difference. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/etw_k4bisect_20261003` (score_out.json, capture/*/sigdump).
 
 K4 100k/256 class agreement (formerly OPEN; explained by the defect above): relax's class agreement with the
 two MPI RELION runs was 0.878-0.894 at iteration 15 while they agree with each other at 0.9335. Non-MPI RELION

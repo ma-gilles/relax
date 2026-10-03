@@ -1284,8 +1284,11 @@ def test_native_sampling_change_monitor_records_relion_orientation_distance():
 
 
 def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=12)
-    state.pdf_direction = np.linspace(1.0, 12.0, 12, dtype=np.float64)[None, :]
+    # RELION's zero-width local prior: pdf_orientation = 1/(n_dir n_psi) for every rotation of every class
+    # (healpix_sampling.cpp:837-842), so it shifts each particle's evidence by -log(n_rot) and leaves the
+    # per-class softmax unchanged.
+    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=2, nr_iter=200, n_directions=12)
+    state.pdf_direction = np.stack([np.linspace(1.0, 12.0, 12), np.linspace(2.0, 3.0, 12)])
     sampling_state = native_sampling.NativeSamplingState(
         healpix_order=0,
         adaptive_oversampling=1,
@@ -1300,8 +1303,9 @@ def test_uniform_local_orientation_prior_replaces_learned_direction_prior():
 
     prior = native_sampling._class_rotation_log_prior_for_sampling(state, sampling_state, healpix_order=0)
 
-    assert prior.shape == (1, sampling.rotation_grid_size(0))
-    assert_matches(prior, np.zeros_like(prior))
+    n_rot = sampling.rotation_grid_size(0)
+    assert prior.shape == (2, n_rot)
+    assert_matches(prior, np.full_like(prior, np.log(1.0 / n_rot)))
 
 
 def test_noprior_sampling_uses_learned_direction_prior(monkeypatch):
@@ -2413,6 +2417,7 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
             # InitialModel pseudo-halfsets are defined by Experiment part_id,
             # so stale input split labels must not leak into the output.
             "_rlnRandomSubset": ["1", "1"],
+            "_rlnLogLikeliContribution": ["1.0", "2.0"],
         }
     )
     optics = pd.DataFrame({"_rlnOpticsGroup": ["1"], "_rlnImageSize": ["8"]})
@@ -2420,6 +2425,7 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
         translation_offsets=np.asarray([[2.0, -1.0], [0.5, 1.25]], dtype=np.float32),
         class_assignments=np.asarray([1, 0], dtype=np.int32),
         max_posterior=np.asarray([0.875, 0.25], dtype=np.float32),
+        log_likelihood_contribution=np.asarray([-12.5, 7.25]),
     )
     out = tmp_path / "run_it001_data.star"
 
@@ -2442,6 +2448,8 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
     assert_matches(data["_rlnClassNumber"].astype(int).to_numpy(), [1, 2])
     assert_matches(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2])
     np.testing.assert_allclose(data["_rlnMaxValueProbDistribution"].astype(float).to_numpy(), [0.25, 0.875])
+    # This run's dLL replaces the input STAR's values.
+    np.testing.assert_allclose(data["_rlnLogLikeliContribution"].astype(float).to_numpy(), [7.25, -12.5])
 
 
 @pytest.mark.parametrize("array_rows", ["0", "1"])
@@ -2552,7 +2560,7 @@ def test_cli_non_dry_run_calls_native_driver(monkeypatch, capsys):
     assert opts.random_perturbation == 0.25
     assert opts.translation_sigma_angstrom == 6.5
     assert opts.diagnostic_stop_after_iteration == 2
-    assert opts.image_fourier_backend == "host_numpy"
+    assert opts.image_fourier_backend == "relion_cuda"
     assert opts.write_iter_artifacts is False
     assert "recovar InitialModel complete: out/initial_model.mrc" in capsys.readouterr().out
 
@@ -2589,3 +2597,23 @@ def test_cli_gpu_allows_explicit_deterministic_cuda(monkeypatch):
         == 0
     )
     assert initial_model.os.environ["CUDA_LAUNCH_BLOCKING"] == "1"
+
+
+def test_log_likelihood_contribution_is_relions_dll():
+    # ml_optimiser.cpp:9029-9058: dLL = log(sum_weight) - min_diff2 - logsigma2, logsigma2 summed over the current-size
+    # Mresol_fine pixels with ires > 0 (each FFTW half-grid pixel once), once per image of the particle.
+    from relax.vdam.estep_meta_updates import relion_log_likelihood_contributions
+
+    ori, cs = 16, 10
+    sigma2 = np.stack([np.linspace(1.0, 2.0, ori // 2 + 1), np.linspace(3.0, 4.0, ori // 2 + 1)])
+    expected = np.zeros(2)
+    for g in range(2):
+        for ip in range(cs // 2 + 1 - cs, cs // 2 + 1):
+            for jp in range(cs // 2 + 1):
+                ires = int(np.floor(np.hypot(ip, jp) + 0.5))
+                if 0 < ires < cs // 2 + 1 and not (jp == 0 and ip < 0):
+                    expected[g] += np.log(2.0 * np.pi * sigma2[g, ires])
+    got = relion_log_likelihood_contributions(
+        np.array([5.0, 6.0, 7.0]), sigma2_noise=sigma2, groups=[0, 1, 1], n_images=[1, 1, 3], ori_size=ori, current_size=cs
+    )
+    np.testing.assert_allclose(got, [5.0 - expected[0], 6.0 - expected[1], 7.0 - 3 * expected[1]], rtol=1e-12)

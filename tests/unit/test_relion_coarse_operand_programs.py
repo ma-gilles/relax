@@ -6,8 +6,9 @@ the reference, so every test here compares the program's output against the
 eager function it is ``jax.jit`` of: equal dtype and shape, values within the
 default float band of ``helpers.float_compare``.
 
-The three assemblies are the generic coarse sincosf operands, the exact-source
-operands, and the normalized-CC (``--firstiter_cc``) tree-rescore operands. The
+The two assemblies are the exact-source operands and the normalized-CC
+(``--firstiter_cc``) operands (the generic sincosf assembly went with the generic
+coarse scorer on 2026-10-02). The
 padded last coarse batch and the inactive-support mask are covered because both
 reach the production path that P3-B's ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH``
 and T18b's fix ``1431919a7`` created.
@@ -23,8 +24,6 @@ from relax.relion.relion_coarse_operands import (
     _relion_cc_coarse_operand_program,
     _relion_cc_coarse_operands,
     _relion_cc_inverse_power_from_processed,
-    _relion_coarse_sincosf_operand_program,
-    _relion_coarse_sincosf_operands,
     _relion_exact_coarse_operand_program,
     _relion_exact_coarse_operands,
     _repeat_pad_batch_axis,
@@ -58,63 +57,6 @@ def _active_mask(rng):
     mask[0] = True
     mask[-1] = False
     return jnp.asarray(mask)
-
-
-def _sincosf_inputs(rng, *, batch, complex_dtype, real_dtype, zero_weights=True):
-    weights = rng.uniform(0.2, 3.0, (batch, N_HALF))
-    if zero_weights:
-        # RELION's coarse support leaves exact zeros in ``score_weight_half``;
-        # they select the ``safe_weight`` branch of the division.
-        weights[:, ::7] = 0.0
-    unshifted = rng.normal(size=(batch, N_HALF)) + 1j * rng.normal(size=(batch, N_HALF))
-    return (
-        jnp.asarray(unshifted, dtype=complex_dtype),
-        jnp.asarray(weights, dtype=real_dtype),
-        jnp.asarray(rng.uniform(0.5, 1.5, N_HALF), dtype=jnp.float32),
-    )
-
-
-@pytest.mark.parametrize(
-    ("complex_dtype", "real_dtype"),
-    [(jnp.complex128, jnp.float64), (jnp.complex64, jnp.float32)],
-)
-def test_sincosf_program_matches_the_eager_assembly(complex_dtype, real_dtype):
-    rng = np.random.default_rng(20260920)
-    unshifted, weights, half_weights = _sincosf_inputs(
-        rng, batch=ACTUAL_BATCH, complex_dtype=complex_dtype, real_dtype=real_dtype
-    )
-    indices = _score_indices(rng)
-    mask = _active_mask(rng)
-
-    eager = _relion_coarse_sincosf_operands(
-        unshifted, weights, half_weights, indices, mask
-    )
-    program = _relion_coarse_sincosf_operand_program(
-        unshifted, weights, half_weights, indices, mask
-    )
-    _assert_same_operand(program[0], eager[0], "sincosf unshifted_corrected")
-    _assert_same_operand(program[1], eager[1], "sincosf pixel_weight")
-    # The dtype pairing the caller reads back off the returned operand.
-    assert eager[0].dtype == complex_dtype
-    assert eager[1].dtype == real_dtype
-
-
-def test_sincosf_program_zeroes_the_inactive_support_and_the_zero_weight_rows():
-    rng = np.random.default_rng(7)
-    unshifted, weights, half_weights = _sincosf_inputs(
-        rng, batch=ACTUAL_BATCH, complex_dtype=jnp.complex128, real_dtype=jnp.float64
-    )
-    indices = _score_indices(rng)
-    mask = _active_mask(rng)
-    corrected, pixel_weight = _relion_coarse_sincosf_operand_program(
-        unshifted, weights, half_weights, indices, mask
-    )
-    inactive = ~np.asarray(mask)
-    assert np.all(np.asarray(corrected)[:, inactive] == 0)
-    assert np.all(np.asarray(pixel_weight)[:, inactive] == 0)
-    zero_weight = np.asarray(weights)[:, np.asarray(indices)] == 0.0
-    assert zero_weight.any()
-    assert np.all(np.asarray(corrected)[zero_weight] == 0)
 
 
 @pytest.mark.parametrize("use_float64_scoring", [False, True])
@@ -283,18 +225,6 @@ def test_each_assembly_is_one_program_per_batch_shape():
     """
 
     rng = np.random.default_rng(20260925)
-    unshifted, weights, half_weights = _sincosf_inputs(
-        rng, batch=ACTUAL_BATCH, complex_dtype=jnp.complex128, real_dtype=jnp.float64
-    )
-    indices = _score_indices(rng)
-    mask = _active_mask(rng)
-    args = (unshifted, weights, half_weights, indices, mask)
-
-    eager_jaxpr = jax.make_jaxpr(_relion_coarse_sincosf_operands)(*args)
-    program_jaxpr = jax.make_jaxpr(_relion_coarse_sincosf_operand_program)(*args)
-    assert len(eager_jaxpr.eqns) >= 10, len(eager_jaxpr.eqns)
-    assert [str(eqn.primitive) for eqn in program_jaxpr.eqns] in (["pjit"], ["jit"])
-
     ctf = jnp.asarray(rng.uniform(0.3, 1.5, (ACTUAL_BATCH, N_HALF)), dtype=jnp.float64)
     scale = jnp.asarray(rng.uniform(0.8, 1.2, ACTUAL_BATCH), dtype=jnp.float32)
     processed = jnp.asarray(

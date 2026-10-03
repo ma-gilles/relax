@@ -82,7 +82,10 @@ imported here. A later noise adaptation needs a separate end-to-end unit and
 mask derivation, including the posterior covariance term in expected residual
 power. Checkpoints store exactly one optimizer's state and reject mismatched
 configurations on resume. Older VDAM checkpoints lack the new config fields
-and fail the strict source/config identity check; they are not migrated.
+and fail the configuration identity check; they are not migrated. The resume
+identity is the inputs and the model-defining configuration: the source that
+wrote a checkpoint is provenance, stored and logged on resume, so a run resumes
+after a code update (October 3, 2026; `checkpoint.PROVENANCE_IDENTITY_FIELDS`).
 
 The planned comparison will pass its radius and angular grid explicitly to
 both optimizers; this implementation does not encode a geometry choice. A

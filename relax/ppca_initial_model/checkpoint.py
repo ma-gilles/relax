@@ -27,11 +27,36 @@ def canonical(value):
 
 # Runtime settings: they change how later updates are computed, not the model a checkpoint
 # holds, so a run may resume under a different value (the controller logs the change).
-RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images")
+RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
+
+
+# Retired model settings and their only supported value: a checkpoint that recorded that value
+# resumes; one written with the setting changed holds a different model and does not.
+_RETIRED_CONFIG_DEFAULTS = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
 
 
 def _identity_config(config_dict):
-    return {key: value for key, value in config_dict.items() if key not in RUNTIME_CONFIG_FIELDS}
+    return {
+        key: value
+        for key, value in canonical(config_dict).items()
+        if key not in RUNTIME_CONFIG_FIELDS and _RETIRED_CONFIG_DEFAULTS.get(key, ...) != value
+    }
+
+
+# Provenance: the code a checkpoint was written by. Stored in every checkpoint (and run.json) and logged
+# on resume, but not part of the resume identity, so a run resumes after a code update. The inputs
+# (manifest or optimisation-set hashes) and the model-defining configuration stay in the identity.
+PROVENANCE_IDENTITY_FIELDS = ("source",)
+
+
+def _resume_identity(identity):
+    return {key: value for key, value in canonical(identity).items() if key not in PROVENANCE_IDENTITY_FIELDS}
+
+
+def saved_source(path):
+    """The source provenance a checkpoint was written under (None if it records none)."""
+    with np.load(path, allow_pickle=False) as arrays:
+        return json.loads(str(arrays["metadata"]))["identity"].get("source")
 
 
 def saved_gemm_precision(path):
@@ -86,7 +111,7 @@ def load(path, config, identity):
         if (
             meta["schema"] != 1
             or _identity_config(meta["config"]) != _identity_config(canonical(dataclasses.asdict(config)))
-            or meta["identity"] != canonical(identity)
+            or _resume_identity(meta["identity"]) != _resume_identity(identity)
         ):
             raise ValueError("Checkpoint input/configuration/source identity mismatch")
         if arrays["theta"].dtype != np.complex64 or arrays["noise"].dtype != np.float32:

@@ -294,6 +294,25 @@ def _update_particle_state_from_estep_meta(
     if (pmax := meta.get("max_posterior_per_image")) is not None:
         particle_state.max_posterior[ids] = np.asarray(pmax, dtype=np.float32).reshape(-1)
 
+    if (dll := meta.get("log_likelihood_contribution")) is not None:
+        particle_state.log_likelihood_contribution = _ensure_field(particle_state.log_likelihood_contribution, (N,), np.float64, 0.0)
+        particle_state.log_likelihood_contribution[ids] = np.asarray(dll, dtype=np.float64).reshape(-1)
     if (nsig := meta.get("significant_counts")) is not None:
         particle_state.significant_counts = _ensure_field(particle_state.significant_counts, (N,), np.int32, 0)
         particle_state.significant_counts[ids] = np.asarray(nsig, dtype=np.int32).reshape(-1)
+
+
+def relion_log_likelihood_contributions(log_evidence, *, sigma2_noise, groups, n_images, ori_size: int, current_size: int):
+    """RELION's per-particle dLL, ``log(sum_weight) - min_diff2 - logsigma2`` (ml_optimiser.cpp:9029-9058).
+
+    ``log_evidence`` is the E-step's ``log(sum_weight) - min_diff2`` per particle; ``logsigma2`` sums
+    ``log(2 pi sigma2_noise[group][ires])`` over the current-size ``Mresol_fine`` pixels with ``ires > 0``
+    once per image of the particle (``n_images``: 1, or a subtomogram's tilt images).
+    """
+    from relax.relion.relion_ctf import _fftw_shell_labels
+
+    shells = _fftw_shell_labels(int(ori_size), int(current_size), centered_rows=False)
+    sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))
+    shells = shells[(shells > 0) & (shells < sigma2.shape[1])]
+    logsigma2 = np.log(2.0 * np.pi * sigma2[:, shells]).sum(axis=1)
+    return np.asarray(log_evidence, np.float64) - np.asarray(n_images, np.float64) * logsigma2[np.asarray(groups, np.int64)]

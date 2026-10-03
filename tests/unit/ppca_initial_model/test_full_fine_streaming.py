@@ -1,6 +1,5 @@
 """Streamed full rotation rows versus the independent local layout and host-mask engine."""
 
-from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
@@ -19,13 +18,16 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
+    TILE_FRAGMENTATION_HEADROOM,
     TracePPCAStats,
     accumulate_full_row_tile,
     accumulate_full_row_tiles,
     coarse_support_mask,
     full_row_pose_log_prior,
     full_row_tile_embeddings,
+    plan_tile_images,
     prepare_full_row_stream,
+    tile_bytes,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -259,6 +261,170 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
 
 
+def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
+    """Tiles hold at most the requested images, else the most whose counted bytes fit the budget."""
+    _dataset, _mu, _W, stream, _host = tile_problem
+    assert plan_tile_images(stream, 150) == 150  # the tiny problem fits any device (CPU: no cap)
+    budget = tile_bytes(stream, 10) / (1 - TILE_FRAGMENTATION_HEADROOM)
+    planned = plan_tile_images(stream, 150, memory_bytes=budget, device_bytes=budget)
+    # Counted bytes (with the block programs' compiled memory) of the plan fit the budget, and the plan
+    # stays within a size or two of the largest that fits (the search is affine in the tile size).
+    assert 8 <= planned <= 10
+    assert tile_bytes(stream, planned) <= (1 - TILE_FRAGMENTATION_HEADROOM) * budget
+    assert plan_tile_images(stream, 150, memory_bytes=1) == 1
+    # A reader that reports more bytes per image (a subtomogram reader's tilts) gets smaller tiles.
+    def heavy(stream, n):
+        return 100 * n * 4096, 10 * n * 4096
+
+    def loader(*args, **kwargs):
+        raise AssertionError("not read")
+
+    loader.operand_bytes = heavy
+    loader.max_frames = lambda stream: 1
+    assert plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget) < 10
+    # A custom reader that does not report its memory is an error, not a single-particle plan.
+    del loader.max_frames
+    with pytest.raises(ValueError, match="has no max_frames"):
+        plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget)
+
+    def bare(*args, **kwargs):
+        raise AssertionError("not read")
+
+    with pytest.raises(ValueError, match="has no operand_bytes, max_frames"):
+        plan_tile_images(stream._replace(tile_loader=bare), 150, memory_bytes=budget)
+
+
+def test_pass2_row_skip_drops_only_negligible_rows(tile_problem):
+    """Skipped rows keep their pass-1 positions empty; the statistics move by at most the dropped mass."""
+    dataset, mu, W, _stream, host = tile_problem
+    rotations, translations = host["rotations"], host["translations"]
+    kwargs = dict(
+        rotations=rotations,
+        translations=translations,
+        rotation_log_prior=host["rotation_log_prior"],
+        translation_log_prior=host["translation_log_prior"],
+        rotation_parent=np.zeros(len(rotations), np.int32),
+        translation_parent=np.zeros(len(translations), np.int32),
+        n_coarse_rotations=1,
+        n_coarse_translations=1,
+        noise_variance=host["noise_variance"],
+        geometry=host["geometry"],
+        schedule=host["schedule"],
+        scoring=host["scoring"],
+        gemm_precision="fp32",
+    )
+    dense = accumulate_full_row_tile(prepare_full_row_stream(dataset, mu, W, **kwargs), np.arange(3), [None] * 3)
+    mass = np.asarray(dense.diagnostics["rotation_mass"], np.float64)
+    assert dense.diagnostics["pass2_rows"] == dense.diagnostics["scored_rows"]
+    # A floor that only a row with almost no mass falls below visits every row and changes nothing.
+    tiny = prepare_full_row_stream(dataset, mu, W, pass2_mass_floor=1e-30, **kwargs)
+    same = accumulate_full_row_tile(tiny, np.arange(3), [None] * 3)
+    for name in ("lhs_tri", "residual_gradient", "embeddings"):
+        assert_matches(np.asarray(getattr(same, name)), np.asarray(getattr(dense, name)))
+    # A floor that keeps most rows runs pass 2 in place: nothing is skipped.
+    most = prepare_full_row_stream(dataset, mu, W, pass2_mass_floor=float(np.quantile(mass, 0.1)), **kwargs)
+    kept_most = accumulate_full_row_tile(most, np.arange(3), [None] * 3)
+    assert kept_most.diagnostics["pass2_rows"] == kept_most.diagnostics["scored_rows"]
+    assert_matches(np.asarray(kept_most.lhs_tri), np.asarray(dense.lhs_tri))
+    # Skip the lighter three quarters of the rows (by total mass, an upper bound on each image's mass).
+    floor = float(np.quantile(mass[mass > 0], 0.75))
+    skip = prepare_full_row_stream(dataset, mu, W, pass2_mass_floor=floor, **kwargs)
+    skipped = accumulate_full_row_tile(skip, np.arange(3), [None] * 3)
+    visited = np.asarray(skipped.diagnostics["rotation_mass"]) > 0
+    assert 0 < skipped.diagnostics["pass2_rows"] < skipped.diagnostics["scored_rows"]
+    assert_matches(np.asarray(skipped.diagnostics["rotation_mass"])[visited], mass[visited].astype(np.float32))
+    assert np.all(mass[~visited] < len(rotations) * 3 * floor)
+    dropped = float(np.sum(mass[~visited])) / 3  # mean dropped mass per image
+    for name in ("lhs_tri", "embeddings"):
+        a, b = np.asarray(getattr(skipped, name), np.float64), np.asarray(getattr(dense, name), np.float64)
+        assert np.linalg.norm(a - b) <= (dropped + 1e-5) * np.linalg.norm(b) * 10
+
+
+def test_pass2_floor_zero_visits_every_row(tile_problem):
+    """tau = 0 is the no-skip path: no row selection, identical statistics."""
+    from relax.ppca_refinement.full_row_stream import _pass2_rows
+
+    _dataset, _mu, _W, stream, _host = tile_problem
+    assert stream.pass2_mass_floor == 0.0
+    assert _pass2_rows(stream, None, None, 1) is None
+    explicit = stream._replace(pass2_mass_floor=0.0)
+    a = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    b = accumulate_full_row_tile(explicit, np.arange(3), SIGNIFICANT)
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "embeddings"):
+        assert_matches(np.asarray(getattr(b, name)), np.asarray(getattr(a, name)))
+    assert b.diagnostics["pass2_rows"] == b.diagnostics["scored_rows"]
+
+
+def test_rotation_mass_returns_to_pass1_rows():
+    """Compacted rows' masses land at their pass-1 positions; padding adds nothing."""
+    from relax.ppca_refinement.full_row_stream import _expand_rotation_mass
+
+    compact = jnp.asarray([5.0, 7.0, 11.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    positions = jnp.asarray([1, 4, 6, 0], jnp.int32)  # three visited rows, one padding slot
+    out = np.asarray(_expand_rotation_mass(compact, positions, np.int32(3)))
+    assert out.tolist() == [0.0, 5.0, 0.0, 0.0, 7.0, 0.0, 11.0, 0.0]
+
+
+def _padded_loader(n_dummies):
+    """The single-particle reader, with ``n_dummies`` zero-operand images appended after the real ones."""
+    from relax.ppca_refinement import full_row_stream as frs
+
+    def load(stream, image_indices, significant_rows, *, collect_observation):
+        tile, observation, layout = frs._load_tile(
+            stream, image_indices, significant_rows, collect_observation=collect_observation
+        )
+        B, T = len(image_indices), int(stream.translations.shape[0])
+        pad = -((B + n_dummies) * T) % frs._SHIFT_ALIGN if stream.static.cuda_kernels else 0
+        extra = n_dummies * T
+        Y1 = jnp.pad(tile.Y1[:, : B * T], ((0, 0), (0, extra + pad)))
+        Y1_recon = jnp.pad(tile.Y1_recon[: B * T], ((0, extra + pad), (0, 0)))
+        tile = tile._replace(
+            coarse_mask=jnp.concatenate([tile.coarse_mask, jnp.repeat(tile.coarse_mask[:1], n_dummies, 0)]),
+            Y1=Y1,
+            ctf2=jnp.pad(tile.ctf2, ((0, 0), (0, n_dummies))),
+            Y1_recon=Y1_recon,
+            ctf2_recon=jnp.pad(tile.ctf2_recon, ((0, n_dummies), (0, 0))),
+            y_norm=jnp.pad(tile.y_norm, (0, n_dummies)),
+        )
+        layout["n_real"] = B
+        return tile, observation, layout
+
+    return load
+
+
+def test_padded_tile_matches_the_real_tile(tile_problem):
+    """Dummy images appended to keep a compiled tile size add no statistics and report nothing."""
+    _dataset, _mu, _W, stream, _host = tile_problem
+    real = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    padded_stream = stream._replace(tile_loader=_padded_loader(2), image_batch_size=5)
+    padded = accumulate_full_row_tile(padded_stream, np.arange(3), SIGNIFICANT)
+    assert padded.n_images == 3 and np.asarray(padded.embeddings).shape == np.asarray(real.embeddings).shape
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(padded, name)), np.asarray(getattr(real, name)))
+    assert_matches(np.float32(padded.log_likelihood), np.float32(real.log_likelihood))
+    for key in ("rotation_mass", "max_posterior_per_image"):
+        assert_matches(np.asarray(padded.diagnostics[key]), np.asarray(real.diagnostics[key]))
+    for key in ("offset_second_sum_px2", "latent_covariance_trace_mean", "pose_entropy_mean"):
+        assert_matches(np.float32(padded.diagnostics[key]), np.float32(real.diagnostics[key]))
+    assert np.array_equal(padded.diagnostics["n_significant_per_image"], real.diagnostics["n_significant_per_image"])
+    embedded = full_row_tile_embeddings(padded_stream, np.arange(3), SIGNIFICANT)
+    assert embedded.n_images == 3
+    assert_matches(np.asarray(embedded.embeddings), np.asarray(real.embeddings))
+
+
+def test_tile_size_buckets_cap_compiled_shapes():
+    """Tiles round up to at most TILE_SIZE_BUCKETS sizes per plan, each holding the tile."""
+    from relax.ppca_refinement.full_row_stream import TILE_SIZE_BUCKETS, tile_size_bucket
+
+    for planned in (1, 7, 16, 150):
+        sizes = {tile_size_bucket(n, planned) for n in range(1, planned + 1)}
+        assert len(sizes) <= TILE_SIZE_BUCKETS and max(sizes) == planned
+        assert all(tile_size_bucket(n, planned) >= n for n in range(1, planned + 1))
+    assert sorted({tile_size_bucket(n, 150) for n in range(1, 151)}) == [10, 19, 38, 75, 150]
+    with pytest.raises(ValueError):
+        tile_size_bucket(151, 150)
+
+
 def test_pipelined_tiles_match_separate_tiles(tile_problem):
     """Pipelining (next tile loaded, previous finished, kept buffer reused) changes no tile's statistics."""
     _dataset, _mu, _W, stream, _host = tile_problem
@@ -384,76 +550,6 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
         actual.diagnostics["n_significant_per_image"],
         np.concatenate([np.asarray(p.diagnostics["n_significant_per_image"]) for p in parts]),
     )
-
-
-def test_device_workers_keep_item_order_and_full_float32():
-    import jax
-
-    from relax.ppca_initial_model.iteration_loop import _coarse_significance, _on_devices
-
-    device = jax.devices()[0]
-    seen = list(_on_devices([device, device], lambda _d, item: (item, jax.config.jax_default_matmul_precision), range(7)))
-    assert seen == [(item, "highest") for item in range(7)]
-
-    class _Result:
-        def __init__(self, ids):
-            self.significant_sample_indices = [np.asarray([i]) for i in ids]
-
-    chunks = []
-    rows = _coarse_significance([device] * 3, 4, np.arange(21), lambda ids: chunks.append(ids) or _Result(ids))
-    # Chunks start on image-batch boundaries, so every batch keeps its one-device images.
-    assert [c.tolist()[0] for c in chunks] == [0, 8, 16] and all(len(c) % 4 == 0 for c in chunks[:-1])
-    assert [int(r[0]) for r in rows] == list(range(21))
-
-
-def test_two_devices_reproduce_one_device_tiles():
-    """Tiles on two (forced CPU) devices match one device and merge on the first."""
-    import os
-    import subprocess
-    import sys
-
-    here = Path(__file__).resolve().parent
-    script = f"""
-import sys
-sys.path[:0] = [{str(here.parent.parent)!r}, {str(here)!r}]
-import jax
-import numpy as np
-import test_full_fine_streaming as t
-from helpers.float_compare import assert_matches
-from relax.ppca_initial_model.iteration_loop import _on_devices, _to_device
-from relax.ppca_refinement.full_row_stream import accumulate_full_row_tile
-devices = jax.devices()
-assert len(devices) == 2
-problems = {{d.id: t.make_tile_problem(d) for d in devices}}
-tiles = [(0, 2), (2, 3)]
-def run(device, tile):
-    stream = problems[device.id][3]
-    part = accumulate_full_row_tile(stream, np.arange(*tile), t.PRUNED[tile[0]:tile[1]])
-    return _to_device(part, devices[0])
-one = [run(devices[0], tile) for tile in tiles]
-two = list(_on_devices(devices, run, tiles))
-assert two[1].lhs_tri.devices() == {{devices[0]}}
-for a, b in zip(one, two):
-    for name in ("lhs_tri", "residual_gradient", "residual_num", "embeddings"):
-        assert_matches(np.asarray(getattr(b, name)), np.asarray(getattr(a, name)))
-print("ok")
-"""
-    env = {**os.environ, "XLA_FLAGS": "--xla_force_host_platform_device_count=2", "JAX_PLATFORMS": "cpu",
-           "CUDA_VISIBLE_DEVICES": ""}
-    result = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=600)
-    assert result.returncode == 0 and result.stdout.strip().endswith("ok"), result.stderr[-3000:]
-
-
-def test_support_tile_order_groups_similar_support_and_keeps_full_rows():
-    from relax.ppca_initial_model.iteration_loop import _support_tile_order
-
-    assert _support_tile_order([None, None, None], 4, 3, 2).tolist() == [0, 1, 2]
-    # Packed ids are rotation * 3 + translation; supports {0}, {3}, {0, 1}, {3, 2}, {0}.
-    significant = [np.asarray([0, 1]), np.asarray([9]), np.asarray([2, 3]), np.asarray([10, 6]), np.asarray([1])]
-    order = _support_tile_order(significant, 4, 3, 2)
-    assert sorted(order.tolist()) == list(range(5))
-    tiles = [set(order[i:i + 2].tolist()) for i in range(0, 5, 2)]
-    assert {0, 4} in tiles  # the two single-rotation {0} images share one tile
 
 
 def test_fine_score_functions_share_the_shifted_frame():

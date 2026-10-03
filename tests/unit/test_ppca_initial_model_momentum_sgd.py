@@ -234,7 +234,10 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
 
     monkeypatch.setattr(iteration_loop, "expectation", expectation)
     dataset = SimpleNamespace(n_images=4, grid_size=4, volume_shape=shape, voxel_size=1.0)
-    config = Config(iterations=1, stages=((1, 1, 0),), optimizer="momentum_sgd", sgd_learning_rate=0.4)
+    # The host-mask engine: the patched expectation stands in for it.
+    config = Config(
+        iterations=1, stages=((1, 1, 0),), optimizer="momentum_sgd", sgd_learning_rate=0.4, stream_coarse_recompute=False
+    )
     identity = {"fixture": "tiny"}
     state = iteration_loop.run(dataset, config, tmp_path, identity, diameter_ang=2.0)
     # Each half contributes G=-1 and trace H=4; pooled G=-2, trace H=8.

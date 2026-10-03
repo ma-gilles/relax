@@ -36,7 +36,7 @@ from relax.helpers.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
 from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.oversampling import prepare_adaptive_pass2_grids
+from relax.helpers.oversampling import adaptive_fine_rows, prepare_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.helpers.resolution import compute_coarse_image_size
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
@@ -137,6 +137,7 @@ def _sparse_pass2_estep_meta(
     source_euler_valid = []
     selected_particle_ids: list[np.ndarray] = []
     max_posterior: list[np.ndarray] = []
+    log_evidence: list[np.ndarray] = []
     field_lists: dict[str, list[np.ndarray]] = {attr: [] for attr, _ in _PARTICLE_RESULT_FIELDS}
 
     for halfset_idx, result in sorted(halfset_results.items()):
@@ -154,6 +155,12 @@ def _sparse_pass2_estep_meta(
             if value is not None:
                 field_lists[attr].append(np.asarray(value, dtype=dtype))
         stats = getattr(result, "stats", None)
+        # log(sum_weight) - min_diff2 per image, the first two terms of RELION's dLL.
+        evidence = getattr(result, "uncast_log_evidence_per_image", None)
+        if evidence is None and stats is not None:
+            evidence = getattr(stats, "log_evidence_per_image", None)
+        if evidence is not None:
+            log_evidence.append(np.asarray(evidence, dtype=np.float64))
         if stats is not None and getattr(stats, "max_posterior_per_image", None) is not None:
             max_posterior.append(np.asarray(stats.max_posterior_per_image, dtype=np.float32))
             meta[f"halfset_{halfset_idx}_pmax_mean"] = (
@@ -171,6 +178,7 @@ def _sparse_pass2_estep_meta(
     for attr, dtype in _PARTICLE_RESULT_FIELDS:
         _merge(field_lists[attr], attr, dtype)
     _merge(max_posterior, "max_posterior_per_image", np.float32)
+    _merge(log_evidence, "log_evidence_per_image", np.float64)
     meta["sparse_pass2"] = True
     return meta
 
@@ -191,6 +199,7 @@ class AdaptiveRouteGrids(NamedTuple):
     grids: object  # relax.helpers.oversampling.AdaptivePass2Grids
     fine_source_eulers: np.ndarray | None
     relion_of_recovar: np.ndarray
+    fill_fine_rows: object = None  # relax.helpers.oversampling.DeferredFineRows when the fine rows are deferred
 
 
 def adaptive_route_grids(
@@ -236,15 +245,9 @@ def adaptive_route_grids(
         translation_step=float(translation_step),
         random_perturbation=float(random_perturbation),
         coarse_rotation_ids=None,
+        defer_fine_rotations=int(oversampling_order) > 0,
     )
-    n_rot = int(host_rotations.shape[0])
-    fine_source_eulers = sampling.get_oversampled_rotation_grid_from_samples(
-        np.arange(n_rot, dtype=np.int64),
-        order,
-        oversampling_order=int(oversampling_order),
-        random_perturbation=float(random_perturbation),
-        return_source_eulers=True,
-    )[-1]
+    fine_source_eulers, fill = adaptive_fine_rows(grids, order, int(oversampling_order), float(random_perturbation))
     if fine_source_eulers is not None and fine_source_eulers.shape[0] != grids.fine_rotations.shape[0]:
         raise RuntimeError("fine source Euler rows do not match the fine rotation grid")
     return AdaptiveRouteGrids(
@@ -252,6 +255,7 @@ def adaptive_route_grids(
         grids=grids,
         fine_source_eulers=fine_source_eulers,
         relion_of_recovar=relion_order_of_recovar_rotations(order),
+        fill_fine_rows=fill,
     )
 
 
@@ -396,7 +400,6 @@ def run_adaptive_initial_model_estep(
         # particle order, exact BPref operands and powerClass spectrum norm.
         preserve_bpref_particle_order=fresh_k1,
         source_faithful_spectrum_norm=fresh_k1,
-        relion_exact_coarse=fresh_k1 or uses_relion_cuda_image_preprocessing(group_dataset),  # every K
         debug_iteration=group_kwargs.get("debug_iteration"),
         reconstruction_group_ids=group_ids,
         reconstruction_group_count=2 if grouped else None,
@@ -432,6 +435,7 @@ def run_adaptive_initial_model_estep(
         relion_projector_half=relion_projector_half_by_class,
         relion_projector_r_max=relion_projector_r_max,
         fine_mstep_rotations_override=grids.fine_mstep_rotations,
+        fill_fine_rows=route.fill_fine_rows,
         return_best_pose_details=True,
         coarse_translation_phase_source=grids.coarse_translation_phase_source,
         **route_kwargs,

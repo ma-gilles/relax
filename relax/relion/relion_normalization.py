@@ -63,6 +63,27 @@ def _derive_group_scale_from_image_scale(scale_per_image, group_ids, n_groups):
     return group_scale
 
 
+def relion_clamped_scale_corrections(scale, group_counts) -> np.ndarray:
+    """RELION's clamp of the groups' new scale corrections and their normalisation to mean one.
+
+    maximizationOtherParameters (ml_optimiser.cpp:5131-5156) clamps every group to [median / 5,
+    5 median] with an if / else-if on the raw values, the median being ``sorted[n_groups / 2]``,
+    then divides by the particle-weighted mean. Both steps run whatever the signs: an iteration
+    whose signal products are all negative (a poor first reference) comes out at positive scales
+    near one, as RELION's does.
+    """
+
+    scale = np.asarray(scale, dtype=np.float64).copy()
+    counts = np.asarray(group_counts, dtype=np.float64)
+    median = float(np.sort(scale)[scale.size // 2])
+    for group in range(scale.size):
+        if scale[group] > 5.0 * median:
+            scale[group] = 5.0 * median
+        elif scale[group] < median / 5.0:
+            scale[group] = median / 5.0
+    return scale / (float(np.sum(counts * scale)) / float(np.sum(counts)))
+
+
 def update_relion_norm_scale_corrections(
     *,
     noise_stats_per_half,
@@ -278,16 +299,9 @@ def update_relion_norm_scale_corrections(
             scale_target = np.ones_like(xa, dtype=np.float64)
             np.divide(xa, aa, out=scale_target, where=aa > 0.0)
             scale_new = float(scale_relaxation_mu) * group_scale_old + (1.0 - float(scale_relaxation_mu)) * scale_target
-            sorted_scale = np.sort(scale_new)
-            median = float(sorted_scale[n_groups // 2])
-            if np.isfinite(median) and median > 0.0:
-                scale_new = np.clip(scale_new, median / 5.0, 5.0 * median)
-            counts = np.bincount(group_ids, minlength=n_groups).astype(np.float64)
-            count_sum = float(np.sum(counts))
-            if count_sum > 0.0:
-                avg_scale = float(np.sum(counts * scale_new) / count_sum)
-                if avg_scale > 0.0 and np.isfinite(avg_scale):
-                    scale_new = scale_new / avg_scale
+            scale_new = relion_clamped_scale_corrections(
+                scale_new, np.bincount(group_ids, minlength=n_groups).astype(np.float64)
+            )
         else:
             scale_new = group_scale_old.copy()
 

@@ -422,6 +422,48 @@ def _resolution_columns(snapshot, n_shells):
     return shells, resolution, angstrom
 
 
+def _past_current_size(n_shells: int, current_size: int) -> np.ndarray:
+    return np.arange(n_shells) > int(current_size) // 2
+
+
+def _relion_ssnr_floor(tau2_fudge: float) -> float:
+    # BackProjector::reconstruct (backprojector.cpp:1105-1121): every shell's SSNR is fsc / (1 - fsc) * tau2_fudge
+    # with fsc >= 0.001, so a shell without data reports the floor.
+    return float(tau2_fudge) * 0.001 / (1.0 - 0.001)
+
+
+def _relion_spectra_past_current_size(tau2, data_vs_prior, snapshot):
+    """Auto-refine tau2 and SSNR past the current size as RELION writes them.
+
+    RELION's split-half reconstruction sets tau2 = SSNR * sigma2, zero where the shell holds no data, and reports
+    the FSC-floor SSNR there (backprojector.cpp:1105-1121). The loop keeps a positive tau2 floor
+    (``recovar.jax_config.EPSILON``, regularization_relion) and zero data_vs_prior past the current size
+    (``compute_data_vs_prior``); :func:`_relax_spectra_past_current_size` restores them.
+    """
+
+    from recovar import jax_config
+
+    tau2, data_vs_prior = np.array(tau2, dtype=np.float64), np.array(data_vs_prior, dtype=np.float64)
+    past = _past_current_size(tau2.shape[-1], snapshot.current_size)
+    tau2[..., past & np.isclose(tau2, jax_config.EPSILON, rtol=1e-6, atol=0.0)] = 0.0
+    past = _past_current_size(data_vs_prior.shape[-1], snapshot.current_size)
+    data_vs_prior[past & (data_vs_prior == 0.0)] = _relion_ssnr_floor(snapshot.tau2_fudge)
+    return tau2, data_vs_prior
+
+
+def _relax_spectra_past_current_size(tau2, data_vs_prior, current_size, tau2_fudge):
+    """Inverse of :func:`_relion_spectra_past_current_size` (relax frame tau2)."""
+
+    from recovar import jax_config
+
+    tau2, data_vs_prior = np.array(tau2, dtype=np.float64), np.array(data_vs_prior, dtype=np.float64)
+    past = _past_current_size(tau2.shape[-1], current_size)
+    tau2[..., past & (tau2 == 0.0)] = jax_config.EPSILON
+    past = _past_current_size(data_vs_prior.shape[-1], current_size)
+    data_vs_prior[past & np.isclose(data_vs_prior, _relion_ssnr_floor(tau2_fudge), rtol=1e-9, atol=0.0)] = 0.0
+    return tau2, data_vs_prior
+
+
 def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSettings, group_rows):
     frame = float(snapshot.ori_size) ** 4
     norm_frame = float(snapshot.ori_size) ** 2
@@ -486,6 +528,8 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
         )
         tau2 = np.asarray(snapshot.tau2_shells, dtype=np.float64)
         dvp = np.asarray(snapshot.data_vs_prior, dtype=np.float64)
+        if not snapshot.k_class:
+            tau2, dvp = _relion_spectra_past_current_size(tau2, dvp, snapshot)
         for k in range(n_classes):
             tau2_k = tau2[k] if snapshot.k_class else tau2[h]
             dvp_k = dvp[k] if snapshot.k_class else dvp
@@ -887,6 +931,9 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
         tau2 = np.stack([_floats(_class_table(m, 0)["rlnReferenceTau2"]) for m in models]) * frame
         data_vs_prior = _floats(_class_table(models[0], 0)["rlnSsnrMap"])
         fsc = _floats(_class_table(models[0], 0)["rlnGoldStandardFsc"])
+        tau2, data_vs_prior = _relax_spectra_past_current_size(
+            tau2, data_vs_prior, int(relax_state["relax_current_size"]), float(general["rlnTau2FudgeArg"])
+        )
 
     noise_shells = []
     for model in halves:

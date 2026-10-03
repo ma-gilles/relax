@@ -1182,11 +1182,11 @@ def main() -> None:
     parser.add_argument(
         "--image-fourier-backend",
         choices=("host_numpy", "jax_gpu", "relion_cuda"),
-        default="host_numpy",
+        default="relion_cuda",
         help=(
-            "Select the packed-half image preprocessing backend. The default "
-            "preserves the production host NumPy path; alternate modes are "
-            "intended for bounded parity diagnostics."
+            "Select the packed-half image preprocessing backend. The default is "
+            "RELION's CUDA preprocessing, which pass 1's exact coarse operands read; "
+            "the other modes are for bounded parity diagnostics."
         ),
     )
     parser.add_argument(

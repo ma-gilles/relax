@@ -964,8 +964,10 @@ scientific contract; runnable code alone does not establish recovery.
   so a row outside an image's own support is `-inf` for that image and adds
   exact zeros. A fixed-capacity row table padded with a masked sentinel row
   keeps one block shape for every support pattern. Each rotation block is one
-  jitted program per pass with no host round trip. `fine_stream_rows` records
-  scored image-rows against exact support.
+  jitted program per pass with no host round trip. The InitialModel controller
+  now runs only the one-parent case, the full grid (oversampling 0; see the
+  rejected oversampling note below); the stream keeps general coarse parents,
+  which its unit tests exercise.
   The scores and moments are those of the host-mask dense routine, evaluated
   in another float32 order (below). Unit tests compare both routines against
   the independent local layout, and the general-rank test checks that the
@@ -982,7 +984,7 @@ scientific contract; runnable code alone does not establish recovery.
   Performance record (September 25, 2026): the host-mask route spent about
   74% of each r16/HP3 16-image tile idle on host mask/prior construction and
   about 54k eager launches. One paired A100 CP113-to-114 update (Slurm job
-  14423310, `/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/devres/qual/`)
+  14423310, `em_fixtures/ppca_evidence_20261003/em_work/ppca_speed_20260925/devres/qual/paired_cp114_devres_14423310`)
   took 761 s with the frozen host-mask stream and 189 s with this engine at
   R512, passing every scoped PPCA gate (LHS relL2 1.3e-7, gradient 5.3e-7,
   direction 6.5e-7, exact selected IDs and noise). The tile is now mostly
@@ -1019,11 +1021,12 @@ scientific contract; runnable code alone does not establish recovery.
   The controller streams both pseudo-halves through one prepared model,
   dispatching each tile before finishing the previous one, with one reused
   pose-kept buffer. Paired local A100 replays of the live checkpoints
-  (`/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ppca_dense_speed_20261001/`):
+  (`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/local_final_20261001`):
   10076 q4/HP4 from about 42 s to 16 s per update and 11-state q10/HP3 from
   about 15.5 s to 6.3 s, every scoped PPCA gate passing; the two large GEMMs
   run at 88-94% of A100 float32 peak. 3xTF32 contractions were measured and
-  rejected: no closer to float64 than float32 on the 11-state statistics.
+  rejected: no closer to float64 than float32 on the 11-state statistics
+  (`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/local_a100_20261001`).
 - Fused GPU stages (October 2, 2026). On GPU streams the elementwise work
   around the four GEMMs runs in relax CUDA kernels
   ([ppca_stream.cuh](../../relax/cuda/ppca_stream.cuh)); the XLA formulation above
@@ -1065,7 +1068,7 @@ scientific contract; runnable code alone does not establish recovery.
   records then carry `resumed_from_gemm_precision`. TF32 leaves
   the float32 equivalence tests (a bug check for the fp32 path) and was adopted on
   end-to-end science (October 2, 2026; H100 job 14880649, three selection seeds
-  per arm, harness `relax_ppca_dense_speed_20261001/harness5`): per-state
+  per arm, harness `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/harness5`): per-state
   shared-frame FSC over shells 1-15 against GT, pose median, and latent
   between-state R^2 on the fixed 1100-particle eleven-state evaluation subset.
 
@@ -1105,8 +1108,9 @@ scientific contract; runnable code alone does not establish recovery.
   separable metric scored .10 / .08 / .10, pose median 131-133 deg and
   R^2 .01 (after 50 updates it was already at .73 against .82). The
   update time fell only from 0.76 s to 0.60 s. Evidence: the harness
-  `relax_ppca_dense_speed_20261001/harness5` (`metric_queue.py`,
-  `metric_separability.py`). VDAM keeps the full per-voxel metric.
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/harness5` (`metric_queue.py`,
+  `metric_separability.py`) and the runs under `jobs/slurm_sepmetric_gt_h100_20261002`
+  and `jobs/slurm_sepmetric2_gt_h100_20261002` beside it. VDAM keeps the full per-voxel metric.
 - Oversampling 1 on the streamed engine was measured and rejected (October 3,
   2026). In that path, a pass 1 over the coarse grid keeps each image's 0.999
   posterior mass, and pass 2 scores the 2x-finer children (HEALPix N+1, half
@@ -1132,7 +1136,68 @@ scientific contract; runnable code alone does not establish recovery.
 
   For the current controller's schedule, the dense HP 3/4 grid stays the
   default. Evidence is in
-  `relax_ppca_dense_speed_20261001/jobs/local_os1_smoke_20261002`.
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/local_os1_smoke_20261002`.
+  [Config](../../relax/ppca_initial_model/config.py) and the
+  `relax ppca_initial_model` command therefore default to the dense stream:
+  oversampling 0, `stream_coarse_recompute`, image batch 150 and rotation
+  block 512, as in the live runs. They refuse oversampling > 0, together with
+  its `--stream-full-fine-rows` and `--fine-devices` fine pass.
+  `--no-stream-coarse-recompute` selects the host-mask dense engine (q <= 2),
+  which is the stream's test reference.
+  The image batch is an upper bound on the particles in a tile. A tile holds
+  fewer when its counted device bytes exceed the memory still available after
+  the stream's upload, less 10% of the device for fragmentation and
+  uncounted temporaries
+  ([plan_tile_images](../../relax/ppca_refinement/full_row_stream.py),
+  `TILE_FRAGMENTATION_HEADROOM`). The count includes:
+  - the kept pass-1 rows over the row table and the moment accumulators, from
+    their shapes;
+  - the larger of the score and moment block programs' own memory (temporaries
+    plus outputs, less donated inputs), from XLA's compiled memory analysis of
+    each program at the planned shapes on the device, cached per shape
+    (`tile_program_bytes`);
+  - the current tile's resident operands and the next tile's reader peak,
+    because tiles are read ahead while the current one runs. The subtomogram
+    reader reports that peak from the compiled memory analysis of its operand
+    program (`load_tilt_tile.operand_bytes`) and its frames per particle
+    (`max_frames`); the single-particle reader counts its arrays. A custom
+    reader without both attributes is refused rather than planned as single
+    particles.
+
+  A finished tile is released before the next one is read. A stage is planned
+  once, from its shapes, and the plan is logged ("PPCA tile plan", in the
+  command's run.log). Each update records the planned size as `tile_images`.
+  On an emulated 16 GB H100 (job 14939163,
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_gpuport_20261003/della_ppca_fb33c09`; r31/HP3 cryo-ET, 41 tilts, batch
+  150) the r31 stage plans 33 particles (block programs 2.13 GiB) and SGD and
+  VDAM complete at a 15.3-15.6 GiB nvidia-smi peak, where the count without the block programs had run out
+  of memory in the score block.
+- Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
+  After pass 1, the stream reads each pose row's largest per-image posterior mass
+  in the tile from the epilogue partials
+  ([_pass2_rows](../../relax/ppca_refinement/full_row_stream.py)). When at most half
+  the rows reach the floor, pass 2 (weights, M-step GEMMs, projections and moment
+  scatter) runs on those rows only. They are gathered into a power-of-two block
+  buffer, and their rotation masses return to the pass-1 positions. Each image then
+  loses less than `rows x floor` of its posterior mass. Otherwise pass 2 visits every
+  row in place and nothing is dropped. Each update records the floor and
+  `pass2_row_fraction`.
+  The 50% threshold exists because compacting perturbs a trajectory even when it
+  keeps nearly every row. A snapshot that compacted at any kept share (H100 job
+  14919588, `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/slurm_rowskip_gt_h100_20261003`; GT-started eleven-state VDAM, 150 updates, seeds 101/102/103) visited
+  97-99.9% of rows and moved state FSC from .771 / .832 / .766 to
+  .767 / .825 / .748 and latent R^2 from .118 / .133 / .131 to .111 / .123 / .132.
+  With the threshold, these SPA tiles run in place and their output equals no
+  skip (10076 and eleven-state walls and logL unchanged).
+  Late cryo-ET posteriors are sharp and tile-coherent. From a random-start k3conf
+  checkpoint at r31/HP3 (pmax 1, batch 150), pass 2 visits 0.27% of the rows and an
+  A100 update falls from 9.5-10.1 s to 4.4-4.7 s; logL agrees to seven significant
+  figures. Science (H100 job 14919848, floor 0 / 1e-10):
+  - GT-started SGD: FSC-AUC .9446 / .9446, pose median 3.67 / 3.67 deg.
+  - Random-start VDAM: FSC-AUC .7250 / .7246, specificity .123 / .120,
+    latent R^2 .659 / .654, pose median 4.95 / 4.98 deg.
+  The random-start run's wall fell from 1064 s to 952 s, all of it in the HP3
+  stages.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
@@ -1405,7 +1470,8 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
 
 1. Lifted October 3, 2026: one noise spectrum per optics group (`state.noise`
    is `(G, S)` for subtomogram particles).
-2. Unit contrast. A per-particle contrast shared by its tilts is not modeled.
+2. Unit contrast. A per-particle contrast estimate was implemented, tested and
+   removed on October 3, 2026 (16.10).
 3. Full rotation grid per stage only (`--oversampling 0
    --stream-coarse-recompute`); no coarse significance pass.
 
@@ -1476,7 +1542,8 @@ one common frame (the GT maps score 0.328); latent accuracy is the nearest-GT-ce
 and k-means (Hungarian) agreement of the embeddings; pose error is each particle's
 angle from the chordal mean of `A_est^T A_gt`. Seeds 11/12/13 for the random arms.
 Jobs 14897752 and 14900962 (PPCA), 14896308 (baseline);
-evidence in `em_work/relax_ppca_cryoet_20261002/` (`HANDOFF.json`).
+evidence in `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/` (`HANDOFF.json`;
+the curated copy of the run root, with a README and sha256 manifest).
 
 | Arm | State FSC-AUC (mean) | State specificity | Pose median, fraction < 10 deg | Latent nearest-centroid / k-means |
 | --- | --- | --- | --- | --- |
@@ -1494,5 +1561,198 @@ class on this fixture). VDAM recovers about 40% of the GT state specificity and 
 90% separable latent; momentum SGD's maps stay close to the mean (specificity
 .03-.05). VDAM also moves away from GT at full resolution (loading power
 overshoots, FSC falls near shell 20), as in the single-particle eleven-state
-comparison (section 14). The baseline has one seed; GT state FSC-AUC of the GT mean
+comparison (section 14). The baseline has one seed. Stock RELION 5.0.1 subtomogram VDAM K=3 (seed 1, non-MPI, one H100)
+collapses on this fixture too: class populations .005/.972/.023 at iteration 133, resolution stuck
+at 24.7 A (`em_fixtures/ppca_evidence_20261003/em_work/cryoet_vdam_20261001/relion/cryoet_ppca_k3conf/vdam_k3_mpiscale/seed1/r1`), so
+the collapse is the K-class algorithm on this fixture, not a relax difference. GT state FSC-AUC of the GT mean
 map is .87-.90 unregistered, so map AUC alone does not show heterogeneity.
+
+Baseline on the current defaults (October 3, 2026). Since the runs above, the
+streamed engine gained memory-planned tiles of 150 particles with rotation blocks of
+512, padded tile sizes (at most five compiled shapes per stage), a pass-2 skip of
+pose rows without posterior mass (floor 1e-10), one fused operand program per tilt
+tile and the batch-share VDAM step (section 17; its factor is one on all 200 updates
+here). Random-start VDAM, seeds 11/12/13, relax main `ab91c0f`, every default, one
+H100 per seed, cold compilation (no compile cache; job 14937827,
+`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/baseline_14937827`):
+
+| Random-start VDAM | State FSC-AUC (mean) | State specificity | Pose median, fraction < 10 deg | Latent nearest-centroid / k-means |
+| --- | --- | --- | --- | --- |
+| earlier code (table above) | .723 / .718 / .713 | .122 / .137 / .127 | 4.8 / 4.8 / 5.1 deg, .95 / .96 / .94 | .91 / .92 / .90 ; .90 / .61 / .90 |
+| main `ab91c0f` defaults | .724 / .725 / .711 | .122 / .145 / .112 | 5.0 / 4.6 / 5.3 deg, .95 / .97 / .91 | .92 / .94 / .91 ; .92 / .92 / .92 |
+
+The three-seed ranges overlap on every metric (mean FSC-AUC .720 against .718,
+specificity .126 against .129), so the speed work moved no science. The seeds
+follow different trajectories under the new code, so seed-by-seed differences are
+run-to-run variation. Training wall per seed, in seconds per stage (r4/HP1, r8/HP2,
+r16/HP3, r31/HP3; 60/50/50/40 updates):
+
+| Code | r4/HP1 | r8/HP2 | r16/HP3 | r31/HP3 | Training | With final pose pass |
+| --- | --- | --- | --- | --- | --- | --- |
+| before the planner, row skip and padding (seed 11, H100, job 14919848) | 474 | 315 | 91 | 184 | 1064 | 1091 |
+| main `ab91c0f` (seeds 11/12/13) | 51-53 | 36-42 | 55 | 102 | 245-252 | 273-280 |
+
+The run is 4.2 times faster. No stage dominates; the full-resolution stage
+(r31/HP3) takes 41% of the training wall, so a coarse significance pass for the
+tilt stream (limit 3 in 16.6) is not needed on this fixture.
+
+### 16.10 Per-particle contrast: tested and removed
+
+Two per-particle contrast models were implemented and tested in October 2026.
+Both gave particle `i` a contrast `c_i` shared by its tilts,
+`y_ik = c_i A_ik(mu + W z_i) + epsilon_ik`. Neither improved the maps or the
+latent, so unit contrast remains the model and the code was removed.
+
+- A marginalized grid: the contrast values were extra tile images, normalized
+  jointly with the pose. It costs `C` times the GEMM work.
+- A point estimate refit after every E-step outside the stream, in the manner of
+  RELION's scale corrections. It is the least-squares scale of the particle's
+  images against `mu + W E[z_i]` at its most probable pose, under the scoring
+  metric. At first it used a fixed Gaussian prior about 1; later it used the
+  posterior mean under a prior whose variance was estimated from the particles
+  (`var(a/b) - mean(1/b)` for the per-particle numerators `a` and denominators
+  `b`). The stream then used it as a fixed per-image scale of the CTF.
+
+On the contrast-sd .144 variant of the fixture
+(`em_fixtures/cryoet_ppca_k3conf_contrast15_box64_20261003`), from the GT start
+(momentum SGD, last 40 updates, job 14912480), the following results were
+measured. Values in the AUC column are state FSC-AUC.
+
+| Arm | Contrast r | Estimated sd | AUC | Latent nearest-centroid |
+| --- | --- | --- | --- | --- |
+| unit contrast | - | - | .943 / .942 / .948 | .990 |
+| grid 0.8 / 1 / 1.25 | .754 | .125 | .944 / .940 / .948 | .992 |
+| point estimate | .825 | .150 | .944 / .940 / .949 | .992 |
+
+The grid was dropped for the cheaper and more accurate point estimate. The
+decisive test used a larger spread: the contrast-sd .29 variant
+(`em_fixtures/cryoet_ppca_k3conf_contrast30_box64_20261003`, kept as a stress
+case). The point estimate was shrunk with the estimated prior variance (job
+14920680, H100, one seed per arm). The criterion for keeping it was a gain larger
+than the earlier three-seed half-range (mean state FSC-AUC .005, latent
+nearest-centroid .0115) on one metric, with no larger loss elsewhere.
+
+| Arm | Mean AUC | Latent nearest-centroid | Pose median, < 10 deg | Contrast r / sd |
+| --- | --- | --- | --- | --- |
+| GT start, unit contrast | .9470 | .980 | 3.66 deg, .987 | - |
+| GT start, estimate | .9496 | .983 | 3.68 deg, .987 | .945 / .258 |
+| random VDAM s11, unit, update 190 | .7226 | .875 | 5.7 deg, .875 | - |
+| random VDAM s11, estimate, update 190 | .6755 | .752 | 24.4 deg, 0 | .887 / .415 |
+
+From the GT start, the estimate recovers the contrast (true sd .288) but ties on
+every metric. From a random start, it loses .047 AUC and .123 latent accuracy,
+and its poses do not converge. The pose error is the spread after the best global
+rotation has been removed. Before the poses settle, a misaligned particle matches
+the model poorly and receives a low contrast. The estimated spread is therefore
+inflated (.415), and the down-weighted particles cannot correct their poses: the
+estimate feeds back on pose error. The unit-contrast random arm stopped at update
+199 with an indefinite metric. That failure is the r31 high-shell loading
+overshoot of VDAM (section 17), which also occurs on the fixture without contrast
+spread; it was not caused by the unmodelled contrast.
+
+A future contrast model would need to start only after the poses settle. It must
+also be judged from random starts, not from the GT start.
+
+
+## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)
+
+Started from the ground-truth model, momentum SGD holds it and VDAM does not: on
+the eleven-state fixture (q = 10, a fixed 300-particle batch on every update) the
+state FSC falls from .983 to .77-.83 in 150 updates (section 14 table). The first
+quantity to move is the loading power (13x in 10 updates, with latent posterior
+covariance trace 3.3 to 0.8); noise, offset variance, step and fudge stay constant.
+
+Mechanism. The coupled direction of section 6.2 makes `theta + d_h` the
+unregularized M-step of pseudo-half `h`. With 150 images per half its loading
+power is 6-330x the GT loadings', its noise power scales as 1/N, and a pooled
+1800-image M-step at GT is unbiased in scale: GT is close to the full-data maximum
+likelihood. VDAM's update moves `theta` toward the gated moving average of these
+M-steps with step .5, so its moving average spans about `subset / step`
+particles. VDAM's own schedule uses late subsets of 10% of the data (10,000 here),
+a window of about 20,000 particles; the fixed 300-particle batch shrinks it to
+about 600. The gate does not compensate: with fudge 4 it stays at .8-.9 where the
+half-M-step Wiener factor is .1-.5. Once noise enters the loadings, the next
+M-step reproduces 60-75% of it, because the E-step fits the latent coordinates to
+it. Momentum SGD's per-voxel step is `lr * trace / max trace`, .005-.4 of a Newton
+step, so it barely moves the noise-dominated shells. Evidence:
+`em_work/relax_ppca_vdamdrift_20261003` (`HANDOFF.json`, replays
+`analysis/diag_directions.py`, jobs 14907807 and 14907965).
+
+Rule. The PPCA VDAM step is multiplied by
+[`Config.step_factor`](../../relax/ppca_initial_model/config.py), `min(1, count /
+scheduled count)`, where the scheduled count is VDAM's own subset size for the
+iteration (`compute_subset_size`, all particles on the final iteration). The factor
+is exactly one on VDAM's own schedule, so default runs are unchanged; only runs
+whose `stochastic_batch_size` is below VDAM's subset take smaller steps, restoring
+VDAM's particle window. Every update logs it as `vdam_step_factor`. The native
+VDAM InitialModel is not affected.
+
+| Eleven-state GT start, 150 tf32 updates, seeds 101/102/103 | State FSC | Worst state | Latent R^2 |
+| --- | --- | --- | --- |
+| VDAM (factor 1) | .768/.833/.777 | .59-.65 | .12 |
+| step x0.1 | .928/.927/.926 | .80 | .46 |
+| step x0.03 | .964/.963/.964 | .89 | .59-.60 |
+| batch-share rule (factor .038-.040 here; seed 101 at update 4125) | .959/.956/.956 | .87 | .56-.58 |
+| momentum SGD | .967 | .90 | .40 |
+
+The state FSC rises monotonically as the step falls (x0.1 .927, x.038-.040 .956, x0.03
+.964). The rule's factor is .038-.040 here because these updates sit in VDAM's middle
+phase, where its subset is still growing (7,467-7,942 particles); in the final phase
+it is 300/10,000 = .03.
+
+Under the rule the state FSC still declines slowly and levels off: seed 101 over
+450 updates reads .970, .959, .950, .942, .938, .935, .934 every 75 updates
+(latent R^2 .60 to .48). On the cryo-ET random start (seed 11, default schedule)
+the factor is one on all 200 updates and the run matches the control (state
+FSC-AUC .723, specificity .120, latent nearest-centroid .910). Jobs 14908906,
+14910785, 14914173, 14919430.
+
+Rejected. A Wiener shell gate and a gate-free update (both a multiplicative
+shrinkage of the M-step output, which compounds through EM: the loading fixed
+point `W = phi M(W)` shrinks or collapses) and an empirical-Bayes per-shell
+Gaussian prior on the VDAM directions (the prior's precision exceeds the batch
+metric at weak shells and the first-moment average overshoots: the mean's
+high-frequency FSC against GT turns negative on the cryo-ET start). Removing
+the gate on the cryo-ET random start lowered specificity from .12-.14 to .08 and
+nearest-centroid accuracy from .90-.92 to .84, so the gate stays. The cryo-ET GT
+start drifts on VDAM's own schedule: with 399 particles the full-data maximum
+likelihood itself fits noise beyond shell 19 (per-coefficient loading SNR .03-.2),
+and SGD's GT hold there is the slowness of its high-shell steps. That needs a
+regularizer, not a step rule: the same shell prior under momentum SGD (lr 1.2)
+scored FSC-AUC .993 from the cryo-ET GT start but collapsed from a random start
+(.04, job 14915796).
+
+High-shell overshoot on the cryo-ET random start (October 3, 2026). When the stage
+radius jumps from 16 to 31, VDAM's mean power at shells 20-28 grows to several times
+its shell-2 power within 15 updates (total mean power about 10x), on the k3conf and
+contrast-sd-.3 fixtures alike; it is not contrast absorbed into the loadings (their
+alignment with the mean is the same on both fixtures). One such run stopped at update
+199 of 200 on the metric check; resumed from update 190 in tf32 and fp32 it did not
+recur (bulk metric `lambda_min / lambda_max >= .0045`; the only indefinite voxels are
+denormal spill at shells 32-33, far inside the check's bound, identical in the CUDA
+scatter and the XLA adjoint). A failing check now saves the state and the offending
+statistics (`failure_before_<iteration>.npz`, `failure_metric_<iteration>_half<h>.npz`).
+
+Tested and rejected: an update radius limited to the shells the data support (pseudo-
+half M-step SNR scaled to all particles at least one, plus two shells, RELION's
+`data_vs_prior > 1` with headroom). It removed the overshoot (peak mean power
+1.2-2.7e6 against 5.4-8.1e6) but lost map quality, because the high shells carry weak
+signal: shrink them, do not truncate them. Seed 11, batch 150, against main at
+c9d0a11 (jobs 14930390 and 14930399):
+
+| Cryo-ET arm | Radius | FSC-AUC | Specificity | Latent nearest-centroid |
+| --- | --- | --- | --- | --- |
+| contrast-sd-.3 random start, fixed stages | 31 | .730 | .108 | .867 |
+| same, data-supported radius | 20 | .598 | .093 | .897 |
+| k3conf random start, fixed stages | 31 | .724 | .116 | .910 |
+| same, data-supported radius | 24 | .658 | .108 | .920 |
+| k3conf GT start, fixed stages | 31 | .750 | .211 | .977 |
+| same, data-supported radius | 21-27 | .724 | .176 | .987 |
+
+| Masked state FSC against GT, shell | 26 | 27 | 28 | 29 | 30 | 31 |
+| --- | --- | --- | --- | --- | --- | --- |
+| k3conf random start, fixed stages | .40 | .39 | .36 | .31 | .30 | .28 |
+| same, data-supported radius | .07 | -.01 | -.03 | -.03 | -.01 | .00 |
+
+The eleven-state runs kept radius 31 under the rule (full-data SNR well above one)
+and scored as without it (.956 for all three seeds).

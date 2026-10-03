@@ -1243,10 +1243,15 @@ def compute_noise_block_per_optics_group(
     ctf_has_mass = ctf_probs != 0.0
     ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_rows, 0.0)
     a2_terms = jnp.where(ctf_has_mass, proj_abs2_half * ctf_probs_raw, 0.0)
-    a2 = jax.ops.segment_sum(a2_terms, row_optics_groups, num_segments=n_groups)
+    # Each group's rows are summed by a masked row reduction, the one-group
+    # function's jnp.sum(axis=0) per group. A segment_sum here is a scatter-add of
+    # every row onto G rows: thousands of atomics per address, 47 ms per 8192-row
+    # M-step block (87% of the multishape Class3D iteration-2 kernel time).
+    member = row_optics_groups[:, None] == jnp.arange(n_groups, dtype=row_optics_groups.dtype)[None, :]
+    a2 = jnp.sum(jnp.where(member[:, :, None], a2_terms[:, None, :], 0.0), axis=0)
 
     cross_terms = jnp.where(summed_masked != 0.0, proj_half * jnp.conj(summed_masked), 0.0)
-    cross = jax.ops.segment_sum(cross_terms, row_optics_groups, num_segments=n_groups)
+    cross = jnp.sum(jnp.where(member[:, :, None], cross_terms[:, None, :], 0.0), axis=0)
     xa = jnp.where(cross.real != 0.0, noise_table * cross.real, 0.0)
     block_noise = a2 - 2.0 * xa
     return jax.vmap(lambda values: bin_shell_values_jax(values, shell_indices, shell_count))(block_noise)

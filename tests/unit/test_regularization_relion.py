@@ -537,6 +537,52 @@ def test_compute_relion_tau2_from_weights_large_grid_cpu_path_matches_device_pat
         )
 
 
+def test_shell_stats_route_to_the_host_when_the_device_copy_does_not_fit(monkeypatch):
+    """A box-256 final tau2 at padding 2 (512^3 voxels, about 6 GiB of device arrays) asked for another 1.02 GiB on a
+    16 GB card and ran out of memory (A100 emulating 16 GB, relax c8ac3e6): it reduces on the host when the device
+    arrays would take more than half of what the device can still hand out, and stays on an 80 GB card."""
+
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1 << 30
+    voxels = 512**3
+    monkeypatch.setattr(regularization_relion.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 60 * gib)
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 8 * gib)
+    assert regularization_relion._shell_stats_on_host(voxels)
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 60 * gib)
+    assert not regularization_relion._shell_stats_on_host(voxels)
+    # The fixed voxel ceiling still applies, and unknown readings keep the device path.
+    ceiling = regularization_relion._RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS
+    assert regularization_relion._shell_stats_on_host(ceiling + 1)
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: None)
+    assert not regularization_relion._shell_stats_on_host(voxels)
+
+
+def test_compute_relion_tau2_host_route_matches_device_route(monkeypatch):
+    shape = (8, 8, 8)
+    padding_factor = 2
+    full_shape = tuple(s * padding_factor for s in shape)
+    rng = np.random.default_rng(12)
+    weight0 = (0.25 + rng.random(np.prod(full_shape))).astype(np.float32)
+    weight1 = (0.25 + rng.random(np.prod(full_shape))).astype(np.float32)
+    fsc = np.linspace(0.95, 0.25, shape[0] // 2 + 1, dtype=np.float32)
+    kwargs = dict(padding_factor=padding_factor, r_max=3, return_details=True)
+
+    prior_device, _, details_device = regularization_relion.compute_relion_tau2_from_weights(
+        weight0, weight1, fsc, shape, **kwargs
+    )
+    monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda n_voxels: True)
+    prior_host, _, details_host = regularization_relion.compute_relion_tau2_from_weights(
+        weight0, weight1, fsc, shape, **kwargs
+    )
+    np.testing.assert_allclose(np.asarray(prior_host), np.asarray(prior_device), rtol=1e-6, atol=1e-6)
+    for key in ("shell_sum", "shell_count", "avg_weight_shells", "prior_shells"):
+        np.testing.assert_allclose(np.asarray(details_host[key]), np.asarray(details_device[key]), rtol=1e-6, atol=1e-6)
+
+
 def test_compute_relion_tau2_from_iref_power_spectrum_matches_relion_binding_scaling():
     from helpers.em_fixtures import fixture_file
     from recovar.utils.helpers import load_relion_volume
