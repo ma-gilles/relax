@@ -24,7 +24,7 @@ from scipy.spatial.transform import Rotation
 from relax.helpers.half_spectrum import make_half_image_weights
 from relax.helpers.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
-from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_support
+from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
 
 
@@ -184,6 +184,9 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     Operands follow section 16.4: frame-major ``(frame, [Re | Im], pixel)`` GEMM axes, each tilt's
     image phase-shifted by its own projection of every 3D shift, and zeros at frames a particle
     does not see. ``n_observations`` counts the tile's tilt images (one noise observation each).
+    With a planned tile size on the stream, the tile is padded to its :func:`tile_size_bucket` with
+    particles that see no frame (zero operands) after the real ones (``n_real``), so a stage compiles
+    one operand program and one stream program per bucket.
     """
     particles = stream.dataset
     ids = np.asarray(image_indices, dtype=np.int64)
@@ -193,14 +196,15 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     frames = particles.group_frames[int(groups[0])]
     images, owner = particles.particle_images(ids)
     B, K, T = ids.size, frames.shape[0], int(stream.translations.shape[0])
+    padded = B if stream.tile_images is None else tile_size_bucket(B, stream.tile_images)
     # Read the tile's images in (particle, frame) slot order, so the operand program sees one shape per
     # tile size; a frame the particle does not see re-reads its first image and is masked to zero.
-    slot_image = np.full(B * K, -1, np.int64)
+    slot_image = np.full(padded * K, -1, np.int64)
     slot_image[owner * K + particles.image_frame[images]] = images
     visible = slot_image >= 0
     _, half, ctf = particles.read(np.where(visible, slot_image, images[0]))
     half, ctf = jax.device_put((half, ctf), stream.device)
-    window, constants, static = _operand_layout(stream, B, K)
+    window, constants, static = _operand_layout(stream, padded, K)
     Y1, ctf2, Y1_recon, ctf2_recon, y_norm, observation = _tilt_operands(
         half,
         ctf,
@@ -216,7 +220,8 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     )
     coarse_mask, table, layout = tile_support(stream, significant_rows)
     tile = _TileArrays(
-        coarse_mask=coarse_mask,
+        # Padding particles take the first particle's support; the stream gives them no posterior mass.
+        coarse_mask=jnp.concatenate([coarse_mask, jnp.repeat(coarse_mask[:1], padded - B, axis=0)]),
         rows=table,
         Y1=Y1,
         ctf2=ctf2,
@@ -229,7 +234,9 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         # The CUDA projector writes each frame's rows padded to the GEMM window, frame-major.
         raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")
     observation = observation if collect_observation else None
-    layout.update(n_observations=int(images.size), original_ids=particles.original_image_indices_from_local(ids))
+    layout.update(
+        n_real=B, n_observations=int(images.size), original_ids=particles.original_image_indices_from_local(ids)
+    )
     return tile, observation, layout
 
 

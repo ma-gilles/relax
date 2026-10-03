@@ -291,6 +291,32 @@ def test_tilt_tile_matches_brute_force_joint_gaussian(problem):
     np.testing.assert_array_equal(actual.original_image_ids, np.arange(3))
 
 
+@pytest.mark.parametrize("planned", [16, 40])
+def test_padded_tilt_tile_matches_brute_force(problem, planned):
+    """A tile padded to its size bucket (3 particles: 4 of 16 with one padding particle; 3 of 40 without)
+    gives the joint Gaussian's statistics of its real particles, as the unpadded tile."""
+    from relax.ppca_refinement.full_row_stream import full_row_tile_embeddings, tile_size_bucket
+
+    particles, stream, arrays, truth = problem
+    padded_stream = stream._replace(tile_images=planned)
+    tile, _, layout = load_tilt_tile(padded_stream, np.arange(3), [None] * 3, collect_observation=False)
+    assert tile.y_norm.shape[0] == tile_size_bucket(3, planned) and layout["n_real"] == 3
+    actual = accumulate_full_row_tile(padded_stream, np.arange(3), [None] * 3)
+    rtol = 2e-5  # the unpadded tile's band (test_tilt_tile_matches_brute_force_joint_gaussian)
+    assert actual.n_images == 3 and actual.diagnostics["tile_size"] == tile_size_bucket(3, planned)
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(actual.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
+    assert_matches(actual.diagnostics["offset_second_sum_px2"], truth["offset_second_sum_px2"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_den), truth["residual_den"], rtol=1e-6)
+    np.testing.assert_array_equal(actual.original_image_ids, np.arange(3))
+    embedded = full_row_tile_embeddings(padded_stream, np.arange(3), [None] * 3)
+    assert_matches(np.asarray(embedded.embeddings), truth["embeddings"], rtol=rtol)
+
+
 def test_summed_per_tilt_scores_are_a_different_model(problem):
     """The shared latent matters: per-tilt marginals (one z per tilt) give another likelihood."""
     particles, stream, arrays, truth = problem
