@@ -2261,6 +2261,12 @@ def main(command=None):
     if result["current_sizes"]:
         print(f"Final current_size: {result['current_sizes'][-1]}")
         print(f"Final pixel resolution: {result['pixel_resolutions'][-1]:.1f}")
+    # RELION reports the final all-data iteration's current resolution (updateCurrentResolution after it,
+    # ml_optimiser_mpi.cpp:4329); without that pass, the last numbered iteration's.
+    final_state = result.get("convergence_state")
+    if result.get("final_all_data_ran") and final_state is not None:
+        print(f"Final resolution: {float(final_state.current_resolution):.2f} A (final all-data iteration)")
+    elif result["current_sizes"]:
         print(
             "Final resolution: "
             f"{_shell_index_to_resolution_angstrom(result['pixel_resolutions'][-1], ds.image_shape[0], ds.voxel_size):.2f} A"
