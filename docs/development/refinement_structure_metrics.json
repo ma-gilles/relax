@@ -114,10 +114,10 @@
           "physical_lines": 457
         },
         {
-          "function_count": 58,
-          "nonblank_noncomment_lines": 1907,
+          "function_count": 63,
+          "nonblank_noncomment_lines": 1906,
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 2221
+          "physical_lines": 2228
         },
         {
           "function_count": 15,
@@ -448,17 +448,17 @@
       },
       "totals": {
         "file_count": 27,
-        "function_count": 356,
+        "function_count": 361,
         "large_argument_function_count": 26,
         "maximum_function_line_span": 2752,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18839,
-        "physical_lines": 21501,
+        "nonblank_noncomment_lines": 18838,
+        "physical_lines": 21508,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "finalization: one K1 pre-join sequence (unfiltered maps, optional join, collector release)",
-    "source_commit": "3817f3939d0362cc283422d82c506a1126825f02",
+    "package": "numbered reconstruction, option Y: each operation spells out its postprocessing, no mode flag below the dispatch",
+    "source_commit": "3890d1608978a1b6521ee5f4922f25d7a5bcc09f",
     "recorded_date": "2026-10-03"
   }
 }

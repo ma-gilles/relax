@@ -651,9 +651,9 @@ shape: padding and current-size backprojector grids change their dimensions.
 and class reconstruction operations (`reconstruct_numbered_k1_halfmaps` and
 `reconstruct_numbered_class_maps`), their unregularized counterparts and
 `align_k1_volume_signs`. Each numbered operation owns its private ordered solves
-and takes shell-curve priors; both apply `_postprocess_numbered_maps`, the one
-sequence of premask capture, first-CC reference filtering and solvent flattening,
-before explicit map installation.
+and takes shell-curve priors; each then runs its own visible sequence of premask
+capture, first-CC reference filtering and solvent flattening over its two slots,
+sharing the capture and solvent-mask helpers, before explicit map installation.
 `taper_first_cc_k1_prior` and `taper_first_cc_class_prior` own later reporting
 adaptation; Class3D curve/history/scheduling publication still precedes its
 shell/detail taper in the controller. Unused implementation scratch may expire

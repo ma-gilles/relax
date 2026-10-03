@@ -188,10 +188,12 @@ dispatches once at this boundary. The
 traces every producer and consumer; it showed the full-volume prior route of the
 numbered operations to be unreachable in production, so `tau_is_1d` is removed
 from them and kept only on the eager solve, which the final K1 path calls with a
-full volume. `_postprocess_numbered_maps` holds the capture, filter and flatten
-sequence and the mask radius once; the K1 and class flatten implementations
-remain as its one execution difference. The `run_mean_reconstruction` test
-builder is removed and each test calls the operation it exercises. The class
+full volume. Each operation writes out its own capture, first-CC low-pass, mask
+and flatten sequence over its two slots, with no mode flag below the dispatch;
+premask capture, the diameter test, the mask radius and construction and the
+closing log are shared helpers without a mode argument, and the class operation
+has its own per-class low-pass and flatten helpers beside the K1 ones. The
+`run_mean_reconstruction` test builder is removed and each test calls the operation it exercises. The class
 operation still postprocesses both execution slots. For step 4, the
 [finalization mode-guard map](final_local_sampling_patch_review.md#finalization-mode-guard-map)
 lists every mode test by entry path; `run_final_all_data` now enters the K1
