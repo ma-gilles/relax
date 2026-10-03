@@ -168,8 +168,25 @@ where the iteration is orchestrated.
   representation, capacity checks and device placement when sharing identical
   production bodies; keep independent numerical references separate. Compare
   all caller operations, including indirect consumers and source guards.
-- Branch around operations that differ and share the common sequence when
-  semantics, ordering, and resource lifetime are actually the same.
+- When two modes share a sequence but differ in some of its steps, share the
+  steps and write the sequence in each mode's operation. A step that is the same
+  in both modes is a helper with no mode argument; a step that differs is each
+  mode's own named helper. No mode flag travels below the point where the mode
+  is decided. A short sequence written twice is acceptable; a duplicated
+  numerical formula is not. Example (user decision, October 3): the shared
+  numbered post-processing function read its `class_axis` flag three times, for
+  the per-class low-pass, the mask dtype source and the flatten implementation.
+  `reconstruct_numbered_k1_halfmaps` and `reconstruct_numbered_class_maps` now
+  each spell out capture, low-pass, mask and flatten over their two slots and
+  call the shared capture and solvent-mask helpers, which hold the dump logic
+  and the radius formula once. The cost: a change to the sequence must be made
+  in both operations, and the source-layout test pins the order in each but not
+  their equality.
+- Making two modes identical by reordering GPU operations or changing array
+  lifetimes is a separate decision that needs explicit approval. Sharing steps
+  must leave each mode's operations, their order and its release points as they
+  were; the K1 flatten still host-stages box-scale results and releases its
+  mask, and the class flatten still reuses one device mask for every class.
 - Encode mandatory behavior in the function's contract. Do not expose toggles
   for unsupported alternatives; investigate existing diagnostic uses before
   removing an option.
