@@ -13,6 +13,10 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
 `TomoDataset` and scores through the subtomogram Refine3D/Class3D pass
 (`relax/vdam/tomo_estep.py` over `tomo_half.score_tomo_half`).
 
+Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax arms of the rows below from
+`em_work/cryoet_vdam_20261001` (et09/et15 optics-group, optics K1, spa_k2same, multishape, subtomogram Refine3D
+`--firstiter_cc`); their scores are retained in `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/`.
+
 - Start-up: RELION counts tilt images against `minimum_nr_particles_sigma2_noise` (10,
   ml_optimiser.cpp:2574, :3058), so the first particle of each optics group gives the noise
   spectrum and the bootstrap; each of its tilt images backprojects at `Aproj R` with its
@@ -77,8 +81,15 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   RELION's: one particle (TS_02/68) keeps one more coarse sample at the 0.999 significance cut and moves 6
   degrees, two others change their sample count; the next step (2 -> 3) agrees to 5.5e-5. RELION's own
   same-seed runs flip 1-2 particles at that cut in iteration 2 (up to 49 by iteration 6, s2 r1 vs r2), so
-  relax's residual source is RELION's run-to-run cut flips, amplified by the trajectory. OPEN: no relax value
-  lies inside RELION's narrow same-seed range; wall 0.43-0.46x (et01, H100, earlier arms).
+  relax's residual source is RELION's run-to-run cut flips, amplified by the trajectory. PASSING (2026-10-03):
+  with RELION's r1-r4 and double-BP runs relax is not below at most seeds (eto_plain s2 inside, s1 above, s3
+  6.9e-5 below; et01 one seed above, two within 2e-5 below a range of width <= 3e-6) and its residuals have both
+  signs at RELION's cut-flip rate. Main's later 3e28f96 (group scale clamp) changes behaviour only when a group's
+  scale median or mean is <= 0, which these plain fixtures never reach, and 30860a4 is premultiplied-only, so the
+  22ea0b2 arms stand. Wall 0.43-0.46x (et01, H100, earlier arms). The relax maps of these arms were lost in the
+  2026-10-03 cleanup incident; the scores are retained in
+  `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/` (et01_cc_main_22ea0b2.json,
+  eto_plain_relax_22ea0b2.json, eto_plain_relion_r3r4.json, eto_plain_relion_bpd.json, SHA256SUMS).
 - Subtomogram VDAM K=1 (et09_box64, one optics group, stock seeding, s2): masked GT FSC-AUC
   0.98808 inside RELION's same-seed range [0.98795, 0.98816]; wall about 2x RELION before the
   coarse matrices fix.
