@@ -113,6 +113,30 @@ makes a 10076 VDAM update 1.9x faster on H100 (2.5 s) and 2.4x on A100 (4.8 s),
 about 8.6x the September control on A100. Evidence:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_ppca_dense_speed_20261001/HANDOFF.json`.
 
+SPA PPCA speed work stopped here. The aligned TF32 GEMMs, the per-warp latent epilogue
+and the register moment scatter followed. The particle stack is now read into
+host memory by default when it fits (`--ppca-preread-images auto`, at most 25%
+of the job's memory, as recorded in `run.json`). On a cold page cache,
+reading each tile from disk cost up to 8 s per update. The tables give the
+median warm VDAM update at the default precision (tf32):
+
+| Fixture | September control | Now, H100 (job 14904148) | Factor |
+| --- | --- | --- | --- |
+| 10076 q4/HP4 | 18.5 s | 1.68 s (1.81-1.85 s without preread) | 11x |
+| eleven-state q10/HP3 | 6.2 s | 0.75 s (0.76-0.81 s without preread) | 8.3x |
+
+| Fixture | September control | Now, A100 | Factor |
+| --- | --- | --- | --- |
+| 10076 q4/HP4 | 41.5 s | 4.6-5.0 s | 8.3-9.0x |
+| eleven-state q10/HP3 | 15.5 s | 2.1-2.6 s | 6.0-7.4x |
+
+The A100 runs read from disk and shared the host.
+At 10076 the device is busy 1.48 s per update on H100: GEMMs .58 s, moment
+scatter .41 s, epilogue and posterior preparation .21 s, window projection .18 s
+(nsys job 14900161). No remaining kernel is more than about 10% of an update.
+A per-shell separable VDAM metric that would shrink the scatter was rejected on
+science ([section 14](../math/vdam_ppca_algorithm.md)).
+
 ## PPCA coarse optimizer comparison (September 28, 2026)
 
 The opt-in [PPCA momentum SGD and two-pass coarse route](../math/ppca_momentum_sgd.md)
