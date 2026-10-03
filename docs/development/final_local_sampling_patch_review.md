@@ -166,6 +166,55 @@ What the package removed on this evidence, in the code shown below:
 Still present: the class operation postprocesses both execution slots, and
 finalization repeats its K1 guards (plan step 4).
 
+### Finalization mode-guard map
+
+Plan step 4 of the first package. Every test of the K1/Class3D mode on the way
+into and through finalization, traced at `ea003d7` (line numbers are that
+commit's). `final_reconstruction.py` holds no mode test: each of its five
+functions serves one mode and the caller chooses. `F` is `finalization.py`,
+`L` is `iteration_loop.py`.
+
+Reconstruction part of `run_final_all_data`, in execution order:
+
+| Line | Test | What it guards | Kind |
+| --- | --- | --- | --- |
+| `F:591` | `not k_class_enabled` | Unfiltered half maps from the pre-join accumulators: two eager solves, each result moved to the host | K1 pre-join sequence |
+| `F:613` | `not k_class_enabled and` join resolution set and positive | Low-resolution join in place (`preserve_inputs=False`), rebinding the four half locals | K1 pre-join sequence; the resolution test is an option, not the mode |
+| `F:626` | `not k_class_enabled` | Clears the four accumulator slots of the pass collector `final_outs` | K1 pre-join sequence |
+| `F:639` / `:676` | `if k_class_enabled` / `else` | Class3D: class weights, history record, previous-reference power prior, log. K1: prior from the joined halves' FSC, log | scientific policy |
+| `F:704-708` | conditional expression | Data-versus-prior operand of the final resolution | scientific policy |
+| `F:711` | value passed on | Resolution shell rule | scientific policy |
+| `F:735` / `:748` | `if k_class_enabled` / `else` | Class3D: class maps, weighted merged map, final class assignments. K1: backprojection list, release of the six locals, consuming merged, half 1, half 2 solves | scientific policy |
+| `F:790-791`, `:806` | conditional expressions, value passed on | Class fields of the result | result layout |
+
+Nothing executes between the three K1 pre-join guards: no log, write or
+release separates the unfiltered solves, the join and the collector clearing.
+Shared work follows them at `F:632-638` (merged sums, `final_iter_fsc = None`,
+half-axis metadata) and again at `F:699-734` (resolution update, two logs)
+between the prior and the final solve, so those two mode decisions cannot join
+the first without reordering or duplicating shared statements.
+
+Before the reconstruction part: `F:157` defines the mode from `n_classes`;
+`F:178` expected-accuracy class ids; `F:265` adaptive class pass-1 window;
+`F:363`, `F:374` dense scoring variant and pose details; `F:535` profile
+record. `F:519` tests `best_pose_translations is not None`, which the dense
+class route leaves unset (`F:374`); it is a check on an engine result, not a
+mode test. Admission and replay in the controller: `L:2852` into
+`_should_run_final_all_data_iteration` (`F:94` rejects Class3D after the cap);
+`L:2866`, `:2879-2880` class fields when no final pass runs; `L:2915` merged
+reference diagnostic (K1); `L:2935` final reference substitution;
+`L:2995-3025` replayed direction-prior layout; `L:3037`, `L:3055` logs;
+`L:3051` `final_use_local = not k_class_enabled and state.do_local_search`.
+
+| Entry path | Reaches the final pass | Guards exercised |
+| --- | --- | --- |
+| K1 native convergence at the top of a permitted iteration | yes | all three K1 pre-join guards; the join runs when `low_resol_join_halves_angstrom` (default 40) is positive; K1 arms of prior and solve; local or dense scoring from the converged state |
+| Fixed iteration count exhausted, either mode | no (`L:2854` returns the numbered maps) | none |
+| K1 after the cap with `RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER=1` | yes, diagnostic | as K1 native convergence |
+| Replay-installed convergence (`relion_replay.py:964-999`) | yes, either mode | K1: as above. Class3D: as the next row |
+| Class3D diagnostic final pass (injected or replayed convergence) | yes | skips the three K1 pre-join guards, including a positive join resolution; Class3D arms of prior and solve; dense scoring only |
+| Tomography | K1 with local search only (`F:417` raises otherwise, so no Class3D) | as K1 native convergence; the intermediate capture at `F:543-579` precedes this code |
+
 ### Actual numbered prior, map and reporting flow
 
 [relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1992):
