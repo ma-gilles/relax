@@ -326,6 +326,21 @@ CELLS: dict[str, dict] = {
 }
 
 
+def _reseeded(name: str, seed: int) -> dict:
+    """``name`` with another ``--random_seed``: the same-GPU seed spread that cross-GPU differences are judged by."""
+
+    spec = dict(CELLS[name])
+    args = list(spec["args"])
+    args[args.index("--random_seed") + 1] = str(seed)
+    spec["args"] = args
+    return spec
+
+
+for _name, _seeds in (("vdam_k1_5k128", (41, 53)), ("tomo_vdam_k1_et09_it10", (2, 3))):
+    for _seed in _seeds:
+        CELLS[f"{_name}_s{_seed}"] = _reseeded(_name, _seed)
+
+
 def cell_fixtures(name: str) -> list[str]:
     """The fixture names a cell's arguments refer to."""
 
