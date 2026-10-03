@@ -1532,7 +1532,8 @@ one common frame (the GT maps score 0.328); latent accuracy is the nearest-GT-ce
 and k-means (Hungarian) agreement of the embeddings; pose error is each particle's
 angle from the chordal mean of `A_est^T A_gt`. Seeds 11/12/13 for the random arms.
 Jobs 14897752 and 14900962 (PPCA), 14896308 (baseline);
-evidence in `em_work/relax_ppca_cryoet_20261002/` (`HANDOFF.json`).
+evidence in `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/` (`HANDOFF.json`;
+the curated copy of the run root, with a README and sha256 manifest).
 
 | Arm | State FSC-AUC (mean) | State specificity | Pose median, fraction < 10 deg | Latent nearest-centroid / k-means |
 | --- | --- | --- | --- | --- |
@@ -1552,9 +1553,38 @@ class on this fixture). VDAM recovers about 40% of the GT state specificity and 
 overshoots, FSC falls near shell 20), as in the single-particle eleven-state
 comparison (section 14). The baseline has one seed. Stock RELION 5.0.1 subtomogram VDAM K=3 (seed 1, non-MPI, one H100)
 collapses on this fixture too: class populations .005/.972/.023 at iteration 133, resolution stuck
-at 24.7 A (`em_work/cryoet_vdam_20261001/relion/cryoet_ppca_k3conf/vdam_k3_mpiscale/seed1/r1`), so
+at 24.7 A (`em_fixtures/ppca_evidence_20261003/em_work/cryoet_vdam_20261001/relion/cryoet_ppca_k3conf/vdam_k3_mpiscale/seed1/r1`), so
 the collapse is the K-class algorithm on this fixture, not a relax difference. GT state FSC-AUC of the GT mean
 map is .87-.90 unregistered, so map AUC alone does not show heterogeneity.
+
+Baseline on the current defaults (October 3, 2026). Since the runs above, the
+streamed engine gained memory-planned tiles of 150 particles with rotation blocks of
+512, padded tile sizes (at most five compiled shapes per stage), a pass-2 skip of
+pose rows without posterior mass (floor 1e-10), one fused operand program per tilt
+tile and the batch-share VDAM step (section 17; its factor is one on all 200 updates
+here). Random-start VDAM, seeds 11/12/13, relax main `ab91c0f`, every default, one
+H100 per seed, cold compilation (no compile cache; job 14937827,
+`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/baseline_14937827`):
+
+| Random-start VDAM | State FSC-AUC (mean) | State specificity | Pose median, fraction < 10 deg | Latent nearest-centroid / k-means |
+| --- | --- | --- | --- | --- |
+| earlier code (table above) | .723 / .718 / .713 | .122 / .137 / .127 | 4.8 / 4.8 / 5.1 deg, .95 / .96 / .94 | .91 / .92 / .90 ; .90 / .61 / .90 |
+| main `ab91c0f` defaults | .724 / .725 / .711 | .122 / .145 / .112 | 5.0 / 4.6 / 5.3 deg, .95 / .97 / .91 | .92 / .94 / .91 ; .92 / .92 / .92 |
+
+The three-seed ranges overlap on every metric (mean FSC-AUC .720 against .718,
+specificity .126 against .129), so the speed work moved no science. The seeds
+follow different trajectories under the new code, so seed-by-seed differences are
+run-to-run variation. Training wall per seed, in seconds per stage (r4/HP1, r8/HP2,
+r16/HP3, r31/HP3; 60/50/50/40 updates):
+
+| Code | r4/HP1 | r8/HP2 | r16/HP3 | r31/HP3 | Training | With final pose pass |
+| --- | --- | --- | --- | --- | --- | --- |
+| before the planner, row skip and padding (seed 11, H100, job 14919848) | 474 | 315 | 91 | 184 | 1064 | 1091 |
+| main `ab91c0f` (seeds 11/12/13) | 51-53 | 36-42 | 55 | 102 | 245-252 | 273-280 |
+
+The run is 4.2 times faster. No stage dominates; the full-resolution stage
+(r31/HP3) takes 41% of the training wall, so a coarse significance pass for the
+tilt stream (limit 3 in 16.6) is not needed on this fixture.
 
 ### 16.10 Per-particle contrast: tested and removed
 
