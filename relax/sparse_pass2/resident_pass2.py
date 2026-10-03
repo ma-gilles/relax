@@ -3251,7 +3251,7 @@ def _resident_pass2(
             ),
         )
     cache_rows_per_class = n_fine_rot if projection_slots is None else int(projection_slots.capacity)
-    n_projections = n_classes * cache_rows_per_class
+    n_projections = projection_cache_rows(n_classes, n_fine_rot, projection_slots)
     (
         _projection_complex_dtype,
         _projection_budget_pixels,
@@ -3517,7 +3517,7 @@ def _resident_pass2(
     union_cache = None
     if not stream_projections and union_indices is not None:
         union_cache = _allocate_projection_cache_blocks(
-            n_classes * cache_rows_per_class, int(union_indices.shape[0]), precision_policy.score_complex_dtype
+            n_projections, int(union_indices.shape[0]), precision_policy.score_complex_dtype
         )
         if union_cache is None:
             logger.info(
@@ -5169,6 +5169,12 @@ class _ProjectionSlots(NamedTuple):
 
 
 _MIN_PROJECTION_SLOTS = 4096
+
+
+def projection_cache_rows(n_classes: int, n_fine_rot: int, slots: "_ProjectionSlots | None") -> int:
+    """Rows of a whole-pass projection cache: each class's slot capacity, or each class's whole fine grid."""
+
+    return int(n_classes) * (int(n_fine_rot) if slots is None else int(slots.capacity))
 
 
 def _projection_slot_capacity(n_needed: int, n_fine_rot: int) -> int | None:

@@ -125,27 +125,11 @@ def test_a_refinement_reuses_a_larger_capacity_it_already_compiled(small_slots):
         assert rp._projection_slot_capacity(100, 144) is None  # 128 rows: more than half the grid's 144
 
 
-def test_the_cache_is_allocated_at_its_cached_rows():
-    """The whole-pass cache array holds n_classes * capacity rows, not every class's whole fine grid.
 
-    554de97 wrote and read the significant-parent rows correctly but allocated the cache at
-    n_classes * n_fine_rot: 32 GiB at current size 170, refused twice (10 s each) before the
-    pass split it into row blocks (ab_lazy 14914828). The allocation runs on the GPU only,
-    so the call is checked in the source.
-    """
-    import ast
-    import inspect
-
-    tree = ast.parse(inspect.getsource(rp._resident_pass2).lstrip())
-    calls = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_allocate_projection_cache_blocks"
-    ]
-    assert len(calls) == 1
-    rows = ast.unparse(calls[0].args[0])
-    assert rows == "n_classes * cache_rows_per_class", rows
-    sizing = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "cache_rows_per_class" for t in node.targets)
-    ]
-    assert len(sizing) == 1 and "projection_slots.capacity" in ast.unparse(sizing[0].value)
+def test_the_cache_holds_each_classs_capacity_not_its_whole_grid(small_slots):
+    """554de97 allocated every class's whole fine grid (32 GiB at current size 170, refused twice
+    before the pass split it into row blocks, ab_lazy 14914828); the cache holds the slots only."""
+    classes = [_csr([[0, 4, 5], [21, 22, 50], []]), _csr([[7], [52, 53], [9]])]
+    slots = _slots([SimpleNamespace(csr=csr) for csr in classes], 3)
+    assert rp.projection_cache_rows(2, PARENT.size, slots) == 2 * slots.capacity == slots.slot_projection.size
+    assert rp.projection_cache_rows(2, PARENT.size, None) == 2 * PARENT.size
