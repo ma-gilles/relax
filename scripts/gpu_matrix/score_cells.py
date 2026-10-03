@@ -133,7 +133,7 @@ def _vdam_arm(label: str, d: Path, k: int, it: int) -> dict | None:
     }
 
 
-def score_vdam(arms: dict[str, Path], ref: str, cell: str, fixture: str, k: int, it: int, gt: list[str], work: Path):
+def score_vdam(arms: dict[str, Path], ref: str, cell: str, fixture: str, k: int, it: int, gt, work: Path):
     arm_cfgs = [a for label, d in arms.items() if (a := _vdam_arm(label, d, k, it)) is not None]
     mask, key = MASKS[fixture]
     config = {
@@ -141,7 +141,7 @@ def score_vdam(arms: dict[str, Path], ref: str, cell: str, fixture: str, k: int,
             {
                 "id": cell,
                 "K": k,
-                "reference": {"kind": "gt", "frame": "relion", "paths": gt},
+                "reference": {"kind": "gt", "frame": gt[0], "paths": gt[1]},
                 "mask": {"key": key, "path": mask, "sha256": _sha256(mask)},
                 "arms": arm_cfgs,
                 "pairs": [[ref, a["label"]] for a in arm_cfgs if a["label"] != ref],
@@ -150,11 +150,21 @@ def score_vdam(arms: dict[str, Path], ref: str, cell: str, fixture: str, k: int,
     }
     cfg, out = work / f"{cell}_cfg.json", work / f"{cell}_score"
     cfg.write_text(json.dumps(config, indent=1))
-    subprocess.run(
+    rc = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "score_initialmodel_maps.py"), str(cfg), str(out), "--workers", "8"],
-        check=True,
-    )
-    return {"config": str(cfg), "output": str(out)}
+    ).returncode
+    result = json.loads((out / f"{cell}.json").read_text())
+    if "error" in result:
+        return {"error": result["error"], "output": str(out)}
+    summary = {"config": str(cfg), "output": str(out), "scorer_rc": rc}
+    for label, arm in result["arms"].items():
+        summary[label] = {k: v for k, v in arm["vs_reference"].items() if k != "per_class"}
+    for pair in result.get("pairs", []):
+        other = pair["b"] if pair["a"] == ref else pair["a"]
+        summary.setdefault(other, {})["vs_reference_arm"] = {
+            k: v for k, v in pair.items() if k not in ("a", "b", "pair_fit", "matching", "fsc")
+        }
+    return summary
 
 
 def score_tomo_class3d(arms: dict[str, Path], ref: str, gt_paths: list[str]) -> dict:
@@ -243,21 +253,28 @@ def main() -> int:
         if wanted(cell):
             scores[cell] = score_class3d(arms_of(cell), fixture, k, args.work)
     vdam = (
-        ("vdam_k1_5k128", "k1_5k128", 1, 200, [f"{FIXTURES['k1_5k128']}/reference_gt_relion.mrc"]),
+        # (frame, GT paths) as the benchmark configs (docs/benchmarks/initialmodel_scores) name them.
+        ("vdam_k1_5k128", "k1_5k128", 1, 200, ("relion", [f"{FIXTURES['k1_5k128']}/reference_gt_relion.mrc"])),
         (
             "vdam_k4_5k128",
             "k4_5k128",
             4,
             200,
-            [f"{FIXTURES['k4_5k128']}/reference_gt_class{c:03d}_relion.mrc" for c in range(1, 5)],
+            ("relax", [f"{FIXTURES['k4_5k128']}/reference_gt_class{c:03d}.mrc" for c in range(1, 5)]),
         ),
-        ("tomo_vdam_k1_et09_it10", "et09_box64", 1, 10, [f"{FIXTURES['et09_box64']}/reference_gt_relion.mrc"]),
+        (
+            "tomo_vdam_k1_et09_it10",
+            "et09_box64",
+            1,
+            10,
+            ("relion", [f"{FIXTURES['et09_box64']}/reference_gt_relion.mrc"]),
+        ),
         (
             "tomo_vdam_k2_et15_it10",
             "et15_k2_box64",
             2,
             10,
-            [f"{ET15_GT}/reference_gt_class{c:03d}_relion.mrc" for c in (1, 2)],
+            ("relion", [f"{ET15_GT}/reference_gt_class{c:03d}_relion.mrc" for c in (1, 2)]),
         ),
     )
     for cell, fixture, k, it, gt in vdam:
