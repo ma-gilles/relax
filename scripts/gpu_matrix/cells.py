@@ -271,15 +271,17 @@ CELLS: dict[str, dict] = {
         "module": "relax.commands.initial_model",
         "args": _tomo_vdam("et09_box64", 1, 240),
         "box": 64,
-        "touch": "{out}/STOP",
-        "ok_pattern": "stopped at saved iteration 10",
+        # The stop file ends the run after the iteration in progress once iteration 10 is written.
+        "stop_when": ["{out}/run_it010_model.star", "{out}/STOP"],
+        "ok_pattern": "VDAM stopped at saved iteration 1",
     },
     "tomo_vdam_k2_et15_it10": {
         "module": "relax.commands.initial_model",
         "args": _tomo_vdam("et15_k2_box64", 2, 400),
         "box": 64,
-        "touch": "{out}/STOP",
-        "ok_pattern": "stopped at saved iteration 10",
+        # The stop file ends the run after the iteration in progress once iteration 10 is written.
+        "stop_when": ["{out}/run_it010_model.star", "{out}/STOP"],
+        "ok_pattern": "VDAM stopped at saved iteration 1",
     },
     "ppca_tomo_vdam_it24": {"module": "relax.commands.ppca_initial_model", "args": _ppca_tomo("vdam"), "box": 64},
     "ppca_tomo_sgd_it24": {

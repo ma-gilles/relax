@@ -160,6 +160,16 @@ while True:
 """
 
 
+def _touch_when(marker: Path, stop_file: Path, proc: subprocess.Popen) -> None:
+    """Create ``stop_file`` once ``marker`` exists (a run-length cap that keeps the run's schedule)."""
+
+    while proc.poll() is None:
+        if marker.exists():
+            stop_file.touch()
+            return
+        time.sleep(0.5)
+
+
 def _reserve_module():
     path = HERE.parents[1] / "relax" / "helpers" / "xla_memory_reserve.py"
     spec = importlib.util.spec_from_file_location("_xla_memory_reserve", path)
@@ -202,8 +212,6 @@ def main() -> int:
         return text.replace("{out}", str(out)).replace("{cpus}", cpus)
 
     argv = [fill(a) for a in spec["args"]]
-    if spec.get("touch"):
-        Path(fill(spec["touch"])).touch()
     env = dict(os.environ)
     gpu = gpu_identity()
     record = {
@@ -252,6 +260,9 @@ def main() -> int:
         )
         sampler = PeakSampler(proc.pid)
         sampler.start()
+        if spec.get("stop_when"):
+            marker, stop_file = (Path(fill(p)) for p in spec["stop_when"])
+            threading.Thread(target=_touch_when, args=(marker, stop_file, proc), daemon=True).start()
         try:
             rc = proc.wait(timeout=args.timeout)
         except subprocess.TimeoutExpired:
