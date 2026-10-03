@@ -350,3 +350,91 @@ def test_slot_views_take_every_per_image_operand():
     assert not view & chunk_only
     assert set(_ChunkStageOperands._fields) == view | chunk_only
     assert "bpref_ctf2_over_nv_recon" in view
+
+
+@pytest.mark.unit
+def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
+    """The slot M-step translates one block at a time: its compiled temporaries do not grow with the block count.
+
+    Unrolled over the blocks, XLA scheduled every block's translated Wavg tiles before consuming any and
+    allocated them all at once (31.94 GiB on etok2s4_premult Class3D K2, against a 12.84 GiB plan that
+    counts one block, as mstep_translation_blocks sizes them). The kernels are stand-ins that keep each
+    block's [C_U, T, W] tile live into the carry.
+    """
+
+    import dataclasses
+
+    import jax.numpy as jnp
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    units, rows, translations, window = 8, 16, 32, 512
+
+    def translate(window_rows, valid, angles, rect_indices, exact_positions, *, image_shape):
+        phases = jnp.sum(angles, axis=-1)[:, :, None]
+        tile = (window_rows[:, None, :] * jnp.exp(1j * phases)).astype(jnp.complex64)
+        return tile, tile[:, :, exact_positions]
+
+    def block_at(start, blocks, operands, tables, carry, *, spec, cuda_backproject):
+        power = jnp.abs(operands.raw_translated_wavg_rectangle) ** 2
+        return carry._replace(Ft_y=carry.Ft_y + jnp.sum(power) * blocks.row_posterior.sum())
+
+    def image_power(carry, operands, tables, row_posterior, row_ids, *, spec):
+        return carry._replace(Ft_ctf=carry.Ft_ctf + jnp.sum(jnp.abs(operands.raw_translated_wavg_for_atomic)))
+
+    def initial_carry(Ft_y, Ft_ctf, operands, tables, *, spec):
+        return rp._ChunkMstepCarry(
+            Ft_y=Ft_y,
+            Ft_ctf=Ft_ctf,
+            wavg_triplet_pixels=jnp.zeros((units, 1, 3), jnp.float32),
+            noise_shells=jnp.zeros(4, jnp.float64),
+            a2_per_image=jnp.zeros(units, jnp.float32),
+            xa_per_image=jnp.zeros(units, jnp.float32),
+        )
+
+    monkeypatch.setattr(resident_tilts, "_slot_view_translate", translate)
+    monkeypatch.setattr(rp, "_resident_mstep_block_at", block_at)
+    monkeypatch.setattr(rp, "_add_chunk_wavg_image_power", image_power)
+    monkeypatch.setattr(rp, "_initial_mstep_carry", initial_carry)
+    fields = rp._ChunkStageOperands._fields
+    operands = rp._ChunkStageOperands(
+        **{name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilts._SLOT_VIEW_FIELDS else None) for name in fields}
+    )
+    tables = rp._ChunkStageTables(**{name: None for name in rp._ChunkStageTables._fields})
+
+    @dataclasses.dataclass(frozen=True)
+    class Spec:
+        mstep_block_rows: int = 8
+
+    def temp_bytes(n_blocks):
+        slots = resident_tilts.SlotMstepTables(
+            slot=jnp.arange(2, dtype=jnp.int32),
+            safe_images=jnp.zeros((2, units), jnp.int32),
+            valid_images=jnp.ones((2, units), bool),
+            targets=jnp.zeros((2, units), jnp.int32),
+            order=jnp.tile(jnp.arange(rows, dtype=jnp.int32), (2, 1)),
+            active=jnp.ones((2, rows), bool),
+            units=jnp.zeros((2, rows), jnp.int32),
+            n_blocks=jnp.full(2, 2, jnp.int32),
+            angles=jnp.ones((2, n_blocks, units, translations, 2), jnp.float32),
+        )
+        mstep = initial_carry(jnp.zeros(4), jnp.zeros(4), None, None, spec=None)
+        lowered = resident_tilts._tilt_mstep_program.lower(
+            mstep,
+            slots,
+            operands,
+            tables,
+            jnp.ones((units, window), jnp.complex64),
+            jnp.ones((rows, n_blocks * translations), jnp.float32),
+            jnp.arange(n_blocks * translations, dtype=jnp.int32).reshape(n_blocks, translations),
+            jnp.ones((n_blocks, translations), bool),
+            jnp.arange(window, dtype=jnp.int32),
+            jnp.arange(window // 2, dtype=jnp.int32),
+            slot_spec=Spec(),
+            image_shape=(8, 8),
+        )
+        return lowered.compile().memory_analysis().temp_size_in_bytes
+
+    tile_bytes = units * translations * window * 8
+    one, many = temp_bytes(1), temp_bytes(8)
+    assert many < one + 2 * tile_bytes, (one, many, tile_bytes)

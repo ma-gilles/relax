@@ -479,9 +479,8 @@ def run_tilt_chunk(
         **spec_kwargs,
     )
     unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)
-    kept_blocks = tuple(
-        (jnp.asarray(kept.index, dtype=jnp.int32), jnp.asarray(kept.valid)) for kept in translation_blocks
-    )
+    kept_index = jnp.asarray(np.stack([kept.index for kept in translation_blocks]), dtype=jnp.int32)
+    kept_valid = jnp.asarray(np.stack([kept.valid for kept in translation_blocks]))
     # Each accumulator slot (class + K * group) backprojects its own rows into its BPref pair; the
     # per-image partials add over the slots (_place_slot_partials), the scale sums under each class's
     # mask (RELION keeps XA/AA per class, acc_ml_optimiser_impl.h:4893-4912).
@@ -524,7 +523,8 @@ def run_tilt_chunk(
                 tables_b,
                 chunk_wavg_window,
                 accumulator_posteriors[accumulator],
-                kept_blocks,
+                kept_index,
+                kept_valid,
                 rect_indices_device,
                 jnp.asarray(exact_positions_device, dtype=jnp.int32),
                 slot_spec=slot_spec,
@@ -761,7 +761,8 @@ def _tilt_mstep_program(
     stage_tables,
     wavg_window,
     row_posterior,
-    kept_blocks,
+    kept_index,
+    kept_valid,
     rect_indices,
     exact_positions,
     *,
@@ -773,8 +774,9 @@ def _tilt_mstep_program(
     Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
     operands, indexed by unit), block by block over its active rows, then adds the image power of each
     translation block once (as the SPA chunk does, ``_add_chunk_wavg_image_power``) and puts its
-    per-image partials on those images' chunk rows. ``kept_blocks`` are the translation blocks'
-    ``(index, valid)``: translations outside a block (and padding) carry zero posterior there.
+    per-image partials on those images' chunk rows. ``kept_index``/``kept_valid`` are the translation blocks'
+    ``[K, T]`` fine-translation ids and validity: translations outside a block (and padding) carry zero
+    posterior there.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -787,42 +789,53 @@ def _tilt_mstep_program(
     def one_slot(full, xs):
         slot, safe, valid, target, order, active, units, n_blocks, angles = xs
         ordered_posterior = row_posterior[order]
-        slot_carry = None
-        for k, (index, kept_valid) in enumerate(kept_blocks):
-            gathered, translated, translated_atomic = _slot_view_arrays(
-                fields, wavg_window, safe, valid, angles[k], rect_indices, exact_positions, image_shape=image_shape
+        gathered, window = _slot_view_gather(fields, wavg_window, safe, valid)
+        kernel_row_image_ids = jnp.where(active, units, jnp.int32(-1))
+        # The block stages' dtypes follow from the gathered operands alone (rp._mstep_block_operand_dtypes).
+        slot_carry = rp._initial_mstep_carry(
+            full.Ft_y,
+            full.Ft_ctf,
+            operands._replace(**gathered),
+            stage_tables._replace(translation_angles=angles[0]),
+            spec=slot_spec,
+        )
+
+        # One translation block at a time: a loop iteration's translated tiles are dead before the next
+        # block translates its own, so the program holds one block's tiles, as mstep_translation_blocks
+        # sizes them. Unrolled blocks let XLA schedule every block's translation first (all tiles live).
+        def translation_block(k, slot_carry):
+            translated, translated_atomic = _slot_view_translate(
+                window, valid, angles[k], rect_indices, exact_positions, image_shape=image_shape
             )
             slot_operands = operands._replace(
                 **gathered, raw_translated_wavg_rectangle=translated, raw_translated_wavg_for_atomic=translated_atomic
             )
             # The M-step kernels read each row's image phases by its slot-local image (the unit).
             slot_tables = stage_tables._replace(translation_angles=angles[k])
-            if slot_carry is None:
-                slot_carry = rp._initial_mstep_carry(full.Ft_y, full.Ft_ctf, slot_operands, slot_tables, spec=slot_spec)
             block_posterior = jnp.where(
-                kept_valid[None, :], ordered_posterior[:, index], jnp.zeros((), row_posterior.dtype)
+                kept_valid[k][None, :], ordered_posterior[:, kept_index[k]], jnp.zeros((), row_posterior.dtype)
             )
             blocks = rp._MstepBlockInputs(
                 row_image_local=units,
-                kernel_row_image_ids=jnp.where(active, units, jnp.int32(-1)),
+                kernel_row_image_ids=kernel_row_image_ids,
                 row_posterior=jnp.where(active[:, None], block_posterior, jnp.zeros((), block_posterior.dtype)),
                 row_fine_rot=slot * jnp.int32(row_capacity) + order,
                 projections=None,
             )
 
-            def block(i, carry, _blocks=blocks, _operands=slot_operands, _tables=slot_tables):
+            def block(i, carry):
                 return rp._resident_mstep_block_at(
                     i * jnp.int32(block_rows),
-                    _blocks,
-                    _operands,
-                    _tables,
+                    blocks,
+                    slot_operands,
+                    slot_tables,
                     carry,
                     spec=slot_spec,
                     cuda_backproject=em_cuda_kernels,
                 )
 
             slot_carry = jax.lax.fori_loop(0, n_blocks, block, slot_carry)
-            slot_carry = rp._add_chunk_wavg_image_power(
+            return rp._add_chunk_wavg_image_power(
                 slot_carry,
                 slot_operands,
                 slot_tables,
@@ -830,6 +843,8 @@ def _tilt_mstep_program(
                 blocks.kernel_row_image_ids,
                 spec=slot_spec,
             )
+
+        slot_carry = jax.lax.fori_loop(0, int(kept_index.shape[0]), translation_block, slot_carry)
         placed = _place_slot_partials(
             {name: getattr(full, name) for name in _SLOT_PARTIAL_FIELDS},
             {name: getattr(slot_carry, name) for name in _SLOT_PARTIAL_FIELDS},
@@ -962,26 +977,40 @@ _SLOT_CHUNK_ONLY_FIELDS = (
 )
 
 
-@partial(jax.jit, static_argnames=("image_shape",))
-def _slot_view_arrays(fields, wavg_window, safe, valid, angles, rect_indices, exact_positions, *, image_shape):
-    """One image slot's chunk operands, one image per unit (``safe``, ``valid`` false on padding).
+def _slot_view_gather(fields, wavg_window, safe, valid):
+    """One image slot's chunk operands, one image per unit (``safe``, ``valid`` false on padding), and its Wavg window.
 
     Padded units read a valid image with every array zeroed, except ``scale`` (1) and ``group_ids``
-    (-1), the chunk gather's padding values (resident_operands._gather_chunk_arrays). The slot's
-    translated Wavg rectangle is built here with each image's own phases.
+    (-1), the chunk gather's padding values (resident_operands._gather_chunk_arrays).
     """
 
     from relax.sparse_pass2.resident_operands import _gather_rows
-    from relax.sparse_pass2.sparse_pass2_wavg import relion_cuda_translate_wavg_norm_window
 
     gathered = {
         name: _gather_rows(values, safe, valid, fill=_SLOT_VIEW_FILL.get(name, 0)) for name, values in fields.items()
     }
-    window = _gather_rows(wavg_window, safe, valid)
-    # The slot's images with their own phases, one launch ([C, T, W]).
+    return gathered, _gather_rows(wavg_window, safe, valid)
+
+
+def _slot_view_translate(window, valid, angles, rect_indices, exact_positions, *, image_shape):
+    """The slot's translated Wavg rectangle ``[C, T, W]``, each image with its own phases (one launch)."""
+
+    from relax.sparse_pass2.sparse_pass2_wavg import relion_cuda_translate_wavg_norm_window
+
     translated = relion_cuda_translate_wavg_norm_window(window, angles, rect_indices, image_shape)
     translated = jnp.where(valid[:, None, None], translated, jnp.zeros((), translated.dtype))
-    return gathered, translated, translated[:, :, exact_positions]
+    return translated, translated[:, :, exact_positions]
+
+
+@partial(jax.jit, static_argnames=("image_shape",))
+def _slot_view_arrays(fields, wavg_window, safe, valid, angles, rect_indices, exact_positions, *, image_shape):
+    """One image slot's chunk operands and its translated Wavg rectangle (:func:`_slot_view_gather`, :func:`_slot_view_translate`)."""
+
+    gathered, window = _slot_view_gather(fields, wavg_window, safe, valid)
+    translated, translated_atomic = _slot_view_translate(
+        window, valid, angles, rect_indices, exact_positions, image_shape=image_shape
+    )
+    return gathered, translated, translated_atomic
 
 
 _SLOT_PARTIAL_FIELDS = ("wavg_triplet_pixels", "a2_per_image", "xa_per_image")
