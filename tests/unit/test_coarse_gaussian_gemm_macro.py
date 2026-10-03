@@ -1481,6 +1481,29 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             assert_matches(payload["scores_pre_prior_per_class"], expected_pre_prior[original_index])
             assert_matches(payload["scores_with_prior_per_class"], expected_with_prior[original_index], rtol=1e-6)
 
+    # RELION's float32 normalization (the zero-oversampling reuse) reads the program's
+    # with-prior values, as it read the loop's.
+    from relax.sparse_pass2 import sparse_pass2_posterior
+
+    normalization_inputs = []
+
+    def capture_fine_posterior(scores, **_kwargs):
+        normalization_inputs.append(np.asarray(scores))
+        ones = jnp.ones(scores.shape[0], dtype=jnp.float32)
+        return jnp.zeros_like(scores), None, None, None, ones, None
+
+    monkeypatch.setattr(sparse_pass2_posterior, "_relion_f32_fine_posterior", capture_fine_posterior)
+    monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_DIR")
+    run_with_priors(
+        dataset,
+        class_prior=active_class_prior,
+        rotation_prior=active_rotation_prior,
+        translation_prior=active_translation_prior,
+        return_relion_f32_normalization=True,
+    )
+    captured = np.concatenate([values[: 2 if i == 0 else 1] for i, values in enumerate(normalization_inputs)])
+    assert_matches(captured, expected_with_prior.reshape(3, -1), rtol=1e-6)
+
 
 @pytest.mark.parametrize(
     ("bad_operand", "message"),

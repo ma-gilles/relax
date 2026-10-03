@@ -3148,6 +3148,10 @@ def _compute_k_class_significance_batched(
                         if relion_f32_coarse_support_enabled
                         else jnp.exp(batched_support_values - global_log_z[:, None])
                     )
+                    if return_relion_f32_normalization and not relion_f32_coarse_support_enabled:
+                        # The program's values are the with-prior scores here, the loop's
+                        # normalization scores.
+                        normalization_score_mats.append(batched_support_values)
                 else:
                     for class_index, mean_for_proj in enumerate(means_for_proj):
                         class_weight_blocks = []
