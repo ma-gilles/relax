@@ -217,7 +217,7 @@ def test_shape_scoring_releases_unused_class_summaries_before_the_next_shape(mon
 
 
 @pytest.mark.unit
-def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
+def test_dense_owner_shape_derivation_passes_class_translations_through_the_merge(monkeypatch):
     half = _half()
     outputs = PerHalfOutputs()
     seen = []

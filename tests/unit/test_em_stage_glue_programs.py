@@ -7,9 +7,8 @@ Three changes are covered, all of them program-count changes only:
   pass, significance and image preprocessing see a single image extent per run
   instead of one per remainder. The repeated rows are dropped from every
   science output.
-* ``RELAX_EM_JIT_STAGE_GLUE`` runs the post-transform preprocessing chain and
-  the windowed score-operand gather as one jitted program each, instead of one
-  XLA program per primitive per extent.
+* ``RELAX_EM_JIT_STAGE_GLUE`` runs the post-transform preprocessing chain as one
+  jitted program, instead of one XLA program per primitive per extent.
 * ``_collate_batch_to_jax`` builds the host array before the device transfer,
   which removes the ``convert_element_type`` program JAX compiles for every
   distinct Python-list length.
@@ -25,102 +24,26 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
-from helpers.em_arrays import _hermitian_volume, _make_rotations, _raw_real_image_2d
-
-import recovar.core.fourier_transform_utils as ftu
 
 pytestmark = pytest.mark.unit
 
-IMAGE_SHAPE = (16, 16)
-IMAGE_SIZE = IMAGE_SHAPE[0] * IMAGE_SHAPE[1]
-VOLUME_SHAPE = (16, 16, 16)
-VOLUME_SIZE = VOLUME_SHAPE[0] * VOLUME_SHAPE[1] * VOLUME_SHAPE[2]
+def _significance_call(monkeypatch, n_classes=2):
+    """Arguments for a coarse significance call whose last batch is a remainder.
 
+    Pass 1 runs on the CPU exact-operand harness (helpers.exact_pass1_harness).
+    """
 
-def _identity_ctf(params, image_shape=None, voxel_size=None, *, half_image=False):
-    if half_image:
-        height, width = image_shape if image_shape is not None else IMAGE_SHAPE
-        size = height * (width // 2 + 1)
-    else:
-        size = IMAGE_SIZE
-    return jnp.ones((params.shape[0], size), dtype=jnp.float32)
+    from helpers.exact_pass1_harness import ExactPass1Dataset, coded_class_projectors, install_exact_pass1_mocks
 
-
-def _raw_real_process(batch, apply_image_mask=False):
-    _ = apply_image_mask
-    images = jnp.asarray(batch)
-    return ftu.get_dft2(images).reshape((images.shape[0], -1)).astype(jnp.complex64)
-
-
-def _raw_real_process_half(batch, apply_image_mask=False):
-    _ = apply_image_mask
-    images = jnp.asarray(batch)
-    return ftu.get_dft2_real(images).reshape((images.shape[0], -1)).astype(jnp.complex64)
-
-
-class _StageGlueDataset:
-    """Minimal dataset with the attributes the coarse significance path reads."""
-
-    def __init__(self, n_images, seed=907):
-        self.image_shape = IMAGE_SHAPE
-        self.image_size = IMAGE_SIZE
-        self.grid_size = IMAGE_SHAPE[0]
-        self.volume_shape = VOLUME_SHAPE
-        self.volume_size = VOLUME_SIZE
-        self.n_images = n_images
-        self.n_units = n_images
-        self.voxel_size = 1.0
-        self.dtype = jnp.complex64
-        self.CTF_params = np.zeros((n_images, 9), dtype=np.float32)
-        self.ctf_evaluator = staticmethod(_identity_ctf)
-        self.process_images = staticmethod(_raw_real_process)
-        self.process_images_half = staticmethod(_raw_real_process_half)
-        self.rotation_matrices = np.tile(np.eye(3, dtype=np.float32), (n_images, 1, 1))
-        self.translations = np.zeros((n_images, 2), dtype=np.float32)
-        self.premultiplied_ctf = False
-
-        rng = np.random.default_rng(seed)
-        self._images = np.zeros((n_images, *IMAGE_SHAPE), dtype=np.float32)
-        for index in range(n_images):
-            self._images[index] = _raw_real_image_2d(IMAGE_SHAPE, seed=int(rng.integers(10000)))
-
-        class _ImageSource:
-            process_images = staticmethod(_raw_real_process)
-            process_images_half = staticmethod(_raw_real_process_half)
-
-        self.image_source = _ImageSource()
-
-    def iter_batches(self, batch_size, *, indices=None, by_image=False, **kwargs):
-        _ = kwargs
-        if indices is None:
-            indices = np.arange(self.n_images)
-        indices = np.asarray(indices)
-        step = max(1, int(batch_size))
-        for start in range(0, len(indices), step):
-            idx = np.asarray(indices[start : start + step])
-            yield (
-                jnp.asarray(self._images[idx]),
-                jnp.asarray(self.rotation_matrices[idx]),
-                jnp.asarray(self.translations[idx]),
-                jnp.asarray(self.CTF_params[idx]),
-                None,
-                idx,
-                idx,
-            )
-
-    def get_valid_frequency_indices(self, pixel_res):
-        return np.ones(self.volume_size, dtype=bool)
-
-
-def _significance_call(n_classes=2):
-    """Arguments for a coarse significance call whose last batch is a remainder."""
-
-    volume = _hermitian_volume(VOLUME_SHAPE, seed=915)
+    install_exact_pass1_mocks(monkeypatch)
+    dataset = ExactPass1Dataset(np.arange(7))
+    rotations = np.tile(np.eye(3, dtype=np.float32), (5, 1, 1))
+    rotations[:, 0, 1] = np.asarray([0.0, 0.3, 0.1, 0.4, 0.2], dtype=np.float32)
     args = (
-        _StageGlueDataset(n_images=7, seed=913),
-        jnp.stack([volume * (1.0 + 0.01 * k) for k in range(n_classes)]),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-        _make_rotations(5, seed=921),
+        dataset,
+        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
+        jnp.ones(dataset.image_size, dtype=jnp.float32),
+        rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),
         "linear_interp",
     )
@@ -135,9 +58,12 @@ def _significance_call(n_classes=2):
         # 7 images in batches of 3 leaves a 1-image tail batch.
         image_batch_size=3,
         rotation_block_size=2,
-        current_size=8,
+        current_size=4,
         half_spectrum_scoring=True,
         return_class_best=True,
+        relion_projector_half=coded_class_projectors(n_classes),
+        relion_projector_r_max=1,
+        relion_projector_texture_interp=True,
     )
     return args, kwargs
 
@@ -201,18 +127,15 @@ def _assert_significance_results_within_null_band(candidate, control):
             compare(actual, expected, f"full_stats[{key!r}]", reporting=True)
 
 
-def _run_padding_pair(monkeypatch, *, jit_glue=False):
+def _run_padding_pair(monkeypatch):
     """The unpadded control and the padded candidate, in this process."""
 
     from relax.scoring import significance
 
-    args, kwargs = _significance_call()
+    args, kwargs = _significance_call(monkeypatch)
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    monkeypatch.delenv("RELAX_EM_JIT_STAGE_GLUE", raising=False)
     control = significance._compute_k_class_significance_batched(*args, **kwargs)
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "1")
-    if jit_glue:
-        monkeypatch.setenv("RELAX_EM_JIT_STAGE_GLUE", "1")
     candidate = significance._compute_k_class_significance_batched(*args, **kwargs)
     return candidate, control
 
@@ -243,18 +166,17 @@ def test_coarse_pad_env_flag_stays_inside_the_null_band_on_gpu(monkeypatch):
 def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     """With the flag on, preprocessing sees ``image_batch_size`` rows every time."""
 
-    from relax.helpers import preprocessing
     from relax.scoring import significance
 
-    args, kwargs = _significance_call(n_classes=1)
-    original = preprocessing.preprocess_batch
+    args, kwargs = _significance_call(monkeypatch, n_classes=1)
+    original = significance._process_relion_exact_coarse_half_image
     seen = []
 
     def record(experiment_dataset, batch, *rest, **batch_kwargs):
         seen.append(int(np.asarray(batch).shape[0]))
         return original(experiment_dataset, batch, *rest, **batch_kwargs)
 
-    monkeypatch.setattr(preprocessing, "preprocess_batch", record)
+    monkeypatch.setattr(significance, "_process_relion_exact_coarse_half_image", record)
 
     monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
     significance._compute_k_class_significance_batched(*args, **kwargs)
@@ -268,42 +190,6 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     assert unpadded == [3, 3, 1]
     assert padded == [3, 3, 3]
     assert len(set(padded)) == 1
-
-
-def test_jit_stage_glue_preserves_every_significance_output(monkeypatch):
-    """The jitted preprocessing/window glue must match the eager path within the float band."""
-
-    from relax.scoring import significance
-
-    args, kwargs = _significance_call()
-    monkeypatch.setenv("RELAX_COARSE_PAD_FINAL_IMAGE_BATCH", "0")
-    monkeypatch.delenv("RELAX_EM_JIT_STAGE_GLUE", raising=False)
-    control = significance._compute_k_class_significance_batched(*args, **kwargs)
-    monkeypatch.setenv("RELAX_EM_JIT_STAGE_GLUE", "1")
-    candidate = significance._compute_k_class_significance_batched(*args, **kwargs)
-    _assert_significance_results_match(candidate, control)
-
-
-def test_jit_stage_glue_and_padding_together_preserve_outputs(monkeypatch):
-    """Both opt-ins at once, which is how the candidate arm runs.
-
-    CPU-only for the same reason as the padding test above.
-    """
-
-    if jax.default_backend() == "gpu":
-        pytest.skip("CPU-only contract; the GPU band is the sibling test")
-    candidate, control = _run_padding_pair(monkeypatch, jit_glue=True)
-    _assert_significance_results_match(candidate, control)
-
-
-@pytest.mark.skipif(
-    jax.default_backend() != "gpu", reason="the null band is a GPU measurement"
-)
-def test_both_opt_ins_stay_inside_the_null_band_on_gpu(monkeypatch):
-    """Both opt-ins on a GPU, against the same measured floor."""
-
-    candidate, control = _run_padding_pair(monkeypatch, jit_glue=True)
-    _assert_significance_results_within_null_band(candidate, control)
 
 
 def test_preprocess_batch_jitted_elementwise_matches_eager():
@@ -349,7 +235,6 @@ def test_collate_list_batch_makes_no_program_and_same_array():
     """``_collate_batch_to_jax`` must stop compiling one program per list length."""
 
     import jax._src.dispatch as dispatch
-
     from recovar.data_io.image_backends import _collate_batch_to_jax
 
     batches = [

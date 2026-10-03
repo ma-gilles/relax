@@ -20,6 +20,15 @@ run's processes resolve them and exits 1 when relax comes from outside the snaps
 ``record`` adds ``native_sources`` to ``<natives_dir>/NATIVE.json``; ``check`` exits 1 with a
 message naming both digests when the libraries were built from different sources, or when the
 record is missing.
+
+``record`` also writes ``recovar_kernels``: the path and digest of the recovar CUDA sources the
+build actually compiled, resolved as the build resolved them (a ``python`` started in the
+current working directory, with the current environment), so run ``record`` where the build ran.
+``python -m`` puts the working directory first on sys.path: a build started inside a recovar
+checkout compiled that checkout's kernels while the installed recovar commit said otherwise
+(natives_bab1082, 2026-10-03; the 2026-09-25 shadowing trap). ``check`` refuses natives whose
+compiled kernel sources differ from those of the recovar a run imports, and natives without the
+record.
 """
 
 from __future__ import annotations
@@ -36,6 +45,8 @@ NATIVE_SOURCE_DIRS = ("relax/cuda", "relax/relion_bind")
 NATIVE_SOURCE_FILES = ("scripts/build_test_natives.sh",)
 SKIP_PARTS = {"__pycache__", "build"}
 SKIP_SUFFIXES = {".pyc", ".so", ".o", ".log"}
+# recovar's CUDA kernel sources (recovar/cuda: the pipeline library and the public headers relax includes).
+RECOVAR_KERNEL_SUFFIXES = {".cu", ".cuh", ".h", ".inc"}
 
 
 def _files(root: Path) -> list[Path]:
@@ -69,6 +80,38 @@ def native_sources(root: Path = REPO_ROOT) -> dict:
     return {"sha256": digest.hexdigest(), "files": len(files), "recovar_commit": recovar}
 
 
+def _resolved_recovar_dir(cwd: Path, env: dict | None = None) -> Path:
+    """The recovar package directory a ``python`` started in ``cwd`` imports (as ``python -m`` resolves it)."""
+    import os
+    import subprocess
+
+    code = "import os, recovar; print(os.path.dirname(os.path.realpath(recovar.__file__)))"
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        env=dict(os.environ if env is None else env, CUDA_VISIBLE_DEVICES="", JAX_PLATFORMS="cpu"),
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(proc.stdout.strip().splitlines()[-1])
+
+
+def recovar_kernels(recovar_dir: Path) -> dict:
+    """Path and digest of the CUDA kernel sources under ``recovar_dir/cuda``."""
+    cuda = Path(recovar_dir).resolve() / "cuda"
+    files = sorted(
+        p for p in cuda.rglob("*") if p.is_file() and (p.suffix in RECOVAR_KERNEL_SUFFIXES or p.name == "Makefile")
+    )
+    if not files:
+        raise RuntimeError(f"no recovar CUDA sources under {cuda}")
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.relative_to(cuda).as_posix().encode() + b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return {"path": str(cuda), "sha256": digest.hexdigest(), "files": len(files)}
+
+
 def check(natives: Path, root: Path = REPO_ROOT) -> str | None:
     """None when ``natives`` was built from ``root``'s native sources, else the reason."""
     record_path = natives / "NATIVE.json"
@@ -83,6 +126,19 @@ def check(natives: Path, root: Path = REPO_ROOT) -> str | None:
             f"stale natives: {natives} were built from native sources {built['sha256'][:12]} "
             f"(recovar {built['recovar_commit'][:9]}), but {root} has {now['sha256'][:12]} "
             f"(recovar {now['recovar_commit'][:9]}); rebuild them with scripts/build_test_natives.sh"
+        )
+    compiled = json.loads(record_path.read_text()).get("recovar_kernels")
+    if not compiled:
+        return (
+            f"{record_path} does not record which recovar kernel sources were compiled (built before the "
+            "guard); rebuild the natives with scripts/build_test_natives.sh"
+        )
+    pinned = recovar_kernels(_resolved_recovar_dir(Path("/")))
+    if compiled["sha256"] != pinned["sha256"]:
+        return (
+            f"natives {natives} compiled the recovar kernels at {compiled['path']} ({compiled['sha256'][:12]}), "
+            f"but this run imports recovar with kernels {pinned['path']} ({pinned['sha256'][:12]}); a build "
+            "started inside a recovar checkout compiles that checkout. Rebuild with scripts/build_test_natives.sh"
         )
     return None
 
@@ -133,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         path = args.natives / "NATIVE.json"
         record = json.loads(path.read_text()) if path.is_file() else {}
         record["native_sources"] = native_sources(args.root)
+        record["recovar_kernels"] = recovar_kernels(_resolved_recovar_dir(Path.cwd()))
         path.write_text(json.dumps(record, indent=1) + "\n")
         print(f"native sources {record['native_sources']['sha256'][:12]} recorded in {path}")
         return 0

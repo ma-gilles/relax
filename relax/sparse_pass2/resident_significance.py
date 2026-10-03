@@ -520,6 +520,33 @@ def resident_significance_csr(
     return csr
 
 
+def significant_coarse_parents(support, *, n_images: int, n_coarse_rot: int, n_coarse_trans: int):
+    """Every coarse rotation a pass-2 candidate row of ``support`` descends from, or None for all of them.
+
+    A class's candidate rows are the fine children of its images' significant
+    coarse rotations (:func:`csr_candidate_rows_per_image`): a sparse support
+    takes its ids' rotations and an empty one parent 0. None when the support
+    has no device CSR for this pass or an image's support takes every parent.
+    """
+
+    csr = getattr(support, "csr", None)
+    if (
+        csr is None
+        or int(csr.n_images) != int(n_images)
+        or int(csr.n_coarse_rot) != int(n_coarse_rot)
+        or int(csr.n_coarse_trans) != int(n_coarse_trans)
+    ):
+        return None
+    n_significant = np.asarray(csr.n_significant, dtype=np.int64)
+    every_parent = np.asarray(csr.store_excluded, dtype=bool) | (n_significant == int(csr.n_samples))
+    if bool(np.any(every_parent & (n_significant != 0))):
+        return None
+    parents = np.unique(np.asarray(csr.ids, dtype=np.int64) // int(n_coarse_trans))
+    if bool(np.any(n_significant == 0)):
+        parents = np.union1d(parents, [0])
+    return parents
+
+
 # ---------------------------------------------------------------------------
 # Candidate tables straight from the CSR
 # ---------------------------------------------------------------------------

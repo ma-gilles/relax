@@ -17,12 +17,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${ROOT}/.pixi/envs/default/bin/python"
 RELION_SRC_DIR="${RELION_SRC_DIR:-/scratch/gpfs/GILLES/mg6942/relion/src}"
 CUDA_MODULE="${CUDA_MODULE:-cudatoolkit/12.8}"
-ARCH='-gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90'
+# RELAX_NATIVE_CUDA_ARCH overrides the A100/H100 gencode list (e.g. sm_60/sm_70 for Polar's P100/V100).
+DEFAULT_ARCH='-gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90'
+ARCH="${RELAX_NATIVE_CUDA_ARCH:-${DEFAULT_ARCH}}"
 test -x "${PY}" || { echo "missing pixi environment at ${PY}" >&2; exit 2; }
 mkdir -p "${OUT}/relion_bind"
 OUT="$(cd "${OUT}" && pwd)"
+# Build from the output directory: `python -m` puts the working directory first on sys.path, so a job started
+# inside a RECOVAR checkout built that checkout's kernels instead of the pinned RECOVAR's (natives_bab1082,
+# 2026-10-03: libcuda_backproject.so without BackprojectIndexedRuntimeRadius).
+cd "${OUT}"
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
 export PYTHONNOUSERSITE=1 RELION_SRC_DIR
+"${PY}" - <<'PY' || exit 2
+import sys
+
+import recovar
+
+if not recovar.__file__.startswith(sys.prefix):
+    sys.exit(f"recovar imports from {recovar.__file__}, not the pixi environment {sys.prefix}")
+PY
 
 # The RELION binding is host code; build it before the CUDA module is loaded.
 RECOVAR_RELION_BIND_BUILD_DIR="${OUT}/relion_bind" "${PY}" "${ROOT}/relax/relion_bind/build.py" > "${OUT}/build_relion_bind.log" 2>&1
@@ -53,6 +67,7 @@ record = {
     "source_head": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip(),
     "source_dirty": bool(subprocess.check_output(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"], text=True).strip()),
     "cuda_module": module,
+    "cuda_arch": __import__("os").environ.get("RELAX_NATIVE_CUDA_ARCH") or "default (sm_80, sm_90)",
     "sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in libs},
     "paths": {p.name: str(p) for p in libs},
 }

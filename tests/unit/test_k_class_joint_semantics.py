@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
+
 from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets

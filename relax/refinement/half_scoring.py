@@ -49,7 +49,6 @@ from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass2_grids
-from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.local.local_layout import build_local_adaptive_pass2_hypothesis_layout, build_local_hypothesis_layout
 from relax.refinement.firstiter_cc import (
     FirstIterCCBatching,
@@ -309,6 +308,9 @@ def _score_direct_k1_dense(
     # branch is the single dense pass used when adaptive oversampling is off.
     direct_em_kwargs.pop("relion_exact_fine_gaussian", None)
     direct_em_kwargs.pop("reconstruction_current_size", None)
+    # A single dense pass projects the means itself; it has no pass 1 to read the projector.
+    direct_em_kwargs.pop("relion_projector_half", None)
+    direct_em_kwargs.pop("relion_projector_r_max", None)
     em_result = run_em(
         half.particles.dataset,
         half.reference,
@@ -364,6 +366,8 @@ def _score_direct_kclass_dense(
     # non-adaptive dense iteration has no fine pass to select.
     dense_em_kwargs.pop("relion_exact_fine_gaussian", None)
     dense_em_kwargs.pop("reconstruction_current_size", None)
+    dense_em_kwargs.pop("relion_projector_half", None)
+    dense_em_kwargs.pop("relion_projector_r_max", None)
     return run_dense_k_class_em(
         half.particles.dataset,
         half.reference,
@@ -447,11 +451,6 @@ def _score_adaptive_kclass_dense(
     if symmetry != "C1" and not sparse_pass2 and sampling.coarse_engine != "gemm_dense":
         raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
     adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
-    # Class3D pass 1 scores RELION's exact coarse operands; a normalized-CC
-    # pass keeps the generic scorer, which the exact path leaves dormant.
-    adaptive_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(
-        half.particles.dataset
-    )
     logger.info(
         "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
         "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",
@@ -558,12 +557,6 @@ def _score_adaptive_k1_dense(
         raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
     skip_significance_pruning = _k1_skip_significance_pruning_enabled()
     adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
-    # Every K=1 start scores RELION's exact coarse operands, as Class3D and
-    # VDAM do; a fresh start requires the RELION CUDA preprocessing anyway.
-    adaptive_em_kwargs["relion_exact_coarse"] = bool(
-        execution.preserve_bpref_particle_order
-        or uses_relion_cuda_image_preprocessing(half.particles.dataset)
-    )
     if half.scale_group_ids is not None:
         adaptive_em_kwargs["group_ids"] = half.scale_group_ids
     if relion_x_half_mstep:

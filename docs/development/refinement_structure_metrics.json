@@ -55,15 +55,15 @@
         },
         {
           "function_count": 2,
-          "nonblank_noncomment_lines": 757,
+          "nonblank_noncomment_lines": 754,
           "path": "relax/refinement/finalization.py",
-          "physical_lines": 811
+          "physical_lines": 809
         },
         {
           "function_count": 2,
-          "nonblank_noncomment_lines": 257,
+          "nonblank_noncomment_lines": 255,
           "path": "relax/refinement/firstiter_cc.py",
-          "physical_lines": 291
+          "physical_lines": 288
         },
         {
           "function_count": 23,
@@ -79,15 +79,15 @@
         },
         {
           "function_count": 21,
-          "nonblank_noncomment_lines": 1896,
+          "nonblank_noncomment_lines": 1892,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2099
+          "physical_lines": 2092
         },
         {
           "function_count": 12,
-          "nonblank_noncomment_lines": 2688,
+          "nonblank_noncomment_lines": 2682,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 3091
+          "physical_lines": 3087
         },
         {
           "function_count": 11,
@@ -97,9 +97,9 @@
         },
         {
           "function_count": 11,
-          "nonblank_noncomment_lines": 320,
+          "nonblank_noncomment_lines": 316,
           "path": "relax/refinement/iteration_snapshot.py",
-          "physical_lines": 376
+          "physical_lines": 374
         },
         {
           "function_count": 3,
@@ -156,22 +156,22 @@
           "physical_lines": 635
         },
         {
-          "function_count": 39,
-          "nonblank_noncomment_lines": 871,
+          "function_count": 43,
+          "nonblank_noncomment_lines": 903,
           "path": "relax/refinement/run_files.py",
-          "physical_lines": 1025
+          "physical_lines": 1072
         },
         {
           "function_count": 6,
           "nonblank_noncomment_lines": 221,
           "path": "relax/refinement/startup_noise.py",
-          "physical_lines": 267
+          "physical_lines": 266
         },
         {
           "function_count": 23,
           "nonblank_noncomment_lines": 929,
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 1051
+          "physical_lines": 1055
         },
         {
           "function_count": 12,
@@ -183,14 +183,14 @@
       "large_argument_functions": [
         {
           "line": 104,
-          "line_span": 708,
+          "line_span": 706,
           "name": "run_final_all_data",
           "parameter_count": 33,
           "path": "relax/refinement/finalization.py"
         },
         {
           "line": 327,
-          "line_span": 343,
+          "line_span": 346,
           "name": "score_tomo_half",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
@@ -203,8 +203,8 @@
           "path": "relax/refinement/result_files.py"
         },
         {
-          "line": 717,
-          "line_span": 196,
+          "line": 720,
+          "line_span": 197,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 24,
           "path": "relax/refinement/tomo_half.py"
@@ -253,7 +253,7 @@
         },
         {
           "line": 268,
-          "line_span": 109,
+          "line_span": 107,
           "name": "finish",
           "parameter_count": 15,
           "path": "relax/refinement/iteration_snapshot.py"
@@ -367,7 +367,7 @@
       "largest_functions": [
         {
           "line": 354,
-          "line_span": 2735,
+          "line_span": 2731,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
@@ -381,7 +381,7 @@
         },
         {
           "line": 104,
-          "line_span": 708,
+          "line_span": 706,
           "name": "run_final_all_data",
           "parameter_count": 33,
           "path": "relax/refinement/finalization.py"
@@ -394,14 +394,14 @@
           "path": "relax/refinement/command_options.py"
         },
         {
-          "line": 1627,
+          "line": 1620,
           "line_span": 456,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 641,
+          "line": 634,
           "line_span": 450,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
@@ -415,18 +415,18 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
+          "line": 327,
+          "line_span": 346,
+          "name": "score_tomo_half",
+          "parameter_count": 26,
+          "path": "relax/refinement/tomo_half.py"
+        },
+        {
           "line": 418,
           "line_span": 345,
           "name": "score_numbered_half",
           "parameter_count": 19,
           "path": "relax/refinement/expectation.py"
-        },
-        {
-          "line": 327,
-          "line_span": 343,
-          "name": "score_tomo_half",
-          "parameter_count": 26,
-          "path": "relax/refinement/tomo_half.py"
         },
         {
           "line": 161,
@@ -448,16 +448,16 @@
       },
       "totals": {
         "file_count": 27,
-        "function_count": 361,
+        "function_count": 365,
         "large_argument_function_count": 26,
-        "maximum_function_line_span": 2735,
+        "maximum_function_line_span": 2731,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18747,
-        "physical_lines": 21417,
+        "nonblank_noncomment_lines": 18760,
+        "physical_lines": 21449,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "package 2 lane A: one K1/Class3D decision for the numbered M-step; unproduced solvent-corrected FSC, raw-FSC scheduling arm and Class3D shared-prior fallback deleted; continued runs build start-up state once",
+    "package": "package 2 merged with main d1ba3e8 (through the first package's merge 1b73943): one K1/Class3D decision for the numbered M-step on top of main's projector built on every scoring route, deferred fine rows and exact coarse operands",
     "source_commit": "a0515a61711380957747bb021e337ef021b1f837",
     "recorded_date": "2026-10-03"
   }

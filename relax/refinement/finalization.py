@@ -219,7 +219,7 @@ def run_final_all_data(
         dtype=scoring_dtype,
     )
     final_precision = local_precision(final_sampling.settings.relion_iteration, pass_index=2)
-    ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING? 
+    ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING?
     ## SHOULD BE WANTING TO DEFINE 100 THINGS LIKE THIS
     if final_use_local:
         final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(
@@ -285,27 +285,25 @@ def run_final_all_data(
         else:
             final_adaptive_pass1_current_size = None
             final_adaptive_pass2_current_size = None
-    if final_use_local or state.adaptive_oversampling > 0 or adaptive.coarse_engine in {"gemm_hybrid", "gemm_dense"}:
-        projector_t0 = time.time()
-        final_projectors = [
-            prepare_scoring_projector(
-                reference,
-                volume_shape=volume_shape,
-                current_size=final_current_size,
-                padding_factor=PROJECTION_PADDING_FACTOR,
-                n_classes=n_classes,
-                dump_label=f"final_half{half.index}",
-            )
-            for half, reference in zip(halves, final_join_means, strict=True)
-        ]
-        logger.info(
-            "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
-            final_current_size,
-            final_projectors[0].r_max,
-            time.time() - projector_t0,
+    # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
+    projector_t0 = time.time()
+    final_projectors = [
+        prepare_scoring_projector(
+            reference,
+            volume_shape=volume_shape,
+            current_size=final_current_size,
+            padding_factor=PROJECTION_PADDING_FACTOR,
+            n_classes=n_classes,
+            dump_label=f"final_half{half.index}",
         )
-    else:
-        final_projectors = (None, None)
+        for half, reference in zip(halves, final_join_means, strict=True)
+    ]
+    logger.info(
+        "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
+        final_current_size,
+        final_projectors[0].r_max,
+        time.time() - projector_t0,
+    )
     logger.info("=== RELION final all-data Nyquist iteration ===")
     if final_use_local:
         if state.adaptive_oversampling > 0:

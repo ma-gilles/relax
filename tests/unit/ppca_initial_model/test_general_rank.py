@@ -151,6 +151,5 @@ def test_momentum_rank_reference_and_dtype(q):
 def test_rank_requires_coarse_stream_and_config_remains_opt_in(q):
     assert Config().q == 2
     with pytest.raises(ValueError, match="coarse recompute"):
-        Config(q=q)
-    config = Config(q=q, oversampling=0, stream_coarse_recompute=True)
-    assert config.q == q
+        Config(q=q, stream_coarse_recompute=False)
+    assert Config(q=q).q == q  # the default engine is the stream

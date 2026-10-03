@@ -1,8 +1,9 @@
 """Final local preparation preserves deferred grids and parent window sizing."""
-from types import SimpleNamespace
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
+
 from relax.refinement import local_sampling
 
 pytestmark = pytest.mark.unit

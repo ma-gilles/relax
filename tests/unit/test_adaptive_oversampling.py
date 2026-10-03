@@ -21,10 +21,10 @@ from helpers.float_compare import assert_matches, matches
 pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
+import recovar.core.fourier_transform_utils as ftu
 from helpers.dense_posterior_reference import compute_e_step_weights
 from helpers.em_arrays import _hermitian_volume, _make_rotations, _raw_real_image_2d
 
-import recovar.core.fourier_transform_utils as ftu
 from relax.dense.em_engine import run_em
 from relax.helpers.oversampling import (
     _find_significant_mask_full_sort,
@@ -114,15 +114,42 @@ def _raw_real_process_half(batch, apply_image_mask=False):
     return ftu.get_dft2_real(images).reshape((images.shape[0], -1)).astype(jnp.complex64)
 
 
+def _exact_pass1_call(n_classes, n_images=3):
+    """Arguments of a pass-1 call on the CPU exact-operand harness (helpers.exact_pass1_harness)."""
+
+    from helpers.exact_pass1_harness import ExactPass1Dataset, coded_class_projectors
+
+    dataset = ExactPass1Dataset(np.arange(n_images))
+    rotations = np.tile(np.eye(3, dtype=np.float32), (5, 1, 1))
+    rotations[:, 0, 1] = np.asarray([0.0, 0.3, 0.1, 0.4, 0.2], dtype=np.float32)
+    args = (
+        dataset,
+        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
+        jnp.ones(dataset.image_size, dtype=jnp.float32),
+        rotations,
+        jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
+        "linear_interp",
+    )
+    projector = dict(
+        relion_projector_half=coded_class_projectors(n_classes),
+        relion_projector_r_max=1,
+        relion_projector_texture_interp=True,
+        half_spectrum_scoring=True,
+        current_size=4,
+    )
+    return args, projector
+
+
 @pytest.mark.parametrize("n_classes", [1, 4])
-@pytest.mark.parametrize("cache_mode", ["off", "force"])
 @pytest.mark.parametrize("pad_tail", [False, True])
-def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes, cache_mode, pad_tail):
+def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes, pad_tail):
     """Return raw F32 normalization without selecting from a different posterior."""
+    from helpers.exact_pass1_harness import install_exact_pass1_mocks
+
     from relax.scoring import significance
     from relax.sparse_pass2 import sparse_pass2_posterior
 
-    monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", cache_mode)
+    install_exact_pass1_mocks(monkeypatch)
     monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: False)
     captured = []
     original = sparse_pass2_posterior._relion_f32_fine_posterior
@@ -133,16 +160,9 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         return result
 
     monkeypatch.setattr(sparse_pass2_posterior, "_relion_f32_fine_posterior", record)
-    volume = _hermitian_volume(VOLUME_SHAPE, seed=913)
-    args = (
-        MockDataset(n_images=3, seed=911),
-        jnp.stack([volume * (1.0 + 0.01 * k) for k in range(n_classes)]),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-        _make_rotations(5, seed=917),
-        jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
-        "linear_interp",
-    )
+    args, projector = _exact_pass1_call(n_classes)
     kwargs = dict(
+        **projector,
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
         rotation_log_prior=np.linspace(0, -0.4, 5, dtype=np.float32),
         translation_log_prior=np.array([[0, -0.1], [-0.2, 0], [0, -0.3]], dtype=np.float32),
@@ -150,7 +170,6 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         max_significants=4,
         image_batch_size=2,
         rotation_block_size=2,
-        current_size=None,
         pad_final_image_batch=pad_tail,
     )
     control = significance._compute_k_class_significance_batched(*args, **kwargs)
@@ -189,13 +208,14 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
     assert candidate[5]["relion_f32_sum_weight"].dtype == np.float32
 
 
-@pytest.mark.parametrize("cache_mode", ["off", "force"])
-def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch, cache_mode):
+def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     """K=1 support weights use RELION's prior + min_diff2 - diff2 order on pre-prior scores."""
+    from helpers.exact_pass1_harness import install_exact_pass1_mocks
+
     from relax.helpers import oversampling
     from relax.scoring import significance
 
-    monkeypatch.setenv("RELAX_SIGNIFICANCE_SCORE_CACHE", cache_mode)
+    install_exact_pass1_mocks(monkeypatch)
     monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
     original_weights = oversampling.relion_cuda_f32_coarse_log_weights
     original_posterior = oversampling.relion_cuda_f32_coarse_posterior
@@ -215,14 +235,10 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch, cac
 
         monkeypatch.setattr(oversampling, "relion_cuda_f32_coarse_log_weights", record_weights)
         monkeypatch.setattr(oversampling, "relion_cuda_f32_coarse_posterior", record_posterior)
-        volume = _hermitian_volume(VOLUME_SHAPE, seed=913)
+        args, projector = _exact_pass1_call(n_classes)
         result = significance._compute_k_class_significance_batched(
-            MockDataset(n_images=3, seed=911),
-            jnp.stack([volume * (1.0 + 0.01 * k) for k in range(n_classes)]),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            _make_rotations(5, seed=917),
-            jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
-            "linear_interp",
+            *args,
+            **projector,
             class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes)),
             rotation_log_prior=rotation_log_prior,
             translation_log_prior=translation_log_prior,
@@ -230,7 +246,6 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch, cac
             max_significants=4,
             image_batch_size=2,
             rotation_block_size=2,
-            current_size=None,
         )
         return result, weight_calls, posterior_calls
 
@@ -863,74 +878,6 @@ class TestSignificantCountsReasonable:
             err_msg="sig_rot_mask inconsistent with sig_mask",
         )
 
-    def test_batched_significance_returns_sparse_sample_lists(self):
-        """The batched coarse pass should preserve per-image significant samples."""
-        from relax.scoring.significance import _compute_k_class_significance_batched
-
-        n_images = 6
-        n_rot = 12
-        n_trans = 4
-
-        ds = MockDataset(n_images=n_images, seed=11)
-        volume = _hermitian_volume(VOLUME_SHAPE, seed=13)
-        rotations = _make_rotations(n_rot, seed=17)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [-1.0, 0.0], [0.0, 1.0]],
-            dtype=jnp.float32,
-        )
-        noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-
-        weights, hard_assignments = compute_e_step_weights(
-            ds,
-            volume,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=3,
-            rotation_block_size=5,
-        )
-        sig_mask, _, n_sig = find_significant_rotations(
-            jnp.asarray(weights),
-            n_rot,
-            n_trans,
-            adaptive_fraction=0.999,
-            max_significants=500,
-        )
-
-        sig_rot_any, n_sig_b, hard_b, class_b, sparse_sig, full_stats = _compute_k_class_significance_batched(
-            ds,
-            volume[None, :],
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            class_log_priors=np.zeros(1, dtype=np.float64),
-            adaptive_fraction=0.999,
-            max_significants=500,
-            image_batch_size=3,
-            rotation_block_size=5,
-            current_size=None,
-        )
-
-        assert_matches(np.asarray(hard_b), np.asarray(hard_assignments))
-        assert_matches(np.asarray(n_sig_b), np.asarray(n_sig))
-        np.testing.assert_allclose(
-            np.asarray(full_stats["max_posterior_per_image"]),
-            np.asarray(weights).max(axis=1),
-            rtol=1e-5,
-            atol=1e-6,
-        )
-        assert np.all(np.isfinite(full_stats["normalization_log_z"]))
-        assert np.any(sig_rot_any)
-        assert_matches(class_b, np.zeros(n_images, dtype=np.int32))
-        for i in range(n_images):
-            assert_matches(
-                np.asarray(sparse_sig[0][i]),
-                np.flatnonzero(np.asarray(sig_mask[i])),
-            )
-
-
 # ===========================================================================
 # Test 4: Oversampled grid generation
 # ===========================================================================
@@ -986,9 +933,9 @@ class TestOversampledGridGeneration:
     def test_oversampled_rotation_grid_from_samples_matches_relion_binding(self):
         """Child orientations should match RELION's oversampled local-search grid."""
         import healpy as hp
+        from recovar import utils
         from relax.relion_bind._relion_bind_core import get_oversampled_orientations
 
-        from recovar import utils
         from relax.sampling import (
             get_oversampled_rotation_grid_from_samples,
             rotation_grid_n_in_planes,
@@ -1045,9 +992,9 @@ class TestOversampledGridGeneration:
     def test_oversampled_rotation_grid_from_samples_matches_relion_binding_with_perturbation(self):
         """RELION perturbation must also be applied to oversampled child orientations."""
         import healpy as hp
+        from recovar import utils
         from relax.relion_bind._relion_bind_core import get_oversampled_orientations
 
-        from recovar import utils
         from relax.sampling import get_oversampled_rotation_grid_from_samples
 
         nside_level = 3
@@ -1155,100 +1102,6 @@ class TestOversampledGridGeneration:
 
 class TestRefineWithAdaptive:
     """Run a few iterations with adaptive_oversampling=1 and verify sanity."""
-
-    @pytest.mark.gpu  # pass 2 runs only on the device-resident engine
-    def test_completes_and_valid_output(self):
-        """refine_single_volume with adaptive_oversampling=1 should complete
-        and produce valid (finite, non-zero) outputs."""
-        from relax.refinement.iteration_loop import refine_single_volume
-        from relax.refinement.refinement_options import (
-            AdaptiveOptions,
-            RefinementBatching,
-            RefinementOptions,
-            RefinementSchedule,
-        )
-        from relax.sampling import get_rotation_grid
-
-        n_images = 8
-        nside_level = 1  # 48 rotations at level 1
-        rotations = get_rotation_grid(nside_level, matrices=True).astype(np.float32)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
-            dtype=jnp.float32,
-        )
-
-        ds1 = MockDataset(n_images=n_images, seed=42)
-        ds2 = MockDataset(n_images=n_images, seed=99)
-
-        volume = _hermitian_volume(VOLUME_SHAPE, seed=42)
-        noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
-
-        result = refine_single_volume(
-            [ds1, ds2],
-            volume,
-            noise_variance,
-            mean_variance,
-            translations,
-            options=RefinementOptions(
-                disc_type="linear_interp",
-                schedule=RefinementSchedule(max_iter=2, init_current_size=8),  # 8 to match volume_shape
-                batching=RefinementBatching(image_batch_size=n_images, rotation_block_size=len(rotations)),
-                adaptive=AdaptiveOptions(adaptive_oversampling=1, max_significants=100),
-            ),
-        )
-
-        # Check basic structure
-        assert "mean" in result
-        assert "means" in result
-        assert "significant_counts" in result
-        assert len(result["current_sizes"]) == 2
-        assert len(result["wall_times"]) == 2
-
-        # Check outputs are finite
-        mean = np.asarray(result["mean"])
-        assert np.all(np.isfinite(mean)), "Output mean has non-finite values"
-        assert not np.allclose(mean, 0.0), "Output mean is all zeros"
-
-        # Check significant counts exist
-        for sc in result["significant_counts"]:
-            if sc is not None:
-                sc_np = np.asarray(sc)
-                assert np.all(sc_np >= 1), "Some images have 0 significant samples"
-
-    @pytest.mark.gpu  # pass 2 runs only on the device-resident engine
-    def test_relion_default_does_not_require_nside_level(self):
-        """RELION mode derives the coarse grid from init_healpix_order."""
-        from relax.refinement.iteration_loop import refine_single_volume
-        from relax.refinement.refinement_options import (
-            AdaptiveOptions,
-            RefinementBatching,
-            RefinementOptions,
-            RefinementSchedule,
-        )
-
-        ds1 = MockDataset(n_images=2, seed=42)
-        ds2 = MockDataset(n_images=2, seed=99)
-        volume = _hermitian_volume(VOLUME_SHAPE, seed=42)
-        rotations = _make_rotations(5, seed=12)
-        translations = jnp.array([[0.0, 0.0]], dtype=jnp.float32)
-        noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
-
-        result = refine_single_volume(
-            [ds1, ds2],
-            volume,
-            noise_variance,
-            mean_variance,
-            translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=1, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=2, rotation_block_size=5),
-                adaptive=AdaptiveOptions(adaptive_oversampling=1),
-            ),
-        )
-
-        assert "convergence_state" in result
 
     def test_adaptive_0_matches_standard(self):
         """adaptive_oversampling=0 should give the standard path's hard assignments."""
@@ -1527,39 +1380,34 @@ def test_top_k_rows_matches_lax_top_k_for_single_rows_above_the_splitter_thresho
 
 @pytest.mark.parametrize("n_classes", [1, 3])
 def test_coarse_projections_are_computed_once_per_block_across_image_batches(monkeypatch, n_classes):
-    """Pass 1 keeps each (class, rotation block) projection for every image batch.
+    """The --firstiter_cc pass keeps each (class, rotation block) projection for every image batch.
 
     The references and rotation blocks are fixed for the pass, so the scores
     must equal a pass that recomputes every block (the byte cap set to zero).
     """
+    from helpers.exact_pass1_harness import install_exact_pass1_mocks
+
     from relax.helpers import projection
     from relax.scoring import significance
 
+    install_exact_pass1_mocks(monkeypatch)
     calls = []
-    original = projection.compute_projections_block
+    original = projection.compute_relion_projector_projections_block
 
     def counting(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(projection, "compute_projections_block", counting)
-    volume = _hermitian_volume(VOLUME_SHAPE, seed=913)
-    args = (
-        MockDataset(n_images=5, seed=911),
-        jnp.stack([volume * (1.0 + 0.01 * k) for k in range(n_classes)]),
-        jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-        _make_rotations(5, seed=917),
-        jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
-        "linear_interp",
-    )
+    monkeypatch.setattr(projection, "compute_relion_projector_projections_block", counting)
+    args, projector = _exact_pass1_call(n_classes, n_images=5)
     kwargs = dict(
+        **projector,
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),
-        rotation_log_prior=np.linspace(0, -0.4, 5, dtype=np.float32),
         adaptive_fraction=0.9,
         max_significants=4,
         image_batch_size=2,
         rotation_block_size=2,
-        current_size=None,
+        score_mode="normalized_cc",
     )
     memoized = significance._compute_k_class_significance_batched(*args, **kwargs)
     n_blocks = 3  # 5 rotations in blocks of 2

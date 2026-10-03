@@ -355,6 +355,16 @@ def _native_expectation_step(
             orientational_prior_mode=int(sampling_state.orientational_prior_mode),
             uniform_local_orientation_prior=bool(sampling_state.uniform_local_orientation_prior),
         )
+        if (evidence := result.meta.get("log_evidence_per_image")) is not None:
+            ids = np.asarray(result.meta["selected_particle_ids"], dtype=np.int64)
+            result.meta["log_likelihood_contribution"] = estep_meta_updates.relion_log_likelihood_contributions(
+                evidence,
+                sigma2_noise=state.sigma2_noise,
+                groups=np.zeros(ids.size, np.int64) if optics_group_ids is None else np.asarray(optics_group_ids)[ids],
+                n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images["image_offsets"])[ids],
+                ori_size=int(state.ori_size),
+                current_size=int(state.current_size) if int(state.current_size) > 0 else int(state.ori_size),
+            )
         estep_meta_updates._update_particle_state_from_estep_meta(
             particle_state,
             result.meta,

@@ -214,7 +214,7 @@ def run_tomo_initial_model_estep(
     meta["tomo_offsets_px"] = (
         tomo_particles.relion_gpu_old_offsets(old) + np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]
     )
-    meta["offset_dims"] = 3
+    meta.update(offset_dims=3, significant_counts=counts.astype(np.int32))  # nsig as Refine3D writes it
     _add_accumulator_weight_meta(meta, accumulators, K)
     meta["pass2_engine"] = "tomo"
     meta["halfset_ids"] = (0, 1)

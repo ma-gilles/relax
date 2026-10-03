@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers import score_diagnostics
+from helpers.exact_pass1_harness import ExactPass1Dataset, mock_unit_ctf_and_zero_highres_power
 from helpers.float_compare import assert_matches
 from helpers.pass1_programs import clear_pass1_programs
 
@@ -46,18 +47,6 @@ def _direct_scores(projected, shifted, weight, initial):
     ("variable", "enabled_flag"),
     [
         (
-            'RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO',
-            significance._coarse_gaussian_gemm_macro_enabled,
-        ),
-        (
-            'RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS',
-            significance._k1_relion_exact_coarse_skip_generic_operands_enabled,
-        ),
-        (
-            'RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS',
-            significance._k1_relion_exact_compact_preprocess_enabled,
-        ),
-        (
             'RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE',
             significance._coarse_gaussian_gemm_projection_cache_enabled,
         ),
@@ -82,82 +71,9 @@ def test_coarse_gaussian_flags_are_default_off_and_fail_closed(
         enabled_flag()
 
 
-def test_exact_coarse_skip_generic_operands_is_default_off_and_fail_closed(
-    monkeypatch,
-):
-    variable = "RELAX_K1_RELION_EXACT_COARSE_SKIP_GENERIC_OPERANDS"
-
-    assert not significance._resolve_k1_relion_exact_coarse_skip_generic_operands(
-        requested=False,
-        exact_coarse_operands_enabled=False,
-    )
-    assert not significance._resolve_k1_relion_exact_coarse_skip_generic_operands(
-        requested=False,
-        exact_coarse_operands_enabled=True,
-    )
-    assert significance._resolve_k1_relion_exact_coarse_skip_generic_operands(
-        requested=True,
-        exact_coarse_operands_enabled=True,
-    )
-    with pytest.raises(ValueError, match=variable):
-        significance._resolve_k1_relion_exact_coarse_skip_generic_operands(
-            requested=True,
-            exact_coarse_operands_enabled=False,
-        )
-
-    profile_variable = "RELAX_K1_RELION_EXACT_COARSE_ASSEMBLY_PROFILE"
-    monkeypatch.delenv(profile_variable, raising=False)
-    assert not significance._k1_relion_exact_coarse_assembly_profile_enabled()
-    monkeypatch.setenv(profile_variable, "1")
-    assert significance._k1_relion_exact_coarse_assembly_profile_enabled()
-    monkeypatch.setenv(profile_variable, "automatic")
-    with pytest.raises(ValueError, match=profile_variable):
-        significance._k1_relion_exact_coarse_assembly_profile_enabled()
-
-
-def test_exact_compact_preprocess_is_default_off_and_fail_closed(monkeypatch):
-    variable = "RELAX_K1_RELION_EXACT_COMPACT_PREPROCESS"
-
-    valid = {
-        "exact_coarse_skip_generic_operands_enabled": True,
-        "exact_coarse_operands_enabled": True,
-        "score_mode": "gaussian",
-        "coarse_gaussian_gemm_macro_enabled": True,
-    }
-    assert not significance._resolve_k1_relion_exact_compact_preprocess(
-        requested=False,
-        **valid,
-    )
-    assert significance._resolve_k1_relion_exact_compact_preprocess(
-        requested=True,
-        **valid,
-    )
-    invalid = (
-        ("exact_coarse_skip_generic_operands_enabled", False),
-        ("exact_coarse_operands_enabled", False),
-        ("coarse_gaussian_gemm_macro_enabled", False),
-        ("score_mode", "normalized_cc"),
-    )
-    for field, value in invalid:
-        kwargs = dict(valid)
-        kwargs[field] = value
-        with pytest.raises(ValueError, match=variable):
-            significance._resolve_k1_relion_exact_compact_preprocess(
-                requested=True,
-                **kwargs,
-            )
-
-
-
 def _projection_cache_request_kwargs(**updates):
     values = dict(
-        macro_enabled=True,
         n_rotations=16,
-        coarse_gaussian_ffi_enabled=True,
-        exact_coarse_operands_enabled=True,
-        use_relion_projector=True,
-        relion_texture_interp_enabled=True,
-        use_float64_scoring=False,
         relion_projector_dtype=np.complex64,
     )
     values.update(updates)
@@ -167,13 +83,7 @@ def _projection_cache_request_kwargs(**updates):
 @pytest.mark.parametrize(
     ("updates", "message"),
     [
-        ({"macro_enabled": False}, "GEMM_MACRO"),
         ({"n_rotations": 17}, "divisible by 16"),
-        ({"coarse_gaussian_ffi_enabled": False}, "exact RELION"),
-        ({"exact_coarse_operands_enabled": False}, "EXACT_COARSE_OPERANDS"),
-        ({"use_relion_projector": False}, "RELION texture projector"),
-        ({"relion_texture_interp_enabled": False}, "RELION texture projector"),
-        ({"use_float64_scoring": True}, "float32/complex64"),
         ({"relion_projector_dtype": np.complex128}, "complex64 RELION projector"),
     ],
 )
@@ -270,103 +180,9 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
     )
     assert build_calls == [(0, 0, 16)]
 
-    rotations_block = np.zeros((6, 3, 3), dtype=np.float32)
-    cached_projection, cached_abs2 = (
-        significance._project_coarse_gaussian_gemm_projection_cache_block_once(
-            cache,
-            0,
-            object(),
-            rotations_block,
-            rotation_start=3,
-        )
-    )
-    expected_projection = projected[3:9]
-    expected_abs2 = np.asarray(jnp.abs(jnp.asarray(expected_projection)) ** 2)
-    assert_matches(
-        np.asarray(cached_projection),
-        expected_projection,
-    )
-    assert_matches(
-        np.asarray(cached_abs2),
-        expected_abs2,
-    )
+    # The pass-1 program reads its blocks from this one table (_coarse_pass1_blocks).
+    assert_matches(np.asarray(cache)[0], projected)
     assert build_calls == [(0, 0, 16)]
-
-    shifted = (
-        rng.normal(size=(3, 2, n_pixels))
-        + 1j * rng.normal(size=(3, 2, n_pixels))
-    ).astype(np.complex64)
-    pixel_weight = rng.uniform(0.1, 2.0, size=(3, n_pixels)).astype(np.float32)
-    initial_diff2 = rng.uniform(0.0, 3.0, size=3).astype(np.float32)
-
-    def uncached_projector(_class_index, _mean_for_proj, _rotations_block):
-        return jnp.asarray(expected_projection), jnp.asarray(expected_abs2)
-
-    def cached_projector(class_index, mean_for_proj, selected_rotations):
-        return significance._project_coarse_gaussian_gemm_projection_cache_block_once(
-            cache,
-            class_index,
-            mean_for_proj,
-            selected_rotations,
-            rotation_start=3,
-        )
-
-    score_arguments = (
-        0,
-        object(),
-        rotations_block,
-        jnp.asarray(shifted),
-        jnp.asarray(pixel_weight),
-        jnp.asarray(initial_diff2),
-        3,
-    )
-    uncached_scores = np.asarray(
-        significance._score_relion_coarse_gaussian_gemm_macro(
-            uncached_projector,
-            *score_arguments,
-            image_shape=(4, 4),
-            volume_shape=(4, 4, 4),
-        )
-    )
-    cached_scores = np.asarray(
-        significance._score_relion_coarse_gaussian_gemm_macro(
-            cached_projector,
-            *score_arguments,
-            image_shape=(4, 4),
-            volume_shape=(4, 4, 4),
-        )
-    )
-    assert_matches(
-        cached_scores,
-        uncached_scores,
-    )
-    assert build_calls == [(0, 0, 16)]
-
-    tail_projection, tail_abs2 = (
-        significance._project_coarse_gaussian_gemm_projection_cache_block_once(
-            cache,
-            0,
-            object(),
-            rotations_block,
-            rotation_start=13,
-        )
-    )
-    assert_matches(np.asarray(tail_projection[:3]), projected[13:])
-    assert_matches(np.asarray(tail_projection[3:]), 0.0)
-    assert_matches(np.asarray(tail_abs2[3:]), 0.0)
-    assert build_calls == [(0, 0, 16)]
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync():
@@ -733,63 +549,6 @@ def test_coarse_gaussian_gemm_scores_ignore_poisoned_tail_exactly():
     )
 
 
-def test_coarse_gaussian_gemm_macro_projects_once_and_binds_all_image_lanes(
-    monkeypatch,
-):
-    projected, projected_abs2, shifted, weight, initial = _macro_operands(
-        real_dtype=np.float32,
-        n_images=6,
-        n_rotations=7,
-    )
-    rotations = np.arange(7 * 3 * 3, dtype=np.float32).reshape(7, 3, 3)
-    mean = object()
-    projection_calls = []
-    score_calls = []
-
-    def project_once(class_index, mean_for_proj, rotations_block):
-        projection_calls.append((class_index, mean_for_proj, np.asarray(rotations_block)))
-        return jnp.asarray(projected), jnp.asarray(projected_abs2)
-
-    sentinel = jnp.arange(6 * 7 * 3, dtype=jnp.float32).reshape(6, 7, 3)
-
-    def capture_score(*args, **kwargs):
-        score_calls.append((args, kwargs))
-        return sentinel
-
-    monkeypatch.setattr(
-        coarse_gaussian_gemm,
-        "_relion_coarse_gaussian_gemm_scores",
-        capture_score,
-    )
-    result = significance._score_relion_coarse_gaussian_gemm_macro(
-        project_once,
-        2,
-        mean,
-        rotations,
-        jnp.asarray(shifted),
-        jnp.asarray(weight),
-        jnp.asarray(initial),
-        4,
-        image_shape=(8, 8),
-        volume_shape=(8, 8, 8),
-    )
-
-    assert result is sentinel
-    assert len(projection_calls) == 1
-    assert projection_calls[0][0] == 2
-    assert projection_calls[0][1] is mean
-    assert_matches(projection_calls[0][2], rotations)
-    assert len(score_calls) == 1
-    bound, static = score_calls[0]
-    assert_matches(np.asarray(bound[0]), projected)
-    assert_matches(np.asarray(bound[1]), projected_abs2)
-    assert_matches(np.asarray(bound[2]), shifted)
-    assert_matches(np.asarray(bound[3]), weight)
-    assert_matches(np.asarray(bound[4]), initial)
-    assert bound[5] == 4
-    assert static == {"image_shape": (8, 8), "volume_shape": (8, 8, 8)}
-
-
 def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
     from relax.classification import k_class
 
@@ -806,143 +565,9 @@ def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
     )
 
 
-class _MacroIntegrationDataset:
-    """Tiny strict-preprocess dataset for the live shared significance path."""
-
-    image_shape = (4, 4)
-    image_size = 16
-    grid_size = 4
-    padding = 0
-    volume_shape = (4, 4, 4)
-    volume_size = 64
-    voxel_size = 1.0
-    dtype = jnp.complex64
-    premultiplied_ctf = False
-
-    def __init__(self, original_indices=None):
-        self._original_indices = np.asarray(
-            [0, 1, 2] if original_indices is None else original_indices,
-            dtype=np.int64,
-        )
-        self.n_images = int(self._original_indices.size)
-        self.n_units = self.n_images
-        self._images = np.stack(
-            [
-                np.full(self.image_shape, int(original_index) + 1, dtype=np.float32)
-                for original_index in self._original_indices
-            ]
-        )
-        self.CTF_params = np.zeros((self.n_units, 9), dtype=np.float32)
-        self.rotation_matrices = np.tile(np.eye(3, dtype=np.float32), (self.n_units, 1, 1))
-        self.translations = np.zeros((self.n_units, 2), dtype=np.float32)
-
-        class _Backend:
-            image_mask = np.ones((4, 4), dtype=np.float32)
-            image_mask_mode = "relion_background_fill"
-            relion_fourier_backend = "relion_cuda"
-
-        class _ImageSource:
-            backend = _Backend()
-
-        self.image_source = _ImageSource()
-
-    @staticmethod
-    def ctf_evaluator(params, image_shape=None, voxel_size=None, *, half_image=False):
-        del voxel_size
-        if half_image:
-            pixel_count = int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
-        else:
-            pixel_count = int(image_shape[0]) * int(image_shape[1])
-        return jnp.ones((params.shape[0], pixel_count), dtype=jnp.float32)
-
-    @staticmethod
-    def process_images(batch, apply_image_mask=False, **kwargs):
-        del apply_image_mask, kwargs
-        batch = jnp.asarray(batch)
-        return jnp.repeat(
-            batch[:, :1, :1].reshape(batch.shape[0], 1).astype(jnp.complex64),
-            16,
-            axis=1,
-        )
-
-    @staticmethod
-    def process_images_half(batch, apply_image_mask=False, **kwargs):
-        del apply_image_mask, kwargs
-        batch = jnp.asarray(batch)
-        return jnp.repeat(
-            batch[:, :1, :1].reshape(batch.shape[0], 1).astype(jnp.complex64),
-            12,
-            axis=1,
-        )
-
-    @property
-    def image_mask(self):
-        return np.ones(self.image_shape, dtype=np.float32)
-
-    def iter_batches(self, batch_size, *, indices=None, by_image=False, **kwargs):
-        del by_image, kwargs
-        if indices is None:
-            indices = np.arange(self.n_units)
-        indices = np.asarray(indices, dtype=np.int64)
-        for start in range(0, indices.size, int(batch_size)):
-            selected = indices[start : start + int(batch_size)]
-            yield (
-                jnp.asarray(self._images[selected]),
-                self.rotation_matrices[selected],
-                self.translations[selected],
-                jnp.asarray(self.CTF_params[selected]),
-                None,
-                selected,
-                selected,
-            )
-
-    def original_image_indices_from_local(self, indices):
-        return self._original_indices[np.asarray(indices, dtype=np.int64)]
-
-    def subset(self, indices):
-        return type(self)(
-            self._original_indices[np.asarray(indices, dtype=np.int64)],
-        )
-
-
-def _mock_unit_ctf_and_zero_highres_power(monkeypatch):
-    """Use unit CTFs and no high-resolution image power in live-path CPU tests."""
-    from relax.sparse_pass2 import sparse_pass2_scoring
-
-    monkeypatch.setattr(
-        relion_ctf,
-        "_relion_exact_ctf_half_from_source_star",
-        lambda _dataset, indices, image_shape, *, pixel_indices=None: jnp.ones(
-            (
-                len(indices),
-                (int(image_shape[0]) * (int(image_shape[1]) // 2 + 1) if pixel_indices is None else len(pixel_indices)),
-            ),
-            dtype=jnp.float64,
-        ),
-    )
-    monkeypatch.setattr(
-        relion_ctf,
-        "_relion_exact_ctf_half_from_source_star_host",
-        lambda _dataset, indices, image_shape, *, pixel_indices=None: np.ones(
-            (
-                len(indices),
-                (int(image_shape[0]) * (int(image_shape[1]) // 2 + 1) if pixel_indices is None else len(pixel_indices)),
-            ),
-            dtype=np.float64,
-        ),
-    )
-    monkeypatch.setattr(
-        sparse_pass2_scoring,
-        "_relion_cuda_powerclass_highres_xi2_half",
-        lambda processed, **_kwargs: jnp.zeros(
-            processed.shape[0],
-            dtype=jnp.float32,
-        ),
-    )
-
-
 def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     monkeypatch,
+    request,
 ):
     """The opt-in cache owns projections once and only serves later blocks."""
 
@@ -951,20 +576,16 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     from relax.cuda import kernels as em_cuda_kernels
     from relax.helpers import projection as projection_helpers
     for name, value in {
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB": "0.001",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB": "0.01",
-        "RECOVAR_K1_COARSE_GAUSSIAN_FFI": "1",
-        "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF": "1",
-        "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS": "1",
         "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "0",
     }.items():
         monkeypatch.setenv(name, value)
 
     monkeypatch.setattr(significance.jax, "default_backend", lambda: "gpu")
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: True)
-    _mock_unit_ctf_and_zero_highres_power(monkeypatch)
+    mock_unit_ctf_and_zero_highres_power(monkeypatch)
     monkeypatch.setattr(
         em_cuda_kernels,
         "relion_translate_score_f32",
@@ -1020,13 +641,10 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
             (shifted.shape[0], projected.shape[0], shifted.shape[1]),
         )
 
-    monkeypatch.setattr(
-        coarse_gaussian_gemm,
-        "_relion_coarse_gaussian_gemm_scores",
-        controlled_scores,
-    )
+    clear_pass1_programs(request)
+    monkeypatch.setattr(significance, "_relion_coarse_gaussian_gemm_scores_jit", controlled_scores)
 
-    dataset = _MacroIntegrationDataset()
+    dataset = ExactPass1Dataset()
     rotations = np.tile(np.eye(3, dtype=np.float32), (16, 1, 1))
     rotations[:, 0, 1] = np.arange(1, 17, dtype=np.float32)
     translations = np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
@@ -1105,12 +723,8 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     from relax.helpers import projection as projection_helpers
     from relax.sparse_pass2 import sparse_pass2_scoring
     for name, value in {
-        "RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO": "1",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE": "0",
         "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB": "0.01",
-        "RECOVAR_K1_COARSE_GAUSSIAN_FFI": "1",
-        "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF": "1",
-        "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS": "1",
         "RECOVAR_K1_RELION_F32_COARSE_SUPPORT": "0",
     }.items():
         monkeypatch.setenv(name, value)
@@ -1211,28 +825,6 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
                     scores[image_lane, rotation_lane, 1] = -0.05
         return jnp.asarray(scores)
 
-    def controlled_scores(
-        projected,
-        projected_abs2,
-        shifted,
-        weight,
-        initial,
-        actual_image_count,
-        **_kwargs,
-    ):
-        del projected_abs2, weight, initial
-        shifted_np = np.asarray(shifted)
-        actual_count = int(np.asarray(actual_image_count))
-        if poison_tail["enabled"] and actual_count < shifted_np.shape[0]:
-            assert np.isnan(shifted_np[actual_count:]).all()
-        return designed_scores(projected, shifted, actual_count)
-
-    monkeypatch.setattr(
-        coarse_gaussian_gemm,
-        "_relion_coarse_gaussian_gemm_scores",
-        controlled_scores,
-    )
-
     def traced_designed_scores(projected, projected_abs2, shifted, weight, initial, actual_image_count, **_kwargs):
         """designed_scores in jnp for the one-program pass 1, which traces its scorer."""
 
@@ -1278,7 +870,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         maybe_poison_tail,
     )
 
-    dataset = _MacroIntegrationDataset()
+    dataset = ExactPass1Dataset()
     rotations = np.tile(np.eye(3, dtype=np.float32), (3, 1, 1))
     rotations[:, 0, 1] = np.asarray([10.0, 11.0, 12.0], dtype=np.float32)
     translations = jnp.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=jnp.float32)
@@ -1544,7 +1136,6 @@ def test_coarse_gaussian_gemm_macro_rejects_ambiguous_bindings(
 def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_memory(
     monkeypatch,
 ):
-    from relax.scoring import coarse_gaussian_gemm
 
     class _Gpu:
         platform = "gpu"

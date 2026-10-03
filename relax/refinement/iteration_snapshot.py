@@ -355,8 +355,9 @@ class SnapshotCapture:
             class_assignments=host_half_pair(class_assignments),
             max_posterior=host_half_pair(max_posterior),
             significant_counts=host_half_pair(significant_counts),
+            # No norm correction (a subtomogram run, --no_norm): RELION's 1.0 in relax's frame.
             avg_norm_correction=tuple(
-                1.0 if value is None else float(value) for value in avg_norm_correction
+                float(self.grid_size) ** 2 if value is None else float(value) for value in avg_norm_correction
             ),
             extra={
                 "euler_dtype": dtype_name(eulers),

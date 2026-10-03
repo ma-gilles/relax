@@ -445,6 +445,38 @@ def test_stale_natives_are_refused(tmp_path, monkeypatch):
         run_test_tier.main(["run", "smoke", "--run-root", str(run_root)])
 
 
+def test_natives_compiled_from_a_shadowing_recovar_checkout_are_refused(tmp_path, monkeypatch):
+    """A build started inside a recovar checkout compiles that checkout's kernels (python -m puts the working
+    directory first on sys.path), whatever recovar commit is installed: natives_bab1082 (2026-10-03) lacked
+    BackprojectIndexedRuntimeRadius. ``record`` resolves recovar as the build did, and ``check`` compares the
+    compiled kernel sources with those of the recovar a run imports."""
+    from scripts import native_sources
+
+    src = tmp_path / "src"
+    for rel in ("relax/cuda/relax_kernels.cu", "relax/relion_bind/module.cpp", "scripts/build_test_natives.sh"):
+        (src / rel).parent.mkdir(parents=True, exist_ok=True)
+        (src / rel).write_text(rel)
+    checkout = tmp_path / "recovar_checkout"
+    (checkout / "recovar" / "cuda").mkdir(parents=True)
+    (checkout / "recovar" / "__init__.py").write_text("")
+    (checkout / "recovar" / "cuda" / "cuda_backproject.cu").write_text("// an older kernel")
+    shadowed, clean = tmp_path / "shadowed", tmp_path / "clean"
+    for natives, cwd in ((shadowed, checkout), (clean, tmp_path)):
+        natives.mkdir()
+        monkeypatch.chdir(cwd)
+        assert native_sources.main(["record", str(natives), "--root", str(src)]) == 0
+    monkeypatch.chdir(tmp_path)
+    recorded = json.loads((shadowed / "NATIVE.json").read_text())["recovar_kernels"]
+    assert recorded["path"] == str((checkout / "recovar" / "cuda").resolve())
+    assert "compiled the recovar kernels" in native_sources.check(shadowed, src)
+    assert native_sources.check(clean, src) is None
+    # Natives without the record cannot be verified and are refused too.
+    record = json.loads((clean / "NATIVE.json").read_text())
+    del record["recovar_kernels"]
+    (clean / "NATIVE.json").write_text(json.dumps(record))
+    assert "does not record which recovar kernel sources" in native_sources.check(clean, src)
+
+
 def test_relax_must_be_imported_from_the_snapshot(tmp_path):
     import os
 

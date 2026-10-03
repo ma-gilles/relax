@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from relax.helpers.batch_fetch import prefetched_batches, prefetch_depth
+from relax.helpers.batch_fetch import prefetch_depth, prefetched_batches
 
 pytestmark = pytest.mark.unit
 
@@ -65,11 +65,12 @@ def test_invalid_depth_rejected(monkeypatch, value):
 
 
 def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
-    from test_em_stage_glue_programs import _significance_call, _assert_significance_results_match
+    from test_em_stage_glue_programs import _assert_significance_results_match, _significance_call
+
     from relax.scoring import significance
 
     monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    args, kwargs = _significance_call()
+    args, kwargs = _significance_call(monkeypatch)
     threads = []
     original = args[0].iter_batches
 

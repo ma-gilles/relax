@@ -1096,7 +1096,18 @@ def test_em_parity_fast_kclass_nonadaptive_replay(tmp_path):
     with firstiter_cc. Check all four matched maps and particle class assignments.
     RELION GPU rejects firstiter_cc without oversampling. Comparing against its
     oversampling-1 reference preserves cross-grid regression coverage, not
-    strict matched-state parity.
+    strict matched-state parity: poses differ from that reference at every
+    iteration (median 13 degrees), so its map FSC, including the near-Nyquist
+    shells, does not measure operand parity.
+
+    Stock RELION 5.0.1 on CPU does accept firstiter_cc at oversampling 0. The
+    oracle's command with --oversampling 0 --iter 3 (non-MPI, --j 16; 2026-10-03,
+    em_fixtures/k4_fast_oracles/h1_os0_cpu_20261003) is the matched
+    reference. At it001, relax's exact coarse operands agree with it on class
+    0.9998 and pose 0.9988 (the generic operands before cbd5179: 0.9988 /
+    0.9960; scripts/compare_iteration_data_stars.py). The kclass_nonadaptive_replay
+    repin of cb16c5e moved this case's FSC against the OS1 reference, not its
+    agreement with RELION at OS0.
     """
     _assert_parity_ancestors_or_skip()
     # Canonical RELION GPU rejects firstiter_cc at OS0. This existing case

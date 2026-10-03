@@ -81,7 +81,8 @@ def test_complete_capture_copies_the_selected_model_and_particle_frame(n_classes
     assert result.translations[1].shape == ((0 if empty_second_half else 2), offset_dimension)
     assert result.extra['translation_dtype'] == np.dtype(dtype).name
     assert result.group_ids[0].tolist() == [0, 0]
-    assert_matches(result.avg_norm_correction, (1.0, 1.0))
+    # A half without norm correction records RELION's 1.0 in relax's frame (grid_size ** 2).
+    assert_matches(result.avg_norm_correction, (1.0, 16.0**2))
     if n_classes == 4:
         assert result.means[0] is result.means[1]
         assert result.fsc is None and result.fsc_for_growth is None

@@ -1118,8 +1118,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             False,
         ),
         score_mode="normalized_cc",
-        relion_coarse_gaussian_default=bool(engine_kwargs.get("relion_exact_coarse", False)),
-        require_plain_gemm_coarse=bool(engine_kwargs.get("require_plain_gemm_coarse", False)),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
         collect_significance=_significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
@@ -2077,6 +2075,22 @@ def _pass2_support_log_args(support_stats, *, n_rot_fine, n_trans_fine, dense_su
     )
 
 
+def _supports_coarse_parents(supports_by_class, n_images, n_coarse_rot, n_coarse_trans):
+    """The coarse parents any class's pass-2 rows descend from, or None for every parent."""
+
+    from relax.sparse_pass2.resident_significance import significant_coarse_parents
+
+    parents = []
+    for support in supports_by_class:
+        class_parents = significant_coarse_parents(
+            support, n_images=n_images, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans
+        )
+        if class_parents is None:
+            return None
+        parents.append(class_parents)
+    return np.unique(np.concatenate(parents)) if parents else None
+
+
 def run_dense_k_class_em_adaptive(
     experiment_dataset,
     means,
@@ -2120,6 +2134,7 @@ def run_dense_k_class_em_adaptive(
     coarse_translation_phase_source=None,
     coarse_engine: str = "auto",
     image_seed_classes=None,
+    fill_fine_rows=None,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + fine pass-2 masked.
@@ -2142,6 +2157,10 @@ def run_dense_k_class_em_adaptive(
         Optional pass-2 rotations used only for M-step backprojection. Score
         projections, posterior selection, and reported best poses continue to
         use ``fine_rotations``. Supported by sparse pass 2 only.
+    fill_fine_rows : callable or None
+        For a deferred fine grid (:class:`relax.helpers.oversampling.DeferredFineRows`):
+        called with the significant coarse parents before the sparse pass 2, or
+        with None (every parent) before any other route reads the fine rows.
     rot_parent_map : np.ndarray of int, shape (n_rot_fine,)
         Index into ``coarse_rotations`` for each fine rotation.
     trans_parent_map : np.ndarray of int, shape (n_trans_fine,)
@@ -2168,6 +2187,10 @@ def run_dense_k_class_em_adaptive(
         defers to ``RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP``;
         the strict-parity default is RELION texture interpolation.
     """
+    if "relion_exact_coarse" in engine_kwargs:
+        raise TypeError(
+            "relion_exact_coarse was removed on 2026-10-02: pass 1 always scores RELION's exact coarse operands"
+        )
     # Lazy import to avoid the formatter stripping a top-level name that is
     # only referenced inside this function.
     from relax.scoring.significance import _compute_k_class_significance_batched
@@ -2284,6 +2307,15 @@ def run_dense_k_class_em_adaptive(
             raise ValueError("gemm_hybrid requires float32 production arithmetic")
         engine_kwargs["mstep_relion_x_half"] = True
         engine_kwargs["sparse_pass2"] = True
+    if fill_fine_rows is not None and (
+        not engine_kwargs.get("sparse_pass2", False)
+        or coarse_engine == "gemm_dense"
+        or firstiter_cc_pass2_only_best_coarse
+        or skip_significance_pruning
+    ):
+        # Only the sparse pass 2 reads just the significant parents' rows.
+        fill_fine_rows(None)
+        fill_fine_rows = None
     if coarse_engine == "gemm_dense":
         logger.warning(
             "gemm_dense is experimental: it evaluates the full pose grid without pruning; "
@@ -2419,9 +2451,6 @@ def run_dense_k_class_em_adaptive(
         coarse_probe_kwargs["rotation_block_size"] = sig_rbs
         coarse_probe_kwargs["relion_firstiter_score_mode"] = "normalized_cc"
         coarse_probe_kwargs["relion_firstiter_winner_take_all"] = True
-        if coarse_engine == "gemm_hybrid":
-            coarse_probe_kwargs["relion_exact_coarse"] = True
-            coarse_probe_kwargs["require_plain_gemm_coarse"] = True
         coarse_probe_kwargs["coarse_relion_projector_texture_interp"] = (
             coarse_relion_projector_texture_interp
         )
@@ -2525,15 +2554,6 @@ def run_dense_k_class_em_adaptive(
             relion_projector_texture_interp=coarse_relion_projector_texture_interp,
             debug_iteration=debug_iteration,
             translation_phase_source=coarse_translation_phase_source,
-            # The exact-operand coarse path (em_status coarse-scorer TODO): the
-            # Refine3D, Class3D and VDAM routes ask for it (relion_exact_coarse); the
-            # generic dense scorer stays for every normalized-CC pass until it moves.
-            relion_coarse_gaussian_default=bool(
-                coarse_engine == "gemm_hybrid" or engine_kwargs.get(
-                    "relion_exact_coarse", engine_kwargs.get("preserve_bpref_particle_order", False)
-                )
-            ),
-            require_plain_gemm_coarse=coarse_engine == "gemm_hybrid",
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
@@ -2637,7 +2657,6 @@ def run_dense_k_class_em_adaptive(
 
     mask_t0 = time.time()
     pass2_kwargs = dict(engine_kwargs)
-    pass2_kwargs.pop("relion_exact_coarse", None)  # a pass-1 choice
     if reuse_zero_oversampling_coarse_state:
         pass2_kwargs["relion_f32_normalization_sum_weight"] = _full_coarse_stats["relion_f32_sum_weight"]
         pass2_kwargs["relion_coarse_max_posterior"] = _full_coarse_stats["relion_f32_max_posterior"]
@@ -2872,7 +2891,15 @@ def run_dense_k_class_em_adaptive(
                 *support_log_args,
             )
 
-    if sparse_pass2_requested and not firstiter_cc_pass2_only_best_coarse and not skip_significance_pruning:
+    sparse_route = sparse_pass2_requested and not firstiter_cc_pass2_only_best_coarse and not skip_significance_pruning
+    if fill_fine_rows is not None:
+        # The sparse pass 2 reads its significant parents' rows; a dense fallback reads every row.
+        fill_fine_rows(
+            _supports_coarse_parents(sig_sample_indices_by_class, n_images, n_rot_coarse, n_trans_coarse)
+            if sparse_route
+            else None
+        )
+    if sparse_route:
         result = _run_sparse_k_class_adaptive_pass2(
             experiment_dataset,
             means_array,

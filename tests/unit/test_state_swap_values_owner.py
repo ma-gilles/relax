@@ -1,15 +1,15 @@
 """The state-swap probe returns one named value instead of positional 14-tuples."""
 
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
 from types import SimpleNamespace
-from relax.refinement.half_inputs import initialize_halfsets
-from relax.refinement.mean_helpers import ReferenceModel
-from relax.refinement.noise_updates import NoiseModel
 
 import numpy as np
 import pytest
 
 from relax.diagnostics import state_swap_runtime
+from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.refinement.half_inputs import initialize_halfsets
+from relax.refinement.mean_helpers import ReferenceModel
+from relax.refinement.noise_updates import NoiseModel
 
 
 def _inputs():

@@ -12,6 +12,10 @@ from recovar.reconstruction import regularization
 from relax.reconstruction import regularization_relion
 from recovar.reconstruction import relion_functions as rf
 from relax.reconstruction import relion_functions_relion
+from relax.relion.geometry import (
+    PROJECTION_PADDING_FACTOR,
+    RECONSTRUCTION_PADDING_FACTOR,
+)
 
 
 def test_gridding_correct_invalid_order_raises():
@@ -1329,10 +1333,6 @@ def test_relion_style_triangular_kernel_respects_by_image_flag(monkeypatch):
 # ---------------------------------------------------------------------------
 
 import jax
-from relax.relion.geometry import (
-    PROJECTION_PADDING_FACTOR,
-    RECONSTRUCTION_PADDING_FACTOR,
-)
 
 
 @pytest.mark.gpu

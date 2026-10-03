@@ -105,3 +105,18 @@ def test_preread_decision():
     assert record == {"setting": "auto", "preread": False, "stack_gb": 17.0, "memory_gb": 64.0, "memory_fraction": 0.25}
     with pytest.raises(ValueError, match="auto, on or off"):
         resolve_preread_images("yes", 1, 1)
+
+
+def test_source_identity_without_git_checkout(monkeypatch):
+    """A plain file snapshot (no git) still has an identity: its file hashes, with no head."""
+    import subprocess
+
+    from relax.commands import ppca_initial_model as command
+
+    def no_git(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(128, "git")
+
+    monkeypatch.setattr(command.subprocess, "check_output", no_git)
+    identity = command.source_identity()
+    assert identity["head"] is None
+    assert "relax/ppca_initial_model/iteration_loop.py" in identity["files"]

@@ -316,7 +316,9 @@ LOC_BUDGETS = {
     # and the momentum-SGD refusal (+14): a real raise, no headroom.
     # Optics features (2026-10-02): the optics gate, the premultiplied flag and the subset's average
     # CTF^2 for the M-step (+22): a real raise.
-    "controller": (1932, (
+    # RELION's rlnLogLikeliContribution (dLL) in data.star (2026-10-03): the driver computes it from the
+    # E-step's log evidence (+10), the E-step carries the evidence and the formula (+27), the writer (+1).
+    "controller": (1942, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -344,7 +346,7 @@ LOC_BUDGETS = {
     # Subtomogram InitialModel's E-step adapter tomo_estep.py (+134, 2026-10-01): a real raise, no headroom.
     # +4: estep_meta_updates keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
     # Several optics groups (2026-10-01): per-group noise rows, ids and the per-group noise update (+47).
-    "estep": (2121, (
+    "estep": (2148, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),
@@ -362,7 +364,7 @@ LOC_BUDGETS = {
     # +2: initial_model_io writes RELION's rlnNrOfSignificantSamples column (2026-10-01).
     # Several optics groups (2026-10-01): per-particle optics, one model.star noise table per group and
     # the shared start-up selection relion_startup_positions (+31).
-    "input_output": (1381, (
+    "input_output": (1382, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),

@@ -8,21 +8,13 @@ pass and calls it per image batch.
 
 import operator
 import os
-from functools import partial
 from typing import NamedTuple
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers import projection_cache as projection_cache_helpers
 from relax.helpers.env_flags import parse_env_strict_flag
-from relax.scoring.scoring import (
-    _relion_coarse_gaussian_gemm_scores,
-)
-
-_COARSE_GAUSSIAN_GEMM_MACRO_ENV = "RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO"
-
 
 _COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB_ENV = (
     "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"
@@ -51,23 +43,9 @@ _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT = 16
 _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ALIAS_EVIDENCE_JOB = 13_332_001
 
 
-_K1_RELION_EXACT_COARSE_OPERANDS_ENV = "RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS"
 
 
 _K1_RELION_F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
-
-
-def _coarse_gaussian_gemm_macro_enabled(*, default: bool = False) -> bool:
-    """Whether one coarse projection feeds the shared multi-image GEMMs.
-
-    The exact-arithmetic objective is unchanged, but expanding the direct
-    square changes operation order and can amplify cancellation.  Keep it
-    default-off until same-H100 repeats establish stable numerical noise,
-    unchanged discrete choices/support and quality, and a material end-to-end
-    speedup.
-    """
-
-    return parse_env_strict_flag(_COARSE_GAUSSIAN_GEMM_MACRO_ENV, default=default)
 
 
 def _coarse_gaussian_gemm_projection_cache_enabled(
@@ -277,26 +255,16 @@ def _coarse_gaussian_gemm_resources(
 
 def _validate_coarse_gaussian_gemm_projection_cache_request(
     *,
-    macro_enabled: bool,
     n_rotations: int,
-    coarse_gaussian_ffi_enabled: bool,
-    exact_coarse_operands_enabled: bool,
-    use_relion_projector: bool,
-    relion_texture_interp_enabled: bool,
-    use_float64_scoring: bool,
     relion_projector_dtype,
 ) -> None:
     """Fail closed unless the cache serves the exact RELION projector rows.
 
-    The cache holds exactly the complex64 rows the macro's projector callback
+    The cache holds exactly the complex64 rows the coarse GEMMs' projector
     returns, one table per class, so any class count is served unchanged.
     """
 
     prefix = f"{_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV}=1 requires"
-    if not macro_enabled:
-        raise ValueError(
-            f"{prefix} {_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1",
-        )
     if int(n_rotations) <= 0 or int(n_rotations) % int(
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT
     ):
@@ -305,20 +273,6 @@ def _validate_coarse_gaussian_gemm_projection_cache_request(
             f"{_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ROW_ALIGNMENT}, "
             f"got {int(n_rotations)}",
         )
-    if not coarse_gaussian_ffi_enabled:
-        raise ValueError(
-            f"{prefix} the exact RELION coarse Gaussian FFI path",
-        )
-    if not exact_coarse_operands_enabled:
-        raise ValueError(
-            f"{prefix} {_K1_RELION_EXACT_COARSE_OPERANDS_ENV}=1",
-        )
-    if not use_relion_projector or not relion_texture_interp_enabled:
-        raise ValueError(
-            f"{prefix} the supplied RELION texture projector",
-        )
-    if use_float64_scoring:
-        raise ValueError(f"{prefix} production float32/complex64 scoring")
     if relion_projector_dtype is None or np.dtype(relion_projector_dtype) != np.dtype(
         np.complex64
     ):
@@ -408,86 +362,3 @@ def _coarse_gaussian_gemm_projection_cache_stats(plan, *, enabled: bool):
     }
 
 
-def _project_coarse_gaussian_gemm_projection_cache_block_once(
-    cache,
-    class_index,
-    mean_for_proj,
-    rotations_block,
-    *,
-    rotation_start: int,
-):
-    """Serve one existing macro block from C64 cache without reprojection."""
-
-    del mean_for_proj
-    cache = jnp.asarray(cache)
-    if cache.ndim != 3 or np.dtype(cache.dtype) != np.dtype(np.complex64):
-        raise TypeError(
-            "coarse GEMM projection cache must have shape "
-            "(table, rotation, pixel) and dtype complex64",
-        )
-    table_index = int(class_index)
-    if table_index < 0 or table_index >= int(cache.shape[0]):
-        raise IndexError(
-            f"coarse GEMM projection-cache table {table_index} is out of range",
-        )
-    start = int(rotation_start)
-    requested_rows = int(rotations_block.shape[0])
-    if start < 0 or requested_rows <= 0 or start >= int(cache.shape[1]):
-        raise IndexError(
-            "coarse GEMM projection-cache block must start inside the cache "
-            "and contain at least one row",
-        )
-    stop = min(start + requested_rows, int(cache.shape[1]))
-    return _projection_cache_block(cache, table_index, start, rows=stop - start, padded_rows=requested_rows)
-
-
-@partial(jax.jit, static_argnames=("rows", "padded_rows"))
-def _projection_cache_block(cache, table_index, start, *, rows, padded_rows):
-    """One cached block and its squared modulus in one program.
-
-    The block is a slice of one table, zero-padded to ``padded_rows`` rows: the
-    shared significance loop masks those physical tail rows to -inf, and zero
-    padding keeps its fixed score-block shape without projecting synthetic
-    identity rotations or changing any valid cached row. The squared modulus
-    is the same C64 expression as the projector callback's; the promoted
-    certificate ignores this companion and forms its two component squares in
-    FP64. Eager, the slice, pad and square were four programs per class and
-    rotation block, and the device idled between them (K15 50k, nsys 14693142).
-    """
-
-    projected_reference = jax.lax.dynamic_slice_in_dim(cache[table_index], start, rows, axis=0)
-    if padded_rows > rows:
-        projected_reference = jnp.pad(projected_reference, ((0, padded_rows - rows), (0, 0)))
-    return projected_reference, jnp.abs(projected_reference) ** 2
-
-
-def _score_relion_coarse_gaussian_gemm_macro(
-    project_block_once,
-    class_index,
-    mean_for_proj,
-    rotations_block,
-    shifted_corrected,
-    pixel_weight,
-    initial_diff2,
-    actual_image_count,
-    *,
-    image_shape,
-    volume_shape,
-):
-    """Project once, then score every physical image lane through shared GEMMs."""
-
-    projected_reference, projected_reference_abs2 = project_block_once(
-        class_index,
-        mean_for_proj,
-        rotations_block,
-    )
-    return _relion_coarse_gaussian_gemm_scores(
-        projected_reference,
-        projected_reference_abs2,
-        shifted_corrected,
-        pixel_weight,
-        initial_diff2,
-        actual_image_count,
-        image_shape=image_shape,
-        volume_shape=volume_shape,
-    )

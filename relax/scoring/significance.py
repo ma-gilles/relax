@@ -35,30 +35,17 @@ from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
     _assemble_relion_exact_coarse_gaussian_operands,
     _infer_relion_coarse_healpix_order,
-    _k1_relion_exact_coarse_assembly_profile_enabled,
-    _k1_relion_exact_coarse_operands_enabled,
-    _k1_relion_exact_coarse_skip_generic_operands_enabled,
-    _k1_relion_exact_compact_preprocess_enabled,
     _k1_relion_f32_coarse_support_enabled,
     _process_relion_exact_coarse_half_image,
-    _relion_acc_double_floorf_quirk_enabled,
     _relion_cc_inverse_power_from_processed,
-    _relion_coarse_gaussian_square_operands,
-    _relion_coarse_gaussian_square_operands_sincosf,
     _repeat_pad_batch_axis,
-    _resolve_k1_relion_exact_coarse_skip_generic_operands,
-    _resolve_k1_relion_exact_compact_preprocess,
     _select_relion_coarse_rescore_winner_slots,
     assemble_relion_cc_coarse_operands,
 )
 from relax.scoring.coarse_gaussian_gemm import (
-    _COARSE_GAUSSIAN_GEMM_MACRO_ENV,
     _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
-    _K1_RELION_EXACT_COARSE_OPERANDS_ENV,
-    _K1_RELION_F32_COARSE_SUPPORT_ENV,
     _coarse_gaussian_gemm_cached_block_rows,
     _coarse_gaussian_gemm_fit_rotation_block_size,
-    _coarse_gaussian_gemm_macro_enabled,
     _coarse_gaussian_gemm_projected_transient_budget_bytes,
     _coarse_gaussian_gemm_projection_cache_budget_bytes,
     _coarse_gaussian_gemm_projection_cache_enabled,
@@ -66,28 +53,18 @@ from relax.scoring.coarse_gaussian_gemm import (
     _coarse_gaussian_gemm_projection_row_bytes,
     _coarse_gaussian_gemm_resources,
     _plan_coarse_gaussian_gemm_projection_cache,
-    _project_coarse_gaussian_gemm_projection_cache_block_once,
-    _score_relion_coarse_gaussian_gemm_macro,
     _validate_coarse_gaussian_gemm_projection_cache_request,
 )
 from relax.scoring.coarse_publication import coarse_square_layout_metadata
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
-    _e_step_block_scores,
-    _e_step_block_scores_windowed,
     _relion_coarse_gaussian_gemm_scores_jit,
     _relion_coarse_normalized_cc_gemm_scores_jit,
     _update_logsumexp,
 )
 from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
 
-_SIGNIFICANCE_SCORE_CACHE_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE"
-_SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV = "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB"
-_SIGNIFICANCE_SCORE_CACHE_DEFAULT_MAX_GB = 2.0
-_RETIRED_BACKEND_REASON = "removed on 2026-10-02 with the opt-in coarse scorers; the coarse GEMM scorer is the only one"
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
-_K1_COARSE_GAUSSIAN_FFI_ENV = "RECOVAR_K1_COARSE_GAUSSIAN_FFI"
-_K1_COARSE_GAUSSIAN_SINCOSF_ENV = "RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF"
 _COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = (
     "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT"
 )
@@ -145,29 +122,6 @@ def _pad_significance_preprocess_inputs(
         None if batch_corr is None else _repeat_pad_batch_axis(batch_corr, target_size),
         _repeat_pad_batch_axis(batch_scale, target_size),
         padded_kwargs,
-    )
-
-
-@partial(jax.jit, static_argnames=("complex_dtype", "real_dtype"))
-def _windowed_score_operands(
-    shifted_half,
-    score_weight_half,
-    window_indices,
-    *,
-    complex_dtype,
-    real_dtype,
-):
-    """Gather and cast the coarse score operands in one program.
-
-    Eagerly these four lines are six XLA programs (two gathers, two index
-    broadcasts and two element casts), retraced for every image-batch extent.
-    The primitives, their order and their dtypes are unchanged, so the result
-    is bit-for-bit the eager one; only the program count differs.
-    """
-
-    return (
-        shifted_half[:, window_indices].astype(complex_dtype),
-        score_weight_half[:, window_indices].astype(real_dtype),
     )
 
 
@@ -355,39 +309,41 @@ def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
     return token == "1"
 
 
-def _k1_coarse_gaussian_ffi_enabled(*, default: bool = False) -> bool:
-    """Return whether the RELION coarse Gaussian FFI is active."""
+def _custom_cuda_ready() -> bool:
+    """Whether JAX runs on a GPU with RECOVAR's custom CUDA library loaded (pass 1's FFI kernels)."""
 
-    return parse_env_strict_flag(_K1_COARSE_GAUSSIAN_FFI_ENV, default=default)
+    from recovar import cuda_backproject
+
+    return jax.default_backend() == "gpu" and cuda_backproject.cuda_available()
 
 
-def _coarse_gaussian_ffi_default(
-    relion_coarse_gaussian_default: bool,
+def _require_exact_pass1_operands(
     *,
     use_relion_projector: bool,
-    use_float64_scoring: bool,
     coarse_texture_interp: bool,
-) -> bool:
-    """Whether the fresh-InitialModel coarse Gaussian FFI default applies.
+    half_spectrum_scoring: bool,
+    use_float64_scoring: bool,
+    use_float64_projections: bool | None,
+) -> None:
+    """Refuse a coarse pass that RELION's exact coarse operands cannot score.
 
-    The FFI scores from the supplied RELION projector with texture
-    interpolation (or float64 operands), so the guarded default is active only
-    when those operands exist; a dense pass without a supplied projector keeps
-    the JAX coarse path. An explicit environment request still fails closed at
-    the operand check.
+    Pass 1 projects with the supplied RELION projector by texture interpolation,
+    scores the half spectrum in float32 and runs RELION's CUDA preprocessing and
+    translation, as RELION's GPU coarse kernels do. The generic dense scorer that
+    served the other configurations was removed on 2026-10-02.
     """
 
-    return bool(
-        relion_coarse_gaussian_default
-        and use_relion_projector
-        and (use_float64_scoring or coarse_texture_interp)
-    )
-
-
-def _k1_coarse_gaussian_sincosf_enabled(*, default: bool = False) -> bool:
-    """Return whether exact RELION coarse score translation is active."""
-
-    return parse_env_strict_flag(_K1_COARSE_GAUSSIAN_SINCOSF_ENV, default=default)
+    missing = []
+    if not use_relion_projector:
+        missing.append("the supplied RELION projector (relion_projector_half)")
+    if not coarse_texture_interp:
+        missing.append("texture interpolation of that projector")
+    if not half_spectrum_scoring:
+        missing.append("half-spectrum scoring")
+    if use_float64_scoring or use_float64_projections:
+        missing.append("float32 scoring and projections")
+    if missing:
+        raise ValueError("pass 1 scores RELION's exact coarse operands and needs " + ", ".join(missing))
 
 
 def _coarse_max_posterior_for_host(batch_weights, actual_batch_size):
@@ -850,33 +806,6 @@ def _coarse_pass1_block(
     )
 
 
-def _significance_score_cache_enabled(n_images, n_classes, n_rot, n_trans, *, use_float64_scoring: bool) -> bool:
-    """Whether to keep pass-1 score blocks for reuse in pass 2.
-
-    The cache is exact: it stores the already-prior-adjusted score tensors
-    computed for the streaming logsumexp pass and reuses them when forming
-    posterior weights/significance masks.  If the estimated tensor footprint is
-    too large, callers fall back to the previous recompute path.
-    """
-
-    mode = os.environ.get(_SIGNIFICANCE_SCORE_CACHE_ENV, "auto").strip().lower()
-    if mode in {"0", "false", "no", "off", "disable", "disabled"}:
-        return False
-    force = mode in {"1", "true", "yes", "on", "force", "always"}
-    itemsize = 8 if use_float64_scoring else 4
-    estimated_bytes = int(n_images) * int(n_classes) * int(n_rot) * int(n_trans) * itemsize
-    max_gb = float(os.environ.get(_SIGNIFICANCE_SCORE_CACHE_MAX_GB_ENV, _SIGNIFICANCE_SCORE_CACHE_DEFAULT_MAX_GB))
-    return force or estimated_bytes <= int(max_gb * (1024**3))
-
-
-def _uses_relion_background_fill(experiment_dataset) -> bool:
-    image_source = getattr(experiment_dataset, "image_source", None)
-    while hasattr(image_source, "parent"):
-        image_source = image_source.parent
-    backend = getattr(image_source, "backend", image_source)
-    return getattr(backend, "image_mask_mode", None) == "relion_background_fill"
-
-
 @nvtx.annotate("kclass.adaptive.pass1_significance", color="orange", domain=NVTX_DOMAIN_EM)
 def _prepare_coarse_relion_projector(
     projector, *, use_float64_scoring, use_float64_projections,
@@ -953,14 +882,12 @@ def _compute_k_class_significance_batched(
     coarse_healpix_order: int | None = None,
     coarse_rotation_ids=None,
     translation_phase_source=None,
-    relion_coarse_gaussian_default: bool = False,
     symmetry_label: str = "C1",
     relion_f32_coarse_tie_ulps: int = 0,
     pad_final_image_batch: bool = False,
     stable_fourier_window_shapes: bool = False,
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
-    require_plain_gemm_coarse: bool = False,
     tree_rescore_max_margin: float | None = None,
 ):
     """Find significant samples from one posterior over ``class x rotation x translation``.
@@ -977,36 +904,20 @@ def _compute_k_class_significance_batched(
     ):
         raise ValueError("RELION float32 normalization requires Gaussian float32 significance")
 
-    from recovar import core
-    from recovar.core.configs import ForwardModelConfig
     from recovar.reconstruction import noise as noise_utils
 
     from relax.helpers.fourier_window import make_fourier_window_spec, relion_fftw_order_for_square_score_window
-    from relax.helpers.half_spectrum import make_half_image_weights, make_scoring_half_image_weights
+    from relax.helpers.half_spectrum import make_scoring_half_image_weights
     from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, tiled_half_image_phase_factors
     from relax.helpers.oversampling import find_significant_rotations as _find_sig
     from relax.helpers.preprocessing import (
-        _dense_batch_ctf_half,
-        jit_stage_glue_enabled,
         prepare_batch_preprocess_operands,
-        process_half_image,
     )
-    from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
-    from relax.helpers.preprocessing import preprocess_batch_firstiter_cc as _preprocess_batch_firstiter_cc
-    from relax.helpers.projection import compute_projections_block as _compute_projections_block
     from relax.helpers.projection import (
         compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
     )
-    from relax.helpers.projection import (
-        project_relion_projector_half_spectrum_centered_rows as _project_relion_projector_manual,
-    )
-    from relax.helpers.projection import relion_kernel_zero_rows
     from relax.scoring.scoring import (
-        _e_step_block_scores_normalized_cc,
-        _e_step_block_scores_windowed_normalized_cc,
-        _relion_coarse_normalized_cc_gemm_scores_jit,
         _relion_coarse_normalized_cc_rescore,
-        _update_logsumexp,
     )
 
     score_mode = str(score_mode)
@@ -1064,23 +975,7 @@ def _compute_k_class_significance_batched(
             relion_projector_half, n_classes, use_float64_scoring=use_float64_scoring,
             use_float64_projections=use_float64_projections,
         )
-    if projection_padding_factor > 1 and not use_relion_projector:
-        from relax.reconstruction.relion_functions_relion import pad_volume_for_projection
-
-        means_for_proj = []
-        proj_volume_shape = None
-        for class_index in range(n_classes):
-            mean_for_proj, proj_volume_shape = pad_volume_for_projection(
-                means_array[class_index],
-                experiment_dataset.volume_shape,
-                projection_padding_factor,
-                do_gridding_correction=do_gridding_correction,
-                current_size=current_size,
-            )
-            means_for_proj.append(mean_for_proj)
-    else:
-        means_for_proj = [means_array[class_index] for class_index in range(n_classes)]
-        proj_volume_shape = experiment_dataset.volume_shape
+    means_for_proj = [means_array[class_index] for class_index in range(n_classes)]
 
     half_weights = make_scoring_half_image_weights(
         image_shape,
@@ -1117,17 +1012,10 @@ def _compute_k_class_significance_batched(
         if coarse_rows_wrap_inside(score_size, int(relion_projector_r_max), rotation_scale):
             coarse_kernel_window = score_size
     window_indices = window_spec.score_indices
-    n_windowed = window_spec.n_score
-    projection_kwargs = window_spec.projection_kwargs()
     coarse_texture_interp = (
         _global_pass1_relion_projector_texture_enabled()
         if relion_projector_texture_interp is None
         else bool(relion_projector_texture_interp)
-    )
-    coarse_floorf_quirk = bool(
-        use_float64_scoring
-        and not coarse_texture_interp
-        and _relion_acc_double_floorf_quirk_enabled()
     )
     if tree_rescore_max_margin is not None and not (
         np.isfinite(tree_rescore_max_margin) and tree_rescore_max_margin >= 0.0
@@ -1138,148 +1026,38 @@ def _compute_k_class_significance_batched(
     tree_rescore_enabled = (
         tree_rescore_max_margin is not None and score_mode == "normalized_cc"
     )
-    # The environment flag spans the complete refinement process. Iteration 1
-    # may use normalized CC, while this intervention applies only to later
-    # Gaussian coarse passes. Keep the flag dormant for the CC call instead of
-    # rejecting the process before it reaches the intended boundary.
-    coarse_gaussian_ffi_requested = _k1_coarse_gaussian_ffi_enabled(
-        default=_coarse_gaussian_ffi_default(
-            relion_coarse_gaussian_default,
-            use_relion_projector=use_relion_projector,
-            use_float64_scoring=use_float64_scoring,
-            coarse_texture_interp=coarse_texture_interp,
-        ),
+    # Pass 1 scores RELION's exact coarse operands only: the Gaussian passes with the coarse GEMMs
+    # (_relion_coarse_gaussian_gemm_scores_jit), the --firstiter_cc passes with RELION's coarse CC
+    # (_relion_coarse_normalized_cc_gemm_scores_jit). The generic dense scorer was removed on
+    # 2026-10-02; like pass 2, pass 1 needs a CUDA GPU and RELION's CUDA image preprocessing.
+    _require_exact_pass1_operands(
+        use_relion_projector=use_relion_projector,
+        coarse_texture_interp=coarse_texture_interp,
+        half_spectrum_scoring=half_spectrum_scoring,
+        use_float64_scoring=use_float64_scoring,
+        use_float64_projections=use_float64_projections,
     )
-    coarse_gaussian_ffi_enabled = (
-        coarse_gaussian_ffi_requested and score_mode == "gaussian"
+    exact_gaussian = score_mode == "gaussian"
+    coarse_gaussian_gemm_projection_cache_requested = exact_gaussian and (
+        _coarse_gaussian_gemm_projection_cache_enabled(default=True)
     )
-    coarse_gaussian_sincosf_requested = _k1_coarse_gaussian_sincosf_enabled(
-        default=relion_coarse_gaussian_default and coarse_gaussian_ffi_enabled,
-    )
-    coarse_gaussian_sincosf_enabled = (
-        coarse_gaussian_sincosf_requested and score_mode == "gaussian"
-    )
-    if coarse_gaussian_sincosf_enabled and not coarse_gaussian_ffi_enabled:
-        raise ValueError(
-            f"{_K1_COARSE_GAUSSIAN_SINCOSF_ENV} requires "
-            f"{_K1_COARSE_GAUSSIAN_FFI_ENV}=1",
-        )
-    # The shared real-packed GEMMs are the one coarse Gaussian scorer on RELION's
-    # exact operands (the fused, native-texture and rectangular kernels were
-    # removed on 2026-10-02); turning them off is refused.
-    if os.environ.get(_COARSE_GAUSSIAN_GEMM_MACRO_ENV, "").strip() == "0":
-        raise ValueError(
-            f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=0 was {_RETIRED_BACKEND_REASON}. Unset it to run the default."
-        )
-    coarse_gaussian_gemm_macro_requested = _coarse_gaussian_gemm_macro_enabled(
-        default=bool(
-            relion_coarse_gaussian_default
-            and coarse_gaussian_ffi_enabled
-            and coarse_gaussian_sincosf_enabled
-        ),
-    )
-    if require_plain_gemm_coarse:
-        if use_float64_scoring or use_float64_projections:
-            raise ValueError("gemm_hybrid requires float32 coarse scoring and projection")
-        if score_mode == "gaussian":
-            coarse_gaussian_gemm_macro_requested = True
-    if coarse_gaussian_ffi_enabled and not coarse_gaussian_gemm_macro_requested:
-        raise ValueError(
-            f"{_K1_COARSE_GAUSSIAN_FFI_ENV}=1 scores with the coarse GEMM scorer, which needs "
-            f"{_K1_COARSE_GAUSSIAN_SINCOSF_ENV}=1 and RELION's exact coarse operands; the direct "
-            f"coarse kernels were {_RETIRED_BACKEND_REASON}"
-        )
-    exact_coarse_operands_requested = _k1_relion_exact_coarse_operands_enabled(
-        default=(
-            relion_coarse_gaussian_default
-            and coarse_gaussian_ffi_enabled
-            and coarse_gaussian_sincosf_enabled
-        ),
-    )
-    exact_coarse_operands_enabled = (
-        exact_coarse_operands_requested and score_mode == "gaussian"
-    )
-    if exact_coarse_operands_enabled and not coarse_gaussian_sincosf_enabled:
-        raise ValueError(
-            f"{_K1_RELION_EXACT_COARSE_OPERANDS_ENV} requires "
-            f"{_K1_COARSE_GAUSSIAN_FFI_ENV}=1 and "
-            f"{_K1_COARSE_GAUSSIAN_SINCOSF_ENV}=1",
-        )
-    # The plain GEMM default reads only the exact operands, so it skips the
-    # generic square operands and generic preprocessing by default too.
-    coarse_gaussian_gemm_plain_default = bool(
-        coarse_gaussian_gemm_macro_requested and exact_coarse_operands_enabled
-    )
-    exact_coarse_skip_generic_operands_requested = (
-        _k1_relion_exact_coarse_skip_generic_operands_enabled(
-            default=coarse_gaussian_gemm_plain_default,
-        )
-    )
-    exact_coarse_skip_generic_operands_enabled = (
-        _resolve_k1_relion_exact_coarse_skip_generic_operands(
-            requested=exact_coarse_skip_generic_operands_requested,
-            exact_coarse_operands_enabled=exact_coarse_operands_enabled,
-        )
-    )
-    exact_coarse_assembly_profile_enabled = (
-        _k1_relion_exact_coarse_assembly_profile_enabled()
-    )
-    coarse_gaussian_gemm_projection_cache_requested = (
-        _coarse_gaussian_gemm_projection_cache_enabled(
-            default=coarse_gaussian_gemm_macro_requested,
-        )
-    )
-    if coarse_gaussian_gemm_macro_requested and score_mode != "gaussian":
-        raise ValueError(f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1 requires score_mode='gaussian'")
-    coarse_gaussian_gemm_macro_enabled = bool(coarse_gaussian_gemm_macro_requested)
-    if coarse_gaussian_gemm_macro_enabled and not exact_coarse_operands_enabled:
-        raise ValueError(
-            f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1 requires "
-            f"{_K1_RELION_EXACT_COARSE_OPERANDS_ENV}=1",
-        )
     # An explicit cache request fails closed; the default cache quietly stands
     # down wherever its contract or memory budget does not hold.
     coarse_gaussian_gemm_projection_cache_explicit = (
         _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV in os.environ
     )
-    if coarse_gaussian_gemm_projection_cache_requested and not (
-        coarse_gaussian_gemm_projection_cache_explicit
-    ):
+    if coarse_gaussian_gemm_projection_cache_requested:
         try:
             _validate_coarse_gaussian_gemm_projection_cache_request(
-                macro_enabled=coarse_gaussian_gemm_macro_enabled,
                 n_rotations=n_rot,
-                coarse_gaussian_ffi_enabled=coarse_gaussian_ffi_enabled,
-                exact_coarse_operands_enabled=exact_coarse_operands_enabled,
-                use_relion_projector=use_relion_projector,
-                relion_texture_interp_enabled=coarse_texture_interp,
-                use_float64_scoring=use_float64_scoring,
-                relion_projector_dtype=(
-                    relion_projector_half[0].dtype if use_relion_projector else None
-                ),
+                relion_projector_dtype=relion_projector_half[0].dtype,
             )
         except (ValueError, TypeError) as reason:
+            if coarse_gaussian_gemm_projection_cache_explicit:
+                raise
             logger.info("coarse GEMM projection cache off: %s", reason)
             coarse_gaussian_gemm_projection_cache_requested = False
-    if coarse_gaussian_gemm_projection_cache_requested:
-        _validate_coarse_gaussian_gemm_projection_cache_request(
-            macro_enabled=coarse_gaussian_gemm_macro_enabled,
-            n_rotations=n_rot,
-            coarse_gaussian_ffi_enabled=coarse_gaussian_ffi_enabled,
-            exact_coarse_operands_enabled=exact_coarse_operands_enabled,
-            use_relion_projector=use_relion_projector,
-            relion_texture_interp_enabled=coarse_texture_interp,
-            use_float64_scoring=use_float64_scoring,
-            relion_projector_dtype=(
-                relion_projector_half[0].dtype if use_relion_projector else None
-            ),
-        )
-    relion_f32_coarse_support_requested = _k1_relion_f32_coarse_support_enabled(
-        default=relion_coarse_gaussian_default and coarse_gaussian_ffi_enabled,
-    )
-    relion_f32_coarse_support_enabled = (
-        relion_f32_coarse_support_requested and score_mode == "gaussian"
-    )
+    relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)
     # Compact the coarse support mask on the device instead of pulling it
     # (ticket T13) whenever the ids are collected; every dense-mask
     # diagnostic keeps the host pull, checked per batch.
@@ -1294,40 +1072,6 @@ def _compute_k_class_significance_batched(
         from relax.sparse_pass2.resident_significance import (
             compact_batch_significance_classes,
         )
-    exact_compact_preprocess_requested = (
-        _k1_relion_exact_compact_preprocess_enabled(
-            default=bool(
-                coarse_gaussian_gemm_plain_default
-                and coarse_gaussian_gemm_macro_enabled
-            ),
-        )
-    )
-    exact_compact_preprocess_enabled = (
-        _resolve_k1_relion_exact_compact_preprocess(
-            requested=exact_compact_preprocess_requested,
-            exact_coarse_skip_generic_operands_enabled=(
-                exact_coarse_skip_generic_operands_enabled
-            ),
-            exact_coarse_operands_enabled=exact_coarse_operands_enabled,
-            score_mode=score_mode,
-            coarse_gaussian_gemm_macro_enabled=coarse_gaussian_gemm_macro_enabled,
-        )
-    )
-    if relion_f32_coarse_support_enabled:
-        if use_float64_scoring:
-            raise ValueError(
-                f"{_K1_RELION_F32_COARSE_SUPPORT_ENV} requires production float32 scoring",
-            )
-        logger.warning(
-            "RELION CUDA float32 coarse support enabled (%s): current_size=%d",
-            (
-                "guarded fresh InitialModel default"
-                if relion_coarse_gaussian_default
-                and _K1_RELION_F32_COARSE_SUPPORT_ENV not in os.environ
-                else "environment override"
-            ),
-            int(image_shape[0]) if current_size is None else int(current_size),
-        )
     coarse_gaussian_full_to_compact = None
     coarse_gaussian_full_to_compact_np = None
     coarse_gaussian_score_indices = None
@@ -1339,36 +1083,15 @@ def _compute_k_class_significance_batched(
     coarse_gaussian_gemm_resource_estimate = None
     coarse_gaussian_gemm_projection_cache_plan = None
     coarse_gaussian_square_layout = None
-    if coarse_gaussian_ffi_enabled:
-        if use_float64_scoring and n_classes != 1:
-            raise ValueError("Diagnostic float64 coarse Gaussian FFI is restricted to K=1")
-        if not use_relion_projector or (not use_float64_scoring and not coarse_texture_interp):
-            raise ValueError(
-                f"{_K1_COARSE_GAUSSIAN_FFI_ENV} requires the supplied RELION "
-                "projector"
-            )
-        if not half_spectrum_scoring:
-            raise ValueError(
-                f"{_K1_COARSE_GAUSSIAN_FFI_ENV} requires half-spectrum scoring"
-            )
+    if exact_gaussian:
         if n_trans > 128:
-            raise ValueError(
-                f"{_K1_COARSE_GAUSSIAN_FFI_ENV} supports at most 128 "
-                f"translations, got {n_trans}"
-            )
-        from recovar import cuda_backproject
-
-        from relax.helpers.projection import relion_projector_half_to_texture_full
-        from relax.relion.relion_ctf import _relion_exact_ctf_half_from_source_star
-        from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
+            raise ValueError(f"the coarse GEMM scorer supports at most 128 translations, got {n_trans}")
         from relax.sparse_pass2.sparse_pass2_scoring import (
             _relion_cuda_powerclass_highres_xi2_half,
         )
 
-        if jax.default_backend() != "gpu" or not cuda_backproject.cuda_available():
-            raise RuntimeError(
-                f"{_K1_COARSE_GAUSSIAN_FFI_ENV} requires the custom CUDA backend"
-            )
+        if not _custom_cuda_ready():
+            raise RuntimeError("pass 1 scores RELION's exact coarse operands and needs the custom CUDA backend")
         active_score_indices_np = (
             np.arange(n_half, dtype=np.int32)
             if window_spec.score_indices_np is None
@@ -1413,7 +1136,7 @@ def _compute_k_class_significance_batched(
             dtype=jnp.int32,
         )
         coarse_gaussian_powerclass = _relion_cuda_powerclass_highres_xi2_half
-        if coarse_gaussian_gemm_macro_enabled:
+        if exact_gaussian:
             coarse_gaussian_gemm_transient_budget = (
                 _coarse_gaussian_gemm_projected_transient_budget_bytes()
             )
@@ -1481,71 +1204,18 @@ def _compute_k_class_significance_batched(
                 compact_pixel_count=int(square_score_count),
                 budget_bytes=_coarse_gaussian_gemm_projected_transient_budget_bytes(),
             )
-        logger.warning(
-            "RELION coarse Gaussian FFI enabled (%s, %s): "
-            "classes=%d current_size=%d physical_size=%d square_pixels=%d "
-            "translations=%d stable_shapes=%s",
-            (
-                "guarded fresh InitialModel default"
-                if relion_coarse_gaussian_default
-                and _K1_COARSE_GAUSSIAN_FFI_ENV not in os.environ
-                else "environment override"
-            ),
-            "float64" if use_float64_scoring else "float32",
+        logger.info(
+            "Coarse pass on RELION's exact operands (coarse GEMMs): classes=%d rotations=%d "
+            "current_size=%d physical_size=%d square_pixels=%d image_lanes=%d translations=%d stable_shapes=%s",
             n_classes,
+            n_rot,
             score_size,
             coarse_gaussian_projector_output_size,
             square_score_count,
+            int(image_batch_size),
             n_trans,
             bool(stable_fourier_window_shapes),
         )
-        if coarse_gaussian_sincosf_enabled:
-            logger.warning(
-                "RELION coarse CUDA sincosf translation enabled (%s): "
-                "classes=%d current_size=%d square_pixels=%d translations=%d",
-                (
-                    "guarded fresh InitialModel default"
-                    if relion_coarse_gaussian_default
-                    and _K1_COARSE_GAUSSIAN_SINCOSF_ENV not in os.environ
-                    else "environment override"
-                ),
-                n_classes,
-                score_size,
-                square_score_count,
-                n_trans,
-            )
-        if exact_coarse_operands_enabled:
-            logger.warning(
-                "RELION exact coarse operands enabled (%s): per-image FFT, "
-                "RFLOAT CTF division/square, and binary64-to-XFLOAT inverse noise",
-                (
-                    "guarded fresh InitialModel default"
-                    if relion_coarse_gaussian_default
-                    and _K1_RELION_EXACT_COARSE_OPERANDS_ENV not in os.environ
-                    else "environment override"
-                ),
-            )
-            if exact_coarse_skip_generic_operands_enabled:
-                logger.warning(
-                    "Opt-in exact-coarse single-translation path enabled: "
-                    "skipping generic square operands that the exact-source "
-                    "assembly replaces before first use",
-                )
-            if exact_compact_preprocess_enabled:
-                logger.warning(
-                    "Opt-in exact+compact preprocessing enabled: skipping the "
-                    "unused generic half-image FFT, CTF evaluation, and full "
-                    "translated score image",
-                )
-        if coarse_gaussian_gemm_macro_enabled:
-            logger.warning(
-                "RELION coarse real-packed float32 GEMM scorer enabled: "
-                "classes=%d rotations=%d image_lanes=%d translations=%d",
-                n_classes,
-                n_rot,
-                int(image_batch_size),
-                n_trans,
-            )
     tree_rescore_fftw_order = None
     tree_rescore_translation_angles = None
     if tree_rescore_enabled:
@@ -1558,11 +1228,6 @@ def _compute_k_class_significance_batched(
             raise ValueError(
                 "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
                 "return_class_best=True",
-            )
-        if use_float64_scoring:
-            raise ValueError(
-                "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-                "production float32 scoring",
             )
         if not use_relion_projector or not coarse_texture_interp:
             raise ValueError(
@@ -1620,20 +1285,11 @@ def _compute_k_class_significance_batched(
             tree_rescore_max_margin,
             score_size,
         )
-    # --firstiter_cc on RELION's exact coarse operands (em_status coarse-scorer
-    # TODO): the tree rescore's per-image FFT, RFLOAT CTF and corr_img operands,
-    # translated with RELION's sincosf for every translation and scored by the
-    # coarse GEMMs (_relion_coarse_normalized_cc_gemm_scores_jit).
-    exact_cc_enabled = bool(
-        score_mode == "normalized_cc"
-        and relion_coarse_gaussian_default
-        and use_relion_projector
-        and coarse_texture_interp
-        and half_spectrum_scoring
-        and not use_float64_scoring
-    )
-    if require_plain_gemm_coarse and score_mode == "normalized_cc" and not exact_cc_enabled:
-        raise ValueError("gemm_hybrid firstiter CC requires the native exact-operand GEMM scorer")
+    # --firstiter_cc on RELION's exact coarse operands: the tree rescore's per-image
+    # FFT, RFLOAT CTF and corr_img operands, translated with RELION's sincosf for
+    # every translation and scored by the coarse GEMMs
+    # (_relion_coarse_normalized_cc_gemm_scores_jit).
+    exact_cc_enabled = score_mode == "normalized_cc"
     exact_cc_score_indices = None
     exact_cc_translation_angles = None
     if exact_cc_enabled:
@@ -1660,15 +1316,9 @@ def _compute_k_class_significance_batched(
             int(exact_cc_score_indices.shape[0]),
             n_trans,
         )
-    # Both exact paths leave the generic half-image score operands unbuilt.
-    generic_operands_skipped = exact_compact_preprocess_enabled or exact_cc_enabled
     track_class_second = return_class_second or tree_rescore_enabled
     if use_window:
         half_weights_windowed = window_spec.score_values(half_weights)
-    if use_float64_scoring:
-        half_weights = half_weights.astype(jnp.float64)
-        if use_window:
-            half_weights_windowed = window_spec.score_values(half_weights)
 
     n_blocks = (n_rot + rotation_block_size - 1) // rotation_block_size
     n_rot_padded = n_blocks * rotation_block_size
@@ -1720,59 +1370,9 @@ def _compute_k_class_significance_batched(
         else:
             raise ValueError(f"translation_log_prior must be 1D or 2D, got {translation_log_prior.ndim} dimensions")
 
-    config = ForwardModelConfig.from_dataset(
-        experiment_dataset,
-        disc_type=disc_type,
-        process_fn=experiment_dataset.process_images,
-    )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
     if noise_variance_half.ndim == 2 and optics_group_ids is None:
         raise ValueError("a per-optics-group noise table needs optics_group_ids")
-    norm_half_weights = make_half_image_weights(image_shape)
-    use_relion_numpy_preprocess = _uses_relion_background_fill(experiment_dataset)
-
-    def _preprocess_batch_relion_numpy(
-        batch_data,
-        ctf_params,
-        batch_size,
-        *,
-        return_unshifted_score_weighted=False,
-        image_indices=None,
-    ):
-        processed_half = process_half_image(
-            experiment_dataset,
-            np.asarray(batch_data),
-            score_with_masked_images,
-            image_indices=image_indices,
-        )
-        processed_half = jnp.asarray(processed_half)
-        ctf_half = _dense_batch_ctf_half(experiment_dataset, ctf_params, config, score_real_dtype, image_indices)
-        ctf2_over_nv_half = ctf_half**2 / batch_noise_half
-        ctf_weighted = processed_half * ctf_half / batch_noise_half
-        translations_tiled = jnp.repeat(jnp.asarray(translations)[None], batch_size, axis=0).reshape(
-            batch_size * n_trans,
-            -1,
-        )
-        weighted_tiled = jnp.repeat(ctf_weighted[:, None, :], n_trans, axis=1).reshape(
-            batch_size * n_trans,
-            -1,
-        )
-        shifted_half = core.translate_images(
-            weighted_tiled,
-            translations_tiled,
-            image_shape,
-            half_image=True,
-        )
-        batch_norm = jnp.sum(
-            (jnp.abs(processed_half) ** 2 / batch_noise_half) * norm_half_weights[None, :],
-            axis=-1,
-            keepdims=True,
-        ).real
-        result = (shifted_half, batch_norm, ctf2_over_nv_half)
-        if return_unshifted_score_weighted:
-            return (*result, ctf_weighted)
-        return result
-
     coarse_gaussian_shifted_corrected = None
     coarse_gaussian_unshifted_corrected = None
     coarse_gaussian_translation_angles = None
@@ -1787,7 +1387,7 @@ def _compute_k_class_significance_batched(
     projector_compact_indices_np = None
     projector_output_size = None
     if use_relion_projector and coarse_texture_interp:
-        if coarse_gaussian_ffi_enabled:
+        if exact_gaussian:
             projector_compact_indices_np = coarse_gaussian_score_indices_np
             projector_output_size = coarse_gaussian_projector_output_size
         elif use_window:
@@ -1852,66 +1452,24 @@ def _compute_k_class_significance_batched(
         return projected, projected_abs2
 
     def _project_block(class_index, mean_for_proj, rots_b):
-        if use_relion_projector:
-            projector_kwargs = {}
-            if current_size is not None:
-                projector_kwargs["projector_output_size"] = int(current_size)
-            if projector_returns_compact:
-                projector_kwargs["pixel_indices"] = projector_compact_indices_np
-            if coarse_texture_interp:
-                if projector_returns_compact:
-                    proj_half_b, proj_abs2_half_b = (
-                        _project_relion_compact_score_rows(
-                            class_index,
-                            rots_b,
-                            return_abs2=True,
-                        )
-                    )
-                else:
-                    proj_half_b, proj_abs2_half_b = (
-                        _compute_relion_projector_projections_block(
-                            relion_projector_half[class_index],
-                            rots_b,
-                            image_shape,
-                            r_max=int(relion_projector_r_max),
-                            padding_factor=int(projection_padding_factor),
-                            centered_rows=True,
-                            dense_scale=True,
-                            relion_texture_interp=True,
-                            relion_kernel="coarse",
-                            **projector_kwargs,
-                        )
-                    )
-            else:
-                proj_half_b = _project_relion_projector_manual(
-                    relion_projector_half[class_index],
-                    rots_b,
-                    image_shape,
-                    int(relion_projector_r_max),
-                    int(projection_padding_factor),
-                    projector_kwargs.get("projector_output_size"),
-                    coarse_floorf_quirk,
-                )
-                zero_rows = relion_kernel_zero_rows(
-                    int(image_shape[0]),
-                    int(projector_kwargs.get("projector_output_size") or 2 * int(relion_projector_r_max)),
-                    int(relion_projector_r_max),
-                    "coarse",
-                )
-                if zero_rows is not None:
-                    proj_half_b = jnp.where(jnp.asarray(zero_rows), 0.0, proj_half_b)
-                proj_half_b = proj_half_b * _dense_projection_scale(image_shape)
-                proj_abs2_half_b = jnp.abs(proj_half_b) ** 2
-        else:
-            proj_half_b, proj_abs2_half_b = _compute_projections_block(
-                mean_for_proj,
-                rots_b,
-                image_shape,
-                proj_volume_shape,
-                disc_type,
-                **projection_kwargs,
-            )
-        return proj_half_b, proj_abs2_half_b
+        del mean_for_proj
+        if projector_returns_compact:
+            return _project_relion_compact_score_rows(class_index, rots_b, return_abs2=True)
+        projector_kwargs = {}
+        if current_size is not None:
+            projector_kwargs["projector_output_size"] = int(current_size)
+        return _compute_relion_projector_projections_block(
+            relion_projector_half[class_index],
+            rots_b,
+            image_shape,
+            r_max=int(relion_projector_r_max),
+            padding_factor=int(projection_padding_factor),
+            centered_rows=True,
+            dense_scale=True,
+            relion_texture_interp=True,
+            relion_kernel="coarse",
+            **projector_kwargs,
+        )
 
     # The references and rotation blocks are fixed for the whole pass, so a
     # block's projections are the same for every image batch; they are kept
@@ -1979,140 +1537,8 @@ def _compute_k_class_significance_batched(
             coarse_gaussian_gemm_projection_cache_plan.budget_bytes,
         )
 
-    def _score_block(
-        class_index,
-        mean_for_proj,
-        rots_b,
-        shifted_data,
-        batch_norm,
-        ctf2_data,
-        batch_size,
-        *,
-        rotation_start,
-    ):
-        if exact_cc_enabled:
-            proj_half_b, _proj_abs2_half_b = _project_block_once(
-                class_index, mean_for_proj, rots_b, rotation_start=rotation_start
-            )
-            if use_window and not projector_returns_compact:
-                proj_half_b = proj_half_b[:, window_indices]
-            return _relion_coarse_normalized_cc_gemm_scores_jit(
-                jnp.asarray(proj_half_b, dtype=jnp.complex64),
-                exact_cc_shifted,
-                jnp.asarray(exact_cc_pixel_weight, dtype=jnp.float32),
-                actual_batch_size,
-                n_images=int(batch_size),
-                n_trans=int(n_trans),
-            )
-        if coarse_gaussian_gemm_macro_enabled:
-            project_block_once = _project_coarse_gemm_block_once
-            if coarse_gaussian_gemm_projection_cache is not None:
-                project_block_once = partial(
-                    _project_coarse_gaussian_gemm_projection_cache_block_once,
-                    coarse_gaussian_gemm_projection_cache,
-                    rotation_start=int(rotation_start),
-                )
-            return _score_relion_coarse_gaussian_gemm_macro(
-                project_block_once,
-                class_index,
-                mean_for_proj,
-                rots_b,
-                jnp.asarray(
-                    coarse_gaussian_shifted_corrected,
-                    dtype=jnp.complex64,
-                ),
-                jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
-                jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
-                actual_batch_size,
-                image_shape=image_shape,
-                volume_shape=volume_shape,
-            )
-        proj_half_b, proj_abs2_half_b = _project_block_once(
-            class_index, mean_for_proj, rots_b, rotation_start=rotation_start
-        )
-        if use_window:
-            if projector_returns_compact:
-                proj_w = proj_half_b
-                proj_abs2_w = proj_abs2_half_b
-            else:
-                proj_w = proj_half_b[:, window_indices]
-                proj_abs2_w = proj_abs2_half_b[:, window_indices]
-            if not use_float64_scoring:
-                proj_w = proj_w.astype(jnp.complex64)
-                proj_abs2_w = proj_abs2_w.astype(jnp.float32)
-            if score_mode == "normalized_cc":
-                return _e_step_block_scores_windowed_normalized_cc(
-                    shifted_data,
-                    batch_norm,
-                    ctf2_data,
-                    proj_w * half_weights_windowed,
-                    proj_abs2_w * half_weights_windowed,
-                    batch_size,
-                    n_trans,
-                    n_windowed,
-                    image_shape,
-                    volume_shape,
-                )
-            return _e_step_block_scores_windowed(
-                shifted_data,
-                batch_norm,
-                ctf2_data,
-                proj_w * half_weights_windowed,
-                proj_abs2_w * half_weights_windowed,
-                half_weights_windowed,
-                batch_size,
-                n_trans,
-                n_windowed,
-                image_shape,
-                volume_shape,
-            )
-        if not use_float64_scoring:
-            proj_half_b = proj_half_b.astype(jnp.complex64)
-            proj_abs2_half_b = proj_abs2_half_b.astype(jnp.float32)
-        if score_mode == "normalized_cc":
-            return _e_step_block_scores_normalized_cc(
-                shifted_data,
-                batch_norm,
-                ctf2_data,
-                proj_half_b * half_weights,
-                proj_abs2_half_b * half_weights,
-                batch_size,
-                n_trans,
-                image_shape,
-                volume_shape,
-            )
-        return _e_step_block_scores(
-            shifted_data,
-            ctf2_data,
-            proj_half_b * half_weights,
-            proj_abs2_half_b * half_weights,
-            batch_size,
-            n_trans,
-        )
-
-    # Device copies of the class and rotation prior terms, made once per pass:
-    # uploading and broadcasting them for every class, block and image batch
-    # left the device idle between those small programs (K15 50k).
-    prior_device_terms = {}
-    # The same terms for the one-program pass 1, built at its first batch.
+    # The class and rotation prior terms of the pass-1 program, built at its first batch.
     pass1_prior_terms = None
-
-    def _add_priors(scores, class_index, r0, r1, batch_translation_log_prior):
-        if score_mode == "normalized_cc":
-            return scores
-        key = (int(class_index), int(r0), int(r1), np.dtype(scores.real.dtype))
-        terms = prior_device_terms.get(key)
-        if terms is None:
-            terms = (
-                jnp.asarray(class_log_priors_np[class_index], dtype=scores.real.dtype),
-                (
-                    None
-                    if rotation_log_prior_padded is None
-                    else jnp.asarray(rotation_log_prior_padded[class_index, r0:r1])
-                ),
-            )
-            prior_device_terms[key] = terms
-        return _add_coarse_prior_terms(scores, *terms, batch_translation_log_prior)
 
     sig_rot_any = np.zeros((n_classes, n_rot), dtype=bool)
     n_sig_all = np.empty(n_images, dtype=np.int32)
@@ -2159,10 +1585,6 @@ def _compute_k_class_significance_batched(
     tree_rescore_ambiguous = 0
     tree_rescore_winner_changes = 0
     tree_rescore_exact_ties = 0
-    generic_coarse_operand_assembly_count = 0
-    exact_coarse_operand_assembly_count = 0
-    generic_score_preprocess_count = 0
-    exact_source_preprocess_count = 0
 
     start_idx = 0
     image_indices = np.arange(n_images)
@@ -2239,265 +1661,9 @@ def _compute_k_class_significance_batched(
                     )
                 batch_translation_log_prior = jnp.asarray(batch_translation_log_prior_np)
 
-            if generic_operands_skipped:
-                shifted_half = None
-                batch_norm = None
-                ctf2_over_nv_half = None
-                coarse_gaussian_unshifted_score_weighted = None
-            elif score_mode == "normalized_cc":
-                cc_window_indices = window_indices if use_window else None
-                score_complex_dtype = jnp.complex128 if use_float64_scoring else jnp.complex64
-                score_real_dtype = jnp.float64 if use_float64_scoring else jnp.float32
-                cc_preprocess_result = _preprocess_batch_firstiter_cc(
-                    experiment_dataset,
-                    batch_data,
-                    ctf_params,
-                    batch_noise_half,
-                    translations,
-                    config,
-                    score_with_masked_images,
-                    window_indices=cc_window_indices,
-                    score_complex_dtype=score_complex_dtype,
-                    score_real_dtype=score_real_dtype,
-                    norm_real_dtype=jnp.float64,
-                    relion_preprocess_kwargs=relion_preprocess_kwargs,
-                    return_unshifted_score_weighted=tree_rescore_enabled,
-                    image_indices=batch_image_indices,
-                )
-                if tree_rescore_enabled:
-                    (
-                        shifted_half,
-                        batch_norm,
-                        ctf2_half_score,
-                        ctf2_over_nv_half,
-                        tree_rescore_unshifted_half,
-                    ) = cc_preprocess_result
-                else:
-                    shifted_half, batch_norm, ctf2_half_score, ctf2_over_nv_half = (
-                        cc_preprocess_result
-                    )
-            else:
-                if use_relion_numpy_preprocess and not relion_cuda_preprocess:
-                    preprocess_result = _preprocess_batch_relion_numpy(
-                        batch_data,
-                        ctf_params,
-                        batch_size,
-                        return_unshifted_score_weighted=coarse_gaussian_sincosf_enabled,
-                        image_indices=batch_image_indices,
-                    )
-                else:
-                    if exact_coarse_assembly_profile_enabled:
-                        generic_score_preprocess_count += 1
-                    preprocess_result = _preprocess_batch(
-                        experiment_dataset,
-                        batch_data,
-                        ctf_params,
-                        batch_noise_half,
-                        translations,
-                        config,
-                        score_with_masked_images,
-                        relion_preprocess_kwargs=relion_preprocess_kwargs,
-                        return_unshifted_score_weighted=coarse_gaussian_sincosf_enabled,
-                        image_indices=batch_image_indices,
-                    )
-                if coarse_gaussian_sincosf_enabled:
-                    (
-                        shifted_half,
-                        batch_norm,
-                        ctf2_over_nv_half,
-                        coarse_gaussian_unshifted_score_weighted,
-                    ) = preprocess_result
-                else:
-                    shifted_half, batch_norm, ctf2_over_nv_half = preprocess_result
-            batch_scale = jnp.asarray(batch_scale_np)
-            if image_corrections is not None and not generic_operands_skipped:
-                batch_corr = jnp.asarray(batch_corr_np)
-                applied_corr = batch_scale if relion_cuda_preprocess else batch_corr
-                corr_expanded = jnp.repeat(applied_corr, n_trans)
-                shifted_half = shifted_half * corr_expanded[:, None]
-                if score_mode == "normalized_cc" and tree_rescore_enabled:
-                    tree_rescore_unshifted_half = (
-                        tree_rescore_unshifted_half * applied_corr[:, None]
-                    )
-                if coarse_gaussian_sincosf_enabled:
-                    coarse_gaussian_unshifted_score_weighted = (
-                        coarse_gaussian_unshifted_score_weighted
-                        * applied_corr[:, None]
-                    )
-                # ``image_corrections`` carries ``(avg_norm/normcorr) * scale``;
-                # ``scale_corrections`` carries ``scale``. The image-only
-                # ``|F_img|^2`` term must be weighted by ``(avg_norm/normcorr)^2``
-                # alone — divide ``batch_corr`` by ``batch_scale`` to isolate it.
-                # Otherwise ``batch_norm`` picks up an extra ``scale^2`` that is
-                # already accounted for on the reference side via
-                # ``ctf2_over_nv_half *= batch_scale^2`` below, double-counting
-                # ``scale^2`` in the Wiener score offset. See
-                # ``em_engine._relion_image_correction_factors`` and
-                # ``ml_optimiser.cpp:6240,7298,8516``.
-                if not relion_cuda_preprocess:
-                    norm_corr = batch_corr / batch_scale
-                    batch_norm = batch_norm * (norm_corr**2)[:, None]
-            if scale_corrections is not None and not generic_operands_skipped:
-                ctf2_over_nv_half = ctf2_over_nv_half * (batch_scale**2)[:, None]
-                if score_mode == "normalized_cc":
-                    ctf2_half_score = ctf2_half_score * (batch_scale**2)[:, None]
-            if (
-                image_pre_shifts is not None
-                and not real_space_pre_shift_applied
-                and not generic_operands_skipped
-            ):
-                batch_shifts_np = np.asarray(image_pre_shifts)[np.asarray(indices)]
-                if batch_size > actual_batch_size:
-                    batch_shifts_np = _repeat_pad_batch_axis(batch_shifts_np, batch_size)
-                batch_shifts = jnp.asarray(batch_shifts_np)
-                shifted_half = shifted_half * tiled_half_image_phase_factors(image_shape, batch_shifts, n_trans, dtype=batch_shifts.dtype)
-                if score_mode == "normalized_cc" and tree_rescore_enabled:
-                    tree_rescore_unshifted_half = (
-                        tree_rescore_unshifted_half
-                        * tiled_half_image_phase_factors(
-                            image_shape,
-                            batch_shifts,
-                            1,
-                            dtype=batch_shifts.dtype,
-                        )
-                    )
-                if coarse_gaussian_sincosf_enabled:
-                    coarse_gaussian_unshifted_score_weighted = (
-                        coarse_gaussian_unshifted_score_weighted
-                        * tiled_half_image_phase_factors(
-                            image_shape,
-                            batch_shifts,
-                            1,
-                            dtype=batch_shifts.dtype,
-                        )
-                    )
-            if score_mode == "normalized_cc" and not generic_operands_skipped:
-                inv_xi2 = 1.0 / jnp.maximum(batch_norm, jnp.asarray(1e-30, dtype=batch_norm.dtype))
-                score_weight_half = ctf2_half_score * inv_xi2
-                shifted_half = shifted_half * jnp.repeat(inv_xi2, n_trans, axis=0)
-                if tree_rescore_enabled:
-                    tree_rescore_unshifted_half = (
-                        tree_rescore_unshifted_half * inv_xi2
-                    )
-            elif not generic_operands_skipped:
-                score_weight_half = ctf2_over_nv_half
-            else:
-                score_weight_half = None
-            if (
-                half_spectrum_scoring
-                and score_mode != "normalized_cc"
-                and not generic_operands_skipped
-            ):
-                from relax.helpers.half_spectrum import make_shell_indices_half as _mshi
-
-                dc_mask = _mshi(image_shape) == 0
-                shifted_half = jnp.where(dc_mask[None, :], 0.0, shifted_half)
-                score_weight_half = jnp.where(dc_mask[None, :], 0.0, score_weight_half)
-                if coarse_gaussian_sincosf_enabled:
-                    coarse_gaussian_unshifted_score_weighted = jnp.where(
-                        dc_mask[None, :],
-                        0.0,
-                        coarse_gaussian_unshifted_score_weighted,
-                    )
-            fused_window_operands = (
-                jit_stage_glue_enabled()
-                and use_window
-                and not generic_operands_skipped
-                and not (score_mode == "normalized_cc" and tree_rescore_enabled)
-            )
-            if generic_operands_skipped:
-                shifted_data = None
-                ctf2_data = None
-            elif fused_window_operands:
-                shifted_data, ctf2_data = _windowed_score_operands(
-                    shifted_half,
-                    score_weight_half,
-                    window_indices,
-                    complex_dtype=jnp.complex128 if use_float64_scoring else jnp.complex64,
-                    real_dtype=jnp.float64 if use_float64_scoring else jnp.float32,
-                )
-            elif use_window:
-                shifted_data = shifted_half[:, window_indices]
-                ctf2_data = score_weight_half[:, window_indices]
-                if score_mode == "normalized_cc" and tree_rescore_enabled:
-                    tree_rescore_unshifted_data = tree_rescore_unshifted_half[
-                        :, window_indices
-                    ]
-            else:
-                shifted_data = shifted_half
-                ctf2_data = score_weight_half
-                if score_mode == "normalized_cc" and tree_rescore_enabled:
-                    tree_rescore_unshifted_data = tree_rescore_unshifted_half
-            if generic_operands_skipped or fused_window_operands:
-                # ``_windowed_score_operands`` already cast both operands.
-                pass
-            elif use_float64_scoring:
-                shifted_data = shifted_data.astype(jnp.complex128)
-                ctf2_data = ctf2_data.astype(jnp.float64)
-            else:
-                shifted_data = shifted_data.astype(jnp.complex64)
-                ctf2_data = ctf2_data.astype(jnp.float32)
-                if score_mode == "normalized_cc" and tree_rescore_enabled:
-                    tree_rescore_unshifted_data = tree_rescore_unshifted_data.astype(
-                        jnp.complex64
-                    )
-
-            if score_mode == "normalized_cc" and tree_rescore_enabled and not exact_cc_enabled:
-                if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
-                    raise ValueError(
-                        "the coarse-tree top-2 rescore (tree_rescore_max_margin) requires "
-                        "RELION CUDA image preprocessing",
-                    )
-                exact_cc_preprocess_kwargs = dict(relion_preprocess_kwargs)
-                exact_cc_preprocess_kwargs["relion_fft_per_image"] = True
-                exact_cc_processed = process_half_image(
-                    experiment_dataset,
-                    batch_data,
-                    score_with_masked_images,
-                    relion_preprocess_kwargs=exact_cc_preprocess_kwargs,
-                    image_indices=batch_image_indices,
-                )
-                exact_cc_inv_xi2 = _relion_cc_inverse_power_from_processed(
-                    exact_cc_processed,
-                    window_indices if use_window else None,
-                )
-                exact_cc_ctf_rfloat = _relion_exact_ctf_half_from_source_star(
-                    experiment_dataset,
-                    indices,
-                    image_shape,
-                )
-                if batch_size > actual_batch_size:
-                    # This operand is rebuilt from the source STAR at ``indices``,
-                    # which the coarse-batch padding does not touch, so it is the one
-                    # per-image array in this branch still at the unpadded extent.
-                    # Repeat-pad it the same way every other operand here is padded;
-                    # the padded rows are sliced off with the rest.
-                    exact_cc_ctf_rfloat = jnp.asarray(
-                        _repeat_pad_batch_axis(exact_cc_ctf_rfloat, batch_size),
-                    )
-                batch_scale_f32 = jnp.asarray(batch_scale_np, dtype=jnp.float32)
-                exact_cc_operands = assemble_relion_cc_coarse_operands(
-                    exact_cc_processed,
-                    exact_cc_ctf_rfloat,
-                    exact_cc_inv_xi2,
-                    batch_scale_f32,
-                    phase_factors=(
-                        tiled_half_image_phase_factors(image_shape, batch_shifts, 1)
-                        if image_pre_shifts is not None
-                        and not real_space_pre_shift_applied
-                        else None
-                    ),
-                    window_indices=window_indices if use_window else None,
-                    scale_corrections_enabled=scale_corrections is not None,
-                )
-                tree_rescore_unshifted_data = exact_cc_operands.windowed_unshifted
-                tree_rescore_corr_img_data = exact_cc_operands.windowed_corr_img
-
+            if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
+                raise ValueError("pass 1 scores RELION's exact coarse operands and needs RELION's CUDA image preprocessing")
             if exact_cc_enabled:
-                if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
-                    raise ValueError(
-                        "the exact normalized-CC coarse pass requires RELION CUDA image preprocessing",
-                    )
                 from relax.cuda import kernels as em_cuda_kernels
 
                 exact_cc_processed = _process_relion_exact_coarse_half_image(
@@ -2548,128 +1714,48 @@ def _compute_k_class_significance_batched(
                     tree_rescore_unshifted_data = exact_cc_operands.windowed_unshifted
                     tree_rescore_corr_img_data = exact_cc_operands.windowed_corr_img
 
-            if coarse_gaussian_ffi_enabled:
-                coarse_preprocess_kwargs = relion_preprocess_kwargs
-                if exact_coarse_operands_enabled:
-                    if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
-                        raise ValueError(
-                            f"{_K1_RELION_EXACT_COARSE_OPERANDS_ENV} requires "
-                            "RELION CUDA image preprocessing",
-                        )
-                    if exact_coarse_assembly_profile_enabled:
-                        exact_source_preprocess_count += 1
-                    processed_direct = _process_relion_exact_coarse_half_image(
-                        experiment_dataset,
-                        batch_data,
-                        score_with_masked_images,
-                        relion_preprocess_kwargs=relion_preprocess_kwargs,
-                        image_indices=batch_image_indices,
-                    )
-                else:
-                    processed_direct = process_half_image(
-                        experiment_dataset,
-                        batch_data,
-                        score_with_masked_images,
-                        relion_preprocess_kwargs=coarse_preprocess_kwargs,
-                        image_indices=batch_image_indices,
-                    )
-                processed_for_powerclass = processed_direct
-                if image_corrections is not None and not relion_cuda_preprocess:
-                    image_only_correction = batch_corr / batch_scale
-                    processed_for_powerclass = (
-                        processed_for_powerclass * image_only_correction[:, None]
-                    )
-                # Reuse the exact operands of RECOVAR's accepted Gaussian score
-                # boundary. Reprocessing and translating a second image copy here
-                # changed the operands as well as the reduction. Algebraically,
-                # ``shifted_half / score_weight_half`` is the shifted image divided
-                # by CTF, and RELION's square-difference weight is
-                # ``score_weight_half * half_weights``.
-                if not exact_coarse_skip_generic_operands_enabled:
-                    if exact_coarse_assembly_profile_enabled:
-                        generic_coarse_operand_assembly_count += 1
-                    if coarse_gaussian_sincosf_enabled:
-                        (
-                            coarse_gaussian_shifted_corrected,
-                            coarse_gaussian_pixel_weight,
-                            coarse_gaussian_unshifted_corrected,
-                        ) = _relion_coarse_gaussian_square_operands_sincosf(
-                            coarse_gaussian_unshifted_score_weighted,
-                            score_weight_half,
-                            half_weights,
-                            coarse_gaussian_score_indices,
-                            coarse_gaussian_score_active_mask,
-                            translations,
-                            image_shape,
-                            translation_phase_source=translations_source,
-                            relion_translation_angle_scale=relion_translation_angle_scale,
-                            return_unshifted=True,
-                        )
-                    else:
-                        (
-                            coarse_gaussian_shifted_corrected,
-                            coarse_gaussian_pixel_weight,
-                        ) = _relion_coarse_gaussian_square_operands(
-                            shifted_half,
-                            score_weight_half,
-                            half_weights,
-                            coarse_gaussian_score_indices,
-                            coarse_gaussian_score_active_mask,
-                            batch_size=batch_size,
-                            n_trans=n_trans,
-                        )
-                if exact_coarse_operands_enabled:
-                    if exact_coarse_assembly_profile_enabled:
-                        exact_coarse_operand_assembly_count += 1
-                    exact_operands = _assemble_relion_exact_coarse_gaussian_operands(
-                        experiment_dataset,
-                        processed_direct,
-                        indices,
-                        use_float64_scoring=use_float64_scoring,
-                        batch_scale_np=batch_scale_np,
-                        actual_batch_size=actual_batch_size,
-                        batch_size=batch_size,
-                        score_indices=coarse_gaussian_score_indices,
-                        score_indices_np=coarse_gaussian_score_indices_np,
-                        score_active_mask=coarse_gaussian_score_active_mask,
-                        translations_source=translations_source,
-                        relion_translation_angle_scale=relion_translation_angle_scale,
-                        image_shape=image_shape,
-                        noise_variance_half=batch_noise_half,
-                        scale_corrections_enabled=scale_corrections is not None,
-                        half_weights=half_weights,
-                        powerclass=coarse_gaussian_powerclass,
-                        current_size=(
-                            coarse_gaussian_square_layout.physical_current_size
-                            if stable_fourier_window_shapes
-                            else current_size
-                        ),
-                        runtime_current_size=(
-                            jnp.asarray(score_size, dtype=jnp.int32) if stable_fourier_window_shapes else None
-                        ),
-                        coarse_kernel_window=coarse_kernel_window,
-                        coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
-                    )
-                    coarse_gaussian_shifted_corrected = exact_operands.shifted_corrected
-                    coarse_gaussian_pixel_weight = exact_operands.pixel_weight
-                    coarse_gaussian_unshifted_corrected = exact_operands.unshifted_corrected
-                    coarse_gaussian_initial_diff2 = exact_operands.initial_diff2
-                    coarse_gaussian_translation_angles = exact_operands.translation_angles
-                else:
-                    coarse_gaussian_initial_diff2 = coarse_gaussian_powerclass(
-                        processed_for_powerclass,
-                        image_shape=image_shape,
-                        current_size=(
-                            coarse_gaussian_square_layout.physical_current_size
-                            if stable_fourier_window_shapes
-                            else current_size
-                        ),
-                        runtime_current_size=(
-                            jnp.asarray(score_size, dtype=jnp.int32)
-                            if stable_fourier_window_shapes
-                            else None
-                        ),
-                    )
+            if exact_gaussian:
+                processed_direct = _process_relion_exact_coarse_half_image(
+                    experiment_dataset,
+                    batch_data,
+                    score_with_masked_images,
+                    relion_preprocess_kwargs=relion_preprocess_kwargs,
+                    image_indices=batch_image_indices,
+                )
+                exact_operands = _assemble_relion_exact_coarse_gaussian_operands(
+                    experiment_dataset,
+                    processed_direct,
+                    indices,
+                    use_float64_scoring=use_float64_scoring,
+                    batch_scale_np=batch_scale_np,
+                    actual_batch_size=actual_batch_size,
+                    batch_size=batch_size,
+                    score_indices=coarse_gaussian_score_indices,
+                    score_indices_np=coarse_gaussian_score_indices_np,
+                    score_active_mask=coarse_gaussian_score_active_mask,
+                    translations_source=translations_source,
+                    relion_translation_angle_scale=relion_translation_angle_scale,
+                    image_shape=image_shape,
+                    noise_variance_half=batch_noise_half,
+                    scale_corrections_enabled=scale_corrections is not None,
+                    half_weights=half_weights,
+                    powerclass=coarse_gaussian_powerclass,
+                    current_size=(
+                        coarse_gaussian_square_layout.physical_current_size
+                        if stable_fourier_window_shapes
+                        else current_size
+                    ),
+                    runtime_current_size=(
+                        jnp.asarray(score_size, dtype=jnp.int32) if stable_fourier_window_shapes else None
+                    ),
+                    coarse_kernel_window=coarse_kernel_window,
+                    coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
+                )
+                coarse_gaussian_shifted_corrected = exact_operands.shifted_corrected
+                coarse_gaussian_pixel_weight = exact_operands.pixel_weight
+                coarse_gaussian_unshifted_corrected = exact_operands.unshifted_corrected
+                coarse_gaussian_initial_diff2 = exact_operands.initial_diff2
+                coarse_gaussian_translation_angles = exact_operands.translation_angles
 
             # Identify per-batch dump target rows so we can record raw scores
             # (pre-prior) for each target image inside the per-class block loop.
@@ -2708,14 +1794,6 @@ def _compute_k_class_significance_batched(
             class_best_argmaxes = [zeros_i32] * n_classes if return_class_best else None
             class_second_best_scores = [neg_inf_f] * n_classes if track_class_second else None
             class_second_best_argmaxes = [zeros_i32] * n_classes if track_class_second else None
-            cache_score_blocks = collect_significance and _significance_score_cache_enabled(
-                batch_size,
-                n_classes,
-                n_rot_padded,
-                n_trans,
-                use_float64_scoring=use_float64_scoring,
-            )
-            cached_class_score_blocks = [] if cache_score_blocks else None
             # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
             # min_diff2 - diff2`` left to right (cuda_kernel_weights_exponent_coarse).
             # Adding the priors to the absolute scores and the min_diff2 offset
@@ -2738,256 +1816,126 @@ def _compute_k_class_significance_batched(
             # the RELAX_SIGNIFICANCE_DUMP_* targets' scores and the class runner-up.
             # The loop below remains for the generic scorer.
             batched_support_values = None
-            pass1_program = bool(coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
-            if pass1_program:
-                if pass1_prior_terms is None:
-                    pass1_prior_terms = tuple(
-                        tuple(
-                            (
-                                jnp.asarray(class_log_priors_np[class_index], dtype=jnp.float32),
-                                None
-                                if rotation_log_prior_padded is None
-                                else jnp.asarray(
-                                    rotation_log_prior_padded[class_index, r0 : r0 + rotation_block_size]
-                                ),
-                            )
-                            for r0 in range(0, n_rot_padded, rotation_block_size)
+            if pass1_prior_terms is None:
+                pass1_prior_terms = tuple(
+                    tuple(
+                        (
+                            jnp.asarray(class_log_priors_np[class_index], dtype=jnp.float32),
+                            None
+                            if rotation_log_prior_padded is None
+                            else jnp.asarray(
+                                rotation_log_prior_padded[class_index, r0 : r0 + rotation_block_size]
+                            ),
                         )
-                        for class_index in range(n_classes)
+                        for r0 in range(0, n_rot_padded, rotation_block_size)
                     )
-                pass1_blocks = tuple(
-                    (class_index, r0, min(rotation_block_size, n_rot - r0), int(rotation_block_size))
                     for class_index in range(n_classes)
-                    for r0 in range(0, n_rot, rotation_block_size)
                 )
-                if exact_cc_enabled:
-                    pass1_operands = (exact_cc_shifted, jnp.asarray(exact_cc_pixel_weight, dtype=jnp.float32), None)
-                else:
-                    pass1_operands = (
-                        jnp.asarray(coarse_gaussian_shifted_corrected, dtype=jnp.complex64),
-                        jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
-                        jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
-                    )
-                pass1_static = dict(
-                    n_trans=int(n_trans),
-                    image_shape=tuple(int(value) for value in image_shape),
-                    volume_shape=tuple(int(value) for value in volume_shape),
-                    float64=_coarse_gemm_float64_requested(),
-                    score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
-                    exact_weight_order=relion_exact_coarse_weight_order,
-                    return_class_best=bool(return_class_best),
-                    track_class_second=bool(track_class_second),
-                    return_values=bool(collect_significance),
+            pass1_blocks = tuple(
+                (class_index, r0, min(rotation_block_size, n_rot - r0), int(rotation_block_size))
+                for class_index in range(n_classes)
+                for r0 in range(0, n_rot, rotation_block_size)
+            )
+            if exact_cc_enabled:
+                pass1_operands = (exact_cc_shifted, jnp.asarray(exact_cc_pixel_weight, dtype=jnp.float32), None)
+            else:
+                pass1_operands = (
+                    jnp.asarray(coarse_gaussian_shifted_corrected, dtype=jnp.complex64),
+                    jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
+                    jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
                 )
-                pass1_dump_rows = (
-                    None
-                    if dump_target_local_positions is None
-                    else jnp.asarray(dump_target_local_positions, dtype=jnp.int32)
+            pass1_static = dict(
+                n_trans=int(n_trans),
+                image_shape=tuple(int(value) for value in image_shape),
+                volume_shape=tuple(int(value) for value in volume_shape),
+                float64=_coarse_gemm_float64_requested(),
+                score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
+                exact_weight_order=relion_exact_coarse_weight_order,
+                return_class_best=bool(return_class_best),
+                track_class_second=bool(track_class_second),
+                return_values=bool(collect_significance),
+            )
+            pass1_dump_rows = (
+                None
+                if dump_target_local_positions is None
+                else jnp.asarray(dump_target_local_positions, dtype=jnp.int32)
+            )
+            pass1_state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), n_classes)
+            if coarse_gaussian_gemm_projection_cache is not None and not exact_cc_enabled:
+                pass1_state, pass1_values, pass1_dumps = _coarse_pass1_blocks(
+                    pass1_state,
+                    coarse_gaussian_gemm_projection_cache,
+                    *pass1_operands,
+                    actual_batch_size,
+                    tuple(
+                        pass1_prior_terms[class_index][r0 // rotation_block_size]
+                        for class_index, r0, _, _ in pass1_blocks
+                    ),
+                    batch_translation_log_prior,
+                    pass1_dump_rows,
+                    blocks=pass1_blocks,
+                    **pass1_static,
                 )
-                pass1_state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), n_classes)
-                if coarse_gaussian_gemm_projection_cache is not None and not exact_cc_enabled:
-                    pass1_state, pass1_values, pass1_dumps = _coarse_pass1_blocks(
-                        pass1_state,
-                        coarse_gaussian_gemm_projection_cache,
+            else:
+                pass1_values = []
+                pass1_dumps = []
+                for class_index, r0, rows, block_rows in pass1_blocks:
+                    rots_b = rotations_padded[r0 : r0 + block_rows]
+                    if exact_cc_enabled:
+                        reference, _ = _project_block_once(
+                            class_index, means_for_proj[class_index], rots_b, rotation_start=r0
+                        )
+                        if use_window and not projector_returns_compact:
+                            reference = reference[:, window_indices]
+                    else:
+                        reference, _ = _project_coarse_gemm_block_once(
+                            class_index, means_for_proj[class_index], rots_b
+                        )
+                    block_state, block_values, block_dump = _coarse_pass1_block(
+                        _class_block_state(pass1_state, class_index),
+                        reference,
                         *pass1_operands,
                         actual_batch_size,
-                        tuple(
-                            pass1_prior_terms[class_index][r0 // rotation_block_size]
-                            for class_index, r0, _, _ in pass1_blocks
-                        ),
+                        pass1_prior_terms[class_index][r0 // rotation_block_size],
                         batch_translation_log_prior,
+                        jnp.int32(class_index),
+                        jnp.int32(r0),
                         pass1_dump_rows,
-                        blocks=pass1_blocks,
+                        rows=rows,
+                        block_rows=block_rows,
                         **pass1_static,
                     )
-                else:
-                    pass1_values = []
-                    pass1_dumps = []
-                    for class_index, r0, rows, block_rows in pass1_blocks:
-                        rots_b = rotations_padded[r0 : r0 + block_rows]
-                        if exact_cc_enabled:
-                            reference, _ = _project_block_once(
-                                class_index, means_for_proj[class_index], rots_b, rotation_start=r0
-                            )
-                            if use_window and not projector_returns_compact:
-                                reference = reference[:, window_indices]
-                        else:
-                            reference, _ = _project_coarse_gemm_block_once(
-                                class_index, means_for_proj[class_index], rots_b
-                            )
-                        block_state, block_values, block_dump = _coarse_pass1_block(
-                            _class_block_state(pass1_state, class_index),
-                            reference,
-                            *pass1_operands,
-                            actual_batch_size,
-                            pass1_prior_terms[class_index][r0 // rotation_block_size],
-                            batch_translation_log_prior,
-                            jnp.int32(class_index),
-                            jnp.int32(r0),
-                            pass1_dump_rows,
-                            rows=rows,
-                            block_rows=block_rows,
-                            **pass1_static,
-                        )
-                        pass1_state = _merge_class_block_state(pass1_state, block_state, class_index)
-                        pass1_values.append(block_values)
-                        pass1_dumps.append(block_dump)
-                if collect_significance:
-                    batched_support_values = jnp.concatenate(pass1_values, axis=1)
-                if pass1_dump_rows is not None:
-                    for (class_index, _, _, _), (pre_prior, with_prior) in zip(pass1_blocks, pass1_dumps, strict=True):
-                        dump_target_pre_prior_blocks_per_class[class_index].append(np.asarray(pre_prior, dtype=np.float64))
-                        dump_target_with_prior_blocks_per_class[class_index].append(
-                            np.asarray(with_prior, dtype=np.float64)
-                        )
-                (
-                    (global_max, global_sum),
-                    (class_max_tuple, class_sum_tuple),
-                    (best_score_batch, best_argmax_batch, best_class_batch),
-                    (class_best_tuple, class_best_argmax_tuple, class_second_tuple, class_second_argmax_tuple),
-                    pass1_raw_score_max,
-                ) = pass1_state
-                if relion_raw_score_max is not None:
-                    relion_raw_score_max = pass1_raw_score_max
-                class_max_values = list(class_max_tuple)
-                class_sum_values = list(class_sum_tuple)
-                if return_class_best:
-                    class_best_scores = list(class_best_tuple)
-                    class_best_argmaxes = list(class_best_argmax_tuple)
-                if track_class_second:
-                    class_second_best_scores = list(class_second_tuple)
-                    class_second_best_argmaxes = list(class_second_argmax_tuple)
-
-            for class_index, mean_for_proj in enumerate(() if pass1_program else means_for_proj):
-                class_max = neg_inf_f
-                class_sum = zeros_f64
-                cached_score_blocks = [] if cached_class_score_blocks is not None else None
-                score_block_count = n_blocks
-                for block_index in range(score_block_count):
-                    r0 = block_index * rotation_block_size
-                    r1 = r0 + rotation_block_size
-                    scores = _score_block(
-                        class_index,
-                        mean_for_proj,
-                        rotations_padded[r0:r1],
-                        shifted_data,
-                        batch_norm,
-                        ctf2_data,
-                        batch_size,
-                        rotation_start=r0,
+                    pass1_state = _merge_class_block_state(pass1_state, block_state, class_index)
+                    pass1_values.append(block_values)
+                    pass1_dumps.append(block_dump)
+            if collect_significance:
+                batched_support_values = jnp.concatenate(pass1_values, axis=1)
+            if pass1_dump_rows is not None:
+                for (class_index, _, _, _), (pre_prior, with_prior) in zip(pass1_blocks, pass1_dumps, strict=True):
+                    dump_target_pre_prior_blocks_per_class[class_index].append(np.asarray(pre_prior, dtype=np.float64))
+                    dump_target_with_prior_blocks_per_class[class_index].append(
+                        np.asarray(with_prior, dtype=np.float64)
                     )
-                    if r1 > n_rot:
-                        valid = n_rot - r0
-                        valid_rotation = (
-                            jnp.arange(rotation_block_size)[None, :, None] < valid
-                        )
-                        scores = jnp.where(valid_rotation, scores, -jnp.inf)
-                    if relion_raw_score_max is not None:
-                        relion_raw_score_max = jnp.maximum(
-                            relion_raw_score_max,
-                            jnp.max(scores.reshape(batch_size, -1), axis=1),
-                        )
-                    # Capture pre-prior raw scores for dump targets BEFORE _add_priors.
-                    # scores shape: (batch_size, rotation_block_size, n_trans).
-                    # For comparison vs RELION exp_Mweight_diff2, recovar's score is
-                    # -0.5 * residual where residual = sum_pixel((proj*ctf - shifted_img)² - |img|²)
-                    # / sigma² × half_weights. RELION's diff2 has the same core term
-                    # plus the per-image Xi2/2 constant. Per-pose RELATIVE differences
-                    # cancel the constant, so direct diff is meaningful.
-                    if dump_target_pre_prior_blocks_per_class is not None:
-                        actual_rot = min(rotation_block_size, n_rot - r0)
-                        dump_target_pre_prior_blocks_per_class[class_index].append(
-                            np.asarray(
-                                scores[dump_target_local_positions, :actual_rot, :],
-                                dtype=np.float64,
-                            )
-                        )
-                    pre_prior_scores = scores
-                    scores = _add_priors(scores, class_index, r0, r1, batch_translation_log_prior)
-                    if dump_target_with_prior_blocks_per_class is not None:
-                        actual_rot = min(rotation_block_size, n_rot - r0)
-                        dump_target_with_prior_blocks_per_class[class_index].append(
-                            np.asarray(
-                                scores[dump_target_local_positions, :actual_rot, :],
-                                dtype=np.float64,
-                            )
-                        )
-                    if cached_score_blocks is not None:
-                        cached_score_blocks.append(
-                            pre_prior_scores if relion_exact_coarse_weight_order else scores,
-                        )
-                    class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
-                    global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
-                    flat_scores = scores.reshape(batch_size, -1)
-                    block_best = jnp.max(flat_scores, axis=1)
-                    block_argmax = jnp.argmax(flat_scores, axis=1)
-                    improved = block_best > best_score_batch
-                    best_score_batch = jnp.where(improved, block_best, best_score_batch)
-                    best_argmax_batch = jnp.where(improved, block_argmax + r0 * n_trans, best_argmax_batch)
-                    best_class_batch = jnp.where(improved, class_index, best_class_batch)
-                    if return_class_best:
-                        previous_best = class_best_scores[class_index]
-                        previous_best_argmax = class_best_argmaxes[class_index]
-                        class_improved = block_best > previous_best
-                        if track_class_second:
-                            if flat_scores.shape[1] < 2:
-                                raise RuntimeError("class runner-up diagnostic requires at least two poses per block")
-                            rows = jnp.arange(batch_size)
-                            block_without_best = flat_scores.at[rows, block_argmax].set(-jnp.inf)
-                            block_second = jnp.max(block_without_best, axis=1)
-                            block_second_argmax = jnp.argmax(block_without_best, axis=1)
-                            previous_second = class_second_best_scores[class_index]
-                            previous_second_argmax = class_second_best_argmaxes[class_index]
-
-                            improved_second_from_previous = previous_best >= block_second
-                            improved_second = jnp.where(
-                                improved_second_from_previous,
-                                previous_best,
-                                block_second,
-                            )
-                            improved_second_argmax = jnp.where(
-                                improved_second_from_previous,
-                                previous_best_argmax,
-                                block_second_argmax + r0 * n_trans,
-                            )
-                            retained_second_from_previous = previous_second >= block_best
-                            retained_second = jnp.where(
-                                retained_second_from_previous,
-                                previous_second,
-                                block_best,
-                            )
-                            retained_second_argmax = jnp.where(
-                                retained_second_from_previous,
-                                previous_second_argmax,
-                                block_argmax + r0 * n_trans,
-                            )
-                            class_second_best_scores[class_index] = jnp.where(
-                                class_improved,
-                                improved_second,
-                                retained_second,
-                            )
-                            class_second_best_argmaxes[class_index] = jnp.where(
-                                class_improved,
-                                improved_second_argmax,
-                                retained_second_argmax,
-                            )
-                        class_best_scores[class_index] = jnp.where(
-                            class_improved,
-                            block_best,
-                            previous_best,
-                        )
-                        class_best_argmaxes[class_index] = jnp.where(
-                            class_improved,
-                            block_argmax + r0 * n_trans,
-                            previous_best_argmax,
-                        )
-                if cached_class_score_blocks is not None:
-                    cached_class_score_blocks.append(cached_score_blocks)
-                class_max_values.append(class_max)
-                class_sum_values.append(class_sum)
+            (
+                (global_max, global_sum),
+                (class_max_tuple, class_sum_tuple),
+                (best_score_batch, best_argmax_batch, best_class_batch),
+                (class_best_tuple, class_best_argmax_tuple, class_second_tuple, class_second_argmax_tuple),
+                pass1_raw_score_max,
+            ) = pass1_state
+            if relion_raw_score_max is not None:
+                relion_raw_score_max = pass1_raw_score_max
+            class_max_values = list(class_max_tuple)
+            class_sum_values = list(class_sum_tuple)
+            if return_class_best:
+                class_best_scores = list(class_best_tuple)
+                class_best_argmaxes = list(class_best_argmax_tuple)
+            if track_class_second:
+                class_second_best_scores = list(class_second_tuple)
+                class_second_best_argmaxes = list(class_second_argmax_tuple)
 
             if tree_rescore_enabled:
-                tree_score_dtype = np.float64 if use_float64_scoring else np.float32
+                tree_score_dtype = np.float32
                 best_scores_np = np.asarray(class_best_scores[0], dtype=tree_score_dtype)
                 second_scores_np = np.asarray(class_second_best_scores[0], dtype=tree_score_dtype)
                 score_margins = best_scores_np - second_scores_np
@@ -3123,76 +2071,16 @@ def _compute_k_class_significance_batched(
                 class_max + jnp.log(class_sum) for class_max, class_sum in zip(class_max_values, class_sum_values)
             ]
 
-            class_weight_mats = []
             normalization_score_mats = []
             if collect_significance:
-                if pass1_program:
-                    batch_values = (
-                        batched_support_values
-                        if relion_f32_coarse_support_enabled
-                        else jnp.exp(batched_support_values - global_log_z[:, None])
-                    )
-                    if return_relion_f32_normalization and not relion_f32_coarse_support_enabled:
-                        # The program's values are the with-prior scores here, the loop's
-                        # normalization scores.
-                        normalization_score_mats.append(batched_support_values)
-                else:
-                    for class_index, mean_for_proj in enumerate(means_for_proj):
-                        class_weight_blocks = []
-                        normalization_score_blocks = []
-                        for block_index in range(n_blocks):
-                            r0 = block_index * rotation_block_size
-                            r1 = r0 + rotation_block_size
-                            if cached_class_score_blocks is None:
-                                scores = _score_block(
-                                    class_index,
-                                    mean_for_proj,
-                                    rotations_padded[r0:r1],
-                                    shifted_data,
-                                    batch_norm,
-                                    ctf2_data,
-                                    batch_size,
-                                    rotation_start=r0,
-                                )
-                                if r1 > n_rot:
-                                    valid = n_rot - r0
-                                    scores = jnp.where(
-                                        jnp.arange(rotation_block_size)[None, :, None]
-                                        < valid,
-                                        scores,
-                                        -jnp.inf,
-                                    )
-                                if not relion_exact_coarse_weight_order:
-                                    scores = _add_priors(
-                                        scores,
-                                        class_index,
-                                        r0,
-                                        r1,
-                                        batch_translation_log_prior,
-                                    )
-                            else:
-                                scores = cached_class_score_blocks[class_index][block_index]
-                            actual_rot = min(rotation_block_size, n_rot - r0)
-                            if return_relion_f32_normalization and not relion_f32_coarse_support_enabled:
-                                normalization_score_blocks.append(
-                                    scores[:, :actual_rot, :].reshape(batch_size, -1),
-                                )
-                            if relion_f32_coarse_support_enabled:
-                                class_weight_blocks.append(
-                                    scores[:, :actual_rot, :].reshape(batch_size, -1),
-                                )
-                            else:
-                                probs = jnp.exp(scores - global_log_z[:, None, None])
-                                class_weight_blocks.append(
-                                    probs[:, :actual_rot, :].reshape(batch_size, -1),
-                                )
-                        class_weight_mats.append(
-                            jnp.concatenate(class_weight_blocks, axis=1),
-                        )
-                        if normalization_score_blocks:
-                            normalization_score_mats.append(jnp.concatenate(normalization_score_blocks, axis=1))
-
-                    batch_values = jnp.concatenate(class_weight_mats, axis=1)
+                batch_values = (
+                    batched_support_values
+                    if relion_f32_coarse_support_enabled
+                    else jnp.exp(batched_support_values - global_log_z[:, None])
+                )
+                if return_relion_f32_normalization and not relion_f32_coarse_support_enabled:
+                    # The program's values are the with-prior scores here.
+                    normalization_score_mats.append(batched_support_values)
                 if relion_f32_coarse_support_enabled:
                     from relax.helpers.oversampling import relion_cuda_f32_coarse_posterior
 
@@ -3354,13 +2242,8 @@ def _compute_k_class_significance_batched(
                 dtype=np.int32,
             )[:actual_batch_size]
 
-            # The exact scorers score without the generic image-energy offset.
-            log_score_offset = (
-                np.zeros(batch_size, dtype=np.float64)
-                if coarse_gaussian_ffi_enabled or exact_cc_enabled
-                else -0.5
-                * np.asarray(jnp.squeeze(batch_norm, axis=1), dtype=np.float64)
-            )
+            # The exact scorers score without an image-energy offset.
+            log_score_offset = np.zeros(batch_size, dtype=np.float64)
             global_log_z_np = np.asarray(global_log_z, dtype=np.float64)
             best_score_np = np.asarray(best_score_batch, dtype=np.float64)
             output_slice = slice(0, actual_batch_size)
@@ -3418,11 +2301,7 @@ def _compute_k_class_significance_batched(
                 target_local_positions_for_dump = None
                 # The pass-1 program returns the target rows' scores; the loop pulls
                 # them from each block.
-                score_capture_mode = (
-                    "pass1_program_target_rows"
-                    if pass1_program
-                    else "intrusive_per_block_host_materialization"
-                )
+                score_capture_mode = "pass1_program_target_rows"
                 if dump_target_pre_prior_blocks_per_class is not None:
                     target_scores_pre_prior_per_class = [
                         np.concatenate(blocks, axis=1) if blocks else None
@@ -3604,11 +2483,7 @@ def _compute_k_class_significance_batched(
         # expand the pass-2/M-step support represented by ``n_sig_all``.
         "significant_cutoff_counts": cutoff_count_all,
         "executed_coarse_backend": (
-            "exact_cc_gemm"
-            if exact_cc_enabled
-            else "gemm_macro"
-            if coarse_gaussian_gemm_macro_enabled
-            else "rectangular"
+            "exact_cc_gemm" if exact_cc_enabled else "gemm_macro"
         ),
     }
     if coarse_gaussian_square_layout is not None:
@@ -3616,65 +2491,6 @@ def _compute_k_class_significance_batched(
             coarse_gaussian_square_layout,
             stable_fourier_window_shapes=stable_fourier_window_shapes,
         )
-    if exact_coarse_assembly_profile_enabled:
-        full_stats["exact_coarse_operand_assembly"] = {
-            "skip_generic_default_enabled": False,
-            "skip_generic_requested": bool(
-                exact_coarse_skip_generic_operands_requested,
-            ),
-            "skip_generic_effective": bool(
-                exact_coarse_skip_generic_operands_enabled,
-            ),
-            "exact_coarse_operands_effective": bool(exact_coarse_operands_enabled),
-            "exact_compact_preprocess_default_enabled": False,
-            "exact_compact_preprocess_requested": bool(
-                exact_compact_preprocess_requested,
-            ),
-            "exact_compact_preprocess_effective": bool(
-                exact_compact_preprocess_enabled,
-            ),
-            "generic_score_preprocess_count": int(generic_score_preprocess_count),
-            "exact_source_preprocess_count": int(exact_source_preprocess_count),
-            "generic_ctf_evaluation_count": int(generic_score_preprocess_count),
-            "generic_full_translation_count": int(generic_score_preprocess_count),
-            "generic_assembly_count": int(generic_coarse_operand_assembly_count),
-            "exact_assembly_count": int(exact_coarse_operand_assembly_count),
-            "translate_score_call_site_count": int(
-                generic_coarse_operand_assembly_count
-                * int(coarse_gaussian_sincosf_enabled)
-                + exact_coarse_operand_assembly_count
-            ),
-            "translate_score_call_count": int(
-                generic_coarse_operand_assembly_count
-                * int(coarse_gaussian_sincosf_enabled)
-                + exact_coarse_operand_assembly_count
-            ),
-            "downstream_operand_source": (
-                "exact_source_star"
-                if exact_coarse_operands_enabled
-                else "generic"
-            ),
-            "diagnostic_operand_source": (
-                "exact_source_star"
-                if exact_coarse_operands_enabled
-                else "generic"
-            ),
-            "raw_score_capture_changed": False,
-            "generic_fallback_policy": (
-                "exact_full_direct_scores_available"
-                if exact_compact_preprocess_enabled
-                else "available"
-            ),
-            "skipped_generic_outputs": (
-                [
-                    "coarse_gaussian_shifted_corrected",
-                    "coarse_gaussian_pixel_weight",
-                    "coarse_gaussian_unshifted_corrected",
-                ]
-                if exact_coarse_skip_generic_operands_enabled
-                else []
-            ),
-        }
     if coarse_gaussian_gemm_resource_estimate is not None:
         full_stats["coarse_gaussian_gemm_resources"] = {
             field: int(value)

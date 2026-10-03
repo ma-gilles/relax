@@ -270,7 +270,7 @@ def test_non_dry_run_calls_native_driver(monkeypatch, capsys):
     assert calls["options"].fn_img == "particles.star"
     assert calls["options"].nr_iter == 3
     assert calls["options"].write_iter_artifacts is False
-    assert calls["options"].image_fourier_backend == "host_numpy"
+    assert calls["options"].image_fourier_backend == "relion_cuda"
     assert "recovar InitialModel complete" in capsys.readouterr().out
 
 

@@ -16,13 +16,11 @@ import textwrap
 
 import numpy as np
 import pytest
-
-from relax.refinement import iteration_planning
 from helpers.float_compare import matches
 
 import relax.refinement.iteration_loop as iteration_loop
 import relax.sampling as sampling_module
-from relax.refinement import finalization, local_sampling
+from relax.refinement import finalization, iteration_planning, local_sampling
 from relax.refinement.final_sampling import prepare_final_sampling
 from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
 from relax.sampling import (

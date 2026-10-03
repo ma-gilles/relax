@@ -291,6 +291,32 @@ def test_tilt_tile_matches_brute_force_joint_gaussian(problem):
     np.testing.assert_array_equal(actual.original_image_ids, np.arange(3))
 
 
+@pytest.mark.parametrize("planned", [16, 40])
+def test_padded_tilt_tile_matches_brute_force(problem, planned):
+    """A tile padded to its size bucket (3 particles: 4 of 16 with one padding particle; 3 of 40 without)
+    gives the joint Gaussian's statistics of its real particles, as the unpadded tile."""
+    from relax.ppca_refinement.full_row_stream import full_row_tile_embeddings, tile_size_bucket
+
+    particles, stream, arrays, truth = problem
+    padded_stream = stream._replace(tile_images=planned)
+    tile, _, layout = load_tilt_tile(padded_stream, np.arange(3), [None] * 3, collect_observation=False)
+    assert tile.y_norm.shape[0] == tile_size_bucket(3, planned) and layout["n_real"] == 3
+    actual = accumulate_full_row_tile(padded_stream, np.arange(3), [None] * 3)
+    rtol = 2e-5  # the unpadded tile's band (test_tilt_tile_matches_brute_force_joint_gaussian)
+    assert actual.n_images == 3 and actual.diagnostics["tile_size"] == tile_size_bucket(3, planned)
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(actual.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
+    assert_matches(actual.diagnostics["offset_second_sum_px2"], truth["offset_second_sum_px2"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_den), truth["residual_den"], rtol=1e-6)
+    np.testing.assert_array_equal(actual.original_image_ids, np.arange(3))
+    embedded = full_row_tile_embeddings(padded_stream, np.arange(3), [None] * 3)
+    assert_matches(np.asarray(embedded.embeddings), truth["embeddings"], rtol=rtol)
+
+
 def test_summed_per_tilt_scores_are_a_different_model(problem):
     """The shared latent matters: per-tilt marginals (one z per tilt) give another likelihood."""
     particles, stream, arrays, truth = problem
@@ -454,8 +480,15 @@ def test_controller_noise_groups_match_brute_force():
     )
     theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
     state = State(
-        jnp.asarray(theta), None, jnp.asarray(np.repeat(noise[:, None], 5, axis=1), jnp.float32),
-        0, np.arange(3), {}, 2.0, 0, {},
+        jnp.asarray(theta),
+        None,
+        jnp.asarray(np.repeat(noise[:, None], 5, axis=1), jnp.float32),
+        0,
+        np.arange(3),
+        {},
+        2.0,
+        0,
+        {},
     )
     iteration_loop._rotation_grid.cache_clear()
     iteration_loop._direction_ids.cache_clear()
@@ -489,3 +522,131 @@ def test_controller_noise_groups_match_brute_force():
     assert np.asarray(stats.residual_num).shape == truth["residual_num"].shape and truth["residual_num"].shape[0] == 2
     assert_matches(np.asarray(stats.residual_num), truth["residual_num"], rtol=rtol)
     assert_matches(np.asarray(stats.residual_den), truth["residual_den"], rtol=1e-6)
+
+
+def test_controller_statistics_do_not_depend_on_the_tile_size():
+    """The controller's statistics are the same, within float32 noise, for one tile per call and for smaller
+    tiles: three one-particle tiles, two-and-one, and one tile padded to a bucket of four. Other tile shapes
+    change the GEMM and reduction order: 1.4e-6 relative on A100 (embeddings), within ``rtol``."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, _stream, arrays = make_problem(seed=9)
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(jnp.asarray(theta), None, jnp.full((1, 5), 40.0, jnp.float32), 0, np.arange(3), {}, 2.0, 0, {})
+
+    def statistics(tile):
+        config = Config(
+            q=2,
+            stages=((1, 3, 0),),
+            oversampling=0,
+            stream_coarse_recompute=True,
+            shift_range=1,
+            shift_step=1,
+            image_batch_size=tile,
+            rotation_block_size=32,
+            gemm_precision="fp32",
+        )
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+        try:
+            stats = iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+        finally:
+            iteration_loop._rotation_grid.cache_clear()
+            iteration_loop._direction_ids.cache_clear()
+        return stats, np.argsort(stats.original_image_ids)
+
+    rtol = 1e-5
+    reference, order = statistics(3)
+    assert reference.diagnostics["tile_sizes"] == [3]
+    for tile, sizes in ((1, [1]), (2, [1, 2]), (4, [4])):
+        stats, tile_order = statistics(tile)
+        assert stats.diagnostics["tile_sizes"] == sizes
+        assert_matches(np.float32(stats.log_likelihood), np.float32(reference.log_likelihood), rtol=rtol)
+        assert_matches(np.asarray(stats.embeddings)[tile_order], np.asarray(reference.embeddings)[order], rtol=rtol)
+        assert_matches(stats.diagnostics["rotation_mass"], reference.diagnostics["rotation_mass"], rtol=rtol)
+        for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+            assert_matches(np.asarray(getattr(stats, name)), np.asarray(getattr(reference, name)), rtol=rtol)
+
+
+@pytest.mark.parametrize(
+    "columns, refused",
+    [
+        ({}, False),
+        ({"rlnCtfDataAreCtfPremultiplied": "1"}, True),
+        ({"rlnBeamTiltX": "0.5"}, True),
+        ({"rlnMagMat00": "1.01", "rlnMagMat01": "0", "rlnMagMat10": "0", "rlnMagMat11": "1"}, True),
+    ],
+)
+def test_subtomogram_training_refuses_unapplied_optics(tmp_path, columns, refused):
+    """The --ios loader fails closed on optics features it would otherwise ignore for every tilt."""
+    from relax.commands.ppca_initial_model import refuse_unsupported_tilt_optics
+
+    labels = ["rlnOpticsGroup", "rlnImagePixelSize", *columns]
+    values = ["1", "8.5", *columns.values()]
+    star = tmp_path / "particles.star"
+    star.write_text(
+        "data_optics\n\nloop_\n"
+        + "".join(f"_{label} #{k + 1}\n" for k, label in enumerate(labels))
+        + " ".join(values)
+        + "\n\n\ndata_particles\n\nloop_\n_rlnTomoParticleName #1\n_rlnOpticsGroup #2\nTS_01/1 1\n"
+    )
+    if refused:
+        with pytest.raises(NotImplementedError, match="does not implement"):
+            refuse_unsupported_tilt_optics(star)
+    else:
+        refuse_unsupported_tilt_optics(star)
+
+
+def test_tilt_geometry_edit_refuses_resume(tmp_path, monkeypatch):
+    """An edited tilt series (same particles and tomograms STAR files) changes the identity; resume refuses it."""
+    from relax.commands import ppca_initial_model as command
+    from relax.ppca_initial_model import tomo
+    from relax.ppca_initial_model.checkpoint import load, save
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+    from relax.refinement import tomo_half
+
+    (tmp_path / "tilt_series").mkdir()
+    (tmp_path / "optimisation_set.star").write_text(
+        "data_\n\nloop_\n_rlnTomoParticlesFile\n_rlnTomoTomogramsFile\nparticles.star tomograms.star\n"
+    )
+    (tmp_path / "particles.star").write_text(
+        "data_optics\n\nloop_\n_rlnOpticsGroup #1\n_rlnImagePixelSize #2\n1 8.5\n\n\n"
+        "data_particles\n\nloop_\n_rlnTomoParticleName #1\n_rlnOpticsGroup #2\nTS_01/1 1\n"
+    )
+    (tmp_path / "tomograms.star").write_text(
+        "data_global\n\nloop_\n_rlnTomoName #1\n_rlnTomoTiltSeriesStarFile #2\nTS_01 tilt_series/TS_01.star\n"
+    )
+    series = tmp_path / "tilt_series/TS_01.star"
+    series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 0.0\n")
+    monkeypatch.setattr(tomo_half, "load_tomo_dataset", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tomo, "tilt_particles_from_tomo_dataset", lambda dataset: None)
+    _, identity = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    theta = jnp.ones((5, 3), jnp.complex64)
+    state = State(theta, None, jnp.ones(3, jnp.float32), 3, np.arange(8), {}, 2.0, 4, {}, sgd_momentum=0 * theta)
+    config = Config(optimizer="momentum_sgd")
+    save(tmp_path / "checkpoint.npz", state, config, identity)
+    assert load(tmp_path / "checkpoint.npz", config, identity).iteration == 3
+    series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 1.5\n")
+    _, edited = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    assert edited["particles_sha256"] == identity["particles_sha256"]
+    assert edited["tilt_series_sha256"] != identity["tilt_series_sha256"]
+    with pytest.raises(ValueError, match="identity mismatch"):
+        load(tmp_path / "checkpoint.npz", config, edited)
+
+
+def test_tilt_operand_bytes_match_the_tile_operands():
+    """The planner's operand memory: XLA's resident bytes are the tile operands' bytes; the peak bounds them."""
+    from relax.ppca_initial_model.tomo import tilt_operand_bytes
+
+    particles, stream, _ = make_problem(seed=3)
+    assert load_tilt_tile.operand_bytes is tilt_operand_bytes
+    tile, observation, _ = load_tilt_tile(stream, np.arange(3), [None] * 3, collect_observation=True)
+    peak, resident = tilt_operand_bytes(stream, 3)
+    outputs = (tile.Y1, tile.ctf2, tile.Y1_recon, tile.ctf2_recon, tile.y_norm, observation)
+    # XLA's output bytes include the result tuple's pointer table (8 bytes per output on CPU).
+    data = sum(int(np.asarray(x).nbytes) for x in outputs)
+    assert data <= resident <= data + 1024
+    assert peak >= resident

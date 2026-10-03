@@ -35,6 +35,8 @@ def _dry_run_launcher(
     env.update(
         {
             "EM_K1_MATRIX_SCRATCH_DIR": str(scratch),
+            # The default runtime root is writable by one account only.
+            "EM_K1_MATRIX_RUNTIME_ROOT": str(tmp_path / "runtime"),
             "EM_K1_MATRIX_CASES": case,
             "EM_K1_MATRIX_RUN_RELION": "1",
             "EM_K1_MATRIX_SETUP_PARTITION": "cpu",
@@ -1038,6 +1040,7 @@ def test_setup_and_summary_default_to_cpu_without_gpu_constraint(tmp_path):
     env.update(
         {
             "EM_K1_MATRIX_SCRATCH_DIR": str(scratch),
+            "EM_K1_MATRIX_RUNTIME_ROOT": str(tmp_path / "runtime"),
             "EM_K1_MATRIX_CASES": "32",
             "EM_K1_MATRIX_RUN_RELION": "1",
                 "SBATCH_ACCOUNT": "gilles",

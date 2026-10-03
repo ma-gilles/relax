@@ -355,7 +355,7 @@ qualify the incoming engine changes. The unchanged native-source digest permits
 reuse of the already built immutable libraries; runtime library/GPU checks still
 run before and after new qualification.
 
-[Current integration, receipts, preserved jobs and required gates](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json)
+Current integration, receipts, preserved jobs and required gates (was `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json`; no longer available)
 track the new candidate. Fresh same-source smoke/medium, float32 K1 and exactly
 K4 quality, characterized real-data confirmation, ordinary paired memory/speed,
 the milestone long tier and qualified main delivery remain required. No

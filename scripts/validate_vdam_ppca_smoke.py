@@ -26,7 +26,6 @@ def main():
     cfg = Config(
         iterations=2,
         stages=((1, 2, 0), (2, 3, 0)),
-        oversampling=1,
         shift_range=0,
         shift_step=2,
         image_batch_size=4,

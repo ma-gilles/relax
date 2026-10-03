@@ -17,7 +17,6 @@ from relax.helpers.batch_planning import (
     _safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.oversampling import build_adaptive_pass2_grids
-from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.sampling import (
     apply_relion_translation_perturbation,
 )
@@ -238,8 +237,6 @@ def _score_kclass_firstiter_cc_pass2(
     firstiter_em_kwargs["image_batch_size"] = firstiter_image_batch_size
     firstiter_em_kwargs["rotation_block_size"] = firstiter_rotation_block_size
     firstiter_em_kwargs["sparse_pass2"] = firstiter_sparse_pass2
-    # The normalized-CC coarse probe scores RELION's exact coarse operands.
-    firstiter_em_kwargs["relion_exact_coarse"] = uses_relion_cuda_image_preprocessing(data.experiment_dataset)
     data.logger.info(
         "STRICT-PARITY %srouting iter-1 K-class through %s run_dense_k_class_em_adaptive "
         "(oversampling=%d, relion_x_half_mstep=%s, best_coarse_subset=True)",
