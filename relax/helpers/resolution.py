@@ -248,6 +248,19 @@ def _truncate_data_vs_prior_for_current_size(data_vs_prior, *, current_size, gri
     return truncated
 
 
+def class_resolution_shells(data_vs_prior, *, grid_size):
+    """Each class's ``updateCurrentResolution`` shell, in class order.
+
+    ``data_vs_prior`` is ``(n_classes, n_shells)``, already truncated to the
+    current size. Class3D scans each class without the split-half
+    high-resolution recheck; RELION's current resolution is the maximum.
+    """
+    return [
+        resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
+        for dvp_class in np.asarray(data_vs_prior)
+    ]
+
+
 def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_size, grid_size, dtype=np.float32):
     """Return RELION's ``updateCurrentResolution`` shell from a DVP curve.
 
@@ -266,10 +279,7 @@ def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_s
         dtype=dtype,
     )
     if k_class_enabled:
-        return max(
-            resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
-            for dvp_class in np.asarray(dvp)
-        )
+        return max(class_resolution_shells(dvp, grid_size=grid_size))
     return resolution_from_data_vs_prior(dvp, ori_size=grid_size, allow_high_res_recovery=True)
 
 
@@ -443,10 +453,7 @@ def estimate_class_iteration_resolution(
         grid_size=grid_size,
         dtype=dtype,
     )
-    observed_shell = max(
-        resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
-        for dvp_class in data_vs_prior
-    )
+    observed_shell = max(class_resolution_shells(data_vs_prior, grid_size=grid_size))
     scheduling_shell = float(
         _firstiter_cc_scheduling_resolution_shell(
             observed_shell,

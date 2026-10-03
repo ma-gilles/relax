@@ -28,6 +28,7 @@ from relax.helpers.resolution import (
     _truncate_fsc_for_current_size_growth,
     bootstrap_current_size_from_ini_high_relion,
     clamp_relion_coarse_image_size,
+    class_resolution_shells,
     compute_coarse_image_size,
     initialize_resolution_from_firstiter_ini_high,
     initialize_resolution_from_fsc,
@@ -500,10 +501,7 @@ def plan_class_image_size(
         dtype=dtype,
     )
     per_class_res_shell = np.asarray(
-        [
-            resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
-            for dvp_class in np.asarray(data_vs_prior_prev)
-        ],
+        class_resolution_shells(data_vs_prior_prev, grid_size=grid_size),
         dtype=np.int32,
     )
     res_shell = int(np.max(per_class_res_shell))
