@@ -354,6 +354,13 @@ for _name, _seeds in (("vdam_k1_5k128", (41, 53)), ("vdam_k4_5k128", (41, 53)), 
 for _repeat in (2, 3):
     CELLS[f"vdam_k4_5k128_r{_repeat}"] = dict(CELLS["vdam_k4_5k128"])
 
+# The box-256 Refine3D with a 3-iteration cap: its final all-data pass and tau2 run at the full box quickly.
+CELLS["refine_k1_50k256_it3"] = dict(CELLS["refine_k1_50k256"])
+CELLS["refine_k1_50k256_it3"]["args"] = [
+    "3" if previous == "--max_iter" else value
+    for previous, value in zip([None, *CELLS["refine_k1_50k256"]["args"]], CELLS["refine_k1_50k256"]["args"])
+]
+
 
 def cell_fixtures(name: str) -> list[str]:
     """The fixture names a cell's arguments refer to."""

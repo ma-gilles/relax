@@ -18,6 +18,35 @@ from recovar.reconstruction.regularization import (  # noqa: F401  (staying help
 )
 
 _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
+# Device bytes per padded-grid voxel of the device shell statistics: the two halves' weights, their combination and
+# its float64 copy (8 B each), and the radius, shell-index and mask grids of _padded_shell_sums_device.
+_SHELL_STATS_DEVICE_BYTES_PER_VOXEL = 48
+
+
+def _shell_stats_on_host(n_voxels: int) -> bool:
+    """Whether the padded-grid shell statistics of ``n_voxels`` reduce on the host instead of the device.
+
+    On the host past ``_RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS``, or when their device arrays would take more
+    than half of what the device can still hand out: a box-256 final tau2 at padding 2 (512^3 voxels) asked for
+    another 1.02 GiB on a 16 GB card after the final all-data pass and ran out of memory (A100 emulating 16 GB,
+    relax c8ac3e6). The two reductions sum the same shells; the routing changes only where they run.
+    """
+
+    if int(n_voxels) > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS:
+        return True
+    from relax.sparse_pass2.sparse_pass2_budget import (
+        _device_free_memory_bytes,
+        _jax_allocator_free_memory_bytes,
+        _jax_allocator_pool_free_bytes,
+        device_available_bytes,
+    )
+
+    if jax.default_backend() != "gpu":
+        return False
+    available = device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+    return available is not None and int(n_voxels) * _SHELL_STATS_DEVICE_BYTES_PER_VOXEL > 0.5 * float(available)
 
 
 _LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS = 200_000_000
@@ -431,9 +460,7 @@ def _compute_relion_weight_shell_stats(
     half_size = int(np.prod(half_grid_shape))
     weight_size = int(np.size(weight))
     force_host_shell_stats = (
-        padding_factor > 1
-        and weight_size in {full_size, half_size}
-        and weight_size > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS
+        padding_factor > 1 and weight_size in {full_size, half_size} and _shell_stats_on_host(weight_size)
     )
     weight_arr = np.asarray(weight).real if force_host_shell_stats else jnp.asarray(weight).real.astype(jnp.float64)
     native_layout = False
@@ -505,7 +532,7 @@ def _compute_relion_weight_shell_stats(
             radial_fn = fourier_transform_utils.get_grid_of_radial_distances
             radial_volume_shape = relion_grid_shape
 
-        if int(np.prod(radial_shape)) > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS:
+        if force_host_shell_stats or int(np.prod(radial_shape)) > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS:
             coords = [
                 np.arange(-(int(s) // 2), int(s) - int(s) // 2, dtype=np.float32)
                 for s in radial_volume_shape[:-1]
@@ -669,8 +696,8 @@ def compute_relion_tau2_from_weights(
     large_weight_size = max(int(np.prod(padded_shape)), int(np.prod(half_padded_shape)))
     use_host_shell_stats = (
         int(padding_factor) > 1
-        and max(int(np.size(Ft_ctf_0)), int(np.size(Ft_ctf_1))) > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS
-        and large_weight_size > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS
+        and max(int(np.size(Ft_ctf_0)), int(np.size(Ft_ctf_1))) in {int(np.prod(padded_shape)), int(np.prod(half_padded_shape))}
+        and _shell_stats_on_host(large_weight_size)
     )
     if use_host_shell_stats:
         H0 = np.asarray(Ft_ctf_0).real.astype(host_prior_dtype, copy=False)
