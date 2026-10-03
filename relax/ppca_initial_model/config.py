@@ -40,6 +40,10 @@ class Config:
     # capability 8.0+, fp32 elsewhere), "tf32" (TF32 tensor-core products, float32 accumulation) or
     # "fp32" (exact float32 products). Section 14 of docs/math/vdam_ppca_algorithm.md has the evidence.
     gemm_precision: str = "auto"
+    # Particle images in host memory: "auto" (the default) reads the whole stack once at start-up
+    # when it takes at most PREREAD_MEMORY_FRACTION of the job's memory, otherwise reads each tile
+    # from disk; "on" and "off" force either. A runtime setting, like gemm_precision.
+    preread_images: str = "auto"
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -81,6 +85,8 @@ class Config:
             raise ValueError("GEMM precision must be auto, fp32 or tf32")
         if self.gemm_precision == "tf32" and not (self.stream_coarse_recompute or self.stream_full_fine_rows):
             raise ValueError("TF32 GEMMs apply to the streamed engines only")
+        if self.preread_images not in ("auto", "on", "off"):
+            raise ValueError("Image preread must be auto, on or off")
 
     def stage(self, iteration):
         return next((r, hp) for start, r, hp in reversed(self.stages) if start <= iteration)

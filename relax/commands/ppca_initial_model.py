@@ -3,6 +3,7 @@
 import argparse
 import dataclasses
 import json
+import logging
 import os
 
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
@@ -13,6 +14,8 @@ import numpy as np
 
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
@@ -65,14 +68,84 @@ def add_args(parser):
         help="streamed-engine GEMMs: auto (default; tf32 on sm_80+ GPUs, else fp32), tf32 (TF32 tensor cores, "
         "float32 accumulation) or fp32 (exact float32)",
     )
+    parser.add_argument(
+        "--ppca-preread-images",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="particle images in host memory: auto (default; read the stack once when it takes at most a "
+        "quarter of the job's memory), on, or off (read each tile from disk)",
+    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
 
 
-def load_training(path):
-    """Load the training fixture with its unit-contrast image sign (algorithm §15)."""
+# Largest share of the job's memory that "auto" lets one host copy of the particle stack take.
+PREREAD_MEMORY_FRACTION = 0.25
+
+
+def _cgroup_memory_limit():
+    """The tightest memory limit over this process's cgroup v2 ancestors (a Slurm job's), or None."""
+    try:
+        relative = next(
+            line.split(":", 2)[2].strip()
+            for line in Path("/proc/self/cgroup").read_text().splitlines()
+            if line.startswith("0::")
+        )
+    except (OSError, StopIteration):
+        return None
+    limits = []
+    group = Path("/sys/fs/cgroup") / relative.lstrip("/")
+    for directory in (group, *group.parents):
+        try:
+            value = (directory / "memory.max").read_text().strip()
+        except OSError:
+            continue
+        if value != "max":
+            limits.append(int(value))
+        if directory == Path("/sys/fs/cgroup"):
+            break
+    return min(limits) if limits else None
+
+
+def available_memory_bytes():
+    """Physical memory, capped by the job's cgroup limit when there is one."""
+    physical = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    limit = _cgroup_memory_limit()
+    return physical if limit is None else min(physical, limit)
+
+
+def resolve_preread_images(setting, stack_bytes, memory_bytes):
+    """Whether to read the particle stack into host memory, and the record of that decision."""
+    if setting not in ("auto", "on", "off"):
+        raise ValueError("Image preread must be auto, on or off")
+    if setting == "auto":
+        preread = stack_bytes <= PREREAD_MEMORY_FRACTION * memory_bytes
+    else:
+        preread = setting == "on"
+    return preread, {
+        "setting": setting,
+        "preread": preread,
+        "stack_gb": round(stack_bytes / 1e9, 3),
+        "memory_gb": round(memory_bytes / 1e9, 3),
+        "memory_fraction": PREREAD_MEMORY_FRACTION,
+    }
+
+
+def training_image_reading(path, preread_images):
+    """:func:`resolve_preread_images` for a training manifest's particle stack on this host."""
+    path = Path(path).resolve()
+    particles = path.parent / json.loads(path.read_text())["particles"]
+    return resolve_preread_images(preread_images, particles.stat().st_size, available_memory_bytes())
+
+
+def load_training(path, preread_images="auto"):
+    """Load the training fixture with its unit-contrast image sign (algorithm §15).
+
+    ``preread_images`` (``Config.preread_images``) decides whether the particle stack is read into
+    host memory once (:func:`training_image_reading`); the decision is logged.
+    """
     from recovar.data_io.cryoem_dataset import load_dataset
 
     path = Path(path).resolve()
@@ -104,12 +177,23 @@ def load_training(path):
             raise ValueError("Training input identity mismatch")
     if manifest["contrast"] != 1 or manifest["image_multiplier"] != 1:
         raise ValueError("First version requires unit contrast and unscaled particles")
+    particles = path.parent / manifest["particles"]
+    preread, reading = training_image_reading(path, preread_images)
+    logger.info(
+        "PPCA particle images: %s (setting %s; stack %.2f GB, memory %.1f GB, preread limit %.0f%%)",
+        "read into host memory once" if preread else "read from disk per tile",
+        reading["setting"],
+        reading["stack_gb"],
+        reading["memory_gb"],
+        100 * PREREAD_MEMORY_FRACTION,
+    )
     data = load_dataset(
-        str(path.parent / manifest["particles"]),
+        str(particles),
         poses_file=str(path.parent / manifest["neutral_poses"]),
         ctf_file=str(path.parent / manifest["ctf"]),
         uninvert_data=False,
         dtype=np.complex64,
+        lazy=not preread,
     )
     if not np.allclose(np.asarray(data.rotation_matrices), np.eye(3), atol=0, rtol=0) or np.any(
         np.asarray(data.translations)
@@ -207,6 +291,7 @@ def main(args=None):
         optimizer=args.optimizer,
         sgd_learning_rate=args.sgd_learning_rate,
         gemm_precision=args.ppca_gemm_precision,
+        preread_images=args.ppca_preread_images,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
     if (args.ios is None) == (args.manifest is None):
@@ -219,7 +304,7 @@ def main(args=None):
         data, identity = load_tilt_training(args.ios, output)
         diameter = args.particle_diameter
     else:
-        data, manifest, identity = load_training(args.manifest)
+        data, manifest, identity = load_training(args.manifest, config.preread_images)
         diameter = manifest["particle_diameter_ang"]
     identity["source"] = source_identity()
     if not args.resume and list(output.glob("checkpoint_*.npz")):
@@ -230,7 +315,16 @@ def main(args=None):
         # Reject a mismatched checkpoint before changing existing run metadata.
         load(args.resume, config, identity)
     (output / "run.json").write_text(
-        json.dumps({"config": dataclasses.asdict(config), "identity": identity}, indent=2) + "\n"
+        json.dumps(
+            {
+                "config": dataclasses.asdict(config),
+                "identity": identity,
+                # Subtomogram stacks are always read into memory (load_tilt_training).
+                "image_reading": None if args.ios else training_image_reading(args.manifest, config.preread_images)[1],
+            },
+            indent=2,
+        )
+        + "\n"
     )
     run(
         data,

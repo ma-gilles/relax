@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 import pytest
 
-from relax.commands.ppca_initial_model import load_training
+from relax.commands.ppca_initial_model import PREREAD_MEMORY_FRACTION, load_training, resolve_preread_images
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
@@ -73,6 +73,11 @@ def test_training_loader_needs_no_truth_and_checks_inputs(tmp_path):
     assert identity == {"manifest_sha256": file_hash(path)}
     assert data.data_multiplier == manifest["image_multiplier"]
     np.testing.assert_allclose(np.asarray(data.get_image_real(0)), images[0], rtol=1e-6, atol=1e-6)
+    # Image reading is not identity: a preread and a per-tile stack give the same images.
+    for setting in ("on", "off"):
+        data, _, read_identity = load_training(path, setting)
+        assert read_identity == identity
+        np.testing.assert_allclose(np.asarray(data.get_image_real(3)), images[3], rtol=1e-6, atol=1e-6)
     for change, message in [
         ({"truth": "absent.npz"}, "Unexpected"),
         ({"files": {}}, "recorded identity"),
@@ -86,3 +91,17 @@ def test_training_loader_needs_no_truth_and_checks_inputs(tmp_path):
     path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="stable original"):
         load_training(path)
+
+
+def test_preread_decision():
+    """auto prereads a stack of at most a quarter of the memory; on/off override; the record says why."""
+    gb = 10**9
+    assert resolve_preread_images("auto", 2 * gb, 64 * gb)[0]
+    assert resolve_preread_images("auto", int(PREREAD_MEMORY_FRACTION * 64 * gb), 64 * gb)[0]
+    assert not resolve_preread_images("auto", 17 * gb, 64 * gb)[0]
+    assert resolve_preread_images("on", 40 * gb, 64 * gb)[0]
+    assert not resolve_preread_images("off", 1, 64 * gb)[0]
+    _, record = resolve_preread_images("auto", 17 * gb, 64 * gb)
+    assert record == {"setting": "auto", "preread": False, "stack_gb": 17.0, "memory_gb": 64.0, "memory_fraction": 0.25}
+    with pytest.raises(ValueError, match="auto, on or off"):
+        resolve_preread_images("yes", 1, 1)

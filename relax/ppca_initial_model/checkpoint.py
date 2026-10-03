@@ -27,7 +27,7 @@ def canonical(value):
 
 # Runtime settings: they change how later updates are computed, not the model a checkpoint
 # holds, so a run may resume under a different value (the controller logs the change).
-RUNTIME_CONFIG_FIELDS = ("gemm_precision",)
+RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images")
 
 
 def _identity_config(config_dict):
