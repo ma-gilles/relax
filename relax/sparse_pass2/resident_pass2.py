@@ -250,15 +250,6 @@ _CHUNK_TIMING_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING"
 # carries a zero posterior and contributes exact zeros.
 _CHUNK_JIT_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT"
 _CHUNK_STATIC_BLOCKS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS"
-# How many M-step blocks the chunk program emits per device-loop iteration.
-# XLA:GPU reads a while predicate back to the host once per iteration, so an
-# unroll of u divides those readbacks by u; it also multiplies the live
-# pixel-axis transients by u, because the emitted copies no longer reuse one
-# block's buffers. Emitting every block (no loop) is not an option: at the early
-# state's second iteration that program asked the allocator for 54.5 GiB, and
-# T16's branch point 6c2dad33e carried that fully unrolled form, which OOMs at
-# hp3 (181 GiB); 7a29c2776's bounded unroll supersedes it and is kept here.
-_CHUNK_BLOCK_UNROLL_ENV = "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL"
 # T16: prepare the per-image operands once per half and keep them resident, and
 # take the M-step's weighted sums with T15's flat-row translate-and-sum kernel
 # instead of a gathered ``[images, translations, pixels]`` tile. Default on;
@@ -5739,7 +5730,6 @@ def _make_chunk_program_spec(
         bpref_recon_operand=bool(bpref_recon_operand),
         mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
         kernel_ctf_probs=_kernel_ctf_probs_enabled(),
-        block_unroll=_chunk_block_unroll(),
         static_block_trip=_chunk_static_block_trip_enabled(),
         reuse_coarse_normalization=bool(reuse_coarse_normalization),
         firstiter_cc=bool(firstiter_cc),
@@ -6546,27 +6536,6 @@ def _chunk_jit_enabled() -> bool:
     return parse_env_flag(_CHUNK_JIT_ENV, default=False)
 
 
-def _chunk_block_unroll() -> int:
-    """M-step blocks emitted per device-loop iteration; 1 keeps today's loop.
-
-    XLA:GPU executes every ``while`` iteration by copying the loop predicate to
-    the host and synchronizing, so the device loop drains the pipeline once per
-    iteration: the hp3 nsys arm of job 14147789 charges 264 such
-    ``cuStreamSynchronize`` calls, 5.94 s, to one warm half, and the early arm
-    charges 1.88 ms to each of 1867 blocks. An unroll of ``u`` divides that by
-    ``u`` and multiplies the live pixel-axis transients by ``u``, so it is a
-    memory trade, not a free one; emitting every block cost 54.5 GiB.
-    """
-
-    raw = os.environ.get(_CHUNK_BLOCK_UNROLL_ENV, "").strip()
-    if not raw:
-        return 1
-    value = int(raw)
-    if value < 1:
-        raise ValueError(f"{_CHUNK_BLOCK_UNROLL_ENV} must be >= 1, got {value}")
-    return value
-
-
 def _kernel_ctf_probs_enabled() -> bool:
     """Whether the M-step's ``ctf_probs`` comes from the kernel's fourth output."""
 
@@ -6828,8 +6797,6 @@ class _ChunkProgramSpec:
     # XLA statement the per-chunk path used. Off by default: the kernel's own
     # translation mass is bitwise against ``jnp.sum`` only at some shapes.
     kernel_ctf_probs: bool
-    # M-step blocks emitted per device-loop iteration.
-    block_unroll: int
     # Trip mechanism of the M-step block loop. False (default) bounds the loop
     # by the chunk's live block count, a device scalar, so the padded blocks the
     # per-stage loop breaks out of are skipped; True runs the full capacity as
@@ -8166,33 +8133,24 @@ def _run_resident_chunk_program(
     block_rows = int(spec.mstep_block_rows)
     mstep = _initial_mstep_carry(Ft_y_total[0], Ft_ctf_total[0], operands, tables, spec=spec)
     blocks = _make_mstep_block_inputs(rows, posterior, n_slots=int(spec.n_slots))
-    unroll = max(int(spec.block_unroll), 1)
     Ft_y_out, Ft_ctf_out = [], []
     for slot_index in range(int(spec.n_slots)):
         # Each slot's blocks accumulate into its own volumes; the per-image
         # Wavg, noise and norm partials carry on across slots.
         mstep = mstep._replace(Ft_y=Ft_y_total[slot_index], Ft_ctf=Ft_ctf_total[slot_index])
         class_blocks, first_block, n_blocks = _slot_mstep_blocks(blocks, slot_index, spec=spec)
-        n_outer = jax.lax.div(n_blocks + jnp.int32(unroll - 1), jnp.int32(unroll))
+        def block(block_index, carry_in, _blocks=class_blocks, _first=first_block):
+            return _resident_mstep_block_at(
+                (_first + block_index) * block_rows,
+                _blocks,
+                operands,
+                tables,
+                carry_in,
+                spec=spec,
+                cuda_backproject=cuda_backproject,
+            )
 
-        def outer(outer_index, carry_in, _blocks=class_blocks, _first=first_block):
-            # ``unroll`` blocks per device-loop iteration: the predicate is read
-            # back once per iteration, and a trailing block past the live count
-            # carries only rows without weight (padding, or another class's).
-            for offset in range(unroll):
-                index = _first + outer_index * unroll + offset
-                carry_in = _resident_mstep_block_at(
-                    index * block_rows,
-                    _blocks,
-                    operands,
-                    tables,
-                    carry_in,
-                    spec=spec,
-                    cuda_backproject=cuda_backproject,
-                )
-            return carry_in
-
-        mstep = jax.lax.fori_loop(0, n_outer, outer, mstep)
+        mstep = jax.lax.fori_loop(0, n_blocks, block, mstep)
         if mstep.scale_xa_per_image is not None:
             # Slot ``class + K * group``: the scale sums are masked by the slot's class.
             mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
@@ -8730,7 +8688,7 @@ def _run_resident_chunk(
         total = time.time() - chunk_t0
         operands_s = stage_t.get("operands", 0.0)
         if use_jit:
-            split = "program=%.3fs unroll=%d" % (total - operands_s, spec.block_unroll)
+            split = "program=%.3fs" % (total - operands_s)
         else:
             posterior_end = stage_t.get("posterior", operands_s)
             mstep_end = stage_t.get("mstep", total)
@@ -9000,7 +8958,6 @@ def run_resident_mstep_blocks(
         use_translate_sum_kernel=use_translate_sum_kernel,
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
         kernel_ctf_probs=use_translate_sum_kernel and _kernel_ctf_probs_enabled(),
-        block_unroll=1,
         static_block_trip=False,
     )
     operands = _ChunkStageOperands(
