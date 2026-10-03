@@ -1427,3 +1427,43 @@ preset, multiple states (the et15 5nrl path or a three-state path), with pixel
 size and SNR chosen so that a true-pose reconstruction is not Nyquist-limited.
 Small decisive runs first: a few hundred particles, a GT-initialized arm per
 optimizer (it must hold GT), then random initializations.
+
+### 16.9 First science on the k3conf fixture (October 2-3, 2026)
+
+Fixture `em_fixtures/cryoet_ppca_k3conf_box64_20261002` (README there): 399
+particles, three 5nrl states at 0/20/40 deg (133 each), four tomograms with one
+optics group each, 41 tilts with 5% hidden, box 64 at 8.5 A, total B 40, unit
+contrast, simulator `snr` 0.002. True-pose half maps cross FSC 0.143 at shells
+20.7-22.9 of 32, so the fixture is not Nyquist-limited. Every arm: `q = 2`,
+`--oversampling 0 --stream-coarse-recompute`, the default stage and batch schedule
+(200 updates), 3D shifts within 2 px at 1 px, TF32 GEMMs, A100. GT arms start from
+the GT state maps (mean and Helmert contrasts on the images' greyscale) at update
+160 and run the last 40. The baseline is relax's subtomogram VDAM InitialModel,
+`K = 3`, with the etbench command. Evaluation (truth used only here): state `c`
+is `mu + W zbar_c` with `zbar_c` the mean final embedding of GT state `c`
+(section 11); masked FSC-AUC after rigid registration of each state (both hands);
+state specificity is the mean over states of `AUC(c, c) - mean AUC(c, other)` in
+one common frame (the GT maps score 0.328); latent accuracy is the nearest-GT-centroid
+and k-means (Hungarian) agreement of the embeddings; pose error is each particle's
+angle from the chordal mean of `A_est^T A_gt`. Seeds 11/12/13 for the random arms.
+Jobs 14897752 and 14900962 (PPCA), 14896308 (baseline);
+evidence in `em_work/relax_ppca_cryoet_20261002/` (`HANDOFF.json`).
+
+| Arm | State FSC-AUC (mean) | State specificity | Pose median, fraction < 10 deg | Latent nearest-centroid / k-means |
+| --- | --- | --- | --- | --- |
+| GT init, momentum SGD | .945 | .347 | 3.67 deg, 1.000 | .990 / .990 |
+| GT init, VDAM | .750 | .211 | 3.65 deg, .997 | .977 / .975 |
+| random init, VDAM (3 seeds) | .723 / .718 / .713 | .122 / .137 / .127 | 4.8 / 4.8 / 5.1 deg, .95 / .96 / .94 | .91 / .92 / .90 ; .90 / .61 / .90 |
+| random init, momentum SGD (3 seeds) | .749 / .756 / .760 | .025 / .050 / .036 | 4.3 / 4.6 / 4.0 deg, .997 / .992 / .997 | .65 / .72 / .63 ; .51 / .72 / .48 |
+| VDAM K-class, K = 3 (seed 1) | .134 / .388 / .110 (classes) | - | 27.0 deg, .11 | one class holds 99.5% |
+
+Conclusions so far. The subtomogram likelihood is right: from GT, momentum SGD
+holds the states (FSC-AUC .945, specificity at the GT value), poses at the HEALPix 3
+spacing and a 99% separable latent. From random seed maps, both optimizers find
+the poses (4-5 deg median against 27 deg for K-class VDAM, which collapses to one
+class on this fixture). VDAM recovers about 40% of the GT state specificity and a
+90% separable latent; momentum SGD's maps stay close to the mean (specificity
+.03-.05). VDAM also moves away from GT at full resolution (loading power
+overshoots, FSC falls near shell 20), as in the single-particle eleven-state
+comparison (section 14). The baseline has one seed; GT state FSC-AUC of the GT mean
+map is .87-.90 unregistered, so map AUC alone does not show heterogeneity.
