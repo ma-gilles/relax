@@ -1454,12 +1454,17 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
 
     While the device runs tile k's passes, the host finishes tile k-1 (its
     statistics are complete) and reads and preprocesses tile k+1. Consecutive
-    tiles of one shape reuse one pose-kept buffer, so a single tile's worth is live.
+    tiles of one shape reuse one pose-kept buffer, and a tile of another size
+    releases it before allocating its own, so a single tile's worth is live
+    (what :func:`stream_tile_bytes` counts).
     """
     with jax.default_device(stream.device):
         loaded = _read_tile(stream, *tiles[0], collect_observation=True) if tiles else None
         results, kept, previous = [], None, None
         for index, (image_indices, _significant) in enumerate(tiles):
+            if kept is not None and kept.score.shape[1] != loaded[0].y_norm.shape[0]:
+                # A tile of another size gets its own kept buffer: release this one first, so one is live.
+                kept = None
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
             loaded = None
             if previous is not None:
