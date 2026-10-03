@@ -37,7 +37,6 @@ from helpers.refinement_specs import (
     local_half_owners,
     local_iteration_keywords,
     local_iteration_owners,
-    run_mean_reconstruction,
 )
 
 import relax.diagnostics.relion_replay as relion_replay_module
@@ -7872,7 +7871,6 @@ class TestRelionModeSmokeTest:
 
     def test_firstiter_cc_lowpass_runs_before_solvent_flatten(self, monkeypatch):
         """RELION applies iter-1 ini_high low-pass before solvent flatten."""
-        from types import SimpleNamespace
 
         from relax.refinement import mean_helpers as mean_helpers_module
 
@@ -7910,34 +7908,30 @@ class TestRelionModeSmokeTest:
             mean_helpers_module.mask, "raised_cosine_mask", fake_raised_cosine_mask,
         )
 
-        means = [None, None]
-        run_mean_reconstruction(
-            means,
-            Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
-            Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
-            Ft_ctf_0=jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
-            Ft_ctf_1=jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
-            Ft_y_combined=None,
-            Ft_ctf_combined=None,
-            mean_signal_variance_shells=None,
-            mean_signal_variance_shells_per_half=[
-                jnp.ones(VOLUME_SHAPE[0] // 2 + 1), jnp.ones(VOLUME_SHAPE[0] // 2 + 1),
-            ],
-            n_classes=1,
-            cs=8,
-            iteration=0,
+        settings = mean_helpers_module.ReconstructionSettings(
             grid_size=8,
-            cryo=SimpleNamespace(voxel_size=np.float32(2.125)),
+            voxel_size=np.float32(2.125),
             volume_shape=VOLUME_SHAPE,
-            tau2_fudge=1.0,
             padding_factor=1,
             projection_padding_factor=1,
-            relion_minres_map=1,
-            particle_diameter_ang=200.0,
+            minres_map=1,
+            width_mask_edge=5,
+            fmask_edge=2,
+            tau2_fudge=1.0,
+            particle_diameter_angstrom=200.0,
+            first_iteration_lowpass_angstrom=30.0,
+        )
+        means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
+            (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
+            (jnp.ones(VOLUME_SIZE, dtype=jnp.float32), jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
+            [
+                jnp.ones(VOLUME_SHAPE[0] // 2 + 1), jnp.ones(VOLUME_SHAPE[0] // 2 + 1),
+            ],
+            settings,
+            iteration=0,
+            current_size=8,
+            accumulator_volume_shape=None,
             relion_firstiter_cc_this_iter=True,
-            relion_firstiter_ini_high_angstrom=30.0,
-            relion_width_mask_edge=5,
-            relion_fmask_edge=2,
         )
 
         assert events[:3] == ["lowpass", "flatten_idft", "flatten_dft"]
@@ -7952,7 +7946,6 @@ class TestRelionModeSmokeTest:
 
     def test_kclass_reconstruction_uses_1d_tau_shell_prior(self, monkeypatch):
         """K-class M-step reconstruction should index RELION tau2 as shells."""
-        from types import SimpleNamespace
 
         from relax.refinement import mean_helpers as mean_helpers_module
 
@@ -7973,32 +7966,29 @@ class TestRelionModeSmokeTest:
             ],
             axis=0,
         )
-        means = [None, None]
-        run_mean_reconstruction(
-            means,
-            Ft_y_0=None,
-            Ft_y_1=None,
-            Ft_ctf_0=None,
-            Ft_ctf_1=None,
-            Ft_y_combined=jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.complex64),
-            Ft_ctf_combined=jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32),
-            mean_signal_variance_shells=tau_shells,
-            mean_signal_variance_shells_per_half=None,
-            n_classes=n_classes,
-            cs=8,
-            iteration=0,
+        settings = mean_helpers_module.ReconstructionSettings(
             grid_size=8,
-            cryo=SimpleNamespace(voxel_size=1.0),
+            voxel_size=1.0,
             volume_shape=VOLUME_SHAPE,
-            tau2_fudge=4.0,
             padding_factor=1,
             projection_padding_factor=1,
-            relion_minres_map=0,
-            particle_diameter_ang=None,
+            minres_map=0,
+            width_mask_edge=5,
+            fmask_edge=2,
+            tau2_fudge=4.0,
+            particle_diameter_angstrom=None,
+            first_iteration_lowpass_angstrom=None,
+        )
+        means = mean_helpers_module.reconstruct_numbered_class_maps(
+            jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.complex64),
+            jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32),
+            tau_shells,
+            settings,
+            n_classes=n_classes,
+            iteration=0,
+            current_size=8,
+            accumulator_volume_shape=None,
             relion_firstiter_cc_this_iter=False,
-            relion_firstiter_ini_high_angstrom=None,
-            relion_width_mask_edge=5,
-            relion_fmask_edge=2,
         )
 
         assert len(calls) == n_classes

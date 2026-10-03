@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.refinement_specs import run_mean_reconstruction
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
@@ -92,7 +91,6 @@ def test_unregularized_reconstruction_variants_expose_dependencies():
 class TestReconstructionOwnership:
     def test_k1_reconstruction_uses_per_half_1d_tau_shell_prior(self, monkeypatch):
         """K=1 reconstruction should not round-trip tau2 through full volumes."""
-        from types import SimpleNamespace
 
         from relax.refinement import mean_helpers as mean_helpers_module
 
@@ -114,33 +112,29 @@ class TestReconstructionOwnership:
         n_shells = VOLUME_SHAPE[0] // 2 + 1
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
-        means = [None, None]
-        run_mean_reconstruction(
-            means,
-            Ft_y_0=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
-            Ft_y_1=jnp.ones(VOLUME_SIZE, dtype=jnp.complex64),
-            Ft_ctf_0=jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
-            Ft_ctf_1=jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
-            Ft_y_combined=None,
-            Ft_ctf_combined=None,
-            mean_signal_variance_shells=None,
-            n_classes=1,
-            cs=8,
-            iteration=0,
+        settings = mean_helpers_module.ReconstructionSettings(
             grid_size=8,
-            cryo=SimpleNamespace(voxel_size=1.0),
+            voxel_size=1.0,
             volume_shape=VOLUME_SHAPE,
-            tau2_fudge=1.0,
             padding_factor=1,
             projection_padding_factor=1,
-            relion_minres_map=0,
-            particle_diameter_ang=None,
+            minres_map=0,
+            width_mask_edge=5,
+            fmask_edge=2,
+            tau2_fudge=1.0,
+            particle_diameter_angstrom=None,
+            first_iteration_lowpass_angstrom=None,
+        )
+        means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
+            (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
+            (jnp.ones(VOLUME_SIZE, dtype=jnp.float32), jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
+            tau_shells,
+            settings,
+            iteration=0,
+            current_size=8,
+            accumulator_volume_shape=None,
             relion_firstiter_cc_this_iter=False,
-            relion_firstiter_ini_high_angstrom=None,
-            relion_width_mask_edge=5,
-            relion_fmask_edge=2,
-            mean_signal_variance_shells_per_half=tau_shells,
-            retained_Ft_y_0_device=retained_half0,
+            retained_first_numerator=retained_half0,
         )
         assert len(calls) == 2
         assert events == ["reconstruct", "finish", "reconstruct", "finish"]
@@ -383,7 +377,6 @@ def test_relion_reconstruction_tau_shells_match_full_prior_bitwise():
 
 def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     """Production host join must hand one live exact buffer to half-0 Stage A."""
-    from types import SimpleNamespace
 
     from relax.refinement import mean_helpers as mean_helpers_module
 
@@ -422,34 +415,29 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     monkeypatch.setattr(
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
-    means = [None, None]
-    run_mean_reconstruction(
-        means,
-        Ft_y_0=joined[0],
-        Ft_y_1=joined[1],
-        Ft_ctf_0=joined[2],
-        Ft_ctf_1=joined[3],
-        Ft_y_combined=None,
-        Ft_ctf_combined=None,
-        mean_signal_variance_shells=None,
-        n_classes=1,
-        cs=4,
-        iteration=0,
+    settings = mean_helpers_module.ReconstructionSettings(
         grid_size=4,
-        cryo=SimpleNamespace(voxel_size=1.0),
+        voxel_size=1.0,
         volume_shape=(4, 4, 4),
-        tau2_fudge=1.0,
         padding_factor=2,
         projection_padding_factor=1,
-        relion_minres_map=0,
-        particle_diameter_ang=None,
-        relion_firstiter_cc_this_iter=False,
-        relion_firstiter_ini_high_angstrom=None,
-        relion_width_mask_edge=5,
-        relion_fmask_edge=2,
+        minres_map=0,
+        width_mask_edge=5,
+        fmask_edge=2,
+        tau2_fudge=1.0,
+        particle_diameter_angstrom=None,
+        first_iteration_lowpass_angstrom=None,
+    )
+    means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
+        (joined[0], joined[1]),
+        (joined[2], joined[3]),
+        [jnp.ones(3, dtype=jnp.float32), jnp.ones(3, dtype=jnp.float32)],
+        settings,
+        iteration=0,
+        current_size=4,
         accumulator_volume_shape=accumulator_shape,
-        mean_signal_variance_shells_per_half=[jnp.ones(3, dtype=jnp.float32), jnp.ones(3, dtype=jnp.float32)],
-        retained_Ft_y_0_device=retained_half0,
+        relion_firstiter_cc_this_iter=False,
+        retained_first_numerator=retained_half0,
     )
     assert len(calls) == 2
     assert calls[0][0][1] is joined[0]

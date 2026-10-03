@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.refinement_specs import run_mean_reconstruction
 
 jnp = pytest.importorskip("jax.numpy")
 mask = pytest.importorskip("recovar.core.mask")
@@ -228,7 +227,6 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch, ca
 
 
 def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeypatch):
-    from types import SimpleNamespace
 
     volume_shape = (4, 4, 4)
     volume_size = int(np.prod(volume_shape))
@@ -263,35 +261,31 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         lambda _shape: True,
     )
 
-    means = [None, None]
-    run_mean_reconstruction(
-        means,
-        Ft_y_0=jnp.ones(volume_size, dtype=jnp.complex64),
-        Ft_y_1=jnp.ones(volume_size, dtype=jnp.complex64),
-        Ft_ctf_0=jnp.ones(volume_size, dtype=jnp.float32),
-        Ft_ctf_1=jnp.ones(volume_size, dtype=jnp.float32),
-        Ft_y_combined=None,
-        Ft_ctf_combined=None,
-        mean_signal_variance_shells=None,
-        mean_signal_variance_shells_per_half=[
+    settings = mean_helpers.ReconstructionSettings(
+        grid_size=4,
+        voxel_size=np.float32(1.0),
+        volume_shape=volume_shape,
+        padding_factor=1,
+        projection_padding_factor=1,
+        minres_map=0,
+        width_mask_edge=1,
+        fmask_edge=2,
+        tau2_fudge=1.0,
+        particle_diameter_angstrom=2.0,
+        first_iteration_lowpass_angstrom=None,
+    )
+    means = mean_helpers.reconstruct_numbered_k1_halfmaps(
+        (jnp.ones(volume_size, dtype=jnp.complex64), jnp.ones(volume_size, dtype=jnp.complex64)),
+        (jnp.ones(volume_size, dtype=jnp.float32), jnp.ones(volume_size, dtype=jnp.float32)),
+        [
             jnp.ones(volume_shape[0] // 2 + 1, dtype=jnp.float32),
             jnp.ones(volume_shape[0] // 2 + 1, dtype=jnp.float32),
         ],
-        n_classes=1,
-        cs=4,
+        settings,
         iteration=0,
-        grid_size=4,
-        cryo=SimpleNamespace(voxel_size=np.float32(1.0)),
-        volume_shape=volume_shape,
-        tau2_fudge=1.0,
-        padding_factor=1,
-        projection_padding_factor=1,
-        relion_minres_map=0,
-        particle_diameter_ang=2.0,
+        current_size=4,
+        accumulator_volume_shape=None,
         relion_firstiter_cc_this_iter=False,
-        relion_firstiter_ini_high_angstrom=None,
-        relion_width_mask_edge=1,
-        relion_fmask_edge=2,
     )
 
     assert len(reconstruction_sources) == len(masks) == 2

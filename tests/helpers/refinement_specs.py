@@ -2,7 +2,7 @@
 
 import dataclasses
 
-from relax.refinement import half_scoring, local_sampling, local_search_iteration, mean_helpers, optics_shapes
+from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.projector_preparation import PreparedProjector
 
@@ -23,59 +23,6 @@ _LOCAL_ITERATION_POSITIONAL = (
     "rotation_block_size",
     "current_size",
 )
-
-
-def run_mean_reconstruction(means, **values):
-    """Exercise the production reconstruction phases with concise test inputs."""
-
-    values = dict(values)
-    Ft_y_by_half = (values.pop("Ft_y_0"), values.pop("Ft_y_1"))
-    Ft_ctf_by_half = (values.pop("Ft_ctf_0"), values.pop("Ft_ctf_1"))
-    Ft_y_combined = values.pop("Ft_y_combined")
-    Ft_ctf_combined = values.pop("Ft_ctf_combined")
-    mean_signal_variance_shells = values.pop("mean_signal_variance_shells")
-    mean_signal_variance_shells_per_half = values.pop("mean_signal_variance_shells_per_half")
-    tau2_fudge = values.pop("tau2_fudge")
-    n_classes = values.pop("n_classes")
-    iteration = values.pop("iteration")
-    current_size = values.pop("cs")
-    cryo = values.pop("cryo")
-    accumulator_volume_shape = values.pop("accumulator_volume_shape", None)
-    retained_first_numerator = values.pop("retained_Ft_y_0_device", None)
-    particle_diameter_ang = values.pop("particle_diameter_ang")
-    relion_firstiter_cc_this_iter = values.pop("relion_firstiter_cc_this_iter")
-    relion_firstiter_ini_high_angstrom = values.pop(
-        "relion_firstiter_ini_high_angstrom"
-    )
-    settings = mean_helpers.ReconstructionSettings(
-        grid_size=values.pop("grid_size"),
-        voxel_size=cryo.voxel_size,
-        volume_shape=values.pop("volume_shape"),
-        padding_factor=values.pop("padding_factor"),
-        projection_padding_factor=values.pop("projection_padding_factor"),
-        minres_map=values.pop("relion_minres_map"),
-        width_mask_edge=values.pop("relion_width_mask_edge"),
-        fmask_edge=values.pop("relion_fmask_edge"),
-        tau2_fudge=tau2_fudge,
-        particle_diameter_angstrom=particle_diameter_ang,
-        first_iteration_lowpass_angstrom=relion_firstiter_ini_high_angstrom,
-    )
-    if n_classes > 1:
-        means[:] = mean_helpers.reconstruct_numbered_class_maps(
-            Ft_y_combined, Ft_ctf_combined, mean_signal_variance_shells, settings,
-            n_classes=n_classes, iteration=iteration, current_size=current_size,
-            accumulator_volume_shape=accumulator_volume_shape,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-        )
-    else:
-        means[:] = mean_helpers.reconstruct_numbered_k1_halfmaps(
-            Ft_y_by_half, Ft_ctf_by_half, mean_signal_variance_shells_per_half, settings,
-            iteration=iteration, current_size=current_size,
-            accumulator_volume_shape=accumulator_volume_shape,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-            retained_first_numerator=retained_first_numerator,
-        )
-    assert not values, f"unmapped mean reconstruction values: {sorted(values)}"
 
 
 def local_iteration_owners(*args, **values):
