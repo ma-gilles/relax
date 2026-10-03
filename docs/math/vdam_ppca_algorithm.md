@@ -1563,5 +1563,17 @@ job 14912480, `em_work/relax_ppca_cryoet_20261002/science6_14912480`):
 The point estimate recovers the contrast better than the three-value grid at
 almost no cost, and the maps, poses and latent agree for all three arms. The grid
 was removed. From the GT start the contrast does not change the reconstruction
-on this fixture; random-start runs remain to be done.
+on this fixture.
+
+Random start, VDAM seed 11 on the same fixture, rebased code (A100, job 14917508,
+batch 150):
+
+| Arm | State FSC-AUC | Specificity | Pose median, < 10 deg | Latent nearest-centroid | Contrast r / sd |
+| --- | --- | --- | --- | --- | --- |
+| no contrast | .715 / .752 / .711 | .129 | 4.91 deg, .935 | .902 | - |
+| point estimate | .721 / .745 / .734 | .127 | 4.60 deg, .962 | .862 | .743 / .248 |
+
+With one seed the two arms are within the earlier three-seed spread (16.9). The
+estimate tracks the contrast (r .74) but overstates its spread (sd .25 against
+.144). The option stays off by default.
 
