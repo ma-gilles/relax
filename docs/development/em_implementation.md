@@ -53,18 +53,16 @@ RELION (`ml_optimiser.cpp`) multiplies orientation weights by the class's
 `pdf_direction` value at the sampled direction only in `NOPRIOR` mode, so local searches
 get no direction prior; `initialisePdfDirection` resets every class to an even
 distribution on a sampling change, so a prior at another HEALPix order is not
-used; RELION keeps one prior per class and copies class 0 to all classes when
-seeding K references, so a K-class run that only holds a shared prior applies
-it to every class; and each half scores with its own model, including the
+used; RELION keeps one prior per class, and a K-class run reads only its
+per-class priors (the one-reference start copies class 0 to every class in the
+controller; no Class3D path fills the K=1 `shared` field, so the former
+shared-to-every-class fallback is removed); and each half scores with its own model, including the
 joined final iteration. Sealed captured sampling expands the prior onto the
 captured direction rows the scorer uses (`_sealed_direction_log_prior`, now
 also owned here); otherwise the canonical sample ordering is used. The controller
 supplies the scoring order, the sealed state only when the scored grid is the
-sealed grid, and its logger. Adopting one rule changed three edge cases that
-previously differed between the passes: the final pass now applies a shared prior
-to every class, K-class priors follow sealed rows, and a stale class prior with a
-matching shared prior now yields identical per-class rows instead of one shared
-vector. [`test_direction_log_prior_owner.py`](../../tests/unit/test_direction_log_prior_owner.py)
+sealed grid, and its logger. Adopting one rule made K-class priors follow sealed
+rows in both passes. [`test_direction_log_prior_owner.py`](../../tests/unit/test_direction_log_prior_owner.py)
 pins each rule.
 `orientation_priors.relion_local_search_sigmas` owns the local-search
 orientational prior widths (configured widths kept, psi falling back to rot,

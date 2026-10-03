@@ -218,9 +218,27 @@ no prior estimate could reach, is removed. The profile-only return passes no
 class products, the direction-prior order is computed once per iteration, and
 `_maybe_host_offload_half0_local_accumulators` and `record_noise_and_tau2` no
 longer take the mode. `refine_single_volume` tests `k_class_enabled` 29 times
-instead of 39. Not done here: the raw-FSC arm of
-`_k1_data_vs_prior_for_scheduling` and the Class3D shared-prior fallback in
-`orientation_priors.py` wait for the user.
+instead of 39.
+
+The user then ruled that unreachable or production-unset code is deleted under
+the cleanup rules. Removed on that ruling, each after tracing its producers:
+the `do_solvent_fsc_correction` option with the block it gated in
+`estimate_split_half_prior` and the solvent-corrected FSC kernel in
+`regularization_relion.py` (no producer on any entry path);
+`_k1_data_vs_prior_for_scheduling` and its raw-FSC arm (the K1 curve is always
+set before `plan_halfmap_image_size` runs), with `plan_class_image_size` now
+calling the one truncation helper; the Class3D shared-prior fallback in
+`relion_direction_log_priors_for_half` (no Class3D path fills `shared`); and
+the always-`None` `state_current_size` operand of `audit_prejoin_accumulators`.
+Two changes alter execution without altering values: the K1 host move no
+longer copies the two per-half reconstruction tau2 volumes that nothing reads
+again, and a continued run no longer builds the start-up reference model,
+noise model, previous rotations, direction priors and sampling perturbation
+that its snapshot replaces (its "Perturbation init" log line no longer
+appears). Still present: `SplitHalfPrior.fsc_for_update`, now always the raw
+FSC, because removing it reaches the growth history and the snapshot format;
+and the class log priors, still computed before a continued Class3D run
+replaces them.
 
 1. Inventory each reconstruction choice with its producer and consumers:
    split-half versus combined classes; prior volume versus shell curves;
@@ -366,7 +384,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2732/1766 for numerical/command controllers;
+Source spans are 2735/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main

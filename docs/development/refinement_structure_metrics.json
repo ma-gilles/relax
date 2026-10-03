@@ -85,15 +85,15 @@
         },
         {
           "function_count": 12,
-          "nonblank_noncomment_lines": 2687,
+          "nonblank_noncomment_lines": 2688,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 3088
+          "physical_lines": 3091
         },
         {
           "function_count": 11,
-          "nonblank_noncomment_lines": 557,
+          "nonblank_noncomment_lines": 560,
           "path": "relax/refinement/iteration_planning.py",
-          "physical_lines": 621
+          "physical_lines": 625
         },
         {
           "function_count": 11,
@@ -115,9 +115,9 @@
         },
         {
           "function_count": 63,
-          "nonblank_noncomment_lines": 1906,
+          "nonblank_noncomment_lines": 1834,
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 2228
+          "physical_lines": 2152
         },
         {
           "function_count": 15,
@@ -145,9 +145,9 @@
         },
         {
           "function_count": 7,
-          "nonblank_noncomment_lines": 300,
+          "nonblank_noncomment_lines": 299,
           "path": "relax/refinement/refinement_options.py",
-          "physical_lines": 397
+          "physical_lines": 396
         },
         {
           "function_count": 11,
@@ -231,7 +231,7 @@
           "path": "relax/refinement/expectation_batches.py"
         },
         {
-          "line": 529,
+          "line": 532,
           "line_span": 129,
           "name": "estimate_class_priors",
           "parameter_count": 19,
@@ -245,7 +245,7 @@
           "path": "relax/refinement/expectation.py"
         },
         {
-          "line": 715,
+          "line": 718,
           "line_span": 389,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
@@ -259,8 +259,8 @@
           "path": "relax/refinement/iteration_snapshot.py"
         },
         {
-          "line": 539,
-          "line_span": 83,
+          "line": 542,
+          "line_span": 84,
           "name": "plan_halfmap_image_size",
           "parameter_count": 14,
           "path": "relax/refinement/iteration_planning.py"
@@ -287,13 +287,6 @@
           "path": "relax/refinement/optics_shapes.py"
         },
         {
-          "line": 1185,
-          "line_span": 151,
-          "name": "estimate_split_half_prior",
-          "parameter_count": 12,
-          "path": "relax/refinement/mean_helpers.py"
-        },
-        {
           "line": 199,
           "line_span": 69,
           "name": "prepare_final_sampling",
@@ -301,14 +294,14 @@
           "path": "relax/refinement/final_sampling.py"
         },
         {
-          "line": 260,
+          "line": 263,
           "line_span": 50,
           "name": "join_half_accumulators_at_low_resolution",
           "parameter_count": 11,
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 452,
+          "line": 455,
           "line_span": 59,
           "name": "estimate_class_prior",
           "parameter_count": 11,
@@ -337,15 +330,22 @@
         },
         {
           "line": 473,
-          "line_span": 64,
+          "line_span": 67,
           "name": "plan_class_image_size",
           "parameter_count": 10,
           "path": "relax/refinement/iteration_planning.py"
         },
         {
-          "line": 367,
+          "line": 370,
           "line_span": 55,
           "name": "_class_tau2_update_details",
+          "parameter_count": 10,
+          "path": "relax/refinement/mean_helpers.py"
+        },
+        {
+          "line": 1188,
+          "line_span": 72,
+          "name": "estimate_split_half_prior",
           "parameter_count": 10,
           "path": "relax/refinement/mean_helpers.py"
         },
@@ -367,7 +367,7 @@
       "largest_functions": [
         {
           "line": 354,
-          "line_span": 2732,
+          "line_span": 2735,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
@@ -408,7 +408,7 @@
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 715,
+          "line": 718,
           "line_span": 389,
           "name": "_reconstruct_volume_eager",
           "parameter_count": 17,
@@ -450,15 +450,15 @@
         "file_count": 27,
         "function_count": 361,
         "large_argument_function_count": 26,
-        "maximum_function_line_span": 2732,
+        "maximum_function_line_span": 2735,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18818,
-        "physical_lines": 21489,
+        "nonblank_noncomment_lines": 18749,
+        "physical_lines": 21419,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "package 2 lane A: the numbered M-step is one K1/Class3D decision with two sequences; per-mode iteration-resolution call; dead mode selects and a repeated prior-order computation removed",
-    "source_commit": "ef86ee1009240b7876e3b35fd0a26dc583321032",
+    "package": "package 2 lane A: one K1/Class3D decision for the numbered M-step; unproduced solvent-corrected FSC, raw-FSC scheduling arm and Class3D shared-prior fallback deleted; continued runs build start-up state once",
+    "source_commit": "65de6c308072328744b86b9295058a6b49642961",
     "recorded_date": "2026-10-03"
   }
 }

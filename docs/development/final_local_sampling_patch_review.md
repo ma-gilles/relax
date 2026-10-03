@@ -68,7 +68,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2732/1766 for numerical/command controllers;
+Source spans are 2735/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main
@@ -265,21 +265,21 @@ tau2 install (`L:2086`), the map-slot clearing (`L:2098-2099`), the
 reconstruction timer and its log (`L:2102`, `L:2127-2130`) and the release of
 the retained numerator (`L:2131`).
 
-After: one test, `L:1953`. It decides which of two ordered sequences runs;
+After: one test, `L:1958`. It decides which of two ordered sequences runs;
 the options inside each arm (join resolution, dump directory, first-CC with
 `ini_high`) are nested conditions, not mode tests.
 
 | Step | Class3D arm | K1 arm |
 | --- | --- | --- |
-| Accumulators | combine the two halves per class (`L:1954`) | optional low-resolution join in place, keeping the retained first-half numerator (`L:2065`) |
-| Previous references | device references (`L:1961`) | host snapshot, then release of both slots (`L:2078`) |
-| Prior timer | `_t_unreg_first` | `_t_unreg_first`, then the optional accumulator dump (`L:2085`) |
-| Prior | `estimate_class_priors`, history and scheduling curve, log (`L:1963`) | `estimate_split_half_prior`, log that reads the old tau2 (`L:2100`, `:2124`) |
-| Install tau2 | `tau2`, then `tau2_per_half = [tau2, tau2]` (`L:2004`) | `tau2`, then `_updated_mean_variance_per_half` (`L:2130`) |
-| Map slots | cleared (`L:2010`) | already `None` after the snapshot |
-| Reconstruction | timer, `reconstruct_numbered_class_maps`, log (`L:2014`) | timer, `reconstruct_numbered_k1_halfmaps`, log, retained numerator dropped (`L:2140`, `:2155`) |
-| First-CC reporting taper | data-vs-prior curve, history and scheduling write, shell and detail taper, log (`L:2029`) | volume and detail taper, tau2 reinstall, log (`L:2163`) |
-| Host move | none | `_host_tau2_volumes` (`L:2196`) |
+| Accumulators | combine the two halves per class (`L:1959`) | optional low-resolution join in place, keeping the retained first-half numerator (`L:2070`) |
+| Previous references | device references (`L:1966`) | host snapshot, then release of both slots (`L:2083`) |
+| Prior timer | `_t_unreg_first` | `_t_unreg_first`, then the optional accumulator dump (`L:2090`) |
+| Prior | `estimate_class_priors`, history and scheduling curve, log (`L:1968`) | `estimate_split_half_prior`, log that reads the old tau2 (`L:2105`, `:2127`) |
+| Install tau2 | `tau2`, then `tau2_per_half = [tau2, tau2]` (`L:2009`) | `tau2`, then `_updated_mean_variance_per_half` (`L:2133`) |
+| Map slots | cleared (`L:2015`) | already `None` after the snapshot |
+| Reconstruction | timer, `reconstruct_numbered_class_maps`, log (`L:2019`) | timer, `reconstruct_numbered_k1_halfmaps`, log, retained numerator dropped (`L:2143`, `:2158`) |
+| First-CC reporting taper | data-vs-prior curve, history and scheduling write, shell and detail taper, log (`L:2034`) | volume and detail taper, tau2 reinstall, log (`L:2166`) |
+| Host move | none | `_host_tau2_volumes` (`L:2199`) |
 
 Within each mode every operation, log, timer, capture and release is in the
 position it had at `970c9bf`. The statements written in both arms are the two
@@ -302,10 +302,16 @@ resolution estimate and the noise history (which now tests `fsc_shells`
 itself) no longer take it. The direction-prior order is computed once per
 iteration, before scoring, and reused when the K1 priors are learned.
 
-Old-versus-new evidence: the real controller on CPU, 24 small K1, K=2 and K=4
+After the map was drawn the K1 arm lost two operands of
+`estimate_split_half_prior` (the unproduced solvent-corrected FSC option) and
+the host move's fourth member (the per-half reconstruction volumes, dropped at
+the same statement instead of copied); the sequence of steps is unchanged.
+
+Old-versus-new evidence: the real controller on CPU, 27 small K1, K=2 and K=4
 cases (CC and non-CC starts, two or three numbered iterations, each join
-setting, intermediates and checkpoints), fingerprinted over results, written
-files, logs, checkpoints and the ordered M-step operation calls. The Class3D
+setting, intermediates, checkpoints and continuation from a snapshot),
+fingerprinted over results, written files, logs, checkpoints and the ordered
+M-step operation calls. The Class3D
 first-CC arm runs only with a harness stub of the engine's M-step rotation
 override; a seed iteration, adaptive oversampling and local search need the
 GPU pass 2 and are not in that comparison.
@@ -314,7 +320,7 @@ GPU pass 2 and are not in that comparison.
 
 The whole M-step decision, from the ordering comment to the stage mark.
 
-[relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1943):
+[relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1948):
 
 ```python
         # --- RELION-exact M-step ordering ---
@@ -481,8 +487,6 @@ The whole M-step decision, from the ordering comment to the stage mark.
                 current_size=current_size,
                 accumulator_shape=mstep_accumulator_shape,
                 full_half_axes=per_half.mstep_full_half_axis,
-                do_solvent_fsc_correction=parity.do_solvent_fsc_correction,
-                pixel_size_angstrom=source_pixel_size_angstrom,
                 iteration=iteration,
                 scoring_dtype=scoring_dtype,
                 started_at=_t_unreg_first,
@@ -564,24 +568,24 @@ The whole M-step decision, from the ordering comment to the stage mark.
             # resident E-step does not use them). Keep them on the host between
             # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
             # float32 volumes are 8 GB of the device floor (GPU census, bigbox
-            # 14480607).
+            # 14480607). The per-half reconstruction volumes are not read again:
+            # drop them here instead of copying them.
             (
                 reference_model.tau2,
                 reference_model.tau2_per_half,
                 mean_signal_variance,
-                mean_signal_variance_per_half,
             ) = _host_tau2_volumes(
                 reference_model.tau2,
                 reference_model.tau2_per_half,
                 mean_signal_variance,
-                mean_signal_variance_per_half,
             )
+            mean_signal_variance_per_half = None
         _parity_dump.mark_stage(iteration, "recon")
 ```
 
 ### Complete numbered Class3D prior result and operation
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 514):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 517):
 
 ```python
 class ClassPriorAggregation:
@@ -599,7 +603,7 @@ class ClassPriorAggregation:
     source: str
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 529):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 532):
 
 ```python
 def estimate_class_priors(
@@ -735,7 +739,7 @@ def estimate_class_priors(
 
 ### Complete regularized reconstruction and reporting tapers
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1151):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1154):
 
 ```python
 class ReconstructionSettings:
@@ -760,7 +764,7 @@ class ReconstructionSettings:
             object.__setattr__(self, "particle_diameter_angstrom", float(self.particle_diameter_angstrom))
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1338):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1262):
 
 ```python
 def _reconstruct_k1_maps(
@@ -817,7 +821,7 @@ def _reconstruct_k1_maps(
     return reconstructed_means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1392):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1316):
 
 ```python
 def _reconstruct_class_maps(
@@ -875,7 +879,7 @@ def _reconstruct_class_maps(
     return shared_classes
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1447):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1371):
 
 ```python
 def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index, iteration, current_size, n_classes):
@@ -891,7 +895,7 @@ def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index,
         )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1460):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1384):
 
 ```python
 def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
@@ -899,7 +903,7 @@ def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
     return settings.particle_diameter_angstrom is not None and settings.particle_diameter_angstrom > 0
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1465):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1389):
 
 ```python
 def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
@@ -914,7 +918,7 @@ def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
     )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1477):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1401):
 
 ```python
 def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes):
@@ -934,7 +938,7 @@ def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes
     )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1494):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1418):
 
 ```python
 def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
@@ -948,7 +952,7 @@ def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
     return jnp.stack(flattened_classes, axis=0)
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1505):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1429):
 
 ```python
 def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
@@ -960,7 +964,7 @@ def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
         )
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1514):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1438):
 
 ```python
 def reconstruct_numbered_k1_halfmaps(
@@ -1017,7 +1021,7 @@ def reconstruct_numbered_k1_halfmaps(
     return means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1568):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1492):
 
 ```python
 def reconstruct_numbered_class_maps(
@@ -1064,7 +1068,7 @@ def reconstruct_numbered_class_maps(
     return means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1613):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1537):
 
 ```python
 class K1ReportingPrior:
@@ -1075,7 +1079,7 @@ class K1ReportingPrior:
     details_per_half: list[dict]
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1621):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1545):
 
 ```python
 def taper_first_cc_k1_prior(
@@ -1128,7 +1132,7 @@ def taper_first_cc_k1_prior(
     return K1ReportingPrior(variance, variance_per_half, details_per_half)
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1672):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1596):
 
 ```python
 class ClassReportingPrior:
@@ -1138,7 +1142,7 @@ class ClassReportingPrior:
     details: dict
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1679):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1603):
 
 ```python
 def taper_first_cc_class_prior(
@@ -1171,7 +1175,7 @@ def taper_first_cc_class_prior(
 
 ### Actual half-source selection, preparation, dataset subset and admission
 
-[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 689):
+[relax/refinement/full_refinement.py](../../relax/refinement/full_refinement.py) (line 643):
 
 ```python
     if args.relion_half_sets is not None:
@@ -1305,7 +1309,7 @@ class HalfsetParticleInputs(NamedTuple):
     accuracy_ctf_params: np.ndarray | None
 ```
 
-[relax/refinement/particle_loading.py](../../relax/refinement/particle_loading.py) (line 55):
+[relax/refinement/particle_loading.py](../../relax/refinement/particle_loading.py) (line 64):
 
 ```python
 def prepare_relion_halfset_inputs(

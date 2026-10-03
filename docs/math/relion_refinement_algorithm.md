@@ -593,7 +593,7 @@ a fixed speedup. Use paired measurements under the
 [`plan_initial_image_size`](../../relax/refinement/iteration_planning.py),
 `plan_halfmap_image_size` and `plan_class_image_size` own the host scheduling
 policy. Startup uses ini_high, then initial FSC, then bootstrap precedence.
-K1 resolves raw/corrected resolution and growth FSC separately from the preceding
+K1 resolves the resolution curve and the growth FSC separately from the preceding
 history or restart; Class3D uses the best truncated class curve without K1's
 high-resolution recovery or high-FSC latch. The controller applies computed
 updates before the image-size oracle and preserves the incoming coarse order
@@ -673,9 +673,9 @@ premultiplied-CTF adaptation and the ordered class estimate/capture/aggregation.
 The controller publishes its scheduling curve before stacking detail records.
 Final first-iteration, replay, CTF and DVP precision policies remain distinct.
 [`estimate_split_half_prior`](../../relax/refinement/mean_helpers.py) owns the
-numbered K1 backprojector FSC, optional solvent-corrected true FSC and each half's
-weight-based tau2. Its `SplitHalfPrior` keeps raw reporting FSC separate from the
-FSC used for priors and size growth, and supplies the shared/per-half variance,
+numbered K1 backprojector FSC and each half's weight-based tau2. RELION's
+`--solvent_correct_fsc` is not implemented, so the FSC used for priors and size
+growth (`SplitHalfPrior.fsc_for_update`) is the raw reporting FSC. It supplies the shared/per-half variance,
 reconstruction shells and detail records. It runs after the existing optional
 low-frequency join and previous-map release, before regularized reconstruction.
 The controller applies tau2 updates and retains post-reconstruction firstiter-CC
@@ -720,9 +720,10 @@ use the caller's selected dtype, float32 by default.
 [`regularization.py`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/regularization.py) owns FSC,
 tau2 and data/prior helpers. `compute_data_vs_prior` uses shell-average weight
 **multiplied by** tau2, tau2 fudge and the padding-volume correction; it is not
-`Ft_ctf / tau2`. The controller's K1 scheduling path also uses
-`_k1_data_vs_prior_for_scheduling`; the generic weight-based helper is not an
-exhaustive description of its resolution policy.
+`Ft_ctf / tau2`. The controller's K1 scheduling path reads the curve the
+previous iteration published, truncated to the previous current size
+(`_truncate_data_vs_prior_for_current_size`); the generic weight-based helper
+is not an exhaustive description of its resolution policy.
 [`relion_reconstruct`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/relion_functions.py) applies
 the actual regularized reconstruction and postprocessing conventions.
 
@@ -885,7 +886,7 @@ explicit decision. Changing model support and particle Fourier windows remain
 separate from this fixed input geometry.
 
 The controller retains the exact borrowed `source_pixel_size_angstrom` scalar
-for existing host arithmetic, including solvent-FSC promotion. An equal Python
+for existing host arithmetic. An equal Python
 float cannot replace a NumPy scalar without tracing dtype consequences. No new
 array allocation, transfer, JIT boundary, RNG call or buffer release is introduced.
 
