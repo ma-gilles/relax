@@ -137,7 +137,8 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
 
     assert result.relion_iteration == 3 and result.n_classes == 1
     assert result.sigma_offset_angstrom == (2.0, 3.0)
-    assert result.avg_norm_correction == (0.95, 1.0)
+    # A half without norm correction records RELION's 1.0 in relax's frame.
+    assert result.avg_norm_correction == (0.95, float(BOX) ** 2)
     np.testing.assert_array_equal(result.acc_rot_per_class, [2.25])
     np.testing.assert_array_equal(result.acc_trans_per_class_angstrom, [1.125])
     assert result.extra["direction_prior_order_half1"] == 1
@@ -365,6 +366,48 @@ def test_subtomogram_run_files_round_trip_3d_offsets(tmp_path):
     for h in range(2):
         assert read.translations[h].shape == (half_rows[h].size, 3)
         assert_matches(read.translations[h], snapshot.translations[h])
+
+
+def test_unnormalized_run_files_carry_relion_norm_and_spectra_past_current_size(tmp_path):
+    """A run without norm correction (subtomogram) writes RELION's rlnNormCorrection(Average) = 1.0; auto-refine
+    writes tau2 = 0 and the FSC-floor SSNR past the current size, as RELION's reader expects, and reads back the
+    loop's floors."""
+
+    import dataclasses
+
+    from recovar import jax_config
+
+    rng = np.random.default_rng(6)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    snapshot = _k1_snapshot([4, 3], rng)
+    past = np.arange(N_SHELLS) > snapshot.current_size // 2
+    tau2 = np.where(past, jax_config.EPSILON, snapshot.tau2_shells)
+    data_vs_prior = np.where(past, 0.0, snapshot.data_vs_prior)
+    snapshot = dataclasses.replace(
+        snapshot,
+        avg_norm_correction=(float(BOX) ** 2, float(BOX) ** 2),
+        image_corrections=[np.asarray(s, dtype=np.float32) for s in snapshot.scale_corrections],
+        tau2_shells=tau2,
+        data_vs_prior=data_vs_prior,
+    )
+    optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
+
+    out = tmp_path / "out"
+    data = read_star_blocks(out / "run_it005_data.star")["particles"]
+    np.testing.assert_allclose(np.asarray(data["rlnNormCorrection"], dtype=np.float64), 1.0, rtol=1e-6)
+    for h in (1, 2):
+        model = read_star_blocks(out / f"run_it005_half{h}_model.star")
+        assert float(model["model_general"]["rlnNormCorrectionAverage"]) == 1.0
+        table = model["model_class_1"]
+        written_tau2 = np.asarray(table["rlnReferenceTau2"], dtype=np.float64)
+        written_ssnr = np.asarray(table["rlnSsnrMap"], dtype=np.float64)
+        assert np.all(written_tau2[past] == 0.0) and np.all(written_tau2[~past] > 0.0)
+        np.testing.assert_allclose(written_ssnr[past], 0.001 / 0.999, rtol=1e-12)
+
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+    _assert_snapshots_match(read, snapshot)
 
 
 def test_healpix_cap_round_trips_and_the_continuing_run_keeps_its_own(tmp_path):
