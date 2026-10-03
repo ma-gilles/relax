@@ -208,6 +208,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 metric_trace_only=config.optimizer == "momentum_sgd",
                 gemm_precision=config.gemm_precision,
                 tile_loader=load_tilt_tile if tilts else None,
+                pass2_mass_floor=config.pass2_mass_floor,
             )
             for group_nv in nvs
         ]
@@ -270,6 +271,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "canonical_euler_count": len(canonical_eulers),
                     "engine": "full_row_coarse_recompute",
                     "tile_images": tile_size,
+                    "pass2_row_fraction": sum(part.diagnostics["pass2_rows"] for part in group_parts)
+                    / sum(part.diagnostics["scored_rows"] for part in group_parts),
                     "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
                 }
@@ -463,6 +466,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "radius": radius,
                 "healpix_order": config.stage(iteration)[1],
                 "gemm_precision": _gemm_precision_used(config),
+                "pass2_mass_floor": config.pass2_mass_floor,
                 **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),
                 **({"resumed_from_source": resumed_source} if resumed_source is not None else {}),
                 "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step * step_factor,
@@ -482,6 +486,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                             "pmax_mean",
                             "coarse_omitted_mass_bound",
                             "tile_images",
+                            "pass2_row_fraction",
                         )
                     }
                     for s in stats

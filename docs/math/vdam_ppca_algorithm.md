@@ -1162,6 +1162,32 @@ scientific contract; runnable code alone does not establish recovery.
   planned size as `tile_images`. On an emulated 16 GB A100 (r31/HP3 cryo-ET,
   41 tilts, batch 150) the plan is 142 particles at a 7.6 GB peak, where a
   one-copy count had run a P100 out of memory.
+- Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
+  After pass 1, the stream reads each pose row's largest per-image posterior mass
+  in the tile from the epilogue partials
+  ([_pass2_rows](../../relax/ppca_refinement/full_row_stream.py)). When at most half
+  the rows reach the floor, pass 2 (weights, M-step GEMMs, projections and moment
+  scatter) runs on those rows only. They are gathered into a power-of-two block
+  buffer, and their rotation masses return to the pass-1 positions. Each image then
+  loses less than `rows x floor` of its posterior mass. Otherwise pass 2 visits every
+  row in place and nothing is dropped. Each update records the floor and
+  `pass2_row_fraction`.
+  The 50% threshold exists because compacting perturbs a trajectory even when it
+  keeps nearly every row. A snapshot that compacted at any kept share (H100 job
+  14919588; GT-started eleven-state VDAM, 150 updates, seeds 101/102/103) visited
+  97-99.9% of rows and moved state FSC from .771 / .832 / .766 to
+  .767 / .825 / .748 and latent R^2 from .118 / .133 / .131 to .111 / .123 / .132.
+  With the threshold, these SPA tiles run in place and their output equals no
+  skip (10076 and eleven-state walls and logL unchanged).
+  Late cryo-ET posteriors are sharp and tile-coherent. From a random-start k3conf
+  checkpoint at r31/HP3 (pmax 1, batch 150), pass 2 visits 0.27% of the rows and an
+  A100 update falls from 9.5-10.1 s to 4.4-4.7 s; logL agrees to seven significant
+  figures. Science (H100 job 14919848, floor 0 / 1e-10):
+  - GT-started SGD: FSC-AUC .9446 / .9446, pose median 3.67 / 3.67 deg.
+  - Random-start VDAM: FSC-AUC .7250 / .7246, specificity .123 / .120,
+    latent R^2 .659 / .654, pose median 4.95 / 4.98 deg.
+  The random-start run's wall fell from 1064 s to 952 s, all of it in the HP3
+  stages.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it

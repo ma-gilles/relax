@@ -82,6 +82,13 @@ def add_args(parser):
         help="particle images in host memory: auto (default; read the stack once when it takes at most a "
         "quarter of the job's memory), on, or off (read each tile from disk)",
     )
+    parser.add_argument(
+        "--ppca-pass2-mass-floor",
+        type=float,
+        default=1e-10,
+        help="pass 2 skips pose rows on which every image of a tile has less posterior mass (default 1e-10, "
+        "applied when at most half the rows remain; 0: none skipped)",
+    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
@@ -325,6 +332,7 @@ def main(args=None):
         sgd_learning_rate=args.sgd_learning_rate,
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
+        pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
     if (args.ios is None) == (args.manifest is None):

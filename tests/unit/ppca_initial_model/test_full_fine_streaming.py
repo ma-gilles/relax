@@ -280,6 +280,77 @@ def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
     assert plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget) < 10
 
 
+def test_pass2_row_skip_drops_only_negligible_rows(tile_problem):
+    """Skipped rows keep their pass-1 positions empty; the statistics move by at most the dropped mass."""
+    dataset, mu, W, _stream, host = tile_problem
+    rotations, translations = host["rotations"], host["translations"]
+    kwargs = dict(
+        rotations=rotations,
+        translations=translations,
+        rotation_log_prior=host["rotation_log_prior"],
+        translation_log_prior=host["translation_log_prior"],
+        rotation_parent=np.zeros(len(rotations), np.int32),
+        translation_parent=np.zeros(len(translations), np.int32),
+        n_coarse_rotations=1,
+        n_coarse_translations=1,
+        noise_variance=host["noise_variance"],
+        geometry=host["geometry"],
+        schedule=host["schedule"],
+        scoring=host["scoring"],
+        gemm_precision="fp32",
+    )
+    dense = accumulate_full_row_tile(prepare_full_row_stream(dataset, mu, W, **kwargs), np.arange(3), [None] * 3)
+    mass = np.asarray(dense.diagnostics["rotation_mass"], np.float64)
+    assert dense.diagnostics["pass2_rows"] == dense.diagnostics["scored_rows"]
+    # A floor that only a row with almost no mass falls below visits every row and changes nothing.
+    tiny = prepare_full_row_stream(dataset, mu, W, pass2_mass_floor=1e-30, **kwargs)
+    same = accumulate_full_row_tile(tiny, np.arange(3), [None] * 3)
+    for name in ("lhs_tri", "residual_gradient", "embeddings"):
+        assert_matches(np.asarray(getattr(same, name)), np.asarray(getattr(dense, name)))
+    # A floor that keeps most rows runs pass 2 in place: nothing is skipped.
+    most = prepare_full_row_stream(dataset, mu, W, pass2_mass_floor=float(np.quantile(mass, 0.1)), **kwargs)
+    kept_most = accumulate_full_row_tile(most, np.arange(3), [None] * 3)
+    assert kept_most.diagnostics["pass2_rows"] == kept_most.diagnostics["scored_rows"]
+    assert_matches(np.asarray(kept_most.lhs_tri), np.asarray(dense.lhs_tri))
+    # Skip the lighter three quarters of the rows (by total mass, an upper bound on each image's mass).
+    floor = float(np.quantile(mass[mass > 0], 0.75))
+    skip = prepare_full_row_stream(dataset, mu, W, pass2_mass_floor=floor, **kwargs)
+    skipped = accumulate_full_row_tile(skip, np.arange(3), [None] * 3)
+    visited = np.asarray(skipped.diagnostics["rotation_mass"]) > 0
+    assert 0 < skipped.diagnostics["pass2_rows"] < skipped.diagnostics["scored_rows"]
+    assert_matches(np.asarray(skipped.diagnostics["rotation_mass"])[visited], mass[visited].astype(np.float32))
+    assert np.all(mass[~visited] < len(rotations) * 3 * floor)
+    dropped = float(np.sum(mass[~visited])) / 3  # mean dropped mass per image
+    for name in ("lhs_tri", "embeddings"):
+        a, b = np.asarray(getattr(skipped, name), np.float64), np.asarray(getattr(dense, name), np.float64)
+        assert np.linalg.norm(a - b) <= (dropped + 1e-5) * np.linalg.norm(b) * 10
+
+
+def test_pass2_floor_zero_visits_every_row(tile_problem):
+    """tau = 0 is the no-skip path: no row selection, identical statistics."""
+    from relax.ppca_refinement.full_row_stream import _pass2_rows
+
+    _dataset, _mu, _W, stream, _host = tile_problem
+    assert stream.pass2_mass_floor == 0.0
+    assert _pass2_rows(stream, None, None, 1) is None
+    explicit = stream._replace(pass2_mass_floor=0.0)
+    a = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    b = accumulate_full_row_tile(explicit, np.arange(3), SIGNIFICANT)
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "embeddings"):
+        assert_matches(np.asarray(getattr(b, name)), np.asarray(getattr(a, name)))
+    assert b.diagnostics["pass2_rows"] == b.diagnostics["scored_rows"]
+
+
+def test_rotation_mass_returns_to_pass1_rows():
+    """Compacted rows' masses land at their pass-1 positions; padding adds nothing."""
+    from relax.ppca_refinement.full_row_stream import _expand_rotation_mass
+
+    compact = jnp.asarray([5.0, 7.0, 11.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    positions = jnp.asarray([1, 4, 6, 0], jnp.int32)  # three visited rows, one padding slot
+    out = np.asarray(_expand_rotation_mass(compact, positions, np.int32(3)))
+    assert out.tolist() == [0.0, 5.0, 0.0, 0.0, 7.0, 0.0, 11.0, 0.0]
+
+
 def test_pipelined_tiles_match_separate_tiles(tile_problem):
     """Pipelining (next tile loaded, previous finished, kept buffer reused) changes no tile's statistics."""
     _dataset, _mu, _W, stream, _host = tile_problem

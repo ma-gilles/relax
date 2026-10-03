@@ -250,6 +250,9 @@ class FullRowStream(NamedTuple):
     # (:func:`_load_tile`). Subtomogram particles read their tilt images
     # (:func:`relax.ppca_initial_model.tomo.load_tilt_tile`).
     tile_loader: object = None
+    # Pass 2 skips every pose row on which each tile image's posterior mass is below this floor
+    # (0 visits every scored row); :func:`_pass2_rows`.
+    pass2_mass_floor: float = 0.0
 
 
 def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_translations: int) -> np.ndarray:
@@ -783,8 +786,12 @@ def prepare_full_row_stream(
     gemm_precision: str = "auto",
     device=None,
     tile_loader=None,
+    pass2_mass_floor: float = 0.0,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
+
+    ``pass2_mass_floor`` (:attr:`FullRowStream.pass2_mass_floor`) lets pass 2 skip the pose rows
+    that carry less posterior mass than it for every image of a tile.
 
     ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
     (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
@@ -821,7 +828,7 @@ def prepare_full_row_stream(
             gemm_precision=gemm_precision,
             device=device,
             tile_loader=tile_loader,
-        )
+        )._replace(pass2_mass_floor=float(pass2_mass_floor))
 
 
 def _prepare_full_row_stream(
@@ -1068,7 +1075,8 @@ def stream_tile_bytes(stream: FullRowStream, n_images: int) -> int:
 
     Per image: the kept pass-1 results over the full row table (:func:`_empty_kept`: scores and
     latent means ``(R, B, T)`` per component, packed covariances ``(R, B, tri(q))``, three per-row
-    partials), and one rotation block's pass-1 inner products and pass-2 weights ``(P, block, B T)``
+    partials) with, under a pass-2 mass floor, its compacted copy of at most half the rows, and one
+    rotation block's pass-1 inner products and pass-2 weights ``(P, block, B T)``
     with its Gram and translation sums ``(tri(P), block, B)``. Per tile: the moment accumulators and
     their compensation (:func:`_empty_carry`), and one block's projections ``(P, block K, 2F)`` with
     their packed products ``(tri(P), block K, F)`` and its M-step images (``K`` frames per row).
@@ -1080,6 +1088,8 @@ def stream_tile_bytes(stream: FullRowStream, n_images: int) -> int:
     capacity = len(stream.block_starts) * block
     K, F = _tile_frames(stream), _window_pixels(stream)
     kept = capacity * (T * P + tri_size(P - 1) + 3)
+    if stream.pass2_mass_floor > 0:
+        kept = kept + kept // 2  # the compacted pass-2 copy of at most half the rows (_compact_capacity)
     block_outputs = block * (2 * P * T + 2 * tri_size(P))
     metric = 1 if static.metric_trace_only else tri_size(P)
     accumulators = 2 * _moment_groups(static) * int(stream.arrays.augmented.shape[1]) * 32
@@ -1337,11 +1347,105 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
 
 
 def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
-    """Dispatch both passes of one loaded tile without waiting for the device; returns its kept buffer too."""
+    """Dispatch both passes of one loaded tile; returns its pass-1 kept buffer too.
+
+    The device runs ahead of the host, except for one wait per tile when pass 2 skips rows
+    (:func:`_pass2_rows` needs the row count).
+    """
     kept, posterior = _score_tile(stream, tile, layout["n_blocks"], kept)
     carry = _empty_carry(stream, int(tile.y_norm.shape[0]), observation_power)
-    carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
+    carry = _run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=True)
     return (tile, layout, posterior, carry), kept
+
+
+@partial(jax.jit, static_argnames=("n",))
+def _row_mass(kept, posterior, *, n):
+    """Largest posterior mass of each of the first ``n`` pose rows over the tile images."""
+    log_norm = posterior.center + posterior.centered_logZ
+    mass = kept.part_sum[:n] * jnp.exp(kept.part_max[:n] - log_norm[None, :])
+    return jnp.max(mass, axis=1)
+
+
+@partial(jax.jit, static_argnames=("n",))
+def _row_mass_xla(score, posterior, *, n):
+    log_norm = posterior.center + posterior.centered_logZ
+    return jnp.max(jnp.sum(jnp.exp(score[:n] - log_norm[None, :, None]), axis=2), axis=1)
+
+
+# Pass 2 compacts its rows only when it keeps at most this share of them; above it, the gather
+# would cost about what it saves, so pass 2 visits every row in place (no mass is dropped).
+PASS2_COMPACT_MAX_FRACTION = 0.5
+
+
+def _pass2_rows(stream, kept, posterior, n_blocks):
+    """Positions, in pass-1 row order, of the rows pass 2 visits; ``None`` when it visits all.
+
+    A row is skipped when every tile image's posterior mass on it (summed over translations) is
+    below ``stream.pass2_mass_floor``, so each image loses less than ``rows * floor`` of its mass.
+    When more than :data:`PASS2_COMPACT_MAX_FRACTION` of the rows remain, none is skipped.
+    """
+    if stream.pass2_mass_floor <= 0:
+        return None
+    n = n_blocks * stream.rotation_block_size
+    if stream.static.cuda_kernels:
+        mass = _row_mass(kept, posterior, n=n)
+    else:
+        mass = _row_mass_xla(kept.score, posterior, n=n)
+    positions = np.flatnonzero(np.asarray(jax.device_get(mass)) >= stream.pass2_mass_floor)
+    return None if positions.size > PASS2_COMPACT_MAX_FRACTION * n else positions.astype(np.int32)
+
+
+@partial(jax.jit, static_argnames=("capacity",))
+def _compact_rows(kept, rows, positions, count, sentinel, *, capacity):
+    """Pass-1 results and row table at ``positions[:count]``, padded with masked sentinel rows."""
+    valid = jnp.arange(capacity) < count
+    index = jnp.where(valid, positions, 0)
+    take = partial(jnp.take, indices=index, axis=0)
+    compact = _Kept(
+        score=jnp.where(valid[:, None, None], take(kept.score), -jnp.inf),
+        latent_mean=jnp.take(kept.latent_mean, index, axis=1),
+        latent_covariance=take(kept.latent_covariance),
+        part_max=jnp.where(valid[:, None], take(kept.part_max), -jnp.inf),
+        part_arg=take(kept.part_arg),
+        part_sum=jnp.where(valid[:, None], take(kept.part_sum), 0.0),
+    )
+    table = jnp.full(rows.shape, sentinel, rows.dtype).at[:capacity].set(jnp.where(valid, take(rows), sentinel))
+    return compact, table
+
+
+def _compact_capacity(total_blocks: int, n_blocks: int) -> int:
+    """Blocks of the compacted pass-2 buffer: the smallest of ``total / 2^k`` (k = 1..5, rounded up) that
+    holds ``n_blocks``. Compaction keeps at most half the rows, so the buffer is at most half the kept
+    one (:func:`stream_tile_bytes` counts it), and a stage compiles at most five buffer shapes."""
+    sizes = sorted({max(1, -(-total_blocks // (1 << k))) for k in range(1, 6)})
+    return next((size for size in sizes if size >= n_blocks), total_blocks)
+
+
+@jax.jit
+def _expand_rotation_mass(compact_mass, positions, count):
+    """Rotation masses of the compacted rows back at their pass-1 positions (padding adds zeros)."""
+    valid = jnp.arange(positions.shape[0]) < count
+    values = jnp.where(valid, compact_mass[: positions.shape[0]], 0.0)
+    return jnp.zeros_like(compact_mass).at[positions].add(values)
+
+
+def _run_skipping_pass2(stream, tile, kept, posterior, layout, carry, *, moments):
+    """Pass 2 over the rows :func:`_pass2_rows` keeps; per-row outputs return to pass-1 positions."""
+    positions = _pass2_rows(stream, kept, posterior, layout["n_blocks"])
+    layout["pass2_rows"] = layout["n_blocks"] * stream.rotation_block_size if positions is None else int(positions.size)
+    if positions is None:
+        return _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=moments)
+    count = int(positions.size)
+    n_blocks = max(1, -(-count // stream.rotation_block_size))
+    capacity = _compact_capacity(len(stream.block_starts), n_blocks) * stream.rotation_block_size
+    padded = np.zeros(capacity, np.int32)
+    padded[:count] = positions
+    sentinel = np.int32(stream.rotation_parent.size)
+    compact, table = _compact_rows(kept, tile.rows, jnp.asarray(padded), np.int32(count), sentinel, capacity=capacity)
+    carry = _run_pass2(stream, tile._replace(rows=table), compact, posterior, n_blocks, carry, moments=moments)
+    return carry._replace(
+        rotation_mass=_expand_rotation_mass(carry.rotation_mass, jnp.asarray(padded), np.int32(count))
+    )
 
 
 def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, *, enforce_x0):
@@ -1395,6 +1499,9 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         "rotation_mass": rotation_mass,
         "scored_image_rows": n_images * layout["scored_rows"],
         "supported_image_rows": layout["supported_image_rows"],
+        # Pose rows pass 2 visited (all scored rows unless pass2_mass_floor skips some).
+        "pass2_rows": layout["pass2_rows"],
+        "scored_rows": layout["scored_rows"],
         "latent_covariance_trace_mean": float(host["latent"] / np.float32(n_images)),
         "pose_entropy_mean": float(host["entropy"] / np.float32(n_images)),
     }
@@ -1424,5 +1531,5 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
         _check_finite_posterior(posterior)
         n_images = int(tile.y_norm.shape[0])
         carry = _empty_carry(stream, n_images, jnp.float32(0))
-        carry = _run_pass2(stream, tile, kept, posterior, layout["n_blocks"], carry, moments=False)
+        carry = _run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=False)
         return DensePPCAEmbeddings(carry.embedding, layout["original_ids"], n_images)

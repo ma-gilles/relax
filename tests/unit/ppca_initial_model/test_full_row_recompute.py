@@ -156,6 +156,8 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
                 "pmax_mean": 0.5,
                 "scored_image_rows": len(ids) * 3,
                 "supported_image_rows": len(ids) * 3,
+                "pass2_rows": 3,
+                "scored_rows": 3,
             },
         )
 
@@ -213,6 +215,7 @@ def test_defaults_are_the_dense_stream_and_oversampling_is_refused():
     args = parser.parse_args(["manifest.json", "--output", "out"])
     assert args.oversampling == 0 and args.stream_coarse_recompute
     assert (args.image_batch_size, args.rotation_block_size) == (150, 512)
+    assert config.pass2_mass_floor == args.ppca_pass2_mass_floor == 1e-10
     host_mask = parser.parse_args(["manifest.json", "--output", "out", "--no-stream-coarse-recompute"])
     assert not host_mask.stream_coarse_recompute
     for change in ({"oversampling": 1}, {"stream_full_fine_rows": True}, {"fine_devices": 2}):

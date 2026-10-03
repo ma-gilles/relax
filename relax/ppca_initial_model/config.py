@@ -48,6 +48,10 @@ class Config:
     # when it takes at most PREREAD_MEMORY_FRACTION of the job's memory, otherwise reads each tile
     # from disk; "on" and "off" force either. A runtime setting, like gemm_precision.
     preread_images: str = "auto"
+    # Pass 2 skips the pose rows on which every image of a tile has less posterior mass than this
+    # (0: visit every row), when that leaves at most half the rows. A runtime setting;
+    # full_row_stream._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
+    pass2_mass_floor: float = 1e-10
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -96,6 +100,8 @@ class Config:
             raise ValueError("TF32 GEMMs apply to the streamed engines only")
         if self.preread_images not in ("auto", "on", "off"):
             raise ValueError("Image preread must be auto, on or off")
+        if not 0 <= self.pass2_mass_floor < 1:
+            raise ValueError("The pass-2 mass floor must be in [0, 1)")
 
     def step_factor(self, iteration, n_images):
         """``min(1, count / scheduled count)``: the factor on VDAM's step for a batch below its own subset.
