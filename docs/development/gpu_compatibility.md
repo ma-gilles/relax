@@ -104,7 +104,7 @@ fixes below applied where noted):
 | Tomo Refine3D s1 | 1650 (main 5b44d0b) | — | — | — |
 | Tomo Class3D et13 / VDAM K1 / VDAM K2 | 275 (main 5b44d0b) / 138 / 156 | — | — | — |
 | PPCA tomo VDAM / SGD, default tile | 242 / 240 (candidate fb33c09e) | — | — | — |
-| Refine3D K1 50k/256, 15 iterations | pending on main 7b1e4da | — | — | — |
+| Refine3D K1 50k/256, 15 iterations | 16800 (main 7b1e4da) | — | — | — |
 
 ## Minimum compute capability
 
@@ -122,7 +122,7 @@ Fixed:
 | Issue | Fix | Evidence |
 | --- | --- | --- |
 | Tomo coarse pass ran out of memory on 16 GB (6.4 to 7.6 GiB batch): fixed 2 GiB budget at 8 B a pixel, no device cap | `_coarse_batches` counts the bytes of the projection path that serves and is capped at a quarter of `device_available_bytes` (dbbb49c) | 16 GB emulation and P100 complete, GT FSC-AUC equal to H100 to 1e-6 |
-| Final tau2 shell statistics ran out of memory at box 256 on 16 GB, after 15 iterations | `_shell_stats_on_host` sends them to the host when their device arrays exceed `_SHELL_STATS_DEVICE_SHARE` of the free memory (29e862a, f4ea273) | host and device equal at 512³; the 15-iteration case is pending (job 14937566) |
+| Final tau2 shell statistics ran out of memory at box 256 on 16 GB, after 15 iterations | `_shell_stats_on_host` sends them to the host when their device arrays exceed `_SHELL_STATS_DEVICE_SHARE` of the free memory (29e862a, f4ea273) | host and device equal at 512³; the failing case, Refine3D K1 50k/256 for 15 iterations at 16 GB, completes on main 7b1e4da (Slurm 14937566, 16800 s) |
 | Preflight skipped without `cuobjdump`; one library's verdict exempted the next | fat-binary reader, per-library verdict (recovar c60e3c26f) | P100 and H100 refuse an unbuilt architecture in 4 to 6 s |
 | A native build started inside a recovar checkout compiled that checkout | builds run in their output directory, and natives record the recovar kernel sources they compiled; `native_sources.py check` refuses any other (adfa7f8, 5d69a51) | unit test with a shadowing checkout |
 | `relax ppca_initial_model` failed outside a git checkout | source identity records `head: None` (302748d3, ppcaspeed) | Polar runs start |
