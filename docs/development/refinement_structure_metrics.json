@@ -28,7 +28,7 @@
       },
       "totals": {
         "file_count": 27,
-        "physical_lines": 21544,
+        "physical_lines": 21543,
         "nonblank_noncomment_lines": 18855,
         "function_count": 365,
         "large_argument_function_count": 26,
@@ -183,7 +183,7 @@
         },
         {
           "path": "relax/refinement/startup_noise.py",
-          "physical_lines": 267,
+          "physical_lines": 266,
           "nonblank_noncomment_lines": 221,
           "function_count": 6
         },
@@ -457,8 +457,8 @@
         }
       ]
     },
-    "package": "merge of main e6a0521: projector built on every scoring route, deferred fine rows, exact coarse operands only",
-    "source_commit": "e00267784a0e36dbd51ef5878e3ccf398cb1341d",
+    "package": "merge of main d1ba3e8 after e6a0521: projector built on every scoring route, deferred fine rows, exact coarse operands only",
+    "source_commit": "ec91c9c5fe95a430bceb0f7dabafaf2266cc7a9e",
     "recorded_date": "2026-10-03"
   }
 }
