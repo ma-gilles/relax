@@ -23,7 +23,6 @@ from recovar.reconstruction.noise import make_radial_noise
 
 from relax import sampling
 from relax.ppca_initial_model import checkpoint
-from relax.ppca_initial_model.contrast import particle_contrast
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
@@ -133,37 +132,6 @@ def _streams_groups(config):
     return config.stream_coarse_recompute
 
 
-def _translation_grid(dataset, config):
-    """The E-step's shift grid in pixels: RELION's 2D grid, or its 3D grid for subtomogram particles (16.1)."""
-    if isinstance(dataset, TiltParticles):
-        return sampling.get_relion_translation_grid_3d(config.shift_range, config.shift_step).astype(np.float32)
-    return sampling.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step).astype(
-        np.float32
-    )
-
-
-def _refit_contrast(dataset, state, config, stats, iteration):
-    """Each E-step particle's MAP-pose contrast (section 16.10), into a copy of the state's contrast."""
-    radius, hp = config.stage(iteration)
-    contrast = np.array(state.contrast, np.float32, copy=True)
-    ids = np.concatenate([s.original_image_ids for s in stats])
-    contrast[ids] = particle_contrast(
-        dataset,
-        state.theta,
-        state.noise,
-        ids=ids,
-        rotation_ids=np.concatenate([s.diagnostics["best_rotation_idx"] for s in stats]),
-        translation_ids=np.concatenate([s.diagnostics["best_translation_idx"] for s in stats]),
-        z=np.concatenate([np.asarray(s.embeddings) for s in stats]),
-        rotations=_rotation_grid(hp),
-        translations=_translation_grid(dataset, config),
-        radius=min(radius, dataset.grid_size // 2 - 1),
-        prior_sd=config.contrast_prior_sd,
-        value_range=config.contrast_range,
-    )
-    return contrast
-
-
 def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
     """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``."""
     if _streams_groups(config):
@@ -189,10 +157,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     radius = min(radius, dataset.grid_size // 2 - 1)
     geometry = GeometryConfig(current_size=2 * radius, q=config.q, volume_domain="fourier_half")
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
-    # A per-particle contrast point estimate (section 16.10) scales each particle's model.
-    scoring = ScoringConfig(
-        relion_texture_interp=False, full_real_observation=True, image_scale_corrections=state.contrast
-    )
+    scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
     rotations = _rotation_grid(hp)
     canonical_eulers = sampling.get_relion_hidden_rotation_grid(hp, matrices=False)
     rotation_prior = (
@@ -204,7 +169,12 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
-    translations = _translation_grid(dataset, config)
+    translations = (
+        # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
+        sampling.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
+        if tilts
+        else sampling.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
+    ).astype(np.float32)
     prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
     prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
@@ -293,10 +263,6 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                         for name in ("residual_num", "residual_den")
                     },
                 )
-            if config.contrast_estimate:
-                # Every particle's most probable pose, in the order of its embeddings (section 16.10).
-                for key in ("best_rotation_idx", "best_translation_idx"):
-                    stats.diagnostics[key] = np.concatenate([part.diagnostics[key] for part in group_parts])
             stats.diagnostics.update(
                 {
                     "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
@@ -363,7 +329,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             0,
             info,
             sgd_momentum=jnp.zeros_like(theta) if config.optimizer == "momentum_sgd" else None,
-            contrast=np.ones(dataset.n_images, np.float32) if config.contrast_estimate else None,
         )
         checkpoint.save(output / "checkpoint_0000.npz", state, config, identity)
     if state.theta.ndim != 2 or state.theta.shape[1] != config.q + 1:
@@ -392,7 +357,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
         stats = expectation_groups(dataset, state, config, halves, iteration)
-        contrast = _refit_contrast(dataset, state, config, stats, iteration) if config.contrast_estimate else None
         if config.optimizer == "momentum_sgd":
             radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
             _, proposed_momentum, diagnostics = momentum_step(
@@ -490,7 +454,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             direction_prior,
             hp,
             momentum,
-            contrast,
         )
         diagnostics.update(
             {
@@ -527,11 +490,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "likelihood_scope": "minibatch/support/noise dependent; omitted observation constants",
                 "direction_prior": direction_prior,
                 "offset_variance_px2": offset_variance,
-                **(
-                    {"contrast_mean": float(np.mean(contrast)), "contrast_sd": float(np.std(contrast))}
-                    if config.contrast_estimate
-                    else {}
-                ),
                 "dtype": str(theta.dtype),
                 "elapsed_seconds": time.monotonic() - started,
             }

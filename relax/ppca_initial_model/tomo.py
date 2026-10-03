@@ -200,13 +200,11 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     visible = slot_image >= 0
     _, half, ctf = particles.read(np.where(visible, slot_image, images[0]))
     half, ctf = jax.device_put((half, ctf), stream.device)
-    scale = np.ones(B, np.float32) if stream.image_scale is None else stream.image_scale[ids]
     window, constants, static = _operand_layout(stream, B, K)
     Y1, ctf2, Y1_recon, ctf2_recon, y_norm, observation = _tilt_operands(
         half,
         ctf,
         jnp.asarray(visible),
-        jnp.asarray(scale, jnp.float32),
         stream.noise_variance_half,
         jnp.asarray(window),
         constants["lattice"],
@@ -293,7 +291,6 @@ def _operand_bytes(n_half, window_size, window_dtype, n_translations, static, de
         spec((images, n_half), jnp.complex64),  # half spectra
         spec((images, n_half)),  # CTF
         spec((images,), jnp.bool_),  # visible
-        spec((static["n_particles"],)),  # contrast scale
         spec((n_half,)),  # noise
         spec((window_size,), window_dtype),
         spec((window_size, 2)),  # lattice
@@ -315,7 +312,6 @@ def _tilt_operands(
     half,
     ctf,
     visible,
-    scale,
     nv,
     window,
     lattice,
@@ -332,9 +328,8 @@ def _tilt_operands(
     """A tilt tile's GEMM operands from its slot-ordered images, as one fused program (section 16.4).
 
     ``half`` and ``ctf`` are ``(B K, n_half)`` in (particle, frame) order with ``visible`` marking the
-    frames each particle sees; ``scale`` ``(B,)`` is each particle's fixed contrast (it scales the CTF).
-    Each frame's images are phase-shifted by the frame's projection of every 3D shift
-    (``frame_shifts`` ``(K, T, 2)``). Returns ``Y1 (K 2F', B T')``, ``ctf2 (K F', B)``,
+    frames each particle sees. Each frame's images are phase-shifted by the frame's projection of every
+    3D shift (``frame_shifts`` ``(K, T, 2)``). Returns ``Y1 (K 2F', B T')``, ``ctf2 (K F', B)``,
     ``Y1_recon (B T', K 2F')``, ``ctf2_recon (B, K F')``, the particles' image energies and the summed
     observed power, with ``F' = F + pad`` and ``B T' = B T + shift_pad``.
     """
@@ -342,7 +337,7 @@ def _tilt_operands(
     T = frame_shifts.shape[1]
     keep = visible.reshape(B, K, 1)
     half = jnp.where(keep, half.reshape(B, K, -1), 0)
-    ctf = jnp.where(keep, ctf.reshape(B, K, -1), 0) * scale[:, None, None]
+    ctf = jnp.where(keep, ctf.reshape(B, K, -1), 0)
     phases = jnp.exp(jnp.complex64(-2j * np.pi) * jnp.einsum("ktd,fd->ktf", frame_shifts, lattice, precision="highest"))
     weighted = (half * ctf / nv)[..., window]  # (B, K, F)
     ctf2 = (ctf * ctf / nv)[..., window]

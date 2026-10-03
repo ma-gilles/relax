@@ -118,8 +118,7 @@ def brute_force(particles, stream, problem):
 
 def _brute_force(particles, stream, p):
     """``p`` may give ``translations`` (default TRANSLATIONS) and each particle's flat ``noise`` (default NOISE);
-    the noise sums are then per noise group of ``particles``, ``(G, S)``. ``p["scale"]`` gives each particle a fixed
-    contrast that scales its whole model."""
+    the noise sums are then per noise group of ``particles``, ``(G, S)``."""
     static = stream.static
     translations = np.asarray(p.get("translations", TRANSLATIONS))
     noise = np.asarray(p.get("noise", np.full(particles.n_images, NOISE)), np.float64)
@@ -168,8 +167,7 @@ def _brute_force(particles, stream, p):
         image_ids, _ = particles.particle_images([i])
         slots = particles.image_frame[image_ids]
         y = p["images"][image_ids].astype(np.complex128)
-        # A fixed per-particle contrast scales the particle's model, as its CTF.
-        C = p["ctf"][image_ids].astype(np.float64) * np.asarray(p.get("scale", np.ones(n_particles)))[i]
+        C = p["ctf"][image_ids].astype(np.float64)
         outside = np.ones(N_HALF, bool)
         outside[window] = False
         sigma2 = noise[i]
@@ -367,8 +365,8 @@ def test_tiles_keep_one_tilt_group():
     assert [t.tolist() for t in tiles] == [[3, 0], [2], [1]]
 
 
-@pytest.mark.parametrize("optimizer, estimate", [("vdam", False), ("momentum_sgd", False), ("momentum_sgd", True)])
-def test_controller_runs_subtomogram_particles(tmp_path, optimizer, estimate):
+@pytest.mark.parametrize("optimizer", ["vdam", "momentum_sgd"])
+def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
     """Two all-particle updates and the final embedding through the InitialModel controller."""
     import json
 
@@ -408,7 +406,6 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer, estimate):
         image_batch_size=3,
         rotation_block_size=32,
         optimizer=optimizer,
-        contrast_estimate=estimate,
     )
     try:
         state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
@@ -423,9 +420,6 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer, estimate):
     embeddings = np.load(tmp_path / "embeddings.npz")
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
-    if estimate:
-        assert state.contrast.shape == (n_particles,) and np.all((state.contrast >= 0.5) & (state.contrast <= 2.0))
-        assert rows[-1]["contrast_mean"] == pytest.approx(float(np.mean(state.contrast)), rel=1e-5)
 
 
 def test_update_noise_keeps_groups_without_images():
@@ -531,159 +525,6 @@ def test_subtomogram_training_refuses_unapplied_optics(tmp_path, columns, refuse
             refuse_unsupported_tilt_optics(star)
     else:
         refuse_unsupported_tilt_optics(star)
-
-
-def _contrast_data(particles, arrays, contrast, rotations, shifts, z):
-    """Noise-free images: each particle's contrast times its CTF-weighted model at its pose, shifted by its shift."""
-    from relax.helpers.preprocessing import relion_half_translation_lattice
-
-    theta = np.stack([arrays["mu"], *arrays["W"].T]).astype(np.complex64)
-    lattice = np.asarray(relion_half_translation_lattice(IMAGE_SHAPE), np.float64)
-    images = np.zeros((len(particles.image_frame), N_HALF), np.complex64)
-    for i in range(particles.n_images):
-        ids, _ = particles.particle_images([i])
-        for image in ids:
-            frame = particles.group_frames[0][particles.image_frame[image]]
-            rotation = (frame @ rotations[i]).astype(np.float32)[None]
-            projection = np.asarray(
-                core.batch_slice_volume(
-                    jnp.asarray(theta),
-                    jnp.asarray(rotation),
-                    IMAGE_SHAPE,
-                    VOLUME_SHAPE,
-                    "linear_interp",
-                    half_volume=True,
-                    half_image=True,
-                    relion_texture_interp=False,
-                )
-            )[:, 0]
-            shift = frame[:2] @ shifts[i]
-            model = (projection[0] + z[i] @ projection[1:]) * arrays["ctf"][image]
-            images[image] = contrast[i] * model * np.exp(2j * np.pi * lattice @ shift)
-    return images
-
-
-def test_map_pose_contrast_recovers_scale():
-    """The least-squares contrast at a particle's pose recovers its scale on noise-free tilt images."""
-    from relax.ppca_initial_model.contrast import particle_contrast
-
-    particles, _, arrays = make_problem(seed=4)
-    rotations = Rotation.random(3, random_state=2).as_matrix()
-    shifts = np.asarray([[0.5, -1.0, 0.2], [0.0, 0.0, 0.0], [-1.0, 0.5, 1.0]])
-    z = np.asarray([[0.5, -0.3], [-1.0, 0.2], [0.1, 0.9]])
-    contrast = np.asarray([0.7, 1.0, 1.3])
-    images = _contrast_data(particles, arrays, contrast, rotations, shifts, z)
-    data = _particles(images, arrays["ctf"], IMAGE_FRAMES, FRAMES)
-    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
-    estimate = particle_contrast(
-        data,
-        theta,
-        np.full(5, NOISE, np.float32),
-        ids=np.arange(3),
-        rotation_ids=np.arange(3),
-        translation_ids=np.arange(3),
-        z=z,
-        rotations=rotations,
-        translations=shifts,
-        radius=3,
-        prior_sd=1e3,
-        value_range=(0.1, 10.0),
-    )
-    assert_matches(estimate, contrast, rtol=1e-4)
-    # The prior pulls toward 1 and the range clamps.
-    pulled = particle_contrast(
-        data,
-        theta,
-        np.full(5, NOISE, np.float32),
-        ids=np.arange(3),
-        rotation_ids=np.arange(3),
-        translation_ids=np.arange(3),
-        z=z,
-        rotations=rotations,
-        translations=shifts,
-        radius=3,
-        prior_sd=1e-3,
-        value_range=(0.8, 1.2),
-    )
-    assert np.all(np.abs(pulled - 1) < 1e-3)
-
-
-def test_map_pose_contrast_of_single_particles():
-    """The same estimator on single-particle images (identity CTF, in-plane shifts)."""
-    from test_full_fine_streaming import _TinyData
-
-    from relax.ppca_initial_model.contrast import particle_contrast
-
-    particles, _, arrays = make_problem(image_frames=[[0], [0], [0]], frames=np.eye(3)[None], seed=7)
-    arrays = {**arrays, "ctf": np.ones_like(arrays["ctf"])}
-    rotations = Rotation.random(3, random_state=5).as_matrix()
-    shifts = np.asarray([[0.5, -1.0, 0.0], [0.0, 0.0, 0.0], [-1.0, 0.5, 0.0]])
-    z = np.asarray([[0.5, -0.3], [-1.0, 0.2], [0.1, 0.9]])
-    contrast = np.asarray([0.8, 1.15, 1.4])
-    images = _contrast_data(particles, arrays, contrast, rotations, shifts, z)
-    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
-    estimate = particle_contrast(
-        _TinyData(images),
-        theta,
-        np.full(5, NOISE, np.float32),
-        ids=np.arange(3),
-        rotation_ids=np.arange(3),
-        translation_ids=np.arange(3),
-        z=z,
-        rotations=rotations,
-        translations=shifts[:, :2],
-        radius=3,
-        prior_sd=1e3,
-        value_range=(0.1, 10.0),
-    )
-    assert_matches(estimate, contrast, rtol=1e-4)
-
-
-def test_stream_scale_matches_brute_force():
-    """Fixed per-particle contrasts in the stream (section 16.10) against the dense joint model of scaled particles."""
-    particles, stream, arrays = make_problem(seed=6)
-    scale = np.asarray([0.8, 1.0, 1.3], np.float32)
-    actual = accumulate_full_row_tile(stream._replace(image_scale=scale), np.arange(3), [None] * 3)
-    truth = brute_force(particles, stream, {**arrays, "scale": scale})
-    rtol = 2e-5  # float32 against float64, as test_tilt_tile_matches_brute_force_joint_gaussian
-    assert_matches(np.float64(actual.log_likelihood), truth["log_likelihood"], rtol=rtol)
-    for name in ("embeddings", "lhs_tri", "residual_gradient", "residual_num"):
-        assert_matches(np.asarray(getattr(actual, name)), truth[name], rtol=rtol)
-    assert_matches(actual.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
-
-
-def test_single_particle_stream_scale_is_the_identity_frame_tilt_scale():
-    """The single-particle stream applies image_scale_corrections as the tilt loader applies its scale."""
-    from test_full_fine_streaming import _TinyData
-
-    planar = TRANSLATIONS[np.abs(TRANSLATIONS[:, 2]) == 0]
-    _, stream, arrays = make_problem(image_frames=[[0], [0], [0]], frames=np.eye(3)[None], translations=planar)
-    scale = np.asarray([0.8, 1.0, 1.3], np.float32)
-    unit = _particles(
-        arrays["images"].astype(np.complex64), np.ones_like(arrays["ctf"]), [[0], [0], [0]], np.eye(3)[None]
-    )
-    spa = prepare_full_row_stream(
-        _TinyData(arrays["images"].astype(np.complex64)),
-        arrays["mu"],
-        arrays["W"],
-        noise_variance=np.full(IMAGE_SHAPE, NOISE, np.float32),
-        rotations=arrays["rotations"],
-        translations=planar[:, :2],
-        rotation_log_prior=arrays["rotation_log_prior"],
-        translation_log_prior=arrays["translation_log_prior"],
-        rotation_parent=np.zeros(5, np.int32),
-        translation_parent=np.zeros(len(planar), np.int32),
-        n_coarse_rotations=1,
-        n_coarse_translations=1,
-        geometry=GeometryConfig(current_size=6, q=2, volume_domain="fourier_half"),
-        schedule=ScheduleConfig(image_batch_size=3, rotation_block_size=2),
-        scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True, image_scale_corrections=scale),
-        gemm_precision="fp32",
-    )
-    a = accumulate_full_row_tile(stream._replace(dataset=unit, image_scale=scale), np.arange(3), [None] * 3)
-    b = accumulate_full_row_tile(spa, np.arange(3), [None] * 3)
-    for name in ("embeddings", "lhs_tri", "residual_gradient", "residual_num", "residual_den"):
-        assert_matches(np.asarray(getattr(a, name)), np.asarray(getattr(b, name)), rtol=2e-6)
 
 
 def test_tilt_operand_bytes_match_the_tile_operands():

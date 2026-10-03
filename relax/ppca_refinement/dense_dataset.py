@@ -415,10 +415,8 @@ def prepare_dense_ppca_image_batch(
 
     observation_power = None
     if collect_observation:
-        # A per-image scale s multiplies the model, and the operands carry it (Y1 times s, CTF^2 weights
-        # times s^2), so the residual statistics stay those of the scaled model (algorithm section 16.10).
-        if score_with_masked_images or relion_unit_half_weights:
-            raise ValueError("Residual statistics require unmasked full-Hermitian observations")
+        if score_with_masked_images or relion_unit_half_weights or image_scale_corrections is not None:
+            raise ValueError("Residual statistics require unmasked, unit-contrast full-Hermitian observations")
         processed = experiment_dataset.process_images_half(batch_data, apply_image_mask=False)
         observation_power = jnp.sum(jnp.abs(processed.reshape(batch_count, -1)) ** 2, axis=0)
     F = int(shifted_score_half.shape[-1])

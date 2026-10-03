@@ -1434,8 +1434,8 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
 
 1. Lifted October 3, 2026: one noise spectrum per optics group (`state.noise`
    is `(G, S)` for subtomogram particles).
-2. Opt-in since October 3, 2026: a per-particle contrast point estimate (16.10).
-   Unit contrast remains the default.
+2. Unit contrast. A per-particle contrast estimate was implemented, tested and
+   removed on October 3, 2026 (16.10).
 3. Full rotation grid per stage only (`--oversampling 0
    --stream-coarse-recompute`); no coarse significance pass.
 
@@ -1530,65 +1530,62 @@ at 24.7 A (`em_work/cryoet_vdam_20261001/relion/cryoet_ppca_k3conf/vdam_k3_mpisc
 the collapse is the K-class algorithm on this fixture, not a relax difference. GT state FSC-AUC of the GT mean
 map is .87-.90 unregistered, so map AUC alone does not show heterogeneity.
 
-### 16.10 Per-particle contrast point estimate (opt-in)
+### 16.10 Per-particle contrast: tested and removed
 
-`Config.contrast_estimate` (`--ppca-contrast-estimate`) gives particle `i` a
-contrast `c_i` shared by its tilts, `y_ik = c_i A_ik(mu + W z_i) + epsilon_ik`, as a
-fixed scale refit after every E-step outside the stream
-([contrast.py](../../relax/ppca_initial_model/contrast.py)), in the manner of
-RELION's scale corrections. For each particle of the minibatch, the model
-`mu + W E[z_i]` is projected at its most probable pose: one projection per image,
-at `Aproj_k R` and shift `[Aproj_k t]` for tilts. The least-squares scale of its
-images under the scoring metric `D` (half-spectrum weights over the noise, inside
-the stage's Fourier radius), with a Gaussian prior of sd `contrast_prior_sd`
-(0.3) about 1, is
+Two per-particle contrast models were implemented and tested in October 2026.
+Both gave particle `i` a contrast `c_i` shared by its tilts,
+`y_ik = c_i A_ik(mu + W z_i) + epsilon_ik`. Neither improved the maps or the
+latent, so unit contrast remains the model and the code was removed.
 
-\[
-c_i=\frac{\sum_k\operatorname{Re}\langle m_{ik},y_{ik}\rangle_D+s^{-2}}
-{\sum_k\|m_{ik}\|_D^2+s^{-2}},
-\]
+- A marginalized grid: the contrast values were extra tile images, normalized
+  jointly with the pose. It costs `C` times the GEMM work.
+- A point estimate refit after every E-step outside the stream, in the manner of
+  RELION's scale corrections. It is the least-squares scale of the particle's
+  images against `mu + W E[z_i]` at its most probable pose, under the scoring
+  metric. At first it used a fixed Gaussian prior about 1; later it used the
+  posterior mean under a prior whose variance was estimated from the particles
+  (`var(a/b) - mean(1/b)` for the per-particle numerators `a` and denominators
+  `b`). The stream then used it as a fixed per-image scale of the CTF.
 
-clamped to `contrast_range` (0.5-2). The next E-step reads it through the
-stream's per-image scale (`ScoringConfig.image_scale_corrections`), which
-multiplies the CTF: score and reconstruction images by `c`, CTF^2 weights by `c^2`.
-The residual statistics are then those of the scaled model. Single particles use
-the same estimator and stream path. The estimate costs one projection per image
-and no GEMM. Checks
-([test_tomo_ppca.py](../../tests/unit/ppca_initial_model/test_tomo_ppca.py)): it
-recovers known scales of noise-free tilt and single-particle images to 1e-4. The
-stream with fixed per-particle scales agrees with the brute-force joint Gaussian of
-scaled particles to the 2e-5 band, and the single-particle stream equals the
-identity-frame tilt stream under the same scales.
+On the contrast-sd .144 variant of the fixture
+(`em_fixtures/cryoet_ppca_k3conf_contrast15_box64_20261003`), from the GT start
+(momentum SGD, last 40 updates, job 14912480), the following results were
+measured. Values in the AUC column are state FSC-AUC.
 
-A marginalized alternative was implemented and tested first: a contrast grid
-whose values were extra tile images normalized jointly with the pose. It costs
-`C` times the GEMM work. The two were compared on the contrast variant of the
-fixture (`em_fixtures/cryoet_ppca_k3conf_contrast15_box64_20261003`, contrast sd
-0.144). Each arm was GT-initialized momentum SGD for the last 40 updates (H100,
-job 14912480, `em_work/relax_ppca_cryoet_20261002/science6_14912480`):
+| Arm | Contrast r | Estimated sd | AUC | Latent nearest-centroid |
+| --- | --- | --- | --- | --- |
+| unit contrast | - | - | .943 / .942 / .948 | .990 |
+| grid 0.8 / 1 / 1.25 | .754 | .125 | .944 / .940 / .948 | .992 |
+| point estimate | .825 | .150 | .944 / .940 / .949 | .992 |
 
-| Arm | Contrast vs truth (Pearson r) | Estimated sd | State FSC-AUC | Specificity | Pose median | Latent nearest-centroid | Seconds per update |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| no contrast | - | - | .943 / .942 / .948 | .344 | 3.68 deg | .990 | 19.4 |
-| grid 0.8 / 1 / 1.25 (posterior mean) | .754 | .125 | .944 / .940 / .948 | .338 | 3.70 deg | .992 | 25.1 |
-| point estimate | .825 | .150 | .944 / .940 / .949 | .337 | 3.70 deg | .992 | 20.1 |
+The grid was dropped for the cheaper and more accurate point estimate. The
+decisive test used a larger spread: the contrast-sd .29 variant
+(`em_fixtures/cryoet_ppca_k3conf_contrast30_box64_20261003`, kept as a stress
+case). The point estimate was shrunk with the estimated prior variance (job
+14920680, H100, one seed per arm). The criterion for keeping it was a gain larger
+than the earlier three-seed half-range (mean state FSC-AUC .005, latent
+nearest-centroid .0115) on one metric, with no larger loss elsewhere.
 
-The point estimate recovers the contrast better than the three-value grid at
-almost no cost, and the maps, poses and latent agree for all three arms. The grid
-was removed. From the GT start the contrast does not change the reconstruction
-on this fixture.
+| Arm | Mean AUC | Latent nearest-centroid | Pose median, < 10 deg | Contrast r / sd |
+| --- | --- | --- | --- | --- |
+| GT start, unit contrast | .9470 | .980 | 3.66 deg, .987 | - |
+| GT start, estimate | .9496 | .983 | 3.68 deg, .987 | .945 / .258 |
+| random VDAM s11, unit, update 190 | .7226 | .875 | 5.7 deg, .875 | - |
+| random VDAM s11, estimate, update 190 | .6755 | .752 | 24.4 deg, 0 | .887 / .415 |
 
-Random start, VDAM seed 11 on the same fixture, rebased code (A100, job 14917508,
-batch 150):
+From the GT start, the estimate recovers the contrast (true sd .288) but ties on
+every metric. From a random start, it loses .047 AUC and .123 latent accuracy,
+and its poses do not converge. The pose error is the spread after the best global
+rotation has been removed. Before the poses settle, a misaligned particle matches
+the model poorly and receives a low contrast. The estimated spread is therefore
+inflated (.415), and the down-weighted particles cannot correct their poses: the
+estimate feeds back on pose error. The unit-contrast random arm stopped at update
+199 with an indefinite metric. That failure is the r31 high-shell loading
+overshoot of VDAM (section 17), which also occurs on the fixture without contrast
+spread; it was not caused by the unmodelled contrast.
 
-| Arm | State FSC-AUC | Specificity | Pose median, < 10 deg | Latent nearest-centroid | Contrast r / sd |
-| --- | --- | --- | --- | --- | --- |
-| no contrast | .715 / .752 / .711 | .129 | 4.91 deg, .935 | .902 | - |
-| point estimate | .721 / .745 / .734 | .127 | 4.60 deg, .962 | .862 | .743 / .248 |
-
-With one seed the two arms are within the earlier three-seed spread (16.9). The
-estimate tracks the contrast (r .74) but overstates its spread (sd .25 against
-.144). The option stays off by default.
+A future contrast model would need to start only after the poses settle. It must
+also be judged from random starts, not from the GT start.
 
 
 ## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)

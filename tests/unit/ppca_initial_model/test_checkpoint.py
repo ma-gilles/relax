@@ -63,6 +63,32 @@ def test_checkpoint_preserves_state_and_rejects_mismatch(tmp_path):
     assert not path.with_suffix(".tmp").exists()
 
 
+def test_checkpoint_with_retired_settings_resumes_only_at_their_default(tmp_path):
+    """A checkpoint written while the contrast estimate existed resumes if it was off (section 16.10)."""
+    import json
+
+    theta = jnp.ones((5, 3), jnp.complex64)
+    state = State(theta, None, jnp.ones(3, jnp.float32), 3, np.arange(8), {}, 2.0, 4, {}, sgd_momentum=0 * theta)
+    config = Config(optimizer="momentum_sgd")
+    path = tmp_path / "checkpoint.npz"
+    save(path, state, config, {"input": "abc"})
+
+    def with_settings(name, **settings):
+        with np.load(path, allow_pickle=False) as arrays:
+            arrays = dict(arrays)
+        metadata = json.loads(str(arrays["metadata"]))
+        metadata["config"].update(settings)
+        arrays["metadata"] = json.dumps(metadata)
+        out = tmp_path / name
+        np.savez(out, **arrays)
+        return out
+
+    retired = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
+    assert load(with_settings("off.npz", **retired), config, {"input": "abc"}).iteration == 3
+    with pytest.raises(ValueError, match="identity mismatch"):
+        load(with_settings("on.npz", **{**retired, "contrast_estimate": True}), config, {"input": "abc"})
+
+
 def test_pilot_schedule_and_final_all_data():
     config = Config()
     assert config.schedule(1, 20000)[0] == 200
