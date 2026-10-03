@@ -285,7 +285,9 @@ LOC_BUDGETS = {
     # CTF^2 for the M-step (+22): a real raise.
     # RELION's rlnLogLikeliContribution (dLL) in data.star (2026-10-03): the driver computes it from the
     # E-step's log evidence (+10), the E-step carries the evidence and the formula (+27), the writer (+1).
-    "controller": (1942, (
+    # Subtomogram optics features (2026-10-03, etoptics): the tomo optics gate, the tilt images' premultiplied
+    # flag and average CTF^2 in the tomo E-step, and the expected accuracy's tilt-image dataset (+16).
+    "controller": (1958, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -301,11 +303,13 @@ LOC_BUDGETS = {
     # Several optics groups (2026-10-01): RELION's per-group start-up particles for the noise and the
     # bootstrap, the bootstrap's per-image optics and its class positions (+16): a real raise.
     # Optics features (2026-10-02): the bootstrap CTF with each group's even Zernike gamma (+46).
-    "initialization": (1133, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    # Subtomogram optics features (2026-10-03, etoptics): the tilt bootstrap's optics-table CTF rows (+8).
+    "initialization": (1141, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
     # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
     # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
     # Optics features (2026-10-02): the trials' optics-table CTFs in the expected accuracy (+6).
-    "sampling_layout": (1009, ("native_sampling.py", "layout.py")),
+    # Subtomogram optics features (2026-10-03, etoptics): the tilt trials' optics-table CTFs (+3).
+    "sampling_layout": (1012, ("native_sampling.py", "layout.py")),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
     # (1846 counted lines at integration, with the shared projector setup). The reviewed

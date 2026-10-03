@@ -379,7 +379,8 @@ def _estimate_native_sampling_accuracy(
     (``optics_group_ids``, each particle's zero-based group) every trial takes its group's noise
     spectrum and CTF constants, as RELION does per particle; the estimate runs once per group on
     that group's trials and the per-class means are recombined with the trial counts.
-    Single particles pass ``experiment_dataset`` for the trials' optics-table CTFs
+    Single particles pass ``experiment_dataset`` (subtomograms: the flat dataset of ``tilt_images``' tilt
+    images) for the trials' optics-table CTFs
     (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`: CTF^2 of premultiplied
     images, even Zernike terms); None without optics-table terms.
     """
@@ -458,6 +459,8 @@ def _estimate_native_sampling_accuracy(
                 },
                 pixel_size=float(state.pixel_size),
                 tilt_images=tilt_images,
+                # The trials' tilt images' exact CTF rows and the magnification's factor, when optics need them.
+                optics=None if experiment_dataset is None else expected_accuracy_optics(experiment_dataset, images),
             )
         return accuracy_estimator(
             references_relion=refs_relion,

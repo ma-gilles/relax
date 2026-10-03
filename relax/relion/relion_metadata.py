@@ -566,6 +566,8 @@ INITIAL_MODEL_OPTICS_FEATURES = IMPLEMENTED_OPTICS_FEATURES - {"magnification"}
 # every tilt image; each joins here once its per-tilt path matches RELION. Until then a subtomogram job refuses
 # it instead of ignoring it (the per-tilt STAR relax reads carries none of these columns).
 TOMO_OPTICS_FEATURES = frozenset()
+# Subtomogram InitialModel (VDAM): the same rule for its tomo E-step, bootstrap and expected accuracy.
+TOMO_INITIAL_MODEL_OPTICS_FEATURES = frozenset()
 
 
 def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:

@@ -332,13 +332,16 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     RELION's start-up loop (calculateSumOfPowerSpectraAndAverageImage, ml_optimiser.cpp:2806-3080)
     counts tilt images against ``minimum_nr_particles_sigma2_noise`` (10 for subtomograms, :2574), so
     the first particle of each optics group fills it: its images give the noise spectrum and the
-    bootstrap, each image backprojected at ``Aproj R`` with its own dose-damped CTF
-    (:3010-3047). The reference is low-passed but has no blobs or soft mask (:2707). The initial
+    bootstrap, each image backprojected at ``Aproj R`` (no magnification, :3010-3015) with its own
+    dose-damped CTF, which carries its optics group's even Zernike terms and magnified frequencies
+    (setValuesByGroup, :3036-3047). The reference is low-passed but has no blobs or soft mask (:2707). The initial
     ``data_vs_prior`` counts particles (ml_model.cpp:1609-1617). Returns ``(state, optics_group_by_particle)``.
     """
 
     from relax.helpers.expected_accuracy import _trial_ctf_images
     from relax.refinement.tomo_half import tilt_image_accuracy_inputs
+    from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+    from relax.relion.relion_ctf import relion_fftw_ctf_rows
 
     ori_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)
@@ -362,8 +365,16 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     )
 
     tilt = tilt_image_accuracy_inputs(half)
-    ctf_images = (
-        _trial_ctf_images(
+    ctf_images = None
+    if bool(opts.do_ctf_correction) and dataset_needs_exact_ctf(half.images):
+        # Optics-table terms: each tilt's CTF from setValuesByGroup, i.e. with its group's even Zernike
+        # phase and magnified frequencies (ml_optimiser.cpp:3036-3047); a premultiplied image keeps the
+        # plain CTF here and is multiplied by it once more, as RELION's start-up does.
+        ctf_images = relion_fftw_ctf_rows(
+            half.images, np.arange(half.n_images), (ori_size, ori_size), square_premultiplied=False
+        )
+    elif bool(opts.do_ctf_correction):
+        ctf_images = _trial_ctf_images(
             np.arange(half.n_units),
             defocus=None,
             optics=None,
@@ -372,9 +383,6 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
             current_image_size=ori_size,
             tilt_images=tilt,
         )
-        if bool(opts.do_ctf_correction)
-        else None
-    )
     # Each image's particle as its position in RELION's order (the seed and the class, part_id_sorted % K).
     position = np.empty(order.size, dtype=np.int64)
     position[order] = np.arange(order.size)

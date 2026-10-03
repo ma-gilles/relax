@@ -476,3 +476,20 @@ def test_odd_demodulation_of_aberrated_tilts_undoes_the_simulated_phase(aberrate
     np.testing.assert_allclose(got[group == 1], 1.0, rtol=0, atol=0)
     expected = np.broadcast_to(np.exp(-1j * phase)[inside], got[group == 2][:, inside].shape)
     np.testing.assert_allclose(got[group == 2][:, inside], expected, rtol=0, atol=1e-9)
+
+
+@pytest.mark.unit
+def test_uncached_fftw_ctf_rows_are_the_exact_rows(aberrated_project, monkeypatch):
+    """relion_fftw_ctf_rows gives the exact operands' rows in RELION's frame, and the plain CTF on request."""
+
+    flat = aberrated_project
+    rows, _ = read_star(str(flat))
+    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    relion_ctf.clear_exact_ctf_result_cache()
+    dataset = SimpleNamespace(particles_file=str(flat))
+    indices = np.arange(len(rows))[::-1]
+    cached = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
+    squared = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID))
+    np.testing.assert_array_equal(-np.fft.fftshift(squared, axes=1).reshape(len(rows), -1), cached)
+    plain = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID), square_premultiplied=False)
+    np.testing.assert_array_equal(plain * plain, squared)
