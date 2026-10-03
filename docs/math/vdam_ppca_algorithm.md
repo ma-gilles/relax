@@ -1107,6 +1107,32 @@ scientific contract; runnable code alone does not establish recovery.
   update time fell only from 0.76 s to 0.60 s. Evidence: the harness
   `relax_ppca_dense_speed_20261001/harness5` (`metric_queue.py`,
   `metric_separability.py`). VDAM keeps the full per-voxel metric.
+- Oversampling 1 on the streamed engine was measured and rejected (October 3,
+  2026). In that path, a pass 1 over the coarse grid keeps each image's 0.999
+  posterior mass, and pass 2 scores the 2x-finer children (HEALPix N+1, half
+  the shift step) with `--stream-full-fine-rows`. A prototype ran that coarse
+  pass on the streamed engine, with the same significant sets as the host-mask
+  coarse pass. It still did not pay against the dense grid (median A100
+  update, same start and selection seed):
+
+  | Workload | Dense | os1, fine tiles of 16 / 32 / 64 / 150 images |
+  | --- | --- | --- |
+  | eleven-state GT CP4000, HP2 -> HP3 | 1.43 s | 3.37 / 2.65 / 2.67 / 5.2-7.8 s |
+  | 10076 CP500, HP3 -> HP4 | 3.23 s | - / 9.02 s / - / out of memory |
+
+  Three effects cancel the pruning:
+  1. At 10076 the posterior has a heavy tail: pmax is about .44, but 0.999
+     of the mass needs 68-87 thousand coarse poses per image.
+  2. On the eleven-state data the per-image supports are small (19-160
+     poses), but a tile scores the union of its images' rows. At 150 images
+     that is about 70% of the grid, and smaller tiles lose to per-tile
+     overhead.
+  3. The oversampled shift grid makes each scored row cost 116 shifts
+     instead of 29.
+
+  For the current controller's schedule, the dense HP 3/4 grid stays the
+  default. Evidence is in
+  `relax_ppca_dense_speed_20261001/jobs/local_os1_smoke_20261002`.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
