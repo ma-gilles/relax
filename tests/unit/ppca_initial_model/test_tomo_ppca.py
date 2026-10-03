@@ -291,6 +291,28 @@ def test_tilt_tile_matches_brute_force_joint_gaussian(problem):
     np.testing.assert_array_equal(actual.original_image_ids, np.arange(3))
 
 
+def test_metric_is_positive_semidefinite_on_every_row(problem):
+    """Every row of the accumulated metric is positive semidefinite: within the update's support (radius
+    up to current_size / 2) to the coupled direction's own bound, and on the interpolation spill outside
+    it, which the update neither solves nor checks, to the same 32 eps of the largest eigenvalue of
+    the whole metric (a spill row's own scale can sit at the float floor)."""
+    from recovar.ppca.triangular import unpack_tri_to_full
+
+    from relax.ppca_initial_model.update import metric_floor
+
+    _, stream, _, _ = problem
+    actual = accumulate_full_row_tile(stream, np.arange(3), [None] * 3)
+    values = np.linalg.eigvalsh(np.asarray(unpack_tri_to_full(actual.lhs_tri, 3)))
+    radii = np.asarray(ftu.get_grid_of_radial_distances_real(VOLUME_SHAPE, rounded=False)).reshape(-1)
+    support = radii <= 3
+    covered = values[:, -1] > 0
+    assert np.count_nonzero(covered & ~support) > 0  # the spill shell exists in this case
+    slack = 32 * np.finfo(np.float32).eps
+    row_scale = np.maximum(np.max(np.abs(values), axis=-1), metric_floor(IMAGE_SHAPE[0]))
+    assert np.all(values[support, 0] >= -slack * row_scale[support])
+    assert np.all(values[~support, 0] >= -slack * np.max(values))
+
+
 @pytest.mark.parametrize("planned", [16, 40])
 def test_padded_tilt_tile_matches_brute_force(problem, planned):
     """A tile padded to its size bucket (3 particles: 4 of 16 with one padding particle; 3 of 40 without)
