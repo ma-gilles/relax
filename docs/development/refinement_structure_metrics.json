@@ -113,7 +113,7 @@
           "function_count": 23,
           "nonblank_noncomment_lines": 939,
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 1061
+          "physical_lines": 1065
         },
         {
           "function_count": 12,
@@ -125,14 +125,14 @@
       "large_argument_functions": [
         {
           "line": 323,
-          "line_span": 343,
+          "line_span": 346,
           "name": "score_tomo_half",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         },
         {
-          "line": 713,
-          "line_span": 210,
+          "line": 716,
+          "line_span": 211,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
@@ -246,7 +246,7 @@
         },
         {
           "line": 323,
-          "line_span": 343,
+          "line_span": 346,
           "name": "score_tomo_half",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
@@ -259,8 +259,8 @@
           "path": "relax/refinement/local_search_iteration.py"
         },
         {
-          "line": 713,
-          "line_span": 210,
+          "line": 716,
+          "line_span": 211,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
@@ -283,7 +283,7 @@
         "maximum_function_line_span": 5582,
         "maximum_parameter_count": 26,
         "nonblank_noncomment_lines": 19022,
-        "physical_lines": 21578,
+        "physical_lines": 21582,
         "very_large_argument_function_count": 2
       }
     }
