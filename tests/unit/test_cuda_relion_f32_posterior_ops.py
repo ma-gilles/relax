@@ -59,7 +59,7 @@ def test_relion_f32_posterior_cuda_source_pins_deployed_arithmetic():
     assert "values[index] / divisor[index / row_size]" in batched_divide
 
     batched_sort_start = source.index("ffi::Error RelionCubSortScanBatchedF32Impl")
-    batched_sort_end = source.index("// Opt-in grouped coarse score-to-support transaction.", batched_sort_start)
+    batched_sort_end = source.index("// RELION's coarse significance cut by radix select", batched_sort_start)
     batched_sort = source[batched_sort_start:batched_sort_end]
     # One segmented radix sort of the positive weights per group of rows (an
     # exact permutation of the per-row sort's keys behind the row's zeros),
