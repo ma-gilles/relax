@@ -2596,12 +2596,7 @@ def refine_single_volume(
 
         # Save per-iter per-shell sigma2 (after this iter's noise update) and
         # the exact shell-wise tau2 ingredients used in the Wiener update.
-        history.record_noise_and_tau2(
-            noise_from_res,
-            noise_from_res_per_half,
-            tau2_update_details,
-            k_class_enabled=k_class_enabled,
-        )
+        history.record_noise_and_tau2(noise_from_res, noise_from_res_per_half, tau2_update_details)
 
         # --- Update convergence state ---
         # This checks assignment changes, resolution stalls, and may trigger

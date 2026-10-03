@@ -155,12 +155,13 @@ class RefinementHistory:
         self.best_rotation_eulers_history.append(euler_snapshot_per_half)
         self.best_translations_history.append(translation_snapshot_per_half)
 
-    def record_noise_and_tau2(self, noise_radial, noise_radial_per_half, tau2_details, *, k_class_enabled: bool) -> None:
+    def record_noise_and_tau2(self, noise_radial, noise_radial_per_half, tau2_details) -> None:
         """Format shell diagnostics before appending a complete iteration.
 
         Float64 input shell arrays remain shared; stacking the halves creates
         a fresh array. Prepare every field before mutating history so malformed
         input cannot leave the trajectory lists at different lengths.
+        ``fsc_shells`` is ``None`` in Class3D details, which have no half-set FSC.
         """
         noise_radial = np.asarray(noise_radial, dtype=np.float64)
         noise_radial_per_half = np.stack(
@@ -176,7 +177,11 @@ class RefinementHistory:
                 "avg_weight_shells": np.asarray(tau2_details["avg_weight_shells"], dtype=np.float64),
                 "shell_sum": np.asarray(tau2_details["shell_sum"], dtype=np.float64),
                 "shell_count": np.asarray(tau2_details["shell_count"], dtype=np.float64),
-                "fsc_shells": None if k_class_enabled else np.asarray(tau2_details["fsc_shells"], dtype=np.float64),
+                "fsc_shells": (
+                    None
+                    if tau2_details["fsc_shells"] is None
+                    else np.asarray(tau2_details["fsc_shells"], dtype=np.float64)
+                ),
                 "ssnr_shells": np.asarray(tau2_details["ssnr_shells"], dtype=np.float64),
             }
         )

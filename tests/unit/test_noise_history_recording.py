@@ -12,15 +12,15 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-@pytest.mark.parametrize("k_class_enabled", [False, True])
-def test_noise_history_formats_host_arrays_without_changing_alias_contract(dtype, k_class_enabled):
+@pytest.mark.parametrize("has_fsc", [True, False], ids=["k1-details", "class3d-details"])
+def test_noise_history_formats_host_arrays_without_changing_alias_contract(dtype, has_fsc):
     shells = np.asarray([1.25, 2.5, 3.75], dtype=dtype)
     keys = ("prior_shells", "sigma2_shells", "avg_weight_shells", "shell_sum", "shell_count", "ssnr_shells")
     details = dict.fromkeys(keys, shells)
-    if not k_class_enabled:
-        details["fsc_shells"] = shells
+    # Class3D details carry the key with None; K1 details carry the half-set FSC.
+    details["fsc_shells"] = shells if has_fsc else None
     history = RefinementHistory()
-    history.record_noise_and_tau2(shells, [shells, shells], details, k_class_enabled=k_class_enabled)
+    history.record_noise_and_tau2(shells, [shells, shells], details)
 
     for stored in [history.noise_radial_trajectory[0], history.tau2_radial_trajectory[0]]:
         assert stored.dtype == np.float64
@@ -30,16 +30,17 @@ def test_noise_history_formats_host_arrays_without_changing_alias_contract(dtype
     assert per_half.shape == (2, 3) and per_half.dtype == np.float64
     assert_matches(per_half, [shells, shells])
     assert not np.shares_memory(per_half, shells)
-    if k_class_enabled:
-        assert history.tau2_fsc_used_trajectory == [None]
-    else:
+    if has_fsc:
         assert_matches(history.tau2_fsc_used_trajectory[0], shells)
-    assert all(value is shells for value in details.values())
+    else:
+        assert history.tau2_fsc_used_trajectory == [None]
+    assert all(value is shells for key, value in details.items() if key != "fsc_shells")
+    assert details["fsc_shells"] is (shells if has_fsc else None)
 
 
 def test_noise_history_without_tau2_records_none_for_every_tau2_series():
     history = RefinementHistory()
-    history.record_noise_and_tau2([1.0, 2.0], [[1.0, 2.0], [3.0, 4.0]], None, k_class_enabled=False)
+    history.record_noise_and_tau2([1.0, 2.0], [[1.0, 2.0], [3.0, 4.0]], None)
     assert history.noise_radial_trajectory[0].dtype == np.float64
     for field in fields(history):
         if field.name.startswith("tau2_"):
@@ -51,5 +52,5 @@ def test_malformed_tau2_does_not_partially_append_history(details):
     history = RefinementHistory()
     before = {field.name: list(getattr(history, field.name)) for field in fields(history)}
     with pytest.raises(KeyError):
-        history.record_noise_and_tau2([1.0, 2.0], [[1.0, 2.0], [3.0, 4.0]], details, k_class_enabled=False)
+        history.record_noise_and_tau2([1.0, 2.0], [[1.0, 2.0], [3.0, 4.0]], details)
     assert {field.name: getattr(history, field.name) for field in fields(history)} == before
