@@ -397,7 +397,10 @@ def score_tomo_half(
         compute_tilt_pass2_stats_resident,
     )
 
-    relion_projector_half = np.asarray(relion_projector_half)
+    # RELION's float projector, as the SPA passes read it: the refinement builds complex128, and a complex128
+    # projector never reaches the float32 texture, so the coarse pass projected in double where RELION interpolates
+    # its float texture (et13_k2conf left RELION's trajectory at it002, 2026-10-03).
+    relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
     n_classes = int(relion_projector_half.shape[0]) if relion_projector_half.ndim == 4 else 1
     if normalized_cc and n_classes > 1:
         # RELION's Class3D CC iteration is K=1 against the first reference (ml_optimiser.cpp:4389-4402);
@@ -772,7 +775,8 @@ def score_tomo_half_in_loop(
         raise ValueError("the tomo half pass projects and backprojects with one padding factor")
     if relion_projector_half is None or relion_projector_r_max is None:
         raise ValueError("the tomo half pass needs RELION's Projector::data half map")
-    relion_projector_half = np.asarray(relion_projector_half)
+    # RELION's float projector (score_tomo_half).
+    relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
     n_classes = 1 if class_log_priors is None else int(np.asarray(class_log_priors).size)
     if relion_projector_half.ndim == 4:
         # The loop keeps a class axis.
