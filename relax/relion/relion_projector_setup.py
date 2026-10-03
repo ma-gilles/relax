@@ -27,7 +27,7 @@ from relax.helpers.deterministic_reduce import (
     static_shell_voxel_lists,
 )
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.relion.relion_project import gridding_correct_volume_real
+from relax.relion.relion_project import gridding_correct_volume_real, gridding_correct_volume_real_separable
 
 
 @partial(jax.jit, static_argnames=("dtype",))
@@ -104,6 +104,7 @@ def setup_relion_projector_on_host(
     padding_factor: int = 1,
     compute_dtype=jnp.float64,
     chunk_bytes: int | None = None,
+    gridding_kernel: str = "radial",
 ) -> tuple[np.ndarray, np.ndarray]:
     """:func:`setup_relion_projector` for one ``r_max``, dispatched chunk by chunk to host arrays.
 
@@ -116,6 +117,9 @@ def setup_relion_projector_on_host(
     large box never holds the whole transform: at EMPIAR-10202 (box 800, padding
     2) the full-capacity transform needed about 100 GB and the build fell back to
     two single-threaded host builds (117 s per iteration, bigbox py-spy 14561585).
+
+    ``gridding_kernel`` selects the real-space correction window: RELION's
+    ``"radial"`` one or the ``"separable"`` per-axis product.
     """
     reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
     radius = ori_size // 2 if int(r_max) < 0 else min(int(r_max), ori_size // 2)
@@ -123,7 +127,12 @@ def setup_relion_projector_on_host(
     if 0 < radius < ori_size // 2:
         quantum = stable_fourier_window_quantum()
         window = stable_fourier_window_current_size(2 * radius, ori_size, quantum=quantum) // 2
-    reference = _gridding_corrected(reference, ori_size=ori_size, padding_factor=padding_factor)
+    if gridding_kernel == "radial":
+        reference = _gridding_corrected(reference, ori_size=ori_size, padding_factor=padding_factor)
+    elif gridding_kernel == "separable":
+        reference = _gridding_corrected_separable(reference, ori_size=ori_size, padding_factor=padding_factor)
+    else:
+        raise ValueError(f"gridding_kernel must be 'radial' or 'separable', got {gridding_kernel!r}")
     return _build_projector_window(
         reference, radius, ori_size, padding_factor, window,
         chunk_bytes=chunk_bytes, to_host=True, output_radius=radius,
@@ -140,6 +149,13 @@ def _gridding_corrected(reference, *, ori_size: int, padding_factor: int):
     """
 
     return gridding_correct_volume_real(reference, ori_size, padding_factor)
+
+
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor"))
+def _gridding_corrected_separable(reference, *, ori_size: int, padding_factor: int):
+    """:func:`gridding_correct_volume_real_separable` as one fused program."""
+
+    return gridding_correct_volume_real_separable(reference, ori_size, padding_factor)
 
 
 def _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype):
@@ -352,6 +368,7 @@ def reference_to_relion_projector_half_maps_and_power(
     interpolator: int = 1,
     projector_data_dtype=None,
     compute_dtype=np.float64,
+    gridding_kernel: str = "radial",
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Convert references to native-layout half maps and their corrected spectrum.
 
@@ -363,7 +380,8 @@ def reference_to_relion_projector_half_maps_and_power(
 
     ``projector_data_dtype`` is what the caller wants the slab in; ``None`` keeps
     complex64, whose consumer is the InitialModel engine. Refinement asks for
-    complex128 explicitly.
+    complex128 explicitly. ``gridding_kernel`` is the correction window of
+    :func:`setup_relion_projector_on_host`.
     """
     compute_dtype = np.dtype(compute_dtype)
     if compute_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
@@ -389,6 +407,7 @@ def reference_to_relion_projector_half_maps_and_power(
         projector_data, power = setup_relion_projector_on_host(
             swap_relion_volume_layout(ref), r_max, ori_size=n,
             padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
+            **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
         )
         dtype = np.complex64 if projector_data_dtype is None else np.dtype(projector_data_dtype)
         halves.append(np.asarray(projector_data).astype(dtype, copy=False))

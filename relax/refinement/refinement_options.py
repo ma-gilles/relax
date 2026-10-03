@@ -104,8 +104,15 @@ class RelionParityOptions:
     # K=1 --firstiter_cc: rescore an image's top two coarse CC poses on RELION's
     # coarse tree when their margin is at most this (the CLI default is 4e-6); None is off.
     firstiter_cc_tree_rescore_max_margin: float | None = None
+    # Real-space gridding-correction window of the scoring projector and the reconstructions:
+    # RELION's radial sinc²(|x| / (pf N)) or the per-axis product (the trilinear kernel's exact
+    # transform). "separable" is K=1 single-particle refinement only.
+    gridding_kernel: Literal["radial", "separable"] = "radial"
 
     def __post_init__(self):
+        if self.gridding_kernel not in {"radial", "separable"}:
+            raise ValueError(f"gridding_kernel must be 'radial' or 'separable', got {self.gridding_kernel!r}")
+
         if self.image_fourier_backend not in {
             "host_numpy",
             "jax_gpu",

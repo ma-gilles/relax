@@ -2190,6 +2190,12 @@ def run_dense_k_class_em_adaptive(
     from relax.scoring.significance import _compute_k_class_significance_batched
     from relax.symmetry import canonicalize_rotational_symmetry
 
+    gridding_kernel = engine_kwargs.get("gridding_kernel", "radial")
+    if gridding_kernel != "radial" and relion_projector_half is None:
+        # Without the slab, pass 1 and pass 2 pad the reference with RELION's radial window.
+        raise NotImplementedError(
+            f"gridding_kernel={gridding_kernel!r} needs the RELION projector slab built with that window"
+        )
     symmetry_label = canonicalize_rotational_symmetry(
         engine_kwargs.get("symmetry_label", "C1")
     )

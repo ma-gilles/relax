@@ -742,6 +742,16 @@ def refine_single_volume(
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
     # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
+    # The real-space gridding-correction window of the scoring projector and of every
+    # reconstruction: RELION's radial sinc² or the per-axis product. Only K=1 SPA threads the
+    # separable one to every site; Class3D's tau2 and the subtomogram scorers keep the radial one.
+    gridding_kernel = parity.gridding_kernel
+    if gridding_kernel != "radial" and (k_class_enabled or tomo_halves):
+        raise NotImplementedError(
+            f"gridding_kernel={gridding_kernel!r} is implemented for K=1 single-particle refinement only "
+            f"(n_classes={n_classes}, subtomograms={tomo_halves})"
+        )
+    gridding_kernel_kwargs = {} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}
     relion_translation_angle_scale = (
         # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
@@ -803,6 +813,7 @@ def refine_single_volume(
         minres_map=RELION_MINRES_MAP,
         width_mask_edge=RELION_WIDTH_MASK_EDGE,
         fmask_edge=RELION_WIDTH_FMASK_EDGE,
+        **gridding_kernel_kwargs,
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,
@@ -1138,6 +1149,7 @@ def refine_single_volume(
         optimizer_random_seed=effective_optimizer_random_seed,
         expected_accuracy=expected_accuracy,
         optics_group_ids=optics_group_ids_per_half[0],
+        **gridding_kernel_kwargs,
     )
 
     follower_setup = setup_relion_follower_scale_state(
@@ -1802,6 +1814,7 @@ def refine_single_volume(
                             padding_factor=PROJECTION_PADDING_FACTOR,
                             n_classes=n_classes,
                             dump_label=f"iter{iteration:03d}_half0",
+                            **gridding_kernel_kwargs,
                         ),
                     )
                 try:
@@ -2400,6 +2413,11 @@ def refine_single_volume(
         # coarse operands on every route, as RELION builds Projector::data every iteration.
         projector_t0 = time.time()
         if captured_projector_state is not None:
+            if gridding_kernel != "radial":
+                raise NotImplementedError(
+                    f"gridding_kernel={gridding_kernel!r} cannot score a captured RELION Projector::data, "
+                    "which carries RELION's radial window"
+                )
             (
                 relion_projector_half_by_half,
                 relion_projector_r_max_by_half,
@@ -2448,6 +2466,7 @@ def refine_single_volume(
                             else None
                         ),
                         dump_label=f"iter{iteration:03d}_half{_half_idx}",
+                        **gridding_kernel_kwargs,
                     )
                 relion_projector_half_by_half[_half_idx] = projector_half
                 relion_projector_r_max_by_half[_half_idx] = projector_r_max
@@ -2988,6 +3007,7 @@ def refine_single_volume(
                         disable_adjoint_ctf=debug.disable_adjoint_ctf,
                         relion_projector_half=relion_projector_half_by_half[k],
                         relion_projector_r_max=relion_projector_r_max_by_half[k],
+                        **gridding_kernel_kwargs,
                         source_faithful_spectrum_norm=(source_faithful_spectrum_norm),
                         relion_translation_angle_scale=(relion_translation_angle_scale),
                     ),
@@ -3122,6 +3142,7 @@ def refine_single_volume(
                     disable_adjoint_ctf=debug.disable_adjoint_ctf,
                     relion_projector_half=relion_projector_half_by_half[k],
                     relion_projector_r_max=relion_projector_r_max_by_half[k],
+                    **gridding_kernel_kwargs,
                     bpref_device_signature_active=bpref_device_signature_active,
                     debug_iteration=numbered_relion_iteration,
                     diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
@@ -3685,6 +3706,7 @@ def refine_single_volume(
                         current_size=int(current_size),
                         return_real_space=True,
                         accumulator_volume_shape=mstep_accumulator_shape,
+                        **gridding_kernel_kwargs,
                     )
                     unfiltered_real = np.asarray(
                         jnp.asarray(unfiltered_real).reshape(volume_shape),
@@ -4063,6 +4085,7 @@ def refine_single_volume(
                     projection_padding_factor=PROJECTION_PADDING_FACTOR,
                     minres_map=RELION_MINRES_MAP,
                     accumulator_volume_shape=mstep_accumulator_shape,
+                    **gridding_kernel_kwargs,
                 )
                 if need_unreg_means
                 else [None, None]
@@ -5420,6 +5443,7 @@ def refine_single_volume(
             padding_factor=PROJECTION_PADDING_FACTOR,
             n_classes=n_classes,
             dump_label=f"final_half{_half_idx}",
+            **gridding_kernel_kwargs,
         )
         final_relion_projector_half_by_half[_half_idx] = projector_half
         final_relion_projector_r_max_by_half[_half_idx] = projector_r_max
@@ -5648,6 +5672,7 @@ def refine_single_volume(
                         disable_adjoint_ctf=debug.disable_adjoint_ctf,
                         relion_projector_half=(final_relion_projector_half_by_half[k]),
                         relion_projector_r_max=(final_relion_projector_r_max_by_half[k]),
+                        **gridding_kernel_kwargs,
                         relion_translation_angle_scale=(relion_translation_angle_scale),
                     ),
                     diagnostics=LocalDiagnosticPolicy(
@@ -5744,6 +5769,7 @@ def refine_single_volume(
                         disable_adjoint_ctf=debug.disable_adjoint_ctf,
                         relion_projector_half=final_relion_projector_half_by_half[k],
                         relion_projector_r_max=final_relion_projector_r_max_by_half[k],
+                        **gridding_kernel_kwargs,
                         return_best_pose_details=not k_class_enabled,
                         bpref_device_signature_active=False,
                         debug_iteration=final_sampling_relion_iteration,
@@ -5839,6 +5865,7 @@ def refine_single_volume(
         minres_map=RELION_MINRES_MAP,
         current_size=final_current_size,
         accumulator_volume_shape=final_mstep_accumulator_shape,
+        **gridding_kernel_kwargs,
     )
     final_reconstruct_t0 = time.time()
     final_unfiltered_means_for_output = None
@@ -6200,6 +6227,6 @@ def refine_single_volume(
         "final_all_data_sampling_offset_range": final_translation_range,
         "final_all_data_sampling_offset_step": final_translation_step,
         "final_all_data_grid_correct": True,
-        "final_all_data_gridding_correct": "radial",
+        "final_all_data_gridding_correct": gridding_kernel,
         "setup_phase_seconds": setup_phase_seconds,
     }

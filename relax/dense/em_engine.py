@@ -622,6 +622,7 @@ def run_em(
     use_float64_scoring: bool = False,
     use_float64_projections: bool = False,
     do_gridding_correction: bool = False,
+    gridding_kernel: str = "radial",
     square_window: bool = False,
     window_at_box: bool = False,
     return_profile: bool = False,
@@ -751,6 +752,12 @@ def run_em(
         layout before returning. This is intended for K-class callers that
         immediately reconstruct from the accumulators.
     """
+    if gridding_kernel != "radial":
+        # This engine projects ``mean`` itself, with RELION's radial gridding window.
+        raise NotImplementedError(
+            f"gridding_kernel={gridding_kernel!r} is not implemented by the dense engine, which pads and "
+            "corrects its own reference with the radial window; use a route that scores the RELION projector slab"
+        )
     if float(relion_translation_angle_scale) != 1.0:
         raise NotImplementedError(
             "RELION model/optics translation-angle scaling requires the exact sparse or local scorer"

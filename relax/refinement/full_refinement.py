@@ -2100,6 +2100,15 @@ def _parse_args(argv=None):
         "values produce smoother volumes (stronger prior).",
     )
     parser.add_argument(
+        "--gridding_kernel",
+        choices=("radial", "separable"),
+        default="radial",
+        help="Real-space gridding-correction window of the scoring projector and the "
+        "reconstructions. radial is RELION's sinc^2(|x| / (pad * box)); separable is the "
+        "per-axis sinc^2 product, the exact transform of the trilinear kernel. separable "
+        "is implemented for K=1 single-particle auto-refine only and is refused elsewhere.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
@@ -2734,6 +2743,13 @@ def _require_command_n_classes(command: str, n_classes: int) -> None:
         raise ValueError(f"unknown refinement command {command!r}")
 
 
+def _require_k1_for_gridding_kernel(gridding_kernel: str, n_classes: int) -> None:
+    """The separable gridding window is threaded through K=1 refinement only."""
+
+    if gridding_kernel != "radial" and n_classes != 1:
+        raise SystemExit(f"--gridding_kernel {gridding_kernel} is implemented for K=1 auto-refine only")
+
+
 def main(command=None):
     """Run a refinement from ``sys.argv``; ``command`` (``refine``/``class3d``) checks ``--n_classes``."""
 
@@ -2742,6 +2758,7 @@ def main(command=None):
     args = _parse_args()
     if command is not None:
         _require_command_n_classes(command, int(args.n_classes))
+    _require_k1_for_gridding_kernel(args.gridding_kernel, int(args.n_classes))
     if cache_directory:
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
@@ -4911,6 +4928,7 @@ def main(command=None):
             ),
             parity=RelionParityOptions(
                 tau2_fudge=effective_tau2_fudge,
+                gridding_kernel=args.gridding_kernel,
                 perturb_factor=args.perturb_factor,
                 perturb_seed=effective_perturb_seed,
                 optimizer_random_seed=args.seed,

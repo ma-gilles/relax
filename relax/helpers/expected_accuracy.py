@@ -46,6 +46,8 @@ class Half1AccuracyInputs(NamedTuple):
     expected_accuracy: object
     # Each half-1 image's row of a per-optics-group noise table; None for one group.
     optics_group_ids: object = None
+    # The projector's gridding-correction window when the transform is built here.
+    gridding_kernel: str = "radial"
 
     def estimate(
         self,
@@ -85,6 +87,7 @@ class Half1AccuracyInputs(NamedTuple):
             do_ctf_correction=self.expected_accuracy.do_ctf_correction,
             optics_group_ids=self.optics_group_ids,
             projector_data=projector_data,
+            **({} if self.gridding_kernel == "radial" else {"gridding_kernel": self.gridding_kernel}),
         )
 
 
@@ -123,6 +126,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     projector_data=None,
     tilt_images=None,
     optics=None,
+    gridding_kernel: str = "radial",
 ) -> ExpectedAccuracy:
     """RELION's ``calculateExpectedAngularErrors`` from prepared inputs.
 
@@ -141,7 +145,8 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     group's); None is the model grid. ``projector_data`` (complex128
     ``[K, pad, pad, pad // 2 + 1]``) is the references' ``Projector::data`` at the
     projector current size when the caller already built it (the scoring
-    projector setup); otherwise each class's transform is built here.
+    projector setup); otherwise each class's transform is built here, with the
+    ``gridding_kernel`` correction window.
     """
     from relax.helpers.relion_expected_accuracy import expected_angular_errors
 
@@ -169,7 +174,10 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     projector_current_size = int(grid.get("projector_current_size", current_image_size) or current_image_size)
     references = np.ascontiguousarray(references_relion, dtype=np.float64)
     if projector_data is None:
-        projector_data = _projector_data(references, projector_current_size, int(padding_factor))
+        projector_data = _projector_data(
+            references, projector_current_size, int(padding_factor),
+            **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
+        )
     tilt = None if tilt_images is None else {key: np.asarray(value) for key, value in tilt_images.items()}
     optics = {} if optics is None else dict(optics)
     ctf_images = None
@@ -218,7 +226,9 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     )
 
 
-def _projector_data(references_relion, current_size: int, padding_factor: int) -> np.ndarray:
+def _projector_data(
+    references_relion, current_size: int, padding_factor: int, gridding_kernel: str = "radial"
+) -> np.ndarray:
     """Each class's ``Projector::data`` (data_dim 2, gridding-corrected) at ``current_size``."""
 
     from relax.relion.relion_projector_setup import setup_relion_projector_on_host
@@ -227,7 +237,8 @@ def _projector_data(references_relion, current_size: int, padding_factor: int) -
     return np.asarray(
         [
             setup_relion_projector_on_host(
-                reference, int(current_size) // 2, ori_size=ori_size, padding_factor=int(padding_factor)
+                reference, int(current_size) // 2, ori_size=ori_size, padding_factor=int(padding_factor),
+                **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
             )[0]
             for reference in references_relion
         ],
@@ -571,6 +582,7 @@ def estimate_relion_expected_accuracy(
     optics_group_ids=None,
     group_grid=None,
     projector_data=None,
+    gridding_kernel: str = "radial",
 ) -> ExpectedAccuracy:
     """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1.
 
@@ -594,6 +606,10 @@ def estimate_relion_expected_accuracy(
     from relax.refinement.tomo_half import TomoHalf
 
     if isinstance(dataset, TomoHalf):
+        if gridding_kernel != "radial":
+            raise NotImplementedError(
+                f"gridding_kernel={gridding_kernel!r} is not implemented for subtomogram expected accuracy"
+            )
         return _estimate_tomo_half(
             dataset,
             reference_fourier=reference_fourier,
@@ -632,6 +648,7 @@ def estimate_relion_expected_accuracy(
             max_trials=max_trials,
             optics_group_ids=optics_group_ids,
             projector_data=projector_data,
+            **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
         )
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     if eulers.ndim != 2 or eulers.shape[1] != 3:
@@ -712,6 +729,7 @@ def estimate_relion_expected_accuracy(
                     max_trials=int(np.count_nonzero(in_group[trial_local])),
                     group_grid=group_grid,
                     projector_data=projector_data,
+                    **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
                 )
             )
         return _combine_group_expected_accuracies(per_group, trial_local, trial_particle_ids)
@@ -751,6 +769,7 @@ def estimate_relion_expected_accuracy(
         group_grid=group_grid,
         projector_data=projector_data,
         optics=_expected_accuracy_optics(dataset, trial_local),
+        **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
     )
 
 

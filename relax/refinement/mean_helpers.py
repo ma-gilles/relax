@@ -536,6 +536,10 @@ def _pad_accumulator_to_class(values, logical_shape, physical_shape):
     return padded.reshape(-1) if flat else padded
 
 
+# RECOVAR's name of each gridding-correction window (``post_process_from_filter_v2``).
+_RECOVAR_GRIDDING_CORRECT = {"radial": "radial", "separable": "square"}
+
+
 def _reconstruct_volume_eager(
     Ft_ctf,
     Ft_y,
@@ -554,13 +558,18 @@ def _reconstruct_volume_eager(
     preserve_output_precision=False,
     relion_filter_scale=None,
     retained_device_numerator=None,
+    gridding_kernel="radial",
 ):
     """Eager RELION-style reconstruction from full or half Fourier accumulators.
 
     This keeps the reconstruction boundary out of a single monolithic JIT while
     letting the local exact path keep its accumulators in packed half-volume
-    layout until the final iDFT boundary.
+    layout until the final iDFT boundary. ``gridding_kernel`` is the real-space
+    correction window: RELION's ``"radial"`` one or the ``"separable"`` per-axis product.
     """
+    if gridding_kernel not in _RECOVAR_GRIDDING_CORRECT:
+        raise ValueError(f"gridding_kernel must be 'radial' or 'separable', got {gridding_kernel!r}")
+    gridding_correct = _RECOVAR_GRIDDING_CORRECT[gridding_kernel]
     from recovar.reconstruction import relion_functions
 
     from relax.reconstruction import relion_functions_relion
@@ -582,7 +591,7 @@ def _reconstruct_volume_eager(
         kernel="triangular",
         use_spherical_mask=use_spherical_mask,
         grid_correct=grid_correct,
-        gridding_correct="radial",
+        gridding_correct=gridding_correct,
         kernel_width=1,
         tau2_fudge=tau2_fudge,
         gridding_padding_factor=projection_padding_factor,
@@ -884,7 +893,7 @@ def _reconstruct_volume_eager(
             kernel="triangular",
             use_spherical_mask=use_spherical_mask,
             grid_correct=grid_correct,
-            gridding_correct="radial",
+            gridding_correct=gridding_correct,
             kernel_width=1,
             return_real_space=return_real_space,
             gridding_padding_factor=projection_padding_factor,
@@ -897,7 +906,7 @@ def _reconstruct_volume_eager(
             kernel="triangular",
             use_spherical_mask=use_spherical_mask,
             grid_correct=grid_correct,
-            gridding_correct="radial",
+            gridding_correct=gridding_correct,
             kernel_width=1,
             return_real_space=return_real_space,
             gridding_padding_factor=projection_padding_factor,
@@ -1011,6 +1020,7 @@ class ReconstructionSettings:
     minres_map: int
     width_mask_edge: int
     fmask_edge: int
+    gridding_kernel: str = "radial"
 
 
 def reconstruct_k1_means(
@@ -1054,6 +1064,7 @@ def reconstruct_k1_means(
             tau_is_1d=tau_is_1d,
             preserve_output_precision=True,
             relion_filter_scale=float(settings.volume_shape[0] ** 4),
+            **({} if settings.gridding_kernel == "radial" else {"gridding_kernel": settings.gridding_kernel}),
             **(
                 {"retained_device_numerator": retained_device_numerator}
                 if k == 0 and retained_device_numerator is not None
@@ -1084,6 +1095,8 @@ def reconstruct_class_means(
 ):
     """Reconstruct the shared Class3D stack from combined accumulators."""
 
+    if settings.gridding_kernel != "radial":
+        raise NotImplementedError(f"gridding_kernel={settings.gridding_kernel!r} is K=1 only")
     _t_recon = time.time()
     cs_int = int(current_size) if current_size is not None else None
     shared_class_maps = []
@@ -1233,6 +1246,7 @@ def reconstruct_unregularized_k1_halfmaps(
     projection_padding_factor,
     minres_map,
     accumulator_volume_shape=None,
+    gridding_kernel="radial",
 ) -> list:
     """Reconstruct each K=1 half from its own unregularized accumulator."""
 
@@ -1247,6 +1261,7 @@ def reconstruct_unregularized_k1_halfmaps(
             projection_padding_factor=projection_padding_factor,
             minres_map=minres_map,
             accumulator_volume_shape=accumulator_volume_shape,
+            **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
         )
         for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
     ]

@@ -94,6 +94,7 @@ def _relion_projector_half_maps_for_scoring(
     n_classes: int,
     real_references=None,
     dump_label: str | None = None,
+    gridding_kernel: str = "radial",
 ) -> tuple[np.ndarray, int, np.ndarray | None]:
     """Build RELION ``Projector::data`` slabs from current Fourier references.
 
@@ -105,7 +106,8 @@ def _relion_projector_half_maps_for_scoring(
 
     The slabs come from the device projector setup
     (:func:`relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power`);
-    RELION's own transform is a test oracle only.
+    RELION's own transform is a test oracle only. ``gridding_kernel`` is the
+    setup's correction window; a non-radial one has its own cache entries.
     """
 
     from recovar.core import fourier_transform_utils as ftu
@@ -150,6 +152,9 @@ def _relion_projector_half_maps_for_scoring(
             dtype=np.int64,
         )
         hasher.update(cache_params.tobytes())
+        if gridding_kernel != "radial":
+            # Radial entries keep their keys; another window never reads them.
+            hasher.update(f"gridding-kernel-{gridding_kernel}".encode("utf-8"))
         hasher.update(refs_for_hash.view(np.uint8))
         cache_path = os.path.join(cache_dir, f"projector_{hasher.hexdigest()[:24]}.npz")
         if os.path.exists(cache_path):
@@ -186,6 +191,7 @@ def _relion_projector_half_maps_for_scoring(
         # Refinement consumes complex128, which its own log line reports; the
         # setup narrows to complex64 (the InitialModel consumer) unless told otherwise.
         projector_data_dtype="complex128",
+        **({} if gridding_kernel == "radial" else {"gridding_kernel": gridding_kernel}),
     )
     if cache_path is not None:
         os.makedirs(cache_dir, exist_ok=True)

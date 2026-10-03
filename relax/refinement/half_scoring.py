@@ -336,6 +336,8 @@ class DenseExecutionPolicy:
     disable_adjoint_ctf: bool
     relion_projector_half: object | None = None
     relion_projector_r_max: int | None = None
+    # The gridding-correction window ``relion_projector_half`` was built with.
+    gridding_kernel: str = "radial"
     return_best_pose_details: bool = True
     bpref_device_signature_active: bool = False
     debug_iteration: int | None = None
@@ -848,6 +850,10 @@ def _score_half_dense_one_shape(
     if priors.class_rotation_log_prior_k is not None:
         em_kwargs["rotation_log_prior"] = None
         em_kwargs["class_rotation_log_prior"] = priors.class_rotation_log_prior_k
+    if execution.gridding_kernel != "radial":
+        # The engines apply RELION's radial window wherever they project a reference without the
+        # projector slab; they refuse this value on those routes (run_em, the adaptive entry).
+        em_kwargs["gridding_kernel"] = execution.gridding_kernel
     if execution.relion_projector_half is not None:
         em_kwargs["relion_projector_half"] = execution.relion_projector_half
         em_kwargs["relion_projector_r_max"] = execution.relion_projector_r_max
@@ -1401,6 +1407,8 @@ class LocalExecutionPolicy:
     disable_adjoint_ctf: bool
     relion_projector_half: object | None = None
     relion_projector_r_max: int | None = None
+    # The gridding-correction window ``relion_projector_half`` was built with.
+    gridding_kernel: str = "radial"
     source_faithful_spectrum_norm: bool = False
     relion_translation_angle_scale: float = 1.0
 
@@ -1813,6 +1821,10 @@ def _score_half_local_one_shape(
     # hypothesis layout, so adding the learned global direction prior here
     # biases both support selection and final weights.
 
+    if execution.gridding_kernel != "radial" and execution.relion_projector_half is None:
+        raise NotImplementedError(
+            f"gridding_kernel={execution.gridding_kernel!r} needs the RELION projector slab built with that window"
+        )
     reconstruction_current_size_for_engine = (
         sampling.cs_for_engine
         if sampling.model_current_size_for_engine is None
