@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "ppca-subtomogram-tilt-groups-20261002",
-    "source_commit": "be905d6be50a25318a98e527c42d1b0b98922453",
+    "package": "firstiter-cc-tree-rescore-option-20261002",
+    "source_commit": "a7641e277cc09d9468acda7a5fc4083201b37f5d",
     "metrics": {
       "files": [
         {
@@ -33,9 +33,9 @@
         },
         {
           "function_count": 64,
-          "nonblank_noncomment_lines": 5092,
+          "nonblank_noncomment_lines": 5110,
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 5626
+          "physical_lines": 5644
         },
         {
           "function_count": 7,
@@ -45,15 +45,15 @@
         },
         {
           "function_count": 22,
-          "nonblank_noncomment_lines": 2029,
+          "nonblank_noncomment_lines": 2032,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2248
+          "physical_lines": 2252
         },
         {
           "function_count": 25,
-          "nonblank_noncomment_lines": 5563,
+          "nonblank_noncomment_lines": 5565,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 6207
+          "physical_lines": 6209
         },
         {
           "function_count": 2,
@@ -99,9 +99,9 @@
         },
         {
           "function_count": 7,
-          "nonblank_noncomment_lines": 295,
+          "nonblank_noncomment_lines": 300,
           "path": "relax/refinement/refinement_options.py",
-          "physical_lines": 389
+          "physical_lines": 397
         },
         {
           "function_count": 39,
@@ -190,42 +190,42 @@
       "largest_functions": [
         {
           "line": 628,
-          "line_span": 5580,
+          "line_span": 5582,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2705,
-          "line_span": 2877,
+          "line": 2722,
+          "line_span": 2878,
           "name": "main",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
         },
         {
           "line": 2516,
-          "line_span": 768,
+          "line_span": 769,
           "name": "_run_half_estep",
           "parameter_count": 1,
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 1965,
-          "line_span": 698,
+          "line": 1975,
+          "line_span": 705,
           "name": "_parse_args",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
         },
         {
-          "line": 1773,
+          "line": 1777,
           "line_span": 459,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 716,
-          "line_span": 447,
+          "line": 718,
+          "line_span": 449,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
@@ -273,10 +273,10 @@
         "file_count": 17,
         "function_count": 326,
         "large_argument_function_count": 9,
-        "maximum_function_line_span": 5580,
+        "maximum_function_line_span": 5582,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 18981,
-        "physical_lines": 21528,
+        "nonblank_noncomment_lines": 19009,
+        "physical_lines": 21560,
         "very_large_argument_function_count": 2
       }
     }
