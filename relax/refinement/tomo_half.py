@@ -41,7 +41,8 @@ class TomoDataset:
 
     ``images`` is the loaded flat per-tilt dataset (:func:`relax.relion.tomo_input.flatten_relion5_tomo`).
     Particle ``u`` owns images ``image_rows[unit_image_offsets[u]:unit_image_offsets[u + 1]]`` of it, in
-    ``img_id`` order, with RELION's ``Aproj`` in ``image_projections``, its tilt-series frame in
+    ``img_id`` order, with RELION's ``Aproj`` in ``image_projections`` (and the projection's left matrix,
+    :func:`tilt_left_matrices`, in ``image_left``), its tilt-series frame in
     ``image_frames`` and the particle's tomogram in ``unit_tomogram``.
     """
 
@@ -67,6 +68,7 @@ class TomoDataset:
         spans = [np.arange(index.image_offsets[p], index.image_offsets[p + 1]) for p in order]
         self.image_rows = np.concatenate([geometry.rows[s] for s in spans]).astype(np.int64)
         self.image_projections = np.concatenate([geometry.projections[s] for s in spans])
+        self.image_left = tilt_left_matrices(images, self.image_projections, self.image_rows)
         # Frame of each image in its tilt series and tomogram of each particle (PPCA tilt groups).
         self.image_frames = np.concatenate([geometry.frames[s] for s in spans]).astype(np.int64)
         self.unit_tomogram = np.asarray(star_column(particles, "rlnTomoName", required=True)).astype(str)
@@ -96,6 +98,7 @@ class TomoDataset:
             self.images.subset(self.image_rows[images]),
             unit_image_offsets=np.concatenate([[0], np.cumsum(counts)]).astype(np.int64),
             image_projections=self.image_projections[images],
+            image_left=self.image_left[images],
             unit_optics_group=self.unit_optics_group[units],
             rows=units,
             image_frames=self.image_frames[images],
@@ -145,6 +148,40 @@ class TomoDataset:
         return np.concatenate(batches, axis=0)
 
 
+def tilt_left_matrices(images, image_projections, image_rows) -> np.ndarray:
+    """Each tilt image's projection left matrix ``L``: RELION's ``applyAnisoMag(Aproj)``.
+
+    relion_refine projects and backprojects a tilt image at ``L R`` with
+    ``L = inv(M3) Aproj`` (acc_ml_optimiser_impl.h:1088-1104, 1711-1727, 3212-3227;
+    ``ObservationModel::applyAnisoMag``), ``M3`` the image's optics-group ``rlnMagMat`` in a 3x3
+    identity; without magnification ``L = Aproj``. The 3D shift still projects through ``Aproj``
+    (``Experiment::getTranslationInTiltSeries``). ``images`` is the flat per-tilt dataset and
+    ``image_rows`` the dataset rows of ``image_projections``. The scale difference
+    (``applyScaleDifference``) is 1: tilt images are on the reference grid.
+    """
+
+    from recovar.data_io.starfile import star_column
+
+    from relax.relion import optics_aberrations
+    from relax.relion.relion_ctf import _exact_ctf_source_cache
+
+    image_projections = np.asarray(image_projections, dtype=np.float64)
+    _, cache = _exact_ctf_source_cache(images, tuple(int(n) for n in images.image_shape))
+    labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
+    if not any(label.startswith("rlnMagMat") for label in labels):
+        return image_projections
+    inverse = {}
+    for group, row in cache["optics"].items():
+        mag3 = np.eye(3)
+        mag3[:2, :2] = optics_aberrations.optics_group_mag_matrix(row)
+        inverse[group] = np.linalg.inv(mag3)
+    groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)
+    if image_projections.shape[0] == 0:
+        return image_projections
+    left = np.stack([inverse[int(group)] for group in groups[np.asarray(image_rows, dtype=np.int64)]])
+    return np.einsum("nij,njk->nik", left.reshape(-1, 3, 3), image_projections)
+
+
 def load_tomo_dataset(
     particles_star, tomograms_star, flat_star, *, datadir, lazy: bool, read_policy=None
 ) -> TomoDataset:
@@ -172,7 +209,8 @@ class TomoHalf:
 
     ``n_units`` counts particles; ``images`` is the flat dataset of their tilt images, particle ``u``'s
     at ``unit_image_offsets[u]:[u + 1]`` in ``img_id`` order, with ``image_projections`` (RELION's
-    ``Aproj``). ``image_shape``, ``volume_shape`` and ``voxel_size`` are the reference model's.
+    ``Aproj``, which places the particle's 3D shifts) and ``image_left`` (the projection's left matrix,
+    :func:`tilt_left_matrices`). ``image_shape``, ``volume_shape`` and ``voxel_size`` are the reference model's.
     """
 
     def __init__(
@@ -181,6 +219,7 @@ class TomoHalf:
         *,
         unit_image_offsets,
         image_projections,
+        image_left,
         unit_optics_group,
         rows,
         image_shape,
@@ -192,6 +231,7 @@ class TomoHalf:
         self.images = images
         self.unit_image_offsets = np.asarray(unit_image_offsets, dtype=np.int64)
         self.image_projections = np.asarray(image_projections, dtype=np.float64)
+        self.image_left = np.asarray(image_left, dtype=np.float64)
         self.unit_optics_group = np.asarray(unit_optics_group, dtype=np.int64)
         # Each image's tilt-series frame and each unit's tomogram, as in TomoDataset (None when not given).
         self.image_frames = None if image_frames is None else np.asarray(image_frames, dtype=np.int64)
@@ -202,7 +242,9 @@ class TomoHalf:
         self.grid_size = self.image_shape[0]
         self.n_units = int(self.unit_image_offsets.size - 1)
         self.n_images = int(self.unit_image_offsets[-1])
-        if int(images.n_units) != self.n_images or self.image_projections.shape != (self.n_images, 3, 3):
+        if int(images.n_units) != self.n_images or not (
+            self.image_projections.shape == self.image_left.shape == (self.n_images, 3, 3)
+        ):
             raise ValueError("a tomo half needs one dataset image and one Aproj per tilt image")
         # Particle-STAR row of each unit, as a loaded dataset's index layout reports it.
         self._index_layout = _RowLayout(np.asarray(rows, dtype=np.int64))
@@ -306,7 +348,7 @@ def tilt_pass_inputs(
     shifted = rounded_old[:, None, :] + np.asarray(fine_px, dtype=np.float64)[None, :, :]
     return TiltPassInputs(
         unit_image_offsets=half.unit_image_offsets,
-        image_left=half.image_projections,
+        image_left=half.image_left,
         image_angles=tomo_particles.tilt_translation_angles(
             fine_px, rounded_old, half.image_projections, image_particle, half.grid_size
         ),
@@ -503,6 +545,7 @@ def score_tomo_half(
             half.images,
             unit_image_offsets=half.unit_image_offsets,
             image_projections=half.image_projections,
+            image_left=half.image_left,
             unit_old_offsets_px=old_offsets_px,
             coarse_eulers_deg=coarse_eulers_deg,
             relion_order=relion_parent_execution_key(
@@ -525,6 +568,7 @@ def score_tomo_half(
             half.images,
             unit_image_offsets=half.unit_image_offsets,
             image_projections=half.image_projections,
+            image_left=half.image_left,
             unit_old_offsets_px=old_offsets_px,
             coarse_eulers_deg=coarse_eulers_deg,
             random_perturbation=sampling.random_perturbation,

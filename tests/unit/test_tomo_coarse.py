@@ -476,6 +476,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         None,
         unit_image_offsets=offsets,
         image_projections=np.tile(np.eye(3), (n_images, 1, 1)),
+        image_left=np.tile(np.eye(3), (n_images, 1, 1)),
         unit_old_offsets_px=np.zeros((3, 3)),
         coarse_eulers_deg=rng.uniform(0.0, 180.0, size=(n_rot, 3)),
         random_perturbation=0.0,

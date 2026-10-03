@@ -846,12 +846,15 @@ def _estimate_tomo_half(
     calculateExpectedAngularErrors sums each trial particle's SNR over its tilt images, each projected
     with ``Aproj A`` and weighted by its own CTF, and perturbs the offset in 3D before projecting it
     into each image (ml_optimiser.cpp:9368-9602). Trials of one optics group share its CTF constants
-    and noise, so the binding runs once per group, as for single particles.
+    and noise, so the binding runs once per group, as for single particles. Optics-table terms
+    (CTF-premultiplied groups, even Zernike terms, magnification) take the tilt images' exact CTF rows
+    and the magnification's projection factor (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`).
     """
     from recovar.core import fourier_transform_utils
     from recovar.utils.helpers import recovar_volume_to_relion
 
     from relax.refinement.tomo_half import tilt_image_accuracy_inputs
+    from relax.relion.optics_aberrations import expected_accuracy_optics
 
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     n_particles = int(half.n_units)
@@ -925,6 +928,7 @@ def _estimate_tomo_half(
                 do_ctf_correction=True if do_ctf_correction is None else bool(do_ctf_correction),
                 random_seed_particle_ids=particle_ids[group_trials],
                 tilt_images=tilt,
+                optics=expected_accuracy_optics(half.images, images),
             )
         )
     return _combine_group_expected_accuracies(per_group, trial_local, particle_ids[trial_local])

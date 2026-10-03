@@ -120,8 +120,13 @@ def tilt_image_coarse_operands(
     )
     if not relion_cuda:
         raise RuntimeError("the subtomogram coarse pass needs the RELION CUDA image preprocessing")
+    # The image indices demodulate odd aberrations, as RELION does for every tilt image (ml_optimiser.cpp:6418).
     processed = _process_relion_exact_coarse_half_image(
-        experiment_dataset, batch_data, score_with_masked_images, relion_preprocess_kwargs=preprocess_kwargs
+        experiment_dataset,
+        batch_data,
+        score_with_masked_images,
+        relion_preprocess_kwargs=preprocess_kwargs,
+        image_indices=image_indices,
     )
     ctf = _relion_exact_ctf_half_from_source_star_host(
         experiment_dataset, image_indices, layout.image_shape, pixel_indices=layout.score_indices_np
@@ -568,7 +573,7 @@ def particle_coarse_significance(
 def _batch_scoring_rotations(
     units,
     offsets,
-    image_projections,
+    image_left,
     coarse_eulers_deg,
     unit_rotation_rows,
     random_perturbation,
@@ -593,7 +598,7 @@ def _batch_scoring_rotations(
     slot = np.arange(slots)[None, :]
     if unit_rotation_rows is None:
         images = np.concatenate([np.arange(offsets[unit], offsets[unit + 1]) for unit in units])
-        left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+        left, _applies = tomo_particles.relion_left_matrices(image_left[images])
         built = jnp.asarray(
             pass1_rotations(coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left),
             dtype=jnp.float32,
@@ -610,7 +615,7 @@ def _batch_scoring_rotations(
         per_unit = []
         for unit, unit_rows in zip(units, unit_rotation_rows):
             images = np.arange(offsets[unit], offsets[unit + 1])
-            left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+            left, _applies = tomo_particles.relion_left_matrices(image_left[images])
             built = jnp.asarray(
                 pass1_rotations(coarse_eulers_deg[unit_rows], random_perturbation, angular_sampling_deg, left_matrices=left),
                 dtype=jnp.float32,
@@ -634,6 +639,7 @@ def particle_coarse_supports(
     *,
     unit_image_offsets,
     image_projections,
+    image_left,
     unit_old_offsets_px,
     coarse_eulers_deg,
     random_perturbation,
@@ -657,8 +663,10 @@ def particle_coarse_supports(
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
 
     RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
-    scored with its own device matrices (``make_eulers_3D`` with the image's ``Aproj``,
-    :func:`relax.sampling._relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts plus
+    scored with its own device matrices (``make_eulers_3D`` with the image's left matrix ``image_left``,
+    its ``Aproj`` with the optics group's magnification, :func:`relax.refinement.tomo_half.tilt_left_matrices`;
+    :func:`relax.sampling._relion_adaptive_pass1_rotations`), its phases for the 3D trial shifts of ``Aproj``
+    (``image_projections``) plus
     the rounded old offset (:func:`relax.refinement.tomo_particles.tilt_translation_angles`) and its own
     CTF and noise; the images' diff2 is summed in ``img_id`` order and the particle's weights are cut
     once (:func:`particle_coarse_significance`). Dataset images ``unit_image_offsets[u]:[u+1]`` are
@@ -687,6 +695,7 @@ def particle_coarse_supports(
         raise ValueError("a K-class coarse pass is a global search with one rotation log prior per class, [K, R]")
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
+    image_left = np.asarray(image_left, dtype=np.float64)
     old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
     local = unit_rotation_ids is not None
     if local != (unit_rotation_log_priors is not None) or (local and rotation_log_prior is not None):
@@ -842,7 +851,7 @@ def particle_coarse_supports(
         rotations = _batch_scoring_rotations(
             units,
             offsets,
-            image_projections,
+            image_left,
             coarse_eulers_deg,
             None if not local else [unit_rotations[unit] for unit in units],
             random_perturbation,
@@ -988,6 +997,7 @@ def particle_coarse_cc_winners(
     *,
     unit_image_offsets,
     image_projections,
+    image_left,
     unit_old_offsets_px,
     coarse_eulers_deg,
     relion_order,
@@ -1006,7 +1016,7 @@ def particle_coarse_cc_winners(
     RELION's first CC iteration sums every tilt image's normalized CC into the particle's diff2
     (acc_ml_optimiser_impl.h:1290-1347, no Xi2 offset and no priors) and keeps the minimum alone
     (convertAllSquaredDifferencesToWeights' CC branch); pass 2 then scores that sample's children.
-    Each image is scored with its own coarse matrices ``Aproj R`` and phases, as the Gaussian pass
+    Each image is scored with its own coarse matrices ``L R`` (``image_left``) and phases, as the Gaussian pass
     (:func:`particle_coarse_supports`). ``relion_order`` ``[R]`` is each coarse rotation's position in
     RELION's orientation order: the first maximum in that order wins, as RELION's ordered minimum.
     ``scale_corrections`` are per dataset image.
@@ -1039,6 +1049,7 @@ def particle_coarse_cc_winners(
     half_weights = make_scoring_half_image_weights(image_shape, relion_half_sum=True, exclude_relion_redundant_x0=False)
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
+    image_left = np.asarray(image_left, dtype=np.float64)
     old = tomo_particles.relion_gpu_old_offsets(np.asarray(unit_old_offsets_px, dtype=np.float64))
     coarse_eulers_deg = np.asarray(coarse_eulers_deg)
     n_rot = int(coarse_eulers_deg.shape[0])
@@ -1061,7 +1072,7 @@ def particle_coarse_cc_winners(
             half_weights,
             scale_corrections=None if scale_corrections is None else np.asarray(scale_corrections)[images],
         )
-        left, _applies = tomo_particles.relion_left_matrices(image_projections[images])
+        left, _applies = tomo_particles.relion_left_matrices(image_left[images])
         rotations = np.asarray(
             _relion_adaptive_pass1_rotations(
                 coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left

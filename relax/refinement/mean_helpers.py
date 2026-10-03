@@ -33,6 +33,7 @@ from relax.helpers.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.reconstruction import regularization_relion
+from relax.refinement.tomo_half import TomoHalf
 from relax.relion import relion_ctf
 from relax.relion.reference_initialization import initial_low_pass_filter_references
 
@@ -589,12 +590,18 @@ def estimate_class_priors(
                 tuple(mean_variance_arr.shape),
             )
     # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
-    # (setAverageCTF2; Class3D has no split halves and does not fix tau2).
+    # (setAverageCTF2; Class3D has no split halves and does not fix tau2). It averages over
+    # images, so a subtomogram half counts its tilt images, each with its particle's scale.
+    ctf2_datasets = [half.dataset for half in halves]
+    ctf2_scales = [half.scale_corrections for half in halves]
+    if isinstance(ctf2_datasets[0], TomoHalf):
+        ctf2_scales = [
+            None if scales is None else np.repeat(np.asarray(scales), np.diff(dataset.unit_image_offsets))
+            for dataset, scales in zip(ctf2_datasets, ctf2_scales)
+        ]
+        ctf2_datasets = [dataset.images for dataset in ctf2_datasets]
     average_ctf2 = relion_ctf.premultiplied_average_ctf2(
-        [half.dataset for half in halves],
-        [half.scale_corrections for half in halves],
-        image_current_size,
-        settings.grid_size,
+        ctf2_datasets, ctf2_scales, image_current_size, settings.grid_size
     )
     for class_idx in range(n_classes):
         log.info(
