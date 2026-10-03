@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "firstiter-cc-tree-rescore-option-20261002",
-    "source_commit": "a7641e277cc09d9468acda7a5fc4083201b37f5d",
+    "package": "ppca-subtomogram-noise-groups-20261003",
+    "source_commit": "6c6986d420bb36ed36a91edd1228fd3cec857ce1",
     "metrics": {
       "files": [
         {
@@ -32,10 +32,10 @@
           "physical_lines": 290
         },
         {
-          "function_count": 64,
-          "nonblank_noncomment_lines": 5110,
+          "function_count": 65,
+          "nonblank_noncomment_lines": 5117,
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 5644
+          "physical_lines": 5655
         },
         {
           "function_count": 7,
@@ -111,9 +111,9 @@
         },
         {
           "function_count": 23,
-          "nonblank_noncomment_lines": 933,
+          "nonblank_noncomment_lines": 939,
           "path": "relax/refinement/tomo_half.py",
-          "physical_lines": 1054
+          "physical_lines": 1061
         },
         {
           "function_count": 12,
@@ -124,14 +124,14 @@
       ],
       "large_argument_functions": [
         {
-          "line": 316,
+          "line": 323,
           "line_span": 343,
           "name": "score_tomo_half",
           "parameter_count": 26,
           "path": "relax/refinement/tomo_half.py"
         },
         {
-          "line": 706,
+          "line": 713,
           "line_span": 210,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
@@ -185,6 +185,13 @@
           "name": "__init__",
           "parameter_count": 10,
           "path": "relax/refinement/run_files.py"
+        },
+        {
+          "line": 165,
+          "line_span": 31,
+          "name": "__init__",
+          "parameter_count": 10,
+          "path": "relax/refinement/tomo_half.py"
         }
       ],
       "largest_functions": [
@@ -196,8 +203,8 @@
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 2722,
-          "line_span": 2878,
+          "line": 2737,
+          "line_span": 2874,
           "name": "main",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
@@ -210,7 +217,7 @@
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 1975,
+          "line": 1990,
           "line_span": 705,
           "name": "_parse_args",
           "parameter_count": 1,
@@ -238,7 +245,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 316,
+          "line": 323,
           "line_span": 343,
           "name": "score_tomo_half",
           "parameter_count": 26,
@@ -252,7 +259,7 @@
           "path": "relax/refinement/local_search_iteration.py"
         },
         {
-          "line": 706,
+          "line": 713,
           "line_span": 210,
           "name": "score_tomo_half_in_loop",
           "parameter_count": 26,
@@ -271,12 +278,12 @@
       },
       "totals": {
         "file_count": 17,
-        "function_count": 326,
-        "large_argument_function_count": 9,
+        "function_count": 327,
+        "large_argument_function_count": 10,
         "maximum_function_line_span": 5582,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 19009,
-        "physical_lines": 21560,
+        "nonblank_noncomment_lines": 19022,
+        "physical_lines": 21578,
         "very_large_argument_function_count": 2
       }
     }
