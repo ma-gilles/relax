@@ -305,7 +305,8 @@ def test_hidden_tilt_equals_a_zero_tilt():
     b = accumulate_full_row_tile(stream._replace(dataset=zero), [0], [None])
     for name in ("embeddings", "lhs_tri", "residual_gradient", "residual_num"):
         assert_matches(np.asarray(getattr(a, name)), np.asarray(getattr(b, name)))
-    assert_matches(a.log_likelihood, b.log_likelihood)
+    # A float32 log-likelihood carried as a Python float: compare it in the float32 band.
+    assert_matches(np.float32(a.log_likelihood), np.float32(b.log_likelihood))
     assert np.all(np.asarray(b.residual_den) > np.asarray(a.residual_den))  # the zero image is one more observation
 
 
@@ -341,7 +342,8 @@ def test_identity_frame_tile_is_the_single_particle_tile():
     b = accumulate_full_row_tile(spa, np.arange(3), [None] * 3)
     for name in ("embeddings", "lhs_tri", "residual_gradient", "residual_num", "residual_den"):
         assert_matches(np.asarray(getattr(a, name)), np.asarray(getattr(b, name)), rtol=2e-6)
-    assert_matches(a.log_likelihood, b.log_likelihood)
+    # A float32 log-likelihood carried as a Python float: compare it in the float32 band.
+    assert_matches(np.float32(a.log_likelihood), np.float32(b.log_likelihood))
 
 
 def test_tiles_keep_one_tilt_group():
