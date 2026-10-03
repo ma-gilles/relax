@@ -1221,7 +1221,7 @@ def test_final_all_data_runs_with_cold_start_only_override(
     def record_resolution_shell(dvp, **kwargs):
         resolution_calls.append({"dvp": np.asarray(dvp).copy(), **kwargs})
         shell = original_shell(dvp, **kwargs)
-        return forced_final_shell if len(resolution_calls) == 2 else shell
+        return forced_final_shell if len(resolution_calls) == 1 else shell
 
     monkeypatch.setattr(resolution_helpers, "relion_current_resolution_shell", record_resolution_shell)
     monkeypatch.setattr(finalization, "relion_current_resolution_shell", record_resolution_shell)
@@ -1250,8 +1250,10 @@ def test_final_all_data_runs_with_cold_start_only_override(
     # is forced to a known shell to check that its result reaches the state.
     grid = int(half_datasets[0].image_shape[0])
     voxel = float(half_datasets[0].voxel_size)
+    # Only the final pass goes through relion_current_resolution_shell; the numbered K1
+    # iteration estimates its shell in estimate_k1_iteration_resolution.
     final_call = resolution_calls[-1]
-    assert len(resolution_calls) == 2
+    assert len(resolution_calls) == 1
     assert final_call["current_size"] == grid
     assert_matches(final_call["dvp"], result["tau2_ssnr_final_all_data"].astype(np.float32))
     state = result["convergence_state"]
