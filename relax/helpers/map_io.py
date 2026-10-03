@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import jax
+import jax.numpy as jnp
 import mrcfile
 import numpy as np
 from recovar.utils.helpers import load_mrc, load_relion_volume, recovar_volume_to_relion
@@ -35,13 +37,30 @@ from recovar.utils.helpers import load_mrc, load_relion_volume, recovar_volume_t
 RELAX_MAP_LABEL = "relax map, RELION sign and axis convention"
 
 
+@jax.jit
+def _relion_float32_on_device(volume):
+    """``recovar_volume_to_relion`` of the real part as float32, on the device (exact)."""
+    return -jnp.transpose(jnp.real(volume).astype(jnp.float32), (2, 1, 0))
+
+
 def write_map(path, volume, voxel_size=None) -> None:
-    """Write an internal-frame real volume as a RELION-convention MRC map."""
-    volume = np.asarray(volume)
+    """Write an internal-frame real volume as a RELION-convention MRC map.
+
+    A device volume is converted on the device and arrives contiguous: the host's
+    transposed view of a 256^3 map costs mrcfile a strided copy of 0.3-0.5 s, which was
+    half of each VDAM checkpoint (py-spy, job 14935204). The two conversions are the
+    same negation and cast, so the file is identical.
+    """
+    if not isinstance(volume, jax.Array):
+        volume = np.asarray(volume)
     if volume.ndim != 3 or len(set(volume.shape)) != 1:
         raise ValueError(f"write_map expects a cubic volume, got shape {volume.shape}")
+    if isinstance(volume, jax.Array):
+        relion = np.asarray(_relion_float32_on_device(volume))
+    else:
+        relion = np.asarray(recovar_volume_to_relion(volume.real), dtype=np.float32)
     with mrcfile.new(str(path), overwrite=True) as handle:
-        handle.set_data(np.asarray(recovar_volume_to_relion(volume.real), dtype=np.float32))
+        handle.set_data(relion)
         if voxel_size is not None:
             handle.voxel_size = voxel_size
         handle.header.ispg = 0  # rwMRC.h leaves the space group at 0

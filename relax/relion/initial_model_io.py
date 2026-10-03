@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -370,9 +369,6 @@ def _initial_model_random_subsets(main_star) -> np.ndarray:
 
 
 def _write_data_star(path: str, main_star, optics_star, dataset, particle_state: NativeParticleState) -> None:
-    array_rows_token = os.environ.get("RELAX_VDAM_STAR_ARRAY_ROWS", "0").strip()
-    if array_rows_token not in {"0", "1"}:
-        raise ValueError("RELAX_VDAM_STAR_ARRAY_ROWS must be 0 or 1")
     n_images = int(len(particle_state.translation_offsets))
     if len(main_star) != n_images:
         raise ValueError(f"STAR table has {len(main_star)} particles but the particle state has {n_images}")
@@ -471,5 +467,6 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
     out_path = Path(path)
     if str(out_path.parent) not in ("", "."):
         out_path.parent.mkdir(parents=True, exist_ok=True)
-    writer_kwargs = {"array_rows": True} if array_rows_token == "1" else {}
-    write_star(str(out_path), table, optics_star.copy() if optics_star is not None else None, **writer_kwargs)
+    # Rows written from the table's array: the same bytes as the per-row Series writer
+    # (tests/unit/test_star_array_rows.py), 0.06 s instead of 0.5 s for 10k particles.
+    write_star(str(out_path), table, optics_star.copy() if optics_star is not None else None, array_rows=True)

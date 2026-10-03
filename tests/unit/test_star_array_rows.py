@@ -1,4 +1,4 @@
-"""Byte-level formatting parity for the opt-in InitialModel STAR row writer."""
+"""Byte-level formatting parity for the array-row STAR writer InitialModel's data STAR uses."""
 
 import io
 from datetime import datetime
@@ -70,13 +70,3 @@ def test_complete_file_layout_and_timestamp_match(tmp_path, monkeypatch, optics)
     starfile.write_star(old, table, optics)
     starfile.write_star(new, table, optics, array_rows=True)
     assert old.read_bytes() == new.read_bytes()
-
-
-def test_invalid_initial_model_selector_fails_before_writing(tmp_path, monkeypatch):
-    from relax.relion import initial_model_io
-
-    monkeypatch.setenv("RELAX_VDAM_STAR_ARRAY_ROWS", "yes")
-    path = tmp_path / "not_written.star"
-    with pytest.raises(ValueError, match="must be 0 or 1"):
-        initial_model_io._write_data_star(str(path), None, None, None, None)
-    assert not path.exists()

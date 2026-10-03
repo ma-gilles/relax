@@ -2299,9 +2299,7 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
     )
 
 
-@pytest.mark.parametrize("array_rows", ["0", "1"])
-def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monkeypatch, array_rows):
-    monkeypatch.setenv("RELAX_VDAM_STAR_ARRAY_ROWS", array_rows)
+def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monkeypatch):
     main = pd.DataFrame(
         {
             "_rlnImageName": ["2@stack.mrcs", "1@stack.mrcs"],
@@ -2349,9 +2347,7 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
     np.testing.assert_allclose(data["_rlnLogLikeliContribution"].astype(float).to_numpy(), [7.25, -12.5])
 
 
-@pytest.mark.parametrize("array_rows", ["0", "1"])
-def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, monkeypatch, array_rows):
-    monkeypatch.setenv("RELAX_VDAM_STAR_ARRAY_ROWS", array_rows)
+def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, monkeypatch):
     main = pd.DataFrame(
         {
             "_rlnImageName": ["3@stack.mrcs", "1@stack.mrcs", "2@stack.mrcs"],

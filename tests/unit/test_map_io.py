@@ -51,6 +51,17 @@ def test_write_map_writes_relion_convention_with_relion_header(tmp_path):
     assert map_io.is_relax_map(path)
 
 
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.complex64])
+def test_write_map_of_a_device_volume_writes_the_same_file(tmp_path, dtype):
+    import jax.numpy as jnp
+
+    volume = (_volume() * 1.000001).astype(dtype)
+    volume[1, 2, 3] = 0.0  # the negation's signed zero
+    map_io.write_map(tmp_path / "host.mrc", volume, voxel_size=1.5)
+    map_io.write_map(tmp_path / "device.mrc", jnp.asarray(volume), voxel_size=1.5)
+    assert (tmp_path / "device.mrc").read_bytes() == (tmp_path / "host.mrc").read_bytes()
+
+
 def test_load_relax_map_round_trips_the_internal_frame(tmp_path):
     volume = _volume()
     path = tmp_path / "map.mrc"
