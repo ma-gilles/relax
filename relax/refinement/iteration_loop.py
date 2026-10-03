@@ -1871,10 +1871,8 @@ def refine_single_volume(
                 bool(debug.stop_after_local_search_score_only),
                 elapsed,
             )
-            merged_mean, merged_class_means = _merged_mean_from_halves(
-                reference_model.maps,
-                class_weights if k_class_enabled else None,
-            )
+            # Local search is K=1 (Class3D was rejected above), so there are no class products.
+            merged_mean, merged_class_means = _merged_mean_from_halves(reference_model.maps, None)
             (
                 replay_requested_iterations,
                 replay_applied_iterations,
@@ -1885,11 +1883,7 @@ def refine_single_volume(
             )
             return {
                 "profile_only": True,
-                **_model_result_fields(
-                    merged_mean, reference_model.maps, merged_class_means,
-                    class_weights if k_class_enabled else None,
-                    class_assignments if k_class_enabled else None,
-                ),
+                **_model_result_fields(merged_mean, reference_model.maps, merged_class_means, None, None),
                 "relion_follower_scale_replay_requested_iterations": replay_requested_iterations,
                 "relion_follower_scale_replay_applied_iterations": replay_applied_iterations,
                 "convergence_state": state,
