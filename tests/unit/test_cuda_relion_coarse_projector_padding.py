@@ -49,6 +49,7 @@ def _euler_matrix(a, b, c):
 @pytest.mark.gpu
 def test_padding_factor_two_matches_scaled_rotations_at_padding_one(monkeypatch, custom_cuda_lib, gpu_device):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -84,6 +85,7 @@ def test_padding_factor_two_matches_scaled_rotations_at_padding_one(monkeypatch,
 @pytest.mark.gpu
 def test_padding_factor_default_is_one(monkeypatch, custom_cuda_lib, gpu_device):
     import recovar.cuda_backproject as cuda_backproject
+
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -101,9 +103,3 @@ def test_padding_factor_default_is_one(monkeypatch, custom_cuda_lib, gpu_device)
     assert_matches(default, explicit)
 
 
-def test_padding_factor_must_be_positive():
-    from relax.scoring import significance
-
-    assert significance._k1_coarse_fused_projector_supports_padding(1)
-    assert significance._k1_coarse_fused_projector_supports_padding(2)
-    assert not significance._k1_coarse_fused_projector_supports_padding(0)

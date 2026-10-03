@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches, matches
 
 from relax.refinement.half_inputs import HalfInputState
-from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -12,7 +12,16 @@ from helpers.fine_grid_significance_reference import _build_fine_grid_significan
 
 import relax.classification.k_class as k_class_module
 from relax.classification import k_class_results
-from relax.classification.k_class import _ClassFineGridSignificanceMask, _sparse_pass2_preferred_over_dense, _dense_engine_kwargs_for_class, _run_sparse_firstiter_global_winner_subset_pass2, _run_sparse_k_class_adaptive_pass2, _strict_exact_fine_gaussian_requested, run_dense_k_class_em, run_dense_k_class_em_adaptive
+from relax.classification.k_class import (
+    _ClassFineGridSignificanceMask,
+    _dense_engine_kwargs_for_class,
+    _run_sparse_firstiter_global_winner_subset_pass2,
+    _run_sparse_k_class_adaptive_pass2,
+    _sparse_pass2_preferred_over_dense,
+    _strict_exact_fine_gaussian_requested,
+    run_dense_k_class_em,
+    run_dense_k_class_em_adaptive,
+)
 from relax.classification.k_class_results import (
     _assemble_result,
     _expand_subset_noise_stats,
@@ -69,25 +78,6 @@ def _firstiter_probe_result(class_assignments, per_class_hard=None, n_rot=1):
     )
 
 
-def _control_coarse_selector_audit(score_mode: str, translation_count: int) -> dict:
-    return {
-        "score_mode": score_mode,
-        "translation_count": int(translation_count),
-        "requested_fused": False,
-        "effective_fused": False,
-        "requested_workers": 0,
-        "effective_workers": 0,
-        "requested_atomic": False,
-        "effective_atomic": False,
-        "wrapper": None,
-        "target": None,
-        "counts": {
-            "fused_calls": 0,
-            "actual_rows": 0,
-            "multistream_calls": 0,
-            "native_atomic_selected_calls": 0,
-        },
-    }
 
 
 @pytest.mark.parametrize("n_classes,order,winner,score_mode,double,enabled", [
@@ -114,8 +104,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         return (None, np.ones(1, dtype=np.int32), coarse_pose, np.zeros(1, dtype=np.int32),
                 [[np.asarray([0], dtype=np.int32)] for _ in range(n_classes)],
                 {"significant_cutoff_counts": np.ones(1, dtype=np.int32),
-                 "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax,
-                 "coarse_selector_audit": _control_coarse_selector_audit(score_mode, 1)})
+                 "relion_f32_sum_weight": coarse_sum, "relion_f32_max_posterior": coarse_pmax})
 
     result = _assemble_result(
         class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
@@ -238,10 +227,6 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
             [[np.asarray([0], dtype=np.int32)]],
             {
                 "significant_cutoff_counts": np.full(1, 5, dtype=np.int32),
-                "coarse_selector_audit": _control_coarse_selector_audit(
-                    "gaussian",
-                    1,
-                ),
             },
         )
 
@@ -1047,10 +1032,6 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
                     dtype=np.float32,
                 ),
                 "class_assignments": np.asarray([1, 0, 1], dtype=np.int32),
-                "coarse_selector_audit": _control_coarse_selector_audit(
-                    "normalized_cc",
-                    3,
-                ),
             },
         )
 
@@ -1310,8 +1291,8 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
 
     It takes the K=1 production arithmetic of the resident pass 2.
     """
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
     from relax.sampling import rotation_grid_size
+    from relax.sparse_pass2 import dispatch as sparse_dispatch
 
     score_calls = []
     probe_calls = []
@@ -1626,8 +1607,9 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
     """The K=1-through-K-class adapter must not drop the fresh-run guard."""
 
     from recovar import cuda_backproject
-    from relax.sparse_pass2 import dispatch as sparse_dispatch
+
     from relax.sampling import rotation_grid_size
+    from relax.sparse_pass2 import dispatch as sparse_dispatch
 
     calls = []
     n_images = 2
@@ -2091,7 +2073,6 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
             np.zeros(TinyDataset.n_units, dtype=np.int32),
             None,
             {
-                "coarse_selector_audit": _control_coarse_selector_audit("normalized_cc", 1),
                 "class_log_evidence_per_image": np.zeros((1, TinyDataset.n_units)),
                 "class_hard_assignments": np.zeros((1, TinyDataset.n_units), dtype=np.int32),
                 "class_best_log_score_per_image": np.zeros(

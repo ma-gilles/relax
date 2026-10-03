@@ -34,7 +34,6 @@ from relax.classification.k_class_results import (
 )
 from relax.dense.em_engine import run_em
 from relax.diagnostics.coarse_score_diagnostics import (
-    _coarse_selector_audit_from_full_stats,
     _with_coarse_significance_diagnostics,
 )
 from relax.diagnostics.local_debug import score_dump_label
@@ -59,7 +58,6 @@ class _DenseKClassScoreProbeResult(NamedTuple):
     per_class_hard_assignments: np.ndarray
     per_class_stats: tuple[RelionStats, ...]
     class_assignments: np.ndarray
-    coarse_selector_audit: dict | None = None
     coarse_score_backend: str | None = None
 
 
@@ -1141,8 +1139,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         n_translations=int(np.asarray(translations).shape[0]),
         iteration=engine_kwargs.get("debug_iteration"),
     )
-    coarse_selector_audit = _coarse_selector_audit_from_full_stats(full_stats)
-
     class_log_evidence = np.asarray(full_stats["class_log_evidence_per_image"], dtype=np.float64)
     per_class_hard = np.asarray(full_stats["class_hard_assignments"], dtype=np.int32)
     score_dtype = _score_dtype_from_kwargs(engine_kwargs)
@@ -1163,7 +1159,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         per_class_hard_assignments=per_class_hard,
         per_class_stats=per_class_stats,
         class_assignments=class_assignments,
-        coarse_selector_audit=coarse_selector_audit,
         coarse_score_backend=full_stats.get("executed_coarse_backend"),
     )
 
@@ -2401,9 +2396,7 @@ def run_dense_k_class_em_adaptive(
         significance_log_priors = log_priors[:1]
         if relion_projector_half is not None:
             significance_projector_half = seed_iteration_first_class(relion_projector_half)[0]
-    coarse_selector_audit = None
     coarse_significance_support_audit = None
-    coarse_gaussian_gemm_hybrid_stats = None
     exact_coarse_operand_assembly = None
     coarse_actual_backend = None
     pass1_t0 = time.time()
@@ -2463,7 +2456,6 @@ def run_dense_k_class_em_adaptive(
                     class_log_priors=probe_class_log_priors,
                     **coarse_probe_kwargs,
                 )
-        coarse_selector_audit = coarse_result.coarse_selector_audit
         coarse_actual_backend = coarse_result.coarse_score_backend
         # ``per_class_hard_assignments[k, i]`` is class k's best coarse pose
         # (independently scored per class). For each class, restrict pass-2
@@ -2573,15 +2565,9 @@ def run_dense_k_class_em_adaptive(
             _full_coarse_stats["significant_cutoff_counts"],
             dtype=np.int32,
         )
-        coarse_selector_audit = _coarse_selector_audit_from_full_stats(
-            _full_coarse_stats
-        )
         coarse_actual_backend = _full_coarse_stats.get("executed_coarse_backend")
         coarse_significance_support_audit = _full_coarse_stats.get(
             "coarse_significance_support_audit",
-        )
-        coarse_gaussian_gemm_hybrid_stats = _full_coarse_stats.get(
-            "coarse_gaussian_gemm_hybrid",
         )
         exact_coarse_operand_assembly = _full_coarse_stats.get(
             "exact_coarse_operand_assembly",
@@ -2600,9 +2586,7 @@ def run_dense_k_class_em_adaptive(
             )
         result = _with_coarse_significance_diagnostics(
             result,
-            selector_audit=coarse_selector_audit,
             support_audit=coarse_significance_support_audit,
-            hybrid_stats=coarse_gaussian_gemm_hybrid_stats,
             exact_coarse_operand_assembly=exact_coarse_operand_assembly,
         )
         if coarse_engine == "gemm_hybrid":

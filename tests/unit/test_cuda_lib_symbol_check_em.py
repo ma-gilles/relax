@@ -18,11 +18,7 @@ def test_em_ffi_registrations_cover_all_em_target_constants():
         if k.startswith("_TARGET_") and isinstance(v, str) and v not in recovar_targets
     }
     em_targets_in_table = {target for target, _symbol in em_cuda_kernels._FFI_REGISTRATIONS}
-    em_optional_targets = {
-        *em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS,
-        em_cuda_kernels._TARGET_RELION_COARSE_POSTERIOR_TRANSACTION_F32,
-        em_cuda_kernels._TARGET_RELION_COARSE_SHARED_PRETRANSLATED_RUNTIME_F32,
-    }
+    em_optional_targets = set(em_cuda_kernels._OPTIONAL_FFI_REGISTRATIONS)
     assert em_targets_in_table.isdisjoint(em_optional_targets)
     assert em_target_constants == em_targets_in_table | em_optional_targets
 

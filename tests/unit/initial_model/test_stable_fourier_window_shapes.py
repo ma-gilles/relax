@@ -16,8 +16,6 @@ from relax.helpers.fourier_window import (
 from relax.helpers.half_volume_mstep import crop_relion_x_half_accumulator
 from relax.helpers.projection import _texture_centered_crop_at_indices
 from relax.helpers.shape_buckets import pad_axis
-from relax.scoring import significance
-from relax.scoring.coarse_gemm_hybrid import plan_coarse_gemm_certificate_topology
 from relax.scoring.significance import _coarse_gaussian_fused_logical_lookup, _plan_coarse_gaussian_square_layout
 from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
@@ -192,19 +190,6 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
             layout,
             current_size=logical_size + 2,
         )
-    source = Path(significance.__file__).read_text()
-    scorer_start = source.index("def _score_coarse_fused_full_diff2(")
-    scorer_end = source.index("def _project_coarse_gemm_rows(", scorer_start)
-    fused_scorer = source[scorer_start:scorer_end]
-    assert "_coarse_gaussian_fused_logical_lookup(" in fused_scorer
-    score_block_start = source.index("def _score_block(")
-    score_block_end = source.index(
-        "if coarse_gaussian_score_backend is _CoarseGaussianScoreBackend.NATIVE_TEXTURE:",
-        score_block_start,
-    )
-    assert "return -_score_coarse_fused_full_diff2(" in source[
-        score_block_start:score_block_end
-    ]
     assert not np.any(layout.score_active_mask_np[logical_count:])
     coords = np.rint(make_frequency_coords_half_np(_IMAGE_SHAPE)).astype(np.int64)
     expected_projector_mask = (
@@ -217,13 +202,6 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         expected_projector_mask,
     )
     assert not np.any(layout.logical_projector_mask_np[logical_count:])
-
-    topology = plan_coarse_gemm_certificate_topology(
-        layout.full_to_compact_np,
-        compact_pixel_count=layout.physical_square_count,
-        translation_count=29,
-    )
-    assert topology.full_position_count == layout.physical_square_count
 
 
 def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
@@ -878,26 +856,3 @@ def test_runtime_bpref_ffi_abi_keeps_default_static_target_separate():
     assert "runtime_current_size->untyped_data()" in common
     assert "runtime_current_size != nullptr &&" in cuda_source
     assert "exact_native_ptx_requested || exact_wavg_predecessor_requested" in cuda_source
-
-
-def test_runtime_coarse_ffi_abi_keeps_static_targets_separate():
-    root = Path(__file__).resolve().parents[3]
-    python_source = (root / "relax" / "cuda" / "kernels.py").read_text()
-    cuda_source = read_em_cuda_source()
-
-    for stem in ("Rectangular", "RotationBlocks"):
-        assert f"cuda_relion_coarse_diff2_{'rectangular' if stem == 'Rectangular' else 'rotation_blocks'}_runtime_f32" in python_source
-        assert f"RelionCoarseDiff2{stem}F32Common(" in cuda_source
-        assert f"RelionCoarseDiff2{stem}RuntimeF32Impl(" in cuda_source
-        binding_start = cuda_source.index(
-            "XLA_FFI_DEFINE_HANDLER_SYMBOL(\n"
-            f"    RelionCoarseDiff2{stem}RuntimeF32,"
-        )
-        binding = cuda_source[binding_start : binding_start + 800]
-        expected_args = 6 if stem == "Rectangular" else 7
-        assert binding.count(".Arg<ffi::AnyBuffer>()") == expected_args
-    assert "const ffi::AnyBuffer* runtime_full_pixel_count" in cuda_source
-    assert "runtime_full_pixel_count->untyped_data()" in cuda_source
-    assert 'denominator[output] = nanf("")' in cuda_source
-
-

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_coarse_significance_image_batch_size
@@ -19,7 +20,6 @@ from relax.vdam.dense_adapter import (
 )
 from relax.vdam.estep_common import DenseInitialModelEstepConfig, _arrays_to_accumulators, _estep_meta
 from relax.vdam.init import initialise_denovo_state
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 
@@ -81,25 +81,6 @@ class _ReplaceableNamespace(SimpleNamespace):
         return type(self)(**values)
 
 
-def _control_coarse_selector_audit(translation_count: int) -> dict:
-    return {
-        "score_mode": "gaussian",
-        "translation_count": int(translation_count),
-        "requested_fused": False,
-        "effective_fused": False,
-        "requested_workers": 0,
-        "effective_workers": 0,
-        "requested_atomic": False,
-        "effective_atomic": False,
-        "wrapper": None,
-        "target": None,
-        "counts": {
-            "fused_calls": 0,
-            "actual_rows": 0,
-            "multistream_calls": 0,
-            "native_atomic_selected_calls": 0,
-        },
-    }
 
 
 def _identity_local_layout(*, n_images, rotations_per_image, n_translations):
@@ -159,8 +140,10 @@ def _fake_result_with_profile(n_classes: int, n: int, *, n_images: int = 2, n_gr
 
 
 def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector_flip():
-    from relax.helpers.half_volume_mstep import relion_x_half_volume_to_full
-    from relax.helpers.half_volume_mstep import enforce_relion_half_volume_x0_hermitian_host
+    from relax.helpers.half_volume_mstep import (
+        enforce_relion_half_volume_x0_hermitian_host,
+        relion_x_half_volume_to_full,
+    )
     from relax.vdam.layout import relion_bpref_frame_scales
 
     state = initialise_denovo_state(

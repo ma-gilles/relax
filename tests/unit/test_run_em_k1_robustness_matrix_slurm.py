@@ -448,7 +448,6 @@ def test_identity_ctf_star_helper_rewrites_relion_metadata_without_touching_raw_
 def test_identity_ctf_phase_shift_matches_recovar_noctf_sign():
     import jax.numpy as jnp
     import numpy as np
-
     from recovar.core.ctf import evaluate_ctf
 
     freqs = jnp.array([[0.0, 0.0], [0.01, 0.02], [0.1, 0.0]], dtype=jnp.float32)
@@ -801,22 +800,6 @@ def test_diagnostic_env_is_forwarded(tmp_path, case, env_name, value):
     assert f"{env_name}={value}" in (scratch / "submission.env").read_text()
 
 
-def test_k1_coarse_gaussian_native_texture_env_is_forwarded(tmp_path):
-    proc, scratch = _dry_run_launcher(
-        tmp_path,
-        case="7",
-        extra_env={"RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE": "1"},
-    )
-
-    assert proc.returncode == 0, proc.stdout
-    scripts = list((scratch / "jobs").glob("em_k1_matrix_7_*.sh"))
-    assert len(scripts) == 1
-    text = scripts[0].read_text()
-    assert "export RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE=1" in text
-    assert "--image-fourier-backend relion_cuda" in text
-    assert "RECOVAR_K1_COARSE_GAUSSIAN_NATIVE_TEXTURE=1" in (
-        scratch / "submission.env"
-    ).read_text()
 
 
 def test_k1_selected_treatment_env_is_forwarded_and_recorded(tmp_path):

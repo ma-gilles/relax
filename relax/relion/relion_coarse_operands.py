@@ -16,8 +16,6 @@ from relax.helpers.env_flags import parse_env_strict_flag
 from relax.helpers.optics_noise import pixel_rows
 from relax.helpers.projection import relion_coarse_relabel
 from relax.scoring.coarse_gaussian_gemm import (
-    _COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR_ENV,
-    _COARSE_GAUSSIAN_GEMM_HYBRID_ENV,
     _K1_RELION_EXACT_COARSE_OPERANDS_ENV,
     _K1_RELION_F32_COARSE_SUPPORT_ENV,
 )
@@ -120,17 +118,14 @@ def _resolve_k1_relion_exact_compact_preprocess(
     requested: bool,
     exact_coarse_skip_generic_operands_enabled: bool,
     exact_coarse_operands_enabled: bool,
-    coarse_gaussian_gemm_hybrid_requested: bool,
-    coarse_gaussian_gemm_compact_posterior_requested: bool,
     score_mode: str,
     any_diagnostic_requested: bool,
     coarse_gaussian_gemm_macro_enabled: bool = False,
 ) -> bool:
     """Resolve the exact+compact preprocessing specialization.
 
-    Both GEMM scorers read only the exact coarse operands: the compact hybrid
-    and the plain real-packed GEMM (the default exact-operand scorer). Either
-    lets the generic half-image FFT, CTF and translated score image go unbuilt.
+    The coarse GEMM scorer reads only the exact coarse operands, so the generic
+    half-image FFT, CTF and translated score image go unbuilt.
     """
 
     if not requested:
@@ -142,14 +137,8 @@ def _resolve_k1_relion_exact_compact_preprocess(
         )
     if not exact_coarse_operands_enabled:
         raise ValueError(f"{prefix} {_K1_RELION_EXACT_COARSE_OPERANDS_ENV}=1")
-    plain_gemm = bool(coarse_gaussian_gemm_macro_enabled and not coarse_gaussian_gemm_hybrid_requested)
-    if not plain_gemm:
-        if not coarse_gaussian_gemm_hybrid_requested:
-            raise ValueError(f"{prefix} {_COARSE_GAUSSIAN_GEMM_HYBRID_ENV}=1")
-        if not coarse_gaussian_gemm_compact_posterior_requested:
-            raise ValueError(
-                f"{prefix} {_COARSE_GAUSSIAN_GEMM_COMPACT_POSTERIOR_ENV}=1",
-            )
+    if not coarse_gaussian_gemm_macro_enabled:
+        raise ValueError(f"{prefix} the coarse GEMM scorer")
     if score_mode != "gaussian":
         raise ValueError(f"{prefix} score_mode='gaussian'")
     if any_diagnostic_requested:

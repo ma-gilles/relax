@@ -3837,10 +3837,9 @@ def _sparse_big_jit_local_case(rng):
 
 
 def _assert_significance_stats_allclose(actual, expected):
-    """Compare every statistic, including the nonnumeric selector audit."""
+    """Compare every statistic."""
     assert actual.keys() == expected.keys()
-    assert actual["coarse_selector_audit"] == expected["coarse_selector_audit"]
-    for key in actual.keys() - {"coarse_selector_audit"}:
+    for key in actual.keys():
         actual_value = np.asarray(actual[key])
         expected_value = np.asarray(expected[key])
         if not (np.issubdtype(actual_value.dtype, np.number)
@@ -10395,17 +10394,6 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
                 "class_hard_assignments": coarse_hard.copy(),
                 "class_best_log_score_per_image": coarse_best_scores.copy(),
                 "class_assignments": expected_classes.copy(),
-                # This mocked selector makes no native launches. The current
-                # boundary requires its execution metadata alongside scores.
-                "coarse_selector_audit": {
-                    "score_mode": "normalized_cc", "translation_count": 2,
-                    "requested_fused": False, "effective_fused": False,
-                    "requested_workers": 0, "effective_workers": 0,
-                    "requested_atomic": False, "effective_atomic": False,
-                    "wrapper": None, "target": None,
-                    "counts": {"fused_calls": 0, "actual_rows": 0,
-                               "multistream_calls": 0, "native_atomic_selected_calls": 0},
-                },
             },
         )
 

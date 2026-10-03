@@ -502,8 +502,17 @@ projection cache does not fit the budget, and scores the exact-operand normalize
 passes with RELION's coarse CC. The per-class loop still serves the generic scorer above (K=1 runs
 without the fresh order, and their CC passes), the opt-in coarse backends and the per-block
 diagnostics, pending the generic scorer's move and the backends' deletion.
-Removed (2026-10-02, team-lead's deletion list D1): the opt-in fused per-block pass-1 program
-(`RELAX_PASS1_FUSED`, `_fused_score_priors_logsumexp_block`); setting the switch is refused.
+Removed (2026-10-02, team-lead's deletion list D1-D5, D7), each switch refused when set
+(`relax/renamed_environment.json` "retired", checked when relax is imported): the fused per-block pass-1
+program (`RELAX_PASS1_FUSED`); the fused-projector coarse scorer family (`RECOVAR_K1_COARSE_FUSED_PROJECTOR`,
+`_CANONICAL_REDUCTION`, `_SINGLE_LANE_CANONICAL`, `_NATIVE_ATOMIC_REDUCTION`, `_PREHALF_WEIGHT`,
+`_MULTISTREAM_WORKERS`), the native-texture and the rectangular coarse scorers and the backend
+selector (`RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0` is refused); the certified K=1 coarse GEMM hybrid with its
+compact posterior, device transaction, real-cross certificate, row partition, CUDA posterior transaction and
+runtime-prefix dump (modules `coarse_gemm_hybrid`, `coarse_partition`, `coarse_device_*`, the publication
+path, the certificate scoring, their tests and the combined-true200 gate tooling); the coarse selector
+audit. The fused projector kernel (`relion_coarse_diff2_projector_f32`, the subtomogram test reference),
+the rectangular kernels (f32, f64) and `coarse_publication._posterior_statistics` stay.
 
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
 and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take
@@ -762,7 +771,8 @@ arm, uncapped). The default exact-operand coarse pass is a real-packed float32 G
 per-pair projector/diff2 kernel (`RECOVAR_COARSE_GAUSSIAN_GEMM_MACRO=0`, and for the K>1 resident route
 also `RECOVAR_K1_COARSE_GAUSSIAN_FFI=1 RECOVAR_K1_COARSE_GAUSSIAN_SINCOSF=1
 RECOVAR_K1_RELION_EXACT_COARSE_OPERANDS=1 RECOVAR_K1_COARSE_FUSED_PROJECTOR=1`, because K>1 resident
-otherwise scores pass 1 with the generic dense GEMM):
+otherwise scores pass 1 with the generic dense GEMM; that native arm was removed on 2026-10-02, see "Pass 1
+as one program per image batch"):
 
 | case, route | RELION | native coarse | GEMM coarse (default) |
 |---|---|---|---|
@@ -923,7 +933,7 @@ error): `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
 `RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=0`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=0`,
 `RELAX_EM_JIT_STAGE_GLUE=0`, `RELAX_LOCAL_IMAGE_CAPACITY_LADDER=0`. Device coarse significance has no
 switch: every class's coarse support is compacted on the device whenever the ids are collected
-(K>1 and VDAM too); score dumps and the compact-hybrid diagnostics keep the host mask
+(K>1 and VDAM too); score dumps keep the host mask
 (`relax/sparse_pass2/resident_significance.py`). Flip pairs (relax vs
 RELION wall, same node): EMPIAR-10073 1.05x and 10345 1.01x pass the scorecard thresholds; K1
 50k/256 runs at 0.65x, with the resident masked GT FSC 9e-5 below the three-run RELION band

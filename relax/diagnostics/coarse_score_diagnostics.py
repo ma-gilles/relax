@@ -11,13 +11,6 @@ import numpy as np
 
 from relax.scoring.significant_samples import significant_sample_ids
 
-_COARSE_SELECTOR_WRAPPER_TARGETS = {
-    "relion_coarse_diff2_projector_f32": "cuda_relion_coarse_diff2_projector_f32",
-    "relion_coarse_diff2_projector_multistream_f32": (
-        "cuda_relion_coarse_diff2_projector_multistream_f32"
-    ),
-}
-
 
 def _coarse_gaussian_direct_macro_diagnostics(
     direct_scores,
@@ -221,206 +214,6 @@ def _coarse_gaussian_qualification_decision(
     }
 
 
-def _validate_coarse_selector_audit(audit: dict) -> dict:
-    """Validate and normalize one host-observed coarse selector audit.
-
-    A configured fused selector is not evidence that its wrapper ran.  The
-    wrapper name, XLA target, and positive call/row counters are therefore
-    required whenever the fused path is effective.  An inactive control is
-    represented explicitly by ``None`` wrapper/target values and zero counts.
-    """
-
-    if not isinstance(audit, dict):
-        raise TypeError("coarse selector audit must be a dict")
-    required = {
-        "score_mode",
-        "translation_count",
-        "requested_fused",
-        "effective_fused",
-        "requested_workers",
-        "effective_workers",
-        "requested_atomic",
-        "effective_atomic",
-        "wrapper",
-        "target",
-        "counts",
-    }
-    missing = sorted(required.difference(audit))
-    if missing:
-        raise ValueError(
-            "coarse selector audit is missing fields: " + ", ".join(missing)
-        )
-
-    score_mode = audit["score_mode"]
-    if score_mode not in {"gaussian", "normalized_cc"}:
-        raise ValueError(
-            f"coarse selector audit has unsupported score_mode={score_mode!r}"
-        )
-
-    integer_fields = {
-        "translation_count": audit["translation_count"],
-        "requested_workers": audit["requested_workers"],
-        "effective_workers": audit["effective_workers"],
-    }
-    normalized_integers = {}
-    for name, value in integer_fields.items():
-        if isinstance(value, (bool, np.bool_)) or not isinstance(
-            value,
-            (int, np.integer),
-        ):
-            raise TypeError(f"coarse selector audit {name} must be an integer")
-        normalized_integers[name] = int(value)
-    translation_count = normalized_integers["translation_count"]
-    requested_workers = normalized_integers["requested_workers"]
-    effective_workers = normalized_integers["effective_workers"]
-    if translation_count <= 0:
-        raise ValueError("coarse selector audit translation_count must be positive")
-    if requested_workers not in {0, 8} or effective_workers not in {0, 8}:
-        raise ValueError(
-            "coarse selector audit requested/effective workers must be 0 or 8"
-        )
-
-    prehalf_fields = {"requested_prehalf", "effective_prehalf"}
-    present_prehalf_fields = prehalf_fields.intersection(audit)
-    if present_prehalf_fields and present_prehalf_fields != prehalf_fields:
-        raise ValueError(
-            "coarse selector audit must provide requested/effective prehalf together"
-        )
-
-    normalized_booleans = {}
-    for name in (
-        "requested_fused",
-        "effective_fused",
-        "requested_atomic",
-        "effective_atomic",
-        *(sorted(prehalf_fields) if present_prehalf_fields else ()),
-    ):
-        value = audit[name]
-        if not isinstance(value, (bool, np.bool_)):
-            raise TypeError(f"coarse selector audit {name} must be boolean")
-        normalized_booleans[name] = bool(value)
-    requested_fused = normalized_booleans["requested_fused"]
-    effective_fused = normalized_booleans["effective_fused"]
-    requested_atomic = normalized_booleans["requested_atomic"]
-    effective_atomic = normalized_booleans["effective_atomic"]
-    requested_prehalf = normalized_booleans.get("requested_prehalf", False)
-    effective_prehalf = normalized_booleans.get("effective_prehalf", False)
-    if effective_fused and not requested_fused:
-        raise ValueError("effective fused coarse selector was not requested")
-    if effective_workers and requested_workers != effective_workers:
-        raise ValueError("effective coarse workers do not match the request")
-    if effective_atomic and not requested_atomic:
-        raise ValueError("effective native-atomic coarse reduction was not requested")
-    if effective_prehalf and not requested_prehalf:
-        raise ValueError("effective coarse prehalf weight was not requested")
-    if effective_workers and not effective_fused:
-        raise ValueError("effective coarse workers require the fused selector")
-    if effective_atomic and not effective_fused:
-        raise ValueError("effective native-atomic reduction requires the fused selector")
-    if effective_prehalf and not effective_atomic:
-        raise ValueError("effective coarse prehalf weight requires native-atomic reduction")
-    if effective_fused and score_mode != "gaussian":
-        raise ValueError("the fused coarse selector is Gaussian-only")
-    if effective_workers and score_mode != "gaussian":
-        raise ValueError("coarse worker streams are Gaussian-only")
-    if effective_atomic and (
-        score_mode != "gaussian" or translation_count != 29
-    ):
-        raise ValueError(
-            "effective native-atomic reduction requires the Gaussian T=29 gate"
-        )
-
-    counts = audit["counts"]
-    if not isinstance(counts, dict):
-        raise TypeError("coarse selector audit counts must be a dict")
-    required_counts = {
-        "fused_calls",
-        "actual_rows",
-        "multistream_calls",
-        "native_atomic_selected_calls",
-    }
-    if present_prehalf_fields:
-        required_counts.add("prehalf_selected_calls")
-    missing_counts = sorted(required_counts.difference(counts))
-    if missing_counts:
-        raise ValueError(
-            "coarse selector audit counts are missing fields: "
-            + ", ".join(missing_counts)
-        )
-    normalized_counts = {}
-    for name in sorted(required_counts):
-        value = counts[name]
-        if isinstance(value, (bool, np.bool_)) or not isinstance(
-            value,
-            (int, np.integer),
-        ):
-            raise TypeError(f"coarse selector audit count {name} must be an integer")
-        value = int(value)
-        if value < 0:
-            raise ValueError(f"coarse selector audit count {name} must be non-negative")
-        normalized_counts[name] = value
-
-    wrapper = audit["wrapper"]
-    target = audit["target"]
-    if wrapper is not None and not isinstance(wrapper, str):
-        raise TypeError("coarse selector audit wrapper must be a string or None")
-    if target is not None and not isinstance(target, str):
-        raise TypeError("coarse selector audit target must be a string or None")
-    fused_calls = normalized_counts["fused_calls"]
-    actual_rows = normalized_counts["actual_rows"]
-    multistream_calls = normalized_counts["multistream_calls"]
-    native_atomic_calls = normalized_counts["native_atomic_selected_calls"]
-    prehalf_calls = normalized_counts.get("prehalf_selected_calls", 0)
-    if effective_fused:
-        expected_wrapper = (
-            "relion_coarse_diff2_projector_multistream_f32"
-            if effective_workers
-            else "relion_coarse_diff2_projector_f32"
-        )
-        expected_target = _COARSE_SELECTOR_WRAPPER_TARGETS[expected_wrapper]
-        if wrapper != expected_wrapper or target != expected_target:
-            raise ValueError(
-                "coarse selector audit observed the wrong wrapper/target: "
-                f"{wrapper!r}/{target!r} != {expected_wrapper!r}/{expected_target!r}"
-            )
-        if fused_calls <= 0:
-            raise ValueError("effective fused coarse selector recorded zero calls")
-        if actual_rows <= 0:
-            raise ValueError("effective fused coarse selector recorded zero actual rows")
-        if actual_rows < fused_calls:
-            raise ValueError("coarse selector actual rows cannot be smaller than calls")
-        expected_multistream_calls = fused_calls if effective_workers else 0
-        if multistream_calls != expected_multistream_calls:
-            raise ValueError(
-                "coarse selector multistream call count does not match the effective wrapper"
-            )
-        expected_atomic_calls = fused_calls if effective_atomic else 0
-        if native_atomic_calls != expected_atomic_calls:
-            raise ValueError(
-                "coarse selector native-atomic call count does not match the effective reduction"
-            )
-        expected_prehalf_calls = fused_calls if effective_prehalf else 0
-        if prehalf_calls != expected_prehalf_calls:
-            raise ValueError(
-                "coarse selector prehalf call count does not match the effective specialization"
-            )
-    else:
-        if wrapper is not None or target is not None:
-            raise ValueError("inactive coarse selector must not report a wrapper/target")
-        if effective_workers or effective_atomic or effective_prehalf:
-            raise ValueError(
-                "inactive coarse selector cannot report effective workers/atomic/prehalf"
-            )
-        if any(normalized_counts.values()):
-            raise ValueError("inactive coarse selector must report zero execution counts")
-
-    normalized = dict(audit)
-    normalized.update(normalized_integers)
-    normalized.update(normalized_booleans)
-    normalized["counts"] = normalized_counts
-    return normalized
-
-
 def _build_coarse_significance_support_audit(
     significant_sample_indices,
     *,
@@ -524,51 +317,18 @@ def _build_coarse_significance_support_audit(
     return result
 
 
-def _coarse_selector_audit_from_full_stats(full_stats: dict) -> dict:
-    """Require a valid execution audit at the coarse-score boundary."""
-
-    if not isinstance(full_stats, dict):
-        raise RuntimeError("K-class significance did not return coarse full_stats")
-    if "coarse_selector_audit" not in full_stats:
-        raise RuntimeError(
-            "K-class significance did not return a coarse selector execution audit"
-        )
-    try:
-        return _validate_coarse_selector_audit(full_stats["coarse_selector_audit"])
-    except (TypeError, ValueError) as error:
-        raise RuntimeError("K-class significance returned an invalid coarse selector audit") from error
-
-
-def _with_coarse_selector_audit(result, audit: dict | None):
-    """Seal the validated coarse audit into a result profile summary."""
-
-    if audit is None:
-        return result
-    try:
-        validated = _validate_coarse_selector_audit(audit)
-    except (TypeError, ValueError) as error:
-        raise RuntimeError("cannot propagate an invalid coarse selector audit") from error
-    profile_summary = dict(result.profile_summary or {})
-    profile_summary["coarse_selector_audit"] = validated
-    return result._replace(profile_summary=profile_summary)
-
-
 def _with_coarse_significance_diagnostics(
     result,
     *,
-    selector_audit: dict | None,
     support_audit: dict | None,
-    hybrid_stats: dict | None,
     exact_coarse_operand_assembly: dict | None = None,
 ):
-    """Propagate exact coarse-support and hybrid telemetry to InitialModel."""
+    """Propagate exact coarse-support telemetry to InitialModel."""
 
-    result = _with_coarse_selector_audit(result, selector_audit)
     additions = {
         key: dict(value)
         for key, value in (
             ("coarse_significance_support_audit", support_audit),
-            ("coarse_gaussian_gemm_hybrid", hybrid_stats),
             (
                 "exact_coarse_operand_assembly",
                 exact_coarse_operand_assembly,

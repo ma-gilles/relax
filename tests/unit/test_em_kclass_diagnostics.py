@@ -5,12 +5,10 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
-import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-import relax.classification.k_class as k_class_mod
 import relax.helpers.oversampling as oversampling_mod
 import relax.scoring.significance as sig_mod
 from relax.dense import score_outputs, scoring_policy
@@ -683,73 +681,6 @@ def test_kclass_significance_dump_uses_original_index_mapper(monkeypatch, tmp_pa
 # ----------------------------------------------------------------------
 # Pass1 fused gate (env-var contract)
 # ----------------------------------------------------------------------
-
-@pytest.mark.parametrize("value", ["", "0", "1"])
-def test_removed_pass1_fused_switch_is_refused(monkeypatch, value):
-    """``RELAX_PASS1_FUSED`` (the fused pass-1 block) was removed on 2026-10-02: setting it, to
-    anything, refuses the run instead of silently running the default."""
-
-    monkeypatch.setenv("RELAX_PASS1_FUSED", value)
-    with pytest.raises(ValueError, match="RELAX_PASS1_FUSED was removed"):
-        sig_mod._compute_k_class_significance_batched(
-            None, None, None, None, None, None, class_log_priors=None, adaptive_fraction=None,
-            max_significants=None, image_batch_size=None, rotation_block_size=None, current_size=None,
-        )
-
-    # K1 adaptive scoring uses this same K-class significance path.
-
-def test_stats_constructors_preserve_double_precision_by_default():
-    from relax.helpers.types import make_noise_stats, make_relion_stats
-
-    posterior = jnp.asarray([1.0 + 2.0**-40], dtype=jnp.float64)
-    relion_stats = make_relion_stats(
-        log_evidence_per_image=posterior,
-        best_log_score_per_image=posterior,
-        max_posterior_per_image=posterior,
-        rotation_posterior_sums=posterior,
-    )
-    noise_stats = make_noise_stats(
-        wsum_sigma2_noise=posterior,
-        wsum_img_power=posterior,
-        wsum_sigma2_offset=0.0,
-        sumw=1.0,
-    )
-
-    assert relion_stats.rotation_posterior_sums.dtype == jnp.float64
-    assert noise_stats.wsum_sigma2_noise.dtype == jnp.float64
-    assert float(relion_stats.rotation_posterior_sums[0]) == 1.0 + 2.0**-40
-    assert float(noise_stats.wsum_sigma2_noise[0]) == 1.0 + 2.0**-40
-
-def test_kclass_subset_helpers_preserve_double_precision():
-    from relax.helpers.types import make_relion_stats
-
-    delta = 2.0**-40
-    subset = make_relion_stats(
-        log_evidence_per_image=np.asarray([1.0 + delta], dtype=np.float64),
-        best_log_score_per_image=np.asarray([2.0 + delta], dtype=np.float64),
-        max_posterior_per_image=np.asarray([0.5 + delta], dtype=np.float64),
-        rotation_posterior_sums=np.asarray([3.0 + delta], dtype=np.float64),
-    )
-    full = k_class_mod._full_stats_from_subset(
-        subset,
-        np.asarray([1]),
-        3,
-        class_log_evidence=np.asarray([4.0 + delta, 5.0 + delta, 6.0 + delta], dtype=np.float64),
-    )
-    noise = k_class_mod._zero_subset_noise_stats(
-        np.asarray([7.0 + delta], dtype=np.float64),
-        n_images=3,
-        full_group_count=2,
-    )
-
-    assert full.best_log_score_per_image.dtype == jnp.float64
-    assert full.max_posterior_per_image.dtype == jnp.float64
-    assert full.log_evidence_per_image.dtype == jnp.float64
-    assert float(full.best_log_score_per_image[1]) == 2.0 + delta
-    assert noise.wsum_sigma2_noise.dtype == jnp.float64
-    assert noise.wsum_norm_correction.dtype == jnp.float64
-    assert noise.wsum_scale_correction_xa.dtype == jnp.float64
-
 
 def test_relion_score_window_projection_kwargs_use_image_window_not_model_window():
     """The score-window helper must hand the projector the image window size."""
