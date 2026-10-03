@@ -207,15 +207,16 @@ def refuse_unsupported_tilt_optics(particles_star):
 
     relion_refine applies CTF premultiplication, odd and even aberrations and anisotropic
     magnification to every tilt image; the per-tilt STAR relax reads carries none of them, so a
-    particle STAR that uses one fails instead of being trained on silently wrong images (the
-    subtomogram Refine3D/Class3D guard, :data:`relax.relion.relion_metadata.TOMO_OPTICS_FEATURES`).
+    particle STAR that uses one fails instead of being trained on silently wrong images
+    (:data:`relax.relion.relion_metadata.TOMO_PPCA_OPTICS_FEATURES`; subtomogram Refine3D/Class3D
+    have their own set, ``TOMO_OPTICS_FEATURES``).
     """
     from recovar.data_io.starfile import read_star
 
-    from relax.relion.relion_metadata import TOMO_OPTICS_FEATURES, refuse_unsupported_optics
+    from relax.relion.relion_metadata import TOMO_PPCA_OPTICS_FEATURES, refuse_unsupported_optics
 
     _, optics = read_star(str(particles_star))
-    refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_OPTICS_FEATURES)
+    refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
 
 
 def load_tilt_training(ios, output):

@@ -565,9 +565,11 @@ INITIAL_MODEL_OPTICS_FEATURES = IMPLEMENTED_OPTICS_FEATURES - {"magnification"}
 # Subtomogram particles (RELION 5 2D stacks), Refine3D/Class3D: relion_refine applies all four features to
 # every tilt image; each joins here once its per-tilt path matches RELION. Until then a subtomogram job refuses
 # it instead of ignoring it (the per-tilt STAR relax reads carries none of these columns).
-TOMO_OPTICS_FEATURES = frozenset()
+TOMO_OPTICS_FEATURES = frozenset({"ctf_premultiplied"})
 # Subtomogram InitialModel (VDAM): the same rule for its tomo E-step, bootstrap and expected accuracy.
-TOMO_INITIAL_MODEL_OPTICS_FEATURES = frozenset()
+TOMO_INITIAL_MODEL_OPTICS_FEATURES = frozenset({"ctf_premultiplied"})
+# Subtomogram PPCA InitialModel: its tilt reader applies none of the four features, so it refuses each of them.
+TOMO_PPCA_OPTICS_FEATURES = frozenset()
 
 
 def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:
