@@ -3516,7 +3516,7 @@ def _resident_pass2(
     union_cache = None
     if not stream_projections and union_indices is not None:
         union_cache = _allocate_projection_cache_blocks(
-            n_classes * int(n_fine_rot), int(union_indices.shape[0]), precision_policy.score_complex_dtype
+            n_classes * cache_rows_per_class, int(union_indices.shape[0]), precision_policy.score_complex_dtype
         )
         if union_cache is None:
             logger.info(
