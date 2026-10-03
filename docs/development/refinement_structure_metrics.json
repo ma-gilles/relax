@@ -65,7 +65,7 @@
           "function_count": 15,
           "nonblank_noncomment_lines": 333,
           "path": "relax/refinement/iteration_snapshot.py",
-          "physical_lines": 399
+          "physical_lines": 400
         },
         {
           "function_count": 2,
@@ -104,10 +104,10 @@
           "physical_lines": 397
         },
         {
-          "function_count": 39,
-          "nonblank_noncomment_lines": 871,
+          "function_count": 43,
+          "nonblank_noncomment_lines": 903,
           "path": "relax/refinement/run_files.py",
-          "physical_lines": 1025
+          "physical_lines": 1072
         },
         {
           "function_count": 23,
@@ -285,12 +285,12 @@
       },
       "totals": {
         "file_count": 17,
-        "function_count": 327,
+        "function_count": 331,
         "large_argument_function_count": 11,
         "maximum_function_line_span": 5578,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 19011,
-        "physical_lines": 21570,
+        "nonblank_noncomment_lines": 19043,
+        "physical_lines": 21618,
         "very_large_argument_function_count": 2
       }
     }
