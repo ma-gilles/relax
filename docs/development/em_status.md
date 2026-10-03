@@ -88,9 +88,15 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   subset, map one-step difference 0.5-4e-3 of a 4-20e-2 step), so it is trajectory divergence, not a per-step
   difference (RELION's own `--continue` at it050 departs from its run: tau2_fudge 4.0, step size 0.3).
   Inside or above at two of three seeds in each case. OPEN: et09 one-group s2 (both relax runs 1-3e-5
-  below) and et15 s2 (8e-5 below; relax repeats running, benchw). Evidence:
+  below) and et15 s2 (relax 0.98203 / 0.98205 / 0.98209 vs RELION [0.98211, 0.98212]), pending one more
+  stock RELION run at each (job 14914672). A replay audit of both seeds found no per-step defect: one
+  iteration from RELION's checkpoints (it010, 100, 190; RELION's sampling perturbation) has RELION's
+  update scale (per-shell projection 0.993-1.001), tau2 equal at RELION's print precision, populations
+  to 1e-6 and best poses for 99.6-100% of the subset; a float64 M-step changes the step by 3e-7. The
+  remaining one-step difference comes from the E-step (per-particle Pmax 1e-6 to 1e-3, noise sums 1e-5
+  to 5e-4, no sign), against final-map gaps of 2-8e-5 and seed-to-seed spreads of about 2e-3. Evidence:
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_vdam_ogtomo_20261002`,
-  `em_work/cryoet_vdam_20261001/tomo_cont`.
+  `em_work/cryoet_vdam_20261001/{tomo_cont,audit}`.
 - With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
   particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
   fixtures keeps classes 2..K empty in both programs (ma-gilles/relax#11). With one optics group
