@@ -7,6 +7,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -14,6 +15,19 @@ logger = logging.getLogger(__name__)
 
 OPERAND_PRECISION_CHECK_ENV = "RELAX_EM_OPERAND_PRECISION_CHECK"
 _REPORTED_PRECISION_VIOLATIONS: set[tuple[str, tuple[str, ...]]] = set()
+
+
+def use_float32_matmuls() -> None:
+    """Run float32 and complex64 matmuls in float32 for the rest of the process.
+
+    JAX's default matmul precision lets XLA use TF32 tensor cores on A100/H100 (about 3e-4 relative
+    error, against 4e-7 in float32), while P100 runs float32. RELION computes in float32. Every
+    relax EM matmul passes ``precision=HIGHEST`` (tests/unit/test_matmul_precision_lint.py); this
+    default is the EM commands' backstop for ``@`` products and calls the lint cannot see. PPCA
+    chooses its precision per call, which overrides this default.
+    """
+
+    jax.config.update("jax_default_matmul_precision", "highest")
 
 
 def operand_precision_check_mode() -> str:

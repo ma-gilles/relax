@@ -17,6 +17,7 @@ from typing import Sequence
 # RECOVAR_EM_XLA_DEFAULTS=0 in the environment still wins.
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
+from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.helpers.particle_io import add_particle_read_arguments
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.native_options import InitialModelDefaults
@@ -579,6 +580,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _assert_expected_repo_imports()
+    use_float32_matmuls()
     parser = make_parser()
     args = parser.parse_args(argv)
     if args.nr_mpi > 1:

@@ -47,6 +47,7 @@ from relax.diagnostics.state_swap_probe import (
 )
 from relax.helpers import iteration_history
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.refinement import command_options, particle_loading, startup_noise
 from relax.refinement.noise_updates import noise_pixel_rows
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
@@ -503,6 +504,7 @@ def main(command=None):
 
     # This module imports JAX before recovar, so recovar's cache environment must be applied to the live config.
     cache_directory = activate_recovar_compilation_cache()
+    use_float32_matmuls()
     _assert_expected_repo_imports()
     args = command_options.parse_refinement_args()
     if command is not None:

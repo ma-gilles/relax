@@ -28,8 +28,8 @@
       },
       "totals": {
         "file_count": 27,
-        "physical_lines": 21543,
-        "nonblank_noncomment_lines": 18855,
+        "physical_lines": 21545,
+        "nonblank_noncomment_lines": 18857,
         "function_count": 365,
         "large_argument_function_count": 26,
         "very_large_argument_function_count": 4,
@@ -87,8 +87,8 @@
         },
         {
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 2311,
-          "nonblank_noncomment_lines": 2034,
+          "physical_lines": 2313,
+          "nonblank_noncomment_lines": 2036,
           "function_count": 23
         },
         {
@@ -394,10 +394,10 @@
         },
         {
           "path": "relax/refinement/full_refinement.py",
-          "line": 501,
+          "line": 502,
           "name": "main",
           "parameter_count": 1,
-          "line_span": 1766
+          "line_span": 1767
         },
         {
           "path": "relax/refinement/finalization.py",
