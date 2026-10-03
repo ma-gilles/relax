@@ -1536,9 +1536,9 @@ def reconstruct_numbered_class_maps(
     Accumulators and priors have a leading class axis; priors contain shell
     curves when tau_is_1d is true, otherwise full volumes. All class solves
     finish before premask capture, initial filtering and solvent flattening.
-    Return the established two particle-execution slots: they alias the shared
-    stack unless postprocessing replaces them. Postprocess both slots in order
-    to preserve execution and capture behavior; they are not scientific halves.
+    Return a two-entry list of particle-execution slots, not scientific
+    halves. Each slot is captured, filtered and flattened in turn; the entries
+    alias the shared stack when neither filtering nor flattening applies.
     """
     shared_classes = _reconstruct_class_maps(
         combined_numerators, combined_denominators, tau_by_class, settings,

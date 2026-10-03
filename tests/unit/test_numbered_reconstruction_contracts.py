@@ -4,8 +4,8 @@
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from helpers.float_compare import assert_matches
+
 from relax.diagnostics import reconstruction as reconstruction_diagnostics
 from relax.refinement import mean_helpers
 
@@ -15,16 +15,22 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("n_classes", [1, 4], ids=["half-maps", "class-stack"])
 @pytest.mark.parametrize("tau_is_1d", [False, True], ids=["volume-prior", "shell-prior"])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
-@pytest.mark.parametrize("postprocess", [False, True], ids=["unmodified", "first-cc-solvent"])
+@pytest.mark.parametrize(
+    ("first_cc", "flatten_solvent"),
+    [(False, False), (True, True), (False, True), (True, False)],
+    ids=["unmodified", "first-cc-solvent", "solvent-only", "first-cc-only"],
+)
 def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
-    monkeypatch, n_classes, tau_is_1d, dtype, postprocess,
+    monkeypatch, n_classes, tau_is_1d, dtype, first_cc, flatten_solvent,
 ):
+    # The low-pass resolution is a run setting; after iteration 1 it stays set
+    # and only the per-iteration first-CC flag turns the filter off.
     settings = mean_helpers.ReconstructionSettings(
         grid_size=2, voxel_size=np.float32(1.3), volume_shape=(2, 2, 2),
         padding_factor=2, projection_padding_factor=1, minres_map=0,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1,
-        particle_diameter_angstrom=np.float32(3.7) if postprocess else None,
-        first_iteration_lowpass_angstrom=20 if postprocess else None,
+        particle_diameter_angstrom=np.float32(3.7) if flatten_solvent else None,
+        first_iteration_lowpass_angstrom=20 if first_cc or flatten_solvent else None,
     )
     count = 2 if n_classes == 1 else n_classes
     numerators = [np.full(8, k + 1, dtype=np.complex64) for k in range(count)]
@@ -87,26 +93,27 @@ def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
     monkeypatch.setattr(mean_helpers.fourier_transform_utils, "get_idft3", lambda value: events.append("ifft") or value)
     monkeypatch.setattr(mean_helpers.fourier_transform_utils, "get_dft3", lambda value: events.append("fft") or value)
     common = dict(iteration=0, current_size=2, accumulator_volume_shape=(4, 4, 4),
-                  tau_is_1d=tau_is_1d, relion_firstiter_cc_this_iter=postprocess)
+                  tau_is_1d=tau_is_1d, relion_firstiter_cc_this_iter=first_cc)
     if n_classes == 1:
         result = mean_helpers.reconstruct_numbered_k1_halfmaps(
             numerators, denominators, priors, settings, retained_first_numerator=retained, **common,
         )
-        slot_events = ["capture", "filter", "mask", "flatten"] if postprocess else ["capture"]
+        slot_events = ["capture"] + ["filter"] * first_cc + ["mask", "flatten"] * flatten_solvent
         expected = numerators
     else:
         result = mean_helpers.reconstruct_numbered_class_maps(
             numerators, denominators, priors, settings, n_classes=n_classes, **common,
         )
-        slot_events = (["capture"] + ["filter"] * n_classes + ["mask"] + ["ifft", "fft"] * n_classes
-                       if postprocess else ["capture"])
+        slot_events = (["capture"] + ["filter"] * n_classes * first_cc
+                       + (["mask"] + ["ifft", "fft"] * n_classes) * flatten_solvent)
         expected = [np.stack(numerators)] * 2
         assert captures[0] is captures[1]
-        assert (result[0] is result[1]) is (not postprocess)
+        assert (result[0] is result[1]) is (not (first_cc or flatten_solvent))
     assert events == ["solve"] * count + slot_events * 2
     for value, original in zip(result, expected, strict=True):
-        assert_matches(np.asarray(value), np.asarray(original) * (2 if postprocess else 1))
-    if postprocess:
+        assert_matches(np.asarray(value), np.asarray(original) * (2 if first_cc else 1))
+    assert len(masks) == (2 if flatten_solvent else 0)
+    if flatten_solvent:
         radius = (float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
                   if n_classes == 1 else settings.particle_diameter_angstrom / (2.0 * settings.voxel_size))
         for kwargs in masks:

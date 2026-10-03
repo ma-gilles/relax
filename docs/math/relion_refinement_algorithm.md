@@ -647,11 +647,12 @@ owns packed-half conventions, the Hermitian `x=0` plane and conversions to
 public layouts. Do not assume all accumulators have the full native volume
 shape: padding and current-size backprojector grids change their dimensions.
 
-[`mean_helpers.py`](../../relax/refinement/mean_helpers.py) owns the K1 and class
-reconstruction operations, their unregularized counterparts,
-`align_k1_volume_signs` and `reconstruct_regularized_means`.
-The latter owns private ordered solves, premask capture, first-CC reference
-filtering and solvent flattening before explicit map installation.
+[`mean_helpers.py`](../../relax/refinement/mean_helpers.py) owns the numbered K1
+and class reconstruction operations (`reconstruct_numbered_k1_halfmaps` and
+`reconstruct_numbered_class_maps`), their unregularized counterparts and
+`align_k1_volume_signs`. Each numbered operation owns its private ordered solves,
+premask capture, first-CC reference filtering and solvent flattening before
+explicit map installation.
 `taper_first_cc_k1_prior` and `taper_first_cc_class_prior` own later reporting
 adaptation; Class3D curve/history/scheduling publication still precedes its
 shell/detail taper in the controller. Unused implementation scratch may expire

@@ -117,7 +117,7 @@ second source of model state.
 | Finding | Current evidence | Remaining uncertainty |
 | --- | --- | --- |
 | Model slots have different scientific meanings | `ReferenceModel`, `initialize_reference_model`, `reference_model_from_snapshot`: class restoration aliases map slot 1 to slot 0 | Trace every restart/publication consumer before changing representation |
-| Generic reconstruction reselects the mode | `reconstruct_regularized_means`: solve, filter, scalar mask arithmetic and flatten branches | Preserve class postprocessing through both slots; deduplication changes execution |
+| Generic reconstruction reselects the mode | At `932c72d`, `reconstruct_regularized_means`: solve, filter, scalar mask arithmetic and flatten branches. Since replaced by `reconstruct_numbered_k1_halfmaps` and `reconstruct_numbered_class_maps`, which hold no mode test | Preserve class postprocessing through both slots; deduplication changes execution |
 | Accumulator collectors retain arrays | `PerHalfOutputs.update_from` stores `Ft_y` and `Ft_ctf` references | Full reference graph and measured GPU/host memory impact remain to establish |
 | Final tomography capture depends on SPA-only preparation | `run_final_all_data`: `final_inputs` assigned in SPA arm and used by common intermediate manifest | Static defect candidate; establish reachable admission and reproduce before a separate fix |
 | Scientific configuration has misleading ownership | `EngineDebugOptions.expected_accuracy`, historical fields in `DenseVariantPolicy` | Trace producers, defaults, precedence and direct programmatic callers |
@@ -172,12 +172,22 @@ passes is an open capability question, not settled by native fixed-iteration use
 
 ### First package: reconstruction mode ownership
 
-Current evidence: `iteration_loop.py` selects K1 versus Class3D operands before
-calling `mean_helpers.reconstruct_regularized_means`. That operation dispatches
-again for the solve, first-CC filtering, solvent-mask scalar arithmetic, dtype
-selection and flattening. Its `numerators`, `denominators` and `tau` arguments
-have different axis meanings by mode. A maintainer must inspect both layers to
-know the contract. The test builder repeats the same adaptation.
+Evidence when this package was planned (`932c72d`): `iteration_loop.py` selected
+K1 versus Class3D operands before calling
+`mean_helpers.reconstruct_regularized_means`. That operation dispatched again for
+the solve, first-CC filtering, solvent-mask scalar arithmetic, dtype selection
+and flattening. Its `numerators`, `denominators` and `tau` arguments had
+different axis meanings by mode. A maintainer had to inspect both layers to know
+the contract.
+
+Current code: step 2 is implemented. `reconstruct_numbered_k1_halfmaps` and
+`reconstruct_numbered_class_maps` replace that function, each with accumulators
+of one layout, and the controller dispatches once at this boundary. The two
+operations repeat the capture, filter and flatten sequence, both still take
+`tau_is_1d` with its full-volume prior route, and the test builder
+`run_mean_reconstruction` still accepts both modes' operands and repeats the
+controller's dispatch. Steps 1 and 4 are not done, and the step 6 review with the
+user has not taken place.
 
 1. Inventory each reconstruction choice with its producer and consumers:
    split-half versus combined classes; prior volume versus shell curves;
@@ -323,7 +333,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2760/1766 for numerical/command controllers;
+Source spans are 2758/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main

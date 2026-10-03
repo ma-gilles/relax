@@ -68,7 +68,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2760/1766 for numerical/command controllers;
+Source spans are 2758/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main
@@ -86,7 +86,7 @@ is verified. Existing comments, frozen candidates, controls and jobs are preserv
 | Expectation/accumulation | `expectation`, `half_scoring`, dense/local/tomo engines | Half-specific operands, serial/overlap mode, ordered result installation and memory boundary |
 | Prejoin diagnostics and accumulator adaptation | `diagnostics.reconstruction`, `mean_helpers` | Audit before combine/join; K1 low-frequency join and previous-map snapshot/release |
 | Prior estimation | `mean_helpers.estimate_class_priors` / `estimate_split_half_prior` | Class history/scheduling before detail stacking; explicit shared/per-half tau2 updates |
-| Regularized reconstruction and postprocessing | `mean_helpers.reconstruct_regularized_means` | Mode-specific accumulator/prior selection, old-map clear, ready-map installation and retained numerator release |
+| Regularized reconstruction and postprocessing | `mean_helpers.reconstruct_numbered_k1_halfmaps` / `reconstruct_numbered_class_maps` | One K1/Class3D dispatch with mode-specific accumulators and priors, old-map clear, ready-map installation and retained numerator release |
 | First-CC reporting taper | `mean_helpers` plus existing curve taper | Untapered reconstruction first; K1 tau2 publication or Class3D curve/history/scheduling before shell/detail taper; host staging afterwards |
 | Posterior/direction, noise and correction updates | Existing prior/noise/normalization owners | Single-reference copying, explicit half/model state and follower-before-report order |
 | Resolution, convergence and output capture | Resolution/convergence/history/snapshot/diagnostic owners | Observed versus scheduling resolution, live replay controls, completed-state capture/checkpoint order |
@@ -104,7 +104,7 @@ GPU pass, dtype default, host/device transfer, formula or numerical fallback is
 introduced by this final source package.
 
 `ClassPriorAggregation` contains only consumed variance/shell/curve/detail/source
-products. Detail aggregation remains after curve publication. The regularized
+products. Detail aggregation remains after curve publication. Each regularized
 operation returns ready maps; no diagnostic consumes `ReferenceModel` while local
 maps are being postprocessed. E-step workers have already joined. Required K1
 solve donation/completion and final merged→half1→half2 consuming order remain.
@@ -115,13 +115,14 @@ not a claim of measured memory or speed improvement.
 
 A maintainer changing class prior-source admission can inspect the producer and
 prior owner without opening command I/O, score engines or noise updates. A mask or
-filter change needs the reconstruction settings and complete map operation. A
+filter change needs the reconstruction settings and both numbered map operations,
+which each carry their own capture, filter and flatten sequence. A
 half-order change needs the particle-table producer and input operation. Changes
 to scientific phase order still require the controller and these exact operands.
 
 ### Actual numbered prior, map and reporting flow
 
-[relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1991):
+[relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1992):
 
 ```python
         if k_class_enabled:
@@ -236,37 +237,35 @@ to scientific phase order still require the controller and these exact operands.
         # --- Now reconstruct the regularized means ---
         _t_recon = time.time()
         if k_class_enabled:
-            reconstruction_numerators = Ft_y_combined
-            reconstruction_denominators = Ft_ctf_combined
-            reconstruction_tau = (
+            reference_model.maps[:] = reconstruct_numbered_class_maps(
+                Ft_y_combined,
+                Ft_ctf_combined,
                 mean_signal_variance_shells
                 if mean_signal_variance_shells is not None
-                else mean_signal_variance
+                else mean_signal_variance,
+                reconstruction_settings,
+                n_classes=n_classes,
+                iteration=iteration,
+                current_size=current_size,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                tau_is_1d=mean_signal_variance_shells is not None,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
             )
-            reconstruction_tau_is_1d = mean_signal_variance_shells is not None
         else:
-            reconstruction_numerators = (Ft_y_0, Ft_y_1)
-            reconstruction_denominators = (Ft_ctf_0, Ft_ctf_1)
-            reconstruction_tau = (
+            reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
                 mean_signal_variance_shells_per_half
                 if mean_signal_variance_shells_per_half is not None
-                else mean_signal_variance_per_half
+                else mean_signal_variance_per_half,
+                reconstruction_settings,
+                iteration=iteration,
+                current_size=current_size,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                tau_is_1d=mean_signal_variance_shells_per_half is not None,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                retained_first_numerator=retained_Ft_y_0_device,
             )
-            reconstruction_tau_is_1d = mean_signal_variance_shells_per_half is not None
-        reference_model.maps[:] = reconstruct_regularized_means(
-            reconstruction_numerators,
-            reconstruction_denominators,
-            reconstruction_tau,
-            reconstruction_settings,
-            n_classes=n_classes,
-            iteration=iteration,
-            current_size=current_size,
-            accumulator_volume_shape=mstep_accumulator_shape,
-            tau_is_1d=reconstruction_tau_is_1d,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-            retained_first_numerator=retained_Ft_y_0_device,
-        )
-        del reconstruction_numerators, reconstruction_denominators, reconstruction_tau
         logger.info(
             "Regularized reconstruction (2 halves + flatten): %.1fs",
             time.time() - _t_recon,
@@ -652,10 +651,91 @@ def _reconstruct_class_maps(
 [relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1443):
 
 ```python
-def reconstruct_regularized_means(
-    numerators,
-    denominators,
-    tau,
+def reconstruct_numbered_k1_halfmaps(
+    numerators_by_half,
+    denominators_by_half,
+    tau_by_half,
+    settings: ReconstructionSettings,
+    *,
+    iteration,
+    current_size,
+    accumulator_volume_shape,
+    tau_is_1d,
+    relion_firstiter_cc_this_iter,
+    retained_first_numerator=None,
+) -> list:
+    """Solve two independent numbered K1 maps, then postprocess each half.
+
+    Numerators, denominators and priors are ordered half pairs. Priors are
+    shell curves when tau_is_1d is true, otherwise full volumes. The private
+    solve frame owns promoted priors, host completion and the retained half-0
+    numerator boundary. Both solves finish before premask capture, initial
+    filtering and solvent flattening. Return ready maps for installation.
+    """
+    means = _reconstruct_k1_maps(
+        numerators_by_half, denominators_by_half, tau_by_half, settings,
+        current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
+        tau_is_1d=tau_is_1d, retained_first_numerator=retained_first_numerator,
+    )
+
+    for k in range(2):
+        # Diagnostic: dump pre-mask Wiener output when env var set.
+        _premask_dump = os.environ.get("RELAX_PREMASK_DUMP_DIR")
+        if _premask_dump:
+            from relax.diagnostics.reconstruction import write_premask_mean
+
+            write_premask_mean(
+                means[k], output_dir=_premask_dump, half_index=k, iteration=iteration,
+                current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
+                volume_shape=settings.volume_shape, n_classes=1,
+            )
+
+        # RELION filters Iref inside maximizationOtherParameters, then calls
+        # solventFlatten from the outer iteration loop.  These operations do
+        # not commute: masking in real space after the Fourier low-pass adds a
+        # small, deterministic high-shell tail.
+        if relion_firstiter_cc_this_iter:
+            means[k] = _apply_relion_initial_lowpass_filter(
+                means[k],
+                settings.volume_shape,
+                settings.voxel_size,
+                settings.first_iteration_lowpass_angstrom,
+                filter_edgewidth=settings.fmask_edge,
+            )
+        if (
+            settings.particle_diameter_angstrom is not None
+            and settings.particle_diameter_angstrom > 0
+        ):
+            flatten_radius = (
+                float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
+            )
+            solvent_mask = _make_relion_solvent_mask(
+                settings.volume_shape,
+                radius=flatten_radius,
+                radius_p=flatten_radius + settings.width_mask_edge,
+                offset=jnp.zeros(3),
+                dtype=means[k].real.dtype,
+            )
+            means[k] = _apply_relion_solvent_flatten_k1(
+                means[k], solvent_mask, settings.volume_shape, half_index=k,
+            )
+            if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
+                solvent_mask = None
+    if relion_firstiter_cc_this_iter and settings.first_iteration_lowpass_angstrom is not None:
+        logger.info(
+            "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
+            float(settings.first_iteration_lowpass_angstrom),
+        )
+    return means
+```
+
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1521):
+
+```python
+def reconstruct_numbered_class_maps(
+    combined_numerators,
+    combined_denominators,
+    tau_by_class,
     settings: ReconstructionSettings,
     *,
     n_classes,
@@ -664,29 +744,23 @@ def reconstruct_regularized_means(
     accumulator_volume_shape,
     tau_is_1d,
     relion_firstiter_cc_this_iter,
-    retained_first_numerator=None,
 ) -> list:
-    """Solve and postprocess the numbered K1 halves or shared Class3D maps.
+    """Solve one numbered Class3D reference stack from combined partitions.
 
-    K1 operands have two half entries; Class3D operands have a leading class
-    axis and combine both native halves. Preserve each solve's own precision,
-    completion/donation boundaries and the capture -> initial filter -> solvent
-    mask order. Returned maps are ready for explicit controller installation.
+    Accumulators and priors have a leading class axis; priors contain shell
+    curves when tau_is_1d is true, otherwise full volumes. All class solves
+    finish before premask capture, initial filtering and solvent flattening.
+    Return a two-entry list of particle-execution slots, not scientific
+    halves. Each slot is captured, filtered and flattened in turn; the entries
+    alias the shared stack when neither filtering nor flattening applies.
     """
-    if n_classes > 1:
-        shared_classes = _reconstruct_class_maps(
-            numerators, denominators, tau, settings,
-            n_classes=n_classes, iteration=iteration, current_size=current_size,
-            accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
-        )
-        means = [shared_classes, shared_classes]
-        del shared_classes
-    else:
-        means = _reconstruct_k1_maps(
-            numerators, denominators, tau, settings,
-            current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=tau_is_1d, retained_first_numerator=retained_first_numerator,
-        )
+    shared_classes = _reconstruct_class_maps(
+        combined_numerators, combined_denominators, tau_by_class, settings,
+        n_classes=n_classes, iteration=iteration, current_size=current_size,
+        accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
+    )
+    means = [shared_classes, shared_classes]
+    del shared_classes
 
     for k in range(2):
         # Diagnostic: dump pre-mask Wiener output when env var set.
@@ -705,59 +779,40 @@ def reconstruct_regularized_means(
         # not commute: masking in real space after the Fourier low-pass adds a
         # small, deterministic high-shell tail.
         if relion_firstiter_cc_this_iter:
-            if n_classes > 1:
-                means[k] = jnp.stack(
-                    [
-                        _apply_relion_initial_lowpass_filter(
-                            means[k][class_idx],
-                            settings.volume_shape,
-                            settings.voxel_size,
-                            settings.first_iteration_lowpass_angstrom,
-                            filter_edgewidth=settings.fmask_edge,
-                        )
-                        for class_idx in range(n_classes)
-                    ],
-                    axis=0,
-                )
-            else:
-                means[k] = _apply_relion_initial_lowpass_filter(
-                    means[k],
-                    settings.volume_shape,
-                    settings.voxel_size,
-                    settings.first_iteration_lowpass_angstrom,
-                    filter_edgewidth=settings.fmask_edge,
-                )
+            means[k] = jnp.stack(
+                [
+                    _apply_relion_initial_lowpass_filter(
+                        means[k][class_idx],
+                        settings.volume_shape,
+                        settings.voxel_size,
+                        settings.first_iteration_lowpass_angstrom,
+                        filter_edgewidth=settings.fmask_edge,
+                    )
+                    for class_idx in range(n_classes)
+                ],
+                axis=0,
+            )
         if (
             settings.particle_diameter_angstrom is not None
             and settings.particle_diameter_angstrom > 0
         ):
-            flatten_radius = (
-                float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
-                if n_classes == 1 else settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
-            )
+            flatten_radius = settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
             solvent_mask = _make_relion_solvent_mask(
                 settings.volume_shape,
                 radius=flatten_radius,
                 radius_p=flatten_radius + settings.width_mask_edge,
                 offset=jnp.zeros(3),
-                dtype=(means[k].real.dtype if n_classes <= 1 else means[k][0].real.dtype),
+                dtype=means[k][0].real.dtype,
             )
-            if n_classes > 1:
-                flattened_classes = []
-                for class_idx in range(n_classes):
-                    vol_real = fourier_transform_utils.get_idft3(
-                        means[k][class_idx].reshape(settings.volume_shape)
-                    )
-                    flattened_classes.append(
-                        fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
-                    )
-                means[k] = jnp.stack(flattened_classes, axis=0)
-            else:
-                means[k] = _apply_relion_solvent_flatten_k1(
-                    means[k], solvent_mask, settings.volume_shape, half_index=k,
+            flattened_classes = []
+            for class_idx in range(n_classes):
+                vol_real = fourier_transform_utils.get_idft3(
+                    means[k][class_idx].reshape(settings.volume_shape)
                 )
-                if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
-                    solvent_mask = None
+                flattened_classes.append(
+                    fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
+                )
+            means[k] = jnp.stack(flattened_classes, axis=0)
     if relion_firstiter_cc_this_iter and settings.first_iteration_lowpass_angstrom is not None:
         logger.info(
             "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
@@ -766,7 +821,7 @@ def reconstruct_regularized_means(
     return means
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1558):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1611):
 
 ```python
 class K1ReportingPrior:
@@ -777,7 +832,7 @@ class K1ReportingPrior:
     details_per_half: list[dict]
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1566):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1619):
 
 ```python
 def taper_first_cc_k1_prior(
@@ -830,7 +885,7 @@ def taper_first_cc_k1_prior(
     return K1ReportingPrior(variance, variance_per_half, details_per_half)
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1617):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1670):
 
 ```python
 class ClassReportingPrior:
@@ -840,7 +895,7 @@ class ClassReportingPrior:
     details: dict
 ```
 
-[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1624):
+[relax/refinement/mean_helpers.py](../../relax/refinement/mean_helpers.py) (line 1677):
 
 ```python
 def taper_first_cc_class_prior(
@@ -1164,9 +1219,11 @@ with numerical operations in [final_reconstruction.py](../../relax/refinement/fi
 The [complete policy/lifetime and consumer audit](/scratch/gpfs/GILLES/mg6942/tmp/relax_finish_milestone_20261002/finalization_review/REVIEW.md)
 explains the distinct numbered/final/VDAM semantics and shared primitives.
 `reconstruct_k1_means`, `reconstruct_class_means` and
-`postprocess_reconstructed_means` are retired. The test adapter now exercises the
-same complete operation; source/lifetime guards and first-CC injection follow the
-actual owner. No baseline, scientific tolerance or independent reference changes.
+`postprocess_reconstructed_means` are retired, as is the single
+`reconstruct_regularized_means` that replaced them. The controller calls
+`reconstruct_numbered_k1_halfmaps` or `reconstruct_numbered_class_maps`, and the
+test adapter dispatches to the same two operations; source/lifetime guards and
+first-CC injection follow the actual owner. No baseline, scientific tolerance or independent reference changes.
 
 <a id="shared-candidate-chunk-layout"></a>
 
