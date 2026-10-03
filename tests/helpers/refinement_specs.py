@@ -65,20 +65,26 @@ def run_mean_reconstruction(means, **values):
         first_iteration_lowpass_angstrom=relion_firstiter_ini_high_angstrom,
     )
     if n_classes > 1:
-        numerators, denominators = Ft_y_combined, Ft_ctf_combined
-        tau = mean_signal_variance_shells if mean_signal_variance_shells is not None else mean_signal_variance
-        tau_is_1d = mean_signal_variance_shells is not None
+        means[:] = mean_helpers.reconstruct_numbered_class_maps(
+            Ft_y_combined, Ft_ctf_combined,
+            mean_signal_variance_shells if mean_signal_variance_shells is not None else mean_signal_variance,
+            settings,
+            n_classes=n_classes, iteration=iteration, current_size=current_size,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=mean_signal_variance_shells is not None,
+            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+        )
     else:
-        numerators, denominators = Ft_y_by_half, Ft_ctf_by_half
-        tau = mean_signal_variance_shells_per_half if mean_signal_variance_shells_per_half is not None else mean_signal_variance_per_half
-        tau_is_1d = mean_signal_variance_shells_per_half is not None
-    means[:] = mean_helpers.reconstruct_regularized_means(
-        numerators, denominators, tau, settings,
-        n_classes=n_classes, iteration=iteration, current_size=current_size,
-        accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
-        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-        retained_first_numerator=retained_first_numerator,
-    )
+        means[:] = mean_helpers.reconstruct_numbered_k1_halfmaps(
+            Ft_y_by_half, Ft_ctf_by_half,
+            mean_signal_variance_shells_per_half if mean_signal_variance_shells_per_half is not None else mean_signal_variance_per_half,
+            settings,
+            iteration=iteration, current_size=current_size,
+            accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=mean_signal_variance_shells_per_half is not None,
+            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+            retained_first_numerator=retained_first_numerator,
+        )
     assert not values, f"unmapped mean reconstruction values: {sorted(values)}"
 
 

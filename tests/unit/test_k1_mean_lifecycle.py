@@ -42,7 +42,7 @@ def test_k1_mean_release_precedes_tau_and_reconstruction():
         release,
     )
     reconstruction = source.index(
-        "reconstruct_regularized_means(",
+        "reconstruct_numbered_k1_halfmaps(",
         tau_update,
     )
 

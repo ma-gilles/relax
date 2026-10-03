@@ -23,10 +23,15 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     from relax.refinement import iteration_loop as iteration_loop_module
     from relax.refinement import mean_helpers as mean_helpers_module
 
-    assert tuple(inspect.signature(mean_helpers_module.reconstruct_regularized_means).parameters) == (
-        "numerators", "denominators", "tau", "settings", "n_classes", "iteration",
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_k1_halfmaps).parameters) == (
+        "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "iteration",
         "current_size", "accumulator_volume_shape", "tau_is_1d",
         "relion_firstiter_cc_this_iter", "retained_first_numerator",
+    )
+    assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_class_maps).parameters) == (
+        "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
+        "iteration", "current_size", "accumulator_volume_shape", "tau_is_1d",
+        "relion_firstiter_cc_this_iter",
     )
     assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
         "grid_size", "voxel_size", "volume_shape", "padding_factor",
@@ -42,15 +47,19 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     source = inspect.getsource(iteration_loop_module.refine_single_volume)
     settings = source.index("reconstruction_settings = ReconstructionSettings(")
     loop = source.index("while (schedule.force_max_iter_after_convergence")
-    reconstruction = source.index("reconstruct_regularized_means(", loop)
-    operation = inspect.getsource(mean_helpers_module.reconstruct_regularized_means)
-    solve = operation.index("_reconstruct_k1_maps(")
-    premask = operation.index("write_premask_mean(")
-    initial_filter = operation.index("_apply_relion_initial_lowpass_filter(", premask)
-    flatten = operation.index("_make_relion_solvent_mask(", initial_filter)
-    assert solve < premask < initial_filter < flatten
+    for operation_name, solve_name in (
+        ("reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps"),
+        ("reconstruct_numbered_class_maps", "_reconstruct_class_maps"),
+    ):
+        reconstruction = source.index(operation_name + "(", loop)
+        operation = inspect.getsource(getattr(mean_helpers_module, operation_name))
+        solve = operation.index(solve_name + "(")
+        premask = operation.index("write_premask_mean(")
+        initial_filter = operation.index("_apply_relion_initial_lowpass_filter(", premask)
+        flatten = operation.index("_make_relion_solvent_mask(", initial_filter)
+        assert solve < premask < initial_filter < flatten
+        assert settings < loop < reconstruction
     assert source.count("ReconstructionSettings(") == 1
-    assert settings < loop < reconstruction
 
 
 def test_unregularized_reconstruction_variants_expose_dependencies():

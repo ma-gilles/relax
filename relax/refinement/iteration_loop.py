@@ -167,7 +167,8 @@ from relax.refinement.mean_helpers import (
     estimate_split_half_prior,
     initialize_reference_model,
     join_half_accumulators_at_low_resolution,
-    reconstruct_regularized_means,
+    reconstruct_numbered_k1_halfmaps,
+    reconstruct_numbered_class_maps,
     reconstruct_unregularized_class_means,
     reconstruct_unregularized_k1_halfmaps,
     reference_model_from_snapshot,
@@ -2100,37 +2101,35 @@ def refine_single_volume(
         # --- Now reconstruct the regularized means ---
         _t_recon = time.time()
         if k_class_enabled:
-            reconstruction_numerators = Ft_y_combined
-            reconstruction_denominators = Ft_ctf_combined
-            reconstruction_tau = (
+            reference_model.maps[:] = reconstruct_numbered_class_maps(
+                Ft_y_combined,
+                Ft_ctf_combined,
                 mean_signal_variance_shells
                 if mean_signal_variance_shells is not None
-                else mean_signal_variance
+                else mean_signal_variance,
+                reconstruction_settings,
+                n_classes=n_classes,
+                iteration=iteration,
+                current_size=current_size,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                tau_is_1d=mean_signal_variance_shells is not None,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
             )
-            reconstruction_tau_is_1d = mean_signal_variance_shells is not None
         else:
-            reconstruction_numerators = (Ft_y_0, Ft_y_1)
-            reconstruction_denominators = (Ft_ctf_0, Ft_ctf_1)
-            reconstruction_tau = (
+            reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
                 mean_signal_variance_shells_per_half
                 if mean_signal_variance_shells_per_half is not None
-                else mean_signal_variance_per_half
+                else mean_signal_variance_per_half,
+                reconstruction_settings,
+                iteration=iteration,
+                current_size=current_size,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                tau_is_1d=mean_signal_variance_shells_per_half is not None,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                retained_first_numerator=retained_Ft_y_0_device,
             )
-            reconstruction_tau_is_1d = mean_signal_variance_shells_per_half is not None
-        reference_model.maps[:] = reconstruct_regularized_means(
-            reconstruction_numerators,
-            reconstruction_denominators,
-            reconstruction_tau,
-            reconstruction_settings,
-            n_classes=n_classes,
-            iteration=iteration,
-            current_size=current_size,
-            accumulator_volume_shape=mstep_accumulator_shape,
-            tau_is_1d=reconstruction_tau_is_1d,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-            retained_first_numerator=retained_Ft_y_0_device,
-        )
-        del reconstruction_numerators, reconstruction_denominators, reconstruction_tau
         logger.info(
             "Regularized reconstruction (2 halves + flatten): %.1fs",
             time.time() - _t_recon,

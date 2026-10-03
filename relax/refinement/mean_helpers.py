@@ -1440,10 +1440,88 @@ def _reconstruct_class_maps(
     return shared_classes
 
 
-def reconstruct_regularized_means(
-    numerators,
-    denominators,
-    tau,
+def reconstruct_numbered_k1_halfmaps(
+    numerators_by_half,
+    denominators_by_half,
+    tau_by_half,
+    settings: ReconstructionSettings,
+    *,
+    iteration,
+    current_size,
+    accumulator_volume_shape,
+    tau_is_1d,
+    relion_firstiter_cc_this_iter,
+    retained_first_numerator=None,
+) -> list:
+    """Solve two independent numbered K1 maps, then postprocess each half.
+
+    Numerators, denominators and priors are ordered half pairs. Priors are
+    shell curves when tau_is_1d is true, otherwise full volumes. The private
+    solve frame owns promoted priors, host completion and the retained half-0
+    numerator boundary. Both solves finish before premask capture, initial
+    filtering and solvent flattening. Return ready maps for installation.
+    """
+    means = _reconstruct_k1_maps(
+        numerators_by_half, denominators_by_half, tau_by_half, settings,
+        current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
+        tau_is_1d=tau_is_1d, retained_first_numerator=retained_first_numerator,
+    )
+
+    for k in range(2):
+        # Diagnostic: dump pre-mask Wiener output when env var set.
+        _premask_dump = os.environ.get("RELAX_PREMASK_DUMP_DIR")
+        if _premask_dump:
+            from relax.diagnostics.reconstruction import write_premask_mean
+
+            write_premask_mean(
+                means[k], output_dir=_premask_dump, half_index=k, iteration=iteration,
+                current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
+                volume_shape=settings.volume_shape, n_classes=1,
+            )
+
+        # RELION filters Iref inside maximizationOtherParameters, then calls
+        # solventFlatten from the outer iteration loop.  These operations do
+        # not commute: masking in real space after the Fourier low-pass adds a
+        # small, deterministic high-shell tail.
+        if relion_firstiter_cc_this_iter:
+            means[k] = _apply_relion_initial_lowpass_filter(
+                means[k],
+                settings.volume_shape,
+                settings.voxel_size,
+                settings.first_iteration_lowpass_angstrom,
+                filter_edgewidth=settings.fmask_edge,
+            )
+        if (
+            settings.particle_diameter_angstrom is not None
+            and settings.particle_diameter_angstrom > 0
+        ):
+            flatten_radius = (
+                float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
+            )
+            solvent_mask = _make_relion_solvent_mask(
+                settings.volume_shape,
+                radius=flatten_radius,
+                radius_p=flatten_radius + settings.width_mask_edge,
+                offset=jnp.zeros(3),
+                dtype=means[k].real.dtype,
+            )
+            means[k] = _apply_relion_solvent_flatten_k1(
+                means[k], solvent_mask, settings.volume_shape, half_index=k,
+            )
+            if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
+                solvent_mask = None
+    if relion_firstiter_cc_this_iter and settings.first_iteration_lowpass_angstrom is not None:
+        logger.info(
+            "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
+            float(settings.first_iteration_lowpass_angstrom),
+        )
+    return means
+
+
+def reconstruct_numbered_class_maps(
+    combined_numerators,
+    combined_denominators,
+    tau_by_class,
     settings: ReconstructionSettings,
     *,
     n_classes,
@@ -1452,29 +1530,23 @@ def reconstruct_regularized_means(
     accumulator_volume_shape,
     tau_is_1d,
     relion_firstiter_cc_this_iter,
-    retained_first_numerator=None,
 ) -> list:
-    """Solve and postprocess the numbered K1 halves or shared Class3D maps.
+    """Solve one numbered Class3D reference stack from combined partitions.
 
-    K1 operands have two half entries; Class3D operands have a leading class
-    axis and combine both native halves. Preserve each solve's own precision,
-    completion/donation boundaries and the capture -> initial filter -> solvent
-    mask order. Returned maps are ready for explicit controller installation.
+    Accumulators and priors have a leading class axis; priors contain shell
+    curves when tau_is_1d is true, otherwise full volumes. All class solves
+    finish before premask capture, initial filtering and solvent flattening.
+    Return the established two particle-execution slots: they alias the shared
+    stack unless postprocessing replaces them. Postprocess both slots in order
+    to preserve execution and capture behavior; they are not scientific halves.
     """
-    if n_classes > 1:
-        shared_classes = _reconstruct_class_maps(
-            numerators, denominators, tau, settings,
-            n_classes=n_classes, iteration=iteration, current_size=current_size,
-            accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
-        )
-        means = [shared_classes, shared_classes]
-        del shared_classes
-    else:
-        means = _reconstruct_k1_maps(
-            numerators, denominators, tau, settings,
-            current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=tau_is_1d, retained_first_numerator=retained_first_numerator,
-        )
+    shared_classes = _reconstruct_class_maps(
+        combined_numerators, combined_denominators, tau_by_class, settings,
+        n_classes=n_classes, iteration=iteration, current_size=current_size,
+        accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
+    )
+    means = [shared_classes, shared_classes]
+    del shared_classes
 
     for k in range(2):
         # Diagnostic: dump pre-mask Wiener output when env var set.
@@ -1493,59 +1565,40 @@ def reconstruct_regularized_means(
         # not commute: masking in real space after the Fourier low-pass adds a
         # small, deterministic high-shell tail.
         if relion_firstiter_cc_this_iter:
-            if n_classes > 1:
-                means[k] = jnp.stack(
-                    [
-                        _apply_relion_initial_lowpass_filter(
-                            means[k][class_idx],
-                            settings.volume_shape,
-                            settings.voxel_size,
-                            settings.first_iteration_lowpass_angstrom,
-                            filter_edgewidth=settings.fmask_edge,
-                        )
-                        for class_idx in range(n_classes)
-                    ],
-                    axis=0,
-                )
-            else:
-                means[k] = _apply_relion_initial_lowpass_filter(
-                    means[k],
-                    settings.volume_shape,
-                    settings.voxel_size,
-                    settings.first_iteration_lowpass_angstrom,
-                    filter_edgewidth=settings.fmask_edge,
-                )
+            means[k] = jnp.stack(
+                [
+                    _apply_relion_initial_lowpass_filter(
+                        means[k][class_idx],
+                        settings.volume_shape,
+                        settings.voxel_size,
+                        settings.first_iteration_lowpass_angstrom,
+                        filter_edgewidth=settings.fmask_edge,
+                    )
+                    for class_idx in range(n_classes)
+                ],
+                axis=0,
+            )
         if (
             settings.particle_diameter_angstrom is not None
             and settings.particle_diameter_angstrom > 0
         ):
-            flatten_radius = (
-                float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
-                if n_classes == 1 else settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
-            )
+            flatten_radius = settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
             solvent_mask = _make_relion_solvent_mask(
                 settings.volume_shape,
                 radius=flatten_radius,
                 radius_p=flatten_radius + settings.width_mask_edge,
                 offset=jnp.zeros(3),
-                dtype=(means[k].real.dtype if n_classes <= 1 else means[k][0].real.dtype),
+                dtype=means[k][0].real.dtype,
             )
-            if n_classes > 1:
-                flattened_classes = []
-                for class_idx in range(n_classes):
-                    vol_real = fourier_transform_utils.get_idft3(
-                        means[k][class_idx].reshape(settings.volume_shape)
-                    )
-                    flattened_classes.append(
-                        fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
-                    )
-                means[k] = jnp.stack(flattened_classes, axis=0)
-            else:
-                means[k] = _apply_relion_solvent_flatten_k1(
-                    means[k], solvent_mask, settings.volume_shape, half_index=k,
+            flattened_classes = []
+            for class_idx in range(n_classes):
+                vol_real = fourier_transform_utils.get_idft3(
+                    means[k][class_idx].reshape(settings.volume_shape)
                 )
-                if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
-                    solvent_mask = None
+                flattened_classes.append(
+                    fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
+                )
+            means[k] = jnp.stack(flattened_classes, axis=0)
     if relion_firstiter_cc_this_iter and settings.first_iteration_lowpass_angstrom is not None:
         logger.info(
             "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
