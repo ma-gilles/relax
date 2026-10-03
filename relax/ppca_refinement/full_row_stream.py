@@ -1038,6 +1038,57 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, kept: _
     return kept, _tile_posterior(kept, tile.rows, n_blocks, stream.rotation_block_size, stream.static)
 
 
+# Share of the device memory still available after the stream's upload (model, voxel-major copy,
+# tables) that a tile's image-proportional buffers may take; projections, moment accumulators and
+# XLA temporaries keep the rest.
+TILE_MEMORY_FRACTION = 0.4
+
+
+def tile_image_floats(stream: FullRowStream, n_frames: int = 1) -> int:
+    """float32 values on the device per tile image (a particle with ``n_frames`` tilt images).
+
+    The kept pass-1 buffers (scores, latent means, packed covariances and the per-row partials)
+    over the full row table, the score and reconstruction image operands of every frame, and one
+    rotation block's pass-1/pass-2 GEMM outputs and posterior weights.
+    """
+    static = stream.static
+    P = static.basis_size
+    T = int(stream.translations.shape[0])
+    capacity = len(stream.block_starts) * stream.rotation_block_size
+    arrays = stream.arrays
+    if arrays.gemm_window is not None:
+        F = int(arrays.gemm_window.shape[0])
+    elif arrays.score_indices is not None:
+        F = int(np.asarray(arrays.score_indices).size)
+    else:
+        F = int(arrays.coefficient_noise.size)
+    kept = capacity * (T * P + tri_size(P - 1) + 3)
+    operands = 2 * n_frames * F * (2 * T + 1)
+    block = stream.rotation_block_size * (2 * P * T + tri_size(P))
+    return int(kept + operands + block)
+
+
+def plan_tile_images(stream: FullRowStream, requested: int, *, n_frames: int = 1, memory_bytes=None) -> int:
+    """Tile images (particles) per tile: ``requested``, capped so a tile fits the device.
+
+    ``memory_bytes`` defaults, on a GPU stream, to what the device can still hand out
+    (:func:`relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`, which counts what is
+    already resident); a CPU stream keeps ``requested``. At least one image per tile.
+    """
+    if memory_bytes is None and stream.static.cuda_kernels:
+        from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+        memory_bytes = budget.device_available_bytes(
+            budget._device_free_memory_bytes(),
+            budget._jax_allocator_free_memory_bytes(),
+            budget._jax_allocator_pool_free_bytes(),
+        )
+    if not memory_bytes:
+        return int(requested)
+    per_image = 4 * tile_image_floats(stream, n_frames)
+    return max(1, min(int(requested), int(TILE_MEMORY_FRACTION * memory_bytes) // per_image))
+
+
 def _empty_kept(capacity: int, n_images: int, n_translations: int, q: int, dtype) -> _Kept:
     return _Kept(
         score=jnp.full((capacity, n_images, n_translations), -jnp.inf, dtype),

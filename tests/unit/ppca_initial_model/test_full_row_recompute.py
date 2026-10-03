@@ -160,6 +160,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         )
 
     monkeypatch.setattr(iteration_loop, "prepare_full_row_stream", prepare)
+    monkeypatch.setattr(iteration_loop, "plan_tile_images", lambda _stream, requested, **_kwargs: requested)
     monkeypatch.setattr(iteration_loop, "accumulate_full_row_tiles", tiles)
     ids = np.arange(5)
     config = Config(

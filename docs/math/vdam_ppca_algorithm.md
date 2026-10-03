@@ -1142,6 +1142,13 @@ scientific contract; runnable code alone does not establish recovery.
   its `--stream-full-fine-rows` and `--fine-devices` fine pass.
   `--no-stream-coarse-recompute` selects the host-mask dense engine (q <= 2),
   which is the stream's test reference.
+  The image batch is an upper bound on the particles in a tile. A tile holds
+  fewer when its image-proportional buffers would take more than 40% of the
+  device memory still available after the stream's upload
+  ([plan_tile_images](../../relax/ppca_refinement/full_row_stream.py)): the
+  kept pass-1 buffers over the row table, every tilt frame's operands and one
+  block's GEMM outputs. Each update records the planned size as `tile_images`.
+  A subtomogram particle counts all of its tilts.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it

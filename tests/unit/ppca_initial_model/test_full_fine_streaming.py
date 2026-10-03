@@ -18,13 +18,16 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
+    TILE_MEMORY_FRACTION,
     TracePPCAStats,
     accumulate_full_row_tile,
     accumulate_full_row_tiles,
     coarse_support_mask,
     full_row_pose_log_prior,
     full_row_tile_embeddings,
+    plan_tile_images,
     prepare_full_row_stream,
+    tile_image_floats,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -256,6 +259,19 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
     truth = _float64_diagnostics(stream, np.arange(3), [None] * 3)["rotation_mass"]
     _assert_matches_or_more_accurate(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"], truth)
     assert_matches(np.sum(actual.diagnostics["rotation_mass"]), np.float32(actual.n_images))
+
+
+def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
+    """Tiles hold at most the requested images, fewer when their buffers would not fit the device."""
+    _dataset, _mu, _W, stream, _host = tile_problem
+    per_image = 4 * tile_image_floats(stream)
+    tilt_image = 4 * tile_image_floats(stream, n_frames=41)
+    assert tilt_image > per_image  # every tilt of a particle adds its operands
+    assert plan_tile_images(stream, 150) == 150  # the tiny problem fits any device (CPU: no cap)
+    ten = int(10 * per_image / TILE_MEMORY_FRACTION) + 1
+    assert plan_tile_images(stream, 150, memory_bytes=ten) == 10
+    assert plan_tile_images(stream, 150, n_frames=41, memory_bytes=ten) < 10
+    assert plan_tile_images(stream, 150, memory_bytes=1) == 1
 
 
 def test_pipelined_tiles_match_separate_tiles(tile_problem):

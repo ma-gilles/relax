@@ -39,6 +39,7 @@ from relax.ppca_refinement.full_row_stream import (
     TracePPCAStats,
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
+    plan_tile_images,
     prepare_full_row_stream,
     resolve_gemm_precision,
 )
@@ -211,17 +212,20 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
             for group_nv in nvs
         ]
         # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
-        # group and one noise group each for subtomogram particles.
+        # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
+        # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
+        tile_size = plan_tile_images(
+            streams[0],
+            config.image_batch_size,
+            n_frames=max(len(frames) for frames in dataset.group_frames) if tilts else 1,
+        )
         tiles = [
             (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
             for group, ids_group in enumerate(ids)
             for tile in (
-                tilt_tiles(dataset, ids_group, config.image_batch_size)
+                tilt_tiles(dataset, ids_group, tile_size)
                 if tilts
-                else [
-                    ids_group[begin : begin + config.image_batch_size]
-                    for begin in range(0, len(ids_group), config.image_batch_size)
-                ]
+                else [ids_group[begin : begin + tile_size] for begin in range(0, len(ids_group), tile_size)]
             )
         ]
         parts = [None] * len(tiles)
@@ -269,6 +273,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "coarse_omitted_mass_bound": 0.0,
                     "canonical_euler_count": len(canonical_eulers),
                     "engine": "full_row_coarse_recompute",
+                    "tile_images": tile_size,
                     "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
                 }
@@ -478,6 +483,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                             "pose_entropy_mean",
                             "pmax_mean",
                             "coarse_omitted_mass_bound",
+                            "tile_images",
                         )
                     }
                     for s in stats
