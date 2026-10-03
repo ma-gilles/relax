@@ -524,6 +524,52 @@ def test_controller_noise_groups_match_brute_force():
     assert_matches(np.asarray(stats.residual_den), truth["residual_den"], rtol=1e-6)
 
 
+def test_controller_statistics_do_not_depend_on_the_tile_size():
+    """The controller's statistics are the same, within float32 noise, for one tile per call and for smaller
+    tiles: three one-particle tiles, two-and-one, and one tile padded to a bucket of four. Other tile shapes
+    change the GEMM and reduction order: 1.4e-6 relative on A100 (embeddings), within ``rtol``."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, _stream, arrays = make_problem(seed=9)
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(jnp.asarray(theta), None, jnp.full((1, 5), 40.0, jnp.float32), 0, np.arange(3), {}, 2.0, 0, {})
+
+    def statistics(tile):
+        config = Config(
+            q=2,
+            stages=((1, 3, 0),),
+            oversampling=0,
+            stream_coarse_recompute=True,
+            shift_range=1,
+            shift_step=1,
+            image_batch_size=tile,
+            rotation_block_size=32,
+            gemm_precision="fp32",
+        )
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+        try:
+            stats = iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+        finally:
+            iteration_loop._rotation_grid.cache_clear()
+            iteration_loop._direction_ids.cache_clear()
+        return stats, np.argsort(stats.original_image_ids)
+
+    rtol = 1e-5
+    reference, order = statistics(3)
+    assert reference.diagnostics["tile_sizes"] == [3]
+    for tile, sizes in ((1, [1]), (2, [1, 2]), (4, [4])):
+        stats, tile_order = statistics(tile)
+        assert stats.diagnostics["tile_sizes"] == sizes
+        assert_matches(np.float32(stats.log_likelihood), np.float32(reference.log_likelihood), rtol=rtol)
+        assert_matches(np.asarray(stats.embeddings)[tile_order], np.asarray(reference.embeddings)[order], rtol=rtol)
+        assert_matches(stats.diagnostics["rotation_mass"], reference.diagnostics["rotation_mass"], rtol=rtol)
+        for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+            assert_matches(np.asarray(getattr(stats, name)), np.asarray(getattr(reference, name)), rtol=rtol)
+
+
 @pytest.mark.parametrize(
     "columns, refused",
     [
