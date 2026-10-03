@@ -5307,6 +5307,113 @@ class TestRelionModeSmokeTest:
         np.testing.assert_allclose(final_half0, ctf_values[2], atol=0.0)
         np.testing.assert_allclose(final_half1, ctf_values[3], atol=0.0)
 
+    @pytest.mark.parametrize(
+        ("n_classes", "join_angstrom", "expected"),
+        [
+            (1, 40.0, ["unfiltered:held", "join:held", "halfmap_prior:released", "halfmap_solve:released"]),
+            (1, 0.0, ["unfiltered:held", "halfmap_prior:released", "halfmap_solve:released"]),
+            (1, None, ["unfiltered:held", "halfmap_prior:released", "halfmap_solve:released"]),
+            (2, 40.0, ["class_priors", "class_solve"]),
+        ],
+    )
+    def test_relion_final_iteration_runs_k1_prejoin_sequence_in_order(
+        self,
+        half_datasets,
+        init_volume,
+        translations,
+        monkeypatch,
+        n_classes,
+        join_angstrom,
+        expected,
+    ):
+        """Final K1 makes unfiltered maps, joins if asked, then releases the pass outputs' accumulators.
+
+        Class3D runs none of the three steps, even with a positive join resolution.
+        """
+        original_update = convergence_policy.update_refinement_state
+        original_outputs = finalization.PerHalfOutputs
+        final_reconstruction = finalization.final_reconstruction
+        collectors = []
+        events = []
+        operands = {}
+
+        def force_convergence_after_first_iter(*args, **kwargs):
+            updated = original_update(*args, **kwargs)
+            updated.has_converged = True
+            return updated
+
+        def record_collector(*args, **kwargs):
+            collectors.append(original_outputs(*args, **kwargs))
+            return collectors[-1]
+
+        def collector_state():
+            held = [value is not None for value in (*collectors[-1].Ft_y, *collectors[-1].Ft_ctf)]
+            assert all(held) or not any(held)
+            return "held" if all(held) else "released"
+
+        def spy(owner, name, label, *, with_collector_state=True):
+            original = getattr(owner, name)
+
+            def wrapped(*args, **kwargs):
+                events.append(f"{label}:{collector_state()}" if with_collector_state else label)
+                operands[label] = (args, kwargs)
+                operands[label + ":result"] = original(*args, **kwargs)
+                return operands[label + ":result"]
+
+            monkeypatch.setattr(owner, name, wrapped)
+
+        monkeypatch.setattr(convergence_policy, "update_refinement_state", force_convergence_after_first_iter)
+        monkeypatch.setattr(finalization, "PerHalfOutputs", record_collector)
+        spy(final_reconstruction, "reconstruct_unfiltered_halfmaps", "unfiltered")
+        spy(finalization, "join_half_accumulators_at_low_resolution", "join")
+        spy(final_reconstruction, "compute_final_halfmap_prior", "halfmap_prior")
+        spy(final_reconstruction, "reconstruct_final_halfmaps", "halfmap_solve")
+        spy(final_reconstruction, "compute_final_class_priors", "class_priors", with_collector_state=False)
+        spy(final_reconstruction, "reconstruct_final_class_maps", "class_solve", with_collector_state=False)
+
+        k_class = {}
+        if n_classes > 1:
+            k_class["k_class"] = KClassOptions(
+                n_classes=n_classes,
+                init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
+            )
+        result = refine_single_volume(
+            half_datasets,
+            init_volume,
+            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
+            translations,
+            options=RefinementOptions(
+                disc_type="linear_interp",
+                schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
+                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                parity=RelionParityOptions(low_resol_join_halves_angstrom=join_angstrom),
+                **k_class,
+            ),
+        )
+
+        assert result["final_all_data_ran"] is True
+        assert len(collectors) == 1
+        assert events == expected
+        if n_classes > 1:
+            assert result["unfiltered_means"] is None
+            return
+        assert result["unfiltered_means"] is operands["unfiltered:result"]
+        # The unfiltered maps read the pass outputs' own arrays, before any join.
+        prejoin_numerators, prejoin_denominators = operands["unfiltered"][0]
+        prior_numerators, prior_denominators = operands["halfmap_prior"][0]
+        if "join" in operands:
+            (join_numerators, join_denominators), join_kwargs = operands["join"]
+            assert all(a is b for a, b in zip(join_numerators, prejoin_numerators, strict=True))
+            assert all(a is b for a, b in zip(join_denominators, prejoin_denominators, strict=True))
+            assert join_kwargs["preserve_inputs"] is False
+            # The prior and the final solve read what the join returned.
+            joined = operands["join:result"]
+            assert all(a is b for a, b in zip((*prior_numerators, *prior_denominators), joined, strict=True))
+        else:
+            assert all(a is b for a, b in zip(prior_numerators, prejoin_numerators, strict=True))
+            assert all(a is b for a, b in zip(prior_denominators, prejoin_denominators, strict=True))
+
     def test_relion_final_iteration_uses_learned_k1_direction_prior(
         self,
         half_datasets,

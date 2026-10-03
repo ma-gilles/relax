@@ -589,6 +589,10 @@ def run_final_all_data(
     final_reconstruct_t0 = time.time()
     final_unfiltered_means_for_output = None
     if not k_class_enabled:
+        # K1 pre-join sequence, in this order: unfiltered half maps, optional
+        # low-resolution join, release of the pass outputs' references. Class3D
+        # has no half maps to keep unjoined and sums its two partitions below.
+        #
         # RELION writes run_half{1,2}_class001_unfil.mrc from the converged half
         # BackProjectors saved before joinTwoHalvesAtLowResolution mutates their
         # low-frequency voxels, with do_map=false.  Keep this separate from the
@@ -610,20 +614,19 @@ def run_final_all_data(
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
-    if not k_class_enabled and parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
-        final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
-            (final_Ft_y_0, final_Ft_y_1),
-            (final_Ft_ctf_0, final_Ft_ctf_1),
-            accumulator_volume_shape=final_mstep_accumulator_shape,
-            grid_size=grid_size,
-            voxel_size=image_geometry.pixel_size_angstrom,
-            padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-            low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
-            pixel_resolutions=history.pixel_resolutions,
-            current_resolution=state.current_resolution,
-            preserve_inputs=False,
-        )
-    if not k_class_enabled:
+        if parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
+            final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
+                (final_Ft_y_0, final_Ft_y_1),
+                (final_Ft_ctf_0, final_Ft_ctf_1),
+                accumulator_volume_shape=final_mstep_accumulator_shape,
+                grid_size=grid_size,
+                voxel_size=image_geometry.pixel_size_angstrom,
+                padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+                low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+                pixel_resolutions=history.pixel_resolutions,
+                current_resolution=state.current_resolution,
+                preserve_inputs=False,
+            )
         # The unfiltered maps are made; drop the pass outputs' references so the
         # pre-join accumulators live only as long as the joined ones do.
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
