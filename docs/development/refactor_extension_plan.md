@@ -203,6 +203,25 @@ as a nested option. The final prior and final solve remain separate decisions
 because shared sums and the shared resolution update lie between them. The
 step 6 review with the user has not taken place.
 
+Package 2, lane A (the user chose on October 3 that a one-line shared statement
+may be written in both arms of a controller decision, with nothing reordered):
+the numbered M-step, from the accumulator audit to the `"recon"` stage mark, is
+one K1/Class3D decision instead of seven. Each arm lists its own ordered steps:
+accumulator combine or optional low-resolution join, previous references, prior
+estimate, tau2 install, reconstruction, optional first-CC reporting taper and,
+for K1, the tau2 volumes' move to the host. The
+[M-step mode map](final_local_sampling_patch_review.md#m-step-mode-map) gives
+the before and after. `estimate_iteration_resolution` is replaced by
+`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`,
+called from the existing class-assignment decision; the K1 FSC fallback, which
+no prior estimate could reach, is removed. The profile-only return passes no
+class products, the direction-prior order is computed once per iteration, and
+`_maybe_host_offload_half0_local_accumulators` and `record_noise_and_tau2` no
+longer take the mode. `refine_single_volume` tests `k_class_enabled` 29 times
+instead of 39. Not done here: the raw-FSC arm of
+`_k1_data_vs_prior_for_scheduling` and the Class3D shared-prior fallback in
+`orientation_priors.py` wait for the user.
+
 1. Inventory each reconstruction choice with its producer and consumers:
    split-half versus combined classes; prior volume versus shell curves;
    first-CC filter/taper; optional solvent mask; host staging/large-box behavior;
@@ -347,7 +366,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2752/1766 for numerical/command controllers;
+Source spans are 2732/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main

@@ -85,9 +85,9 @@
         },
         {
           "function_count": 12,
-          "nonblank_noncomment_lines": 2707,
+          "nonblank_noncomment_lines": 2687,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 3107
+          "physical_lines": 3088
         },
         {
           "function_count": 11,
@@ -366,8 +366,8 @@
       ],
       "largest_functions": [
         {
-          "line": 353,
-          "line_span": 2752,
+          "line": 354,
+          "line_span": 2732,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
@@ -450,15 +450,15 @@
         "file_count": 27,
         "function_count": 361,
         "large_argument_function_count": 26,
-        "maximum_function_line_span": 2752,
+        "maximum_function_line_span": 2732,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18838,
-        "physical_lines": 21508,
+        "nonblank_noncomment_lines": 18818,
+        "physical_lines": 21489,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "numbered reconstruction, option Y: each operation spells out its postprocessing, no mode flag below the dispatch",
-    "source_commit": "3890d1608978a1b6521ee5f4922f25d7a5bcc09f",
+    "package": "package 2 lane A: the numbered M-step is one K1/Class3D decision with two sequences; per-mode iteration-resolution call; dead mode selects and a repeated prior-order computation removed",
+    "source_commit": "ef86ee1009240b7876e3b35fd0a26dc583321032",
     "recorded_date": "2026-10-03"
   }
 }

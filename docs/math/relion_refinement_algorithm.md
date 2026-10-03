@@ -759,9 +759,11 @@ next permitted loop top. Exhausting the iteration cap does not synthesize a
 finalization boundary. Approximate support accuracy remains diagnostic by default.
 
 
-[`estimate_iteration_resolution`](../../relax/helpers/resolution.py) selects the
-Class3D prior curve, K1 reconstruction SSNR or FSC-derived fallback, preserving
-current-window truncation and the minimum shell 5. `ResolutionEstimate` keeps the
+[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/helpers/resolution.py)
+take the K1 reconstruction SSNR and the Class3D prior curves respectively,
+preserving current-window truncation and the minimum shell 5. K1 applies the
+split-half high-resolution recheck; Class3D takes the maximum shell over
+classes. `ResolutionEstimate` keeps the
 observed shell separate from the first-iteration `ini_high` scheduling override.
 The controller converts the scheduling shell to angstroms after noise updates and
 records convergence statistics at its original boundary.

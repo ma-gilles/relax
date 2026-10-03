@@ -141,8 +141,9 @@ belong to `prepare_particle_pose_update` and `prepare_pose_comparison` in
 keep previous/current frames together. The controller installs state and records
 history/particle files between those two operations, preserving their timing.
 
-Post-reconstruction curve selection and observed/scheduling resolution shells belong
-to [`estimate_iteration_resolution`](../../relax/helpers/resolution.py). Its result
+Post-reconstruction observed/scheduling resolution shells belong to
+[`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`](../../relax/helpers/resolution.py);
+the controller passes each its mode's curve. Their result
 is consumed by diagnostics, history, next-iteration planning and convergence while
 the controller retains the timing of state writes and native convergence checks.
 
