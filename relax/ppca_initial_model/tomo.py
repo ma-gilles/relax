@@ -11,6 +11,7 @@ for all its particles: the frames join the streamed engine's GEMM contraction
 from __future__ import annotations
 
 import dataclasses
+from functools import partial
 from typing import Callable
 
 import jax
@@ -190,53 +191,104 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         raise ValueError("A subtomogram tile must hold particles of one tilt group")
     frames = particles.group_frames[int(groups[0])]
     images, owner = particles.particle_images(ids)
-    slots = particles.image_frame[images]
-    _, half, ctf = particles.read(images)
+    B, K, T = ids.size, frames.shape[0], int(stream.translations.shape[0])
+    # Read the tile's images in (particle, frame) slot order, so the operand program sees one shape per
+    # tile size; a frame the particle does not see re-reads its first image and is masked to zero.
+    slot_image = np.full(B * K, -1, np.int64)
+    slot_image[owner * K + particles.image_frame[images]] = images
+    visible = slot_image >= 0
+    _, half, ctf = particles.read(np.where(visible, slot_image, images[0]))
     half, ctf = jax.device_put((half, ctf), stream.device)
     resolved = stream.resolved
-    nv = stream.noise_variance_half
     window = np.arange(half.shape[1]) if resolved.score_indices is None else np.asarray(resolved.score_indices)
-    lattice = np.asarray(relion_half_translation_lattice(stream.static.image_shape), np.float32)[window]
-    shifts = jnp.asarray(tilt_shifts(frames, stream.translations)[slots])  # (n, T, 2)
-    phases = jnp.exp(jnp.complex64(-2j * np.pi) * jnp.einsum("ntd,fd->ntf", shifts, lattice, precision="highest"))
-    if stream.image_scale is not None:
-        # A fixed contrast per particle scales its model: the CTF of every tilt image by it (section 16.10).
-        ctf = ctf * jnp.asarray(stream.image_scale[ids][owner])[:, None]
-    weighted = (half * ctf / nv)[:, window]
-    ctf2 = (ctf * ctf / nv)[:, window]
-    score_mask, recon_mask = resolved.score_mask[window], resolved.recon_mask[window]
-    B, K, T, F = ids.size, frames.shape[0], int(stream.translations.shape[0]), window.size
     # GPU streams pad each frame's pixels to the GEMM window and the (image, shift) axis to its multiple.
-    pad = (stream.arrays.gemm_window.shape[0] - F) if stream.static.cuda_kernels else 0
-    shift_pad = -(B * T) % _SHIFT_ALIGN if stream.static.cuda_kernels else 0
-
-    def per_frame(values):
-        """``(n, ..., F)`` image values into zero-padded ``(B, K, ..., F + pad)`` frame slots."""
-        values = jnp.pad(values, [(0, 0)] * (values.ndim - 1) + [(0, pad)])
-        full = jnp.zeros((B, K) + values.shape[1:], values.dtype)
-        return full.at[owner, slots].set(values)
-
-    Y_score = per_frame(weighted[:, None, :] * score_mask * phases)  # (B, K, T, F')
-    Y_recon = per_frame(weighted[:, None, :] * recon_mask * phases)
-    ctf2_score, ctf2_recon = per_frame(ctf2 * score_mask), per_frame(ctf2 * recon_mask)  # (B, K, F')
-    norm = jnp.sum(jnp.abs(half) ** 2 / nv * make_half_image_weights(stream.static.image_shape), axis=1)
+    pad = (stream.arrays.gemm_window.shape[0] - window.size) if stream.static.cuda_kernels else 0
+    scale = np.ones(B, np.float32) if stream.image_scale is None else stream.image_scale[ids]
+    Y1, ctf2, Y1_recon, ctf2_recon, y_norm, observation = _tilt_operands(
+        half,
+        ctf,
+        jnp.asarray(visible),
+        jnp.asarray(scale, jnp.float32),
+        stream.noise_variance_half,
+        jnp.asarray(window),
+        jnp.asarray(np.asarray(relion_half_translation_lattice(stream.static.image_shape), np.float32)[window]),
+        jnp.asarray(tilt_shifts(frames, stream.translations)),
+        resolved.score_mask[window],
+        resolved.recon_mask[window],
+        make_half_image_weights(stream.static.image_shape),
+        n_particles=B,
+        n_frames=K,
+        pad=pad,
+        shift_pad=-(B * T) % _SHIFT_ALIGN if stream.static.cuda_kernels else 0,
+    )
     coarse_mask, table, layout = tile_support(stream, significant_rows)
     tile = _TileArrays(
         coarse_mask=coarse_mask,
         rows=table,
-        Y1=jnp.pad(jnp.transpose(_real_imag(Y_score), (1, 3, 0, 2)).reshape(-1, B * T), ((0, 0), (0, shift_pad))),
-        ctf2=jnp.transpose(ctf2_score, (1, 2, 0)).reshape(-1, B),
-        Y1_recon=jnp.pad(jnp.transpose(_real_imag(Y_recon), (0, 2, 1, 3)).reshape(B * T, -1), ((0, shift_pad), (0, 0))),
-        ctf2_recon=ctf2_recon.reshape(B, -1),
-        y_norm=jax.ops.segment_sum(norm, jnp.asarray(owner), num_segments=B),
+        Y1=Y1,
+        ctf2=ctf2,
+        Y1_recon=Y1_recon,
+        ctf2_recon=ctf2_recon,
+        y_norm=y_norm,
         frames=jnp.asarray(frames, jnp.float32),
     )
     if stream.static.cuda_kernels and tile.Y1.shape[0] != K * 2 * stream.arrays.gemm_window.shape[0]:
         # The CUDA projector writes each frame's rows padded to the GEMM window, frame-major.
         raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")
-    observation = jnp.sum(jnp.abs(half) ** 2, axis=0) if collect_observation else None
+    observation = observation if collect_observation else None
     layout.update(n_observations=int(images.size), original_ids=particles.original_image_indices_from_local(ids))
     return tile, observation, layout
+
+
+@partial(jax.jit, static_argnames=("n_particles", "n_frames", "pad", "shift_pad"))
+def _tilt_operands(
+    half,
+    ctf,
+    visible,
+    scale,
+    nv,
+    window,
+    lattice,
+    frame_shifts,
+    score_mask,
+    recon_mask,
+    weights,
+    *,
+    n_particles,
+    n_frames,
+    pad,
+    shift_pad,
+):
+    """A tilt tile's GEMM operands from its slot-ordered images, as one fused program (section 16.4).
+
+    ``half`` and ``ctf`` are ``(B K, n_half)`` in (particle, frame) order with ``visible`` marking the
+    frames each particle sees; ``scale`` ``(B,)`` is each particle's fixed contrast (it scales the CTF).
+    Each frame's images are phase-shifted by the frame's projection of every 3D shift
+    (``frame_shifts`` ``(K, T, 2)``). Returns ``Y1 (K 2F', B T')``, ``ctf2 (K F', B)``,
+    ``Y1_recon (B T', K 2F')``, ``ctf2_recon (B, K F')``, the particles' image energies and the summed
+    observed power, with ``F' = F + pad`` and ``B T' = B T + shift_pad``.
+    """
+    B, K = n_particles, n_frames
+    T = frame_shifts.shape[1]
+    keep = visible.reshape(B, K, 1)
+    half = jnp.where(keep, half.reshape(B, K, -1), 0)
+    ctf = jnp.where(keep, ctf.reshape(B, K, -1), 0) * scale[:, None, None]
+    phases = jnp.exp(jnp.complex64(-2j * np.pi) * jnp.einsum("ktd,fd->ktf", frame_shifts, lattice, precision="highest"))
+    weighted = (half * ctf / nv)[..., window]  # (B, K, F)
+    ctf2 = (ctf * ctf / nv)[..., window]
+
+    def padded(values):
+        return jnp.pad(values, [(0, 0)] * (values.ndim - 1) + [(0, pad)])
+
+    Y_score = padded(weighted[:, :, None, :] * score_mask * phases[None])  # (B, K, T, F')
+    Y_recon = padded(weighted[:, :, None, :] * recon_mask * phases[None])
+    Y1 = jnp.pad(jnp.transpose(_real_imag(Y_score), (1, 3, 0, 2)).reshape(-1, B * T), ((0, 0), (0, shift_pad)))
+    Y1_recon = jnp.pad(jnp.transpose(_real_imag(Y_recon), (0, 2, 1, 3)).reshape(B * T, -1), ((0, shift_pad), (0, 0)))
+    ctf2_score = jnp.transpose(padded(ctf2 * score_mask), (1, 2, 0)).reshape(-1, B)
+    ctf2_recon = padded(ctf2 * recon_mask).reshape(B, -1)
+    y_norm = jnp.sum(jnp.abs(half) ** 2 / nv * weights, axis=(1, 2))
+    observation = jnp.sum(jnp.abs(half) ** 2, axis=(0, 1))
+    return Y1, ctf2_score, Y1_recon, ctf2_recon, y_norm, observation
 
 
 def tilt_bootstrap(particles: TiltParticles, rng, channels: int, radius: int, *, image_target: int = 1000):
