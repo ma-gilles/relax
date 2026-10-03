@@ -2073,6 +2073,22 @@ def _pass2_support_log_args(support_stats, *, n_rot_fine, n_trans_fine, dense_su
     )
 
 
+def _supports_coarse_parents(supports_by_class, n_images, n_coarse_rot, n_coarse_trans):
+    """The coarse parents any class's pass-2 rows descend from, or None for every parent."""
+
+    from relax.sparse_pass2.resident_significance import significant_coarse_parents
+
+    parents = []
+    for support in supports_by_class:
+        class_parents = significant_coarse_parents(
+            support, n_images=n_images, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans
+        )
+        if class_parents is None:
+            return None
+        parents.append(class_parents)
+    return np.unique(np.concatenate(parents)) if parents else None
+
+
 def run_dense_k_class_em_adaptive(
     experiment_dataset,
     means,
@@ -2116,6 +2132,7 @@ def run_dense_k_class_em_adaptive(
     coarse_translation_phase_source=None,
     coarse_engine: str = "auto",
     image_seed_classes=None,
+    fill_fine_rows=None,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + fine pass-2 masked.
@@ -2138,6 +2155,10 @@ def run_dense_k_class_em_adaptive(
         Optional pass-2 rotations used only for M-step backprojection. Score
         projections, posterior selection, and reported best poses continue to
         use ``fine_rotations``. Supported by sparse pass 2 only.
+    fill_fine_rows : callable or None
+        For a deferred fine grid (:class:`relax.helpers.oversampling.DeferredFineRows`):
+        called with the significant coarse parents before the sparse pass 2, or
+        with None (every parent) before any other route reads the fine rows.
     rot_parent_map : np.ndarray of int, shape (n_rot_fine,)
         Index into ``coarse_rotations`` for each fine rotation.
     trans_parent_map : np.ndarray of int, shape (n_trans_fine,)
@@ -2280,6 +2301,15 @@ def run_dense_k_class_em_adaptive(
             raise ValueError("gemm_hybrid requires float32 production arithmetic")
         engine_kwargs["mstep_relion_x_half"] = True
         engine_kwargs["sparse_pass2"] = True
+    if fill_fine_rows is not None and (
+        not engine_kwargs.get("sparse_pass2", False)
+        or coarse_engine == "gemm_dense"
+        or firstiter_cc_pass2_only_best_coarse
+        or skip_significance_pruning
+    ):
+        # Only the sparse pass 2 reads just the significant parents' rows.
+        fill_fine_rows(None)
+        fill_fine_rows = None
     if coarse_engine == "gemm_dense":
         logger.warning(
             "gemm_dense is experimental: it evaluates the full pose grid without pruning; "
@@ -2868,7 +2898,15 @@ def run_dense_k_class_em_adaptive(
                 *support_log_args,
             )
 
-    if sparse_pass2_requested and not firstiter_cc_pass2_only_best_coarse and not skip_significance_pruning:
+    sparse_route = sparse_pass2_requested and not firstiter_cc_pass2_only_best_coarse and not skip_significance_pruning
+    if fill_fine_rows is not None:
+        # The sparse pass 2 reads its significant parents' rows; a dense fallback reads every row.
+        fill_fine_rows(
+            _supports_coarse_parents(sig_sample_indices_by_class, n_images, n_rot_coarse, n_trans_coarse)
+            if sparse_route
+            else None
+        )
+    if sparse_route:
         result = _run_sparse_k_class_adaptive_pass2(
             experiment_dataset,
             means_array,

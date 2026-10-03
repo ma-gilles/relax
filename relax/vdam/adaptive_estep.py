@@ -36,6 +36,7 @@ from relax.helpers.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
 from relax.helpers.convergence import healpix_angular_step
+from relax.helpers.oversampling import adaptive_fine_rows
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.helpers.resolution import compute_coarse_image_size
 from relax.refinement.half_scoring import _adaptive_pass2_grids
@@ -199,6 +200,7 @@ class AdaptiveRouteGrids(NamedTuple):
     grids: object  # relax.refinement.half_scoring._AdaptivePass2Grids
     fine_source_eulers: np.ndarray | None
     relion_of_recovar: np.ndarray
+    fill_fine_rows: object = None  # relax.helpers.oversampling.DeferredFineRows when the fine rows are deferred
 
 
 def adaptive_route_grids(
@@ -244,15 +246,9 @@ def adaptive_route_grids(
         translation_step=float(translation_step),
         random_perturbation=float(random_perturbation),
         coarse_rotation_ids=None,
+        defer_fine_rotations=int(oversampling_order) > 0,
     )
-    n_rot = int(host_rotations.shape[0])
-    fine_source_eulers = sampling.get_oversampled_rotation_grid_from_samples(
-        np.arange(n_rot, dtype=np.int64),
-        order,
-        oversampling_order=int(oversampling_order),
-        random_perturbation=float(random_perturbation),
-        return_source_eulers=True,
-    )[-1]
+    fine_source_eulers, fill = adaptive_fine_rows(grids, order, int(oversampling_order), float(random_perturbation))
     if fine_source_eulers is not None and fine_source_eulers.shape[0] != grids.fine_rotations.shape[0]:
         raise RuntimeError("fine source Euler rows do not match the fine rotation grid")
     return AdaptiveRouteGrids(
@@ -260,6 +256,7 @@ def adaptive_route_grids(
         grids=grids,
         fine_source_eulers=fine_source_eulers,
         relion_of_recovar=relion_order_of_recovar_rotations(order),
+        fill_fine_rows=fill,
     )
 
 
@@ -440,6 +437,7 @@ def run_adaptive_initial_model_estep(
         relion_projector_half=relion_projector_half_by_class,
         relion_projector_r_max=relion_projector_r_max,
         fine_mstep_rotations_override=grids.fine_mstep_rotations,
+        fill_fine_rows=route.fill_fine_rows,
         return_best_pose_details=True,
         coarse_translation_phase_source=grids.coarse_translation_phase_source,
         **route_kwargs,

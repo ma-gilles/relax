@@ -157,6 +157,7 @@ from relax.sparse_pass2.resident_significance import (
     fine_rotation_children,
     resident_candidate_tables,
     resident_significance_csr,
+    significant_coarse_parents,
 )
 from relax.sparse_pass2.resident_statistics import (
     FinalizedStatistics,
@@ -5202,29 +5203,19 @@ def _significant_projection_slots(
     candidate rows of a class are exactly the children of its images' significant
     coarse rotations (:func:`csr_candidate_rows_per_image`: an empty support takes
     parent 0), so caching those children serves every row with the same
-    projection. None (cache the whole grid) when a class has no device CSR or an
-    image whose support takes every parent, or when the children's capacity
-    exceeds half the grid.
+    projection (:func:`~relax.sparse_pass2.resident_significance.significant_coarse_parents`).
+    None (cache the whole grid) when a class has no device CSR or an image whose
+    support takes every parent, or when the children's capacity exceeds half the grid.
     """
 
     child_offsets, child_ids = (np.asarray(value, dtype=np.int64) for value in children)
     class_rotations = []
     for support in class_supports:
-        csr = getattr(support, "csr", None)
-        if (
-            csr is None
-            or int(csr.n_images) != int(n_images)
-            or int(csr.n_coarse_rot) != int(n_coarse_rot)
-            or int(csr.n_coarse_trans) != int(n_coarse_trans)
-        ):
+        parents = significant_coarse_parents(
+            support, n_images=n_images, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans
+        )
+        if parents is None:
             return None
-        n_significant = np.asarray(csr.n_significant, dtype=np.int64)
-        every_parent = np.asarray(csr.store_excluded, dtype=bool) | (n_significant == int(csr.n_samples))
-        if bool(np.any(every_parent & (n_significant != 0))):
-            return None
-        parents = np.unique(np.asarray(csr.ids, dtype=np.int64) // int(n_coarse_trans))
-        if bool(np.any(n_significant == 0)):
-            parents = np.union1d(parents, [0])
         counts = child_offsets[parents + 1] - child_offsets[parents]
         starts = np.repeat(child_offsets[parents] - np.cumsum(counts) + counts, counts)
         class_rotations.append(np.unique(child_ids[starts + np.arange(int(counts.sum()))]))

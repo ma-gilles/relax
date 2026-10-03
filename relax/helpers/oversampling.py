@@ -61,6 +61,7 @@ def build_adaptive_pass2_grids(
     return_mstep_rotations: bool = False,
     coarse_rotation_ids=None,
     symmetry: str = "C1",
+    defer_fine_rotations: bool = False,
 ):
     """Build coarse/fine pose grids for ordinary and first-CC adaptive scoring.
 
@@ -73,6 +74,11 @@ def build_adaptive_pass2_grids(
     Scoring translations and the separate translation-phase source are distinct
     caller inputs. ``coarse_rotation_ids`` identifies a supplied rotation subset
     in the full HEALPix grid when oversampling is enabled.
+
+    ``defer_fine_rotations`` (C1, the whole coarse grid, oversampling) returns
+    the fine rotation arrays as identity placeholders in the full grid's
+    parent-major layout; :func:`fill_adaptive_fine_rotation_rows` then fills the
+    rows of the parents a pass reads.
     """
     from relax.sampling import (
         apply_relion_translation_perturbation,
@@ -114,18 +120,27 @@ def build_adaptive_pass2_grids(
         raise ValueError(
             "coarse_rotation_ids must identify every supplied coarse rotation exactly once"
         )
-    fine_rotation_outputs = get_oversampled_rotation_grid_from_samples(
-        all_coarse_rot_indices,
-        parent_nside_level=int(coarse_healpix_order),
-        oversampling_order=adaptive_os,
-        random_perturbation=float(random_perturbation),
-        return_mstep_rotations=return_mstep_rotations,
-        dtype=coarse_rotations.dtype,
-        **({} if symmetry == "C1" else {"symmetry": symmetry}),
-    )
-    fine_rotations, rot_parent_map = fine_rotation_outputs[:2]
-    fine_mstep_rotations = fine_rotation_outputs[2] if return_mstep_rotations else None
-    rot_parent_map = np.asarray(rot_parent_map, dtype=np.int64)
+    if defer_fine_rotations:
+        if symmetry != "C1" or coarse_rotation_ids is not None:
+            raise ValueError("deferred fine rotations take the whole C1 coarse grid")
+        n_children = 8**adaptive_os
+        n_fine = int(coarse_rot_np.shape[0]) * n_children
+        fine_rotations = np.tile(np.eye(3, dtype=coarse_rot_np.dtype), (n_fine, 1, 1))
+        fine_mstep_rotations = fine_rotations.copy() if return_mstep_rotations else None
+        rot_parent_map = np.repeat(np.arange(int(coarse_rot_np.shape[0]), dtype=np.int64), n_children)
+    else:
+        fine_rotation_outputs = get_oversampled_rotation_grid_from_samples(
+            all_coarse_rot_indices,
+            parent_nside_level=int(coarse_healpix_order),
+            oversampling_order=adaptive_os,
+            random_perturbation=float(random_perturbation),
+            return_mstep_rotations=return_mstep_rotations,
+            dtype=coarse_rotations.dtype,
+            **({} if symmetry == "C1" else {"symmetry": symmetry}),
+        )
+        fine_rotations, rot_parent_map = fine_rotation_outputs[:2]
+        fine_mstep_rotations = fine_rotation_outputs[2] if return_mstep_rotations else None
+        rot_parent_map = np.asarray(rot_parent_map, dtype=np.int64)
 
     fine_base_translations, trans_parent_map = get_oversampled_translation_grid(
         base_translations_f64,
@@ -151,6 +166,103 @@ def build_adaptive_pass2_grids(
         return (*outputs, fine_mstep_rotations)
     return outputs
 
+
+
+def fill_adaptive_fine_rotation_rows(
+    parents,
+    *,
+    filled,
+    fine_rotations,
+    fine_mstep_rotations,
+    fine_source_eulers,
+    coarse_healpix_order: int,
+    adaptive_oversampling: int,
+    random_perturbation: float,
+) -> None:
+    """Fill the deferred fine rows of ``parents`` (None: every parent) in place.
+
+    Each fine row depends on its coarse parent alone and the grid is
+    parent-major, ``8**oversampling`` children per parent, so a parent's rows
+    computed on their own are the rows the whole grid holds
+    (:func:`relax.sampling.get_oversampled_rotation_grid_from_samples`).
+    ``filled`` [n_coarse] marks the parents already filled.
+    """
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+
+    parents = np.flatnonzero(~filled) if parents is None else np.unique(np.asarray(parents, dtype=np.int64))
+    parents = parents[~filled[parents]]
+    if parents.size == 0:
+        return
+    rotations, _parent_map, _ids, mstep_rotations, source_eulers = get_oversampled_rotation_grid_from_samples(
+        parents,
+        parent_nside_level=int(coarse_healpix_order),
+        oversampling_order=int(adaptive_oversampling),
+        random_perturbation=float(random_perturbation),
+        return_rotation_indices=True,
+        return_mstep_rotations=True,
+        return_source_eulers=True,
+        dtype=fine_rotations.dtype,
+    )
+    n_children = 8 ** int(adaptive_oversampling)
+    rows = (parents[:, None] * n_children + np.arange(n_children, dtype=np.int64)[None, :]).reshape(-1)
+    fine_rotations[rows] = rotations
+    if fine_mstep_rotations is not None:
+        fine_mstep_rotations[rows] = mstep_rotations
+    if fine_source_eulers is not None:
+        fine_source_eulers[rows] = source_eulers
+    filled[parents] = True
+
+
+class DeferredFineRows:
+    """A deferred adaptive grid's fine rows (``defer_fine_rotations``), filled per coarse parent on call.
+
+    ``grids`` is the :class:`~relax.refinement.half_scoring._AdaptivePass2Grids`
+    whose fine and M-step rotation arrays it fills in place; ``source_eulers``
+    holds the fine source Euler rows, NaN until their parent is filled. Called
+    with the parents a pass reads, or None for every parent.
+    """
+
+    def __init__(self, grids, coarse_healpix_order: int, adaptive_oversampling: int, random_perturbation: float):
+        self.grids = grids
+        self.source_eulers = np.full((int(grids.fine_rotations.shape[0]), 3), np.nan)
+        self.filled = np.zeros(int(grids.coarse_rotations.shape[0]), dtype=bool)
+        self.coarse_healpix_order = int(coarse_healpix_order)
+        self.adaptive_oversampling = int(adaptive_oversampling)
+        self.random_perturbation = float(random_perturbation)
+
+    def __call__(self, parents) -> None:
+        fill_adaptive_fine_rotation_rows(
+            parents,
+            filled=self.filled,
+            fine_rotations=self.grids.fine_rotations,
+            fine_mstep_rotations=self.grids.fine_mstep_rotations,
+            fine_source_eulers=self.source_eulers,
+            coarse_healpix_order=self.coarse_healpix_order,
+            adaptive_oversampling=self.adaptive_oversampling,
+            random_perturbation=self.random_perturbation,
+        )
+
+
+def adaptive_fine_rows(grids, coarse_healpix_order: int, adaptive_oversampling: int, random_perturbation: float):
+    """``(fine source Euler rows, row filler)`` of an adaptive grid built with ``defer_fine_rotations=oversampling > 0``.
+
+    With oversampling the rows are deferred and the filler (:class:`DeferredFineRows`)
+    fills them per coarse parent: pass 2 reads only its significant parents' rows.
+    Without, the filler is None and the Euler rows are the coarse grid's.
+    """
+    from relax.sampling import get_oversampled_rotation_grid_from_samples
+
+    if int(adaptive_oversampling) > 0:
+        fill = DeferredFineRows(grids, coarse_healpix_order, adaptive_oversampling, random_perturbation)
+        return fill.source_eulers, fill
+    eulers = get_oversampled_rotation_grid_from_samples(
+        np.arange(int(grids.coarse_rotations.shape[0]), dtype=np.int64),
+        int(coarse_healpix_order),
+        oversampling_order=0,
+        random_perturbation=float(random_perturbation),
+        return_source_eulers=True,
+    )[-1]
+    return eulers, None
 
 
 def _relion_cuda_f32_tail_target(sum_weight, adaptive_fraction: float):
