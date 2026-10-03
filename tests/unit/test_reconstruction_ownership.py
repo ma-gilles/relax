@@ -41,6 +41,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
         "grid_size", "voxel_size", "volume_shape", "padding_factor",
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
+        "gridding_kernel",
     )
     for name in (
         "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",
@@ -63,7 +64,7 @@ def test_unregularized_reconstruction_variants_expose_dependencies():
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_k1_halfmaps).parameters) == (
         "Ft_y_per_half", "Ft_ctf_per_half", "volume_shape", "tau2_fudge",
         "padding_factor", "projection_padding_factor", "minres_map",
-        "accumulator_volume_shape",
+        "accumulator_volume_shape", "gridding_kernel",
     )
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_unregularized_class_means).parameters) == (
         "Ft_y_combined", "Ft_ctf_combined", "volume_shape", "n_classes",
