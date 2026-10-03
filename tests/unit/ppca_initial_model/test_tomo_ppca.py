@@ -393,7 +393,12 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
         rotation_block_size=32,
         optimizer=optimizer,
     )
-    state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
+    try:
+        state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
+    finally:
+        # Leave no real grid behind for tests that monkeypatch it.
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
     rows = [json.loads(line) for line in (tmp_path / "iterations.jsonl").read_text().splitlines()]
     assert [row["iteration"] for row in rows] == [1, 2]
     assert all(sum(row["half_counts"]) == n_particles for row in rows)
