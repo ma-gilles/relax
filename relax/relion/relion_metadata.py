@@ -607,6 +607,10 @@ IMPLEMENTED_OPTICS_FEATURES = frozenset({"ctf_premultiplied", "odd_aberrations",
 # InitialModel (VDAM, single particles): premultiplied images and odd and even aberrations through the
 # K-class adaptive route; magnification stays refused (the VDAM E-step does not magnify its projections).
 INITIAL_MODEL_OPTICS_FEATURES = IMPLEMENTED_OPTICS_FEATURES - {"magnification"}
+# Subtomogram particles (RELION 5 2D stacks), Refine3D/Class3D: relion_refine applies all four features to
+# every tilt image; each joins here once its per-tilt path matches RELION. Until then a subtomogram job refuses
+# it instead of ignoring it (the per-tilt STAR relax reads carries none of these columns).
+TOMO_OPTICS_FEATURES = frozenset()
 
 
 def refuse_unsupported_optics(optics_table, *, source, supported=frozenset()) -> None:

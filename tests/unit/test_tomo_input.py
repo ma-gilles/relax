@@ -241,3 +241,35 @@ def test_subtomogram_runs_take_the_first_iteration_cross_correlation():
         _validate_tomo_run(SimpleNamespace(**{**vars(args), "firstiter_cc": True, "n_classes": n_classes}), None, False)
     with pytest.raises(SystemExit, match="soft-mask"):
         _validate_tomo_run(SimpleNamespace(**{**vars(args), "relion_softmask_reduction": "probe"}), None, False)
+
+
+@pytest.mark.unit
+def test_subtomogram_runs_refuse_unqualified_optics_features(project):
+    """Subtomogram Refine3D/Class3D refuse each optics feature until its per-tilt path is qualified.
+
+    relion_refine applies all four to every tilt image; ignoring one silently gave wrong maps.
+    """
+
+    from relax.refinement.full_refinement import _refuse_unsupported_particle_optics
+    from relax.relion.relion_metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
+
+    out, _ = project
+    _, optics = read_star(str(out / "particles.star"))
+    _refuse_unsupported_particle_optics(optics, tomo_run=True)
+    values = {
+        "ctf_premultiplied": {"_rlnCtfDataAreCtfPremultiplied": 1},
+        "odd_aberrations": {"_rlnBeamTiltX": 0.5},
+        "even_aberrations": {"_rlnEvenZernike": "[0,0,0,0,40]"},
+        "magnification": {"_rlnMagMat00": 1.01, "_rlnMagMat01": 0.0, "_rlnMagMat10": 0.0, "_rlnMagMat11": 1.0},
+    }
+    assert set(values) == set(OPTICS_FEATURE_LABELS)
+    for feature, columns in values.items():
+        table = optics.copy()
+        for label, value in columns.items():
+            table[label] = value
+        _refuse_unsupported_particle_optics(table, tomo_run=False)
+        if feature in TOMO_OPTICS_FEATURES:
+            _refuse_unsupported_particle_optics(table, tomo_run=True)
+        else:
+            with pytest.raises(NotImplementedError, match="does not implement"):
+                _refuse_unsupported_particle_optics(table, tomo_run=True)

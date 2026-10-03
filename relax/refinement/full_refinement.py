@@ -1846,6 +1846,21 @@ def _validate_continue_cli(args) -> int:
     return seed
 
 
+def _refuse_unsupported_particle_optics(optics_table, *, tomo_run: bool) -> None:
+    """Refuse the particle STAR's optics features this run does not implement.
+
+    Single particles take :data:`relax.relion.relion_metadata.IMPLEMENTED_OPTICS_FEATURES`; subtomogram
+    particles take :data:`relax.relion.relion_metadata.TOMO_OPTICS_FEATURES`, the features whose per-tilt
+    path is qualified.
+    """
+
+    relion_metadata.refuse_unsupported_optics(
+        optics_table,
+        source="particles.star",
+        supported=relion_metadata.TOMO_OPTICS_FEATURES if tomo_run else relion_metadata.IMPLEMENTED_OPTICS_FEATURES,
+    )
+
+
 def _validate_tomo_run(args, frozen_boundary, double_image_preprocessing):
     """Refuse options the subtomogram (2D-stack) path does not implement yet (S4.2)."""
 
@@ -3036,11 +3051,7 @@ def main(command=None):
 
     our_star = _starfile.read(os.path.join(args.data_dir, "particles.star"))
     our_particles = our_star["particles"] if isinstance(our_star, dict) else our_star
-    relion_metadata.refuse_unsupported_optics(
-        our_star.get("optics") if isinstance(our_star, dict) else None,
-        source="particles.star",
-        supported=relion_metadata.IMPLEMENTED_OPTICS_FEATURES,
-    )
+    _refuse_unsupported_particle_optics(our_star.get("optics") if isinstance(our_star, dict) else None, tomo_run=tomo_run)
     # Keep the input-STAR particle identities available for replay mapping.
     # RELION data STAR rows can be permuted relative to this table, so callers
     # must map by rlnImageName rather than assuming row positions coincide.
