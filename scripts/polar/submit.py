@@ -117,6 +117,14 @@ def main() -> None:
         help="additional Slurm environment variable; repeatable",
     )
     parser.add_argument(
+        "--sbatch-option",
+        dest="sbatch_options",
+        action="append",
+        default=[],
+        metavar="OPTION",
+        help="sbatch option overriding the script's directives, e.g. --gres=gpu:tesla_v100-pcie-16gb:1; repeatable",
+    )
+    parser.add_argument(
         "--stage-only", action="store_true", help="sync code without submitting (for environment setup)"
     )
     args = parser.parse_args()
@@ -183,6 +191,7 @@ def main() -> None:
         f"--output={run_root}/slurm-%j.out",
         f"--error={run_root}/slurm-%j.err",
         f"--export={exports}",
+        *args.sbatch_options,
         f"{source}/{job_relative}",
     )
     receipt = {
@@ -193,6 +202,7 @@ def main() -> None:
         "env_lock_sha256": env_key,
         "inputs": input_hashes,
         "settings": settings,
+        "sbatch_options": args.sbatch_options,
         "run_root": run_root,
         "stdout": f"{run_root}/slurm-{job_id}.out",
         "stderr": f"{run_root}/slurm-{job_id}.err",
