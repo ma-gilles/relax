@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import logging
 from functools import partial
 from typing import NamedTuple
 
@@ -94,6 +95,7 @@ class TracePPCAStats(AugmentedPPCAStats):
 
     metric_trace: jax.Array | None = None
 
+logger = logging.getLogger(__name__)
 _HIGHEST = jax.lax.Precision.HIGHEST
 GEMM_PRECISIONS = ("auto", "fp32", "tf32")
 
@@ -1047,63 +1049,185 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, kept: _
     return kept, _tile_posterior(kept, tile.rows, n_blocks, stream.rotation_block_size, stream.static)
 
 
-# Share of the device memory still available after the stream's upload (model, voxel-major copy,
-# tables) that a tile's image-proportional buffers may take; projections, moment accumulators and
-# XLA temporaries keep the rest.
-TILE_MEMORY_FRACTION = 0.4
+# Device memory a tile plan leaves unplanned for allocator fragmentation and XLA program
+# temporaries the plan does not count, as a share of the device's memory.
+TILE_FRAGMENTATION_HEADROOM = 0.10
 
 
-# Live copies of the image operands while a tile reader builds them (complex shifted images,
-# frame slots, the planar [Re | Im] stack and its padded transpose). Measured on the subtomogram
-# reader at r31/HP3 (41 tilts, 33 shifts, A100): 92 MiB of device peak per added particle, about
-# 2.4 copies of the score and reconstruction operands on top of the kept buffers.
-TILE_LOADER_OPERAND_COPIES = 2.5
+def _window_pixels(stream: FullRowStream) -> int:
+    """Pixels per frame of the tile operands (the padded GEMM window on GPU streams)."""
+    arrays = stream.arrays
+    if arrays.gemm_window is not None:
+        return int(arrays.gemm_window.shape[0])
+    if arrays.score_indices is not None:
+        return int(np.asarray(arrays.score_indices).size)
+    return int(arrays.coefficient_noise.size)
 
 
-def tile_image_floats(stream: FullRowStream, n_frames: int = 1) -> int:
-    """float32 values on the device per tile image (a particle with ``n_frames`` tilt images).
+def _tile_frames(stream: FullRowStream) -> int:
+    """Projection frames per tile row: a subtomogram reader's tilts (``max_frames``), else 1."""
+    frames = getattr(stream.tile_loader, "max_frames", None)
+    return 1 if frames is None else int(frames(stream))
 
-    The kept pass-1 buffers (scores, latent means, packed covariances and the per-row partials)
-    over the full row table, the score and reconstruction image operands of every frame with the
-    reader's transient copies (:data:`TILE_LOADER_OPERAND_COPIES`), and one rotation block's
-    pass-1/pass-2 GEMM outputs and posterior weights.
+
+def stream_tile_bytes(stream: FullRowStream, n_images: int) -> int:
+    """Device bytes of the stream's own buffers for a tile of ``n_images``, from their shapes.
+
+    Per image: the kept pass-1 results over the full row table (:func:`_empty_kept`: scores and
+    latent means ``(R, B, T)`` per component, packed covariances ``(R, B, tri(q))``, three per-row
+    partials), and one rotation block's pass-1 inner products and pass-2 weights ``(P, block, B T)``
+    with its Gram and translation sums ``(tri(P), block, B)``. Per tile: the moment accumulators and
+    their compensation (:func:`_empty_carry`), and one block's projections ``(P, block K, 2F)`` with
+    their packed products ``(tri(P), block K, F)`` and its M-step images (``K`` frames per row).
     """
     static = stream.static
     P = static.basis_size
     T = int(stream.translations.shape[0])
-    capacity = len(stream.block_starts) * stream.rotation_block_size
-    arrays = stream.arrays
-    if arrays.gemm_window is not None:
-        F = int(arrays.gemm_window.shape[0])
-    elif arrays.score_indices is not None:
-        F = int(np.asarray(arrays.score_indices).size)
-    else:
-        F = int(arrays.coefficient_noise.size)
+    block = stream.rotation_block_size
+    capacity = len(stream.block_starts) * block
+    K, F = _tile_frames(stream), _window_pixels(stream)
     kept = capacity * (T * P + tri_size(P - 1) + 3)
-    operands = TILE_LOADER_OPERAND_COPIES * 2 * n_frames * F * (2 * T + 1)
-    block = stream.rotation_block_size * (2 * P * T + tri_size(P))
-    return int(kept + operands + block)
+    block_outputs = block * (2 * P * T + 2 * tri_size(P))
+    metric = 1 if static.metric_trace_only else tri_size(P)
+    accumulators = 2 * _moment_groups(static) * int(stream.arrays.augmented.shape[1]) * 32
+    projections = block * K * F * (2 * P + tri_size(P))
+    moment_images = block * K * F * (metric + 2 * P)
+    return 4 * (int(n_images) * (kept + block_outputs) + accumulators + projections + moment_images)
 
 
-def plan_tile_images(stream: FullRowStream, requested: int, *, n_frames: int = 1, memory_bytes=None) -> int:
-    """Tile images (particles) per tile: ``requested``, capped so a tile fits the device.
+def single_particle_reader_bytes(stream: FullRowStream, n_images: int) -> tuple[int, int]:
+    """``(peak, resident)`` device bytes of :func:`_load_tile` for ``n_images``, from its arrays.
 
-    ``memory_bytes`` defaults, on a GPU stream, to what the device can still hand out
-    (:func:`relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`, which counts what is
-    already resident); a CPU stream keeps ``requested``. At least one image per tile.
+    Peak counts every array the reader creates as live at once: the shifted half images
+    ``(B T, n_half)`` complex from ``preprocess_batch``, their scaled and masked score and
+    reconstruction copies, the windowed copies, the GEMM-window padding, the planar ``[Re | Im]``
+    stacks and their padded transposes, and the CTF rows. Resident is the tile's two planar operands
+    and CTF rows, live until the tile finishes.
     """
-    if memory_bytes is None and stream.static.cuda_kernels:
-        from relax.sparse_pass2 import sparse_pass2_budget as budget
+    T = int(stream.translations.shape[0])
+    n_half = int(stream.arrays.coefficient_noise.size)
+    F = _window_pixels(stream)
+    complex_full = 2 * T * n_half  # one (T, n_half) complex64 image stack, in float32 values
+    complex_window = 2 * T * F
+    planar = 2 * T * F
+    peak = 3 * complex_full + 4 * complex_window + 4 * planar + 6 * n_half
+    resident = 2 * planar + 2 * F
+    return 4 * int(n_images) * peak, 4 * int(n_images) * resident
 
-        memory_bytes = budget.device_available_bytes(
-            budget._device_free_memory_bytes(),
-            budget._jax_allocator_free_memory_bytes(),
-            budget._jax_allocator_pool_free_bytes(),
-        )
+
+def _reader_bytes(stream: FullRowStream):
+    """The tile reader's ``(peak, resident)`` byte count: ``stream.tile_loader.operand_bytes`` when the
+    reader has one (the subtomogram reader, from XLA's compiled memory analysis of its operand
+    program), else :func:`single_particle_reader_bytes`."""
+    return getattr(stream.tile_loader, "operand_bytes", None) or single_particle_reader_bytes
+
+
+def tile_bytes(stream: FullRowStream, n_images: int, reader=None) -> int:
+    """Device bytes a tile of ``n_images`` needs at its peak, while the next tile is being read.
+
+    Tiles are pipelined (:func:`accumulate_full_row_tiles`): the next tile's reader runs while the
+    current tile's operands and the shared kept buffer are live, so the count is the stream's own
+    buffers (:func:`stream_tile_bytes`), one tile's resident operands and one reader peak.
+    """
+    peak, resident = (reader or _reader_bytes(stream))(stream, n_images)
+    return stream_tile_bytes(stream, n_images) + resident + peak
+
+
+def plan_tile_images(stream: FullRowStream, requested: int, *, memory_bytes=None, device_bytes=None) -> int:
+    """Tile images (particles) per tile: ``requested``, or the most that fit the device (:func:`tile_bytes`).
+
+    The budget is ``memory_bytes`` minus :data:`TILE_FRAGMENTATION_HEADROOM` of ``device_bytes``. On a
+    GPU stream they default to what the device can still hand out after the stream's upload
+    (:func:`relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`) and the device's memory;
+    a CPU stream keeps ``requested``. At least one image per tile. Every stage (radius, window,
+    pose grid) is planned with its own shapes, once: with the probed defaults the plan is kept per
+    stage shape, measured at the stage's first update.
+    """
+    if memory_bytes is None and device_bytes is None and stream.static.cuda_kernels:
+        # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
+        key = (_plan_shape_key(stream), int(requested), stream.device.id)
+        if key not in _PLANS:
+            _PLANS[key] = plan_tile_images(stream, requested, memory_bytes=_available_device_bytes())
+        return _PLANS[key]
     if not memory_bytes:
         return int(requested)
-    per_image = 4 * tile_image_floats(stream, n_frames)
-    return max(1, min(int(requested), int(TILE_MEMORY_FRACTION * memory_bytes) // per_image))
+    if device_bytes is None and stream.static.cuda_kernels:
+        from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+        device_bytes = budget._device_memory_limit_bytes()
+    budget_bytes = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
+    reader = _reader_bytes(stream)
+    requested = int(requested)
+    planned = _plan_tile_images(stream, requested, reader, budget_bytes)
+    logger.info(
+        "PPCA tile plan: %d of %d images per tile; counted %.2f GiB of a %.2f GiB budget "
+        "(%.2f GiB available, %.2f GiB device, headroom %.0f%%)",
+        planned,
+        requested,
+        tile_bytes(stream, planned, reader) / 2**30,
+        budget_bytes / 2**30,
+        memory_bytes / 2**30,
+        (device_bytes or memory_bytes) / 2**30,
+        100 * TILE_FRAGMENTATION_HEADROOM,
+    )
+    return planned
+
+
+# Plans by stage shapes (:func:`_plan_shape_key`) for the device probes' defaults.
+_PLANS: dict = {}
+
+
+def _plan_shape_key(stream: FullRowStream) -> tuple:
+    """Everything :func:`tile_bytes` reads from a stream: a stage's pose grid, window, rank and frames."""
+    static = stream.static
+    return (
+        len(stream.block_starts),
+        stream.rotation_block_size,
+        int(stream.translations.shape[0]),
+        _window_pixels(stream),
+        int(stream.arrays.coefficient_noise.size),
+        int(stream.arrays.augmented.shape[1]),
+        static.basis_size,
+        static.metric_trace_only,
+        _tile_frames(stream),
+        getattr(stream.tile_loader, "operand_bytes", None),
+    )
+
+
+def _available_device_bytes():
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    return budget.device_available_bytes(
+        budget._device_free_memory_bytes(),
+        budget._jax_allocator_free_memory_bytes(),
+        budget._jax_allocator_pool_free_bytes(),
+    )
+
+
+def _plan_tile_images(stream, requested, reader, budget_bytes):
+    if tile_bytes(stream, requested, reader) <= budget_bytes:
+        return requested
+    # The reader's bytes are affine in the tile size: two exact counts (1 and ``requested``) place
+    # every size between them, so the search compiles no other reader program. The chosen size is
+    # then counted exactly.
+    ends = {n: reader(stream, n) for n in (1, requested)}
+
+    def affine(stream, n):
+        if requested == 1:
+            return ends[1]
+        t = (n - 1) / (requested - 1)
+        return tuple(int(round((1 - t) * a + t * b)) for a, b in zip(ends[1], ends[requested]))
+
+    low, high = 1, requested
+    while low < high:  # the largest size that fits; bytes grow with the size
+        middle = (low + high + 1) // 2
+        if tile_bytes(stream, middle, affine) <= budget_bytes:
+            low = middle
+        else:
+            high = middle - 1
+    while low > 1 and tile_bytes(stream, low, reader) > budget_bytes:
+        low -= 1
+    return low
 
 
 def _empty_kept(capacity: int, n_images: int, n_translations: int, q: int, dtype) -> _Kept:
@@ -1205,8 +1329,11 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
         results, kept, previous = [], None, None
         for index, (image_indices, _significant) in enumerate(tiles):
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
+            loaded = None
             if previous is not None:
                 results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
+            # Only this tile's operands stay live while the next one is read (tile_bytes counts that).
+            previous = None
             loaded = (
                 _read_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
             )

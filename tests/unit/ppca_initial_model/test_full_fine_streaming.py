@@ -18,7 +18,7 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
-    TILE_MEMORY_FRACTION,
+    TILE_FRAGMENTATION_HEADROOM,
     TracePPCAStats,
     accumulate_full_row_tile,
     accumulate_full_row_tiles,
@@ -27,7 +27,7 @@ from relax.ppca_refinement.full_row_stream import (
     full_row_tile_embeddings,
     plan_tile_images,
     prepare_full_row_stream,
-    tile_image_floats,
+    tile_bytes,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -262,16 +262,22 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
 
 
 def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
-    """Tiles hold at most the requested images, fewer when their buffers would not fit the device."""
+    """Tiles hold at most the requested images, else the most whose counted bytes fit the budget."""
     _dataset, _mu, _W, stream, _host = tile_problem
-    per_image = 4 * tile_image_floats(stream)
-    tilt_image = 4 * tile_image_floats(stream, n_frames=41)
-    assert tilt_image > per_image  # every tilt of a particle adds its operands
     assert plan_tile_images(stream, 150) == 150  # the tiny problem fits any device (CPU: no cap)
-    ten = int(10 * per_image / TILE_MEMORY_FRACTION) + 1
-    assert plan_tile_images(stream, 150, memory_bytes=ten) == 10
-    assert plan_tile_images(stream, 150, n_frames=41, memory_bytes=ten) < 10
+    budget = tile_bytes(stream, 10) / (1 - TILE_FRAGMENTATION_HEADROOM)
+    assert plan_tile_images(stream, 150, memory_bytes=budget, device_bytes=budget) == 10
+    assert tile_bytes(stream, 11) > (1 - TILE_FRAGMENTATION_HEADROOM) * budget
     assert plan_tile_images(stream, 150, memory_bytes=1) == 1
+    # A reader that reports more bytes per image (a subtomogram reader's tilts) gets smaller tiles.
+    def heavy(stream, n):
+        return 100 * n * 4096, 10 * n * 4096
+
+    def loader(*args, **kwargs):
+        raise AssertionError("not read")
+
+    loader.operand_bytes = heavy
+    assert plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget) < 10
 
 
 def test_pipelined_tiles_match_separate_tiles(tile_problem):

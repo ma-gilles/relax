@@ -444,3 +444,11 @@ def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2):
 
 # The tile planner reads the reader's operand memory from the reader (FullRowStream.tile_loader).
 load_tilt_tile.operand_bytes = tilt_operand_bytes
+
+
+def tilt_frames(stream) -> int:
+    """Projection frames per tile row for the tile planner: the largest tilt group's frame count."""
+    return max(len(frames) for frames in stream.dataset.group_frames)
+
+
+load_tilt_tile.max_frames = tilt_frames

@@ -244,11 +244,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
         # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
         # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
-        tile_size = plan_tile_images(
-            streams[0],
-            config.image_batch_size,
-            n_frames=max(len(frames) for frames in dataset.group_frames) if tilts else 1,
-        )
+        tile_size = plan_tile_images(streams[0], config.image_batch_size)
         tiles = [
             (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
             for group, ids_group in enumerate(ids)

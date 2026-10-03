@@ -1143,13 +1143,25 @@ scientific contract; runnable code alone does not establish recovery.
   `--no-stream-coarse-recompute` selects the host-mask dense engine (q <= 2),
   which is the stream's test reference.
   The image batch is an upper bound on the particles in a tile. A tile holds
-  fewer when its image-proportional buffers would take more than 40% of the
-  device memory still available after the stream's upload
-  ([plan_tile_images](../../relax/ppca_refinement/full_row_stream.py)): the
-  kept pass-1 buffers over the row table, every tilt frame's operands with the
-  tile reader's transient copies (2.5, measured as 92 MiB of peak per added
-  41-tilt particle at r31/HP3) and one block's GEMM outputs. Each update records the planned size as `tile_images`.
-  A subtomogram particle counts all of its tilts.
+  fewer when its counted device bytes exceed the memory still available after
+  the stream's upload, less 10% of the device for fragmentation and
+  uncounted temporaries
+  ([plan_tile_images](../../relax/ppca_refinement/full_row_stream.py),
+  `TILE_FRAGMENTATION_HEADROOM`). The count, from array shapes, includes:
+  - the kept pass-1 rows over the row table, one block's GEMM outputs and
+    weights, the moment accumulators, and one block's projections and M-step
+    images for the tile's K frames;
+  - the current tile's resident operands and the next tile's reader peak,
+    because tiles are read ahead while the current one runs. The subtomogram
+    reader reports that peak from XLA's compiled memory analysis of its operand
+    program (`load_tilt_tile.operand_bytes`); the single-particle reader counts
+    its arrays.
+
+  A finished tile is released before the next one is read. A stage is planned
+  once, from its shapes, and the plan is logged. Each update records the
+  planned size as `tile_images`. On an emulated 16 GB A100 (r31/HP3 cryo-ET,
+  41 tilts, batch 150) the plan is 142 particles at a 7.6 GB peak, where a
+  one-copy count had run a P100 out of memory.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it
