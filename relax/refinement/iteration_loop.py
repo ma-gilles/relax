@@ -2184,18 +2184,18 @@ def refine_single_volume(
             # resident E-step does not use them). Keep them on the host between
             # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
             # float32 volumes are 8 GB of the device floor (GPU census, bigbox
-            # 14480607).
+            # 14480607). The per-half reconstruction volumes are not read again:
+            # drop them here instead of copying them.
             (
                 reference_model.tau2,
                 reference_model.tau2_per_half,
                 mean_signal_variance,
-                mean_signal_variance_per_half,
             ) = _host_tau2_volumes(
                 reference_model.tau2,
                 reference_model.tau2_per_half,
                 mean_signal_variance,
-                mean_signal_variance_per_half,
             )
+            mean_signal_variance_per_half = None
         _parity_dump.mark_stage(iteration, "recon")
 
         history.significant_counts.append(significance.recorded)

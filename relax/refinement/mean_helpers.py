@@ -100,11 +100,15 @@ class HostTau2(NamedTuple):
     shared: object
     per_half: list
     reconstruction: object
-    reconstruction_per_half: list | None
 
 
-def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_variance, mean_signal_variance_per_half):
-    """Move K1 tau2 volumes to host, copying each distinct device array once."""
+def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_variance):
+    """Move the K1 tau2 volumes that are read again to host, copying each distinct device array once.
+
+    The per-half reconstruction volumes are not among them: nothing reads them
+    after the reconstruction unless per-half scoring is on, and then they are
+    the entries of ``mean_variance_per_half``.
+    """
     host = {}
 
     def to_host(value):
@@ -119,7 +123,6 @@ def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_varian
         to_host(mean_variance),
         [to_host(value) for value in mean_variance_per_half],
         to_host(mean_signal_variance),
-        None if mean_signal_variance_per_half is None else [to_host(value) for value in mean_signal_variance_per_half],
     )
 
 def _updated_mean_variance_per_half(
