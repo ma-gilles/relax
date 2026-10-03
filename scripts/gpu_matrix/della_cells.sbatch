@@ -11,6 +11,7 @@
 #     --output=OUT/job-%j.log --export=NONE,MATRIX_SRC=<frozen checkout>,MATRIX_NATIVES=<natives>,\
 #MATRIX_OUT=<out root>,MATRIX_CELLS='cell cell@16 ...' scripts/gpu_matrix/della_cells.sbatch
 # MATRIX_SRC is a frozen checkout sharing a pixi environment; it is put first on PYTHONPATH.
+# MATRIX_LIVE_MEMORY=0 turns off the in-process live-memory sampler: do so for any run whose wall is quoted.
 
 set -uo pipefail
 : "${MATRIX_SRC:?}" "${MATRIX_NATIVES:?}" "${MATRIX_OUT:?}" "${MATRIX_CELLS:?}"
