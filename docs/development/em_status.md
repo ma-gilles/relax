@@ -499,9 +499,17 @@ H100 replay of ribosembly K15 50k it150 -> 151 (job 14877086): warm E-step 33.6 
 40.1 s), K4 25.7 -> 25.1 s, K1 10.0 -> 9.9 s; every image's significant-sample count equal to the loop's.
 The same program folds one class and rotation block per call on that block's projection when the
 projection cache does not fit the budget, and scores the exact-operand normalized-CC (`--firstiter_cc`)
-passes with RELION's coarse CC. The per-class loop still serves the generic scorer above (K=1 runs
-without the fresh order, and their CC passes) and the class runner-up (`return_class_second`, the
-K=1 tree rescore), pending the generic scorer's move.
+passes with RELION's coarse CC. Since 2026-10-02 it also tracks each class's runner-up
+(`return_class_second`), serves score-only passes, and the K=1 `--firstiter_cc` coarse-tree top-2 rescore
+(margin: the run option `--firstiter_cc_tree_rescore_max_margin`, default 4e-6 for K=1) scores the
+exact operands with the CC GEMMs. RELION-band check (control cf583b3 vs a2cc776, K=1 auto-refine,
+`--firstiter_cc`, seed 1775735620; c1band_a2cc776, jobs 14904272/14904273): the coarse-probe winners
+near the 4e-6 ties differ (noise1_50k 63 vs 14 winner changes, pdb_k1_100k 18 vs 2), but the fine pass
+lands identically (run_it001_data.star poses equal between the arms; versus RELION's it001, 5 of 50000
+and 0 of 100000 particles differ in both arms, RELION-vs-RELION 3 of 50000); both arms meet the map
+gate against every RELION run, masked GT FSC-AUC noise1 0.679361 vs 0.679342 (RELION 0.679354),
+pdb 0.692246 vs 0.692217 (RELION 0.692196). The per-class loop still serves the generic scorer above
+(datasets without RELION's CUDA preprocessing), pending its removal.
 Removed (2026-10-02, team-lead's deletion list D1-D5, D7), each switch refused when set
 (`relax/renamed_environment.json` "retired", checked when relax is imported): the fused per-block pass-1
 program (`RELAX_PASS1_FUSED`); the fused-projector coarse scorer family (`RECOVAR_K1_COARSE_FUSED_PROJECTOR`,
