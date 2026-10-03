@@ -2205,19 +2205,12 @@ def refine_single_volume(
 
         history.record_rotation_posterior(rotation_posterior_per_half)
         if all(rot_sum is not None for rot_sum in rotation_posterior_per_half):
-            k1_direction_prior_order = _direction_prior_healpix_order_for_scoring(
-                use_local=use_local,
-                current_healpix_order=current_rotation_grid.healpix_order,
-                state_healpix_order=state.healpix_order,
-                adaptive_oversampling=state.adaptive_oversampling,
-                local_search_order=local_sampling.search.healpix_order if use_local else None,
-            )
             if not k_class_enabled:
                 learned_priors = learn_k1_direction_priors(
                     rotation_posterior_per_half,
-                    direction_prior_order=k1_direction_prior_order,
+                    direction_prior_order=direction_prior_healpix_order,
                     expected_rotation_count=rotation_grid_size(
-                        k1_direction_prior_order,
+                        direction_prior_healpix_order,
                         symmetry=symmetry,
                     ),
                     dtype=scoring_dtype,
@@ -2233,8 +2226,7 @@ def refine_single_volume(
                     symmetry=symmetry,
                 )
                 if (
-                    not use_local
-                    and effective_rotations.shape[0] == exhaustive_grid_size
+                    effective_rotations.shape[0] == exhaustive_grid_size
                     and all(
                         rot_sum is not None
                         for rot_sum in class_rotation_posterior_per_half
