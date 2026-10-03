@@ -3322,7 +3322,6 @@ def test_half0_local_relion_accumulators_offload_to_host():
     out = score_outputs._maybe_host_offload_half0_local_accumulators(
         half_index=0,
         use_local=True,
-        k_class_enabled=False,
         score_result=result,
         log=iteration_loop_module.logger,
     )
@@ -3347,7 +3346,6 @@ def test_half0_local_relion_accumulator_offload_skips_non_x_half():
     out = score_outputs._maybe_host_offload_half0_local_accumulators(
         half_index=0,
         use_local=True,
-        k_class_enabled=False,
         score_result=result,
         log=iteration_loop_module.logger,
     )

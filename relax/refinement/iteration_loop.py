@@ -1821,7 +1821,6 @@ def refine_single_volume(
                 score_result = _maybe_host_offload_half0_local_accumulators(
                     half_index=k,
                     use_local=use_local,
-                    k_class_enabled=k_class_enabled,
                     score_result=score_result,
                     log=logger,
                 )

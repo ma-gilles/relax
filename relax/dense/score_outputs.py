@@ -161,13 +161,15 @@ def _maybe_host_offload_half0_local_accumulators(
     *,
     half_index: int,
     use_local: bool,
-    k_class_enabled: bool,
     score_result: HalfScoreResult,
     log,
 ) -> HalfScoreResult:
-    """Keep finished half-0 local accumulators off GPU while half 1 scores."""
+    """Keep finished half-0 local accumulators off GPU while half 1 scores.
 
-    if int(half_index) != 0 or not use_local or k_class_enabled:
+    Local search is K=1: the numbered controller rejects it for Class3D.
+    """
+
+    if int(half_index) != 0 or not use_local:
         return score_result
     if score_result.mstep_full_half_axis is None:
         return score_result
