@@ -21,12 +21,82 @@ its conditional complexity or the complete readability design. Existing medium
 ordinary performance repeats for a design still being revised. All final quality,
 performance and delivery requirements below remain in force for the final source.
 
-### Planning-only architecture review — current direction
+### Execution plan and model policy — October 3
+
+This section supersedes the planning-only status below. The user authorized
+bounded agent implementation, then requested a complete plan and explicitly
+prohibited Astra-high implementation. The whole architecture remains the scope;
+separating two reconstruction functions is only the first prerequisite.
+
+Use Sol at medium reasoning for routine implementation, migrations and focused
+checks, honoring this session's earlier Sol preference. The primary owns the
+architecture, integration, scientific acceptance and job registry. Reserve
+expensive architectural reasoning for unresolved design decisions and milestone
+review; do not assign it routine coding or test waiting. Scripts observe jobs.
+Only one agent writes any given source file. Maximum active team is primary plus
+three workers. Use short task packets and isolated worktrees; no full-history
+forks for new implementation workers.
+
+#### Packages, dependencies and acceptance
+
+| Package | Work and concrete deliverable | Dependency / acceptance criterion |
+| --- | --- | --- |
+| P0 — capability and temporal contracts | Matrix of production, diagnostic, rejected and unresolved routes; side-by-side K1/Class3D transition ledger; direct/programmatic/qualification caller inventory | Before controller split. Every proposed deletion names its callers and reachability evidence; replay-installed and computed state are accounted for. |
+| P1 — coherent scientific operations | Distinct numbered half/class reconstruction; review prior estimation, sampling, expectation and noise contracts; remove repeated adaptation and historical call-site flags | First reconstruction patch can proceed now. Review caller and complete implementation; no ambiguous half/class axis and no duplicated numerical formula. Preserve final versus numbered policy differences. |
+| P2 — persistent and consumable ownership | Separate scientific reference models from particle execution partitions; explicit pose/noise/sampling ownership; transfer/release accumulator owners and aliases at actual last consumers | Uses P0/P1. Producer-consumer/lifetime table, tests of state publication and buffer ownership. Preserve zero-copy class aliasing until separately qualified; no generic context object. |
+| P3 — explicit scientific trajectories | Separate K1 auto-refinement and Class3D controllers from coherent operations; keep VDAM separate and modality-specific expectation within each trajectory | Uses P0–P2. Complete flow review proves original convergence, replay, RNG, sizing, first-CC and checkpoint timing. No copied numerical engine; shared orchestration retained only when its meaning is stable. |
+| P4 — configuration, modality and interventions | Ordinary startup state outside ReplayState; expected accuracy outside debug; meaningful execution/window settings replacing historical DenseVariantPolicy fields; distinct SPA/tomo preparation and capture contracts | Ownership decided with P0/P2; integrate serially with P3 where files overlap. Input admission rejects invalid stable combinations, while restored/computed-result checks remain. Observation cannot silently alter computation. |
+| P5 — simplify and retire | Remove redundant branches, obsolete APIs, duplicate sources of truth, dead families and forwarding-only layers; migrate callers/tests/docs; targeted style cleanup | After relevant replacement contracts exist. Each retained branch has an owner and reason. Diagnostic Class3D final paths and live comparison engines stay until explicitly replaced or retired with usage evidence. |
+| P6 — review, qualify and deliver | Complete calling-flow artifact, reusable principles and extension guidance; final frozen source/control; scoped scientific ladder, K1/exactly K4/real quality, memory and ordinary matched-GPU speed; main integration | No completion while required gates or design defects remain. Current checkpoint runs qualify only their source. Review the full architecture before expensive final repeats. |
+
+P1 is not limited to moving code. For each operation, record what information its
+caller no longer needs to know, what branching/argument adaptation disappeared,
+and what numerical or execution choice remains intentionally visible. Avoid new
+objects whose only purpose is to gather locals at one call site.
+
+P2 must trace all accumulator aliases, including `PerHalfOutputs` and the last
+`HalfScoreResult` in finalization. Clearing local names alone does not establish
+release. Measure lifetime/performance changes separately from mathematically
+identical code extraction. Do not call retained memory a leak without evidence.
+
+P4 includes a separate bug investigation for final tomography intermediate
+capture referencing SPA-only `final_inputs`. Reproduce before fixing; do not
+fabricate SPA operands. Do not bundle a confirmed behavior fix invisibly into
+structural equivalence claims.
+
+#### How a package executes
+
+1. Primary assigns one falsifiable objective, source fingerprint, exact writable
+   files, CPU/GPU budget, expected checks and stop condition. Audits are read-only.
+2. Sol implements in an isolated worktree, migrates maintained consumers and runs
+   focused checks. It submits no Slurm jobs and changes no baselines or tolerances.
+3. Primary reviews full caller/owner/state/lifetime changes and verifies evidence.
+   Resolve material design choices with concrete examples; no per-edit approvals.
+4. Publish cohesive review-branch updates with executed/pending checks explicit.
+   Preserve current freezes/jobs. Qualified pieces land on main under repository
+   gates; user-authorized draft review publication does not imply acceptance.
+5. Advance the dependent package. Do not parallelize changes to the same controller
+   or have multiple agents independently redesign shared types.
+
+Initial team: one Sol reconstruction writer (P1), read-only workflow/capability
+auditor (P0), read-only ownership auditor (P2). When audits finish, use Sol workers
+for independent migrations/tests or the next disjoint package. Primary handles
+shared-controller integration and architecture review. Do not keep an expensive
+model active solely to poll jobs or narrate progress.
+
+#### Goal and completion
+
+Retain the existing full completion goal. This plan adds architecture milestones
+without weakening final-source scientific/performance or main-delivery requirements.
+No new goal is needed to schedule subagents. The user need not repeatedly return
+a replacement goal to keep implementation moving. Report package status, evidence,
+remaining design decisions and exact live jobs in one concise handoff.
+
+### Architecture review basis — preceding planning phase
 
 The user requested big-picture planning before implementation and supplied an
-independent static review of commit `cad2012`. No implementation is authorized
-by this plan update. The subsequent reconstruction package is a proposed migration
-step, not the immediate action. Existing frozen checkpoint jobs remain unchanged.
+independent static review of commit `cad2012`. At that planning phase no implementation was authorized. The execution section
+above records the subsequent bounded implementation authorization. Existing frozen checkpoint jobs remain unchanged.
 
 Working recommendation: distinct K1 auto-refinement and Class3D scientific
 controllers; shared scoring, joint posterior, backprojection and reconstruction
