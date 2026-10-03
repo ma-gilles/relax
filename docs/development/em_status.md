@@ -59,17 +59,26 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   again identical. et09_box64 K=1 seed 2 end to end on one H100 (job 14864247): 6391 s, against 18434 s for relax
   before this work and 9955 / 8858 s for stock RELION; per-iteration average Pmax tracks the earlier relax run
   (it200 0.659 vs 0.658; RELION 0.669-0.670).
-- Subtomogram Refine3D `--firstiter_cc` (et01_base, RELION's default command, RELION 5.0.1
-  mpiscale MPI 3x4, H100): masked GT FSC-AUC relax / RELION (two same-seed runs, identical)
-  s1 0.99161 / 0.99162, s2 0.99180 / 0.99180, s3 0.99212 / 0.99223; map gate PASS on every seed
-  (merged cross-engine 0.99998 at s1-s2, 0.99962 at s3); wall 0.43-0.46x. OPEN: the s3 gap of
-  1.1e-4 reproduces in two relax runs (66ff6c8, d6ba262), outside RELION's same-seed range.
-  STALE, pre-d28c258 (2026-10-03): these arms, and the etoptics eto_plain Refine3D arms (s1-s3 1.4e-3,
-  4e-4, 7e-5 below RELION's stock r1/r2/double-BP band, which spans at most 1.5e-4), ran before
-  d28c258 gave the coarse CC pass RELION's float projector. Iteration 1 alone then moved 2 (et01 s3)
-  and 6-8 (eto_plain) particles by one fine step against RELION's deterministic CC iteration; on main
-  22ea0b2 it moves 0 (et01 s3, eto_plain s1) or 1, RELION's own near-tie rate (its s2 r1/r2 differ on
-  one particle). Full reruns on 22ea0b2 decide the rows.
+- Subtomogram Refine3D `--firstiter_cc` (RELION's default command; RELION 5.0.1 mpiscale MPI 3x4, H100;
+  relax accuracy-only arms on A100). Masked GT FSC-AUC on main 22ea0b2 against RELION's same-seed range
+  (stock r1/r2, plus the double-BP build where run):
+  | case | RELION range | relax 22ea0b2 | pre-d28c258 relax |
+  | --- | --- | --- | --- |
+  | et01_base s1 | 0.991616-0.991619 | 0.991596 (-2.0e-5) | 0.991610 |
+  | et01_base s2 | 0.991803 | 0.991802 (-6e-7) | 0.991800 |
+  | et01_base s3 | 0.992231-0.992234 | 0.992243 (+9e-6) | 0.992118 |
+  | eto_plain s1 | 0.85747-0.85762 | 0.85836 (+7.4e-4) | 0.85626 |
+  | eto_plain s2 | 0.86168-0.86171 | 0.86163 (-4.7e-5) | 0.86130 |
+  | eto_plain s3 | 0.86395 | 0.86387 (-8.4e-5) | 0.86388 |
+  The pre-d28c258 arms (coarse CC pass projected in double, not RELION's float texture) moved 2-8 particles at
+  the deterministic CC iteration 1 and sat below RELION in 4 of 6 rows; on main iteration 1 moves 0, or 1 at
+  RELION's own near-tie rate, and the residuals have both signs. A one-step replay from RELION's eto_plain s1
+  iteration-1 state (state-swap all_relion, uninterrupted noise) leaves iteration 2's half-1 map 8.7e-3 from
+  RELION's: one particle (TS_02/68) keeps one more coarse sample at the 0.999 significance cut and moves 6
+  degrees, two others change their sample count; the next step (2 -> 3) agrees to 5.5e-5. RELION's own
+  same-seed runs flip 1-2 particles at that cut in iteration 2 (up to 49 by iteration 6, s2 r1 vs r2), so
+  relax's residual source is RELION's run-to-run cut flips, amplified by the trajectory. OPEN: no relax value
+  lies inside RELION's narrow same-seed range; wall 0.43-0.46x (et01, H100, earlier arms).
 - Subtomogram VDAM K=1 (et09_box64, one optics group, stock seeding, s2): masked GT FSC-AUC
   0.98808 inside RELION's same-seed range [0.98795, 0.98816]; wall about 2x RELION before the
   coarse matrices fix.
