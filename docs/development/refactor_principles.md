@@ -916,9 +916,10 @@ and repeated mode decisions as well as operation ownership.
   five callers now call `reconstruct_numbered_k1_halfmaps` or
   `reconstruct_numbered_class_maps` directly and the builder is removed.
 
-Initial review targets: finalization repeats the K1 guard around unfiltered
+Initial review targets: finalization repeated the K1 guard around unfiltered
 reconstruction, optional low-resolution joining and accumulator release; these
-are an ordered K1 sequence suitable for consolidation. Numbered reconstruction
+are now one ordered K1 block, with the join resolution kept as a nested
+condition because it is an option and not the mode. Numbered reconstruction
 repeatedly selects K1/Class3D around accumulator preparation, prior estimation
 and model publication; inspect their whole data flow before consolidating across
 intervening shared work. Replay/startup precedence and local-search state checks

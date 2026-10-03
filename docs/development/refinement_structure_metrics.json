@@ -55,9 +55,9 @@
         },
         {
           "function_count": 2,
-          "nonblank_noncomment_lines": 758,
+          "nonblank_noncomment_lines": 757,
           "path": "relax/refinement/finalization.py",
-          "physical_lines": 808
+          "physical_lines": 811
         },
         {
           "function_count": 2,
@@ -183,7 +183,7 @@
       "large_argument_functions": [
         {
           "line": 104,
-          "line_span": 705,
+          "line_span": 708,
           "name": "run_final_all_data",
           "parameter_count": 33,
           "path": "relax/refinement/finalization.py"
@@ -381,7 +381,7 @@
         },
         {
           "line": 104,
-          "line_span": 705,
+          "line_span": 708,
           "name": "run_final_all_data",
           "parameter_count": 33,
           "path": "relax/refinement/finalization.py"
@@ -452,13 +452,13 @@
         "large_argument_function_count": 26,
         "maximum_function_line_span": 2752,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18840,
-        "physical_lines": 21498,
+        "nonblank_noncomment_lines": 18839,
+        "physical_lines": 21501,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "numbered reconstruction: shell-curve priors only and one postprocessing sequence",
-    "source_commit": "55221f75e3101bc4fd6d3ad11c6761b1ad088ccb",
+    "package": "finalization: one K1 pre-join sequence (unfiltered maps, optional join, collector release)",
+    "source_commit": "3817f3939d0362cc283422d82c506a1126825f02",
     "recorded_date": "2026-10-03"
   }
 }

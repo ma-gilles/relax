@@ -163,8 +163,8 @@ What the package removed on this evidence, in the code shown below:
 - The `run_mean_reconstruction` test builder is removed; tests call the
   operation they exercise with its own operands.
 
-Still present: the class operation postprocesses both execution slots, and
-finalization repeats its K1 guards (plan step 4).
+Still present: the class operation postprocesses both execution slots.
+Finalization's repeated K1 guards (plan step 4) are consolidated as mapped below.
 
 ### Finalization mode-guard map
 
@@ -214,6 +214,23 @@ reference diagnostic (K1); `L:2935` final reference substitution;
 | Replay-installed convergence (`relion_replay.py:964-999`) | yes, either mode | K1: as above. Class3D: as the next row |
 | Class3D diagnostic final pass (injected or replayed convergence) | yes | skips the three K1 pre-join guards, including a positive join resolution; Class3D arms of prior and solve; dense scoring only |
 | Tomography | K1 with local search only (`F:417` raises otherwise, so no Class3D) | as K1 native convergence; the intermediate capture at `F:543-579` precedes this code |
+
+What step 4 changed, in the [final calling flow](#actual-final-calling-flow)
+below: the three K1 pre-join guards are one `if not k_class_enabled:` block
+(`finalization.py:591-633`) holding the unfiltered solves, the join and the
+collector clearing in their previous order. The join keeps its own nested
+condition, because the join resolution is an option and not the mode. The
+reconstruction part of `run_final_all_data` now decides the mode at three
+statements instead of five (pre-join block, prior, final solve) and selects on
+it in three conditional expressions as before (resolution operand `:707-711`,
+class result fields `:793-794`). The prior and solve decisions keep their
+places: merging either into the pre-join block would move it across the shared
+sums or the shared resolution update and its logs. Final Class3D still keeps
+its collector slots and half locals after the sums, as before; that release
+belongs to the ownership package. The tomography capture lines are untouched.
+`test_relion_final_iteration_runs_k1_prejoin_sequence_in_order` runs the real
+controller and pins the call order and the collector state at each call, for K1
+with and without a join and for Class3D with a positive join resolution.
 
 ### Actual numbered prior, map and reporting flow
 
@@ -5322,17 +5339,23 @@ _parity_dump.mark_stage(iteration, "recon")
 
 ### Actual final calling flow
 
-Final expectation returns the established accumulator metadata. Unfiltered K1
-maps are reconstructed before joining mutates the low frequencies. Final prior
+Final expectation returns the established accumulator metadata. One K1 block
+reconstructs the unfiltered maps before joining mutates the low frequencies,
+joins when a join resolution is set, then drops the pass collector's
+accumulator references; Class3D skips the block. Final prior
 policy differs from numbered policy, and the controller updates resolution before
 MAP. Class weights and final products remain visible here.
 
-[relax/refinement/finalization.py](../../relax/refinement/finalization.py) (line 587):
+[relax/refinement/finalization.py](../../relax/refinement/finalization.py) (line 589):
 
 ```python
 final_reconstruct_t0 = time.time()
 final_unfiltered_means_for_output = None
 if not k_class_enabled:
+    # K1 pre-join sequence, in this order: unfiltered half maps, optional
+    # low-resolution join, release of the pass outputs' references. Class3D
+    # has no half maps to keep unjoined and sums its two partitions below.
+    #
     # RELION writes run_half{1,2}_class001_unfil.mrc from the converged half
     # BackProjectors saved before joinTwoHalvesAtLowResolution mutates their
     # low-frequency voxels, with do_map=false.  Keep this separate from the
@@ -5354,20 +5377,19 @@ if not k_class_enabled:
         current_size=final_current_size,
         accumulator_shape=final_mstep_accumulator_shape,
     )
-if not k_class_enabled and parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
-    final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
-        (final_Ft_y_0, final_Ft_y_1),
-        (final_Ft_ctf_0, final_Ft_ctf_1),
-        accumulator_volume_shape=final_mstep_accumulator_shape,
-        grid_size=grid_size,
-        voxel_size=image_geometry.pixel_size_angstrom,
-        padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-        low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
-        pixel_resolutions=history.pixel_resolutions,
-        current_resolution=state.current_resolution,
-        preserve_inputs=False,
-    )
-if not k_class_enabled:
+    if parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
+        final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
+            (final_Ft_y_0, final_Ft_y_1),
+            (final_Ft_ctf_0, final_Ft_ctf_1),
+            accumulator_volume_shape=final_mstep_accumulator_shape,
+            grid_size=grid_size,
+            voxel_size=image_geometry.pixel_size_angstrom,
+            padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+            low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+            pixel_resolutions=history.pixel_resolutions,
+            current_resolution=state.current_resolution,
+            preserve_inputs=False,
+        )
     # The unfiltered maps are made; drop the pass outputs' references so the
     # pre-join accumulators live only as long as the joined ones do.
     final_outs.Ft_y[0] = final_outs.Ft_y[1] = None

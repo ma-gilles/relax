@@ -180,7 +180,7 @@ and flattening. Its `numerators`, `denominators` and `tau` arguments had
 different axis meanings by mode. A maintainer had to inspect both layers to know
 the contract.
 
-Current code: steps 1, 2, 3 and 5 are implemented. `reconstruct_numbered_k1_halfmaps`
+Current code: steps 1 to 5 are implemented. `reconstruct_numbered_k1_halfmaps`
 and `reconstruct_numbered_class_maps` replace that function, each with
 accumulators of one layout and shell-curve priors only, and the controller
 dispatches once at this boundary. The
@@ -192,7 +192,13 @@ full volume. `_postprocess_numbered_maps` holds the capture, filter and flatten
 sequence and the mask radius once; the K1 and class flatten implementations
 remain as its one execution difference. The `run_mean_reconstruction` test
 builder is removed and each test calls the operation it exercises. The class
-operation still postprocesses both execution slots. Step 4 is not done, and the
+operation still postprocesses both execution slots. For step 4, the
+[finalization mode-guard map](final_local_sampling_patch_review.md#finalization-mode-guard-map)
+lists every mode test by entry path; `run_final_all_data` now enters the K1
+unfiltered reconstruction, optional low-resolution join and collector release
+through one mode decision, in their previous order, with the join resolution
+as a nested option. The final prior and final solve remain separate decisions
+because shared sums and the shared resolution update lie between them. The
 step 6 review with the user has not taken place.
 
 1. Inventory each reconstruction choice with its producer and consumers:
