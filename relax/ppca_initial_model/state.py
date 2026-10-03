@@ -20,3 +20,5 @@ class State:
     direction_prior: object = None
     direction_order: int = -1
     sgd_momentum: object = None
+    # Per-particle contrast point estimates (Config.contrast_estimate, algorithm section 16.10); None without.
+    contrast: object = None

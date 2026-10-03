@@ -199,6 +199,9 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     lattice = np.asarray(relion_half_translation_lattice(stream.static.image_shape), np.float32)[window]
     shifts = jnp.asarray(tilt_shifts(frames, stream.translations)[slots])  # (n, T, 2)
     phases = jnp.exp(jnp.complex64(-2j * np.pi) * jnp.einsum("ntd,fd->ntf", shifts, lattice, precision="highest"))
+    if stream.image_scale is not None:
+        # A fixed contrast per particle scales its model: the CTF of every tilt image by it (section 16.10).
+        ctf = ctf * jnp.asarray(stream.image_scale[ids][owner])[:, None]
     weighted = (half * ctf / nv)[:, window]
     ctf2 = (ctf * ctf / nv)[:, window]
     score_mask, recon_mask = resolved.score_mask[window], resolved.recon_mask[window]
@@ -228,6 +231,9 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         y_norm=jax.ops.segment_sum(norm, jnp.asarray(owner), num_segments=B),
         frames=jnp.asarray(frames, jnp.float32),
     )
+    if stream.static.cuda_kernels and tile.Y1.shape[0] != K * 2 * stream.arrays.gemm_window.shape[0]:
+        # The CUDA projector writes each frame's rows padded to the GEMM window, frame-major.
+        raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")
     observation = jnp.sum(jnp.abs(half) ** 2, axis=0) if collect_observation else None
     layout.update(n_observations=int(images.size), original_ids=particles.original_image_indices_from_local(ids))
     return tile, observation, layout

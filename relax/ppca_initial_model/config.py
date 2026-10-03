@@ -48,6 +48,13 @@ class Config:
     # when it takes at most PREREAD_MEMORY_FRACTION of the job's memory, otherwise reads each tile
     # from disk; "on" and "off" force either. A runtime setting, like gemm_precision.
     preread_images: str = "auto"
+    # Per-particle contrast point estimate (section 16.10 of docs/math/vdam_ppca_algorithm.md): after each
+    # E-step, the least-squares scale of every particle's images against the model at its most probable
+    # pose, with a Gaussian prior of sd contrast_prior_sd about 1 and clamped to contrast_range; the next
+    # E-step uses it as a fixed scale of the particle's model. Off by default.
+    contrast_estimate: bool = False
+    contrast_prior_sd: float = 0.3
+    contrast_range: tuple = (0.5, 2.0)
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -94,6 +101,12 @@ class Config:
             raise ValueError("GEMM precision must be auto, fp32 or tf32")
         if self.gemm_precision == "tf32" and not (self.stream_coarse_recompute or self.stream_full_fine_rows):
             raise ValueError("TF32 GEMMs apply to the streamed engines only")
+        if self.contrast_estimate and (
+            not self.stream_coarse_recompute
+            or not (np.isfinite(self.contrast_prior_sd) and self.contrast_prior_sd > 0)
+            or not 0 < self.contrast_range[0] < 1 < self.contrast_range[1]
+        ):
+            raise ValueError("Contrast estimates need the streamed engine, a positive prior sd and a range around 1")
         if self.preread_images not in ("auto", "on", "off"):
             raise ValueError("Image preread must be auto, on or off")
 

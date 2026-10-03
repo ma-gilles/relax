@@ -30,7 +30,12 @@ def canonical(value):
 RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images")
 
 
+# Model settings added after checkpoints existed: a checkpoint without one was written under its default.
+_ADDED_CONFIG_DEFAULTS = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
+
+
 def _identity_config(config_dict):
+    config_dict = {**_ADDED_CONFIG_DEFAULTS, **canonical(config_dict)}
     return {key: value for key, value in config_dict.items() if key not in RUNTIME_CONFIG_FIELDS}
 
 
@@ -87,6 +92,7 @@ def save(path, state, config, identity):
         noise=np.asarray(state.noise),
         order=np.asarray(state.order),
         direction_prior=np.asarray([] if state.direction_prior is None else state.direction_prior),
+        contrast=np.asarray([] if state.contrast is None else state.contrast, np.float32),
         metadata=json.dumps(metadata),
     )
     with open(temporary, "wb") as stream:
@@ -134,4 +140,5 @@ def load(path, config, identity):
             arrays["direction_prior"].copy() if arrays["direction_prior"].size else None,
             meta["direction_order"],
             momentum,
+            arrays["contrast"].copy() if "contrast" in arrays.files and arrays["contrast"].size else None,
         )

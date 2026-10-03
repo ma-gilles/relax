@@ -125,6 +125,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         direction_prior=None,
         direction_order=-1,
         offset_variance=4.0,
+        contrast=None,
     )
     captured = []
     sentinel = SimpleNamespace(diagnostics={})

@@ -1421,7 +1421,8 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
 
 1. Lifted October 3, 2026: one noise spectrum per optics group (`state.noise`
    is `(G, S)` for subtomogram particles).
-2. Unit contrast. A per-particle contrast shared by its tilts is not modeled.
+2. Opt-in since October 3, 2026: a per-particle contrast point estimate (16.10).
+   Unit contrast remains the default.
 3. Full rotation grid per stage only (`--oversampling 0
    --stream-coarse-recompute`); no coarse significance pass.
 
@@ -1512,3 +1513,52 @@ class on this fixture). VDAM recovers about 40% of the GT state specificity and 
 overshoots, FSC falls near shell 20), as in the single-particle eleven-state
 comparison (section 14). The baseline has one seed; GT state FSC-AUC of the GT mean
 map is .87-.90 unregistered, so map AUC alone does not show heterogeneity.
+
+### 16.10 Per-particle contrast point estimate (opt-in)
+
+`Config.contrast_estimate` (`--ppca-contrast-estimate`) gives particle `i` a
+contrast `c_i` shared by its tilts, `y_ik = c_i A_ik(mu + W z_i) + epsilon_ik`, as a
+fixed scale refit after every E-step outside the stream
+([contrast.py](../../relax/ppca_initial_model/contrast.py)), in the manner of
+RELION's scale corrections. For each particle of the minibatch, the model
+`mu + W E[z_i]` is projected at its most probable pose: one projection per image,
+at `Aproj_k R` and shift `[Aproj_k t]` for tilts. The least-squares scale of its
+images under the scoring metric `D` (half-spectrum weights over the noise, inside
+the stage's Fourier radius), with a Gaussian prior of sd `contrast_prior_sd`
+(0.3) about 1, is
+
+\[
+c_i=\frac{\sum_k\operatorname{Re}\langle m_{ik},y_{ik}\rangle_D+s^{-2}}
+{\sum_k\|m_{ik}\|_D^2+s^{-2}},
+\]
+
+clamped to `contrast_range` (0.5-2). The next E-step reads it through the
+stream's per-image scale (`ScoringConfig.image_scale_corrections`), which
+multiplies the CTF: score and reconstruction images by `c`, CTF^2 weights by `c^2`.
+The residual statistics are then those of the scaled model. Single particles use
+the same estimator and stream path. The estimate costs one projection per image
+and no GEMM. Checks
+([test_tomo_ppca.py](../../tests/unit/ppca_initial_model/test_tomo_ppca.py)): it
+recovers known scales of noise-free tilt and single-particle images to 1e-4. The
+stream with fixed per-particle scales agrees with the brute-force joint Gaussian of
+scaled particles to the 2e-5 band, and the single-particle stream equals the
+identity-frame tilt stream under the same scales.
+
+A marginalized alternative was implemented and tested first: a contrast grid
+whose values were extra tile images normalized jointly with the pose. It costs
+`C` times the GEMM work. The two were compared on the contrast variant of the
+fixture (`em_fixtures/cryoet_ppca_k3conf_contrast15_box64_20261003`, contrast sd
+0.144). Each arm was GT-initialized momentum SGD for the last 40 updates (H100,
+job 14912480, `em_work/relax_ppca_cryoet_20261002/science6_14912480`):
+
+| Arm | Contrast vs truth (Pearson r) | Estimated sd | State FSC-AUC | Specificity | Pose median | Latent nearest-centroid | Seconds per update |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| no contrast | - | - | .943 / .942 / .948 | .344 | 3.68 deg | .990 | 19.4 |
+| grid 0.8 / 1 / 1.25 (posterior mean) | .754 | .125 | .944 / .940 / .948 | .338 | 3.70 deg | .992 | 25.1 |
+| point estimate | .825 | .150 | .944 / .940 / .949 | .337 | 3.70 deg | .992 | 20.1 |
+
+The point estimate recovers the contrast better than the three-value grid at
+almost no cost, and the maps, poses and latent agree for all three arms. The grid
+was removed. From the GT start the contrast does not change the reconstruction
+on this fixture; random-start runs remain to be done.
+

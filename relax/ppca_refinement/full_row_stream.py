@@ -248,6 +248,9 @@ class FullRowStream(NamedTuple):
     # (:func:`_load_tile`). Subtomogram particles read their tilt images
     # (:func:`relax.ppca_initial_model.tomo.load_tilt_tile`).
     tile_loader: object = None
+    # Per-image scale of the model (a particle's contrast), indexed by the dataset's image ids, or None:
+    # the tile operands carry it (score and reconstruction images times s, CTF^2 weights times s^2).
+    image_scale: np.ndarray | None = None
 
 
 def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_translations: int) -> np.ndarray:
@@ -601,10 +604,12 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     # One image per (rotation, frame), frame minor: the GEMM outputs' rows split into frames.
     R = block_size * _n_frames(tile)
     F = tile.ctf2_recon.shape[1] // _n_frames(tile)
-    K = sums.shape[0]
+    n_moments = sums.shape[0]  # packed (1 + q) x (1 + q) moment channels
     rotations = _frame_rotations(tile, arrays.rotations[_block_rows(tile, start, block_size)])
     rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=_gemm(static)).reshape(P, R, 2 * F)
-    lhs_images = jnp.dot(sums.reshape(K * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(K, R, F)
+    lhs_images = jnp.dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(
+        n_moments, R, F
+    )
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight. The RHS images enter the
@@ -844,8 +849,8 @@ def _prepare_full_row_stream(
     tile_loader,
 ) -> FullRowStream:
     gemm_precision = resolve_gemm_precision(gemm_precision, device)
-    if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
-        raise ValueError("Full-row streaming supports unit image scale and no class prior")
+    if scoring.class_log_prior != 0.0:
+        raise ValueError("Full-row streaming supports no class prior")
     if scoring.score_with_masked_images or scoring.relion_unit_half_weights or not scoring.full_real_observation:
         # Pass 2 forms residuals from the reconstruction-window moment images,
         # which requires the score operands to be those with Hermitian weights.
@@ -936,6 +941,9 @@ def _prepare_full_row_stream(
         rotation_parent=rotation_parent,
         device=device,
         tile_loader=tile_loader,
+        image_scale=None
+        if scoring.image_scale_corrections is None
+        else np.asarray(scoring.image_scale_corrections, np.float32),
     )
 
 
@@ -991,6 +999,7 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
         batch_data,
         ctf_params,
         indices,
+        image_scale_corrections=stream.image_scale,
         collect_observation=collect_observation,
     )
     coarse_mask, table, layout = tile_support(stream, significant_rows)
