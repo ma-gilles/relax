@@ -11,6 +11,14 @@ PPCA work and tomography safeguards. Incoming command/controller changes are
 adapted to the existing refactor owners. Scientific sequencing and visible
 updates remain unchanged by these interface migrations.
 
+Both refactor packages are since merged with GitHub main
+`d1ba3e83406c81ab77891e25d1a775d4a818e674`: the first package at `1b73943`, the
+second at `e026a64`. Main's changes after `80f2b2b` are kept as main wrote
+them: the numbered iteration builds the scoring projector on every route (the
+"no projector scoring path" error is gone), the adaptive pass-2 grids come from
+`oversampling.prepare_adaptive_pass2_grids` with deferred fine rotations, and
+pass 1 scores RELION's exact coarse operands only.
+
 The first-CC margin now resolves in `command_options.resolve_firstiter_controls`,
 then enters the existing parity settings at the original command boundary.
 Numbered expectation and final dense execution consume those settings; the
@@ -68,7 +76,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2735/1766 for numerical/command controllers;
+Source spans are 2731/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main
@@ -226,13 +234,13 @@ reference diagnostic (K1); `L:2935` final reference substitution;
 
 What step 4 changed, in the [final calling flow](#actual-final-calling-flow)
 below: the three K1 pre-join guards are one `if not k_class_enabled:` block
-(`finalization.py:591-633`) holding the unfiltered solves, the join and the
+(`finalization.py:589-631`) holding the unfiltered solves, the join and the
 collector clearing in their previous order. The join keeps its own nested
 condition, because the join resolution is an option and not the mode. The
 reconstruction part of `run_final_all_data` now decides the mode at three
 statements instead of five (pre-join block, prior, final solve) and selects on
-it in three conditional expressions as before (resolution operand `:707-711`,
-class result fields `:793-794`). The prior and solve decisions keep their
+it in three conditional expressions as before (resolution operand `:705-709`,
+class result fields `:791-792`). The prior and solve decisions keep their
 places: merging either into the pre-join block would move it across the shared
 sums or the shared resolution update and its logs. Final Class3D still keeps
 its collector slots and half locals after the sums, as before; that release
@@ -265,21 +273,21 @@ tau2 install (`L:2086`), the map-slot clearing (`L:2098-2099`), the
 reconstruction timer and its log (`L:2102`, `L:2127-2130`) and the release of
 the retained numerator (`L:2131`).
 
-After: one test, `L:1958`. It decides which of two ordered sequences runs;
+After: one test, `L:1954`. It decides which of two ordered sequences runs;
 the options inside each arm (join resolution, dump directory, first-CC with
 `ini_high`) are nested conditions, not mode tests.
 
 | Step | Class3D arm | K1 arm |
 | --- | --- | --- |
-| Accumulators | combine the two halves per class (`L:1959`) | optional low-resolution join in place, keeping the retained first-half numerator (`L:2070`) |
-| Previous references | device references (`L:1966`) | host snapshot, then release of both slots (`L:2083`) |
-| Prior timer | `_t_unreg_first` | `_t_unreg_first`, then the optional accumulator dump (`L:2090`) |
-| Prior | `estimate_class_priors`, history and scheduling curve, log (`L:1968`) | `estimate_split_half_prior`, log that reads the old tau2 (`L:2105`, `:2127`) |
-| Install tau2 | `tau2`, then `tau2_per_half = [tau2, tau2]` (`L:2009`) | `tau2`, then `_updated_mean_variance_per_half` (`L:2133`) |
-| Map slots | cleared (`L:2015`) | already `None` after the snapshot |
-| Reconstruction | timer, `reconstruct_numbered_class_maps`, log (`L:2019`) | timer, `reconstruct_numbered_k1_halfmaps`, log, retained numerator dropped (`L:2143`, `:2158`) |
-| First-CC reporting taper | data-vs-prior curve, history and scheduling write, shell and detail taper, log (`L:2034`) | volume and detail taper, tau2 reinstall, log (`L:2166`) |
-| Host move | none | `_host_tau2_volumes` (`L:2199`) |
+| Accumulators | combine the two halves per class (`L:1955`) | optional low-resolution join in place, keeping the retained first-half numerator (`L:2066`) |
+| Previous references | device references (`L:1962`) | host snapshot, then release of both slots (`L:2079`) |
+| Prior timer | `_t_unreg_first` | `_t_unreg_first`, then the optional accumulator dump (`L:2086`) |
+| Prior | `estimate_class_priors`, history and scheduling curve, log (`L:1964`) | `estimate_split_half_prior`, log that reads the old tau2 (`L:2101`, `:2123`) |
+| Install tau2 | `tau2`, then `tau2_per_half = [tau2, tau2]` (`L:2005`) | `tau2`, then `_updated_mean_variance_per_half` (`L:2129`) |
+| Map slots | cleared (`L:2011`) | already `None` after the snapshot |
+| Reconstruction | timer, `reconstruct_numbered_class_maps`, log (`L:2015`) | timer, `reconstruct_numbered_k1_halfmaps`, log, retained numerator dropped (`L:2139`, `:2154`) |
+| First-CC reporting taper | data-vs-prior curve, history and scheduling write, shell and detail taper, log (`L:2030`) | volume and detail taper, tau2 reinstall, log (`L:2162`) |
+| Host move | none | `_host_tau2_volumes` (`L:2195`) |
 
 Within each mode every operation, log, timer, capture and release is in the
 position it had at `970c9bf`. The statements written in both arms are the two
@@ -320,7 +328,7 @@ GPU pass 2 and are not in that comparison.
 
 The whole M-step decision, from the ordering comment to the stage mark.
 
-[relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1948):
+[relax/refinement/iteration_loop.py](../../relax/refinement/iteration_loop.py) (line 1944):
 
 ```python
         # --- RELION-exact M-step ordering ---
