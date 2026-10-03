@@ -61,15 +61,15 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   (it200 0.659 vs 0.658; RELION 0.669-0.670).
 - Subtomogram Refine3D `--firstiter_cc` (RELION's default command; RELION 5.0.1 mpiscale MPI 3x4, H100;
   relax accuracy-only arms on A100). Masked GT FSC-AUC on main 22ea0b2 against RELION's same-seed range
-  (stock r1/r2, plus the double-BP build where run):
+  (stock r1/r2, eto_plain also r3/r4, plus the double-BP build where run):
   | case | RELION range | relax 22ea0b2 | pre-d28c258 relax |
   | --- | --- | --- | --- |
   | et01_base s1 | 0.991616-0.991619 | 0.991596 (-2.0e-5) | 0.991610 |
   | et01_base s2 | 0.991803 | 0.991802 (-6e-7) | 0.991800 |
   | et01_base s3 | 0.992231-0.992234 | 0.992243 (+9e-6) | 0.992118 |
-  | eto_plain s1 | 0.85747-0.85762 | 0.85836 (+7.4e-4) | 0.85626 |
-  | eto_plain s2 | 0.86168-0.86171 | 0.86163 (-4.7e-5) | 0.86130 |
-  | eto_plain s3 | 0.86395 | 0.86387 (-8.4e-5) | 0.86388 |
+  | eto_plain s1 | 0.85743-0.85762 | 0.85836 (+7.4e-4) | 0.85626 |
+  | eto_plain s2 | 0.86155-0.86171 | 0.86163 (inside) | 0.86130 |
+  | eto_plain s3 | 0.86394-0.86398 | 0.86387 (-6.9e-5) | 0.86388 |
   The pre-d28c258 arms (coarse CC pass projected in double, not RELION's float texture) moved 2-8 particles at
   the deterministic CC iteration 1 and sat below RELION in 4 of 6 rows; on main iteration 1 moves 0, or 1 at
   RELION's own near-tie rate, and the residuals have both signs. A one-step replay from RELION's eto_plain s1
