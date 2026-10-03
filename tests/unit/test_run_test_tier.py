@@ -497,3 +497,25 @@ def test_every_fast_oracle_is_labelled_continue_or_uninterrupted():
     sets = {case.relion_set for case in em_tier_fsc.CASES.values()}
     assert sets <= set(em_tier_fsc.ORACLE_RUN), sorted(sets - set(em_tier_fsc.ORACLE_RUN))
     assert set(em_tier_fsc.ORACLE_RUN.values()) <= {"uninterrupted", "continue"}
+
+
+def test_local_gpus_follow_the_session_subset_within_1_to_3(monkeypatch):
+    monkeypatch.delenv("RELAX_LOCAL_GPUS", raising=False)
+    assert run_test_tier.local_gpus() == ("1", "2", "3")
+    monkeypatch.setenv("RELAX_LOCAL_GPUS", "1,3")
+    assert run_test_tier.local_gpus() == ("1", "3")
+    for bad in ("0,1", "4", " , "):
+        monkeypatch.setenv("RELAX_LOCAL_GPUS", bad)
+        with pytest.raises(SystemExit, match="RELAX_LOCAL_GPUS"):
+            run_test_tier.local_gpus()
+
+
+def test_idle_local_gpu_skips_gpus_outside_the_session_subset(monkeypatch):
+    listing = "1, GPU-one, 0, NVIDIA A100\n2, GPU-two, 0, NVIDIA A100\n3, GPU-three, 0, NVIDIA A100\n"
+
+    def fake_check_output(command, text=True):
+        return listing if "--query-gpu=index,uuid,memory.used,name" in command else ""
+
+    monkeypatch.setattr(run_test_tier.subprocess, "check_output", fake_check_output)
+    monkeypatch.setenv("RELAX_LOCAL_GPUS", "3")
+    assert run_test_tier.idle_local_gpu() == "GPU-three"
