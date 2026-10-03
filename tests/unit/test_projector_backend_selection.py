@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from helpers.float_compare import assert_matches
 
 from relax.refinement.refinement_options import RefinementOptions

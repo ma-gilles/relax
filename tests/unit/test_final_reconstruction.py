@@ -5,8 +5,8 @@ import weakref
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from helpers.float_compare import assert_matches
+
 from relax.refinement import final_reconstruction
 from relax.refinement.mean_helpers import ReconstructionSettings
 from relax.relion.geometry import (

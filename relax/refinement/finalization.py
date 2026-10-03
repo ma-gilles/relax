@@ -219,7 +219,7 @@ def run_final_all_data(
         dtype=scoring_dtype,
     )
     final_precision = local_precision(final_sampling.settings.relion_iteration, pass_index=2)
-    ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING? 
+    ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING?
     ## SHOULD BE WANTING TO DEFINE 100 THINGS LIKE THIS
     if final_use_local:
         final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(
