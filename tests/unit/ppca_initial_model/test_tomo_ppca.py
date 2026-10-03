@@ -117,7 +117,12 @@ def brute_force(particles, stream, problem):
 
 
 def _brute_force(particles, stream, p):
+    """``p`` may give ``translations`` (default TRANSLATIONS) and each particle's flat ``noise`` (default NOISE);
+    the noise sums are then per noise group of ``particles``, ``(G, S)``."""
     static = stream.static
+    translations = np.asarray(p.get("translations", TRANSLATIONS))
+    noise = np.asarray(p.get("noise", np.full(particles.n_images, NOISE)), np.float64)
+    noise_group = particles.particle_noise_group
     window = np.asarray(stream.resolved.score_indices)
     weights = np.asarray(make_half_image_weights(IMAGE_SHAPE), np.float64)
     lattice = np.asarray(relion_half_translation_lattice(IMAGE_SHAPE), np.float64)
@@ -125,7 +130,7 @@ def _brute_force(particles, stream, p):
     P = theta.shape[0]
     q = P - 1
     frames = particles.group_frames[0]
-    R, T = len(p["rotations"]), len(TRANSLATIONS)
+    R, T = len(p["rotations"]), len(translations)
 
     def project(rotation):
         out = core.batch_slice_volume(
@@ -145,7 +150,6 @@ def _brute_force(particles, stream, p):
         (r, k): frames[k] @ p["rotations"][r].astype(np.float64) for r in range(R) for k in range(len(frames))
     }
     projections = {key: project(rot) for key, rot in tilt_rotation.items()}
-    D = weights[window] / NOISE  # pixel precision of the half-spectrum metric
     real = lambda z: np.concatenate([z.real, z.imag], axis=-1)  # noqa: E731
     n_particles = particles.n_images
     log_likelihood = 0.0
@@ -154,7 +158,10 @@ def _brute_force(particles, stream, p):
     offset_second = 0.0
     rhs_images = {key: np.zeros((P, N_HALF), np.complex128) for key in projections}
     lhs_images = {key: np.zeros((P * (P + 1) // 2, N_HALF)) for key in projections}
-    power = np.sum(np.abs(p["images"]) ** 2, axis=0)
+    image_group = np.repeat(noise_group, np.diff(particles.image_offsets))
+    power = np.stack(
+        [np.sum(np.abs(p["images"][image_group == g]) ** 2, axis=0) for g in range(particles.n_noise_groups)]
+    )
     tri = list(zip(*np.triu_indices(P)))
     for i in range(n_particles):
         image_ids, _ = particles.particle_images([i])
@@ -163,11 +170,13 @@ def _brute_force(particles, stream, p):
         C = p["ctf"][image_ids].astype(np.float64)
         outside = np.ones(N_HALF, bool)
         outside[window] = False
-        offset = -0.5 * np.sum(np.abs(y[:, outside]) ** 2 * weights[outside] / NOISE)
+        sigma2 = noise[i]
+        D = weights[window] / sigma2  # pixel precision of the half-spectrum metric
+        offset = -0.5 * np.sum(np.abs(y[:, outside]) ** 2 * weights[outside] / sigma2)
         scores, moments = np.zeros((R, T)), {}
         for r in range(R):
             for t in range(T):
-                shifts = tilt_shifts(frames, TRANSLATIONS[t : t + 1])[slots, 0].astype(np.float64)  # (n, 2)
+                shifts = tilt_shifts(frames, translations[t : t + 1])[slots, 0].astype(np.float64)  # (n, 2)
                 phase = np.exp(-2j * np.pi * shifts @ lattice[window].T)  # (n, F)
                 shifted = y[:, window] * phase
                 A = np.stack([C[n, window] * projections[(r, k)][:, window] for n, k in enumerate(slots)], axis=1)
@@ -188,7 +197,7 @@ def _brute_force(particles, stream, p):
         gamma = np.exp(total - log_z)
         log_likelihood += log_z
         rotation_mass += gamma.sum(axis=1)
-        offset_second += np.sum(gamma * np.sum(TRANSLATIONS.astype(np.float64) ** 2, axis=-1)[None])
+        offset_second += np.sum(gamma * np.sum(translations.astype(np.float64) ** 2, axis=-1)[None])
         for (r, t), (mean, covariance, shifted, A) in moments.items():
             g = gamma[r, t]
             embeddings[i] += g * mean
@@ -196,17 +205,17 @@ def _brute_force(particles, stream, p):
             G = np.outer(alpha, alpha)
             G[1:, 1:] += covariance
             for n, k in enumerate(slots):
-                y_recon = shifted[n] * C[n, window] / NOISE
+                y_recon = shifted[n] * C[n, window] / sigma2
                 rhs_images[(r, k)][:, window] += g * alpha[:, None] * y_recon[None]
                 for c, (a, b) in enumerate(tri):
-                    lhs_images[(r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / NOISE
+                    lhs_images[(r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2
                 predicted = alpha @ A[:, n]  # CTF-weighted projection of mu + W m
                 loading = A[1:, n]  # (q, F)
                 expected = (
                     np.abs(shifted[n] - predicted) ** 2
                     + np.einsum("jf,jl,lf->f", loading.conj(), covariance, loading).real
                 )
-                power[window] += g * (expected - np.abs(shifted[n]) ** 2)
+                power[noise_group[i], window] += g * (expected - np.abs(shifted[n]) ** 2)
 
     def adjoint(images, rotations):
         return np.asarray(
@@ -240,10 +249,13 @@ def _brute_force(particles, stream, p):
         lhs[c] = adjoint(np.stack([lhs_images[key][c] for key in keys]).astype(np.complex128), rotations).real
     lhs = np.asarray(_enforce_augmented_x0(jnp.asarray(lhs, jnp.complex128), VOLUME_SHAPE).real)
     shells = np.asarray(make_shell_indices_half(IMAGE_SHAPE))
-    residual_num = np.zeros(shells.max() + 1)
-    np.add.at(residual_num, shells, weights * power)
-    residual_den = np.zeros(shells.max() + 1)
-    np.add.at(residual_den, shells, weights * len(particles.image_frame))
+    residual_num = np.zeros((particles.n_noise_groups, shells.max() + 1))
+    residual_den = np.zeros_like(residual_num)
+    for g in range(particles.n_noise_groups):
+        np.add.at(residual_num[g], shells, weights * power[g])
+        np.add.at(residual_den[g], shells, weights * np.count_nonzero(image_group == g))
+    if "noise" not in p:
+        residual_num, residual_den = residual_num[0], residual_den[0]
     return dict(
         log_likelihood=log_likelihood,
         embeddings=embeddings,
@@ -408,3 +420,72 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
     embeddings = np.load(tmp_path / "embeddings.npz")
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
+
+
+def test_update_noise_keeps_groups_without_images():
+    from relax.ppca_initial_model.noise import update_noise
+
+    previous = np.asarray([[1.0, 2.0], [3.0, 4.0]], np.float32)
+    updated = np.asarray(update_noise(previous, [[10.0, 20.0], [0.0, 0.0]], [[2.0, 2.0], [0.0, 0.0]]))
+    assert_matches(updated[0], np.float32(0.9) * previous[0] + np.float32(0.1) * np.asarray([5.0, 10.0], np.float32))
+    assert_matches(updated[1], previous[1])
+
+
+def test_controller_noise_groups_match_brute_force():
+    """Two noise groups with different spectra: the controller's per-group streams against the dense joint model."""
+    from relax import sampling
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, stream, arrays = make_problem(seed=9)
+    particles = TiltParticles(**{**particles.__dict__, "noise_group": np.asarray([1, 0, 1])})
+    noise = np.asarray([30.0, 75.0])
+    config = Config(
+        q=2,
+        stages=((1, 3, 0),),
+        oversampling=0,
+        stream_coarse_recompute=True,
+        shift_range=1,
+        shift_step=1,
+        image_batch_size=3,
+        rotation_block_size=32,
+        gemm_precision="fp32",
+    )
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(
+        jnp.asarray(theta), None, jnp.asarray(np.repeat(noise[:, None], 5, axis=1), jnp.float32),
+        0, np.arange(3), {}, 2.0, 0, {},
+    )
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    try:
+        stats = iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    rotations = sampling.get_relion_hidden_rotation_grid(0, matrices=True).astype(np.float32)
+    translations = sampling.get_relion_translation_grid_3d(1, 1).astype(np.float32)
+    translation_prior = -np.sum(translations.astype(np.float64) ** 2, axis=-1) / 4.0
+    truth = brute_force(
+        particles,
+        stream,  # the same score window (current size 6) as stage radius 3
+        {
+            **arrays,
+            "rotations": rotations,
+            "rotation_log_prior": np.full(len(rotations), -np.log(len(rotations))),
+            "translations": translations,
+            "translation_log_prior": translation_prior - np.log(np.sum(np.exp(translation_prior))),
+            "noise": noise[particles.particle_noise_group],
+        },
+    )
+    order = np.argsort(stats.original_image_ids)
+    rtol = 2e-5  # float32 against float64, as test_tilt_tile_matches_brute_force_joint_gaussian
+    assert_matches(np.float64(stats.log_likelihood), truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(stats.embeddings)[order], truth["embeddings"], rtol=rtol)
+    assert_matches(stats.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
+    assert_matches(np.asarray(stats.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(stats.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert np.asarray(stats.residual_num).shape == truth["residual_num"].shape and truth["residual_num"].shape[0] == 2
+    assert_matches(np.asarray(stats.residual_num), truth["residual_num"], rtol=rtol)
+    assert_matches(np.asarray(stats.residual_den), truth["residual_den"], rtol=1e-6)

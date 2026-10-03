@@ -94,6 +94,8 @@ class TomoDataset:
             image_projections=self.image_projections[images],
             unit_optics_group=self.unit_optics_group[units],
             rows=units,
+            image_frames=self.image_frames[images],
+            unit_tomogram=self.unit_tomogram[units],
             image_shape=self.image_shape,
             volume_shape=self.volume_shape,
             voxel_size=self.voxel_size,
@@ -171,11 +173,16 @@ class TomoHalf:
         image_shape,
         volume_shape,
         voxel_size,
+        image_frames=None,
+        unit_tomogram=None,
     ):
         self.images = images
         self.unit_image_offsets = np.asarray(unit_image_offsets, dtype=np.int64)
         self.image_projections = np.asarray(image_projections, dtype=np.float64)
         self.unit_optics_group = np.asarray(unit_optics_group, dtype=np.int64)
+        # Each image's tilt-series frame and each unit's tomogram, as in TomoDataset (None when not given).
+        self.image_frames = None if image_frames is None else np.asarray(image_frames, dtype=np.int64)
+        self.unit_tomogram = None if unit_tomogram is None else np.asarray(unit_tomogram)
         self.image_shape = tuple(int(size) for size in image_shape)
         self.volume_shape = tuple(int(size) for size in volume_shape)
         self.voxel_size = float(voxel_size)

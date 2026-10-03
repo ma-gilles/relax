@@ -167,8 +167,11 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
     return theta
 
 
-def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang):
-    """Unaligned start-up noise of ``(group, real-space image)`` pairs, as coefficient variance (section 10)."""
+def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang, *, n_groups=None):
+    """Unaligned start-up noise of ``(group, real-space image)`` pairs, as coefficient variance (section 10).
+
+    One spectrum ``(S,)``; with ``n_groups`` one per noise group, ``(n_groups, S)`` (subtomograms, section 16.6).
+    """
     # Existing estimator deliberately uses host float64 accumulation/metadata.
     _, sigma = compute_avg_unaligned_and_sigma2(
         iter(images_for_noise),
@@ -177,6 +180,6 @@ def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang):
         particle_diameter_ang=diameter_ang,
         width_mask_edge_px=5,
         do_zero_mask=False,
-        nr_optics_groups=1,
+        nr_optics_groups=1 if n_groups is None else int(n_groups),
     )
-    return relion_to_coefficient_variance(sigma[0], image_shape)
+    return relion_to_coefficient_variance(sigma[0] if n_groups is None else sigma, image_shape)

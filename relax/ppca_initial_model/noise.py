@@ -27,12 +27,26 @@ def expected_residual_power(y, projected_mean, projected_loadings, mean, covaria
 
 
 def update_noise(previous, numerator, denominator, *, full_data=False):
-    """Apply VDAM timing to raw shell sums at the old E-step model."""
+    """Apply VDAM timing to raw shell sums at the old E-step model.
+
+    ``(G, S)`` sums update one spectrum per noise group (subtomogram optics groups); a group
+    without images in this batch keeps its previous spectrum.
+    """
     numerator, denominator = np.asarray(numerator), np.asarray(denominator)
+    if numerator.ndim == 2:
+        updated = np.array(previous, dtype=np.float32, copy=True)
+        seen = np.any(denominator > 0, axis=-1)
+        updated[seen] = _updated_spectrum(np.asarray(previous)[seen], numerator[seen], denominator[seen], full_data)
+        return jnp.asarray(updated)
+    return jnp.asarray(_updated_spectrum(previous, numerator, denominator, full_data))
+
+
+def _updated_spectrum(previous, numerator, denominator, full_data):
+    """VDAM-timed update of shell spectra (any leading shape) from positive shell sums."""
     if np.any(denominator <= 0):
         raise ValueError("Noise shells must have positive measured counts")
     measured = numerator / denominator
     if not np.all(np.isfinite(measured)) or np.any(measured <= 0):
         raise ValueError("Nonpositive/nonfinite expected noise variance")
     beta = np.float32(0 if full_data else 0.9)
-    return jnp.asarray(beta * np.asarray(previous) + (1 - beta) * measured, dtype=jnp.float32)
+    return np.asarray(beta * np.asarray(previous) + (1 - beta) * measured, dtype=np.float32)

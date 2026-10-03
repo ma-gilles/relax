@@ -1271,12 +1271,13 @@ A_{ik\phi}=C_{ik}\,S_{s_{ik}(t)}\,P(\mathrm{Aproj}_{ik}R),\qquad
 z_i\sim\mathcal N(0,I_q).
 \]
 
-Noise is independent across tilt images, with spectrum `Sigma` in the
-coefficient units of section 14. The first version uses one spectrum for every
-tilt image; RELION's model is one per optics group (one per tomogram on our
-fixtures), with dose entering through the CTF, not the noise. Tiles are single
-tomograms (16.4), so a per-group spectrum later changes only the tile's noise row
-and the per-group noise sums.
+Noise is independent across tilt images, with spectrum `Sigma_g` in the
+coefficient units of section 14 for the particle's optics group `g` (one per
+tomogram on RELION 5 imports), as in RELION; dose enters through the CTF, not the
+noise. Tiles hold particles of one tilt group and one noise group (16.4), and the
+controller runs one stream per noise group, whose noise enters that stream's
+operands; no engine change is needed. Until October 3, 2026 the first version
+used one spectrum for every tilt image.
 
 ### 16.2 The latent is shared: sum the tilts before integrating it out
 
@@ -1312,11 +1313,13 @@ momentum SGD are used unchanged. Batches, pseudo-halves (stable particle id
 parity) and the subset schedule count particles, not tilt images.
 
 The noise update averages the expected residual power (with the posterior
-covariance term of section 10) over visible tilt images: each tilt image is
-one noise observation in the denominator. The offset variance is
+covariance term of section 10) over the visible tilt images of each noise group:
+each tilt image is one noise observation in its group's denominator, and a group
+with no particle in a minibatch keeps its spectrum. The initial spectra use the
+unaligned estimator over about 1,000 tilt images of each group (RELION's
+per-group start-up count). The offset variance is
 `sum gamma |t|^2 / (3 count)` in 3D, with the same floor and 0.9 subset
-smoothing as SPA. The initial noise is the unaligned estimator of section 10
-over the bootstrap's tilt images.
+smoothing as SPA.
 
 ### 16.4 Mapping onto the streamed GEMMs
 
@@ -1374,9 +1377,8 @@ through the same tilt stream is the follow-up, if the full grid is too slow.
 
 Approved for the first version (October 2, 2026), each to be lifted separately:
 
-1. One noise spectrum for every tilt image. Real data has one optics group per
-   tomogram, so per-group noise (a tile-level noise row and per-group noise sums)
-   follows soon.
+1. Lifted October 3, 2026: one noise spectrum per optics group (`state.noise`
+   is `(G, S)` for subtomogram particles).
 2. Unit contrast. A per-particle contrast shared by its tilts is not modeled.
 3. Full rotation grid per stage only (`--oversampling 0
    --stream-coarse-recompute`); no coarse significance pass.
@@ -1401,7 +1403,8 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
   the images, CTFs and tilt geometry only.
 
 Checks ([test_tomo_ppca.py](../../tests/unit/ppca_initial_model/test_tomo_ppca.py)):
-the tilt tile against a brute-force float64 joint Gaussian that stacks each
+the tilt tile, and the controller's per-noise-group expectation (two groups with
+different spectra), against a brute-force float64 joint Gaussian that stacks each
 particle's tilts with one latent and evaluates `log N(y; A mu, A W W^T A^T +
 D^-1)` from the dense covariance (box 8, `q = 2`, three particles, four frames,
 one hidden tilt, five rotations, seven 3D shifts): log-likelihood, embeddings,

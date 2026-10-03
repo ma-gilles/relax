@@ -278,38 +278,45 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     ).astype(np.float32)
     prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
     prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
-    nv = np.asarray(make_radial_noise(np.asarray(state.noise), dataset.image_shape), np.float32)
+    # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
+    noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
+    nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
+    nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
     if config.oversampling == 0:
         if config.stream_coarse_recompute:
             # One artificial coarse parent represents the full coarse pose grid.
-            # It keeps the shared full-row mask Bx1x1 instead of BxRxT.
-            stream = prepare_full_row_stream(
-                dataset,
-                mu,
-                W,
-                noise_variance=nv,
-                rotations=rotations,
-                translations=translations,
-                rotation_log_prior=rotation_log_prior,
-                translation_log_prior=np.asarray(prior),
-                rotation_parent=np.zeros(len(rotations), np.int32),
-                translation_parent=np.zeros(len(translations), np.int32),
-                n_coarse_rotations=1,
-                n_coarse_translations=1,
-                geometry=geometry,
-                schedule=schedule,
-                scoring=scoring,
-                # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
-                metric_trace_only=config.optimizer == "momentum_sgd",
-                gemm_precision=config.gemm_precision,
-                tile_loader=load_tilt_tile if tilts else None,
-            )
+            # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
+            # own stream (its noise enters the operands); single particles have one group.
+            streams = [
+                prepare_full_row_stream(
+                    dataset,
+                    mu,
+                    W,
+                    noise_variance=group_nv,
+                    rotations=rotations,
+                    translations=translations,
+                    rotation_log_prior=rotation_log_prior,
+                    translation_log_prior=np.asarray(prior),
+                    rotation_parent=np.zeros(len(rotations), np.int32),
+                    translation_parent=np.zeros(len(translations), np.int32),
+                    n_coarse_rotations=1,
+                    n_coarse_translations=1,
+                    geometry=geometry,
+                    schedule=schedule,
+                    scoring=scoring,
+                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
+                    metric_trace_only=config.optimizer == "momentum_sgd",
+                    gemm_precision=config.gemm_precision,
+                    tile_loader=load_tilt_tile if tilts else None,
+                )
+                for group_nv in nvs
+            ]
             # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
-            # group each for subtomogram particles.
+            # group and one noise group each for subtomogram particles.
             tiles = [
-                (group, np.asarray(tile))
+                (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
                 for group, ids_group in enumerate(ids)
                 for tile in (
                     tilt_tiles(dataset, ids_group, config.image_batch_size)
@@ -320,10 +327,18 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     ]
                 )
             ]
-            if embeddings_only:
-                parts = [full_row_tile_embeddings(stream, tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles]
-            else:
-                parts = accumulate_full_row_tiles(stream, [(tile_ids, [None] * len(tile_ids)) for _, tile_ids in tiles])
+            parts = [None] * len(tiles)
+            for noise_group, stream in enumerate(streams):
+                members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
+                items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
+                if embeddings_only:
+                    done = [full_row_tile_embeddings(stream, *item) for item in items]
+                else:
+                    done = accumulate_full_row_tiles(stream, items) if items else []
+                for k, part in zip(members, done):
+                    parts[k] = part
+            noise_owner = [owner for _, owner, _ in tiles]
+            tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
             results = []
             for group in range(len(ids)):
                 group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
@@ -335,6 +350,22 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     ))
                     continue
                 stats = _merge_statistics(group_parts)
+                if tilts:
+                    # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
+                    owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]
+                    stats = dataclasses.replace(
+                        stats,
+                        **{
+                            name: jnp.stack([
+                                sum(
+                                    (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
+                                    jnp.zeros_like(getattr(group_parts[0], name)),
+                                )
+                                for g in range(len(streams))
+                            ])
+                            for name in ("residual_num", "residual_den")
+                        },
+                    )
                 stats.diagnostics.update(
                     {
                         "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
@@ -662,9 +693,11 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             momentum = None
         numerator = sum(s.residual_num for s in stats)
         denominator = sum(s.residual_den for s in stats)
-        previous = np.pad(np.asarray(state.noise), (0, max(0, len(numerator) - len(state.noise))), mode="edge")[
-            : len(numerator)
-        ]
+        # Noise rows (one per noise group for subtomograms) padded to the statistics' shell count.
+        current = np.asarray(state.noise)
+        noise_shells = np.asarray(numerator).shape[-1]
+        padding = [(0, 0)] * (current.ndim - 1) + [(0, max(0, noise_shells - current.shape[-1]))]
+        previous = np.pad(current, padding, mode="edge")[..., :noise_shells]
         try:
             noise = update_noise(previous, numerator, denominator, full_data=count == dataset.n_images)
         except ValueError:

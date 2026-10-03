@@ -34,7 +34,8 @@ class TiltParticles:
     ``image_frame[i]`` of its particle's group, whose frame matrices (RELION's ``Aproj``) are
     ``group_frames[particle_group[p]]``. ``read(image_ids)`` returns the images' real-space pixels
     ``(n, N, N)``, centered half spectra ``(n, n_half)`` complex64 and CTF rows ``(n, n_half)``
-    float32 on the half grid of :meth:`process_images_half`.
+    float32 on the half grid of :meth:`process_images_half`. ``noise_group`` (``0..G-1`` per
+    particle, its optics group; ``None`` is one group) selects the particle's noise spectrum.
     """
 
     image_shape: tuple
@@ -45,6 +46,18 @@ class TiltParticles:
     particle_group: np.ndarray
     group_frames: tuple
     read: Callable
+    noise_group: np.ndarray | None = None
+
+    @property
+    def particle_noise_group(self) -> np.ndarray:
+        """Noise group of every particle (all zero with one group)."""
+        if self.noise_group is None:
+            return np.zeros(self.n_images, np.int64)
+        return np.asarray(self.noise_group, np.int64)
+
+    @property
+    def n_noise_groups(self) -> int:
+        return int(self.particle_noise_group.max()) + 1 if self.n_images else 1
 
     @property
     def n_images(self) -> int:
@@ -134,16 +147,18 @@ def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
         particle_group=particle_group,
         group_frames=tuple(np.asarray(m, np.float64) for m in group_frames),
         read=read,
+        # One noise spectrum per optics group (one per tomogram on RELION 5 imports).
+        noise_group=np.unique(np.asarray(tomo.unit_optics_group), return_inverse=True)[1].reshape(-1),
     )
 
 
 def tilt_tiles(particles: TiltParticles, ids, tile_size: int) -> list[np.ndarray]:
-    """Cut ``ids`` into tiles of at most ``tile_size`` particles of one tilt group each.
+    """Cut ``ids`` into tiles of at most ``tile_size`` particles of one tilt group and one noise group each.
 
     Groups appear in order of their first particle in ``ids``; particles keep their order within a group.
     """
     ids = np.asarray(ids, dtype=np.int64)
-    groups = particles.particle_group[ids]
+    groups = particles.particle_group[ids] * particles.n_noise_groups + particles.particle_noise_group[ids]
     _, first = np.unique(groups, return_index=True)
     tiles = []
     for group in groups[np.sort(first)]:
@@ -224,7 +239,7 @@ def tilt_bootstrap(particles: TiltParticles, rng, channels: int, radius: int, *,
     Random particles are read until about ``image_target`` tilt images; each particle gets one
     random rotation and every visible tilt backprojects at ``Aproj_k R`` with its own CTF, into
     seed map ``position % channels``. Returns the per-map RHS and CTF^2 half volumes and the
-    tilt images for the initial noise estimate.
+    chosen particles.
     """
     order = rng.permutation(particles.n_images)
     counts = np.diff(particles.image_offsets)[order]
@@ -238,7 +253,7 @@ def tilt_bootstrap(particles: TiltParticles, rng, channels: int, radius: int, *,
         ]
     )
     tilt_rotations = np.einsum("nab,nbc->nac", frames, rotations[owner]).astype(np.float32)
-    raw, half, ctf = particles.read(images)
+    _, half, ctf = particles.read(images)
     labels = owner % channels
     n_half_volume = int(np.prod(particles.volume_shape[:2])) * (particles.volume_shape[2] // 2 + 1)
     rhs = jnp.zeros((channels, n_half_volume), jnp.complex64)
@@ -251,23 +266,46 @@ def tilt_bootstrap(particles: TiltParticles, rng, channels: int, radius: int, *,
         options = dict(half_image=True, half_volume=True, max_r=radius)
         rhs = rhs.at[k].add(core.adjoint_slice_volume(half[select] * ctf[select], *slice_args, **options))
         lhs = lhs.at[k].add(core.adjoint_slice_volume(ctf[select] ** 2, *slice_args, **options).real)
-    return rhs, lhs, [(0, np.asarray(image, np.float32)) for image in raw], chosen
+    return rhs, lhs, chosen
+
+
+def tilt_noise_images(particles: TiltParticles, rng, *, images_per_group: int = 1000):
+    """``(noise group, real-space image)`` pairs for the start-up noise of every noise group.
+
+    Each group reads the tilt images of its particles in a random order until ``images_per_group``
+    images (RELION's per-group start-up count of 1000 images), so every group gets a spectrum.
+    """
+    pairs = []
+    for group in range(particles.n_noise_groups):
+        members = rng.permutation(np.flatnonzero(particles.particle_noise_group == group))
+        counts = np.diff(particles.image_offsets)[members]
+        chosen = members[: int(np.searchsorted(np.cumsum(counts), images_per_group)) + 1]
+        raw, _, _ = particles.read(particles.particle_images(chosen)[0])
+        pairs.extend((group, np.asarray(image, np.float32)) for image in raw)
+    return pairs
 
 
 @full_float32
 def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2):
-    """:func:`relax.ppca_initial_model.initialization.initialize` for subtomogram particles (section 16.5)."""
+    """:func:`relax.ppca_initial_model.initialization.initialize` for subtomogram particles (section 16.5).
+
+    The noise is one spectrum per noise group, ``(G, S)``.
+    """
     if isinstance(q, bool) or not isinstance(q, (int, np.integer)) or q <= 0:
         raise ValueError("q must be a positive integer")
     rng = np.random.default_rng(seed)
     radius = max(1, int(np.floor(0.07 * particles.grid_size + 0.5)))
-    rhs, lhs, images_for_noise, chosen = tilt_bootstrap(particles, rng, q + 1, radius)
+    rhs, lhs, chosen = tilt_bootstrap(particles, rng, q + 1, radius)
     theta = seed_model(rhs, lhs, particles.volume_shape, particles.voxel_size, diameter_ang, radius, rng)
-    noise = initial_noise(images_for_noise, particles.image_shape, particles.voxel_size, diameter_ang)
+    images_for_noise = tilt_noise_images(particles, rng)
+    noise = initial_noise(
+        images_for_noise, particles.image_shape, particles.voxel_size, diameter_ang, n_groups=particles.n_noise_groups
+    )
     info = {
         "seed": seed,
         "bootstrap_particles": chosen.tolist(),
-        "bootstrap_tilt_images": len(images_for_noise),
+        "noise_tilt_images": len(images_for_noise),
+        "noise_groups": particles.n_noise_groups,
         "bootstrap_radius": radius,
         "projection": "complex64",
         "accumulation": "complex64/float32",
