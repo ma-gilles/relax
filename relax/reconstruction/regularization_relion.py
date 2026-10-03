@@ -21,15 +21,20 @@ _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
 # Device bytes per padded-grid voxel of the device shell statistics: the two halves' weights, their combination and
 # its float64 copy (8 B each), and the radius, shell-index and mask grids of _padded_shell_sums_device.
 _SHELL_STATS_DEVICE_BYTES_PER_VOXEL = 48
+# Largest share of what the device can still hand out that the device shell statistics may take. The final tau2 runs
+# beside the final all-data pass's accumulators and the XLA pool's fragmentation, and the estimate above counts the
+# named arrays only, not the reductions' temporaries; half leaves room for both.
+_SHELL_STATS_DEVICE_SHARE = 0.5
 
 
 def _shell_stats_on_host(n_voxels: int) -> bool:
     """Whether the padded-grid shell statistics of ``n_voxels`` reduce on the host instead of the device.
 
     On the host past ``_RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS``, or when their device arrays would take more
-    than half of what the device can still hand out: a box-256 final tau2 at padding 2 (512^3 voxels) asked for
-    another 1.02 GiB on a 16 GB card after the final all-data pass and ran out of memory (A100 emulating 16 GB,
-    relax c8ac3e6). The two reductions sum the same shells; the routing changes only where they run.
+    than ``_SHELL_STATS_DEVICE_SHARE`` of what the device can still hand out: a box-256 final tau2 at padding 2
+    (512^3 voxels) asked for another 1.02 GiB on a 16 GB card after the final all-data pass and ran out of memory
+    (A100 emulating 16 GB, relax c8ac3e6). The two reductions sum the same shells; the routing changes only where
+    they run.
     """
 
     if int(n_voxels) > _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS:
@@ -46,7 +51,9 @@ def _shell_stats_on_host(n_voxels: int) -> bool:
     available = device_available_bytes(
         _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
     )
-    return available is not None and int(n_voxels) * _SHELL_STATS_DEVICE_BYTES_PER_VOXEL > 0.5 * float(available)
+    return available is not None and (
+        int(n_voxels) * _SHELL_STATS_DEVICE_BYTES_PER_VOXEL > _SHELL_STATS_DEVICE_SHARE * float(available)
+    )
 
 
 _LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS = 200_000_000
@@ -694,9 +701,10 @@ def compute_relion_tau2_from_weights(
     )
     half_padded_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(padded_shape)
     large_weight_size = max(int(np.prod(padded_shape)), int(np.prod(half_padded_shape)))
+    padded_sizes = {int(np.prod(padded_shape)), int(np.prod(half_padded_shape))}
     use_host_shell_stats = (
         int(padding_factor) > 1
-        and max(int(np.size(Ft_ctf_0)), int(np.size(Ft_ctf_1))) in {int(np.prod(padded_shape)), int(np.prod(half_padded_shape))}
+        and max(int(np.size(Ft_ctf_0)), int(np.size(Ft_ctf_1))) in padded_sizes
         and _shell_stats_on_host(large_weight_size)
     )
     if use_host_shell_stats:

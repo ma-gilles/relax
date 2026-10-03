@@ -554,7 +554,8 @@ def test_shell_stats_route_to_the_host_when_the_device_copy_does_not_fit(monkeyp
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 60 * gib)
     assert not regularization_relion._shell_stats_on_host(voxels)
     # The fixed voxel ceiling still applies, and unknown readings keep the device path.
-    assert regularization_relion._shell_stats_on_host(regularization_relion._RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS + 1)
+    ceiling = regularization_relion._RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS
+    assert regularization_relion._shell_stats_on_host(ceiling + 1)
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: None)
     assert not regularization_relion._shell_stats_on_host(voxels)
