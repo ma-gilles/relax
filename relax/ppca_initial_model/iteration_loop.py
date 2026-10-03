@@ -215,17 +215,25 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
         # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
         # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
-        tile_size = plan_tile_images(streams[0], config.image_batch_size)
+        def cut(size):
+            return [
+                (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
+                for group, ids_group in enumerate(ids)
+                for tile in (
+                    tilt_tiles(dataset, ids_group, size)
+                    if tilts
+                    else [ids_group[begin : begin + size] for begin in range(0, len(ids_group), size)]
+                )
+            ]
+
+        def tiles_per_call(size):
+            # Each noise group's stream accumulates its tiles in one call (below).
+            owners = [owner for _, owner, _ in cut(size)]
+            return max(owners.count(owner) for owner in set(owners)) if owners else 0
+
+        tile_size = plan_tile_images(streams[0], config.image_batch_size, tiles_per_call=tiles_per_call)
         streams = [stream._replace(tile_images=tile_size) for stream in streams]
-        tiles = [
-            (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
-            for group, ids_group in enumerate(ids)
-            for tile in (
-                tilt_tiles(dataset, ids_group, tile_size)
-                if tilts
-                else [ids_group[begin : begin + tile_size] for begin in range(0, len(ids_group), tile_size)]
-            )
-        ]
+        tiles = cut(tile_size)
         parts = [None] * len(tiles)
         for noise_group, stream in enumerate(streams):
             members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]

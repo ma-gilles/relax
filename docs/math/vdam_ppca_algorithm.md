@@ -1164,14 +1164,25 @@ scientific contract; runnable code alone does not establish recovery.
     reader without both attributes is refused rather than planned as single
     particles.
 
-  A finished tile is released before the next one is read. A stage is planned
+  A finished tile is released before the next one is read. Tiles are read
+  ahead only within one accumulate call, and the controller makes one call
+  per noise group. When every call of an update holds one tile at the plan
+  without read-ahead, that plan is used and the next tile's reader is not
+  counted (`tiles_per_call`); otherwise it is. A stage is planned
   once, from its shapes, and the plan is logged ("PPCA tile plan", in the
   command's run.log). Each update records the planned size as `tile_images`.
   On an emulated 16 GB H100 (job 14939163,
   `em_fixtures/ppca_evidence_20261003/em_work/relax_gpuport_20261003/della_ppca_fb33c09`; r31/HP3 cryo-ET, 41 tilts, batch
   150) the r31 stage plans 33 particles (block programs 2.13 GiB) and SGD and
-  VDAM complete at a 15.3-15.6 GiB nvidia-smi peak, where the count without the block programs had run out
-  of memory in the score block.
+  VDAM complete at a 15.3-15.6 GiB nvidia-smi peak (the pool's reserved memory),
+  where the count without the block programs had run out of memory in the score
+  block. Live allocator peaks match the count: three pipelined r31 tiles of 139
+  particles peak at 12.80 GiB against 12.94 GiB counted, and 33-particle tiles
+  at 4.83 against 4.76 GiB (A100).
+  On an 80 GB card the plan is the requested 150 particles at every k3conf and
+  EMPIAR-10076 stage (`test_an_80_gb_card_keeps_the_requested_tile_at_every_stage`),
+  and the controller's statistics do not depend on the tile size beyond float32
+  reduction order (`test_controller_statistics_do_not_depend_on_the_tile_size`).
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials

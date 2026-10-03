@@ -1121,7 +1121,8 @@ def tile_program_bytes(stream: FullRowStream, n_images: int) -> int:
     The larger of :func:`_score_block` and :func:`_moment_block` (moments) at the tile's shapes:
     each program's temporaries plus the outputs that do not alias its donated input (the kept
     results, the moment carry), from ``lower(...).compile().memory_analysis()``. Cached per stage
-    shape and size; the persistent compilation cache serves the real tiles of the same shapes.
+    shape and size. These are separate compiles from the tiles' own (their operands' device
+    placement differs, so the cache keys do): about 0.3 s per stage on A100 at EMPIAR-10076's shapes.
     """
     key = (_plan_shape_key(stream), int(n_images), getattr(stream.device, "id", None))
     if key not in _PROGRAM_BYTES:
@@ -1198,18 +1199,23 @@ def _reader_bytes(stream: FullRowStream):
     return single_particle_reader_bytes if reader is None else reader.operand_bytes
 
 
-def tile_bytes(stream: FullRowStream, n_images: int, reader=None) -> int:
-    """Device bytes a tile of ``n_images`` needs at its peak, while the next tile is being read.
+def tile_bytes(stream: FullRowStream, n_images: int, reader=None, *, pipelined: bool = True) -> int:
+    """Device bytes a tile of ``n_images`` needs at its peak.
 
-    Tiles are pipelined (:func:`accumulate_full_row_tiles`): the next tile's reader runs while the
-    current tile's operands and the shared kept buffer are live, so the count is the stream's own
-    buffers (:func:`stream_tile_bytes`), one tile's resident operands and one reader peak.
+    Tiles of one :func:`accumulate_full_row_tiles` call are pipelined: the next tile's reader runs
+    while the current tile's operands and the shared kept buffer are live, so the count is the
+    stream's own buffers (:func:`stream_tile_bytes`), one tile's resident operands and one reader
+    peak. A call of one tile (``pipelined=False``) reads it before its passes run: the larger of the
+    reader peak and the stream's buffers with the tile's operands.
     """
     peak, resident = (reader or _reader_bytes(stream))(stream, n_images)
-    return stream_tile_bytes(stream, n_images) + resident + peak
+    own = stream_tile_bytes(stream, n_images) + resident
+    return own + peak if pipelined else max(own, peak)
 
 
-def plan_tile_images(stream: FullRowStream, requested: int, *, memory_bytes=None, device_bytes=None) -> int:
+def plan_tile_images(
+    stream: FullRowStream, requested: int, *, memory_bytes=None, device_bytes=None, tiles_per_call=None
+) -> int:
     """Tile images (particles) per tile: ``requested``, or the most that fit the device (:func:`tile_bytes`).
 
     The budget is ``memory_bytes`` minus :data:`TILE_FRAGMENTATION_HEADROOM` of ``device_bytes``. On a
@@ -1218,12 +1224,25 @@ def plan_tile_images(stream: FullRowStream, requested: int, *, memory_bytes=None
     a CPU stream keeps ``requested``. At least one image per tile. Every stage (radius, window,
     pose grid) is planned with its own shapes, once: with the probed defaults the plan is kept per
     stage shape, measured at the stage's first update.
+
+    ``tiles_per_call(size)`` gives the most tiles one :func:`accumulate_full_row_tiles` call holds at
+    a tile size (never fewer for smaller tiles). Tiles are read ahead only within a call, so when
+    every call holds one tile at the plan without read-ahead, that plan is used; otherwise (or when
+    it is None) the next tile's reader is counted.
     """
+    if tiles_per_call is not None and tiles_per_call(int(requested)) <= 1:
+        single = _planned_tile_images(stream, requested, memory_bytes, device_bytes, pipelined=False)
+        if tiles_per_call(single) <= 1:
+            return single
+    return _planned_tile_images(stream, requested, memory_bytes, device_bytes, pipelined=True)
+
+
+def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipelined):
     if memory_bytes is None and device_bytes is None and stream.static.cuda_kernels:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
-        key = (_plan_shape_key(stream), int(requested), stream.device.id)
+        key = (_plan_shape_key(stream), int(requested), stream.device.id, pipelined)
         if key not in _PLANS:
-            _PLANS[key] = plan_tile_images(stream, requested, memory_bytes=_available_device_bytes())
+            _PLANS[key] = _planned_tile_images(stream, requested, _available_device_bytes(), None, pipelined=pipelined)
         return _PLANS[key]
     if not memory_bytes:
         return int(requested)
@@ -1234,17 +1253,17 @@ def plan_tile_images(stream: FullRowStream, requested: int, *, memory_bytes=None
     budget_bytes = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
     reader = _reader_bytes(stream)
     requested = int(requested)
-    planned = _plan_tile_images(stream, requested, reader, budget_bytes)
+    planned = _plan_tile_images(stream, requested, reader, budget_bytes, pipelined)
     peak, resident = reader(stream, planned)
     gib = 2**30
     logger.info(
         "PPCA tile plan: %d of %d images per tile (%d frames each); counted %.2f GiB of a %.2f GiB budget "
         "(%.2f GiB available, %.2f GiB device, headroom %.0f%%): stream %.2f GiB of which block programs "
-        "%.2f GiB, tile operands %.2f GiB, next tile's reader %.2f GiB",
+        "%.2f GiB, tile operands %.2f GiB, reader %.2f GiB (%s)",
         planned,
         requested,
         _tile_frames(stream),
-        tile_bytes(stream, planned, reader) / gib,
+        tile_bytes(stream, planned, reader, pipelined=pipelined) / gib,
         budget_bytes / gib,
         memory_bytes / gib,
         (device_bytes or memory_bytes) / gib,
@@ -1253,6 +1272,7 @@ def plan_tile_images(stream: FullRowStream, requested: int, *, memory_bytes=None
         tile_program_bytes(stream, planned) / gib,
         resident / gib,
         peak / gib,
+        "next tile read ahead" if pipelined else "one tile per call",
     )
     return planned
 
@@ -1288,18 +1308,18 @@ def _available_device_bytes():
     )
 
 
-def _plan_tile_images(stream, requested, reader, budget_bytes):
-    exact = {requested: tile_bytes(stream, requested, reader)}
+def _plan_tile_images(stream, requested, reader, budget_bytes, pipelined):
+    exact = {requested: tile_bytes(stream, requested, reader, pipelined=pipelined)}
     if exact[requested] <= budget_bytes:
         return requested
     # Tile bytes are affine in the tile size (every counted buffer and program grows linearly in the
     # images): two exact counts (1 and ``requested``) place every size between them, so the search
     # compiles no other program. The chosen size is then counted exactly.
-    exact[1] = tile_bytes(stream, 1, reader)
+    exact[1] = tile_bytes(stream, 1, reader, pipelined=pipelined)
     slope = (exact[requested] - exact[1]) / max(requested - 1, 1)
     low = max(1, min(requested, 1 + int((budget_bytes - exact[1]) // slope) if slope > 0 else requested))
     while low > 1:
-        exact.setdefault(low, tile_bytes(stream, low, reader))
+        exact.setdefault(low, tile_bytes(stream, low, reader, pipelined=pipelined))
         if exact[low] <= budget_bytes:
             break
         low = max(1, min(low - 1, int(low * budget_bytes / exact[low])))
