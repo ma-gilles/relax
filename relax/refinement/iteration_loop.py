@@ -1935,7 +1935,6 @@ def refine_single_volume(
             accumulator_shape=mstep_accumulator_shape,
             k_class_enabled=k_class_enabled,
             init_relion_iteration=init_relion_iteration,
-            state_current_size=getattr(state, "current_size", None),
             pixel_size_angstrom=source_pixel_size_angstrom,
             log=logger,
         )

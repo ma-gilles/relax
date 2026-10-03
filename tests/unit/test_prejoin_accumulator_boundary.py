@@ -68,7 +68,7 @@ def test_prejoin_capture_guard_routing(
         assert tuple(arrays) == ('Ft_y_0', 'Ft_y_1', 'Ft_ctf_0', 'Ft_ctf_1')
         for actual, expected in zip(arrays.values(), numerators + denominators):
             assert actual is expected
-        assert context == f'iteration={iteration} relion_iteration={12 + iteration + 1} current_size=6'
+        assert context == f'iteration={iteration} relion_iteration={12 + iteration + 1}'
     raw_pixel_size = np.float32(1.5)
     monkeypatch.setattr(diagnostics, 'write_bpref_accumulators', save)
     monkeypatch.setattr(diagnostics.finite_check, 'half_accumulator_guard_mode', guard_mode)
@@ -76,7 +76,7 @@ def test_prejoin_capture_guard_routing(
     result = diagnostics.audit_prejoin_accumulators(
         numerators, denominators, settings, iteration=iteration, current_size=6,
         accumulator_shape=(16, 16, 16), k_class_enabled=k_class_enabled,
-        init_relion_iteration=12, state_current_size=6,
+        init_relion_iteration=12,
         pixel_size_angstrom=raw_pixel_size, log=log,
     )
     assert result is matches
@@ -93,7 +93,7 @@ def test_malformed_capture_target_refuses_before_guard_even_without_capture(sett
         diagnostics.audit_prejoin_accumulators(
             [None, None], [None, None], settings, iteration=0, current_size=6,
             accumulator_shape=(16, 16, 16), k_class_enabled=True,
-            init_relion_iteration=12, state_current_size=6,
+            init_relion_iteration=12,
             pixel_size_angstrom=1.5, log=Mock(),
         )
     guard.assert_not_called()
@@ -113,7 +113,7 @@ def test_capture_precedes_guard_failure(settings, monkeypatch):
         diagnostics.audit_prejoin_accumulators(
             [None, None], [None, None], settings, iteration=0, current_size=6,
             accumulator_shape=(16, 16, 16), k_class_enabled=False,
-            init_relion_iteration=12, state_current_size=6,
+            init_relion_iteration=12,
             pixel_size_angstrom=1.5, log=Mock(),
         )
     assert events == ['capture', 'guard']
