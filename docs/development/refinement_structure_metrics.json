@@ -85,9 +85,9 @@
         },
         {
           "function_count": 12,
-          "nonblank_noncomment_lines": 2713,
+          "nonblank_noncomment_lines": 2707,
           "path": "relax/refinement/iteration_loop.py",
-          "physical_lines": 3113
+          "physical_lines": 3107
         },
         {
           "function_count": 11,
@@ -114,10 +114,10 @@
           "physical_lines": 457
         },
         {
-          "function_count": 56,
-          "nonblank_noncomment_lines": 1908,
+          "function_count": 58,
+          "nonblank_noncomment_lines": 1907,
           "path": "relax/refinement/mean_helpers.py",
-          "physical_lines": 2226
+          "physical_lines": 2221
         },
         {
           "function_count": 15,
@@ -287,7 +287,7 @@
           "path": "relax/refinement/optics_shapes.py"
         },
         {
-          "line": 1179,
+          "line": 1185,
           "line_span": 151,
           "name": "estimate_split_half_prior",
           "parameter_count": 12,
@@ -350,20 +350,6 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 1443,
-          "line_span": 76,
-          "name": "reconstruct_numbered_k1_halfmaps",
-          "parameter_count": 10,
-          "path": "relax/refinement/mean_helpers.py"
-        },
-        {
-          "line": 1521,
-          "line_span": 87,
-          "name": "reconstruct_numbered_class_maps",
-          "parameter_count": 10,
-          "path": "relax/refinement/mean_helpers.py"
-        },
-        {
           "line": 234,
           "line_span": 42,
           "name": "__init__",
@@ -381,7 +367,7 @@
       "largest_functions": [
         {
           "line": 353,
-          "line_span": 2758,
+          "line_span": 2752,
           "name": "refine_single_volume",
           "parameter_count": 6,
           "path": "relax/refinement/iteration_loop.py"
@@ -462,17 +448,17 @@
       },
       "totals": {
         "file_count": 27,
-        "function_count": 354,
-        "large_argument_function_count": 28,
-        "maximum_function_line_span": 2758,
+        "function_count": 356,
+        "large_argument_function_count": 26,
+        "maximum_function_line_span": 2752,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18847,
-        "physical_lines": 21509,
+        "nonblank_noncomment_lines": 18840,
+        "physical_lines": 21498,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "numbered reconstruction split into K1 half-map and class-map operations",
-    "source_commit": "3be1e22fa48d3d697f9ee826ad73365815424dde",
+    "package": "numbered reconstruction: shell-curve priors only and one postprocessing sequence",
+    "source_commit": "55221f75e3101bc4fd6d3ad11c6761b1ad088ccb",
     "recorded_date": "2026-10-03"
   }
 }

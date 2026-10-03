@@ -896,6 +896,25 @@ and repeated mode decisions as well as operation ownership.
   formulas do not become one formula merely to eliminate a conditional.
 - Judge the full implementation: moving every branch into tiny helpers or a
   dispatch table does not reduce the number of cases a maintainer must understand.
+- Give an operand one representation at an operation boundary. A flag that tells
+  the callee how to read another argument is a second case on every path through
+  it. When every producer on every supported entry path supplies one
+  representation, remove the flag and its fallback from the operation, its call
+  sites and each private function whose callers are all constant; stop at the
+  first function that another caller reaches with the other representation.
+  Example: both numbered prior estimators and the class replay always produced
+  shell curves, so `tau_is_1d` and the `shells if not None else volume` selection
+  left the two numbered operations and their private solves.
+  `_reconstruct_volume_eager` keeps the flag because the final K1 solve passes a
+  full volume.
+- A test helper must not repeat the dispatch of the code it tests. A builder
+  that accepts every mode's operands and selects the operation lets a test pass
+  operands the production caller never combines, and keeps a removed case alive.
+  Each test names the operation it exercises and passes that operation's
+  operands. Example: `run_mean_reconstruction` took K1 and Class3D operands with
+  the unused mode's set to `None` and chose the operation from `n_classes`; its
+  five callers now call `reconstruct_numbered_k1_halfmaps` or
+  `reconstruct_numbered_class_maps` directly and the builder is removed.
 
 Initial review targets: finalization repeats the K1 guard around unfiltered
 reconstruction, optional low-resolution joining and accumulator release; these

@@ -180,14 +180,20 @@ and flattening. Its `numerators`, `denominators` and `tau` arguments had
 different axis meanings by mode. A maintainer had to inspect both layers to know
 the contract.
 
-Current code: step 2 is implemented. `reconstruct_numbered_k1_halfmaps` and
-`reconstruct_numbered_class_maps` replace that function, each with accumulators
-of one layout, and the controller dispatches once at this boundary. The two
-operations repeat the capture, filter and flatten sequence, both still take
-`tau_is_1d` with its full-volume prior route, and the test builder
-`run_mean_reconstruction` still accepts both modes' operands and repeats the
-controller's dispatch. Steps 1 and 4 are not done, and the step 6 review with the
-user has not taken place.
+Current code: steps 1, 2, 3 and 5 are implemented. `reconstruct_numbered_k1_halfmaps`
+and `reconstruct_numbered_class_maps` replace that function, each with
+accumulators of one layout and shell-curve priors only, and the controller
+dispatches once at this boundary. The
+[choice inventory](final_local_sampling_patch_review.md#reconstruction-choice-inventory)
+traces every producer and consumer; it showed the full-volume prior route of the
+numbered operations to be unreachable in production, so `tau_is_1d` is removed
+from them and kept only on the eager solve, which the final K1 path calls with a
+full volume. `_postprocess_numbered_maps` holds the capture, filter and flatten
+sequence and the mask radius once; the K1 and class flatten implementations
+remain as its one execution difference. The `run_mean_reconstruction` test
+builder is removed and each test calls the operation it exercises. The class
+operation still postprocesses both execution slots. Step 4 is not done, and the
+step 6 review with the user has not taken place.
 
 1. Inventory each reconstruction choice with its producer and consumers:
    split-half versus combined classes; prior volume versus shell curves;
@@ -333,7 +339,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2758/1766 for numerical/command controllers;
+Source spans are 2752/1766 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main
