@@ -600,8 +600,14 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     resumed_precision = None
+    resumed_source = None
     if resume:
         state = checkpoint.load(resume, config, identity)
+        saved_source = checkpoint.saved_source(resume)
+        if saved_source != checkpoint.canonical(identity).get("source"):
+            # Resuming under other code is allowed; the first update records where the state came from.
+            resumed_source = saved_source
+            logger.warning("resumed a checkpoint written by other source: %s", json.dumps(saved_source)[:200])
         saved = checkpoint.saved_gemm_precision(resume)
         if saved != config.gemm_precision:
             resumed_precision = saved
@@ -758,6 +764,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "healpix_order": config.stage(iteration)[1],
                 "gemm_precision": _gemm_precision_used(config),
                 **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),
+                **({"resumed_from_source": resumed_source} if resumed_source is not None else {}),
                 "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step,
                 "fudge": fudge,
                 "noise": noise,

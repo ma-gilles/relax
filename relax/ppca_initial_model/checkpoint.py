@@ -34,6 +34,22 @@ def _identity_config(config_dict):
     return {key: value for key, value in config_dict.items() if key not in RUNTIME_CONFIG_FIELDS}
 
 
+# Provenance: the code a checkpoint was written by. Stored in every checkpoint (and run.json) and logged
+# on resume, but not part of the resume identity, so a run resumes after a code update. The inputs
+# (manifest or optimisation-set hashes) and the model-defining configuration stay in the identity.
+PROVENANCE_IDENTITY_FIELDS = ("source",)
+
+
+def _resume_identity(identity):
+    return {key: value for key, value in canonical(identity).items() if key not in PROVENANCE_IDENTITY_FIELDS}
+
+
+def saved_source(path):
+    """The source provenance a checkpoint was written under (None if it records none)."""
+    with np.load(path, allow_pickle=False) as arrays:
+        return json.loads(str(arrays["metadata"]))["identity"].get("source")
+
+
 def saved_gemm_precision(path):
     """The stream GEMM precision setting a checkpoint was written under (fp32 before the setting existed)."""
     with np.load(path, allow_pickle=False) as arrays:
@@ -86,7 +102,7 @@ def load(path, config, identity):
         if (
             meta["schema"] != 1
             or _identity_config(meta["config"]) != _identity_config(canonical(dataclasses.asdict(config)))
-            or meta["identity"] != canonical(identity)
+            or _resume_identity(meta["identity"]) != _resume_identity(identity)
         ):
             raise ValueError("Checkpoint input/configuration/source identity mismatch")
         if arrays["theta"].dtype != np.complex64 or arrays["noise"].dtype != np.float32:
