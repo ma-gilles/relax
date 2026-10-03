@@ -731,6 +731,20 @@ labeled diagnostic only.
   scale difference in pass 1, reaches 0.3880/0.6102. VDAM on several shapes is not wired yet; its
   engine-level loop will use `optics_shapes.shape_class_engine_inputs` and `merge_k_class_engine_results`.
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930/score_twoshape_68d7ea1_out.json`.
+  Resident stable windows on another grid (2026-10-03): a pass whose images are on another grid than the
+  reference takes the stable-window plan on its own image grid, and its reference-model cube takes its own
+  physical class (`resident_pass2._stable_reference_volume_class`); before, every such pass kept the logical
+  window and recompiled per current size. Same fixture and seed, 25 iterations, cold: 754 -> 555 s, XLA
+  compile 485 -> 275 s; iteration-2 maps differ from the control by 2.6e-7; masked GT FSC-AUC 0.4662 vs
+  0.4664. Same-node pair on H100 (job 14945409): relax 485 s, stock GPU RELION 715 s. The remaining
+  compile is the chunk posterior, M-step block and statistics programs (64-79 signatures) and eager
+  primitives on new shapes.
+  Distance to stock CPU RELION on this fixture (2.0e-3 at iteration 1, 5e-3 at iteration 2) is RELION's
+  CPU translation defect (ma-gilles/relax#13): its CPU path phase-shifts trial translations with the model
+  box, so a group on another box is shifted by box_g / ori_size times the nominal offset. With relax's
+  group translations scaled the same way (diagnostic, not landed) iteration 1 agrees to 2.6e-4 with 14
+  group-2 rotations differing instead of 476; the same-shape two-optics control agrees to 3.3e-4. relax
+  keeps the physical shift, as RELION's GPU path does.
 - Optics features in Refine3D (K=1): CTF-premultiplied particles
   (`rlnCtfDataAreCtfPremultiplied`), beam tilt and odd Zernike aberrations (image
   demodulation), even Zernike aberrations and anisotropic magnification (`rlnMagMat*`).
