@@ -340,3 +340,139 @@ def test_subtomogram_runs_refuse_unqualified_optics_features(project):
         else:
             with pytest.raises(NotImplementedError, match="does not implement"):
                 validate_particle_optics(table, tomographic=True)
+
+
+@pytest.mark.unit
+def test_flat_star_keeps_the_optics_features(project, tmp_path):
+    """The per-tilt STAR carries each tilt's optics-group features, as relion_refine reads them per image."""
+
+    from recovar.data_io import starfile
+
+    out, _ = project
+    particles, optics = read_star(str(out / "particles.star"))
+    groups = np.asarray(star_column(optics, "rlnOpticsGroup"), dtype=np.int64)
+    optics["_rlnCtfDataAreCtfPremultiplied"] = 1
+    optics["_rlnOddZernike"] = [f"[0,0,{10 * g},0,0,-5]" for g in groups]
+    optics["_rlnMagMat00"] = 1.0 + 0.01 * groups
+    optics["_rlnTomoUnrelatedLabel"] = 7.0
+    star = tmp_path / "particles_optics.star"
+    starfile.write_star(str(star), particles, data_optics=optics)
+    flat = tomo_input.flatten_relion5_tomo(star, out / "tomograms.star", tmp_path / "flat.star")
+    _, flat_optics = read_star(str(flat))
+    flat_groups = np.asarray(star_column(flat_optics, "rlnOpticsGroup"), dtype=np.int64)
+    position = {int(g): i for i, g in enumerate(groups)}
+    rows = [position[int(g)] for g in flat_groups]
+    for label in ("rlnCtfDataAreCtfPremultiplied", "rlnOddZernike", "rlnMagMat00"):
+        assert list(map(str, star_column(flat_optics, label))) == list(
+            map(str, np.asarray(star_column(optics, label))[rows])
+        )
+    assert star_column(flat_optics, "rlnTomoUnrelatedLabel") is None
+
+
+ABERRATED_OPTICS = dict(
+    voltage=300.0,
+    cs=2.7,
+    amp_contrast=0.1,
+    noise_scale=1.0,
+    beam_tilt=(1.6, -1.2),
+    odd_zernike=[0, 0, 40, 0, 0, -30],
+    even_zernike=[0, 0, 0, 0, 400, 0, 0, 0, -300],
+    mag_matrix=[[1.015, 0.004], [0.004, 0.99]],
+)
+
+
+@pytest.fixture(scope="module")
+def aberrated_project(tmp_path_factory):
+    """A simulated project whose second optics group has every aberration, CTF-premultiplied."""
+
+    root = tmp_path_factory.mktemp("relion_tomo_optics")
+    x = (np.arange(GRID) - GRID / 2) * VOXEL
+    zz, yy, xx = np.meshgrid(x, x, x, indexing="ij")
+    with mrcfile.new(root / "vol0000.mrc") as mrc:
+        mrc.set_data(np.exp(-((xx - 12) ** 2 + yy**2 + zz**2) / 200).astype(np.float32))
+        mrc.voxel_size = VOXEL
+    plain = {key: ABERRATED_OPTICS[key] for key in ("voltage", "cs", "amp_contrast", "noise_scale")}
+    out = root / "project"
+    relion_tomo.generate_relion5_tomo_dataset(
+        str(out),
+        str(root / "vol"),
+        VOXEL,
+        n_particles=4,
+        grid_size=GRID,
+        n_tomograms=2,
+        optics_groups=[plain, ABERRATED_OPTICS],
+        max_tilt=30.0,
+        tilt_step=10.0,
+        tomogram_size=(512, 512, 128),
+        premultiplied_ctf=True,
+        snr=0.05,
+        seed=4,
+    )
+    particles, tomograms = tomo_input.read_optimisation_set(out / "optimisation_set.star")
+    return tomo_input.flatten_relion5_tomo(particles, tomograms, root / "relax" / "particles_tilts.star")
+
+
+def _inside_nyquist_half():
+    import recovar.core.fourier_transform_utils as ftu
+
+    freqs = np.asarray(ftu.get_k_coordinate_of_each_pixel_half((GRID, GRID), VOXEL, scaled=True), dtype=np.float64)
+    return freqs, np.all(np.abs(freqs) < 0.5 / VOXEL, axis=-1)
+
+
+@pytest.mark.unit
+def test_exact_ctf_of_aberrated_tilts_matches_the_simulator(aberrated_project, monkeypatch):
+    """Per tilt image: relax's exact CTF (even Zernike, magnification, premultiplied CTF^2) is the simulated one."""
+
+    from recovar.core import CTFParamIndex
+
+    flat = aberrated_project
+    rows, _ = read_star(str(flat))
+    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    relion_ctf.clear_exact_ctf_result_cache()
+    dataset = SimpleNamespace(particles_file=str(flat))
+    got = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, np.arange(len(rows)), (GRID, GRID))
+    group = np.asarray(star_column(rows, "rlnOpticsGroup"), dtype=np.int64)
+    params = np.zeros((len(rows), 11))
+    for column, label in (
+        (CTFParamIndex.DFU, "rlnDefocusU"),
+        (CTFParamIndex.DFV, "rlnDefocusV"),
+        (CTFParamIndex.DFANG, "rlnDefocusAngle"),
+        (CTFParamIndex.CONTRAST, "rlnCtfScalefactor"),
+        (CTFParamIndex.DOSE, "rlnMicrographPreExposure"),
+    ):
+        params[:, column] = np.asarray(star_column(rows, label), dtype=np.float64)
+    params[:, CTFParamIndex.VOLT], params[:, CTFParamIndex.CS], params[:, CTFParamIndex.W] = 300.0, 2.7, 0.1
+    _, inside = _inside_nyquist_half()
+    for g, optics in (
+        (1, {}),
+        (2, dict(mag_matrix=ABERRATED_OPTICS["mag_matrix"], even_zernike=ABERRATED_OPTICS["even_zernike"])),
+    ):
+        sel = group == g
+        expected = np.asarray(relion_tomo.relion_tomo_ctf(params[sel], (GRID, GRID), VOXEL, half_image=True, **optics))
+        # RELION squares its CTF row for premultiplied images; relax stores RELION's rows negated.
+        np.testing.assert_allclose(got[sel][:, inside], -(expected**2)[:, inside], rtol=0, atol=1e-9)
+
+
+@pytest.mark.unit
+def test_odd_demodulation_of_aberrated_tilts_undoes_the_simulated_phase(aberrated_project, monkeypatch):
+    """relax demodulates each tilt image by exp(-i phase) of its group's beam tilt and odd Zernike terms."""
+
+    from relax.relion import optics_aberrations
+
+    flat = aberrated_project
+    rows, _ = read_star(str(flat))
+    monkeypatch.setattr(relion_ctf, "_RELION_EXACT_CTF_SOURCE_CACHE", {})
+    monkeypatch.setattr(optics_aberrations, "_ODD_PHASE_CACHE", {})
+    dataset = SimpleNamespace(particles_file=str(flat), image_shape=(GRID, GRID))
+    got = np.asarray(optics_aberrations.odd_demodulation_rows(dataset, np.arange(len(rows))))
+    group = np.asarray(star_column(rows, "rlnOpticsGroup"), dtype=np.int64)
+    freqs, inside = _inside_nyquist_half()
+    odd = relion_tomo.odd_coefficients_with_beam_tilt(
+        ABERRATED_OPTICS["odd_zernike"], ABERRATED_OPTICS["beam_tilt"], 2.7, 300.0
+    )
+    phase = relion_tomo.zernike_phase(
+        odd, relion_tomo.odd_index_to_mn, freqs @ np.asarray(ABERRATED_OPTICS["mag_matrix"]).T
+    )
+    np.testing.assert_allclose(got[group == 1], 1.0, rtol=0, atol=0)
+    expected = np.broadcast_to(np.exp(-1j * phase)[inside], got[group == 2][:, inside].shape)
+    np.testing.assert_allclose(got[group == 2][:, inside], expected, rtol=0, atol=1e-9)

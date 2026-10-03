@@ -629,7 +629,7 @@ def _evaluate_exact_ctf_rows(cache, original_indices, image_h: int, image_w: int
             columns = params[first:last][:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
             if tomo:
                 columns[:, 6] = 0.0  # dose-weighted: damped by the dose below, as RELION does for dose >= 0
-                freq_sq = fftw_half_freq_sq(image_h, image_w, float(pixel[0]))
+                freq_sq = fftw_half_freq_sq(image_h, image_w, float(pixel[0]), mag)
 
             def finish(start, stop, ctf, first=first):
                 chunk = slice(first + start, first + stop)

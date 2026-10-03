@@ -57,20 +57,24 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
     return damping
 
 
-def fftw_half_freq_sq(image_h: int, image_w: int, pixel_size: float) -> np.ndarray:
+def fftw_half_freq_sq(image_h: int, image_w: int, pixel_size: float, mag_matrix=None) -> np.ndarray:
     """``k^2`` (1/A^2) on RELION's FFTW half grid, ``(image_h, image_w // 2 + 1)``.
 
     Rows follow ``FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM2D`` as ``CTF::getFftwImage``
     uses it (``src/ctf.cpp:443-449``): ``ip = i`` for ``i < image_w // 2 + 1``, else
-    ``i - image_h``.
+    ``i - image_h``. With an optics group's anisotropic magnification ``M`` (2x2) it is
+    ``|M k|^2``: ``CTF::getCTF`` magnifies the frequency before the damping (``src/ctf.h:189-197``).
     """
 
     rows = np.arange(image_h)
     ip = np.where(rows < image_w // 2 + 1, rows, rows - image_h)
     jp = np.arange(image_w // 2 + 1)
-    x = jp / (image_w * pixel_size)
-    y = ip / (image_h * pixel_size)
-    return y[:, None] ** 2 + x[None, :] ** 2
+    x = np.broadcast_to(jp[None, :] / (image_w * pixel_size), (image_h, jp.size))
+    y = np.broadcast_to(ip[:, None] / (image_h * pixel_size), (image_h, jp.size))
+    if mag_matrix is not None:
+        m = np.asarray(mag_matrix, dtype=np.float64)
+        x, y = m[0, 0] * x + m[0, 1] * y, m[1, 0] * x + m[1, 1] * y
+    return y**2 + x**2
 
 
 def read_optimisation_set(path) -> tuple[Path, Path]:
@@ -93,18 +97,26 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
     """Write the per-tilt STAR relax reads (RECOVAR's RELION 5 reader) and return it.
 
     Tomograms with ``rlnCtfBfactorPerElectronDose`` carry it on every row as the
-    column ``_rlnCtfBfactorPerElectronDose``.
+    column ``_rlnCtfBfactorPerElectronDose``. The per-tilt optics table keeps the particle
+    STAR's optics features (:data:`relax.relion.relion_metadata.OPTICS_FEATURE_LABELS`:
+    ``rlnCtfDataAreCtfPremultiplied``, beam tilt, odd and even Zernike terms, ``rlnMagMat``):
+    relion_refine reads them from the particle STAR's optics groups for every tilt image
+    (``Experiment::read``, exp_model.cpp:863), and relax's exact CTF and aberration operands
+    read them from the per-tilt STAR.
     """
 
     from recovar.commands.parse_relion5_tomo import convert
+    from recovar.data_io import starfile
 
     output_star = Path(output_star)
     output_star.parent.mkdir(parents=True, exist_ok=True)
     convert(str(tomograms_star), str(particles_star), str(output_star))
+    rows, optics = read_star(str(output_star))
+    particles, particle_optics = read_star(str(particles_star))
+    changed = False
     tomograms, _ = read_star(str(tomograms_star))
     bfactor = star_column(tomograms, "rlnCtfBfactorPerElectronDose")
     if bfactor is not None and np.any(np.asarray(bfactor, dtype=np.float64) > 0.0):
-        particles, _ = read_star(str(particles_star))
         tomo_of_particle = dict(
             zip(
                 np.asarray(star_column(particles, "rlnTomoParticleName", required=True)),
@@ -114,11 +126,31 @@ def flatten_relion5_tomo(particles_star, tomograms_star, output_star) -> Path:
         per_tomo = dict(
             zip(np.asarray(star_column(tomograms, "rlnTomoName", required=True)), np.asarray(bfactor, dtype=np.float64))
         )
-        from recovar.data_io import starfile
-
-        rows, optics = read_star(str(output_star))
         names = np.asarray(star_column(rows, "rlnGroupName", required=True))
         rows["_rlnCtfBfactorPerElectronDose"] = [per_tomo[tomo_of_particle[name]] for name in names]
+        changed = True
+    from relax.relion.relion_metadata import OPTICS_FEATURE_LABELS
+
+    features = {label for labels in OPTICS_FEATURE_LABELS.values() for label in labels}
+    written = {str(name).lstrip("_") for name in optics.columns}
+    missing = [
+        name
+        for name in particle_optics.columns
+        if str(name).lstrip("_") in features and str(name).lstrip("_") not in written
+    ]
+    if missing:
+        source_row = {
+            int(group): row
+            for row, group in enumerate(np.asarray(star_column(particle_optics, "rlnOpticsGroup", required=True)))
+        }
+        rows_of_flat = [
+            source_row[int(group)] for group in np.asarray(star_column(optics, "rlnOpticsGroup", required=True))
+        ]
+        for name in missing:
+            label = "_" + str(name).lstrip("_")
+            optics[label] = np.asarray(particle_optics[name])[rows_of_flat]
+        changed = True
+    if changed:
         starfile.write_star(str(output_star), rows, data_optics=optics)
     return output_star
 
