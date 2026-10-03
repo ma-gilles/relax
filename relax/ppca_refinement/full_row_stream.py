@@ -1053,12 +1053,20 @@ def _score_tile(stream: FullRowStream, tile: _TileArrays, n_blocks: int, kept: _
 TILE_MEMORY_FRACTION = 0.4
 
 
+# Live copies of the image operands while a tile reader builds them (complex shifted images,
+# frame slots, the planar [Re | Im] stack and its padded transpose). Measured on the subtomogram
+# reader at r31/HP3 (41 tilts, 33 shifts, A100): 92 MiB of device peak per added particle, about
+# 2.4 copies of the score and reconstruction operands on top of the kept buffers.
+TILE_LOADER_OPERAND_COPIES = 2.5
+
+
 def tile_image_floats(stream: FullRowStream, n_frames: int = 1) -> int:
     """float32 values on the device per tile image (a particle with ``n_frames`` tilt images).
 
     The kept pass-1 buffers (scores, latent means, packed covariances and the per-row partials)
-    over the full row table, the score and reconstruction image operands of every frame, and one
-    rotation block's pass-1/pass-2 GEMM outputs and posterior weights.
+    over the full row table, the score and reconstruction image operands of every frame with the
+    reader's transient copies (:data:`TILE_LOADER_OPERAND_COPIES`), and one rotation block's
+    pass-1/pass-2 GEMM outputs and posterior weights.
     """
     static = stream.static
     P = static.basis_size
@@ -1072,7 +1080,7 @@ def tile_image_floats(stream: FullRowStream, n_frames: int = 1) -> int:
     else:
         F = int(arrays.coefficient_noise.size)
     kept = capacity * (T * P + tri_size(P - 1) + 3)
-    operands = 2 * n_frames * F * (2 * T + 1)
+    operands = TILE_LOADER_OPERAND_COPIES * 2 * n_frames * F * (2 * T + 1)
     block = stream.rotation_block_size * (2 * P * T + tri_size(P))
     return int(kept + operands + block)
 
