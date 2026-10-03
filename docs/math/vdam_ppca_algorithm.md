@@ -1681,3 +1681,38 @@ and SGD's GT hold there is the slowness of its high-shell steps. That needs a
 regularizer, not a step rule: the same shell prior under momentum SGD (lr 1.2)
 scored FSC-AUC .993 from the cryo-ET GT start but collapsed from a random start
 (.04, job 14915796).
+
+High-shell overshoot on the cryo-ET random start (October 3, 2026). When the stage
+radius jumps from 16 to 31, VDAM's mean power at shells 20-28 grows to several times
+its shell-2 power within 15 updates (total mean power about 10x), on the k3conf and
+contrast-sd-.3 fixtures alike; it is not contrast absorbed into the loadings (their
+alignment with the mean is the same on both fixtures). One such run stopped at update
+199 of 200 on the metric check; resumed from update 190 in tf32 and fp32 it did not
+recur (bulk metric `lambda_min / lambda_max >= .0045`; the only indefinite voxels are
+denormal spill at shells 32-33, far inside the check's bound, identical in the CUDA
+scatter and the XLA adjoint). A failing check now saves the state and the offending
+statistics (`failure_before_<iteration>.npz`, `failure_metric_<iteration>_half<h>.npz`).
+
+Tested and rejected: an update radius limited to the shells the data support (pseudo-
+half M-step SNR scaled to all particles at least one, plus two shells, RELION's
+`data_vs_prior > 1` with headroom). It removed the overshoot (peak mean power
+1.2-2.7e6 against 5.4-8.1e6) but lost map quality, because the high shells carry weak
+signal: shrink them, do not truncate them. Seed 11, batch 150, against main at
+c9d0a11 (jobs 14930390 and 14930399):
+
+| Cryo-ET arm | Radius | FSC-AUC | Specificity | Latent nearest-centroid |
+| --- | --- | --- | --- | --- |
+| contrast-sd-.3 random start, fixed stages | 31 | .730 | .108 | .867 |
+| same, data-supported radius | 20 | .598 | .093 | .897 |
+| k3conf random start, fixed stages | 31 | .724 | .116 | .910 |
+| same, data-supported radius | 24 | .658 | .108 | .920 |
+| k3conf GT start, fixed stages | 31 | .750 | .211 | .977 |
+| same, data-supported radius | 21-27 | .724 | .176 | .987 |
+
+| Masked state FSC against GT, shell | 26 | 27 | 28 | 29 | 30 | 31 |
+| --- | --- | --- | --- | --- | --- | --- |
+| k3conf random start, fixed stages | .40 | .39 | .36 | .31 | .30 | .28 |
+| same, data-supported radius | .07 | -.01 | -.03 | -.03 | -.01 | .00 |
+
+The eleven-state runs kept radius 31 under the rule (full-data SNR well above one)
+and scored as without it (.956 for all three seeds).

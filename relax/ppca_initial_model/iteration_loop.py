@@ -384,10 +384,21 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             directions = []
             metric_info = []
             coverage = []
-            for result in stats:
-                direction, info = coupled_direction(
-                    result.lhs_tri, result.residual_gradient, floor=metric_floor(dataset.grid_size)
-                )
+            for half, result in enumerate(stats):
+                try:
+                    direction, info = coupled_direction(
+                        result.lhs_tri, result.residual_gradient, floor=metric_floor(dataset.grid_size)
+                    )
+                except ValueError:
+                    # Keep the state and the offending statistics for diagnosis, as the noise update does.
+                    checkpoint.save(output / f"failure_before_{iteration:04d}.npz", state, config, identity)
+                    np.savez(
+                        output / f"failure_metric_{iteration:04d}_half{half}.npz",
+                        lhs_tri=np.asarray(result.lhs_tri),
+                        residual_gradient=np.asarray(result.residual_gradient),
+                        selected=selected,
+                    )
+                    raise
                 directions.append(direction)
                 metric_info.append(info)
                 coverage.append(jnp.trace(unpack_tri_to_full(result.lhs_tri, config.q + 1), axis1=-2, axis2=-1) > 0)
