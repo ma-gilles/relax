@@ -264,4 +264,3 @@ def scoring_noise_from_sigma2(
         ),
         dtype=output_dtype,
     ).reshape(-1)
-

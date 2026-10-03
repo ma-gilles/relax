@@ -41,7 +41,7 @@ qualify the incoming engine changes. The unchanged native-source digest permits
 reuse of the already built immutable libraries; runtime library/GPU checks still
 run before and after new qualification.
 
-[Current integration, receipts, preserved jobs and required gates](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json)
+Current integration, receipts, preserved jobs and required gates (was `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json`; no longer available)
 track the new candidate. Fresh same-source smoke/medium, float32 K1 and exactly
 K4 quality, characterized real-data confirmation, ordinary paired memory/speed,
 the milestone long tier and qualified main delivery remain required. No
@@ -85,7 +85,7 @@ sampling order and array lifetimes are unchanged. See the
 All 185 selected CPU cases pass with zero skips; source/test lint, structural
 comparison and diff checks pass. The initial structural proof required a script
 normalization repair, with no production/test change. Exact source and commands
-are in the [handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_input_geometry_20261002T210920Z/HANDOFF.json).
+are in the handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_input_geometry_20261002T210920Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 Controller spans 2,917 lines and command 1,860. Representative phase ownership,
 whole dead/shared-code audit and the prior Class3D scratch-lifetime choice remain
@@ -107,7 +107,7 @@ The affected inventory passed 223 cases and found one stale source guard from
 the preceding expectation move; after test-only migration all three affected
 guards pass, zero skips. Numerical assertions/tolerances are unchanged. Structural
 comparison, isolated diagnostic import, source/test lint and diff checks pass.
-Exact source, commands and failure repair are in the [package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_sealed_restart_owner_20261002T204921Z/HANDOFF.json).
+Exact source, commands and failure repair are in the package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_sealed_restart_owner_20261002T204921Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 Controller remains 2,913 lines and command 1,860. Representative design and the
 prior Class3D scratch-lifetime choice remain open. Final production float32
@@ -129,7 +129,7 @@ Initial checks passed 132 cases and found eight incorrect new window expectation
 plus one source guard needing its new owner. After test-only repairs, 43 repair
 cases, 27 affected controller cases and all 108 CPU EM guards pass with zero
 skips. Structural, import and lint checks pass. Exact source, commands, repaired
-failures and limitations are in the [package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_expectation_preparation_20261002T202923Z/HANDOFF.json).
+failures and limitations are in the package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_expectation_preparation_20261002T202923Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 The controller remains 2,913 lines, command 1,860; scorer has 19 inputs and
 producer 18, with 34 half-worker captures. The representative design remains
@@ -279,9 +279,9 @@ not a switch to double-precision EM.
 
 The candidate incorporates cached main `7412fd8`; remote refresh is unverified.
 Original dirty work/comments and all earlier frozen sources/jobs are preserved.
-The [current handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_projector_reuse_owner_20261002T134633Z/HANDOFF.json) records exact source identities,
+The current handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_projector_reuse_owner_20261002T134633Z/HANDOFF.json`; mg6942 scratch outside the repository) records exact source identities,
 commands and the two failed new-fixture receipts followed by their passing repairs.
-The [previous main integration](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T131551Z/HANDOFF.json)
+The previous main integration (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T131551Z/HANDOFF.json`; mg6942 scratch outside the repository)
 retains its 257 distinct affected CPU cases, 108 guards and 37 unexecuted GPU cases
 for that source. Its explicitly built and frozen CUDA 12.8 libraries are reused
 after current source/hash checks.
@@ -309,7 +309,7 @@ previous/current cases match (344 successful selections, 160 matching refusals);
 logging and 80 borrowed-array checks match. Eight archive comparisons/roundtrips,
 full-command AST expansion, import/lint and native-source hashes pass. The 108
 CPU guards pass on the unchanged engine path; exact version/reuse scope is in the
-[handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_pose_owner_20261002T112730Z/HANDOFF.json).
+handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_pose_owner_20261002T112730Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 The command remains **1,992 lines** in a 2,762-line file; the numerical controller
 remains **3,194**. Both are unfinished. Pose preparation has 18 explicit inputs;
@@ -325,7 +325,7 @@ before retry. Human review of the completed example precedes broad automation.
 
 ## Current command configuration and archive metadata
 
-[Earlier configuration/archive owner and main integration](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/HANDOFF.json)
+Earlier configuration/archive owner and main integration (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/HANDOFF.json`; mg6942 scratch outside the repository)
 remain preserved.
 
 ## Refactor history and scientific gates
@@ -570,7 +570,7 @@ science ([section 14](../math/vdam_ppca_algorithm.md)).
 
 ## Refinement readability example (October 1, 2026)
 
-[Recorded readability packages and their source-specific evidence](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/final_source/docs/development/em_status.md#refinement-readability-example-october-1-2026).
+Recorded readability packages and their source-specific evidence (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/final_source/docs/development/em_status.md#refinement-readability-example-october-1-2026`; mg6942 scratch outside the repository).
 
 ## PPCA coarse optimizer comparison (September 28, 2026)
 

@@ -39,7 +39,7 @@ qualify the incoming engine changes. The unchanged native-source digest permits
 reuse of the already built immutable libraries; runtime library/GPU checks still
 run before and after new qualification.
 
-[Current integration, receipts, preserved jobs and required gates](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json)
+Current integration, receipts, preserved jobs and required gates (was `/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json`; no longer available)
 track the new candidate. Fresh same-source smoke/medium, float32 K1 and exactly
 K4 quality, characterized real-data confirmation, ordinary paired memory/speed,
 the milestone long tier and qualified main delivery remain required. No
@@ -1351,7 +1351,7 @@ def validate_particle_half_inputs(
 
 Final calls remain in [finalization.py](../../relax/refinement/finalization.py),
 with numerical operations in [final_reconstruction.py](../../relax/refinement/final_reconstruction.py).
-The [complete policy/lifetime and consumer audit](/scratch/gpfs/GILLES/mg6942/tmp/relax_finish_milestone_20261002/finalization_review/REVIEW.md)
+The complete policy/lifetime and consumer audit (`/scratch/gpfs/GILLES/mg6942/tmp/relax_finish_milestone_20261002/finalization_review/REVIEW.md`; mg6942 scratch outside the repository)
 explains the distinct numbered/final/VDAM semantics and shared primitives.
 `reconstruct_k1_means`, `reconstruct_class_means` and
 `postprocess_reconstructed_means` are retired, as is the single
@@ -1447,7 +1447,7 @@ both old bodies equal the shared body and that surviving engine operations diffe
 only at the three helper calls. The existing direct layout test now imports its
 actual owner; numerical assertions, tolerances and baselines are unchanged.
 GPU-only cases were excluded explicitly and are listed in the test inventory.
-The [handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_shared_chunk_layout_20261002T214235Z/HANDOFF.json)
+The handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_shared_chunk_layout_20261002T214235Z/HANDOFF.json`; mg6942 scratch outside the repository)
 links exact source, commands, inventory and structural evidence.
 
 The private-callgraph screen found no additional candidate in refinement, helpers
@@ -1484,7 +1484,7 @@ All 43 focused batch, expectation-planning and import cases pass, zero skips.
 No tests, tolerances or baselines changed. The first lint run found the remaining
 unused `numbers.Integral` import and stopped before tests; removing that binding
 produced the passing receipt. Exact source, audit inventory and commands are in
-the [handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_retired_capacity_planning_20261002T213032Z/HANDOFF.json).
+the handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_retired_capacity_planning_20261002T213032Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 This is a scoped retirement proof, not a whole-repository dead-code certificate.
 The numerical controller remains 2,883 lines and command 1,860. Reconstruction
@@ -1620,7 +1620,7 @@ controller operations, resolving only its six proven operands. Every existing
 particle-input function/type remains unchanged. The extra host import dependency
 and repeated fixed mode classification are recorded explicitly. Source lint and
 diff checks pass. Exact commands, source and limits are in the
-[handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_image_preprocessing_20261002T212207Z/HANDOFF.json).
+handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_image_preprocessing_20261002T212207Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 Controller spans 2,883 lines and command 1,860. Phase ownership and complete-flow
 review remain unfinished; line counts do not establish a finished design.
@@ -1824,7 +1824,7 @@ checker attempt failed because its normalization missed older geometry-shape
 reads; fixing that proof script alone produced the passing receipt.
 
 Exact source, test inventory and limits are in the
-[package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_input_geometry_20261002T210920Z/HANDOFF.json).
+package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_input_geometry_20261002T210920Z/HANDOFF.json`; mg6942 scratch outside the repository).
 The controller spans 2,917 lines and command 1,860; these are review signals,
 not a completion claim. Representative phase ownership, the pending Class3D
 scratch-lifetime choice and whole dead/shared-code audit remain open. Final
@@ -2155,7 +2155,7 @@ logger label and imports no EM execution modules. Retired private entry names an
 the command's capture-loader re-export are absent from maintained consumers.
 Source/test lint and diff checks pass. The exact inventory, repaired failure,
 source manifests and comparison are in the
-[package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_sealed_restart_owner_20261002T204921Z/HANDOFF.json).
+package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_sealed_restart_owner_20261002T204921Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 Command `main()` remains 1,860 lines and the numerical controller 2,913. This
 change establishes diagnostic ownership; it does not claim that those controllers
@@ -2993,7 +2993,7 @@ reads; neither constructor computes arrays. Canonical/device-grid distinctions,
 window sentinels, inactive metadata guards and the original release boundary
 have focused tests. Exact commands, XML, source manifests, the failed-test
 repairs and comparison limitations are in the
-[package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_expectation_preparation_20261002T202923Z/HANDOFF.json).
+package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_expectation_preparation_20261002T202923Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 This introduces one result type and one substantive producer in the existing
 expectation module, without a new module, forwarding method, flag, kernel or
@@ -3342,7 +3342,7 @@ precedence, gradient-mode active caps and legacy saved fields. A caller check
 executes the actual command AST and verifies follower operand identity and
 resolved option installation. Exact commands, XML, saved pre-edit source and
 source manifests are in the
-[package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_command_admission_20261002T201344Z/HANDOFF.json).
+package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_command_admission_20261002T201344Z/HANDOFF.json`; mg6942 scratch outside the repository).
 
 Structural comparison resolves only proven input bindings and the moved empty
 host-path list. Dispatch operations, runtime scalar computations and logging are
@@ -7153,7 +7153,7 @@ comparison verifies the surviving numerical grid blocks and the controller's
 phase order against the previous frozen source. Four initial new-fixture errors
 and one subsequent incomplete-counter fixture were repaired without changing
 production math or tolerance. See the
-[package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_sampling_policy_20261002T173238Z/HANDOFF.json)
+package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_sampling_policy_20261002T173238Z/HANDOFF.json`; mg6942 scratch outside the repository)
 for exact source identities, commands and logs.
 
 The numbered controller remains 3,052 lines and the command 1,992 lines. Sampling
@@ -7192,8 +7192,8 @@ audit. Collecting every local into a context object would leave the coupling.
 
 Current editable source incorporates cached main `a9e0668`. The fast-forward
 preserved every refactor edit; six focused incoming crop/window cases and 108
-EM CPU guards pass. See the [integration handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T154930Z/HANDOFF.json).
-The projector implementation below is unchanged. Its [earlier frozen package](/scratch/gpfs/GILLES/mg6942/tmp/relax_projector_reuse_owner_20261002T134633Z/HANDOFF.json)
+EM CPU guards pass. See the integration handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T154930Z/HANDOFF.json`; mg6942 scratch outside the repository).
+The projector implementation below is unchanged. Its earlier frozen package (`/scratch/gpfs/GILLES/mg6942/tmp/relax_projector_reuse_owner_20261002T134633Z/HANDOFF.json`; mg6942 scratch outside the repository)
 passed 79 affected CPU cases and 96 old/new preparation-stage comparisons.
 Its prepared GPU jobs and admitted real-data packet remain source-specific to
 `7412fd8`. Incoming resident-projection code requires fresh GPU qualification;
@@ -7728,7 +7728,7 @@ comparisons and stored-format roundtrips pass. Full-command expansion matches;
 numerical/scoring/reconstruction owners are byte unchanged. The 108 CPU guards
 pass on the unchanged engine path. Exact source/version scope and initial lint
 and comparison-harness repairs are in the
-[pose-source handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_pose_owner_20261002T112730Z/HANDOFF.json).
+pose-source handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_pose_owner_20261002T112730Z/HANDOFF.json`; mg6942 scratch outside the repository).
 GPU smoke, production K1/exactly K4/real-data quality and repeated speed/memory
 qualification remain open. Both long controllers remain unfinished.
 
@@ -8317,7 +8317,7 @@ unchanged. New roundtrips cover uneven/permuted halves and optional diagnostics.
 Two indirect source-location tests were migrated after the first broad run.
 
 Exact commands, source inventories and failure corrections are in the
-[package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_command_metadata_owner_20261002T101901Z/HANDOFF.json). Source is based on cached main `35430e1`;
+package handoff (`/scratch/gpfs/GILLES/mg6942/tmp/relax_command_metadata_owner_20261002T101901Z/HANDOFF.json`; mg6942 scratch outside the repository). Source is based on cached main `35430e1`;
 remote refresh is unverified. Original work/comments and every previous frozen
 source/job remain preserved. GPU driver access fails and Slurm sockets are denied;
 the older uncertain submission must be inspected before retrying. Latest GPU,
@@ -8617,8 +8617,8 @@ Compiling the actual previous controller block and reader passes 456 comparisons
 432 captures and 24 matching refusals. Numerical call operands, shapes, dtypes,
 order, text reads and log payloads match. The remaining command statements and
 all 29 command helpers match their previous AST; the remaining 23 metadata
-functions and the shared broadcast module are unchanged. See the [immutable
-receipt](/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_model_replay_20261002T091611Z/HANDOFF.json) for exact source, commands and initial failure evidence.
+functions and the shared broadcast module are unchanged. See the immutable
+receipt (`/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_model_replay_20261002T091611Z/HANDOFF.json`; mg6942 scratch outside the repository) for exact source, commands and initial failure evidence.
 
 This does not qualify production GPU behavior, K1/K4/real-data quality or repeated
 matched-GPU performance and peak RSS. Those gates remain open. The command still
@@ -8628,63 +8628,63 @@ not the completed representative controller or approval for broad automation.
 
 ## Checkpoint array capture
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#checkpoint-array-capture).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#checkpoint-array-capture`; mg6942 scratch outside the repository).
 
 ### Actual scheduled capture and publication
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#actual-scheduled-capture-and-publication).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#actual-scheduled-capture-and-publication`; mg6942 scratch outside the repository).
 
 ### Complete capture owner and existing result construction
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#complete-capture-owner-and-existing-result-construction).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#complete-capture-owner-and-existing-result-construction`; mg6942 scratch outside the repository).
 
 ### Checks and open qualification
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#checks-and-open-qualification).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T090332Z/source/docs/development/final_local_sampling_patch_review.md#checks-and-open-qualification`; mg6942 scratch outside the repository).
 
 ## Iteration convergence policy
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#iteration-convergence-policy).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#iteration-convergence-policy`; mg6942 scratch outside the repository).
 
 ### Actual preceding-iteration decision
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-preceding-iteration-decision).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-preceding-iteration-decision`; mg6942 scratch outside the repository).
 
 ### Actual update and following consumers
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-update-and-following-consumers).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-update-and-following-consumers`; mg6942 scratch outside the repository).
 
 ### Complete operation and result
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-operation-and-result).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-operation-and-result`; mg6942 scratch outside the repository).
 
 ### Ownership and runtime review
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#ownership-and-runtime-review).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#ownership-and-runtime-review`; mg6942 scratch outside the repository).
 
 ### Verification and remaining design work
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#verification-and-remaining-design-work).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#verification-and-remaining-design-work`; mg6942 scratch outside the repository).
 
 ## Startup sampling state
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#startup-sampling-state).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#startup-sampling-state`; mg6942 scratch outside the repository).
 
 ### Actual controller and following initialization
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-controller-and-following-initialization).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-controller-and-following-initialization`; mg6942 scratch outside the repository).
 
 ### Complete startup operation
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-startup-operation).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-startup-operation`; mg6942 scratch outside the repository).
 
 ### Source precedence and lifetime
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#source-precedence-and-lifetime).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#source-precedence-and-lifetime`; mg6942 scratch outside the repository).
 
 ### Checks and outstanding qualification
 
-[Complete previously reviewed source and calling flow](/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#checks-and-outstanding-qualification).
+Complete previously reviewed source and calling flow (`/scratch/gpfs/GILLES/mg6942/tmp/relax_iteration_convergence_20261002T080454Z/source/candidate/docs/development/final_local_sampling_patch_review.md#checks-and-outstanding-qualification`; mg6942 scratch outside the repository).
 
 ## Previous reviewed responsibilities
 
@@ -8693,328 +8693,328 @@ The headings below retain existing review links and their source-specific eviden
 
 ## Particle row layout
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-row-layout).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-row-layout`; mg6942 scratch outside the repository).
 
 ### Actual preparation and input consumers
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-preparation-and-input-consumers).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-preparation-and-input-consumers`; mg6942 scratch outside the repository).
 
 ### Complete row-layout operations and result
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-row-layout-operations-and-result).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-row-layout-operations-and-result`; mg6942 scratch outside the repository).
 
 ### Expected accuracy and output consumption
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#expected-accuracy-and-output-consumption).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#expected-accuracy-and-output-consumption`; mg6942 scratch outside the repository).
 
 ### Identity frames, lifetime and visible decisions
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#identity-frames-lifetime-and-visible-decisions).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#identity-frames-lifetime-and-visible-decisions`; mg6942 scratch outside the repository).
 
 ### Evidence and remaining qualification
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#evidence-and-remaining-qualification).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#evidence-and-remaining-qualification`; mg6942 scratch outside the repository).
 
 ## Previous reviewed responsibilities
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#previous-reviewed-responsibilities).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#previous-reviewed-responsibilities`; mg6942 scratch outside the repository).
 
 ## Particle input preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-input-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-input-preparation`; mg6942 scratch outside the repository).
 
 ### Complete controller prefix and result consumption
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-controller-prefix-and-result-consumption).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-controller-prefix-and-result-consumption`; mg6942 scratch outside the repository).
 
 ### Complete loading owner
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-loading-owner).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-loading-owner`; mg6942 scratch outside the repository).
 
 ### Shared optimiser discovery
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-optimiser-discovery).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-optimiser-discovery`; mg6942 scratch outside the repository).
 
 ### Ownership, arrays and validation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#ownership-arrays-and-validation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#ownership-arrays-and-validation`; mg6942 scratch outside the repository).
 
 ## Previous reviewed responsibilities
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#previous-reviewed-responsibilities).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#previous-reviewed-responsibilities`; mg6942 scratch outside the repository).
 
 ## Particle pose transition
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-pose-transition).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-pose-transition`; mg6942 scratch outside the repository).
 
 ### Ownership, order and lifetime
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#ownership-order-and-lifetime).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#ownership-order-and-lifetime`; mg6942 scratch outside the repository).
 
 ### Existing preceding-iteration convergence decision
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#existing-preceding-iteration-convergence-decision).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#existing-preceding-iteration-convergence-decision`; mg6942 scratch outside the repository).
 
 ### Complete surrounding post-reconstruction flow
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-surrounding-post-reconstruction-flow).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-surrounding-post-reconstruction-flow`; mg6942 scratch outside the repository).
 
 ### Complete pose result types and operations
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-pose-result-types-and-operations).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-pose-result-types-and-operations`; mg6942 scratch outside the repository).
 
 ### Evidence and remaining work
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#evidence-and-remaining-work).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#evidence-and-remaining-work`; mg6942 scratch outside the repository).
 
 ## Iteration resolution observations
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#iteration-resolution-observations).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#iteration-resolution-observations`; mg6942 scratch outside the repository).
 
 ## Earlier reviewed boundaries
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#earlier-reviewed-boundaries).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#earlier-reviewed-boundaries`; mg6942 scratch outside the repository).
 
 ## Command-option ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#command-option-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#command-option-ownership`; mg6942 scratch outside the repository).
 
 ## Particle-table source and group-layout ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-table-source-and-group-layout-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-table-source-and-group-layout-ownership`; mg6942 scratch outside the repository).
 
 ## Command follower-topology preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#command-follower-topology-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#command-follower-topology-preparation`; mg6942 scratch outside the repository).
 
 ## Particle-pose interpretation and visible state update
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-pose-interpretation-and-visible-state-update).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#particle-pose-interpretation-and-visible-state-update`; mg6942 scratch outside the repository).
 
 ## Scope and ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#scope-and-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#scope-and-ownership`; mg6942 scratch outside the repository).
 
 ## Argument audit
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#argument-audit).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#argument-audit`; mg6942 scratch outside the repository).
 
 ## Review decision and surrounding controller
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#review-decision-and-surrounding-controller).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#review-decision-and-surrounding-controller`; mg6942 scratch outside the repository).
 
 ## Precision and dense engine defaults
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#precision-and-dense-engine-defaults).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#precision-and-dense-engine-defaults`; mg6942 scratch outside the repository).
 
 ## Expectation batch preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#expectation-batch-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#expectation-batch-preparation`; mg6942 scratch outside the repository).
 
 ## Normalization and scale update ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#normalization-and-scale-update-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#normalization-and-scale-update-ownership`; mg6942 scratch outside the repository).
 
 ## Numbered image-size planning
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-image-size-planning).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-image-size-planning`; mg6942 scratch outside the repository).
 
 ## Numbered split-half FSC and prior estimation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-split-half-fsc-and-prior-estimation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-split-half-fsc-and-prior-estimation`; mg6942 scratch outside the repository).
 
 ## Startup noise preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#startup-noise-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#startup-noise-preparation`; mg6942 scratch outside the repository).
 
 ## Frozen-boundary CLI admission
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#frozen-boundary-cli-admission).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#frozen-boundary-cli-admission`; mg6942 scratch outside the repository).
 
 ## Command result publication
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#command-result-publication).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#command-result-publication`; mg6942 scratch outside the repository).
 
 ## Final half priors and optics on the scoring frame
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#final-half-priors-and-optics-on-the-scoring-frame).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#final-half-priors-and-optics-on-the-scoring-frame`; mg6942 scratch outside the repository).
 
 ## Numbered half expectation and explicit publication
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-half-expectation-and-explicit-publication).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-half-expectation-and-explicit-publication`; mg6942 scratch outside the repository).
 
 ## Numbered sampling and empty expectation preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-sampling-and-empty-expectation-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-sampling-and-empty-expectation-preparation`; mg6942 scratch outside the repository).
 
 ## Complete numerical scoring results
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-numerical-scoring-results).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-numerical-scoring-results`; mg6942 scratch outside the repository).
 
 ## Persistent references and shared class-prior estimation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#persistent-references-and-shared-class-prior-estimation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#persistent-references-and-shared-class-prior-estimation`; mg6942 scratch outside the repository).
 
 ## Persistent noise-model lifecycle
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#persistent-noise-model-lifecycle).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#persistent-noise-model-lifecycle`; mg6942 scratch outside the repository).
 
 ## Persistent direction-prior ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#persistent-direction-prior-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#persistent-direction-prior-ownership`; mg6942 scratch outside the repository).
 
 ## Current operation: optics preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#current-operation-optics-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#current-operation-optics-preparation`; mg6942 scratch outside the repository).
 
 ## Optics preparation result types
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#optics-preparation-result-types).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#optics-preparation-result-types`; mg6942 scratch outside the repository).
 
 ## Complete optics preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-optics-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-optics-preparation`; mg6942 scratch outside the repository).
 
 ## Actual final optics caller
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-final-optics-caller).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#actual-final-optics-caller`; mg6942 scratch outside the repository).
 
 ## Dense class adaptation and consumption
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-class-adaptation-and-consumption).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-class-adaptation-and-consumption`; mg6942 scratch outside the repository).
 
 ## Local class adaptation and consumption
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-class-adaptation-and-consumption).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-class-adaptation-and-consumption`; mg6942 scratch outside the repository).
 
 ## Existing shared image and geometry remapping
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#existing-shared-image-and-geometry-remapping).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#existing-shared-image-and-geometry-remapping`; mg6942 scratch outside the repository).
 
 ## 1. Particle ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#1-particle-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#1-particle-ownership`; mg6942 scratch outside the repository).
 
 ## Initialize once at the input boundary
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#initialize-once-at-the-input-boundary).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#initialize-once-at-the-input-boundary`; mg6942 scratch outside the repository).
 
 ## Controller initialization
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#controller-initialization).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#controller-initialization`; mg6942 scratch outside the repository).
 
 ## Restart updates the resident halves
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#restart-updates-the-resident-halves).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#restart-updates-the-resident-halves`; mg6942 scratch outside the repository).
 
 ## Numbered pose update
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-pose-update).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-pose-update`; mg6942 scratch outside the repository).
 
 ## Numbered correction update
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-correction-update).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#numbered-correction-update`; mg6942 scratch outside the repository).
 
 ## 2. Shared local/dense scoring operands
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#2-shared-localdense-scoring-operands).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#2-shared-localdense-scoring-operands`; mg6942 scratch outside the repository).
 
 ## Prepared projector result
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#prepared-projector-result).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#prepared-projector-result`; mg6942 scratch outside the repository).
 
 ## Shared optics
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-optics).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-optics`; mg6942 scratch outside the repository).
 
 ## Dense batch configuration
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-batch-configuration).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-batch-configuration`; mg6942 scratch outside the repository).
 
 ## Local execution configuration
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-execution-configuration).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-execution-configuration`; mg6942 scratch outside the repository).
 
 ## Dense execution configuration
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-execution-configuration).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-execution-configuration`; mg6942 scratch outside the repository).
 
 ## Local prior inputs
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-prior-inputs).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-prior-inputs`; mg6942 scratch outside the repository).
 
 ## Local diagnostics
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-diagnostics).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#local-diagnostics`; mg6942 scratch outside the repository).
 
 ## Dense sampling inputs
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-sampling-inputs).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-sampling-inputs`; mg6942 scratch outside the repository).
 
 ## Dense prior inputs
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-prior-inputs).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-prior-inputs`; mg6942 scratch outside the repository).
 
 ## Dense mode selection
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-mode-selection).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#dense-mode-selection`; mg6942 scratch outside the repository).
 
 ## 3. Final input boundary
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#3-final-input-boundary).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#3-final-input-boundary`; mg6942 scratch outside the repository).
 
 ## 4. Physical image geometry
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#4-physical-image-geometry).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#4-physical-image-geometry`; mg6942 scratch outside the repository).
 
 ## Read physical geometry at entry
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#read-physical-geometry-at-entry).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#read-physical-geometry-at-entry`; mg6942 scratch outside the repository).
 
 ## Complete local sampling module
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-local-sampling-module).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-local-sampling-module`; mg6942 scratch outside the repository).
 
 ## Complete final sampling producer
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-final-sampling-producer).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#complete-final-sampling-producer`; mg6942 scratch outside the repository).
 
 ## Rotation-grid ownership and remaining controller work
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#rotation-grid-ownership-and-remaining-controller-work).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#rotation-grid-ownership-and-remaining-controller-work`; mg6942 scratch outside the repository).
 
 ## 5. Final all-data orchestration boundary
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#5-final-all-data-orchestration-boundary).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#5-final-all-data-orchestration-boundary`; mg6942 scratch outside the repository).
 
 ## 6. Complete final all-data controller
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#6-complete-final-all-data-controller).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#6-complete-final-all-data-controller`; mg6942 scratch outside the repository).
 
 ## 7. Final reconstruction implementation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#7-final-reconstruction-implementation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#7-final-reconstruction-implementation`; mg6942 scratch outside the repository).
 
 ## 8. Fixed refinement geometry defaults
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#8-fixed-refinement-geometry-defaults).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#8-fixed-refinement-geometry-defaults`; mg6942 scratch outside the repository).
 
 ## 9. Shared reference initialization
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#9-shared-reference-initialization).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#9-shared-reference-initialization`; mg6942 scratch outside the repository).
 
 ## Shared adaptive grid result
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-adaptive-grid-result).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-adaptive-grid-result`; mg6942 scratch outside the repository).
 
 ## Shared adaptive grid preparation
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-adaptive-grid-preparation).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#shared-adaptive-grid-preparation`; mg6942 scratch outside the repository).
 
 ## Implementation and evidence
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#implementation-and-evidence).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#implementation-and-evidence`; mg6942 scratch outside the repository).
 
 ### Class3D capture ownership
 
-[Preserved complete example](/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#class3d-capture-ownership).
+Preserved complete example (`/scratch/gpfs/GILLES/mg6942/tmp/relax_particle_layout_20261002T070932Z/source/candidate/docs/development/final_local_sampling_patch_review.md#class3d-capture-ownership`; mg6942 scratch outside the repository).
