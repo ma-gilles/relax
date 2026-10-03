@@ -111,8 +111,10 @@ Pass 1 (the coarse pass) scores, adds the priors and reduces an image batch in o
 `scoring.significance._coarse_pass1_blocks` (see [EM status](em_status.md), "Pass 1 as one program per
 image batch"). The coarse GEMM scorer is its only Gaussian scorer; the fused, native-texture and
 rectangular coarse scorers, the certified K=1 GEMM hybrid (`coarse_gemm_hybrid`, `coarse_partition`,
-`coarse_device_*`) and the fused pass-1 block were removed on 2026-10-02, and their switches are listed as
-retired in `relax/renamed_environment.json`.
+`coarse_device_*`), the fused pass-1 block and the paired and streaming GEMM score captures
+(`coarse_gemm_streaming`) were removed on 2026-10-02, and their switches are listed as retired in
+`relax/renamed_environment.json`. The `RELAX_SIGNIFICANCE_DUMP_*` target scores come from the pass-1
+program; the dumps are written by `diagnostics/coarse_gaussian_diagnostics.py`.
 Live BPref execution modes are selected by `sparse_pass2/sparse_pass2_policy.py`;
 capture scopes and shadow comparisons stay with the diagnostic owners.
 

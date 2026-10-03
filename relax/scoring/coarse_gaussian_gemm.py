@@ -473,7 +473,6 @@ def _score_relion_coarse_gaussian_gemm_macro(
     *,
     image_shape,
     volume_shape,
-    return_projected: bool = False,
 ):
     """Project once, then score every physical image lane through shared GEMMs."""
 
@@ -482,7 +481,7 @@ def _score_relion_coarse_gaussian_gemm_macro(
         mean_for_proj,
         rotations_block,
     )
-    scores = _relion_coarse_gaussian_gemm_scores(
+    return _relion_coarse_gaussian_gemm_scores(
         projected_reference,
         projected_reference_abs2,
         shifted_corrected,
@@ -492,6 +491,3 @@ def _score_relion_coarse_gaussian_gemm_macro(
         image_shape=image_shape,
         volume_shape=volume_shape,
     )
-    if return_projected:
-        return scores, projected_reference, projected_reference_abs2
-    return scores

@@ -36,10 +36,6 @@
   "RECOVAR_CLEAR_JAX_CACHES_PER_ITER": "RELAX_CLEAR_JAX_CACHES_PER_ITER",
   "RECOVAR_CMD": "RELAX_CMD",
   "RECOVAR_COARSE_CAPTURE": "RELAX_COARSE_CAPTURE",
-  "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR": "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR",
-  "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES": "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES",
-  "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR": "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR",
-  "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK",
   "RECOVAR_COARSE_PAD_FINAL_IMAGE_BATCH": "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
   "RECOVAR_COMMAND": "RELAX_COMMAND",
   "RECOVAR_COMMAND_PREFIX": "RELAX_COMMAND_PREFIX",
@@ -656,6 +652,14 @@
   "RELAX_COARSE_RUNTIME_PREFIX_DUMP_ORIGINAL_INDICES": "removed on 2026-10-02 with the certified K=1 coarse GEMM hybrid; the plain coarse GEMM scorer is the default",
   "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_ORIGINAL_INDICES": "removed on 2026-10-02 with the certified K=1 coarse GEMM hybrid; the plain coarse GEMM scorer is the default",
   "RELAX_COARSE_RUNTIME_PREFIX_DUMP_LABEL": "removed on 2026-10-02 with the certified K=1 coarse GEMM hybrid; the plain coarse GEMM scorer is the default",
-  "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_LABEL": "removed on 2026-10-02 with the certified K=1 coarse GEMM hybrid; the plain coarse GEMM scorer is the default"
+  "RECOVAR_COARSE_RUNTIME_PREFIX_DUMP_LABEL": "removed on 2026-10-02 with the certified K=1 coarse GEMM hybrid; the plain coarse GEMM scorer is the default",
+  "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR": "removed on 2026-10-02 with the paired direct-vs-GEMM coarse score capture; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR": "removed on 2026-10-02 with the paired direct-vs-GEMM coarse score capture; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RECOVAR_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES": "removed on 2026-10-02 with the paired direct-vs-GEMM coarse score capture; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES": "removed on 2026-10-02 with the paired direct-vs-GEMM coarse score capture; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
+  "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores"
  }
 }

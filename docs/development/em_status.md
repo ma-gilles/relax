@@ -500,8 +500,8 @@ H100 replay of ribosembly K15 50k it150 -> 151 (job 14877086): warm E-step 33.6 
 The same program folds one class and rotation block per call on that block's projection when the
 projection cache does not fit the budget, and scores the exact-operand normalized-CC (`--firstiter_cc`)
 passes with RELION's coarse CC. The per-class loop still serves the generic scorer above (K=1 runs
-without the fresh order, and their CC passes), the opt-in coarse backends and the per-block
-diagnostics, pending the generic scorer's move and the backends' deletion.
+without the fresh order, and their CC passes) and the class runner-up (`return_class_second`, the
+K=1 tree rescore), pending the generic scorer's move.
 Removed (2026-10-02, team-lead's deletion list D1-D5, D7), each switch refused when set
 (`relax/renamed_environment.json` "retired", checked when relax is imported): the fused per-block pass-1
 program (`RELAX_PASS1_FUSED`); the fused-projector coarse scorer family (`RECOVAR_K1_COARSE_FUSED_PROJECTOR`,
@@ -513,6 +513,15 @@ runtime-prefix dump (modules `coarse_gemm_hybrid`, `coarse_partition`, `coarse_d
 path, the certificate scoring, their tests and the combined-true200 gate tooling); the coarse selector
 audit. The fused projector kernel (`relion_coarse_diff2_projector_f32`, the subtomogram test reference),
 the rectangular kernels (f32, f64) and `coarse_publication._posterior_statistics` stay.
+Removed (2026-10-02, D6): the paired direct-vs-GEMM coarse score capture
+(`RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR`, `_DIAGNOSTIC_ORIGINAL_INDICES`, its call scopes and manifests)
+and the all-particle streaming rescore (`RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR`, `_STREAM_TOPK`,
+module `coarse_gemm_streaming`), with the `coarse_gaussian_gemm_qualification` stats block; both forms of
+each switch are retired. The GEMM-vs-direct comparisons stay as unit tests of the scorer and the pass-1
+program (`tests/unit/test_coarse_gaussian_gemm_macro.py`, with the summary helper in
+`tests/helpers/score_diagnostics.py`). `RELAX_SIGNIFICANCE_DUMP_*` (the RELION first-divergence dumps)
+reads the targets' pre-prior and with-prior scores from the pass-1 program (`dump_rows`; the dump records
+`score_capture_mode="pass1_program_target_rows"`), so a dump no longer leaves the program.
 
 Projection kernel (2026-09-27, kspeed, from team-lead's TODO): `project_relion_half_capacity`
 and the half-storage branch of `relax.helpers.projection._project_relion_projector_texture` take

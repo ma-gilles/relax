@@ -119,7 +119,6 @@ def _resolve_k1_relion_exact_compact_preprocess(
     exact_coarse_skip_generic_operands_enabled: bool,
     exact_coarse_operands_enabled: bool,
     score_mode: str,
-    any_diagnostic_requested: bool,
     coarse_gaussian_gemm_macro_enabled: bool = False,
 ) -> bool:
     """Resolve the exact+compact preprocessing specialization.
@@ -141,8 +140,6 @@ def _resolve_k1_relion_exact_compact_preprocess(
         raise ValueError(f"{prefix} the coarse GEMM scorer")
     if score_mode != "gaussian":
         raise ValueError(f"{prefix} score_mode='gaussian'")
-    if any_diagnostic_requested:
-        raise ValueError(f"{prefix} paired coarse diagnostics to be disabled")
     return True
 
 

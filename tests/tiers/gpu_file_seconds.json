@@ -118,7 +118,6 @@
 "tests/unit/test_class_tau2_lowres_join_owner.py": 3,
 "tests/unit/test_classify_relion_capture_target_tie.py": 0,
 "tests/unit/test_classify_relion_recovar_fine_top_discrepancy.py": 0,
-"tests/unit/test_coarse_gaussian_gemm_streaming.py": 12,
 "tests/unit/test_coarse_physical_pmax.py": 16,
 "tests/unit/test_coarse_projection_precision.py": 0,
 "tests/unit/test_compact_candidates.py": 0,

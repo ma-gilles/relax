@@ -11,11 +11,9 @@ import pytest
 from helpers import score_diagnostics
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import coarse_score_diagnostics
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
 from relax.scoring import coarse_gaussian_gemm, scoring, significance
-from relax.scoring.coarse_gemm_streaming import COARSE_GEMM_STREAMING_SCHEMA
 from relax.scoring.significant_samples import significant_sample_ids
 
 
@@ -123,7 +121,6 @@ def test_exact_compact_preprocess_is_default_off_and_fail_closed(monkeypatch):
         "exact_coarse_skip_generic_operands_enabled": True,
         "exact_coarse_operands_enabled": True,
         "score_mode": "gaussian",
-        "any_diagnostic_requested": False,
         "coarse_gaussian_gemm_macro_enabled": True,
     }
     assert not significance._resolve_k1_relion_exact_compact_preprocess(
@@ -139,7 +136,6 @@ def test_exact_compact_preprocess_is_default_off_and_fail_closed(monkeypatch):
         ("exact_coarse_operands_enabled", False),
         ("coarse_gaussian_gemm_macro_enabled", False),
         ("score_mode", "normalized_cc"),
-        ("any_diagnostic_requested", True),
     )
     for field, value in invalid:
         kwargs = dict(valid)
@@ -396,170 +392,6 @@ def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync
         )
 
 
-def test_coarse_gemm_scope_manifests_fail_closed_on_collisions_and_duplicates(
-    tmp_path,
-):
-    run_id = "collision_contract"
-    call_ids = ("call0000_group0000_halfseth00", "call0001_group0001_halfseth01")
-    first = significance.CoarseGaussianGemmDiagnosticScope(
-        run_id=run_id,
-        call_id=call_ids[0],
-        expected_call_ids=call_ids,
-        finalize=False,
-    )
-    significance._seal_coarse_gaussian_gemm_diagnostic_scope(
-        str(tmp_path),
-        scope=first,
-        selection_policy="explicit_call_scope_intersection",
-        requested_targets={0, 1},
-        targets_in_scope={0},
-        captured_target_counts={0: 1},
-        artifact_paths=[str(tmp_path / "first.npz")],
-    )
-    with pytest.raises(FileExistsError, match="refusing to overwrite"):
-        significance._seal_coarse_gaussian_gemm_diagnostic_scope(
-            str(tmp_path),
-            scope=first,
-            selection_policy="explicit_call_scope_intersection",
-            requested_targets={0, 1},
-            targets_in_scope={0},
-            captured_target_counts={0: 1},
-            artifact_paths=[str(tmp_path / "first.npz")],
-        )
-
-    duplicate_dir = tmp_path / "duplicate"
-    duplicate_call_ids = ("call0000_a", "call0001_b")
-    for call_index, call_id in enumerate(duplicate_call_ids):
-        scope = significance.CoarseGaussianGemmDiagnosticScope(
-            run_id="duplicate_target_contract",
-            call_id=call_id,
-            expected_call_ids=duplicate_call_ids,
-            finalize=call_index == 1,
-        )
-        if call_index == 0:
-            significance._seal_coarse_gaussian_gemm_diagnostic_scope(
-                str(duplicate_dir),
-                scope=scope,
-                selection_policy="explicit_call_scope_intersection",
-                requested_targets={0},
-                targets_in_scope={0},
-                captured_target_counts={0: 1},
-                artifact_paths=[str(duplicate_dir / "a.npz")],
-            )
-        else:
-            with pytest.raises(RuntimeError, match=r"duplicate=\[0\]"):
-                significance._seal_coarse_gaussian_gemm_diagnostic_scope(
-                    str(duplicate_dir),
-                    scope=scope,
-                    selection_policy="explicit_call_scope_intersection",
-                    requested_targets={0},
-                    targets_in_scope={0},
-                    captured_target_counts={0: 1},
-                    artifact_paths=[str(duplicate_dir / "b.npz")],
-                )
-
-
-def test_coarse_gemm_diagnostic_classifies_negative_implied_diff2_as_no_go(
-    tmp_path,
-):
-    output_path = tmp_path / "negative_implied_diff2.npz"
-    direct = np.zeros((1, 1, 1, 1), dtype=np.float32)
-    macro = np.full((1, 1, 1, 1), np.float32(1.0e-3), dtype=np.float32)
-    resources = significance._coarse_gaussian_gemm_resources(
-        rotation_block_size=1,
-        image_shape=(4, 4),
-        compact_pixel_count=1,
-        budget_bytes=10**6,
-    )
-    scope = significance.CoarseGaussianGemmDiagnosticScope(
-        run_id="negative_implied_diff2",
-        call_id="call0000_global",
-        expected_call_ids=("call0000_global",),
-        finalize=True,
-    )
-    significance._write_coarse_gaussian_gemm_diagnostic(
-        str(output_path),
-        direct_scores_pre_prior=direct,
-        macro_scores_pre_prior=macro,
-        direct_scores_with_prior=direct,
-        macro_scores_with_prior=macro,
-        direct_support=np.ones((1, 1), dtype=bool),
-        macro_support=np.ones((1, 1), dtype=bool),
-        original_indices=np.asarray([0]),
-        local_indices=np.asarray([0]),
-        actual_batch_size=1,
-        padded_batch_size=1,
-        adaptive_fraction=0.5,
-        max_significants=1,
-        resource_estimate=resources,
-        diagnostic_scope=scope,
-        diagnostic_selection_policy="strict_single_call",
-        debug_iteration=0,
-        current_size=4,
-    )
-    with np.load(output_path) as payload:
-        assert str(payload["qualification_status"]).startswith("NO_GO")
-        assert int(payload["macro_only_negative_implied_diff2_count"]) == 1
-        reasons = set(payload["automatic_no_go_reasons"].tolist())
-        assert "negative_implied_diff2" in reasons
-        assert "exact-zero_cancellation_drift" in reasons
-
-
-def test_coarse_gemm_qualification_allows_only_fully_qualified_stable_noise():
-    stable = coarse_score_diagnostics._coarse_gaussian_qualification_decision(
-        exact_arithmetic_equivalent=True,
-        repeat_stable=True,
-        unbiased_non_directional=True,
-        bounded_non_growing=True,
-        discrete_choices_equal=True,
-        final_basin_quality_equal=True,
-        material_runtime_win=True,
-        scale_amplified=False,
-        negative_implied_diff2=False,
-        nonfinite_scores=False,
-        exact_zero_cancellation_drift=False,
-    )
-    assert stable["status"] == (
-        "GO_STABLE_BOUNDED_MATHEMATICALLY_EQUIVALENT_NOISE"
-    )
-    assert stable["requires_bitwise_score_identity"] is False
-    assert stable["requires_exact_discrete_identity"] is True
-
-    unqualified = coarse_score_diagnostics._coarse_gaussian_qualification_decision(
-        exact_arithmetic_equivalent=True,
-        repeat_stable=None,
-        unbiased_non_directional=None,
-        bounded_non_growing=None,
-        discrete_choices_equal=True,
-        final_basin_quality_equal=None,
-        material_runtime_win=None,
-        scale_amplified=None,
-        negative_implied_diff2=False,
-        nonfinite_scores=False,
-        exact_zero_cancellation_drift=False,
-    )
-    assert unqualified["status"] == "NO_GO_UNQUALIFIED"
-    assert "repeat_stability" in unqualified["pending_gates"]
-
-    for bad_flag in ("scale_amplified", "negative_implied_diff2"):
-        kwargs = dict(
-            exact_arithmetic_equivalent=True,
-            repeat_stable=True,
-            unbiased_non_directional=True,
-            bounded_non_growing=True,
-            discrete_choices_equal=True,
-            final_basin_quality_equal=True,
-            material_runtime_win=True,
-            scale_amplified=False,
-            negative_implied_diff2=False,
-            nonfinite_scores=False,
-            exact_zero_cancellation_drift=False,
-        )
-        kwargs[bad_flag] = True
-        rejected = coarse_score_diagnostics._coarse_gaussian_qualification_decision(**kwargs)
-        assert rejected["status"] == "NO_GO"
-
-
 @pytest.mark.parametrize("real_dtype", [np.float32, np.float64])
 def test_coarse_gaussian_gemm_scores_report_direct_objective(record_property, real_dtype):
     """Report precision-specific drift without turning this sample into a tolerance."""
@@ -574,7 +406,7 @@ def test_coarse_gaussian_gemm_scores_report_direct_objective(record_property, re
         )
     )
     expected = _direct_scores(operands[0], operands[2], operands[3], operands[4])
-    diagnostics = coarse_score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
+    diagnostics = score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
         expected[:, None, :, :],
         actual[:, None, :, :],
     )
@@ -637,7 +469,7 @@ def test_coarse_gaussian_gemm_direct_square_cancellation_stress_equal_operands(
             )
         )
         direct = _direct_scores(projected, shifted, unit_weight, initial)
-        diagnostics = coarse_score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
+        diagnostics = score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
             direct[:, None, :, :],
             macro[:, None, :, :],
         )
@@ -745,7 +577,7 @@ def test_coarse_gaussian_gemm_direct_square_cancellation_stress_nearby_operands(
     )
     direct = _direct_scores(projected, shifted, weight, initial)
     delta = macro - direct
-    diagnostics = coarse_score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
+    diagnostics = score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
         direct[:, None, :, :],
         macro[:, None, :, :],
     )
@@ -788,7 +620,7 @@ def test_coarse_gaussian_direct_macro_diagnostics_preserve_layout_and_discretes(
     direct_support = np.array([[True, False, True, False], [False, True, True, False]])
     macro_support = direct_support.copy()
     macro_support[1, 2] = False
-    diagnostics = coarse_score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
+    diagnostics = score_diagnostics._coarse_gaussian_direct_macro_diagnostics(
         direct,
         macro,
         direct_support=direct_support,
@@ -824,7 +656,7 @@ def test_coarse_gaussian_diagnostics_report_exact_ulp_and_repeat_spread():
         ],
         dtype=np.float32,
     ).reshape(1, 1, 1, 3)
-    diagnostics = coarse_score_diagnostics._coarse_gaussian_direct_macro_diagnostics(direct, macro)
+    diagnostics = score_diagnostics._coarse_gaussian_direct_macro_diagnostics(direct, macro)
     assert_matches(diagnostics["ulp_score_delta"], 1)
 
     repeat_deltas = np.stack(
@@ -1369,7 +1201,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
                 if class_index == 0 and rotation_index == 0:
                     scores[image_lane, rotation_lane, 0] = 0.0
                 # Each small runner-up gap is independently overcome by one
-                # prior axis in the qualification calls below.
+                # prior axis in the prior calls below.
                 if original_image_id == 0 and class_index == 1 and rotation_index == 0:
                     scores[image_lane, rotation_lane, 0] = -0.05
                 if original_image_id == 1 and class_index == 0 and rotation_index == 1:
@@ -1488,7 +1320,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         class_prior,
         rotation_prior,
         translation_prior,
-        diagnostic_scope=None,
+        **options,
     ):
         selected_translation_prior = translation_prior[
             selected_dataset._original_indices
@@ -1503,8 +1335,8 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             class_log_priors=class_prior,
             rotation_log_prior=rotation_prior,
             translation_log_prior=selected_translation_prior,
-            coarse_gemm_diagnostic_scope=diagnostic_scope,
             **common,
+            **options,
         )
 
     zero_priors = run_with_priors(
@@ -1572,61 +1404,16 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     assert unique_support_pairs(translation_only) == ((0, 0), (0, 1), (0, 0))
     assert unique_support_pairs(clean) == ((1, 0), (0, 3), (0, 0))
 
-    diagnostic_dir = tmp_path / "paired_scores"
-    monkeypatch.setenv(
-        "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_DIR",
-        str(diagnostic_dir),
-    )
-    monkeypatch.setenv(
-        "RELAX_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_ORIGINAL_INDICES",
-        "0,1",
-    )
-    stream_diagnostic_dir = tmp_path / "streaming_scores"
-    monkeypatch.setenv(
-        "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_DIAGNOSTIC_DIR",
-        str(stream_diagnostic_dir),
-    )
-    monkeypatch.setenv(
-        "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK",
-        "12",
-    )
-
-    def direct_square_stub(projected, shifted, weight, initial, full_to_compact):
-        del initial, full_to_compact
-        active = np.any(np.asarray(weight) != 0.0, axis=1)
-        actual_count = int(np.count_nonzero(active))
-        return -designed_scores(projected, shifted, actual_count)
-
-    monkeypatch.setattr(
-        em_cuda_kernels,
-        "relion_coarse_diff2_rectangular_f32",
-        direct_square_stub,
-    )
     poison_tail["enabled"] = True
     group_datasets = (dataset.subset([0, 2]), dataset.subset([1]))
-    run_id = "initial_model_it0001_k002_multigroup"
-    call_ids = (
-        "call0000_group0000_halfseth00",
-        "call0001_group0001_halfseth01",
-    )
-    scopes = tuple(
-        significance.CoarseGaussianGemmDiagnosticScope(
-            run_id=run_id,
-            call_id=call_id,
-            expected_call_ids=call_ids,
-            finalize=index == len(call_ids) - 1,
-        )
-        for index, call_id in enumerate(call_ids)
-    )
     poisoned_groups = tuple(
         run_with_priors(
             group_dataset,
             class_prior=active_class_prior,
             rotation_prior=active_rotation_prior,
             translation_prior=active_translation_prior,
-            diagnostic_scope=scopes[index],
         )
-        for index, group_dataset in enumerate(group_datasets)
+        for group_dataset in group_datasets
     )
 
     assert_matches(
@@ -1651,103 +1438,53 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
                 ),
                 np.asarray(expected_support[class_index][image_index], dtype=np.int64),
             )
-    assert [call[0] for call in score_calls].count(1) > 0
-    assert [call[0] for call in score_calls].count(2) > 0
     assert any(np.any(tail) for _, _, tail in projection_calls)
     resources = clean[5]["coarse_gaussian_gemm_resources"]
     assert resources["predicted_peak_projection_bytes"] <= resources[
         "projected_transient_budget_bytes"
     ]
-    clean_qualification = clean[5]["coarse_gaussian_gemm_qualification"]
-    assert clean_qualification["paired_capture_requested"] is False
-    assert clean_qualification["paired_capture_active"] is False
-    assert clean_qualification["clean_timing_eligible"] is True
-    assert clean_qualification["numerical_qualification_status"] == "NO_GO_UNQUALIFIED"
-    assert clean_qualification["requires_bitwise_score_identity"] is False
-    assert clean_qualification["requires_exact_discrete_identity"] is True
-    for poisoned in poisoned_groups:
-        captured_qualification = poisoned[5]["coarse_gaussian_gemm_qualification"]
-        assert captured_qualification["paired_capture_requested"] is True
-        assert captured_qualification["paired_capture_active"] is True
-        assert captured_qualification["clean_timing_eligible"] is False
-        assert "separate diagnostic-off timing arm" in captured_qualification["timing_policy"]
-    diagnostic_paths = sorted(diagnostic_dir.glob("*.npz"))
-    assert len(diagnostic_paths) == 2
-    captured_original_indices = []
-    for diagnostic_path in diagnostic_paths:
-        with np.load(diagnostic_path) as payload:
-            assert str(payload["layout"]) == "image,class,rotation,translation"
-            assert bool(payload["paired_capture_active"]) is True
-            assert bool(payload["clean_timing_eligible"]) is False
-            assert str(payload["qualification_status"]).startswith("NO_GO")
-            assert payload["automatic_no_go_reasons"].size == 0
-            assert payload["pending_qualification_gates"].size > 0
-            assert bool(payload["requires_bitwise_score_identity"]) is False
-            assert bool(payload["requires_exact_discrete_identity"]) is True
-            assert str(payload["repeat_spread_assessment"]).startswith("NO_GO")
-            assert str(payload["scale_growth_assessment"]).startswith("NO_GO")
-            assert "separate_diagnostic-off_timing_arm" in str(payload["timing_policy"])
-            assert_matches(
-                payload["direct_scores_with_prior"],
-                payload["macro_scores_with_prior"],
-            )
-            assert_matches(payload["argmax_equal"], True)
-            assert_matches(payload["support_equal"], True)
-            assert int(payload["score_precision_bits"]) == 32
-            captured_original_indices.extend(payload["original_indices"].tolist())
-    assert sorted(captured_original_indices) == [0, 1]
-    assert len({path.name for path in diagnostic_paths}) == 2
-    assert call_ids[0] in diagnostic_paths[0].name
-    assert call_ids[1] in diagnostic_paths[1].name
 
-    scope_manifest_paths = sorted(diagnostic_dir.glob("coarse_gemm_scope_*.json"))
-    assert len(scope_manifest_paths) == 2
-    scope_records = [json.loads(path.read_text()) for path in scope_manifest_paths]
-    assert {tuple(record["targets_in_scope"]) for record in scope_records} == {
-        (0,),
-        (1,),
-    }
-    assert {
-        tuple(record["targets_explicitly_out_of_scope"])
-        for record in scope_records
-    } == {(0,), (1,)}
-    aggregate_path = diagnostic_dir / f"coarse_gemm_manifest_{run_id}.json"
-    aggregate = json.loads(aggregate_path.read_text())
-    assert aggregate["all_requested_captured_exactly_once"] is True
-    assert aggregate["captured_target_counts"] == {"0": 1, "1": 1}
-
-    stream_paths = sorted(stream_diagnostic_dir.glob("coarse_gemm_rescore_*.npz"))
-    assert len(stream_paths) == 2
-    stream_original_indices = []
-    for stream_path in stream_paths:
-        with np.load(stream_path, allow_pickle=False) as payload:
-            assert payload["schema"].item() == COARSE_GEMM_STREAMING_SCHEMA
-            assert payload["retained_topk"].item() == 12
-            assert payload["stores_score_cube"].item() is False
-            assert payload["production_behavior_changed"].item() is False
-            assert payload["winner_comparison_coverage"].all()
-            assert payload["winner_equal"].all()
-            assert payload["support_comparison_coverage"].all()
-            assert_matches(payload["support_false_negative_count"], 0)
-            assert_matches(payload["support_false_positive_count"], 0)
-            assert_matches(payload["all_candidate_max_abs_delta"], 0.0)
-            assert payload[
-                "relion_nonzero_surface_error_safe_superset_coverage"
-            ].all()
-            stream_original_indices.extend(payload["original_indices"].tolist())
-    assert sorted(stream_original_indices) == [0, 1, 2]
-
-    stream_scope_paths = sorted(
-        stream_diagnostic_dir.glob("coarse_gemm_rescore_scope_*.json")
-    )
-    assert len(stream_scope_paths) == 2
-    stream_aggregate_path = (
-        stream_diagnostic_dir / f"coarse_gemm_rescore_manifest_{run_id}.json"
-    )
-    stream_aggregate = json.loads(stream_aggregate_path.read_text())
-    assert stream_aggregate["particle_count"] == 3
-    assert stream_aggregate["all_particles_captured_exactly_once"] is True
-    assert stream_aggregate["stores_score_cube"] is False
+    # RELAX_SIGNIFICANCE_DUMP_* reads the pass-1 program's target-row scores; the class
+    # runner-up (return_class_second) still runs the per-block loop, whose dump is the
+    # reference.
+    poison_tail["enabled"] = False
+    dumps = {}
+    for label, options in (("program", {}), ("loop", {"return_class_second": True})):
+        dump_dir = tmp_path / label
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "2,1")
+        run_with_priors(
+            dataset,
+            class_prior=active_class_prior,
+            rotation_prior=active_rotation_prior,
+            translation_prior=active_translation_prior,
+            **options,
+        )
+        dumps[label] = {}
+        for path in sorted(dump_dir.glob("significance_orig*.npz")):
+            with np.load(path) as payload:
+                dumps[label][path.name] = {
+                    key: payload[key]
+                    for key in (
+                        "scores_pre_prior_per_class",
+                        "scores_with_prior_per_class",
+                        "weights_per_class",
+                        "score_capture_mode",
+                    )
+                }
+    assert sorted(dumps["program"]) == sorted(dumps["loop"])
+    assert len(dumps["program"]) == 2
+    for name, program in dumps["program"].items():
+        loop = dumps["loop"][name]
+        assert str(program["score_capture_mode"]) == "pass1_program_target_rows"
+        assert str(loop["score_capture_mode"]) == "intrusive_per_block_host_materialization"
+        assert program["scores_pre_prior_per_class"].shape == (2, 3, 2)
+        assert_matches(program["scores_pre_prior_per_class"], loop["scores_pre_prior_per_class"])
+        assert_matches(program["scores_with_prior_per_class"], loop["scores_with_prior_per_class"])
+        assert_matches(program["weights_per_class"], loop["weights_per_class"], rtol=1e-6)
+    # The loop's eager scorer saw the full and the one-image final batch.
+    assert [call[0] for call in score_calls].count(1) > 0
+    assert [call[0] for call in score_calls].count(2) > 0
 
 
 @pytest.mark.parametrize(
@@ -1894,7 +1631,7 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
 
     case = _pass1_case()
     n_classes, n_rot, n_images, n_trans = case["n_classes"], case["n_rot"], case["n_images"], case["n_trans"]
-    state, values = significance._coarse_pass1_blocks(
+    state, values, dumps = significance._coarse_pass1_blocks(
         case["state"],
         case["cache"],
         case["shifted"],
@@ -1906,6 +1643,7 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
         blocks=case["blocks"],
         **_pass1_static(case, "gaussian", exact_weight_order),
     )
+    assert dumps is None
     (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_pose), raw_max = state
 
     # Reference: every class's whole score table from the public GEMM scorer.
@@ -1959,7 +1697,7 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     case = _pass1_case(seed=7)
     static = _pass1_static(case, score_kind, False)
     common = (case["shifted"], case["weight"], case["initial"], 2)
-    whole_state, whole_values = significance._coarse_pass1_blocks(
+    whole_state, whole_values, _ = significance._coarse_pass1_blocks(
         case["state"], case["cache"], *common, case["prior_terms"], case["translation_prior"],
         blocks=case["blocks"], **static,
     )
@@ -1967,7 +1705,7 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     for block, terms in zip(case["blocks"], case["prior_terms"]):
         class_index, r0, rows, block_rows = block
         reference = jnp.pad(case["cache"][class_index, r0 : r0 + rows], ((0, block_rows - rows), (0, 0)))
-        block_state, block_values = significance._coarse_pass1_block(
+        block_state, block_values, _ = significance._coarse_pass1_block(
             significance._class_block_state(state, class_index), reference, *common, terms,
             case["translation_prior"], jnp.int32(class_index), jnp.int32(r0), rows=rows, block_rows=block_rows,
             **static,
@@ -1997,3 +1735,51 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
             axis=1,
         ).reshape(case["n_images"], -1)
         assert_matches(np.asarray(jnp.concatenate(values, axis=1)), cc, rtol=rtol)
+
+
+def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
+    """``dump_rows`` returns those batch rows' pre-prior and with-prior scores, per block.
+
+    The RELAX_SIGNIFICANCE_DUMP_* targets read their scores from the pass-1 program: each
+    block's ``[n_targets, rows, T]`` scores before and after the priors, in the requested
+    row order, with the values and state those of the run without targets.
+    """
+
+    case = _pass1_case(seed=11)
+    n_classes, n_rot = case["n_classes"], case["n_rot"]
+    static = _pass1_static(case, "gaussian", False)
+    args = (
+        case["state"], case["cache"], case["shifted"], case["weight"], case["initial"], 2,
+        case["prior_terms"], case["translation_prior"],
+    )
+    plain_state, plain_values, _ = significance._coarse_pass1_blocks(*args, blocks=case["blocks"], **static)
+    targets = np.asarray([2, 0])
+    state, values, dumps = significance._coarse_pass1_blocks(
+        *args, jnp.asarray(targets, dtype=jnp.int32), blocks=case["blocks"], **static
+    )
+    for got, want in zip(jax.tree_util.tree_leaves((state, values)), jax.tree_util.tree_leaves((plain_state, plain_values))):
+        assert_matches(np.asarray(got), np.asarray(want))
+    raw = np.stack(
+        [
+            np.asarray(
+                scoring._relion_coarse_gaussian_gemm_scores(
+                    case["cache"][k], jnp.abs(case["cache"][k]) ** 2, case["shifted"], case["weight"],
+                    case["initial"], 2, image_shape=(4, 4), volume_shape=(4, 4, 4),
+                )
+            )
+            for k in range(n_classes)
+        ],
+        axis=1,
+    )  # [B, K, R, T]
+    with_prior = (
+        raw
+        + case["class_prior"][None, :, None, None]
+        + case["rotation_prior"][None, :, :n_rot, None]
+        + np.asarray(case["translation_prior"])[:, None, None, :]
+    )
+    for k in range(n_classes):
+        class_dumps = [dump for (block_class, _, _, _), dump in zip(case["blocks"], dumps) if block_class == k]
+        pre_prior = np.concatenate([np.asarray(pre) for pre, _ in class_dumps], axis=1)
+        after_prior = np.concatenate([np.asarray(after) for _, after in class_dumps], axis=1)
+        assert_matches(pre_prior, raw[targets, k])
+        assert_matches(after_prior, with_prior[targets, k])

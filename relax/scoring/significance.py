@@ -18,17 +18,9 @@ import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
 from relax.diagnostics.coarse_gaussian_diagnostics import (
-    _COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_INDICES_ENV,
-    CoarseGaussianGemmDiagnosticScope,
-    _coarse_gaussian_gemm_diagnostic_request,
-    _coarse_gaussian_gemm_streaming_diagnostic_request,
     _maybe_dump_k_class_significance_batch,
     _maybe_dump_tree_rescore_batch,
-    _resolve_coarse_gaussian_gemm_diagnostic_scope,
-    _seal_coarse_gaussian_gemm_diagnostic_scope,
-    _seal_coarse_gaussian_gemm_streaming_scope,
     _significance_debug_dump_matches,
-    _write_coarse_gaussian_gemm_diagnostic,
 )
 from relax.diagnostics.coarse_score_diagnostics import (
     _build_coarse_significance_support_audit,
@@ -78,13 +70,6 @@ from relax.scoring.coarse_gaussian_gemm import (
     _project_coarse_gaussian_gemm_projection_cache_block_once,
     _score_relion_coarse_gaussian_gemm_macro,
     _validate_coarse_gaussian_gemm_projection_cache_request,
-)
-from relax.scoring.coarse_gemm_streaming import (
-    coarse_gemm_streaming_dual_state_bytes,
-    coarse_gemm_streaming_state_bytes,
-    initialize_coarse_gemm_streaming_state,
-    update_coarse_gemm_streaming_state,
-    write_coarse_gemm_streaming_summary,
 )
 from relax.scoring.coarse_publication import coarse_square_layout_metadata
 from relax.scoring.scoring import (
@@ -587,6 +572,7 @@ def _pass1_block_update(
     translation_log_prior,
     class_index,
     rotation_start,
+    dump_rows=None,
     *,
     rows: int,
     block_rows: int,
@@ -608,8 +594,10 @@ def _pass1_block_update(
     ``"normalized_cc"`` (RELION's coarse CC, :func:`_relion_coarse_normalized_cc_gemm_scores_jit`;
     no priors, as RELION's ``--firstiter_cc`` scores have none). The padded tail rows are
     ``-inf``; the Gaussian scores get the class, rotation and translation priors
-    (:func:`_add_coarse_prior_terms`). Returns the new state and the block's ``[B, rows * T]``
-    support values (pre-prior with ``exact_weight_order``).
+    (:func:`_add_coarse_prior_terms`). Returns the new state, the block's ``[B, rows * T]``
+    support values (pre-prior with ``exact_weight_order``) and, for the ``dump_rows`` batch
+    rows of a ``RELAX_SIGNIFICANCE_DUMP_*`` target (``None`` otherwise), their pre-prior
+    and with-prior ``[n_targets, rows, T]`` scores.
     """
 
     (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_argmax), raw_score_max = (
@@ -650,6 +638,9 @@ def _pass1_block_update(
         class_log_prior, rotation_log_prior_block = prior_terms
         scores = _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, translation_log_prior)
     values = (pre_prior_scores if exact_weight_order else scores)[:, :rows, :].reshape(batch_size, -1)
+    dump = None
+    if dump_rows is not None:
+        dump = (pre_prior_scores[dump_rows, :rows, :], scores[dump_rows, :rows, :])
     class_max, class_sum = _update_logsumexp(class_max, class_sum, scores)
     global_max, global_sum = _update_logsumexp(global_max, global_sum, scores)
     flat_scores = scores.reshape(batch_size, -1)
@@ -670,7 +661,7 @@ def _pass1_block_update(
         (class_best, class_best_argmax),
         raw_score_max,
     )
-    return state, values
+    return state, values, dump
 
 
 def _class_block_state(state, class_index: int):
@@ -725,6 +716,7 @@ def _coarse_pass1_blocks(
     actual_image_count,
     prior_terms,
     translation_log_prior,
+    dump_rows=None,
     *,
     blocks: tuple,
     n_trans: int,
@@ -745,18 +737,20 @@ def _coarse_pass1_blocks(
     ``prior_terms[i]`` is block ``i``'s class prior and rotation-prior block (``None``
     without a rotation prior). ``state`` is :func:`_pass1_initial_state`: ``((global
     max, sum), (class maxima, sums), (best score, pose, class), (class best scores,
-    poses), raw score maximum)``. Returns the new state and one ``[B, rows * T]``
-    support-value block per entry. At K15, 400+ eager programs per batch kept the
+    poses), raw score maximum)``. Returns the new state, one ``[B, rows * T]``
+    support-value block per entry and, with ``dump_rows``, each entry's dump scores
+    (``None`` without). At K15, 400+ eager programs per batch kept the
     host behind the device queue while the device idled between batches (K15 50k,
     nsys 14868231).
     """
 
     values = []
+    dumps = []
     for block_index, (class_index, r0, rows, block_rows) in enumerate(blocks):
         reference = jax.lax.dynamic_slice_in_dim(projection_cache[class_index], r0, rows, axis=0)
         if rows < block_rows:
             reference = jnp.pad(reference, ((0, block_rows - rows), (0, 0)))
-        block_state, block_values = _pass1_block_update(
+        block_state, block_values, block_dump = _pass1_block_update(
             _class_block_state(state, class_index),
             reference,
             shifted_corrected,
@@ -767,6 +761,7 @@ def _coarse_pass1_blocks(
             translation_log_prior,
             class_index,
             r0,
+            dump_rows,
             rows=rows,
             block_rows=block_rows,
             n_trans=n_trans,
@@ -779,7 +774,8 @@ def _coarse_pass1_blocks(
         )
         state = _merge_class_block_state(state, block_state, class_index)
         values.append(block_values)
-    return state, tuple(values)
+        dumps.append(block_dump)
+    return state, tuple(values), None if dump_rows is None else tuple(dumps)
 
 
 @partial(jax.jit, static_argnames=("rows", "block_rows") + _PASS1_STATIC)
@@ -794,6 +790,7 @@ def _coarse_pass1_block(
     translation_log_prior,
     class_index,
     rotation_start,
+    dump_rows=None,
     *,
     rows: int,
     block_rows: int,
@@ -823,6 +820,7 @@ def _coarse_pass1_block(
         translation_log_prior,
         class_index,
         rotation_start,
+        dump_rows,
         rows=rows,
         block_rows=block_rows,
         n_trans=n_trans,
@@ -943,7 +941,6 @@ def _compute_k_class_significance_batched(
     relion_f32_coarse_tie_ulps: int = 0,
     pad_final_image_batch: bool = False,
     stable_fourier_window_shapes: bool = False,
-    coarse_gemm_diagnostic_scope: CoarseGaussianGemmDiagnosticScope | None = None,
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     require_plain_gemm_coarse: bool = False,
@@ -1214,72 +1211,6 @@ def _compute_k_class_significance_batched(
     if coarse_gaussian_gemm_macro_requested and score_mode != "gaussian":
         raise ValueError(f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1 requires score_mode='gaussian'")
     coarse_gaussian_gemm_macro_enabled = bool(coarse_gaussian_gemm_macro_requested)
-    (
-        coarse_gaussian_gemm_diagnostic_dir,
-        coarse_gaussian_gemm_diagnostic_targets,
-    ) = _coarse_gaussian_gemm_diagnostic_request()
-    (
-        coarse_gaussian_gemm_stream_diagnostic_dir,
-        coarse_gaussian_gemm_stream_topk,
-    ) = _coarse_gaussian_gemm_streaming_diagnostic_request(
-        max_significants=max_significants,
-    )
-    coarse_gaussian_gemm_requested_targets = coarse_gaussian_gemm_diagnostic_targets
-    coarse_gaussian_gemm_diagnostic_scope = None
-    coarse_gaussian_gemm_diagnostic_selection_policy = None
-    coarse_gaussian_gemm_any_diagnostic = bool(
-        coarse_gaussian_gemm_diagnostic_dir is not None
-        or coarse_gaussian_gemm_stream_diagnostic_dir is not None
-    )
-    if coarse_gaussian_gemm_any_diagnostic:
-        if not coarse_gaussian_gemm_macro_enabled:
-            raise ValueError(
-                "coarse GEMM diagnostics require "
-                f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1",
-            )
-        if not collect_significance:
-            raise ValueError(
-                "coarse GEMM diagnostics require "
-                "collect_significance=True so exact support can be compared",
-            )
-        (
-            coarse_gaussian_gemm_diagnostic_scope,
-            explicitly_scoped_diagnostic,
-        ) = _resolve_coarse_gaussian_gemm_diagnostic_scope(
-            coarse_gemm_diagnostic_scope,
-            debug_iteration=debug_iteration,
-            current_size=current_size,
-        )
-    if coarse_gaussian_gemm_diagnostic_dir is not None:
-        logger.warning(
-            "coarse GEMM paired capture is requested; calls containing target "
-            "particles execute both direct and GEMM scorers, and the configured "
-            "run is excluded from runtime qualification"
-        )
-        if explicitly_scoped_diagnostic:
-            available_original_indices = set(
-                int(value)
-                for value in original_image_indices(
-                    experiment_dataset,
-                    np.arange(n_images, dtype=np.int64),
-                )
-            )
-            coarse_gaussian_gemm_diagnostic_targets = (
-                coarse_gaussian_gemm_requested_targets & available_original_indices
-            )
-            coarse_gaussian_gemm_diagnostic_selection_policy = (
-                "explicit_call_scope_intersection"
-            )
-        else:
-            coarse_gaussian_gemm_diagnostic_selection_policy = "strict_single_call"
-    if coarse_gaussian_gemm_stream_diagnostic_dir is not None:
-        logger.warning(
-            "coarse GEMM all-particle streaming exact-rescore diagnostic is "
-            "requested (topk=%d); every score block executes both scorers, only "
-            "bounded summaries are retained, and the run is excluded from "
-            "runtime qualification",
-            coarse_gaussian_gemm_stream_topk,
-        )
     if coarse_gaussian_gemm_macro_enabled and not exact_coarse_operands_enabled:
         raise ValueError(
             f"{_COARSE_GAUSSIAN_GEMM_MACRO_ENV}=1 requires "
@@ -1347,7 +1278,6 @@ def _compute_k_class_significance_batched(
             default=bool(
                 coarse_gaussian_gemm_plain_default
                 and coarse_gaussian_gemm_macro_enabled
-                and not coarse_gaussian_gemm_any_diagnostic
                 and not (
                     collect_significance
                     and _significance_debug_dump_matches(
@@ -1366,7 +1296,6 @@ def _compute_k_class_significance_batched(
             ),
             exact_coarse_operands_enabled=exact_coarse_operands_enabled,
             score_mode=score_mode,
-            any_diagnostic_requested=coarse_gaussian_gemm_any_diagnostic,
             coarse_gaussian_gemm_macro_enabled=coarse_gaussian_gemm_macro_enabled,
         )
     )
@@ -2055,10 +1984,6 @@ def _compute_k_class_significance_batched(
             coarse_gaussian_gemm_projection_cache_plan.budget_bytes,
         )
 
-    coarse_gemm_diagnostic_positions = None
-    coarse_gemm_direct_capture = {"scores": None}
-    coarse_gemm_stream_capture_control = {"enabled": False}
-
     def _score_block(
         class_index,
         mean_for_proj,
@@ -2085,7 +2010,6 @@ def _compute_k_class_significance_batched(
                 n_trans=int(n_trans),
             )
         if coarse_gaussian_gemm_macro_enabled:
-            coarse_gemm_direct_capture["scores"] = None
             project_block_once = _project_coarse_gemm_block_once
             if coarse_gaussian_gemm_projection_cache is not None:
                 project_block_once = partial(
@@ -2093,7 +2017,7 @@ def _compute_k_class_significance_batched(
                     coarse_gaussian_gemm_projection_cache,
                     rotation_start=int(rotation_start),
                 )
-            score_result = _score_relion_coarse_gaussian_gemm_macro(
+            return _score_relion_coarse_gaussian_gemm_macro(
                 project_block_once,
                 class_index,
                 mean_for_proj,
@@ -2107,52 +2031,7 @@ def _compute_k_class_significance_batched(
                 actual_batch_size,
                 image_shape=image_shape,
                 volume_shape=volume_shape,
-                return_projected=bool(
-                    coarse_gemm_diagnostic_positions is not None
-                    or coarse_gemm_stream_capture_control["enabled"]
-                ),
             )
-            if (
-                coarse_gemm_diagnostic_positions is None
-                and not coarse_gemm_stream_capture_control["enabled"]
-            ):
-                return score_result
-
-            from relax.cuda import kernels as em_cuda_kernels
-
-            macro_scores, projected_reference, _projected_reference_abs2 = score_result
-            active = jnp.arange(batch_size, dtype=jnp.int32) < jnp.asarray(
-                actual_batch_size,
-                dtype=jnp.int32,
-            )
-            direct_shifted = jnp.where(
-                active[:, None, None],
-                jnp.asarray(coarse_gaussian_shifted_corrected, dtype=jnp.complex64),
-                jnp.zeros((), dtype=jnp.complex64),
-            )
-            direct_weight = jnp.where(
-                active[:, None],
-                jnp.asarray(coarse_gaussian_pixel_weight, dtype=jnp.float32),
-                jnp.zeros((), dtype=jnp.float32),
-            )
-            direct_initial = jnp.where(
-                active,
-                jnp.asarray(coarse_gaussian_initial_diff2, dtype=jnp.float32),
-                jnp.zeros((), dtype=jnp.float32),
-            )
-            direct_diff2 = em_cuda_kernels.relion_coarse_diff2_rectangular_f32(
-                jnp.asarray(projected_reference, dtype=jnp.complex64),
-                direct_shifted,
-                direct_weight,
-                direct_initial,
-                coarse_gaussian_full_to_compact,
-            )
-            coarse_gemm_direct_capture["scores"] = jnp.where(
-                active[:, None, None],
-                -direct_diff2,
-                jnp.zeros((), dtype=jnp.float32),
-            )
-            return macro_scores
         proj_half_b, proj_abs2_half_b = _project_block_once(
             class_index, mean_for_proj, rots_b, rotation_start=rotation_start
         )
@@ -2285,11 +2164,6 @@ def _compute_k_class_significance_batched(
     tree_rescore_ambiguous = 0
     tree_rescore_winner_changes = 0
     tree_rescore_exact_ties = 0
-    coarse_gaussian_gemm_diagnostic_paths = []
-    coarse_gaussian_gemm_diagnostic_found_targets = set()
-    coarse_gaussian_gemm_diagnostic_target_counts = {}
-    coarse_gaussian_gemm_stream_paths = []
-    coarse_gaussian_gemm_stream_original_indices = []
     generic_coarse_operand_assembly_count = 0
     exact_coarse_operand_assembly_count = 0
     generic_score_preprocess_count = 0
@@ -2353,53 +2227,6 @@ def _compute_k_class_significance_batched(
                         batch_size,
                     )
                 )
-            local_indices_np = np.asarray(indices, dtype=np.int64)
-            batch_original_indices_np = None
-            if coarse_gaussian_gemm_stream_diagnostic_dir is not None:
-                batch_original_indices_np = original_image_indices(
-                    experiment_dataset,
-                    local_indices_np,
-                )
-            coarse_gemm_diagnostic_positions = None
-            coarse_gemm_diagnostic_original_indices = None
-            if coarse_gaussian_gemm_diagnostic_targets is not None:
-                original_indices_np = original_image_indices(
-                    experiment_dataset,
-                    local_indices_np,
-                )
-                positions = np.flatnonzero(
-                    np.isin(
-                        original_indices_np,
-                        np.fromiter(
-                            coarse_gaussian_gemm_diagnostic_targets,
-                            dtype=np.int64,
-                        ),
-                    )
-                ).astype(np.int64)
-                if positions.size:
-                    coarse_gemm_diagnostic_positions = positions
-                    coarse_gemm_diagnostic_original_indices = original_indices_np[positions]
-            coarse_gemm_stream_capture_control["enabled"] = bool(
-                coarse_gaussian_gemm_stream_diagnostic_dir is not None
-            )
-            coarse_gemm_stream_state = (
-                initialize_coarse_gemm_streaming_state(
-                    batch_size,
-                    coarse_gaussian_gemm_stream_topk,
-                    score_dtype=jnp.float32,
-                )
-                if coarse_gemm_stream_capture_control["enabled"]
-                else None
-            )
-            coarse_gemm_pre_prior_stream_state = (
-                initialize_coarse_gemm_streaming_state(
-                    batch_size,
-                    coarse_gaussian_gemm_stream_topk,
-                    score_dtype=jnp.float32,
-                )
-                if coarse_gemm_stream_capture_control["enabled"]
-                else None
-            )
             real_space_pre_shift_applied = integer_pre_shifts is not None
             if real_space_pre_shift_applied and not relion_cuda_preprocess:
                 batch_data = apply_relion_integer_pre_shifts(batch_data, integer_pre_shifts)
@@ -2874,26 +2701,6 @@ def _compute_k_class_significance_batched(
             dump_target_with_prior_blocks_per_class = (
                 [[] for _ in range(n_classes)] if dump_target_local_positions is not None else None
             )
-            coarse_gemm_macro_pre_prior_blocks = (
-                [[] for _ in range(n_classes)]
-                if coarse_gemm_diagnostic_positions is not None
-                else None
-            )
-            coarse_gemm_direct_pre_prior_blocks = (
-                [[] for _ in range(n_classes)]
-                if coarse_gemm_diagnostic_positions is not None
-                else None
-            )
-            coarse_gemm_macro_with_prior_blocks = (
-                [[] for _ in range(n_classes)]
-                if coarse_gemm_diagnostic_positions is not None
-                else None
-            )
-            coarse_gemm_direct_with_prior_blocks = (
-                [[] for _ in range(n_classes)]
-                if coarse_gemm_diagnostic_positions is not None
-                else None
-            )
             neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_size, bool(jax.config.jax_enable_x64))
             global_max = neg_inf_f
             global_sum = zeros_f64
@@ -2906,15 +2713,12 @@ def _compute_k_class_significance_batched(
             class_best_argmaxes = [zeros_i32] * n_classes if return_class_best else None
             class_second_best_scores = [neg_inf_f] * n_classes if track_class_second else None
             class_second_best_argmaxes = [zeros_i32] * n_classes if track_class_second else None
-            cache_score_blocks = collect_significance and (
-                coarse_gemm_diagnostic_positions is not None
-                or _significance_score_cache_enabled(
-                    batch_size,
-                    n_classes,
-                    n_rot_padded,
-                    n_trans,
-                    use_float64_scoring=use_float64_scoring,
-                )
+            cache_score_blocks = collect_significance and _significance_score_cache_enabled(
+                batch_size,
+                n_classes,
+                n_rot_padded,
+                n_trans,
+                use_float64_scoring=use_float64_scoring,
             )
             cached_class_score_blocks = [] if cache_score_blocks else None
             # RELION's CUDA coarse kernel forms ``pdf_orientation + pdf_offset +
@@ -2935,18 +2739,14 @@ def _compute_k_class_significance_batched(
             # Pass 1 of the coarse GEMM scorers is one program per batch
             # (_coarse_pass1_blocks): over the cached projections in one call, or
             # one call per class and rotation block on its projection when the
-            # cache does not fit and for --firstiter_cc. The loop below remains
-            # for the other scorers and the diagnostics that read per-block scores.
+            # cache does not fit and for --firstiter_cc. The program also returns
+            # the RELAX_SIGNIFICANCE_DUMP_* targets' scores. The loop below remains
+            # for the other scorers and the class runner-up.
             batched_support_values = None
             pass1_program = (
                 (coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
                 and collect_significance
                 and not track_class_second
-                and coarse_gemm_diagnostic_positions is None
-                and coarse_gemm_stream_state is None
-                and coarse_gemm_pre_prior_stream_state is None
-                and dump_target_pre_prior_blocks_per_class is None
-                and dump_target_with_prior_blocks_per_class is None
             )
             if pass1_program:
                 if pass1_prior_terms is None:
@@ -2986,9 +2786,14 @@ def _compute_k_class_significance_batched(
                     exact_weight_order=relion_exact_coarse_weight_order,
                     return_class_best=bool(return_class_best),
                 )
+                pass1_dump_rows = (
+                    None
+                    if dump_target_local_positions is None
+                    else jnp.asarray(dump_target_local_positions, dtype=jnp.int32)
+                )
                 pass1_state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), n_classes)
                 if coarse_gaussian_gemm_projection_cache is not None and not exact_cc_enabled:
-                    pass1_state, pass1_values = _coarse_pass1_blocks(
+                    pass1_state, pass1_values, pass1_dumps = _coarse_pass1_blocks(
                         pass1_state,
                         coarse_gaussian_gemm_projection_cache,
                         *pass1_operands,
@@ -2998,11 +2803,13 @@ def _compute_k_class_significance_batched(
                             for class_index, r0, _, _ in pass1_blocks
                         ),
                         batch_translation_log_prior,
+                        pass1_dump_rows,
                         blocks=pass1_blocks,
                         **pass1_static,
                     )
                 else:
                     pass1_values = []
+                    pass1_dumps = []
                     for class_index, r0, rows, block_rows in pass1_blocks:
                         rots_b = rotations_padded[r0 : r0 + block_rows]
                         if exact_cc_enabled:
@@ -3015,7 +2822,7 @@ def _compute_k_class_significance_batched(
                             reference, _ = _project_coarse_gemm_block_once(
                                 class_index, means_for_proj[class_index], rots_b
                             )
-                        block_state, block_values = _coarse_pass1_block(
+                        block_state, block_values, block_dump = _coarse_pass1_block(
                             _class_block_state(pass1_state, class_index),
                             reference,
                             *pass1_operands,
@@ -3024,13 +2831,21 @@ def _compute_k_class_significance_batched(
                             batch_translation_log_prior,
                             jnp.int32(class_index),
                             jnp.int32(r0),
+                            pass1_dump_rows,
                             rows=rows,
                             block_rows=block_rows,
                             **pass1_static,
                         )
                         pass1_state = _merge_class_block_state(pass1_state, block_state, class_index)
                         pass1_values.append(block_values)
+                        pass1_dumps.append(block_dump)
                 batched_support_values = jnp.concatenate(pass1_values, axis=1)
+                if pass1_dump_rows is not None:
+                    for (class_index, _, _, _), (pre_prior, with_prior) in zip(pass1_blocks, pass1_dumps, strict=True):
+                        dump_target_pre_prior_blocks_per_class[class_index].append(np.asarray(pre_prior, dtype=np.float64))
+                        dump_target_with_prior_blocks_per_class[class_index].append(
+                            np.asarray(with_prior, dtype=np.float64)
+                        )
                 (
                     (global_max, global_sum),
                     (class_max_tuple, class_sum_tuple),
@@ -3064,27 +2879,12 @@ def _compute_k_class_significance_batched(
                         batch_size,
                         rotation_start=r0,
                     )
-                    direct_scores_for_diagnostic = coarse_gemm_direct_capture["scores"]
-                    if (
-                        coarse_gemm_diagnostic_positions is not None
-                        and direct_scores_for_diagnostic is None
-                    ):
-                        raise RuntimeError(
-                            "coarse GEMM diagnostic did not capture the paired "
-                            "direct-square score block",
-                        )
                     if r1 > n_rot:
                         valid = n_rot - r0
                         valid_rotation = (
                             jnp.arange(rotation_block_size)[None, :, None] < valid
                         )
                         scores = jnp.where(valid_rotation, scores, -jnp.inf)
-                        if direct_scores_for_diagnostic is not None:
-                            direct_scores_for_diagnostic = jnp.where(
-                                valid_rotation,
-                                direct_scores_for_diagnostic,
-                                -jnp.inf,
-                            )
                     if relion_raw_score_max is not None:
                         relion_raw_score_max = jnp.maximum(
                             relion_raw_score_max,
@@ -3105,70 +2905,8 @@ def _compute_k_class_significance_batched(
                                 dtype=np.float64,
                             )
                         )
-                    if coarse_gemm_macro_pre_prior_blocks is not None:
-                        actual_rot = min(rotation_block_size, n_rot - r0)
-                        target_rows = coarse_gemm_diagnostic_positions
-                        coarse_gemm_macro_pre_prior_blocks[class_index].append(
-                            scores[target_rows, :actual_rot, :]
-                        )
-                        coarse_gemm_direct_pre_prior_blocks[class_index].append(
-                            direct_scores_for_diagnostic[
-                                target_rows,
-                                :actual_rot,
-                                :,
-                            ]
-                        )
-                    if coarse_gemm_pre_prior_stream_state is not None:
-                        if direct_scores_for_diagnostic is None:
-                            raise RuntimeError(
-                                "coarse GEMM pre-prior streaming diagnostic "
-                                "requires the paired direct-square score block",
-                            )
-                        coarse_gemm_pre_prior_stream_state = (
-                            update_coarse_gemm_streaming_state(
-                                coarse_gemm_pre_prior_stream_state,
-                                direct_scores_for_diagnostic,
-                                scores,
-                                candidate_offset=(
-                                    class_index * n_rot * n_trans
-                                    + r0 * n_trans
-                                ),
-                                actual_image_count=actual_batch_size,
-                            )
-                        )
                     pre_prior_scores = scores
                     scores = _add_priors(scores, class_index, r0, r1, batch_translation_log_prior)
-                    if direct_scores_for_diagnostic is not None:
-                        direct_scores_for_diagnostic = _add_priors(
-                            direct_scores_for_diagnostic,
-                            class_index,
-                            r0,
-                            r1,
-                            batch_translation_log_prior,
-                        )
-                        if coarse_gemm_stream_state is not None:
-                            coarse_gemm_stream_state = update_coarse_gemm_streaming_state(
-                                coarse_gemm_stream_state,
-                                direct_scores_for_diagnostic,
-                                scores,
-                                candidate_offset=(
-                                    class_index * n_rot * n_trans + r0 * n_trans
-                                ),
-                                actual_image_count=actual_batch_size,
-                            )
-                        actual_rot = min(rotation_block_size, n_rot - r0)
-                        target_rows = coarse_gemm_diagnostic_positions
-                        if target_rows is not None:
-                            coarse_gemm_macro_with_prior_blocks[class_index].append(
-                                scores[target_rows, :actual_rot, :]
-                            )
-                            coarse_gemm_direct_with_prior_blocks[class_index].append(
-                                direct_scores_for_diagnostic[
-                                    target_rows,
-                                    :actual_rot,
-                                    :,
-                                ]
-                            )
                     if dump_target_with_prior_blocks_per_class is not None:
                         actual_rot = min(rotation_block_size, n_rot - r0)
                         dump_target_with_prior_blocks_per_class[class_index].append(
@@ -3250,12 +2988,6 @@ def _compute_k_class_significance_batched(
                     cached_class_score_blocks.append(cached_score_blocks)
                 class_max_values.append(class_max)
                 class_sum_values.append(class_sum)
-
-            # The second significance pass may recompute score blocks when the
-            # production cache is disabled.  The all-particle diagnostic is a
-            # first-pass online reduction; do not execute or count direct scores a
-            # second time merely because support probabilities need replay.
-            coarse_gemm_stream_capture_control["enabled"] = False
 
             if tree_rescore_enabled:
                 tree_score_dtype = np.float64 if use_float64_scoring else np.float32
@@ -3563,8 +3295,6 @@ def _compute_k_class_significance_batched(
                     )
                 device_significance_batch = (
                     coarse_significance_device_enabled
-                    and coarse_gemm_diagnostic_positions is None
-                    and coarse_gemm_stream_state is None
                     and not debug_dump_enabled
                 )
                 if device_significance_batch:
@@ -3613,157 +3343,6 @@ def _compute_k_class_significance_batched(
                 batch_sig_mask_np = None
                 n_sig_all[start_idx:end_idx] = 0
                 cutoff_count_all[start_idx:end_idx] = 0
-
-            if coarse_gemm_diagnostic_positions is not None:
-                if batch_sig_mask_np is None or coarse_gaussian_gemm_resource_estimate is None:
-                    raise RuntimeError(
-                        "coarse GEMM paired diagnostic requires production support "
-                        "and a sealed resource estimate",
-                    )
-
-                def _stack_coarse_gemm_diagnostic_blocks(blocks_by_class):
-                    return jnp.stack(
-                        [jnp.concatenate(blocks, axis=1) for blocks in blocks_by_class],
-                        axis=1,
-                    )
-
-                direct_pre_prior = _stack_coarse_gemm_diagnostic_blocks(
-                    coarse_gemm_direct_pre_prior_blocks,
-                )
-                macro_pre_prior = _stack_coarse_gemm_diagnostic_blocks(
-                    coarse_gemm_macro_pre_prior_blocks,
-                )
-                direct_with_prior = _stack_coarse_gemm_diagnostic_blocks(
-                    coarse_gemm_direct_with_prior_blocks,
-                )
-                macro_with_prior = _stack_coarse_gemm_diagnostic_blocks(
-                    coarse_gemm_macro_with_prior_blocks,
-                )
-                direct_values = direct_with_prior.reshape(
-                    direct_with_prior.shape[0],
-                    -1,
-                )
-                if relion_f32_coarse_support_enabled:
-                    from relax.helpers.oversampling import relion_cuda_f32_coarse_posterior
-
-                    direct_raw_max = jnp.max(
-                        direct_pre_prior.reshape(direct_pre_prior.shape[0], -1),
-                        axis=1,
-                    )
-                    _, direct_sig_mask, *_ = relion_cuda_f32_coarse_posterior(
-                        direct_values,
-                        adaptive_fraction=float(adaptive_fraction),
-                        max_significants=max_significants,
-                        tie_score_ulps=int(relion_f32_coarse_tie_ulps),
-                        min_diff2_offsets=-direct_raw_max,
-                    )
-                else:
-                    direct_max = jnp.max(direct_values, axis=1, keepdims=True)
-                    direct_exp = jnp.exp(direct_values - direct_max)
-                    direct_weights = direct_exp / jnp.sum(
-                        direct_exp,
-                        axis=1,
-                        keepdims=True,
-                    )
-                    direct_sig_mask, *_ = _find_sig(
-                        direct_weights,
-                        n_classes * n_rot,
-                        n_trans,
-                        adaptive_fraction=adaptive_fraction,
-                        max_significants=max_significants,
-                        return_cutoff_count=True,
-                    )
-                macro_support = batch_sig_mask_np[coarse_gemm_diagnostic_positions]
-                iteration_label = -1 if debug_iteration is None else int(debug_iteration)
-                size_label = -1 if current_size is None else int(current_size)
-                diagnostic_path = os.path.join(
-                    coarse_gaussian_gemm_diagnostic_dir,
-                    "coarse_gemm_ab_"
-                    f"{coarse_gaussian_gemm_diagnostic_scope.run_id}_"
-                    f"{coarse_gaussian_gemm_diagnostic_scope.call_id}_"
-                    f"it{iteration_label:04d}_cs{size_label:04d}_"
-                    f"batch{start_idx:08d}_{end_idx:08d}.npz",
-                )
-                local_indices_np = np.asarray(indices, dtype=np.int64)
-                _write_coarse_gaussian_gemm_diagnostic(
-                    diagnostic_path,
-                    direct_scores_pre_prior=np.asarray(direct_pre_prior),
-                    macro_scores_pre_prior=np.asarray(macro_pre_prior),
-                    direct_scores_with_prior=np.asarray(direct_with_prior),
-                    macro_scores_with_prior=np.asarray(macro_with_prior),
-                    direct_support=np.asarray(direct_sig_mask, dtype=bool),
-                    macro_support=macro_support,
-                    original_indices=coarse_gemm_diagnostic_original_indices,
-                    local_indices=local_indices_np[coarse_gemm_diagnostic_positions],
-                    actual_batch_size=actual_batch_size,
-                    padded_batch_size=batch_size,
-                    adaptive_fraction=adaptive_fraction,
-                    max_significants=max_significants,
-                    resource_estimate=coarse_gaussian_gemm_resource_estimate,
-                    diagnostic_scope=coarse_gaussian_gemm_diagnostic_scope,
-                    diagnostic_selection_policy=(
-                        coarse_gaussian_gemm_diagnostic_selection_policy
-                    ),
-                    debug_iteration=debug_iteration,
-                    current_size=current_size,
-                )
-                coarse_gaussian_gemm_diagnostic_paths.append(diagnostic_path)
-                for value in coarse_gemm_diagnostic_original_indices:
-                    target = int(value)
-                    coarse_gaussian_gemm_diagnostic_found_targets.add(target)
-                    coarse_gaussian_gemm_diagnostic_target_counts[target] = (
-                        coarse_gaussian_gemm_diagnostic_target_counts.get(target, 0) + 1
-                    )
-
-            if (coarse_gemm_stream_state is None) != (
-                coarse_gemm_pre_prior_stream_state is None
-            ):
-                raise RuntimeError(
-                    "coarse GEMM streaming diagnostic requires paired pre-prior "
-                    "and posterior states",
-                )
-            if coarse_gemm_stream_state is not None:
-                if (
-                    batch_sig_mask_np is None
-                    or batch_original_indices_np is None
-                    or coarse_gaussian_gemm_diagnostic_scope is None
-                ):
-                    raise RuntimeError(
-                        "coarse GEMM streaming diagnostic requires production support, "
-                        "particle identity, and a resolved call scope",
-                    )
-                iteration_label = -1 if debug_iteration is None else int(debug_iteration)
-                size_label = -1 if current_size is None else int(current_size)
-                stream_path = os.path.join(
-                    coarse_gaussian_gemm_stream_diagnostic_dir,
-                    "coarse_gemm_rescore_"
-                    f"{coarse_gaussian_gemm_diagnostic_scope.run_id}_"
-                    f"{coarse_gaussian_gemm_diagnostic_scope.call_id}_"
-                    f"it{iteration_label:04d}_cs{size_label:04d}_"
-                    f"batch{start_idx:08d}_{end_idx:08d}.npz",
-                )
-                write_coarse_gemm_streaming_summary(
-                    stream_path,
-                    coarse_gemm_stream_state,
-                    coarse_gemm_pre_prior_stream_state,
-                    batch_sig_mask_np,
-                    original_indices=batch_original_indices_np,
-                    local_indices=local_indices_np,
-                    actual_image_count=actual_batch_size,
-                    padded_image_count=batch_size,
-                    adaptive_fraction=adaptive_fraction,
-                    max_significants=max_significants,
-                    diagnostic_run_id=coarse_gaussian_gemm_diagnostic_scope.run_id,
-                    diagnostic_call_id=coarse_gaussian_gemm_diagnostic_scope.call_id,
-                    debug_iteration=debug_iteration,
-                    current_size=current_size,
-                    n_rotations=n_rot,
-                    n_translations=n_trans,
-                )
-                coarse_gaussian_gemm_stream_paths.append(stream_path)
-                coarse_gaussian_gemm_stream_original_indices.extend(
-                    int(value) for value in batch_original_indices_np
-                )
 
             hard_assignment[start_idx:end_idx] = np.asarray(
                 best_argmax_batch,
@@ -3836,7 +3415,13 @@ def _compute_k_class_significance_batched(
                 target_scores_pre_prior_per_class = None
                 target_scores_with_prior_per_class = None
                 target_local_positions_for_dump = None
-                score_capture_mode = "intrusive_per_block_host_materialization"
+                # The pass-1 program returns the target rows' scores; the loop pulls
+                # them from each block.
+                score_capture_mode = (
+                    "pass1_program_target_rows"
+                    if batched_support_values is not None
+                    else "intrusive_per_block_host_materialization"
+                )
                 if dump_target_pre_prior_blocks_per_class is not None:
                     target_scores_pre_prior_per_class = [
                         np.concatenate(blocks, axis=1) if blocks else None
@@ -3931,21 +3516,19 @@ def _compute_k_class_significance_batched(
                     n_classes=n_classes,
                     rotations=rotations,
                     translations=translations,
-                    class_weight_mats=(
-                        [
-                            np.asarray(
-                                batch_weights.reshape(
-                                    batch_size,
-                                    n_classes,
-                                    n_rot * n_trans,
-                                )[:, class_index, :],
-                                dtype=np.float64,
-                            )
-                            for class_index in range(n_classes)
-                        ]
-                        if relion_f32_coarse_support_enabled
-                        else [np.asarray(mat, dtype=np.float64) for mat in class_weight_mats]
-                    ),
+                    # ``batch_weights`` is the class-major concatenation of each class's
+                    # weights on every route.
+                    class_weight_mats=[
+                        np.asarray(
+                            batch_weights.reshape(
+                                batch_size,
+                                n_classes,
+                                n_rot * n_trans,
+                            )[:, class_index, :],
+                            dtype=np.float64,
+                        )
+                        for class_index in range(n_classes)
+                    ],
                     batch_sig_mask=batch_sig_mask_np,
                     batch_n_sig=np.asarray(batch_n_sig, dtype=np.int64),
                     hard_assignment_batch=np.asarray(best_argmax_batch, dtype=np.int64),
@@ -4085,50 +3668,6 @@ def _compute_k_class_significance_batched(
                 float(n_images) * float(n_rot) * float(n_trans) / 1e9,
             )
 
-    coarse_gaussian_gemm_scope_manifest_path = None
-    coarse_gaussian_gemm_aggregate_manifest_path = None
-    coarse_gaussian_gemm_stream_scope_manifest_path = None
-    coarse_gaussian_gemm_stream_aggregate_manifest_path = None
-    if coarse_gaussian_gemm_diagnostic_targets is not None:
-        missing_targets = (
-            coarse_gaussian_gemm_diagnostic_targets
-            - coarse_gaussian_gemm_diagnostic_found_targets
-        )
-        if missing_targets:
-            raise ValueError(
-                f"{_COARSE_GAUSSIAN_GEMM_DIAGNOSTIC_INDICES_ENV} contains "
-                "targets that were not captured in this diagnostic call "
-                f"scope: {sorted(missing_targets)}",
-            )
-        (
-            coarse_gaussian_gemm_scope_manifest_path,
-            coarse_gaussian_gemm_aggregate_manifest_path,
-        ) = _seal_coarse_gaussian_gemm_diagnostic_scope(
-            coarse_gaussian_gemm_diagnostic_dir,
-            scope=coarse_gaussian_gemm_diagnostic_scope,
-            selection_policy=coarse_gaussian_gemm_diagnostic_selection_policy,
-            requested_targets=coarse_gaussian_gemm_requested_targets,
-            targets_in_scope=coarse_gaussian_gemm_diagnostic_targets,
-            captured_target_counts=coarse_gaussian_gemm_diagnostic_target_counts,
-            artifact_paths=coarse_gaussian_gemm_diagnostic_paths,
-        )
-    if coarse_gaussian_gemm_stream_diagnostic_dir is not None:
-        if len(coarse_gaussian_gemm_stream_original_indices) != n_images:
-            raise RuntimeError(
-                "coarse GEMM streaming diagnostic did not capture every particle "
-                f"in its call scope: {len(coarse_gaussian_gemm_stream_original_indices)} "
-                f"!= {n_images}",
-            )
-        (
-            coarse_gaussian_gemm_stream_scope_manifest_path,
-            coarse_gaussian_gemm_stream_aggregate_manifest_path,
-        ) = _seal_coarse_gaussian_gemm_streaming_scope(
-            coarse_gaussian_gemm_stream_diagnostic_dir,
-            scope=coarse_gaussian_gemm_diagnostic_scope,
-            retained_topk=coarse_gaussian_gemm_stream_topk,
-            artifact_paths=coarse_gaussian_gemm_stream_paths,
-            original_indices=coarse_gaussian_gemm_stream_original_indices,
-        )
     full_stats = {
         "normalization_log_z": normalization_log_z,
         "normalization_log_evidence": normalization_log_evidence,
@@ -4217,84 +3756,12 @@ def _compute_k_class_significance_batched(
             field: int(value)
             for field, value in coarse_gaussian_gemm_resource_estimate._asdict().items()
         }
-        paired_capture_requested = bool(
-            coarse_gaussian_gemm_diagnostic_dir is not None
-            or coarse_gaussian_gemm_stream_diagnostic_dir is not None
-        )
-        paired_capture_active = bool(
-            coarse_gaussian_gemm_diagnostic_targets
-            or coarse_gaussian_gemm_stream_diagnostic_dir is not None
-        )
-        full_stats["coarse_gaussian_gemm_qualification"] = {
-            "paired_capture_requested": paired_capture_requested,
-            "paired_capture_active": paired_capture_active,
-            "clean_timing_eligible": not paired_capture_requested,
-            "numerical_qualification_status": "NO_GO_UNQUALIFIED",
-            "requires_bitwise_score_identity": False,
-            "requires_exact_discrete_identity": True,
-            "timing_policy": (
-                "paired capture executes both scorers; use a separate "
-                "diagnostic-off timing arm"
-            ),
-            "numerical_policy": (
-                "mathematically equivalent score noise may pass only when "
-                "repeat-stable, unbiased/non-directional, bounded/non-growing, "
-                "discrete-identical, basin/quality-neutral, and materially faster; "
-                "scale amplification or negative implied diff2 is NO-GO"
-            ),
-        }
     if coarse_gaussian_gemm_projection_cache_plan is not None:
         full_stats["coarse_gaussian_gemm_projection_cache"] = (
             _coarse_gaussian_gemm_projection_cache_stats(
                 coarse_gaussian_gemm_projection_cache_plan,
                 enabled=coarse_gaussian_gemm_projection_cache is not None,
             )
-        )
-    if coarse_gaussian_gemm_diagnostic_paths:
-        full_stats["coarse_gaussian_gemm_diagnostic_paths"] = tuple(
-            coarse_gaussian_gemm_diagnostic_paths,
-        )
-    if coarse_gaussian_gemm_scope_manifest_path is not None:
-        full_stats["coarse_gaussian_gemm_scope_manifest_path"] = (
-            coarse_gaussian_gemm_scope_manifest_path
-        )
-    if coarse_gaussian_gemm_aggregate_manifest_path is not None:
-        full_stats["coarse_gaussian_gemm_aggregate_manifest_path"] = (
-            coarse_gaussian_gemm_aggregate_manifest_path
-        )
-    if coarse_gaussian_gemm_stream_paths:
-        full_stats["coarse_gaussian_gemm_stream_diagnostic"] = {
-            "artifact_paths": tuple(coarse_gaussian_gemm_stream_paths),
-            "retained_topk": int(coarse_gaussian_gemm_stream_topk),
-            "persistent_state_bytes_at_requested_batch_size": (
-                coarse_gemm_streaming_dual_state_bytes(
-                    int(image_batch_size),
-                    int(coarse_gaussian_gemm_stream_topk),
-                )
-            ),
-            "posterior_state_bytes_at_requested_batch_size": (
-                coarse_gemm_streaming_state_bytes(
-                    int(image_batch_size),
-                    int(coarse_gaussian_gemm_stream_topk),
-                )
-            ),
-            "pre_prior_state_bytes_at_requested_batch_size": (
-                coarse_gemm_streaming_state_bytes(
-                    int(image_batch_size),
-                    int(coarse_gaussian_gemm_stream_topk),
-                )
-            ),
-            "stores_score_cube": False,
-            "clean_timing_eligible": False,
-            "production_behavior_changed": False,
-        }
-    if coarse_gaussian_gemm_stream_scope_manifest_path is not None:
-        full_stats["coarse_gaussian_gemm_stream_scope_manifest_path"] = (
-            coarse_gaussian_gemm_stream_scope_manifest_path
-        )
-    if coarse_gaussian_gemm_stream_aggregate_manifest_path is not None:
-        full_stats["coarse_gaussian_gemm_stream_aggregate_manifest_path"] = (
-            coarse_gaussian_gemm_stream_aggregate_manifest_path
         )
     if _coarse_significance_support_audit_enabled():
         if significant_sample_indices is None:
