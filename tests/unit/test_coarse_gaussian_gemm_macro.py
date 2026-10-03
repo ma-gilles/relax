@@ -1948,11 +1948,12 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
 
 @pytest.mark.parametrize("score_kind", ["gaussian", "normalized_cc"])
 def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
-    """A pass whose cache does not fit calls the program once per block on that block's projection.
+    """A pass whose cache does not fit folds one block per call on that block's projection.
 
-    Folding the blocks one call at a time, each with its projected rows (zero past the
-    block's rotations, as a padded rotation block projects), gives the one-call values and
-    state, for the Gaussian GEMM scores and RELION's normalized CC.
+    Folding the blocks one call at a time through _coarse_pass1_block (runtime class index
+    and rotation start), each with its projected rows (zero past the block's rotations, as a
+    padded rotation block projects), gives the one-call values and state, for the Gaussian
+    GEMM scores and RELION's normalized CC.
     """
 
     case = _pass1_case(seed=7)
@@ -1966,10 +1967,13 @@ def test_coarse_pass1_blocks_fold_one_block_per_call_as_in_one_call(score_kind):
     for block, terms in zip(case["blocks"], case["prior_terms"]):
         class_index, r0, rows, block_rows = block
         reference = jnp.pad(case["cache"][class_index, r0 : r0 + rows], ((0, block_rows - rows), (0, 0)))
-        state, block_values = significance._coarse_pass1_blocks(
-            state, (reference,), *common, (terms,), case["translation_prior"], blocks=(block,), **static,
+        block_state, block_values = significance._coarse_pass1_block(
+            significance._class_block_state(state, class_index), reference, *common, terms,
+            case["translation_prior"], jnp.int32(class_index), jnp.int32(r0), rows=rows, block_rows=block_rows,
+            **static,
         )
-        values.extend(block_values)
+        state = significance._merge_class_block_state(state, block_state, class_index)
+        values.append(block_values)
     # Separate programs may pick different GEMM algorithms for the same block shapes: on an A100 the
     # CC values of a per-block fold and one call differed by 2.6e-6 relative (2026-10-02).
     rtol = 1e-5
