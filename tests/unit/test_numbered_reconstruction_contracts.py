@@ -23,7 +23,9 @@ def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
     monkeypatch, n_classes, dtype, first_cc, flatten_solvent,
 ):
     # The low-pass resolution is a run setting; after iteration 1 it stays set
-    # and only the per-iteration first-CC flag turns the filter off.
+    # and only the per-iteration first-CC flag turns the filter off. The
+    # settings turn float32 scalars into Python floats, so both operations
+    # compute the mask radius in double precision.
     settings = mean_helpers.ReconstructionSettings(
         grid_size=2, voxel_size=np.float32(1.3), volume_shape=(2, 2, 2),
         padding_factor=2, projection_padding_factor=1, minres_map=0,
@@ -112,9 +114,11 @@ def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
     for value, original in zip(result, expected, strict=True):
         assert_matches(np.asarray(value), np.asarray(original) * (2 if first_cc else 1))
     assert len(masks) == (2 if flatten_solvent else 0)
+    assert type(settings.voxel_size) is float
     if flatten_solvent:
-        radius = (float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
-                  if n_classes == 1 else settings.particle_diameter_angstrom / (2.0 * settings.voxel_size))
+        assert type(settings.particle_diameter_angstrom) is float
+        radius = float(np.float32(3.7)) / (2.0 * float(np.float32(1.3)))
         for kwargs in masks:
-            assert type(kwargs["radius"]) is type(radius)
-            assert_matches(kwargs["radius"], radius)
+            assert type(kwargs["radius"]) is float
+            assert kwargs["radius"] == radius
+            assert kwargs["radius_p"] == radius + 5

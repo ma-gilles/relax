@@ -53,12 +53,14 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     ):
         reconstruction = source.index(operation_name + "(", loop)
         operation = inspect.getsource(getattr(mean_helpers_module, operation_name))
-        solve = operation.index(solve_name + "(")
-        premask = operation.index("write_premask_mean(")
-        initial_filter = operation.index("_apply_relion_initial_lowpass_filter(", premask)
-        flatten = operation.index("_make_relion_solvent_mask(", initial_filter)
-        assert solve < premask < initial_filter < flatten
+        assert operation.index(solve_name + "(") < operation.index("_postprocess_numbered_maps(")
         assert settings < loop < reconstruction
+    postprocess = inspect.getsource(mean_helpers_module._postprocess_numbered_maps)
+    premask = postprocess.index("write_premask_mean(")
+    initial_filter = postprocess.index("_apply_relion_initial_lowpass_filter(", premask)
+    flatten = postprocess.index("_make_relion_solvent_mask(", initial_filter)
+    assert premask < initial_filter < flatten
+    assert postprocess.count("flatten_radius = ") == 1
     assert source.count("ReconstructionSettings(") == 1
 
 
