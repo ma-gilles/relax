@@ -109,28 +109,6 @@ def test_kclass_uses_per_class_priors_at_the_scoring_order(caplog):
     assert "Using learned per-class global direction prior half-1: 2 classes" in caplog.text
 
 
-@pytest.mark.parametrize("class_prior_order", [None, ORDER + 1])
-def test_kclass_shared_prior_is_copied_to_every_class(class_prior_order, caplog):
-    """RELION seeds K references by copying pdf_direction[0]; a stale class prior does not block it."""
-
-    shared = _prior(8)
-    class_prior = None if class_prior_order is None else np.stack([_prior(9), _prior(10)])
-    with caplog.at_level(logging.INFO, logger=__name__):
-        result = _priors(
-            n_classes=2,
-            class_direction_prior=class_prior,
-            class_direction_prior_order=class_prior_order,
-            global_direction_prior=shared,
-            global_direction_prior_order=ORDER,
-        )
-    expected_row = op.make_relion_direction_log_prior(shared, ORDER, dtype=np.float32)
-    assert result.rotation_log_prior is None
-    assert result.class_rotation_log_prior.shape == (2, N_ROT)
-    for row in result.class_rotation_log_prior:
-        assert_matches(row, expected_row, strict=True)
-    assert "Using shared global direction prior half-1: 2 classes" in caplog.text
-
-
 def test_kclass_without_a_matching_prior_is_uniform():
     _none(_priors(n_classes=2))
     _none(

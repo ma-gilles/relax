@@ -231,7 +231,7 @@ class DirectionPrior:
 
 @dataclass
 class HalfDirectionPriors:
-    """Learned class priors and their shared fallback for one half-model."""
+    """One half-model's direction prior: ``shared`` for K=1, ``classes`` for K>1."""
 
     shared: DirectionPrior = DirectionPrior(None, None)
     classes: DirectionPrior = DirectionPrior(None, None)
@@ -333,10 +333,11 @@ def relion_direction_log_priors_for_half(
     priors instead, so ``use_local`` yields no direction prior here. A prior
     learned at another HEALPix order is not used: RELION calls
     ``initialisePdfDirection`` on every sampling change, which resets every
-    class to an even distribution. RELION always holds one ``pdf_direction``
-    per class and copies class 0 to all classes when seeding K references, so
-    a K-class run that only has a shared prior applies it to every class. Each
-    half scores with its own model, including RELION's joined final iteration.
+    class to an even distribution. RELION holds one ``pdf_direction`` per
+    class; a K-class run reads only ``priors.classes`` (the one-reference start
+    copies class 0 to every class in the controller), and K=1 reads only
+    ``priors.shared``. Each half scores with its own model, including RELION's
+    joined final iteration.
     Sealed captured sampling expands the prior onto the captured direction rows
     the scorer actually uses; otherwise the canonical sample ordering is used.
     """
@@ -351,20 +352,12 @@ def relion_direction_log_priors_for_half(
 
     if n_classes > 1:
         prior = priors.classes
-        source = "learned per-class"
-        if (prior.values is None or prior.healpix_order != scoring_healpix_order) and priors.shared.values is not None:
-            shared = np.asarray(priors.shared.values, dtype=dtype)
-            prior = DirectionPrior(
-                np.broadcast_to(shared[None, :], (n_classes, shared.size)).copy(),
-                priors.shared.healpix_order,
-            )
-            source = "shared"
         if prior.values is None or prior.healpix_order != scoring_healpix_order:
             return HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None)
         class_log_prior = np.stack([expand(prior.values[class_idx]) for class_idx in range(n_classes)], axis=0)
         log.info(
             "Using %s global direction prior half-%d: %d classes, %d directions at healpix_order=%d",
-            source,
+            "learned per-class",
             half_index + 1,
             n_classes,
             prior.values.shape[1],
