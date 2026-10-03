@@ -216,6 +216,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
         # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
         tile_size = plan_tile_images(streams[0], config.image_batch_size)
+        streams = [stream._replace(tile_images=tile_size) for stream in streams]
         tiles = [
             (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
             for group, ids_group in enumerate(ids)
@@ -271,6 +272,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "canonical_euler_count": len(canonical_eulers),
                     "engine": "full_row_coarse_recompute",
                     "tile_images": tile_size,
+                    # Compiled tile shapes this update (padding readers round tiles up to buckets).
+                    "tile_sizes": sorted({int(part.diagnostics["tile_size"]) for part in group_parts}),
                     "pass2_row_fraction": sum(part.diagnostics["pass2_rows"] for part in group_parts)
                     / sum(part.diagnostics["scored_rows"] for part in group_parts),
                     "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
@@ -348,6 +351,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         else None
     )
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
+    stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -458,9 +462,17 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             hp,
             momentum,
         )
+        seen = stage_tile_sizes.setdefault(config.stage(iteration), set())
+        new_sizes = {size for s in stats for size in s.diagnostics.get("tile_sizes", ())} - seen
+        if new_sizes:
+            seen.update(new_sizes)
+            logger.info(
+                "stage %s compiles tile sizes %s (%d so far)", config.stage(iteration), sorted(new_sizes), len(seen)
+            )
         diagnostics.update(
             {
                 "iteration": iteration,
+                "stage_tile_sizes": sorted(seen),
                 "particle_ids": [s.original_image_ids for s in stats],
                 "half_counts": [s.n_images for s in stats],
                 "radius": radius,
@@ -486,6 +498,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                             "pmax_mean",
                             "coarse_omitted_mass_bound",
                             "tile_images",
+                            "tile_sizes",
                             "pass2_row_fraction",
                         )
                     }

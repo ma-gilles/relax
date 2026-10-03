@@ -128,6 +128,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     )
     captured = []
     sentinel = SimpleNamespace(diagnostics={})
+    sentinel._replace = lambda **_fields: sentinel  # the controller records the planned tile size on streams
 
     def prepare(*_args, **kwargs):
         captured.append(kwargs)
@@ -158,6 +159,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
                 "supported_image_rows": len(ids) * 3,
                 "pass2_rows": 3,
                 "scored_rows": 3,
+                "tile_size": len(ids),
             },
         )
 

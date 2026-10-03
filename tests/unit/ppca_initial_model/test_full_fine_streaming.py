@@ -351,6 +351,66 @@ def test_rotation_mass_returns_to_pass1_rows():
     assert out.tolist() == [0.0, 5.0, 0.0, 0.0, 7.0, 0.0, 11.0, 0.0]
 
 
+def _padded_loader(n_dummies):
+    """The single-particle reader, with ``n_dummies`` zero-operand images appended after the real ones."""
+    from relax.ppca_refinement import full_row_stream as frs
+
+    def load(stream, image_indices, significant_rows, *, collect_observation):
+        tile, observation, layout = frs._load_tile(
+            stream, image_indices, significant_rows, collect_observation=collect_observation
+        )
+        B, T = len(image_indices), int(stream.translations.shape[0])
+        pad = -((B + n_dummies) * T) % frs._SHIFT_ALIGN if stream.static.cuda_kernels else 0
+        extra = n_dummies * T
+        Y1 = jnp.pad(tile.Y1[:, : B * T], ((0, 0), (0, extra + pad)))
+        Y1_recon = jnp.pad(tile.Y1_recon[: B * T], ((0, extra + pad), (0, 0)))
+        tile = tile._replace(
+            coarse_mask=jnp.concatenate([tile.coarse_mask, jnp.repeat(tile.coarse_mask[:1], n_dummies, 0)]),
+            Y1=Y1,
+            ctf2=jnp.pad(tile.ctf2, ((0, 0), (0, n_dummies))),
+            Y1_recon=Y1_recon,
+            ctf2_recon=jnp.pad(tile.ctf2_recon, ((0, n_dummies), (0, 0))),
+            y_norm=jnp.pad(tile.y_norm, (0, n_dummies)),
+        )
+        layout["n_real"] = B
+        return tile, observation, layout
+
+    return load
+
+
+def test_padded_tile_matches_the_real_tile(tile_problem):
+    """Dummy images appended to keep a compiled tile size add no statistics and report nothing."""
+    _dataset, _mu, _W, stream, _host = tile_problem
+    real = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    padded_stream = stream._replace(tile_loader=_padded_loader(2), image_batch_size=5)
+    padded = accumulate_full_row_tile(padded_stream, np.arange(3), SIGNIFICANT)
+    assert padded.n_images == 3 and np.asarray(padded.embeddings).shape == np.asarray(real.embeddings).shape
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(padded, name)), np.asarray(getattr(real, name)))
+    assert_matches(np.float32(padded.log_likelihood), np.float32(real.log_likelihood))
+    for key in ("rotation_mass", "max_posterior_per_image"):
+        assert_matches(np.asarray(padded.diagnostics[key]), np.asarray(real.diagnostics[key]))
+    for key in ("offset_second_sum_px2", "latent_covariance_trace_mean", "pose_entropy_mean"):
+        assert_matches(np.float32(padded.diagnostics[key]), np.float32(real.diagnostics[key]))
+    assert np.array_equal(padded.diagnostics["n_significant_per_image"], real.diagnostics["n_significant_per_image"])
+    embedded = full_row_tile_embeddings(padded_stream, np.arange(3), SIGNIFICANT)
+    assert embedded.n_images == 3
+    assert_matches(np.asarray(embedded.embeddings), np.asarray(real.embeddings))
+
+
+def test_tile_size_buckets_cap_compiled_shapes():
+    """Tiles round up to at most TILE_SIZE_BUCKETS sizes per plan, each holding the tile."""
+    from relax.ppca_refinement.full_row_stream import TILE_SIZE_BUCKETS, tile_size_bucket
+
+    for planned in (1, 7, 16, 150):
+        sizes = {tile_size_bucket(n, planned) for n in range(1, planned + 1)}
+        assert len(sizes) <= TILE_SIZE_BUCKETS and max(sizes) == planned
+        assert all(tile_size_bucket(n, planned) >= n for n in range(1, planned + 1))
+    assert sorted({tile_size_bucket(n, 150) for n in range(1, 151)}) == [10, 19, 38, 75, 150]
+    with pytest.raises(ValueError):
+        tile_size_bucket(151, 150)
+
+
 def test_pipelined_tiles_match_separate_tiles(tile_problem):
     """Pipelining (next tile loaded, previous finished, kept buffer reused) changes no tile's statistics."""
     _dataset, _mu, _W, stream, _host = tile_problem

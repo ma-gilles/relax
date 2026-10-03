@@ -253,6 +253,9 @@ class FullRowStream(NamedTuple):
     # Pass 2 skips every pose row on which each tile image's posterior mass is below this floor
     # (0 visits every scored row); :func:`_pass2_rows`.
     pass2_mass_floor: float = 0.0
+    # Planned images per tile (:func:`plan_tile_images`), set by the controller; a padding reader rounds
+    # each tile up to its :func:`tile_size_bucket`. None: tiles keep their own sizes.
+    tile_images: int | None = None
 
 
 def coarse_support_mask(significant_rows, n_coarse_rotations: int, n_coarse_translations: int) -> np.ndarray:
@@ -1250,8 +1253,9 @@ def _tile_posterior(kept: _Kept, rows, n_blocks: int, block_size: int, static: _
     return _normalize(kept.score, rows, n_blocks=n_blocks, block_size=block_size)
 
 
-def _check_finite_posterior(posterior: _Posterior):
-    finite = jax.device_get((jnp.all(jnp.isfinite(posterior.center)), jnp.all(jnp.isfinite(posterior.centered_logZ))))
+def _check_finite_posterior(posterior: _Posterior, n_real: int | None = None):
+    center, centered_logZ = posterior.center[:n_real], posterior.centered_logZ[:n_real]
+    finite = jax.device_get((jnp.all(jnp.isfinite(center)), jnp.all(jnp.isfinite(centered_logZ))))
     if not all(finite):
         raise ValueError("Every full-row image needs a finite supported pose and partition")
 
@@ -1346,6 +1350,37 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
         return results
 
 
+# Compiled tile sizes per stage: a padding reader rounds a tile up to one of these many sizes.
+TILE_SIZE_BUCKETS = 5
+
+
+def tile_size_bucket(n_images: int, planned: int) -> int:
+    """The padded size of a tile of ``n_images``: the smallest of ``planned / 2^k`` (k < :data:`TILE_SIZE_BUCKETS`,
+    rounded up) that holds it, so a stage compiles at most :data:`TILE_SIZE_BUCKETS` tile shapes."""
+    if not 0 < n_images <= planned:
+        raise ValueError("A tile holds between 1 and the planned number of images")
+    sizes = sorted({max(1, -(-int(planned) // (1 << k))) for k in range(TILE_SIZE_BUCKETS)})
+    return next(size for size in sizes if size >= n_images)
+
+
+def _n_real(tile, layout) -> int:
+    """Real images of a tile: a reader may pad it with dummy images to a fixed size (``layout["n_real"]``)."""
+    return int(layout.get("n_real", tile.y_norm.shape[0]))
+
+
+def _drop_padding(posterior: _Posterior, n_real: int) -> _Posterior:
+    """Give a tile's padding images no posterior mass: an infinite normalizer makes every pass-2 weight
+    (embeddings, moment sums, rotation mass, entropy, offsets, counts, row masses) of those images 0.
+
+    A reader pads a tile with dummy images (every operand zero) so the tile keeps a compiled size; real
+    images come first.
+    """
+    if n_real == posterior.center.shape[0]:
+        return posterior
+    real = jnp.arange(posterior.center.shape[0]) < n_real
+    return posterior._replace(center=jnp.where(real, posterior.center, jnp.inf))
+
+
 def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     """Dispatch both passes of one loaded tile; returns its pass-1 kept buffer too.
 
@@ -1353,6 +1388,7 @@ def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     (:func:`_pass2_rows` needs the row count).
     """
     kept, posterior = _score_tile(stream, tile, layout["n_blocks"], kept)
+    posterior = _drop_padding(posterior, _n_real(tile, layout))
     carry = _empty_carry(stream, int(tile.y_norm.shape[0]), observation_power)
     carry = _run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=True)
     return (tile, layout, posterior, carry), kept
@@ -1449,9 +1485,9 @@ def _run_skipping_pass2(stream, tile, kept, posterior, layout, carry, *, moments
 
 
 def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, *, enforce_x0):
-    _check_finite_posterior(posterior)
+    n_images = _n_real(tile, layout)
+    _check_finite_posterior(posterior, n_images)
     static = stream.static
-    n_images = int(tile.y_norm.shape[0])
     lhs_tri, residual = _unpack_moments(carry.moments, static)
     if enforce_x0:
         lhs_tri = _enforce_augmented_x0(lhs_tri.astype(jnp.complex64), static.volume_shape).real.astype(jnp.float32)
@@ -1463,14 +1499,15 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
     residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * layout["n_observations"])
     # Scores exclude the pose-invariant image constant; the absolute log-partition adds it back.
     logZ = posterior.center + posterior.centered_logZ + pose_invariant_score_offset(tile.y_norm)
+    real = slice(0, n_images)  # padding images (after the real ones) report nothing
     host = jax.device_get(
         {
-            "log_likelihood": jnp.sum(logZ),
-            "top_centered_score": posterior.top_score - posterior.center,
-            "centered_logZ": posterior.centered_logZ,
-            "rotation": posterior.top_rotation,
-            "translation": posterior.top_translation,
-            "n_significant": carry.n_significant,
+            "log_likelihood": jnp.sum(logZ[real]),
+            "top_centered_score": (posterior.top_score - posterior.center)[real],
+            "centered_logZ": posterior.centered_logZ[real],
+            "rotation": posterior.top_rotation[real],
+            "translation": posterior.top_translation[real],
+            "n_significant": carry.n_significant[real],
             "rotation_mass": carry.rotation_mass,
             "latent": carry.latent_covariance_trace_sum,
             "entropy": carry.pose_entropy_sum,
@@ -1497,6 +1534,7 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         "best_translation_idx": np.where(finite, host["translation"], -1).astype(np.int32),
         "offset_second_sum_px2": float(host["offset"]),
         "rotation_mass": rotation_mass,
+        "tile_size": int(tile.y_norm.shape[0]),  # with padding: the compiled tile shape
         "scored_image_rows": n_images * layout["scored_rows"],
         "supported_image_rows": layout["supported_image_rows"],
         # Pose rows pass 2 visited (all scored rows unless pass2_mass_floor skips some).
@@ -1513,7 +1551,7 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         residual_gradient=residual,
         residual_num=residual_num,
         residual_den=residual_den,
-        embeddings=carry.embedding,
+        embeddings=carry.embedding[real],
         original_image_ids=original_ids,
         diagnostics=diagnostics,
     )
@@ -1528,8 +1566,9 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
     with jax.default_device(stream.device):
         tile, _, layout = _read_tile(stream, image_indices, significant_rows, collect_observation=False)
         kept, posterior = _score_tile(stream, tile, layout["n_blocks"])
-        _check_finite_posterior(posterior)
-        n_images = int(tile.y_norm.shape[0])
-        carry = _empty_carry(stream, n_images, jnp.float32(0))
+        n_real = _n_real(tile, layout)
+        _check_finite_posterior(posterior, n_real)
+        posterior = _drop_padding(posterior, n_real)
+        carry = _empty_carry(stream, int(tile.y_norm.shape[0]), jnp.float32(0))
         carry = _run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=False)
-        return DensePPCAEmbeddings(carry.embedding, layout["original_ids"], n_images)
+        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real)
