@@ -14,7 +14,8 @@
   GT FSC-AUC), with every arm paired with the reference arm.
 - Tomo Class3D: per-class GT FSC-AUC after a Hungarian match, and the matched per-class FSC-AUC against the
   reference arm.
-- PPCA InitialModel: the mean map against the GT consensus, after the same registration as VDAM.
+- PPCA InitialModel: the final state's GEMM precision and log-likelihood, and its mean and loading subspace
+  against the reference arm's (same seed and particle order).
 """
 
 from __future__ import annotations
@@ -179,6 +180,39 @@ def score_tomo_class3d(arms: dict[str, Path], ref: str, gt_paths: list[str]) -> 
     return out
 
 
+def score_ppca(arms: dict[str, Path], ref: str) -> dict:
+    """Final PPCA state: GEMM precision, log-likelihood, and agreement with the reference arm's state.
+
+    ``theta`` ``[coefficients, 1 + q]`` holds the mean and the q loadings. Agreement: the normalized
+    correlation of the means, and the cosines of the principal angles between the loading subspaces.
+    """
+
+    states, out = {}, {}
+    for label, d in arms.items():
+        checkpoints = sorted(d.glob("checkpoint_[0-9][0-9][0-9][0-9].npz"))
+        if not checkpoints or not (d / "iterations.jsonl").exists():
+            continue
+        last = json.loads((d / "iterations.jsonl").read_text().strip().splitlines()[-1])
+        states[label] = np.asarray(np.load(checkpoints[-1])["theta"], dtype=np.complex128)
+        out[label] = {
+            "iteration": int(last["iteration"]),
+            "gemm_precision": last.get("gemm_precision"),
+            "log_likelihood": float(last["log_likelihood"]),
+            "loading_singular_values": last.get("loading_singular_values"),
+        }
+    for label, theta in states.items():
+        if ref not in states:
+            break
+        base = states[ref]
+        mean = np.vdot(theta[:, 0], base[:, 0]).real / (np.linalg.norm(theta[:, 0]) * np.linalg.norm(base[:, 0]))
+        qa, _ = np.linalg.qr(theta[:, 1:])
+        qb, _ = np.linalg.qr(base[:, 1:])
+        cosines = np.linalg.svd(qa.conj().T @ qb, compute_uv=False)
+        out[label]["mean_corr_vs_reference_arm"] = float(mean)
+        out[label]["loading_subspace_cosines_vs_reference_arm"] = [float(c) for c in cosines]
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--arm", action="append", required=True, help="LABEL=CELLS_DIR")
@@ -232,6 +266,9 @@ def main() -> int:
     if wanted("tomo_class3d_et13_it3"):
         gt = [f"{FIXTURES['et13_k2']}/reference_gt_class{c:03d}_relion.mrc" for c in (1, 2)]
         scores["tomo_class3d_et13_it3"] = score_tomo_class3d(arms_of("tomo_class3d_et13_it3"), args.reference, gt)
+    for cell in ("ppca_tomo_vdam_it24", "ppca_tomo_sgd_it24"):
+        if wanted(cell):
+            scores[cell] = score_ppca(arms_of(cell), args.reference)
     args.out.write_text(json.dumps(scores, indent=1) + "\n")
     print(json.dumps(scores, indent=1)[:4000])
     return 0
