@@ -1178,8 +1178,6 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         fake_projection,
     )
 
-    score_calls = []
-
     def designed_scores(projected, shifted, actual_count):
         projected_codes = np.asarray(projected)[:, 0].real
         shifted_np = np.asarray(shifted)
@@ -1225,9 +1223,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         actual_count = int(np.asarray(actual_image_count))
         if poison_tail["enabled"] and actual_count < shifted_np.shape[0]:
             assert np.isnan(shifted_np[actual_count:]).all()
-        scores = designed_scores(projected, shifted, actual_count)
-        score_calls.append((actual_count, tuple(shifted.shape)))
-        return scores
+        return designed_scores(projected, shifted, actual_count)
 
     monkeypatch.setattr(
         coarse_gaussian_gemm,
@@ -1444,47 +1440,46 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         "projected_transient_budget_bytes"
     ]
 
-    # RELAX_SIGNIFICANCE_DUMP_* reads the pass-1 program's target-row scores; the class
-    # runner-up (return_class_second) still runs the per-block loop, whose dump is the
-    # reference.
+    # RELAX_SIGNIFICANCE_DUMP_* reads the pass-1 program's target-row scores: each target's
+    # designed scores of every class and rotation, before and after the priors.
     poison_tail["enabled"] = False
-    dumps = {}
-    for label, options in (("program", {}), ("loop", {"return_class_second": True})):
-        dump_dir = tmp_path / label
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
-        monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "2,1")
-        run_with_priors(
-            dataset,
-            class_prior=active_class_prior,
-            rotation_prior=active_rotation_prior,
-            translation_prior=active_translation_prior,
-            **options,
-        )
-        dumps[label] = {}
-        for path in sorted(dump_dir.glob("significance_orig*.npz")):
-            with np.load(path) as payload:
-                dumps[label][path.name] = {
-                    key: payload[key]
-                    for key in (
-                        "scores_pre_prior_per_class",
-                        "scores_with_prior_per_class",
-                        "weights_per_class",
-                        "score_capture_mode",
-                    )
-                }
-    assert sorted(dumps["program"]) == sorted(dumps["loop"])
-    assert len(dumps["program"]) == 2
-    for name, program in dumps["program"].items():
-        loop = dumps["loop"][name]
-        assert str(program["score_capture_mode"]) == "pass1_program_target_rows"
-        assert str(loop["score_capture_mode"]) == "intrusive_per_block_host_materialization"
-        assert program["scores_pre_prior_per_class"].shape == (2, 3, 2)
-        assert_matches(program["scores_pre_prior_per_class"], loop["scores_pre_prior_per_class"])
-        assert_matches(program["scores_with_prior_per_class"], loop["scores_with_prior_per_class"])
-        assert_matches(program["weights_per_class"], loop["weights_per_class"], rtol=1e-6)
-    # The loop's eager scorer saw the full and the one-image final batch.
-    assert [call[0] for call in score_calls].count(1) > 0
-    assert [call[0] for call in score_calls].count(2) > 0
+    dump_dir = tmp_path / "dump"
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "2,1")
+    run_with_priors(
+        dataset,
+        class_prior=active_class_prior,
+        rotation_prior=active_rotation_prior,
+        translation_prior=active_translation_prior,
+    )
+    images = jnp.asarray(np.arange(1, 4, dtype=np.complex64)[:, None, None] * np.ones((3, 2, 1), np.complex64))
+    expected_pre_prior = np.stack(
+        [
+            np.asarray(
+                designed_scores(
+                    jnp.asarray(class_index * 100.0 + np.arange(3, dtype=np.float32) * 10.0)[:, None], images, 3
+                )
+            )
+            for class_index in range(2)
+        ],
+        axis=1,
+    )  # [image, class, rotation, translation]
+    expected_with_prior = (
+        expected_pre_prior
+        + active_class_prior[None, :, None, None]
+        + active_rotation_prior[None, :, :, None]
+        + active_translation_prior[:, None, None, :]
+    )
+    paths = {
+        int(path.name[len("significance_orig") :].split("_")[0]): path
+        for path in dump_dir.glob("significance_orig*.npz")
+    }
+    assert sorted(paths) == [1, 2]
+    for original_index, path in paths.items():
+        with np.load(path) as payload:
+            assert str(payload["score_capture_mode"]) == "pass1_program_target_rows"
+            assert_matches(payload["scores_pre_prior_per_class"], expected_pre_prior[original_index])
+            assert_matches(payload["scores_with_prior_per_class"], expected_with_prior[original_index], rtol=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -1607,7 +1602,7 @@ def _pass1_case(seed=20261002):
     return case
 
 
-def _pass1_static(case, score_kind, exact_weight_order):
+def _pass1_static(case, score_kind, exact_weight_order, track_class_second=False):
     return dict(
         n_trans=case["n_trans"],
         image_shape=(4, 4),
@@ -1616,6 +1611,7 @@ def _pass1_static(case, score_kind, exact_weight_order):
         score_kind=score_kind,
         exact_weight_order=exact_weight_order,
         return_class_best=True,
+        track_class_second=track_class_second,
     )
 
 
@@ -1626,7 +1622,8 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
     Three classes of five cached rotations in blocks of two (a padded tail block), two of
     three images live: the support values keep the class-major, rotation, translation
     layout (pre-prior with ``exact_weight_order``), and the logsumexps, the best pose and
-    class, and each class's best pose are those of the scores with every prior added.
+    class, and each class's best and runner-up poses are those of the scores with every
+    prior added.
     """
 
     case = _pass1_case()
@@ -1641,10 +1638,11 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
         case["prior_terms"],
         case["translation_prior"],
         blocks=case["blocks"],
-        **_pass1_static(case, "gaussian", exact_weight_order),
+        **_pass1_static(case, "gaussian", exact_weight_order, track_class_second=True),
     )
     assert dumps is None
-    (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_pose), raw_max = state
+    (global_max, global_sum), (class_max, class_sum), best, class_poses, raw_max = state
+    class_best, class_best_pose, class_second, class_second_pose = class_poses
 
     # Reference: every class's whole score table from the public GEMM scorer.
     raw = np.stack(
@@ -1678,6 +1676,9 @@ def test_coarse_pass1_blocks_is_the_per_class_block_loop(exact_weight_order):
         assert_matches(np.asarray(class_max[k]) + np.log(np.asarray(class_sum[k])), class_log_z, rtol=1e-6)
         assert_matches(np.asarray(class_best_pose[k]), flat[:, k].argmax(axis=1))
         assert_matches(np.asarray(class_best[k]), flat[:, k].max(axis=1))
+        runner_up_pose = np.argsort(flat[:, k], axis=1)[:, -2]
+        assert_matches(np.asarray(class_second_pose[k]), runner_up_pose)
+        assert_matches(np.asarray(class_second[k]), np.take_along_axis(flat[:, k], runner_up_pose[:, None], axis=1)[:, 0])
     best_score, best_pose, best_class = (np.asarray(x) for x in best)
     assert_matches(best_class, flat.reshape(n_images, -1).argmax(axis=1) // (n_rot * n_trans))
     assert_matches(best_pose, flat.reshape(n_images, -1).argmax(axis=1) % (n_rot * n_trans))

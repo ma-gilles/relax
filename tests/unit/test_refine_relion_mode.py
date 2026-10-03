@@ -7019,7 +7019,9 @@ class TestRelionModeSmokeTest:
             "_e_step_block_scores_windowed_normalized_cc",
             fake_gemm_scores,
         )
-        exact_gemm = gemm_mode == "selected"
+        # The exact-operand CC scorer serves every RELION-preprocessed pass, the
+        # default and an explicitly selected engine alike; "legacy" runs without it.
+        exact_gemm = gemm_mode != "legacy"
         if exact_gemm:
             monkeypatch.setattr(
                 scoring_module,
@@ -7062,7 +7064,7 @@ class TestRelionModeSmokeTest:
             collect_significance=False,
             return_class_best=True,
             relion_coarse_gaussian_default=gemm_mode != "legacy",
-            require_plain_gemm_coarse=exact_gemm,
+            require_plain_gemm_coarse=gemm_mode == "selected",
         )
 
         if exact_gemm:

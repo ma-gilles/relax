@@ -556,7 +556,7 @@ def _pass1_initial_state(batch_constants, n_classes: int):
         (neg_inf_f, zeros_f64),
         ((neg_inf_f,) * per_class, (zeros_f64,) * per_class),
         (neg_inf_f, zeros_i32, zeros_i32),
-        ((neg_inf_f,) * per_class, (zeros_i32,) * per_class),
+        ((neg_inf_f,) * per_class, (zeros_i32,) * per_class, (neg_inf_f,) * per_class, (zeros_i32,) * per_class),
         jnp.full(neg_inf_f.shape, -jnp.inf, dtype=jnp.float32),
     )
 
@@ -583,12 +583,14 @@ def _pass1_block_update(
     score_kind: str,
     exact_weight_order: bool,
     return_class_best: bool,
+    track_class_second: bool,
 ):
     """One class's rotation block of pass 1: its scores and the running reductions it updates.
 
     ``block_state`` is ``((global max, sum), (class max, sum), (best score, pose, class),
-    (class best score, pose), raw score maximum)`` with the class entries of
-    ``class_index`` only; ``class_index`` and ``rotation_start`` may be traced.
+    (class best score, pose, runner-up score, pose), raw score maximum)`` with the class
+    entries of ``class_index`` only; the runner-up (``track_class_second``, with
+    ``return_class_best``) is the best pose of the class other than its best one; ``class_index`` and ``rotation_start`` may be traced.
     ``score_kind`` is ``"gaussian"`` (the GEMM scores of the projected or cached rows,
     :func:`_relion_coarse_gaussian_gemm_scores_jit`, with ``initial_diff2``) or
     ``"normalized_cc"`` (RELION's coarse CC, :func:`_relion_coarse_normalized_cc_gemm_scores_jit`;
@@ -600,9 +602,13 @@ def _pass1_block_update(
     and with-prior ``[n_targets, rows, T]`` scores.
     """
 
-    (global_max, global_sum), (class_max, class_sum), best, (class_best, class_best_argmax), raw_score_max = (
-        block_state
-    )
+    (
+        (global_max, global_sum),
+        (class_max, class_sum),
+        best,
+        (class_best, class_best_argmax, class_second, class_second_argmax),
+        raw_score_max,
+    ) = block_state
     best_score, best_argmax, best_class = best
     batch_size = int(shifted_corrected.shape[0])
     if score_kind == "gaussian":
@@ -652,13 +658,31 @@ def _pass1_block_update(
     best_class = jnp.where(improved, class_index, best_class)
     if return_class_best:
         class_improved = block_best > class_best
+        if track_class_second:
+            if flat_scores.shape[1] < 2:
+                raise RuntimeError("class runner-up diagnostic requires at least two poses per block")
+            block_without_best = flat_scores.at[jnp.arange(batch_size), block_argmax].set(-jnp.inf)
+            block_second = jnp.max(block_without_best, axis=1)
+            block_second_argmax = jnp.argmax(block_without_best, axis=1)
+            improved_second_from_previous = class_best >= block_second
+            improved_second = jnp.where(improved_second_from_previous, class_best, block_second)
+            improved_second_argmax = jnp.where(
+                improved_second_from_previous, class_best_argmax, block_second_argmax + rotation_start * int(n_trans)
+            )
+            retained_second_from_previous = class_second >= block_best
+            retained_second = jnp.where(retained_second_from_previous, class_second, block_best)
+            retained_second_argmax = jnp.where(
+                retained_second_from_previous, class_second_argmax, block_argmax + rotation_start * int(n_trans)
+            )
+            class_second = jnp.where(class_improved, improved_second, retained_second)
+            class_second_argmax = jnp.where(class_improved, improved_second_argmax, retained_second_argmax)
         class_best = jnp.where(class_improved, block_best, class_best)
         class_best_argmax = jnp.where(class_improved, block_argmax + rotation_start * int(n_trans), class_best_argmax)
     state = (
         (global_max, global_sum),
         (class_max, class_sum),
         (best_score, best_argmax, best_class),
-        (class_best, class_best_argmax),
+        (class_best, class_best_argmax, class_second, class_second_argmax),
         raw_score_max,
     )
     return state, values, dump
@@ -667,12 +691,12 @@ def _pass1_block_update(
 def _class_block_state(state, class_index: int):
     """``state`` (:func:`_pass1_initial_state`) narrowed to class ``class_index``'s entries."""
 
-    global_terms, (class_max, class_sum), best, (class_best, class_best_argmax), raw_score_max = state
+    global_terms, (class_max, class_sum), best, class_poses, raw_score_max = state
     return (
         global_terms,
         (class_max[class_index], class_sum[class_index]),
         best,
-        (class_best[class_index], class_best_argmax[class_index]),
+        tuple(values[class_index] for values in class_poses),
         raw_score_max,
     )
 
@@ -680,8 +704,8 @@ def _class_block_state(state, class_index: int):
 def _merge_class_block_state(state, block_state, class_index: int):
     """``state`` with class ``class_index``'s entries and the shared entries from ``block_state``."""
 
-    _, (class_max, class_sum), _, (class_best, class_best_argmax), _ = state
-    global_terms, (block_max, block_sum), best, (block_best, block_best_argmax), raw_score_max = block_state
+    _, (class_max, class_sum), _, class_poses, _ = state
+    global_terms, (block_max, block_sum), best, block_poses, raw_score_max = block_state
 
     def put(values, value):
         return values[:class_index] + (value,) + values[class_index + 1 :]
@@ -690,7 +714,7 @@ def _merge_class_block_state(state, block_state, class_index: int):
         global_terms,
         (put(class_max, block_max), put(class_sum, block_sum)),
         best,
-        (put(class_best, block_best), put(class_best_argmax, block_best_argmax)),
+        tuple(put(values, value) for values, value in zip(class_poses, block_poses, strict=True)),
         raw_score_max,
     )
 
@@ -703,6 +727,7 @@ _PASS1_STATIC = (
     "score_kind",
     "exact_weight_order",
     "return_class_best",
+    "track_class_second",
 )
 
 
@@ -726,6 +751,7 @@ def _coarse_pass1_blocks(
     score_kind: str,
     exact_weight_order: bool,
     return_class_best: bool,
+    track_class_second: bool = False,
 ):
     """Pass 1 of one image batch over every cached class and rotation block, as one program.
 
@@ -737,7 +763,7 @@ def _coarse_pass1_blocks(
     ``prior_terms[i]`` is block ``i``'s class prior and rotation-prior block (``None``
     without a rotation prior). ``state`` is :func:`_pass1_initial_state`: ``((global
     max, sum), (class maxima, sums), (best score, pose, class), (class best scores,
-    poses), raw score maximum)``. Returns the new state, one ``[B, rows * T]``
+    poses, runner-up scores, poses), raw score maximum)``. Returns the new state, one ``[B, rows * T]``
     support-value block per entry and, with ``dump_rows``, each entry's dump scores
     (``None`` without). At K15, 400+ eager programs per batch kept the
     host behind the device queue while the device idled between batches (K15 50k,
@@ -771,6 +797,7 @@ def _coarse_pass1_blocks(
             score_kind=score_kind,
             exact_weight_order=exact_weight_order,
             return_class_best=return_class_best,
+            track_class_second=track_class_second,
         )
         state = _merge_class_block_state(state, block_state, class_index)
         values.append(block_values)
@@ -801,6 +828,7 @@ def _coarse_pass1_block(
     score_kind: str,
     exact_weight_order: bool,
     return_class_best: bool,
+    track_class_second: bool = False,
 ):
     """One class's rotation block of pass 1 on its projection (:func:`_pass1_block_update`).
 
@@ -830,6 +858,7 @@ def _coarse_pass1_block(
         score_kind=score_kind,
         exact_weight_order=exact_weight_order,
         return_class_best=return_class_best,
+        track_class_second=track_class_second,
     )
 
 
@@ -1628,9 +1657,6 @@ def _compute_k_class_significance_batched(
         and coarse_texture_interp
         and half_spectrum_scoring
         and not use_float64_scoring
-        # Keep the default top-two route unchanged. An explicitly selected
-        # hybrid engine uses the exact GEMM coarse scorer before the rescore.
-        and (not tree_rescore_enabled or require_plain_gemm_coarse)
         # The raw score dumps read the generic operands.
         and not (
             collect_significance
@@ -2740,13 +2766,12 @@ def _compute_k_class_significance_batched(
             # (_coarse_pass1_blocks): over the cached projections in one call, or
             # one call per class and rotation block on its projection when the
             # cache does not fit and for --firstiter_cc. The program also returns
-            # the RELAX_SIGNIFICANCE_DUMP_* targets' scores. The loop below remains
-            # for the other scorers and the class runner-up.
+            # the RELAX_SIGNIFICANCE_DUMP_* targets' scores and the class runner-up.
+            # The loop below remains for the generic scorer.
             batched_support_values = None
             pass1_program = (
                 (coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
                 and collect_significance
-                and not track_class_second
             )
             if pass1_program:
                 if pass1_prior_terms is None:
@@ -2785,6 +2810,7 @@ def _compute_k_class_significance_batched(
                     score_kind="normalized_cc" if exact_cc_enabled else "gaussian",
                     exact_weight_order=relion_exact_coarse_weight_order,
                     return_class_best=bool(return_class_best),
+                    track_class_second=bool(track_class_second),
                 )
                 pass1_dump_rows = (
                     None
@@ -2850,7 +2876,7 @@ def _compute_k_class_significance_batched(
                     (global_max, global_sum),
                     (class_max_tuple, class_sum_tuple),
                     (best_score_batch, best_argmax_batch, best_class_batch),
-                    (class_best_tuple, class_best_argmax_tuple),
+                    (class_best_tuple, class_best_argmax_tuple, class_second_tuple, class_second_argmax_tuple),
                     pass1_raw_score_max,
                 ) = pass1_state
                 if relion_raw_score_max is not None:
@@ -2860,6 +2886,9 @@ def _compute_k_class_significance_batched(
                 if return_class_best:
                     class_best_scores = list(class_best_tuple)
                     class_best_argmaxes = list(class_best_argmax_tuple)
+                if track_class_second:
+                    class_second_best_scores = list(class_second_tuple)
+                    class_second_best_argmaxes = list(class_second_argmax_tuple)
 
             for class_index, mean_for_proj in enumerate(means_for_proj if batched_support_values is None else ()):
                 class_max = neg_inf_f
