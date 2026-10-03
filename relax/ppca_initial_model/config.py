@@ -19,15 +19,19 @@ class Config:
     iterations: int = 200
     seed: int = 11
     stages: tuple = ((1, 4, 1), (61, 8, 2), (111, 16, 3), (161, 32, 3))
-    oversampling: int = 1
+    # Oversampling > 0 (coarse significance, then a finer pass over the significant poses) is
+    # refused: measured slower than the dense grid (section 14 of docs/math/vdam_ppca_algorithm.md).
+    oversampling: int = 0
     target_mass: float = 0.999
     shift_range: float = 6
     shift_step: float = 2
-    image_batch_size: int = 16
-    rotation_block_size: int = 128
+    image_batch_size: int = 150
+    rotation_block_size: int = 512
     fine_image_tile_size: int = 1
     stream_full_fine_rows: bool = False
-    stream_coarse_recompute: bool = False
+    # The default engine: the GPU stream over the full pose grid of each stage. False selects the
+    # host-mask dense engine (q <= 2 only), the float32 reference of the stream's tests.
+    stream_coarse_recompute: bool = True
     fine_devices: int = 1
     stochastic_batch_size: int | None = None
     stochastic_all_iterations: bool = False
@@ -54,6 +58,11 @@ class Config:
             raise ValueError("Invalid radius/HEALPix schedule")
         if not 0 < self.target_mass <= 1 or self.oversampling < 0:
             raise ValueError("Invalid pose support")
+        if self.oversampling > 0 or self.stream_full_fine_rows or self.fine_devices > 1:
+            raise ValueError(
+                "PPCA oversampling > 0 (and its --stream-full-fine-rows / --fine-devices pass) is not supported: "
+                "it measured slower than the dense pose grid; see section 14 of docs/math/vdam_ppca_algorithm.md"
+            )
         if min(self.image_batch_size, self.rotation_block_size, self.fine_image_tile_size, self.checkpoint_interval) <= 0:
             raise ValueError("Batch/checkpoint sizes must be positive")
         if self.fine_devices < 1 or (self.fine_devices > 1 and not self.stream_full_fine_rows):

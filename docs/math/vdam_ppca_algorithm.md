@@ -1133,6 +1133,13 @@ scientific contract; runnable code alone does not establish recovery.
   For the current controller's schedule, the dense HP 3/4 grid stays the
   default. Evidence is in
   `relax_ppca_dense_speed_20261001/jobs/local_os1_smoke_20261002`.
+  [Config](../../relax/ppca_initial_model/config.py) and the
+  `relax ppca_initial_model` command therefore default to the dense stream:
+  oversampling 0, `stream_coarse_recompute`, image batch 150 and rotation
+  block 512, as in the live runs. They refuse oversampling > 0, together with
+  its `--stream-full-fine-rows` and `--fine-devices` fine pass.
+  `--no-stream-coarse-recompute` selects the host-mask dense engine (q <= 2),
+  which is the stream's test reference.
 - The fine pose scores (blocked and factor-once) are assembled without the
   pose-invariant image energy: `-y_norm/2` is the same for every pose of an
   image (about `1e3` here) and cancels in every posterior, but in float32 it

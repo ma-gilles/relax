@@ -79,7 +79,7 @@ def main():
     data, manifest, identity = load_training(args.manifest)
     identity["source"] = source_identity()
     config = Config(
-        iterations=2, stages=((1, 2, 0), (2, 3, 0)), oversampling=1,
+        iterations=2, stages=((1, 2, 0), (2, 3, 0)),
         shift_range=0, shift_step=2, image_batch_size=4, rotation_block_size=128,
     )
     state = loop.run(data, config, root / "initial", identity, manifest["particle_diameter_ang"], stop_after=1)

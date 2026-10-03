@@ -27,19 +27,26 @@ def add_args(parser):
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--stages", help="JSON list of [first iteration, Fourier radius, HEALPix order]")
-    parser.add_argument("--oversampling", type=int, default=1)
+    parser.add_argument(
+        "--oversampling",
+        type=int,
+        default=0,
+        help="0 only: oversampling > 0 measured slower than the dense grid (vdam_ppca_algorithm.md section 14)",
+    )
     parser.add_argument("--shift-range", type=float, default=6)
     parser.add_argument("--shift-step", type=float, default=2)
-    parser.add_argument("--image-batch-size", type=int, default=16)
-    parser.add_argument("--rotation-block-size", type=int, default=128)
+    parser.add_argument("--image-batch-size", type=int, default=150)
+    parser.add_argument("--rotation-block-size", type=int, default=512)
     parser.add_argument("--fine-image-tile-size", type=int, default=1,
                         help="Batch identical full-support fine rows; 1 keeps the reference path")
     parser.add_argument("--stream-full-fine-rows", action="store_true",
                         help="Stream rows of the shared fine grid with exact per-image support masks on the device")
     parser.add_argument(
         "--stream-coarse-recompute",
-        action="store_true",
-        help="Recompute coarse PPCA score blocks in pass 2; use image/rotation batch-size flags",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="GPU stream over the full pose grid (default); --no-stream-coarse-recompute selects the host-mask "
+        "dense reference engine (q <= 2)",
     )
     parser.add_argument("--fine-devices", type=int, default=1,
                         help="Local GPUs for the streamed pass; image tiles are split across them")

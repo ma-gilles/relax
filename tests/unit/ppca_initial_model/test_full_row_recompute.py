@@ -15,12 +15,13 @@ from relax.ppca_refinement.full_row_stream import _normalize
 pytestmark = pytest.mark.unit
 
 
-def test_coarse_recompute_cli_is_opt_in():
+def test_coarse_recompute_cli_is_the_default():
     parser = argparse.ArgumentParser()
     add_args(parser)
     required = ["manifest.json", "--output", "out"]
-    assert not parser.parse_args(required).stream_coarse_recompute
+    assert parser.parse_args(required).stream_coarse_recompute
     assert parser.parse_args([*required, "--stream-coarse-recompute"]).stream_coarse_recompute
+    assert not parser.parse_args([*required, "--no-stream-coarse-recompute"]).stream_coarse_recompute
     fixed = parser.parse_args([*required, "--stochastic-batch-size", "300", "--stochastic-all-iterations"])
     assert fixed.stochastic_batch_size == 300 and fixed.stochastic_all_iterations
     controls = parser.parse_args(
@@ -196,10 +197,26 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         "accumulate_dense_ppca_statistics",
         lambda *_args, **_kwargs: dense_called.append(True) or sentinel,
     )
-    assert iteration_loop.expectation(data, state, Config(stages=((1, 2, 0),), oversampling=0), ids, 1) is sentinel
+    host_mask = Config(stages=((1, 2, 0),), stream_coarse_recompute=False)
+    assert iteration_loop.expectation(data, state, host_mask, ids, 1) is sentinel
     assert dense_called == [True]
-    with pytest.raises(ValueError, match="oversampling=0"):
-        Config(oversampling=1, stream_coarse_recompute=True)
+
+
+def test_defaults_are_the_dense_stream_and_oversampling_is_refused():
+    """The default engine is the qualified dense stream; oversampling and its fine pass are refused."""
+    config = Config()
+    assert config.oversampling == 0 and config.stream_coarse_recompute
+    assert (config.image_batch_size, config.rotation_block_size) == (150, 512)
+    parser = argparse.ArgumentParser()
+    add_args(parser)
+    args = parser.parse_args(["manifest.json", "--output", "out"])
+    assert args.oversampling == 0 and args.stream_coarse_recompute
+    assert (args.image_batch_size, args.rotation_block_size) == (150, 512)
+    host_mask = parser.parse_args(["manifest.json", "--output", "out", "--no-stream-coarse-recompute"])
+    assert not host_mask.stream_coarse_recompute
+    for change in ({"oversampling": 1}, {"stream_full_fine_rows": True}, {"fine_devices": 2}):
+        with pytest.raises(ValueError, match="section 14"):
+            Config(stream_coarse_recompute=False, **change)
 
 
 def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
@@ -218,7 +235,7 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
     with pytest.raises(SystemExit):
         parser.parse_args([*required, "--ppca-gemm-precision", "bf16"])
     with pytest.raises(ValueError, match="streamed engines"):
-        Config(gemm_precision="tf32")
+        Config(gemm_precision="tf32", stream_coarse_recompute=False)
     with pytest.raises(ValueError, match="fp32 or tf32"):
         Config(gemm_precision="bf16", oversampling=0, stream_coarse_recompute=True)
     assert Config().gemm_precision == "auto"  # the host-mask engines ignore it
@@ -258,7 +275,7 @@ def test_auto_gemm_precision_resolves_by_device():
         resolve_gemm_precision("tf32", cpu)
     with pytest.raises(ValueError, match="gemm_precision"):
         resolve_gemm_precision("bf16", cpu)
-    assert iteration_loop._gemm_precision_used(Config()) == "fp32"  # host-mask engines
+    assert iteration_loop._gemm_precision_used(Config(stream_coarse_recompute=False)) == "fp32"  # host-mask engine
 
 
 def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, caplog):
