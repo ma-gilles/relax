@@ -13,7 +13,6 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("n_classes", [1, 4], ids=["half-maps", "class-stack"])
-@pytest.mark.parametrize("tau_is_1d", [False, True], ids=["volume-prior", "shell-prior"])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
 @pytest.mark.parametrize(
     ("first_cc", "flatten_solvent"),
@@ -21,7 +20,7 @@ pytestmark = pytest.mark.unit
     ids=["unmodified", "first-cc-solvent", "solvent-only", "first-cc-only"],
 )
 def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
-    monkeypatch, n_classes, tau_is_1d, dtype, first_cc, flatten_solvent,
+    monkeypatch, n_classes, dtype, first_cc, flatten_solvent,
 ):
     # The low-pass resolution is a run setting; after iteration 1 it stays set
     # and only the per-iteration first-CC flag turns the filter off.
@@ -35,7 +34,7 @@ def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
     count = 2 if n_classes == 1 else n_classes
     numerators = [np.full(8, k + 1, dtype=np.complex64) for k in range(count)]
     denominators = [np.full(8, k + 2, dtype=dtype) for k in range(count)]
-    priors = [np.full(2 if tau_is_1d else 8, k + 3, dtype=dtype) for k in range(count)]
+    priors = [np.full(2, k + 3, dtype=dtype) for k in range(count)]
     retained = object()
     events, solve_calls, masks, captures = [], [], [], []
 
@@ -43,7 +42,7 @@ def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
         index = len(solve_calls)
         assert denominator is denominators[index]
         assert numerator is numerators[index]
-        assert kwargs["tau_is_1d"] is tau_is_1d
+        assert kwargs["tau_is_1d"] is True
         assert kwargs["accumulator_volume_shape"] == (4, 4, 4)
         assert_matches(np.asarray(kwargs["tau"]), priors[index])
         if n_classes == 1:
@@ -93,7 +92,7 @@ def test_numbered_reconstruction_preserves_mode_operands_and_operation_order(
     monkeypatch.setattr(mean_helpers.fourier_transform_utils, "get_idft3", lambda value: events.append("ifft") or value)
     monkeypatch.setattr(mean_helpers.fourier_transform_utils, "get_dft3", lambda value: events.append("fft") or value)
     common = dict(iteration=0, current_size=2, accumulator_volume_shape=(4, 4, 4),
-                  tau_is_1d=tau_is_1d, relion_firstiter_cc_this_iter=first_cc)
+                  relion_firstiter_cc_this_iter=first_cc)
     if n_classes == 1:
         result = mean_helpers.reconstruct_numbered_k1_halfmaps(
             numerators, denominators, priors, settings, retained_first_numerator=retained, **common,

@@ -272,11 +272,10 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         Ft_ctf_1=jnp.ones(volume_size, dtype=jnp.float32),
         Ft_y_combined=None,
         Ft_ctf_combined=None,
-        mean_signal_variance=None,
         mean_signal_variance_shells=None,
-        mean_signal_variance_per_half=[
-            jnp.ones(volume_size, dtype=jnp.float32),
-            jnp.ones(volume_size, dtype=jnp.float32),
+        mean_signal_variance_shells_per_half=[
+            jnp.ones(volume_shape[0] // 2 + 1, dtype=jnp.float32),
+            jnp.ones(volume_shape[0] // 2 + 1, dtype=jnp.float32),
         ],
         n_classes=1,
         cs=4,

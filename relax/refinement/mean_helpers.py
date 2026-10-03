@@ -1337,7 +1337,6 @@ def _reconstruct_k1_maps(
     *,
     current_size,
     accumulator_volume_shape,
-    tau_is_1d,
     retained_first_numerator=None,
 ) -> list:
     """Reconstruct both K=1 halves while preserving RELION buffer lifetime."""
@@ -1366,7 +1365,7 @@ def _reconstruct_k1_maps(
             minres_map=settings.minres_map,
             current_size=cs_int,
             accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=tau_is_1d,
+            tau_is_1d=True,
             preserve_output_precision=True,
             relion_filter_scale=float(settings.volume_shape[0] ** 4),
             **(
@@ -1394,7 +1393,6 @@ def _reconstruct_class_maps(
     iteration,
     current_size,
     accumulator_volume_shape,
-    tau_is_1d,
 ):
     """Reconstruct the shared Class3D stack from combined accumulators."""
 
@@ -1420,7 +1418,7 @@ def _reconstruct_class_maps(
             minres_map=settings.minres_map,
             current_size=cs_int,
             accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=tau_is_1d,
+            tau_is_1d=True,
         ).reshape(-1)
         shared_class_maps.append(class_map)
         logger.info(
@@ -1449,22 +1447,21 @@ def reconstruct_numbered_k1_halfmaps(
     iteration,
     current_size,
     accumulator_volume_shape,
-    tau_is_1d,
     relion_firstiter_cc_this_iter,
     retained_first_numerator=None,
 ) -> list:
     """Solve two independent numbered K1 maps, then postprocess each half.
 
-    Numerators, denominators and priors are ordered half pairs. Priors are
-    shell curves when tau_is_1d is true, otherwise full volumes. The private
-    solve frame owns promoted priors, host completion and the retained half-0
-    numerator boundary. Both solves finish before premask capture, initial
-    filtering and solvent flattening. Return ready maps for installation.
+    Numerators, denominators and priors are ordered half pairs; each prior is
+    a shell curve. The private solve frame owns promoted priors, host
+    completion and the retained half-0 numerator boundary. Both solves finish
+    before premask capture, initial filtering and solvent flattening. Return
+    ready maps for installation.
     """
     means = _reconstruct_k1_maps(
         numerators_by_half, denominators_by_half, tau_by_half, settings,
         current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
-        tau_is_1d=tau_is_1d, retained_first_numerator=retained_first_numerator,
+        retained_first_numerator=retained_first_numerator,
     )
 
     for k in range(2):
@@ -1528,14 +1525,13 @@ def reconstruct_numbered_class_maps(
     iteration,
     current_size,
     accumulator_volume_shape,
-    tau_is_1d,
     relion_firstiter_cc_this_iter,
 ) -> list:
     """Solve one numbered Class3D reference stack from combined partitions.
 
-    Accumulators and priors have a leading class axis; priors contain shell
-    curves when tau_is_1d is true, otherwise full volumes. All class solves
-    finish before premask capture, initial filtering and solvent flattening.
+    Accumulators and priors have a leading class axis; each prior is a shell
+    curve. All class solves finish before premask capture, initial filtering
+    and solvent flattening.
     Return a two-entry list of particle-execution slots, not scientific
     halves. Each slot is captured, filtered and flattened in turn; the entries
     alias the shared stack when neither filtering nor flattening applies.
@@ -1543,7 +1539,7 @@ def reconstruct_numbered_class_maps(
     shared_classes = _reconstruct_class_maps(
         combined_numerators, combined_denominators, tau_by_class, settings,
         n_classes=n_classes, iteration=iteration, current_size=current_size,
-        accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
+        accumulator_volume_shape=accumulator_volume_shape,
     )
     means = [shared_classes, shared_classes]
     del shared_classes

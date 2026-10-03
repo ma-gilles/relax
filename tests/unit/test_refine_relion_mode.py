@@ -7919,9 +7919,10 @@ class TestRelionModeSmokeTest:
             Ft_ctf_1=jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
             Ft_y_combined=None,
             Ft_ctf_combined=None,
-            mean_signal_variance=None,
             mean_signal_variance_shells=None,
-            mean_signal_variance_per_half=[jnp.ones(VOLUME_SIZE), jnp.ones(VOLUME_SIZE)],
+            mean_signal_variance_shells_per_half=[
+                jnp.ones(VOLUME_SHAPE[0] // 2 + 1), jnp.ones(VOLUME_SHAPE[0] // 2 + 1),
+            ],
             n_classes=1,
             cs=8,
             iteration=0,
@@ -7965,7 +7966,6 @@ class TestRelionModeSmokeTest:
 
         n_classes = 2
         n_shells = VOLUME_SHAPE[0] // 2 + 1
-        tau_full = jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32) * 11.0
         tau_shells = jnp.stack(
             [
                 jnp.arange(n_shells, dtype=jnp.float32) + 101.0,
@@ -7982,9 +7982,8 @@ class TestRelionModeSmokeTest:
             Ft_ctf_1=None,
             Ft_y_combined=jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.complex64),
             Ft_ctf_combined=jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32),
-            mean_signal_variance=tau_full,
             mean_signal_variance_shells=tau_shells,
-            mean_signal_variance_per_half=None,
+            mean_signal_variance_shells_per_half=None,
             n_classes=n_classes,
             cs=8,
             iteration=0,

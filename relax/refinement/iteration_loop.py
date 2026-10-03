@@ -2104,29 +2104,23 @@ def refine_single_volume(
             reference_model.maps[:] = reconstruct_numbered_class_maps(
                 Ft_y_combined,
                 Ft_ctf_combined,
-                mean_signal_variance_shells
-                if mean_signal_variance_shells is not None
-                else mean_signal_variance,
+                mean_signal_variance_shells,
                 reconstruction_settings,
                 n_classes=n_classes,
                 iteration=iteration,
                 current_size=current_size,
                 accumulator_volume_shape=mstep_accumulator_shape,
-                tau_is_1d=mean_signal_variance_shells is not None,
                 relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
             )
         else:
             reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
                 (Ft_y_0, Ft_y_1),
                 (Ft_ctf_0, Ft_ctf_1),
-                mean_signal_variance_shells_per_half
-                if mean_signal_variance_shells_per_half is not None
-                else mean_signal_variance_per_half,
+                mean_signal_variance_shells_per_half,
                 reconstruction_settings,
                 iteration=iteration,
                 current_size=current_size,
                 accumulator_volume_shape=mstep_accumulator_shape,
-                tau_is_1d=mean_signal_variance_shells_per_half is not None,
                 relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
                 retained_first_numerator=retained_Ft_y_0_device,
             )

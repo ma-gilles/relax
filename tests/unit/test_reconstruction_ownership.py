@@ -25,12 +25,12 @@ def test_mean_reconstruction_variants_share_run_level_settings():
 
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_k1_halfmaps).parameters) == (
         "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "iteration",
-        "current_size", "accumulator_volume_shape", "tau_is_1d",
+        "current_size", "accumulator_volume_shape",
         "relion_firstiter_cc_this_iter", "retained_first_numerator",
     )
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_class_maps).parameters) == (
         "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
-        "iteration", "current_size", "accumulator_volume_shape", "tau_is_1d",
+        "iteration", "current_size", "accumulator_volume_shape",
         "relion_firstiter_cc_this_iter",
     )
     assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
@@ -110,7 +110,6 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(mean_helpers_module, "_finish_host_staged_reconstruction", fake_finish)
         n_shells = VOLUME_SHAPE[0] // 2 + 1
-        tau_full = [jnp.full(VOLUME_SIZE, 11.0, dtype=jnp.float32), jnp.full(VOLUME_SIZE, 12.0, dtype=jnp.float32)]
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
         means = [None, None]
@@ -122,9 +121,7 @@ class TestReconstructionOwnership:
             Ft_ctf_1=jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
             Ft_y_combined=None,
             Ft_ctf_combined=None,
-            mean_signal_variance=None,
             mean_signal_variance_shells=None,
-            mean_signal_variance_per_half=tau_full,
             n_classes=1,
             cs=8,
             iteration=0,
@@ -432,9 +429,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         Ft_ctf_1=joined[3],
         Ft_y_combined=None,
         Ft_ctf_combined=None,
-        mean_signal_variance=None,
         mean_signal_variance_shells=None,
-        mean_signal_variance_per_half=[jnp.ones(4**3, dtype=jnp.float32), jnp.ones(4**3, dtype=jnp.float32)],
         n_classes=1,
         cs=4,
         iteration=0,

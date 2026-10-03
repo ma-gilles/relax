@@ -33,12 +33,8 @@ def run_mean_reconstruction(means, **values):
     Ft_ctf_by_half = (values.pop("Ft_ctf_0"), values.pop("Ft_ctf_1"))
     Ft_y_combined = values.pop("Ft_y_combined")
     Ft_ctf_combined = values.pop("Ft_ctf_combined")
-    mean_signal_variance = values.pop("mean_signal_variance")
     mean_signal_variance_shells = values.pop("mean_signal_variance_shells")
-    mean_signal_variance_per_half = values.pop("mean_signal_variance_per_half")
-    mean_signal_variance_shells_per_half = values.pop(
-        "mean_signal_variance_shells_per_half", None
-    )
+    mean_signal_variance_shells_per_half = values.pop("mean_signal_variance_shells_per_half")
     tau2_fudge = values.pop("tau2_fudge")
     n_classes = values.pop("n_classes")
     iteration = values.pop("iteration")
@@ -66,22 +62,16 @@ def run_mean_reconstruction(means, **values):
     )
     if n_classes > 1:
         means[:] = mean_helpers.reconstruct_numbered_class_maps(
-            Ft_y_combined, Ft_ctf_combined,
-            mean_signal_variance_shells if mean_signal_variance_shells is not None else mean_signal_variance,
-            settings,
+            Ft_y_combined, Ft_ctf_combined, mean_signal_variance_shells, settings,
             n_classes=n_classes, iteration=iteration, current_size=current_size,
             accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=mean_signal_variance_shells is not None,
             relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
         )
     else:
         means[:] = mean_helpers.reconstruct_numbered_k1_halfmaps(
-            Ft_y_by_half, Ft_ctf_by_half,
-            mean_signal_variance_shells_per_half if mean_signal_variance_shells_per_half is not None else mean_signal_variance_per_half,
-            settings,
+            Ft_y_by_half, Ft_ctf_by_half, mean_signal_variance_shells_per_half, settings,
             iteration=iteration, current_size=current_size,
             accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=mean_signal_variance_shells_per_half is not None,
             relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
             retained_first_numerator=retained_first_numerator,
         )
