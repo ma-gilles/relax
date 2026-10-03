@@ -553,6 +553,44 @@ def test_subtomogram_training_refuses_unapplied_optics(tmp_path, columns, refuse
         refuse_unsupported_tilt_optics(star)
 
 
+def test_tilt_geometry_edit_refuses_resume(tmp_path, monkeypatch):
+    """An edited tilt series (same particles and tomograms STAR files) changes the identity; resume refuses it."""
+    from relax.commands import ppca_initial_model as command
+    from relax.ppca_initial_model import tomo
+    from relax.ppca_initial_model.checkpoint import load, save
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+    from relax.refinement import tomo_half
+
+    (tmp_path / "tilt_series").mkdir()
+    (tmp_path / "optimisation_set.star").write_text(
+        "data_\n\nloop_\n_rlnTomoParticlesFile\n_rlnTomoTomogramsFile\nparticles.star tomograms.star\n"
+    )
+    (tmp_path / "particles.star").write_text(
+        "data_optics\n\nloop_\n_rlnOpticsGroup #1\n_rlnImagePixelSize #2\n1 8.5\n\n\n"
+        "data_particles\n\nloop_\n_rlnTomoParticleName #1\n_rlnOpticsGroup #2\nTS_01/1 1\n"
+    )
+    (tmp_path / "tomograms.star").write_text(
+        "data_global\n\nloop_\n_rlnTomoName #1\n_rlnTomoTiltSeriesStarFile #2\nTS_01 tilt_series/TS_01.star\n"
+    )
+    series = tmp_path / "tilt_series/TS_01.star"
+    series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 0.0\n")
+    monkeypatch.setattr(tomo_half, "load_tomo_dataset", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tomo, "tilt_particles_from_tomo_dataset", lambda dataset: None)
+    _, identity = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    theta = jnp.ones((5, 3), jnp.complex64)
+    state = State(theta, None, jnp.ones(3, jnp.float32), 3, np.arange(8), {}, 2.0, 4, {}, sgd_momentum=0 * theta)
+    config = Config(optimizer="momentum_sgd")
+    save(tmp_path / "checkpoint.npz", state, config, identity)
+    assert load(tmp_path / "checkpoint.npz", config, identity).iteration == 3
+    series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 1.5\n")
+    _, edited = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    assert edited["particles_sha256"] == identity["particles_sha256"]
+    assert edited["tilt_series_sha256"] != identity["tilt_series_sha256"]
+    with pytest.raises(ValueError, match="identity mismatch"):
+        load(tmp_path / "checkpoint.npz", config, edited)
+
+
 def test_tilt_operand_bytes_match_the_tile_operands():
     """The planner's operand memory: XLA's resident bytes are the tile operands' bytes; the peak bounds them."""
     from relax.ppca_initial_model.tomo import tilt_operand_bytes

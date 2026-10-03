@@ -258,8 +258,31 @@ def load_tilt_training(ios, output):
         datadir=str(Path(particles_star).resolve().parent),
         lazy=False,
     )
-    identity = {"ios_sha256": file_hash(ios), "particles_sha256": file_hash(particles_star)}
+    identity = {
+        "ios_sha256": file_hash(ios),
+        "particles_sha256": file_hash(particles_star),
+        "tomograms_sha256": file_hash(tomograms_star),
+        "tilt_series_sha256": tilt_series_hash(tomograms_star),
+    }
     return tilt_particles_from_tomo_dataset(tomo), identity
+
+
+def tilt_series_hash(tomograms_star):
+    """One sha256 of the tilt-series STAR files a tomograms STAR names (their per-tilt geometry, CTF and dose).
+
+    The particles and tomograms STAR files do not identify the tilt geometry: an edited tilt series leaves them
+    unchanged, so the checkpoint identity also carries this hash and a run does not resume across such an edit.
+    """
+    import hashlib
+
+    from recovar.data_io.starfile import read_star, star_column
+
+    table, _ = read_star(str(tomograms_star))
+    root = Path(tomograms_star).parent
+    digest = hashlib.sha256()
+    for name in sorted({str(f) for f in star_column(table, "rlnTomoTiltSeriesStarFile", required=True)}):
+        digest.update(f"{name}\0{file_hash(root / name)}\0".encode())
+    return digest.hexdigest()
 
 
 def source_identity():
