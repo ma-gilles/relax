@@ -680,9 +680,10 @@ from the same input: class assignment 100% in every pair, populations within 3e-
 significant-count differences of either sign. Best pose and Pmax per particle are near-ties under flat
 posteriors (the two RELION builds disagree on 12-100% of best poses after one step). Stock RELION
 `--continue` restarts the subset shuffle from the input order (`sorted_idx` is not checkpointed), so a
-matched replay needs the same order on both sides. Low-priority open item: relax's per-class tau2
-after one step differs from RELION's by 2e-5 to 1.6e-4 relative while the two RELION builds agree
-exactly (reference power spectrum precision; `refresh_tau2_from_projector_power`). Table:
+matched replay needs the same order on both sides. The per-class tau2 "difference" of 2e-5 to
+1.6e-4 seen there is RELION's model.star rounding (values at or above 1e-4 get 6 fixed decimals, e.g.
+0.002124 for 0.0021235641): all 1290 relax tau2 values fall within half a unit of RELION's last printed
+digit. Table:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/etw_vdam_k2_onestep_20261002/compare2_s67_it{10,20,50,100,150}.json`.
 
 VDAM defaults (2026-09-25, landed from the vdamspeed stack): RELION's ternary max/min in the JAX
