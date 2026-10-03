@@ -12,6 +12,10 @@ together with its per-row provenance page
 [docs/benchmarks/relion_vs_relax_provenance.md](../benchmarks/relion_vs_relax_provenance.md).
 Update the JSON and regenerate both pages when a baseline changes.
 
+Cross-GPU compatibility (GPU models, 16 to 80 GB of memory, and the policy that small-card sizing must not
+change large-card plans or results) is measured with `scripts/gpu_matrix/` and recorded in
+[GPU compatibility](gpu_compatibility.md).
+
 ## Keep definitions, runs and reports separate
 
 Maintain three independently identified artifacts:
