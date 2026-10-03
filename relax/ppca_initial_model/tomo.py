@@ -11,6 +11,7 @@ for all its particles: the frames join the streamed engine's GEMM contraction
 from __future__ import annotations
 
 import dataclasses
+import functools
 from functools import partial
 from typing import Callable
 
@@ -199,11 +200,8 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     visible = slot_image >= 0
     _, half, ctf = particles.read(np.where(visible, slot_image, images[0]))
     half, ctf = jax.device_put((half, ctf), stream.device)
-    resolved = stream.resolved
-    window = np.arange(half.shape[1]) if resolved.score_indices is None else np.asarray(resolved.score_indices)
-    # GPU streams pad each frame's pixels to the GEMM window and the (image, shift) axis to its multiple.
-    pad = (stream.arrays.gemm_window.shape[0] - window.size) if stream.static.cuda_kernels else 0
     scale = np.ones(B, np.float32) if stream.image_scale is None else stream.image_scale[ids]
+    window, constants, static = _operand_layout(stream, B, K)
     Y1, ctf2, Y1_recon, ctf2_recon, y_norm, observation = _tilt_operands(
         half,
         ctf,
@@ -211,15 +209,12 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         jnp.asarray(scale, jnp.float32),
         stream.noise_variance_half,
         jnp.asarray(window),
-        jnp.asarray(np.asarray(relion_half_translation_lattice(stream.static.image_shape), np.float32)[window]),
+        constants["lattice"],
         jnp.asarray(tilt_shifts(frames, stream.translations)),
-        resolved.score_mask[window],
-        resolved.recon_mask[window],
-        make_half_image_weights(stream.static.image_shape),
-        n_particles=B,
-        n_frames=K,
-        pad=pad,
-        shift_pad=-(B * T) % _SHIFT_ALIGN if stream.static.cuda_kernels else 0,
+        constants["score_mask"],
+        constants["recon_mask"],
+        constants["weights"],
+        **static,
     )
     coarse_mask, table, layout = tile_support(stream, significant_rows)
     tile = _TileArrays(
@@ -238,6 +233,81 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     observation = observation if collect_observation else None
     layout.update(n_observations=int(images.size), original_ids=particles.original_image_indices_from_local(ids))
     return tile, observation, layout
+
+
+def _operand_layout(stream, n_particles: int, n_frames: int):
+    """The operand program's score window, per-pixel constants and static shape arguments for a tile size."""
+    resolved = stream.resolved
+    n_half = int(np.asarray(stream.noise_variance_half).size)
+    window = np.arange(n_half) if resolved.score_indices is None else np.asarray(resolved.score_indices)
+    T = int(stream.translations.shape[0])
+    constants = {
+        "lattice": jnp.asarray(
+            np.asarray(relion_half_translation_lattice(stream.static.image_shape), np.float32)[window]
+        ),
+        "score_mask": resolved.score_mask[window],
+        "recon_mask": resolved.recon_mask[window],
+        "weights": make_half_image_weights(stream.static.image_shape),
+    }
+    static = {
+        "n_particles": int(n_particles),
+        "n_frames": int(n_frames),
+        # GPU streams pad each frame's pixels to the GEMM window and the (image, shift) axis to its multiple.
+        "pad": int(stream.arrays.gemm_window.shape[0] - window.size) if stream.static.cuda_kernels else 0,
+        "shift_pad": -(int(n_particles) * T) % _SHIFT_ALIGN if stream.static.cuda_kernels else 0,
+    }
+    return window, constants, static
+
+
+def tilt_operand_bytes(stream, n_particles: int) -> tuple[int, int]:
+    """Device bytes of one tilt tile's operand program for ``n_particles``, from XLA's compiled memory analysis.
+
+    The tile holds particles of one tilt group; the largest group's frame count sizes it. Returns
+    ``(peak, resident)``: arguments plus outputs plus temporaries, and the outputs alone (they stay live with
+    the tile). The tile planner reads it through ``load_tilt_tile.operand_bytes``; the program compiled at
+    these shapes is the one a tile of this size reuses.
+    """
+    n_frames = max(len(frames) for frames in stream.dataset.group_frames)
+    window, _, static = _operand_layout(stream, n_particles, n_frames)
+    n_half = int(np.asarray(stream.noise_variance_half).size)
+    return _operand_bytes(
+        n_half,
+        int(window.size),
+        str(np.asarray(window).dtype),
+        int(stream.translations.shape[0]),
+        tuple(sorted(static.items())),
+        stream.device,
+    )
+
+
+@functools.lru_cache(maxsize=64)
+def _operand_bytes(n_half, window_size, window_dtype, n_translations, static, device):
+    static = dict(static)
+    images = static["n_particles"] * static["n_frames"]
+    f32 = jnp.float32
+
+    def spec(shape, dtype=f32):
+        return jax.ShapeDtypeStruct(shape, dtype)
+
+    arguments = (
+        spec((images, n_half), jnp.complex64),  # half spectra
+        spec((images, n_half)),  # CTF
+        spec((images,), jnp.bool_),  # visible
+        spec((static["n_particles"],)),  # contrast scale
+        spec((n_half,)),  # noise
+        spec((window_size,), window_dtype),
+        spec((window_size, 2)),  # lattice
+        spec((static["n_frames"], n_translations, 2)),  # frame shifts
+        spec((window_size,)),  # score mask
+        spec((window_size,)),  # reconstruction mask
+        spec((n_half,)),  # half-spectrum weights
+    )
+    with jax.default_device(device):
+        analysis = _tilt_operands.lower(*arguments, **static).compile().memory_analysis()
+    if analysis is None:
+        raise RuntimeError("XLA reports no memory analysis for the tilt operand program on this platform")
+    peak = analysis.argument_size_in_bytes + analysis.output_size_in_bytes + analysis.temp_size_in_bytes
+    return int(peak), int(analysis.output_size_in_bytes)
 
 
 @partial(jax.jit, static_argnames=("n_particles", "n_frames", "pad", "shift_pad"))
@@ -370,3 +440,7 @@ def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2):
         "noise_initializer": "deliberate host float64; coefficient spectrum float32",
     }
     return theta, noise, info
+
+
+# The tile planner reads the reader's operand memory from the reader (FullRowStream.tile_loader).
+load_tilt_tile.operand_bytes = tilt_operand_bytes

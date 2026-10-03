@@ -684,3 +684,18 @@ def test_single_particle_stream_scale_is_the_identity_frame_tilt_scale():
     b = accumulate_full_row_tile(spa, np.arange(3), [None] * 3)
     for name in ("embeddings", "lhs_tri", "residual_gradient", "residual_num", "residual_den"):
         assert_matches(np.asarray(getattr(a, name)), np.asarray(getattr(b, name)), rtol=2e-6)
+
+
+def test_tilt_operand_bytes_match_the_tile_operands():
+    """The planner's operand memory: XLA's resident bytes are the tile operands' bytes; the peak bounds them."""
+    from relax.ppca_initial_model.tomo import tilt_operand_bytes
+
+    particles, stream, _ = make_problem(seed=3)
+    assert load_tilt_tile.operand_bytes is tilt_operand_bytes
+    tile, observation, _ = load_tilt_tile(stream, np.arange(3), [None] * 3, collect_observation=True)
+    peak, resident = tilt_operand_bytes(stream, 3)
+    outputs = (tile.Y1, tile.ctf2, tile.Y1_recon, tile.ctf2_recon, tile.y_norm, observation)
+    # XLA's output bytes include the result tuple's pointer table (8 bytes per output on CPU).
+    data = sum(int(np.asarray(x).nbytes) for x in outputs)
+    assert data <= resident <= data + 1024
+    assert peak >= resident
