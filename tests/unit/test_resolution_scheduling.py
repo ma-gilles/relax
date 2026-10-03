@@ -494,13 +494,12 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
-def test_iteration_resolution_prefers_reconstruction_curve_and_keeps_window_edge(dtype):
+def test_k1_iteration_resolution_uses_reconstruction_curve_and_keeps_window_edge(dtype):
     curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, 9, 9], dtype=dtype)
     original = curve.tobytes()
-    estimate = resolution_helpers.estimate_iteration_resolution(
-        class_data_vs_prior=None, tau2_update_details={"ssnr_shells": curve},
-        fsc=np.zeros(9, dtype=dtype), k_class_enabled=False,
-        current_size=12, grid_size=16, voxel_size=1.5, tau2_fudge=1.0,
+    estimate = resolution_helpers.estimate_k1_iteration_resolution(
+        curve,
+        current_size=12, grid_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
         relion_iteration=2, dtype=dtype,
     )
@@ -516,17 +515,16 @@ def test_iteration_resolution_prefers_reconstruction_curve_and_keeps_window_edge
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
-def test_iteration_resolution_uses_all_class_curves(dtype):
+def test_class_iteration_resolution_uses_all_class_curves(dtype):
     curves = np.array([
         [0, 4, 3, 2, 1.1, .2, .2, .2, .2],
         [0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2],
         [0, 4, 3, 2, .2, .2, .2, .2, .2],
         [0, 4, 3, .2, .2, .2, .2, .2, .2],
     ], dtype=dtype)
-    estimate = resolution_helpers.estimate_iteration_resolution(
-        class_data_vs_prior=curves, tau2_update_details={"ssnr_shells": np.zeros(9)},
-        fsc=np.zeros(9, dtype=dtype), k_class_enabled=True,
-        current_size=16, grid_size=16, voxel_size=1.5, tau2_fudge=4.0,
+    estimate = resolution_helpers.estimate_class_iteration_resolution(
+        curves,
+        current_size=16, grid_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
         relion_iteration=2, dtype=dtype,
     )
@@ -538,19 +536,33 @@ def test_iteration_resolution_uses_all_class_curves(dtype):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
 @pytest.mark.parametrize("relion_iteration", [1, 2])
-@pytest.mark.parametrize("k_class_enabled", [False, True], ids=["k1", "k4"])
-def test_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
-    dtype, relion_iteration, k_class_enabled,
+def test_k1_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
+    dtype, relion_iteration,
 ):
     curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype)
-    class_curves = np.tile(curve, (4, 1)) if k_class_enabled else None
-    estimate = resolution_helpers.estimate_iteration_resolution(
-        class_data_vs_prior=class_curves, tau2_update_details={"ssnr_shells": curve},
-        fsc=np.zeros(9, dtype=dtype), k_class_enabled=k_class_enabled,
-        current_size=16, grid_size=16, voxel_size=1.5, tau2_fudge=1.0,
+    estimate = resolution_helpers.estimate_k1_iteration_resolution(
+        curve,
+        current_size=16, grid_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
         relion_iteration=relion_iteration, dtype=dtype,
     )
     assert estimate.observed_shell == 6
     assert_matches(estimate.scheduling_shell, 2.0 if relion_iteration == 1 else 6.0)
-    assert_matches(estimate.data_vs_prior, class_curves if k_class_enabled else curve)
+    assert_matches(estimate.data_vs_prior, curve)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
+@pytest.mark.parametrize("relion_iteration", [1, 2])
+def test_class_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
+    dtype, relion_iteration,
+):
+    class_curves = np.tile(np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype), (4, 1))
+    estimate = resolution_helpers.estimate_class_iteration_resolution(
+        class_curves,
+        current_size=16, grid_size=16, voxel_size=1.5,
+        emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
+        relion_iteration=relion_iteration, dtype=dtype,
+    )
+    assert estimate.observed_shell == 6
+    assert_matches(estimate.scheduling_shell, 2.0 if relion_iteration == 1 else 6.0)
+    assert_matches(estimate.data_vs_prior, class_curves)

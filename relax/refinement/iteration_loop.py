@@ -98,7 +98,8 @@ from relax.helpers.resolution import (
     ImageGeometry,
     _firstiter_cc_ini_high_tapered,
     _truncate_fsc_for_current_size_growth,
-    estimate_iteration_resolution,
+    estimate_class_iteration_resolution,
+    estimate_k1_iteration_resolution,
     relion_expectation_coarse_size_order,
     shell_index_to_resolution_angstrom,
 )
@@ -2392,35 +2393,41 @@ def refine_single_volume(
         # effective_rotations) for consistent convergence tracking.
         current_combined_ha = concatenate_assignments(coarse_ha)
         previous_combined_ha = concatenate_assignments_or_none(previous_assignments)
-        if k_class_enabled:
-            current_combined_classes = concatenate_assignments(class_assignments)
-            history.class_assignment_history.append(current_combined_classes.copy())
-            previous_combined_classes = concatenate_assignments_or_none(previous_class_assignments)
-        else:
-            current_combined_classes = None
-            previous_combined_classes = None
 
         # tau2 was already updated BEFORE the Wiener solve (matching RELION's
         # reconstruct() which calls updateSSNRarrays before the filter).
 
         # --- Resolution from updated FSC-derived SSNR (RELION auto-refine) ---
-        # K=1: data_vs_prior comes from the half-map FSC.
-        # K>1: data_vs_prior comes from the shared per-class prior and the
-        # combined class accumulators.
-        resolution_estimate = estimate_iteration_resolution(
-            class_data_vs_prior=history.data_vs_prior_trajectory[-1] if k_class_enabled else None,
-            tau2_update_details=tau2_update_details,
-            fsc=fsc,
-            k_class_enabled=k_class_enabled,
-            current_size=current_size,
-            grid_size=grid_size,
-            voxel_size=source_pixel_size_angstrom,
-            tau2_fudge=tau2_fudge,
-            emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
-            ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
-            relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
-            dtype=scoring_dtype,
-        )
+        if k_class_enabled:
+            current_combined_classes = concatenate_assignments(class_assignments)
+            history.class_assignment_history.append(current_combined_classes.copy())
+            previous_combined_classes = concatenate_assignments_or_none(previous_class_assignments)
+            # K>1: data_vs_prior comes from the shared per-class prior and the
+            # combined class accumulators.
+            resolution_estimate = estimate_class_iteration_resolution(
+                history.data_vs_prior_trajectory[-1],
+                current_size=current_size,
+                grid_size=grid_size,
+                voxel_size=source_pixel_size_angstrom,
+                emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
+                ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
+                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
+                dtype=scoring_dtype,
+            )
+        else:
+            current_combined_classes = None
+            previous_combined_classes = None
+            # K=1: data_vs_prior comes from the half-map FSC.
+            resolution_estimate = estimate_k1_iteration_resolution(
+                tau2_update_details["ssnr_shells"],
+                current_size=current_size,
+                grid_size=grid_size,
+                voxel_size=source_pixel_size_angstrom,
+                emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
+                ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
+                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
+                dtype=scoring_dtype,
+            )
         if int(resolution_estimate.scheduling_shell) != int(resolution_estimate.observed_shell):
             logger.info(
                 "RELION firstiter_cc resolution state: using ini_high=%.2f A shell %d "
