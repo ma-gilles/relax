@@ -1319,18 +1319,38 @@ def _relion_rfft_shell_grid(volume_shape):
     return shell.astype(np.int64), valid, radius_sq
 
 
+@functools.lru_cache(maxsize=16)
+def _relion_fft_shell_grid_full(volume_shape):
+    """Return RELION-style shell labels for a full (non-packed) 3-D spectrum."""
+    volume_shape = tuple(int(s) for s in volume_shape)
+    if len(volume_shape) != 3 or len(set(volume_shape)) != 1:
+        raise ValueError(f"Expected cubic 3-D volume_shape, got {volume_shape}")
+    freqs = [np.fft.fftfreq(size) * size for size in volume_shape]
+    zz, yy, xx = np.meshgrid(*freqs, indexing="ij")
+    radius_sq = zz * zz + yy * yy + xx * xx
+    shell = _relion_round_away_from_zero(np.sqrt(radius_sq))
+    shell_count = volume_shape[2] // 2 + 1
+    valid = shell < shell_count
+    return shell.astype(np.int64), valid
+
+
 def _relion_fsc_from_real_maps_numpy(map0, map1):
-    """Mirror RELION ``getFSC`` for two real-space maps using NumPy FFTs."""
+    """Mirror RELION ``getFSC`` for two real-space maps using NumPy FFTs.
+
+    Uses the full (non-packed) 3-D FFT rather than ``rfftn``'s packed half
+    spectrum, so every frequency gets its own array entry and no Hermitian
+    multiplicity weighting is needed.
+    """
     map0 = np.asarray(map0, dtype=np.float64)
     map1 = np.asarray(map1, dtype=np.float64)
     if map0.shape != map1.shape:
         raise ValueError(f"map shapes must match, got {map0.shape} and {map1.shape}")
-    shell, valid, _ = _relion_rfft_shell_grid(tuple(map0.shape))
+    shell, valid = _relion_fft_shell_grid_full(tuple(map0.shape))
     shell_count = map0.shape[-1] // 2 + 1
 
     fft_axes = (0, 1, 2)
-    ft0 = np.fft.rfftn(map0, axes=fft_axes)
-    ft1 = np.fft.rfftn(map1, axes=fft_axes)
+    ft0 = np.fft.fftn(map0, axes=fft_axes)
+    ft1 = np.fft.fftn(map1, axes=fft_axes)
     labels = shell[valid].reshape(-1)
     ft0_flat = ft0[valid].reshape(-1)
     ft1_flat = ft1[valid].reshape(-1)

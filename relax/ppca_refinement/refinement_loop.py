@@ -174,6 +174,7 @@ def _finish_refinement_iteration(
     kclass_schedule_allows,
     pose_stability_threshold: float,
     path_diagnostics: dict,
+    volume_shape,
 ) -> tuple[PoseMarginalPPCAEMState, PPCARefinementIterationRecord]:
     """Apply the shared halfset gate and record its resolution decision.
 
@@ -182,6 +183,7 @@ def _finish_refinement_iteration(
     W_agreement = loading_subspace_agreement(
         np.asarray(updated.W_half[0]).T,
         np.asarray(updated.W_half[1]).T,
+        volume_shape=volume_shape,
     )
     kclass_allows = _resolve_kclass_allows(
         kclass_schedule_allows,
@@ -314,6 +316,7 @@ def run_dense_ppca_refinement_loop(
             kclass_schedule_allows=kclass_schedule_allows,
             pose_stability_threshold=pose_stability_threshold,
             path_diagnostics={},
+            volume_shape=experiment_dataset.volume_shape,
         )
         records.append(record)
         state = updated

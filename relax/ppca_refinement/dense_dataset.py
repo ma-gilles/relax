@@ -24,7 +24,7 @@ from recovar.ppca.triangular import tri_size as _tri_size
 from recovar.reconstruction import noise as noise_utils
 
 from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.helpers.half_spectrum import make_scoring_half_image_weights
+from relax.helpers.half_spectrum import make_half_volume_weights, make_scoring_half_image_weights
 from relax.helpers.oversampling import find_significant_mask, top_k_rows
 from relax.helpers.preprocessing import prepare_reconstruction_batch, preprocess_batch
 from relax.ppca_refinement.config import (
@@ -1584,7 +1584,7 @@ def run_dense_ppca_fused_em_iteration(
     return DensePPCAFusedEMResult(mu_half=mu_half, W_half=W_half, stats=stats, diagnostics=diagnostics)
 
 
-def combine_halfset_scoring_model(mu_half, W_half):
+def combine_halfset_scoring_model(mu_half, W_half, volume_shape):
     """Combine halfset PPCA estimates for scoring with per-column sign alignment."""
 
     mu0, mu1 = (jnp.asarray(mu_half[0]), jnp.asarray(mu_half[1]))
@@ -1594,7 +1594,9 @@ def combine_halfset_scoring_model(mu_half, W_half):
         raise ValueError(f"halfset W shapes differ: {W0.shape} vs {W1.shape}")
     if W0.shape[-1] == 0:
         return mu_score, W0
-    dots = jnp.sum(jnp.conj(W0) * W1, axis=0).real
+    volume_shape = tuple(int(x) for x in volume_shape)
+    weights = make_half_volume_weights(volume_shape).reshape(-1)
+    dots = jnp.sum(weights[:, None] * jnp.conj(W0) * W1, axis=0).real
     signs = jnp.where(dots < 0.0, -1.0, 1.0).astype(W1.real.dtype)
     W_score = 0.5 * (W0 + W1 * signs[None, :])
     return mu_score, W_score
@@ -1648,7 +1650,7 @@ def run_dense_ppca_halfset_fused_em_iteration(
 
     mu_half = (results[0].mu_half, results[1].mu_half)
     W_half = (results[0].W_half, results[1].W_half)
-    mu_score, W_score = combine_halfset_scoring_model(mu_half, W_half)
+    mu_score, W_score = combine_halfset_scoring_model(mu_half, W_half, experiment_dataset.volume_shape)
     old_mu = jnp.asarray(state.mu_score)
     old_W = jnp.asarray(state.W_score)
     pose_diagnostics = {

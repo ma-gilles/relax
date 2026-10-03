@@ -780,3 +780,59 @@ def test_hermitian_full_accumulators_take_the_streamed_fsc_with_equal_result(sha
         assert_matches(
             regularization_relion._packed_half_of_hermitian_full(full, accumulator_shape), half.reshape(-1)
         )
+
+
+def test_relion_fsc_from_real_maps_matches_manually_weighted_half_spectrum():
+    """The full-FFT fix must match an independently Hermitian-weighted half-FFT FSC.
+
+    ``_relion_fsc_from_real_maps_numpy`` used to bin ``np.fft.rfftn``'s packed
+    half spectrum directly with no per-frequency weight. An FFTW-style half
+    transform stores each off-axis conjugate pair once even though it
+    physically has two members, so that under-weighted off-axis frequencies
+    relative to the self-conjugate kx=0/Nyquist columns. This cross-checks the
+    fix (which instead uses the full, non-packed FFT) against a second,
+    independently constructed computation: ``rfftn``'s half spectrum with an
+    explicit multiplicity weight (2 for interior columns, 1 for the
+    self-conjugate columns) folded into every per-shell sum, which is the
+    mathematically equivalent way to sum over the full spectrum. It also
+    confirms the previous unweighted computation would have disagreed.
+    """
+    rng = np.random.default_rng(0)
+    n = 6
+    map0 = rng.standard_normal((n, n, n))
+    map1 = rng.standard_normal((n, n, n))
+
+    fixed = regularization_relion._relion_fsc_from_real_maps_numpy(map0, map1)
+
+    ft0 = np.fft.rfftn(map0)
+    ft1 = np.fft.rfftn(map1)
+    kx = np.arange(ft0.shape[-1])
+    weight = np.broadcast_to(np.where((kx == 0) | (kx == n // 2), 1.0, 2.0), ft0.shape)
+
+    z = np.fft.fftfreq(n) * n
+    y = np.fft.fftfreq(n) * n
+    x = np.fft.rfftfreq(n) * n
+    zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
+    shell = regularization_relion._relion_round_away_from_zero(np.sqrt(zz**2 + yy**2 + xx**2)).astype(np.int64)
+    shell_count = n // 2 + 1
+    valid = shell < shell_count
+    labels = shell[valid]
+    w = weight[valid]
+    f0 = ft0[valid]
+    f1 = ft1[valid]
+
+    def _fsc(weights):
+        numerator = np.bincount(labels, weights=weights * (np.conj(f0) * f1).real, minlength=shell_count)
+        denom0 = np.bincount(labels, weights=weights * np.abs(f0) ** 2, minlength=shell_count)
+        denom1 = np.bincount(labels, weights=weights * np.abs(f1) ** 2, minlength=shell_count)
+        out = np.zeros(shell_count)
+        nonzero = (denom0 * denom1) > 0
+        out[nonzero] = numerator[nonzero] / np.sqrt(denom0[nonzero] * denom1[nonzero])
+        out[0] = 1.0
+        return out
+
+    expected = _fsc(w)
+    assert_matches(fixed, expected, "full-FFT FSC must match the independently Hermitian-weighted half-FFT FSC")
+
+    naive = _fsc(np.ones_like(w))
+    assert not np.allclose(naive[1:], fixed[1:]), "the previous unweighted half-spectrum FSC should have disagreed"

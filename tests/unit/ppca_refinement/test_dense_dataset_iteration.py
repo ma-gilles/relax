@@ -13,6 +13,7 @@ from relax.ppca_refinement.config import (
     SparsePass2Config,
 )
 from relax.ppca_refinement.dense_dataset import (
+    combine_halfset_scoring_model,
     iter_dense_ppca_dataset_blocks,
     run_dense_ppca_fused_em_iteration,
     run_dense_ppca_halfset_fused_em_iteration,
@@ -899,3 +900,51 @@ def test_embedding_only_matches_full_posterior_on_fixed_support(tiny_inputs):
     np.testing.assert_array_equal(only.original_image_ids, full.original_image_ids)
     np.testing.assert_array_equal(only.embeddings, full.embeddings)
     assert only.n_images == full.n_images == 3
+
+
+def _half_volume_multiplicity(volume_shape) -> np.ndarray:
+    """Empirically measure each packed half-volume voxel's Hermitian multiplicity.
+
+    Probes ``half_volume_to_full_volume`` with a real one-hot half vector: the
+    sum of squared magnitudes of the resulting full spectrum equals exactly
+    how many times that half voxel is represented once expanded (1 for a
+    self-conjugate voxel, 2 for one with a redundant Hermitian mirror).
+    """
+    half_size = int(np.prod(ftu.volume_shape_to_half_volume_shape(volume_shape)))
+    basis = jnp.eye(half_size, dtype=jnp.complex64)
+    full = ftu.half_volume_to_full_volume(basis, volume_shape).reshape(half_size, -1)
+    return np.asarray(jnp.sum(jnp.abs(full) ** 2, axis=-1).real)
+
+
+def test_combine_halfset_scoring_model_weights_offaxis_frequencies_twice():
+    """A sign-alignment dot product that skips Hermitian weighting can flip sign.
+
+    Builds one self-conjugate half voxel (multiplicity 1) and one interior
+    half voxel with a redundant Hermitian mirror (multiplicity 2), then picks
+    per-voxel values so the naive unweighted dot product is positive
+    (``3 - 2 = 1``) while the correctly weighted one is negative
+    (``3 - 2*2 = -1``). ``combine_halfset_scoring_model`` must follow the
+    weighted sign and subtract, not add, the halfsets.
+    """
+    multiplicity = _half_volume_multiplicity(VOLUME_SHAPE)
+    self_paired = int(np.flatnonzero(np.isclose(multiplicity, 1.0))[0])
+    off_axis = int(np.flatnonzero(np.isclose(multiplicity, 2.0))[0])
+
+    W0 = np.zeros((HALF_VOL, 1), dtype=np.complex64)
+    W1 = np.zeros((HALF_VOL, 1), dtype=np.complex64)
+    W0[self_paired, 0], W1[self_paired, 0] = 3.0, 1.0
+    W0[off_axis, 0], W1[off_axis, 0] = -2.0, 1.0
+
+    naive_dot = complex(np.sum(np.conj(W0) * W1))
+    weighted_dot = (
+        1.0 * (W0[self_paired, 0] * np.conj(W1[self_paired, 0])).real
+        + 2.0 * (W0[off_axis, 0] * np.conj(W1[off_axis, 0])).real
+    )
+    assert naive_dot.real > 0.0
+    assert weighted_dot < 0.0
+
+    mu_half = (jnp.zeros((1,), jnp.complex64), jnp.zeros((1,), jnp.complex64))
+    _, W_score = combine_halfset_scoring_model((mu_half[0], mu_half[1]), (W0, W1), VOLUME_SHAPE)
+
+    assert_matches(W_score, 0.5 * (W0 - W1), "weighted sign must subtract the halfsets")
+    assert not np.allclose(np.asarray(W_score), 0.5 * (W0 + W1)), "naive unweighted sign would add instead"
