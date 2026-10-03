@@ -1179,6 +1179,12 @@ scientific contract; runnable code alone does not establish recovery.
   block. Live allocator peaks match the count: three pipelined r31 tiles of 139
   particles peak at 12.80 GiB against 12.94 GiB counted, and 33-particle tiles
   at 4.83 against 4.76 GiB (A100).
+  A CPU stream is planned the same way, from the host memory this process may
+  use (physical memory capped by the job's cgroup limit, less its resident set)
+  and the compiled CPU programs. There the moment program's XLA adjoint holds one
+  half volume per block image and channel (about 3.5 TB at box 128, 41 tilts and
+  rotation block 512), so on either device a stage whose one-image tile does not
+  fit is refused with the rotation block to shrink, before anything is allocated.
   On an 80 GB card the plan is the requested 150 particles at every k3conf and
   EMPIAR-10076 stage (`test_an_80_gb_card_keeps_the_requested_tile_at_every_stage`),
   and the controller's statistics do not depend on the tile size beyond float32
