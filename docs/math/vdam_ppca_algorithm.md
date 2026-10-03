@@ -1511,7 +1511,10 @@ class on this fixture). VDAM recovers about 40% of the GT state specificity and 
 90% separable latent; momentum SGD's maps stay close to the mean (specificity
 .03-.05). VDAM also moves away from GT at full resolution (loading power
 overshoots, FSC falls near shell 20), as in the single-particle eleven-state
-comparison (section 14). The baseline has one seed; GT state FSC-AUC of the GT mean
+comparison (section 14). The baseline has one seed. Stock RELION 5.0.1 subtomogram VDAM K=3 (seed 1, non-MPI, one H100)
+collapses on this fixture too: class populations .005/.972/.023 at iteration 133, resolution stuck
+at 24.7 A (`em_work/cryoet_vdam_20261001/relion/cryoet_ppca_k3conf/vdam_k3_mpiscale/seed1/r1`), so
+the collapse is the K-class algorithm on this fixture, not a relax difference. GT state FSC-AUC of the GT mean
 map is .87-.90 unregistered, so map AUC alone does not show heterogeneity.
 
 ### 16.10 Per-particle contrast point estimate (opt-in)
