@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from helpers import score_diagnostics
 from helpers.float_compare import assert_matches
+from helpers.pass1_programs import clear_pass1_programs
 
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
@@ -1094,6 +1095,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
 def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     monkeypatch,
     tmp_path,
+    request,
 ):
     """Live K-class pass preserves layout, priors, support, and both tail masks."""
 
@@ -1252,6 +1254,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         return jnp.stack([t0, t1], axis=-1).astype(jnp.float32)
 
     # The one-program pass 1 (significance._coarse_pass1_blocks) traces its scorer.
+    clear_pass1_programs(request)
     monkeypatch.setattr(significance, "_relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
     jax.clear_caches()
 

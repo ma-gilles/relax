@@ -564,6 +564,7 @@ def _pass1_block_update(
     exact_weight_order: bool,
     return_class_best: bool,
     track_class_second: bool,
+    return_values: bool = True,
 ):
     """One class's rotation block of pass 1: its scores and the running reductions it updates.
 
@@ -577,7 +578,8 @@ def _pass1_block_update(
     no priors, as RELION's ``--firstiter_cc`` scores have none). The padded tail rows are
     ``-inf``; the Gaussian scores get the class, rotation and translation priors
     (:func:`_add_coarse_prior_terms`). Returns the new state, the block's ``[B, rows * T]``
-    support values (pre-prior with ``exact_weight_order``) and, for the ``dump_rows`` batch
+    support values (pre-prior with ``exact_weight_order``; ``None`` without ``return_values``, for a
+    score-only pass) and, for the ``dump_rows`` batch
     rows of a ``RELAX_SIGNIFICANCE_DUMP_*`` target (``None`` otherwise), their pre-prior
     and with-prior ``[n_targets, rows, T]`` scores.
     """
@@ -623,7 +625,9 @@ def _pass1_block_update(
     if score_kind == "gaussian":
         class_log_prior, rotation_log_prior_block = prior_terms
         scores = _add_coarse_prior_terms(scores, class_log_prior, rotation_log_prior_block, translation_log_prior)
-    values = (pre_prior_scores if exact_weight_order else scores)[:, :rows, :].reshape(batch_size, -1)
+    values = None
+    if return_values:
+        values = (pre_prior_scores if exact_weight_order else scores)[:, :rows, :].reshape(batch_size, -1)
     dump = None
     if dump_rows is not None:
         dump = (pre_prior_scores[dump_rows, :rows, :], scores[dump_rows, :rows, :])
@@ -708,6 +712,7 @@ _PASS1_STATIC = (
     "exact_weight_order",
     "return_class_best",
     "track_class_second",
+    "return_values",
 )
 
 
@@ -732,6 +737,7 @@ def _coarse_pass1_blocks(
     exact_weight_order: bool,
     return_class_best: bool,
     track_class_second: bool = False,
+    return_values: bool = True,
 ):
     """Pass 1 of one image batch over every cached class and rotation block, as one program.
 
@@ -778,6 +784,7 @@ def _coarse_pass1_blocks(
             exact_weight_order=exact_weight_order,
             return_class_best=return_class_best,
             track_class_second=track_class_second,
+            return_values=return_values,
         )
         state = _merge_class_block_state(state, block_state, class_index)
         values.append(block_values)
@@ -809,6 +816,7 @@ def _coarse_pass1_block(
     exact_weight_order: bool,
     return_class_best: bool,
     track_class_second: bool = False,
+    return_values: bool = True,
 ):
     """One class's rotation block of pass 1 on its projection (:func:`_pass1_block_update`).
 
@@ -839,6 +847,7 @@ def _coarse_pass1_block(
         exact_weight_order=exact_weight_order,
         return_class_best=return_class_best,
         track_class_second=track_class_second,
+        return_values=return_values,
     )
 
 
@@ -2753,10 +2762,7 @@ def _compute_k_class_significance_batched(
             # the RELAX_SIGNIFICANCE_DUMP_* targets' scores and the class runner-up.
             # The loop below remains for the generic scorer.
             batched_support_values = None
-            pass1_program = (
-                (coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
-                and collect_significance
-            )
+            pass1_program = bool(coarse_gaussian_gemm_macro_enabled or exact_cc_enabled)
             if pass1_program:
                 if pass1_prior_terms is None:
                     pass1_prior_terms = tuple(
@@ -2795,6 +2801,7 @@ def _compute_k_class_significance_batched(
                     exact_weight_order=relion_exact_coarse_weight_order,
                     return_class_best=bool(return_class_best),
                     track_class_second=bool(track_class_second),
+                    return_values=bool(collect_significance),
                 )
                 pass1_dump_rows = (
                     None
@@ -2849,7 +2856,8 @@ def _compute_k_class_significance_batched(
                         pass1_state = _merge_class_block_state(pass1_state, block_state, class_index)
                         pass1_values.append(block_values)
                         pass1_dumps.append(block_dump)
-                batched_support_values = jnp.concatenate(pass1_values, axis=1)
+                if collect_significance:
+                    batched_support_values = jnp.concatenate(pass1_values, axis=1)
                 if pass1_dump_rows is not None:
                     for (class_index, _, _, _), (pre_prior, with_prior) in zip(pass1_blocks, pass1_dumps, strict=True):
                         dump_target_pre_prior_blocks_per_class[class_index].append(np.asarray(pre_prior, dtype=np.float64))
@@ -2874,7 +2882,7 @@ def _compute_k_class_significance_batched(
                     class_second_best_scores = list(class_second_tuple)
                     class_second_best_argmaxes = list(class_second_argmax_tuple)
 
-            for class_index, mean_for_proj in enumerate(means_for_proj if batched_support_values is None else ()):
+            for class_index, mean_for_proj in enumerate(() if pass1_program else means_for_proj):
                 class_max = neg_inf_f
                 class_sum = zeros_f64
                 cached_score_blocks = [] if cached_class_score_blocks is not None else None
@@ -3142,7 +3150,7 @@ def _compute_k_class_significance_batched(
             class_weight_mats = []
             normalization_score_mats = []
             if collect_significance:
-                if batched_support_values is not None:
+                if pass1_program:
                     batch_values = (
                         batched_support_values
                         if relion_f32_coarse_support_enabled
@@ -3436,7 +3444,7 @@ def _compute_k_class_significance_batched(
                 # them from each block.
                 score_capture_mode = (
                     "pass1_program_target_rows"
-                    if batched_support_values is not None
+                    if pass1_program
                     else "intrusive_per_block_host_materialization"
                 )
                 if dump_target_pre_prior_blocks_per_class is not None:

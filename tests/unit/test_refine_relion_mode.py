@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
+from helpers.pass1_programs import clear_pass1_programs
 
 from relax.refinement.half_inputs import HalfInputState
 
@@ -6929,6 +6930,7 @@ class TestRelionModeSmokeTest:
         expected_ties,
         expected_changes,
         gemm_mode,
+        request,
     ):
         """The direct-texture replay replaces every bounded native winner."""
 
@@ -7019,15 +7021,16 @@ class TestRelionModeSmokeTest:
         # default and an explicitly selected engine alike; "legacy" runs without it.
         exact_gemm = gemm_mode != "legacy"
         if exact_gemm:
-            monkeypatch.setattr(
-                scoring_module,
-                "_relion_coarse_normalized_cc_gemm_scores_jit",
-                lambda _proj, _shifted, _weight, _count, *, n_images, n_trans:
-                jnp.broadcast_to(
+            def fake_cc_gemm_scores(_proj, _shifted, _weight, _count, *, n_images, n_trans):
+                return jnp.broadcast_to(
                     jnp.asarray(original_scores, dtype=jnp.float32)[None, :, None],
                     (n_images, 2, n_trans),
-                ),
-            )
+                )
+
+            # The pass-1 program (significance) and the scorer module each bind the scorer.
+            clear_pass1_programs(request)
+            for module in (scoring_module, significance_module):
+                monkeypatch.setattr(module, "_relion_coarse_normalized_cc_gemm_scores_jit", fake_cc_gemm_scores)
             monkeypatch.setattr(
                 em_cuda_kernels,
                 "relion_translate_score_f32",
