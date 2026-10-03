@@ -91,9 +91,9 @@
         },
         {
           "function_count": 11,
-          "nonblank_noncomment_lines": 560,
+          "nonblank_noncomment_lines": 558,
           "path": "relax/refinement/iteration_planning.py",
-          "physical_lines": 625
+          "physical_lines": 623
         },
         {
           "function_count": 11,
@@ -259,7 +259,7 @@
           "path": "relax/refinement/iteration_snapshot.py"
         },
         {
-          "line": 542,
+          "line": 540,
           "line_span": 84,
           "name": "plan_halfmap_image_size",
           "parameter_count": 14,
@@ -329,8 +329,8 @@
           "path": "relax/refinement/final_sampling.py"
         },
         {
-          "line": 473,
-          "line_span": 67,
+          "line": 474,
+          "line_span": 64,
           "name": "plan_class_image_size",
           "parameter_count": 10,
           "path": "relax/refinement/iteration_planning.py"
@@ -452,13 +452,13 @@
         "large_argument_function_count": 26,
         "maximum_function_line_span": 2735,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18749,
-        "physical_lines": 21419,
+        "nonblank_noncomment_lines": 18747,
+        "physical_lines": 21417,
         "very_large_argument_function_count": 4
       }
     },
     "package": "package 2 lane A: one K1/Class3D decision for the numbered M-step; unproduced solvent-corrected FSC, raw-FSC scheduling arm and Class3D shared-prior fallback deleted; continued runs build start-up state once",
-    "source_commit": "65de6c308072328744b86b9295058a6b49642961",
+    "source_commit": "a0515a61711380957747bb021e337ef021b1f837",
     "recorded_date": "2026-10-03"
   }
 }

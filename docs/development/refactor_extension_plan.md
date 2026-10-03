@@ -214,7 +214,10 @@ for K1, the tau2 volumes' move to the host. The
 the before and after. `estimate_iteration_resolution` is replaced by
 `estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`,
 called from the existing class-assignment decision; the K1 FSC fallback, which
-no prior estimate could reach, is removed. The profile-only return passes no
+no prior estimate could reach, is removed. The Class3D rule (each class's shell
+without the split-half recheck) has one home, `class_resolution_shells`, which
+the class operation, the final pass's `relion_current_resolution_shell` and
+`plan_class_image_size` call. The profile-only return passes no
 class products, the direction-prior order is computed once per iteration, and
 `_maybe_host_offload_half0_local_accumulators` and `record_noise_and_tau2` no
 longer take the mode. `refine_single_volume` tests `k_class_enabled` 29 times

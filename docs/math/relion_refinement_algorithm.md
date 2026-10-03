@@ -764,7 +764,8 @@ finalization boundary. Approximate support accuracy remains diagnostic by defaul
 take the K1 reconstruction SSNR and the Class3D prior curves respectively,
 preserving current-window truncation and the minimum shell 5. K1 applies the
 split-half high-resolution recheck; Class3D takes the maximum shell over
-classes. `ResolutionEstimate` keeps the
+classes (`class_resolution_shells`, shared with the final pass and the
+image-size planner). `ResolutionEstimate` keeps the
 observed shell separate from the first-iteration `ini_high` scheduling override.
 The controller converts the scheduling shell to angstroms after noise updates and
 records convergence statistics at its original boundary.
