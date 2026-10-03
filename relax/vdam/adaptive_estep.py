@@ -137,6 +137,7 @@ def _sparse_pass2_estep_meta(
     source_euler_valid = []
     selected_particle_ids: list[np.ndarray] = []
     max_posterior: list[np.ndarray] = []
+    log_evidence: list[np.ndarray] = []
     field_lists: dict[str, list[np.ndarray]] = {attr: [] for attr, _ in _PARTICLE_RESULT_FIELDS}
 
     for halfset_idx, result in sorted(halfset_results.items()):
@@ -154,6 +155,12 @@ def _sparse_pass2_estep_meta(
             if value is not None:
                 field_lists[attr].append(np.asarray(value, dtype=dtype))
         stats = getattr(result, "stats", None)
+        # log(sum_weight) - min_diff2 per image, the first two terms of RELION's dLL.
+        evidence = getattr(result, "uncast_log_evidence_per_image", None)
+        if evidence is None and stats is not None:
+            evidence = getattr(stats, "log_evidence_per_image", None)
+        if evidence is not None:
+            log_evidence.append(np.asarray(evidence, dtype=np.float64))
         if stats is not None and getattr(stats, "max_posterior_per_image", None) is not None:
             max_posterior.append(np.asarray(stats.max_posterior_per_image, dtype=np.float32))
             meta[f"halfset_{halfset_idx}_pmax_mean"] = (
@@ -171,6 +178,7 @@ def _sparse_pass2_estep_meta(
     for attr, dtype in _PARTICLE_RESULT_FIELDS:
         _merge(field_lists[attr], attr, dtype)
     _merge(max_posterior, "max_posterior_per_image", np.float32)
+    _merge(log_evidence, "log_evidence_per_image", np.float64)
     meta["sparse_pass2"] = True
     return meta
 

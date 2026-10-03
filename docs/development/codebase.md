@@ -225,6 +225,11 @@ to 1,932 (+22: the optics gate, the premultiplied flag, the subset's average CTF
 1,133 (+46: the bootstrap CTF with each optics group's even Zernike gamma) and sampling to 1,009 (+6:
 the trials' optics-table CTFs in the expected accuracy).
 
+RELION's per-particle `rlnLogLikeliContribution` in InitialModel's data.star (October 3, 2026), which
+VDAM had copied from its input STAR, raises controller to 1,942 (+10: dLL from the E-step's log
+evidence), E-step to 2,148 (+27: the evidence through the E-step meta and
+`estep_meta_updates.relion_log_likelihood_contributions`) and input/output to 1,382 (+1: the writer).
+
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
 initialization and wiring, 89 in the loop for optimizer selection, fixed
