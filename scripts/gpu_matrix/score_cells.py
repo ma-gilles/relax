@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -151,7 +152,7 @@ def score_vdam(arms: dict[str, Path], ref: str, cell: str, fixture: str, k: int,
     cfg, out = work / f"{cell}_cfg.json", work / f"{cell}_score"
     cfg.write_text(json.dumps(config, indent=1))
     rc = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "score_initialmodel_maps.py"), str(cfg), str(out), "--workers", "8"],
+        [sys.executable, str(ROOT / "scripts" / "score_initialmodel_maps.py"), str(cfg), str(out), "--workers", os.environ.get("SCORE_WORKERS", "8")],
     ).returncode
     result = json.loads((out / f"{cell}.json").read_text())
     if "error" in result:
