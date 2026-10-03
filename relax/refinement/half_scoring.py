@@ -166,7 +166,7 @@ def _adaptive_pass2_grids(
         return_mstep_rotations=True,
         **({"coarse_rotation_ids": coarse_rotation_ids} if coarse_rotation_ids is not None else {}),
         **({"symmetry": symmetry} if symmetry != "C1" else {}),
-        defer_fine_rotations=defer_fine_rotations,
+        **({"defer_fine_rotations": True} if defer_fine_rotations else {}),
     )
     coarse_translation_phase_source = apply_relion_translation_perturbation(
         np.asarray(base_translations, dtype=np.float64),
