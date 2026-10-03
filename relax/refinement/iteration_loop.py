@@ -1947,27 +1947,6 @@ def refine_single_volume(
         )
 
         retained_Ft_y_0_device = None
-        # RELION's --low_resol_join_halves averages the low-resolution shells of
-        # the K=1 half accumulators before the Wiener solve; see
-        # join_half_accumulators_at_low_resolution for the rationale and cap.
-        if k_class_enabled:
-            Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
-            Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
-        elif parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
-            Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1, retained_Ft_y_0_device = join_half_accumulators_at_low_resolution(
-                (Ft_y_0, Ft_y_1),
-                (Ft_ctf_0, Ft_ctf_1),
-                accumulator_volume_shape=mstep_accumulator_shape,
-                grid_size=grid_size,
-                voxel_size=source_pixel_size_angstrom,
-                padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-                low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
-                pixel_resolutions=history.pixel_resolutions,
-                current_resolution=getattr(state, "current_resolution", float("inf")),
-                preserve_inputs=False,
-                return_retained_first_numerator=True,
-            )
-
         # --- RELION-exact M-step ordering ---
         # K=1 stays on RELION's split-half auto-refine path
         # (compareTwoHalves -> updateSSNRarrays -> reconstruct).
@@ -1979,17 +1958,15 @@ def refine_single_volume(
         # Snapshot the previous-iter means BEFORE the reconstruction so sign
         # alignment has a reference at iter 1.
         if k_class_enabled:
+            Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
+            Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
             # K-class 256px maps are large enough that materializing both
             # previous class stacks on the host immediately after pass 2 can
             # SIGBUS under Slurm/tmp quota pressure.  JAX arrays are immutable;
             # keep device references here and let the later per-class tau2/sign
             # code transfer only the slices it actually needs.
             previous_means = [jnp.asarray(mean) if mean is not None else None for mean in reference_model.maps]
-        else:
-            previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
-
-        _t_unreg_first = time.time()
-        if k_class_enabled:
+            _t_unreg_first = time.time()
             class_priors = estimate_class_priors(
                 previous_means,
                 Ft_y_combined,
@@ -2031,8 +2008,28 @@ def refine_single_volume(
                 kclass_tau2_source,
                 time.time() - _t_unreg_first,
             )
+            reference_model.tau2 = mean_signal_variance
+            reference_model.tau2_per_half = [reference_model.tau2, reference_model.tau2]
         else:
-            mean_signal_variance_shells = None
+            # RELION's --low_resol_join_halves averages the low-resolution shells of
+            # the K=1 half accumulators before the Wiener solve; see
+            # join_half_accumulators_at_low_resolution for the rationale and cap.
+            if parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
+                Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1, retained_Ft_y_0_device = join_half_accumulators_at_low_resolution(
+                    (Ft_y_0, Ft_y_1),
+                    (Ft_ctf_0, Ft_ctf_1),
+                    accumulator_volume_shape=mstep_accumulator_shape,
+                    grid_size=grid_size,
+                    voxel_size=source_pixel_size_angstrom,
+                    padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+                    low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+                    pixel_resolutions=history.pixel_resolutions,
+                    current_resolution=getattr(state, "current_resolution", float("inf")),
+                    preserve_inputs=False,
+                    return_retained_first_numerator=True,
+                )
+            previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
+            _t_unreg_first = time.time()
             # Optional dump of post-join Ft_y, Ft_ctf for shell-by-shell parity
             # comparison against RELION's RELAX_MSTEP_DUMP_DIR. Activated by
             # RELAX_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
@@ -2083,15 +2080,12 @@ def refine_single_volume(
                 float(jnp.max(jnp.abs(mean_signal_variance_per_half[0]))),
                 float(jnp.max(jnp.abs(mean_signal_variance_per_half[1]))),
             )
-        reference_model.tau2 = mean_signal_variance
-        if not k_class_enabled:
+            reference_model.tau2 = mean_signal_variance
             reference_model.tau2_per_half = _updated_mean_variance_per_half(
                 reference_model.tau2,
                 mean_signal_variance_per_half,
                 use_per_half_mean_variance=parity.use_per_half_mean_variance,
             )
-        else:
-            reference_model.tau2_per_half = [reference_model.tau2, reference_model.tau2]
 
         # --- Free previous-iteration means to reclaim GPU memory ---
         # (previous_means already snapshotted earlier for FSC sign alignment)
