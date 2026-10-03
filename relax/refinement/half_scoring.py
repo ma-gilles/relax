@@ -386,6 +386,9 @@ def _score_direct_k1_dense(
     # branch is the single dense pass used when adaptive oversampling is off.
     direct_em_kwargs.pop("relion_exact_fine_gaussian", None)
     direct_em_kwargs.pop("reconstruction_current_size", None)
+    # A single dense pass projects the means itself; it has no pass 1 to read the projector.
+    direct_em_kwargs.pop("relion_projector_half", None)
+    direct_em_kwargs.pop("relion_projector_r_max", None)
     em_result = run_em(
         half.experiment_dataset,
         half.means_k,
@@ -441,6 +444,8 @@ def _score_direct_kclass_dense(
     # non-adaptive dense iteration has no fine pass to select.
     dense_em_kwargs.pop("relion_exact_fine_gaussian", None)
     dense_em_kwargs.pop("reconstruction_current_size", None)
+    dense_em_kwargs.pop("relion_projector_half", None)
+    dense_em_kwargs.pop("relion_projector_r_max", None)
     return run_dense_k_class_em(
         half.experiment_dataset,
         half.means_k,

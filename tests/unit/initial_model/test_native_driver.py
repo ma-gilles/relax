@@ -2560,7 +2560,7 @@ def test_cli_non_dry_run_calls_native_driver(monkeypatch, capsys):
     assert opts.random_perturbation == 0.25
     assert opts.translation_sigma_angstrom == 6.5
     assert opts.diagnostic_stop_after_iteration == 2
-    assert opts.image_fourier_backend == "host_numpy"
+    assert opts.image_fourier_backend == "relion_cuda"
     assert opts.write_iter_artifacts is False
     assert "recovar InitialModel complete: out/initial_model.mrc" in capsys.readouterr().out
 

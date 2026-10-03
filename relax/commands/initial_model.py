@@ -516,7 +516,9 @@ def _input_files(args: argparse.Namespace) -> dict[str, object]:
 def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
     backend = args.image_fourier_backend
     if backend == "auto":
-        backend = "relion_cuda" if args.gpu_ids or args.coarse_engine != "auto" else "host_numpy"
+        # Pass 1 scores RELION's exact coarse operands, which read RELION's CUDA image
+        # preprocessing; RELION's ``--gpu ""`` also means the visible GPUs.
+        backend = "relion_cuda"
     if args.coarse_engine != "auto" and backend != "relion_cuda":
         raise ValueError(f"{args.coarse_engine} requires --image-fourier-backend relion_cuda")
     return {

@@ -2396,82 +2396,78 @@ def refine_single_volume(
         # again on the host (RELION computes both in one computeFourierTransformMap).
         relion_projector_power_by_half = [None, None]
         captured_projector_state = replay_result.relion_projector_state
-        selected_gemm_global = adaptive.coarse_engine in {"gemm_hybrid", "gemm_dense"}
-        if captured_projector_state is not None and not (use_local or use_adaptive or selected_gemm_global):
-            raise RuntimeError(
-                "captured RELION Projector::data was supplied but this iteration has no projector scoring path"
+        # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
+        # coarse operands on every route, as RELION builds Projector::data every iteration.
+        projector_t0 = time.time()
+        if captured_projector_state is not None:
+            (
+                relion_projector_half_by_half,
+                relion_projector_r_max_by_half,
+            ) = _validate_captured_relion_projector_for_iteration(
+                captured_projector_state,
+                current_size=model_current_size_for_engine,
+                volume_shape=volume_shape,
+                padding_factor=PROJECTION_PADDING_FACTOR,
+                n_classes=n_classes,
             )
-        if use_local or use_adaptive or selected_gemm_global:
-            projector_t0 = time.time()
-            if captured_projector_state is not None:
-                (
-                    relion_projector_half_by_half,
-                    relion_projector_r_max_by_half,
-                ) = _validate_captured_relion_projector_for_iteration(
-                    captured_projector_state,
-                    current_size=model_current_size_for_engine,
-                    volume_shape=volume_shape,
-                    padding_factor=PROJECTION_PADDING_FACTOR,
-                    n_classes=n_classes,
-                )
-                logger.info(
-                    "RELION mode: using captured exact Projector::data at current_size=%s "
-                    "r_max=%s manifest=%s",
-                    model_current_size_for_engine,
-                    relion_projector_r_max_by_half[0],
-                    captured_projector_state.source_manifest_sha256,
-                )
-            else:
-                for _half_idx in range(2):
-                    if experiment_datasets[_half_idx].n_units == 0:
-                        logger.info(
-                            "RELION mode: skipping Projector::data build for empty half-%d dataset",
-                            _half_idx + 1,
-                        )
-                        continue
-                    resolved_projector_size = (
-                        int(grid_size) if model_current_size_for_engine is None else int(model_current_size_for_engine)
+            logger.info(
+                "RELION mode: using captured exact Projector::data at current_size=%s "
+                "r_max=%s manifest=%s",
+                model_current_size_for_engine,
+                relion_projector_r_max_by_half[0],
+                captured_projector_state.source_manifest_sha256,
+            )
+        else:
+            for _half_idx in range(2):
+                if experiment_datasets[_half_idx].n_units == 0:
+                    logger.info(
+                        "RELION mode: skipping Projector::data build for empty half-%d dataset",
+                        _half_idx + 1,
                     )
-                    if (
-                        _half_idx == 0
-                        and shared_projector_half1 is not None
-                        and shared_projector_half1[0] is means[0]
-                        and shared_projector_half1[1] == resolved_projector_size
-                    ):
-                        projector_half, projector_r_max, projector_power = shared_projector_half1[2:]
-                    else:
-                        projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
-                            means[_half_idx],
-                            volume_shape=volume_shape,
-                            current_size=model_current_size_for_engine,
-                            padding_factor=PROJECTION_PADDING_FACTOR,
-                            n_classes=n_classes,
-                            real_references=(
-                                initial_real_references_by_half[_half_idx]
-                                if iteration == 0
-                                else None
-                            ),
-                            dump_label=f"iter{iteration:03d}_half{_half_idx}",
-                        )
-                    relion_projector_half_by_half[_half_idx] = projector_half
-                    relion_projector_r_max_by_half[_half_idx] = projector_r_max
-                    if has_previous_iteration:
-                        # Iteration 1 may project the initial real references
-                        # directly; tau2 transforms the Fourier means, so only
-                        # later iterations share one transform with it.
-                        relion_projector_power_by_half[_half_idx] = projector_power
-                logger.info(
-                    # The slab dtype decides whether pass-2 projection runs on
-                    # the native texture projector or the vmapped JAX fallback
-                    # (_relion_projector_texture_enabled requires complex64),
-                    # so record it rather than leaving the path implicit.
-                    "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
-                    "dtype=%s in %.2fs",
-                    model_current_size_for_engine,
-                    relion_projector_r_max_by_half[0],
-                    getattr(relion_projector_half_by_half[0], "dtype", None),
-                    time.time() - projector_t0,
+                    continue
+                resolved_projector_size = (
+                    int(grid_size) if model_current_size_for_engine is None else int(model_current_size_for_engine)
                 )
+                if (
+                    _half_idx == 0
+                    and shared_projector_half1 is not None
+                    and shared_projector_half1[0] is means[0]
+                    and shared_projector_half1[1] == resolved_projector_size
+                ):
+                    projector_half, projector_r_max, projector_power = shared_projector_half1[2:]
+                else:
+                    projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
+                        means[_half_idx],
+                        volume_shape=volume_shape,
+                        current_size=model_current_size_for_engine,
+                        padding_factor=PROJECTION_PADDING_FACTOR,
+                        n_classes=n_classes,
+                        real_references=(
+                            initial_real_references_by_half[_half_idx]
+                            if iteration == 0
+                            else None
+                        ),
+                        dump_label=f"iter{iteration:03d}_half{_half_idx}",
+                    )
+                relion_projector_half_by_half[_half_idx] = projector_half
+                relion_projector_r_max_by_half[_half_idx] = projector_r_max
+                if has_previous_iteration:
+                    # Iteration 1 may project the initial real references
+                    # directly; tau2 transforms the Fourier means, so only
+                    # later iterations share one transform with it.
+                    relion_projector_power_by_half[_half_idx] = projector_power
+            logger.info(
+                # The slab dtype decides whether pass-2 projection runs on
+                # the native texture projector or the vmapped JAX fallback
+                # (_relion_projector_texture_enabled requires complex64),
+                # so record it rather than leaving the path implicit.
+                "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
+                "dtype=%s in %.2fs",
+                model_current_size_for_engine,
+                relion_projector_r_max_by_half[0],
+                getattr(relion_projector_half_by_half[0], "dtype", None),
+                time.time() - projector_t0,
+            )
 
         # Freeze the exact iteration-start curve used by RELION's scale XA/AA
         # shell gate.  The scheduling variable is updated again after the
@@ -5414,26 +5410,26 @@ def refine_single_volume(
     final_relion_projector_half_by_half = [None, None]
     final_relion_projector_r_max_by_half = [None, None]
     final_relion_projector_power_by_half = [None, None]
-    if final_use_local or int(state.adaptive_oversampling) > 0 or adaptive.coarse_engine in {"gemm_hybrid", "gemm_dense"}:
-        projector_t0 = time.time()
-        for _half_idx in range(2):
-            projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
-                final_join_means[_half_idx],
-                volume_shape=volume_shape,
-                current_size=final_current_size,
-                padding_factor=PROJECTION_PADDING_FACTOR,
-                n_classes=n_classes,
-                dump_label=f"final_half{_half_idx}",
-            )
-            final_relion_projector_half_by_half[_half_idx] = projector_half
-            final_relion_projector_r_max_by_half[_half_idx] = projector_r_max
-            final_relion_projector_power_by_half[_half_idx] = projector_power
-        logger.info(
-            "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
-            final_current_size,
-            final_relion_projector_r_max_by_half[0],
-            time.time() - projector_t0,
+    # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
+    projector_t0 = time.time()
+    for _half_idx in range(2):
+        projector_half, projector_r_max, projector_power = _relion_projector_half_maps_for_scoring(
+            final_join_means[_half_idx],
+            volume_shape=volume_shape,
+            current_size=final_current_size,
+            padding_factor=PROJECTION_PADDING_FACTOR,
+            n_classes=n_classes,
+            dump_label=f"final_half{_half_idx}",
         )
+        final_relion_projector_half_by_half[_half_idx] = projector_half
+        final_relion_projector_r_max_by_half[_half_idx] = projector_r_max
+        final_relion_projector_power_by_half[_half_idx] = projector_power
+    logger.info(
+        "RELION final all-data: built exact Projector::data for scoring at current_size=%d r_max=%s in %.2fs",
+        final_current_size,
+        final_relion_projector_r_max_by_half[0],
+        time.time() - projector_t0,
+    )
     logger.info("=== RELION final all-data Nyquist iteration ===")
     final_use_float64_scoring, final_use_float64_projections = _local_search_precision_flags(
         final_sampling_relion_iteration,

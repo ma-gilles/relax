@@ -1217,8 +1217,7 @@ def main():
         default="auto",
         help=(
             "Fourier preprocessing backend for RELION-masked images. auto (default) "
-            "is relion_cuda when RELION's particle order is preserved (the production "
-            "K=1 arithmetic requires it) and host_numpy otherwise."
+            "is relion_cuda, which pass 1's exact coarse operands read."
         ),
     )
     parser.add_argument(
@@ -1842,17 +1841,10 @@ def main():
             "  Native RELION particle order from the optimiser seed "
             f"{optimizer_random_seed} (production K=1 arithmetic)"
         )
-    # The preserved RELION order runs the production K=1 arithmetic, which scores
-    # from RELION's CUDA image preprocessing (as full_refinement's auto does).
+    # Pass 1 scores RELION's exact coarse operands, which read RELION's CUDA image
+    # preprocessing (as full_refinement's auto does).
     if args.image_fourier_backend == "auto":
-        args.image_fourier_backend = (
-            "relion_cuda"
-            if (
-                args.diagnostic_native_relion_particle_order_seed is not None
-                or args.diagnostic_fresh_particle_order_seed is not None
-            )
-            else "host_numpy"
-        )
+        args.image_fourier_backend = "relion_cuda"
     # Optics groups on several image shapes load one dataset per shape (full_refinement's rule).
     shape_class_rows = optics_shape_class_rows(args.data_star)
     if shape_class_rows is None:
