@@ -64,6 +64,12 @@ Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
   s1 0.99161 / 0.99162, s2 0.99180 / 0.99180, s3 0.99212 / 0.99223; map gate PASS on every seed
   (merged cross-engine 0.99998 at s1-s2, 0.99962 at s3); wall 0.43-0.46x. OPEN: the s3 gap of
   1.1e-4 reproduces in two relax runs (66ff6c8, d6ba262), outside RELION's same-seed range.
+  STALE, pre-d28c258 (2026-10-03): these arms, and the etoptics eto_plain Refine3D arms (s1-s3 1.4e-3,
+  4e-4, 7e-5 below RELION's stock r1/r2/double-BP band, which spans at most 1.5e-4), ran before
+  d28c258 gave the coarse CC pass RELION's float projector. Iteration 1 alone then moved 2 (et01 s3)
+  and 6-8 (eto_plain) particles by one fine step against RELION's deterministic CC iteration; on main
+  22ea0b2 it moves 0 (et01 s3, eto_plain s1) or 1, RELION's own near-tie rate (its s2 r1/r2 differ on
+  one particle). Full reruns on 22ea0b2 decide the rows.
 - Subtomogram VDAM K=1 (et09_box64, one optics group, stock seeding, s2): masked GT FSC-AUC
   0.98808 inside RELION's same-seed range [0.98795, 0.98816]; wall about 2x RELION before the
   coarse matrices fix.
