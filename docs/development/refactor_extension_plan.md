@@ -21,6 +21,85 @@ its conditional complexity or the complete readability design. Existing medium
 ordinary performance repeats for a design still being revised. All final quality,
 performance and delivery requirements below remain in force for the final source.
 
+### Planning-only architecture review — current direction
+
+The user requested big-picture planning before implementation and supplied an
+independent static review of commit `cad2012`. No implementation is authorized
+by this plan update. The subsequent reconstruction package is a proposed migration
+step, not the immediate action. Existing frozen checkpoint jobs remain unchanged.
+
+Working recommendation: distinct K1 auto-refinement and Class3D scientific
+controllers; shared scoring, joint posterior, backprojection and reconstruction
+machinery. Tomography gets meaningful expectation/preparation contracts within
+the appropriate scientific trajectory, not initially duplicate controllers.
+VDAM remains a separate optimizer/workflow using shared numerical operations.
+No base-refiner hierarchy, generic pipeline framework or event bus is proposed.
+
+The reason to split is different scientific state and progression, rather than
+branch count. K1 owns independent half maps; Class3D owns one reference stack
+scored through two particle partitions. The existing two-slot storage may remain
+at an adapter boundary during migration, without array copies. Such an adapter
+must have explicit consumers and a retirement condition, not become a permanent
+second source of model state.
+
+#### Evidence checked locally against the review branch
+
+| Finding | Current evidence | Remaining uncertainty |
+| --- | --- | --- |
+| Model slots have different scientific meanings | `ReferenceModel`, `initialize_reference_model`, `reference_model_from_snapshot`: class restoration aliases map slot 1 to slot 0 | Trace every restart/publication consumer before changing representation |
+| Generic reconstruction reselects the mode | `reconstruct_regularized_means`: solve, filter, scalar mask arithmetic and flatten branches | Preserve class postprocessing through both slots; deduplication changes execution |
+| Accumulator collectors retain arrays | `PerHalfOutputs.update_from` stores `Ft_y` and `Ft_ctf` references | Full reference graph and measured GPU/host memory impact remain to establish |
+| Final tomography capture depends on SPA-only preparation | `run_final_all_data`: `final_inputs` assigned in SPA arm and used by common intermediate manifest | Static defect candidate; establish reachable admission and reproduce before a separate fix |
+| Scientific configuration has misleading ownership | `EngineDebugOptions.expected_accuracy`, historical fields in `DenseVariantPolicy` | Trace producers, defaults, precedence and direct programmatic callers |
+
+The external review did not execute numerical checks. Its architectural findings
+are not qualification evidence. One gate description needs correction: the
+repository requires K1 and exactly K4 production workloads of at least 100k/256,
+with the synthetic K1 trajectory followed by characterized real-data confirmation.
+It does not require both completion fixtures to be real data. Preserve the actual
+approved fixtures and gates; do not silently substitute a new validation objective.
+
+#### Required planning deliverables before source changes
+
+1. Capability matrix covering CLI, programmatic, replay and qualification callers:
+   ordinary supported, supported diagnostic, rejected, and unresolved combinations.
+   Do not equate untested with unsupported or obsolete.
+2. Side-by-side K1/Class3D transition ledger: consumed completed state, decisions,
+   writes, next consumers, captures, RNG advancement and release/completion points.
+   Include preceding-iteration convergence, incoming local sizing order, numbered
+   versus final perturbation precision and current versus next scale-gating spectra.
+3. Ownership map separating scientific references from execution partitions,
+   persistent particle state from iteration results, and borrowing from consumption.
+   Identify actual owners/aliases before designing a `take` or `consume` interface.
+4. Target calling flow and operation contracts for the hybrid, compared with a
+   shared controller. Demonstrate representative convergence, class-prior and
+   tomography changes. Account for duplicated orchestration and shared invariants.
+5. Configuration/intervention map: startup source state, scientific controls,
+   execution controls, passive observations and intrusive interventions. Replay may
+   return to native progression; do not create a separate replay engine by default.
+6. Removal ledger: obsolete candidates with caller evidence; live comparison paths
+   to retain; missing-shell fallbacks to investigate; reachable Class3D finalization
+   paths. A recommendation is not permission to drop a supported scientific route.
+7. Cohesive migration and validation plan, reviewed with the user before execution.
+   Separate confirmed bug fixes and execution optimizations from structural work.
+
+#### Proposed migration sequence after plan acceptance
+
+- Establish capability and transition contracts.
+- Complete explicit numbered half-map and class-map reconstruction operations.
+- Separate persistent reference ownership and define accumulator consumption.
+- Separate K1/Class3D controllers using those operations; provide modality-specific
+  expectation preparation without multiplying global/local/backend controllers.
+- Rationalize configuration and interventions; retire proven obsolete interfaces.
+- Review the complete example, freeze, qualify final float32 quality and matched
+  GPU memory/speed, then deliver under the existing integration rules.
+
+Each stage must preserve scientifically timed state publication and numerical
+execution. First-class continuation remains supported. Comparison backends and
+intrusive research modes should stay available until their users and contracts
+are established; isolation is not deletion. The status of Class3D diagnostic final
+passes is an open capability question, not settled by native fixed-iteration use.
+
 ### First package: reconstruction mode ownership
 
 Current evidence: `iteration_loop.py` selects K1 versus Class3D operands before

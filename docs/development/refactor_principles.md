@@ -905,3 +905,21 @@ and model publication; inspect their whole data flow before consolidating across
 intervening shared work. Replay/startup precedence and local-search state checks
 need producer tracing before deletion. None of these observations establishes
 that a scientific mode is dead.
+
+## Architecture planning clarification — October 3
+
+The user requested planning only before further implementation. Separate sharing
+of scientific trajectories, scientific operations, numerical kernels and execution
+machinery. A split is justified when state or argument meaning changes; repeated
+orchestration is acceptable when it exposes different scientific sequences.
+Keep formulas, normalization, coordinate conventions and delicate execution
+machinery in their existing shared owners. Treat scientific publication time as
+part of an operation contract. Scientific half maps and particle execution
+partitions are different concepts even if current storage uses two slots for both.
+
+The independent review's hybrid K1/Class3D-controller proposal is the working
+recommendation to evaluate in the extension plan, not an accepted implementation.
+Tomography expectation and VDAM optimizer differences do not justify copying all
+outer controllers. Preserve compute-changing interventions as explicit operations,
+not passive observer hooks. Confirmed bugs and performance optimizations need
+separate evidence from equivalent structural changes.
