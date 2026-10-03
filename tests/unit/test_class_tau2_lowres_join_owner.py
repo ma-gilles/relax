@@ -31,12 +31,11 @@ N_SHELLS = GRID_SIZE // 2 + 1
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
-@pytest.mark.parametrize("solvent_correction,diameter", [(False, 6.0), (True, 6.0), (True, None)])
-def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, solvent_correction, diameter, monkeypatch):
+@pytest.mark.parametrize("diameter", [6.0, None])
+def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diameter, monkeypatch):
     numerators = [object(), object()]
     denominators = [object(), object()]
     raw_fsc = np.linspace(0.2, 0.8, N_SHELLS, dtype=dtype)
-    corrected_fsc = raw_fsc * dtype(0.5)
     events = []
     variances = []
     detail_rows = []
@@ -50,33 +49,12 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, solvent
         events.append("raw FSC")
         return raw_fsc
 
-    def reconstruct(weight, numerator, shape, padding_factor, **kwargs):
-        half = denominators.index(weight)
-        assert numerator is numerators[half]
-        assert kwargs["tau"] is None
-        assert_matches(kwargs["tau2_fudge"], 1.0)
-        assert kwargs["use_spherical_mask"] and kwargs["return_real_space"]
-        assert kwargs["current_size"] == GRID_SIZE
-        events.append(f"unfiltered half {half}")
-        return np.full(shape, half + 1, dtype=dtype)
-
-    def correct_fsc(first, second, solvent_mask, **kwargs):
-        assert first.dtype == second.dtype == solvent_mask.dtype == np.float64
-        assert_matches(first, np.ones(VOLUME_SHAPE))
-        assert_matches(second, np.full(VOLUME_SHAPE, 2))
-        assert kwargs["rng_seed"] == 1775735622
-        events.append("solvent FSC")
-        return corrected_fsc, {
-            "randomize_at": 1, "fsc_masked": raw_fsc,
-            "fsc_random_masked": raw_fsc, "fsc_true": corrected_fsc,
-        }
-
     def compute_tau(first, second, fsc, shape, **kwargs):
         half = denominators.index(first)
         assert second is first
         assert kwargs["full_half_axis"] == (-1 if half == 0 else 2)
         assert kwargs["output_dtype"] == dtype
-        assert fsc is (corrected_fsc if solvent_correction and diameter else raw_fsc)
+        assert fsc is raw_fsc
         assert_matches(kwargs["tau2_fudge"], 1.0)
         events.append(f"half {half} prior")
         variance = jnp.full(np.prod(shape), 1 + 2 * half, dtype=dtype)
@@ -86,9 +64,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, solvent
         return variance, fsc, details
 
     monkeypatch.setattr(regularization_relion, "compute_relion_fsc_from_backprojector", compute_fsc)
-    monkeypatch.setattr(regularization_relion, "compute_relion_solvent_corrected_true_fsc", correct_fsc)
     monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", compute_tau)
-    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", reconstruct)
     log = Mock()
     result = mean_helpers.estimate_split_half_prior(
         numerators, denominators,
@@ -101,21 +77,18 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, solvent
         ),
         current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
         full_half_axes=[None, 2],
-        do_solvent_fsc_correction=solvent_correction,
-        pixel_size_angstrom=1.5,
         iteration=2, scoring_dtype=dtype,
         started_at=time.time(), log=log,
     )
-    correction_events = ["unfiltered half 0", "unfiltered half 1", "solvent FSC"] if solvent_correction and diameter else []
-    assert events == ["raw FSC", *correction_events, "half 0 prior", "half 1 prior"]
+    assert events == ["raw FSC", "half 0 prior", "half 1 prior"]
     assert result.fsc is raw_fsc
-    assert result.fsc_for_update is (corrected_fsc if correction_events else raw_fsc)
+    assert result.fsc_for_update is raw_fsc
     for half in range(2):
         assert result.variance_per_half[half] is variances[half]
         assert result.details_per_half[half] is detail_rows[half]
         assert result.shells_per_half[half] is detail_rows[half]["prior_shells"]
     assert_matches(result.variance, np.full(np.prod(VOLUME_SHAPE), 2, dtype=dtype))
-    assert log.warning.call_count == int(solvent_correction and diameter is None)
+    assert log.warning.call_count == 0
 
 
 @pytest.mark.parametrize("source", ["host", "projector", "replay"])

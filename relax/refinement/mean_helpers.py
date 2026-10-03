@@ -1172,7 +1172,7 @@ class ReconstructionSettings:
 
 @dataclass(frozen=True)
 class SplitHalfPrior:
-    """K1 scoring/reconstruction priors and raw versus corrected FSC."""
+    """K1 scoring/reconstruction priors and the shared FSC (``fsc_for_update`` is ``fsc``)."""
 
     variance: object
     variance_per_half: list
@@ -1190,8 +1190,6 @@ def estimate_split_half_prior(
     current_size,
     accumulator_shape,
     full_half_axes,
-    do_solvent_fsc_correction,
-    pixel_size_angstrom,
     iteration,
     scoring_dtype,
     started_at,
@@ -1199,8 +1197,9 @@ def estimate_split_half_prior(
 ) -> SplitHalfPrior:
     """Estimate independent half priors from this expectation's shared FSC.
 
-    Raw FSC is reported; solvent-corrected FSC, when enabled, drives tau2 and
-    size growth. The two halves retain their own Fourier weights.
+    The raw backprojector FSC is reported and drives tau2 and size growth
+    (``fsc_for_update`` is the same curve). The two halves retain their own
+    Fourier weights.
     See ``docs/math/relion_refinement_algorithm.md`` for the M-step ordering.
     """
 
@@ -1220,84 +1219,6 @@ def estimate_split_half_prior(
         iteration + 1,
         time.time() - started_at,
     )
-    raw_backprojector_fsc = current_iter_fsc
-    tau2_fsc_for_update = current_iter_fsc
-    if (
-        do_solvent_fsc_correction
-        and settings.particle_diameter_angstrom is not None
-        and settings.particle_diameter_angstrom > 0
-    ):
-        from recovar.core import mask as _mask
-
-        _t_solvent_fsc = time.time()
-        unfiltered_half_maps = []
-        for Ft_ctf_half, Ft_y_half in ((denominators[0], numerators[0]), (denominators[1], numerators[1])):
-            unfiltered_real = _reconstruct_volume_eager(
-                Ft_ctf_half,
-                Ft_y_half,
-                settings.volume_shape,
-                settings.padding_factor,
-                tau=None,
-                tau2_fudge=settings.tau2_fudge,
-                projection_padding_factor=settings.projection_padding_factor,
-                # RELION's BackProjector::reconstruct(do_map=false)
-                # still calls softMaskOutsideMap inside
-                # windowToOridimRealSpace.
-                use_spherical_mask=True,
-                minres_map=settings.minres_map,
-                current_size=int(current_size),
-                return_real_space=True,
-                accumulator_volume_shape=accumulator_shape,
-            )
-            unfiltered_real = np.asarray(
-                jnp.asarray(unfiltered_real).reshape(settings.volume_shape),
-                dtype=np.float64,
-            ).real
-            unfiltered_half_maps.append(unfiltered_real)
-
-        flatten_radius = settings.particle_diameter_angstrom / (2.0 * pixel_size_angstrom)
-        solvent_mask = np.asarray(
-            _mask.raised_cosine_mask(
-                settings.volume_shape,
-                radius=flatten_radius,
-                radius_p=flatten_radius + settings.width_mask_edge,
-                offset=jnp.zeros(3),
-                dtype=jnp.float64,
-            ),
-            dtype=np.float64,
-        )
-        tau2_fsc_for_update, solvent_fsc_details = regularization_relion.compute_relion_solvent_corrected_true_fsc(
-            unfiltered_half_maps[0],
-            unfiltered_half_maps[1],
-            solvent_mask,
-            current_size=int(current_size),
-            rng_seed=int(1775735620 + iteration),
-            return_details=True,
-        )
-        randomize_at = int(solvent_fsc_details["randomize_at"])
-        probe_shell = max(1, randomize_at) if randomize_at > 0 else min(len(solvent_fsc_details["fsc_true"]) - 1, 1)
-        corrected_shell = min(len(solvent_fsc_details["fsc_true"]) - 1, max(probe_shell, randomize_at + 2))
-        log.info(
-            "Computed iter-%d solvent-corrected true FSC for tau2: randomize_at=%d "
-            "raw_fsc[%d]=%.4f masked=%.4f random_masked=%.4f true=%.4f; "
-            "formula_shell[%d]: masked=%.4f random_masked=%.4f true=%.4f elapsed=%.1fs",
-            iteration + 1,
-            randomize_at,
-            probe_shell,
-            float(np.asarray(raw_backprojector_fsc)[probe_shell]),
-            float(solvent_fsc_details["fsc_masked"][probe_shell]),
-            float(solvent_fsc_details["fsc_random_masked"][probe_shell]),
-            float(solvent_fsc_details["fsc_true"][probe_shell]),
-            corrected_shell,
-            float(solvent_fsc_details["fsc_masked"][corrected_shell]),
-            float(solvent_fsc_details["fsc_random_masked"][corrected_shell]),
-            float(solvent_fsc_details["fsc_true"][corrected_shell]),
-            time.time() - _t_solvent_fsc,
-        )
-    elif do_solvent_fsc_correction:
-        log.warning(
-            "RELION solvent FSC correction requested but particle_diameter_ang is unset; using raw FSC for tau2"
-        )
 
     # RELION calls BackProjector::updateSSNRarrays independently for each
     # half-map BPref.  The gold-standard FSC is shared, but sigma2/tau2
@@ -1309,7 +1230,7 @@ def estimate_split_half_prior(
         mean_signal_variance_k, _, tau2_update_details_k = regularization_relion.compute_relion_tau2_from_weights(
             Ft_ctf_half,
             Ft_ctf_half,
-            tau2_fsc_for_update,
+            current_iter_fsc,
             settings.volume_shape,
             tau2_fudge=settings.tau2_fudge,
             padding_factor=settings.padding_factor,
@@ -1330,7 +1251,7 @@ def estimate_split_half_prior(
         variance_per_half=mean_signal_variance_per_half,
         shells_per_half=mean_signal_variance_shells_per_half,
         fsc=current_iter_fsc,
-        fsc_for_update=tau2_fsc_for_update,
+        fsc_for_update=current_iter_fsc,
         details_per_half=tau2_update_details_per_half,
     )
 

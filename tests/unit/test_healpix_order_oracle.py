@@ -73,7 +73,6 @@ def test_sampling_validation_preserves_payloads_and_input_options(orders):
             tau2_fudge=4.0,
             perturb_replay_relion_prefix="custom",
             emulate_relion_firstiter_cc=True,
-            do_solvent_fsc_correction=True,
             image_fourier_backend="jax_gpu",
         ),
         k_class=KClassOptions(n_classes=4),

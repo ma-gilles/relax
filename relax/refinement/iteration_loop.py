@@ -2104,8 +2104,6 @@ def refine_single_volume(
                 current_size=current_size,
                 accumulator_shape=mstep_accumulator_shape,
                 full_half_axes=per_half.mstep_full_half_axis,
-                do_solvent_fsc_correction=parity.do_solvent_fsc_correction,
-                pixel_size_angstrom=source_pixel_size_angstrom,
                 iteration=iteration,
                 scoring_dtype=scoring_dtype,
                 started_at=_t_unreg_first,
