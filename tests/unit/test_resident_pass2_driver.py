@@ -1589,8 +1589,6 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
         square_window=False,
         window_spec_kwargs={"window_at_box": True},
         firstiter_cc=False,
-        reconstruction_image_radius=None,
-        reconstruction_volume_current_size=None,
     )
     monkeypatch.setenv(rp._RESIDENT_STABLE_WINDOWS_ENV, "0")
     assert rp._resident_stable_window_plan((64, 64), **kwargs) is None
@@ -1603,11 +1601,33 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(monkeypatch, ca
         {"current_size": 64, "mstep_current_size": 64, "n_half": 64 * 33},
         {"firstiter_cc": True},
         {"mstep_current_size": 34},
-        {"reconstruction_volume_current_size": 36},
     ):
         with caplog.at_level("INFO"):
             assert rp._resident_stable_window_plan((64, 64), **{**kwargs, **override}) is None
     assert "not applicable" in caplog.text
+
+
+def test_stable_window_reference_volume_on_another_grid(monkeypatch):
+    """A pass on another grid keeps the image grid's plan; its reference cube and clip take a physical class."""
+
+    from relax.helpers.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
+    from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+    from relax.refinement.optics_shapes import reconstruction_image_radius
+
+    monkeypatch.delenv(rp._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    quantum = stable_fourier_window_quantum()
+    physical = rp._stable_reference_volume_class(128, 54)
+    assert physical == stable_fourier_window_current_size(54, 128, quantum=quantum) and physical >= 54
+    scale = 112 * 5.44 / (128 * 4.25)
+    logical_radius = reconstruction_image_radius(54, scale)
+    physical_radius = rp._reference_image_radius_at(logical_radius, 54, physical)
+    assert physical_radius == pytest.approx((physical // 2) * scale, rel=1e-12)
+    assert physical_radius >= logical_radius
+    assert rp._reference_image_radius_at(None, 54, physical) is None
+    clip = mstep_adjoint_max_r(54, logical_radius, 2)
+    assert isinstance(clip, ReferenceSphereClip)
+    assert rp._runtime_mstep_radius(clip) == pytest.approx(logical_radius)
+    assert rp._runtime_mstep_radius(mstep_adjoint_max_r(54, None, 2)) == 27.0
 
 
 @requires_resident_gpu

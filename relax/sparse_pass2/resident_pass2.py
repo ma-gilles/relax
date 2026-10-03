@@ -77,7 +77,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
-from relax.helpers.adjoint import mstep_adjoint_max_r
+from relax.helpers.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
 from relax.helpers.batch_fetch import fetch_indexed_batch
 from relax.helpers.deterministic_reduce import deterministic_reductions_enabled
 from relax.helpers.env_flags import parse_env_capacity_ladder, parse_env_flag
@@ -2297,6 +2297,42 @@ def _stable_window_physical_class(image_size: int, current_size: int, quantum: i
     return chosen
 
 
+def _stable_reference_volume_class(volume_size: int, volume_current_size: int) -> int:
+    """The physical reference-model current size of a pass on another grid.
+
+    The backprojector cube of images on another grid is keyed on the reference
+    model's current size, not the image's; it takes the same quantized classes,
+    with the run's class history, as a pass on the model grid would.
+    """
+
+    quantum = stable_fourier_window_quantum()
+    physical = _stable_window_physical_class(int(volume_size), int(volume_current_size), quantum)
+    if physical is None:
+        physical = stable_fourier_window_current_size(int(volume_current_size), int(volume_size), quantum=quantum)
+    return int(physical)
+
+
+def _reference_image_radius_at(image_radius, volume_current_size: int, physical_volume_current_size: int):
+    """The image-space radius of a physical reference-model size, or None on one grid.
+
+    :func:`relax.refinement.optics_shapes.reconstruction_image_radius` is
+    ``(current_size // 2) * s``; the physical class keeps the scale ``s``.
+    """
+
+    if image_radius is None:
+        return None
+    logical_r_max = int(volume_current_size) // 2
+    if logical_r_max <= 0:
+        raise ValueError(f"a reference-model current size of {volume_current_size} has no radius")
+    return float(image_radius) / float(logical_r_max) * float(int(physical_volume_current_size) // 2)
+
+
+def _runtime_mstep_radius(mstep_max_r) -> float:
+    """The adjoint's runtime radius in image Fourier pixels: ``max_r``, or a sphere clip's image radius."""
+
+    return float(mstep_max_r.image_radius) if isinstance(mstep_max_r, ReferenceSphereClip) else float(mstep_max_r)
+
+
 def _capacity_projection_applies(
     *,
     use_relion_projector,
@@ -2376,16 +2412,16 @@ def _resident_stable_window_plan(
     square_window,
     window_spec_kwargs,
     firstiter_cc,
-    reconstruction_image_radius,
-    reconstruction_volume_current_size,
 ):
     """The pass's stable-window plan, or None to keep the logical window.
 
     The plan applies when the flag is on and the current size is below the box,
     with one current size for scoring and reconstruction on the model grid.
-    The --firstiter_cc iteration (normalized-CC tiles), reconstructions on
-    another grid and a split score/reconstruction current size keep RELION's
-    logical window, as the compact and local engines do.
+    The --firstiter_cc iteration (normalized-CC tiles) and a split
+    score/reconstruction current size keep RELION's logical window, as the
+    compact and local engines do. Images on another grid take the plan on their
+    own image grid; their reference-model volume gets its own physical class in
+    the caller (:func:`_stable_reference_volume_class`).
     """
 
     if not _resident_stable_windows_requested():
@@ -2397,8 +2433,6 @@ def _resident_stable_window_plan(
         reasons.append("--firstiter_cc")
     if int(mstep_current_size) != int(current_size):
         reasons.append("reconstruction current size differs from the score's")
-    if reconstruction_image_radius is not None or reconstruction_volume_current_size is not None:
-        reasons.append("reconstruction on another grid")
     if reasons:
         logger.info(
             "Resident pass-2 stable windows requested but not applicable (%s); using the logical window",
@@ -2964,8 +2998,6 @@ def _resident_pass2(
         square_window=square_window,
         window_spec_kwargs=window_spec_kwargs,
         firstiter_cc=firstiter_cc,
-        reconstruction_image_radius=reconstruction_image_radius,
-        reconstruction_volume_current_size=reconstruction_volume_current_size,
     )
     stable_window_spec = None
     # The spec's current size: the physical class with stable windows, RELION's otherwise.
@@ -3135,7 +3167,11 @@ def _resident_pass2(
     program_recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
     program_mstep_max_r = mstep_max_r
     if stable_window_plan is not None:
-        program_volume_current_size = int(stable_window_plan.physical_reconstruction_current_size)
+        program_volume_current_size = (
+            int(stable_window_plan.physical_reconstruction_current_size)
+            if reconstruction_volume_current_size is None
+            else _stable_reference_volume_class(int(volume_shape[0]), int(volume_current_size))
+        )
         program_recon_volume_shape = tuple(
             int(v)
             for v in relion_backprojector_volume_shape(
@@ -3143,7 +3179,9 @@ def _resident_pass2(
             )
         )
         program_mstep_max_r = mstep_adjoint_max_r(
-            program_volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
+            program_volume_current_size,
+            _reference_image_radius_at(reconstruction_image_radius, volume_current_size, program_volume_current_size),
+            reconstruction_padding_factor,
         )
     program_recon_volume_size = int(np.prod(half_volume_accumulator_shape(program_recon_volume_shape)))
     # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
@@ -3956,7 +3994,7 @@ def _resident_pass2(
         place=_PLACE_ON_DEVICE,
         # The capacity cube's adjoint clips at RELION's radius: its compact
         # trilinear bound and 3-D radius check read it (recovar backproject_indexed).
-        mstep_max_r=None if stable_window_plan is None else mstep_max_r,
+        mstep_max_r=None if stable_window_plan is None else _runtime_mstep_radius(mstep_max_r),
     )
 
     max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(device_memory_bytes)
