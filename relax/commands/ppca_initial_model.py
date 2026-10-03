@@ -253,10 +253,19 @@ def source_identity():
     # Includes untracked implementation files; a clean HEAD alone is insufficient.
     files = sorted((repo / "relax/ppca_initial_model").glob("*.py"))
     files += sorted((repo / "relax/ppca_refinement").glob("*.py"))
-    files += [Path(__file__), repo / "relax/relion/relion_project.py", repo / "pixi.lock"]
+    files += [Path(__file__), repo / "relax/relion/relion_project.py"]
+    # A plain file snapshot or an installed package has no lock file or git checkout; the file
+    # hashes identify the source on their own.
+    files += [path for path in (repo / "pixi.lock",) if path.is_file()]
     recovar_stats = Path(recovar.__file__).resolve().parent / "ppca/pose_accumulators.py"
+    try:
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        head = None
     return {
-        "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip(),
+        "head": head,
         "files": {str(p.relative_to(repo)): file_hash(p) for p in files},
         "recovar_stats": {"path": str(recovar_stats), "sha256": file_hash(recovar_stats)},
         "native": native,
