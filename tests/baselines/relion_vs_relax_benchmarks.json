@@ -9019,7 +9019,13 @@
       "14708643"
      ]
     }
-   ]
+   ],
+   "pending": {
+    "note": "re-measure of the 0.38x wall on the fixed tomo coarse GEMM: on main a57891c4 the GEMM's float32 expansion error, summed over about 40 tilts, flips near-ties that RELION's direct kernel resolves the other way, which moved et13 (team-lead/speedw 2026-10-02; et13's refresh is held). et16's seed-1 accuracy held, so the wall stands until speedw lands the fix",
+    "jobs": [
+     "14896444"
+    ]
+   }
   },
   {
    "id": "multioptics_s3b_10k_autorefine",
