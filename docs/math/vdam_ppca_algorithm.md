@@ -1147,21 +1147,28 @@ scientific contract; runnable code alone does not establish recovery.
   the stream's upload, less 10% of the device for fragmentation and
   uncounted temporaries
   ([plan_tile_images](../../relax/ppca_refinement/full_row_stream.py),
-  `TILE_FRAGMENTATION_HEADROOM`). The count, from array shapes, includes:
-  - the kept pass-1 rows over the row table, one block's GEMM outputs and
-    weights, the moment accumulators, and one block's projections and M-step
-    images for the tile's K frames;
+  `TILE_FRAGMENTATION_HEADROOM`). The count includes:
+  - the kept pass-1 rows over the row table and the moment accumulators, from
+    their shapes;
+  - the larger of the score and moment block programs' own memory (temporaries
+    plus outputs, less donated inputs), from XLA's compiled memory analysis of
+    each program at the planned shapes on the device, cached per shape
+    (`tile_program_bytes`);
   - the current tile's resident operands and the next tile's reader peak,
     because tiles are read ahead while the current one runs. The subtomogram
-    reader reports that peak from XLA's compiled memory analysis of its operand
-    program (`load_tilt_tile.operand_bytes`); the single-particle reader counts
-    its arrays.
+    reader reports that peak from the compiled memory analysis of its operand
+    program (`load_tilt_tile.operand_bytes`) and its frames per particle
+    (`max_frames`); the single-particle reader counts its arrays. A custom
+    reader without both attributes is refused rather than planned as single
+    particles.
 
   A finished tile is released before the next one is read. A stage is planned
-  once, from its shapes, and the plan is logged. Each update records the
-  planned size as `tile_images`. On an emulated 16 GB A100 (r31/HP3 cryo-ET,
-  41 tilts, batch 150) the plan is 142 particles at a 7.6 GB peak, where a
-  one-copy count had run a P100 out of memory.
+  once, from its shapes, and the plan is logged ("PPCA tile plan", in the
+  command's run.log). Each update records the planned size as `tile_images`.
+  On an emulated 16 GB H100 (job 14939163; r31/HP3 cryo-ET, 41 tilts, batch
+  150) the r31 stage plans 33 particles (block programs 2.13 GiB) and SGD and
+  VDAM complete at a 15.3-15.6 GiB nvidia-smi peak, where the count without the block programs had run out
+  of memory in the score block.
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials
