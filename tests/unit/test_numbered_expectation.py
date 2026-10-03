@@ -146,6 +146,7 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
     assert captured['optics']['coarse_step_deg'] is coarse_step
     assert captured['optics']['particle_diameter_ang'] is diameter
     assert captured['optics']['noise_radial'] is radial
+    assert captured['optics']['with_log_prior'] is not local
     assert radial.dtype == np.float64
 
 
@@ -353,6 +354,10 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
         offset_range_angst=4., offset_step_angst=1., random_perturbation=.125, coarse_size=2, fine_size=4)
     kwargs['initial_class_assignments'] = np.array([3, 1, 0, 2], dtype=np.int32)
     kwargs['class_log_priors'] = np.zeros(4, dtype=np.float32)
+    # The direction-prior owner supplies no prior under local search.
+    class_direction_prior = None if local else np.zeros((4, 4), dtype=np.float32)
+    kwargs['direction_priors'] = HalfDirectionLogPriors(
+        rotation_log_prior=None, class_rotation_log_prior=class_direction_prior)
     captured = {}
 
     def score(dataset, **inputs):
@@ -369,6 +374,7 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
     assert_matches(captured['unit_seed_classes'], [0, 2])
     assert captured['sampling'] is kwargs['tomo_sampling']
     assert (captured['local_search'] is not None) == local
+    assert captured['class_rotation_log_prior'] is class_direction_prior
 
 
 @pytest.mark.parametrize('n_classes', [1, 4])
