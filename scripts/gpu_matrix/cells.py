@@ -336,6 +336,16 @@ def _reseeded(name: str, seed: int) -> dict:
     return spec
 
 
+# PPCA with an explicit particles-per-tile request: 16 (the old default) and 150 (the dense-stream default),
+# which a 16 GB card must cut down to fit (relax_ppca tile planner).
+for _optimizer, _tag in (("vdam", "vdam"), ("momentum_sgd", "sgd")):
+    for _batch in (16, 150):
+        CELLS[f"ppca_tomo_{_tag}_it24_b{_batch}"] = {
+            "module": "relax.commands.ppca_initial_model",
+            "args": [*_ppca_tomo(_optimizer), "--image-batch-size", str(_batch)],
+            "box": 64,
+        }
+
 for _name, _seeds in (("vdam_k1_5k128", (41, 53)), ("tomo_vdam_k1_et09_it10", (2, 3))):
     for _seed in _seeds:
         CELLS[f"{_name}_s{_seed}"] = _reseeded(_name, _seed)
