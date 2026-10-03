@@ -631,13 +631,15 @@ def refine_single_volume(
     optics_group_ids_per_half = _optics_group_ids_per_half(
         parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )
-    reference_model = initialize_reference_model(
-        initial_maps,
-        jnp.asarray(init_mean_variance),
-        use_per_half_mean_variance=parity.use_per_half_mean_variance,
-        k_class_enabled=k_class_enabled,
-        log=logger,
-    )
+    # A continued run takes its start-up model state from the snapshot, below.
+    if resume is None:
+        reference_model = initialize_reference_model(
+            initial_maps,
+            jnp.asarray(init_mean_variance),
+            use_per_half_mean_variance=parity.use_per_half_mean_variance,
+            k_class_enabled=k_class_enabled,
+            log=logger,
+        )
     # The reference owner alone retains the start-up tau2, so the first M-step
     # replacement releases it from the device.
     del initial_maps, init_mean_variance
@@ -665,14 +667,15 @@ def refine_single_volume(
     # RELION measures the first iteration's orientation changes from the input angles, as its offset
     # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
     # trackers of the hidden-variable stall counter.
-    previous_best_rotations = [
-        None
-        if half.rotation_eulers is None
-        else np.zeros((0, 3, 3), dtype=scoring_dtype)
-        if len(half.rotation_eulers) == 0
-        else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=scoring_dtype)
-        for half in halves
-    ]
+    if resume is None:
+        previous_best_rotations = [
+            None
+            if half.rotation_eulers is None
+            else np.zeros((0, 3, 3), dtype=scoring_dtype)
+            if len(half.rotation_eulers) == 0
+            else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=scoring_dtype)
+            for half in halves
+        ]
     previous_data_vs_prior_for_scheduling = (
         None
         if schedule.init_data_vs_prior is None
@@ -696,23 +699,25 @@ def refine_single_volume(
     relion_has_high_fsc_at_limit = bool(schedule.init_has_high_fsc_at_limit) if schedule.init_has_high_fsc_at_limit is not None else False
 
     # --- Direction prior from snapshot ---
-    direction_priors = initial_direction_priors_from_snapshot(
-        replay.init_direction_prior,
-        n_classes=n_classes,
-        dtype=scoring_dtype,
-        log=logger,
-        symmetry=symmetry, expected_order=current_rotation_grid.healpix_order,
-    )
+    if resume is None or resume.direction_prior is None:
+        direction_priors = initial_direction_priors_from_snapshot(
+            replay.init_direction_prior,
+            n_classes=n_classes,
+            dtype=scoring_dtype,
+            log=logger,
+            symmetry=symmetry, expected_order=current_rotation_grid.healpix_order,
+        )
     _mark_setup_phase("direction_prior")
 
     # Extract per-shell radial profiles from the input pixel-array noise
     # variances for diagnostic logging ("noise update per shell: old=... new=...").
-    noise_model = initialize_noise_model(
-        initial_noise_variance_per_half,
-        average_variance=initial_noise_variance,
-        image_shape=image_geometry.image_shape,
-        dtype=scoring_dtype,
-    )
+    if resume is None:
+        noise_model = initialize_noise_model(
+            initial_noise_variance_per_half,
+            average_variance=initial_noise_variance,
+            image_shape=image_geometry.image_shape,
+            dtype=scoring_dtype,
+        )
     del initial_noise_variance_per_half, initial_noise_variance
     _mark_setup_phase("noise_radial_init")
 
@@ -749,27 +754,6 @@ def refine_single_volume(
         k_class_enabled=k_class_enabled,
     )
 
-    # --- RELION SamplingPerturbation state (healpix_sampling.cpp:167-174) ---
-    # RELION applies a random rigid rotation of the entire SO(3) trial grid at
-    # each iteration: A -> A @ R_perturb with R_perturb = R_from_relion([m,m,m])
-    # and m = random_perturbation * angular_sampling. The random_perturbation
-    # is advanced per iter via realWRAP(prev + rnd_unif(0.5*pf, pf), -pf, +pf).
-    # For exact parity replay, read _rlnSamplingPerturbInstance from RELION's
-    # per-iter sampling.star.
-    if parity.perturb_factor > 0 and parity.perturb_seed is not None:
-        random_perturbation = relion_sampling_perturbation_for_iteration(
-            parity.perturb_factor,
-            parity.perturb_seed,
-            init_relion_iteration,
-        )
-        logger.info(
-            "Perturbation init: relion_iter=%d random_seed=%d rp=%+.5f",
-            int(init_relion_iteration),
-            int(parity.perturb_seed),
-            random_perturbation,
-        )
-    else:
-        random_perturbation = 0.0
     # --- Continue from the run files of an earlier run (RELION --continue) ---
     # The snapshot replaces every value the next numbered iteration reads, so the
     # first loop iteration runs as iteration init_relion_iteration + 1 of the
@@ -832,6 +816,28 @@ def refine_single_volume(
             bool(state.do_local_search),
             float(state.current_resolution),
         )
+    else:
+        # --- RELION SamplingPerturbation state (healpix_sampling.cpp:167-174) ---
+        # RELION applies a random rigid rotation of the entire SO(3) trial grid at
+        # each iteration: A -> A @ R_perturb with R_perturb = R_from_relion([m,m,m])
+        # and m = random_perturbation * angular_sampling. The random_perturbation
+        # is advanced per iter via realWRAP(prev + rnd_unif(0.5*pf, pf), -pf, +pf).
+        # For exact parity replay, read _rlnSamplingPerturbInstance from RELION's
+        # per-iter sampling.star.
+        if parity.perturb_factor > 0 and parity.perturb_seed is not None:
+            random_perturbation = relion_sampling_perturbation_for_iteration(
+                parity.perturb_factor,
+                parity.perturb_seed,
+                init_relion_iteration,
+            )
+            logger.info(
+                "Perturbation init: relion_iter=%d random_seed=%d rp=%+.5f",
+                int(init_relion_iteration),
+                int(parity.perturb_seed),
+                random_perturbation,
+            )
+        else:
+            random_perturbation = 0.0
     perturb_rng = None if parity.perturb_seed is not None else np.random.default_rng()
     # RELION's per-class MlModel::acc_rot/acc_trans for model.star: zero until the
     # first expected-accuracy estimate (ml_model.cpp:68), then the latest estimate.
