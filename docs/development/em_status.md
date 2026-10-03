@@ -908,6 +908,18 @@ corrections to 4e-5; jobs 14456979, 14457083). Patched build, patch, verificatio
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_mpi_scale_20260926/` (run with
 `SLURM_MPI_TYPE=pmix_v3`). Class3D benchmark references should be non-MPI RELION or this patched build.
 
+K4 5k/128 seed 29 score shift (2026-10-03, closed as a tie): main scored masked GT FSC-AUC 0.475817 against
+0.476104 for the 09-27 run and both RELION builds. Bisect over the 271 relax commits since ddf88c8: the first
+change is a9c89cb (K-class M-step sums each projection's rows, then backprojects once), which moves relax
+toward double-accumulation RELION (iteration-2 class maps 7.5e-7 from it, against 1.15e-5 for per-row
+backprojection and 1.55e-5 for stock RELION) and still scores 0.476104. The drop is one particle
+(2254@particles.128.mrcs) taking a different pose at iteration 4, and later unrelated commits toggle it on
+and off. Its coarse posterior puts 0.9990002 or 0.9989997 of the mass on the top coarse sample against
+RELION's adaptive fraction 0.999 (margin about 2e-7, a few float32 ulps): one or two coarse samples are
+significant, and the fine winner follows. RELION keeps one (rlnNrOfSignificantSamples 1, pose with Pmax
+0.8263). Enabling the capture alone swaps the side. A float tie, not a relax difference. Evidence:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/etw_k4bisect_20261003` (score_out.json, capture/*/sigdump).
+
 K4 100k/256 class agreement (formerly OPEN; explained by the defect above): relax's class agreement with the
 two MPI RELION runs was 0.878-0.894 at iteration 15 while they agree with each other at 0.9335. Non-MPI RELION
 with the same command (job 14455196, 3643 s) agrees with those MPI runs at 0.8785-0.8954, the same level, and
