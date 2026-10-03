@@ -7,11 +7,13 @@ the bytes come from differs.
 import argparse
 import os
 import signal
+from types import SimpleNamespace
 
 import mrcfile
 import numpy as np
 import pandas as pd
 import pytest
+import starfile
 from helpers.float_compare import assert_matches, matches
 from recovar.data_io import staging
 from recovar.data_io.cryoem_dataset import load_dataset
@@ -24,6 +26,7 @@ from relax.helpers.particle_io import (
     assert_reads_from_scratch,
     prepare_particle_reads,
 )
+from relax.refinement import particle_loading
 
 pytestmark = pytest.mark.unit
 
@@ -110,6 +113,127 @@ def _reads(ds):
         "rotations": np.asarray(ds.rotation_matrices),
         "translations": np.asarray(ds.translations),
     }
+
+
+def _loading_args(root, **overrides):
+    values = dict(
+        data_dir=str(root), output=str(root), preread_images=False,
+        scratch_dir="", keep_free_scratch_gb=0.0, particle_diameter_ang=24.0,
+        width_mask_edge_px=5.0, relion_softmask_reduction="control",
+        image_fourier_backend="host_numpy", n_classes=1,
+        relion_init_dir=None, init_noise_from_npz=None, perturb_replay_relion_dir=None,
+    )
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+@pytest.mark.parametrize("mode", ["streaming", "scratch", "preread"])
+@pytest.mark.parametrize("double_preprocessing", [False, True])
+def test_command_particle_loading_preserves_images_identity_and_precision(
+    tmp_path, monkeypatch, mode, double_preprocessing,
+):
+    from recovar.data_io import cryoem_dataset
+
+    _, expected = _fixture(tmp_path)
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1" if double_preprocessing else "0")
+    calls = []
+
+    def recorded_load(*args, **kwargs):
+        calls.append(kwargs.copy())
+        return load_dataset(*args, **kwargs)
+
+    monkeypatch.setattr(cryoem_dataset, "load_dataset", recorded_load)
+    loaded = particle_loading.load_particle_inputs(_loading_args(
+        tmp_path, preread_images=mode == "preread",
+        scratch_dir=str(scratch_dir) if mode == "scratch" else "",
+    ))
+    dataset = loaded.dataset
+    assert not loaded.tomographic and loaded.shape_class_rows is None
+    assert loaded.double_preprocessing is double_preprocessing
+    assert_matches(loaded.mask_parameters, (24.0, 5.0))
+    assert len(calls) == 1
+    assert calls[0]["dtype"] is (np.complex128 if double_preprocessing else np.complex64)
+    assert calls[0]["lazy"] is (mode != "preread")
+    assert calls[0]["absent_angles_zero"] is True
+    assert_matches(dataset.image_source.host_images(np.arange(dataset.n_units)), expected)
+    rows = np.array([17, 2, 5, 0], dtype=np.int64)
+    assert_matches(dataset.subset(rows).image_source.host_images(np.arange(rows.size)), expected[rows])
+
+
+def test_command_particle_loading_keeps_shape_rows_and_group_mask_geometry(tmp_path, monkeypatch):
+    _, expected = _fixture(tmp_path)
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "0")
+    star_path = tmp_path / "particles.star"
+    tables = starfile.read(star_path)
+    second_group = tables["particles"]["rlnImageName"].str.contains("mic2.mrcs")
+    tables["particles"].loc[second_group, "rlnOpticsGroup"] = 2
+    second_optics = tables["optics"].copy()
+    second_optics["rlnOpticsGroup"] = 2
+    second_optics["rlnImageSize"] = 12
+    second_optics["rlnImagePixelSize"] = 2.0
+    tables["optics"] = pd.concat([tables["optics"], second_optics], ignore_index=True)
+    second_stack = tmp_path / "Extract" / "mic2.mrcs"
+    with mrcfile.open(second_stack) as mrc:
+        cropped = np.array(mrc.data[:, 2:-2, 2:-2], copy=True)
+    with mrcfile.new(second_stack, overwrite=True) as mrc:
+        mrc.set_data(cropped)
+    starfile.write(tables, star_path, overwrite=True)
+
+    loaded = particle_loading.load_particle_inputs(_loading_args(tmp_path))
+    dataset = loaded.dataset
+    assert not loaded.tomographic and len(loaded.shape_class_rows) == 2
+    assert dataset.n_units == expected.shape[0]
+    for index, (box, pixel_size) in enumerate([(16, 1.5), (12, 2.0)]):
+        rows = np.flatnonzero(np.asarray(second_group) == bool(index))
+        assert np.array_equal(loaded.shape_class_rows[index], rows)
+        images = expected[rows] if index == 0 else expected[rows, 2:-2, 2:-2]
+        shape_dataset = dataset.datasets[index]
+        assert shape_dataset.image_shape == (box, box)
+        assert_matches(shape_dataset.voxel_size, pixel_size)
+        assert_matches(shape_dataset.image_source.host_images(np.arange(rows.size)), images)
+        assert shape_dataset.image_source.backend.image_mask.shape == (box, box)
+        # Both grids span 24 A; their masks must use their own physical pixel size.
+        backend = shape_dataset.image_source.backend
+        corner_radius = np.sqrt(2) * (box // 2)
+        mask_radius = 24.0 / (2 * pixel_size)
+        expected_corner = 0.5 + 0.5 * np.cos(np.pi * (corner_radius - mask_radius) / 5.0)
+        assert_matches(backend.image_mask[0, 0], expected_corner, rtol=1e-6)
+        assert backend.image_mask_mode == "relion_background_fill"
+    subset_rows = np.array([17, 2, 5, 0], dtype=np.int64)
+    half = dataset.subset(subset_rows)
+    assert half.n_units == subset_rows.size
+    for shape_class in half.classes:
+        source_rows = subset_rows[shape_class.image_indices]
+        images = expected[source_rows]
+        if shape_class.dataset.image_shape == (12, 12):
+            images = images[:, 2:-2, 2:-2]
+        assert_matches(shape_class.dataset.image_source.host_images(np.arange(source_rows.size)), images)
+
+
+@pytest.mark.parametrize("format_name", ["subtomogram", "multiple_shapes"])
+@pytest.mark.parametrize("unsupported", ["float64", "frozen", "loaded_noise", "initial_state"])
+def test_command_refuses_unsupported_input_state_before_loading(
+    tmp_path, monkeypatch, format_name, unsupported,
+):
+    from recovar.data_io import cryoem_dataset
+
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1" if unsupported == "float64" else "0")
+    monkeypatch.setattr(particle_loading, "is_relion5_2d_stack_star", lambda _: format_name == "subtomogram")
+    monkeypatch.setattr(particle_loading, "optics_shape_class_rows", lambda _: [np.array([0]), np.array([1])])
+
+    def unexpected_load(*args, **kwargs):
+        raise AssertionError("unsupported input reached image loading")
+
+    monkeypatch.setattr(cryoem_dataset, "load_dataset", unexpected_load)
+    monkeypatch.setattr(particle_loading, "load_tomo_dataset", unexpected_load)
+    args = _loading_args(
+        tmp_path, init_noise_from_npz="noise.npz" if unsupported == "loaded_noise" else None,
+        relion_init_dir="seeded" if unsupported == "initial_state" else None,
+    )
+    with pytest.raises(SystemExit, match="subtomogram particles|optics groups on several image shapes"):
+        particle_loading.load_particle_inputs(args, frozen_boundary=object() if unsupported == "frozen" else None)
 
 
 def test_default_scratch_and_preread_read_identical_bytes(tmp_path):

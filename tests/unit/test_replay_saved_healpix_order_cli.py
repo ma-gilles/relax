@@ -52,10 +52,23 @@ def test_cold_start_and_autonomous_runs_skip_saved_order_check(replay_dir, init_
     run_full_refinement._validate_replay_saved_healpix_order(replay_dir, init_relion_iteration, 2)
 
 
-def test_cli_validates_saved_order_before_refinement():
-    import inspect
+def test_cli_validates_saved_order_before_refinement(tmp_path, monkeypatch):
+    from relax.refinement import command_options
 
-    source = inspect.getsource(run_full_refinement.main)
-    start = source.index("_validate_replay_saved_healpix_order(")
-    assert start < source.index("frozen_boundary = None")
-    assert "args.healpix_order" in source[start : start + 240]
+    _write_sampling(tmp_path, 16, 3)
+    args = command_options.parse_refinement_args([
+        "--data_dir", str(tmp_path), "--output", str(tmp_path / "output"),
+        "--perturb_replay_relion_dir", str(tmp_path),
+        "--init_relion_iteration", "16", "--healpix_order", "2",
+    ])
+    monkeypatch.setattr(command_options, "parse_refinement_args", lambda: args)
+    monkeypatch.setattr(run_full_refinement, "activate_recovar_compilation_cache", lambda: None)
+    monkeypatch.setattr(run_full_refinement, "_assert_expected_repo_imports", lambda: None)
+    monkeypatch.setattr(run_full_refinement, "apply_k1_refine3d_env_defaults", lambda: None)
+
+    def unexpected_boundary(*args, **kwargs):
+        raise AssertionError("invalid saved sampling order reached boundary/data preparation")
+
+    monkeypatch.setattr(run_full_refinement.frozen_boundary_cli, "load_cli_boundary", unexpected_boundary)
+    with pytest.raises(ValueError, match="does not match RELION's saved sampling order 3"):
+        run_full_refinement.main()

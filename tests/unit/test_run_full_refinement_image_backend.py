@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+COMMAND_OPTIONS = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "command_options.py"
+PARTICLE_LOADING = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "particle_loading.py"
 RUNNER = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
 
 
@@ -13,7 +15,7 @@ def _runner_tree() -> ast.Module:
 
 
 def _image_backend_argument() -> ast.Call:
-    for node in ast.walk(_runner_tree()):
+    for node in ast.walk(ast.parse(COMMAND_OPTIONS.read_text())):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if node.func.attr != "add_argument" or not node.args:
@@ -25,7 +27,7 @@ def _image_backend_argument() -> ast.Call:
 
 def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
     # auto resolves to relion_cuda for K=1 and for Class3D on the resident pass 2, host_numpy for
-    # Class3D on the compact engine (_resolve_relion_gui_defaults).
+    # Class3D on the compact engine (command_options.resolve_job_defaults).
     argument = _image_backend_argument()
     keywords = {keyword.arg: keyword.value for keyword in argument.keywords}
 
@@ -56,7 +58,7 @@ def test_image_fourier_backend_cli_is_forwarded_to_refinement():
 def test_relion_softmask_reduction_cli_has_sealed_diagnostic_choices():
     arguments = [
         node
-        for node in ast.walk(_runner_tree())
+        for node in ast.walk(ast.parse(COMMAND_OPTIONS.read_text()))
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "add_argument"
@@ -75,7 +77,7 @@ def test_relion_softmask_reduction_cli_has_sealed_diagnostic_choices():
 
 
 def test_relion_softmask_reduction_routes_both_native_diagnostic_modes():
-    source = RUNNER.read_text()
+    source = PARTICLE_LOADING.read_text()
     assert 'backend.set_relion_native_lane_reduction(True)' in source
     assert 'os.environ["RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION"] = "1"' in source
     assert 'args.image_fourier_backend != "relion_cuda"' in source

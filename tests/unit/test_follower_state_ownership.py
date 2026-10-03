@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.refinement.half_inputs import HalfSet
 from relax.relion import relion_worker_scale as scale
 
 pytestmark = pytest.mark.unit
@@ -21,10 +22,9 @@ def correction_inputs():
         follower_owners_per_half=[np.array([0, 1]), np.array([1, 0])],
         scale_reduction_mode=scale.RELION_SCALE_REDUCTION_OPTICS_PREFIX,
     )
-    halves = SimpleNamespace(
-        group_ids=[np.array([0, 1]), np.array([1, 0])],
-        scale_corrections=[None, None],
-        image_corrections=[None, None],
+    halves = (
+        HalfSet(index=0, dataset=object(), group_ids=np.array([0, 1])),
+        HalfSet(index=1, dataset=object(), group_ids=np.array([1, 0])),
     )
     noise = SimpleNamespace(
         wsum_scale_correction_xa=np.array([[2.0, 6.0], [4.0, 8.0]]),
@@ -63,12 +63,12 @@ def test_updates_are_visible_through_owner(correction_inputs, firstiter, dtype):
         assert (state is initial) == firstiter
         assert_matches(diagnostic[0], state.scales[0])
         halves = kwargs["relion_half_inputs"]
-        for half, factor in enumerate(([2.0, 1.0], [0.5, 1.0])):
-            expected = state.scales[setup.follower_owners_per_half[half], halves.group_ids[half]].astype(dtype)
-            assert_matches(halves.scale_corrections[half], expected)
-            assert_matches(halves.image_corrections[half], (expected * factor).astype(dtype))
-            assert halves.scale_corrections[half].dtype == dtype
-            assert halves.image_corrections[half].dtype == dtype
+        for half, factor in zip(halves, ([2.0, 1.0], [0.5, 1.0])):
+            expected = state.scales[setup.follower_owners_per_half[half.index], half.group_ids].astype(dtype)
+            assert_matches(half.scale_corrections, expected)
+            assert_matches(half.image_corrections, (expected * factor).astype(dtype))
+            assert half.scale_corrections.dtype == dtype
+            assert half.image_corrections.dtype == dtype
 
 
 def test_missing_statistics_leave_owner_and_corrections_untouched(correction_inputs):
@@ -83,5 +83,5 @@ def test_missing_statistics_leave_owner_and_corrections_untouched(correction_inp
             dtype=np.float32,
         )
     assert setup.follower_scale_state is original
-    assert kwargs["relion_half_inputs"].scale_corrections == [None, None]
-    assert kwargs["relion_half_inputs"].image_corrections == [None, None]
+    assert all(half.scale_corrections is None for half in kwargs["relion_half_inputs"])
+    assert all(half.image_corrections is None for half in kwargs["relion_half_inputs"])

@@ -1,9 +1,11 @@
-"""Mutable per-half pose and correction inputs for refinement and replay."""
+"""Particle-half ownership, pose interpretation and correction inputs."""
 
 import logging
 from dataclasses import dataclass
 
 import numpy as np
+
+from relax.helpers.convergence import concatenate_pose_stacks_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,14 @@ def optional_half_arrays(values, *, dtype=None):
         np.asarray(values[0], dtype=dtype) if values[0] is not None else None,
         np.asarray(values[1], dtype=dtype) if values[1] is not None else None,
     ]
+
+
+def _sigma_offset_for_half(
+    current_sigma_offset_angstrom, current_sigma_offset_angstrom_per_half, half_index: int
+) -> float:
+    if current_sigma_offset_angstrom_per_half is None:
+        return float(current_sigma_offset_angstrom)
+    return float(current_sigma_offset_angstrom_per_half[half_index])
 
 
 def _optional_group_count_half_pair(values):
@@ -67,42 +77,247 @@ def _logged_half_arrays(values, *, label: str):
     return per_half
 
 
-@dataclass
-class HalfInputState:
-    """Mutable per-half inputs carried across replay and local-search iterations."""
+@dataclass(kw_only=True)
+class HalfSet:
+    """Persistent particles, poses and corrections for one independent half."""
 
-    previous_best_translations: list
-    previous_best_rotation_eulers: list
-    image_corrections: list
-    scale_corrections: list
-    group_ids: list
-    group_count: list
+    index: int
+    dataset: object
+    optics_group_ids: object | None = None
+    rotation_eulers: object | None = None
+    translations: object | None = None
+    image_corrections: object | None = None
+    scale_corrections: object | None = None
+    group_ids: object | None = None
+    group_count: int | None = None
 
-    @classmethod
-    def from_initial_values(
-        cls,
-        *,
-        previous_best_translations,
-        previous_best_rotation_eulers,
-        image_corrections,
-        scale_corrections,
-        group_ids=None,
-        group_count=None,
-    ):
-        return cls(
-            previous_best_translations=optional_half_arrays(previous_best_translations),
-            previous_best_rotation_eulers=optional_half_arrays(previous_best_rotation_eulers),
-            image_corrections=_logged_half_arrays(
-                image_corrections,
-                label="image_corrections",
-            ),
-            scale_corrections=_logged_half_arrays(
-                scale_corrections,
-                label="scale_corrections",
-            ),
-            group_ids=optional_half_arrays(group_ids, dtype=np.int64),
-            group_count=_optional_group_count_half_pair(group_count),
+    def require_local_search_poses(self):
+        if self.rotation_eulers is None or self.translations is None:
+            raise ValueError(f"Local search requires orientations and translations for half {self.index + 1}")
+
+
+@dataclass(frozen=True, eq=False)
+class ParticlePoses:
+    """One half's selected orientations and relative/absolute shifts in pixels."""
+
+    rotations: np.ndarray
+    eulers_deg: np.ndarray
+    relative_translations_pixels: np.ndarray
+    translations_pixels: np.ndarray
+
+
+def resolve_particle_poses(
+    assignments,
+    translation_grid,
+    *,
+    previous_translations,
+    best_pose_rotations,
+    best_pose_rotation_eulers,
+    best_pose_translations,
+    pose_rotations,
+    local_sampling,
+    dtype,
+) -> ParticlePoses:
+    """Resolve explicit engine poses or grid IDs into persistent particle poses.
+
+    Supplied Euler metadata stays float64; deferred local matrices stay float32.
+    See ``docs/math/relion_refinement_algorithm.md``, section 3.
+    """
+    from recovar import utils
+
+    from relax.local.local_layout import _selected_rotation_matrices
+    from relax.relion.relion_metadata import _relion_metadata_translations
+    from relax.sampling import build_local_search_grid_metadata
+
+    if best_pose_rotations is not None:
+        rotations = np.asarray(best_pose_rotations, dtype=dtype)
+        eulers = (
+            np.asarray(best_pose_rotation_eulers, dtype=np.float64)
+            if best_pose_rotation_eulers is not None
+            else utils.R_to_relion(rotations, degrees=True).astype(dtype)
         )
+        translations = np.asarray(best_pose_translations, dtype=dtype)
+    else:
+        rotation_ids = assignments // translation_grid.shape[0]
+        translation_ids = assignments % translation_grid.shape[0]
+        if local_sampling is not None:
+            if local_sampling.rotations is None:
+                grid_metadata = build_local_search_grid_metadata(
+                    local_sampling.search.healpix_order, symmetry=local_sampling.search.symmetry,
+                )
+                rotations = _selected_rotation_matrices(
+                    rotation_ids,
+                    None,
+                    grid_metadata,
+                    random_perturbation=local_sampling.perturbation,
+                    angular_sampling_deg=local_sampling.angular_step_deg,
+                )
+                eulers = utils.R_to_relion(np.asarray(rotations), degrees=True).astype(dtype)
+            else:
+                rotations = np.asarray(local_sampling.rotations, dtype=dtype)[rotation_ids]
+                if local_sampling.rotation_eulers is not None:
+                    eulers = np.asarray(local_sampling.rotation_eulers, dtype=dtype)[rotation_ids]
+                else:
+                    eulers = utils.R_to_relion(np.asarray(rotations), degrees=True).astype(dtype)
+        else:
+            rotations = np.asarray(pose_rotations, dtype=dtype)[rotation_ids]
+            eulers = utils.R_to_relion(np.asarray(rotations), degrees=True).astype(dtype)
+        translations = np.asarray(translation_grid)[translation_ids]
+    return ParticlePoses(
+        rotations=rotations,
+        eulers_deg=eulers,
+        relative_translations_pixels=translations,
+        translations_pixels=_relion_metadata_translations(
+            previous_translations, translations, dtype=dtype,
+        ),
+    )
+
+
+@dataclass(frozen=True, eq=False)
+class ParticlePoseUpdate:
+    """Previous pose snapshots and resolved poses for one numbered iteration."""
+
+    previous_rotations: list[np.ndarray | None]
+    previous_translations_pixels: list[np.ndarray | None]
+    current: tuple[ParticlePoses, ParticlePoses]
+
+
+@dataclass(frozen=True, eq=False)
+class PoseComparison:
+    """Half-ordered pose stacks consumed by convergence-change measurements."""
+
+    current_rotations: np.ndarray | None
+    previous_rotations: np.ndarray | None
+    current_translations_pixels: np.ndarray | None
+    previous_translations_pixels: np.ndarray | None
+
+
+def prepare_particle_pose_update(
+    scores,
+    halves,
+    translation_grid,
+    *,
+    previous_rotations,
+    local_sampling,
+    dtype,
+) -> ParticlePoseUpdate:
+    """Snapshot prior poses and resolve engine outputs without installing state.
+
+    Snapshot both halves before resolving either. Canonical Euler metadata,
+    relative search shifts and absolute particle offsets retain their existing
+    precision and frames. See ``docs/math/relion_refinement_algorithm.md``,
+    section 3. The controller owns publication and diagnostic ordering.
+    """
+    previous_rotations_snapshot = [
+        np.asarray(rot).copy() if rot is not None else None for rot in previous_rotations
+    ]
+    previous_translations_snapshot = [
+        np.asarray(half.translations).copy() if half.translations is not None else None
+        for half in halves
+    ]
+    current = tuple(
+        resolve_particle_poses(
+            scores.hard_assignments[k],
+            translation_grid,
+            previous_translations=previous_translations_snapshot[k],
+            best_pose_rotations=scores.best_pose_rotations[k],
+            best_pose_rotation_eulers=scores.best_pose_rotation_eulers[k],
+            best_pose_translations=scores.best_pose_translations[k],
+            pose_rotations=scores.pose_rotations[k],
+            local_sampling=local_sampling,
+            dtype=dtype,
+        )
+        for k in range(2)
+    )
+    return ParticlePoseUpdate(
+        previous_rotations=previous_rotations_snapshot,
+        previous_translations_pixels=previous_translations_snapshot,
+        current=current,
+    )
+
+
+def prepare_pose_comparison(
+    pose_update: ParticlePoseUpdate,
+    *,
+    translation_dimension: int,
+    dtype,
+    log,
+) -> PoseComparison:
+    """Prepare aligned current/previous pose stacks in physical half order.
+
+    Missing or malformed stacks retain the existing convergence primitive's
+    refusal and logging behavior. Publication has already happened in the
+    controller; this operation neither updates poses nor decides convergence.
+    """
+    current_rotations = concatenate_pose_stacks_or_none(
+        [poses.rotations for poses in pose_update.current],
+        trailing_shape=(3, 3),
+        label="current rotation",
+        dtype=dtype,
+        logger=log,
+    )
+    previous_rotations = concatenate_pose_stacks_or_none(
+        pose_update.previous_rotations,
+        trailing_shape=(3, 3),
+        label="previous rotation",
+        dtype=dtype,
+        logger=log,
+    )
+    current_translations_pixels = concatenate_pose_stacks_or_none(
+        [poses.translations_pixels for poses in pose_update.current],
+        trailing_shape=(translation_dimension,),
+        label="current translation",
+        dtype=dtype,
+        logger=log,
+    )
+    previous_translations_pixels = concatenate_pose_stacks_or_none(
+        pose_update.previous_translations_pixels,
+        trailing_shape=(translation_dimension,),
+        label="previous translation",
+        dtype=dtype,
+        logger=log,
+    )
+
+    return PoseComparison(
+        current_rotations=current_rotations,
+        previous_rotations=previous_rotations,
+        current_translations_pixels=current_translations_pixels,
+        previous_translations_pixels=previous_translations_pixels,
+    )
+
+
+def initialize_halfsets(
+    datasets,
+    *,
+    optics_group_ids=(None, None),
+    previous_best_translations,
+    previous_best_rotation_eulers,
+    image_corrections,
+    scale_corrections,
+    group_ids=None,
+    group_count=None,
+) -> tuple[HalfSet, HalfSet]:
+    """Normalize input arrays once and attach each to its particle half."""
+    translations = optional_half_arrays(previous_best_translations)
+    rotation_eulers = optional_half_arrays(previous_best_rotation_eulers)
+    images = _logged_half_arrays(image_corrections, label="image_corrections")
+    scales = _logged_half_arrays(scale_corrections, label="scale_corrections")
+    groups = optional_half_arrays(group_ids, dtype=np.int64)
+    counts = _optional_group_count_half_pair(group_count)
+    return tuple(
+        HalfSet(
+            index=k,
+            dataset=datasets[k],
+            optics_group_ids=optics_group_ids[k],
+            translations=translations[k],
+            rotation_eulers=rotation_eulers[k],
+            image_corrections=images[k],
+            scale_corrections=scales[k],
+            group_ids=groups[k],
+            group_count=counts[k],
+        )
+        for k in range(2)
+    )
 
 
 def _normalize_sigma_offset_per_half(values):

@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -21,6 +21,7 @@ from recovar import utils
 from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.env_flags import parse_env_flag_or_false
 from relax.helpers.orientation_priors import (
+    DirectionPrior,
     class_weights_from_direction_prior,
     infer_direction_prior_healpix_order,
     normalize_class_direction_prior,
@@ -28,15 +29,14 @@ from relax.helpers.orientation_priors import (
     normalize_direction_prior_per_half,
 )
 from relax.refinement.half_inputs import (
-    HalfInputState,
+    HalfSet,
     _as_sigma_offset_half_pair,
     _normalize_sigma_offset_per_half,
     optional_half_arrays,
 )
 from relax.refinement.noise_updates import (
-    _mean_noise_variance,
-    _noise_radial_history,
-    _normalize_noise_variance_per_half,
+    NoiseModel,
+    noise_model_from_pixels,
 )
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion import relion_metadata
@@ -55,6 +55,10 @@ from relax.sampling import (
     _translation_grid_for_class_count,
     relion_sampling_perturbation_for_iteration,
 )
+
+if TYPE_CHECKING:
+    from relax.helpers.resolution import ImageGeometry
+
 
 logger = logging.getLogger(__name__)
 
@@ -634,7 +638,7 @@ def _apply_replay_correction_overrides(*, relion_half_inputs, replay_override) -
 
     resident_dtypes = [
         np.asarray(value).dtype
-        for values in (relion_half_inputs.image_corrections, relion_half_inputs.scale_corrections)
+        for values in ([particle_half.image_corrections for particle_half in relion_half_inputs], [particle_half.scale_corrections for particle_half in relion_half_inputs])
         for value in values
         if value is not None
     ]
@@ -644,8 +648,8 @@ def _apply_replay_correction_overrides(*, relion_half_inputs, replay_override) -
     scoring_scales = optional_half_arrays(scoring_scale_value, dtype=correction_dtype)
 
     for half_idx in range(2):
-        resident_image = relion_half_inputs.image_corrections[half_idx]
-        resident_scale = relion_half_inputs.scale_corrections[half_idx]
+        resident_image = relion_half_inputs[half_idx].image_corrections
+        resident_scale = relion_half_inputs[half_idx].scale_corrections
         override_image = replay_images[half_idx]
         serialized_scale = serialized_scales[half_idx]
         explicit_scoring_scale = scoring_scales[half_idx]
@@ -684,9 +688,9 @@ def _apply_replay_correction_overrides(*, relion_half_inputs, replay_override) -
                 if base_image.shape != base_scale.shape or base_image.shape != target_scale.shape:
                     raise ValueError("image, source-scale, and scoring-scale corrections must have matching shapes")
                 base_image = base_image * (target_scale / base_scale)
-            relion_half_inputs.image_corrections[half_idx] = base_image
+            relion_half_inputs[half_idx].image_corrections = base_image
         if explicit_scoring_scale is not None or resident_scale is None:
-            relion_half_inputs.scale_corrections[half_idx] = target_scale
+            relion_half_inputs[half_idx].scale_corrections = target_scale
 
     applied_fields = []
     if replay_image_value is not None:
@@ -705,19 +709,14 @@ def _apply_replay_correction_overrides(*, relion_half_inputs, replay_override) -
 class ReplayOverrideResult:
     """Iteration-state values touched by replay overrides.
 
-    ``state``, ``relion_half_inputs``, and the four ``*_direction_prior_*``
-    lists are mutated in place by ``apply_iter_replay_overrides`` (they are
-    object/list references) and do not appear in this result. Scalars and
-    array refs that need to be reassigned by the caller appear here.
+    State, particle halves and direction-prior owners are updated in place.
+    Replacements, including the noise model, are assigned by the controller.
     """
 
     cs: int
     prior_translations: Any  # jnp.ndarray or None — used downstream by local-search prior
     previous_best_rotations: list
-    noise_variance_per_half: list
-    noise_variance: Any
-    previous_noise_radial_per_half: list
-    previous_noise_radial: Any
+    noise_model: NoiseModel
     current_sigma_offset_angstrom: float
     replay_meta: dict | None  # parsed sampling.star (or None); used downstream by perturbation apply
     current_sigma_offset_angstrom_per_half: list[float] | None = None
@@ -729,7 +728,7 @@ def _sealed_sampling_base_grids(sealed_sampling_state, *, voxel_size_angstrom, d
     """Construct scorer grids directly from a schema-v3 captured sampling state.
 
     ``dtype`` controls the returned rotation matrices, working Euler grid, and
-    translations, matching ``_relion_rotation_grid_float32``'s policy: pass ``np.float64`` under
+    translations, matching ``relion_scoring_rotation_grid``'s policy: pass ``np.float64`` under
     float64 scoring/projections so a restart from a sealed boundary keeps the
     same coarse-grid precision as a fresh (non-restarted) run.
     """
@@ -1036,21 +1035,15 @@ def apply_iter_replay_overrides(
     iteration: int,
     state,
     cs: int,
-    cryo,
+    image_geometry: ImageGeometry,
     k_class_enabled: bool,
     n_classes: int,
-    relion_half_inputs: HalfInputState,
+    relion_half_inputs: tuple[HalfSet, HalfSet],
     previous_best_rotations: list,
-    noise_variance_per_half: list,
-    noise_variance,
-    previous_noise_radial_per_half: list,
-    previous_noise_radial,
+    noise_model: NoiseModel,
     current_sigma_offset_angstrom: float,
     current_sigma_offset_angstrom_per_half: list[float] | None = None,
-    class_direction_prior_per_half: list,
-    class_direction_prior_order_per_half: list,
-    global_direction_prior_per_half: list,
-    global_direction_prior_order_per_half: list,
+    direction_priors,
     preserve_existing_direction_prior: bool = False,
     sealed_sampling_state: dict | None = None,
     dtype: np.dtype = np.float32,
@@ -1061,8 +1054,7 @@ def apply_iter_replay_overrides(
     See ``docs/math/em_parity_program.md`` under the 2026-07-15 targeted
     posterior discriminators for the serialized-versus-runtime scale contract.
 
-    Mutates ``state``, ``relion_half_inputs``, and the four direction-prior
-    lists in place. Returns explicit new values for everything else.
+    Mutates ``state``, ``relion_half_inputs``, and each half's direction-prior state in place. Returns explicit new values for everything else.
 
     Two override sources, applied in order:
 
@@ -1093,7 +1085,7 @@ def apply_iter_replay_overrides(
     if sealed_sampling_state is not None:
         if int(iteration) != 0:
             raise ValueError("sealed frozen-boundary sampling currently owns exactly one iteration")
-        _px = float(cryo.voxel_size) if cryo.voxel_size > 0 else 1.0
+        _px = image_geometry.pixel_size_angstrom
         _relion_hp = int(sealed_sampling_state["healpix_order_original"])
         if state.max_healpix_order is not None and _relion_hp > int(state.max_healpix_order):
             raise ValueError(
@@ -1141,7 +1133,7 @@ def apply_iter_replay_overrides(
         _relion_hp = int(_replay_meta["healpix_order"])
         _relion_psi_step_deg = float(_replay_meta.get("psi_step", healpix_angular_step(_relion_hp)))
         # RELION stores offset_{range,step} in Angstroms; convert to px.
-        _px = float(cryo.voxel_size) if cryo.voxel_size > 0 else 1.0
+        _px = image_geometry.pixel_size_angstrom
         _relion_offset_range = float(_replay_meta["offset_range"]) / _px
         _relion_offset_step = float(_replay_meta["offset_step"]) / _px
         _replay_prior_translations_np = _translation_grid_for_class_count(
@@ -1346,20 +1338,24 @@ def apply_iter_replay_overrides(
                     # updateAngularSampling/initialisePdfDirection. Remapping here
                     # would incorrectly retain learned anisotropy after refinement.
                     if k_class_enabled:
-                        class_direction_prior_per_half[_half_idx] = normalize_class_direction_prior(
+                        direction_priors[_half_idx].classes = DirectionPrior(
+                            normalize_class_direction_prior(
                             _relion_direction_prior, n_classes,
+                        ),
+                            _relion_direction_prior_order,
                         )
-                        class_direction_prior_order_per_half[_half_idx] = _relion_direction_prior_order
                         logger.info(
                             "Replay override: class direction prior half-%d <- %s (%d classes, %d directions)",
                             _half_idx + 1,
                             _prior_star,
-                            class_direction_prior_per_half[_half_idx].shape[0],
-                            class_direction_prior_per_half[_half_idx].shape[1],
+                            direction_priors[_half_idx].classes.values.shape[0],
+                            direction_priors[_half_idx].classes.values.shape[1],
                         )
                     else:
-                        global_direction_prior_per_half[_half_idx] = _relion_direction_prior
-                        global_direction_prior_order_per_half[_half_idx] = _relion_direction_prior_order
+                        direction_priors[_half_idx].shared = DirectionPrior(
+                            _relion_direction_prior,
+                            _relion_direction_prior_order,
+                        )
                         logger.info(
                             "Replay override: direction prior half-%d <- %s (%d directions, range=[%.6f, %.6f], zeros=%d)",
                             _half_idx + 1,
@@ -1413,13 +1409,14 @@ def apply_iter_replay_overrides(
             )
         _replay_prev_trans = iter_replay_override.get("previous_best_translations")
         if _replay_prev_trans is not None:
-            relion_half_inputs.previous_best_translations = optional_half_arrays(
+            for particle_half, value_for_half in zip(relion_half_inputs, optional_half_arrays(
                 _replay_prev_trans, dtype=runtime_dtype
-            )
+            ), strict=True):
+                particle_half.translations = value_for_half
             logger.info(
                 "Replay override: previous_best_translations <- half1=%s half2=%s",
-                "set" if relion_half_inputs.previous_best_translations[0] is not None else "none",
-                "set" if relion_half_inputs.previous_best_translations[1] is not None else "none",
+                "set" if relion_half_inputs[0].translations is not None else "none",
+                "set" if relion_half_inputs[1].translations is not None else "none",
             )
         _replay_prev_rots = iter_replay_override.get("previous_best_rotations")
         if _replay_prev_rots is not None:
@@ -1431,11 +1428,12 @@ def apply_iter_replay_overrides(
             )
         _replay_prev_eulers = iter_replay_override.get("previous_best_rotation_eulers")
         if _replay_prev_eulers is not None:
-            relion_half_inputs.previous_best_rotation_eulers = optional_half_arrays(_replay_prev_eulers)
+            for particle_half, value_for_half in zip(relion_half_inputs, optional_half_arrays(_replay_prev_eulers), strict=True):
+                particle_half.rotation_eulers = value_for_half
             logger.info(
                 "Replay override: previous_best_rotation_eulers <- half1=%s half2=%s",
-                "set" if relion_half_inputs.previous_best_rotation_eulers[0] is not None else "none",
-                "set" if relion_half_inputs.previous_best_rotation_eulers[1] is not None else "none",
+                "set" if relion_half_inputs[0].rotation_eulers is not None else "none",
+                "set" if relion_half_inputs[1].rotation_eulers is not None else "none",
             )
         _apply_replay_correction_overrides(
             relion_half_inputs=relion_half_inputs,
@@ -1443,12 +1441,8 @@ def apply_iter_replay_overrides(
         )
         _replay_noise = iter_replay_override.get("noise_variance")
         if _replay_noise is not None:
-            noise_variance_per_half = _normalize_noise_variance_per_half(_replay_noise, n_halves=2)
-            noise_variance = _mean_noise_variance(noise_variance_per_half)
-            previous_noise_radial_per_half, previous_noise_radial = _noise_radial_history(
-                noise_variance_per_half,
-                cryo.image_shape,
-                dtype=runtime_dtype,
+            noise_model = noise_model_from_pixels(
+                _replay_noise, image_geometry.image_shape, dtype=runtime_dtype,
             )
             logger.info("Replay override: sigma2_noise <- per-half model.star arrays")
         _replay_dir_prior = iter_replay_override.get("direction_prior")
@@ -1476,19 +1470,23 @@ def apply_iter_replay_overrides(
                 # updateAngularSampling/initialisePdfDirection. Remapping here
                 # would incorrectly retain learned anisotropy after refinement.
                 if k_class_enabled:
-                    class_direction_prior_per_half[_half_idx] = normalize_class_direction_prior(
+                    direction_priors[_half_idx].classes = DirectionPrior(
+                        normalize_class_direction_prior(
                         prior_k, n_classes, dtype=runtime_dtype
+                    ),
+                        prior_order_k,
                     )
-                    class_direction_prior_order_per_half[_half_idx] = prior_order_k
                     logger.info(
                         "Replay override: class direction prior half-%d <- provided override (%d classes, %d directions)",
                         _half_idx + 1,
-                        class_direction_prior_per_half[_half_idx].shape[0],
-                        class_direction_prior_per_half[_half_idx].shape[1],
+                        direction_priors[_half_idx].classes.values.shape[0],
+                        direction_priors[_half_idx].classes.values.shape[1],
                     )
                 else:
-                    global_direction_prior_per_half[_half_idx] = prior_k
-                    global_direction_prior_order_per_half[_half_idx] = prior_order_k
+                    direction_priors[_half_idx].shared = DirectionPrior(
+                        prior_k,
+                        prior_order_k,
+                    )
                     logger.info(
                         "Replay override: direction prior half-%d <- provided override (%d directions, range=[%.6f, %.6f], zeros=%d)",
                         _half_idx + 1,
@@ -1502,10 +1500,7 @@ def apply_iter_replay_overrides(
         cs=cs,
         prior_translations=_replay_prior_translations,
         previous_best_rotations=previous_best_rotations,
-        noise_variance_per_half=noise_variance_per_half,
-        noise_variance=noise_variance,
-        previous_noise_radial_per_half=previous_noise_radial_per_half,
-        previous_noise_radial=previous_noise_radial,
+        noise_model=noise_model,
         current_sigma_offset_angstrom=current_sigma_offset_angstrom,
         replay_meta=_replay_meta,
         current_sigma_offset_angstrom_per_half=_current_sigma_offset_angstrom_per_half,

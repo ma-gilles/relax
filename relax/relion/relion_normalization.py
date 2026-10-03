@@ -1,17 +1,20 @@
 """RELION image-normalization and group-scale updates from M-step statistics.
 
-Independent of iteration scheduling, follower dispatch and mean reconstruction.
+Preparation, numerical estimation and reporting stay together. Iteration
+scheduling, follower dispatch and installation of new corrections remain in the
+controller.
 Inputs and outputs retain the two-half convention, including an empty half in
 Class3D. The update computes new arrays without installing runtime state.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import jax.numpy as jnp
 import numpy as np
 
+from relax.diagnostics import finite_check
 from relax.helpers.types import total_sumw
 
 
@@ -25,6 +28,20 @@ class NormScaleCorrectionUpdateResult:
     image_corrections_per_half: list
     scale_corrections_per_half: list
     zero_norm_residual_counts: list
+
+
+@dataclass
+class NormScaleCorrectionReport:
+    """Per-half correction measurements for checkpoints and parity captures.
+
+    Follower reporting uses rank 1's group scales with half 2 absent; installed
+    particle corrections and follower state remain with their runtime owners.
+    """
+
+    group_scale_corrections_per_half: list = field(default_factory=lambda: [None, None])
+    norm_corrections_per_half: list = field(default_factory=lambda: [None, None])
+    avg_norm_correction_per_half: list = field(default_factory=lambda: [None, None])
+    zero_norm_residual_counts: list = field(default_factory=lambda: [None, None])
 
 
 def _half_list_or_none(values, *, n_halves: int, name: str):
@@ -291,4 +308,81 @@ def update_relion_norm_scale_corrections(
         image_corrections_per_half=out_image_corr,
         scale_corrections_per_half=out_scale_corr,
         zero_norm_residual_counts=out_zero_norm_counts,
+    )
+
+
+def prepare_norm_scale_update(
+    noise_stats_per_half,
+    halves,
+    *,
+    group_ids_per_half,
+    firstiter_cc: bool,
+    do_norm_correction: bool,
+    do_scale_correction: bool,
+    dtype,
+    iteration: int,
+    current_size: int,
+) -> NormScaleCorrectionUpdateResult:
+    """Audit particle statistics and estimate corrections from the current halves.
+
+    The caller admits complete statistics and supplies physical group IDs;
+    follower statistic routing remains separate. No particle state is installed.
+    See ``docs/math/relion_refinement_algorithm.md``, normalization/scale updates.
+    """
+    if finite_check.finite_check_enabled():
+        # P4-D. Name the particles behind a non-finite statistic before
+        # the shared validator raises with only "must be finite".
+        for _p4d_half, _p4d_stats in enumerate(noise_stats_per_half):
+            finite_check.check_per_image(
+                "norm-scale-statistics",
+                {
+                    "wsum_norm_correction": getattr(_p4d_stats, "wsum_norm_correction", None),
+                    "wsum_scale_correction_xa": getattr(_p4d_stats, "wsum_scale_correction_xa", None),
+                    "wsum_scale_correction_aa": getattr(_p4d_stats, "wsum_scale_correction_aa", None),
+                    "wsum_sigma2_noise": getattr(_p4d_stats, "wsum_sigma2_noise", None),
+                    "sumw": getattr(_p4d_stats, "sumw", None),
+                },
+                context=finite_check.describe_context(
+                    iteration=iteration + 1, half=_p4d_half + 1, current_size=current_size
+                ),
+            )
+    return update_relion_norm_scale_corrections(
+        noise_stats_per_half=noise_stats_per_half,
+        image_corrections_per_half=[particle_half.image_corrections for particle_half in halves],
+        scale_corrections_per_half=[particle_half.scale_corrections for particle_half in halves],
+        group_ids_per_half=group_ids_per_half,
+        group_count_per_half=[particle_half.group_count for particle_half in halves],
+        relion_firstiter_cc_this_iter=firstiter_cc,
+        # RELION switches norm correction off for subtomograms (ml_optimiser.cpp:2688-2693).
+        do_norm_correction=do_norm_correction,
+        do_scale_correction=do_scale_correction,
+        dtype=dtype,
+    )
+
+
+def _format_relion_correction_range(values):
+    arr = np.asarray(values, dtype=np.float64).reshape(-1)
+    if arr.size == 0:
+        return "empty"
+    return f"[{float(np.min(arr)):.6g}, {float(np.max(arr)):.6g}]"
+
+
+def log_norm_scale_update(update: NormScaleCorrectionUpdateResult, *, log) -> None:
+    """Report normalization residuals and the estimated correction ranges."""
+    if any(int(count) > 0 for count in update.zero_norm_residual_counts):
+        log.warning(
+            "RELION norm correction preserved previous image normalization for zero/tiny norm residuals: "
+            "half1=%d half2=%d",
+            int(update.zero_norm_residual_counts[0]),
+            int(update.zero_norm_residual_counts[1]),
+        )
+    log.info(
+        "RELION norm correction update: avg_norm half1=%.6g half2=%.6g; "
+        "image_corr ranges half1=%s half2=%s; scale_corr ranges half1=%s half2=%s",
+        float(update.avg_norm_correction_per_half[0]),
+        float(update.avg_norm_correction_per_half[1]),
+        _format_relion_correction_range(update.image_corrections_per_half[0]),
+        _format_relion_correction_range(update.image_corrections_per_half[1]),
+        _format_relion_correction_range(update.scale_corrections_per_half[0]),
+        _format_relion_correction_range(update.scale_corrections_per_half[1]),
     )

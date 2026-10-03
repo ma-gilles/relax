@@ -3,17 +3,26 @@ import json
 import logging
 import shutil
 import sys
+from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.diagnostics.relion_replay import _apply_replay_correction_overrides
 from relax.helpers.types import NoiseStats
-from relax.refinement.half_inputs import HalfInputState
+from relax.refinement.finalization import run_final_all_data
+from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_loop import refine_single_volume
-from relax.relion.relion_normalization import update_relion_norm_scale_corrections
+from relax.relion.relion_normalization import (
+    log_norm_scale_update,
+    prepare_norm_scale_update,
+    update_relion_norm_scale_corrections,
+)
 from relax.relion.relion_worker_scale import (
+    RELION_SCALE_REDUCTION_ALL_GROUPS,
+    RELION_SCALE_REDUCTION_OPTICS_PREFIX,
     RelionDispatchSchedule,
     RelionFollowerScaleReplay,
     RelionFollowerScaleSetup,
@@ -28,24 +37,22 @@ from relax.relion.relion_worker_scale import (
     load_relion_follower_scale_replay,
     make_relion_dispatch_schedule_from_chunks,
     make_relion_follower_scale_state,
+    prepare_follower_topology,
     relion_class3d_follower_owners_from_schedule,
     relion_oracle_id,
     relion_oracle_manifest_sha256,
     relion_ordered_particle_sha256,
     relion_rank1_serialized_scales,
-    relion_worker_group_ids,
-    select_relion_follower_scales,
-    RELION_SCALE_REDUCTION_ALL_GROUPS,
-    RELION_SCALE_REDUCTION_OPTICS_PREFIX,
     relion_scale_reduction_mode_from_command,
     relion_scale_reduction_mode_from_optimiser_star,
+    relion_worker_group_ids,
+    select_relion_follower_scales,
     update_relion_follower_scales,
     validate_relion_follower_scale_replay,
     validate_relion_follower_scale_replay_application,
     validate_relion_follower_scale_start,
     verify_relion_dispatch_schedule_oracle,
 )
-from helpers.float_compare import assert_matches
 
 _ORACLE_MANIFEST = "0" * 64
 _PARTICLE_ORDER = "1" * 64
@@ -73,6 +80,76 @@ _REPLAY_KWARGS = {
 }
 
 
+def test_prepared_topology_keeps_captured_particle_identity_and_iteration_coverage(tmp_path):
+    schedule = RelionDispatchSchedule(
+        relion_iterations=np.asarray([1, 2], dtype=np.int64),
+        owner_by_sorted_position=np.asarray([[0, 1, 0], [1, 0, 1]], dtype=np.int64),
+        original_particle_id_by_sorted_position=np.asarray([[2, 0, 1], [1, 2, 0]], dtype=np.int64),
+        n_followers=2,
+        pool_size=1,
+        random_seed=9,
+        **_ORACLE_KWARGS,
+        source="unit capture",
+    )
+    groups = SimpleNamespace(
+        group_ids_per_half=(np.asarray([2, 0, 1]), np.empty(0, dtype=np.int64)),
+        particle_ids_per_half=(np.asarray([0, 2, 1]), np.empty(0, dtype=np.int64)),
+        n_groups=3,
+        n_optics_groups=1,
+        source="unit particle table",
+    )
+    (tmp_path / "run_it000_optimiser.star").write_text(
+        "# --o run --gpu --dont_combine_weights_via_disc\ndata_optimiser_general\n"
+    )
+    kwargs = dict(strict_replay=True, replay_path=None, oracle_dir=tmp_path,
+                  random_seed=9, init_relion_iteration=0, max_iter=2)
+    topology = prepare_follower_topology(None, schedule, groups, **kwargs)
+    assert topology.n_followers == 2
+    assert topology.replay is None
+    assert topology.reduction_mode == RELION_SCALE_REDUCTION_OPTICS_PREFIX
+    assert list(topology.owners_by_iteration) == [1, 2]
+    np.testing.assert_array_equal(topology.owners_by_iteration[1][0], [1, 0, 0])
+    np.testing.assert_array_equal(topology.owners_by_iteration[2][0], [1, 0, 1])
+    assert topology.owners_by_iteration[1][1].shape == (0,)
+    assert topology.owners_by_iteration[1][1].dtype == np.int64
+    with pytest.raises(SystemExit, match="requested numbered iterations:.*3"):
+        prepare_follower_topology(None, schedule, groups, **{**kwargs, "max_iter": 3})
+    with pytest.raises(SystemExit, match="leader-serialized STAR"):
+        prepare_follower_topology(None, schedule, groups, **{**kwargs, "init_relion_iteration": 1})
+
+
+@pytest.mark.parametrize("requested_followers", [None, 0])
+def test_prepared_topology_without_mpi_needs_no_oracle(requested_followers):
+    topology = prepare_follower_topology(
+        requested_followers, None, None, strict_replay=False,
+        replay_path=None, oracle_dir=None, random_seed=9,
+        init_relion_iteration=0, max_iter=2,
+    )
+    assert topology.n_followers == 0
+    assert topology.replay is topology.reduction_mode is topology.owners_by_iteration is None
+
+
+@pytest.mark.parametrize(
+    "requested_followers, strict_replay, replay_path, message",
+    [
+        (-1, False, None, "non-negative"),
+        (2, False, None, "strict K>1"),
+        (2, True, None, "requires --relion-dispatch-schedule"),
+        (None, True, None, "dynamic MPI work queue"),
+        (0, True, "replay.npz", "requires strict K>1 RELION follower topology"),
+    ],
+)
+def test_prepared_topology_rejects_unsupported_or_incomplete_mpi_state(
+    requested_followers, strict_replay, replay_path, message,
+):
+    with pytest.raises(SystemExit, match=message):
+        prepare_follower_topology(
+            requested_followers, None, None, strict_replay=strict_replay,
+            replay_path=replay_path, oracle_dir=None, random_seed=9,
+            init_relion_iteration=0, max_iter=2,
+        )
+
+
 def test_follower_scale_continuation_from_leader_star_fails_closed():
     validate_relion_follower_scale_start(n_followers=2, init_relion_iteration=0)
 
@@ -98,7 +175,8 @@ def test_serialized_replay_preserves_live_follower_scale_between_iterations():
         group_ids=groups,
         follower_owners=owners,
     ).astype(np.float32)
-    half_inputs = HalfInputState.from_initial_values(
+    half_inputs = initialize_halfsets(
+        (None, None),
         previous_best_translations=[None, None],
         previous_best_rotation_eulers=[None, None],
         image_corrections=[live_scales.copy(), np.zeros(0, dtype=np.float32)],
@@ -119,8 +197,8 @@ def test_serialized_replay_preserves_live_follower_scale_between_iterations():
     )
 
     assert applied == ["image_corrections", "serialized_scale_corrections"]
-    assert_matches(half_inputs.scale_corrections[0], live_scales)
-    np.testing.assert_allclose(half_inputs.image_corrections[0], live_scales)
+    assert_matches(half_inputs[0].scale_corrections, live_scales)
+    np.testing.assert_allclose(half_inputs[0].image_corrections, live_scales)
 
 
 def test_dynamic_dispatch_chunks_cover_every_sorted_position_once():
@@ -933,7 +1011,8 @@ def test_final_dispatch_remaps_scoring_scale_norm_ratio_and_xa_aa_group_ids():
         group_counts=state.group_counts,
         n_optics_groups=state.n_optics_groups,
     )
-    half_inputs = HalfInputState.from_initial_values(
+    half_inputs = initialize_halfsets(
+        (None, None),
         previous_best_translations=[None, None],
         previous_best_rotation_eulers=[None, None],
         image_corrections=[np.asarray([2.4, 2.4]), np.zeros(0)],
@@ -953,8 +1032,8 @@ def test_final_dispatch_remaps_scoring_scale_norm_ratio_and_xa_aa_group_ids():
         dtype=np.float32,
     )
 
-    np.testing.assert_allclose(half_inputs.scale_corrections[0], [0.8, 1.2])
-    np.testing.assert_allclose(half_inputs.image_corrections[0], [1.6, 3.6])
+    np.testing.assert_allclose(half_inputs[0].scale_corrections, [0.8, 1.2])
+    np.testing.assert_allclose(half_inputs[0].image_corrections, [1.6, 3.6])
     assert_matches(stats_group_ids[0], [3, 1])
     assert stats_group_ids[1].size == 0
 
@@ -988,7 +1067,10 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries():
     # Both surviving result-dict sites source the follower-scale trajectory
     # keys (including the two "numbered_*_trajectory" ones) from one shared
     # RelionFollowerScaleSetup.to_result_dict() call.
-    assert source.count("follower_setup.to_result_dict(history)") == 2
+    assert source.count("follower_setup.to_result_dict(history)") == 1
+    assert "finalization.run_final_all_data(" in source
+    final_source = inspect.getsource(run_final_all_data)
+    assert final_source.count("follower_setup.to_result_dict(history)") == 1
 
     dispatch_source = inspect.getsource(_dispatch_relion_follower_scale_for_numbered_iteration)
     pre_score_append = dispatch_source.index("history.record_follower_scale_pre_score(")
@@ -1003,11 +1085,15 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class():
     source = inspect.getsource(refine_single_volume)
     update_start = source.index("can_update_norm_scale = (")
     update_source = source[update_start : source.index("history.record_noise_and_tau2(", update_start)]
+    update_source += inspect.getsource(prepare_norm_scale_update)
+    update_source += inspect.getsource(log_norm_scale_update).replace("update.", "norm_scale_update.")
 
     assert "not k_class_enabled" not in update_source
+    assert "prepare_norm_scale_update(" in update_source
     assert "update_relion_norm_scale_corrections(" in update_source
     assert "experiment_datasets[_half_idx].n_units" in update_source
     assert "np.zeros(int(experiment_datasets[_half_idx].n_units), dtype=np.int64)" in update_source
+    assert "log_norm_scale_update(norm_scale_update, log=logger)" in update_source
     assert "_format_relion_correction_range(norm_scale_update.image_corrections_per_half[0])" in update_source
     assert "_format_relion_correction_range(norm_scale_update.image_corrections_per_half[1])" in update_source
     assert "np.min(np.asarray(norm_scale_update.image_corrections_per_half" not in update_source
@@ -1054,7 +1140,9 @@ def test_strict_restart_requires_coupled_perturbation_and_model_scale_state():
 
 
 def test_sparse_follower_scale_replay_accounting_guards_every_result_return():
-    source = inspect.getsource(refine_single_volume)
+    numbered_source = inspect.getsource(refine_single_volume)
+    assert "finalization.run_final_all_data(" in numbered_source
+    source = numbered_source + inspect.getsource(run_final_all_data)
 
     # One call immediately before each of the three result-return paths
     # (local diagnostic, no-final, and final-all-data). Validation belongs to

@@ -252,7 +252,7 @@ class TestInitialiseDataVsPrior:
         assert_matches(state.data_vs_prior_class, 0.0)
 
     def test_reference_spectrum_uses_relion_volume_frame(self):
-        from relax.vdam.init import _relion_power_spectrum_3d
+        from relax.relion.reference_initialization import _relion_power_spectrum_3d
         from recovar.utils.helpers import recovar_volume_to_relion
 
         state = initialise_denovo_state(

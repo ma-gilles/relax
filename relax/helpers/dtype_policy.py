@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import jax.numpy as jnp
 import numpy as np
@@ -88,6 +88,15 @@ class DensePrecisionPolicy:
     use_float64_projections: bool = False
     use_float64_normalization: bool = True
 
+    def for_local_pass(self, iteration: int | None, *, pass_index: int):
+        if pass_index == 2 and _diagnostic_float64_pass2_matches(iteration):
+            return replace(self, use_float64_scoring=True, use_float64_projections=True)
+        return self
+
+    @property
+    def rotation_real_dtype(self):
+        return np.float64 if (self.use_float64_scoring or self.use_float64_projections) else np.float32
+
     @property
     def score_complex_dtype(self):
         return jnp.complex128 if self.use_float64_scoring else jnp.complex64
@@ -168,25 +177,3 @@ def _diagnostic_float64_pass2_matches(debug_iteration: int | None) -> bool:
             "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS must be comma-separated integers"
         ) from exc
     return int(debug_iteration) in requested
-
-def _local_search_precision_flags(
-    debug_iteration: int | None,
-    *,
-    static_em_kwargs: Mapping[str, object],
-    pass_index: int,
-) -> tuple[bool, bool]:
-    """Resolve local-search precision without changing production defaults.
-
-    The supplied float64 switches apply to both local passes.  The targeted
-    diagnostic selector upgrades only pass 2 so it remains useful for
-    classifying the fine-score/posterior boundary independently of pass 1.
-    """
-
-    if int(pass_index) not in (1, 2):
-        raise ValueError(f"local-search pass_index must be 1 or 2, got {pass_index}")
-    use_float64_scoring = bool(static_em_kwargs["use_float64_scoring"])
-    use_float64_projections = bool(static_em_kwargs["use_float64_projections"])
-    if int(pass_index) == 2 and _diagnostic_float64_pass2_matches(debug_iteration):
-        use_float64_scoring = True
-        use_float64_projections = True
-    return use_float64_scoring, use_float64_projections

@@ -1,6 +1,5 @@
 """CLI and ordering contract for the resident-state swap diagnostic."""
 
-import argparse
 import ast
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +10,6 @@ import pytest
 from relax.diagnostics.state_swap_probe import (
     _STATE_SWAP_VARIANT_COMPONENTS,
     REQUIRED_STATE_SWAP_REPLAY_KEYS,
-    add_state_swap_probe_arguments,
     build_state_swap_probe,
     state_swap_probe_loop_index,
     state_swap_variant_choices,
@@ -22,15 +20,19 @@ from relax.diagnostics.state_swap_runtime import (
     _scale_state_swap_reference_maps,
     _snapshot_state_swap_inputs,
 )
+from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.refinement.half_inputs import initialize_halfsets
+from relax.refinement.mean_helpers import ReferenceModel
+from relax.refinement.noise_updates import NoiseModel
 
 pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _parse_state_swap_args(*tokens):
-    parser = argparse.ArgumentParser()
-    add_state_swap_probe_arguments(parser)
-    return parser.parse_args(tokens)
+    from relax.refinement.command_options import parse_refinement_args
+
+    return parse_refinement_args(["--data_dir", "unused", "--output", "unused", *tokens])
 
 
 def _loop_index(args, *, init_relion_iteration=0, max_iter=5):
@@ -244,7 +246,6 @@ def test_full_runner_propagates_and_serializes_state_swap_probe():
     ]
 
     assert {
-        "add_state_swap_probe_arguments",
         "state_swap_probe_loop_index",
         "build_state_swap_probe",
         "validate_state_swap_probe_application",
@@ -258,7 +259,18 @@ def test_full_runner_propagates_and_serializes_state_swap_probe():
     assert isinstance(state_swap_keywords[0].value, ast.Name)
     assert state_swap_keywords[0].value.id == "state_swap_probe"
 
-    source = (REPO_ROOT / "relax/refinement/full_refinement.py").read_text()
+    archive_calls = [
+        node for node in calls
+        if isinstance(node.func, ast.Name) and node.func.id == "build_archive_metadata"
+    ]
+    assert len(archive_calls) == 1
+    archive_probe = next(keyword.value for keyword in archive_calls[0].keywords
+                         if keyword.arg == "state_swap_probe")
+    assert isinstance(archive_probe, ast.Name) and archive_probe.id == "state_swap_probe"
+
+    # The command parser is exercised by every CLI case above. Archive fields
+    # belong to the result writer, which receives the same probe as the engine.
+    source = (REPO_ROOT / "relax/refinement/result_files.py").read_text()
     for field in (
         "state_swap_probe_target_relion_iteration",
         "state_swap_probe_loop_index",
@@ -307,31 +319,55 @@ def test_state_swap_snapshot_is_bounded_to_target_iteration():
 
 def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
     state = SimpleNamespace(marker="resident")
-    half_inputs = SimpleNamespace(
+    half_inputs = initialize_halfsets(
+        (None, None),
         image_corrections=[np.array([1.0]), np.array([2.0])],
         scale_corrections=[np.array([3.0]), np.array([4.0])],
         previous_best_translations=[np.zeros((1, 2)), np.ones((1, 2))],
         previous_best_rotation_eulers=[np.zeros((1, 3)), np.ones((1, 3))],
     )
+    direction_priors = [
+        HalfDirectionPriors(
+            classes=DirectionPrior(values, order),
+            shared=DirectionPrior(shared_values, shared_order),
+        )
+        for values, order, shared_values, shared_order in zip(
+            [np.array([0.4]), np.array([0.6])], [3, 3],
+            [np.array([0.4]), np.array([0.6])], [3, 3], strict=True,
+        )
+    ]
+    snapshot_tau2 = np.array([5.0])
     snapshot = _snapshot_state_swap_inputs(
         state=state,
         cs=52,
-        means=[np.array([1.0]), np.array([2.0])],
-        mean_variance=np.array([5.0]),
-        noise_variance_per_half=[np.array([6.0]), np.array([7.0])],
-        noise_variance=np.array([6.5]),
-        previous_noise_radial_per_half=[np.array([8.0]), np.array([9.0])],
-        previous_noise_radial=np.array([8.5]),
+        reference_model=ReferenceModel(
+            maps=[np.array([1.0]), np.array([2.0])], tau2=snapshot_tau2,
+            tau2_per_half=[snapshot_tau2, snapshot_tau2],
+        ),
+        noise_model=NoiseModel(
+            variance_per_half=[np.array([6.0]), np.array([7.0])],
+            average_variance=np.array([6.5]),
+            radial_per_half=[np.array([8.0]), np.array([9.0])],
+            average_radial=np.array([8.5]),
+        ),
         relion_half_inputs=half_inputs,
         previous_best_rotations=[np.eye(3)[None], np.eye(3)[None]],
         current_sigma_offset_angstrom=3.0,
         current_sigma_offset_angstrom_per_half=[2.0, 4.0],
-        class_direction_prior_per_half=[np.array([0.4]), np.array([0.6])],
-        class_direction_prior_order_per_half=[3, 3],
-        global_direction_prior_per_half=[np.array([0.4]), np.array([0.6])],
-        global_direction_prior_order_per_half=[3, 3],
+        direction_priors=direction_priors,
     )
 
+    direction_priors = [
+        HalfDirectionPriors(
+            classes=DirectionPrior(values, order),
+            shared=DirectionPrior(shared_values, shared_order),
+        )
+        for values, order, shared_values, shared_order in zip(
+            [np.array([0.5]), np.array([0.5])], [4, 4],
+            [np.array([0.5]), np.array([0.5])], [4, 4], strict=True,
+        )
+    ]
+    current_tau2 = np.array([50.0])
     restored = _apply_state_swap_probe(
         probe={"iteration": 6, "variant": "recovar_sigma_offset"},
         iteration=6,
@@ -339,24 +375,25 @@ def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
         state=state,
         cs=52,
         volume_shape=(1, 1, 1),
-        means=[np.array([10.0]), np.array([20.0])],
-        mean_variance=np.array([50.0]),
-        noise_variance_per_half=[np.array([60.0]), np.array([70.0])],
-        noise_variance=np.array([65.0]),
-        previous_noise_radial_per_half=[np.array([80.0]), np.array([90.0])],
-        previous_noise_radial=np.array([85.0]),
+        reference_model=ReferenceModel(
+            maps=[np.array([10.0]), np.array([20.0])], tau2=current_tau2,
+            tau2_per_half=[current_tau2, current_tau2],
+        ),
+        noise_model=NoiseModel(
+            variance_per_half=[np.array([60.0]), np.array([70.0])],
+            average_variance=np.array([65.0]),
+            radial_per_half=[np.array([80.0]), np.array([90.0])],
+            average_radial=np.array([85.0]),
+        ),
         relion_half_inputs=half_inputs,
         previous_best_rotations=[np.eye(3)[None], np.eye(3)[None]],
         current_sigma_offset_angstrom=3.1,
         current_sigma_offset_angstrom_per_half=[2.9, 3.3],
-        class_direction_prior_per_half=[np.array([0.5]), np.array([0.5])],
-        class_direction_prior_order_per_half=[4, 4],
-        global_direction_prior_per_half=[np.array([0.5]), np.array([0.5])],
-        global_direction_prior_order_per_half=[4, 4],
+        direction_priors=direction_priors,
     )
 
-    restored_sigma = restored[8]
-    restored_sigma_per_half = restored[9]
+    restored_sigma = restored.current_sigma_offset_angstrom
+    restored_sigma_per_half = restored.current_sigma_offset_angstrom_per_half
     assert restored_sigma == pytest.approx(3.0)
     assert restored_sigma_per_half == pytest.approx([2.0, 4.0])
     restored_sigma_per_half[0] = 99.0

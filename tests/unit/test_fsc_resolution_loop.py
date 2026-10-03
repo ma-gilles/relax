@@ -191,17 +191,17 @@ def translations():
 def generated_relion_rotation_grid(monkeypatch):
     """Keep loop tests independent of the optional compiled RELION binding."""
 
-    def fake_relion_rotation_grid_float32(order, dtype=None):
+    def fake_scoring_rotation_grid(order, dtype=None, *, symmetry="C1"):
         del dtype
-        n_rotations = iteration_loop_module.rotation_grid_size(order)
+        n_rotations = iteration_loop_module.rotation_grid_size(order, symmetry=symmetry)
         rotations = np.repeat(np.eye(3, dtype=np.float32)[None], n_rotations, axis=0)
         eulers = np.zeros((n_rotations, 3), dtype=np.float32)
-        return rotations, eulers
+        return sampling_module.RotationGrid(rotations=rotations, rotation_eulers=eulers, healpix_order=order, symmetry=symmetry)
 
     monkeypatch.setattr(
         sampling_module,
-        "_relion_rotation_grid_float32",
-        fake_relion_rotation_grid_float32,
+        "relion_scoring_rotation_grid",
+        fake_scoring_rotation_grid,
     )
 
 

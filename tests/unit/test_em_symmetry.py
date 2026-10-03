@@ -7,9 +7,11 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
 from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
+
+from relax.refinement import optics_shapes
+from relax.refinement.half_inputs import HalfSet
 from relax.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
@@ -150,12 +152,12 @@ def test_icosahedral_conventions_are_distinct_ordered_sets():
     "label", ["C1", "C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
 def test_symmetry_reduced_coarse_grid_matches_relion_binding(label):
+    from recovar import utils
     from relax.relion_bind._relion_bind_core import (
         get_coarse_orientations,
         get_healpix_sampling_metadata,
     )
 
-    from recovar import utils
     from relax import sampling
 
     order = 3
@@ -206,12 +208,12 @@ def test_symmetry_reduced_coarse_grid_matches_relion_binding(label):
     "label", ["C1", "C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
 def test_symmetry_oversampling_matches_relion_binding(label):
+    from recovar import utils
     from relax.relion_bind._relion_bind_core import (
         get_healpix_sampling_metadata,
         get_oversampled_orientations,
     )
 
-    from recovar import utils
     from relax import sampling
 
     order = 3
@@ -344,6 +346,7 @@ def test_empty_too_coarse_asymmetric_unit_fails_closed(label):
 )
 def test_convergence_distance_minimizes_over_relion_symmetry_mates(label):
     from recovar import utils
+
     from relax.helpers.convergence import (
         _relion_angular_distance_per_particle as relion_angular_distance_per_particle,
     )
@@ -364,6 +367,7 @@ def test_convergence_distance_minimizes_over_relion_symmetry_mates(label):
 
 def test_explicit_c1_convergence_distance_preserves_default_path():
     from recovar import utils
+
     from relax.helpers.convergence import (
         _relion_angular_distance_per_particle as relion_angular_distance_per_particle,
     )
@@ -553,12 +557,12 @@ def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
 
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
-    from relax.scoring.sparse_bucket_arrays import (
-        _prepare_per_image_pass2_inputs,
-    )
     from relax.sampling import (
         get_oversampled_rotation_grid_from_samples,
         rotation_grid_size,
+    )
+    from relax.scoring.sparse_bucket_arrays import (
+        _prepare_per_image_pass2_inputs,
     )
 
     order = 3
@@ -587,10 +591,10 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
 
 
 def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
+    from relax.sampling import rotation_grid_size
     from relax.scoring.sparse_bucket_arrays import (
         _prepare_per_image_pass2_inputs,
     )
-    from relax.sampling import rotation_grid_size
 
     with pytest.raises(ValueError, match="I1 sparse pass-2 coarse rotation count mismatch"):
         _prepare_per_image_pass2_inputs(
@@ -717,10 +721,8 @@ def test_non_c1_nonadaptive_dense_reconstruction_fails_before_run_em(
         "run_em",
         lambda *_args, **_kwargs: pytest.fail("unsupported non-C1 route called run_em"),
     )
-    from relax.dense.score_outputs import PerHalfOutputs
 
     common = dict(
-        outputs=PerHalfOutputs(),
         k=0,
         experiment_dataset=object(),
         means_k=(
@@ -876,10 +878,8 @@ def test_iteration_debug_metadata_default_preserves_explicit_c1(
 
 
 def _k1_symmetric_dense_half_kwargs(**overrides):
-    from relax.dense.score_outputs import PerHalfOutputs
 
     kwargs = dict(
-        outputs=PerHalfOutputs(),
         k=0,
         experiment_dataset=SimpleNamespace(image_shape=(8, 8)),
         means_k=np.zeros(8, dtype=np.complex64),
@@ -920,25 +920,27 @@ def _symmetric_dense_owners(half_scoring, values):
     """Build the seven dense-scoring owners from concise symmetry-test values."""
 
     values = dict(values)
+    sampling_state = values.pop("state")
     owners = (
-        half_scoring.DenseHalfData(
-            k=values.pop("k"),
-            experiment_dataset=values.pop("experiment_dataset"),
-            means_k=values.pop("means_k"),
+        half_scoring.HalfScoringData(
+            particles=HalfSet(
+                index=values.pop("k"),
+                dataset=values.pop("experiment_dataset"),
+                image_corrections=values.pop("image_corrections_k"),
+                scale_corrections=values.pop("scale_corrections_k"),
+            ),
+            reference=values.pop("means_k"),
             mean_variance=values.pop("mean_variance"),
-            noise_variance_k=values.pop("noise_variance_k"),
-            image_corrections_k=values.pop("image_corrections_k"),
-            scale_corrections_k=values.pop("scale_corrections_k"),
-            outputs=values.pop("outputs"),
+            noise_variance=values.pop("noise_variance_k"),
         ),
         half_scoring.DenseSamplingSpec(
             effective_rotations=values.pop("effective_rotations"),
             current_translations=values.pop("current_translations"),
             base_translations=values.pop("base_translations"),
             current_healpix_order=values.pop("current_healpix_order"),
-            state=values.pop("state"),
+            oversampling_order=sampling_state.adaptive_oversampling,
+            translation_step=sampling_state.translation_step,
             random_perturbation=values.pop("random_perturbation"),
-            disc_type=values.pop("disc_type"),
             cs_for_engine=values.pop("cs_for_engine"),
             symmetry=values.pop("symmetry"),
         ),
@@ -962,10 +964,11 @@ def _symmetric_dense_owners(half_scoring, values):
             relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
         ),
         half_scoring.DenseExecutionPolicy(
+            disc_type=values.pop("disc_type"),
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
         ),
-        half_scoring.DenseOpticsSpec(),
+        optics_shapes.OpticsSpec(),
     )
     assert not values, f"unmapped dense owner values: {sorted(values)}"
     return owners
@@ -983,7 +986,7 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
     from relax.refinement import half_scoring
 
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
-    for name in ("_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_em", "run_dense_k_class_em_adaptive"):
+    for name in ("prepare_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_em", "run_dense_k_class_em_adaptive"):
         monkeypatch.setattr(
             half_scoring,
             name,
@@ -997,7 +1000,6 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
 def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monkeypatch):
     """Final Q a087087cc: exact-local reconstruction of a point group requires x-half accumulation."""
 
-    from relax.dense.score_outputs import PerHalfOutputs
     from relax.refinement import half_scoring
 
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
@@ -1040,7 +1042,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
-        outputs=PerHalfOutputs(),
         local_profile_history=[],
         symmetry="C4",
     )
@@ -1055,7 +1056,9 @@ def test_point_group_mstep_source_angles_are_the_relion_binary64_rows(label):
     from relax import sampling
 
     order = 2
-    _, scoring_eulers = sampling._relion_rotation_grid_float32(order, symmetry=label)
+    _rotation_grid_ = sampling.relion_scoring_rotation_grid(order, symmetry=label)
+    _ = _rotation_grid_.rotations
+    scoring_eulers = _rotation_grid_.rotation_eulers
     exact = sampling._get_relion_rotation_grid_eulers_float64(order, symmetry=label)
     source = sampling._relion_mstep_source_eulers(scoring_eulers, order, symmetry=label)
     assert source.dtype == np.float64 and source.shape == exact.shape

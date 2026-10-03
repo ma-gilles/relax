@@ -85,6 +85,9 @@ Cost control must not reduce the scientific goal or gates.
 
 ## Implement and review
 
+- For readability refactors, follow the user-agreed
+  [refactor principles](docs/development/refactor_principles.md). Review the
+  main calling flow with the user before extending the first example broadly.
 - Prefer small functions with explicit inputs, units, layouts and ownership.
   Use simple containers when they clarify state; avoid forwarding layers.
 - Separate correctness repairs, performance changes and structural cleanup.
@@ -92,6 +95,10 @@ Cost control must not reduce the scientific goal or gates.
   serialized formats and scientific defaults during cleanup. Preserve non-EM
   public APIs. EM APIs may change when this simplifies the implementation;
   migrate affected callers, tests and documentation in the same change.
+- For the readability refactor, unused temporary arrays may expire after their
+  last use (explicit user approval, October 2, 2026). Preserve required buffer
+  lifetimes, aliases and asynchronous execution contracts. Qualify final quality,
+  peak memory and GPU performance after the complete source is frozen.
 - Remove private dead code only after checking callers, dynamic registration,
   CLI entry points, tests, notebooks and serialized/imported names. Keep
   independent numerical references independent of production code.

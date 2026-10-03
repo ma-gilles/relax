@@ -1,49 +1,101 @@
-"""The final all-data pass sizes a local pass 1 only for parent-expanded (adaptive) local search.
-
-RELION (``ml_optimiser.cpp``, ``updateImageSizeAndResolutionPointers``) keeps
-``coarse_size == current_size`` when ``adaptive_oversampling`` is 0; the
-controller therefore assigns ``final_local_pass1_current_size`` only at its
-initialization and under ``if use_parent_expanded_final_local``.  The previous
-code reached the clamp outside that branch and raised ``UnboundLocalError`` for
-lazy (large-order) non-expanded final local searches.
-"""
-
-from __future__ import annotations
-
-import ast
-import inspect
-import textwrap
+"""Final local preparation preserves deferred grids and parent window sizing."""
+from types import SimpleNamespace
+from dataclasses import replace
 
 import pytest
-
-import relax.refinement.iteration_loop as iteration_loop
+from relax.refinement import local_sampling
 
 pytestmark = pytest.mark.unit
 
 
-def _assignments_to(tree, name):
-    parents = {}
-    for node in ast.walk(tree):
-        for child in ast.iter_child_nodes(node):
-            parents[child] = node
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
-            yield node, parents
+@pytest.mark.parametrize("pixel_size", [0.0, -1.0, float("nan"), float("inf")])
+def test_invalid_particle_spacing_rejected_even_with_model_override(pixel_size):
+    from relax.refinement.iteration_loop import refine_single_volume
+    from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
+
+    half = SimpleNamespace(voxel_size=pixel_size, image_shape=(32, 32), volume_shape=(32, 32, 32))
+    options = RefinementOptions(parity=RelionParityOptions(relion_model_pixel_size=1.5))
+    with pytest.raises(ValueError, match="Particle pixel size must be finite and positive"):
+        refine_single_volume([half, half], None, None, None, None, options=options)
 
 
-def _guarded_by(node, parents, condition_name):
-    while node in parents:
-        node = parents[node]
-        if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == condition_name:
-            return True
-    return False
+@pytest.fixture
+def preparation(monkeypatch):
+    calls = []
+    monkeypatch.setattr(local_sampling.sampling, "relion_angular_sampling_deg", lambda *a, **kw: 3.0)
+    monkeypatch.setattr(local_sampling, "healpix_angular_step", lambda order: 6.0)
+
+    def size_parent(**kwargs):
+        calls.append(kwargs)
+        return 32
+
+    monkeypatch.setattr(local_sampling, "relion_local_pass1_current_size", size_parent)
+    monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda *a, **kw: False)
+    inputs = dict(
+        search=local_sampling.LocalSearchSettings(healpix_order=2, oversampling_order=0, sigma_rot=0.1, sigma_psi=0.2),
+        image_geometry=local_sampling.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5),
+        translations=object(), base_translations=object(), image_window_size=64,
+        particle_diameter_angstrom=100.0,
+        perturbation=None, rotation_dtype=object(),
+    )
+    return inputs, calls
 
 
-def test_final_local_pass1_size_is_assigned_only_under_parent_expansion():
-    source = textwrap.dedent(inspect.getsource(iteration_loop.refine_single_volume))
-    tree = ast.parse(source)
-    assignments = list(_assignments_to(tree, "final_local_pass1_current_size"))
-    assert len(assignments) == 2
-    initialization, sized = assignments
-    assert isinstance(initialization[0].value, ast.Name) and initialization[0].value.id == "final_current_size"
-    assert _guarded_by(sized[0], sized[1], "use_parent_expanded_final_local")
+@pytest.mark.parametrize("oversampling", [0, 1])
+def test_deferred_grid_sizes_parent_only_when_expanded(preparation, oversampling):
+    inputs, calls = preparation
+    inputs["search"] = replace(inputs["search"], healpix_order=2 + oversampling, oversampling_order=oversampling)
+    result = local_sampling.prepare_final_local_sampling(**inputs)
+    assert result.rotations is None
+    assert result.mstep_rotations is None
+    assert result.search.healpix_order == 2 + oversampling
+    assert result.coarse_image_window_size == (32 if oversampling else 64)
+    assert len(calls) == oversampling
+    assert (result.coarse_angular_step_deg is None) == (oversampling == 0)
+    assert result.translations is inputs["translations"]
+    assert result.search is inputs["search"]
+
+
+@pytest.mark.parametrize("perturbation", [None, 0.0, 0.125])
+def test_eager_grid_uses_explicit_dtype(preparation, monkeypatch, perturbation):
+    inputs, calls = preparation
+    inputs["perturbation"] = perturbation
+    fine, mstep = object(), object()
+    observed = []
+    monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda *a, **kw: True)
+
+    def exact_grid(**kwargs):
+        observed.append(kwargs)
+        return fine, object(), mstep
+
+    monkeypatch.setattr(local_sampling.sampling, "_exact_local_fine_grid", exact_grid)
+    result = local_sampling.prepare_final_local_sampling(**inputs)
+    assert result.rotations is fine
+    assert result.mstep_rotations is mstep
+    assert observed[0]["dtype"] is inputs["rotation_dtype"]
+    assert observed[0]["random_perturbation"] is perturbation
+    assert result.coarse_image_window_size == 64
+    assert not calls
+
+
+def test_parent_expansion_never_materializes_exhaustive_grid(preparation, monkeypatch):
+    inputs, calls = preparation
+    inputs["search"] = replace(inputs["search"], healpix_order=3, oversampling_order=1)
+
+    def unexpected_precompute(*args, **kwargs):
+        raise AssertionError("Parent expansion should generate particle neighborhoods")
+
+    monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", unexpected_precompute)
+    result = local_sampling.prepare_final_local_sampling(**inputs)
+    assert result.rotations is None
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("parent_order", [6, 7])
+def test_final_sampling_uses_resolved_parent_order(preparation, parent_order):
+    # Final STAR metadata may advance hp6 to hp7; oversampling must follow it.
+    inputs, calls = preparation
+    inputs["search"] = replace(inputs["search"], healpix_order=parent_order + 1, oversampling_order=1)
+    result = local_sampling.prepare_final_local_sampling(**inputs)
+    assert result.search.healpix_order == parent_order + 1
+    assert calls[0]["pre_update_healpix_order"] == parent_order

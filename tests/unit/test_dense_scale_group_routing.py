@@ -38,7 +38,7 @@ def test_k1_dense_scorer_uses_the_routing_rule_and_no_longer_rejects_scale_group
     source = inspect.getsource(half_scoring._score_half_dense_one_shape)
     gate = (
         "if sampling.coarse_engine != \"auto\" or execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(\n"
-        "        sampling.state.adaptive_oversampling, half.group_ids_k\n"
+        "        sampling.oversampling_order, half.scale_group_ids\n"
         "    ):"
     )
     assert source.count(gate) == 1
@@ -53,11 +53,11 @@ def test_k1_dense_scorer_uses_the_routing_rule_and_no_longer_rejects_scale_group
 
 def test_k_class_dense_scorer_routes_scale_groups_at_oversampling_zero():
     source = inspect.getsource(half_scoring._score_half_dense_one_shape)
-    gate = 'elif sampling.coarse_engine != "auto" or _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):'
+    gate = 'elif sampling.coarse_engine != "auto" or _dense_uses_adaptive_engine(sampling.oversampling_order, half.scale_group_ids):'
     assert source.count(gate) == 1
     assert "_score_adaptive_kclass_dense(" in _routed_block(source, gate, "else:")
     adaptive = inspect.getsource(half_scoring._score_adaptive_kclass_dense)
-    routed = _routed_block(adaptive, "if adaptive_os <= 0:", "pass2_grids = _adaptive_pass2_grids(")
+    routed = _routed_block(adaptive, "if adaptive_os <= 0:", "pass2_grids = prepare_adaptive_pass2_grids(")
     assert "coarse_current_size = sampling.cs_for_engine" in routed
     assert "fine_current_size = sampling.cs_for_engine" in routed
     assert "firstiter_coarse_current_size is not None and int(" not in source
@@ -66,7 +66,7 @@ def test_k_class_dense_scorer_routes_scale_groups_at_oversampling_zero():
 def test_k_class_positive_oversampling_never_drops_to_the_direct_engine():
     """RELION keeps two passes under adaptive oversampling even when coarse_size == current_size."""
     source = inspect.getsource(half_scoring._score_half_dense_one_shape)
-    gate = 'elif sampling.coarse_engine != "auto" or _dense_uses_adaptive_engine(sampling.state.adaptive_oversampling, half.group_ids_k):'
+    gate = 'elif sampling.coarse_engine != "auto" or _dense_uses_adaptive_engine(sampling.oversampling_order, half.scale_group_ids):'
     assert "firstiter_coarse_current_size is not None" not in _routed_block(source, "if variant.k_class_enabled:", gate)
     assert "or firstiter_coarse_current_size is not None" not in source
     assert half_scoring._dense_uses_adaptive_engine(1, None) is True

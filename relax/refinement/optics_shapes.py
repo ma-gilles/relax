@@ -25,6 +25,11 @@ import math
 import numpy as np
 
 from relax.helpers import optics_scale
+from relax.helpers.orientation_priors import (
+    make_relion_translation_log_prior,
+    relion_half_translation_prior_inputs,
+    relion_translation_search_base,
+)
 from relax.helpers.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
 
 
@@ -38,6 +43,31 @@ class ShapeClass:
     pixel_size: float
     scale: float  # s_g = box_g angpix_g / (ori angpix_ref)
     translation_factor: float  # reference pixels -> class pixels: angpix_ref / angpix_g
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class ShapeTranslations:
+    """Pre-shifts and priors computed in one shape class's own pixels."""
+
+    search_base: object | None
+    local_prior_center: object | None
+    engine_prior_center: object
+    log_prior: object | None
+
+
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class OpticsSpec:
+    """Optics operands for a half or its selected shape class.
+
+    ``class_translations`` follows ``MultiShapeHalf.classes`` in order. After
+    selection, only projection scale and reference support remain class-specific.
+    """
+
+    noise_radial_k: object | None = None
+    coarse_sizing: tuple[float, float | None] | None = None
+    class_translations: tuple[ShapeTranslations, ...] | None = None
+    projection_scale: float = 1.0
+    reference_current_size: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -72,6 +102,77 @@ class MultiShapeHalf:
 
     def __getattr__(self, name):
         raise AttributeError(f"a half with several image shapes has no single {name!r}; use its shape classes")
+
+
+def prepare_optics(
+    dataset,
+    *,
+    noise_radial,
+    previous_translations,
+    sigma_offset_angstrom,
+    base_translations,
+    current_translations,
+    with_log_prior: bool,
+    zero_cold_center: bool,
+    coarse_step_deg=None,
+    particle_diameter_ang=None,
+    dtype=np.float32,
+) -> OpticsSpec:
+    """Prepare half scoring operands for its image shape classes.
+
+    Stored offsets are converted before rounding in each class's pixels
+    (RELION ``my_old_offset.selfROUND()``, ml_optimiser.cpp:6085). Scaling an
+    already-rounded reference offset gives different pre-shifts and priors.
+    A single-shape half needs no additional arrays or translation computation.
+    """
+
+    if not isinstance(dataset, MultiShapeHalf):
+        return OpticsSpec()
+
+    noise_radial = np.asarray(noise_radial, dtype=np.float64)
+    coarse_sizing = None if coarse_step_deg is None else (float(coarse_step_deg), particle_diameter_ang)
+    translations = []
+    for shape_class in dataset.classes:
+        factor = shape_class.translation_factor
+        previous = (
+            None
+            if previous_translations is None
+            else np.asarray(previous_translations, dtype=np.float64)[shape_class.image_indices] * factor
+        )
+        inputs = relion_half_translation_prior_inputs(
+            previous,
+            voxel_size=shape_class.pixel_size,
+            base_translations=None if base_translations is None else np.asarray(base_translations) * factor,
+            current_translations=np.asarray(current_translations) * factor,
+            dtype=dtype,
+        )
+        search_base = relion_translation_search_base(previous, dtype=dtype)
+        log_prior = None
+        if with_log_prior:
+            center = inputs.prior_center
+            if center is None and zero_cold_center:
+                center = np.zeros(2, dtype=dtype)
+            log_prior = make_relion_translation_log_prior(
+                inputs.prior_translations,
+                shape_class.pixel_size,
+                sigma_offset_angstrom,
+                center,
+                offset_range_pixels=None,
+                dtype=dtype,
+            )
+        translations.append(
+            ShapeTranslations(
+                search_base=search_base,
+                local_prior_center=inputs.local_prior_center,
+                engine_prior_center=inputs.engine_prior_center,
+                log_prior=log_prior,
+            )
+        )
+    return OpticsSpec(
+        noise_radial_k=noise_radial,
+        coarse_sizing=coarse_sizing,
+        class_translations=tuple(translations),
+    )
 
 
 def make_shape_classes(datasets_and_indices, *, ref_box, ref_pixel):
@@ -271,13 +372,11 @@ def class_kwargs(kwargs, shape_class: ShapeClass, n_half: int) -> dict:
     for name in TRANSLATION_KWARGS:
         if out.get(name) is not None:
             out[name] = np.asarray(out[name]) * shape_class.translation_factor
-    state = out.get("state")
-    if state is not None and getattr(state, "translation_step", None) is not None and shape_class.translation_factor != 1.0:
+    translation_step = out.get("translation_step")
+    if translation_step is not None and shape_class.translation_factor != 1.0:
         # The oversampled translation grid is built from the step (RELION samples offsets in
         # Angstrom and converts them with the image's pixel size, getTranslationsInPixel).
-        out["state"] = dataclasses.replace(
-            state, translation_step=float(state.translation_step) * shape_class.translation_factor
-        )
+        out["translation_step"] = float(translation_step) * shape_class.translation_factor
     for name in IMAGE_SIZE_KWARGS:
         if out.get(name) is not None:
             out[name] = optics_scale.group_current_size(out[name], shape_class.box_size, shape_class.scale)
@@ -663,44 +762,36 @@ def merge_class_results(results, classes, n_half, ref_box):
         profile_summary=first.profile_summary,
         mstep_full_half_axis=first.mstep_full_half_axis,
         mstep_accumulator_shape=first.mstep_accumulator_shape,
+        classes=_merge_class_scores([result.classes for result in results], classes, n_half, ref_box),
     )
 
 
-def merge_k_class_outputs(outputs, k, class_outputs, classes, n_half, ref_box) -> None:
-    """Store the half's K-class summaries in ``outputs[k]`` from its shape classes' outputs.
+def _merge_class_scores(summaries, classes, n_half, ref_box):
+    """Merge class assignments, posterior sums and noise into one half's result."""
 
-    Class assignments and best poses return to the half's image order (translations
-    in reference pixels); class and class-rotation posterior sums add; each class's
-    noise sums go to the reference shells as the aggregate ones do (``_merge_noise_stats``).
-    """
+    from relax.dense.score_outputs import ClassScoreSummary
 
-    def slots(name):
-        return [getattr(class_out, name)[k] for class_out in class_outputs]
-
-    outputs.class_assignments[k] = place_by_index(slots("class_assignments"), classes, n_half)
-    outputs.best_pose_rotations[k] = place_by_index(slots("best_pose_rotations"), classes, n_half)
-    outputs.best_pose_rotation_eulers[k] = place_by_index(slots("best_pose_rotation_eulers"), classes, n_half)
-    translations = [
-        None if value is None else np.asarray(value) / shape_class.translation_factor
-        for value, shape_class in zip(slots("best_pose_translations"), classes)
-    ]
-    outputs.best_pose_translations[k] = (
-        None
-        if translations[0] is None
-        else place_by_index(translations, classes, n_half).astype(np.asarray(slots("best_pose_translations")[0]).dtype)
-    )
-    for name in ("class_posterior", "class_full_posterior", "class_rotation_posterior"):
-        getattr(outputs, name)[k] = _sum([np.asarray(value, dtype=np.float64) for value in slots(name)])
-    per_class = slots("noise_stats_per_class")
+    if all(summary is None for summary in summaries):
+        return None
+    if any(summary is None for summary in summaries):
+        raise ValueError("class statistics are missing for some shape classes")
+    per_class = [summary.noise_stats for summary in summaries]
     if all(stats is None for stats in per_class):
-        outputs.noise_stats_per_class[k] = None
-        return
-    if any(stats is None for stats in per_class) or len({len(stats) for stats in per_class}) != 1:
-        raise ValueError("per-class noise statistics are missing for some shape classes")
-    outputs.noise_stats_per_class[k] = [
-        _merge_noise_stats([stats[c] for stats in per_class], classes, n_half, ref_box)
-        for c in range(len(per_class[0]))
-    ]
+        noise_stats = None
+    else:
+        if any(stats is None for stats in per_class) or len({len(stats) for stats in per_class}) != 1:
+            raise ValueError("per-class noise statistics are missing for some shape classes")
+        noise_stats = [
+            _merge_noise_stats([stats[c] for stats in per_class], classes, n_half, ref_box)
+            for c in range(len(per_class[0]))
+        ]
+    return ClassScoreSummary(
+        assignments=place_by_index([summary.assignments for summary in summaries], classes, n_half),
+        mstep_mass=_sum([np.asarray(summary.mstep_mass, dtype=np.float64) for summary in summaries]),
+        evidence_mass=_sum([np.asarray(summary.evidence_mass, dtype=np.float64) for summary in summaries]),
+        rotation_mass=_sum([np.asarray(summary.rotation_mass, dtype=np.float64) for summary in summaries]),
+        noise_stats=noise_stats,
+    )
 
 
 def _per_image_axis(values, classes, n_half, axis):
@@ -835,45 +926,3 @@ def require_exact_local_parent_windows(kwargs) -> None:
                 "RELION's coarse kernel projects its wrapped outer rows (diff2.cuh:86-90). Only the fused coarse "
                 "scorer reproduces that so far."
             )
-
-
-def score_half_by_shape(score_fn, kwargs):
-    """Run ``score_fn`` (a half scoring function) once per shape class and merge.
-
-    ``kwargs`` are ``score_fn``'s keywords for the whole half plus ``noise_radial_k``,
-    the half's ``[G, n_ref]`` reference-shell noise spectra, and optionally
-    ``class_batch_overrides``, one dict of batch-size keywords per class planned for
-    that class's own image box and sizes, and ``class_translation_overrides``, each
-    class's translation operands rebuilt in its own pixels.
-    """
-
-    from relax.dense.score_outputs import PerHalfOutputs
-
-    kwargs = dict(kwargs)
-    half = kwargs["experiment_dataset"]
-    noise_radial = kwargs.pop("noise_radial_k")
-    batch_overrides = kwargs.pop("class_batch_overrides", None)
-    translation_overrides = kwargs.pop("class_translation_overrides", None)
-    if batch_overrides is not None and len(batch_overrides) != len(half.classes):
-        raise ValueError("class_batch_overrides needs one entry per shape class")
-    if kwargs.get("optics_group_ids_k") is None:
-        raise ValueError("a half with several image shapes needs each image's optics group")
-    outputs, k = kwargs["outputs"], kwargs["k"]
-    ref_box = int(half.image_shape[0])
-    results = []
-    for index, shape_class in enumerate(half.classes):
-        class_kw = class_kwargs(kwargs, shape_class, half.n_units)
-        if batch_overrides is not None:
-            class_kw.update(batch_overrides[index])
-        if translation_overrides is not None:
-            # The class's own rounded pre-shifts, prior centers and pdf_offset replace the
-            # scaled reference values, for the operands this call takes.
-            class_kw.update({key: value for key, value in translation_overrides[index].items() if key in class_kw})
-        class_kw["noise_variance_k"] = class_noise_table(noise_radial, shape_class, ref_box)
-        class_kw["outputs"] = PerHalfOutputs()
-        results.append(score_fn(**class_kw))
-    merged = merge_class_results(results, half.classes, half.n_units, ref_box)
-    outputs.best_pose_rotations[k] = merged.best_pose_rotations
-    outputs.best_pose_rotation_eulers[k] = merged.best_pose_rotation_eulers
-    outputs.best_pose_translations[k] = merged.best_pose_translations
-    return merged

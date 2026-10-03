@@ -590,7 +590,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
     from helpers.em_fixtures import fixture_file
     from recovar.utils.helpers import load_relion_volume, recovar_volume_to_relion
 
-    from relax.refinement.projector_preparation import _relion_projector_half_maps_for_scoring
+    from relax.refinement.projector_preparation import prepare_scoring_projector
 
     volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
     vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)
@@ -599,7 +599,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
     vol_real = np.asarray(fourier_transform_utils.get_idft3(jnp.asarray(ft_recovar).reshape(vol_recovar.shape)).real)
 
     for current_size in (56, n):
-        _slab, _r_max, power = _relion_projector_half_maps_for_scoring(
+        projector = prepare_scoring_projector(
             ft_recovar[None, :],
             volume_shape=vol_recovar.shape,
             current_size=current_size,
@@ -630,7 +630,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             padding_factor=2,
             current_size=current_size,
             return_details=True,
-            projector_power_spectrum=power[0],
+            projector_power_spectrum=projector.power_spectrum[0],
         )
         for candidate in (reused, rebuilt):
             assert_matches(np.asarray(candidate[0]), np.asarray(oracle[0]))

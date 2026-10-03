@@ -430,12 +430,6 @@ def _batched_compact_candidate_indices(candidate_masks):
     return tuple(out)
 
 
-def _quantize_up(value: int, quantum: int) -> int:
-    value = int(value)
-    quantum = int(quantum)
-    return max(quantum, ((value + quantum - 1) // quantum) * quantum)
-
-
 def _quantize_pow2(value: int, floor: int) -> int:
     """Round up to a power of two (at least ``floor``).
 

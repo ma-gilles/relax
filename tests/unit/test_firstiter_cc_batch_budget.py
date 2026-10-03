@@ -10,40 +10,49 @@ from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
-from relax.dense import score_outputs
-from relax.helpers import batch_planning
+from relax.helpers import batch_planning, oversampling
 from relax.helpers.batch_planning import (
     _estimate_relion_em_batch_sizes,
     _safe_dense_k_class_rotation_block_size,
     _safe_firstiter_cc_image_batch_size,
 )
 from relax.helpers.types import NoiseStats, make_relion_stats
-from relax.refinement import firstiter_cc, half_scoring, iteration_loop, local_search_iteration
+from relax.refinement import (
+    firstiter_cc,
+    half_scoring,
+    iteration_loop,
+    local_sampling,
+    local_search_iteration,
+    optics_shapes,
+)
+from relax.refinement.half_inputs import HalfSet
 from relax.relion import optics_aberrations
 
 
 def _dense_owners(**values):
     """Build the seven explicit dense-scoring owners from concise test values."""
 
+    sampling_state = values.pop("state")
     owners = (
-        half_scoring.DenseHalfData(
-            k=values.pop("k"),
-            experiment_dataset=values.pop("experiment_dataset"),
-            means_k=values.pop("means_k"),
+        half_scoring.HalfScoringData(
+            particles=HalfSet(
+                index=values.pop("k"),
+                dataset=values.pop("experiment_dataset"),
+                image_corrections=values.pop("image_corrections_k"),
+                scale_corrections=values.pop("scale_corrections_k"),
+            ),
+            reference=values.pop("means_k"),
             mean_variance=values.pop("mean_variance"),
-            noise_variance_k=values.pop("noise_variance_k"),
-            image_corrections_k=values.pop("image_corrections_k"),
-            scale_corrections_k=values.pop("scale_corrections_k"),
-            outputs=values.pop("outputs"),
+            noise_variance=values.pop("noise_variance_k"),
         ),
         half_scoring.DenseSamplingSpec(
             effective_rotations=values.pop("effective_rotations"),
             current_translations=values.pop("current_translations"),
             base_translations=values.pop("base_translations"),
             current_healpix_order=values.pop("current_healpix_order"),
-            state=values.pop("state"),
+            oversampling_order=sampling_state.adaptive_oversampling,
+            translation_step=sampling_state.translation_step,
             random_perturbation=values.pop("random_perturbation"),
-            disc_type=values.pop("disc_type"),
             cs_for_engine=values.pop("cs_for_engine"),
             coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
         ),
@@ -74,12 +83,13 @@ def _dense_owners(**values):
             firstiter_updates_em_kwargs_ibs=values.pop("firstiter_updates_em_kwargs_ibs", False),
         ),
         half_scoring.DenseExecutionPolicy(
+            disc_type=values.pop("disc_type"),
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             debug_iteration=values.pop("debug_iteration", None),
         ),
-        half_scoring.DenseOpticsSpec(),
+        optics_shapes.OpticsSpec(),
     )
     assert not values, f"unmapped dense owner values: {sorted(values)}"
     return owners
@@ -132,13 +142,13 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.DenseHalfData,
+            half_scoring.HalfScoringData,
             half_scoring.DenseSamplingSpec,
             half_scoring.DensePriorSpec,
             half_scoring.DenseBatchPolicy,
             half_scoring.DenseVariantPolicy,
             half_scoring.DenseExecutionPolicy,
-            half_scoring.DenseOpticsSpec,
+            optics_shapes.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
     }
@@ -167,24 +177,17 @@ def test_local_half_core_keeps_owner_dependencies_visible():
     stable_field_names = {
         field.name
         for owner in (
-            half_scoring.LocalHalfData,
-            half_scoring.LocalSamplingSpec,
+            half_scoring.HalfScoringData,
+            local_sampling.LocalSampling,
             half_scoring.LocalPriorSpec,
             half_scoring.LocalBatchPolicy,
             half_scoring.LocalExecutionPolicy,
             half_scoring.LocalDiagnosticPolicy,
-            half_scoring.LocalOpticsSpec,
+            optics_shapes.OpticsSpec,
         )
         for field in dataclasses.fields(owner)
     }
-    # The pass-1/pass-2 precision flags are read once from the diagnostic policy.
-    precision_locals = {
-        "fine_use_float64_projections",
-        "fine_use_float64_scoring",
-        "parent_use_float64_projections",
-        "parent_use_float64_scoring",
-    }
-    assert assigned_names & stable_field_names == precision_locals
+    assert not assigned_names & stable_field_names
 
 
 def test_local_iteration_core_keeps_owner_dependencies_visible():
@@ -355,7 +358,8 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
             current_translations=np.zeros((29, 2), dtype=np.float32),
             base_translations=np.zeros((29, 2), dtype=np.float32),
             current_healpix_order=1,
-            state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+            oversampling_order=1,
+            translation_step=2.0,
             random_perturbation=0.0,
     )
     policy = firstiter_cc.FirstIterCCPolicy(
@@ -532,7 +536,6 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, n
         safe_batch_sizes=fake_safe_batch_sizes,
         significance_safe_batch_sizes=coarse_planner if separate_coarse else None,
         max_significants=None,
-        outputs=score_outputs.PerHalfOutputs(),
         firstiter_coarse_current_size=40,
         firstiter_fine_current_size=90,
         bpref_device_signature_active=True,
@@ -637,7 +640,7 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
             best_pose_rotation_ids=jnp.zeros(n_images, dtype=jnp.int32),
         )
 
-    monkeypatch.setattr(half_scoring, "build_adaptive_pass2_grids", fake_grids)
+    monkeypatch.setattr(oversampling, "build_adaptive_pass2_grids", fake_grids)
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     result = half_scoring._score_half_dense(*_dense_owners(
@@ -671,7 +674,6 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
         disable_adjoint_ctf=False,
         safe_batch_sizes=fake_safe_batch_sizes,
         max_significants=None,
-        outputs=score_outputs.PerHalfOutputs(),
         k_class_image_batch_size_override=50,
         k_class_rotation_block_size_override=2000,
         firstiter_coarse_current_size=40,
@@ -762,7 +764,8 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
             current_translations=np.zeros((5, 2), dtype=np.float32),
             base_translations=np.zeros((5, 2), dtype=np.float32),
             current_healpix_order=1,
-            state=SimpleNamespace(adaptive_oversampling=1, translation_step=2.0),
+            oversampling_order=1,
+            translation_step=2.0,
             random_perturbation=0.0,
             projection_rotations=lambda rotations: optics_aberrations.projection_rotations(rotations, 2.0),
         ),

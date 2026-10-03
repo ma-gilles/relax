@@ -1,10 +1,14 @@
 """Production input-STAR pose initialization for full EM refinement."""
 
 import argparse
+import hashlib
+import logging
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
+import starfile
 from helpers.float_compare import assert_matches
 
 from relax.relion.input_poses import (
@@ -13,6 +17,7 @@ from relax.relion.input_poses import (
     _load_input_star_class3d_translations,
     _load_input_star_previous_best_poses,
     _resolve_input_star_pose_seed,
+    prepare_initial_poses,
 )
 
 pytestmark = pytest.mark.unit
@@ -40,6 +45,157 @@ def _particle_tables(*, angstrom_origins=False):
         }
     )
     return input_particles, halfset_particles
+
+
+def _pose_preparation_inputs(tmp_path, *, n_classes=1, angstrom_origins=False, norm_corrections=False):
+    particles, halfset = _particle_tables(angstrom_origins=angstrom_origins)
+    if norm_corrections:
+        particles["rlnNormCorrection"] = [0.5, 0.8, 1.25, 2.0]
+    starfile.write(particles, tmp_path / "particles.star")
+    layout = SimpleNamespace(
+        half1_rows=np.array([2, 0]) if n_classes == 1 else np.array([2, 0, 3, 1]),
+        half2_rows=np.array([3, 1]) if n_classes == 1 else np.array([], dtype=np.int64),
+    )
+    return particles, dict(
+        particle_layout=layout, relion_halfset_particles=halfset, pixel_size_angstrom=2.0,
+        data_dir=tmp_path, requested_source="auto", n_classes=n_classes, init_relion_iteration=0,
+        has_relion_half_sets=n_classes == 1, diagnostic_single_half=False, frozen_boundary=None,
+        poses_npz_path=None, pose_iteration="last", has_replay_pose_source=False,
+        class3d_translations=None, class3d_translation_path=None, log=logging.getLogger("test.initial_poses"),
+    )
+
+
+@pytest.mark.parametrize("n_classes", [1, 4])
+@pytest.mark.parametrize("angstrom_origins", [False, True])
+@pytest.mark.parametrize("norm_corrections", [False, True])
+@pytest.mark.parametrize("requested", ["auto", "input-star", "none"])
+def test_prepared_input_poses_pair_source_half_order_units_and_corrections(
+    tmp_path, n_classes, angstrom_origins, norm_corrections, requested,
+):
+    particles, inputs = _pose_preparation_inputs(
+        tmp_path, n_classes=n_classes, angstrom_origins=angstrom_origins, norm_corrections=norm_corrections,
+    )
+    inputs["requested_source"] = requested
+    prepared = prepare_initial_poses(particles, **inputs)
+    assert prepared.provenance.requested_source == requested
+    if requested == "none":
+        assert prepared.poses is None
+        assert prepared.image_corrections is None and prepared.scale_corrections is None
+        assert prepared.provenance.resolved_source == "none"
+        assert prepared.provenance.path is None and prepared.provenance.sha256 is None
+        return
+    path = tmp_path / "particles.star"
+    assert prepared.provenance.path == path.resolve()
+    assert prepared.provenance.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert prepared.poses["translation_units"] == ("angstrom" if angstrom_origins else "pixel")
+    if n_classes == 4:
+        assert prepared.provenance.resolved_source == "input_star_translations"
+        assert prepared.poses["previous_best_rotation_eulers"] == [None, None]
+        assert prepared.poses["previous_best_translations"][1].shape == (0, 2)
+        assert_matches(prepared.poses["previous_best_translations"][0], [[2.5, -2.5], [0.5, -0.5], [3.5, -3.5], [1.5, -1.5]])
+        assert prepared.image_corrections is None and prepared.scale_corrections is None
+    else:
+        assert prepared.provenance.resolved_source == "input_star"
+        assert_matches(prepared.poses["previous_best_rotation_eulers"][0], [[30, 31, 32], [10, 11, 12]])
+        assert_matches(prepared.poses["previous_best_rotation_eulers"][1], [[40, 41, 42], [20, 21, 22]])
+        assert_matches(prepared.poses["previous_best_translations"][0], [[2.5, -2.5], [0.5, -0.5]])
+        assert_matches(prepared.poses["previous_best_translations"][1], [[3.5, -3.5], [1.5, -1.5]])
+        for norms in prepared.poses["norm_corrections"]:
+            assert norms.dtype == np.float64
+        if norm_corrections:
+            assert_matches(prepared.image_corrections[0], np.array([0.8, 2.0], dtype=np.float32))
+            assert_matches(prepared.image_corrections[1], np.array([0.5, 1.25], dtype=np.float32))
+            assert all(values.dtype == np.float32 for values in prepared.image_corrections)
+            for scales in prepared.scale_corrections:
+                assert_matches(scales, np.ones(2, dtype=np.float32))
+        else:
+            assert prepared.image_corrections is None and prepared.scale_corrections is None
+    assert all(values.dtype == np.float32 for values in prepared.poses["previous_best_translations"])
+
+
+@pytest.mark.parametrize("requested", ["auto", "none"])
+def test_frozen_pose_arrays_keep_precedence_and_aliases(tmp_path, requested):
+    particles, inputs = _pose_preparation_inputs(tmp_path)
+    eulers = (np.arange(6, dtype=np.float64).reshape(2, 3), np.zeros((2, 3), dtype=np.float32))
+    translations = (np.zeros((2, 2), dtype=np.float64), np.ones((2, 2), dtype=np.float32))
+    inputs.update(
+        requested_source=requested,
+        frozen_boundary=SimpleNamespace(
+            completed_relion_iteration=4, previous_best_rotation_eulers=eulers, previous_best_translations=translations,
+        ),
+        poses_npz_path=tmp_path / "missing.npz", has_replay_pose_source=True,
+    )
+    (tmp_path / "particles.star").unlink()
+    prepared = prepare_initial_poses(particles, **inputs)
+    assert prepared.poses["iteration"] == "003"
+    for half in range(2):
+        assert prepared.poses["previous_best_rotation_eulers"][half] is eulers[half]
+        assert prepared.poses["previous_best_translations"][half] is translations[half]
+    assert prepared.image_corrections is None and prepared.scale_corrections is None
+    assert prepared.provenance.resolved_source == "diagnostic_replay"
+    assert prepared.provenance.path is None and prepared.provenance.sha256 is None
+
+
+def test_npz_pose_source_keeps_numbered_selection_and_source_labels(tmp_path, caplog):
+    particles, inputs = _pose_preparation_inputs(tmp_path)
+    path = tmp_path / "poses.npz"
+    arrays = {}
+    for iteration in (1, 3):
+        for half in range(2):
+            arrays[f"best_rotation_eulers_iter_{iteration:03d}_half{half}"] = np.full((2, 3), iteration + half, np.float64)
+            arrays[f"best_translations_iter_{iteration:03d}_half{half}"] = np.full((2, 2), -iteration - half, np.float64)
+    np.savez(path, **arrays)
+    inputs.update(poses_npz_path=path, has_replay_pose_source=True)
+    (tmp_path / "particles.star").unlink()
+    with caplog.at_level(logging.INFO):
+        prepared = prepare_initial_poses(particles, **inputs)
+    assert prepared.poses["iteration"] == "003"
+    for half in range(2):
+        assert_matches(prepared.poses["previous_best_rotation_eulers"][half], np.full((2, 3), 3 + half, np.float32))
+        assert_matches(prepared.poses["previous_best_translations"][half], np.full((2, 2), -3 - half, np.float32))
+        assert prepared.poses["previous_best_rotation_eulers"][half].dtype == np.float32
+    assert prepared.provenance.resolved_source == "diagnostic_replay"
+    assert prepared.provenance.path is None and prepared.provenance.sha256 is None
+    assert any("Diagnostic local-search seed" in record.message and "iter=003" in record.message for record in caplog.records)
+
+
+@pytest.mark.parametrize("requested", ["auto", "none"])
+def test_class3d_replay_translation_seed_keeps_source_and_no_orientation_seed(tmp_path, requested):
+    particles, inputs = _pose_preparation_inputs(tmp_path, n_classes=4)
+    path = tmp_path / "run_it000_data.star"
+    path.write_bytes((tmp_path / "particles.star").read_bytes())
+    translations = [np.arange(8, dtype=np.float32).reshape(4, 2), np.empty((0, 2), np.float32)]
+    inputs.update(
+        requested_source=requested, class3d_translations=translations,
+        class3d_translation_path=path, has_replay_pose_source=True,
+    )
+    prepared = prepare_initial_poses(particles, **inputs)
+    assert prepared.poses["iteration"] == "000_translation_only"
+    assert prepared.poses["previous_best_translations"] is translations
+    assert prepared.poses["previous_best_rotation_eulers"] == [None, None]
+    assert prepared.provenance.resolved_source == "relion_run_it000_translations"
+    assert prepared.provenance.path is path
+    assert prepared.provenance.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("override, message", [
+    ({"has_replay_pose_source": True}, "already owns initialization"),
+    ({"init_relion_iteration": 1}, "fresh"),
+    ({"has_relion_half_sets": False}, "requires --relion_half_sets"),
+    ({"diagnostic_single_half": True}, "both gold-standard halves"),
+])
+def test_explicit_input_pose_source_preserves_admission_errors(tmp_path, override, message):
+    particles, inputs = _pose_preparation_inputs(tmp_path)
+    inputs.update(requested_source="input-star", **override)
+    with pytest.raises(SystemExit, match="Invalid initial pose source:.*" + message):
+        prepare_initial_poses(particles, **inputs)
+
+
+def test_prepared_pose_input_errors_keep_cli_context(tmp_path):
+    particles, inputs = _pose_preparation_inputs(tmp_path)
+    particles.loc[2, "rlnAnglePsi"] = np.nan
+    with pytest.raises(SystemExit, match="Invalid input-STAR pose initialization:.*finite"):
+        prepare_initial_poses(particles, **inputs)
 
 
 @pytest.mark.parametrize("angstrom_origins", [False, True])

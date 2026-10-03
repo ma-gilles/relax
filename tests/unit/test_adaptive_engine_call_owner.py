@@ -19,7 +19,7 @@ def test_sparse_pass2_switch_reads_only_positive_values(monkeypatch):
 
 
 def _grids(fine_mstep):
-    return half_scoring._AdaptivePass2Grids(
+    return half_scoring.AdaptivePass2Grids(
         coarse_rotations=np.zeros((2, 3, 3), dtype=np.float32),
         coarse_translations=np.zeros((1, 2), dtype=np.float32),
         fine_rotations=np.zeros((4, 3, 3), dtype=np.float32),
@@ -55,12 +55,13 @@ def test_common_engine_keywords_follow_the_sparse_switch():
                 current_translations=None,
                 base_translations=None,
                 current_healpix_order=np.int64(2),
-                state=None,
+                oversampling_order=0,
+                translation_step=1.0,
                 random_perturbation=0.0,
-                disc_type="linear_interp",
                 cs_for_engine=None,
             ),
             half_scoring.DenseExecutionPolicy(
+                disc_type="linear_interp",
                 disable_adjoint_y=False,
                 disable_adjoint_ctf=False,
                 return_best_pose_details=True,

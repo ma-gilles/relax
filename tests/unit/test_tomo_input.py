@@ -51,6 +51,37 @@ def project(tmp_path_factory):
 
 
 @pytest.mark.unit
+def test_command_particle_loading_preserves_tilt_particle_identity(project, tmp_path, monkeypatch):
+    from relax.refinement import particle_loading
+
+    out, flat = project
+    monkeypatch.setenv("RECOVAR_CACHE_DIR", "")
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "0")
+    args = SimpleNamespace(
+        data_dir=str(out), output=str(tmp_path), preread_images=False,
+        scratch_dir="", keep_free_scratch_gb=0.0, particle_diameter_ang=120.0,
+        width_mask_edge_px=5.0, relion_softmask_reduction="control",
+        image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
+    )
+    loaded = particle_loading.load_particle_inputs(args)
+    original_rows, _ = read_star(str(flat))
+    original_index = tomo_input.tomo_particle_index(original_rows)
+    particles, _ = read_star(str(out / "particles.star"))
+    particle_names = np.asarray(star_column(particles, "rlnTomoParticleName"))
+    visible_counts = [
+        sum(int(value) for value in str(frames).strip("[]").split(","))
+        for frames in star_column(particles, "rlnTomoVisibleFrames")
+    ]
+    assert loaded.tomographic and loaded.shape_class_rows is None
+    assert loaded.dataset.n_units == original_index.n_particles
+    assert loaded.dataset.images.n_units == original_index.n_images
+    assert np.array_equal(loaded.dataset.particle_names, particle_names)
+    assert np.array_equal(loaded.dataset.unit_image_offsets, np.r_[0, np.cumsum(visible_counts)])
+    assert_matches(loaded.dataset.images.voxel_size, VOXEL)
+    assert_matches(loaded.mask_parameters, (120.0, 5.0))
+
+
+@pytest.mark.unit
 def test_relion_tomo_damping_matches_relion_formula():
     freq_sq = np.array([0.0, 1e-4, 1e-2, 0.03])
     ne = 0.245 * np.power(freq_sq[1:], -0.8325) + 2.81
@@ -231,16 +262,16 @@ def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
 def test_subtomogram_runs_take_the_first_iteration_cross_correlation():
     """Subtomogram Refine3D and Class3D run RELION's CC iteration (score_tomo_half normalized_cc)."""
 
-    from relax.refinement.full_refinement import _validate_tomo_run
+    from relax.refinement.command_options import validate_tomo_args
 
     args = SimpleNamespace(
         relion_init_dir=None, init_noise_from_npz=None, relion_softmask_reduction="control", firstiter_cc=False
     )
-    _validate_tomo_run(args, None, False)
+    validate_tomo_args(args, None, False)
     for n_classes in (1, 2):
-        _validate_tomo_run(SimpleNamespace(**{**vars(args), "firstiter_cc": True, "n_classes": n_classes}), None, False)
+        validate_tomo_args(SimpleNamespace(**{**vars(args), "firstiter_cc": True, "n_classes": n_classes}), None, False)
     with pytest.raises(SystemExit, match="soft-mask"):
-        _validate_tomo_run(SimpleNamespace(**{**vars(args), "relion_softmask_reduction": "probe"}), None, False)
+        validate_tomo_args(SimpleNamespace(**{**vars(args), "relion_softmask_reduction": "probe"}), None, False)
 
 
 @pytest.mark.unit
@@ -250,12 +281,12 @@ def test_subtomogram_runs_refuse_unqualified_optics_features(project):
     relion_refine applies all four to every tilt image; ignoring one silently gave wrong maps.
     """
 
-    from relax.refinement.full_refinement import _refuse_unsupported_particle_optics
+    from relax.refinement.particle_loading import validate_particle_optics
     from relax.relion.relion_metadata import OPTICS_FEATURE_LABELS, TOMO_OPTICS_FEATURES
 
     out, _ = project
     _, optics = read_star(str(out / "particles.star"))
-    _refuse_unsupported_particle_optics(optics, tomo_run=True)
+    validate_particle_optics(optics, tomographic=True)
     values = {
         "ctf_premultiplied": {"_rlnCtfDataAreCtfPremultiplied": 1},
         "odd_aberrations": {"_rlnBeamTiltX": 0.5},
@@ -267,9 +298,9 @@ def test_subtomogram_runs_refuse_unqualified_optics_features(project):
         table = optics.copy()
         for label, value in columns.items():
             table[label] = value
-        _refuse_unsupported_particle_optics(table, tomo_run=False)
+        validate_particle_optics(table, tomographic=False)
         if feature in TOMO_OPTICS_FEATURES:
-            _refuse_unsupported_particle_optics(table, tomo_run=True)
+            validate_particle_optics(table, tomographic=True)
         else:
             with pytest.raises(NotImplementedError, match="does not implement"):
-                _refuse_unsupported_particle_optics(table, tomo_run=True)
+                validate_particle_optics(table, tomographic=True)

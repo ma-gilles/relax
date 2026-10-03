@@ -96,6 +96,7 @@ from relax.relion.relion_projector_setup import (
     prepare_local_projector_slab,
 )
 from relax.sparse_pass2 import resident_pass2 as rp
+from relax.sparse_pass2.resident_candidates import chunk_segment_offsets
 from relax.sparse_pass2.resident_local_layout import (
     materialize_local_chunk,
     plan_local_capacity_chunks,
@@ -1527,7 +1528,7 @@ def _run_resident_parent_probe(
         )
         del score_proj, ops
         scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
-        segment_offsets_np = _local_chunk_segment_offsets(tables, chunk, t)
+        segment_offsets_np = chunk_segment_offsets(tables, chunk, n_fine_trans=t)
         segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
         log_z = em_cuda_kernels.sparse_pass2_segmented_log_z_f64(
             scores_flat, segment_offsets, n_valid_images_device
@@ -1642,31 +1643,6 @@ def _run_resident_parent_probe(
         profile=profile,
         significant_counts=significant_counts,
     )
-
-
-def _local_chunk_segment_offsets(tables, chunk, n_fine_trans: int) -> np.ndarray:
-    """Cell offsets of each chunk image slot, in the segmented handler's units.
-
-    Same contract as the global driver's: slot ``b`` owns the cells of image
-    ``image_start + b``; padded slots and rows past ``n_valid_rows`` are covered
-    by no segment, which the handler treats exactly as an all ``-inf``
-    rectangular row.
-    """
-
-    image_capacity = int(chunk.image_capacity)
-    n_valid_images = int(chunk.n_valid_images)
-    offsets = np.full(image_capacity + 1, chunk.n_valid_rows * int(n_fine_trans), dtype=np.int64)
-    starts = (
-        np.asarray(
-            tables.row_offsets[chunk.image_start : chunk.image_start + n_valid_images + 1],
-            dtype=np.int64,
-        )
-        - int(chunk.row_start)
-    ) * int(n_fine_trans)
-    offsets[: n_valid_images + 1] = starts
-    if int(offsets[-1]) > int(chunk.row_capacity) * int(n_fine_trans):
-        raise ValueError("chunk segment offsets exceed the chunk's cell capacity")
-    return offsets.astype(np.int32)
 
 
 def _unshifted_chunk_operands(experiment_dataset, image_indices, **kwargs):
@@ -1987,7 +1963,7 @@ def _start_resident_local_chunk(
     mark("score", scores_flat)
 
     # --- stage 4: segmented RELION float32 fine posterior -------------------
-    segment_offsets_np = _local_chunk_segment_offsets(tables, chunk, n_fine_trans)
+    segment_offsets_np = chunk_segment_offsets(tables, chunk, n_fine_trans=n_fine_trans)
     segment_offsets = jnp.asarray(segment_offsets_np, dtype=jnp.int32)
     log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
         scores_flat, segment_offsets, n_valid_images_device

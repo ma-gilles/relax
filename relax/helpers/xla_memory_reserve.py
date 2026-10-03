@@ -35,9 +35,6 @@ MEM_FRACTION_ENV = "XLA_PYTHON_CLIENT_MEM_FRACTION"
 _CONTEXT_AND_SCRATCH_BYTES = 3 * 1024**3
 # Never hand XLA less than this share of the card.
 _MIN_FRACTION = 0.5
-# Padding of relax's projectors (full_refinement's projection_padding_factor, RELION's --pad 2).
-PROJECTION_PADDING_FACTOR = 2
-
 
 def relion_projector_texture_bytes(model_box: int, padding_factor: int) -> int:
     """Bytes of the float32 texture pair of RELION's largest projector slab for ``model_box``.
@@ -198,7 +195,7 @@ def reference_maps_from_argv(argv) -> list[str | None]:
     ]
 
 
-def reserve_for_reference_maps(paths, padding_factor: int = PROJECTION_PADDING_FACTOR) -> dict | None:
+def reserve_for_reference_maps(paths, padding_factor: int) -> dict | None:
     """:func:`reserve_projector_texture_memory` for the box of the first existing map in ``paths``."""
 
     return reserve_projector_texture_memory(model_box_from_map_headers(paths), padding_factor)

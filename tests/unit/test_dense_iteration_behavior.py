@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -15,9 +16,66 @@ from relax.diagnostics import local_debug
 from relax.helpers.convergence import _native_final_perturbation_healpix_order
 from relax.refinement import half_scoring
 from relax.refinement.local_search_iteration import _LocalSearchIterationResult
-from relax.relion import relion_worker_scale
+from relax.relion import relion_normalization
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize('n_classes,use_x_half', [(1, False), (1, True), (4, False)])
+@pytest.mark.parametrize('translation_dimension', [2, 3])
+def test_empty_expectation_keeps_reconstruction_layout_and_particle_dimensions(n_classes, use_x_half, translation_dimension):
+    result = score_outputs.empty_half_result(
+        volume_shape=(8, 8, 8), padded_volume_shape=(16, 16, 16),
+        n_classes=n_classes, n_shells=5, n_rotations=7,
+        translation_dimension=translation_dimension,
+        image_window_size=4, model_support_size=6, use_x_half_mstep=use_x_half,
+    )
+    assert result.ha.shape == (0,) and result.ha.dtype == np.int32
+    assert result.best_pose_translations.shape == (0, translation_dimension)
+    assert result.classes.rotation_mass.shape == (n_classes, 7)
+    assert result.em_stats.rotation_posterior_sums.shape == (7,)
+    assert result.noise_stats.wsum_sigma2_noise.shape == (5,)
+    assert_matches(result.classes.mstep_mass, 0.0)
+    if n_classes > 1:
+        assert result.Ft_y is None and result.Ft_ctf is None
+    else:
+        assert_matches(result.Ft_y, 0.0)
+        assert_matches(result.Ft_ctf, 0.0)
+    assert result.mstep_full_half_axis == (0 if use_x_half else None)
+    assert result.mstep_accumulator_shape == ((15, 15, 15) if use_x_half else None)
+
+
+def test_complete_class_result_is_recorded_only_at_the_selected_half():
+    outs = score_outputs.PerHalfOutputs()
+    other_half = object()
+    outs.class_posterior[0] = other_half
+    outs.noise_stats_per_class[1] = object()
+    classes = score_outputs.ClassScoreSummary(
+        assignments=np.array([1, 0], dtype=np.int32),
+        mstep_mass=np.array([0.3, 0.7], dtype=np.float64),
+        evidence_mass=np.array([0.4, 0.6], dtype=np.float64),
+        rotation_mass=np.ones((2, 3), dtype=np.float64),
+        noise_stats=None,
+    )
+    result = score_outputs.HalfScoreResult(
+        ha=np.array([2, 3], dtype=np.int32), Ft_y=object(), Ft_ctf=object(),
+        em_stats=SimpleNamespace(
+            max_posterior_per_image=np.array([0.4, 0.6], dtype=np.float64),
+            rotation_posterior_sums=np.ones(3, dtype=np.float64),
+        ),
+        noise_stats=object(), classes=classes,
+    )
+
+    outs.update_from(1, result, dtype=np.float32)
+
+    assert outs.class_posterior[0] is other_half
+    assert outs.class_assignments[1] is classes.assignments
+    assert outs.class_posterior[1] is classes.mstep_mass
+    assert outs.class_full_posterior[1] is classes.evidence_mass
+    assert outs.class_rotation_posterior[1] is classes.rotation_mass
+    assert outs.noise_stats_per_class[1] is None
+    assert outs.class_posterior[1].dtype == np.float64
+    assert outs.max_posterior[1].dtype == np.float32
 
 
 def test_per_half_update_from_half_score_result_updates_only_score_payload():
@@ -63,11 +121,15 @@ def test_per_half_update_preserves_double_posterior_state_in_double_mode(monkeyp
         max_posterior_per_image = np.array([0.123456789012345], dtype=np.float64)
         rotation_posterior_sums = np.array([0.987654321098765], dtype=np.float64)
 
-    monkeypatch.setitem(scoring_policy._DENSE_EM_STATIC_KWARGS, "use_float64_scoring", True)
+    monkeypatch.setattr(
+        scoring_policy,
+        "DENSE_PRECISION",
+        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
+    )
     outs = iteration_loop.PerHalfOutputs()
     outs.update_from(
         0,
-        iteration_loop.HalfScoreResult(
+        score_outputs.HalfScoreResult(
             ha=np.array([0], dtype=np.int32),
             Ft_y=None,
             Ft_ctf=None,
@@ -93,8 +155,8 @@ def test_mstep_full_half_axis_resolver_keeps_common_axis_or_default():
 
 
 def test_relion_correction_range_formatter_accepts_empty_halves():
-    assert relion_worker_scale._format_relion_correction_range(np.array([], dtype=np.float32)) == "empty"
-    assert relion_worker_scale._format_relion_correction_range(np.array([0.5, 2.0], dtype=np.float32)) == "[0.5, 2]"
+    assert relion_normalization._format_relion_correction_range(np.array([], dtype=np.float32)) == "empty"
+    assert relion_normalization._format_relion_correction_range(np.array([0.5, 2.0], dtype=np.float32)) == "[0.5, 2]"
 
 
 @pytest.mark.parametrize(
@@ -259,7 +321,6 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
-        outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
     ))
 
@@ -336,7 +397,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
             noise_stats="fine_noise",
         )
 
-    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order: {})
+    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order, *, symmetry='C1': {})
     monkeypatch.setattr(half_scoring, "build_local_hypothesis_layout", lambda *_args, **_kwargs: parent_layout)
     monkeypatch.setattr(
         half_scoring,
@@ -385,7 +446,6 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
-        outputs=score_outputs.PerHalfOutputs(),
         local_profile_history=[],
         adaptive_pass2_denominator_mode=denominator_mode,
     ))
@@ -464,10 +524,9 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
             "parent_layout",
             retained,
             SimpleNamespace(
-                current_translations=np.zeros((3, 2), dtype=np.float32),
-                local_parent_oversampling_order=1,
-                local_search_random_perturbation=0.25,
-                symmetry="C1",
+                translations=np.zeros((3, 2), dtype=np.float32),
+                search=SimpleNamespace(oversampling_order=1, symmetry="C1"),
+                perturbation=0.25,
             ),
             SimpleNamespace(
                 adaptive_pass2_full_parent=full_parent,
@@ -510,6 +569,7 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
             "oversampling_order": 1,
             "random_perturbation": 0.25,
             "dtype": np.float32,
+            "symmetry": "C1",
         }
 
 

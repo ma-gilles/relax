@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics.iteration import _save_bpref_accumulators
+from relax.diagnostics.reconstruction import write_bpref_accumulators
 from scripts.analyze_k1_half1_raw_accumulator import _load_recovar
 
 
@@ -25,7 +25,7 @@ def test_dump_round_trip(tmp_path, monkeypatch, stage, loaded_stage, dtype, run_
     original = [value.copy() for value in numerators + weights]
     dump_dir = tmp_path / "new" / "capture"
 
-    _save_bpref_accumulators(
+    write_bpref_accumulators(
         str(dump_dir),
         stage=stage,
         iteration=2,

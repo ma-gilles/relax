@@ -1,9 +1,8 @@
 """Execution defaults and existing diagnostic selectors for half-set scoring.
 
-Static engine kwargs retain their import-time environment snapshot. Selector
-functions read their environment at call time, including legacy override
-precedence and invalid-value handling. The controller and scorers share the
-same static kwargs object; this module performs no scoring or scheduling.
+Global precision and fine-scoring policy retain their import-time environment
+snapshot. Selector functions read their environment at call time, including legacy override
+precedence and invalid-value handling. This module performs no scoring or scheduling.
 """
 
 import logging
@@ -12,6 +11,7 @@ import os
 import jax
 import numpy as np
 
+from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
 
 logger = logging.getLogger(__name__)
@@ -37,39 +37,21 @@ _FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 # rounded radial shells, no DC, no redundant negative-row kx=0 entries.
 RELION_FOURIER_WINDOW_SQUARE = False
 
-# RELION uses pf=2 for both projection and reconstruction (--pad 2).
-# Projection: real-space zero-pad N³→(2N)³, DFT, then trilinear slice.
-# Reconstruction: backproject into (2N)³ Fourier grid, Wiener solve,
-# iDFT at (2N)³, crop real-space to N³.
-PADDING_FACTOR = 2
+# Resolve the diagnostic switches once, at the existing import boundary.
+DENSE_PRECISION = DensePrecisionPolicy(
+    use_float64_scoring=parse_env_true_flag("RELAX_USE_FLOAT64_SCORING"),
+    use_float64_projections=parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS"),
+)
+RELION_EXACT_FINE_GAUSSIAN = not parse_env_true_flag(
+    "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN"
+)
 
-PROJECTION_PADDING_FACTOR = 2
+def local_precision(iteration: int | None, *, pass_index: int) -> DensePrecisionPolicy:
+    """Resolve production precision and the configured float64 diagnostic override."""
+    if pass_index not in (1, 2):
+        raise ValueError(f"local-search pass_index must be 1 or 2, got {pass_index}")
+    return DENSE_PRECISION.for_local_pass(iteration, pass_index=pass_index)
 
-# Dense ``run_em`` kwargs that are identical for every E-step in RELION mode.
-# Per-iter and per-half values are layered on top at each call site via
-# ``{**_DENSE_EM_STATIC_KWARGS, ...}``.
-
-_DENSE_EM_STATIC_KWARGS: dict = {
-    "score_with_masked_images": True,
-    "half_spectrum_scoring": True,
-    "projection_padding_factor": PROJECTION_PADDING_FACTOR,
-    "reconstruction_padding_factor": PADDING_FACTOR,
-    # Default float32. Set ``RELAX_USE_FLOAT64_SCORING=1`` /
-    # ``RELAX_USE_FLOAT64_PROJECTIONS=1`` to upgrade to double precision.
-    # Use fixed-state comparisons to evaluate precision changes; these flags
-    # alone do not establish the cause of a trajectory mismatch.
-    "use_float64_scoring": parse_env_true_flag("RELAX_USE_FLOAT64_SCORING"),
-    "use_float64_projections": parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS"),
-    # Default to RELION's float32 fine-search diff2/minimum ordering. This
-    # diagnostic bypass retains the historical algebraic sparse scorer for
-    # controlled full-trajectory A/B comparisons.
-    "relion_exact_fine_gaussian": not parse_env_true_flag(
-        "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN"
-    ),
-    "do_gridding_correction": True,
-    "square_window": RELION_FOURIER_WINDOW_SQUARE,
-    "sparse_pass2": False,
-}
 
 # Off by default: reproduces RELION's GPU-accelerated projector/backprojector
 # narrowing coordinates to float32 before flooring, unconditionally, even under
@@ -204,18 +186,16 @@ def _k1_skip_significance_pruning_enabled() -> bool:
 def _dense_global_scoring_dtype() -> np.dtype:
     """Dtype for the dense/global (``use_local=False``) scoring path's
     float64-sensitive operands: the pass-1 rotation grid built by
-    ``_relion_rotation_grid_float32``, and the offset/orientation log-prior
+    ``relion_scoring_rotation_grid``, and the offset/orientation log-prior
     arrays built by ``make_relion_translation_log_prior`` /
     ``make_relion_direction_log_prior`` and their prior-center helpers.
 
     None of these have a per-iteration diagnostic override (see
-    ``_local_search_precision_flags`` for the local-search analog), so this
+    ``local_precision`` for the local-search analog), so this
     collapses the global float64-scoring/-projections switches directly,
     matching RELION's ``ACC_DOUBLE_PRECISION`` build where the corresponding
     host ``RFLOAT`` values are never narrowed to float before the (no-op)
     ``XFLOAT`` cast.
     """
 
-    if _DENSE_EM_STATIC_KWARGS["use_float64_scoring"] or _DENSE_EM_STATIC_KWARGS["use_float64_projections"]:
-        return np.float64
-    return np.float32
+    return DENSE_PRECISION.rotation_real_dtype

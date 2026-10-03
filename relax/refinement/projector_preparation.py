@@ -1,6 +1,6 @@
 """Prepare RELION projector slabs for scoring and validate captured geometry.
 
-Native preparation converts references, reuses the existing disk cache and
+Device preparation converts references, reuses the existing disk cache and
 writes optional projector dumps. Captured preparation checks the replay state
 against the live scoring geometry. Neither path owns iteration scheduling.
 The captured-state type and its serialized identity remain in relion_replay.
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
@@ -18,6 +19,25 @@ import numpy as np
 from relax.diagnostics.relion_replay import RelionProjectorReplayState
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, kw_only=True)
+class PreparedProjector:
+    """Projection slabs, Fourier cutoff and power spectra from one transform."""
+
+    data: object
+    r_max: int
+    power_spectrum: object | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ProjectorReuse:
+    """An accuracy projector tied to its reference identity and image support."""
+
+    references: object
+    current_size: int
+    image_box_size: int
+    projector: PreparedProjector
 
 
 class InitialReferenceReplayError(ValueError):
@@ -85,8 +105,8 @@ def prepare_initial_real_references(init_reference_real, *, volume_shape, n_clas
     return initial_real_references_by_half
 
 
-def _relion_projector_half_maps_for_scoring(
-    means_k,
+def prepare_scoring_projector(
+    references,
     *,
     volume_shape,
     current_size: int | None,
@@ -94,10 +114,11 @@ def _relion_projector_half_maps_for_scoring(
     n_classes: int,
     real_references=None,
     dump_label: str | None = None,
-) -> tuple[np.ndarray, int, np.ndarray | None]:
-    """Build RELION ``Projector::data`` slabs from current Fourier references.
+    reusable: ProjectorReuse | None = None,
+) -> PreparedProjector:
+    """Prepare RELION ``Projector::data`` slabs from current Fourier references.
 
-    Returns ``(slabs, r_max, power_spectra)``. ``power_spectra`` (float64
+    The returned ``power_spectrum`` (float64
     ``[K, ori_size // 2 + 1]``) is each class's corrected power spectrum from
     the same transform, as ``computeFourierTransformMap`` returns it; Class3D
     derives its tau2 from it. It is ``None`` when the slabs come from a
@@ -108,16 +129,21 @@ def _relion_projector_half_maps_for_scoring(
     RELION's own transform is a test oracle only.
     """
 
+    if reusable is not None:
+        reuse_size = reusable.image_box_size if current_size is None else int(current_size)
+        if reusable.references is references and reusable.current_size == reuse_size:
+            return reusable.projector
+
     from recovar.core import fourier_transform_utils as ftu
 
     from relax.relion.relion_projector_setup import reference_to_relion_projector_half_maps_and_power
 
-    refs_ft = np.asarray(means_k)
+    refs_ft = np.asarray(references)
     if int(n_classes) == 1 and refs_ft.ndim == 1:
         refs_ft = refs_ft[None, :]
     if refs_ft.ndim != 2 or int(refs_ft.shape[0]) != int(n_classes):
         raise ValueError(
-            "means_k must be a flat reference or a per-class reference array; "
+            "references must be a flat reference or a per-class reference array; "
             f"got shape {refs_ft.shape} for n_classes={n_classes}",
         )
     refs_real_override = None
@@ -168,7 +194,7 @@ def _relion_projector_half_maps_for_scoring(
                     ):
                         raise ValueError("metadata mismatch")
                 logger.info("RELION mode: loaded cached Projector::data from %s", cache_path)
-                return projector_half, projector_r_max, projector_power
+                return PreparedProjector(data=projector_half, r_max=projector_r_max, power_spectrum=projector_power)
             except Exception as exc:
                 logger.warning("Ignoring unreadable RELION projector cache %s: %s", cache_path, exc)
     if refs_real_override is None:
@@ -222,7 +248,7 @@ def _relion_projector_half_maps_for_scoring(
             volume_shape=np.asarray(volume_shape, dtype=np.int64),
             n_classes=np.int64(n_classes),
         )
-    return projector_half, projector_r_max, projector_power
+    return PreparedProjector(data=projector_half, r_max=projector_r_max, power_spectrum=projector_power)
 
 
 def _validate_captured_relion_projector_for_iteration(
@@ -232,7 +258,7 @@ def _validate_captured_relion_projector_for_iteration(
     volume_shape,
     padding_factor: int,
     n_classes: int,
-) -> tuple[list[np.ndarray], list[int]]:
+) -> list[PreparedProjector]:
     """Bind a captured projector state to one exact live replay geometry."""
 
     resolved_current_size = int(current_size) if current_size is not None else int(volume_shape[0])
@@ -259,7 +285,9 @@ def _validate_captured_relion_projector_for_iteration(
             "captured RELION Projector::data does not match the live replay boundary: "
             + "; ".join(mismatches)
         )
-    return (
-        list(replay_state.projector_half_by_half),
-        [int(value) for value in replay_state.projector_r_max_by_half],
-    )
+    return [
+        PreparedProjector(data=data, r_max=int(r_max))
+        for data, r_max in zip(
+            replay_state.projector_half_by_half, replay_state.projector_r_max_by_half, strict=True
+        )
+    ]

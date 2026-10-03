@@ -1,4 +1,4 @@
-"""Host data model for the device-resident K=1 sparse pass-2 prototype.
+"""Host candidate tables and capacity-chunk layouts for resident pass 2.
 
 This module builds a flat, row-major (CSR-by-image) table of pass-2 candidate
 rows from :func:`recovar.em.scoring.sparse_bucket_arrays._prepare_per_image_pass2_inputs`
@@ -53,6 +53,7 @@ from relax.scoring.compact_candidates import SparseCandidateMask
 __all__ = [
     "CandidateTableBlocks",
     "CapacityChunk",
+    "chunk_segment_offsets",
     "merge_class_tables",
     "coarse_winner_cells",
     "n_mask_words",
@@ -219,6 +220,24 @@ class CapacityChunk:
     @property
     def n_valid_rows(self) -> int:
         return self.row_stop - self.row_start
+
+
+def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
+    """Cell offsets by image slot; padded slots repeat the valid end offset."""
+    image_capacity = int(chunk.image_capacity)
+    n_valid_images = int(chunk.n_valid_images)
+    offsets = np.full(image_capacity + 1, chunk.n_valid_rows * int(n_fine_trans), dtype=np.int64)
+    starts = (
+        np.asarray(
+            tables.row_offsets[chunk.image_start : chunk.image_start + n_valid_images + 1],
+            dtype=np.int64,
+        )
+        - int(chunk.row_start)
+    ) * int(n_fine_trans)
+    offsets[: n_valid_images + 1] = starts
+    if int(offsets[-1]) > int(chunk.row_capacity) * int(n_fine_trans):
+        raise ValueError("chunk segment offsets exceed the chunk's cell capacity")
+    return offsets.astype(np.int32)
 
 
 def _pack_bits_rows(bool_rows: np.ndarray) -> np.ndarray:

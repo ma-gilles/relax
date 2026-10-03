@@ -2,7 +2,7 @@
 
 import pytest
 
-from relax.refinement.iteration_loop import _relion_auto_refine_transitions
+from relax.refinement.convergence import uses_native_auto_refine
 
 pytestmark = pytest.mark.unit
 
@@ -12,4 +12,4 @@ pytestmark = pytest.mark.unit
     [(True, False, True), (True, True, False), (False, False, False), (False, True, False)],
 )
 def test_only_native_k1_iterations_own_sampling_and_convergence(native, k_class, expected):
-    assert _relion_auto_refine_transitions(native_sampling_boundary=native, k_class_enabled=k_class) is expected
+    assert uses_native_auto_refine(native_sampling_boundary=native, n_classes=4 if k_class else 1) is expected

@@ -23,8 +23,7 @@ import relax.vdam as init_model
 from relax.commands.initial_model import GuiInitialModelDefaults
 from relax.diagnostics import vdam_mstep_replay
 from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_from_prepared_inputs
-from relax.refinement.mean_helpers import initial_low_pass_filter_references
-from relax.relion import initial_model_io, relion_projector_setup
+from relax.relion import initial_model_io, reference_initialization, relion_projector_setup
 from relax.vdam import (
     adaptive_estep,
     dense_adapter,
@@ -402,7 +401,10 @@ def test_responsibility_loc_budget(responsibility):
     shared = {
         "input_output": source_lines(star_column) + source_lines(_relion_star_list_value) + 4,
         "controller": source_lines(GuiInitialModelDefaults) + 2,
-        "initialization": source_lines(initial_low_pass_filter_references) + 3,
+        "initialization": 3 + sum(source_lines(getattr(reference_initialization, name)) + 2 for name in (
+            "initial_low_pass_filter_references", "_relion_power_spectrum_3d",
+            "relion_initial_tau2_and_data_vs_prior", "_relion_data_vs_prior",
+        )),
         "estep": 1 + sum(source_lines(getattr(relion_projector_setup, name)) + 2 for name in (
             "reference_to_relion_projector_half_maps", "reference_to_relion_projector_half_maps_and_power",
         )),

@@ -25,7 +25,7 @@ import numpy as np
 
 from relax.healpix_sampling import euler_angles_to_matrix
 from relax.helpers import relion_random
-from relax.refinement.mean_helpers import initial_low_pass_filter_references
+from relax.relion.reference_initialization import initial_low_pass_filter_references
 from relax.vdam.schedules import _relion_round
 
 _PI = 3.14159265358979323846

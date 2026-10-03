@@ -1,5 +1,6 @@
 import functools
 import os
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import healpy as hp
@@ -1314,12 +1315,22 @@ def _get_relion_rotation_grid_eulers_float64(
     return relion_euler.reshape(n_dir, n_psi, 3).transpose(1, 0, 2).reshape(-1, 3)
 
 
-class _PerturbedTrialGrid(NamedTuple):
-    """One RELION SamplingPerturbation applied to a trial grid."""
+@dataclass(frozen=True, eq=False)
+class RotationGrid:
+    """Unperturbed scoring matrices/Euler rows with their order and point group."""
 
     rotations: np.ndarray
     rotation_eulers: np.ndarray
-    mstep_rotations: np.ndarray
+    healpix_order: int
+    symmetry: str
+
+
+class TrialGrid(NamedTuple):
+    """Scoring orientations/translations and optional exact M-step matrices."""
+
+    rotations: np.ndarray
+    rotation_eulers: np.ndarray
+    mstep_rotations: np.ndarray | None
     translations: jnp.ndarray
 
 
@@ -1336,12 +1347,11 @@ def _relion_mstep_source_eulers(rotation_eulers, healpix_order, *, use_grid_eule
     if use_grid_eulers:
         return np.asarray(rotation_eulers, dtype=np.float64)
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    symmetry_kwargs = {"symmetry": symmetry} if symmetry != "C1" else {}
     # Compare row counts before building the canonical grid: a final local search at a high
     # order (subtomograms reach order 9, 9.7e9 rows) would otherwise build it only to discard it.
-    if int(rotation_grid_size(healpix_order, **symmetry_kwargs)) != int(np.shape(rotation_eulers)[0]):
+    if int(rotation_grid_size(healpix_order, symmetry=symmetry)) != int(np.shape(rotation_eulers)[0]):
         return np.asarray(rotation_eulers, dtype=np.float64)
-    return _get_relion_rotation_grid_eulers_float64(healpix_order, **symmetry_kwargs)
+    return _get_relion_rotation_grid_eulers_float64(healpix_order, symmetry=symmetry)
 
 
 def _perturbed_trial_grid(
@@ -1353,7 +1363,7 @@ def _perturbed_trial_grid(
     random_perturbation: float,
     angular_sampling_deg: float,
     dtype,
-) -> _PerturbedTrialGrid:
+) -> TrialGrid:
     """Apply RELION's SamplingPerturbation to a trial grid.
 
     ``healpix_sampling.cpp:1909-1934`` rotates every trial orientation by the
@@ -1383,7 +1393,7 @@ def _perturbed_trial_grid(
         ),
         dtype=dtype,
     )
-    return _PerturbedTrialGrid(rotations, rotation_eulers, mstep_rotations, translations)
+    return TrialGrid(rotations, rotation_eulers, mstep_rotations, translations)
 
 
 def _relion_base_translation_grid(translation_range, translation_step, *, n_classes, voxel_size):
@@ -1415,8 +1425,10 @@ def _exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_pertur
     """
 
     symmetry = canonicalize_rotational_symmetry(symmetry)
-    symmetry_kwargs = {"symmetry": symmetry} if symmetry != "C1" else {}
-    rotations, rotation_eulers = _relion_rotation_grid_float32(healpix_order, dtype=dtype, **symmetry_kwargs)
+    rotation_grid = relion_scoring_rotation_grid(healpix_order, dtype=dtype, symmetry=symmetry)
+    rotations = rotation_grid.rotations
+    rotation_eulers = rotation_grid.rotation_eulers
+    del rotation_grid
     if random_perturbation is not None:
         rotations, rotation_eulers = apply_relion_rotation_perturbation_to_eulers(
             rotation_eulers,
@@ -1424,7 +1436,7 @@ def _exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_pertur
             angular_sampling_deg,
         )
     mstep_rotations, _ = apply_relion_rotation_perturbation_to_eulers(
-        _get_relion_rotation_grid_eulers_float64(healpix_order, **symmetry_kwargs),
+        _get_relion_rotation_grid_eulers_float64(healpix_order, symmetry=symmetry),
         0.0 if random_perturbation is None else float(random_perturbation),
         angular_sampling_deg,
     )
@@ -1449,25 +1461,24 @@ def _local_search_mstep_rotations(effective_mstep_rotations, rotation_eulers, he
     return mstep_rotations
 
 
-def _relion_rotation_grid_float32(healpix_order: int, *, dtype: np.dtype = np.float32, symmetry: str = "C1"):
-    """Return scorer matrices/eulers using RELION's accelerated-path policy.
+def relion_scoring_rotation_grid(healpix_order: int, *, dtype: np.dtype = np.float32, symmetry: str = "C1") -> RotationGrid:
+    """Return scoring matrices and working Euler rows in the requested precision.
 
-    ``dtype`` controls the returned rotation matrices and working Euler grid. Under
-    ``ACC_DOUBLE_PRECISION`` RELION's host-side ``RFLOAT -> XFLOAT`` cast is a
-    no-op, so a caller running float64 scoring should pass ``dtype=np.float64``
-    here to keep the coarse scorer operands at full precision instead of the
-    single-precision default.  These Euler rows are subsequently perturbed and
-    converted back to matrices, so they are working RFLOAT values rather than
-    merely serialized metadata.
+    Construct matrices from canonical host-double angles before the final cast.
+    Working Euler rows use scoring precision because subsequent perturbations
+    operate on them. Float64 output supports ACC_DOUBLE_PRECISION diagnostics.
     """
     order = int(healpix_order)
-    source_eulers = _get_relion_rotation_grid_eulers_float64(order, **({"symmetry": symmetry} if symmetry != "C1" else {}))
+    source_eulers = _get_relion_rotation_grid_eulers_float64(order, symmetry=symmetry)
     eulers = source_eulers.astype(dtype)
     # RELION's accelerated expectation path constructs inverse projector
     # matrices on the host in RFLOAT precision, casts to XFLOAT, then copies
     # them to the device.  Preserve source Euler precision until that cast.
     rotations = _relion_mstep_rotations_from_eulers(source_eulers, dtype=dtype)
-    return rotations, eulers
+    return RotationGrid(
+        rotations=rotations, rotation_eulers=eulers,
+        healpix_order=order, symmetry=symmetry,
+    )
 
 
 def get_oversampled_relion_hidden_rotation_grid_from_samples(

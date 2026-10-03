@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
+from relax.diagnostics import frozen_boundary_cli
 from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_FILENAME,
     FROZEN_BOUNDARY_MANIFEST,
@@ -212,10 +214,82 @@ def _write_v3_boundary(root, **overrides):
     return _write_boundary(root, **values)
 
 
+@pytest.fixture
+def boundary_cli_inputs(tmp_path):
+    from relax.refinement.command_options import parse_refinement_args
+
+    source = tmp_path / "particles.star"
+    halves = tmp_path / "halves.star"
+    source.write_text("sealed particle source")
+    halves.write_text("sealed half identities")
+    _write_boundary(
+        tmp_path / "boundary",
+        source_star_sha256=np.asarray(hashlib.sha256(source.read_bytes()).hexdigest()),
+        relion_half_star_sha256=np.asarray(hashlib.sha256(halves.read_bytes()).hexdigest()),
+    )
+    return parse_refinement_args([
+        "--data_dir", str(tmp_path), "--output", str(tmp_path / "output"),
+        "--frozen-boundary-dir", str(tmp_path / "boundary"),
+        "--relion_half_sets", str(halves),
+        "--perturb_replay_relion_dir", str(tmp_path / "replay"),
+        "--max_iter", "1", "--skip_final_iteration",
+        "--init_relion_iteration", "2", "--healpix_order", "3",
+        "--adaptive_oversampling", "1",
+    ])
+
+
+def test_cli_boundary_loads_bound_v2_arrays(boundary_cli_inputs):
+    inputs = frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+
+    assert inputs.source_paths is None
+    assert inputs.boundary.means[0].dtype == np.complex64
+    assert_matches(inputs.boundary.means[0], np.arange(8, dtype=np.float32))
+    assert inputs.boundary.noise_radial_per_half[0].dtype == np.float64
+    assert_matches(inputs.boundary.source_rows_per_half[0], [0, 2])
+
+
+def test_cli_boundary_preserves_source_failure_cause(boundary_cli_inputs):
+    from pathlib import Path
+
+    Path(boundary_cli_inputs.relion_half_sets).write_text("substituted half identities")
+    with pytest.raises(SystemExit, match="source binding.*half-set STAR SHA-256 mismatch") as error:
+        frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+    assert isinstance(error.value.__cause__, ValueError)
+
+
+@pytest.mark.parametrize("field,value,message", [
+    ("sym", "C2", "C1 only"),
+    ("n_classes", 4, "K=1-only"),
+    ("max_iter", 2, "requires --max_iter 1"),
+    ("relion_half_sets", None, "requires --relion_half_sets"),
+    ("init_relion_iteration", 1, "does not match the sealed frozen boundary"),
+    ("healpix_order", 2, "does not match the sealed frozen boundary"),
+    ("require_fixed_diagnostic_boundary", True, "rejects historical schema-v2"),
+])
+def test_cli_boundary_rejects_incompatible_invocations(boundary_cli_inputs, field, value, message):
+    setattr(boundary_cli_inputs, field, value)
+    with pytest.raises(SystemExit, match=message):
+        frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+
+
+def test_native_cli_has_no_boundary(boundary_cli_inputs):
+    boundary_cli_inputs.frozen_boundary_dir = None
+    inputs = frozen_boundary_cli.load_cli_boundary(boundary_cli_inputs)
+    assert inputs.boundary is None
+    assert inputs.source_paths is None
+
+
 def test_frozen_boundary_loader_round_trips_primitive_state(tmp_path):
     _write_boundary(tmp_path)
 
     boundary = load_frozen_refinement_boundary(tmp_path)
+    frozen_boundary_cli.validate_particle_half_inputs(
+        boundary,
+        image_names=np.asarray(["1@a.mrcs", "3@a.mrcs", "2@a.mrcs", "4@a.mrcs"]),
+        half_rows=boundary.source_rows_per_half,
+        image_shape=(2, 2),
+        log=logging.getLogger(__name__),
+    )
 
     assert boundary.completed_relion_iteration == 2
     assert boundary.volume_shape == (2, 2, 2)

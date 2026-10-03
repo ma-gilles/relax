@@ -166,19 +166,6 @@ def tau2_mean_variance(snapshot: IterationSnapshot, volume_shape, *, dtype):
     return 0.5 * (per_half[0] + per_half[1])
 
 
-def noise_pixel_rows(noise_shells, image_shape):
-    """Expand one half's noise shells (``(S,)`` or ``(G, S)``) to the loop's pixel rows."""
-
-    from recovar.reconstruction import noise
-
-    shells = np.asarray(noise_shells, dtype=np.float64)
-    if shells.ndim == 1:
-        return jnp.asarray(noise.make_radial_noise(shells, image_shape)).reshape(-1)
-    return jnp.stack(
-        [jnp.asarray(noise.make_radial_noise(row, image_shape)).reshape(-1) for row in shells]
-    )
-
-
 def host_array(value, dtype=None):
     """A host copy of a device or host array (``None`` stays ``None``)."""
 
@@ -226,7 +213,6 @@ class _SnapshotAssembly:
     """Host-owned fields accumulated before one complete snapshot is published."""
 
     values: dict
-    direction_prior_order: list | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -279,7 +265,7 @@ class SnapshotCapture:
             }
         )
 
-    def capture_maps_and_spectra(
+    def finish(
         self,
         assembly,
         means,
@@ -290,9 +276,20 @@ class SnapshotCapture:
         *,
         fsc,
         fsc_for_growth,
-    ) -> None:
-        """Copy reference maps and radial spectra into the assembly."""
+        class_weights,
+        direction_priors,
+        half_inputs,
+        class_assignments,
+        max_posterior,
+        significant_counts,
+        avg_norm_correction,
+    ) -> IterationSnapshot:
+        """Copy maps, spectra, priors and particles into a complete checkpoint.
 
+        ``begin`` precedes array capture so replacing the prior header releases
+        the preceding checkpoint's retained arrays before new maps are copied.
+        See ``docs/math/relion_refinement_algorithm.md#checkpoint-capture``.
+        """
         k_class = int(self.n_classes) > 1
         tau2 = (
             np.array(tau2_shells, dtype=np.float64)
@@ -318,17 +315,14 @@ class SnapshotCapture:
                 else host_half_pair(unfiltered_means)
             ),
         )
-
-    def capture_priors(
-        self,
-        assembly,
-        class_weights,
-        direction_prior,
-        direction_prior_order,
-    ) -> None:
-        """Copy class weights and learned direction priors into the assembly."""
-
-        k_class = int(self.n_classes) > 1
+        direction_prior = (
+            [p.classes.values for p in direction_priors]
+            if k_class else [p.shared.values for p in direction_priors]
+        )
+        direction_prior_order = (
+            [p.classes.healpix_order for p in direction_priors]
+            if k_class else [p.shared.healpix_order for p in direction_priors]
+        )
         assembly.values.update(
             class_weights=(
                 None if not k_class else np.array(class_weights, dtype=np.float64)
@@ -340,22 +334,9 @@ class SnapshotCapture:
                 else None
             ),
         )
-        assembly.direction_prior_order = direction_prior_order
-
-    def capture_particles(
-        self,
-        assembly,
-        half_inputs,
-        class_assignments,
-        max_posterior,
-        significant_counts,
-        avg_norm_correction,
-    ) -> None:
-        """Copy per-half particle state and posterior summaries."""
-
-        eulers = host_half_pair(half_inputs.previous_best_rotation_eulers)
-        translations = host_half_pair(half_inputs.previous_best_translations)
-        image_corrections = host_half_pair(half_inputs.image_corrections)
+        eulers = host_half_pair([particle_half.rotation_eulers for particle_half in half_inputs])
+        translations = host_half_pair([particle_half.translations for particle_half in half_inputs])
+        image_corrections = host_half_pair([particle_half.image_corrections for particle_half in half_inputs])
 
         def dtype_name(values):
             present = [value for value in values if value is not None]
@@ -365,15 +346,15 @@ class SnapshotCapture:
             rotation_eulers=eulers,
             translations=translations,
             image_corrections=image_corrections,
-            scale_corrections=host_half_pair(half_inputs.scale_corrections),
+            scale_corrections=host_half_pair([particle_half.scale_corrections for particle_half in half_inputs]),
             group_ids=[
                 np.zeros(0 if euler is None else len(euler), dtype=np.int64)
                 if group_ids is None
                 else np.array(group_ids, dtype=np.int64)
-                for group_ids, euler in zip(half_inputs.group_ids, eulers)
+                for group_ids, euler in zip([particle_half.group_ids for particle_half in half_inputs], eulers)
             ],
             class_assignments=(
-                host_half_pair(class_assignments) if int(self.n_classes) > 1 else None
+                host_half_pair(class_assignments) if k_class else None
             ),
             max_posterior=host_half_pair(max_posterior),
             significant_counts=host_half_pair(significant_counts),
@@ -388,12 +369,8 @@ class SnapshotCapture:
                     f"direction_prior_order_half{h + 1}": (
                         -1 if order is None else int(order)
                     )
-                    for h, order in enumerate(assembly.direction_prior_order or [])
+                    for h, order in enumerate(direction_prior_order or [])
                 },
             },
         )
-
-    def finish(self, assembly) -> IterationSnapshot:
-        """Publish a complete snapshot after every capture phase has run."""
-
         return IterationSnapshot(**assembly.values)

@@ -491,3 +491,66 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
     joined1 = np.asarray(joined1).reshape(volume_shape)
     np.testing.assert_allclose([joined0[inside], joined1[inside]], [6.0, 6.0], atol=1e-6)
     np.testing.assert_allclose([joined0[outside], joined1[outside]], [10.0, 2.0], atol=1e-6)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
+def test_iteration_resolution_prefers_reconstruction_curve_and_keeps_window_edge(dtype):
+    curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, 9, 9], dtype=dtype)
+    original = curve.tobytes()
+    estimate = resolution_helpers.estimate_iteration_resolution(
+        class_data_vs_prior=None, tau2_update_details={"ssnr_shells": curve},
+        fsc=np.zeros(9, dtype=dtype), k_class_enabled=False,
+        current_size=12, grid_size=16, voxel_size=1.5, tau2_fudge=1.0,
+        emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
+        relion_iteration=2, dtype=dtype,
+    )
+    # The boundary is above RELION_MINRES_MAP (5), so the floor cannot mask source selection.
+    assert estimate.observed_shell == 6
+    assert_matches(estimate.scheduling_shell, 6.0)
+    assert_matches(estimate.data_vs_prior[:7], curve[:7])
+    assert_matches(estimate.data_vs_prior[7:], 0.0)
+    assert estimate.data_vs_prior.dtype == dtype
+    assert not np.shares_memory(estimate.data_vs_prior, curve)
+    # Input-byte checks verify non-mutation, not numerical equivalence.
+    assert curve.tobytes() == original
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
+def test_iteration_resolution_uses_all_class_curves(dtype):
+    curves = np.array([
+        [0, 4, 3, 2, 1.1, .2, .2, .2, .2],
+        [0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2],
+        [0, 4, 3, 2, .2, .2, .2, .2, .2],
+        [0, 4, 3, .2, .2, .2, .2, .2, .2],
+    ], dtype=dtype)
+    estimate = resolution_helpers.estimate_iteration_resolution(
+        class_data_vs_prior=curves, tau2_update_details={"ssnr_shells": np.zeros(9)},
+        fsc=np.zeros(9, dtype=dtype), k_class_enabled=True,
+        current_size=16, grid_size=16, voxel_size=1.5, tau2_fudge=4.0,
+        emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
+        relion_iteration=2, dtype=dtype,
+    )
+    assert estimate.observed_shell == 6
+    assert_matches(estimate.data_vs_prior, curves)
+    assert estimate.data_vs_prior.shape == (4, 9)
+    assert not np.shares_memory(estimate.data_vs_prior, curves)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
+@pytest.mark.parametrize("relion_iteration", [1, 2])
+@pytest.mark.parametrize("k_class_enabled", [False, True], ids=["k1", "k4"])
+def test_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
+    dtype, relion_iteration, k_class_enabled,
+):
+    curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype)
+    class_curves = np.tile(curve, (4, 1)) if k_class_enabled else None
+    estimate = resolution_helpers.estimate_iteration_resolution(
+        class_data_vs_prior=class_curves, tau2_update_details={"ssnr_shells": curve},
+        fsc=np.zeros(9, dtype=dtype), k_class_enabled=k_class_enabled,
+        current_size=16, grid_size=16, voxel_size=1.5, tau2_fudge=1.0,
+        emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
+        relion_iteration=relion_iteration, dtype=dtype,
+    )
+    assert estimate.observed_shell == 6
+    assert_matches(estimate.scheduling_shell, 2.0 if relion_iteration == 1 else 6.0)
+    assert_matches(estimate.data_vs_prior, class_curves if k_class_enabled else curve)

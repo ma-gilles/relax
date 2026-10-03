@@ -32,9 +32,12 @@ def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
         }
         for node in ast.walk(loop)
     )
+    expectation = tree("expectation.py")
+    assert any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id == "score_numbered_half" for node in ast.walk(loop))
     direct_calls = [
         node
-        for node in ast.walk(loop)
+        for node in ast.walk(expectation)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "_score_half_dense_in_bpref_scope"
@@ -252,7 +255,7 @@ def test_device_matrix_generation_gate(os, local, k, mode, hard, double, expecte
         n_classes=k,
         firstiter_score_mode_this_iter=mode,
         firstiter_winner_take_all_this_iter=hard,
-        _DENSE_EM_STATIC_KWARGS={"use_float64_scoring": double},
+        scoring_policy=SimpleNamespace(DENSE_PRECISION=SimpleNamespace(use_float64_scoring=double)),
     )
     assert bool(got) is expected
 
@@ -314,7 +317,7 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
     assert evaluate(operands["fine"], **scope) is fine
 
 
-def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():
+def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration():
     scorer_source = tree("half_scoring.py")
     assert not any(
         isinstance(node, ast.Name) and node.id == "_diagnostic_float64_pass2_matches"
@@ -323,7 +326,8 @@ def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():
 
     execution_policies = [
         node
-        for node in ast.walk(tree("iteration_loop.py"))
+        for owner in ["expectation.py", "finalization.py"]
+        for node in ast.walk(tree(owner))
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "DenseExecutionPolicy"
@@ -340,10 +344,9 @@ def test_dense_float64_diagnostic_is_resolved_by_the_iteration_controller():
         assert diagnostic.func.id == "_diagnostic_float64_pass2_matches"
 
 
-def test_local_experimental_overrides_are_resolved_by_the_iteration_controller():
+def test_local_adaptive_overrides_are_resolved_before_half_scoring():
     scorer_source = tree("half_scoring.py")
     controller_helpers = {
-        "_local_search_precision_flags",
         "_local_adaptive_pass2_full_parent_enabled",
         "_local_adaptive_pass2_rotation_only_enabled",
         "_local_adaptive_pass2_denominator_support_mode",
@@ -355,17 +358,14 @@ def test_local_experimental_overrides_are_resolved_by_the_iteration_controller()
 
     diagnostic_policies = [
         node
-        for node in ast.walk(tree("iteration_loop.py"))
+        for owner in ["expectation.py", "finalization.py"]
+        for node in ast.walk(tree(owner))
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "LocalDiagnosticPolicy"
     ]
     assert len(diagnostic_policies) == 2
     resolved_fields = {
-        "parent_use_float64_scoring",
-        "parent_use_float64_projections",
-        "fine_use_float64_scoring",
-        "fine_use_float64_projections",
         "adaptive_pass2_full_parent",
         "adaptive_pass2_rotation_only",
         "adaptive_pass2_denominator_mode",
@@ -459,7 +459,7 @@ def test_local_adaptive_parent_layout_exposes_five_story_inputs():
 def test_loop_transports_geometry_separately_from_effective_rotations():
     calls = [
         n
-        for n in ast.walk(tree("iteration_loop.py"))
+        for n in ast.walk(tree("expectation.py"))
         if isinstance(n, ast.Call)
         and isinstance(n.func, ast.Name)
         and n.func.id == "DenseSamplingSpec"
@@ -472,7 +472,7 @@ def test_loop_transports_geometry_separately_from_effective_rotations():
         evaluate(
             keywords["coarse_scoring_rotations"],
             adaptive_pass1_rotations=marker,
-            state=SimpleNamespace(adaptive_oversampling=0),
+            oversampling_order=0,
         )
         is marker
     )
@@ -480,7 +480,7 @@ def test_loop_transports_geometry_separately_from_effective_rotations():
         evaluate(
             keywords["coarse_scoring_rotations"],
             adaptive_pass1_rotations=marker,
-            state=SimpleNamespace(adaptive_oversampling=1),
+            oversampling_order=1,
         )
         is None
     )

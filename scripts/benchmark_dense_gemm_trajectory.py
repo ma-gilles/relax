@@ -185,8 +185,8 @@ def load_half_metadata(models, data_table, half_rows, *, voxel_size, base_transl
 def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, translations, rotation_tile, translation_tile):
     """Freeze a deterministic subset of the canonical checkpoint's full SO(3)/shift grid."""
     from relax.dense.gemm_experiment import native_phase_table, pad_grid
-    from relax.refinement.half_scoring import _adaptive_pass2_grids
-    from relax.refinement.iteration_loop import _initial_coarse_grids
+    from relax.helpers.oversampling import prepare_adaptive_pass2_grids
+    from relax.refinement.iteration_planning import build_initial_coarse_grids
     from relax.relion.optics_aberrations import projection_rotations
     from relax.relion.relion_metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
     from relax.scoring.significance import _plan_coarse_gaussian_square_layout
@@ -199,18 +199,17 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     if symmetry != "C1" or sampling_state["healpix_order"] != 3:
         raise NotImplementedError("controlled fixture expects C1 HEALPix order 3")
     pixel_size = float(dataset.voxel_size)
-    base = _initial_coarse_grids(
-        healpix_order=3, sealed_sampling_state=None, translations=None,
-        init_healpix_order=3,
-        init_translation_range=float(sampling_state["offset_range"]) / pixel_size,
-        init_translation_step=float(sampling_state["offset_step"]) / pixel_size,
-        n_classes=1, voxel_size=pixel_size, log=log, symmetry="C1",
-    )
-    pose_grid = _adaptive_pass2_grids(
-        base.rotations, base.translations, base.base_translations,
-        healpix_order=3, adaptive_oversampling=0,
+    base = build_initial_coarse_grids(
+        3, None,
+        translation_range=float(sampling_state["offset_range"]) / pixel_size,
         translation_step=float(sampling_state["offset_step"]) / pixel_size,
-        random_perturbation=0.0, coarse_rotation_ids=None, symmetry="C1",
+        n_classes=1, voxel_size=pixel_size, symmetry="C1",
+    )
+    pose_grid = prepare_adaptive_pass2_grids(
+        base.rotation_grid.rotations, base.translations, base.base_translations,
+        healpix_order=base.rotation_grid.healpix_order, adaptive_oversampling=0,
+        translation_step=float(sampling_state["offset_step"]) / pixel_size,
+        random_perturbation=0.0, coarse_rotation_ids=None, symmetry=base.rotation_grid.symmetry,
     )
     score_all = np.asarray(projection_rotations(pose_grid.coarse_rotations, 1.0), dtype=np.float32)
     bp_all = np.asarray(projection_rotations(pose_grid.fine_mstep_rotations, 1.0), dtype=np.float32)

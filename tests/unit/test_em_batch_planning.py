@@ -6,12 +6,12 @@ import numpy as np
 import pytest
 
 import relax.refinement.iteration_loop as iteration_loop_module
+from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
 from relax.local.local_layout import (
     LocalHypothesisLayout,
     _local_search_engine_rotation_block_size,
 )
 from relax.refinement import half_scoring
-from relax.refinement.iteration_loop import _estimate_relion_em_batch_sizes
 
 IMAGE_SHAPE = (8, 8)
 VOLUME_SHAPE = (8, 8, 8)
@@ -39,7 +39,7 @@ def _identity_layout(rotation_counts, *, n_trans):
 def test_local_search_outer_batch_sizing_uses_current_size_window():
     source = inspect.getsource(half_scoring._score_half_local_one_shape)
 
-    assert "current_size_for_batch=sampling.cs_for_engine" in source
+    assert "current_size_for_batch=sampling.image_window_size" in source
 
 
 # ---------------------------------------------------------------------------

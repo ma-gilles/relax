@@ -9,6 +9,8 @@ mapping, the previous-resolution cap, dtypes and the detail-record layout.
 from __future__ import annotations
 
 import inspect
+import time
+from unittest.mock import Mock
 
 import jax.numpy as jnp
 import numpy as np
@@ -26,6 +28,155 @@ PADDING_FACTOR = 2
 VOLUME_SHAPE = (GRID_SIZE, GRID_SIZE, GRID_SIZE)
 ACCUMULATOR_SHAPE = tuple(PADDING_FACTOR * s for s in VOLUME_SHAPE)
 N_SHELLS = GRID_SIZE // 2 + 1
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
+@pytest.mark.parametrize("solvent_correction,diameter", [(False, 6.0), (True, 6.0), (True, None)])
+def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, solvent_correction, diameter, monkeypatch):
+    numerators = [object(), object()]
+    denominators = [object(), object()]
+    raw_fsc = np.linspace(0.2, 0.8, N_SHELLS, dtype=dtype)
+    corrected_fsc = raw_fsc * dtype(0.5)
+    events = []
+    variances = []
+    detail_rows = []
+
+    def compute_fsc(y0, y1, w0, w1, shape, **kwargs):
+        assert (y0, y1) == tuple(numerators)
+        assert (w0, w1) == tuple(denominators)
+        assert shape == VOLUME_SHAPE
+        assert kwargs["r_max"] == GRID_SIZE // 2
+        assert kwargs["output_dtype"] == dtype
+        events.append("raw FSC")
+        return raw_fsc
+
+    def reconstruct(weight, numerator, shape, padding_factor, **kwargs):
+        half = denominators.index(weight)
+        assert numerator is numerators[half]
+        assert kwargs["tau"] is None
+        assert_matches(kwargs["tau2_fudge"], 1.0)
+        assert kwargs["use_spherical_mask"] and kwargs["return_real_space"]
+        assert kwargs["current_size"] == GRID_SIZE
+        events.append(f"unfiltered half {half}")
+        return np.full(shape, half + 1, dtype=dtype)
+
+    def correct_fsc(first, second, solvent_mask, **kwargs):
+        assert first.dtype == second.dtype == solvent_mask.dtype == np.float64
+        assert_matches(first, np.ones(VOLUME_SHAPE))
+        assert_matches(second, np.full(VOLUME_SHAPE, 2))
+        assert kwargs["rng_seed"] == 1775735622
+        events.append("solvent FSC")
+        return corrected_fsc, {
+            "randomize_at": 1, "fsc_masked": raw_fsc,
+            "fsc_random_masked": raw_fsc, "fsc_true": corrected_fsc,
+        }
+
+    def compute_tau(first, second, fsc, shape, **kwargs):
+        half = denominators.index(first)
+        assert second is first
+        assert kwargs["full_half_axis"] == (-1 if half == 0 else 2)
+        assert kwargs["output_dtype"] == dtype
+        assert fsc is (corrected_fsc if solvent_correction and diameter else raw_fsc)
+        assert_matches(kwargs["tau2_fudge"], 1.0)
+        events.append(f"half {half} prior")
+        variance = jnp.full(np.prod(shape), 1 + 2 * half, dtype=dtype)
+        details = {"prior_shells": jnp.full(N_SHELLS, 1 + 2 * half, dtype=dtype)}
+        variances.append(variance)
+        detail_rows.append(details)
+        return variance, fsc, details
+
+    monkeypatch.setattr(regularization_relion, "compute_relion_fsc_from_backprojector", compute_fsc)
+    monkeypatch.setattr(regularization_relion, "compute_relion_solvent_corrected_true_fsc", correct_fsc)
+    monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", compute_tau)
+    monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", reconstruct)
+    log = Mock()
+    result = mean_helpers.estimate_split_half_prior(
+        numerators, denominators,
+        mean_helpers.ReconstructionSettings(
+            grid_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
+            padding_factor=2, projection_padding_factor=2, minres_map=5,
+            width_mask_edge=5, fmask_edge=2,
+            tau2_fudge=1.0, particle_diameter_angstrom=diameter,
+            first_iteration_lowpass_angstrom=None,
+        ),
+        current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
+        full_half_axes=[None, 2],
+        do_solvent_fsc_correction=solvent_correction,
+        pixel_size_angstrom=1.5,
+        iteration=2, scoring_dtype=dtype,
+        started_at=time.time(), log=log,
+    )
+    correction_events = ["unfiltered half 0", "unfiltered half 1", "solvent FSC"] if solvent_correction and diameter else []
+    assert events == ["raw FSC", *correction_events, "half 0 prior", "half 1 prior"]
+    assert result.fsc is raw_fsc
+    assert result.fsc_for_update is (corrected_fsc if correction_events else raw_fsc)
+    for half in range(2):
+        assert result.variance_per_half[half] is variances[half]
+        assert result.details_per_half[half] is detail_rows[half]
+        assert result.shells_per_half[half] is detail_rows[half]["prior_shells"]
+    assert_matches(result.variance, np.full(np.prod(VOLUME_SHAPE), 2, dtype=dtype))
+    assert log.warning.call_count == int(solvent_correction and diameter is None)
+
+
+@pytest.mark.parametrize("source", ["host", "projector", "replay"])
+def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(source, monkeypatch):
+    calls = []
+
+    class Stack:
+        def __init__(self, name):
+            self.name = name
+
+        def __getitem__(self, index):
+            assert index == 2
+            assert not (source == "replay" and self.name in {"reference", "projector"})
+            calls.append(self.name)
+            return self.name
+
+    variance = jnp.ones(np.prod(VOLUME_SHAPE), dtype=jnp.float64)
+    shells = jnp.ones(N_SHELLS, dtype=jnp.float64)
+    weight_shells = {"marker": "weights"}
+    details = {"marker": "details"}
+
+    def estimate(reference, shape, **kwargs):
+        calls.append("prior")
+        assert reference == "reference" and shape == VOLUME_SHAPE
+        return variance, shells / GRID_SIZE**4, shells
+
+    def weights(denominator, shape, **kwargs):
+        calls.append("weight statistics")
+        assert denominator == "denominator" and kwargs["shell_rounding"] == "round"
+        return weight_shells
+
+    def normalize(denominator, prior, statistics, shape, **kwargs):
+        calls.append("data vs prior")
+        assert denominator == "denominator" and statistics is weight_shells
+        assert_matches(kwargs["tau2_fudge"], 4.0)
+        return prior, details
+
+    monkeypatch.setattr(mean_helpers, "_class_tau2_from_iref_power_spectrum", estimate)
+    monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", weights)
+    monkeypatch.setattr(mean_helpers, "_class_tau2_update_details", normalize)
+    settings = mean_helpers.ReconstructionSettings(
+        grid_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
+        padding_factor=PADDING_FACTOR, projection_padding_factor=2,
+        minres_map=5, width_mask_edge=5, fmask_edge=2,
+        tau2_fudge=4.0, particle_diameter_angstrom=None,
+        first_iteration_lowpass_angstrom=None,
+    )
+    result = mean_helpers.estimate_class_prior(
+        Stack("reference"), Stack("denominator"), class_index=2, settings=settings,
+        current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
+        full_half_axis=-1, frame_scale=float(GRID_SIZE)**4,
+        projector_power_spectrum=Stack("projector") if source != "host" else None,
+        replay_tau2_shells=np.ones((4, N_SHELLS)) if source == "replay" else None,
+    )
+    prior_calls = [] if source == "replay" else ["reference", *(["projector"] if source == "projector" else []), "prior"]
+    assert calls == prior_calls + ["denominator", "weight statistics", "denominator", "data vs prior"]
+    assert result.weight_shells is weight_shells and result.details is details
+    if source == "replay":
+        assert result.variance.dtype == result.shells.dtype == result.relion_shells.dtype == np.float32
+    else:
+        assert result.variance is variance and result.shells is shells
 
 
 def _random_accumulators(seed: int):

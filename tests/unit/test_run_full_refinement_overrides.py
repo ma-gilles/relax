@@ -20,12 +20,25 @@ import pytest
 from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 
+from relax.diagnostics import frozen_boundary_cli
 from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
     FROZEN_BOUNDARY_PROVENANCE_VERIFICATION_SCOPE,
     _assert_frozen_scoring_state_unchanged,
     _frozen_scoring_state_arrays,
 )
+from relax.diagnostics.frozen_boundary_cli import (
+    _fixed_diagnostic_source_paths,
+    _validate_fixed_diagnostic_arm_cli,
+    _validate_fixed_diagnostic_math_environment,
+    _verify_fixed_diagnostic_provenance_manifests,
+    _verify_frozen_boundary_source_hashes,
+    attach_projector_capture,
+    expand_boundary_noise,
+    projector_only_replay_slots,
+    validate_projector_only_replay_slots,
+)
+from relax.diagnostics.initial_model_replay import read_initial_model
 from relax.diagnostics.relion_replay import (
     _build_replay_iteration_overrides,
     _format_replay_mean_for_log,
@@ -34,40 +47,30 @@ from relax.helpers.iteration_history import (
     _load_init_noise_radial_npz,
     _load_init_previous_best_poses_npz,
 )
+from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
 from relax.refinement import full_refinement as run_full_refinement
 from relax.refinement.full_refinement import (
-    _assert_frozen_replay_slots_projector_only,
-    _attach_relion_projector_capture,
-    _build_frozen_replay_slots,
-    _compute_relion_fresh_k1_initial_sigma2,
-    _fixed_diagnostic_source_paths,
     _k1_relion_live_initial_noise_enabled,
-    _load_replay_group_particles,
-    _make_frozen_boundary_noise_variance,
-    _maybe_apply_relion_image_mask,
-    _relion_fresh_initial_noise_layout,
-    _relion_halfset_and_accuracy_layout,
     _relion_optimiser_star_for_runtime,
-    _relion_sigma2_to_native_noise_variance,
     _replay_complete_initial_particle_state,
-    _resolve_native_group_layout,
     _resolve_replay_normcorr,
     _resolve_tau2_fudge,
-    _select_authoritative_group_particles,
     _use_fresh_auto_refine_particle_order,
-    _validate_fixed_diagnostic_arm_cli,
-    _validate_fixed_diagnostic_math_environment,
-    _verify_fixed_diagnostic_provenance_manifests,
-    _verify_frozen_boundary_source_hashes,
 )
-from relax.refinement.mean_helpers import _mean_variance_for_scoring_half, _updated_mean_variance_per_half
+from relax.refinement.half_inputs import HalfSet
+from relax.refinement.mean_helpers import _updated_mean_variance_per_half
+from relax.refinement.particle_loading import _apply_relion_image_mask, prepare_relion_halfset_inputs
+from relax.refinement.startup_noise import (
+    estimate_startup_sigma2,
+    scoring_noise_from_sigma2,
+)
 from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
 )
+from relax.relion.input_particle_table import prepare_relion_halfset_layout
 from relax.relion.relion_metadata import (
-    _load_relion_it000_model_stars,
     _parse_relion_cli_ini_high,
     _parse_relion_tau2_fudge,
 )
@@ -218,7 +221,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_preserves_source_order():
         image_source=_FakeImageSource(images),
     )
     source_rows = np.asarray([4, 1, 5], dtype=np.int64)
-    got = _compute_relion_fresh_k1_initial_sigma2(
+    got = estimate_startup_sigma2(
         dataset,
         source_rows=source_rows,
         optics_group_ids=np.asarray([7, 7, 7], dtype=np.int64),
@@ -249,7 +252,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_rejects_duplicate_rows():
         image_source=_FakeImageSource(images),
     )
     with pytest.raises(ValueError, match="contain duplicates"):
-        _compute_relion_fresh_k1_initial_sigma2(
+        estimate_startup_sigma2(
             dataset,
             source_rows=np.asarray([1, 1], dtype=np.int64),
             optics_group_ids=np.asarray([1, 1], dtype=np.int64),
@@ -269,7 +272,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
         image_source=_FakeImageSource(images),
     )
     source_rows = np.asarray([0, 1, 2], dtype=np.int64)
-    got = _compute_relion_fresh_k1_initial_sigma2(
+    got = estimate_startup_sigma2(
         dataset,
         source_rows=source_rows,
         optics_group_ids=np.asarray([1, 1, 1], dtype=np.int64),
@@ -304,7 +307,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
 
 def test_relion_sigma2_to_native_noise_variance_keeps_float32_scoring_dtype():
     radial = np.asarray([0.0, 0.5, 0.25, 0.125, 0.0625], dtype=np.float64)
-    got = _relion_sigma2_to_native_noise_variance(radial, grid_size=8)
+    got = scoring_noise_from_sigma2(radial, grid_size=8)
     assert got.shape == (64,)
     assert got.dtype == np.float32
     assert np.all(np.isfinite(got))
@@ -312,7 +315,7 @@ def test_relion_sigma2_to_native_noise_variance_keeps_float32_scoring_dtype():
 
 def test_relion_sigma2_to_native_noise_variance_can_preserve_float64_reciprocal_boundary():
     radial = np.asarray([0.125, 0.3, 0.7, 1.1, 2.3], dtype=np.float64)
-    got = _relion_sigma2_to_native_noise_variance(
+    got = scoring_noise_from_sigma2(
         radial,
         grid_size=8,
         output_dtype=np.float64,
@@ -326,52 +329,65 @@ def test_relion_sigma2_to_native_noise_variance_can_preserve_float64_reciprocal_
 
 
 def test_frozen_replay_is_exactly_projector_only():
-    slots = _build_frozen_replay_slots(1)
+    slots = projector_only_replay_slots(1)
     projector = object()
     slots[0]["relion_projector_state"] = projector
 
-    _assert_frozen_replay_slots_projector_only(slots, projector_slot=0)
+    validate_projector_only_replay_slots(slots, projector_slot=0)
 
     assert slots == [{"relion_projector_state": projector}, {}]
 
 
 @pytest.mark.parametrize("field", ["noise_variance", "class_tau2", "future_override"])
 def test_frozen_replay_rejects_any_nonprojector_override(field):
-    slots = _build_frozen_replay_slots(1)
+    slots = projector_only_replay_slots(1)
     slots[0]["relion_projector_state"] = object()
     slots[0][field] = object()
 
     with pytest.raises(ValueError, match="not projector-only"):
-        _assert_frozen_replay_slots_projector_only(slots, projector_slot=0)
+        validate_projector_only_replay_slots(slots, projector_slot=0)
 
 
 def test_frozen_replay_rejects_projector_in_final_slot():
-    slots = _build_frozen_replay_slots(1)
+    slots = projector_only_replay_slots(1)
     slots[1]["relion_projector_state"] = object()
 
     with pytest.raises(ValueError, match="exactly one projector"):
-        _assert_frozen_replay_slots_projector_only(slots, projector_slot=0)
+        validate_projector_only_replay_slots(slots, projector_slot=0)
 
 
 def test_frozen_scoring_state_negative_overwrite_regression():
-    half_inputs = SimpleNamespace(
-        previous_best_rotation_eulers=[
-            np.zeros((2, 3), dtype=np.float32),
-            np.ones((3, 3), dtype=np.float32),
-        ],
-        previous_best_translations=[
-            np.zeros((2, 2), dtype=np.float32),
-            np.ones((3, 2), dtype=np.float32),
-        ],
-        image_corrections=[
-            np.ones(2, dtype=np.float32),
-            np.ones(3, dtype=np.float32),
-        ],
-        scale_corrections=[
-            np.ones(2, dtype=np.float32),
-            np.ones(3, dtype=np.float32),
-        ],
+    half_inputs = (
+        HalfSet(
+            index=0,
+            dataset=object(),
+            rotation_eulers=np.zeros((2, 3), dtype=np.float32),
+            translations=np.zeros((2, 2), dtype=np.float32),
+            image_corrections=np.ones(2, dtype=np.float32),
+            scale_corrections=np.ones(2, dtype=np.float32),
+        ),
+        HalfSet(
+            index=1,
+            dataset=object(),
+            rotation_eulers=np.ones((3, 3), dtype=np.float32),
+            translations=np.ones((3, 2), dtype=np.float32),
+            image_corrections=np.ones(3, dtype=np.float32),
+            scale_corrections=np.ones(3, dtype=np.float32),
+        ),
     )
+    direction_priors = [
+        HalfDirectionPriors(
+            classes=DirectionPrior(values, order),
+            shared=DirectionPrior(shared_values, shared_order),
+        )
+        for values, order, shared_values, shared_order in zip(
+            [None, None], [None, None],
+            [
+            np.full(12, 1.0 / 12.0, dtype=np.float32),
+            np.full(12, 1.0 / 12.0, dtype=np.float32),
+        ], [None, None], strict=True,
+        )
+    ]
     expected = _frozen_scoring_state_arrays(
         means=[
             np.zeros(8, dtype=np.complex64),
@@ -384,10 +400,7 @@ def test_frozen_scoring_state_negative_overwrite_regression():
             np.full(4, 2.0, dtype=np.float32),
         ],
         current_sigma_offset_angstrom_per_half=[2.0, 3.0],
-        global_direction_prior_per_half=[
-            np.full(12, 1.0 / 12.0, dtype=np.float32),
-            np.full(12, 1.0 / 12.0, dtype=np.float32),
-        ],
+        direction_priors=direction_priors,
         sealed_scoring_context={"slot": 0, "mode": "fixed"},
     )
     assert "mean_variance" in expected
@@ -413,18 +426,6 @@ def test_frozen_scoring_state_negative_overwrite_regression():
         _assert_frozen_scoring_state_unchanged(expected, changed_tau2)
 
 
-def test_unequal_half_tau2_is_dispatched_without_collapsing():
-    half1 = np.asarray([1.0, 2.0], dtype=np.float32)
-    half2 = np.asarray([3.0, 4.0], dtype=np.float32)
-
-    selected1 = _mean_variance_for_scoring_half([half1, half2], 0)
-    selected2 = _mean_variance_for_scoring_half([half1, half2], 1)
-
-    assert selected1 is half1
-    assert selected2 is half2
-    assert not matches(selected1, selected2)
-
-
 def test_ordinary_k1_keeps_shared_tau2_across_multiple_updates():
     """Diagnostic per-half tau2 must not alter the historical K=1 scorer."""
 
@@ -440,8 +441,8 @@ def test_ordinary_k1_keeps_shared_tau2_across_multiple_updates():
             use_per_half_mean_variance=False,
         )
 
-        assert _mean_variance_for_scoring_half(scoring_tau2, 0) is shared
-        assert _mean_variance_for_scoring_half(scoring_tau2, 1) is shared
+        assert scoring_tau2[0] is shared
+        assert scoring_tau2[1] is shared
 
 
 def test_fixed_arm_can_keep_per_half_tau2_across_updates():
@@ -458,10 +459,10 @@ def test_fixed_arm_can_keep_per_half_tau2_across_updates():
     )
 
     assert_matches(
-        _mean_variance_for_scoring_half(scoring_tau2, 0), candidate_per_half[0]
+        scoring_tau2[0], candidate_per_half[0]
     )
     assert_matches(
-        _mean_variance_for_scoring_half(scoring_tau2, 1), candidate_per_half[1]
+        scoring_tau2[1], candidate_per_half[1]
     )
 
 
@@ -478,8 +479,8 @@ def test_default_state_swap_resyncs_both_scorer_halves_to_substituted_shared_tau
         use_per_half_mean_variance=False,
     )
 
-    assert _mean_variance_for_scoring_half(scoring_tau2, 0) is substituted_shared
-    assert _mean_variance_for_scoring_half(scoring_tau2, 1) is substituted_shared
+    assert scoring_tau2[0] is substituted_shared
+    assert scoring_tau2[1] is substituted_shared
 
 
 def test_fixed_arm_provenance_manifests_fail_closed_on_environment_tamper(
@@ -522,7 +523,7 @@ def test_fixed_arm_provenance_manifests_fail_closed_on_environment_tamper(
 
     environment_manifest.write_text(json.dumps(expected_environment), encoding="utf-8")
     monkeypatch.setattr(
-        run_full_refinement,
+        frozen_boundary_cli,
         "git_worktree_provenance",
         lambda: {"head": commit, "dirty_count": 0},
     )
@@ -638,13 +639,13 @@ def test_fixed_arm_rejects_mask_cli_values_that_differ_from_sealed_optimiser(tmp
     )
 
     with pytest.raises(ValueError, match="particle diameter differs"):
-        _maybe_apply_relion_image_mask(
+        _apply_relion_image_mask(
             None,
             SimpleNamespace(particle_diameter_ang=279.0, width_mask_edge_px=5.0),
             sealed_optimiser_star=sealed,
         )
     with pytest.raises(ValueError, match="mask-edge width differs"):
-        _maybe_apply_relion_image_mask(
+        _apply_relion_image_mask(
             None,
             SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=4.0),
             sealed_optimiser_star=sealed,
@@ -736,7 +737,7 @@ def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
         np.linspace(3.0, 4.0, 5, dtype=np.float64),
     ]
 
-    noise_per_half = _make_frozen_boundary_noise_variance(radial_per_half, (8, 8))
+    noise_per_half = expand_boundary_noise(radial_per_half, (8, 8))
 
     assert len(noise_per_half) == 2
     for noise in noise_per_half:
@@ -777,10 +778,10 @@ def test_attach_relion_projector_capture_targets_exact_replay_slot(tmp_path, mon
         return expected_state
 
     monkeypatch.setattr("relax.relion.relion_metadata.read_relion_model_metadata", fake_model_metadata)
-    monkeypatch.setattr(run_full_refinement, "build_relion_projector_replay_state", fake_build)
+    monkeypatch.setattr(frozen_boundary_cli, "build_relion_projector_replay_state", fake_build)
     overrides = [{"slot": index} for index in range(4)]
 
-    slot, state = _attach_relion_projector_capture(
+    capture = attach_projector_capture(
         overrides,
         capture_dir=capture_dir,
         manifest_path=manifest,
@@ -791,8 +792,11 @@ def test_attach_relion_projector_capture_targets_exact_replay_slot(tmp_path, mon
         n_classes=1,
     )
 
-    assert slot == 2
-    assert state is expected_state
+    assert capture.replay_slot == 2
+    assert capture.state is expected_state
+    assert capture.source_dir == capture_dir.resolve()
+    assert capture.source_manifest == manifest.resolve()
+    assert capture.source_manifest_sha256 == expected_state["source_manifest_sha256"]
     assert overrides[2]["relion_projector_state"] is expected_state
     assert "relion_projector_state" not in overrides[1]
     assert observed == {
@@ -808,7 +812,7 @@ def test_attach_relion_projector_capture_targets_exact_replay_slot(tmp_path, mon
 
 def test_attach_relion_projector_capture_rejects_unrepresented_iteration(tmp_path):
     with pytest.raises(ValueError, match="outside the configured replay trajectory"):
-        _attach_relion_projector_capture(
+        attach_projector_capture(
             [{}],
             capture_dir=tmp_path,
             manifest_path=tmp_path / "manifest",
@@ -822,7 +826,7 @@ def test_attach_relion_projector_capture_rejects_unrepresented_iteration(tmp_pat
 
 def test_attach_relion_projector_capture_rejects_late_restart(tmp_path):
     with pytest.raises(ValueError, match="uninterrupted cold-start trajectory"):
-        _attach_relion_projector_capture(
+        attach_projector_capture(
             [{}],
             capture_dir=tmp_path,
             manifest_path=tmp_path / "manifest",
@@ -850,13 +854,13 @@ def test_attach_relion_projector_capture_accepts_immediate_validated_frozen_rest
         lambda path: {"current_image_size": 42},
     )
     monkeypatch.setattr(
-        run_full_refinement,
+        frozen_boundary_cli,
         "build_relion_projector_replay_state",
         lambda *args, **kwargs: expected_state,
     )
     overrides = [{"state": "it3"}, {"state": "final"}]
 
-    slot, state = _attach_relion_projector_capture(
+    capture = attach_projector_capture(
         overrides,
         capture_dir=capture_dir,
         manifest_path=manifest,
@@ -868,14 +872,14 @@ def test_attach_relion_projector_capture_accepts_immediate_validated_frozen_rest
         validated_frozen_boundary_iteration=2,
     )
 
-    assert slot == 0
-    assert state is expected_state
+    assert capture.replay_slot == 0
+    assert capture.state is expected_state
     assert overrides[0]["relion_projector_state"] is expected_state
 
 
 def test_attach_relion_projector_capture_rejects_nonadjacent_frozen_restart(tmp_path):
     with pytest.raises(ValueError, match="immediately following"):
-        _attach_relion_projector_capture(
+        attach_projector_capture(
             [{}, {}, {}],
             capture_dir=tmp_path,
             manifest_path=tmp_path / "manifest",
@@ -902,7 +906,7 @@ def test_attach_relion_projector_capture_rejects_nonatomic_slot(
     tmp_path, overrides, message
 ):
     with pytest.raises(ValueError, match=message):
-        _attach_relion_projector_capture(
+        attach_projector_capture(
             overrides,
             capture_dir=tmp_path,
             manifest_path=tmp_path / "manifest",
@@ -990,9 +994,10 @@ def test_parse_relion_cli_ini_high_is_none_when_absent_or_disabled():
 def test_full_refinement_uses_active_relion_max_significants_not_saved_sentinel():
     source = RUN_FULL_REFINEMENT.read_text()
 
-    assert "resolve_relion_runtime_max_significants" in source
+    assert "resolve_relion_runtime_controls(" in source
+    assert "resolve_relion_runtime_max_significants" in RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
     assert 'max_significants_resolution["active_max_significants"]' in source
-    assert '"max_significants_resolution": max_significants_resolution' in source
+    assert '"max_significants_resolution": runtime_controls.max_significants_resolution' in source
 
 
 def test_firstiter_cc_passes_relion_cli_ini_high_to_refinement_loop():
@@ -1104,11 +1109,13 @@ def test_refinement_results_persist_final_tau2_weight_combination():
     add_refinement_history_artifacts(saved, result, [1], [0], 2)
     assert saved["tau2_weight_combination_final_all_data"].item() == "sum"
     assert saved["tau2_weight_combination_final_all_data"].dtype.kind == "U"
-    assert "iteration_history.add_refinement_history_artifacts(" in RUN_FULL_REFINEMENT.read_text()
+    assert "write_refinement_archive(" in RUN_FULL_REFINEMENT.read_text()
+    assert "iteration_history.add_refinement_history_artifacts(" in RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
 
 
 def test_final_all_data_writes_matched_unfiltered_half_products():
-    source = RUN_FULL_REFINEMENT.read_text()
+    assert "write_final_maps(" in RUN_FULL_REFINEMENT.read_text()
+    source = RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
 
     assert 'unfiltered_means = result.get("unfiltered_means")' in source
     assert 'f"final_half{k + 1}_unfil.mrc"' in source
@@ -1129,33 +1136,44 @@ def test_refinement_results_persist_class_assignment_history():
     assert saved["class_assignments_by_image_iter_000"].dtype == np.int32
     assert saved["class_weights"].dtype == np.float64
     assert_matches(saved["class_weights"], result["class_weights"])
-    assert "iteration_history.add_class_history_artifacts(" in RUN_FULL_REFINEMENT.read_text()
+    assert "write_refinement_archive(" in RUN_FULL_REFINEMENT.read_text()
+    assert "iteration_history.add_class_history_artifacts(" in RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
 
 
 def test_refinement_results_persist_numbered_follower_scale_boundaries():
-    source = RUN_FULL_REFINEMENT.read_text()
+    assert "write_refinement_archive(" in RUN_FULL_REFINEMENT.read_text()
+    source = RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
 
     assert '("relion_scale_follower_scales_numbered_pre_score_trajectory", np.float64)' in source
     assert '("relion_scale_follower_scales_numbered_post_mstep_trajectory", np.float64)' in source
 
 
 def test_runner_threads_fail_closed_sparse_follower_scale_replay():
-    source = RUN_FULL_REFINEMENT.read_text()
+    from relax.relion.relion_worker_scale import prepare_follower_topology
 
-    assert '"--relion-follower-scale-replay"' in source
-    assert "load_relion_follower_scale_replay(" in source
-    assert "validate_relion_follower_scale_replay(" in source
-    assert "schedule_oracle_id=relion_dispatch_schedule.oracle_id" in source
-    assert "verify_relion_dispatch_schedule_oracle(" in source
-    assert "numbered_iterations=range(" in source
-    assert "first_numbered_iteration=int(args.init_relion_iteration) + 1" in source
-    assert "relion_follower_scale_replay=relion_follower_scale_replay" in source
-    assert 'save_dict["relion_follower_scale_replay_iterations"]' in source
-    assert 'save_dict["relion_follower_scale_replay_source"]' in source
-    assert 'save_dict["relion_follower_scale_replay_oracle_id"]' in source
-    assert 'save_dict["relion_dispatch_oracle_id"]' in source
-    assert '("relion_follower_scale_replay_requested_iterations", np.int64)' in source
-    assert '("relion_follower_scale_replay_applied_iterations", np.int64)' in source
+    source = RUN_FULL_REFINEMENT.read_text()
+    options_source = RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
+    topology_source = inspect.getsource(prepare_follower_topology)
+
+    assert '"--relion-follower-scale-replay"' in options_source
+    assert "prepare_follower_topology(" in source
+    assert "load_relion_follower_scale_replay(" in topology_source
+    assert "validate_relion_follower_scale_replay(" in topology_source
+    assert "schedule_oracle_id=schedule.oracle_id" in topology_source
+    assert "load_verified_dispatch_schedule(" in source
+    assert "verify_relion_dispatch_schedule_oracle(" in options_source
+    assert "numbered_iterations=range(" in topology_source
+    assert "first_numbered_iteration=int(init_relion_iteration) + 1" in topology_source
+    assert "relion_follower_scale_replay=follower_topology.replay" in source
+    assert "follower_replay=follower_topology.replay" in source
+    assert "write_refinement_archive(" in source
+    output_source = RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
+    assert 'save_dict["relion_follower_scale_replay_iterations"]' in output_source
+    assert 'save_dict["relion_follower_scale_replay_source"]' in output_source
+    assert 'save_dict["relion_follower_scale_replay_oracle_id"]' in output_source
+    assert 'save_dict["relion_dispatch_oracle_id"]' in output_source
+    assert '("relion_follower_scale_replay_requested_iterations", np.int64)' in output_source
+    assert '("relion_follower_scale_replay_applied_iterations", np.int64)' in output_source
 
 
 def test_runner_requires_and_persists_perturbation_restart_provenance():
@@ -1209,14 +1227,24 @@ def test_stop_after_local_search_score_only_passes_to_refinement_loop():
 
 def test_stop_after_local_search_score_only_is_diagnostic_score_only_path():
     source = ITERATION_LOOP.read_text()
+    expectation_source = (ITERATION_LOOP.parent / "expectation.py").read_text()
     half_scoring_source = (ITERATION_LOOP.parent / "half_scoring.py").read_text()
     # stop_after_local_search{,_score_only} are read off the EngineDebugOptions
     # bundle (`debug.*`) inside the iteration loop now, rather than being bare
     # locals bound from flat refine_single_volume kwargs.
     assert "if debug.stop_after_local_search_score_only:\n        stop_after_local_search = True" in source
-    assert "diagnostic_score_only=bool(" in source
+    assert "diagnostic_score_only=bool(" in expectation_source
     assert "debug.stop_after_local_search_score_only" in source
-    assert "_score_half_local_in_bpref_scope(" in source
+    assert "local_diagnostics=numbered_local_diagnostics" in expectation_source
+    assert "_score_half_local_in_bpref_scope(" in expectation_source
+    diagnostics = _sole_call_keywords(
+        ast.parse(expectation_source), "_score_half_local_in_bpref_scope",
+    )["diagnostics"]
+    assert isinstance(diagnostics, ast.Call) and diagnostics.func.id == "replace"
+    assert isinstance(diagnostics.args[0], ast.Attribute)
+    assert isinstance(diagnostics.args[0].value, ast.Name)
+    assert diagnostics.args[0].value.id == "phase"
+    assert diagnostics.args[0].attr == "local_diagnostics"
     assert "return _score_half_local(half, sampling, priors, batching, execution, diagnostics, optics)" in half_scoring_source
     assert "score_only=diagnostics.diagnostic_score_only" in half_scoring_source
     assert "accumulate_noise=local_accumulate_noise" in half_scoring_source
@@ -1230,7 +1258,7 @@ def test_diagnostic_single_half_is_guarded_to_local_search_stops():
     assert "local_stop_requested = (" in source
     assert "--diagnostic_single_half is only valid with --stop_after_local_search" in source
     assert "--diagnostic_single_half is K=1-only" in source
-    assert "half2_idx = np.empty(0, dtype=np.int64)" in source
+    assert "particle_layout._replace(half2_rows=np.empty(0, dtype=np.int64))" in source
     assert '"diagnostic_single_half": bool(args.diagnostic_single_half)' in source
     assert "skipping Projector::data build for empty half-%d dataset" in ITERATION_LOOP.read_text()
 
@@ -1251,12 +1279,13 @@ def test_init_noise_from_npz_loader_uses_latest_numbered_spectrum(tmp_path):
 
 def test_init_noise_from_npz_is_diagnostic_cli_path():
     source = RUN_FULL_REFINEMENT.read_text()
-    assert "--init_noise_from_npz" in source
-    assert "--init_noise_iter" in source
+    options_source = RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
+    assert "--init_noise_from_npz" in options_source
+    assert "--init_noise_iter" in options_source
     assert "iteration_history._load_init_noise_radial_npz(args.init_noise_from_npz, args.init_noise_iter)" in source
     # RELION's start-up estimate is the only estimator from the images.
     assert "estimate_initial_noise_spectrum_from_unaligned_images" not in source
-    assert "_compute_relion_startup_noise(" in source
+    assert "startup_noise.prepare_startup_noise(" in source
 
 
 def test_relion_tau2_fudge_parser_accepts_class3d_arg_label():
@@ -1269,206 +1298,9 @@ _rlnTau2FudgeArg                                          4.000000
     assert _parse_relion_tau2_fudge(text) == pytest.approx(4.0)
 
 
-def test_native_group_layout_prefers_supplied_relion_groups_and_maps_exact_identities():
-    pd = pytest.importorskip("pandas")
-    our_particles = pd.DataFrame(
-        {
-            "rlnImageName": [
-                "3@stack_a.mrcs",
-                "1@stack_a.mrcs",
-                "4@stack_a.mrcs",
-                "2@stack_a.mrcs",
-            ],
-        },
-    )
-    relion_particles = pd.DataFrame(
-        {
-            "rlnImageName": [
-                "1@stack_a.mrcs",
-                "2@stack_a.mrcs",
-                "3@stack_a.mrcs",
-                "4@stack_a.mrcs",
-            ],
-            "rlnGroupNumber": [2, 4, 1, 7],
-            "rlnOpticsGroup": [1, 2, 1, 3],
-        },
-    )
-
-    layout = _resolve_native_group_layout(
-        our_particles,
-        half1_idx=np.asarray([0, 1], dtype=np.int64),
-        half2_idx=np.asarray([2, 3], dtype=np.int64),
-        relion_particles=relion_particles,
-    )
-
-    assert layout is not None
-    assert layout.source == "supplied RELION data STAR"
-    assert layout.n_groups == 7
-    assert layout.n_optics_groups == 3
-    assert_matches(layout.group_ids_per_half[0], [0, 1])
-    assert_matches(layout.group_ids_per_half[1], [6, 3])
-    # Internal IDs are authoritative RELION data-STAR row numbers, mapped by
-    # full rlnImageName identity rather than RECOVAR row position.
-    assert_matches(layout.particle_ids_per_half[0], [2, 0])
-    assert_matches(layout.particle_ids_per_half[1], [3, 1])
-    assert_matches(layout.optics_group_ids_per_half[0], [0, 0])
-    assert_matches(layout.optics_group_ids_per_half[1], [2, 1])
 
 
-def test_replay_group_loader_uses_iter0_without_relion_half_sets(tmp_path):
-    pd = pytest.importorskip("pandas")
-    starfile = pytest.importorskip("starfile")
-    particles = pd.DataFrame(
-        {
-            "rlnImageName": ["2@x.mrcs", "1@x.mrcs"],
-            "rlnGroupNumber": [7, 3],
-        }
-    )
-    starfile.write({"particles": particles}, tmp_path / "run_it000_data.star")
-
-    loaded, source = _load_replay_group_particles(tmp_path)
-
-    assert source == tmp_path / "run_it000_data.star"
-    assert_matches(loaded["rlnGroupNumber"], [7, 3])
-
-
-def test_subset_only_halfset_does_not_block_permuted_replay_group_layout(tmp_path):
-    pd = pytest.importorskip("pandas")
-    starfile = pytest.importorskip("starfile")
-    our_particles = pd.DataFrame(
-        {"rlnImageName": ["3@x.mrcs", "1@x.mrcs", "2@x.mrcs"]}
-    )
-    subset_only = pd.DataFrame(
-        {
-            "rlnImageName": ["1@x.mrcs", "2@x.mrcs", "3@x.mrcs"],
-            "rlnRandomSubset": [1, 2, 1],
-        }
-    )
-    replay_particles = pd.DataFrame(
-        {
-            "rlnImageName": ["2@x.mrcs", "3@x.mrcs", "1@x.mrcs"],
-            "rlnGroupNumber": [7, 4, 2],
-        }
-    )
-    starfile.write({"particles": replay_particles}, tmp_path / "run_it000_data.star")
-
-    selected, source = _select_authoritative_group_particles(
-        halfset_particles=subset_only,
-        halfset_source=tmp_path / "halfsets.star",
-        replay_dirs=(tmp_path,),
-    )
-    layout = _resolve_native_group_layout(
-        our_particles,
-        half1_idx=np.asarray([0, 1], dtype=np.int64),
-        half2_idx=np.asarray([2], dtype=np.int64),
-        relion_particles=selected,
-    )
-
-    assert source == tmp_path / "run_it000_data.star"
-    assert layout is not None
-    assert layout.n_groups == 7
-    assert_matches(layout.group_ids_per_half[0], [3, 1])
-    assert_matches(layout.group_ids_per_half[1], [6])
-
-
-def test_native_group_layout_preserves_full_group_axis_when_half_max_is_absent():
-    pd = pytest.importorskip("pandas")
-    particles = pd.DataFrame(
-        {
-            "rlnImageName": ["1@x.mrcs", "2@x.mrcs", "3@x.mrcs", "4@x.mrcs"],
-            "rlnGroupNumber": [1, 2, 7, 4],
-        },
-    )
-
-    layout = _resolve_native_group_layout(
-        particles,
-        half1_idx=np.asarray([0, 1], dtype=np.int64),
-        half2_idx=np.asarray([2, 3], dtype=np.int64),
-        relion_particles=particles,
-    )
-
-    assert layout is not None
-    assert layout.n_groups == 7
-    assert int(np.max(layout.group_ids_per_half[0])) == 1
-    assert_matches(layout.group_ids_per_half[1], [6, 3])
-
-
-def test_native_group_layout_numbers_relion_groups_when_the_star_has_none():
-    """Without rlnGroupNumber anywhere, groups follow relion_refine, not a silent None.
-
-    RELION sorts by micrograph name and numbers groups by first appearance of
-    rlnGroupName, else the post-job micrograph name (exp_model.cpp:900-901, 926-965).
-    """
-    pd = pytest.importorskip("pandas")
-    our_particles = pd.DataFrame(
-        {
-            "rlnImageName": ["1@x.mrcs", "2@x.mrcs", "3@x.mrcs", "4@x.mrcs"],
-            "rlnMicrographName": ["Extract/job007/mic_b.mrc", "Extract/job007/mic_a.mrc",
-                                  "Extract/job007/mic_b.mrc", "Extract/job007/mic_c.mrc"],
-        },
-    )
-
-    layout = _resolve_native_group_layout(
-        our_particles,
-        half1_idx=np.asarray([0, 1], dtype=np.int64),
-        half2_idx=np.asarray([2, 3], dtype=np.int64),
-    )
-
-    assert layout is not None
-    assert layout.n_groups == 3
-    # Sorted order: mic_a (row 1), mic_b (rows 0, 2), mic_c (row 3).
-    assert_matches(layout.group_ids_per_half[0], [1, 0])
-    assert_matches(layout.group_ids_per_half[1], [1, 2])
-    assert_matches(layout.particle_ids_per_half[0], [1, 0])
-    assert_matches(layout.particle_ids_per_half[1], [2, 3])
-
-    # An input rlnGroupNumber that disagrees with RELION's numbering is ignored,
-    # as relion_refine ignores it (exp_model.cpp:963-965).
-    stale = our_particles.assign(rlnGroupNumber=[9, 4, 2, 7])
-    renumbered = _resolve_native_group_layout(
-        stale,
-        half1_idx=np.asarray([0, 1], dtype=np.int64),
-        half2_idx=np.asarray([2, 3], dtype=np.int64),
-    )
-    assert renumbered.n_groups == 3
-    assert_matches(renumbered.group_ids_per_half[0], [1, 0])
-    assert_matches(renumbered.group_ids_per_half[1], [1, 2])
-
-    # No group or micrograph name: RELION reads an empty micrograph name for
-    # every particle (exp_model.cpp:154-167), so all share one group.
-    single = _resolve_native_group_layout(
-        our_particles[["rlnImageName"]],
-        half1_idx=np.asarray([0, 1], dtype=np.int64),
-        half2_idx=np.asarray([2, 3], dtype=np.int64),
-    )
-    assert single.n_groups == 1
-    assert_matches(np.concatenate(single.group_ids_per_half), [0, 0, 0, 0])
-
-
-@pytest.mark.parametrize(
-    ("relion_names", "message"),
-    [
-        (["1@x.mrcs", "1@x.mrcs"], "duplicate rlnImageName/stack identities"),
-        (["1@x.mrcs", "2@other.mrcs"], "do not contain the same rlnImageName/stack identities"),
-    ],
-)
-def test_native_group_layout_rejects_duplicate_or_missing_relion_identities(relion_names, message):
-    pd = pytest.importorskip("pandas")
-    our_particles = pd.DataFrame({"rlnImageName": ["1@x.mrcs", "2@x.mrcs"]})
-    relion_particles = pd.DataFrame(
-        {"rlnImageName": relion_names, "rlnGroupNumber": [1, 2]},
-    )
-
-    with pytest.raises(ValueError, match=message):
-        _resolve_native_group_layout(
-            our_particles,
-            half1_idx=np.asarray([0], dtype=np.int64),
-            half2_idx=np.asarray([1], dtype=np.int64),
-            relion_particles=relion_particles,
-        )
-
-
-def test_relion_expected_accuracy_layout_preserves_relion_particle_rows():
+def test_relion_expected_accuracy_layout_preserves_relion_particle_rows(monkeypatch):
     pd = pytest.importorskip("pandas")
     our_particles = pd.DataFrame(
         {"rlnImageName": ["30@x.mrcs", "10@x.mrcs", "40@x.mrcs", "20@x.mrcs"]},
@@ -1481,16 +1313,28 @@ def test_relion_expected_accuracy_layout_preserves_relion_particle_rows():
         },
     )
 
-    half1, half2, base_order, optics, particle_ids = _relion_halfset_and_accuracy_layout(
+    from recovar.data_io import metadata_readers
+
+    ctf_source = np.arange(32, dtype=np.float64).reshape(4, 8)
+    monkeypatch.setattr(metadata_readers, "parse_ctf_from_star", lambda path, grid: ctf_source)
+    prepared = prepare_relion_halfset_inputs(
         our_particles,
         relion_particles,
+        source_path="halfsets.star", random_seed=None,
+        prepare_noise_order=False, tomographic=False, image_grid_size=8,
+        log=run_full_refinement.logger,
     )
+    layout = prepared.layout
 
-    assert_matches(half1, [0, 1, 2])
-    assert_matches(half2, [3])
-    assert_matches(base_order, [1, 0, 2])
-    assert_matches(optics, [1, 2, 2])
-    assert_matches(particle_ids, [2, 0, 3])
+    assert_matches(layout.half1_rows, [0, 1, 2])
+    assert_matches(layout.half2_rows, [3])
+    assert_matches(layout.accuracy_base_order_local, [1, 0, 2])
+    assert_matches(layout.accuracy_optics_group_ids, [1, 2, 2])
+    assert_matches(layout.accuracy_particle_ids, [2, 0, 3])
+
+    assert prepared.accuracy_ctf_params.dtype == np.float64
+    assert_matches(prepared.accuracy_ctf_params, ctf_source[layout.accuracy_particle_ids, 1:])
+    assert not np.shares_memory(prepared.accuracy_ctf_params, ctf_source)
 
 
 def test_relion_fresh_initial_noise_layout_continues_from_half1_into_half2():
@@ -1506,10 +1350,14 @@ def test_relion_fresh_initial_noise_layout_continues_from_half1_into_half2():
         },
     )
 
-    source_rows, optics = _relion_fresh_initial_noise_layout(
+    prepared = prepare_relion_halfset_inputs(
         our_particles,
         relion_particles,
+        source_path="unused-tomo-source.star", random_seed=None,
+        prepare_noise_order=True, tomographic=True, image_grid_size=None,
+        log=run_full_refinement.logger,
     )
+    source_rows, optics = prepared.noise_source_rows, prepared.noise_optics_group_ids
 
     assert_matches(source_rows, [1, 0, 2, 3])
     assert_matches(optics, [2, 1, 2, 1])
@@ -1528,16 +1376,20 @@ def test_relion_expected_accuracy_layout_supports_repeated_indices_across_stacks
         },
     )
 
-    half1, half2, base_order, optics, particle_ids = _relion_halfset_and_accuracy_layout(
+    prepared = prepare_relion_halfset_inputs(
         our_particles,
         relion_particles,
+        source_path="unused-tomo-source.star", random_seed=None,
+        prepare_noise_order=False, tomographic=True, image_grid_size=None,
+        log=run_full_refinement.logger,
     )
+    layout = prepared.layout
 
-    assert_matches(half1, [0, 1, 2])
-    assert_matches(half2, [3])
-    assert_matches(base_order, [1, 0, 2])
-    assert_matches(optics, [1, 2, 2])
-    assert_matches(particle_ids, [2, 0, 3])
+    assert_matches(layout.half1_rows, [0, 1, 2])
+    assert_matches(layout.half2_rows, [3])
+    assert_matches(layout.accuracy_base_order_local, [1, 0, 2])
+    assert_matches(layout.accuracy_optics_group_ids, [1, 2, 2])
+    assert_matches(layout.accuracy_particle_ids, [2, 0, 3])
 
 
 def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
@@ -1575,8 +1427,8 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
         )
     }
 
-    half1, half2, base_order, optics, particle_ids = (
-        _relion_halfset_and_accuracy_layout(
+    layout = (
+        prepare_relion_halfset_layout(
             our_particles,
             relion_particles,
             random_seed=1711,
@@ -1584,22 +1436,22 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
     )
 
     assert_matches(
-        half1,
+        layout.half1_rows,
         [
             our_row_by_name[relion_particles.iloc[row]["rlnImageName"]]
             for row in expected_relion_half1
         ],
     )
     assert_matches(
-        half2,
+        layout.half2_rows,
         [
             our_row_by_name[relion_particles.iloc[row]["rlnImageName"]]
             for row in expected_relion_half2
         ],
     )
-    assert base_order is None
-    assert_matches(particle_ids, expected_relion_half1)
-    assert_matches(optics, relion_particles.iloc[particle_ids]["rlnOpticsGroup"])
+    assert layout.accuracy_base_order_local is None
+    assert_matches(layout.accuracy_particle_ids, expected_relion_half1)
+    assert_matches(layout.accuracy_optics_group_ids, relion_particles.iloc[layout.accuracy_particle_ids]["rlnOpticsGroup"])
 
 
 def test_runner_keeps_input_particle_names_for_replay_mapping():
@@ -1660,18 +1512,19 @@ def test_replay_mapping_distinguishes_repeated_indices_across_stacks(tmp_path):
 
 def test_native_group_ids_are_available_to_k_class_refinement():
     source = RUN_FULL_REFINEMENT.read_text()
-    group_start = source.index("native_group_layout = _resolve_native_group_layout")
+    group_start = source.index("prepared_particle_groups = input_particle_table.prepare_particle_group_layout")
     group_end = source.index("optimiser_star = _relion_optimiser_star_for_runtime(", group_start)
     group_block = source[group_start:group_end]
 
     assert "args.n_classes == 1" not in group_block
     assert "Native group-scale updates remain disabled for K-class refinement" not in source
-    assert "relion_particles=relion_group_particles" in group_block
-    replay_group_load = source.index("_select_authoritative_group_particles(", source.index("def main"))
-    assert replay_group_load < group_start
-    assert "native_group_count =" in group_block
-    assert "init_group_ids=native_group_ids_per_half" in source
-    assert "init_group_count=native_group_count" in source
+    assert "halfset_particles=relion_particles" in group_block
+    assert "group_particle_source = prepared_particle_groups.source" in group_block
+    assert "particle_groups = prepared_particle_groups.layout" in group_block
+    assert "group_particle_source.particles" in group_block
+    assert "init_group_ids=list(particle_groups.group_ids_per_half)" in source
+    assert "init_group_count=particle_groups.n_groups" in source
+    assert "init_relion_optics_group_count=particle_groups.n_optics_groups" in source
 
 
 def test_load_init_previous_best_poses_npz_selects_latest_numbered_iter(tmp_path):
@@ -1755,12 +1608,12 @@ def test_load_relion_it000_model_stars_prefers_shared_model(tmp_path):
     _write_minimal_relion_model_star(tmp_path / "run_it000_half1_model.star", sigma2_noise_start=2.0)
     _write_minimal_relion_model_star(tmp_path / "run_it000_half2_model.star", sigma2_noise_start=3.0)
 
-    bundle = _load_relion_it000_model_stars(tmp_path, n_classes=1)
+    bundle = read_initial_model(tmp_path, n_classes=1)
 
-    assert bundle["source"] == "shared"
-    assert bundle["model_paths"] == [shared]
-    assert bundle["reference_model_path"] == shared
-    assert len(bundle["models"]) == 1
+    assert bundle.source == "shared"
+    assert [source.path for source in bundle.models] == [shared]
+    assert bundle.reference.path == shared
+    assert len(bundle.models) == 1
 
 
 def test_load_relion_it000_model_stars_accepts_autorefine_half_models(tmp_path):
@@ -1769,14 +1622,14 @@ def test_load_relion_it000_model_stars_accepts_autorefine_half_models(tmp_path):
     _write_minimal_relion_model_star(half1, sigma2_noise_start=2.0)
     _write_minimal_relion_model_star(half2, sigma2_noise_start=3.0)
 
-    bundle = _load_relion_it000_model_stars(tmp_path, n_classes=1)
+    bundle = read_initial_model(tmp_path, n_classes=1)
 
-    assert bundle["source"] == "half-specific"
-    assert bundle["model_paths"] == [half1, half2]
-    assert bundle["reference_model_path"] == half1
-    assert len(bundle["models"]) == 2
-    np.testing.assert_allclose(bundle["models"][0]["model_optics_group_1"]["rlnSigma2Noise"], [2.0, 3.0])
-    np.testing.assert_allclose(bundle["models"][1]["model_optics_group_1"]["rlnSigma2Noise"], [3.0, 4.0])
+    assert bundle.source == "half-specific"
+    assert [source.path for source in bundle.models] == [half1, half2]
+    assert bundle.reference.path == half1
+    assert len(bundle.models) == 2
+    np.testing.assert_allclose(bundle.models[0].tables["model_optics_group_1"]["rlnSigma2Noise"], [2.0, 3.0])
+    np.testing.assert_allclose(bundle.models[1].tables["model_optics_group_1"]["rlnSigma2Noise"], [3.0, 4.0])
 
 
 def test_load_relion_it000_model_stars_requires_shared_model_for_kclass(tmp_path):
@@ -1784,7 +1637,7 @@ def test_load_relion_it000_model_stars_requires_shared_model_for_kclass(tmp_path
     _write_minimal_relion_model_star(tmp_path / "run_it000_half2_model.star", sigma2_noise_start=3.0)
 
     with pytest.raises(SystemExit, match="no compatible iter-0 model STAR"):
-        _load_relion_it000_model_stars(tmp_path, n_classes=4)
+        read_initial_model(tmp_path, n_classes=4)
 
 
 def test_replay_mean_log_formatter_handles_empty_half_without_warning():
@@ -1851,7 +1704,7 @@ def test_k1_half_sets_are_relions_and_class3d_uses_all_data_once():
     # No seeded NumPy split: K=1 takes RELION's table (from the input or a RELION STAR).
     assert "np.random.RandomState(seed)" not in source
     assert "K=1 auto-refine uses RELION's half sets" in source
-    assert "half1_idx = np.arange(n_images, dtype=np.int64)" in source
+    assert "input_particle_table.prepare_class3d_particle_layout(" in source
 
 
 @pytest.mark.usefixtures("verified_k1_relion_os0")

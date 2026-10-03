@@ -1,11 +1,42 @@
 # Codebase map for contributors
 
+Numbered convergence policy lives in [`refinement/convergence.py`](../../relax/refinement/convergence.py):
+physical-unit conversion, accuracy admission and optimiser replay precedence.
+The same owner selects native versus explicit angular sampling at the start of
+expectation, after accuracy and before the numbered grid is constructed.
+The mathematical scheduler/metrics remain in `helpers/convergence.py`; the
+controller installs state and checks preceding-iteration convergence at its
+existing top boundary. See the [complete operation](final_local_sampling_patch_review.md#iteration-convergence-policy).
+
 Start at the entry point for the workflow you are changing, then follow the
 state and array layouts into its kernels. RECOVAR has several EM workflows;
 sharing a numerical primitive does not make their controllers interchangeable.
 The [development contract](../../AGENTS.md) defines change scope and validation.
 
 ## Workflow entry points
+
+`refinement.iteration_planning.initialize_refinement_state` owns startup state
+construction and replay/FSC/low-pass/frozen/continuation precedence. It returns
+the existing convergence state directly. The numerical controller retains phase
+timing, grid construction, subsequent model/particle installation and later
+scientific state updates.
+
+`relion.input_particle_table` owns physical particle identity, paired-half and
+Class3D row preparation. `ParticleLayout` pairs selected input rows with their
+expected-accuracy source/local frame throughout command consumers. Source/mode
+selection, diagnostic admission and important state writes remain in the
+command; this run-constant identity result is separate from mutable half poses.
+
+`refinement.particle_loading` owns command particle-format admission, reading
+setup and mask configuration. `LoadedParticles` returns the existing dataset with
+its format/grid/preprocessing metadata. RECOVAR remains the image reader and
+Fourier preprocessor. Optimiser-source discovery belongs to
+`refinement.command_options`; the controller retains half-set construction,
+startup-noise source selection, explicit state updates and invocation timing.
+
+Refinement flag definitions, job defaults and supported-mode validation belong to
+[`command_options.py`](../../relax/refinement/command_options.py). The execution
+controller retains cache/import setup, seed assignment and validation timing.
 
 | Workflow | Entry point | Main implementation |
 | --- | --- | --- |
@@ -21,6 +52,18 @@ contracts. Choose the implementation reached by the actual command. The
 pipeline PPCA path currently rejects tilt-series input. Consult the
 [PPCA refinement guide](../../relax/ppca_refinement/AGENTS.md) when working
 on pose refinement, and the [paper-data runbook](della.md) for pinned inputs.
+
+Unperturbed exhaustive rotation matrices, working Euler rows, HEALPix order and
+point group are produced together as `sampling.RotationGrid` in
+[`sampling.py`](../../relax/sampling.py). Initial planning and numbered replacement
+retain that owner; final sampling consumes it. The command and numbered controllers
+remain unfinished; the [current review](final_local_sampling_patch_review.md#rotation-grid-ownership-and-remaining-controller-work)
+shows the actual producer, updates and final consumer.
+
+Numbered normalization preparation, numerical estimation and reporting live in
+[`relion_normalization.py`](../../relax/relion/relion_normalization.py). The controller
+selects policy and visibly installs corrections; strict follower installation is
+owned by [`relion_worker_scale.py`](../../relax/relion/relion_worker_scale.py).
 
 ## EM package layout
 
@@ -92,18 +135,54 @@ raw MRC arrays and uncentered FFT calls are not interchangeable with them.
 
 ## Dense and local EM ownership
 
+Particle pose snapshots, engine interpretation and half-ordered convergence inputs
+belong to `prepare_particle_pose_update` and `prepare_pose_comparison` in
+[`half_inputs.py`](../../relax/refinement/half_inputs.py). Their computed results
+keep previous/current frames together. The controller installs state and records
+history/particle files between those two operations, preserving their timing.
+
+Post-reconstruction curve selection and observed/scheduling resolution shells belong
+to [`estimate_iteration_resolution`](../../relax/helpers/resolution.py). Its result
+is consumed by diagnostics, history, next-iteration planning and convergence while
+the controller retains the timing of state writes and native convergence checks.
+
 Use the [EM implementation reference](em_implementation.md#dense-and-local-em-ownership)
 for detailed module contracts. Start with the boundary being changed:
 
 | Boundary | Main owner |
 | --- | --- |
+| Command oracle admission and resolved controls | [`command_options.py`](../../relax/refinement/command_options.py); portable dispatch manifest/particle/file admission and CLI/optimiser cap, CTF and initial-filter precedence. `full_refinement.py` retains source choice, strict replay decision, follower preparation and visible option installation. |
+| Sealed restart CLI admission and runtime adaptation | [`diagnostics/frozen_boundary_cli.py`](../../relax/diagnostics/frozen_boundary_cli.py); invocation/source binding, effective-config checks, projector-only replay slots, capture attachment with source identity and float32 scoring-noise expansion. Schema/file loaders keep their existing owners. Command retains modes, state installation and provenance publication. |
+| Prejoin capture and finite auditing | [`diagnostics/reconstruction.py`](../../relax/diagnostics/reconstruction.py); target selection and native-half audit before cross-half mixing, plus pre/postjoin BPref serialization. Numerical join and state writes remain in the controller. |
 | Iteration scheduling and state mutation | [`iteration_loop.py`](../../relax/refinement/iteration_loop.py) |
+| Refinement scoring projector preparation | [`projector_preparation.py`](../../relax/refinement/projector_preparation.py); accuracy-produced `ProjectorReuse` binds reference identity and image/window support; `prepare_scoring_projector` owns reuse, transform, disk cache and dumps. Controller retains captured admission, half order and release/install boundaries. |
+| Checkpoint capture and saved iteration schema | [`refinement/iteration_snapshot.py`](../../relax/refinement/iteration_snapshot.py); header replacement preserves retained-map lifetime, then complete array/schema capture returns `IterationSnapshot`. The controller owns scheduling/growth; `run_files.py` owns disk formats. |
+| Iteration-zero model-file replay | [`diagnostics/initial_model_replay.py`](../../relax/diagnostics/initial_model_replay.py); ordered file/table identity, NPZ/live/STAR noise precedence, MPI broadcast, prior expansion and optimiser controls. Command retains admission and explicit installation/reporting. Shared formulas remain in RECOVAR and `relion/initial_noise.py`. |
 | Dense E/M execution | [`em_engine.py`](../../relax/dense/em_engine.py) |
 | Local search orchestration and kernels | [`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py), [`resident_local_pass2.py`](../../relax/sparse_pass2/resident_local_pass2.py) |
 | Class routing and joint result assembly | [`k_class.py`](../../relax/classification/k_class.py), [`k_class_results.py`](../../relax/classification/k_class_results.py) |
-| Replay selection and final-pass admission | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py), [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) |
+| Replay selection and final all-data admission/execution | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py), [`finalization.py`](../../relax/refinement/finalization.py) |
+| Final native/replay sampling and prepared grids | [`final_sampling.py`](../../relax/refinement/final_sampling.py) |
+| Numbered prior/reconstruction and first-CC reporting | [`mean_helpers.py`](../../relax/refinement/mean_helpers.py): ordered Class3D replay/CTF/diagnostic aggregation, K1 split-half estimation, complete regularized solve/capture/filter/flatten operation and reporting tapers. Controller installs maps/tau2 and publishes class scheduling/history before detail taper. Final retains distinct policies over shared primitives. |
+| Final reconstruction and half-map/class priors | [`final_reconstruction.py`](../../relax/refinement/final_reconstruction.py) |
+| Shared reference startup formulas | [`reference_initialization.py`](../../relax/relion/reference_initialization.py), used by refinement and VDAM |
+| Refinement mask widths and padding defaults | [`geometry.py`](../../relax/relion/geometry.py); VDAM retains its own padding and mask settings |
+| Resident candidate tables and chunk layout | [`sparse_pass2/resident_candidates.py`](../../relax/sparse_pass2/resident_candidates.py); shared host cell offsets for global, local parent and local fine scoring. Drivers retain placement, posterior kernels and accumulation. |
 | Sparse engine dispatch and independent reference | [`sparse_pass2/dispatch.py`](../../relax/sparse_pass2/dispatch.py), [`reference/sparse_pass2.py`](../../relax/reference/sparse_pass2.py); grid and support arithmetic stay in `helpers/oversampling.py` |
 | Standard half-set and first-iteration adapters | [`refinement/half_scoring.py`](../../relax/refinement/half_scoring.py), [`refinement/firstiter_cc.py`](../../relax/refinement/firstiter_cc.py) |
+| Particle pose interpretation and persistent half state | [`refinement/half_inputs.py`](../../relax/refinement/half_inputs.py); resolves explicit or grid poses into computed matrices/Euler rows and relative/absolute pixel shifts. The controller installs state and records history. |
+| Strict RELION follower topology preparation | [`relion/relion_worker_scale.py`](../../relax/relion/relion_worker_scale.py); validates MPI admission, replay and numbered particle ownership before execution |
+| Particle-table source and group identity | [`relion/input_particle_table.py`](../../relax/relion/input_particle_table.py); admits half-set STAR schema/optics geometry and produces authoritative group source plus matching physical/optics axes in half image order |
+| Input geometry and replay units | `ImageGeometry` in [`helpers/resolution.py`](../../relax/helpers/resolution.py); fixed shape and validated physical pixel size. [`diagnostics/relion_replay.py`](../../relax/diagnostics/relion_replay.py) consumes geometry directly. Controller retains the borrowed source pixel scalar where host promotion requires its original type; changing windows/model support have separate owners. |
+| Refinement memory planning | [`helpers/batch_planning.py`](../../relax/helpers/batch_planning.py) and [`refinement/expectation_batches.py`](../../relax/refinement/expectation_batches.py); live dense/local/compact budgets and half adaptation. The disconnected future whole-local descriptor/fingerprint family is retired; supported batch decisions are unchanged. |
+| Numbered half expectation preparation, execution and recording | [`refinement/expectation.py`](../../relax/refinement/expectation.py); `NumberedExpectation` and `prepare_numbered_expectation` bind the shared canonical grid, dense/local support and diagnostic policy. The same owner prepares per-half priors/batches/optics, dispatches, and records profiles/captures and ordered counts. Controller retains modes, tomography adaptation, publication, offloading, serial/overlap choice and release. |
+| Final SPA half prior/optics preparation | `prepare_final_half` in the same expectation owner; local/dense scoring and manifest export consume its prepared operands |
+| Half image preprocessing | `configure_half_image_preprocessing` in [`refinement/particle_loading.py`](../../relax/refinement/particle_loading.py); backend registration/selection, source-faithful admission and mask units; paired row/noise/accuracy preparation owns the selected CTF copy and releases unused source tables. Controller retains source/mode admission, dataset subsetting and setup order/timing; image datasets and backends stay rooted by the half input owners. |
+| Refinement startup noise | [`refinement/startup_noise.py`](../../relax/refinement/startup_noise.py); ordered source rows, SPA/multi-shape/tomography image adaptation, live host sigma2 and scoring expansion. Command retains source selection; host FFT/mask formulas remain in `relion/initial_noise.py`. |
+| Numbered image-size and startup grid planning | [`refinement/iteration_planning.py`](../../relax/refinement/iteration_planning.py); initial precedence, K1 raw/corrected resolution versus growth signals, Class3D prior curves, computed results. Controller retains mode selection, writes, oracle and replay/angular order. |
+| Numbered perturbation and scoring windows | [`refinement/iteration_planning.py`](../../relax/refinement/iteration_planning.py); sealed/STAR/native perturbation precedence, independent model/particle cutoffs and adaptive pass-1 sizing from the incoming order. Grid execution remains in `sampling.py` and the controller. |
+| Completed-iteration correction reporting and parity capture | `NormScaleCorrectionReport` in [`relion/relion_normalization.py`](../../relax/relion/relion_normalization.py), consumed by checkpoints and `dump_numbered_iteration` in [`diagnostics/iteration.py`](../../relax/diagnostics/iteration.py). Controller retains correction installation, capture selection and checkpoint order. |
+| Final refinement result files | [`refinement/result_files.py`](../../relax/refinement/result_files.py); reused result schemas, final diagnostic formatting, array layouts, NPZ compression, profiles and final maps. Controllers retain model selection and publication order. |
 | Coarse/sparse scoring | [`scoring/significance.py`](../../relax/scoring/significance.py), [`sparse_pass2/resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) |
 
 Coarse window metadata is published by `scoring/coarse_publication.py`.
@@ -130,7 +209,29 @@ Canonical source Euler angles and host pixel geometry remain metadata; derive
 computation arrays from them. Required validation comes from the scoped guides,
 not from the size of this overview. Current evidence belongs in [EM status](em_status.md).
 
+Numbered K1 current-FSC and independent half-weight tau2 estimation live in
+`mean_helpers.estimate_split_half_prior` with its `SplitHalfPrior` result. The
+controller retains joining, K1/Class3D policy, reference replacement and later
+CC taper/host parking. Raw FSC and corrected growth FSC remain distinct.
+The same `ReconstructionSettings` is constructed once for numbered/final prior
+estimation, reconstruction, masks/initial filtering and Class3D captures. It owns
+their invariant regularization and mask settings; current windows, accumulator
+layout and phase decisions remain explicit inputs.
+
 ## Diagnostics and reusable evidence
+
+Class3D M-step capture is owned by
+[`diagnostics/reconstruction.py`](../../relax/diagnostics/reconstruction.py):
+`write_class_mstep` computes captured floor-shell weight summaries and writes the
+historical NPZ schema from the prior result and reconstruction settings. The
+per-class gate and numerical class loop remain in the refinement controller.
+
+Sealed diagnostic CLI admission lives in
+[`frozen_boundary_cli.py`](../../relax/diagnostics/frozen_boundary_cli.py): flags,
+source/arm checks, manifest binding and effective-runtime adaptation. Bundle
+schemas and array validation remain in
+[`frozen_boundary.py`](../../relax/diagnostics/frozen_boundary.py). The refinement
+command owns when admission and the resolved-runtime check run.
 
 The optional iteration, reconstruction, pass-2 operand and normalization capture
 writers live in [`relax/diagnostics`](../../relax/diagnostics/__init__.py).
@@ -290,3 +391,16 @@ records the original comparison at `4f83abed4` (8,633 lines). The subsequent
 prior cleanup removed 11 lines and the startup metadata boundary added four;
 the table above accounts for both. Historical file/name counts distinguish
 relocation from new names but are not a semantic proof of dead-code completeness.
+
+
+Startup sampling policy is produced by
+`relax/refinement/command_options.py:resolve_initial_sampling` and reused as
+`InitialSampling`. Archive metadata conversion belongs to
+`relax/refinement/result_files.py:build_archive_metadata`; the command owns
+publication order. The current review shows both producers and all calling facts.
+
+Startup pose source selection, loading and norm-correction preparation belong to
+`relax/relion/input_poses.py:prepare_initial_poses`. Its `InitialPoses` result
+retains the source-specific seed payload; `PoseProvenance` is reused by profile
+and archive reporting. The command retains frozen-correction selection and
+visible replay options.

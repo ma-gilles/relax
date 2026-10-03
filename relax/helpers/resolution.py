@@ -7,6 +7,7 @@ iteration controller selects when to apply these rules.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -22,6 +23,24 @@ from relax.reconstruction.regularization_relion import (
 if TYPE_CHECKING:
     from relax.helpers.convergence import RefinementState
     from relax.refinement.refinement_options import RefinementOptions
+
+
+@dataclass(frozen=True, kw_only=True)
+class ImageGeometry:
+    """Physical input-image grid; independent of Fourier windows and model support."""
+
+    image_shape: tuple[int, int]
+    pixel_size_angstrom: float
+
+    def __post_init__(self):
+        pixel_size = float(self.pixel_size_angstrom)
+        if not np.isfinite(pixel_size) or pixel_size <= 0:
+            raise ValueError(f"Particle pixel size must be finite and positive, got {pixel_size}")
+        object.__setattr__(self, "pixel_size_angstrom", pixel_size)
+
+    @property
+    def box_size(self) -> int:
+        return self.image_shape[0]
 
 
 def relion_local_pass1_current_size(
@@ -381,6 +400,78 @@ def _firstiter_cc_scheduling_resolution_shell(
             ini_high_angstrom,
         )
     return int(resolution_shell)
+
+@dataclass(frozen=True)
+class ResolutionEstimate:
+    """Post-reconstruction curve and the observed/first-iteration scheduling shells."""
+
+    data_vs_prior: np.ndarray
+    observed_shell: int
+    scheduling_shell: float
+
+
+def estimate_iteration_resolution(
+    *,
+    class_data_vs_prior,
+    tau2_update_details,
+    fsc,
+    k_class_enabled,
+    current_size,
+    grid_size,
+    voxel_size,
+    tau2_fudge,
+    emulate_relion_firstiter_cc,
+    ini_high_angstrom,
+    relion_iteration,
+    dtype,
+) -> ResolutionEstimate:
+    """Select the post-reconstruction prior curve and estimate resolution.
+
+    Class3D uses its recorded per-class curve; K1 prefers the curve used by
+    reconstruction and otherwise derives it from FSC. Keep the observed shell
+    separate from RELION's first-iteration ``ini_high`` scheduling override.
+    See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
+    """
+    if k_class_enabled:
+        data_vs_prior = class_data_vs_prior
+    elif tau2_update_details is not None and tau2_update_details.get("ssnr_shells") is not None:
+        data_vs_prior = np.asarray(
+            tau2_update_details["ssnr_shells"],
+            dtype=dtype,
+        ).copy()
+    else:
+        data_vs_prior = np.asarray(
+            fsc_to_relion_ssnr(
+                np.asarray(fsc, dtype=dtype),
+                tau2_fudge=tau2_fudge,
+            ),
+            dtype=dtype,
+        )
+    data_vs_prior = _truncate_data_vs_prior_for_current_size(
+        data_vs_prior,
+        current_size=current_size,
+        grid_size=grid_size,
+        dtype=dtype,
+    )
+    observed_shell = relion_current_resolution_shell(
+        data_vs_prior,
+        k_class_enabled=k_class_enabled,
+        current_size=current_size,
+        grid_size=grid_size,
+        dtype=dtype,
+    )
+    scheduling_shell = float(
+        _firstiter_cc_scheduling_resolution_shell(
+            observed_shell,
+            emulate_relion_firstiter_cc=emulate_relion_firstiter_cc,
+            ini_high_angstrom=ini_high_angstrom,
+            relion_iteration=relion_iteration,
+            grid_size=grid_size,
+            voxel_size=voxel_size,
+        )
+    )
+    return ResolutionEstimate(data_vs_prior, observed_shell, scheduling_shell)
+
 
 
 def _firstiter_cc_ini_high_tau2_taper(

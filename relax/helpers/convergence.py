@@ -527,28 +527,6 @@ def _exhaustive_grid_order_for_state(state: RefinementState) -> int:
         )
     return min(state.healpix_order, RELION_MAX_FULL_GRID_ORDER)
 
-def _final_local_sampling_orders(
-    *,
-    state_healpix_order: int,
-    adaptive_oversampling: int,
-    final_sampling_healpix_order: int | None,
-) -> tuple[int, int]:
-    """Return RELION's final local parent and fine HEALPix orders.
-
-    The unnumbered final ``run_sampling.star`` may advance the parent order
-    beyond the last numbered optimiser state.  When that authoritative final
-    metadata exists, its order must replace the stale state order before
-    applying adaptive oversampling.  Runs without a final sampling STAR keep
-    the historical state-derived fallback.
-    """
-
-    parent_order = (
-        int(state_healpix_order)
-        if final_sampling_healpix_order is None
-        else int(final_sampling_healpix_order)
-    )
-    return parent_order, parent_order + int(adaptive_oversampling)
-
 def _native_final_perturbation_healpix_order(state, final_current_healpix_order: int) -> int:
     """Return the angular-step order for native final sampling perturbation.
 

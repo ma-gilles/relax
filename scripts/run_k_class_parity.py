@@ -1314,7 +1314,8 @@ def main() -> None:
         relion_translation_prior_center,
         relion_translation_search_base,
     )
-    from relax.refinement.iteration_loop import RELION_MINRES_MAP, _reconstruct_volume_eager
+    from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
+    from relax.refinement.mean_helpers import _reconstruct_volume_eager
     from relax.relion.relion_metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,

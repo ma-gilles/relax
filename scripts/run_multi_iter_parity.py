@@ -636,7 +636,7 @@ def filter_fresh_initial_reference(
     its binary64 real-space result directly to the initial projector.
     """
 
-    from relax.refinement.mean_helpers import initial_low_pass_filter_references
+    from relax.relion.reference_initialization import initial_low_pass_filter_references
 
     volume_real = np.asarray(volume_real, dtype=np.float64)
     if volume_real.ndim != 3 or len(set(volume_real.shape)) != 1:

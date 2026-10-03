@@ -8,10 +8,28 @@ their existing casts and coarse-grid reductions.
 from dataclasses import dataclass, field
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.helpers.types import make_relion_stats
+from relax.helpers.half_volume_mstep import (
+    half_volume_accumulator_shape,
+    relion_backprojector_volume_shape,
+    relion_x_half_accumulators_to_public_layout,
+)
+from relax.helpers.types import make_noise_stats, make_relion_stats
+from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR
+
+
+@dataclass(frozen=True, kw_only=True)
+class ClassScoreSummary:
+    """Assignments and prior/noise statistics for one half's class model."""
+
+    assignments: np.ndarray
+    mstep_mass: np.ndarray
+    evidence_mass: np.ndarray
+    rotation_mass: np.ndarray
+    noise_stats: object | None
 
 
 @dataclass
@@ -21,8 +39,7 @@ class HalfScoreResult:
     Per-image fields follow the halfset dataset's local image order. ``ha``
     encodes pose assignments in the scoring grid; adaptive paths may also
     provide ``coarse_ha`` and explicit best poses for downstream pose export.
-    Class assignments and class posterior summaries are written separately
-    into ``PerHalfOutputs`` by the K-class scoring adapters.
+    Class assignments and posterior summaries accompany K-class results.
 
     Accumulators retain the engine's layout and device until reconstruction
     or explicit host offloading. Interpret them with ``mstep_full_half_axis``
@@ -50,6 +67,79 @@ class HalfScoreResult:
     profile_summary: dict | None = None
     mstep_full_half_axis: int | None = None
     mstep_accumulator_shape: tuple[int, int, int] | None = None
+
+    classes: ClassScoreSummary | None = None
+    translation_search_base: object | None = None
+
+
+def empty_half_result(
+    *,
+    volume_shape,
+    padded_volume_shape,
+    n_classes: int,
+    n_shells: int,
+    n_rotations: int,
+    translation_dimension: int,
+    image_window_size: int | None,
+    model_support_size: int | None,
+    use_x_half_mstep: bool,
+) -> HalfScoreResult:
+    """Zero expectation payload with the selected reconstruction layout."""
+    accumulator_shape = (
+        relion_backprojector_volume_shape(
+            volume_shape,
+            RECONSTRUCTION_PADDING_FACTOR,
+            current_size=image_window_size if model_support_size is None else model_support_size,
+        )
+        if use_x_half_mstep else None
+    )
+    if n_classes > 1:
+        Ft_y = Ft_ctf = None
+    elif use_x_half_mstep:
+        x_half_shape = half_volume_accumulator_shape(accumulator_shape)
+        flat_x_half_shape = (int(np.prod(x_half_shape)),)
+        Ft_y_x_half = jnp.zeros(flat_x_half_shape, dtype=jnp.complex128)
+        Ft_ctf_x_half = jnp.zeros(flat_x_half_shape, dtype=jnp.complex128)
+        Ft_y, Ft_ctf = relion_x_half_accumulators_to_public_layout(
+            Ft_y_x_half, Ft_ctf_x_half, accumulator_shape,
+        )
+    else:
+        flat_padded_shape = (int(np.prod(padded_volume_shape)),)
+        Ft_y = jnp.zeros(flat_padded_shape, dtype=jnp.complex128)
+        Ft_ctf = jnp.zeros(flat_padded_shape, dtype=jnp.complex128)
+    assignments = np.zeros(0, dtype=np.int32)
+    classes = ClassScoreSummary(
+        assignments=np.zeros(0, dtype=np.int32),
+        mstep_mass=np.zeros(n_classes, dtype=np.float32),
+        evidence_mass=np.zeros(n_classes, dtype=np.float32),
+        rotation_mass=np.zeros((n_classes, n_rotations), dtype=np.float32),
+        noise_stats=None,
+    )
+    em_stats = make_relion_stats(
+        log_evidence_per_image=jnp.zeros(0, dtype=jnp.float32),
+        best_log_score_per_image=jnp.zeros(0, dtype=jnp.float32),
+        max_posterior_per_image=jnp.zeros(0, dtype=jnp.float32),
+        rotation_posterior_sums=jnp.zeros(n_rotations, dtype=jnp.float32),
+    )
+    noise_stats = make_noise_stats(
+        wsum_sigma2_noise=jnp.zeros(n_shells, dtype=jnp.float32),
+        wsum_img_power=jnp.zeros(n_shells, dtype=jnp.float32),
+        wsum_sigma2_offset=0.0,
+        sumw=0.0,
+    )
+    return HalfScoreResult(
+        ha=assignments,
+        Ft_y=Ft_y,
+        Ft_ctf=Ft_ctf,
+        em_stats=em_stats,
+        noise_stats=noise_stats,
+        best_pose_rotations=np.zeros((0, 3, 3), dtype=np.float32),
+        best_pose_rotation_eulers=np.zeros((0, 3), dtype=np.float32),
+        best_pose_translations=np.zeros((0, translation_dimension), dtype=np.float32),
+        mstep_full_half_axis=0 if use_x_half_mstep else None,
+        mstep_accumulator_shape=accumulator_shape,
+        classes=classes,
+    )
 
 
 def _host_offload_array(value):
@@ -105,10 +195,8 @@ class PerHalfOutputs:
     Class counts and class/rotation summaries live inside their halfset slot.
     Unpopulated slots are ``None``; an empty scored half can hold empty arrays.
 
-    ``frozen=True`` prevents rebinding fields, while scoring adapters mutate
-    their lists. The controller deliberately aliases these lists. ``update_from``
-    stores the common scoring payload; K-class adapters separately populate
-    class assignments, posterior summaries and per-class noise statistics.
+    ``frozen=True`` prevents rebinding fields. The controller deliberately aliases
+    these lists and records complete scoring results with ``update_from``.
     """
 
     hard_assignments: list = field(default_factory=lambda: [None, None])
@@ -136,8 +224,8 @@ class PerHalfOutputs:
         """Store one half's payload, retaining arrays except for posterior casts.
 
         Missing optional pose fields leave existing slot values intact. Layout
-        metadata is always replaced, including ``None``. Class-specific fields
-        are owned by the scoring adapter and remain untouched here.
+        metadata is always replaced, including ``None``. A K-class payload
+        replaces its class summaries together, including absent noise statistics.
         """
         self.hard_assignments[half_index] = score_result.ha
         self.Ft_y[half_index] = score_result.Ft_y
@@ -165,33 +253,42 @@ class PerHalfOutputs:
             self.pose_rotation_eulers[half_index] = score_result.pose_rotation_eulers
         self.mstep_full_half_axis[half_index] = score_result.mstep_full_half_axis
         self.mstep_accumulator_shape[half_index] = score_result.mstep_accumulator_shape
+        if score_result.classes is not None:
+            self.class_assignments[half_index] = score_result.classes.assignments
+            self.class_posterior[half_index] = score_result.classes.mstep_mass
+            self.class_full_posterior[half_index] = score_result.classes.evidence_mass
+            self.class_rotation_posterior[half_index] = score_result.classes.rotation_mass
+            self.noise_stats_per_class[half_index] = score_result.classes.noise_stats
 
 
-def _scatter_dense_k_class_result(
+def class_em_to_half_result(
     k_class_result,
     *,
-    k: int,
     effective_rotations,
     rot_pmap_for_collapse,
     adaptive_os_local: int,
-    outputs: "PerHalfOutputs",
     require_best_pose_details: bool = True,
     pose_dtype: np.dtype = np.float32,
-):
-    """Scatter ``run_dense_k_class_em*`` result into per-half output lists.
+) -> HalfScoreResult:
+    """Adapt class EM statistics and canonical poses to one half's result.
 
-    Returns the five tuple of E-step outputs ``(ha_k, Ft_y_k, Ft_ctf_k,
-    em_stats_k, noise_stats_k)`` used downstream by both the adaptive
-    pass-2 and single-pass branches.
+    Class occupancy uses M-step mass; rotation sums use the coarse prior grid.
+    The controller records the returned arrays in its half slots.
     """
-    ha_k = np.asarray(k_class_result.pose_assignments, dtype=np.int32)
-    outputs.noise_stats_per_class[k] = k_class_result.noise_stats
-    outputs.class_assignments[k] = np.asarray(k_class_result.class_assignments, dtype=np.int32)
+    result = HalfScoreResult(
+        ha=np.asarray(k_class_result.pose_assignments, dtype=np.int32),
+        Ft_y=k_class_result.Ft_y,
+        Ft_ctf=k_class_result.Ft_ctf,
+        em_stats=k_class_result.stats,
+        noise_stats=k_class_result.aggregate_noise_stats,
+    )
+    class_noise_stats = k_class_result.noise_stats
+    class_assignments = np.asarray(k_class_result.class_assignments, dtype=np.int32)
     class_mass_for_priors = getattr(k_class_result, "class_mstep_posterior_sums", None)
     if class_mass_for_priors is None:
         class_mass_for_priors = k_class_result.class_posterior_sums
-    outputs.class_posterior[k] = np.asarray(class_mass_for_priors, dtype=np.float64)
-    outputs.class_full_posterior[k] = np.asarray(k_class_result.class_posterior_sums, dtype=np.float64)
+    class_posterior = np.asarray(class_mass_for_priors, dtype=np.float64)
+    class_full_posterior = np.asarray(k_class_result.class_posterior_sums, dtype=np.float64)
     # Collapse fine-grid rotation posteriors to coarse via the parent map
     # when iter-1 firstiter_cc routes through the adaptive 2-pass engine
     # with adaptive_oversampling > 0; downstream
@@ -215,26 +312,27 @@ def _scatter_dense_k_class_result(
             raise RuntimeError(
                 f"Unexpected K-class rotation_posterior_sums shape {rot_post.shape}; expected ({n_rot_coarse},)"
             )
-    outputs.class_rotation_posterior[k] = np.stack(per_class_rot_post_coarse, axis=0)
+    class_rotation_posterior = np.stack(per_class_rot_post_coarse, axis=0)
+    result.classes = ClassScoreSummary(
+        assignments=class_assignments,
+        mstep_mass=class_posterior,
+        evidence_mass=class_full_posterior,
+        rotation_mass=class_rotation_posterior,
+        noise_stats=class_noise_stats,
+    )
     if require_best_pose_details:
         if k_class_result.best_pose_rotations is None or k_class_result.best_pose_translations is None:
             raise RuntimeError("Dense K-class path did not return best pose details")
         best_rots = np.asarray(k_class_result.best_pose_rotations, dtype=pose_dtype)
-        outputs.best_pose_rotations[k] = best_rots
+        result.best_pose_rotations = best_rots
         source_eulers = getattr(k_class_result, "best_pose_eulers_deg", None)
-        outputs.best_pose_rotation_eulers[k] = (
+        result.best_pose_rotation_eulers = (
             np.asarray(source_eulers, dtype=np.float64)
             if source_eulers is not None
             else utils.R_to_relion(best_rots, degrees=True).astype(pose_dtype)
         )
-        outputs.best_pose_translations[k] = np.asarray(k_class_result.best_pose_translations, dtype=pose_dtype)
-    return (
-        ha_k,
-        k_class_result.Ft_y,
-        k_class_result.Ft_ctf,
-        k_class_result.stats,
-        k_class_result.aggregate_noise_stats,
-    )
+        result.best_pose_translations = np.asarray(k_class_result.best_pose_translations, dtype=pose_dtype)
+    return result
 
 
 def _collapse_fine_pose_assignments_to_coarse(

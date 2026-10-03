@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from relax.helpers.convergence import healpix_angular_step
-from relax.helpers.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
+from relax.helpers.resolution import ImageGeometry
+from relax.refinement.iteration_planning import ExpectationWindows, plan_adaptive_image_size
 
 pytestmark = pytest.mark.unit
 
@@ -27,7 +27,7 @@ def _global_window(incoming, updated, *, current=172, sealed=None):
         and isinstance(node.test, ast.Name) and node.test.id == "use_adaptive"
         and any(
             isinstance(child, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == "effective_step_deg" for t in child.targets)
+            and any(isinstance(t, ast.Name) and t.id == "coarse_image_plan" for t in child.targets)
             for child in node.body
         )
     ]
@@ -35,10 +35,10 @@ def _global_window(incoming, updated, *, current=172, sealed=None):
     namespace = dict(
         coarse_size_healpix_order=incoming,
         current_healpix_order=updated,
-        healpix_angular_step=healpix_angular_step,
-        compute_coarse_image_size=compute_coarse_image_size,
-        clamp_relion_coarse_image_size=clamp_relion_coarse_image_size,
-        cryo=SimpleNamespace(voxel_size=1.400011),
+        plan_adaptive_image_size=plan_adaptive_image_size,
+        expectation_windows=ExpectationWindows(model_size=current, image_size=current, image_box_size=380),
+        image_geometry=ImageGeometry(image_shape=(380, 380), pixel_size_angstrom=1.400011),
+        source_pixel_size_angstrom=1.400011,
         optics_pixel_sizes=[1.400011],
         optics_image_sizes=[380],
         grid_size=380,

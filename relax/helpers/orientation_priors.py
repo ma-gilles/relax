@@ -221,57 +221,56 @@ def relion_half_translation_prior_inputs(
     )
 
 
-def initial_direction_priors_from_snapshot(init_direction_prior, *, n_classes: int, dtype: np.dtype, log, symmetry: str = "C1", expected_order: int | None = None):
-    """Initialize per-half direction priors from a RELION snapshot.
+@dataclass(frozen=True)
+class DirectionPrior:
+    """Direction probabilities and their HEALPix sampling order."""
 
-    A restart from a RELION model carries the previous iteration's
-    ``pdf_direction`` as a non-uniform prior that RELION applies in its next
-    E-step. K-class snapshots yield one ``(n_classes, n_pixels)`` prior per
-    half, K=1 snapshots one vector per half; both keep RELION's per-half
-    models. Returns the four caller-owned lists
-    ``(global_prior, global_order, class_prior, class_order)``, each with one
-    entry per half, all ``None`` without a snapshot prior. Orders are inferred
-    from the prior length.
-    """
+    values: np.ndarray | None
+    healpix_order: int | None
 
-    global_prior_per_half = [None, None]
-    global_order_per_half = [None, None]
-    class_prior_per_half = [None, None]
-    class_order_per_half = [None, None]
+
+@dataclass
+class HalfDirectionPriors:
+    """Learned class priors and their shared fallback for one half-model."""
+
+    shared: DirectionPrior = DirectionPrior(None, None)
+    classes: DirectionPrior = DirectionPrior(None, None)
+
+
+def initial_direction_priors_from_snapshot(
+    init_direction_prior, *, n_classes: int, dtype: np.dtype, log,
+    symmetry: str = "C1", expected_order: int | None = None,
+) -> list[HalfDirectionPriors]:
+    """Load each half's model prior with its source sampling order."""
+
+    priors = [HalfDirectionPriors(), HalfDirectionPriors()]
     if init_direction_prior is None:
-        return global_prior_per_half, global_order_per_half, class_prior_per_half, class_order_per_half
+        return priors
     if n_classes > 1:
-        class_prior_per_half = normalize_class_direction_prior_per_half(init_direction_prior, n_classes, dtype=dtype)
-        for k in range(2):
-            if class_prior_per_half[k] is None:
+        values_per_half = normalize_class_direction_prior_per_half(init_direction_prior, n_classes, dtype=dtype)
+        for k, values in enumerate(values_per_half):
+            if values is None:
                 continue
-            prior_k = np.asarray(class_prior_per_half[k], dtype=dtype)
-            class_prior_per_half[k] = prior_k
-            class_order_per_half[k] = infer_direction_prior_healpix_order(prior_k[0], **({"symmetry": symmetry, "expected_order": expected_order} if symmetry != "C1" else {}))
+            values = np.asarray(values, dtype=dtype)
+            order = infer_direction_prior_healpix_order(values[0], symmetry=symmetry, expected_order=expected_order)
+            priors[k].classes = DirectionPrior(values, order)
             log.info(
                 "RELION mode: loaded init class direction priors half-%d: %d classes, %d directions",
-                k + 1,
-                prior_k.shape[0],
-                prior_k.shape[1],
+                k + 1, values.shape[0], values.shape[1],
             )
-        return global_prior_per_half, global_order_per_half, class_prior_per_half, class_order_per_half
-    global_prior_per_half = normalize_direction_prior_per_half(init_direction_prior, dtype=dtype)
-    for k in range(2):
-        if global_prior_per_half[k] is None:
+        return priors
+    values_per_half = normalize_direction_prior_per_half(init_direction_prior, dtype=dtype)
+    for k, values in enumerate(values_per_half):
+        if values is None:
             continue
-        prior_k = np.asarray(global_prior_per_half[k], dtype=dtype)
-        global_prior_per_half[k] = prior_k
-        global_order_per_half[k] = infer_direction_prior_healpix_order(prior_k, **({"symmetry": symmetry, "expected_order": expected_order} if symmetry != "C1" else {}))
+        values = np.asarray(values, dtype=dtype)
+        order = infer_direction_prior_healpix_order(values, symmetry=symmetry, expected_order=expected_order)
+        priors[k].shared = DirectionPrior(values, order)
         log.info(
             "RELION mode: loaded init direction prior half-%d: %d directions, range=[%.6f, %.6f], %d zero-probability",
-            k + 1,
-            len(prior_k),
-            prior_k.min(),
-            prior_k.max(),
-            int(np.sum(prior_k == 0)),
+            k + 1, len(values), values.min(), values.max(), int(np.sum(values == 0)),
         )
-    return global_prior_per_half, global_order_per_half, class_prior_per_half, class_order_per_half
-
+    return priors
 
 def _sealed_direction_log_prior(direction_prior, sealed_sampling_state, *, dtype: np.dtype = np.float32, symmetry: str = "C1"):
     """Expand a full direction prior onto the exact captured direction rows."""
@@ -318,10 +317,7 @@ def relion_direction_log_priors_for_half(
     use_local: bool,
     scoring_healpix_order,
     n_classes: int,
-    class_direction_prior,
-    class_direction_prior_order,
-    global_direction_prior,
-    global_direction_prior_order,
+    priors: HalfDirectionPriors,
     sealed_sampling_state,
     dtype: np.dtype,
     log,
@@ -350,40 +346,41 @@ def relion_direction_log_priors_for_half(
 
     def expand(prior):
         if sealed_sampling_state is not None:
-            return _sealed_direction_log_prior(prior, sealed_sampling_state, dtype=dtype, **({"symmetry": symmetry} if symmetry != "C1" else {}))
-        return make_relion_direction_log_prior(prior, scoring_healpix_order, dtype=dtype, **({"symmetry": symmetry} if symmetry != "C1" else {}))
+            return _sealed_direction_log_prior(prior, sealed_sampling_state, dtype=dtype, symmetry=symmetry)
+        return make_relion_direction_log_prior(prior, scoring_healpix_order, dtype=dtype, symmetry=symmetry)
 
     if n_classes > 1:
-        prior = class_direction_prior
-        prior_order = class_direction_prior_order
+        prior = priors.classes
         source = "learned per-class"
-        if (prior is None or prior_order != scoring_healpix_order) and global_direction_prior is not None:
-            shared = np.asarray(global_direction_prior, dtype=dtype)
-            prior = np.broadcast_to(shared[None, :], (n_classes, shared.size)).copy()
-            prior_order = global_direction_prior_order
+        if (prior.values is None or prior.healpix_order != scoring_healpix_order) and priors.shared.values is not None:
+            shared = np.asarray(priors.shared.values, dtype=dtype)
+            prior = DirectionPrior(
+                np.broadcast_to(shared[None, :], (n_classes, shared.size)).copy(),
+                priors.shared.healpix_order,
+            )
             source = "shared"
-        if prior is None or prior_order != scoring_healpix_order:
+        if prior.values is None or prior.healpix_order != scoring_healpix_order:
             return HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None)
-        class_log_prior = np.stack([expand(prior[class_idx]) for class_idx in range(n_classes)], axis=0)
+        class_log_prior = np.stack([expand(prior.values[class_idx]) for class_idx in range(n_classes)], axis=0)
         log.info(
             "Using %s global direction prior half-%d: %d classes, %d directions at healpix_order=%d",
             source,
             half_index + 1,
             n_classes,
-            prior.shape[1],
+            prior.values.shape[1],
             scoring_healpix_order,
         )
         return HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=class_log_prior)
 
-    if global_direction_prior is None or global_direction_prior_order != scoring_healpix_order:
+    if priors.shared.values is None or priors.shared.healpix_order != scoring_healpix_order:
         return HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None)
     log.info(
         "Using learned global direction prior half-%d: %d directions at healpix_order=%d",
         half_index + 1,
-        np.asarray(global_direction_prior).shape[0],
+        np.asarray(priors.shared.values).shape[0],
         scoring_healpix_order,
     )
-    return HalfDirectionLogPriors(rotation_log_prior=expand(global_direction_prior), class_rotation_log_prior=None)
+    return HalfDirectionLogPriors(rotation_log_prior=expand(priors.shared.values), class_rotation_log_prior=None)
 
 
 def collapse_rotation_posterior_to_direction_prior(
@@ -797,3 +794,96 @@ def relion_local_search_sigmas(sigma_rot, sigma_psi, *, use_local, healpix_order
         sigma_rot = np.sqrt(2.0 * 2.0) * step_rad
         sigma_psi = sigma_rot
     return sigma_rot, sigma_psi
+
+
+def _combined_class_direction_prior_from_halves(
+    class_rotation_posterior_per_half, n_classes: int, healpix_order: int, *, dtype: np.dtype = np.float32, symmetry: str = "C1"
+):
+    """Collapse Class3D rotation posterior sums after undoing RECOVAR's half split.
+
+    RELION Class3D has a single ``mymodel.pdf_direction[class]`` updated from
+    ``wsum_model.pdf_direction[class]`` over all particles.  RECOVAR's two
+    E-step halves are only a parallelization artifact for K>1, so combine their
+    per-class rotation posterior sums before forming the next iteration's
+    direction prior.
+    """
+
+    combined_priors = []
+    for class_idx in range(n_classes):
+        combined = None
+        for per_half in class_rotation_posterior_per_half:
+            if per_half is None:
+                continue
+            per_class = np.asarray(per_half[class_idx], dtype=np.float64)
+            combined = per_class if combined is None else combined + per_class
+        if combined is None:
+            return None
+        combined_priors.append(
+            collapse_rotation_posterior_to_direction_prior(combined, healpix_order, dtype=dtype, symmetry=symmetry)
+        )
+    return np.stack(combined_priors, axis=0)
+
+
+def learn_k1_direction_priors(
+    rotation_posterior_per_half,
+    *,
+    direction_prior_order,
+    expected_rotation_count,
+    dtype,
+    log,
+    symmetry="C1",
+) -> tuple[DirectionPrior | None, DirectionPrior | None]:
+    """Collapse each K=1 half's rotation posterior into its next direction prior; rejected halves return None."""
+
+    if not all(
+        np.asarray(rot_sum).shape[0] == expected_rotation_count
+        for rot_sum in rotation_posterior_per_half
+    ):
+        return None, None
+    learned = [None, None]
+    for k in range(2):
+        direction_prior_k = collapse_rotation_posterior_to_direction_prior(
+            np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
+            direction_prior_order,
+            dtype=dtype,
+            symmetry=symmetry,
+        )
+        try:
+            make_relion_direction_log_prior(
+                direction_prior_k,
+                direction_prior_order,
+                symmetry=symmetry,
+            )
+        except ValueError as exc:
+            log.warning(
+                "Skipping K=1 direction prior update for half-%d at healpix_order=%d: %s",
+                k + 1,
+                direction_prior_order,
+                exc,
+            )
+            continue
+        learned[k] = DirectionPrior(direction_prior_k, direction_prior_order)
+    return tuple(learned)
+
+
+def learn_class_direction_priors(
+    class_rotation_posterior_per_half,
+    *,
+    n_classes,
+    healpix_order,
+    dtype,
+    symmetry="C1",
+) -> tuple[DirectionPrior, DirectionPrior]:
+    """Combine both K-class halves into a shared prior copied to each half."""
+
+    combined_class_direction_prior = _combined_class_direction_prior_from_halves(
+        class_rotation_posterior_per_half,
+        n_classes,
+        healpix_order,
+        dtype=dtype,
+        symmetry=symmetry,
+    )
+    return tuple(
+        DirectionPrior(combined_class_direction_prior.copy(), healpix_order)
+        for _ in range(2)
+    )

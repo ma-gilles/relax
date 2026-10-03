@@ -130,6 +130,7 @@ def _positive_k_class_threshold(
         return None
     return threshold
 
+### M- IS THIS KIND OF THING NECESSARY?
 
 def _sparse_pass2_preferred_over_dense(n_classes: int, n_images: int) -> bool:
     """Return whether a large K-class job keeps the sparse pass 2 despite broad support.
@@ -325,6 +326,7 @@ def _dense_engine_kwargs_for_class(engine_kwargs: dict, class_index: int, n_clas
     kwargs = {k: v for k, v in kwargs.items() if k in _RUN_EM_ALLOWED_KWARGS}
     return kwargs
 
+### M- THIS SEEMS TO USE THE DATASET OBJECT OF RECOVAR - IS THIS OUTDATED - SHOULD WE REMOVE IT FOR BETTER EFFICIENCY/READABILITY? IT WASN'T MADE FOR THIS SO WE SHOULD THINK ABOUT JUST STRIPPING IT OUT/CLEANING IT
 
 def _dataset_image_count(experiment_dataset, fallback: int | None = None) -> int:
     if hasattr(experiment_dataset, "n_units"):
@@ -341,7 +343,8 @@ def _reject_kwargs(kwargs: dict, names: tuple[str, ...], caller: str) -> None:
     if present:
         raise ValueError(f"{caller} controls these arguments directly: {', '.join(present)}")
 
-
+## M - IS THIS ALWAYS THE CASE? IF THAT'S ON REALLY BY DEFAULT MAKE AN ISSUE TO INVESTIGATE - IT SEEMS VERY
+## PROBLEMATIC FOR CLASSIFICAITON
 def _override_class_assignments_with_coarse_winner(
     result,
     coarse_class_assignments,
@@ -383,7 +386,8 @@ def _override_class_assignments_with_coarse_winner(
         )
     return result._replace(**replace_kwargs)
 
-
+## SHOULD ALL THE NUMPY BE CHANGED TO JAX.NP ? WOULD IT BE FASTER? WHAT'S THE PT?
+## WE CAOULD USE JAX.NP IN CPU, TOO
 def _decode_dense_best_pose_details(hard_assignment, rotations: np.ndarray, translations: np.ndarray):
     """Decode dense flat pose IDs into the pose fields expected by RELION state.
 
@@ -411,7 +415,7 @@ def _decode_dense_best_pose_details(hard_assignment, rotations: np.ndarray, tran
         jnp.asarray(rot_idx, dtype=jnp.int32),
     )
 
-
+## THIS SEEMS TO INDICATE POOR PLANNING/SETTING UP IF WE HAVE TO DO THIS - REPLACE BY A NICER CLASS OR SOMETHING?
 def _infer_healpix_order_from_rotation_count(
     n_rot: int,
     symmetry_label: str = "C1",

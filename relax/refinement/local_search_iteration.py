@@ -212,7 +212,7 @@ def _run_local_search_iteration(
         # RELION local priors remain factorized in canonical direction/psi index
         # space even when the scored trial rotations have been perturbed.
         local_grid_metadata = build_local_search_grid_metadata(
-            grid.healpix_order, **({"symmetry": grid.symmetry} if grid.symmetry != "C1" else {})
+            grid.healpix_order, symmetry=grid.symmetry
         )
         metadata_build_time = time.time() - metadata_t0
 

@@ -244,7 +244,7 @@ def _dense_estep_config(
             return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
         )
         # The adaptive route rebuilds RELION's fine translations from the
-        # unperturbed host grid (``_adaptive_pass2_grids``).
+        # unperturbed host grid (``prepare_adaptive_pass2_grids``).
         if sampling_plan.coarse_base_translations is None:
             raise ValueError("the adaptive route needs the sampling plan's host-double coarse grid")
         engine_kwargs["coarse_base_translations"] = np.asarray(

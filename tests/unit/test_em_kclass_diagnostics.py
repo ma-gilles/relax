@@ -56,7 +56,7 @@ def test_k1_relion_x_half_mstep_default_disables_when_cuda_unavailable(monkeypat
     assert scoring_policy._k1_relion_x_half_mstep_enabled() is True
 
 
-def test_kclass_scatter_uses_mstep_class_mass_for_relion_priors():
+def test_kclass_result_uses_mstep_class_mass_for_relion_priors():
     """RELION Class3D occupancies come from StoreWeightedSums, not full evidence sums."""
 
     stats = [
@@ -77,24 +77,20 @@ def test_kclass_scatter_uses_mstep_class_mass_for_relion_priors():
         best_pose_rotations=np.repeat(np.eye(3, dtype=np.float64)[None], 3, axis=0),
         best_pose_translations=np.asarray([[0.1, -0.2], [0.3, -0.4], [0.5, -0.6]], dtype=np.float64),
     )
-    outputs = score_outputs.PerHalfOutputs()
-
-    score_outputs._scatter_dense_k_class_result(
+    prepared = score_outputs.class_em_to_half_result(
         result,
-        k=0,
         effective_rotations=np.repeat(np.eye(3, dtype=np.float32)[None], 3, axis=0),
         rot_pmap_for_collapse=None,
         adaptive_os_local=0,
-        outputs=outputs,
         require_best_pose_details=True,
         pose_dtype=np.float64,
     )
 
-    np.testing.assert_allclose(outputs.class_posterior[0], [1.2, 1.8])
-    np.testing.assert_allclose(outputs.class_full_posterior[0], [1.7, 1.3])
-    assert outputs.best_pose_rotations[0].dtype == np.float64
-    assert outputs.best_pose_rotation_eulers[0].dtype == np.float64
-    assert outputs.best_pose_translations[0].dtype == np.float64
+    np.testing.assert_allclose(prepared.classes.mstep_mass, [1.2, 1.8])
+    np.testing.assert_allclose(prepared.classes.evidence_mass, [1.7, 1.3])
+    assert prepared.best_pose_rotations.dtype == np.float64
+    assert prepared.best_pose_rotation_eulers.dtype == np.float64
+    assert prepared.best_pose_translations.dtype == np.float64
 
 def test_class_weight_history_snapshots_mstep_and_full_posterior():
     from relax.helpers import iteration_history
@@ -118,9 +114,10 @@ def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance()
     source = inspect.getsource(iteration_loop.refine_single_volume)
     assert "history.record_class_weights(" in source
 
-    import relax.refinement.full_refinement as run_full_refinement
+    from relax.refinement import full_refinement, result_files
 
-    save_source = inspect.getsource(run_full_refinement)
+    assert "write_refinement_archive(" in inspect.getsource(full_refinement.main)
+    save_source = inspect.getsource(result_files.write_refinement_archive)
     assert "iteration_history.add_class_history_artifacts(save_dict, result" in save_source
     artifact_source = inspect.getsource(iteration_history.add_class_history_artifacts)
     assert '"class_mstep_weight_trajectory"' in artifact_source

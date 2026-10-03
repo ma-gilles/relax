@@ -18,6 +18,10 @@ import numpy as np
 
 from relax.refinement import tomo_particles
 from relax.refinement.optics_shapes import _RowLayout
+from relax.relion.geometry import (
+    PROJECTION_PADDING_FACTOR,
+    RECONSTRUCTION_PADDING_FACTOR,
+)
 
 
 def is_relion5_2d_stack_star(particles_star) -> bool:
@@ -730,8 +734,6 @@ def score_tomo_half_in_loop(
     scale_correction_group_count,
     scale_correction_data_vs_prior,
     reconstruction_current_size,
-    outputs,
-    k: int,
     local_search=None,
     symmetry: str = "C1",
     class_log_priors=None,
@@ -742,8 +744,8 @@ def score_tomo_half_in_loop(
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
 
     Per-unit fields are the particles'. The best translations are the winning trial shifts in pixels
-    (3D); the loop adds the rounded previous offset, as RELION writes ``old + shift``. The explicit
-    best poses also go to ``outputs`` (the loop's pose update reads them there).
+    (3D); the loop adds the rounded previous offset, as RELION writes ``old + shift``. The returned
+    best poses and class summaries are recorded by the controller.
 
     A local-search iteration passes ``local_search``: a dict with the particles' previous angles
     (``previous_eulers_deg``), ``sigma_rot`` and ``sigma_psi`` and the pass-1 HEALPix order
@@ -752,15 +754,13 @@ def score_tomo_half_in_loop(
     Class3D (K>1, a global search): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
     ``class_log_priors`` are the classes' ``log pdf_class`` and ``class_rotation_log_prior`` their
     direction priors ``[K, R]`` (or None: the shared ``rotation_log_prior``), folded as the SPA K-class
-    pass folds them (``k_class._rotation_prior_with_class_log_prior``). The class outputs go to
-    ``outputs`` through the SPA K-class adapters (``_class_segmented_em_result``,
-    ``_scatter_dense_k_class_result``). ``unit_seed_classes`` are the particles' classes in RELION's
+    pass folds them (``k_class._rotation_prior_with_class_log_prior``). Class outputs use the same SPA result adaptation
+    (``_class_segmented_em_result``, ``class_em_to_half_result``). ``unit_seed_classes`` are the particles' classes in RELION's
     first iteration from one reference (:func:`score_tomo_half`). ``normalized_cc`` is the
     ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
     """
 
     from relax.dense.score_outputs import HalfScoreResult
-    from relax.dense.scoring_policy import PADDING_FACTOR, PROJECTION_PADDING_FACTOR
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
     from relax.sampling import rotation_grid_size
 
@@ -768,7 +768,7 @@ def score_tomo_half_in_loop(
         raise ValueError("a local-search iteration needs its local-search inputs, and only it")
     if not (use_adaptive or use_local) or int(sampling.oversampling_order) < 1:
         raise NotImplementedError("subtomogram particles run RELION's adaptive two-pass E-step only")
-    if PADDING_FACTOR != PROJECTION_PADDING_FACTOR:
+    if RECONSTRUCTION_PADDING_FACTOR != PROJECTION_PADDING_FACTOR:
         raise ValueError("the tomo half pass projects and backprojects with one padding factor")
     if relion_projector_half is None or relion_projector_r_max is None:
         raise ValueError("the tomo half pass needs RELION's Projector::data half map")
@@ -863,11 +863,11 @@ def score_tomo_half_in_loop(
     pass2 = result.pass2
     mstep_size = sampling.fine_size if reconstruction_current_size is None else int(reconstruction_current_size)
     mstep_accumulator_shape = relion_backprojector_volume_shape(
-        half.volume_shape, PADDING_FACTOR, current_size=mstep_size
+        half.volume_shape, RECONSTRUCTION_PADDING_FACTOR, current_size=mstep_size
     )
     if n_classes > 1:
         from relax.classification.k_class import _class_segmented_em_result
-        from relax.dense.score_outputs import _scatter_dense_k_class_result
+        from relax.dense.score_outputs import class_em_to_half_result
 
         k_class_result = _class_segmented_em_result(
             pass2,
@@ -878,43 +878,33 @@ def score_tomo_half_in_loop(
             mstep_full_half_axis=0,
             mstep_accumulator_shape=mstep_accumulator_shape,
         )
-        ha, Ft_y, Ft_ctf, em_stats, noise_stats = _scatter_dense_k_class_result(
+        score_result = class_em_to_half_result(
             k_class_result,
-            k=k,
             # The class rotation sums are already over the coarse grid.
             effective_rotations=np.zeros((int(rotation_grid_size(sampling.healpix_order, symmetry)), 0)),
             rot_pmap_for_collapse=None,
             adaptive_os_local=int(sampling.oversampling_order),
-            outputs=outputs,
             require_best_pose_details=True,
             pose_dtype=np.float32,
         )
-        return HalfScoreResult(
-            ha=np.asarray(ha, dtype=np.int32),
-            Ft_y=Ft_y,
-            Ft_ctf=Ft_ctf,
-            em_stats=em_stats,
-            noise_stats=noise_stats,
-            best_pose_rotations=outputs.best_pose_rotations[k],
-            best_pose_rotation_eulers=outputs.best_pose_rotation_eulers[k],
-            best_pose_translations=outputs.best_pose_translations[k],
-            coarse_ha=result.coarse_hard_assignment,
-            significant_counts=result.significant_counts,
-            mstep_full_half_axis=0,
-            mstep_accumulator_shape=mstep_accumulator_shape,
-        )
-    outputs.best_pose_rotations[k] = np.asarray(pass2.best_rotations, dtype=np.float32)
-    outputs.best_pose_rotation_eulers[k] = np.asarray(pass2.source_eulers, dtype=np.float64)
-    outputs.best_pose_translations[k] = np.asarray(pass2.best_translations, dtype=np.float32)
+        score_result.ha = np.asarray(score_result.ha, dtype=np.int32)
+        score_result.coarse_ha = result.coarse_hard_assignment
+        score_result.significant_counts = result.significant_counts
+        score_result.mstep_full_half_axis = 0
+        score_result.mstep_accumulator_shape = mstep_accumulator_shape
+        return score_result
+    best_rotations = np.asarray(pass2.best_rotations, dtype=np.float32)
+    best_eulers = np.asarray(pass2.source_eulers, dtype=np.float64)
+    best_translations = np.asarray(pass2.best_translations, dtype=np.float32)
     return HalfScoreResult(
         ha=np.asarray(pass2.hard_assignment, dtype=np.int32),
         Ft_y=pass2.Ft_y,
         Ft_ctf=pass2.Ft_ctf,
         em_stats=pass2.relion_stats,
         noise_stats=pass2.noise_stats,
-        best_pose_rotations=outputs.best_pose_rotations[k],
-        best_pose_rotation_eulers=outputs.best_pose_rotation_eulers[k],
-        best_pose_translations=outputs.best_pose_translations[k],
+        best_pose_rotations=best_rotations,
+        best_pose_rotation_eulers=best_eulers,
+        best_pose_translations=best_translations,
         coarse_ha=result.coarse_hard_assignment,
         significant_counts=result.significant_counts,
         mstep_full_half_axis=0,

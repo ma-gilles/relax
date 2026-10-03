@@ -5,7 +5,8 @@ translations in class pixels, remapped Fourier sizes, scaled projection) and tha
 per-image outputs return to the half's order by index while sums add.
 """
 
-from dataclasses import dataclass
+import dataclasses
+import weakref
 from types import SimpleNamespace
 
 import numpy as np
@@ -13,9 +14,10 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
-from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
+from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
 from relax.helpers.types import RelionStats, make_noise_stats
 from relax.refinement import half_scoring, optics_shapes
+from relax.refinement.half_inputs import HalfSet
 
 REF_BOX, REF_PIX = 32, 4.0
 
@@ -128,37 +130,130 @@ def _fake_result(n, images, value, groups=2, box=32):
     )
 
 
-@pytest.mark.unit
-def test_score_half_by_shape_places_images_and_adds_sums():
-    half = _half()
-    seen = []
 
-    def fake_score(**kwargs):
-        seen.append(kwargs)
-        dataset = kwargs["experiment_dataset"]
-        # Each class reports its images by the image corrections it was given.
-        images = np.asarray(kwargs["image_corrections_k"]).astype(int)
-        return _fake_result(images.size, images, 1.0, box=dataset.image_shape[0])
 
-    outputs = PerHalfOutputs()
-    merged = optics_shapes.score_half_by_shape(
-        fake_score,
-        dict(
-            experiment_dataset=half,
-            k=0,
-            outputs=outputs,
-            image_corrections_k=np.arange(5.0),
-            optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
-            noise_variance_k=None,
-            noise_radial_k=np.ones((2, 17)) * REF_BOX**4,
+def _dense_owners(half, optics, *, class_batch_overrides=None):
+    group_ids = np.empty(half.n_units, dtype=np.int32)
+    for group, shape_class in enumerate(half.classes):
+        group_ids[shape_class.image_indices] = group
+    return (
+        half_scoring.HalfScoringData(
+            particles=HalfSet(
+                index=0,
+                dataset=half,
+                optics_group_ids=group_ids,
+                image_corrections=np.arange(half.n_units, dtype=float),
+                scale_corrections=np.ones(half.n_units),
+            ),
+            reference=np.zeros(4),
+            mean_variance=np.ones(4),
+            noise_variance=None,
+        ),
+        half_scoring.DenseSamplingSpec(
+            effective_rotations=np.eye(3)[None],
+            current_translations=np.zeros((1, 2)),
+            base_translations=np.zeros((1, 2)),
+            current_healpix_order=0,
+            oversampling_order=1,
+            translation_step=1.0,
+            random_perturbation=0.0,
             cs_for_engine=None,
         ),
+        half_scoring.DensePriorSpec(
+            rotation_log_prior_k=None,
+            class_rotation_log_prior_k=None,
+            translation_log_prior=None,
+            translation_search_base=np.zeros((half.n_units, 2)),
+            trans_prior_center_for_engine=np.zeros((half.n_units, 2)),
+            class_log_priors=None,
+        ),
+        half_scoring.DenseBatchPolicy(
+            image_batch_size=1,
+            safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
+            max_significants=-1,
+            class_batch_overrides=class_batch_overrides,
+        ),
+        half_scoring.DenseVariantPolicy(
+            firstiter_score_mode_this_iter="gaussian",
+            firstiter_winner_take_all_this_iter=False,
+            k_class_enabled=False,
+            relion_firstiter_cc_this_iter=False,
+        ),
+        half_scoring.DenseExecutionPolicy(
+            disc_type="linear_interp",
+            disable_adjoint_y=False,
+            disable_adjoint_ctf=False,
+        ),
+        optics,
     )
-    assert [getattr(kw["experiment_dataset"], "_dataset", kw["experiment_dataset"]) for kw in seen] == [
-        c.dataset for c in half.classes
+
+
+@pytest.mark.unit
+def test_shape_scoring_releases_unused_class_summaries_before_the_next_shape(monkeypatch):
+    half = _half()
+    summaries = []
+
+    def fake_score(half, *owners):
+        assert all(reference() is None for reference in summaries)
+        rows = np.asarray(half.particles.image_corrections).astype(int)
+        result = _fake_result(rows.size, rows, 1.0, box=half.particles.dataset.image_shape[0])
+        result.classes = ClassScoreSummary(
+            assignments=np.zeros(rows.size, dtype=np.int32),
+            mstep_mass=np.ones(2), evidence_mass=np.ones(2),
+            rotation_mass=np.ones((2, 3)), noise_stats=object(),
+        )
+        summaries.append(weakref.ref(result.classes))
+        return result
+
+    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    owners = _dense_owners(
+        half, optics_shapes.OpticsSpec(noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
+    )
+    merged = half_scoring._score_half_dense(*owners)
+
+    assert len(summaries) == 2
+    assert all(reference() is None for reference in summaries)
+    assert merged.classes is None
+
+
+@pytest.mark.unit
+def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
+    half = _half()
+    outputs = PerHalfOutputs()
+    seen = []
+    optics = optics_shapes.prepare_optics(
+        half, noise_radial=np.ones((2, 17)) * REF_BOX**4, previous_translations=np.full((5, 2), 1.4),
+        sigma_offset_angstrom=10.0, base_translations=np.zeros((1, 2)), current_translations=np.zeros((1, 2)),
+        with_log_prior=True, zero_cold_center=False,
+    )
+
+    def fake_score(half, sampling, priors, batching, variant, execution, optics):
+        seen.append((half, sampling, priors, batching, variant, execution, optics))
+        images = np.asarray(half.particles.image_corrections).astype(int)
+        return _fake_result(
+            images.size,
+            images,
+            1.0,
+            box=half.particles.dataset.image_shape[0],
+        )
+
+    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
+    owners = _dense_owners(half, optics)
+
+    merged = half_scoring._score_half_dense(*owners)
+    outputs.update_from(0, merged)
+
+    assert [getattr(item[0].particles.dataset, "_dataset", item[0].particles.dataset) for item in seen] == [
+        shape_class.dataset for shape_class in half.classes
     ]
-    assert seen[1]["noise_variance_k"].shape == (2, 28 * 28)
+    assert seen[1][0].noise_variance.shape == (2, 28 * 28)
+    for owner, translations in zip(seen, optics.class_translations, strict=True):
+        assert owner[2].translation_search_base is translations.search_base
+        assert owner[2].trans_prior_center_for_engine is translations.engine_prior_center
+        assert owner[2].translation_log_prior is translations.log_prior
+        assert owner[6].class_translations is None
     assert_matches(merged.ha, np.arange(5))
+    assert outputs.best_pose_translations[0] is merged.best_pose_translations
     assert_matches(merged.em_stats.log_evidence_per_image, np.arange(5.0))
     # Norm residuals are power sums: the 28-px class's go to the reference box x (32/28)^4.
     expected_norm = np.arange(5.0) * 10
@@ -202,79 +297,36 @@ def _write_fake_class_outputs(outputs, k, images, box):
 @pytest.mark.unit
 @pytest.mark.parametrize("k_class_enabled", [False, True])
 def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch, k_class_enabled):
-    @dataclass(frozen=True)
-    class State:
-        adaptive_oversampling: int
-        translation_step: float
-
     half = _half()
     outputs = PerHalfOutputs()
     seen = []
 
     def fake_score(half, sampling, priors, batching, variant, execution, optics):
         seen.append((half, sampling, priors, batching, variant, execution, optics))
-        images = np.asarray(half.image_corrections_k).astype(int)
+        images = np.asarray(half.particles.image_corrections).astype(int)
+        box = half.particles.dataset.image_shape[0]
+        result = _fake_result(images.size, images, 1.0, box=box)
         if variant.k_class_enabled:
-            _write_fake_class_outputs(half.outputs, half.k, images, half.experiment_dataset.image_shape[0])
-        return _fake_result(
-            images.size,
-            images,
-            1.0,
-            box=half.experiment_dataset.image_shape[0],
-        )
+            class_outputs = PerHalfOutputs()
+            _write_fake_class_outputs(class_outputs, 0, images, box)
+            result.classes = ClassScoreSummary(
+                assignments=class_outputs.class_assignments[0],
+                mstep_mass=class_outputs.class_posterior[0],
+                evidence_mass=class_outputs.class_full_posterior[0],
+                rotation_mass=class_outputs.class_rotation_posterior[0],
+                noise_stats=class_outputs.noise_stats_per_class[0],
+            )
+            result.best_pose_rotations = class_outputs.best_pose_rotations[0]
+            result.best_pose_rotation_eulers = class_outputs.best_pose_rotation_eulers[0]
+            result.best_pose_translations = class_outputs.best_pose_translations[0]
+        return result
 
     monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", fake_score)
-    owners = (
-        half_scoring.DenseHalfData(
-            k=0,
-            experiment_dataset=half,
-            means_k=np.zeros(4),
-            mean_variance=np.ones(4),
-            noise_variance_k=None,
-            image_corrections_k=np.arange(5.0),
-            scale_corrections_k=np.ones(5),
-            outputs=outputs,
-            optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
-        ),
-        half_scoring.DenseSamplingSpec(
-            effective_rotations=np.eye(3)[None],
-            current_translations=np.zeros((1, 2)),
-            base_translations=np.zeros((1, 2)),
-            current_healpix_order=0,
-            state=State(adaptive_oversampling=1, translation_step=1.0),
-            random_perturbation=0.0,
-            disc_type="linear_interp",
-            cs_for_engine=None,
-        ),
-        half_scoring.DensePriorSpec(
-            rotation_log_prior_k=None,
-            class_rotation_log_prior_k=None,
-            translation_log_prior=None,
-            translation_search_base=np.zeros((5, 2)),
-            trans_prior_center_for_engine=np.zeros((5, 2)),
-            class_log_priors=None,
-        ),
-        half_scoring.DenseBatchPolicy(
-            image_batch_size=1,
-            safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
-            max_significants=-1,
-        ),
-        half_scoring.DenseVariantPolicy(
-            firstiter_score_mode_this_iter="gaussian",
-            firstiter_winner_take_all_this_iter=False,
-            k_class_enabled=k_class_enabled,
-            relion_firstiter_cc_this_iter=False,
-        ),
-        half_scoring.DenseExecutionPolicy(
-            disable_adjoint_y=False,
-            disable_adjoint_ctf=False,
-        ),
-        half_scoring.DenseOpticsSpec(
-            noise_radial_k=np.ones((2, 17)) * REF_BOX**4,
-        ),
-    )
+    owners = list(_dense_owners(half, optics_shapes.OpticsSpec(noise_radial_k=np.ones((2, 17)) * REF_BOX**4)))
+    owners[4] = dataclasses.replace(owners[4], k_class_enabled=k_class_enabled)
 
     merged = half_scoring._score_half_dense(*owners)
+    outputs.update_from(0, merged)
 
     if k_class_enabled:
         # Class assignments return to the half's image order; the class sums of both shape
@@ -299,10 +351,10 @@ def test_dense_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch, k
     else:
         assert outputs.class_assignments[0] is None
 
-    assert [getattr(item[0].experiment_dataset, "_dataset", item[0].experiment_dataset) for item in seen] == [
+    assert [getattr(item[0].particles.dataset, "_dataset", item[0].particles.dataset) for item in seen] == [
         shape_class.dataset for shape_class in half.classes
     ]
-    assert seen[1][0].noise_variance_k.shape == (2, 28 * 28)
+    assert seen[1][0].noise_variance.shape == (2, 28 * 28)
     assert_matches(merged.ha, np.arange(5))
     if not k_class_enabled:
         assert outputs.best_pose_translations[0] is merged.best_pose_translations
@@ -313,15 +365,20 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
     half = _half()
     outputs = PerHalfOutputs()
     seen = []
+    optics = optics_shapes.prepare_optics(
+        half, noise_radial=np.ones((2, 17)) * REF_BOX**4, previous_translations=np.full((5, 2), 1.4),
+        sigma_offset_angstrom=10.0, base_translations=np.zeros((1, 2)), current_translations=np.zeros((1, 2)),
+        with_log_prior=False, zero_cold_center=False,
+    )
 
     def fake_score(half, sampling, priors, batching, execution, diagnostics, optics):
         seen.append((half, sampling, priors, batching, execution, diagnostics, optics))
-        images = np.asarray(half.image_corrections_k).astype(int)
+        images = np.asarray(half.particles.image_corrections).astype(int)
         return _fake_result(
             images.size,
             images,
             1.0,
-            box=half.experiment_dataset.image_shape[0],
+            box=half.particles.dataset.image_shape[0],
         )
 
     monkeypatch.setattr(half_scoring, "_score_half_local_one_shape", fake_score)
@@ -333,7 +390,6 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         previous_best_rotation_eulers_k=np.zeros((5, 3)),
         image_corrections_k=np.arange(5.0),
         scale_corrections_k=np.ones(5),
-        outputs=outputs,
         optics_group_ids_k=np.array([0, 1, 1, 0, 0]),
         local_search_rotations=np.eye(3)[None],
         local_search_order=0,
@@ -363,15 +419,22 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         diagnostic_score_only=False,
         local_profile_history=[],
         noise_radial_k=np.ones((2, 17)) * REF_BOX**4,
+        class_translations=optics.class_translations,
     )
 
     merged = half_scoring._score_half_local(*owners)
+    outputs.update_from(0, merged)
 
     assert [
-        getattr(item[0].experiment_dataset, "_dataset", item[0].experiment_dataset)
+        getattr(item[0].particles.dataset, "_dataset", item[0].particles.dataset)
         for item in seen
     ] == [shape_class.dataset for shape_class in half.classes]
-    assert seen[1][0].noise_variance_k.shape == (2, 28 * 28)
+    assert seen[1][0].noise_variance.shape == (2, 28 * 28)
+    for owner, translations in zip(seen, optics.class_translations, strict=True):
+        assert owner[2].translation_search_base is translations.search_base
+        assert owner[2].trans_prior_center is translations.local_prior_center
+        assert owner[2].trans_prior_center_for_engine is translations.engine_prior_center
+        assert owner[6].class_translations is None
     assert_matches(merged.ha, np.arange(5))
     assert outputs.best_pose_translations[0] is merged.best_pose_translations
 
@@ -399,9 +462,9 @@ def test_class_coarse_size_is_relions_formula_at_the_class_grid():
 
 
 @pytest.mark.unit
-def test_adaptive_batches_are_planned_per_class_box():
+def test_adaptive_batches_are_planned_per_class_box(monkeypatch):
     from relax.helpers.batch_planning import _AdaptiveDenseBatchSizes
-    from relax.refinement import iteration_loop
+    from relax.refinement import expectation_batches
 
     ds_a = SimpleNamespace(image_shape=(32, 32), volume_shape=(32,) * 3, voxel_size=4.0)
     ds_b = SimpleNamespace(image_shape=(40, 40), volume_shape=(40,) * 3, voxel_size=4.0)  # larger box
@@ -417,7 +480,7 @@ def test_adaptive_batches_are_planned_per_class_box():
         return _AdaptiveDenseBatchSizes(1000 // n, 2000 // n, 3000 // n, 4000 // n)
 
     sizing = (34.5, 100.0)
-    overrides = iteration_loop._class_adaptive_batch_overrides(
+    overrides = expectation_batches._class_adaptive_batch_overrides(
         half, plan=plan, cs_for_engine=20, coarse_cs=12, coarse_sizing=sizing
     )
     expected_sizes = [optics_shapes.class_adaptive_sizes(c, 20, 12, sizing) for c in classes]
@@ -429,20 +492,21 @@ def test_adaptive_batches_are_planned_per_class_box():
         "significance_image_batch_size_override": 75,
         "significance_rotation_block_size_override": 100,
     }
-    assert iteration_loop._largest_image_size(half) == 40
+    assert expectation_batches._largest_image_size(half) == 40
 
     # Each class's call receives its own plan.
     received = []
-    optics_shapes.score_half_by_shape(
-        lambda **kw: received.append(kw["k_class_image_batch_size_override"])
-        or _fake_result(len(kw["image_corrections_k"]), np.asarray(kw["image_corrections_k"]).astype(int), 1.0,
-                        box=kw["experiment_dataset"].image_shape[0]),
-        dict(
-            experiment_dataset=half, k=0, outputs=PerHalfOutputs(), image_corrections_k=np.arange(3.0),
-            optics_group_ids_k=np.array([0, 1, 0]), noise_variance_k=None,
-            noise_radial_k=np.ones((2, 17)) * REF_BOX**4, cs_for_engine=None, class_batch_overrides=overrides,
-        ),
+    def score(half, sampling, priors, batching, variant, execution, optics):
+        received.append(batching.k_class_image_batch_size_override)
+        images = np.asarray(half.particles.image_corrections).astype(int)
+        return _fake_result(images.size, images, 1.0, box=half.particles.dataset.image_shape[0])
+
+    monkeypatch.setattr(half_scoring, "_score_half_dense_one_shape", score)
+    owners = _dense_owners(
+        half, optics_shapes.OpticsSpec(noise_radial_k=np.ones((2, 17)) * REF_BOX**4),
+        class_batch_overrides=overrides,
     )
+    half_scoring._score_half_dense(*owners)
     assert received == [1000 // 32, 25]
 
 
@@ -459,41 +523,77 @@ def test_full_box_reference_size_is_explicit_for_a_class_on_another_grid():
 def test_class_pre_shifts_are_rounded_in_the_class_pixels():
     # RELION rounds a particle's stored offset in its own image pixels (ml_optimiser.cpp:6085),
     # so a class's pre-shift is round(offset * factor), not round(offset) * factor.
-    from relax.refinement import iteration_loop
-
     half = _half()
     previous = np.array([[1.4, -2.6], [2.5, 1.1], [-0.6, 3.3], [0.2, 0.2], [4.4, -4.4]])
     grid = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-    out = iteration_loop._class_translation_kwargs(
-        half, previous, sigma_offset_angstrom=10.0, base_translations=grid, current_translations=grid,
+    out = optics_shapes.prepare_optics(
+        half, noise_radial=np.ones((2, 17)), previous_translations=previous,
+        sigma_offset_angstrom=10.0, base_translations=grid, current_translations=grid,
         with_log_prior=True, zero_cold_center=True,
-    )["class_translation_overrides"]
+    ).class_translations
     for shape_class, values in zip(half.classes, out):
         in_class = previous[shape_class.image_indices] * shape_class.translation_factor
         expected = np.sign(in_class) * np.floor(np.abs(in_class) + 0.5)
-        assert_matches(values["translation_search_base"], expected.astype(np.float32))
-        assert values["translation_log_prior"].shape == (shape_class.image_indices.size, 3)
-    assert iteration_loop._class_translation_kwargs(
-        object(), previous, sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
+        assert_matches(values.search_base, expected.astype(np.float32))
+        assert values.log_prior.shape == (shape_class.image_indices.size, 3)
+    assert optics_shapes.prepare_optics(
+        object(), noise_radial=None, previous_translations=previous,
+        sigma_offset_angstrom=1.0, base_translations=grid, current_translations=grid,
         with_log_prior=False, zero_cold_center=False,
-    ) == {}
+    ) == optics_shapes.OpticsSpec()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+@pytest.mark.parametrize("with_log_prior,zero_cold_center", [(False, False), (True, False), (True, True)])
+def test_prepared_optics_preserves_cold_start_prior_policy(dtype, with_log_prior, zero_cold_center):
+    half = _half()
+    grid = np.array([[0.0, 0.0], [1.0, -1.0], [2.0, 0.0]], dtype=dtype)
+    noise = np.ones((2, 17), dtype=np.float64)
+    prepared = optics_shapes.prepare_optics(
+        half, noise_radial=noise, previous_translations=None, sigma_offset_angstrom=10.0,
+        base_translations=grid, current_translations=grid, with_log_prior=with_log_prior,
+        zero_cold_center=zero_cold_center, coarse_step_deg=34.5, particle_diameter_ang=100.0, dtype=dtype,
+    )
+    assert prepared.noise_radial_k is noise
+    assert prepared.coarse_sizing == (34.5, 100.0)
+    for shape_class, translations in zip(half.classes, prepared.class_translations, strict=True):
+        assert translations.search_base is translations.local_prior_center is None
+        assert translations.engine_prior_center.dtype == dtype
+        assert_matches(translations.engine_prior_center, np.zeros(2, dtype=dtype))
+        if not with_log_prior:
+            assert translations.log_prior is None
+        else:
+            assert translations.log_prior.dtype == dtype
+            expected = np.zeros(3, dtype=dtype)
+            if zero_cold_center:
+                # pdf_offset evaluated in class pixels, with the existing angstrom scale.
+                class_grid = grid * shape_class.translation_factor
+                expected = -0.5 * np.sum(class_grid**2, axis=1) * shape_class.pixel_size**4 / 100.0
+            assert_matches(translations.log_prior, expected)
+
+
+@pytest.mark.unit
+def test_single_shape_preparation_does_not_materialize_operands():
+    class UnreadableArray:
+        def __array__(self, *args, **kwargs):
+            raise AssertionError("Single-shape optics preparation must not read arrays")
+
+    array = UnreadableArray()
+    assert optics_shapes.prepare_optics(
+        object(), noise_radial=array, previous_translations=array, sigma_offset_angstrom=1.0,
+        base_translations=array, current_translations=array, with_log_prior=True, zero_cold_center=True,
+    ) == optics_shapes.OpticsSpec()
 
 
 @pytest.mark.unit
 def test_class_translation_step_is_in_class_pixels():
-    # The adaptive pass 2 builds its oversampled translations from state.translation_step; a class
+    # The adaptive pass 2 builds its oversampled translations from translation_step; a class
     # on another pixel size samples the same Angstrom offsets, so its step is in its pixels.
-    import dataclasses
-
-    @dataclasses.dataclass
-    class State:
-        translation_step: float
-        adaptive_oversampling: int
-
     half = _half()
-    kwargs = dict(experiment_dataset=half, state=State(2.0, 1))
-    assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["state"].translation_step == pytest.approx(2.0 * 0.75)
-    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["state"] is kwargs["state"]
+    kwargs = dict(experiment_dataset=half, translation_step=2.0)
+    assert optics_shapes.class_kwargs(kwargs, half.classes[1], 5)["translation_step"] == pytest.approx(2.0 * 0.75)
+    assert optics_shapes.class_kwargs(kwargs, half.classes[0], 5)["translation_step"] == kwargs["translation_step"]
 
 
 @pytest.mark.unit

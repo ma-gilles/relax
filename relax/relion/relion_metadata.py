@@ -395,51 +395,6 @@ def _parse_relion_tau2_fudge(text):
     return val
 
 
-
-def _load_relion_it000_model_stars(relion_init_dir, n_classes):
-    """Load RELION iter-0 model STARs for strict cold-start replay.
-
-    Class3D writes a shared ``run_it000_model.star``. AutoRefine writes
-    half-specific ``run_it000_half{1,2}_model.star`` files instead; preserve
-    the shared path when present, and fall back to the half pair for K=1.
-    """
-    import starfile as _starfile
-
-    relion_init_dir = Path(relion_init_dir)
-    shared_model_path = relion_init_dir / "run_it000_model.star"
-    if shared_model_path.exists():
-        model = _starfile.read(str(shared_model_path))
-        return {
-            "models": [model],
-            "model_paths": [shared_model_path],
-            "reference_model": model,
-            "reference_model_path": shared_model_path,
-            "source": "shared",
-        }
-
-    half_model_paths = [
-        relion_init_dir / "run_it000_half1_model.star",
-        relion_init_dir / "run_it000_half2_model.star",
-    ]
-    if int(n_classes) == 1 and all(path.exists() for path in half_model_paths):
-        models = [_starfile.read(str(path)) for path in half_model_paths]
-        return {
-            "models": models,
-            "model_paths": half_model_paths,
-            "reference_model": models[0],
-            "reference_model_path": half_model_paths[0],
-            "source": "half-specific",
-        }
-
-    expected = [shared_model_path, *half_model_paths]
-    missing = [str(path) for path in expected if not path.exists()]
-    raise SystemExit(
-        "--relion_init_dir given but no compatible iter-0 model STAR was found; "
-        f"missing candidates: {', '.join(missing)}",
-    )
-
-
-
 def _relion_image_identity(name, *, label: str) -> tuple[int, str]:
     """Return the exact ``(<1-based index>, <stack>)`` RELION image identity."""
 

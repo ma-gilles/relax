@@ -22,6 +22,7 @@ See docs/math/plan_relion_parity.md, Phase 5.
 """
 
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -121,7 +122,7 @@ def build_adaptive_pass2_grids(
         random_perturbation=float(random_perturbation),
         return_mstep_rotations=return_mstep_rotations,
         dtype=coarse_rotations.dtype,
-        **({} if symmetry == "C1" else {"symmetry": symmetry}),
+        symmetry=symmetry,
     )
     fine_rotations, rot_parent_map = fine_rotation_outputs[:2]
     fine_mstep_rotations = fine_rotation_outputs[2] if return_mstep_rotations else None
@@ -631,3 +632,79 @@ def find_significant_rotations(
 # ---------------------------------------------------------------------------
 # Pass 2: sparse oversampled evaluation
 # ---------------------------------------------------------------------------
+
+
+class AdaptivePass2Grids(NamedTuple):
+    """Coarse/fine trial grids of one adaptive-oversampling expectation."""
+
+    coarse_rotations: np.ndarray
+    coarse_translations: np.ndarray
+    fine_rotations: np.ndarray
+    fine_translations: np.ndarray
+    rotation_parent_map: np.ndarray
+    translation_parent_map: np.ndarray
+    fine_mstep_rotations: np.ndarray
+    coarse_translation_phase_source: np.ndarray
+    n_fine_translations: int
+
+
+
+def prepare_adaptive_pass2_grids(
+    effective_rotations,
+    current_translations,
+    base_translations,
+    *,
+    healpix_order,
+    adaptive_oversampling,
+    translation_step,
+    random_perturbation,
+    coarse_rotation_ids,
+    symmetry: str = "C1",
+) -> AdaptivePass2Grids:
+    """Materialize RELION's two-pass trial grids for the dense adaptive engine.
+
+    Pass 1 scores the perturbed coarse grid; pass 2 scores the oversampled
+    children of the significant coarse candidates with parent maps back to
+    the coarse grid, and the exact M-step rotations of the fine grid. The
+    coarse translation phases come from the host-double base grid under the
+    same SamplingPerturbation. The K=1 and K-class dense routes share this rule.
+    """
+
+    from relax.sampling import apply_relion_translation_perturbation
+
+    (
+        coarse_rot,
+        coarse_trans,
+        fine_rot,
+        fine_trans,
+        rot_pmap,
+        trans_pmap,
+        fine_mstep_rot,
+    ) = build_adaptive_pass2_grids(
+        effective_rotations,
+        current_translations,
+        base_translations,
+        int(healpix_order),
+        adaptive_oversampling,
+        float(translation_step),
+        random_perturbation,
+        return_mstep_rotations=True,
+        coarse_rotation_ids=coarse_rotation_ids,
+        symmetry=symmetry,
+    )
+    coarse_translation_phase_source = apply_relion_translation_perturbation(
+        np.asarray(base_translations, dtype=np.float64),
+        float(random_perturbation),
+        float(translation_step),
+    )
+    return AdaptivePass2Grids(
+        coarse_rot,
+        coarse_trans,
+        fine_rot,
+        fine_trans,
+        rot_pmap,
+        trans_pmap,
+        fine_mstep_rot,
+        coarse_translation_phase_source,
+        int(fine_trans.shape[0]),
+    )

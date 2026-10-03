@@ -7,6 +7,8 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.diagnostics import reconstruction as dumps
+from relax.refinement.iteration_planning import ClassImageSize
+from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
 
 pytestmark = pytest.mark.unit
 
@@ -70,7 +72,18 @@ def invoke(writer, values):
 
 
 def test_current_size_schema_and_casts(capture_inputs):
-    invoke(dumps.write_kclass_current_size, capture_inputs)
+    values = capture_inputs
+    plan = ClassImageSize(
+        size=values["computed_cs"], resolution_shell=values["res_shell"], raw_size=values["raw_cs"],
+        resolution_shells_per_class=np.asarray(values["per_class_res_shell"]),
+        raw_data_vs_prior=values["data_vs_prior_prev_raw"], data_vs_prior=values["data_vs_prior_prev"],
+    )
+    dumps.write_class_image_size(
+        plan, output_dir=values["output_dir"], previous_size=values["prev_cs"],
+        grid_size=values["grid_size"], iteration=values["iteration"],
+        has_high_fsc_at_limit=values["relion_has_high_fsc_at_limit"],
+        incr_size=values["relion_incr_size"], state=values["state"],
+    )
     path = capture_inputs["output_dir"] / "recovar_kclass_current_size_it003.npz"
     with np.load(path) as saved:
         assert set(saved.files) == {
@@ -103,7 +116,40 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
     monkeypatch.setenv("RELAX_KCLASS_DUMP_PRESERVE_DTYPE", token)
     if missing_half:
         capture_inputs["Ft_ctf_1"] = None
-    invoke(dumps.write_kclass_mstep, capture_inputs)
+    values = capture_inputs
+    prior = ClassPriorEstimate(
+        variance=None, shells=values["tau2_shells_recovar_frame_k"],
+        relion_shells=values["tau2_shells_relion_frame_k"],
+        data_vs_prior=values["data_vs_prior_k"], details={},
+        weight_shells=values["shell_stats_k"],
+    )
+    settings = ReconstructionSettings(
+        grid_size=values["grid_size"], voxel_size=values["voxel_size"],
+        volume_shape=(16, 16, 16), padding_factor=values["PADDING_FACTOR"],
+        projection_padding_factor=2, minres_map=5, width_mask_edge=5, fmask_edge=2,
+        tau2_fudge=values["tau2_fudge"], particle_diameter_angstrom=None,
+        first_iteration_lowpass_angstrom=None,
+    )
+
+    def floor_statistics(denominator, shape, **kwargs):
+        assert_matches(denominator, values["Ft_ctf_combined"][values["class_idx"]])
+        assert shape == settings.volume_shape
+        assert kwargs == {
+            "padding_factor": 2, "r_max": 4, "shell_rounding": "floor",
+            "full_half_axis": 0, "accumulator_volume_shape": (4, 4, 3),
+        }
+        return values["reconstruct_floor_stats_k"]
+
+    monkeypatch.setattr(dumps.regularization_relion, "_compute_relion_weight_shell_stats", floor_statistics)
+    dumps.write_class_mstep(
+        prior, numerators=values["Ft_y_combined"], denominators=values["Ft_ctf_combined"],
+        half_denominators=(values["Ft_ctf_0"], values["Ft_ctf_1"]),
+        references=values["previous_means"], settings=settings, output_dir=values["output_dir"],
+        class_index=values["class_idx"], current_size=values["current_size"], iteration=values["iteration"],
+        source=values["kclass_tau2_source"], accumulator_shape=values["mstep_accumulator_shape"],
+        full_half_axis=values["mstep_full_half_axis"],
+        frame_scale=values["kclass_tau2_frame_scale"],
+    )
     with np.load(capture_inputs["output_dir"] / "recovar_kclass_mstep_it003_c02.npz") as saved:
         expected_dtype = np.complex128 if preserve else np.complex64
         assert saved["Ft_y_combined"].dtype == expected_dtype
@@ -115,6 +161,8 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
             assert saved["Ft_ctf_1"].dtype == np.complex64
         assert saved["dump_preserve_dtype"].item() == preserve
         assert saved["tau2_shells"].dtype == np.float64
+        assert saved["tau2_fudge"].dtype == np.float64
+        assert_matches(saved["tau2_fudge"], values["tau2_fudge"])
 
 
 @pytest.mark.parametrize("include_fsc", [False, True])

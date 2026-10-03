@@ -102,19 +102,19 @@ class RefinementHistory:
     # -- per-iteration E-step / M-step outputs --------------------------
 
     def record_direction_prior(
-        self, class_direction_prior_per_half, global_direction_prior_per_half, *, k_class_enabled: bool
+        self, direction_priors, *, k_class_enabled: bool
     ) -> None:
         """Record float64 copies of each half's learned direction prior.
 
         K-class runs record class 0 of each half's ``(n_classes, n_pixels)``
         prior; K=1 records the half's global prior. Missing priors stay ``None``.
         """
-        source = class_direction_prior_per_half if k_class_enabled else global_direction_prior_per_half
+        source = [p.classes if k_class_enabled else p.shared for p in direction_priors]
         self.direction_prior_trajectory_per_half.append(
             [
                 None
-                if prior_k is None
-                else np.asarray(prior_k[0] if k_class_enabled else prior_k, dtype=np.float64).copy()
+                if prior_k.values is None
+                else np.asarray(prior_k.values[0] if k_class_enabled else prior_k.values, dtype=np.float64).copy()
                 for prior_k in source
             ]
         )

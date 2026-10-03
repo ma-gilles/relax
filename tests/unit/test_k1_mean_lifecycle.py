@@ -1,6 +1,7 @@
 """Focused lifetime guards for K=1 references between EM iterations."""
 
 import inspect
+import weakref
 from pathlib import Path
 
 import numpy as np
@@ -34,18 +35,20 @@ def test_k1_mean_release_precedes_tau_and_reconstruction():
     source = inspect.getsource(iteration_loop.refine_single_volume)
     initial_alias_release = source.index("del init_volume")
     release = source.index(
-        "previous_means = _snapshot_and_release_previous_k1_means(means)"
+        "previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)"
     )
     tau_update = source.index(
-        "regularization_relion.compute_relion_tau2_from_weights(",
+        "estimate_split_half_prior(",
         release,
     )
     reconstruction = source.index(
-        "reconstruct_k1_means(",
+        "reconstruct_regularized_means(",
         tau_update,
     )
 
     assert initial_alias_release < release < tau_update < reconstruction
+    operation = inspect.getsource(mean_helpers.estimate_split_half_prior)
+    assert operation.index("compute_relion_fsc_from_backprojector(") < operation.index("compute_relion_tau2_from_weights(")
 
 
 def test_production_runner_leaves_cold_start_host_owned_until_normalization():
@@ -70,3 +73,17 @@ def test_normalize_initial_means_reuses_immutable_shared_reference():
     got[0] = got[0].at[0].set(jnp.complex64(-1.0))
     assert got[0] is not got[1]
     assert_matches(np.asarray(got[1]), np.asarray(shared))
+
+
+@pytest.mark.parametrize("complex_dtype", [np.complex64, np.complex128], ids=["production-f32", "diagnostic-f64"])
+def test_reference_owner_keeps_no_extra_map_alias_after_k1_release(complex_dtype):
+    expected = np.arange(12, dtype=np.float64).astype(complex_dtype)
+    model = mean_helpers.ReferenceModel(
+        maps=[expected.copy(), expected.copy()], tau2=None, tau2_per_half=[None, None],
+    )
+    references = [weakref.ref(value) for value in model.maps]
+    previous = mean_helpers._snapshot_and_release_previous_k1_means(model.maps)
+    assert model.maps == [None, None]
+    assert all(reference() is None for reference in references)
+    for value in previous:
+        assert_matches(value, expected)

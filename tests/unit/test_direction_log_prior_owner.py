@@ -40,6 +40,14 @@ def _priors(**overrides):
         half_index=0,
     )
     kwargs.update(overrides)
+    shared = kwargs.pop("global_direction_prior")
+    shared_order = kwargs.pop("global_direction_prior_order")
+    classes = kwargs.pop("class_direction_prior")
+    class_order = kwargs.pop("class_direction_prior_order")
+    kwargs["priors"] = op.HalfDirectionPriors(
+        shared=op.DirectionPrior(shared, shared_order),
+        classes=op.DirectionPrior(classes, class_order),
+    )
     return op.relion_direction_log_priors_for_half(**kwargs)
 
 

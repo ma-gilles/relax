@@ -101,8 +101,8 @@ def test_reference_maps_follow_the_drivers_flags(tmp_path, monkeypatch):
     monkeypatch.setenv(reserve.MEM_FRACTION_ENV, ".90")
     monkeypatch.setattr(reserve, "_jax_backend_initialized", lambda: False)
     monkeypatch.setattr(reserve, "_visible_device_total_bytes", lambda: H100_TOTAL_BYTES)
-    assert reserve.reserve_for_reference_maps(paths)["model_box"] == 32
-    assert reserve.reserve_for_reference_maps([]) is None
+    assert reserve.reserve_for_reference_maps(paths, padding_factor=2)["model_box"] == 32
+    assert reserve.reserve_for_reference_maps([], padding_factor=2) is None
 
 
 def test_module_imports_only_the_standard_library():

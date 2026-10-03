@@ -310,42 +310,78 @@ def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_
     return radial, jnp.stack(rows)
 
 
-@_dataclass
-class NoiseUpdateResult:
-    """Noise-update values in both shell and image-pixel layouts.
+@_dataclass(frozen=True)
+class NoiseModel:
+    """Two half-model spectra and their pixel expansions.
 
-    ``noise_from_res`` is the mean per-shell sigma2_noise profile;
-    ``noise_from_res_per_half`` contains its two per-half profiles.
-    These are NumPy float64 arrays with ``n_shells`` entries per profile.
-
-    ``noise_variance_per_half`` contains flattened image-pixel arrays obtained
-    by expanding the radial noise model. ``noise_variance`` is their elementwise
-    mean in that same pixel layout, not a shell profile. The returned
-    ``previous_noise_radial`` and ``previous_noise_radial_per_half`` carry shell
-    profiles for the next update and its diagnostics.
-
-    Ownership is path-dependent. Ordinary K1 updates replace entries in the
-    supplied pixel-array list. K-class updates return a new two-entry list whose
-    entries refer to the same expanded shared-noise array. The first-iteration
-    CC path preserves the input pixel list and previous radial-history objects.
-    Otherwise the returned per-half radial history is the same list as
-    ``noise_from_res_per_half``. Do not assume these outputs are independent
-    copies or change their aliasing during structural cleanup.
+    Each half has flat pixel/shell arrays, or ``(G, P)`` / ``(G, S)`` arrays
+    for several optics groups. Cached averages serve diagnostics; their dtype
+    depends on initialization, replay or estimation and is retained separately.
+    K1 estimation replaces entries in the pixel list; Class3D shares its pixel
+    array between halves and keeps independent host shell profiles.
     """
 
+    variance_per_half: list
+    radial_per_half: list
+    average_variance: object
+    average_radial: object
+
+
+def initialize_noise_model(variance_per_half, *, average_variance, image_shape, dtype):
+    """Derive shell profiles after the caller's pixel normalization and averaging."""
+    radial_per_half, average_radial = _noise_radial_history(
+        variance_per_half, image_shape, dtype=dtype,
+    )
+    return NoiseModel(variance_per_half, radial_per_half, average_variance, average_radial)
+
+
+def noise_model_from_pixels(noise_variance, image_shape, *, dtype):
+    """Normalize input/replay pixel noise and derive its diagnostic shell profiles."""
+    variance_per_half = _normalize_noise_variance_per_half(noise_variance, n_halves=2)
+    average_variance = _mean_noise_variance(variance_per_half)
+    return initialize_noise_model(
+        variance_per_half, average_variance=average_variance, image_shape=image_shape, dtype=dtype,
+    )
+
+
+def noise_pixel_rows(noise_shells, image_shape):
+    """Expand one half's noise shells (``(S,)`` or ``(G, S)``) to pixel rows."""
+    from recovar.reconstruction import noise
+
+    shells = np.asarray(noise_shells, dtype=np.float64)
+    if shells.ndim == 1:
+        return jnp.asarray(noise.make_radial_noise(shells, image_shape)).reshape(-1)
+    return jnp.stack(
+        [jnp.asarray(noise.make_radial_noise(row, image_shape)).reshape(-1) for row in shells]
+    )
+
+
+def noise_model_from_shells(noise_shells, image_shape):
+    """Restore checkpoint spectra without the initialization scoring-dtype cast."""
+    variance_per_half = [noise_pixel_rows(shells, image_shape) for shells in noise_shells]
+    average_variance = _mean_noise_variance(variance_per_half)
+    radial_per_half = [np.asarray(shells, dtype=np.float64) for shells in noise_shells]
+    average_radial = jnp.asarray(np.mean(np.stack(radial_per_half, axis=0), axis=0))
+    return NoiseModel(variance_per_half, radial_per_half, average_variance, average_radial)
+
+
+@_dataclass
+class NoiseUpdateResult:
+    """Updated model and float64 shell estimates for iteration history.
+
+    CC retains the previous model's shell objects, whose precision can differ
+    from the history estimates. Other updates share those estimates with the
+    next model's radial profiles.
+    """
+
+    model: NoiseModel
     noise_from_res: np.ndarray
     noise_from_res_per_half: list
-    noise_variance_per_half: list
-    noise_variance: object
-    previous_noise_radial: object
-    previous_noise_radial_per_half: list
 
 
 def update_posterior_noise_variance(
     noise_stats_per_half,
-    noise_variance_per_half: list,
-    previous_noise_radial_per_half: list,
-    previous_noise_radial,
+    model: NoiseModel,
     image_shape,
     *,
     k_class_enabled: bool,
@@ -368,6 +404,10 @@ def update_posterior_noise_variance(
 
     from relax.reconstruction import noise_relion
 
+    noise_variance_per_half = model.variance_per_half
+    previous_noise_radial_per_half = model.radial_per_half
+    previous_noise_radial = model.average_radial
+
     if noise_stats_per_half[0] is None or noise_stats_per_half[1] is None:
         raise RuntimeError(
             "RELION mode expected per-half NoiseStats from the EM engine; "
@@ -384,12 +424,14 @@ def update_posterior_noise_variance(
             "RELION iter-1 CC emulation: keeping previous sigma2_noise (skip first-iter noise update)",
         )
         return NoiseUpdateResult(
+            model=NoiseModel(
+                noise_variance_per_half,
+                previous_noise_radial_per_half,
+                _mean_noise_variance(noise_variance_per_half),
+                previous_noise_radial,
+            ),
             noise_from_res=noise_from_res,
             noise_from_res_per_half=noise_from_res_per_half,
-            noise_variance_per_half=noise_variance_per_half,
-            noise_variance=_mean_noise_variance(noise_variance_per_half),
-            previous_noise_radial=previous_noise_radial,
-            previous_noise_radial_per_half=previous_noise_radial_per_half,
         )
 
     if k_class_enabled:
@@ -471,10 +513,12 @@ def update_posterior_noise_variance(
     new_previous_noise_radial = jnp.asarray(noise_from_res)
     noise_variance = _mean_noise_variance(noise_variance_per_half)
     return NoiseUpdateResult(
+        model=NoiseModel(
+            noise_variance_per_half,
+            noise_from_res_per_half,
+            noise_variance,
+            new_previous_noise_radial,
+        ),
         noise_from_res=noise_from_res,
         noise_from_res_per_half=noise_from_res_per_half,
-        noise_variance_per_half=noise_variance_per_half,
-        noise_variance=noise_variance,
-        previous_noise_radial=new_previous_noise_radial,
-        previous_noise_radial_per_half=noise_from_res_per_half,
     )

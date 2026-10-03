@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.refinement.mean_helpers import prepare_initial_mean_variance
+from relax.refinement.mean_helpers import initialize_reference_model
 from relax.refinement.projector_preparation import (
     InitialReferenceReplayError,
     prepare_initial_real_references,
@@ -83,9 +83,10 @@ def test_incompatible_real_reference_fails_without_broadcast(value, classes):
 @pytest.mark.parametrize("classes", [False, True])
 def test_shared_tau2_keeps_original_object(classes):
     initial = jnp.asarray([1.0, 3.0], dtype=jnp.float32)
-    shared, halves = prepare_initial_mean_variance(
-        initial, use_per_half_mean_variance=False, k_class_enabled=classes, log=LOG
+    model = initialize_reference_model(
+        [None, None], initial, use_per_half_mean_variance=False, k_class_enabled=classes, log=LOG
     )
+    shared, halves = model.tau2, model.tau2_per_half
     assert shared is initial
     assert halves[0] is initial and halves[1] is initial
 
@@ -96,9 +97,10 @@ def test_half_tau2_values_and_existing_promoted_average(dtype, monkeypatch):
     monkeypatch.setenv("RELAX_USE_FLOAT64_PROJECTIONS", "0")
     source = np.array([[1, 2**24, 3], [2**-20, -(2**24), 5]], dtype=dtype)
     initial = jnp.asarray(source)
-    shared, halves = prepare_initial_mean_variance(
-        initial, use_per_half_mean_variance=True, k_class_enabled=False, log=LOG
+    model = initialize_reference_model(
+        [None, None], initial, use_per_half_mean_variance=True, k_class_enabled=False, log=LOG
     )
+    shared, halves = model.tau2, model.tau2_per_half
     expected = ((source[0].astype(np.float64) + source[1].astype(np.float64)) * 0.5).astype(np.float32)
     assert shared.dtype == np.float32
     assert_matches(shared, expected)
@@ -113,4 +115,4 @@ def test_half_tau2_values_and_existing_promoted_average(dtype, monkeypatch):
 )
 def test_half_tau2_rejects_unsupported_inputs(shape, kclass, message):
     with pytest.raises(ValueError, match=message):
-        prepare_initial_mean_variance(jnp.ones(shape), use_per_half_mean_variance=True, k_class_enabled=kclass, log=LOG)
+        initialize_reference_model([None, None], jnp.ones(shape), use_per_half_mean_variance=True, k_class_enabled=kclass, log=LOG)

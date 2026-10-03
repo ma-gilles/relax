@@ -35,6 +35,7 @@ from relax.sparse_pass2 import resident_pass2 as rp
 from relax.sparse_pass2.resident_candidates import (
     CapacityChunk,
     ResidentCandidateTables,
+    chunk_segment_offsets,
     plan_capacity_chunks,
 )
 from relax.sparse_pass2.sparse_pass2_policy import ResidentConfigurationUnsupported
@@ -157,7 +158,7 @@ def test_chunk_segment_offsets_cover_each_image_once_and_pad_empty():
         row_capacity=16,
         image_capacity=4,
     )
-    offsets = rp._chunk_segment_offsets(tables, chunk, n_fine_trans=4)
+    offsets = chunk_segment_offsets(tables, chunk, n_fine_trans=4)
     assert offsets.dtype == np.int32
     assert offsets.shape == (5,)
     # Image 1 owns 5 rows, image 2 owns 2; both are contiguous from cell 0.

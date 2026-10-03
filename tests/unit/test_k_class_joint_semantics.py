@@ -3,8 +3,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
-
-from relax.refinement.half_inputs import HalfInputState
+from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.resolution import ImageGeometry
+from relax.refinement.half_inputs import initialize_halfsets
+from relax.refinement.noise_updates import NoiseModel
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
@@ -1883,7 +1885,8 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         translation_range=0.0,
         translation_step=1.0,
     )
-    half_inputs = HalfInputState.from_initial_values(
+    half_inputs = initialize_halfsets(
+        (None, None),
         previous_best_translations=None,
         previous_best_rotation_eulers=None,
         image_corrections=None,
@@ -1892,6 +1895,16 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
     class_priors = [None, None]
     class_orders = [None, None]
 
+    direction_priors = [
+        HalfDirectionPriors(
+            classes=DirectionPrior(values, order),
+            shared=DirectionPrior(shared_values, shared_order),
+        )
+        for values, order, shared_values, shared_order in zip(
+            class_priors, class_orders,
+            [None, None], [None, None], strict=True,
+        )
+    ]
     result = apply_iter_replay_overrides(
         iter_replay_override=None,
         perturb_replay_relion_dir=str(tmp_path),
@@ -1899,25 +1912,24 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         iteration=1,
         state=state,
         cs=4,
-        cryo=SimpleNamespace(voxel_size=1.0, image_shape=(8, 8)),
+        image_geometry=ImageGeometry(image_shape=(8, 8), pixel_size_angstrom=1.0),
         k_class_enabled=True,
         n_classes=2,
         relion_half_inputs=half_inputs,
         previous_best_rotations=[None, None],
-        noise_variance_per_half=[None, None],
-        noise_variance=None,
-        previous_noise_radial_per_half=[None, None],
-        previous_noise_radial=None,
+        noise_model=NoiseModel(
+            variance_per_half=[None, None],
+            average_variance=None,
+            radial_per_half=[None, None],
+            average_radial=None,
+        ),
         current_sigma_offset_angstrom=1.0,
-        class_direction_prior_per_half=class_priors,
-        class_direction_prior_order_per_half=class_orders,
-        global_direction_prior_per_half=[None, None],
-        global_direction_prior_order_per_half=[None, None],
+        direction_priors=direction_priors,
     )
 
     assert calls == [str(tmp_path / "run_it001_model.star"), str(tmp_path / "run_it001_model.star")]
-    np.testing.assert_allclose(class_priors[0].sum(axis=1), np.ones(2), rtol=1e-6, atol=1e-6)
-    np.testing.assert_allclose(class_priors[1], class_priors[0], rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(direction_priors[0].classes.values.sum(axis=1), np.ones(2), rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(direction_priors[1].classes.values, direction_priors[0].classes.values, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.class_weights, raw_prior.sum(axis=1) / raw_prior.sum(), rtol=1e-6, atol=1e-6)
 
 

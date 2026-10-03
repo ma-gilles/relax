@@ -40,13 +40,14 @@ class FirstIterCCData:
 
 @dataclass(frozen=True, kw_only=True)
 class FirstIterCCGridSpec:
-    """Coarse sampling state and perturbation inputs."""
+    """Resolved coarse sampling and perturbation inputs."""
 
     effective_rotations: object
     current_translations: object
     base_translations: object
     current_healpix_order: int
-    state: object
+    oversampling_order: int
+    translation_step: float
     random_perturbation: float
     coarse_rotation_ids: object | None = None
     symmetry: str = "C1"
@@ -116,7 +117,7 @@ def _score_kclass_firstiter_cc_pass2(
     Return ``(k_class_result, rot_pmap, trans_pmap, n_trans_fine, adaptive_os)``.
     """
 
-    adaptive_os_local = int(grid.state.adaptive_oversampling)
+    adaptive_os_local = int(grid.oversampling_order)
     (
         coarse_rot,
         coarse_trans,
@@ -131,7 +132,7 @@ def _score_kclass_firstiter_cc_pass2(
         grid.base_translations,
         int(grid.current_healpix_order),
         adaptive_os_local,
-        float(grid.state.translation_step),
+        float(grid.translation_step),
         grid.random_perturbation,
         return_mstep_rotations=True,
         **(
@@ -139,7 +140,7 @@ def _score_kclass_firstiter_cc_pass2(
             if grid.coarse_rotation_ids is not None
             else {}
         ),
-        **({"symmetry": grid.symmetry} if grid.symmetry != "C1" else {}),
+        symmetry=grid.symmetry,
     )
     if grid.projection_rotations is not None:
         coarse_rot, fine_rot, fine_mstep_rot = (
@@ -150,7 +151,7 @@ def _score_kclass_firstiter_cc_pass2(
     coarse_translation_phase_source = apply_relion_translation_perturbation(
         np.asarray(grid.base_translations, dtype=np.float64),
         float(grid.random_perturbation),
-        float(grid.state.translation_step),
+        float(grid.translation_step),
     )
     n_classes = int(np.asarray(data.mean).shape[0]) if np.asarray(data.mean).ndim >= 2 else 1
     firstiter_significance_image_batch_size = None

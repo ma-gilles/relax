@@ -25,7 +25,7 @@ ORDER = 1
 N_ROT = rotation_grid_size(ORDER)
 
 
-def _canonical_eulers(order):
+def _canonical_eulers(order, *, symmetry='C1'):
     """Deterministic stand-in for RELION's native grid angles (no native binding needed)."""
     n = rotation_grid_size(order)
     return np.stack([np.linspace(0.0, 350.0, n), np.linspace(10.0, 170.0, n), np.linspace(5.0, 355.0, n)], axis=1)
@@ -53,7 +53,7 @@ def test_mstep_source_falls_back_to_the_grid_angles_when_sizes_differ():
 def test_sealed_grid_supplies_its_own_angles(monkeypatch):
     eulers = np.arange(3 * N_ROT, dtype=np.float32).reshape(-1, 3)
     monkeypatch.setattr(
-        sampling_module, "_get_relion_rotation_grid_eulers_float64", lambda order: pytest.fail("canonical grid must not be built")
+        sampling_module, "_get_relion_rotation_grid_eulers_float64", lambda order, *, symmetry='C1': pytest.fail("canonical grid must not be built")
     )
     source = sampling_module._relion_mstep_source_eulers(eulers, ORDER, use_grid_eulers=True)
     assert source.dtype == np.float64 and source.tolist() == eulers.astype(np.float64).tolist()
@@ -141,7 +141,7 @@ def test_point_group_mstep_source_uses_the_reduced_grid_rfloat_angles(monkeypatc
     assert not matches(source, scoring_eulers.astype(np.float64))
 
 
-def test_point_group_label_is_canonicalized_and_c1_keeps_the_one_argument_lookup(monkeypatch):
+def test_point_group_label_is_canonicalized_and_c1_is_passed_explicitly(monkeypatch):
     calls = []
 
     def fake(order, **kwargs):
@@ -152,4 +152,4 @@ def test_point_group_label_is_canonicalized_and_c1_keeps_the_one_argument_lookup
     eulers = np.zeros((N_ROT, 3), dtype=np.float32)
     sampling_module._relion_mstep_source_eulers(eulers, ORDER, symmetry="c1")
     sampling_module._relion_mstep_source_eulers(eulers, ORDER)
-    assert calls == [(ORDER, {}), (ORDER, {})]
+    assert calls == [(ORDER, {"symmetry": "C1"}), (ORDER, {"symmetry": "C1"})]

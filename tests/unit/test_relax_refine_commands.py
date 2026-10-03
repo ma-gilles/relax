@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from relax import command_line
-from relax.refinement import full_refinement
+from relax.refinement import command_options, full_refinement
 
 pytestmark = pytest.mark.unit
 
@@ -57,10 +57,10 @@ def test_command_dispatches_to_the_driver_with_its_arguments(monkeypatch, comman
 )
 def test_each_command_runs_only_its_class_count(command, n_classes, accepted):
     if accepted:
-        full_refinement._require_command_n_classes(command, n_classes)
+        command_options.require_command_n_classes(command, n_classes)
     else:
         with pytest.raises(SystemExit, match="relax (refine|class3d)"):
-            full_refinement._require_command_n_classes(command, n_classes)
+            command_options.require_command_n_classes(command, n_classes)
 
 
 def test_requested_diagnostic_dump_stop_exits_zero(monkeypatch):

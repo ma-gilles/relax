@@ -1329,6 +1329,10 @@ def test_relion_style_triangular_kernel_respects_by_image_flag(monkeypatch):
 # ---------------------------------------------------------------------------
 
 import jax
+from relax.relion.geometry import (
+    PROJECTION_PADDING_FACTOR,
+    RECONSTRUCTION_PADDING_FACTOR,
+)
 
 
 @pytest.mark.gpu
@@ -3210,7 +3214,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
     pass always applied the correction rely on this equivalence.
     """
     from recovar.core import fourier_transform_utils as ftu
-    from relax.dense.scoring_policy import PADDING_FACTOR, PROJECTION_PADDING_FACTOR
+
     from relax.refinement import mean_helpers
 
     volume_shape = (16, 16, 16)
@@ -3232,7 +3236,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
 
     def saved_map(grid_correct):
         ft = mean_helpers._reconstruct_volume_eager(
-            ft_ctf, f_ty, volume_shape, PADDING_FACTOR, grid_correct=grid_correct, **common
+            ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common
         )
         return np.real(np.asarray(ftu.get_idft3(jnp.asarray(ft).reshape(volume_shape)))).astype(np.float32)
 

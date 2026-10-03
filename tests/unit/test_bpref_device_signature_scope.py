@@ -12,7 +12,7 @@ from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import iteration as debug_dumps
-from relax.refinement import half_scoring, iteration_loop
+from relax.refinement import finalization, half_scoring, iteration_loop
 
 pytestmark = pytest.mark.unit
 
@@ -239,11 +239,12 @@ def test_clear_dump_context_marks_contribution_and_native_dumps_inactive():
 def test_iteration_loop_clears_dump_context_before_every_final_exit_or_half():
     source = inspect.getsource(iteration_loop.refine_single_volume)
     final_decision = source.index("should_run_final_iteration =")
-    final_loop = source.index("for k in range(2):", source.index("final_outs = PerHalfOutputs()"))
+    final_source = inspect.getsource(finalization.run_final_all_data)
+    final_loop = final_source.index("for half, projector in zip(", final_source.index("final_outs = PerHalfOutputs()"))
 
     assert source.rfind("clear_bpref_contribution_dump_context()", 0, final_decision) >= 0
-    assert "clear_bpref_contribution_dump_context()" in source[
-        final_loop : source.index("final_half_t0", final_loop)
+    assert "clear_bpref_contribution_dump_context()" in final_source[
+        final_loop : final_source.index("final_half_t0", final_loop)
     ]
 
 

@@ -164,4 +164,4 @@ def test_projector_build_log_reports_the_slab_dtype():
     start = source.index(anchor)
     call = source[start : start + 600]
     assert '"dtype=%s in %.2fs"' in call
-    assert 'getattr(relion_projector_half_by_half[0], "dtype", None)' in call
+    assert 'None if projectors[0] is None else projectors[0].data.dtype' in call

@@ -1,8 +1,8 @@
-"""Mean-volume reconstruction and K-class helpers for the iteration loop.
+"""Reference state, numbered prior estimation and map reconstruction.
 
-Per-iteration aggregator + reconstruction helpers extracted verbatim from
-``iteration_loop.py``. None of these wrap symbols that pytest monkeypatches
-at ``iteration_loop.<name>``; all dependencies are imported directly.
+Reconstruction, first-CC reporting tapers and their private numerical helpers
+share this owner. Controllers install the returned maps and priors explicitly;
+final all-data orchestration shares numerical primitives with its own policies.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -21,29 +22,43 @@ import numpy as np
 from recovar.core import fourier_transform_utils, mask
 
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
+from relax.diagnostics import reconstruction as reconstruction_diagnostics
+from relax.diagnostics import relion_replay as replay_policy
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
-    collapse_rotation_posterior_to_direction_prior,
-    make_relion_direction_log_prior,
 )
-from relax.helpers.resolution import shell_index_to_resolution_angstrom
+from relax.helpers.resolution import (
+    _firstiter_cc_ini_high_tapered,
+    _firstiter_cc_ini_high_tau2_taper,
+    shell_index_to_resolution_angstrom,
+)
 from relax.reconstruction import regularization_relion
+from relax.relion import relion_ctf
+from relax.relion.reference_initialization import initial_low_pass_filter_references
 
 logger = logging.getLogger(__name__)
 
 _LARGE_IRFFT_TRANSFORM_SIZE_LIMIT = np.iinfo(np.int32).max
 
-WIDTH_FMASK_EDGE: float = 2.0  # ml_optimiser.h:91
 
+@dataclass
+class ReferenceModel:
+    """Half/class Fourier maps and the tau2 volumes used by their next expectation.
 
-def prepare_initial_mean_variance(
-    initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, log
-):
-    """Initialize shared/per-half tau2 using the existing reduction and dtype policy.
-
-    The controller retains the original JAX array throughout refinement.
-    Shared priors alias one array; the opt-in half priors keep separate values.
+    Maps stay in the existing flat centered Fourier layout. K1 map slots are
+    cleared before reconstruction; Class3D slots share one class stack. Tau2
+    retains the RECOVAR frame scale and its shared/per-half scoring policy.
     """
+
+    maps: list
+    tau2: object
+    tau2_per_half: list
+
+
+def initialize_reference_model(
+    half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, log
+):
+    """Attach shared/per-half tau2 to the already normalized references."""
     if use_per_half_mean_variance:
         if k_class_enabled:
             raise ValueError("per-half scoring tau2 is supported only for K=1")
@@ -67,15 +82,45 @@ def prepare_initial_mean_variance(
     else:
         mean_variance = initial_mean_variance
         mean_variance_per_half = [mean_variance, mean_variance]
-    return mean_variance, mean_variance_per_half
+    return ReferenceModel(maps=half_maps, tau2=mean_variance, tau2_per_half=mean_variance_per_half)
 
 
-def _mean_variance_for_scoring_half(mean_variance_per_half, half_index):
-    """Select the exact half-owned K=1 tau2 prior passed to the scorer."""
+def reference_model_from_snapshot(snapshot, volume_shape, *, k_class_enabled, dtype):
+    """Restore checkpoint references and the continuation's shared tau2 layout."""
+    from relax.refinement.iteration_snapshot import tau2_mean_variance
 
-    if len(mean_variance_per_half) != 2 or int(half_index) not in (0, 1):
-        raise ValueError("per-half scoring tau2 requires exactly two halves and index 0 or 1")
-    return mean_variance_per_half[int(half_index)]
+    maps = [jnp.asarray(mean) for mean in snapshot.means]
+    if k_class_enabled:
+        maps[1] = maps[0]
+    tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
+    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=[tau2, tau2])
+
+
+class HostTau2(NamedTuple):
+    shared: object
+    per_half: list
+    reconstruction: object
+    reconstruction_per_half: list | None
+
+
+def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_variance, mean_signal_variance_per_half):
+    """Move K1 tau2 volumes to host, copying each distinct device array once."""
+    host = {}
+
+    def to_host(value):
+        if value is None or isinstance(value, np.ndarray):
+            return value
+        key = id(value)
+        if key not in host:
+            host[key] = np.asarray(jax.device_get(value))
+        return host[key]
+
+    return HostTau2(
+        to_host(mean_variance),
+        [to_host(value) for value in mean_variance_per_half],
+        to_host(mean_signal_variance),
+        None if mean_signal_variance_per_half is None else [to_host(value) for value in mean_signal_variance_per_half],
+    )
 
 def _updated_mean_variance_per_half(
     shared_mean_variance,
@@ -189,32 +234,6 @@ def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, prev
     return weights / float(np.sum(weights))
 
 
-def _combined_class_direction_prior_from_halves(
-    class_rotation_posterior_per_half, n_classes: int, healpix_order: int, *, dtype: np.dtype = np.float32, symmetry: str = "C1"
-):
-    """Collapse Class3D rotation posterior sums after undoing RECOVAR's half split.
-
-    RELION Class3D has a single ``mymodel.pdf_direction[class]`` updated from
-    ``wsum_model.pdf_direction[class]`` over all particles.  RECOVAR's two
-    E-step halves are only a parallelization artifact for K>1, so combine their
-    per-class rotation posterior sums before forming the next iteration's
-    direction prior.
-    """
-
-    combined_priors = []
-    for class_idx in range(n_classes):
-        combined = None
-        for per_half in class_rotation_posterior_per_half:
-            if per_half is None:
-                continue
-            per_class = np.asarray(per_half[class_idx], dtype=np.float64)
-            combined = per_class if combined is None else combined + per_class
-        if combined is None:
-            return None
-        combined_priors.append(
-            collapse_rotation_posterior_to_direction_prior(combined, healpix_order, dtype=dtype, **({"symmetry": symmetry} if symmetry != "C1" else {}))
-        )
-    return np.stack(combined_priors, axis=0)
 
 
 def _previous_resolution_angstrom_for_half_join(
@@ -414,71 +433,228 @@ def _stack_class_tau2_update_details(details_per_class):
     }
 
 
-def update_k1_direction_priors(
-    rotation_posterior_per_half,
-    global_direction_prior_per_half,
-    global_direction_prior_order_per_half,
-    *,
-    direction_prior_order,
-    expected_rotation_count,
-    dtype,
-    log,
-    symmetry="C1",
-) -> None:
-    """Collapse each K=1 half's rotation posterior into its next direction prior."""
+@dataclass(frozen=True)
+class ClassPriorEstimate:
+    """One class's prior, weight statistics and data-vs-prior estimate.
 
-    if not all(
-        np.asarray(rot_sum).shape[0] == expected_rotation_count
-        for rot_sum in rotation_posterior_per_half
-    ):
-        return
-    for k in range(2):
-        direction_prior_k = collapse_rotation_posterior_to_direction_prior(
-            np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
-            direction_prior_order,
-            dtype=dtype,
-            **({"symmetry": symmetry} if symmetry != "C1" else {}),
+    ``variance`` and ``shells`` use the RECOVAR frame. ``relion_shells`` keeps
+    the unscaled diagnostic spectrum; ``weight_shells`` uses round shells.
+    """
+
+    variance: object
+    shells: object
+    relion_shells: object
+    data_vs_prior: object
+    details: dict
+    weight_shells: dict
+
+
+def estimate_class_prior(
+    references,
+    denominators,
+    *,
+    class_index,
+    settings: ReconstructionSettings,
+    current_size,
+    accumulator_shape,
+    full_half_axis,
+    frame_scale,
+    projector_power_spectrum=None,
+    replay_tau2_shells=None,
+    average_ctf2=None,
+) -> ClassPriorEstimate:
+    """Estimate a class prior from Iref power or diagnostic replay, then its weights.
+
+    Index inside the operation so reference/projector views are created only
+    on the native path and weight views follow prior estimation.
+    """
+    if replay_tau2_shells is not None:
+        shells = jnp.asarray(replay_tau2_shells[class_index], dtype=jnp.float32)
+        from recovar import utils
+
+        variance = jnp.asarray(
+            utils.make_radial_image(shells, settings.volume_shape, extend_last_frequency=True),
+            dtype=jnp.float32,
+        ).reshape(-1)
+        relion_shells = shells / jnp.asarray(frame_scale, dtype=shells.dtype)
+    else:
+        variance, relion_shells, shells = _class_tau2_from_iref_power_spectrum(
+            references[class_index], settings.volume_shape,
+            padding_factor=settings.padding_factor,
+            current_size=current_size,
+            frame_scale=frame_scale,
+            projector_power_spectrum=(
+                None if projector_power_spectrum is None else projector_power_spectrum[class_index]
+            ),
         )
-        try:
-            make_relion_direction_log_prior(
-                direction_prior_k,
-                direction_prior_order,
-                **({"symmetry": symmetry} if symmetry != "C1" else {}),
-            )
-        except ValueError as exc:
-            log.warning(
-                "Skipping K=1 direction prior update for half-%d at healpix_order=%d: %s",
-                k + 1,
-                direction_prior_order,
-                exc,
-            )
-            continue
-        global_direction_prior_per_half[k] = direction_prior_k
-        global_direction_prior_order_per_half[k] = direction_prior_order
-
-
-def update_class_direction_priors(
-    class_rotation_posterior_per_half,
-    class_direction_prior_per_half,
-    class_direction_prior_order_per_half,
-    *,
-    n_classes,
-    healpix_order,
-    dtype,
-    symmetry="C1",
-) -> None:
-    """Combine both K-class halves into a shared prior copied to each half."""
-
-    combined_class_direction_prior = _combined_class_direction_prior_from_halves(
-        class_rotation_posterior_per_half,
-        n_classes,
-        healpix_order,
-        dtype=dtype,
-        **({"symmetry": symmetry} if symmetry != "C1" else {}),
+    weight_shells = regularization_relion._compute_relion_weight_shell_stats(
+        denominators[class_index], settings.volume_shape,
+        padding_factor=settings.padding_factor,
+        r_max=current_size // 2,
+        shell_rounding="round",
+        full_half_axis=full_half_axis,
+        accumulator_volume_shape=accumulator_shape,
     )
-    for k in range(2):
-        class_direction_prior_per_half[k] = combined_class_direction_prior.copy()
-        class_direction_prior_order_per_half[k] = healpix_order
+    data_vs_prior, details = _class_tau2_update_details(
+        denominators[class_index], shells, weight_shells, settings.volume_shape,
+        padding_factor=settings.padding_factor,
+        tau2_fudge=settings.tau2_fudge,
+        current_size=current_size,
+        full_half_axis=full_half_axis,
+        accumulator_volume_shape=accumulator_shape,
+        average_ctf2=average_ctf2,
+    )
+    return ClassPriorEstimate(
+        variance=variance, shells=shells, relion_shells=relion_shells,
+        data_vs_prior=data_vs_prior, details=details, weight_shells=weight_shells,
+    )
+
+
+@dataclass(frozen=True)
+class ClassPriorAggregation:
+    """Class-axis priors, scheduling curves and detail rows for ordered publication.
+
+    Variance and shell stacks use the RECOVAR frame. The controller publishes
+    the data-vs-prior curve before aggregating detail rows, preserving RELION's
+    numbered M-step order. No reference maps or unused class scratch are held.
+    """
+
+    variance: object
+    shells: object
+    data_vs_prior: np.ndarray
+    details_per_class: list[dict]
+    source: str
+
+
+def estimate_class_priors(
+    previous_half_maps,
+    combined_numerators,
+    combined_denominators,
+    settings: ReconstructionSettings,
+    *,
+    half_denominators,
+    prior_tau2,
+    halves,
+    n_classes,
+    iteration,
+    current_size,
+    image_current_size,
+    accumulator_shape,
+    full_half_axis,
+    projector_power_spectrum,
+    iter_replay_override,
+    replay,
+    scoring_dtype,
+    started_at,
+    log,
+) -> ClassPriorAggregation:
+    """Prepare and aggregate numbered Class3D priors from the previous Iref.
+
+    Own diagnostic replay admission, premultiplied-CTF adaptation, ordered class
+    computation/capture and class-axis reductions. The controller installs the
+    products and applies first-CC taper only after regularized reconstruction.
+    See ``docs/math/relion_refinement_algorithm.md`` for the M-step ordering.
+    """
+    tau2_update_details_per_class = []
+    mean_signal_variance_per_class = []
+    mean_signal_variance_shells_per_class = []
+    data_vs_prior_per_class = []
+    # Dense RECOVAR accumulators live in the historical unnormalised
+    # image frame: RELION BPref weight = Ft_ctf * N^4. Equivalently,
+    # keep Ft_y/Ft_ctf in RECOVAR frame and scale RELION tau2 by N^4
+    # before the Wiener solve. The same frame conversion is documented
+    # in docs/math/ab_initio_initial_model_algorithm.md.
+    kclass_tau2_frame_scale = float(settings.grid_size) ** 4
+    replay_class_tau2, replay_tau2_enabled, kclass_tau2_source = replay_policy._class_tau2_replay(
+        iteration=iteration,
+        n_classes=n_classes,
+        iter_replay_override=iter_replay_override,
+        replay=replay,
+        logger=log,
+    )
+    if iteration == 0:
+        mean_variance_arr = jnp.asarray(prior_tau2)
+        expected_shape = (n_classes, int(np.prod(settings.volume_shape)))
+        if tuple(mean_variance_arr.shape) == expected_shape:
+            log.info(
+                "Class3D initial per-class tau2 volume available at iter=%d with shape=%s; "
+                "M-step tau2 is recomputed from previous Iref power spectra",
+                iteration + 1,
+                tuple(mean_variance_arr.shape),
+            )
+    # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
+    # (setAverageCTF2; Class3D has no split halves and does not fix tau2).
+    average_ctf2 = relion_ctf.premultiplied_average_ctf2(
+        [half.dataset for half in halves],
+        [half.scale_corrections for half in halves],
+        image_current_size,
+        settings.grid_size,
+    )
+    for class_idx in range(n_classes):
+        log.info(
+            "Class3D tau2 update start: iter=%d class=%d/%d current_size=%d source=%s spectrum=%s",
+            iteration + 1,
+            class_idx + 1,
+            n_classes,
+            int(current_size),
+            kclass_tau2_source,
+            "host transform" if projector_power_spectrum is None else "scoring projector",
+        )
+        class_prior = estimate_class_prior(
+            previous_half_maps[0],
+            combined_denominators,
+            class_index=class_idx,
+            settings=settings,
+            current_size=current_size,
+            accumulator_shape=accumulator_shape,
+            full_half_axis=full_half_axis,
+            frame_scale=kclass_tau2_frame_scale,
+            projector_power_spectrum=projector_power_spectrum,
+            replay_tau2_shells=replay_class_tau2 if replay_tau2_enabled else None,
+            average_ctf2=average_ctf2,
+        )
+        mean_signal_variance_per_class.append(class_prior.variance)
+        mean_signal_variance_shells_per_class.append(class_prior.shells)
+        data_vs_prior_per_class.append(class_prior.data_vs_prior)
+        tau2_update_details_per_class.append(class_prior.details)
+        _kclass_dump_dir = os.environ.get("RELAX_KCLASS_DUMP_DIR")
+        if _kclass_dump_dir:
+            reconstruction_diagnostics.write_class_mstep(
+                class_prior,
+                numerators=combined_numerators,
+                denominators=combined_denominators,
+                half_denominators=half_denominators,
+                references=previous_half_maps,
+                settings=settings,
+                output_dir=_kclass_dump_dir,
+                class_index=class_idx,
+                current_size=current_size,
+                iteration=iteration,
+                source=kclass_tau2_source,
+                accumulator_shape=accumulator_shape,
+                full_half_axis=full_half_axis,
+                frame_scale=kclass_tau2_frame_scale,
+            )
+        log.info(
+            "Class3D tau2 update done: iter=%d class=%d/%d elapsed=%.1fs",
+            iteration + 1,
+            class_idx + 1,
+            n_classes,
+            time.time() - started_at,
+        )
+    mean_signal_variance = jnp.stack(mean_signal_variance_per_class, axis=0)
+    mean_signal_variance_shells = jnp.stack(mean_signal_variance_shells_per_class, axis=0)
+    data_vs_prior_iter = np.stack(
+        [np.asarray(dvp, dtype=scoring_dtype) for dvp in data_vs_prior_per_class],
+        axis=0,
+    )
+    return ClassPriorAggregation(
+        variance=mean_signal_variance,
+        shells=mean_signal_variance_shells,
+        data_vs_prior=data_vs_prior_iter,
+        details_per_class=tau2_update_details_per_class,
+        source=kclass_tau2_source,
+    )
 
 
 def _merged_mean_from_halves(means, class_weights=None):
@@ -927,34 +1103,6 @@ def _reconstruct_volume_eager(
     return result
 
 
-def initial_low_pass_filter_references(
-    Iref: np.ndarray,
-    *,
-    ori_size: int,
-    pixel_size: float,
-    ini_high_ang: float,
-    filter_edgewidth: float = WIDTH_FMASK_EDGE,
-) -> np.ndarray:
-    """``initialLowPassFilterReferences`` (ml_optimiser.cpp:3336): cosine-taper from r=radius outward to r=radius_p."""
-    edge_width = float(filter_edgewidth)
-    radius = ori_size * pixel_size / ini_high_ang - edge_width / 2.0
-    radius_p = radius + edge_width
-    N = Iref.shape[1]
-    kz = np.fft.fftfreq(N, d=1.0) * N
-    kx = np.arange(N // 2 + 1, dtype=np.float64)
-    r = np.sqrt(kz[:, None, None] ** 2 + kz[None, :, None] ** 2 + kx[None, None, :] ** 2)
-    mask = np.zeros_like(r)
-    mask[r < radius] = 1.0
-    edge = (r >= radius) & (r <= radius_p)
-    if edge_width > 0:
-        mask[edge] = 0.5 - 0.5 * np.cos(np.pi * (radius_p - r[edge]) / edge_width)
-
-    out = np.zeros_like(Iref)
-    for k in range(Iref.shape[0]):
-        vol = Iref[k]
-        F = np.fft.rfftn(vol, axes=(0, 1, 2), norm=None) / vol.size
-        out[k] = np.fft.irfftn(F * mask * vol.size, s=vol.shape, axes=(0, 1, 2), norm=None)
-    return out
 
 
 def _apply_relion_initial_lowpass_filter(
@@ -1001,7 +1149,7 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
 
 @dataclass(frozen=True, kw_only=True)
 class ReconstructionSettings:
-    """Run-level geometry and RELION constants reused by reconstruction phases."""
+    """Run-level geometry, regularization, mask and initial-filter settings."""
 
     grid_size: int
     voxel_size: object
@@ -1011,16 +1159,183 @@ class ReconstructionSettings:
     minres_map: int
     width_mask_edge: int
     fmask_edge: int
+    tau2_fudge: float
+    particle_diameter_angstrom: float | None
+    first_iteration_lowpass_angstrom: float | None
 
 
-def reconstruct_k1_means(
+@dataclass(frozen=True)
+class SplitHalfPrior:
+    """K1 scoring/reconstruction priors and raw versus corrected FSC."""
+
+    variance: object
+    variance_per_half: list
+    shells_per_half: list
+    fsc: object
+    fsc_for_update: object
+    details_per_half: list[dict]
+
+
+def estimate_split_half_prior(
+    numerators,
+    denominators,
+    settings: ReconstructionSettings,
+    *,
+    current_size,
+    accumulator_shape,
+    full_half_axes,
+    do_solvent_fsc_correction,
+    pixel_size_angstrom,
+    iteration,
+    scoring_dtype,
+    started_at,
+    log,
+) -> SplitHalfPrior:
+    """Estimate independent half priors from this expectation's shared FSC.
+
+    Raw FSC is reported; solvent-corrected FSC, when enabled, drives tau2 and
+    size growth. The two halves retain their own Fourier weights.
+    See ``docs/math/relion_refinement_algorithm.md`` for the M-step ordering.
+    """
+
+    current_iter_fsc = regularization_relion.compute_relion_fsc_from_backprojector(
+        numerators[0],
+        numerators[1],
+        denominators[0],
+        denominators[1],
+        settings.volume_shape,
+        padding_factor=settings.padding_factor,
+        r_max=current_size // 2,
+        accumulator_volume_shape=accumulator_shape,
+        output_dtype=scoring_dtype,
+    )
+    log.info(
+        "Computed iter-%d FSC for tau2 (RELION backprojector path): %.1fs",
+        iteration + 1,
+        time.time() - started_at,
+    )
+    raw_backprojector_fsc = current_iter_fsc
+    tau2_fsc_for_update = current_iter_fsc
+    if (
+        do_solvent_fsc_correction
+        and settings.particle_diameter_angstrom is not None
+        and settings.particle_diameter_angstrom > 0
+    ):
+        from recovar.core import mask as _mask
+
+        _t_solvent_fsc = time.time()
+        unfiltered_half_maps = []
+        for Ft_ctf_half, Ft_y_half in ((denominators[0], numerators[0]), (denominators[1], numerators[1])):
+            unfiltered_real = _reconstruct_volume_eager(
+                Ft_ctf_half,
+                Ft_y_half,
+                settings.volume_shape,
+                settings.padding_factor,
+                tau=None,
+                tau2_fudge=settings.tau2_fudge,
+                projection_padding_factor=settings.projection_padding_factor,
+                # RELION's BackProjector::reconstruct(do_map=false)
+                # still calls softMaskOutsideMap inside
+                # windowToOridimRealSpace.
+                use_spherical_mask=True,
+                minres_map=settings.minres_map,
+                current_size=int(current_size),
+                return_real_space=True,
+                accumulator_volume_shape=accumulator_shape,
+            )
+            unfiltered_real = np.asarray(
+                jnp.asarray(unfiltered_real).reshape(settings.volume_shape),
+                dtype=np.float64,
+            ).real
+            unfiltered_half_maps.append(unfiltered_real)
+
+        flatten_radius = settings.particle_diameter_angstrom / (2.0 * pixel_size_angstrom)
+        solvent_mask = np.asarray(
+            _mask.raised_cosine_mask(
+                settings.volume_shape,
+                radius=flatten_radius,
+                radius_p=flatten_radius + settings.width_mask_edge,
+                offset=jnp.zeros(3),
+                dtype=jnp.float64,
+            ),
+            dtype=np.float64,
+        )
+        tau2_fsc_for_update, solvent_fsc_details = regularization_relion.compute_relion_solvent_corrected_true_fsc(
+            unfiltered_half_maps[0],
+            unfiltered_half_maps[1],
+            solvent_mask,
+            current_size=int(current_size),
+            rng_seed=int(1775735620 + iteration),
+            return_details=True,
+        )
+        randomize_at = int(solvent_fsc_details["randomize_at"])
+        probe_shell = max(1, randomize_at) if randomize_at > 0 else min(len(solvent_fsc_details["fsc_true"]) - 1, 1)
+        corrected_shell = min(len(solvent_fsc_details["fsc_true"]) - 1, max(probe_shell, randomize_at + 2))
+        log.info(
+            "Computed iter-%d solvent-corrected true FSC for tau2: randomize_at=%d "
+            "raw_fsc[%d]=%.4f masked=%.4f random_masked=%.4f true=%.4f; "
+            "formula_shell[%d]: masked=%.4f random_masked=%.4f true=%.4f elapsed=%.1fs",
+            iteration + 1,
+            randomize_at,
+            probe_shell,
+            float(np.asarray(raw_backprojector_fsc)[probe_shell]),
+            float(solvent_fsc_details["fsc_masked"][probe_shell]),
+            float(solvent_fsc_details["fsc_random_masked"][probe_shell]),
+            float(solvent_fsc_details["fsc_true"][probe_shell]),
+            corrected_shell,
+            float(solvent_fsc_details["fsc_masked"][corrected_shell]),
+            float(solvent_fsc_details["fsc_random_masked"][corrected_shell]),
+            float(solvent_fsc_details["fsc_true"][corrected_shell]),
+            time.time() - _t_solvent_fsc,
+        )
+    elif do_solvent_fsc_correction:
+        log.warning(
+            "RELION solvent FSC correction requested but particle_diameter_ang is unset; using raw FSC for tau2"
+        )
+
+    # RELION calls BackProjector::updateSSNRarrays independently for each
+    # half-map BPref.  The gold-standard FSC is shared, but sigma2/tau2
+    # come from each half's own Fourier weight outside the joined shells.
+    tau2_update_details_per_half = []
+    mean_signal_variance_per_half = []
+    for half_idx, Ft_ctf_half in enumerate((denominators[0], denominators[1])):
+        full_half_axis = full_half_axes[half_idx]
+        mean_signal_variance_k, _, tau2_update_details_k = regularization_relion.compute_relion_tau2_from_weights(
+            Ft_ctf_half,
+            Ft_ctf_half,
+            tau2_fsc_for_update,
+            settings.volume_shape,
+            tau2_fudge=settings.tau2_fudge,
+            padding_factor=settings.padding_factor,
+            r_max=current_size // 2,
+            return_details=True,
+            full_half_axis=-1 if full_half_axis is None else int(full_half_axis),
+            accumulator_volume_shape=accumulator_shape,
+            output_dtype=scoring_dtype,
+        )
+        mean_signal_variance_per_half.append(mean_signal_variance_k)
+        tau2_update_details_per_half.append(tau2_update_details_k)
+    mean_signal_variance_shells_per_half = [
+        details["prior_shells"] for details in tau2_update_details_per_half
+    ]
+    mean_signal_variance = 0.5 * (mean_signal_variance_per_half[0] + mean_signal_variance_per_half[1])
+    return SplitHalfPrior(
+        variance=mean_signal_variance,
+        variance_per_half=mean_signal_variance_per_half,
+        shells_per_half=mean_signal_variance_shells_per_half,
+        fsc=current_iter_fsc,
+        fsc_for_update=tau2_fsc_for_update,
+        details_per_half=tau2_update_details_per_half,
+    )
+
+
+def _reconstruct_k1_maps(
     numerators_by_half,
     denominators_by_half,
     tau_by_half,
     settings: ReconstructionSettings,
     *,
     current_size,
-    tau2_fudge,
     accumulator_volume_shape,
     tau_is_1d,
     retained_first_numerator=None,
@@ -1046,7 +1361,7 @@ def reconstruct_k1_means(
             settings.volume_shape,
             settings.padding_factor,
             tau=reconstruction_tau,
-            tau2_fudge=tau2_fudge,
+            tau2_fudge=settings.tau2_fudge,
             projection_padding_factor=settings.projection_padding_factor,
             minres_map=settings.minres_map,
             current_size=cs_int,
@@ -1069,7 +1384,7 @@ def reconstruct_k1_means(
     return reconstructed_means
 
 
-def reconstruct_class_means(
+def _reconstruct_class_maps(
     combined_numerators,
     combined_denominators,
     tau_by_class,
@@ -1078,7 +1393,6 @@ def reconstruct_class_means(
     n_classes,
     iteration,
     current_size,
-    tau2_fudge,
     accumulator_volume_shape,
     tau_is_1d,
 ):
@@ -1101,7 +1415,7 @@ def reconstruct_class_means(
             settings.volume_shape,
             settings.padding_factor,
             tau=tau_by_class[class_idx],
-            tau2_fudge=tau2_fudge,
+            tau2_fudge=settings.tau2_fudge,
             projection_padding_factor=settings.projection_padding_factor,
             minres_map=settings.minres_map,
             current_size=cs_int,
@@ -1126,23 +1440,41 @@ def reconstruct_class_means(
     return shared_classes
 
 
-def postprocess_reconstructed_means(
-    means,
+def reconstruct_regularized_means(
+    numerators,
+    denominators,
+    tau,
     settings: ReconstructionSettings,
     *,
     n_classes,
     iteration,
     current_size,
-    particle_diameter_ang,
+    accumulator_volume_shape,
+    tau_is_1d,
     relion_firstiter_cc_this_iter,
-    relion_firstiter_ini_high_angstrom,
-) -> None:
-    """Apply premask capture, first-iteration filtering and solvent flattening.
+    retained_first_numerator=None,
+) -> list:
+    """Solve and postprocess the numbered K1 halves or shared Class3D maps.
 
-    ``width_mask_edge`` is the real-space mask edge (RELION ``--maskedge``).
-    ``fmask_edge`` is the Fourier edge of ``initialLowPassFilterReferences``;
-    preserving their distinct units is part of the reconstruction contract.
+    K1 operands have two half entries; Class3D operands have a leading class
+    axis and combine both native halves. Preserve each solve's own precision,
+    completion/donation boundaries and the capture -> initial filter -> solvent
+    mask order. Returned maps are ready for explicit controller installation.
     """
+    if n_classes > 1:
+        shared_classes = _reconstruct_class_maps(
+            numerators, denominators, tau, settings,
+            n_classes=n_classes, iteration=iteration, current_size=current_size,
+            accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
+        )
+        means = [shared_classes, shared_classes]
+        del shared_classes
+    else:
+        means = _reconstruct_k1_maps(
+            numerators, denominators, tau, settings,
+            current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
+            tau_is_1d=tau_is_1d, retained_first_numerator=retained_first_numerator,
+        )
 
     for k in range(2):
         # Diagnostic: dump pre-mask Wiener output when env var set.
@@ -1168,7 +1500,7 @@ def postprocess_reconstructed_means(
                             means[k][class_idx],
                             settings.volume_shape,
                             settings.voxel_size,
-                            relion_firstiter_ini_high_angstrom,
+                            settings.first_iteration_lowpass_angstrom,
                             filter_edgewidth=settings.fmask_edge,
                         )
                         for class_idx in range(n_classes)
@@ -1180,13 +1512,16 @@ def postprocess_reconstructed_means(
                     means[k],
                     settings.volume_shape,
                     settings.voxel_size,
-                    relion_firstiter_ini_high_angstrom,
+                    settings.first_iteration_lowpass_angstrom,
                     filter_edgewidth=settings.fmask_edge,
                 )
-        if particle_diameter_ang is not None and particle_diameter_ang > 0:
+        if (
+            settings.particle_diameter_angstrom is not None
+            and settings.particle_diameter_angstrom > 0
+        ):
             flatten_radius = (
-                float(particle_diameter_ang) / (2.0 * float(settings.voxel_size))
-                if n_classes == 1 else particle_diameter_ang / (2.0 * settings.voxel_size)
+                float(settings.particle_diameter_angstrom) / (2.0 * float(settings.voxel_size))
+                if n_classes == 1 else settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
             )
             solvent_mask = _make_relion_solvent_mask(
                 settings.volume_shape,
@@ -1211,11 +1546,107 @@ def postprocess_reconstructed_means(
                 )
                 if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
                     solvent_mask = None
-    if relion_firstiter_cc_this_iter and relion_firstiter_ini_high_angstrom is not None:
+    if relion_firstiter_cc_this_iter and settings.first_iteration_lowpass_angstrom is not None:
         logger.info(
             "RELION iter-1 CC emulation: reapplying ini_high low-pass filter at %.2f A",
-            float(relion_firstiter_ini_high_angstrom),
+            float(settings.first_iteration_lowpass_angstrom),
         )
+    return means
+
+
+@dataclass(frozen=True)
+class K1ReportingPrior:
+    """Tapered K1 shared/half volumes and their per-half reporting details."""
+
+    variance: object
+    variance_per_half: list
+    details_per_half: list[dict]
+
+
+def taper_first_cc_k1_prior(
+    variance_per_half,
+    details_per_half,
+    settings: ReconstructionSettings,
+    *,
+    pixel_size_angstrom,
+    scoring_dtype,
+) -> K1ReportingPrior:
+    """Taper K1 reporting priors after the untapered regularized reconstruction.
+
+    Preserve incoming list/dict identity and the half -> prior/SSNR update
+    order. The expanded taper and radial grid are temporary implementation
+    arrays; model installation and shared/per-half policy stay with the caller.
+    """
+    tau2_taper = _firstiter_cc_ini_high_tau2_taper(
+        len(details_per_half[0]["prior_shells"]),
+        settings.grid_size,
+        pixel_size_angstrom,
+        settings.first_iteration_lowpass_angstrom,
+        filter_edgewidth=settings.fmask_edge,
+    )
+    radial_shells = np.asarray(
+        fourier_transform_utils.get_grid_of_radial_distances(
+            settings.volume_shape,
+            scaled=False,
+            frequency_shift=0,
+        ),
+        dtype=np.int32,
+    ).reshape(-1)
+    radial_shells = np.minimum(radial_shells, len(tau2_taper) - 1)
+    tau2_taper_volume = jnp.asarray(
+        tau2_taper[radial_shells],
+        dtype=scoring_dtype,
+    )
+    for half_idx in range(2):
+        variance_per_half[half_idx] = (
+            variance_per_half[half_idx] * tau2_taper_volume
+        )
+        for field in ("prior_shells", "ssnr_shells"):
+            field_values = details_per_half[half_idx][field]
+            details_per_half[half_idx][field] = field_values * jnp.asarray(
+                tau2_taper,
+                dtype=field_values.dtype,
+            )
+    variance = 0.5 * (
+        variance_per_half[0] + variance_per_half[1]
+    )
+    return K1ReportingPrior(variance, variance_per_half, details_per_half)
+
+
+@dataclass(frozen=True)
+class ClassReportingPrior:
+    """Tapered Class3D shell stack and its aggregate prior/SSNR details."""
+
+    shells: object
+    details: dict
+
+
+def taper_first_cc_class_prior(
+    shells,
+    details,
+    settings: ReconstructionSettings,
+    *,
+    pixel_size_angstrom,
+) -> ClassReportingPrior:
+    """Taper class reporting shells after the caller publishes the tapered curve.
+
+    The controller first tapers/publishes data-vs-prior for scheduling. This
+    operation then adapts the shell stack and aggregate detail arrays in their
+    existing order, preserving the detail mapping's identity.
+    """
+    def taper_shells(values):
+        return _firstiter_cc_ini_high_tapered(
+            values,
+            settings.grid_size,
+            pixel_size_angstrom,
+            settings.first_iteration_lowpass_angstrom,
+            filter_edgewidth=settings.fmask_edge,
+        )
+
+    shells = jnp.asarray(taper_shells(np.asarray(shells)))
+    for field in ("prior_shells", "ssnr_shells"):
+        details[field] = taper_shells(np.asarray(details[field]))
+    return ClassReportingPrior(shells, details)
 
 
 # ---------------------------------------------------------------------------
@@ -1226,12 +1657,8 @@ def postprocess_reconstructed_means(
 def reconstruct_unregularized_k1_halfmaps(
     Ft_y_per_half,
     Ft_ctf_per_half,
-    volume_shape,
+    settings: ReconstructionSettings,
     *,
-    tau2_fudge,
-    padding_factor,
-    projection_padding_factor,
-    minres_map,
     accumulator_volume_shape=None,
 ) -> list:
     """Reconstruct each K=1 half from its own unregularized accumulator."""
@@ -1240,12 +1667,12 @@ def reconstruct_unregularized_k1_halfmaps(
         _reconstruct_volume_eager(
             Ft_ctf_half,
             Ft_y_half,
-            volume_shape,
-            padding_factor,
+            settings.volume_shape,
+            settings.padding_factor,
             tau=None,
-            tau2_fudge=tau2_fudge,
-            projection_padding_factor=projection_padding_factor,
-            minres_map=minres_map,
+            tau2_fudge=settings.tau2_fudge,
+            projection_padding_factor=settings.projection_padding_factor,
+            minres_map=settings.minres_map,
             accumulator_volume_shape=accumulator_volume_shape,
         )
         for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
@@ -1255,13 +1682,9 @@ def reconstruct_unregularized_k1_halfmaps(
 def reconstruct_unregularized_class_means(
     Ft_y_combined,
     Ft_ctf_combined,
-    volume_shape,
+    settings: ReconstructionSettings,
     n_classes,
     *,
-    tau2_fudge,
-    padding_factor,
-    projection_padding_factor,
-    minres_map,
     accumulator_volume_shape=None,
 ) -> list:
     """Reconstruct the shared K-class stack from combined accumulators."""
@@ -1271,12 +1694,12 @@ def reconstruct_unregularized_class_means(
             _reconstruct_volume_eager(
                 Ft_ctf_combined[class_idx],
                 Ft_y_combined[class_idx],
-                volume_shape,
-                padding_factor,
+                settings.volume_shape,
+                settings.padding_factor,
                 tau=None,
-                tau2_fudge=tau2_fudge,
-                projection_padding_factor=projection_padding_factor,
-                minres_map=minres_map,
+                tau2_fudge=settings.tau2_fudge,
+                projection_padding_factor=settings.projection_padding_factor,
+                minres_map=settings.minres_map,
                 accumulator_volume_shape=accumulator_volume_shape,
             ).reshape(-1)
             for class_idx in range(n_classes)

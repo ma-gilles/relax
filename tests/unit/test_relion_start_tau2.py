@@ -7,7 +7,7 @@ from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
 
 from relax.refinement import full_refinement as run_full_refinement
-from relax.vdam.init import relion_initial_tau2_and_data_vs_prior
+from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 
 pytestmark = pytest.mark.unit
 
@@ -61,7 +61,7 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     import mrcfile
     from recovar.utils import helpers
 
-    from relax.refinement.mean_helpers import initial_low_pass_filter_references
+    from relax.relion.reference_initialization import initial_low_pass_filter_references
 
     with mrcfile.open(reference_path, permissive=True) as mrc:
         pixel_size = float(mrc.voxel_size.x)
@@ -102,7 +102,7 @@ def test_class3d_start_data_vs_prior_matches_relion_run_it000_model_per_class():
     import mrcfile
     from recovar.utils import helpers
 
-    from relax.refinement.mean_helpers import initial_low_pass_filter_references
+    from relax.relion.reference_initialization import initial_low_pass_filter_references
 
     model = starfile.read(fixture_file("k2_5k128_relion_os0", "run_it000_model.star"))
     sigma2 = np.asarray(model["model_optics_group_1"]["rlnSigma2Noise"], dtype=np.float64)

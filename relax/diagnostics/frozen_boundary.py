@@ -482,7 +482,7 @@ def _frozen_scoring_state_arrays(
     relion_half_inputs,
     noise_variance_per_half,
     current_sigma_offset_angstrom_per_half,
-    global_direction_prior_per_half,
+    direction_priors,
     experiment_datasets=None,
     sealed_sampling_state=None,
     sealed_scoring_context=None,
@@ -491,12 +491,12 @@ def _frozen_scoring_state_arrays(
 
     pair_fields = {
         "mean": means,
-        "previous_best_rotation_eulers": relion_half_inputs.previous_best_rotation_eulers,
-        "previous_best_translations": relion_half_inputs.previous_best_translations,
-        "image_corrections": relion_half_inputs.image_corrections,
-        "scale_corrections": relion_half_inputs.scale_corrections,
+        "previous_best_rotation_eulers": [particle_half.rotation_eulers for particle_half in relion_half_inputs],
+        "previous_best_translations": [particle_half.translations for particle_half in relion_half_inputs],
+        "image_corrections": [particle_half.image_corrections for particle_half in relion_half_inputs],
+        "scale_corrections": [particle_half.scale_corrections for particle_half in relion_half_inputs],
         "noise_variance": noise_variance_per_half,
-        "direction_prior": global_direction_prior_per_half,
+        "direction_prior": [p.shared.values for p in direction_priors],
     }
     arrays = {}
     for field_name, values in pair_fields.items():

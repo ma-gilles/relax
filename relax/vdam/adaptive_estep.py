@@ -36,9 +36,9 @@ from relax.helpers.batch_planning import (
     safe_coarse_significance_image_batch_size as _safe_coarse_significance_image_batch_size,
 )
 from relax.helpers.convergence import healpix_angular_step
+from relax.helpers.oversampling import prepare_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.helpers.resolution import compute_coarse_image_size
-from relax.refinement.half_scoring import _adaptive_pass2_grids
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.vdam.estep_common import (
     _PARTICLE_RESULT_FIELDS,
@@ -188,7 +188,7 @@ class AdaptiveRouteGrids(NamedTuple):
     """One iteration's coarse and fine trial grids in the adaptive route's order."""
 
     pass1_rotations: np.ndarray
-    grids: object  # relax.refinement.half_scoring._AdaptivePass2Grids
+    grids: object  # relax.helpers.oversampling.AdaptivePass2Grids
     fine_source_eulers: np.ndarray | None
     relion_of_recovar: np.ndarray
 
@@ -201,7 +201,7 @@ def adaptive_route_grids(
     coarse_base_translations: np.ndarray,
     translation_step: float,
 ) -> AdaptiveRouteGrids:
-    """Build RELION's two-pass grids as auto-refine builds them (``_adaptive_pass2_grids``).
+    """Build RELION's two-pass grids as auto-refine builds them (``prepare_adaptive_pass2_grids``).
 
     Pass 1 scores RELION's device-built coarse matrices
     (``AccProjectorPlan::setup``, :func:`relax.sampling._relion_adaptive_pass1_rotations`);
@@ -227,7 +227,7 @@ def adaptive_route_grids(
     coarse_translations = sampling.apply_relion_translation_perturbation(
         base, float(random_perturbation), float(translation_step)
     ).astype(np.float32)
-    grids = _adaptive_pass2_grids(
+    grids = prepare_adaptive_pass2_grids(
         pass1_rotations if int(oversampling_order) > 0 else host_rotations,
         coarse_translations,
         base,

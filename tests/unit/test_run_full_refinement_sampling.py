@@ -11,17 +11,14 @@ from relax.helpers.iteration_history import (
     _pose_history_by_image,
     add_significant_count_artifacts,
 )
+from relax.refinement.command_options import resolve_firstiter_controls, resolve_initial_sampling
 from relax.refinement.full_refinement import (
-    _configure_relion_firstiter_controls,
     _effective_perturb_seed,
     _explicit_relion_optimiser_for_seed,
-    _jsonable_profile_rows,
     _refine_sampling_kwargs,
-    _resolve_effective_max_healpix_order,
     _resolve_optimizer_random_seed,
-    _resolve_relion_sampling_orders,
-    _rotation_posterior_arrays,
 )
+from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
 from relax.sampling import (
     advance_relion_perturbation_from_seed,
     relion_sampling_perturbation_for_iteration,
@@ -33,7 +30,7 @@ RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "relax" / "refinemen
 def test_k1_firstiter_cc_defaults_to_relion_reference_and_tree_controls():
     environment = {}
 
-    use_real_reference, tree_margin = _configure_relion_firstiter_controls(
+    use_real_reference, tree_margin = resolve_firstiter_controls(
         firstiter_cc=True,
         n_classes=1,
         environ=environment,
@@ -55,7 +52,7 @@ def test_k1_firstiter_cc_defaults_to_relion_reference_and_tree_controls():
 def test_relion_firstiter_controls_do_not_change_other_modes(firstiter_cc, n_classes):
     environment = {}
 
-    use_real_reference, tree_margin = _configure_relion_firstiter_controls(
+    use_real_reference, tree_margin = resolve_firstiter_controls(
         firstiter_cc=firstiter_cc,
         n_classes=n_classes,
         environ=environment,
@@ -68,7 +65,7 @@ def test_relion_firstiter_controls_do_not_change_other_modes(firstiter_cc, n_cla
 
 def test_k1_firstiter_cc_explicit_opt_outs_override_defaults():
     environment = {"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "0"}
-    use_real_reference, tree_margin = _configure_relion_firstiter_controls(
+    use_real_reference, tree_margin = resolve_firstiter_controls(
         firstiter_cc=True,
         n_classes=1,
         tree_rescore_max_margin="off",
@@ -80,13 +77,13 @@ def test_k1_firstiter_cc_explicit_opt_outs_override_defaults():
 
 
 def test_tree_rescore_margin_option_takes_an_explicit_margin_and_rejects_bad_values():
-    _, tree_margin = _configure_relion_firstiter_controls(
+    _, tree_margin = resolve_firstiter_controls(
         firstiter_cc=True, n_classes=1, tree_rescore_max_margin="1e-5", environ={}
     )
     assert tree_margin == 1e-5
     for bad in ("-1", "nan", "sometimes"):
         with pytest.raises(SystemExit, match="firstiter_cc_tree_rescore_max_margin"):
-            _configure_relion_firstiter_controls(
+            resolve_firstiter_controls(
                 firstiter_cc=True, n_classes=1, tree_rescore_max_margin=bad, environ={}
             )
 
@@ -94,7 +91,7 @@ def test_tree_rescore_margin_option_takes_an_explicit_margin_and_rejects_bad_val
 def test_explicit_projector_override_still_applies_outside_default_scope():
     environment = {"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "1"}
 
-    use_real_reference, tree_margin = _configure_relion_firstiter_controls(
+    use_real_reference, tree_margin = resolve_firstiter_controls(
         firstiter_cc=False,
         n_classes=4,
         environ=environment,
@@ -107,7 +104,7 @@ def test_explicit_projector_override_still_applies_outside_default_scope():
 
 def test_initial_projector_override_rejects_invalid_boolean():
     with pytest.raises(SystemExit, match="must be a boolean token"):
-        _configure_relion_firstiter_controls(
+        resolve_firstiter_controls(
             firstiter_cc=True,
             n_classes=1,
             environ={"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "sometimes"},
@@ -115,63 +112,68 @@ def test_initial_projector_override_rejects_invalid_boolean():
 
 
 def test_relion_healpix_order_is_coarse_pass1_order():
-    coarse, fine = _resolve_relion_sampling_orders(healpix_order=2, adaptive_oversampling=1)
+    sampling = resolve_initial_sampling(2, 1, n_classes=1, max_healpix_order=None)
 
-    assert coarse == 2
-    assert fine == 3
+    assert sampling.coarse_order == 2
+    assert sampling.fine_order == 3
 
 
 def test_relion_sampling_order_rejects_negative_values():
     with pytest.raises(ValueError):
-        _resolve_relion_sampling_orders(healpix_order=-1, adaptive_oversampling=1)
+        resolve_initial_sampling(-1, 1, n_classes=1, max_healpix_order=None)
 
     with pytest.raises(ValueError):
-        _resolve_relion_sampling_orders(healpix_order=1, adaptive_oversampling=-1)
+        resolve_initial_sampling(1, -1, n_classes=1, max_healpix_order=None)
 
 
 def test_kclass_default_max_healpix_order_matches_relion_fixed_class3d_sampling():
-    cap, source = _resolve_effective_max_healpix_order(
+    sampling = resolve_initial_sampling(
+        adaptive_oversampling=0,
         n_classes=4,
         healpix_order=1,
         max_healpix_order=None,
     )
 
-    assert cap == 1
-    assert "Class3D fixed" in source
+    assert sampling.max_order == 1
+    assert "Class3D fixed" in sampling.max_order_source
 
 
 def test_k1_default_max_healpix_order_is_uncapped_as_relion():
     """RELION's auto-refine has no HEALPix cap (ml_optimiser.cpp updateAngularSampling); the
     old K=1 cap of 7 kept EMPIAR-10202 from converging while RELION went to 9 (14475516)."""
 
-    cap, source = _resolve_effective_max_healpix_order(
+    sampling = resolve_initial_sampling(
+        adaptive_oversampling=0,
         n_classes=1,
         healpix_order=3,
         max_healpix_order=None,
     )
 
-    assert cap is None
-    assert "auto-refine" in source and "uncapped" in source
-    assert _resolve_effective_max_healpix_order(n_classes=1, healpix_order=3, max_healpix_order=7) == (
+    assert sampling.max_order is None
+    assert "auto-refine" in sampling.max_order_source and "uncapped" in sampling.max_order_source
+    capped = resolve_initial_sampling(3, 0, n_classes=1, max_healpix_order=7)
+    assert (capped.max_order, capped.max_order_source) == (
         7,
         "explicit CLI",
     )
 
 
 def test_explicit_max_healpix_order_allows_kclass_refinement():
-    cap, source = _resolve_effective_max_healpix_order(
+    sampling = resolve_initial_sampling(
+        adaptive_oversampling=0,
         n_classes=4,
         healpix_order=1,
         max_healpix_order=3,
     )
 
-    assert cap == 3
-    assert source == "explicit CLI"
+    assert sampling.max_order == 3
+    assert sampling.max_order_source == "explicit CLI"
 
 
 def test_explicit_max_healpix_order_cannot_be_coarser_than_start():
     with pytest.raises(ValueError, match="max_healpix_order"):
-        _resolve_effective_max_healpix_order(
+        resolve_initial_sampling(
+            adaptive_oversampling=0,
             n_classes=4,
             healpix_order=2,
             max_healpix_order=1,
@@ -244,8 +246,9 @@ def test_seed_source_ignores_incidental_data_dir_relion_discovery(tmp_path):
 
 def test_optimizer_seed_is_resolved_before_halfset_splitting():
     source = RUN_FULL_REFINEMENT.read_text()
+    options_source = RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
 
-    assert "default=None" in source[source.index('parser.add_argument(\n        "--seed"') :]
+    assert "default=None" in options_source[options_source.index('parser.add_argument(\n        "--seed"') :]
     assert source.index("args.seed, optimizer_seed_source = _resolve_optimizer_random_seed") < source.index(
         "args.relion_half_sets = str(\n            _write_relion_start_particle_table("
     )
@@ -385,7 +388,7 @@ def test_profile_rows_are_jsonable_for_nested_numpy_values():
         }
     ]
 
-    jsonable = _jsonable_profile_rows(rows)
+    jsonable = profile_rows_for_json(rows)
 
     assert jsonable == [
         {

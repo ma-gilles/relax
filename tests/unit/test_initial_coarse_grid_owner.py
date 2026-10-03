@@ -2,8 +2,7 @@
 
 ``build_initial_coarse_grids`` builds the first exhaustive grid (sealed capture,
 caller translation table, or RELION translation grid) and
-``_relion_base_translation_grid`` is the only unperturbed RELION translation
-grid construction in ``iteration_loop``.
+final-pass grid preparation is owned by ``prepare_final_sampling``.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import matches
 
+import relax.refinement.finalization as finalization
 import relax.refinement.iteration_loop as iteration_loop
 import relax.refinement.iteration_planning as iteration_planning
 import relax.sampling as sampling_module
@@ -35,10 +35,10 @@ SEALED = {
 }
 
 
-def _fake_rotation_grid(order, dtype=np.float32):
+def _fake_rotation_grid(order, dtype=np.float32, *, symmetry='C1'):
     n = 3 * (int(order) + 1)
     rotations = np.repeat(np.eye(3, dtype=dtype)[None], n, axis=0)
-    return rotations, np.arange(3 * n, dtype=dtype).reshape(n, 3)
+    return sampling_module.RotationGrid(rotations=rotations, rotation_eulers=np.arange(3 * n, dtype=dtype).reshape(n, 3), healpix_order=order, symmetry=symmetry)
 
 
 def _same(x, y):
@@ -67,6 +67,7 @@ def _initial_grids(**overrides):
             sealed_sampling_state,
             initialized_healpix_order=initialized_healpix_order,
             voxel_size=kwargs["voxel_size"],
+            symmetry=kwargs.get("symmetry", "C1"),
             log=logging.getLogger("test_initial_coarse_grid_owner"),
         )
     return iteration_planning.build_initial_coarse_grids(
@@ -92,15 +93,17 @@ def test_base_translation_grid_falls_back_to_pixel_units_without_a_voxel_size():
     assert _same(fallback, pixel_units)
 
 
-def test_sealed_state_supplies_the_initial_grid(caplog):
+@pytest.mark.parametrize("symmetry", ["C1", "C4"])
+def test_sealed_state_supplies_the_initial_grid(caplog, symmetry):
     caplog.set_level(logging.INFO, logger="test_initial_coarse_grid_owner")
-    grids = _initial_grids(sealed_sampling_state=SEALED)
+    grids = _initial_grids(sealed_sampling_state=SEALED, symmetry=symmetry)
     rotations, eulers, translations = _sealed_sampling_base_grids(SEALED, voxel_size_angstrom=2.0, dtype=np.float32)
-    assert _same(grids.rotations, rotations) and _same(grids.rotation_eulers, eulers)
+    assert _same(grids.rotation_grid.rotations, rotations) and _same(grids.rotation_grid.rotation_eulers, eulers)
     assert isinstance(grids.translations, jnp.ndarray) and _same(grids.translations, translations)
     assert grids.base_translations.dtype == np.float64
     assert _same(grids.base_translations, np.asarray(translations, dtype=np.float64))
-    assert grids.healpix_order == 3 and isinstance(grids.healpix_order, int)
+    assert grids.rotation_grid.healpix_order == 3 and isinstance(grids.rotation_grid.healpix_order, int)
+    assert grids.rotation_grid.symmetry == symmetry
     assert "Frozen-boundary v3 directly materialized 6 Euler rows and 3 translations" in caplog.text
 
 
@@ -110,19 +113,21 @@ def test_sealed_state_must_sit_at_the_initialized_order():
 
 
 def test_relion_translation_grid_pairs_with_the_canonical_rotation_grid(monkeypatch):
-    monkeypatch.setattr(sampling_module, "_relion_rotation_grid_float32", _fake_rotation_grid)
+    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_rotation_grid)
     grids = _initial_grids(n_classes=4)
-    rotations, eulers = _fake_rotation_grid(3, dtype=iteration_planning._dense_global_scoring_dtype())
-    assert _same(grids.rotations, rotations) and _same(grids.rotation_eulers, eulers)
+    _rotation_grid_rotations = _fake_rotation_grid(3, dtype=iteration_planning._dense_global_scoring_dtype())
+    rotations = _rotation_grid_rotations.rotations
+    eulers = _rotation_grid_rotations.rotation_eulers
+    assert _same(grids.rotation_grid.rotations, rotations) and _same(grids.rotation_grid.rotation_eulers, eulers)
     expected = sampling_module._relion_base_translation_grid(4.25, 1.416667, n_classes=4, voxel_size=2.0)
     assert _same(grids.base_translations, expected)
     assert isinstance(grids.translations, jnp.ndarray)
     assert _same(grids.translations, jnp.asarray(expected, dtype=iteration_planning._dense_global_scoring_dtype()))
-    assert grids.healpix_order == 3
+    assert grids.rotation_grid.healpix_order == 3
 
 
 def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
-    monkeypatch.setattr(sampling_module, "_relion_rotation_grid_float32", _fake_rotation_grid)
+    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_rotation_grid)
     table = np.asarray([[0.5, -1.0], [0.0, 0.0]], dtype=np.float32)
     grids = _initial_grids(translations=table)
     assert grids.base_translations.dtype == np.float64 and _same(grids.base_translations, table.astype(np.float64))
@@ -145,6 +150,7 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "sealed_sampling_state",
         "initialized_healpix_order",
         "voxel_size",
+        "symmetry",
         "log",
     )
     source = inspect.getsource(iteration_loop.refine_single_volume)
@@ -153,4 +159,5 @@ def test_controller_materializes_explicit_coarse_grid_variants():
     assert "InitialGridSampling(" not in source
     assert "_sealed_sampling_base_grids(" not in source
     assert "_translation_grid_for_class_count(" not in source
-    assert source.count("_relion_base_translation_grid(") == 6
+    assert source.count("finalization.run_final_all_data(") == 1
+    assert inspect.getsource(finalization.run_final_all_data).count("prepare_final_sampling(") == 1

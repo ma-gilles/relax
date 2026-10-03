@@ -306,19 +306,23 @@ def test_relion_global_grid_preserves_source_euler_precision_until_matrix_cast(m
     monkeypatch.setattr(
         sampling_module,
         "_get_relion_rotation_grid_eulers_float64",
-        lambda _order: source_eulers,
+        lambda _order, *, symmetry='C1': source_eulers,
     )
 
-    rotations, returned_eulers = sampling_module._relion_rotation_grid_float32(3)
+    _rotation_grid_rotations = sampling_module.relion_scoring_rotation_grid(3)
+    rotations = _rotation_grid_rotations.rotations
+    returned_eulers = _rotation_grid_rotations.rotation_eulers
 
     assert_matches(rotations, _relion_mstep_rotations_from_eulers(source_eulers))
     assert_matches(returned_eulers, source_eulers.astype(np.float32))
     # A late float32 cast of the Euler angles moves the matrices by 6.2e-8
     # relative, inside the float32 band, so that difference is not asserted.
 
-    rotations_f64, returned_eulers_f64 = sampling_module._relion_rotation_grid_float32(
+    _rotation_grid_rotations_f64 = sampling_module.relion_scoring_rotation_grid(
         3, dtype=np.float64
     )
+    rotations_f64 = _rotation_grid_rotations_f64.rotations
+    returned_eulers_f64 = _rotation_grid_rotations_f64.rotation_eulers
     assert_matches(returned_eulers_f64, source_eulers)
     assert_matches(
         rotations_f64,

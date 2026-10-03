@@ -669,23 +669,29 @@ def test_the_per_chunk_oracle_meets_the_same_guard():
     assert "prepare_unshifted_bucket_operands" in io._prepare_bucket_io.__code__.co_names
 
 
-def test_the_backend_pairing_is_enforced_before_pass_2():
-    """Exact BPref never meets a dataset without the backend it needs.
+@pytest.mark.parametrize("backend_name", ["host_numpy", "jax_gpu"])
+def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name):
+    """A source-faithful K1 run refuses an incompatible backend before state/scoring."""
+    from types import SimpleNamespace
 
-    `refine_single_volume` refuses source-faithful normalization, which is what
-    turns exact BPref on by default, against any backend but `relion_cuda`, and
-    its own comment says it fails there rather than inside the first sparse
-    pass 2. So the configuration that trips the guard above cannot reach pass 2
-    at all, which is the last reason the resident path needs no refusal of its
-    own.
-    """
+    from relax.refinement import iteration_loop
+    from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
 
-    import inspect
-
-    from relax.refinement.iteration_loop import refine_single_volume
-
-    source = inspect.getsource(refine_single_volume)
-    assert 'relion_fourier_backend", None) not in (None, "relion_cuda")' in source, (
-        "the upstream pairing guard is gone from refine_single_volume"
+    # No backend setter or image arrays are needed: admission must reject this
+    # combination before refinement state, projection or pass-2 preparation.
+    dataset = SimpleNamespace(
+        image_shape=(8, 8), volume_shape=(8, 8, 8), voxel_size=1.0,
+        image_source=SimpleNamespace(backend=SimpleNamespace(relion_fourier_backend=backend_name)),
     )
-    assert "require RELION CUDA image preprocessing" in source
+
+    def unexpected_state(*args, **kwargs):
+        raise AssertionError("invalid image backend reached refinement state initialization")
+
+    monkeypatch.setattr(iteration_loop, "initialize_refinement_state", unexpected_state)
+    with pytest.raises(ValueError, match="require RELION CUDA image preprocessing"):
+        iteration_loop.refine_single_volume(
+            [dataset, dataset], None, None, None, None,
+            options=RefinementOptions(parity=RelionParityOptions(
+                preserve_bpref_particle_order=True, image_fourier_backend=backend_name,
+            )),
+        )

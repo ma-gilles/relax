@@ -4,13 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from relax.refinement import command_options, particle_loading
 from relax.refinement import full_refinement as driver
 
 pytestmark = pytest.mark.unit
 
 
 def _parsed(*tokens):
-    return driver._parse_args(["--data_dir", "data", "--output", "out", *tokens])
+    return command_options.parse_refinement_args(["--data_dir", "data", "--output", "out", *tokens])
 
 
 def test_refine3d_and_class3d_gui_defaults():
@@ -37,7 +38,7 @@ def test_input_and_output_are_required(missing, capsys):
     tokens = {"--data_dir": "data", "--output": "out"}
     tokens.pop(missing)
     with pytest.raises(SystemExit):
-        driver._parse_args([item for pair in tokens.items() for item in pair])
+        command_options.parse_refinement_args([item for pair in tokens.items() for item in pair])
     assert missing in capsys.readouterr().err
 
 
@@ -58,7 +59,7 @@ def test_job_type_defaults(n_classes, frozen, expected):
         apply_initial_lowpass=None,
         frozen_boundary_dir=frozen,
     )
-    driver._resolve_relion_gui_defaults(args)
+    command_options.resolve_job_defaults(args)
     assert (args.max_iter, args.image_fourier_backend, args.apply_initial_lowpass) == expected
 
 
@@ -66,7 +67,7 @@ def test_explicit_values_are_kept():
     args = SimpleNamespace(
         n_classes=1, max_iter=3, image_fourier_backend="host_numpy", apply_initial_lowpass=False, frozen_boundary_dir=None
     )
-    driver._resolve_relion_gui_defaults(args)
+    command_options.resolve_job_defaults(args)
     assert (args.max_iter, args.image_fourier_backend, args.apply_initial_lowpass) == (3, "host_numpy", False)
 
 
@@ -84,8 +85,8 @@ def test_mask_diameter_falls_back_to_the_gui_default(monkeypatch):
             applied.update(kwargs)
 
     ds = SimpleNamespace(image_source=SimpleNamespace(backend=Backend()), voxel_size=2.0)
-    monkeypatch.setattr(driver, "_find_relion_optimiser_star", lambda args: None)
-    params = driver._maybe_apply_relion_image_mask(ds, SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=5.0))
+    monkeypatch.setattr(command_options, "find_relion_optimiser_star", lambda args: None)
+    params = particle_loading._apply_relion_image_mask(ds, SimpleNamespace(particle_diameter_ang=None, width_mask_edge_px=5.0))
     assert params == (200.0, 5.0)
     assert applied["particle_diameter_ang"] == 200.0
 
@@ -99,5 +100,7 @@ def test_initial_model_seed_default_is_relions():
 
 def test_seed_used_is_recorded_in_results_and_ledger():
     source = driver.Path(driver.__file__).read_text()
-    assert '"random_seed": np.int64(args.seed),' in source
+    archive_source = driver.Path(driver.__file__).with_name("result_files.py").read_text()
+    assert "build_archive_metadata(" in source
+    assert '"random_seed": np.int64(args.seed),' in archive_source
     assert '"random_seed": int(args.seed),\n            "random_seed_source": str(optimizer_seed_source),' in source

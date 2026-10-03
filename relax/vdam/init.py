@@ -1,12 +1,7 @@
-"""Denovo InitialModel state initialisation (RELION parity).
+"""InitialModel startup state for RELION's de novo initialization.
 
-Mirrors MlModel::initialiseFromImages fn_ref=None branch
-(ml_model.cpp:1082) plus the surrounding ini_high / sigma2_noise / tau2
-setup. Three public callables:
-
-- ``initialise_denovo_state`` — particle-independent state fields.
-- ``seed_noise_from_mavg`` — write per-optics-group sigma2_noise.
-- ``initialise_data_vs_prior_from_references`` — seed tau2_class (shared per class with auto-refine).
+Mirrors ``MlModel::initialiseFromImages``' no-reference branch
+(``ml_model.cpp:1082``) and noise/signal-prior startup.
 """
 
 from __future__ import annotations
@@ -16,6 +11,10 @@ from dataclasses import replace
 
 import numpy as np
 
+from relax.relion.reference_initialization import (
+    _relion_data_vs_prior,
+    relion_initial_tau2_and_data_vs_prior,
+)
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
 
 # RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
@@ -97,64 +96,6 @@ def seed_noise_from_mavg(
     new_state = replace(state)
     new_state.sigma2_noise = np.asarray(sigma2_per_group, dtype=np.float64).copy()
     return new_state
-
-
-def _relion_power_spectrum_3d(volume: np.ndarray, n_shells: int) -> np.ndarray:
-    """RELION ``getSpectrum(POWER_SPECTRUM)``: FFTW-normalized forward FFT, per-shell mean ``|F|^2``."""
-    vol = np.asarray(volume, dtype=np.float64)
-    if vol.ndim != 3 or vol.shape[0] != vol.shape[1] or vol.shape[1] != vol.shape[2]:
-        raise ValueError(f"volume must be cubic 3D, got shape {vol.shape}")
-    n = int(vol.shape[0])
-    if n_shells < 1:
-        raise ValueError(f"n_shells must be positive, got {n_shells}")
-
-    fourier = np.fft.rfftn(vol, axes=(0, 1, 2), norm=None) / float(vol.size)
-    kz = np.fft.fftfreq(n, d=1.0) * n
-    kx = np.arange(n // 2 + 1, dtype=np.float64)
-    radius = np.sqrt(kz[:, None, None] ** 2 + kz[None, :, None] ** 2 + kx[None, None, :] ** 2)
-    shell = np.floor(radius + 0.5).astype(np.int64)
-    valid = shell < int(n_shells)
-    out = np.zeros(int(n_shells), dtype=np.float64)
-    count = np.zeros(int(n_shells), dtype=np.float64)
-    power = np.abs(fourier) ** 2
-    np.add.at(out, shell[valid].ravel(), power[valid].ravel())
-    np.add.at(count, shell[valid].ravel(), 1.0)
-    nz = count > 0.0
-    out[nz] /= count[nz]
-    return out
-
-
-def relion_initial_tau2_and_data_vs_prior(
-    iref_relion: np.ndarray,
-    *,
-    tau2_fudge: float,
-    avg_sigma2_noise: np.ndarray,
-    nr_particles: int,
-    pdf_class: float = 1.0,
-) -> tuple[np.ndarray, np.ndarray]:
-    """One class of ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557-1626).
-
-    ``iref_relion`` is the start-up reference in RELION's frame (after
-    ``initialLowPassFilterReferences``); ``avg_sigma2_noise`` is the RELION-unit
-    noise spectrum averaged over optics groups with noise. Returns the RELION-unit
-    ``tau2_class`` and ``data_vs_prior_class`` spectra, ``ori_size // 2 + 1`` shells.
-    """
-    iref = np.asarray(iref_relion, dtype=np.float64)
-    ori_size = int(iref.shape[0])
-    avg_sigma2_noise = np.asarray(avg_sigma2_noise, dtype=np.float64).reshape(-1)
-    if avg_sigma2_noise.shape != (ori_size // 2 + 1,) or np.any(avg_sigma2_noise <= 0.0) or nr_particles <= 0:
-        raise ValueError("need a positive noise spectrum of ori_size // 2 + 1 shells and nr_particles > 0")
-    spectrum = _relion_power_spectrum_3d(iref, ori_size // 2 + 1)
-    spectrum *= float(ori_size * ori_size) / 2.0
-    tau2 = float(tau2_fudge) * spectrum
-    return tau2, _relion_data_vs_prior(tau2, avg_sigma2_noise, nr_particles, pdf_class)
-
-
-def _relion_data_vs_prior(tau2, avg_sigma2_noise, nr_particles, pdf_class):
-    """``data_vs_prior = N * pdf_class * tau2 / (sigma2 * 2i)``, shell 0 without the ``2i``."""
-    shell_factor = np.maximum(1.0, 2.0 * np.arange(avg_sigma2_noise.size, dtype=np.float64))
-    evidence = float(nr_particles) * float(pdf_class) / avg_sigma2_noise
-    return evidence / shell_factor * tau2
 
 
 def initialise_data_vs_prior_from_references(

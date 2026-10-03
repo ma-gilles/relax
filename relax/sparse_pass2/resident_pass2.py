@@ -128,6 +128,7 @@ from relax.sparse_pass2.compile_ahead import (
 from relax.sparse_pass2.resident_candidates import (
     _BLOCK_ROWS,
     CandidateTableBlocks,
+    chunk_segment_offsets,
     map_over_classes,
     materialize_chunk,
     merge_class_tables,
@@ -4893,30 +4894,6 @@ def compute_k_class_pass2_stats_resident(
     )
 
 
-def _chunk_segment_offsets(tables, chunk, n_fine_trans: int) -> np.ndarray:
-    """Cell offsets of each chunk image slot, in the segmented handler's units.
-
-    Slot ``b`` of the chunk owns the cells of image ``image_start + b``; padded
-    slots and the rows past ``n_valid_rows`` are covered by no segment, which
-    the handler treats exactly as an all ``-inf`` rectangular row.
-    """
-
-    image_capacity = int(chunk.image_capacity)
-    n_valid_images = int(chunk.n_valid_images)
-    offsets = np.full(image_capacity + 1, chunk.n_valid_rows * int(n_fine_trans), dtype=np.int64)
-    starts = (
-        np.asarray(
-            tables.row_offsets[chunk.image_start : chunk.image_start + n_valid_images + 1],
-            dtype=np.int64,
-        )
-        - int(chunk.row_start)
-    ) * int(n_fine_trans)
-    offsets[: n_valid_images + 1] = starts
-    if int(offsets[-1]) > int(chunk.row_capacity) * int(n_fine_trans):
-        raise ValueError("chunk segment offsets exceed the chunk's cell capacity")
-    return offsets.astype(np.int32)
-
-
 class _Placement(NamedTuple):
     """How a chunk constructor turns host values into program inputs.
 
@@ -5251,7 +5228,7 @@ def _make_chunk_row_arrays(tables, chunk, n_fine_trans, *, place, n_fine_rot=Non
 
     image_capacity = int(chunk.image_capacity)
     tables, host_chunk, local_chunk = _chunk_host_rows(tables, chunk)
-    segment_offsets_np = _chunk_segment_offsets(tables, local_chunk, n_fine_trans)
+    segment_offsets_np = chunk_segment_offsets(tables, local_chunk, n_fine_trans=n_fine_trans)
     image_row_start_np = segment_offsets_np.astype(np.int64)[:image_capacity] // int(n_fine_trans)
     image_row_count_np = (
         segment_offsets_np.astype(np.int64)[1:] - segment_offsets_np.astype(np.int64)[:-1]

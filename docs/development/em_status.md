@@ -1,9 +1,408 @@
 # Current EM/VDAM development scope
 
-Updated September 28, 2026. Cleanup and scientific qualification remain in
-progress. The [task queue](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/CURRENT_TASK.md)
-contains the active work list; detailed experiment histories live in the private
-`ma-gilles/recovar-experiments` repository.
+<a id="current-readability-work-half-image-preprocessing-ownership"></a>
+
+## Current readability refactor
+
+The completed operation ownership is integrated with GitHub main
+`80f2b2b36cee01d110276d189a3b061c78746c86`. The thirteen code/guide commits through
+`69abd77` retain their changes; the subsequent commit adds PPCA measurement
+documentation only. The incoming work includes
+pass-1 runner-up, exact-operand, normalization and dump-schema changes,
+PPCA work and tomography safeguards. Incoming command/controller changes are
+adapted to the existing refactor owners. Scientific sequencing and visible
+updates remain unchanged by these interface migrations.
+
+The first-CC margin now resolves in `command_options.resolve_firstiter_controls`,
+then enters the existing parity settings at the original command boundary.
+Numbered expectation and final dense execution consume those settings; the
+batch planner reads the same value. `None` disables rescoring; `0.0` is enabled.
+K1 CLI `auto` still means 4e-6 with firstiter_cc, while K4 `auto` stays off.
+Particle-format optics admission stays immediately after the input STAR is read;
+tomography uses main's qualified-feature set and preserves tilt versus particle
+metadata indexing.
+
+Focused CPU verification executed 538 cases: 536 passed, and two newly extended
+staging expectations assumed the compact coarse planner also applied to enabled
+rescoring. Main uses the generic coarse planner in that case. The corrected
+nine-case staging suite passed, covering off, zero and the default margin.
+The failed full-run receipt is preserved; its repair changes no numerical
+production AST or tolerance. Five GPU cases were deselected for fresh GPU tiers.
+Whole-source import lint and native source/import checks passed. The six
+principal prior, reconstruction, noise, planning and half-input numerical owners
+are byte-identical to the preceding implementation.
+
+Earlier frozen `0b46b2` smoke **14909958** passed: 466 GPU cases, 251 controller
+cases and all three required parity replays. One optional operand test lacked
+its exact-CTF STAR fixture. Its medium **14909959** remains on its original
+immutable source. The queued K1 pair **14910610** is preserved under a root-owned
+synchronization hold to avoid redundant production work. These jobs do not
+qualify the incoming engine changes. The unchanged native-source digest permits
+reuse of the already built immutable libraries; runtime library/GPU checks still
+run before and after new qualification.
+
+[Current integration, receipts, preserved jobs and required gates](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/refactor_finish_sync_69abd77_20261003/HANDOFF.json)
+track the new candidate. Fresh same-source smoke/medium, float32 K1 and exactly
+K4 quality, characterized real-data confirmation, ordinary paired memory/speed,
+the milestone long tier and qualified main delivery remain required. No
+production quality or performance acceptance is claimed.
+
+
+
+The remaining numbered Class3D prior aggregation, regularized reconstruction,
+postprocessing, first-CC reporting taper and paired row/noise/accuracy preparation
+are integrated in their existing responsibility owners. The controller retains
+mode/source admission, explicit scientific state installation, scheduling/history
+publication and the transition to final all-data. Three obsolete reconstruction
+entry points and their maintained direct/indirect callers are migrated.
+
+Unused temporary expiry after last use is explicitly authorized by the user on
+October 2. Selected scientific products retain their required storage; unused
+class originals, full CTF tables and taper/admission scratch may expire. Existing
+casts, ordered numerical calls, JIT/donation boundaries and final consuming solves
+are preserved. Final prior/reconstruction orchestration stays separate because
+its replay, CTF, precision and release policies differ; shared mathematical
+primitives retain one implementation.
+
+The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
+show the scientific order, producer/consumer ownership and actual caller together.
+Source spans are 2760/1766 for numerical/command controllers;
+these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
+own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
+scientific, real-data, memory and matched-GPU speed gates pass and delivery to main
+is verified. Existing comments, frozen candidates, controls and jobs are preserved.
+
+<a id="current-readability-work-input-geometry-and-replay-boundary"></a>
+
+## Earlier readability work: input geometry and replay boundary
+
+Replay now consumes validated `ImageGeometry`; the generic controller dataset
+alias and two silent invalid-pixel substitutions are removed. Original scalar
+types remain explicit for existing host arithmetic. Scientific state writes,
+sampling order and array lifetimes are unchanged. See the
+[actual producer and calling flow](final_local_sampling_patch_review.md#input-geometry-and-replay-boundary).
+
+All 185 selected CPU cases pass with zero skips; source/test lint, structural
+comparison and diff checks pass. The initial structural proof required a script
+normalization repair, with no production/test change. Exact source and commands
+are in the [handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_input_geometry_20261002T210920Z/HANDOFF.json).
+
+Controller spans 2,917 lines and command 1,860. Representative phase ownership,
+whole dead/shared-code audit and the prior Class3D scratch-lifetime choice remain
+open. Production float32 K1/exactly-K4, real-data quality, memory and matched-GPU
+speed await complete-flow review and a new freeze. Original work, frozen sources,
+controls and jobs are preserved. No new GPU job, merge or publication.
+
+<a id="current-readability-work-sealed-restart-runtime-ownership"></a>
+
+## Earlier readability work: sealed restart runtime ownership
+
+The existing diagnostic CLI owner now holds projector-only slots, captured-state
+attachment and float32 scoring-noise expansion with its admission/source helpers.
+Controller mode/source selection, noise installation, capture publication and
+validation timing remain visible. No new function, type, module or wrapper.
+See the [actual callers and implementations](final_local_sampling_patch_review.md#sealed-restart-runtime-adaptation).
+
+The affected inventory passed 223 cases and found one stale source guard from
+the preceding expectation move; after test-only migration all three affected
+guards pass, zero skips. Numerical assertions/tolerances are unchanged. Structural
+comparison, isolated diagnostic import, source/test lint and diff checks pass.
+Exact source, commands and failure repair are in the [package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_sealed_restart_owner_20261002T204921Z/HANDOFF.json).
+
+Controller remains 2,913 lines and command 1,860. Representative design and the
+prior Class3D scratch-lifetime choice remain open. Final production float32
+K1/exactly-K4, real-data quality, memory and matched-GPU speed await complete-flow
+review and a new freeze. No new GPU job, merge or publication; original work,
+frozen sources, controls and jobs remain preserved.
+
+<a id="current-readability-work-numbered-expectation-preparation"></a>
+
+## Earlier readability work: numbered expectation preparation
+
+The existing expectation owner now binds the canonical trial grid, dense/local
+sampling support and local diagnostic policy once for both halves. The
+controller retains mode decisions, explicit tomography adaptation, half-specific
+operands, score publication, serial/overlap dispatch and the memory boundary.
+See the [complete construction and implementation](final_local_sampling_patch_review.md#numbered-expectation-preparation).
+
+Initial checks passed 132 cases and found eight incorrect new window expectations
+plus one source guard needing its new owner. After test-only repairs, 43 repair
+cases, 27 affected controller cases and all 108 CPU EM guards pass with zero
+skips. Structural, import and lint checks pass. Exact source, commands, repaired
+failures and limitations are in the [package handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_numbered_expectation_preparation_20261002T202923Z/HANDOFF.json).
+
+The controller remains 2,913 lines, command 1,860; scorer has 19 inputs and
+producer 18, with 34 half-worker captures. The representative design remains
+unfinished. Full production float32 K1/exactly-K4, real-data quality, memory and
+matched-GPU speed await complete-flow review and freeze. The prior Class3D
+lifetime choice remains pending. No new GPU job, merge or publication;
+original workspace, frozen sources, controls and jobs remain preserved.
+
+<a id="current-readability-work-command-oracle-admission-and-runtime-controls"></a>
+
+## Earlier readability work: command oracle admission and runtime controls
+
+Command preparation now owns verified dispatch admission and CLI/optimiser
+runtime-control resolution in the existing command-options module. The controller
+keeps authoritative group identity, strict replay admission, follower preparation,
+frozen-aware source choice and visible option installation before reference
+loading. See the [complete current caller and owners](final_local_sampling_patch_review.md#command-oracle-admission-and-runtime-controls)
+and [checks/source receipt](final_search_patch_status.md#current-command-oracle-admission-and-runtime-controls).
+
+The initial run passed 208 cases and exposed 12 new fixture setup errors from
+unsorted manifest names; all 26 new cases pass after fixing that fixture alone.
+Existing 194 cases passed initially, with zero skips. Structural/import checks
+pass. Command remains 1,860 lines and numerical controller 2,949; the representative
+flow and phase ownership remain unfinished. Production K1/exactly-K4, real-data
+quality, memory and matched-GPU performance await design review and freeze. No
+new job, merge or publication. Earlier sources/jobs and pending Class3D lifetime
+choice remain preserved.
+
+## Earlier readability work: correction reporting and capture
+
+Correction measurements now have one small reporting result in the normalization
+owner, reused by checkpoint averages and parity captures. The existing diagnostic
+owner performs capture encoding/conversion and preserves warning handling. The
+controller retains normalization admission, native/follower correction writes,
+convergence, checkpoint order and full/timing-only selection. See the
+[complete current operation](final_local_sampling_patch_review.md#correction-reporting-and-completed-iteration-capture)
+and [checks and source receipt](final_search_patch_status.md#current-correction-reporting-and-capture).
+
+The initial focused run passed 88 cases and found five failures from two new
+fixture mistakes. After repair without assertion/tolerance changes, all 13 new
+reporting/capture and 25 affected controller cases pass with zero skips. Existing
+normalization, follower, snapshot-lifetime and timing checks passed in the first
+run. Structural and import checks pass. The controller remains 2,949 lines,
+command 1,992; the half worker still captures 38 names. The representative design
+and phase interface remain unfinished. Class3D scratch lifetime awaits the prior
+user choice. Full production K1/exactly-K4, real-data quality, memory and matched GPU
+speed remain open. No new GPU submission, merge or publication; previous
+sources and jobs are preserved.
+
+## Earlier readability work: half input ownership
+
+The existing half model operands carry borrowed radial noise; local/dense
+sampling carries coarse angular metadata; particle diameter comes from the
+already-required run options. No new function, type, module or flag was added.
+Scoring, frame writes, offloading, publication and recording remain visible. See
+the [complete current operation](final_local_sampling_patch_review.md#numbered-half-input-ownership)
+and [checks and source receipt](final_search_patch_status.md#earlier-half-input-ownership).
+
+The initial focused command passed 122 cases and found three stale indirect
+fixture cases. After migration without assertion changes, all three final
+preparation and 45 affected controller cases pass with zero skips. Structural
+comparison, import lint and pinned imports pass. At that source the controller spanned 2,968
+lines, command 1,992; the half worker captures 38 names and the score interface
+has 23 inputs. Phase ownership and the representative design remain unfinished.
+Class3D scratch lifetime awaits the existing user choice. Full production
+K1/exactly-K4, real-data quality, memory and matched-GPU performance remain open;
+existing sources/jobs are preserved. No new GPU submission or publication.
+
+## Earlier readability work: half-expectation recording
+
+Half profiles, support counts and E-step captures now have their existing
+expectation owner. The controller retains scoring, metadata updates, offloading,
+payload publication and the recording call. Count collection preserves worker
+recording order, separate Class3D/native policies, absent/empty arrays and
+combination after preprocessing drains. See the
+[complete current flow](final_local_sampling_patch_review.md#half-expectation-recording-and-support-counts)
+and [checks and source receipt](final_search_patch_status.md#earlier-half-expectation-recording).
+
+The initial focused command passed 127 cases and failed one stale checkpoint
+fixture. After migration, all 19 checkpoint and 45 affected controller cases pass
+with zero skips. Structural comparison and import lint pass. The numerical
+controller at that source spanned 2,969 lines, command 1,992; the half worker captured 40
+names. Phase construction and the representative refactor remain unfinished.
+Class3D scratch-lifetime approval remains pending. Full production K1/exactly-K4,
+real-data quality, memory and matched-GPU speed gates remain open. No new GPU
+submission or publication; existing sources/jobs are preserved.
+
+## Earlier readability work: reconstruction settings
+
+The representative refactor is still being completed before full production
+qualification. The existing reconstruction settings owner now binds invariant
+regularization, particle-mask and initial-filter inputs once for numbered/final
+priors, reconstruction, postprocessing and Class3D captures. Windows, accumulator
+layout, first-CC phase decisions and model updates remain explicit. See the
+[complete current calling flow](final_local_sampling_patch_review.md#reconstruction-settings-and-visible-model-updates)
+and [checks and source receipt](final_search_patch_status.md#earlier-reconstruction-settings-cleanup).
+
+58 focused and 19 affected controller cases pass. The final capture-interface
+migration passes all 11 capture cases; import and structural checks pass. The
+unused command noise validator is removed after caller/dynamic-name screening;
+33 affected startup, command and import cases pass. The
+numerical controller at that source spanned 3,037 lines and command 1,992 lines. Class3D prior
+aggregation is waiting for the concrete buffer-lifetime choice sent to the user.
+Other controller responsibilities remain unfinished. Full production K1,
+exactly-K4, real-data quality, peak-memory and matched-GPU performance gates remain
+open. Existing sources/jobs are preserved; no new GPU submission or publication.
+
+## Earlier readability work: numbered sampling
+
+The refactor is actively completing code before further production qualification,
+following the user's October 2 clarification. Angular-transition policy now
+belongs to `refinement/convergence.py`; numbered perturbation and scoring-window
+planning belong to `refinement/iteration_planning.py`. The controller preserves
+pre-update coarse order, replay/accuracy timing, grid execution and explicit
+state writes. See the [complete calling flow](final_local_sampling_patch_review.md#numbered-sampling-policy-and-fourier-windows)
+and [current package receipt](final_search_patch_status.md#earlier-numbered-sampling-cleanup).
+
+Focused CPU checks pass. At that source the numerical controller spanned 3,052 lines and command
+1,992 lines; both are unfinished. Continue phase construction/publication and
+reconstruction ownership work with buffer-lifetime review. Full production K1,
+exactly K4, real-data quality and repeated matched-GPU performance remain open.
+Preserve existing frozen sources/jobs; no new submission or publication occurred.
+
+## Current main integration and Class3D shape results
+
+Projector preparation now owns reuse of the accuracy projector, reference
+conversion, the established disk cache and optional dumps in the existing
+`projector_preparation.py` module. `ProjectorReuse` is produced with the accuracy
+projector; it pairs the same borrowed reference identity with its active window
+and fixed image support. Accuracy and scoring consume it directly. No new module
+or forwarding wrapper was added.
+
+The controller retains captured-projector admission, empty-half handling, ordered
+half iteration and explicit projector installation. Its old-projector list reset
+and last-projector assignment remain at their original release boundaries. The
+complete producer, operation and caller are in the [review](final_local_sampling_patch_review.md#projector-preparation-and-accuracy-reuse).
+
+This package passed **79 affected CPU tests, 108 guards and 96 actual old/new
+preparation-stage comparisons**, with no skipped cases in those test receipts.
+Controller lifetime tests exercise old-list release, the last-projector alias,
+accuracy/scoring reuse and an empty half. Cold transform/cache arithmetic,
+captured validation, finalization order and the remaining controller statements
+match the previous source after the reviewed adapters are expanded. Lint,
+guide mirrors, metrics, pinned imports and native-source hashes pass. Existing
+deliberate complex128 slabs and float64 power spectra remain unchanged; this is
+not a switch to double-precision EM.
+
+The candidate incorporates cached main `7412fd8`; remote refresh is unverified.
+Original dirty work/comments and all earlier frozen sources/jobs are preserved.
+The [current handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_projector_reuse_owner_20261002T134633Z/HANDOFF.json) records exact source identities,
+commands and the two failed new-fixture receipts followed by their passing repairs.
+The [previous main integration](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T131551Z/HANDOFF.json)
+retains its 257 distinct affected CPU cases, 108 guards and 37 unexecuted GPU cases
+for that source. Its explicitly built and frozen CUDA 12.8 libraries are reused
+after current source/hash checks.
+
+The command `main()` remains **1,992 lines**, and the numerical controller **3,184**.
+Both are unfinished. Class3D aggregation and broader sampling extraction still
+require explicit lifecycle/RNG decisions. The next step is review of this complete
+projector flow and the remaining controller responsibilities, before broad automation.
+
+GPU smoke, production float32 K1/exactly K4/real-data quality, repeated matched-GPU
+timing and peak RSS remain unqualified. The older K1 convergence discrepancy is open.
+This session cannot reach the GPU driver or Slurm sockets. No new jobs or publication
+occurred; inspect the earlier uncertain submission's remote state before retrying.
+
+
+## Current startup pose source ownership
+
+Startup pose selection, loading, corrections and provenance now have one
+operation in `relion/input_poses.py`. The command retains source setup order and
+visible replay/frozen-correction construction. Reports reuse provenance produced
+with the selected data. See the [complete caller, result types and implementation](final_local_sampling_patch_review.md#startup-pose-source-ownership).
+
+414 affected CPU tests pass, including 34 new source cases. All 504 actual
+previous/current cases match (344 successful selections, 160 matching refusals);
+logging and 80 borrowed-array checks match. Eight archive comparisons/roundtrips,
+full-command AST expansion, import/lint and native-source hashes pass. The 108
+CPU guards pass on the unchanged engine path; exact version/reuse scope is in the
+[handoff](/scratch/gpfs/GILLES/mg6942/tmp/relax_initial_pose_owner_20261002T112730Z/HANDOFF.json).
+
+The command remains **1,992 lines** in a 2,762-line file; the numerical controller
+remains **3,194**. Both are unfinished. Pose preparation has 18 explicit inputs;
+archive adaptation has 28. Next, complete projector/restart provenance at its
+producers and larger controller boundaries after buffer-lifetime review.
+
+This tested package is based on main `ab6595d`. Cached main has advanced to
+`c70f1a1`; integration follows this immutable snapshot. Remote refresh is unverified. Original dirty work/comments and frozen candidates/jobs are preserved.
+No publication or new GPU submission occurred. GPU smoke, float32 K1/exactly K4
+and real-data quality plus repeated matched-GPU timing/peak RSS remain unqualified.
+GPU driver and scheduler access still fail; inspect the prior uncertain submission
+before retry. Human review of the completed example precedes broad automation.
+
+## Current command configuration and archive metadata
+
+[Earlier configuration/archive owner and main integration](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/HANDOFF.json)
+remain preserved.
+
+## Refactor history and scientific gates
+
+Read the concise [current qualification status](final_search_patch_status.md)
+for source-specific numerical findings, preserved smoke/job evidence and the
+remaining float32 K1/K4/real-data/performance gates. Earlier readability source
+reports are retained in the immutable [previous status][refactor-history].
+The following preserved headings keep existing links; their old next actions
+are historical evidence rather than current instructions.
+
+## Current iteration-zero model replay owner
+
+[Recorded source and evidence][previous-status].
+
+## Earlier main integration
+
+[Recorded source and evidence][previous-status].
+
+## Current checkpoint capture ownership
+
+[Recorded source and evidence][previous-status].
+
+## Earlier iteration convergence policy
+
+[Recorded source and evidence][previous-status].
+
+## Earlier startup sampling state
+
+[Recorded source and evidence][previous-status].
+
+## Earlier particle row layout
+
+[Recorded source and evidence][previous-status].
+
+## Earlier particle input preparation
+
+[Recorded source and evidence][previous-status].
+
+## Earlier particle-pose transition
+
+[Recorded source and evidence][previous-status].
+
+## Earlier iteration-resolution ownership
+
+[Recorded source and evidence][previous-status].
+
+## Earlier command-option ownership
+
+[Recorded source and evidence][previous-status].
+
+## Earlier particle-group ownership
+
+[Recorded source and evidence][previous-status].
+
+## Earlier follower-topology preparation
+
+[Recorded source and evidence][previous-status].
+
+## Readability refactor: particle pose interpretation
+
+[Recorded source and evidence][previous-status].
+
+## Readability refactor: normalization update
+
+[Recorded source and evidence][previous-status].
+
+## Readability refactor: rotation-grid ownership
+
+[Recorded source and evidence][previous-status].
+
+## Readability refactor: final all-data controller
+
+[Recorded source and evidence][previous-status].
+
+[refactor-history]: /scratch/gpfs/GILLES/mg6942/tmp/relax_initial_model_replay_20261002T091611Z/source/candidate/docs/development/em_status.md
+[previous-status]: /scratch/gpfs/GILLES/mg6942/tmp/relax_initial_model_replay_20261002T091611Z/source/candidate/docs/development/em_status.md
 
 ## Subtomogram InitialModel and first-iteration CC (October 1, 2026)
 
@@ -136,6 +535,10 @@ scatter .41 s, epilogue and posterior preparation .21 s, window projection .18 s
 (nsys job 14900161). No remaining kernel is more than about 10% of an update.
 A per-shell separable VDAM metric that would shrink the scatter was rejected on
 science ([section 14](../math/vdam_ppca_algorithm.md)).
+
+## Refinement readability example (October 1, 2026)
+
+[Recorded readability packages and their source-specific evidence](/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/final_source/docs/development/em_status.md#refinement-readability-example-october-1-2026).
 
 ## PPCA coarse optimizer comparison (September 28, 2026)
 

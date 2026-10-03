@@ -22,15 +22,19 @@ def _init(prior, **overrides):
 
 
 def test_no_snapshot_prior_leaves_every_half_unset():
-    assert _init(None) == ([None, None], [None, None], [None, None], [None, None])
-    assert _init(None, n_classes=3) == ([None, None], [None, None], [None, None], [None, None])
+    assert all(p.shared.values is None and p.classes.values is None for p in _init(None))
+    assert all(p.shared.values is None and p.classes.values is None for p in _init(None, n_classes=3))
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_k1_vector_is_shared_by_both_halves_with_inferred_order(dtype, caplog):
     prior = np.linspace(0.0, 1.0, N_PIX)
     with caplog.at_level(logging.INFO, logger=__name__):
-        global_prior, global_order, class_prior, class_order = _init(prior, dtype=dtype)
+        priors = _init(prior, dtype=dtype)
+        global_prior = [p.shared.values for p in priors]
+        global_order = [p.shared.healpix_order for p in priors]
+        class_prior = [p.classes.values for p in priors]
+        class_order = [p.classes.healpix_order for p in priors]
     assert class_prior == [None, None] and class_order == [None, None]
     assert global_order == [3, 3]
     for half in global_prior:
@@ -43,7 +47,9 @@ def test_k1_vector_is_shared_by_both_halves_with_inferred_order(dtype, caplog):
 
 def test_k1_per_half_list_keeps_a_missing_half_unset():
     prior = np.linspace(0.1, 1.0, N_PIX)
-    global_prior, global_order, _, _ = _init([None, prior])
+    priors = _init([None, prior])
+    global_prior = [p.shared.values for p in priors]
+    global_order = [p.shared.healpix_order for p in priors]
     assert global_prior[0] is None and global_order[0] is None
     assert global_prior[1].shape == (N_PIX,) and global_order[1] == 3
 
@@ -51,7 +57,11 @@ def test_k1_per_half_list_keeps_a_missing_half_unset():
 def test_kclass_snapshot_yields_per_class_priors_per_half(caplog):
     shared = np.stack([np.linspace(0.0, 1.0, N_PIX), np.linspace(1.0, 2.0, N_PIX)])
     with caplog.at_level(logging.INFO, logger=__name__):
-        global_prior, global_order, class_prior, class_order = _init(shared, n_classes=2)
+        priors = _init(shared, n_classes=2)
+        global_prior = [p.shared.values for p in priors]
+        global_order = [p.shared.healpix_order for p in priors]
+        class_prior = [p.classes.values for p in priors]
+        class_order = [p.classes.healpix_order for p in priors]
     assert global_prior == [None, None] and global_order == [None, None]
     assert class_order == [3, 3]
     for half in class_prior:
@@ -61,7 +71,9 @@ def test_kclass_snapshot_yields_per_class_priors_per_half(caplog):
 
 def test_kclass_per_half_snapshot_keeps_halves_distinct():
     per_half = np.stack([np.stack([np.linspace(0.0, 1.0, N_PIX)] * 2), np.stack([np.linspace(2.0, 3.0, N_PIX)] * 2)])
-    _, _, class_prior, class_order = _init(per_half, n_classes=2)
+    priors = _init(per_half, n_classes=2)
+    class_prior = [p.classes.values for p in priors]
+    class_order = [p.classes.healpix_order for p in priors]
     assert class_order == [3, 3]
     expected = op.normalize_class_direction_prior_per_half(per_half, 2, dtype=np.float32)
     for half, want in zip(class_prior, expected):

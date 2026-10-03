@@ -1,32 +1,149 @@
 """Reconstruction diagnostic serialization; scheduling stays in the controller.
 
-Callers retain their environment gates. These writers preserve historical NPZ
-field names, casts and optional-field behavior; they do not update EM state.
+Prejoin admission and finite auditing run before cross-half mixing. Writers
+preserve historical NPZ field names, casts and optional-field behavior; model
+and history updates remain with the controller.
 """
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
+from relax.diagnostics import finite_check
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
+from relax.reconstruction import regularization_relion
+
+if TYPE_CHECKING:
+    from relax.refinement.iteration_planning import ClassImageSize
+    from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
 
 
-def write_kclass_current_size(
+def audit_prejoin_accumulators(
+    numerators,
+    denominators,
+    settings: ReconstructionSettings,
+    *,
+    iteration,
+    current_size,
+    accumulator_shape,
+    k_class_enabled,
+    init_relion_iteration,
+    state_current_size,
+    pixel_size_angstrom,
+    log,
+) -> bool:
+    """Capture and audit native half accumulators before any cross-half join.
+
+    Return whether this numbered iteration matches the accumulator capture
+    target, for the controller's subsequent post-join capture. The guard runs
+    for K1 and Class3D, including iterations outside the capture target.
+    """
+    prejoin_dir = os.environ.get("RELAX_BPREF_PREJOIN_DUMP_DIR")
+    target_iteration = os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_ITERATION")
+    iteration_matches = (
+        not target_iteration or iteration + 1 == int(target_iteration)
+    )
+    if prejoin_dir and not k_class_enabled and iteration_matches:
+        write_bpref_accumulators(
+            prejoin_dir,
+            stage="prejoin",
+            iteration=iteration,
+            current_size=current_size,
+            padding_factor=settings.padding_factor,
+            grid_size=settings.grid_size,
+            voxel_size=pixel_size_angstrom,
+            volume_shape=settings.volume_shape,
+            accumulator_shape=accumulator_shape,
+            Ft_y_0=numerators[0],
+            Ft_y_1=numerators[1],
+            Ft_ctf_0=denominators[0],
+            Ft_ctf_1=denominators[1],
+        )
+
+    guard_mode = finite_check.half_accumulator_guard_mode()
+    if iteration == 0:
+        log.info(
+            "BPref accumulator guard (%s): mode=%s",
+            finite_check.HALF_ACCUMULATOR_GUARD_ENV,
+            guard_mode,
+        )
+    if guard_mode != "off":
+        # Before the join, so a report names the half that is actually
+        # damaged rather than the one the join copied it into.
+        finite_check.check_half_accumulators(
+            {
+                "Ft_y_0": numerators[0],
+                "Ft_y_1": numerators[1],
+                "Ft_ctf_0": denominators[0],
+                "Ft_ctf_1": denominators[1],
+            },
+            context=finite_check.describe_context(
+                iteration=iteration,
+                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
+                current_size=state_current_size,
+            ),
+        )
+    return iteration_matches
+
+
+def write_bpref_accumulators(
+    dump_dir: str,
+    *,
+    stage: str,
+    iteration: int,
+    current_size: int,
+    padding_factor: int,
+    grid_size: int,
+    voxel_size: float,
+    volume_shape,
+    accumulator_shape,
+    Ft_y_0,
+    Ft_y_1,
+    Ft_ctf_0,
+    Ft_ctf_1,
+) -> None:
+    """Save K1 accumulators at the controller's ``prejoin`` or ``accum`` stage.
+
+    ``iteration`` is zero-based; filenames and payload metadata are one-based.
+    Preserve the numerator dtype and save the real part of each weight array.
+    These captures locate a state boundary, without establishing that every
+    upstream scoring input matched between runs.
+    """
+    import pathlib
+
+    pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
+    np.savez(
+        pathlib.Path(dump_dir) / f"recovar_bpref_{stage}_it{iteration + 1:03d}.npz",
+        schema=np.asarray(f"recovar-bpref-{stage}-v2"),
+        run_id=np.asarray(os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_RUN_ID", "unset")),
+        iteration=np.int32(iteration + 1),
+        current_size=np.int32(current_size),
+        padding_factor=np.int32(padding_factor),
+        grid_size=np.int32(grid_size),
+        voxel_size=np.float32(voxel_size),
+        volume_shape=np.asarray(volume_shape, dtype=np.int32),
+        mstep_accumulator_shape=np.asarray(accumulator_shape, dtype=np.int32),
+        Ft_y_0=np.asarray(Ft_y_0),
+        Ft_y_1=np.asarray(Ft_y_1),
+        Ft_ctf_0=np.asarray(Ft_ctf_0).real,
+        Ft_ctf_1=np.asarray(Ft_ctf_1).real,
+    )
+
+
+def write_class_image_size(
+    plan: ClassImageSize,
     *,
     output_dir,
-    computed_cs,
-    data_vs_prior_prev,
-    data_vs_prior_prev_raw,
+    previous_size,
     grid_size,
     iteration,
-    per_class_res_shell,
-    prev_cs,
-    raw_cs,
-    relion_has_high_fsc_at_limit,
-    relion_incr_size,
-    res_shell,
+    has_high_fsc_at_limit,
+    incr_size,
     state,
 ):
     """Write the existing kclass current size NPZ schema."""
@@ -36,47 +153,49 @@ def write_kclass_current_size(
     np.savez(
         pathlib.Path(output_dir) / f"recovar_kclass_current_size_it{iteration + 1:03d}.npz",
         iteration=np.int32(iteration + 1),
-        previous_current_size=np.int32(prev_cs),
+        previous_current_size=np.int32(previous_size),
         grid_size=np.int32(grid_size),
-        resolution_shell=np.int32(res_shell),
-        per_class_resolution_shells=np.asarray(per_class_res_shell, dtype=np.int32),
+        resolution_shell=np.int32(plan.resolution_shell),
+        per_class_resolution_shells=np.asarray(plan.resolution_shells_per_class, dtype=np.int32),
         ave_Pmax=np.float64(float(state.ave_Pmax)),
         state_current_resolution=np.float64(float(state.current_resolution)),
         state_previous_resolution=np.float64(float(state.previous_resolution)),
-        relion_incr_size=np.int32(relion_incr_size),
-        relion_has_high_fsc_at_limit=np.int32(int(relion_has_high_fsc_at_limit)),
-        data_vs_prior_prev_raw=np.asarray(data_vs_prior_prev_raw, dtype=np.float32),
-        data_vs_prior_prev=np.asarray(data_vs_prior_prev, dtype=np.float32),
-        raw_current_size=np.int32(raw_cs),
-        quantized_current_size=np.int32(computed_cs),
+        relion_incr_size=np.int32(incr_size),
+        relion_has_high_fsc_at_limit=np.int32(int(has_high_fsc_at_limit)),
+        data_vs_prior_prev_raw=np.asarray(plan.raw_data_vs_prior, dtype=np.float32),
+        data_vs_prior_prev=np.asarray(plan.data_vs_prior, dtype=np.float32),
+        raw_current_size=np.int32(plan.raw_size),
+        quantized_current_size=np.int32(plan.size),
     )
 
 
-def write_kclass_mstep(
+def write_class_mstep(
+    prior: ClassPriorEstimate,
     *,
-    Ft_ctf_0,
-    Ft_ctf_1,
-    Ft_ctf_combined,
-    Ft_y_combined,
-    PADDING_FACTOR,
+    numerators,
+    denominators,
+    half_denominators,
+    references,
+    settings: ReconstructionSettings,
     output_dir,
-    class_idx,
+    class_index,
     current_size,
-    data_vs_prior_k,
-    grid_size,
     iteration,
-    kclass_tau2_frame_scale,
-    kclass_tau2_source,
-    mstep_accumulator_shape,
-    mstep_full_half_axis,
-    previous_means,
-    reconstruct_floor_stats_k,
-    shell_stats_k,
-    tau2_fudge,
-    tau2_shells_recovar_frame_k,
-    tau2_shells_relion_frame_k,
+    source,
+    accumulator_shape,
+    full_half_axis,
+    frame_scale,
 ):
-    """Write the existing kclass mstep NPZ schema."""
+    """Capture a class prior and its reconstruction operands in the M-step NPZ."""
+    reconstruct_floor_stats_k = regularization_relion._compute_relion_weight_shell_stats(
+        denominators[class_index],
+        settings.volume_shape,
+        padding_factor=settings.padding_factor,
+        r_max=current_size // 2,
+        shell_rounding="floor",
+        full_half_axis=full_half_axis,
+        accumulator_volume_shape=accumulator_shape,
+    )
     import pathlib
 
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -89,46 +208,46 @@ def write_kclass_mstep(
     }
     dump_dtype = None if _preserve_kclass_dump_dtype else np.complex64
     np.savez(
-        pathlib.Path(output_dir) / f"recovar_kclass_mstep_it{iteration + 1:03d}_c{class_idx + 1:02d}.npz",
+        pathlib.Path(output_dir) / f"recovar_kclass_mstep_it{iteration + 1:03d}_c{class_index + 1:02d}.npz",
         iteration=np.int32(iteration + 1),
-        class_index=np.int32(class_idx + 1),
+        class_index=np.int32(class_index + 1),
         current_size=np.int32(current_size),
-        padding_factor=np.int32(PADDING_FACTOR),
-        grid_size=np.int32(grid_size),
-        mstep_accumulator_shape=np.asarray(mstep_accumulator_shape, dtype=np.int32),
-        mstep_full_half_axis=np.int32(mstep_full_half_axis),
-        tau2_fudge=np.float64(tau2_fudge),
-        tau2_frame_scale=np.float64(kclass_tau2_frame_scale),
-        previous_mean=np.asarray(previous_means[0][class_idx], dtype=np.complex64),
-        previous_mean_half0=np.asarray(previous_means[0][class_idx], dtype=np.complex64),
-        previous_mean_half1=np.asarray(previous_means[1][class_idx], dtype=np.complex64),
-        Ft_y_combined=np.asarray(Ft_y_combined[class_idx], dtype=dump_dtype),
+        padding_factor=np.int32(settings.padding_factor),
+        grid_size=np.int32(settings.grid_size),
+        mstep_accumulator_shape=np.asarray(accumulator_shape, dtype=np.int32),
+        mstep_full_half_axis=np.int32(full_half_axis),
+        tau2_fudge=np.float64(settings.tau2_fudge),
+        tau2_frame_scale=np.float64(frame_scale),
+        previous_mean=np.asarray(references[0][class_index], dtype=np.complex64),
+        previous_mean_half0=np.asarray(references[0][class_index], dtype=np.complex64),
+        previous_mean_half1=np.asarray(references[1][class_index], dtype=np.complex64),
+        Ft_y_combined=np.asarray(numerators[class_index], dtype=dump_dtype),
         Ft_ctf_0=(
-            np.asarray(Ft_ctf_0[class_idx], dtype=dump_dtype)
-            if Ft_ctf_0 is not None
+            np.asarray(half_denominators[0][class_index], dtype=dump_dtype)
+            if half_denominators[0] is not None
             else np.empty(0, dtype=np.complex64)
         ),
         Ft_ctf_1=(
-            np.asarray(Ft_ctf_1[class_idx], dtype=dump_dtype)
-            if Ft_ctf_1 is not None
+            np.asarray(half_denominators[1][class_index], dtype=dump_dtype)
+            if half_denominators[1] is not None
             else np.empty(0, dtype=np.complex64)
         ),
-        Ft_ctf_combined=np.asarray(Ft_ctf_combined[class_idx], dtype=dump_dtype),
+        Ft_ctf_combined=np.asarray(denominators[class_index], dtype=dump_dtype),
         dump_preserve_dtype=np.int32(int(_preserve_kclass_dump_dtype)),
-        tau2_shells=np.asarray(tau2_shells_recovar_frame_k, dtype=np.float64),
-        tau2_shells_relion=np.asarray(tau2_shells_relion_frame_k, dtype=np.float64),
-        tau2_source=np.asarray(kclass_tau2_source),
+        tau2_shells=np.asarray(prior.shells, dtype=np.float64),
+        tau2_shells_relion=np.asarray(prior.relion_shells, dtype=np.float64),
+        tau2_source=np.asarray(source),
         sigma2_shells=np.asarray(
             jnp.where(
-                shell_stats_k["avg_weight_shells"] > 0,
-                1.0 / (PADDING_FACTOR**3 * shell_stats_k["avg_weight_shells"]),
+                prior.weight_shells["avg_weight_shells"] > 0,
+                1.0 / (settings.padding_factor**3 * prior.weight_shells["avg_weight_shells"]),
                 0.0,
             ),
             dtype=np.float64,
         ),
-        avg_weight_shells=np.asarray(shell_stats_k["avg_weight_shells"], dtype=np.float64),
-        shell_sum=np.asarray(shell_stats_k["shell_sum"], dtype=np.float64),
-        shell_count=np.asarray(shell_stats_k["shell_count"], dtype=np.float64),
+        avg_weight_shells=np.asarray(prior.weight_shells["avg_weight_shells"], dtype=np.float64),
+        shell_sum=np.asarray(prior.weight_shells["shell_sum"], dtype=np.float64),
+        shell_count=np.asarray(prior.weight_shells["shell_count"], dtype=np.float64),
         reconstruct_floor_avg_weight_shells=np.asarray(
             reconstruct_floor_stats_k["avg_weight_shells"],
             dtype=np.float64,
@@ -137,7 +256,7 @@ def write_kclass_mstep(
             reconstruct_floor_stats_k["shell_count"],
             dtype=np.float64,
         ),
-        data_vs_prior=np.asarray(data_vs_prior_k, dtype=np.float64),
+        data_vs_prior=np.asarray(prior.data_vs_prior, dtype=np.float64),
     )
 
 

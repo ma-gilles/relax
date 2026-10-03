@@ -1,224 +1,105 @@
-"""Learned direction-prior updates expose cohesive owners; history formats snapshots.
-
-The explicit K=1 and K-class helpers mutate the caller-owned per-half prior
-lists; ``RefinementHistory.record_direction_prior`` and
-``record_rotation_posterior`` own the float64 snapshot copies.
-"""
+"""Prior learning preserves numerical values, half identity and history copies."""
 
 from __future__ import annotations
 
-import inspect
 import logging
+from functools import partial
 
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.helpers import orientation_priors as op
 from relax.helpers.iteration_history import RefinementHistory
-from relax.helpers.orientation_priors import collapse_rotation_posterior_to_direction_prior
-from relax.refinement import mean_helpers
 from relax.sampling import rotation_grid_size
 
 pytestmark = pytest.mark.unit
-
 ORDER = 1
 N_ROT = rotation_grid_size(ORDER)
+learn_k1 = partial(
+    op.learn_k1_direction_priors,
+    direction_prior_order=ORDER,
+    expected_rotation_count=N_ROT,
+    dtype=np.float32,
+    log=logging.getLogger(__name__),
+)
 
 
-def _lists():
-    return [None, None], [None, None], [None, None], [None, None]
-
-
-def _update(rotation_posterior_per_half, lists, **overrides):
-    global_prior, global_order, class_prior, class_order = lists
-    kwargs = dict(
-        rotation_posterior_per_half=rotation_posterior_per_half,
-        class_rotation_posterior_per_half=[None, None],
-        global_direction_prior_per_half=global_prior,
-        global_direction_prior_order_per_half=global_order,
-        class_direction_prior_per_half=class_prior,
-        class_direction_prior_order_per_half=class_order,
-        n_classes=1,
-        use_local=False,
-        k1_direction_prior_order=ORDER,
-        k1_direction_prior_size=N_ROT,
-        current_healpix_order=ORDER,
-        exhaustive_grid_size=N_ROT,
-        n_effective_rotations=N_ROT,
-        dtype=np.float32,
-        log=logging.getLogger(__name__),
-    )
-    kwargs.update(overrides)
-    rotation_posterior_per_half = kwargs.pop("rotation_posterior_per_half")
-    class_rotation_posterior_per_half = kwargs.pop("class_rotation_posterior_per_half")
-    global_direction_prior_per_half = kwargs.pop("global_direction_prior_per_half")
-    global_direction_prior_order_per_half = kwargs.pop("global_direction_prior_order_per_half")
-    class_direction_prior_per_half = kwargs.pop("class_direction_prior_per_half")
-    class_direction_prior_order_per_half = kwargs.pop("class_direction_prior_order_per_half")
-    n_classes = kwargs.pop("n_classes")
-    use_local = kwargs.pop("use_local")
-    k1_direction_prior_order = kwargs.pop("k1_direction_prior_order")
-    k1_direction_prior_size = kwargs.pop("k1_direction_prior_size")
-    current_healpix_order = kwargs.pop("current_healpix_order")
-    exhaustive_grid_size = kwargs.pop("exhaustive_grid_size")
-    n_effective_rotations = kwargs.pop("n_effective_rotations")
-    symmetry = kwargs.pop("symmetry", "C1")
-    dtype = kwargs.pop("dtype")
-    log = kwargs.pop("log")
-    assert not kwargs, f"unmapped direction-prior values: {sorted(kwargs)}"
-    if n_classes <= 1:
-        return mean_helpers.update_k1_direction_priors(
-            rotation_posterior_per_half,
-            global_direction_prior_per_half,
-            global_direction_prior_order_per_half,
-            direction_prior_order=k1_direction_prior_order,
-            expected_rotation_count=k1_direction_prior_size,
-            dtype=dtype,
-            log=log,
-            symmetry=symmetry,
-        )
-    if (
-        not use_local
-        and n_effective_rotations == exhaustive_grid_size
-        and all(rot_sum is not None for rot_sum in class_rotation_posterior_per_half)
-    ):
-        return mean_helpers.update_class_direction_priors(
-            class_rotation_posterior_per_half,
-            class_direction_prior_per_half,
-            class_direction_prior_order_per_half,
-            n_classes=n_classes,
-            healpix_order=current_healpix_order,
-            dtype=dtype,
-            symmetry=symmetry,
-        )
-    return None
-
-
-def test_direction_prior_variants_expose_their_dependencies():
-    assert tuple(inspect.signature(mean_helpers.update_k1_direction_priors).parameters) == (
-        "rotation_posterior_per_half",
-        "global_direction_prior_per_half",
-        "global_direction_prior_order_per_half",
-        "direction_prior_order",
-        "expected_rotation_count",
-        "dtype",
-        "log",
-        "symmetry",
-    )
-    assert tuple(inspect.signature(mean_helpers.update_class_direction_priors).parameters) == (
-        "class_rotation_posterior_per_half",
-        "class_direction_prior_per_half",
-        "class_direction_prior_order_per_half",
-        "n_classes",
-        "healpix_order",
-        "dtype",
-        "symmetry",
-    )
-    for name in (
-        "DirectionPosteriorState",
-        "DirectionPriorState",
-        "DirectionPriorGridSpec",
-        "DirectionPriorExecution",
-    ):
-        assert not hasattr(mean_helpers, name)
-
-
-def test_k1_learns_one_prior_per_half_at_the_scoring_order():
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_k1_learns_one_prior_per_half_at_the_scoring_order(dtype):
     rng = np.random.default_rng(0)
     posteriors = [rng.uniform(0.0, 1.0, N_ROT).astype(np.float32) for _ in range(2)]
-    lists = _lists()
-    assert _update(posteriors, lists) is None
-    global_prior, global_order, class_prior, class_order = lists
-    for k in range(2):
-        expected = collapse_rotation_posterior_to_direction_prior(
-            np.asarray(posteriors[k], dtype=np.float64), ORDER, dtype=np.float32
+    learned = learn_k1(posteriors, dtype=dtype)
+    for posterior, prior in zip(posteriors, learned, strict=True):
+        expected = op.collapse_rotation_posterior_to_direction_prior(
+            np.asarray(posterior, dtype=np.float64), ORDER, dtype=dtype,
         )
-        assert global_prior[k].dtype == np.float32
-        assert_matches(global_prior[k], expected, strict=True)
-        assert global_order[k] == ORDER
-    assert class_prior == [None, None] and class_order == [None, None]
+        assert prior.values.dtype == dtype
+        assert_matches(prior.values, expected, strict=True)
+        assert prior.healpix_order == ORDER
 
 
-def test_k1_size_mismatch_leaves_priors_untouched():
+def test_k1_size_mismatch_rejects_the_update():
     posteriors = [np.ones(N_ROT, dtype=np.float32), np.ones(N_ROT + 1, dtype=np.float32)]
-    lists = _lists()
-    _update(posteriors, lists)
-    assert lists == ([None, None], [None, None], [None, None], [None, None])
+    assert learn_k1(posteriors) == (None, None)
 
 
 def test_k1_skips_a_half_whose_prior_cannot_form_a_log_prior(monkeypatch, caplog):
     calls = []
 
-    def failing_log_prior(direction_prior, healpix_order):
+    def failing_log_prior(direction_prior, healpix_order, *, symmetry="C1"):
         calls.append(int(healpix_order))
         if len(calls) == 1:
             raise ValueError("bad support")
 
-    monkeypatch.setattr(mean_helpers, "make_relion_direction_log_prior", failing_log_prior)
+    monkeypatch.setattr(op, "make_relion_direction_log_prior", failing_log_prior)
     posteriors = [np.ones(N_ROT, dtype=np.float32), np.ones(N_ROT, dtype=np.float32)]
-    lists = _lists()
     with caplog.at_level(logging.WARNING, logger=__name__):
-        _update(posteriors, lists)
-    global_prior, global_order, _, _ = lists
+        learned = learn_k1(posteriors)
     assert calls == [ORDER, ORDER]
-    assert global_prior[0] is None and global_order[0] is None
-    assert global_prior[1] is not None and global_order[1] == ORDER
+    assert learned[0] is None
+    assert learned[1].healpix_order == ORDER
     assert "Skipping K=1 direction prior update for half-1 at healpix_order=1: bad support" in caplog.text
 
 
-def test_kclass_combines_halves_on_the_exhaustive_grid_with_independent_copies():
+def test_kclass_combines_halves_with_independent_copies():
     rng = np.random.default_rng(1)
     n_classes = 2
-    class_posteriors = [rng.uniform(0.0, 1.0, (n_classes, N_ROT)) for _ in range(2)]
-    lists = _lists()
-    _update(
-        [np.ones(N_ROT), np.ones(N_ROT)],
-        lists,
-        class_rotation_posterior_per_half=class_posteriors,
-        n_classes=n_classes,
+    posteriors = [rng.uniform(0.0, 1.0, (n_classes, N_ROT)) for _ in range(2)]
+    learned = op.learn_class_direction_priors(
+        posteriors, n_classes=n_classes, healpix_order=ORDER, dtype=np.float32,
     )
-    global_prior, global_order, class_prior, class_order = lists
-    expected = mean_helpers._combined_class_direction_prior_from_halves(
-        class_posteriors, n_classes, ORDER, dtype=np.float32
+    expected = op._combined_class_direction_prior_from_halves(
+        posteriors, n_classes, ORDER, dtype=np.float32,
     )
-    assert global_prior == [None, None] and global_order == [None, None]
-    for k in range(2):
-        assert class_prior[k].shape == expected.shape and class_prior[k].dtype == np.float32
-        assert_matches(class_prior[k], expected, strict=True)
-        assert class_order[k] == ORDER
-    assert class_prior[0] is not class_prior[1]
-    assert not np.shares_memory(class_prior[0], class_prior[1])
-
-
-@pytest.mark.parametrize(
-    "override",
-    [dict(use_local=True), dict(n_effective_rotations=N_ROT + 3), dict(class_rotation_posterior_per_half=[None, np.ones((2, N_ROT))])],
-)
-def test_kclass_update_requires_global_scoring_on_the_exhaustive_grid(override):
-    lists = _lists()
-    kwargs = dict(class_rotation_posterior_per_half=[np.ones((2, N_ROT)), np.ones((2, N_ROT))], n_classes=2)
-    kwargs.update(override)
-    _update([np.ones(N_ROT), np.ones(N_ROT)], lists, **kwargs)
-    assert lists == ([None, None], [None, None], [None, None], [None, None])
+    for prior in learned:
+        assert prior.values.shape == expected.shape and prior.values.dtype == np.float32
+        assert_matches(prior.values, expected, strict=True)
+        assert prior.healpix_order == ORDER
+    assert learned[0].values is not learned[1].values
+    assert not np.shares_memory(learned[0].values, learned[1].values)
 
 
 def test_history_records_float64_copies_of_k1_priors_and_none_for_missing():
-    prior = np.asarray([0.25, 0.75], dtype=np.float32)
+    values = np.asarray([0.25, 0.75], dtype=np.float32)
+    priors = [op.HalfDirectionPriors(shared=op.DirectionPrior(values, 0)), op.HalfDirectionPriors()]
     history = RefinementHistory()
-    history.record_direction_prior([None, None], [prior, None], k_class_enabled=False)
+    history.record_direction_prior(priors, k_class_enabled=False)
     stored = history.direction_prior_trajectory_per_half[0]
     assert stored[1] is None
     assert stored[0].dtype == np.float64 and stored[0].tolist() == [0.25, 0.75]
-    assert not np.shares_memory(stored[0], prior)
+    assert not np.shares_memory(stored[0], values)
 
 
 def test_history_records_class_zero_of_each_half_for_kclass():
-    class_prior = np.asarray([[0.1, 0.9], [0.6, 0.4]], dtype=np.float64)
+    values = np.asarray([[0.1, 0.9], [0.6, 0.4]], dtype=np.float64)
+    priors = [op.HalfDirectionPriors(classes=op.DirectionPrior(values, 0)),
+              op.HalfDirectionPriors(classes=op.DirectionPrior(values.copy(), 0))]
     history = RefinementHistory()
-    history.record_direction_prior([class_prior, class_prior.copy()], [np.ones(2), np.ones(2)], k_class_enabled=True)
+    history.record_direction_prior(priors, k_class_enabled=True)
     stored = history.direction_prior_trajectory_per_half[0]
     assert [s.tolist() for s in stored] == [[0.1, 0.9], [0.1, 0.9]]
-    assert all(s.dtype == np.float64 and not np.shares_memory(s, class_prior) for s in stored)
+    assert all(s.dtype == np.float64 and not np.shares_memory(s, values) for s in stored)
 
 
 def test_history_records_float64_rotation_posterior_copies():
@@ -227,5 +108,6 @@ def test_history_records_float64_rotation_posterior_copies():
     history.record_rotation_posterior([posterior, None])
     stored = history.rotation_posterior_trajectory_per_half[0]
     assert stored[1] is None
-    assert stored[0].dtype == np.float64 and stored[0].tolist() == [1.0, 2.0, 3.0]
+    assert stored[0].dtype == np.float64
+    assert_matches(stored[0], posterior)
     assert not np.shares_memory(stored[0], posterior)

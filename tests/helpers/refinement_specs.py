@@ -2,7 +2,9 @@
 
 import dataclasses
 
-from relax.refinement import half_scoring, local_search_iteration, mean_helpers
+from relax.refinement import half_scoring, local_sampling, local_search_iteration, mean_helpers, optics_shapes
+from relax.refinement.half_inputs import HalfSet
+from relax.refinement.projector_preparation import PreparedProjector
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",
@@ -58,52 +60,24 @@ def run_mean_reconstruction(means, **values):
         minres_map=values.pop("relion_minres_map"),
         width_mask_edge=values.pop("relion_width_mask_edge"),
         fmask_edge=values.pop("relion_fmask_edge"),
+        tau2_fudge=tau2_fudge,
+        particle_diameter_angstrom=particle_diameter_ang,
+        first_iteration_lowpass_angstrom=relion_firstiter_ini_high_angstrom,
     )
     if n_classes > 1:
-        tau_by_class = (
-            mean_signal_variance_shells
-            if mean_signal_variance_shells is not None
-            else mean_signal_variance
-        )
-        shared = mean_helpers.reconstruct_class_means(
-            Ft_y_combined,
-            Ft_ctf_combined,
-            tau_by_class,
-            settings,
-            n_classes=n_classes,
-            iteration=iteration,
-            current_size=current_size,
-            tau2_fudge=tau2_fudge,
-            accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=mean_signal_variance_shells is not None,
-        )
-        means[0] = means[1] = shared
+        numerators, denominators = Ft_y_combined, Ft_ctf_combined
+        tau = mean_signal_variance_shells if mean_signal_variance_shells is not None else mean_signal_variance
+        tau_is_1d = mean_signal_variance_shells is not None
     else:
-        tau_by_half = (
-            mean_signal_variance_shells_per_half
-            if mean_signal_variance_shells_per_half is not None
-            else mean_signal_variance_per_half
-        )
-        means[:] = mean_helpers.reconstruct_k1_means(
-            Ft_y_by_half,
-            Ft_ctf_by_half,
-            tau_by_half,
-            settings,
-            current_size=current_size,
-            tau2_fudge=tau2_fudge,
-            accumulator_volume_shape=accumulator_volume_shape,
-            tau_is_1d=mean_signal_variance_shells_per_half is not None,
-            retained_first_numerator=retained_first_numerator,
-        )
-    mean_helpers.postprocess_reconstructed_means(
-        means,
-        settings,
-        n_classes=n_classes,
-        iteration=iteration,
-        current_size=current_size,
-        particle_diameter_ang=particle_diameter_ang,
+        numerators, denominators = Ft_y_by_half, Ft_ctf_by_half
+        tau = mean_signal_variance_shells_per_half if mean_signal_variance_shells_per_half is not None else mean_signal_variance_per_half
+        tau_is_1d = mean_signal_variance_shells_per_half is not None
+    means[:] = mean_helpers.reconstruct_regularized_means(
+        numerators, denominators, tau, settings,
+        n_classes=n_classes, iteration=iteration, current_size=current_size,
+        accumulator_volume_shape=accumulator_volume_shape, tau_is_1d=tau_is_1d,
         relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-        relion_firstiter_ini_high_angstrom=relion_firstiter_ini_high_angstrom,
+        retained_first_numerator=retained_first_numerator,
     )
     assert not values, f"unmapped mean reconstruction values: {sorted(values)}"
 
@@ -223,37 +197,43 @@ def local_iteration_keywords(fake):
 def local_half_owners(**values):
     """Build the seven explicit exact-local owners from concise test values."""
 
+    projector_data = values.pop("relion_projector_half", None)
+    projector_r_max = values.pop("relion_projector_r_max", None)
+    projector = None if projector_data is None else PreparedProjector(data=projector_data, r_max=projector_r_max)
     owners = (
-        half_scoring.LocalHalfData(
-            k=values.pop("k"),
-            experiment_dataset=values.pop("experiment_dataset"),
-            means_k=values.pop("means_k"),
-            noise_variance_k=values.pop("noise_variance_k"),
-            previous_best_rotation_eulers_k=values.pop("previous_best_rotation_eulers_k"),
-            image_corrections_k=values.pop("image_corrections_k"),
-            scale_corrections_k=values.pop("scale_corrections_k"),
-            outputs=values.pop("outputs"),
-            group_ids_k=values.pop("group_ids_k", None),
-            group_count_k=values.pop("group_count_k", None),
+        half_scoring.HalfScoringData(
+            particles=HalfSet(
+                index=values.pop("k"),
+                dataset=values.pop("experiment_dataset"),
+                rotation_eulers=values.pop("previous_best_rotation_eulers_k"),
+                optics_group_ids=values.pop("optics_group_ids_k", None),
+                image_corrections=values.pop("image_corrections_k"),
+                scale_corrections=values.pop("scale_corrections_k"),
+            ),
+            reference=values.pop("means_k"),
+            projector=projector,
+            noise_variance=values.pop("noise_variance_k"),
+            scale_group_ids=values.pop("group_ids_k", None),
+            scale_group_count=values.pop("group_count_k", None),
             scale_correction_data_vs_prior=values.pop("scale_correction_data_vs_prior", None),
-            optics_group_ids_k=values.pop("optics_group_ids_k", None),
         ),
-        half_scoring.LocalSamplingSpec(
-            local_search_rotations=values.pop("local_search_rotations"),
-            local_search_mstep_rotations=values.pop("local_search_mstep_rotations", None),
-            local_search_order=values.pop("local_search_order"),
-            sigma_rot=values.pop("sigma_rot"),
-            sigma_psi=values.pop("sigma_psi"),
-            current_translations=values.pop("current_translations"),
+        local_sampling.LocalSampling(
+            search=local_sampling.LocalSearchSettings(
+                healpix_order=values.pop("local_search_order"),
+                oversampling_order=values.pop("local_parent_oversampling_order"),
+                sigma_rot=values.pop("sigma_rot"),
+                sigma_psi=values.pop("sigma_psi"),
+                symmetry=values.pop("symmetry", "C1"),
+            ),
+            rotations=values.pop("local_search_rotations"),
+            mstep_rotations=values.pop("local_search_mstep_rotations", None),
+            translations=values.pop("current_translations"),
             base_translations=values.pop("base_translations"),
-            disc_type=values.pop("disc_type"),
-            cs_for_engine=values.pop("cs_for_engine"),
-            model_current_size_for_engine=values.pop("model_current_size_for_engine", None),
-            local_pass1_current_size=values.pop("local_pass1_current_size"),
-            local_search_random_perturbation=values.pop("local_search_random_perturbation"),
-            local_search_angular_sampling_deg=values.pop("local_search_angular_sampling_deg"),
-            local_parent_oversampling_order=values.pop("local_parent_oversampling_order"),
-            symmetry=values.pop("symmetry", "C1"),
+            image_window_size=values.pop("cs_for_engine"),
+            model_support_size=values.pop("model_current_size_for_engine", None),
+            coarse_image_window_size=values.pop("local_pass1_current_size"),
+            perturbation=values.pop("local_search_random_perturbation"),
+            angular_step_deg=values.pop("local_search_angular_sampling_deg"),
         ),
         half_scoring.LocalPriorSpec(
             trans_prior_center=values.pop("trans_prior_center"),
@@ -268,10 +248,9 @@ def local_half_owners(**values):
             safe_batch_sizes=values.pop("safe_batch_sizes"),
         ),
         half_scoring.LocalExecutionPolicy(
+            disc_type=values.pop("disc_type"),
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
-            relion_projector_half=values.pop("relion_projector_half", None),
-            relion_projector_r_max=values.pop("relion_projector_r_max", None),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
         ),
@@ -283,18 +262,14 @@ def local_half_owners(**values):
             diagnostic_score_only=values.pop("diagnostic_score_only"),
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
-            parent_use_float64_scoring=values.pop("parent_use_float64_scoring", False),
-            parent_use_float64_projections=values.pop("parent_use_float64_projections", False),
-            fine_use_float64_scoring=values.pop("fine_use_float64_scoring", False),
-            fine_use_float64_projections=values.pop("fine_use_float64_projections", False),
             adaptive_pass2_full_parent=values.pop("adaptive_pass2_full_parent", False),
             adaptive_pass2_rotation_only=values.pop("adaptive_pass2_rotation_only", False),
             adaptive_pass2_denominator_mode=values.pop("adaptive_pass2_denominator_mode", None),
         ),
-        half_scoring.LocalOpticsSpec(
+        optics_shapes.OpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),
             coarse_sizing=values.pop("coarse_sizing", None),
-            class_translation_overrides=values.pop("class_translation_overrides", None),
+            class_translations=values.pop("class_translations", None),
             projection_scale=values.pop("projection_scale", 1.0),
             reference_current_size=values.pop("reference_current_size", None),
         ),

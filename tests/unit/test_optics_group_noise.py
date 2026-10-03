@@ -6,8 +6,6 @@ with that group's own weight (``maximizationOtherParameters``, ml_optimiser.cpp
 group g's sums would, and a one-group run must keep the flat layout.
 """
 
-import inspect
-
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
@@ -32,26 +30,15 @@ def _stats(rng, n_groups=None, sumw=None):
 def _update(stats_per_half, noise_per_half, radial_per_half):
     return noise_updates.update_posterior_noise_variance(
         stats_per_half,
-        list(noise_per_half),
-        radial_per_half,
-        np.mean(np.stack(radial_per_half), axis=0),
+        noise_updates.NoiseModel(
+            variance_per_half=list(noise_per_half),
+            radial_per_half=radial_per_half,
+            average_variance=noise_updates._mean_noise_variance(noise_per_half),
+            average_radial=np.mean(np.stack(radial_per_half), axis=0),
+        ),
         SHAPE,
         k_class_enabled=False,
         firstiter_cc=False,
-    )
-
-
-def test_noise_update_signature_keeps_dependencies_visible():
-    function = noise_updates.update_posterior_noise_variance
-    assert tuple(inspect.signature(function).parameters) == (
-        "noise_stats_per_half",
-        "noise_variance_per_half",
-        "previous_noise_radial_per_half",
-        "previous_noise_radial",
-        "image_shape",
-        "k_class_enabled",
-        "firstiter_cc",
-        "dump_debug",
     )
 
 
@@ -75,7 +62,7 @@ def test_per_group_update_equals_one_group_updates():
 
     for k in range(2):
         assert result.noise_from_res_per_half[k].shape == (n_groups, N_SHELLS)
-        assert result.noise_variance_per_half[k].shape == (n_groups, SHAPE[0] * SHAPE[1])
+        assert result.model.variance_per_half[k].shape == (n_groups, SHAPE[0] * SHAPE[1])
         for g in range(n_groups):
             single = _update(
                 [group_stats[0][g], group_stats[1][g]],
@@ -84,7 +71,7 @@ def test_per_group_update_equals_one_group_updates():
             )
             assert_matches(result.noise_from_res_per_half[k][g], single.noise_from_res_per_half[k])
             assert_matches(
-                np.asarray(result.noise_variance_per_half[k][g]), np.asarray(single.noise_variance_per_half[k])
+                np.asarray(result.model.variance_per_half[k][g]), np.asarray(single.model.variance_per_half[k])
             )
 
 
@@ -102,9 +89,12 @@ def test_class3d_update_keeps_one_spectrum_per_group_and_ignores_the_empty_accum
     previous_rows = np.ones((2, SHAPE[0] * SHAPE[1]))
     result = noise_updates.update_posterior_noise_variance(
         [stats, empty],
-        [previous_rows, previous_rows],
-        [previous_radial, previous_radial],
-        previous_radial,
+        noise_updates.NoiseModel(
+            variance_per_half=[previous_rows, previous_rows],
+            radial_per_half=[previous_radial, previous_radial],
+            average_variance=previous_rows,
+            average_radial=previous_radial,
+        ),
         SHAPE,
         k_class_enabled=True,
         firstiter_cc=False,
@@ -112,7 +102,55 @@ def test_class3d_update_keeps_one_spectrum_per_group_and_ignores_the_empty_accum
     k1 = _update([stats, stats], [previous_rows, previous_rows], [previous_radial, previous_radial])
     for k in range(2):
         assert_matches(result.noise_from_res_per_half[k], k1.noise_from_res_per_half[0])
-        assert_matches(np.asarray(result.noise_variance_per_half[k]), np.asarray(k1.noise_variance_per_half[0]))
+        assert_matches(np.asarray(result.model.variance_per_half[k]), np.asarray(k1.model.variance_per_half[0]))
+    assert result.model.variance_per_half[0] is result.model.variance_per_half[1]
+    assert result.model.radial_per_half[0] is not result.model.radial_per_half[1]
+
+
+@pytest.mark.unit
+def test_firstiter_cc_retains_noise_buffers_and_history_precision():
+    rows = [np.ones(256, dtype=np.float32), np.full(256, 2.0, dtype=np.float32)]
+    model = noise_updates.noise_model_from_pixels(rows, SHAPE, dtype=np.float32)
+    original_pixels = list(model.variance_per_half)
+    result = noise_updates.update_posterior_noise_variance(
+        [_stats(np.random.default_rng(3)), _stats(np.random.default_rng(4))],
+        model, SHAPE, k_class_enabled=False, firstiter_cc=True,
+    )
+    assert result.model.variance_per_half is model.variance_per_half
+    assert all(a is b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
+    assert result.model.radial_per_half is model.radial_per_half
+    assert result.model.average_radial is model.average_radial
+    assert result.model.average_radial.dtype == np.float32
+    assert result.noise_from_res.dtype == np.float64
+    assert_matches(result.noise_from_res, np.mean(np.stack(model.radial_per_half), axis=0))
+
+
+@pytest.mark.unit
+def test_k1_update_replaces_pixels_in_the_owned_list():
+    model = noise_updates.noise_model_from_pixels(
+        [np.ones(256, dtype=np.float32), np.ones(256, dtype=np.float32)], SHAPE, dtype=np.float32,
+    )
+    original_pixels = list(model.variance_per_half)
+    result = noise_updates.update_posterior_noise_variance(
+        [_stats(np.random.default_rng(5)), _stats(np.random.default_rng(6))],
+        model, SHAPE, k_class_enabled=False, firstiter_cc=False,
+    )
+    assert result.model.variance_per_half is model.variance_per_half
+    assert all(a is not b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
+    assert result.model.radial_per_half is result.noise_from_res_per_half
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("n_groups", [1, 3])
+def test_checkpoint_noise_restores_shell_precision_and_group_layout(n_groups):
+    shell_shape = (N_SHELLS,) if n_groups == 1 else (n_groups, N_SHELLS)
+    shells = [np.ones(shell_shape, dtype=np.float32), np.full(shell_shape, 3.0, dtype=np.float32)]
+    restored = noise_updates.noise_model_from_shells(shells, SHAPE)
+    pixel_shape = (256,) if n_groups == 1 else (n_groups, 256)
+    assert [row.shape for row in restored.variance_per_half] == [pixel_shape, pixel_shape]
+    assert restored.average_radial.dtype == np.float64
+    assert all(row.dtype == np.float64 for row in restored.radial_per_half)
+    assert_matches(restored.average_radial, np.full(shell_shape, 2.0))
 
 
 @pytest.mark.unit
@@ -127,7 +165,7 @@ def test_group_without_noise_sums_keeps_its_spectrum():
     previous_rows = np.stack([np.ones(SHAPE[0] * SHAPE[1]), np.full(SHAPE[0] * SHAPE[1], 7.0)])
     result = _update([stats, stats], [previous_rows, previous_rows], [previous_radial, previous_radial])
     assert_matches(result.noise_from_res_per_half[0][1], np.full(N_SHELLS, 7.0))
-    assert_matches(np.asarray(result.noise_variance_per_half[0][1]), previous_rows[1])
+    assert_matches(np.asarray(result.model.variance_per_half[0][1]), previous_rows[1])
     assert not np.allclose(result.noise_from_res_per_half[0][0], 1.0)
 
 

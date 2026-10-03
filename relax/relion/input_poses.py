@@ -1,10 +1,36 @@
-"""Input-STAR pose and norm-correction initialization in matched half-local particle order."""
+"""Startup pose sources, matched input-STAR poses and normalization corrections."""
 
 import argparse
+from logging import Logger
+from pathlib import Path
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
+from recovar.utils.file_hash import sha256_file as _sha256_file
 
+from relax.helpers import iteration_history
 from relax.relion import relion_metadata
+
+if TYPE_CHECKING:
+    from relax.relion.input_particle_table import ParticleLayout
+
+
+class PoseProvenance(NamedTuple):
+    """Requested and selected startup pose source, reused by run reports."""
+
+    requested_source: str
+    resolved_source: str
+    path: Path | None
+    sha256: str | None
+
+
+class InitialPoses(NamedTuple):
+    """Selected pose payload and corrections in the established half-local order."""
+
+    poses: dict | None
+    image_corrections: list[np.ndarray] | None
+    scale_corrections: list[np.ndarray] | None
+    provenance: PoseProvenance
 
 
 def _input_numeric_columns(input_particles, columns, *, field: str) -> np.ndarray:
@@ -368,3 +394,156 @@ def _kclass_firstiter_translation_seed(
             )
         selected.append(np.ascontiguousarray(array).copy())
     return selected
+
+
+def prepare_initial_poses(
+    input_particles,
+    *,
+    particle_layout: "ParticleLayout",
+    relion_halfset_particles,
+    pixel_size_angstrom: float,
+    data_dir,
+    requested_source: str,
+    n_classes: int,
+    init_relion_iteration: int,
+    has_relion_half_sets: bool,
+    diagnostic_single_half: bool,
+    frozen_boundary,
+    poses_npz_path,
+    pose_iteration,
+    has_replay_pose_source: bool,
+    class3d_translations,
+    class3d_translation_path,
+    log: Logger,
+) -> InitialPoses:
+    """Select and load startup poses, their corrections and source provenance.
+
+    See ``docs/math/relion_refinement_algorithm.md#startup-particle-state-and-norm-corrections``.
+    """
+    has_competing_initial_pose_source = (
+        frozen_boundary is not None
+        or poses_npz_path is not None
+        or has_replay_pose_source
+    )
+    try:
+        use_input_star_pose_seed = _resolve_input_star_pose_seed(
+            requested_source,
+            n_classes=n_classes,
+            init_relion_iteration=init_relion_iteration,
+            has_relion_half_sets=has_relion_half_sets,
+            has_competing_pose_source=has_competing_initial_pose_source,
+            diagnostic_single_half=diagnostic_single_half,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"Invalid initial pose source: {exc}") from exc
+
+    resolved_initial_pose_source = "diagnostic_replay" if has_competing_initial_pose_source else "none"
+    initial_pose_source_path = None
+    initial_pose_source_sha256 = None
+    init_previous_best_poses = None
+    initial_image_corrections = None
+    initial_scale_corrections = None
+    if frozen_boundary is not None:
+        init_previous_best_poses = {
+            "iteration": f"{frozen_boundary.completed_relion_iteration - 1:03d}",
+            "previous_best_rotation_eulers": list(
+                frozen_boundary.previous_best_rotation_eulers
+            ),
+            "previous_best_translations": list(
+                frozen_boundary.previous_best_translations
+            ),
+        }
+    elif poses_npz_path is not None:
+        init_previous_best_poses = iteration_history._load_init_previous_best_poses_npz(
+            poses_npz_path,
+            pose_iteration,
+        )
+        log.info(
+            "Diagnostic local-search seed: loaded previous best poses from %s (iter=%s; half sizes=%s)",
+            poses_npz_path,
+            init_previous_best_poses["iteration"],
+            [
+                arr.shape[0]
+                for arr in init_previous_best_poses["previous_best_rotation_eulers"]
+            ],
+        )
+
+    elif class3d_translations is not None:
+        init_previous_best_poses = {
+            "iteration": "000_translation_only",
+            "previous_best_rotation_eulers": [None, None],
+            "previous_best_translations": class3d_translations,
+        }
+        resolved_initial_pose_source = "relion_run_it000_translations"
+        initial_pose_source_path = class3d_translation_path
+        initial_pose_source_sha256 = _sha256_file(initial_pose_source_path)
+        log.info(
+            "Production fresh Class3D translation initialization: source=%s "
+            "sha256=%s half_sizes=%s (orientations intentionally unset)",
+            initial_pose_source_path,
+            initial_pose_source_sha256,
+            [arr.shape[0] for arr in class3d_translations],
+        )
+    elif use_input_star_pose_seed and n_classes > 1:
+        input_pose_path = (Path(data_dir) / "particles.star").resolve()
+        try:
+            init_previous_best_poses = _load_input_star_class3d_translations(
+                input_particles,
+                particle_layout.half1_rows,
+                voxel_size=pixel_size_angstrom,
+            )
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(f"Invalid input-STAR Class3D origin initialization: {exc}") from exc
+        resolved_initial_pose_source = "input_star_translations"
+        initial_pose_source_path = input_pose_path
+        initial_pose_source_sha256 = _sha256_file(input_pose_path)
+        log.info(
+            "Fresh Class3D translation initialization: source=%s sha256=%s "
+            "translation_units=%s particles=%d (orientations intentionally unset)",
+            input_pose_path,
+            initial_pose_source_sha256,
+            init_previous_best_poses["translation_units"],
+            init_previous_best_poses["previous_best_translations"][0].shape[0],
+        )
+    elif use_input_star_pose_seed:
+        input_pose_path = (Path(data_dir) / "particles.star").resolve()
+        try:
+            init_previous_best_poses = _load_input_star_previous_best_poses(
+                input_particles,
+                relion_halfset_particles,
+                particle_layout.half1_rows,
+                particle_layout.half2_rows,
+                voxel_size=pixel_size_angstrom,
+            )
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(f"Invalid input-STAR pose initialization: {exc}") from exc
+        initial_image_corrections, initial_scale_corrections = _initial_corrections_from_norm(
+            init_previous_best_poses["norm_corrections"],
+        )
+        resolved_initial_pose_source = "input_star"
+        initial_pose_source_path = input_pose_path
+        initial_pose_source_sha256 = _sha256_file(input_pose_path)
+        log.info(
+            "Production fresh-run pose initialization: source=%s sha256=%s "
+            "translation_units=%s half_sizes=%s norm_corrections=%s",
+            input_pose_path,
+            initial_pose_source_sha256,
+            init_previous_best_poses["translation_units"],
+            [
+                arr.shape[0]
+                for arr in init_previous_best_poses["previous_best_rotation_eulers"]
+            ],
+            "unit" if initial_image_corrections is None else "from input rlnNormCorrection",
+        )
+
+    return InitialPoses(
+        poses=init_previous_best_poses,
+        image_corrections=initial_image_corrections,
+        scale_corrections=initial_scale_corrections,
+        provenance=PoseProvenance(
+            requested_source=requested_source,
+            resolved_source=resolved_initial_pose_source,
+            path=initial_pose_source_path,
+            sha256=initial_pose_source_sha256,
+        ),
+    )

@@ -14,7 +14,7 @@ from relax.diagnostics.frozen_boundary import (
     FROZEN_BOUNDARY_PROVENANCE_VERIFICATION_SCOPE,
     V3_REQUIRED_FIXED_SOURCE_NAMES,
 )
-from relax.refinement.full_refinement import _particle_stack_paths_from_star
+from relax.diagnostics.frozen_boundary_cli import _particle_stack_paths_from_star
 from scripts.finalize_frozen_boundary_v3 import (
     _runtime_payload,
     _validate_capture_manifest,

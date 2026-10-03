@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.helpers.iteration_history import RefinementHistory
+from relax.relion.relion_normalization import _format_relion_correction_range
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions
@@ -1194,6 +1195,197 @@ def _validate_coupled_relion_restart_state(
         )
 
 
+@dataclass(frozen=True, eq=False)
+class PreparedFollowerTopology:
+    """Resolved MPI topology, replay and per-iteration particle ownership."""
+
+    n_followers: int
+    replay: RelionFollowerScaleReplay | None
+    reduction_mode: str | None
+    owners_by_iteration: dict[int, list[np.ndarray]] | None
+
+
+def prepare_follower_topology(
+    requested_followers,
+    schedule,
+    group_layout,
+    *,
+    strict_replay,
+    replay_path,
+    oracle_dir,
+    random_seed,
+    init_relion_iteration,
+    max_iter,
+    group_source=None,
+    logger=logger,
+) -> PreparedFollowerTopology:
+    """Validate follower admission and prepare ownership from a verified schedule.
+
+    Oracle verification precedes this operation. Owners remain in each half's
+    image order; the reduction mode comes from the oracle's recorded command.
+    See docs/math/relion_refinement_algorithm.md#follower-topology-admission-before-refinement.
+    """
+    if requested_followers is None:
+        if strict_replay and schedule is None:
+            raise SystemExit(
+                "Strict K>1 RELION replay requires --relion-dispatch-schedule captured "
+                "from the same oracle run: expectation follower ownership is a dynamic "
+                "MPI work queue and cannot be reconstructed from --seed. Pass "
+                "--relion-scale-followers 0 for a non-MPI RELION oracle (single-process "
+                "group scales)."
+            )
+        relion_scale_followers = (
+            0 if schedule is None else schedule.n_followers
+        )
+    else:
+        relion_scale_followers = int(requested_followers)
+        if relion_scale_followers < 0:
+            raise SystemExit("--relion-scale-followers must be non-negative")
+        if relion_scale_followers > 0 and not strict_replay:
+            raise SystemExit(
+                "--relion-scale-followers is strict K>1 RELION replay/init state only; "
+                "provide --relion_init_dir or --perturb_replay_relion_dir"
+            )
+    if relion_scale_followers > 0 and schedule is None:
+        raise SystemExit(
+            "--relion-scale-followers > 0 requires --relion-dispatch-schedule; "
+            "seed-only/static ownership is not RELION-exact"
+        )
+    if (
+        schedule is not None
+        and relion_scale_followers != schedule.n_followers
+    ):
+        raise SystemExit(
+            "--relion-scale-followers disagrees with --relion-dispatch-schedule "
+            f"({relion_scale_followers} != {schedule.n_followers})"
+        )
+    if relion_scale_followers > 0 and group_layout is None:
+        raise SystemExit("Strict RELION follower-scale emulation requires an authoritative group layout")
+    if relion_scale_followers > 0 and int(init_relion_iteration) > 0:
+        raise SystemExit(
+            "Strict RELION follower-scale emulation cannot cold-start after iteration 0 from "
+            "a leader-serialized STAR; rerun from iteration 0 (full follower-scale checkpoint "
+            "input is not implemented)"
+        )
+    relion_follower_scale_replay = None
+    if replay_path is not None:
+        if not strict_replay or relion_scale_followers < 1:
+            raise SystemExit(
+                "--relion-follower-scale-replay requires strict K>1 RELION follower topology"
+            )
+        try:
+            relion_follower_scale_replay = load_relion_follower_scale_replay(
+                replay_path
+            )
+            validate_relion_follower_scale_replay(
+                relion_follower_scale_replay,
+                n_followers=relion_scale_followers,
+                n_groups=group_layout.n_groups,
+                schedule_iterations=schedule.relion_iterations,
+                schedule_oracle_id=schedule.oracle_id,
+                schedule_artifact_paths=schedule.oracle_artifact_paths,
+                oracle_dir=oracle_dir,
+                numbered_iterations=range(
+                    int(init_relion_iteration) + 1,
+                    int(init_relion_iteration) + int(max_iter) + 1,
+                ),
+                first_numbered_iteration=int(init_relion_iteration) + 1,
+            )
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"Invalid --relion-follower-scale-replay: {exc}") from exc
+        logger.info(
+            "Diagnostic RELION follower-scale replay: source=%s oracle_id=%s "
+            "iterations=%s shape=%s",
+            relion_follower_scale_replay.source,
+            relion_follower_scale_replay.oracle_id,
+            relion_follower_scale_replay.relion_iterations.tolist(),
+            relion_follower_scale_replay.follower_scales.shape,
+        )
+    if group_layout is not None:
+        logger.info(
+            "Native RELION group layout: source=%s full_groups=%d half1_present=%d half2_present=%d",
+            group_layout.source,
+            group_layout.n_groups,
+            int(np.unique(group_layout.group_ids_per_half[0]).size),
+            int(np.unique(group_layout.group_ids_per_half[1]).size),
+        )
+        if group_source is not None:
+            logger.info("Native RELION group layout provenance: %s", group_source)
+    if relion_scale_followers > 0:
+        logger.info(
+            "Strict RELION follower-scale topology: followers=%d physical_groups=%d "
+            "optics_groups=%d dynamic_schedule=%s",
+            relion_scale_followers,
+            group_layout.n_groups,
+            group_layout.n_optics_groups,
+            schedule.source,
+        )
+        logger.info(
+            "Verified RELION dispatch oracle: oracle_id=%s artifacts=%d particle_star=%s",
+            schedule.oracle_id,
+            len(schedule.oracle_artifact_paths),
+            schedule.particle_star_relative_path,
+        )
+    relion_scale_reduction_mode = None
+    if relion_scale_followers > 0:
+        # Which physical groups RELION reduced across followers is a property of
+        # the oracle run's weight-combination path (relion_worker_scale docstring).
+        reduction_source = oracle_dir / "run_it000_optimiser.star"
+        try:
+            relion_scale_reduction_mode, relion_command = (
+                relion_scale_reduction_mode_from_optimiser_star(reduction_source)
+            )
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"Cannot determine the RELION group-scale reduction: {exc}") from exc
+        logger.info(
+            "Strict RELION follower-scale reduction: mode=%s dont_combine_weights_via_disc=%s source=%s",
+            relion_scale_reduction_mode,
+            "--dont_combine_weights_via_disc" in relion_command.split(),
+            reduction_source,
+        )
+    relion_scale_follower_owners_by_iteration = None
+    if relion_scale_followers > 0:
+        relion_scale_follower_owners_by_iteration = {}
+        for relion_iteration_value in schedule.relion_iterations:
+            relion_iteration = int(relion_iteration_value)
+            try:
+                owners_half1 = relion_class3d_follower_owners_from_schedule(
+                    schedule,
+                    particle_ids_by_image=group_layout.particle_ids_per_half[0],
+                    random_seed=int(random_seed),
+                    relion_iteration=relion_iteration,
+                )
+            except (RuntimeError, ValueError) as exc:
+                raise SystemExit(
+                    f"RELION dispatch schedule cannot supply iteration {relion_iteration}: {exc}"
+                ) from exc
+            relion_scale_follower_owners_by_iteration[relion_iteration] = [
+                owners_half1,
+                np.zeros(group_layout.particle_ids_per_half[1].size, dtype=np.int64),
+            ]
+        required_numbered_iterations = set(
+            range(
+                int(init_relion_iteration) + 1,
+                int(init_relion_iteration) + int(max_iter) + 1,
+            )
+        )
+        missing_numbered_iterations = sorted(
+            required_numbered_iterations - set(relion_scale_follower_owners_by_iteration)
+        )
+        if missing_numbered_iterations:
+            raise SystemExit(
+                "RELION dispatch schedule cannot supply requested numbered iterations: "
+                f"{missing_numbered_iterations}"
+            )
+    return PreparedFollowerTopology(
+        n_followers=relion_scale_followers,
+        replay=relion_follower_scale_replay,
+        reduction_mode=relion_scale_reduction_mode,
+        owners_by_iteration=relion_scale_follower_owners_by_iteration,
+    )
+
+
+
 @dataclass
 class RelionFollowerScaleSetup:
     """RELION per-follower group-scale emulation state for one refinement run.
@@ -1259,7 +1451,7 @@ def setup_relion_follower_scale_state(
     group-scale emulation state.
 
     See this module's docstring for the MPI-follower parity rationale.
-    Mutates ``relion_half_inputs.scale_corrections`` in place when the
+    Updates each particle half's ``scale_corrections`` when the
     strict follower topology is active, seeding each half's per-particle
     scale from the newly constructed follower state.
     """
@@ -1273,8 +1465,8 @@ def setup_relion_follower_scale_state(
     follower_owners_per_half = [None, None]
     follower_owners_by_iteration = None
     follower_scale_replay_by_iteration = {}
-    scale_stats_group_ids_per_half = relion_half_inputs.group_ids
-    scale_stats_group_count_per_half = relion_half_inputs.group_count
+    scale_stats_group_ids_per_half = [particle_half.group_ids for particle_half in relion_half_inputs]
+    scale_stats_group_count_per_half = [particle_half.group_count for particle_half in relion_half_inputs]
     physical_group_count = 0
     scale_reduction_mode = None
 
@@ -1289,14 +1481,14 @@ def setup_relion_follower_scale_state(
     if follower_count > 0:
         if not k_class_enabled:
             raise ValueError("RELION follower-local scale emulation is strict K-class state only")
-        if relion_half_inputs.group_ids[0] is None:
+        if relion_half_inputs[0].group_ids is None:
             raise ValueError("RELION follower-local scale emulation requires physical group IDs")
         if replay.relion_scale_follower_owners_by_iteration is None:
             raise ValueError(
                 "RELION follower-local scale emulation requires a captured per-iteration "
                 "dynamic dispatch schedule; seed-only ownership is not exact"
             )
-        physical_group_count = int(relion_half_inputs.group_count[0] or 0)
+        physical_group_count = int(relion_half_inputs[0].group_count or 0)
         if physical_group_count < 1:
             raise ValueError("RELION follower-local scale emulation requires a positive group count")
         optics_group_count = int(replay.init_relion_optics_group_count or 0)
@@ -1360,7 +1552,8 @@ def setup_relion_follower_scale_state(
             )
 
         group_counts = np.zeros(physical_group_count, dtype=np.float64)
-        for group_ids_k in relion_half_inputs.group_ids:
+        for half in relion_half_inputs:
+            group_ids_k = half.group_ids
             if group_ids_k is not None and np.asarray(group_ids_k).size:
                 group_counts += np.bincount(
                     np.asarray(group_ids_k, dtype=np.int64),
@@ -1369,11 +1562,9 @@ def setup_relion_follower_scale_state(
         initial_group_scales = np.ones(physical_group_count, dtype=np.float64)
         initial_scale_sums = np.zeros(physical_group_count, dtype=np.float64)
         initial_scale_counts = np.zeros(physical_group_count, dtype=np.float64)
-        for group_ids_k, scales_k in zip(
-            relion_half_inputs.group_ids,
-            relion_half_inputs.scale_corrections,
-            strict=True,
-        ):
+        for half in relion_half_inputs:
+            group_ids_k = half.group_ids
+            scales_k = half.scale_corrections
             if group_ids_k is None or scales_k is None or np.asarray(group_ids_k).size == 0:
                 continue
             groups_k = np.asarray(group_ids_k, dtype=np.int64)
@@ -1439,7 +1630,7 @@ def setup_relion_follower_scale_state(
         ]
         scale_stats_group_ids_per_half = []
         for half_idx in range(2):
-            physical_groups = np.asarray(relion_half_inputs.group_ids[half_idx], dtype=np.int64)
+            physical_groups = np.asarray(relion_half_inputs[half_idx].group_ids, dtype=np.int64)
             owners = follower_owners_per_half[half_idx]
             scale_stats_group_ids_per_half.append(
                 relion_worker_group_ids(
@@ -1453,7 +1644,7 @@ def setup_relion_follower_scale_state(
                 group_ids=physical_groups,
                 follower_owners=owners,
             )
-            relion_half_inputs.scale_corrections[half_idx] = selected_scales
+            relion_half_inputs[half_idx].scale_corrections = selected_scales
         scale_stats_group_count_per_half = [
             follower_count * physical_group_count,
             follower_count * physical_group_count,
@@ -1512,10 +1703,10 @@ def _remap_relion_follower_runtime_inputs(
 
     stats_group_ids_per_half = []
     for half_idx in range(2):
-        physical_groups = np.asarray(relion_half_inputs.group_ids[half_idx], dtype=np.int64)
+        physical_groups = np.asarray(relion_half_inputs[half_idx].group_ids, dtype=np.int64)
         owners = np.asarray(follower_owners_per_half[half_idx], dtype=np.int64)
-        old_scales = relion_half_inputs.scale_corrections[half_idx]
-        old_image_corrections = relion_half_inputs.image_corrections[half_idx]
+        old_scales = relion_half_inputs[half_idx].scale_corrections
+        old_image_corrections = relion_half_inputs[half_idx].image_corrections
         if old_scales is None or old_image_corrections is None:
             raise RuntimeError(
                 "RELION follower dispatch remap requires resident image and scale corrections"
@@ -1534,8 +1725,8 @@ def _remap_relion_follower_runtime_inputs(
             group_ids=physical_groups,
             follower_owners=owners,
         ).astype(dtype)
-        relion_half_inputs.scale_corrections[half_idx] = selected_scales
-        relion_half_inputs.image_corrections[half_idx] = np.asarray(
+        relion_half_inputs[half_idx].scale_corrections = selected_scales
+        relion_half_inputs[half_idx].image_corrections = np.asarray(
             norm_factor * selected_scales,
             dtype=dtype,
         )
@@ -1657,13 +1848,6 @@ def _dispatch_relion_follower_scale_for_final_all_data(
     )
 
 
-def _format_relion_correction_range(values):
-    arr = np.asarray(values, dtype=np.float64).reshape(-1)
-    if arr.size == 0:
-        return "empty"
-    return f"[{float(np.min(arr)):.6g}, {float(np.max(arr)):.6g}]"
-
-
 def _update_relion_follower_corrections(
     follower_setup: RelionFollowerScaleSetup,
     *,
@@ -1696,7 +1880,7 @@ def _update_relion_follower_corrections(
     )
     follower_setup.follower_scale_state = relion_follower_scale_state
     for half_idx in range(2):
-        physical_groups = np.asarray(relion_half_inputs.group_ids[half_idx], dtype=np.int64)
+        physical_groups = np.asarray(relion_half_inputs[half_idx].group_ids, dtype=np.int64)
         selected_scales = select_relion_follower_scales(
             relion_follower_scale_state,
             group_ids=physical_groups,
@@ -1709,8 +1893,8 @@ def _update_relion_follower_corrections(
         avg_norm = float(norm_scale_update.avg_norm_correction_per_half[half_idx])
         norm_factor = np.ones_like(normcorr, dtype=np.float64)
         np.divide(avg_norm, normcorr, out=norm_factor, where=normcorr > 0.0)
-        relion_half_inputs.scale_corrections[half_idx] = selected_scales
-        relion_half_inputs.image_corrections[half_idx] = np.asarray(
+        relion_half_inputs[half_idx].scale_corrections = selected_scales
+        relion_half_inputs[half_idx].image_corrections = np.asarray(
             norm_factor * selected_scales,
             dtype=dtype,
         )

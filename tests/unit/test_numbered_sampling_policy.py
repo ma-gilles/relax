@@ -1,0 +1,139 @@
+"""Expectation sampling decisions use the incoming state and physical iteration."""
+
+import logging
+
+import numpy as np
+import pytest
+from helpers.float_compare import assert_matches
+
+from relax import sampling
+from relax.helpers.convergence import RefinementState
+from relax.helpers.resolution import ImageGeometry
+from relax.refinement import convergence, iteration_planning
+from relax.refinement.refinement_options import AdaptiveOptions, RelionParityOptions
+
+pytestmark = pytest.mark.unit
+LOG = logging.getLogger(__name__)
+
+
+@pytest.mark.parametrize("previous,native,n_classes,advance", [
+    (False, True, 1, False),
+    (True, True, 1, True),
+    (True, False, 1, False),
+    (True, True, 4, False),
+])
+def test_native_sampling_uses_completed_iteration_counters(previous, native, n_classes, advance):
+    state = RefinementState(
+        healpix_order=2, max_healpix_order=5,
+        acc_rot=1.0, acc_trans=0.5,
+        smallest_changes_optimal_orientations=1.0,
+        nr_iter_wo_resol_gain=2, nr_iter_wo_large_hidden_variable_changes=2,
+    )
+    result = convergence.advance_expectation_sampling(
+        state, AdaptiveOptions(), iteration=0,
+        has_previous_iteration=previous, native_sampling_boundary=native,
+        n_classes=n_classes, log=LOG,
+    )
+    assert result.healpix_order == (3 if advance else 2)
+    if not advance:
+        assert result is state
+
+
+@pytest.mark.parametrize("previous,native,n_classes", [(False, True, 1), (True, True, 1), (True, False, 4)])
+def test_explicit_schedule_precedes_native_advance(previous, native, n_classes, monkeypatch):
+    state = RefinementState(healpix_order=2, max_healpix_order=5)
+    monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
+    result = convergence.advance_expectation_sampling(
+        state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1,
+        has_previous_iteration=previous, native_sampling_boundary=native,
+        n_classes=n_classes, log=LOG,
+    )
+    assert result.healpix_order == 3
+
+
+@pytest.mark.parametrize("seed", [None, 17])
+def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
+    parity = RelionParityOptions(perturb_factor=0.5, perturb_seed=seed)
+    rng = np.random.default_rng(23)
+    reference_rng = np.random.default_rng(23)
+    current = expected = 0.125
+    for iteration in range(3):
+        expected, _ = sampling._advance_relion_perturbation(
+            expected, perturb_factor=0.5, perturb_seed=seed,
+            relion_iteration=11 + iteration, rng=reference_rng,
+        )
+        current = iteration_planning.resolve_numbered_perturbation(
+            current, parity, iteration=iteration, init_relion_iteration=10,
+            replay_metadata=None, replay_dir=None, rng=rng, log=LOG,
+        )
+        assert_matches(current, expected)
+    assert_matches(rng.random(), reference_rng.random())
+
+
+@pytest.mark.parametrize("sealed", [False, True])
+def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
+    rng = np.random.default_rng(23)
+    reference_rng = np.random.default_rng(23)
+    result = iteration_planning.resolve_numbered_perturbation(
+        0.125, RelionParityOptions(perturb_factor=0.5),
+        iteration=0, init_relion_iteration=10,
+        replay_metadata={"sealed_v3": sealed, "random_perturbation": 0.25,
+                         "perturbation_factor": 0.5, "healpix_order": 3},
+        replay_dir=str(tmp_path), rng=rng, log=LOG,
+    )
+    assert_matches(result, 0.25)
+    assert_matches(rng.random(), reference_rng.random())
+
+
+def test_replay_restart_uses_physical_iteration(tmp_path):
+    (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
+    result = iteration_planning.resolve_numbered_perturbation(
+        0.125, RelionParityOptions(
+            perturb_factor=0.5, perturb_replay_precision="seed_exact",
+            perturb_replay_restart_state_iterations=(11,),
+            perturb_replay_relion_dir=str(tmp_path),
+        ), iteration=0, init_relion_iteration=11,
+        replay_metadata={"random_perturbation": -0.06873, "perturbation_factor": 0.5,
+                         "healpix_order": 3},
+        replay_dir=str(tmp_path), rng=None, log=LOG,
+    )
+    assert_matches(result, -0.06873074173927307)
+
+
+def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
+    monkeypatch.setattr(sampling, "_advance_relion_perturbation", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
+    result = iteration_planning.resolve_numbered_perturbation(
+        0.25, RelionParityOptions(perturb_factor=0.0), iteration=2,
+        init_relion_iteration=10, replay_metadata=None, replay_dir=None,
+        rng=None, log=LOG,
+    )
+    assert_matches(result, 0.25)
+
+
+@pytest.mark.parametrize("model_size,optics_boxes,optics_pixels,image_size,model_window,image_window", [
+    (128, None, None, 128, None, None),
+    (64, None, None, 64, 64, 64),
+    (128, [128], [0.5], 64, 128, 64),
+    (64, [128], [0.5], 32, 64, 32),
+    (64, [128], [2.0], 128, 64, None),
+])
+def test_particle_remap_retains_independent_model_cutoff(
+    model_size, optics_boxes, optics_pixels, image_size, model_window, image_window,
+):
+    result = iteration_planning.plan_expectation_windows(
+        model_size, ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.0),
+        model_pixel_size=1.0, optics_image_sizes=optics_boxes,
+        optics_pixel_sizes=optics_pixels, log=LOG,
+    )
+    assert result.image_size == image_size
+    assert result.model_window_size == model_window
+    assert result.image_window_size == image_window
+
+
+def test_single_shape_cannot_hide_different_optics_window_sizes():
+    with pytest.raises(NotImplementedError, match="one remapped image current size"):
+        iteration_planning.plan_expectation_windows(
+            64, ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.0),
+            model_pixel_size=1.0, optics_image_sizes=[128, 128],
+            optics_pixel_sizes=[1.0, 2.0], log=LOG,
+        )

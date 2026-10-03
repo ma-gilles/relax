@@ -25,8 +25,11 @@ normalization mass comes from `convergence._relion_pmax_normalization_mass_per_h
 Class3D uses each half's retained M-step posterior mass, K=1 the half's noise
 `sumw`, and `_relion_optimizer_average_pmax` divides half 1's Pmax sum by it.
 
-Learned direction priors belong to
-[`mean_helpers.update_learned_direction_priors`](../../relax/refinement/mean_helpers.py).
+Direction-prior construction, learning and scoring belong to
+[`orientation_priors`](../../relax/helpers/orientation_priors.py).
+`DirectionPrior` pairs probabilities with their HEALPix order;
+`HalfDirectionPriors` owns the shared and class payloads for one half-model.
+`learn_k1_direction_priors` and `learn_class_direction_priors` return updates.
 K=1 collapses each half's rotation posterior at the order used for scoring and
 skips a half whose prior cannot form a RELION log prior, with the warning routed
 through the controller logger; K-class combines both halves' per-class posteriors
@@ -35,8 +38,9 @@ half. The controller decides when both posteriors are present, derives the K=1
 order from its sampling state and supplies the grid sizes, so the controller's
 sampling policy stays the only source of grid geometry. `RefinementHistory`
 owns the float64 snapshot copies of the rotation posteriors and of the learned
-priors (class 0 per half for K-class); the controller passes the live lists.
-Controller tests that stub the collapse step patch `mean_helpers`.
+priors (class 0 per half for K-class); the controller passes the prior owners.
+The controller applies learned payloads explicitly. Tests that stub the collapse
+step patch `orientation_priors`.
 
 Snapshot initialization of those priors belongs to
 `orientation_priors.initial_direction_priors_from_snapshot`: a RELION restart
@@ -77,12 +81,14 @@ angles or RELION's canonical grid at the perturbation order (the scoring grid's
 angles when the row counts differ), and one RELION `SamplingPerturbation` rotates
 the trial orientations, rebuilds the M-step rotations and shifts the translation
 grid. [`iteration_planning.build_initial_coarse_grids`](../../relax/refinement/iteration_planning.py)
-materializes the first exhaustive grid from an `InitialCoarseGridRequest` that
-retains its array payloads by reference. It selects a sealed capture, a caller
-translation table or the RELION translation grid, and
-`_relion_base_translation_grid` is the only unperturbed translation-grid
-construction used by the controller; [`test_initial_coarse_grid_owner.py`](../../tests/unit/test_initial_coarse_grid_owner.py)
-pins both. `expected_accuracy.Half1AccuracyInputs` bundles the run-constant inputs of RELION's
+materializes the first exhaustive grid from a caller translation table or the
+RELION translation grid; `build_sealed_initial_coarse_grids` handles sealed
+captures. [`prepare_final_sampling`](../../relax/refinement/final_sampling.py)
+resolves final native/replay settings and returns ready-to-score grids together
+with their metadata. It owns the final NumPy/JAX conversion boundary and preserves
+rounding before perturbation. [`test_initial_coarse_grid_owner.py`](../../tests/unit/test_initial_coarse_grid_owner.py)
+and [`test_final_sampling.py`](../../tests/unit/test_final_sampling.py) cover these
+boundaries. `expected_accuracy.Half1AccuracyInputs` bundles the run-constant inputs of RELION's
 expected-accuracy estimation and owns the `estimate` method used by both passes.
 The same module owns `_expected_accuracy_class_ids`, which supplies half-1 class labels ([`test_expected_accuracy_inputs_owner.py`](../../tests/unit/test_expected_accuracy_inputs_owner.py)).
 `sampling._advance_relion_perturbation` owns the update beside its seeded and generator primitives, and advances RELION's SamplingPerturbation to an iteration
@@ -126,7 +132,7 @@ Replay and finalization have separate selection and mutation boundaries:
 
 | Responsibility | Owner | Inputs and preserved behavior |
 | --- | --- | --- |
-| Final-pass admission | [`finalization_policy.py`](../../relax/refinement/finalization_policy.py) | Receives convergence/cap state and the controller logger. Reads diagnostic flags when called; does not mutate refinement state. |
+| Final-pass admission | [`finalization.py`](../../relax/refinement/finalization.py) | Admission receives convergence/cap state and the controller logger and does not mutate state. The same owner executes final accuracy/sampling, expectation and reconstruction, with explicit final state/history writes. |
 | Replay numbering and cutoff | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py) | `_numbered_relion_iteration` maps restart-local indices; `_native_sampling_boundary_for_iteration` checks cutoff and sealed state. The controller retains scheduling. |
 | Numbered optimiser accuracy override | `relion_replay.read_optimiser_accuracy_replay` | Selects this iteration's numbered optimiser STAR when replay is active and unsealed; finite RELION rotation/translation accuracies replace the reported and convergence accuracies. Read or parse failures warn and keep values assigned before the failure. Returns `OptimiserAccuracyReplay`; the controller passes its metadata to `apply_optimiser_convergence_replay` after the state update. |
 | Class3D captured tau2 selection | `relion_replay._class_tau2_replay` | Selects same-iteration captured spectra when the diagnostic is enabled, preserves fallback logging and validates captured shapes even when disabled. Returns spectra, enable flag and source label; M-step arithmetic stays in refinement. |
@@ -206,11 +212,11 @@ oversampling always keeps the two-pass adaptive expectation (pass 1 at the
 current size when no reduced coarse size exists); the direct dense engine serves
 only runs without scale groups at oversampling 0
 ([`test_dense_scale_group_routing.py`](../../tests/unit/test_dense_scale_group_routing.py)).
-`half_scoring._adaptive_pass2_grids` materializes the perturbed coarse grid, the
+[`prepare_adaptive_pass2_grids`](../../relax/helpers/oversampling.py) materializes the perturbed coarse grid, the
 oversampled children with parent maps, the fine M-step rotations and the coarse
 translation phase source for both routes
 ([`test_adaptive_pass2_grids_owner.py`](../../tests/unit/test_adaptive_pass2_grids_owner.py)).
-`half_scoring._adaptive_engine_shared_kwargs` holds the keywords both routes pass
+`half_scoring._adaptive_engine_common_kwargs` holds the keywords both routes pass
 identically to `run_dense_k_class_em_adaptive` (noise accumulation, RELION's adaptive
 fraction, the fine M-step rotations pruned only for sparse pass 2); the K=1 call adds
 significance skipping, the diagnostic float64 pass 2 and the host-double coarse

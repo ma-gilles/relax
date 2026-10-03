@@ -1,0 +1,49 @@
+Continue the existing relax readability refactor, preserving ongoing work, frozen candidates, running jobs and accepted user decisions.
+
+Optimize for how much code a developer or agent must understand to make a safe change. Smaller files and fewer functions are not the objective. Numerical behavior and GPU performance remain essential.
+
+Read the current refactor principles, review artifacts and extension plan in docs/development/, along with the applicable repository contracts. Build on the existing work rather than starting another architecture.
+
+Apply these design principles:
+
+1. Organize by responsibility.
+Keep a coherent operation, its private helpers and its small result types together. Extract a module when it establishes meaningful ownership or isolates implementation details. Avoid one-function-per-file fragmentation, generic helper collections and arbitrary splits of a long function.
+
+2. Extract substantial operations.
+Useful boundaries include sampling preparation, expectation/accumulation, reconstruction, noise estimation and convergence policy. A single-caller function is worthwhile when it encapsulates a meaningful operation. Avoid chains of functions that merely forward arguments. Each layer should own a decision, computation or necessary adaptation.
+
+3. Keep the scientific algorithm visible.
+The controller should expose execution order, important mode decisions, state updates and the transition to finalization. Preserve the existing timing of convergence decisions, including decisions based on the preceding iteration. Do not rearrange operations to fit an idealized loop.
+
+4. Establish ownership before shortening signatures.
+Trace each input to its producer, lifetime, consumers and update sites. Group data when it forms a real domain concept with shared invariants and lifecycle. Do not create a context object containing all controller locals. Pass individual fields when that is all a function needs. Review construction and consumption together: hiding twenty arguments behind twenty assignments to a temporary object is not simplification.
+
+5. Keep state changes explicit.
+Return named results and apply important model updates visibly in orchestration. Avoid generic result.apply(context) operations. Preserve half-set, class, optics and particle identity relationships. Keep arrays paired with the metadata needed to interpret them. Account for aliases, retained references, donation and buffer lifetime.
+
+6. Separate source organization from GPU execution.
+A new Python function does not require a new JIT boundary or GPU pass. Preserve existing fusion, batching, reduction order, dtypes, RNG progression, layouts, transfers, synchronization and specialization. Do not materialize large intermediates merely to make stages look independent. Shared RECOVAR mathematics must retain one implementation in RECOVAR.
+
+7. Judge the complete change.
+Compare the caller, implementations, types, construction code and indirect consumers. Count newly introduced wrappers and dependencies as well as deleted controller lines. Line counts are review signals, subject to existing repository budgets; they are not evidence that a design improved.
+
+For the next package:
+
+- Choose one coherent area within the current scope.
+- Explain its current ownership and the main source of comprehension difficulty.
+- Implement a complete, reviewable improvement with migrated callers and affected tests.
+- Show the actual calling flow and implementation together.
+- Identify which details a future maintainer can now safely leave unopened.
+- Record numerical and runtime risks and execute the applicable repository checks. Preserve established tolerances and production precision.
+- Update the existing review artifact and principles with concrete lessons, avoiding another parallel set of guidance.
+
+Finish this representative example and present it for human design review before extending the pattern broadly. After acceptance, test the principles on a different responsibility before automating widespread extraction.
+
+Your handoff should state:
+- What responsibility now has a clearer owner.
+- Why the new boundary reduces the amount of code and assumptions needed for a typical change.
+- Which state updates and scientific decisions remain visible.
+- What was verified, what remains unqualified and the supporting evidence.
+- Any concrete design decision that still needs human feedback.
+
+Do not justify an extraction solely by saying that a file or function became shorter.

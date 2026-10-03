@@ -7,12 +7,16 @@ ordered return tuple retain the controller's existing semantics.
 """
 
 import logging
+from dataclasses import replace
 from typing import NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
 
 from relax.diagnostics.state_swap_probe import _STATE_SWAP_VARIANT_COMPONENTS
+from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.refinement.mean_helpers import ReferenceModel
+from relax.refinement.noise_updates import NoiseModel
 
 # Keep the existing diagnostic log namespace for configured handlers/filters.
 logger = logging.getLogger(__name__)
@@ -77,8 +81,11 @@ def _copy_half_pair(values):
     return [_copy_optional_array(value) for value in values]
 
 
-def _copy_direction_prior_state(values, orders):
-    return _copy_half_pair(values), [None if order is None else int(order) for order in orders]
+def _copy_direction_prior_state(priors):
+    return (
+        [_copy_optional_array(prior.values) for prior in priors],
+        [None if prior.healpix_order is None else int(prior.healpix_order) for prior in priors],
+    )
 
 
 def _copy_optional_float_pair(values):
@@ -97,42 +104,33 @@ def _snapshot_state_swap_inputs(
     *,
     state,
     cs,
-    means,
-    mean_variance,
-    noise_variance_per_half,
-    noise_variance,
-    previous_noise_radial_per_half,
-    previous_noise_radial,
+    reference_model,
+    noise_model,
     relion_half_inputs,
     previous_best_rotations,
     current_sigma_offset_angstrom,
     current_sigma_offset_angstrom_per_half,
-    class_direction_prior_per_half,
-    class_direction_prior_order_per_half,
-    global_direction_prior_per_half,
-    global_direction_prior_order_per_half,
+    direction_priors,
 ):
     class_priors, class_prior_orders = _copy_direction_prior_state(
-        class_direction_prior_per_half,
-        class_direction_prior_order_per_half,
+        [p.classes for p in direction_priors],
     )
     global_priors, global_prior_orders = _copy_direction_prior_state(
-        global_direction_prior_per_half,
-        global_direction_prior_order_per_half,
+        [p.shared for p in direction_priors],
     )
     return {
         "state_fields": dict(state.__dict__),
         "cs": int(cs),
-        "means": [_copy_optional_array(mean) for mean in means],
-        "mean_variance": _copy_optional_array(mean_variance),
-        "noise_variance_per_half": _copy_half_pair(noise_variance_per_half),
-        "noise_variance": _copy_optional_array(noise_variance),
-        "previous_noise_radial_per_half": _copy_half_pair(previous_noise_radial_per_half),
-        "previous_noise_radial": _copy_optional_array(previous_noise_radial),
-        "image_corrections": _copy_half_pair(relion_half_inputs.image_corrections),
-        "scale_corrections": _copy_half_pair(relion_half_inputs.scale_corrections),
-        "previous_best_translations": _copy_half_pair(relion_half_inputs.previous_best_translations),
-        "previous_best_rotation_eulers": _copy_half_pair(relion_half_inputs.previous_best_rotation_eulers),
+        "means": [_copy_optional_array(mean) for mean in reference_model.maps],
+        "mean_variance": _copy_optional_array(reference_model.tau2),
+        "noise_variance_per_half": _copy_half_pair(noise_model.variance_per_half),
+        "noise_variance": _copy_optional_array(noise_model.average_variance),
+        "previous_noise_radial_per_half": _copy_half_pair(noise_model.radial_per_half),
+        "previous_noise_radial": _copy_optional_array(noise_model.average_radial),
+        "image_corrections": _copy_half_pair([particle_half.image_corrections for particle_half in relion_half_inputs]),
+        "scale_corrections": _copy_half_pair([particle_half.scale_corrections for particle_half in relion_half_inputs]),
+        "previous_best_translations": _copy_half_pair([particle_half.translations for particle_half in relion_half_inputs]),
+        "previous_best_rotation_eulers": _copy_half_pair([particle_half.rotation_eulers for particle_half in relion_half_inputs]),
         "previous_best_rotations": _copy_half_pair(previous_best_rotations),
         "current_sigma_offset_angstrom": float(current_sigma_offset_angstrom),
         "current_sigma_offset_angstrom_per_half": _copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
@@ -152,19 +150,12 @@ class _StateSwapValues(NamedTuple):
     """
 
     cs: object
-    means: object
-    mean_variance: object
-    noise_variance_per_half: object
-    noise_variance: object
-    previous_noise_radial_per_half: object
-    previous_noise_radial: object
+    reference_model: ReferenceModel
+    noise_model: NoiseModel
     previous_best_rotations: object
     current_sigma_offset_angstrom: object
     current_sigma_offset_angstrom_per_half: object
-    class_direction_prior_per_half: object
-    class_direction_prior_order_per_half: object
-    global_direction_prior_per_half: object
-    global_direction_prior_order_per_half: object
+    direction_priors: object
 
 
 
@@ -277,38 +268,24 @@ def _apply_state_swap_probe(
     state,
     cs,
     volume_shape,
-    means,
-    mean_variance,
-    noise_variance_per_half,
-    noise_variance,
-    previous_noise_radial_per_half,
-    previous_noise_radial,
+    reference_model,
+    noise_model,
     relion_half_inputs,
     previous_best_rotations,
     current_sigma_offset_angstrom,
     current_sigma_offset_angstrom_per_half,
-    class_direction_prior_per_half,
-    class_direction_prior_order_per_half,
-    global_direction_prior_per_half,
-    global_direction_prior_order_per_half,
+    direction_priors,
 ):
     """Restore selected RECOVAR-produced state after RELION replay override."""
 
     unchanged = _StateSwapValues(
         cs,
-        means,
-        mean_variance,
-        noise_variance_per_half,
-        noise_variance,
-        previous_noise_radial_per_half,
-        previous_noise_radial,
+        reference_model,
+        noise_model,
         previous_best_rotations,
         current_sigma_offset_angstrom,
         current_sigma_offset_angstrom_per_half,
-        class_direction_prior_per_half,
-        class_direction_prior_order_per_half,
-        global_direction_prior_per_half,
-        global_direction_prior_order_per_half,
+        direction_priors,
     )
     if not probe or recovar_snapshot is None:
         return unchanged
@@ -358,10 +335,13 @@ def _apply_state_swap_probe(
             set(recovar_state_fields) - _STATE_SWAP_STATE_NO_GRID_EXCLUDE,
         )
     if "maps" in components:
-        means = [jnp.asarray(mean) if mean is not None else None for mean in recovar_snapshot["means"]]
+        reference_model = replace(
+            reference_model,
+            maps=[jnp.asarray(mean) if mean is not None else None for mean in recovar_snapshot["means"]],
+        )
     if "map_scale" in components:
         source_name, target_name, scale_mode = _STATE_SWAP_MAP_SCALE_VARIANTS[variant]
-        relion_means = means
+        relion_means = reference_model.maps
         recovar_means = recovar_snapshot["means"]
         source_means = recovar_means if source_name == "recovar" else relion_means
         target_means = recovar_means if target_name == "recovar" else relion_means
@@ -371,7 +351,7 @@ def _apply_state_swap_probe(
             mode=scale_mode,
             volume_shape=volume_shape,
         )
-        means = [jnp.asarray(mean) for mean in scaled_means]
+        reference_model = replace(reference_model, maps=[jnp.asarray(mean) for mean in scaled_means])
         for summary in scale_summaries:
             logger.warning(
                 "STATE-SWAP map amplitude: variant=%s map=%d mode=%s scale=[%.9g, %.9g] relative_l2=%.9g->%.9g",
@@ -384,33 +364,52 @@ def _apply_state_swap_probe(
                 summary["relative_l2_after"],
             )
     if "tau2_noise" in components or "tau2" in components:
-        mean_variance = jnp.asarray(recovar_snapshot["mean_variance"])
+        reference_model = replace(reference_model, tau2=jnp.asarray(recovar_snapshot["mean_variance"]))
     if "tau2_noise" in components or "noise_variance" in components:
-        noise_variance_per_half = [
-            jnp.asarray(noise_k) if noise_k is not None else None
-            for noise_k in recovar_snapshot["noise_variance_per_half"]
-        ]
-        noise_variance = jnp.asarray(recovar_snapshot["noise_variance"])
+        noise_model = replace(
+            noise_model,
+            variance_per_half=[
+                jnp.asarray(noise_k) if noise_k is not None else None
+                for noise_k in recovar_snapshot["noise_variance_per_half"]
+            ],
+            average_variance=jnp.asarray(recovar_snapshot["noise_variance"]),
+        )
     if "tau2_noise" in components or "previous_noise_radial" in components:
-        previous_noise_radial_per_half = _copy_half_pair(recovar_snapshot["previous_noise_radial_per_half"])
-        previous_noise_radial = _copy_optional_array(recovar_snapshot["previous_noise_radial"])
+        noise_model = replace(
+            noise_model,
+            radial_per_half=_copy_half_pair(recovar_snapshot["previous_noise_radial_per_half"]),
+            average_radial=_copy_optional_array(recovar_snapshot["previous_noise_radial"]),
+        )
     if "image_scale" in components or "image_correction" in components:
-        relion_half_inputs.image_corrections = _copy_half_pair(recovar_snapshot["image_corrections"])
+        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(recovar_snapshot["image_corrections"]), strict=True):
+            particle_half.image_corrections = value_for_half
     if "image_scale" in components or "scale_correction" in components:
-        relion_half_inputs.scale_corrections = _copy_half_pair(recovar_snapshot["scale_corrections"])
+        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(recovar_snapshot["scale_corrections"]), strict=True):
+            particle_half.scale_corrections = value_for_half
     if "poses" in components:
-        relion_half_inputs.previous_best_translations = _copy_half_pair(
+        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(
             recovar_snapshot["previous_best_translations"],
-        )
-        relion_half_inputs.previous_best_rotation_eulers = _copy_half_pair(
+        ), strict=True):
+            particle_half.translations = value_for_half
+        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(
             recovar_snapshot["previous_best_rotation_eulers"],
-        )
+        ), strict=True):
+            particle_half.rotation_eulers = value_for_half
         previous_best_rotations = _copy_half_pair(recovar_snapshot["previous_best_rotations"])
     if "direction_prior" in components:
-        class_direction_prior_per_half = _copy_half_pair(recovar_snapshot["class_direction_prior_per_half"])
-        class_direction_prior_order_per_half = list(recovar_snapshot["class_direction_prior_order_per_half"])
-        global_direction_prior_per_half = _copy_half_pair(recovar_snapshot["global_direction_prior_per_half"])
-        global_direction_prior_order_per_half = list(recovar_snapshot["global_direction_prior_order_per_half"])
+        direction_priors = [
+            HalfDirectionPriors(
+                classes=DirectionPrior(
+                    _copy_optional_array(recovar_snapshot["class_direction_prior_per_half"][k]),
+                    recovar_snapshot["class_direction_prior_order_per_half"][k],
+                ),
+                shared=DirectionPrior(
+                    _copy_optional_array(recovar_snapshot["global_direction_prior_per_half"][k]),
+                    recovar_snapshot["global_direction_prior_order_per_half"][k],
+                ),
+            )
+            for k in range(2)
+        ]
     if "sigma_offset" in components:
         current_sigma_offset_angstrom = float(recovar_snapshot["current_sigma_offset_angstrom"])
         current_sigma_offset_angstrom_per_half = _copy_optional_float_pair(
@@ -421,17 +420,10 @@ def _apply_state_swap_probe(
 
     return _StateSwapValues(
         cs,
-        means,
-        mean_variance,
-        noise_variance_per_half,
-        noise_variance,
-        previous_noise_radial_per_half,
-        previous_noise_radial,
+        reference_model,
+        noise_model,
         previous_best_rotations,
         current_sigma_offset_angstrom,
         current_sigma_offset_angstrom_per_half,
-        class_direction_prior_per_half,
-        class_direction_prior_order_per_half,
-        global_direction_prior_per_half,
-        global_direction_prior_order_per_half,
+        direction_priors,
     )

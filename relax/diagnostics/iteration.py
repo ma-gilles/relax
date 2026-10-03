@@ -8,8 +8,6 @@ Extracted from ``iteration_loop.py``:
 - ``_save_iteration_intermediates`` writes per-iteration regularized and
   unregularized volumes, FSC, noise, tau2, hard assignments, and metadata
   when ``--save_intermediates_dir`` is provided.
-- ``_save_bpref_accumulators`` writes the same accumulator schema before or
-  after the low-resolution half-map join. The controller chooses the boundary.
 - Half selectors validate terminating significance/noise captures and explicit
   numbered-half device captures before the controller dispatches scoring.
 """
@@ -18,20 +16,91 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
 import numpy as np
 
+from relax.diagnostics import parity_dump as _parity_dump
 from relax.helpers.env_flags import parse_int_set
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.relion.relion_metadata import _relion_half_plane_shell_counts
 from relax.sampling import rotation_grid_size
 from relax.symmetry import canonicalize_rotational_symmetry, symmetry_operator_sha256
 
+if TYPE_CHECKING:
+    from relax.helpers.convergence import RefinementState
+    from relax.refinement.half_inputs import HalfSet, ParticlePoses
+    from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.relion.relion_normalization import NormScaleCorrectionReport
+
 logger = logging.getLogger(__name__)
 
 
 _SIGNIFICANCE_DUMP_TARGET_HALF_ENV = "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF"
 _PASS2_NORM_DUMP_TARGET_HALF_ENV = "RELAX_PASS2_DUMP_TARGET_HALF"
+
+
+def dump_numbered_iteration(
+    iteration: int,
+    *,
+    init_relion_iteration: int,
+    state: RefinementState,
+    current_size: int,
+    sigma_offset_angstrom,
+    random_perturbation,
+    settings: ReconstructionSettings,
+    pixel_size_angstrom,
+    ave_pmax,
+    fsc,
+    noise_variance,
+    means,
+    unfiltered_means,
+    poses: tuple[ParticlePoses, ParticlePoses],
+    half_inputs: tuple[HalfSet, HalfSet],
+    corrections: NormScaleCorrectionReport,
+    scale_correction_data_vs_prior,
+    log,
+) -> None:
+    """Adapt completed-iteration operands to the parity capture schema.
+
+    Capture admission and timing-only selection remain with the controller.
+    See ``docs/math/relion_refinement_algorithm.md#diagnostic-capture``.
+    """
+    try:
+        _parity_dump.dump_iteration(
+            iteration=iteration,
+            init_relion_iteration=int(init_relion_iteration),
+            current_size=int(current_size),
+            sigma_offset=float(sigma_offset_angstrom),
+            translation_step=float(state.translation_step),
+            translation_range=float(state.translation_range),
+            random_perturbation=float(random_perturbation) if random_perturbation is not None else 0.0,
+            random_perturbation_instance=int(state.perturbation_instance)
+            if hasattr(state, "perturbation_instance")
+            else 0,
+            tau2_fudge=float(settings.tau2_fudge),
+            voxel_size=pixel_size_angstrom,
+            grid_size=int(settings.grid_size),
+            volume_shape=tuple(settings.volume_shape),
+            ave_pmax=float(ave_pmax),
+            fsc=np.asarray(fsc, dtype=np.float64),
+            sigma2_noise=np.asarray(noise_variance, dtype=np.float64),
+            means=means,
+            unreg_means=unfiltered_means,
+            new_iter_best_rotation_eulers=[pose.eulers_deg for pose in poses],
+            new_iter_best_translations=[pose.translations_pixels for pose in poses],
+            image_corrections=[half.image_corrections for half in half_inputs],
+            scale_corrections=[half.scale_corrections for half in half_inputs],
+            group_ids=[half.group_ids for half in half_inputs],
+            group_counts=[half.group_count for half in half_inputs],
+            group_scale_corrections=corrections.group_scale_corrections_per_half,
+            norm_corrections=corrections.norm_corrections_per_half,
+            avg_norm_corrections=corrections.avg_norm_correction_per_half,
+            zero_norm_residual_counts=corrections.zero_norm_residual_counts,
+            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
+        )
+    except Exception as exc:
+        log.warning("parity_dump.dump_iteration failed at iter %d: %s", iteration, exc)
 
 
 def _significance_dump_half_indices(
@@ -157,50 +226,6 @@ def _bpref_device_signature_active_for_numbered_half(
     if final_all_data:
         return False
     return int(iteration) == target_iteration and int(half) == target_half
-
-
-def _save_bpref_accumulators(
-    dump_dir: str,
-    *,
-    stage: str,
-    iteration: int,
-    current_size: int,
-    padding_factor: int,
-    grid_size: int,
-    voxel_size: float,
-    volume_shape,
-    accumulator_shape,
-    Ft_y_0,
-    Ft_y_1,
-    Ft_ctf_0,
-    Ft_ctf_1,
-) -> None:
-    """Save K1 accumulators at the controller's ``prejoin`` or ``accum`` stage.
-
-    ``iteration`` is zero-based; filenames and payload metadata are one-based.
-    Preserve the numerator dtype and save the real part of each weight array.
-    These captures locate a state boundary, without establishing that every
-    upstream scoring input matched between runs.
-    """
-    import pathlib
-
-    pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
-    np.savez(
-        pathlib.Path(dump_dir) / f"recovar_bpref_{stage}_it{iteration + 1:03d}.npz",
-        schema=np.asarray(f"recovar-bpref-{stage}-v2"),
-        run_id=np.asarray(os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_RUN_ID", "unset")),
-        iteration=np.int32(iteration + 1),
-        current_size=np.int32(current_size),
-        padding_factor=np.int32(padding_factor),
-        grid_size=np.int32(grid_size),
-        voxel_size=np.float32(voxel_size),
-        volume_shape=np.asarray(volume_shape, dtype=np.int32),
-        mstep_accumulator_shape=np.asarray(accumulator_shape, dtype=np.int32),
-        Ft_y_0=np.asarray(Ft_y_0),
-        Ft_y_1=np.asarray(Ft_y_1),
-        Ft_ctf_0=np.asarray(Ft_ctf_0).real,
-        Ft_ctf_1=np.asarray(Ft_ctf_1).real,
-    )
 
 
 def _replay_manifest_array(value, dtype=None):

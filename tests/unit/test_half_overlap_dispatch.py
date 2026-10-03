@@ -12,7 +12,7 @@ import threading
 
 import pytest
 
-from relax.refinement.iteration_loop import (
+from relax.refinement.expectation import (
     _half_overlap_active,
     _run_halves_overlapped,
 )

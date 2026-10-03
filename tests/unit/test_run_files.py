@@ -13,10 +13,11 @@ from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.helpers.convergence import RefinementState
+from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
 from relax.reconstruction import regularization_relion
 from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
-from relax.refinement.half_inputs import HalfInputState
+from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
@@ -47,17 +48,9 @@ def test_snapshot_capture_has_a_staged_run_lifecycle():
         "current_size", "incr_size", "has_high_fsc_at_limit", "random_perturbation",
         "acc_rot_per_class", "acc_trans_per_class_angstrom",
     )
-    assert tuple(inspect.signature(SnapshotCapture.capture_maps_and_spectra).parameters) == (
-        "self", "assembly", "means", "unfiltered_means", "tau2_shells",
-        "data_vs_prior", "noise_shells", "fsc", "fsc_for_growth",
-    )
-    assert tuple(inspect.signature(SnapshotCapture.capture_priors).parameters) == (
-        "self", "assembly", "class_weights", "direction_prior", "direction_prior_order",
-    )
-    assert tuple(inspect.signature(SnapshotCapture.capture_particles).parameters) == (
-        "self", "assembly", "half_inputs", "class_assignments", "max_posterior",
-        "significant_counts", "avg_norm_correction",
-    )
+    assert not hasattr(SnapshotCapture, "capture_maps_and_spectra")
+    assert not hasattr(SnapshotCapture, "capture_priors")
+    assert not hasattr(SnapshotCapture, "capture_particles")
     for name in (
         "SnapshotRunSpec", "SnapshotReferenceState", "SnapshotSamplingState",
         "SnapshotParticleState", "capture_iteration_snapshot",
@@ -68,12 +61,10 @@ def test_snapshot_capture_has_a_staged_run_lifecycle():
     capture = source.index("snapshot_capture = SnapshotCapture(")
     loop = source.index("while (schedule.force_max_iter_after_convergence")
     begin = source.index("snapshot = snapshot_capture.begin(", loop)
-    maps = source.index("snapshot_capture.capture_maps_and_spectra(", begin)
-    priors = source.index("snapshot_capture.capture_priors(", maps)
-    particles = source.index("snapshot_capture.capture_particles(", priors)
-    finish = source.index("checkpoint_writer(snapshot_capture.finish(snapshot))", particles)
+    finish = source.index("snapshot = snapshot_capture.finish(", begin)
+    publish = source.index("checkpoint_writer(snapshot)", finish)
     assert source.count("SnapshotCapture(") == 1
-    assert capture < loop < begin < maps < priors < particles < finish
+    assert capture < loop < begin < finish < publish
 
 
 def test_staged_snapshot_capture_copies_complete_k1_state():
@@ -105,19 +96,9 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
     unfiltered = [np.full(8, 3, dtype=np.complex64), np.full(8, 4, dtype=np.complex64)]
     tau2 = [np.arange(5, dtype=np.float32), np.arange(5, dtype=np.float32) + 1]
     noise = [np.arange(5, dtype=np.float64) + 2, np.arange(5, dtype=np.float64) + 3]
-    capture.capture_maps_and_spectra(
-        snapshot,
-        means,
-        unfiltered,
-        tau2,
-        np.arange(5, dtype=np.float32),
-        noise,
-        fsc=np.linspace(1.0, 0.0, 5),
-        fsc_for_growth=np.linspace(0.9, 0.1, 5),
-    )
     direction_prior = [np.full(12, 0.25), np.full(12, 0.5)]
-    capture.capture_priors(snapshot, None, direction_prior, [1, 1])
-    half_inputs = HalfInputState.from_initial_values(
+    half_inputs = initialize_halfsets(
+        (None, None),
         previous_best_translations=[np.zeros((2, 2), dtype=np.float32)] * 2,
         previous_best_rotation_eulers=[np.zeros((2, 3), dtype=np.float64)] * 2,
         image_corrections=[np.ones(2, dtype=np.float32)] * 2,
@@ -125,21 +106,24 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
         group_ids=[None, np.ones(2, dtype=np.int64)],
         group_count=None,
     )
-    capture.capture_particles(
-        snapshot,
-        half_inputs,
-        None,
-        [np.full(2, 0.7), np.full(2, 0.8)],
-        [np.ones(2, dtype=np.int32), np.full(2, 2, dtype=np.int32)],
-        (0.95, None),
+    result = capture.finish(
+        snapshot, means, unfiltered, tau2, np.arange(5, dtype=np.float32), noise,
+        fsc=np.linspace(1.0, 0.0, 5),
+        fsc_for_growth=np.linspace(0.9, 0.1, 5),
+        class_weights=None,
+        direction_priors=[HalfDirectionPriors(shared=DirectionPrior(values, 1)) for values in direction_prior],
+        half_inputs=half_inputs,
+        class_assignments=None,
+        max_posterior=[np.full(2, 0.7), np.full(2, 0.8)],
+        significant_counts=[np.ones(2, dtype=np.int32), np.full(2, 2, dtype=np.int32)],
+        avg_norm_correction=(0.95, None),
     )
-    result = capture.finish(snapshot)
 
     assert result.relion_iteration == 3 and result.n_classes == 1
-    assert result.sigma_offset_angstrom == (2.0, 3.0)
-    assert result.avg_norm_correction == (0.95, 1.0)
-    np.testing.assert_array_equal(result.acc_rot_per_class, [2.25])
-    np.testing.assert_array_equal(result.acc_trans_per_class_angstrom, [1.125])
+    assert_matches(result.sigma_offset_angstrom, (2.0, 3.0))
+    assert_matches(result.avg_norm_correction, (0.95, 1.0))
+    assert_matches(result.acc_rot_per_class, [2.25])
+    assert_matches(result.acc_trans_per_class_angstrom, [1.125])
     assert result.extra["direction_prior_order_half1"] == 1
     assert result.extra["direction_prior_order_half2"] == 1
     assert result.group_ids[0].shape == (2,) and np.all(result.group_ids[0] == 0)
