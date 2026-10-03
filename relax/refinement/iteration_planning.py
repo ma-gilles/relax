@@ -24,7 +24,7 @@ from relax.helpers.resolution import (
     ImageGeometry,
     _bootstrap_current_size_relion,
     _firstiter_cc_scheduling_resolution_shell,
-    _k1_data_vs_prior_for_scheduling,
+    _truncate_data_vs_prior_for_current_size,
     _truncate_fsc_for_current_size_growth,
     bootstrap_current_size_from_ini_high_relion,
     clamp_relion_coarse_image_size,
@@ -493,9 +493,12 @@ def plan_class_image_size(
         data_vs_prior,
         dtype=dtype,
     ).copy()
-    data_vs_prior_prev = data_vs_prior_prev_raw.copy()
-    if previous_size < grid_size:
-        data_vs_prior_prev[..., min(data_vs_prior_prev.shape[-1], previous_size // 2 + 1) :] = 0.0
+    data_vs_prior_prev = _truncate_data_vs_prior_for_current_size(
+        data_vs_prior_prev_raw,
+        current_size=previous_size,
+        grid_size=grid_size,
+        dtype=dtype,
+    )
     per_class_res_shell = np.asarray(
         [
             resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
@@ -553,7 +556,10 @@ def plan_halfmap_image_size(
     dtype,
     log: logging.Logger,
 ) -> HalfmapImageSize:
-    """Plan split-half support from raw/corrected FSC and RELION's growth latch.
+    """Plan split-half support from the previous iteration's curve and RELION's growth latch.
+
+    ``data_vs_prior`` is the curve the previous iteration published (or the
+    continued snapshot's); the raw FSC is read only as the growth fallback.
 
     See ``docs/math/relion_refinement_algorithm.md`` for image-size scheduling.
     """
@@ -570,12 +576,10 @@ def plan_halfmap_image_size(
         dtype=dtype,
     )
 
-    data_vs_prior_iter = _k1_data_vs_prior_for_scheduling(
-        raw_fsc=fsc_prev_raw,
-        corrected_data_vs_prior=data_vs_prior,
+    data_vs_prior_iter = _truncate_data_vs_prior_for_current_size(
+        data_vs_prior,
         current_size=previous_size,
         grid_size=grid_size,
-        tau2_fudge=parity.tau2_fudge,
         dtype=dtype,
     )
     res_shell = resolution_from_data_vs_prior(

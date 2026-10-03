@@ -57,70 +57,22 @@ class TestResolutionScheduling:
         assert_matches(tapered[:, 12:], 0.0)
         assert bool(untapered[1, 10] > 3.0) and not bool(tapered[1, 10] > 3.0)
 
-    def test_k1_current_size_scheduling_raw_fsc_matches_gui_default(self):
-        """GUI-default K=1 scheduling uses raw FSC-derived DVP."""
-        raw_fsc = np.ones(129, dtype=np.float32) * 0.9
-        raw_fsc[0] = 1.0
-        raw_fsc[28:] = 0.0
-
-        dvp = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=None,
-            current_size=56,
-            grid_size=256,
-            tau2_fudge=1.0,
-        )
-        shell = regularization_relion.resolution_from_data_vs_prior(
-            dvp,
-            allow_high_res_recovery=True,
-        )
-        current_size = regularization_relion.compute_current_size_relion(
-            shell,
-            256,
-            ave_Pmax=1.0,
-            has_high_fsc_at_limit=True,
-        )
-
-        assert shell == 27
-        assert current_size == 118
-
     def test_k1_current_size_scheduling_keeps_boundary_shell(self):
-        """Raw-FSC and corrected-DVP scheduling must agree at current_size//2."""
+        """K1 scheduling keeps the shell at current_size//2 and zeroes the next."""
         current_size = 56
         boundary_shell = current_size // 2
-        raw_fsc = np.zeros(129, dtype=np.float32)
-        corrected_dvp = np.zeros_like(raw_fsc)
-        raw_fsc[:boundary_shell] = 0.05
+        corrected_dvp = np.zeros(129, dtype=np.float32)
         corrected_dvp[:boundary_shell] = 0.05
-        raw_fsc[boundary_shell] = 0.9
         corrected_dvp[boundary_shell] = 10.0
 
-        raw_dvp = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=None,
+        corrected = resolution_helpers._truncate_data_vs_prior_for_current_size(
+            corrected_dvp,
             current_size=current_size,
             grid_size=256,
-            tau2_fudge=1.0,
-        )
-        corrected = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=corrected_dvp,
-            current_size=current_size,
-            grid_size=256,
-            tau2_fudge=1.0,
         )
 
-        assert raw_dvp[boundary_shell] > 1.0
         assert corrected[boundary_shell] > 1.0
-        assert raw_dvp[boundary_shell + 1] < 1.0
         assert corrected[boundary_shell + 1] == 0.0
-        assert (
-            regularization_relion.resolution_from_data_vs_prior(
-                raw_dvp,
-                allow_high_res_recovery=True,
-            )
-            == boundary_shell
-        )
         assert (
             regularization_relion.resolution_from_data_vs_prior(
                 corrected,
@@ -244,19 +196,6 @@ class TestResolutionScheduling:
         )
         assert shell == 18
         assert current_size == 100
-
-        raw_fsc = np.ones(129, dtype=np.float32) * 0.9
-        raw_fsc[0] = 1.0
-        raw_fsc[28:] = 0.0
-        dvp = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=None,
-            current_size=56,
-            grid_size=256,
-            tau2_fudge=1.0,
-        )
-        assert regularization_relion.resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True) == 27
-        assert dvp[29] < 1.0
 
     def test_firstiter_cc_scheduling_override_is_class_count_independent(self):
         """The ini_high rule also applies to Class3D/K-class iteration 1."""

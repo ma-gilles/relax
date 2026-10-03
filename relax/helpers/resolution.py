@@ -239,36 +239,6 @@ def bootstrap_current_size_from_ini_high_relion(
     return _bootstrap_current_size_relion(2 * init_shell, ori_size=ori_size, incr_size=incr_size)
 
 
-def _k1_data_vs_prior_for_scheduling(
-    *,
-    raw_fsc,
-    corrected_data_vs_prior,
-    current_size,
-    grid_size,
-    tau2_fudge,
-    dtype=np.float32,
-):
-    """Return the K=1 DVP curve RELION uses for current-resolution updates.
-
-    Auto-refine normally uses raw split-half FSC. If RELION's
-    ``--solvent_correct_fsc`` path is enabled, the corrected FSC-derived DVP
-    is passed here instead.
-    """
-    if corrected_data_vs_prior is not None:
-        return _truncate_data_vs_prior_for_current_size(
-            corrected_data_vs_prior,
-            current_size=current_size,
-            grid_size=grid_size,
-            dtype=dtype,
-        )
-
-    runtime_dtype = dtype
-    fsc_prev = np.asarray(raw_fsc, dtype=runtime_dtype).copy()
-    if int(current_size) < int(grid_size):
-        fsc_prev[min(len(fsc_prev), int(current_size) // 2 + 1) :] = 0.0
-    return np.asarray(fsc_to_relion_ssnr(fsc_prev, tau2_fudge=tau2_fudge), dtype=runtime_dtype)
-
-
 def _truncate_data_vs_prior_for_current_size(data_vs_prior, *, current_size, grid_size, dtype=np.float32):
     """Zero DVP shells beyond RELION's inclusive current-size boundary."""
     truncated = np.asarray(data_vs_prior, dtype=dtype).copy()
