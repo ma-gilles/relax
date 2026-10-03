@@ -1946,7 +1946,6 @@ def refine_single_volume(
             log=logger,
         )
 
-        retained_Ft_y_0_device = None
         # --- RELION-exact M-step ordering ---
         # K=1 stays on RELION's split-half auto-refine path
         # (compareTwoHalves -> updateSSNRarrays -> reconstruct).
@@ -2010,7 +2009,61 @@ def refine_single_volume(
             )
             reference_model.tau2 = mean_signal_variance
             reference_model.tau2_per_half = [reference_model.tau2, reference_model.tau2]
+
+            # --- Free previous-iteration means to reclaim GPU memory ---
+            # (previous_means already snapshotted earlier for FSC sign alignment)
+            for k in range(2):
+                reference_model.maps[k] = None
+
+            # --- Now reconstruct the regularized means ---
+            _t_recon = time.time()
+            reference_model.maps[:] = reconstruct_numbered_class_maps(
+                Ft_y_combined,
+                Ft_ctf_combined,
+                mean_signal_variance_shells,
+                reconstruction_settings,
+                n_classes=n_classes,
+                iteration=iteration,
+                current_size=current_size,
+                accumulator_volume_shape=mstep_accumulator_shape,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+            )
+            logger.info(
+                "Regularized reconstruction (2 halves + flatten): %.1fs",
+                time.time() - _t_recon,
+            )
+            if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+                # Class3D tapers each class's tau2_class and data_vs_prior_class the
+                # same way (ml_optimiser.cpp:6389-6420). RELION's comment calls this
+                # output only, but the next E-step gates each class's scale sums on
+                # data_vs_prior_class > 3 (:10473), so the untapered curve let
+                # shells past ini_high into iteration 2's scale correction. The
+                # class tau2 volumes are recomputed from the Iref power next
+                # iteration, so only the shell curves carry the taper.
+                data_vs_prior_iter = _firstiter_cc_ini_high_tapered(
+                    data_vs_prior_iter,
+                    grid_size,
+                    source_pixel_size_angstrom,
+                    parity.relion_firstiter_ini_high_angstrom,
+                    filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
+                )
+                history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
+                previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+                tapered_prior = taper_first_cc_class_prior(
+                    mean_signal_variance_shells,
+                    tau2_update_details,
+                    reconstruction_settings,
+                    pixel_size_angstrom=source_pixel_size_angstrom,
+                )
+                mean_signal_variance_shells = tapered_prior.shells
+                tau2_update_details = tapered_prior.details
+                del tapered_prior
+                logger.info(
+                    "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
+                    float(parity.relion_firstiter_ini_high_angstrom),
+                )
         else:
+            retained_Ft_y_0_device = None
             # RELION's --low_resol_join_halves averages the low-resolution shells of
             # the K=1 half accumulators before the Wiener solve; see
             # join_half_accumulators_at_low_resolution for the rationale and cap.
@@ -2087,26 +2140,9 @@ def refine_single_volume(
                 use_per_half_mean_variance=parity.use_per_half_mean_variance,
             )
 
-        # --- Free previous-iteration means to reclaim GPU memory ---
-        # (previous_means already snapshotted earlier for FSC sign alignment)
-        for k in range(2):
-            reference_model.maps[k] = None
-
-        # --- Now reconstruct the regularized means ---
-        _t_recon = time.time()
-        if k_class_enabled:
-            reference_model.maps[:] = reconstruct_numbered_class_maps(
-                Ft_y_combined,
-                Ft_ctf_combined,
-                mean_signal_variance_shells,
-                reconstruction_settings,
-                n_classes=n_classes,
-                iteration=iteration,
-                current_size=current_size,
-                accumulator_volume_shape=mstep_accumulator_shape,
-                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-            )
-        else:
+            # --- Now reconstruct the regularized means ---
+            # (the previous K=1 references were released by the snapshot above)
+            _t_recon = time.time()
             reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
                 (Ft_y_0, Ft_y_1),
                 (Ft_ctf_0, Ft_ctf_1),
@@ -2118,77 +2154,41 @@ def refine_single_volume(
                 relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
                 retained_first_numerator=retained_Ft_y_0_device,
             )
-        logger.info(
-            "Regularized reconstruction (2 halves + flatten): %.1fs",
-            time.time() - _t_recon,
-        )
-        retained_Ft_y_0_device = None
-
-
-        # RELION reconstructs the first-iteration CC maps with the untapered
-        # updateSSNRarrays tau2.  Only afterwards does
-        # initialLowPassFilterReferences taper tau2/data_vs_prior for the
-        # model state and reporting; that tapered spectrum is explicitly not
-        # used in the reconstruction calculation (ml_optimiser.cpp:5296-5328).
-        if (
-            not k_class_enabled
-            and relion_firstiter_cc_this_iter
-            and parity.relion_firstiter_ini_high_angstrom is not None
-        ):
-            tapered_prior = taper_first_cc_k1_prior(
-                mean_signal_variance_per_half,
-                tau2_update_details_per_half,
-                reconstruction_settings,
-                pixel_size_angstrom=source_pixel_size_angstrom,
-                scoring_dtype=scoring_dtype,
-            )
-            mean_signal_variance = tapered_prior.variance
-            mean_signal_variance_per_half = tapered_prior.variance_per_half
-            tau2_update_details_per_half = tapered_prior.details_per_half
-            del tapered_prior
-            reference_model.tau2 = mean_signal_variance
-            reference_model.tau2_per_half = _updated_mean_variance_per_half(
-                reference_model.tau2,
-                mean_signal_variance_per_half,
-                use_per_half_mean_variance=parity.use_per_half_mean_variance,
-            )
-            tau2_update_details = tau2_update_details_per_half[0]
             logger.info(
-                "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
-                "with ini_high=%.2f A",
-                float(parity.relion_firstiter_ini_high_angstrom),
+                "Regularized reconstruction (2 halves + flatten): %.1fs",
+                time.time() - _t_recon,
             )
-        elif relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
-            # Class3D tapers each class's tau2_class and data_vs_prior_class the
-            # same way (ml_optimiser.cpp:6389-6420). RELION's comment calls this
-            # output only, but the next E-step gates each class's scale sums on
-            # data_vs_prior_class > 3 (:10473), so the untapered curve let
-            # shells past ini_high into iteration 2's scale correction. The
-            # class tau2 volumes are recomputed from the Iref power next
-            # iteration, so only the shell curves carry the taper.
-            data_vs_prior_iter = _firstiter_cc_ini_high_tapered(
-                data_vs_prior_iter,
-                grid_size,
-                source_pixel_size_angstrom,
-                parity.relion_firstiter_ini_high_angstrom,
-                filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
-            )
-            history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
-            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
-            tapered_prior = taper_first_cc_class_prior(
-                mean_signal_variance_shells,
-                tau2_update_details,
-                reconstruction_settings,
-                pixel_size_angstrom=source_pixel_size_angstrom,
-            )
-            mean_signal_variance_shells = tapered_prior.shells
-            tau2_update_details = tapered_prior.details
-            del tapered_prior
-            logger.info(
-                "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
-                float(parity.relion_firstiter_ini_high_angstrom),
-            )
-        if not k_class_enabled:
+            retained_Ft_y_0_device = None
+
+            # RELION reconstructs the first-iteration CC maps with the untapered
+            # updateSSNRarrays tau2.  Only afterwards does
+            # initialLowPassFilterReferences taper tau2/data_vs_prior for the
+            # model state and reporting; that tapered spectrum is explicitly not
+            # used in the reconstruction calculation (ml_optimiser.cpp:5296-5328).
+            if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+                tapered_prior = taper_first_cc_k1_prior(
+                    mean_signal_variance_per_half,
+                    tau2_update_details_per_half,
+                    reconstruction_settings,
+                    pixel_size_angstrom=source_pixel_size_angstrom,
+                    scoring_dtype=scoring_dtype,
+                )
+                mean_signal_variance = tapered_prior.variance
+                mean_signal_variance_per_half = tapered_prior.variance_per_half
+                tau2_update_details_per_half = tapered_prior.details_per_half
+                del tapered_prior
+                reference_model.tau2 = mean_signal_variance
+                reference_model.tau2_per_half = _updated_mean_variance_per_half(
+                    reference_model.tau2,
+                    mean_signal_variance_per_half,
+                    use_per_half_mean_variance=parity.use_per_half_mean_variance,
+                )
+                tau2_update_details = tau2_update_details_per_half[0]
+                logger.info(
+                    "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
+                    "with ini_high=%.2f A",
+                    float(parity.relion_firstiter_ini_high_angstrom),
+                )
             # The K=1 tau2 volumes are read again only by the next M-step (the
             # resident E-step does not use them). Keep them on the host between
             # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
