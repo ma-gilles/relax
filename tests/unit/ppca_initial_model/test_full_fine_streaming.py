@@ -264,34 +264,38 @@ def test_one_artificial_parent_recompute_matches_full_coarse_reference(tile_prob
 def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
     """Tiles hold at most the requested images, else the most whose counted bytes fit the budget."""
     _dataset, _mu, _W, stream, _host = tile_problem
-    assert plan_tile_images(stream, 150) == 150  # the tiny problem fits any device (CPU: no cap)
+    assert plan_tile_images(stream, 150) == 150  # the tiny problem fits any device (here the host's memory)
     budget = tile_bytes(stream, 10) / (1 - TILE_FRAGMENTATION_HEADROOM)
     planned = plan_tile_images(stream, 150, memory_bytes=budget, device_bytes=budget)
     # Counted bytes (with the block programs' compiled memory) of the plan fit the budget, and the plan
     # stays within a size or two of the largest that fits (the search is affine in the tile size).
     assert 8 <= planned <= 10
     assert tile_bytes(stream, planned) <= (1 - TILE_FRAGMENTATION_HEADROOM) * budget
-    assert plan_tile_images(stream, 150, memory_bytes=1) == 1
+    # A device that cannot hold a one-image tile is refused, naming the rotation block to shrink.
+    with pytest.raises(ValueError, match="rotation block"):
+        plan_tile_images(stream, 150, memory_bytes=1, device_bytes=1)
+
     # A reader that reports more bytes per image (a subtomogram reader's tilts) gets smaller tiles.
     def heavy(stream, n):
-        return 100 * n * 4096, 10 * n * 4096
+        return n * int(budget // 20), n * int(budget // 200)
 
     def loader(*args, **kwargs):
         raise AssertionError("not read")
 
     loader.operand_bytes = heavy
     loader.max_frames = lambda stream: 1
-    assert plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget) < 10
+    heavy_plan = plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget, device_bytes=budget)
+    assert 1 <= heavy_plan < 10
     # A custom reader that does not report its memory is an error, not a single-particle plan.
     del loader.max_frames
     with pytest.raises(ValueError, match="has no max_frames"):
-        plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget)
+        plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget, device_bytes=budget)
 
     def bare(*args, **kwargs):
         raise AssertionError("not read")
 
     with pytest.raises(ValueError, match="has no operand_bytes, max_frames"):
-        plan_tile_images(stream._replace(tile_loader=bare), 150, memory_bytes=budget)
+        plan_tile_images(stream._replace(tile_loader=bare), 150, memory_bytes=budget, device_bytes=budget)
 
 
 def test_pass2_row_skip_drops_only_negligible_rows(tile_problem):

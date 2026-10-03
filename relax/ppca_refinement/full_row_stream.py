@@ -1221,9 +1221,11 @@ def plan_tile_images(
     The budget is ``memory_bytes`` minus :data:`TILE_FRAGMENTATION_HEADROOM` of ``device_bytes``. On a
     GPU stream they default to what the device can still hand out after the stream's upload
     (:func:`relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`) and the device's memory;
-    a CPU stream keeps ``requested``. At least one image per tile. Every stage (radius, window,
-    pose grid) is planned with its own shapes, once: with the probed defaults the plan is kept per
-    stage shape, measured at the stage's first update.
+    on a CPU stream to the host memory left to this process and the host memory it may use
+    (:mod:`relax.helpers.host_memory`). Every stage (radius, window, pose grid) is planned with its
+    own shapes, once: with the probed defaults the plan is kept per stage shape, measured at the
+    stage's first update. A stage whose one-image tile does not fit is refused: its rotation block
+    is too large for the device.
 
     ``tiles_per_call(size)`` gives the most tiles one :func:`accumulate_full_row_tiles` call holds at
     a tile size (never fewer for smaller tiles). Tiles are read ahead only within a call, so when
@@ -1238,11 +1240,11 @@ def plan_tile_images(
 
 
 def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipelined):
-    if memory_bytes is None and device_bytes is None and stream.static.cuda_kernels:
+    if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
         key = (_plan_shape_key(stream), int(requested), stream.device.id, pipelined)
         if key not in _PLANS:
-            _PLANS[key] = _planned_tile_images(stream, requested, _available_device_bytes(), None, pipelined=pipelined)
+            _PLANS[key] = _planned_tile_images(stream, requested, *_available_bytes(stream), pipelined=pipelined)
         return _PLANS[key]
     if not memory_bytes:
         return int(requested)
@@ -1256,6 +1258,14 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
     planned = _plan_tile_images(stream, requested, reader, budget_bytes, pipelined)
     peak, resident = reader(stream, planned)
     gib = 2**30
+    counted = tile_bytes(stream, planned, reader, pipelined=pipelined)
+    if counted > budget_bytes:
+        raise ValueError(
+            f"A tile of one image needs {counted / gib:.2f} GiB on the {stream.device.platform} "
+            f"(block programs {tile_program_bytes(stream, planned) / gib:.2f} GiB at rotation block "
+            f"{stream.rotation_block_size}), more than its {budget_bytes / gib:.2f} GiB budget: "
+            "use a smaller rotation block"
+        )
     logger.info(
         "PPCA tile plan: %d of %d images per tile (%d frames each); counted %.2f GiB of a %.2f GiB budget "
         "(%.2f GiB available, %.2f GiB device, headroom %.0f%%): stream %.2f GiB of which block programs "
@@ -1263,7 +1273,7 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
         planned,
         requested,
         _tile_frames(stream),
-        tile_bytes(stream, planned, reader, pipelined=pipelined) / gib,
+        counted / gib,
         budget_bytes / gib,
         memory_bytes / gib,
         (device_bytes or memory_bytes) / gib,
@@ -1298,14 +1308,22 @@ def _plan_shape_key(stream: FullRowStream) -> tuple:
     )
 
 
-def _available_device_bytes():
+def _available_bytes(stream):
+    """``(available, total)`` memory for the stream's tiles: the GPU's after the stream's upload and
+    its memory, or the host memory left to this process and the host memory it may use."""
+    if not stream.static.cuda_kernels:
+        from relax.helpers.host_memory import available_memory_bytes, resident_bytes
+
+        host = available_memory_bytes()
+        return host - resident_bytes(), host
     from relax.sparse_pass2 import sparse_pass2_budget as budget
 
-    return budget.device_available_bytes(
+    available = budget.device_available_bytes(
         budget._device_free_memory_bytes(),
         budget._jax_allocator_free_memory_bytes(),
         budget._jax_allocator_pool_free_bytes(),
     )
+    return available, None
 
 
 def _plan_tile_images(stream, requested, reader, budget_bytes, pipelined):

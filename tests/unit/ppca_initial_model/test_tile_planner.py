@@ -183,3 +183,14 @@ def test_an_80_gb_card_keeps_the_requested_tile_at_every_stage(kind, stage):
     stream = (_tilt_stream if kind == "subtomogram" else _spa_stream)(*stage)
     device = 80 * GIB
     assert plan_tile_images(stream, 150, memory_bytes=device - _resident(stream), device_bytes=device) == 150
+
+
+def test_a_cpu_stream_refuses_a_rotation_block_its_host_cannot_hold():
+    """On the CPU the moment program's XLA adjoint holds one half volume per block image and channel: the
+    k3conf r31 stage at rotation block 512 needs far more than a 64 GiB host, and is refused before any
+    allocation."""
+    stream = _tilt_stream()
+    if stream.static.cuda_kernels:
+        pytest.skip("a CPU stream")
+    with pytest.raises(ValueError, match="rotation block 512"):
+        plan_tile_images(stream, 150, memory_bytes=64 * GIB, device_bytes=64 * GIB)
