@@ -1067,38 +1067,107 @@ def _window_pixels(stream: FullRowStream) -> int:
     return int(arrays.coefficient_noise.size)
 
 
+# What a tile reader other than the single-particle one must report for the tile planner.
+READER_PLAN_ATTRIBUTES = ("operand_bytes", "max_frames")
+
+
+def _plan_reader(stream: FullRowStream):
+    """The stream's custom tile reader, after checking it reports what the planner counts; None for
+    the single-particle reader. A reader without them would be planned as single particles, which
+    can run a card out of memory, so that is an error."""
+    reader = stream.tile_loader
+    if reader is None:
+        return None
+    missing = [name for name in READER_PLAN_ATTRIBUTES if not callable(getattr(reader, name, None))]
+    if missing:
+        raise ValueError(
+            f"Tile reader {getattr(reader, '__qualname__', reader)!r} has no {', '.join(missing)}: the tile "
+            "planner cannot count its memory (see READER_PLAN_ATTRIBUTES)"
+        )
+    return reader
+
+
 def _tile_frames(stream: FullRowStream) -> int:
-    """Projection frames per tile row: a subtomogram reader's tilts (``max_frames``), else 1."""
-    frames = getattr(stream.tile_loader, "max_frames", None)
-    return 1 if frames is None else int(frames(stream))
+    """Projection frames per tile row: a custom reader's ``max_frames`` (a subtomogram reader's tilts), else 1."""
+    reader = _plan_reader(stream)
+    return 1 if reader is None else int(reader.max_frames(stream))
+
+
+def _tile_spec(stream: FullRowStream, n_images: int) -> _TileArrays:
+    """Shapes and dtypes of a tile of ``n_images`` as the stream's readers build it (:class:`_TileArrays`)."""
+    B, T = int(n_images), int(stream.translations.shape[0])
+    K, F = _tile_frames(stream), _window_pixels(stream)
+    BT = B * T + (-(B * T) % _SHIFT_ALIGN if stream.static.cuda_kernels else 0)
+    f32 = jnp.float32
+    spec = jax.ShapeDtypeStruct
+    return _TileArrays(
+        coarse_mask=spec((B, stream.n_coarse_rotations + 1, stream.n_coarse_translations), jnp.bool_),
+        rows=spec((len(stream.block_starts) * stream.rotation_block_size,), jnp.int32),
+        Y1=spec((K * 2 * F, BT), f32),
+        ctf2=spec((K * F, B), f32),
+        Y1_recon=spec((BT, K * 2 * F), f32),
+        ctf2_recon=spec((B, K * F), f32),
+        y_norm=spec((B,), f32),
+        frames=None if _plan_reader(stream) is None else spec((K, 3, 3), f32),
+    )
+
+
+_PROGRAM_BYTES: dict = {}
+
+
+def tile_program_bytes(stream: FullRowStream, n_images: int) -> int:
+    """Device bytes the pass-1 and pass-2 block programs add for a tile of ``n_images``, from XLA.
+
+    The larger of :func:`_score_block` and :func:`_moment_block` (moments) at the tile's shapes:
+    each program's temporaries plus the outputs that do not alias its donated input (the kept
+    results, the moment carry), from ``lower(...).compile().memory_analysis()``. Cached per stage
+    shape and size; the persistent compilation cache serves the real tiles of the same shapes.
+    """
+    key = (_plan_shape_key(stream), int(n_images), getattr(stream.device, "id", None))
+    if key not in _PROGRAM_BYTES:
+        static, block = stream.static, stream.rotation_block_size
+        capacity = len(stream.block_starts) * block
+        T, q = int(stream.translations.shape[0]), static.basis_size - 1
+        tile = _tile_spec(stream, n_images)
+        kept = jax.eval_shape(lambda: _empty_kept(capacity, int(n_images), T, q, jnp.float32))
+        carry = jax.eval_shape(lambda: _empty_carry(stream, int(n_images), jnp.float32(0)))
+        vector = jax.ShapeDtypeStruct((int(n_images),), jnp.float32)
+        index = jax.ShapeDtypeStruct((int(n_images),), jnp.int32)
+        posterior = _Posterior(vector, vector, vector, index, index)
+        start = jax.ShapeDtypeStruct((), jnp.int32)
+        with jax.default_device(stream.device):
+            programs = (
+                _score_block.lower(stream.arrays, tile, kept, start, static=static, block_size=block),
+                _moment_block.lower(
+                    carry, stream.arrays, tile, kept, posterior, start, static=static, block_size=block, moments=True
+                ),
+            )
+            analyses = [program.compile().memory_analysis() for program in programs]
+        if any(analysis is None for analysis in analyses):
+            raise RuntimeError("XLA reported no memory analysis for the stream's block programs")
+        _PROGRAM_BYTES[key] = max(
+            int(a.temp_size_in_bytes) + int(a.output_size_in_bytes) - int(a.alias_size_in_bytes) for a in analyses
+        )
+    return _PROGRAM_BYTES[key]
 
 
 def stream_tile_bytes(stream: FullRowStream, n_images: int) -> int:
-    """Device bytes of the stream's own buffers for a tile of ``n_images``, from their shapes.
+    """Device bytes of the stream's own buffers for a tile of ``n_images``.
 
-    Per image: the kept pass-1 results over the full row table (:func:`_empty_kept`: scores and
-    latent means ``(R, B, T)`` per component, packed covariances ``(R, B, tri(q))``, three per-row
-    partials) with, under a pass-2 mass floor, its compacted copy of at most half the rows, and one
-    rotation block's pass-1 inner products and pass-2 weights ``(P, block, B T)``
-    with its Gram and translation sums ``(tri(P), block, B)``. Per tile: the moment accumulators and
-    their compensation (:func:`_empty_carry`), and one block's projections ``(P, block K, 2F)`` with
-    their packed products ``(tri(P), block K, F)`` and its M-step images (``K`` frames per row).
+    The kept pass-1 results over the full row table (:func:`_empty_kept`, from their shapes) with,
+    under a pass-2 mass floor, its compacted copy of at most half the rows; the moment accumulators
+    and their compensation (:func:`_empty_carry`); and the block programs' own memory
+    (:func:`tile_program_bytes`: projections, GEMM outputs, weights and M-step images).
     """
     static = stream.static
     P = static.basis_size
     T = int(stream.translations.shape[0])
-    block = stream.rotation_block_size
-    capacity = len(stream.block_starts) * block
-    K, F = _tile_frames(stream), _window_pixels(stream)
+    capacity = len(stream.block_starts) * stream.rotation_block_size
     kept = capacity * (T * P + tri_size(P - 1) + 3)
     if stream.pass2_mass_floor > 0:
         kept = kept + kept // 2  # the compacted pass-2 copy of at most half the rows (_compact_capacity)
-    block_outputs = block * (2 * P * T + 2 * tri_size(P))
-    metric = 1 if static.metric_trace_only else tri_size(P)
     accumulators = 2 * _moment_groups(static) * int(stream.arrays.augmented.shape[1]) * 32
-    projections = block * K * F * (2 * P + tri_size(P))
-    moment_images = block * K * F * (metric + 2 * P)
-    return 4 * (int(n_images) * (kept + block_outputs) + accumulators + projections + moment_images)
+    return 4 * (int(n_images) * kept + accumulators) + tile_program_bytes(stream, n_images)
 
 
 def single_particle_reader_bytes(stream: FullRowStream, n_images: int) -> tuple[int, int]:
@@ -1122,10 +1191,11 @@ def single_particle_reader_bytes(stream: FullRowStream, n_images: int) -> tuple[
 
 
 def _reader_bytes(stream: FullRowStream):
-    """The tile reader's ``(peak, resident)`` byte count: ``stream.tile_loader.operand_bytes`` when the
-    reader has one (the subtomogram reader, from XLA's compiled memory analysis of its operand
-    program), else :func:`single_particle_reader_bytes`."""
-    return getattr(stream.tile_loader, "operand_bytes", None) or single_particle_reader_bytes
+    """The tile reader's ``(peak, resident)`` byte count: a custom reader's ``operand_bytes`` (the
+    subtomogram reader's, from XLA's compiled memory analysis of its operand program), else
+    :func:`single_particle_reader_bytes`."""
+    reader = _plan_reader(stream)
+    return single_particle_reader_bytes if reader is None else reader.operand_bytes
 
 
 def tile_bytes(stream: FullRowStream, n_images: int, reader=None) -> int:
@@ -1165,16 +1235,24 @@ def plan_tile_images(stream: FullRowStream, requested: int, *, memory_bytes=None
     reader = _reader_bytes(stream)
     requested = int(requested)
     planned = _plan_tile_images(stream, requested, reader, budget_bytes)
+    peak, resident = reader(stream, planned)
+    gib = 2**30
     logger.info(
-        "PPCA tile plan: %d of %d images per tile; counted %.2f GiB of a %.2f GiB budget "
-        "(%.2f GiB available, %.2f GiB device, headroom %.0f%%)",
+        "PPCA tile plan: %d of %d images per tile (%d frames each); counted %.2f GiB of a %.2f GiB budget "
+        "(%.2f GiB available, %.2f GiB device, headroom %.0f%%): stream %.2f GiB of which block programs "
+        "%.2f GiB, tile operands %.2f GiB, next tile's reader %.2f GiB",
         planned,
         requested,
-        tile_bytes(stream, planned, reader) / 2**30,
-        budget_bytes / 2**30,
-        memory_bytes / 2**30,
-        (device_bytes or memory_bytes) / 2**30,
+        _tile_frames(stream),
+        tile_bytes(stream, planned, reader) / gib,
+        budget_bytes / gib,
+        memory_bytes / gib,
+        (device_bytes or memory_bytes) / gib,
         100 * TILE_FRAGMENTATION_HEADROOM,
+        stream_tile_bytes(stream, planned) / gib,
+        tile_program_bytes(stream, planned) / gib,
+        resident / gib,
+        peak / gib,
     )
     return planned
 
@@ -1196,7 +1274,7 @@ def _plan_shape_key(stream: FullRowStream) -> tuple:
         static.basis_size,
         static.metric_trace_only,
         _tile_frames(stream),
-        getattr(stream.tile_loader, "operand_bytes", None),
+        stream.tile_loader,
     )
 
 
@@ -1211,28 +1289,20 @@ def _available_device_bytes():
 
 
 def _plan_tile_images(stream, requested, reader, budget_bytes):
-    if tile_bytes(stream, requested, reader) <= budget_bytes:
+    exact = {requested: tile_bytes(stream, requested, reader)}
+    if exact[requested] <= budget_bytes:
         return requested
-    # The reader's bytes are affine in the tile size: two exact counts (1 and ``requested``) place
-    # every size between them, so the search compiles no other reader program. The chosen size is
-    # then counted exactly.
-    ends = {n: reader(stream, n) for n in (1, requested)}
-
-    def affine(stream, n):
-        if requested == 1:
-            return ends[1]
-        t = (n - 1) / (requested - 1)
-        return tuple(int(round((1 - t) * a + t * b)) for a, b in zip(ends[1], ends[requested]))
-
-    low, high = 1, requested
-    while low < high:  # the largest size that fits; bytes grow with the size
-        middle = (low + high + 1) // 2
-        if tile_bytes(stream, middle, affine) <= budget_bytes:
-            low = middle
-        else:
-            high = middle - 1
-    while low > 1 and tile_bytes(stream, low, reader) > budget_bytes:
-        low -= 1
+    # Tile bytes are affine in the tile size (every counted buffer and program grows linearly in the
+    # images): two exact counts (1 and ``requested``) place every size between them, so the search
+    # compiles no other program. The chosen size is then counted exactly.
+    exact[1] = tile_bytes(stream, 1, reader)
+    slope = (exact[requested] - exact[1]) / max(requested - 1, 1)
+    low = max(1, min(requested, 1 + int((budget_bytes - exact[1]) // slope) if slope > 0 else requested))
+    while low > 1:
+        exact.setdefault(low, tile_bytes(stream, low, reader))
+        if exact[low] <= budget_bytes:
+            break
+        low = max(1, min(low - 1, int(low * budget_bytes / exact[low])))
     return low
 
 

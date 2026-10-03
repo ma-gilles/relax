@@ -302,7 +302,10 @@ def main(args=None):
         add_args(parser)
         args = parser.parse_args(args)
     import os
+    import sys
 
+    # The run's INFO lines (tile plans, compiled tile sizes, resumes) reach the job log, as in Refine3D.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 
     activate_recovar_compilation_cache()

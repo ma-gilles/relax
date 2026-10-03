@@ -266,8 +266,11 @@ def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
     _dataset, _mu, _W, stream, _host = tile_problem
     assert plan_tile_images(stream, 150) == 150  # the tiny problem fits any device (CPU: no cap)
     budget = tile_bytes(stream, 10) / (1 - TILE_FRAGMENTATION_HEADROOM)
-    assert plan_tile_images(stream, 150, memory_bytes=budget, device_bytes=budget) == 10
-    assert tile_bytes(stream, 11) > (1 - TILE_FRAGMENTATION_HEADROOM) * budget
+    planned = plan_tile_images(stream, 150, memory_bytes=budget, device_bytes=budget)
+    # Counted bytes (with the block programs' compiled memory) of the plan fit the budget, and the plan
+    # stays within a size or two of the largest that fits (the search is affine in the tile size).
+    assert 8 <= planned <= 10
+    assert tile_bytes(stream, planned) <= (1 - TILE_FRAGMENTATION_HEADROOM) * budget
     assert plan_tile_images(stream, 150, memory_bytes=1) == 1
     # A reader that reports more bytes per image (a subtomogram reader's tilts) gets smaller tiles.
     def heavy(stream, n):
@@ -277,7 +280,18 @@ def test_tile_planner_caps_tiles_to_device_memory(tile_problem):
         raise AssertionError("not read")
 
     loader.operand_bytes = heavy
+    loader.max_frames = lambda stream: 1
     assert plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget) < 10
+    # A custom reader that does not report its memory is an error, not a single-particle plan.
+    del loader.max_frames
+    with pytest.raises(ValueError, match="has no max_frames"):
+        plan_tile_images(stream._replace(tile_loader=loader), 150, memory_bytes=budget)
+
+    def bare(*args, **kwargs):
+        raise AssertionError("not read")
+
+    with pytest.raises(ValueError, match="has no operand_bytes, max_frames"):
+        plan_tile_images(stream._replace(tile_loader=bare), 150, memory_bytes=budget)
 
 
 def test_pass2_row_skip_drops_only_negligible_rows(tile_problem):

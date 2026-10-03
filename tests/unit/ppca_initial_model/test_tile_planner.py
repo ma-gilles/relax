@@ -14,6 +14,7 @@ from relax.ppca_refinement.full_row_stream import (
     prepare_full_row_stream,
     stream_tile_bytes,
     tile_bytes,
+    tile_program_bytes,
 )
 
 pytestmark = pytest.mark.unit
@@ -58,21 +59,45 @@ def _tilt_stream():
         scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
         tile_loader=load_tilt_tile,
         gemm_precision="fp32",
+        pass2_mass_floor=1e-10,  # the controller's default: the planner counts the compacted pass-2 copy
     )
 
 
-def test_radius_31_tilt_stage_fits_a_16_gb_card():
-    """The planned tile's counted bytes stay inside a 16 GB card's budget, and one more particle would not."""
-    stream = _tilt_stream()
+def _plan_checks(stream):
     resident = sum(int(np.asarray(x).nbytes) for x in stream.arrays if hasattr(x, "nbytes"))
     device = 16 * GIB
     available = device - resident
     budget = available - TILE_FRAGMENTATION_HEADROOM * device
-    planned = plan_tile_images(stream, 150, memory_bytes=available, device_bytes=device)
-    assert 1 <= planned < 150
-    assert tile_bytes(stream, planned) <= budget < tile_bytes(stream, planned + 1)
-    # Every tilt counts: the reader's operands for 41 frames outweigh the kept buffers per particle.
+    planned = plan_tile_images(stream, 300, memory_bytes=available, device_bytes=device)
+    assert 1 <= planned < 300
+    assert tile_bytes(stream, planned) <= budget
+    # An 80 GB card takes more images per tile.
+    assert plan_tile_images(stream, 300, memory_bytes=80 * GIB - resident, device_bytes=80 * GIB) > planned
+    return planned
+
+
+def test_radius_31_tilt_stage_fits_a_16_gb_card(monkeypatch):
+    """The planned tile's counted bytes stay inside a 16 GB card's budget.
+
+    On CPU the block programs are the XLA reference path, not the GPU programs a 16 GB card runs; their
+    memory comes from the GPU test below. Here a per-image stand-in for them checks the arithmetic.
+    """
+    from relax.ppca_refinement import full_row_stream as frs
+
+    stream = _tilt_stream()
+    # One block's projections, products and M-step images for 41 frames, plus its GEMM outputs per image.
+    block, K, F, P, T = stream.rotation_block_size, 41, frs._window_pixels(stream), 3, 33
+    monkeypatch.setattr(
+        frs, "tile_program_bytes", lambda stream, n: 4 * (block * K * F * 4 * P + n * block * (2 * P * T + 12))
+    )
+    planned = _plan_checks(stream)
     reader_peak, operands = load_tilt_tile.operand_bytes(stream, planned)
-    assert reader_peak + operands > stream_tile_bytes(stream, planned) - stream_tile_bytes(stream, 0)
-    # An 80 GB card takes the requested batch.
-    assert plan_tile_images(stream, 150, memory_bytes=80 * GIB - resident, device_bytes=80 * GIB) > planned
+    assert stream_tile_bytes(stream, planned) + reader_peak + operands == tile_bytes(stream, planned)
+
+
+@pytest.mark.gpu
+def test_radius_31_tilt_stage_fits_a_16_gb_card_with_compiled_programs():
+    """On the GPU, the block programs' memory comes from XLA's compiled analysis of the CUDA programs."""
+    stream = _tilt_stream()
+    planned = _plan_checks(stream)
+    assert stream_tile_bytes(stream, planned) > tile_program_bytes(stream, planned) > 0
