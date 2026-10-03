@@ -211,14 +211,6 @@ def _maybe_dump_k_class_significance_batch(
     target_local_positions=None,
     target_scores_pre_prior_per_class=None,
     target_scores_with_prior_per_class=None,
-    projected_reference_rotation_ids=None,
-    projected_reference_per_class=None,
-    projected_reference_norm_score_per_class=None,
-    projected_cross_score_per_class=None,
-    shifted_data=None,
-    ctf2_data=None,
-    window_indices=None,
-    half_weights_used=None,
     coarse_gaussian_shifted_corrected=None,
     coarse_gaussian_unshifted_corrected=None,
     coarse_gaussian_pixel_weight=None,
@@ -328,19 +320,6 @@ def _maybe_dump_k_class_significance_batch(
                     axis=0,
                 )
 
-        image_rows = slice(local_pos * n_trans, (local_pos + 1) * n_trans)
-        shifted_target = None
-        if shifted_data is not None:
-            shifted_target = np.asarray(shifted_data[image_rows], dtype=np.complex128)
-        ctf2_target = None
-        if ctf2_data is not None:
-            ctf2_arr = np.asarray(ctf2_data)
-            ctf2_target = (
-                ctf2_arr[local_pos : local_pos + 1]
-                if ctf2_arr.shape[0] == local_indices.shape[0]
-                else ctf2_arr[image_rows]
-            )
-
         iteration_suffix = "" if not target_iteration else f"_it{int(debug_iteration):03d}"
         out_path = os.path.join(
             dump_dir,
@@ -379,26 +358,6 @@ def _maybe_dump_k_class_significance_batch(
             translation_log_prior=(
                 np.asarray(trans_prior, dtype=np.float64)
                 if trans_prior is not None
-                else np.empty((0,), dtype=np.float64)
-            ),
-            shifted_data=(
-                shifted_target
-                if shifted_target is not None
-                else np.empty((0,), dtype=np.complex128)
-            ),
-            ctf2_data=(
-                np.asarray(ctf2_target, dtype=np.float64)
-                if ctf2_target is not None
-                else np.empty((0,), dtype=np.float64)
-            ),
-            window_indices=(
-                np.asarray(window_indices, dtype=np.int32)
-                if window_indices is not None
-                else np.empty((0,), dtype=np.int32)
-            ),
-            half_weights=(
-                np.asarray(half_weights_used, dtype=np.float64)
-                if half_weights_used is not None
                 else np.empty((0,), dtype=np.float64)
             ),
             coarse_gaussian_unshifted_corrected=(
@@ -466,39 +425,6 @@ def _maybe_dump_k_class_significance_batch(
             # comparisons). Shape (n_classes, n_rot, n_trans).
             save_kwargs["scores_pre_prior_per_class"] = scores_pre_prior_per_class
             save_kwargs["scores_with_prior_per_class"] = scores_with_prior_per_class
-        if projected_reference_per_class is not None:
-            projection_values = np.asarray(projected_reference_per_class)
-            projection_ids = np.asarray(projected_reference_rotation_ids, dtype=np.int32)
-            if projection_values.shape[:2] != (n_classes, projection_ids.size):
-                raise ValueError(
-                    "projected-reference dump must have shape "
-                    f"({n_classes}, {projection_ids.size}, n_pixels), got {projection_values.shape}",
-                )
-            save_kwargs["projected_reference_rotation_ids"] = projection_ids
-            save_kwargs["projected_reference_per_class"] = projection_values.astype(np.complex128)
-            norm_scores = np.asarray(projected_reference_norm_score_per_class)
-            cross_scores = np.asarray(projected_cross_score_per_class)
-            expected_component_shape = (
-                n_classes,
-                local_indices.shape[0],
-                projection_ids.size,
-                n_trans,
-            )
-            if (
-                norm_scores.shape != expected_component_shape
-                or cross_scores.shape != expected_component_shape
-            ):
-                raise ValueError(
-                    "projected score components must both have shape "
-                    f"{expected_component_shape}, got "
-                    f"{norm_scores.shape} and {cross_scores.shape}",
-                )
-            save_kwargs["projected_reference_norm_score_per_class"] = norm_scores[
-                :, local_pos
-            ].astype(np.float64)
-            save_kwargs["projected_cross_score_per_class"] = cross_scores[
-                :, local_pos
-            ].astype(np.float64)
         np.savez_compressed(out_path, **save_kwargs)
         _maybe_stop_after_significance_dump(
             out_path,

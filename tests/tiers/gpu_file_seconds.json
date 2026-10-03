@@ -74,8 +74,6 @@
 "tests/unit/test_aggregate_em_kclass_multiseed.py": 0,
 "tests/unit/test_analyze_em_k1_bpref_membership_cohort.py": 0,
 "tests/unit/test_analyze_em_k1_bpref_substitution.py": 0,
-"tests/unit/test_analyze_em_k1_fine_ppref_source_boundary.py": 0,
-"tests/unit/test_analyze_em_k1_live_reference_counterfactual.py": 0,
 "tests/unit/test_analyze_em_k1_map_amplitude_trajectory.py": 0,
 "tests/unit/test_analyze_em_k1_native_fine_operands.py": 0,
 "tests/unit/test_analyze_em_k4_allclass_native_boundary.py": 0,

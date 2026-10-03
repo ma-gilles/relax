@@ -7231,7 +7231,6 @@ class TestRelionModeSmokeTest:
             "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES",
             str(target_local),
         )
-        monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS", raising=False)
 
         _compute_k_class_significance_batched(
             dataset,

@@ -155,8 +155,8 @@ def test_significance_dump_work_is_gated_before_scoring(monkeypatch, tmp_path):
 
 def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
     """End-to-end behavioral test: a one-particle invocation of
-    ``_maybe_dump_k_class_significance_batch`` with operands set writes
-    them to the npz with sensible shapes/dtypes.
+    ``_maybe_dump_k_class_significance_batch`` with RELION's exact coarse
+    operands set writes them to the npz with sensible shapes/dtypes.
     """
 
     n_images = 1
@@ -188,38 +188,17 @@ def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
     max_posterior = np.array([0.5], dtype=np.float64)
     class_log_priors = np.zeros(n_classes, dtype=np.float64)
 
-    shifted_data = np.zeros(
-        (n_images * n_trans, n_pix), dtype=np.complex128
-    )
-    ctf2_data = np.zeros((n_images, n_pix), dtype=np.float64)
-    window_indices = np.arange(n_pix, dtype=np.int32)
-    half_weights_used = np.ones(n_pix, dtype=np.float64)
     coarse_gaussian_shifted_corrected = np.arange(
         n_images * n_trans * n_pix,
         dtype=np.float32,
     ).reshape(n_images, n_trans, n_pix).astype(np.complex64)
+    coarse_gaussian_pixel_weight = np.ones((n_images, n_pix), dtype=np.float32)
+    coarse_gaussian_initial_diff2 = np.full(n_images, 3.0, dtype=np.float32)
+    coarse_gaussian_score_indices = np.arange(n_pix, dtype=np.int32)
     relion_projector_half = [
         np.full((3, 4, 2), class_index + 1j, dtype=np.complex64)
         for class_index in range(n_classes)
     ]
-    projected_reference_rotation_ids = np.asarray([0, 2], dtype=np.int32)
-    projected_reference_per_class = np.arange(
-        n_classes * projected_reference_rotation_ids.size * n_pix,
-        dtype=np.float32,
-    ).reshape(n_classes, projected_reference_rotation_ids.size, n_pix).astype(np.complex64)
-    component_shape = (
-        n_classes,
-        n_images,
-        projected_reference_rotation_ids.size,
-        n_trans,
-    )
-    projected_reference_norm_score_per_class = np.arange(
-        np.prod(component_shape), dtype=np.float64
-    ).reshape(component_shape)
-    projected_cross_score_per_class = (
-        -projected_reference_norm_score_per_class - 1.0
-    )
-
     dump_dir = tmp_path / "dump"
     dump_dir.mkdir()
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
@@ -246,78 +225,39 @@ def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
         current_size=14,
         adaptive_fraction=0.999,
         max_significants=1_000_000,
-        shifted_data=shifted_data,
-        ctf2_data=ctf2_data,
-        window_indices=window_indices,
-        half_weights_used=half_weights_used,
         coarse_gaussian_shifted_corrected=coarse_gaussian_shifted_corrected,
+        coarse_gaussian_pixel_weight=coarse_gaussian_pixel_weight,
+        coarse_gaussian_initial_diff2=coarse_gaussian_initial_diff2,
+        coarse_gaussian_score_indices=coarse_gaussian_score_indices,
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=7,
         projection_padding_factor=1,
-        projected_reference_rotation_ids=projected_reference_rotation_ids,
-        projected_reference_per_class=projected_reference_per_class,
-        projected_reference_norm_score_per_class=(
-            projected_reference_norm_score_per_class
-        ),
-        projected_cross_score_per_class=projected_cross_score_per_class,
         debug_iteration=2,
     )
     files = sorted(os.listdir(dump_dir))
     assert files == ["significance_orig000042_it002_cs014.npz"]
     payload = np.load(dump_dir / files[0])
     for name in (
-        "shifted_data",
-        "ctf2_data",
-        "window_indices",
-        "half_weights",
         "coarse_gaussian_shifted_corrected",
+        "coarse_gaussian_pixel_weight",
+        "coarse_gaussian_initial_diff2",
+        "coarse_gaussian_score_indices",
         "relion_projector_half_per_class",
         "relion_projector_r_max",
         "projection_padding_factor",
     ):
         assert name in payload.files, f"Dump npz is missing schema field {name!r}"
-    assert payload["shifted_data"].dtype == np.complex128
-    assert payload["ctf2_data"].dtype == np.float64
-    assert payload["window_indices"].dtype == np.int32
-    assert payload["half_weights"].dtype == np.float64
+    for retired in ("shifted_data", "ctf2_data", "window_indices", "half_weights", "projected_reference_per_class"):
+        assert retired not in payload.files
     assert payload["coarse_gaussian_shifted_corrected"].dtype == np.complex64
     assert payload["relion_projector_half_per_class"].dtype == np.complex64
-    assert payload["projected_reference_rotation_ids"].dtype == np.int32
-    assert payload["projected_reference_per_class"].dtype == np.complex128
-    assert payload["projected_reference_norm_score_per_class"].dtype == np.float64
-    assert payload["projected_cross_score_per_class"].dtype == np.float64
-    assert payload["window_indices"].shape == (n_pix,)
-    assert payload["half_weights"].shape == (n_pix,)
     assert payload["coarse_gaussian_shifted_corrected"].shape == (n_trans, n_pix)
+    assert payload["coarse_gaussian_pixel_weight"].shape == (n_pix,)
+    assert float(payload["coarse_gaussian_initial_diff2"]) == 3.0
+    assert_matches(payload["coarse_gaussian_score_indices"], coarse_gaussian_score_indices)
     assert payload["relion_projector_half_per_class"].shape == (n_classes, 3, 4, 2)
     assert int(payload["relion_projector_r_max"]) == 7
     assert int(payload["projection_padding_factor"]) == 1
-    assert payload["projected_reference_rotation_ids"].shape == (2,)
-    assert payload["projected_reference_per_class"].shape == (n_classes, 2, n_pix)
-    assert payload["projected_reference_norm_score_per_class"].shape == (
-        n_classes,
-        2,
-        n_trans,
-    )
-    assert payload["projected_cross_score_per_class"].shape == (
-        n_classes,
-        2,
-        n_trans,
-    )
-    assert_matches(
-        payload["projected_reference_rotation_ids"], projected_reference_rotation_ids,
-    )
-    assert_matches(
-        payload["projected_reference_per_class"], projected_reference_per_class,
-    )
-    assert_matches(
-        payload["projected_reference_norm_score_per_class"],
-        projected_reference_norm_score_per_class[:, 0],
-    )
-    assert_matches(
-        payload["projected_cross_score_per_class"],
-        projected_cross_score_per_class[:, 0],
-    )
     assert int(payload["n_classes"]) == n_classes
     assert int(payload["n_rot"]) == n_rot
     assert int(payload["n_trans"]) == n_trans

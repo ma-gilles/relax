@@ -387,7 +387,6 @@
   "RECOVAR_SIGNIFICANCE_DUMP_DIR": "RELAX_SIGNIFICANCE_DUMP_DIR",
   "RECOVAR_SIGNIFICANCE_DUMP_ITERATION": "RELAX_SIGNIFICANCE_DUMP_ITERATION",
   "RECOVAR_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES",
-  "RECOVAR_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS": "RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS",
   "RECOVAR_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET",
   "RECOVAR_SIGNIFICANCE_DUMP_TARGET_HALF": "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF",
   "RECOVAR_SIGNIFICANCE_SCORE_CACHE": "RELAX_SIGNIFICANCE_SCORE_CACHE",
@@ -661,6 +660,8 @@
   "RECOVAR_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
   "RELAX_COARSE_GAUSSIAN_GEMM_STREAM_TOPK": "removed on 2026-10-02 with the all-particle streaming direct-vs-GEMM coarse rescore; the GEMM-vs-direct comparisons are unit tests of the pass-1 program (tests/unit/test_coarse_gaussian_gemm_macro.py), and RELAX_SIGNIFICANCE_DUMP_* reads the program's scores",
   "RECOVAR_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "removed on 2026-10-02; the K=1 --firstiter_cc coarse-tree top-2 rescore margin is the run option --firstiter_cc_tree_rescore_max_margin (RelionParityOptions.firstiter_cc_tree_rescore_max_margin; default 4e-6 for K=1)",
-  "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "removed on 2026-10-02; the K=1 --firstiter_cc coarse-tree top-2 rescore margin is the run option --firstiter_cc_tree_rescore_max_margin (RelionParityOptions.firstiter_cc_tree_rescore_max_margin; default 4e-6 for K=1)"
+  "RELAX_FIRSTITER_CC_TREE_TOP2_RESCORE_MAX_MARGIN": "removed on 2026-10-02; the K=1 --firstiter_cc coarse-tree top-2 rescore margin is the run option --firstiter_cc_tree_rescore_max_margin (RelionParityOptions.firstiter_cc_tree_rescore_max_margin; default 4e-6 for K=1)",
+  "RECOVAR_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS": "removed on 2026-10-02 with the generic coarse operands: RELAX_SIGNIFICANCE_DUMP_* writes the pass-1 program's scores and RELION's exact coarse operands; the projection extras and their analysis scripts (analyze_em_k1_live_reference_counterfactual and its importers) are in git history",
+  "RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS": "removed on 2026-10-02 with the generic coarse operands: RELAX_SIGNIFICANCE_DUMP_* writes the pass-1 program's scores and RELION's exact coarse operands; the projection extras and their analysis scripts (analyze_em_k1_live_reference_counterfactual and its importers) are in git history"
  }
 }

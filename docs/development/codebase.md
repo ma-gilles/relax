@@ -114,7 +114,12 @@ rectangular coarse scorers, the certified K=1 GEMM hybrid (`coarse_gemm_hybrid`,
 `coarse_device_*`), the fused pass-1 block and the paired and streaming GEMM score captures
 (`coarse_gemm_streaming`) were removed on 2026-10-02, and their switches are listed as retired in
 `relax/renamed_environment.json`. The `RELAX_SIGNIFICANCE_DUMP_*` target scores come from the pass-1
-program; the dumps are written by `diagnostics/coarse_gaussian_diagnostics.py`.
+program, and a dump records RELION's exact coarse operands (`coarse_gaussian_*`); the dumps are written
+by `diagnostics/coarse_gaussian_diagnostics.py`. The generic-operand dump fields (`shifted_data`,
+`ctf2_data`, `window_indices`, `half_weights`), the `RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS`
+projection extras and the scripts that read them (`scripts/analyze_em_k1_live_reference_counterfactual.py`,
+`analyze_em_k1_fine_ppref_source_boundary.py`, `analyze_em_k1_fine_top_pair_operands.py` and their unit
+tests) were removed on 2026-10-02; recover them from git history (before the removal commit) if needed.
 Live BPref execution modes are selected by `sparse_pass2/sparse_pass2_policy.py`;
 capture scopes and shadow comparisons stay with the diagnostic owners.
 

@@ -33,7 +33,6 @@ from relax.helpers.env_flags import (
 from relax.helpers.optics_noise import noise_rows
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
-    _K1_RELION_EXACT_COMPACT_PREPROCESS_ENV,
     _assemble_relion_exact_coarse_gaussian_operands,
     _infer_relion_coarse_healpix_order,
     _k1_relion_exact_coarse_assembly_profile_enabled,
@@ -1300,13 +1299,6 @@ def _compute_k_class_significance_batched(
             default=bool(
                 coarse_gaussian_gemm_plain_default
                 and coarse_gaussian_gemm_macro_enabled
-                and not (
-                    collect_significance
-                    and _significance_debug_dump_matches(
-                        current_size=current_size,
-                        debug_iteration=debug_iteration,
-                    )
-                )
             ),
         )
     )
@@ -1321,17 +1313,6 @@ def _compute_k_class_significance_batched(
             coarse_gaussian_gemm_macro_enabled=coarse_gaussian_gemm_macro_enabled,
         )
     )
-    if exact_compact_preprocess_enabled and (
-        collect_significance
-        and _significance_debug_dump_matches(
-            current_size=current_size,
-            debug_iteration=debug_iteration,
-        )
-    ):
-        raise ValueError(
-            f"{_K1_RELION_EXACT_COMPACT_PREPROCESS_ENV}=1 does not support "
-            "raw significance score dumps",
-        )
     if relion_f32_coarse_support_enabled:
         if use_float64_scoring:
             raise ValueError(
@@ -1650,11 +1631,6 @@ def _compute_k_class_significance_batched(
         and coarse_texture_interp
         and half_spectrum_scoring
         and not use_float64_scoring
-        # The raw score dumps read the generic operands.
-        and not (
-            collect_significance
-            and _significance_debug_dump_matches(current_size=current_size, debug_iteration=debug_iteration)
-        )
     )
     if require_plain_gemm_coarse and score_mode == "normalized_cc" and not exact_cc_enabled:
         raise ValueError("gemm_hybrid firstiter CC requires the native exact-operand GEMM scorer")
@@ -3457,84 +3433,6 @@ def _compute_k_class_significance_batched(
                         for blocks in dump_target_with_prior_blocks_per_class
                     ]
                     target_local_positions_for_dump = dump_target_local_positions
-                projected_reference_rotation_ids = None
-                projected_reference_per_class = None
-                projected_reference_norm_score_per_class = None
-                projected_cross_score_per_class = None
-                requested_projection_rotations = sorted(
-                    parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS") or (),
-                )
-                if requested_projection_rotations and target_local_positions_for_dump is not None:
-                    projected_reference_rotation_ids = np.asarray(requested_projection_rotations, dtype=np.int32)
-                    if (
-                        int(projected_reference_rotation_ids[0]) < 0
-                        or int(projected_reference_rotation_ids[-1]) >= n_rot
-                    ):
-                        raise ValueError(
-                            "RELAX_SIGNIFICANCE_DUMP_PROJECTION_ROTATIONS contains an out-of-range rotation",
-                        )
-                    projection_rotations = jnp.asarray(rotations[projected_reference_rotation_ids])
-                    projection_values = []
-                    projection_norm_scores = []
-                    projection_cross_scores = []
-                    for class_index, mean_for_proj in enumerate(means_for_proj):
-                        projected_half, projected_abs2 = _project_block(
-                            class_index,
-                            mean_for_proj,
-                            projection_rotations,
-                        )
-                        if use_window:
-                            if projector_returns_compact:
-                                if coarse_gaussian_window_positions is not None:
-                                    projected_half = projected_half[:, coarse_gaussian_window_positions]
-                                    projected_abs2 = projected_abs2[:, coarse_gaussian_window_positions]
-                            else:
-                                projected_half = projected_half[:, window_indices]
-                                projected_abs2 = projected_abs2[:, window_indices]
-                        if not use_float64_scoring:
-                            projected_half = projected_half.astype(jnp.complex64)
-                            projected_abs2 = projected_abs2.astype(jnp.float32)
-                        score_weights = half_weights_windowed if use_window else half_weights
-                        weighted_projected = projected_half * score_weights
-                        weighted_projected_abs2 = projected_abs2 * score_weights
-                        component_cross = (
-                            -2.0
-                            * jnp.matmul(
-                                jnp.conj(shifted_data),
-                                weighted_projected.T,
-                                precision=jax.lax.Precision.HIGHEST,
-                            ).real
-                        )
-                        component_cross = component_cross.reshape(
-                            batch_size,
-                            n_trans,
-                            projected_reference_rotation_ids.size,
-                        ).swapaxes(1, 2)
-                        component_norm = jnp.matmul(
-                            ctf2_data,
-                            weighted_projected_abs2.T,
-                            precision=jax.lax.Precision.HIGHEST,
-                        )
-                        component_norm = jnp.broadcast_to(
-                            component_norm[..., None],
-                            component_cross.shape,
-                        )
-                        projection_values.append(np.asarray(projected_half, dtype=np.complex128))
-                        projection_norm_scores.append(
-                            np.asarray(-0.5 * component_norm, dtype=np.float64)
-                        )
-                        projection_cross_scores.append(
-                            np.asarray(-0.5 * component_cross, dtype=np.float64)
-                        )
-                    projected_reference_per_class = np.stack(projection_values, axis=0)
-                    projected_reference_norm_score_per_class = np.stack(
-                        projection_norm_scores,
-                        axis=0,
-                    )
-                    projected_cross_score_per_class = np.stack(
-                        projection_cross_scores,
-                        axis=0,
-                    )
                 _maybe_dump_k_class_significance_batch(
                     experiment_dataset=experiment_dataset,
                     indices=indices,
@@ -3571,21 +3469,22 @@ def _compute_k_class_significance_batched(
                     target_local_positions=target_local_positions_for_dump,
                     target_scores_pre_prior_per_class=target_scores_pre_prior_per_class,
                     target_scores_with_prior_per_class=target_scores_with_prior_per_class,
-                    projected_reference_rotation_ids=projected_reference_rotation_ids,
-                    projected_reference_per_class=projected_reference_per_class,
-                    projected_reference_norm_score_per_class=(
-                        projected_reference_norm_score_per_class
+                    # RELION's exact coarse operands: the Gaussian GEMM's, or the CC pass's.
+                    coarse_gaussian_shifted_corrected=(
+                        exact_cc_shifted if exact_cc_enabled else coarse_gaussian_shifted_corrected
                     ),
-                    projected_cross_score_per_class=projected_cross_score_per_class,
-                    shifted_data=shifted_data,
-                    ctf2_data=ctf2_data,
-                    window_indices=window_indices,
-                    half_weights_used=half_weights_windowed if use_window else half_weights,
-                    coarse_gaussian_shifted_corrected=coarse_gaussian_shifted_corrected,
-                    coarse_gaussian_unshifted_corrected=coarse_gaussian_unshifted_corrected,
-                    coarse_gaussian_pixel_weight=coarse_gaussian_pixel_weight,
-                    coarse_gaussian_initial_diff2=coarse_gaussian_initial_diff2,
-                    coarse_gaussian_score_indices=coarse_gaussian_score_indices,
+                    coarse_gaussian_unshifted_corrected=(
+                        exact_cc_operands.windowed_unshifted
+                        if exact_cc_enabled
+                        else coarse_gaussian_unshifted_corrected
+                    ),
+                    coarse_gaussian_pixel_weight=(
+                        exact_cc_pixel_weight if exact_cc_enabled else coarse_gaussian_pixel_weight
+                    ),
+                    coarse_gaussian_initial_diff2=None if exact_cc_enabled else coarse_gaussian_initial_diff2,
+                    coarse_gaussian_score_indices=(
+                        exact_cc_score_indices if exact_cc_enabled else coarse_gaussian_score_indices
+                    ),
                     translation_phase_source=translations_source,
                     relion_projector_half=relion_projector_half,
                     relion_projector_r_max=relion_projector_r_max,
