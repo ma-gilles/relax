@@ -22,6 +22,8 @@ from recovar.ppca.triangular import unpack_tri_to_full
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax import sampling
+from relax.helpers.convergence import healpix_angular_step
+from relax.helpers.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
@@ -42,6 +44,14 @@ from relax.ppca_refinement.full_row_stream import (
     plan_tile_images,
     prepare_full_row_stream,
     resolve_gemm_precision,
+)
+from relax.ppca_refinement.oversampled_stream import (
+    accumulate_oversampled_tiles,
+    oversampled_tile_embeddings,
+    plan_job_chunk,
+    prepare_oversampled_stream,
+    relion_child_grids,
+    significance_summary,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 
@@ -99,6 +109,43 @@ def _merge_statistics(parts):
     return AugmentedPPCAStats(**fields)
 
 
+# A batch whose images the significant-sample cap stopped short of the adaptive fraction, holding less than this
+# posterior mass, for more than OVERSAMPLING_CAP_WARNING of its images, logs a warning.
+OVERSAMPLING_CAP_MASS = 0.99
+OVERSAMPLING_CAP_WARNING = 0.05
+
+
+def _oversampling_record(stats, config, iteration):
+    """Per-update record of adaptive oversampling: windows and the significant samples of the whole batch."""
+    parts = [s.diagnostics["oversampling"] for s in stats]
+    record = {key: parts[0][key] for key in ("order", "pass1_image_size", "pass2_image_size")}
+    record.update(
+        significance_summary(
+            np.concatenate([p["significant_samples_per_image"] for p in parts]),
+            np.concatenate([p["significant_mass_per_image"] for p in parts]),
+            np.concatenate([p["significant_capped_per_image"] for p in parts]),
+            low_mass=OVERSAMPLING_CAP_MASS,
+        )
+    )
+    record.update(adaptive_fraction=config.target_mass, max_significant=config.max_significant)
+    if record["capped_low_mass_fraction"] > OVERSAMPLING_CAP_WARNING:
+        logger.warning(
+            "update %d: --maxsig %d stopped %.1f%% of the batch's images short of the adaptive fraction %.3f with "
+            "less than %.2f of their posterior mass (capped mass mean %.4f, p5 %.4f, min %.4f; median %g "
+            "significant samples); consider a larger --maxsig",
+            iteration,
+            config.max_significant,
+            100 * record["capped_low_mass_fraction"],
+            config.target_mass,
+            OVERSAMPLING_CAP_MASS,
+            record["capped_mass_mean"],
+            record["capped_mass_p5"],
+            record["capped_mass_min"],
+            record["samples_median"],
+        )
+    return record
+
+
 def _curvature_trace(stats, p):
     """Momentum SGD's per-frequency metric trace summed over the halves."""
     if all(isinstance(s, TracePPCAStats) for s in stats):
@@ -132,14 +179,19 @@ def _streams_groups(config):
     return config.stream_coarse_recompute
 
 
-def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
-    """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``."""
+def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+    """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``.
+
+    ``diameter_ang`` sizes adaptive oversampling's pass-1 window (RELION's coarse image size); None takes the box.
+    """
     if _streams_groups(config):
-        return _expectation(dataset, state, config, [ids], iteration, embeddings_only=embeddings_only)[0]
+        return _expectation(
+            dataset, state, config, [ids], iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+        )[0]
     return _expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only)
 
 
-def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False):
+def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False, diameter_ang=None):
     """:func:`expectation` of each id group (the pseudo-halves), one result per group.
 
     The streamed coarse-recompute path prepares the model once for all groups
@@ -147,11 +199,22 @@ def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_
     """
     if not _streams_groups(config):
         return [expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only) for ids in groups]
-    return _expectation(dataset, state, config, groups, iteration, embeddings_only=embeddings_only)
+    return _expectation(
+        dataset, state, config, groups, iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+    )
+
+
+def pass1_image_size(order, dataset, current_size, diameter_ang):
+    """RELION's pass-1 image size of adaptive oversampling at HEALPix ``order``: the window the coarse angular step
+    resolves, at most ``current_size`` (:func:`relax.helpers.resolution.compute_coarse_image_size`)."""
+    coarse = compute_coarse_image_size(
+        healpix_angular_step(order), dataset.voxel_size, dataset.grid_size, particle_diameter=diameter_ang
+    )
+    return clamp_relion_coarse_image_size(coarse, current_size, dataset.grid_size)
 
 
 @full_float32
-def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False):
+def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
     radius, hp = config.stage(iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = min(radius, dataset.grid_size // 2 - 1)
@@ -187,31 +250,37 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         # One artificial coarse parent represents the full coarse pose grid.
         # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
         # own stream (its noise enters the operands); single particles have one group.
-        streams = [
-            prepare_full_row_stream(
-                dataset,
-                mu,
-                W,
-                noise_variance=group_nv,
-                rotations=rotations,
-                translations=translations,
-                rotation_log_prior=rotation_log_prior,
-                translation_log_prior=np.asarray(prior),
-                rotation_parent=np.zeros(len(rotations), np.int32),
-                translation_parent=np.zeros(len(translations), np.int32),
-                n_coarse_rotations=1,
-                n_coarse_translations=1,
-                geometry=geometry,
-                schedule=schedule,
-                scoring=scoring,
-                # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
-                metric_trace_only=config.optimizer == "momentum_sgd",
-                gemm_precision=config.gemm_precision,
-                tile_loader=load_tilt_tile if tilts else None,
-                pass2_mass_floor=config.pass2_mass_floor,
-            )
-            for group_nv in nvs
-        ]
+        def make_streams(stream_geometry):
+            return [
+                prepare_full_row_stream(
+                    dataset,
+                    mu,
+                    W,
+                    noise_variance=group_nv,
+                    rotations=rotations,
+                    translations=translations,
+                    rotation_log_prior=rotation_log_prior,
+                    translation_log_prior=np.asarray(prior),
+                    rotation_parent=np.zeros(len(rotations), np.int32),
+                    translation_parent=np.zeros(len(translations), np.int32),
+                    n_coarse_rotations=1,
+                    n_coarse_translations=1,
+                    geometry=stream_geometry,
+                    schedule=schedule,
+                    scoring=scoring,
+                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
+                    metric_trace_only=config.optimizer == "momentum_sgd",
+                    gemm_precision=config.gemm_precision,
+                    tile_loader=load_tilt_tile if tilts else None,
+                    pass2_mass_floor=config.pass2_mass_floor,
+                )
+                for group_nv in nvs
+            ]
+
+        # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
+        pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if config.oversampling else 2 * radius
+        streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
+        pass2_streams = make_streams(geometry) if pass1_size != 2 * radius else streams
         # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
         # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
         # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
@@ -233,15 +302,33 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
 
         tile_size = plan_tile_images(streams[0], config.image_batch_size, tiles_per_call=tiles_per_call)
         streams = [stream._replace(tile_images=tile_size) for stream in streams]
+        if config.oversampling:
+            fine_rotations, fine_translations = relion_child_grids(hp, translations, config.shift_step)
+            streams = [
+                prepare_oversampled_stream(
+                    stream,
+                    fine_rotations,
+                    fine_translations,
+                    pass2=pass2._replace(tile_images=tile_size),
+                    adaptive_fraction=config.target_mass,
+                    max_significant=config.max_significant,
+                )
+                for stream, pass2 in zip(streams, pass2_streams)
+            ]
+            job_chunk = plan_job_chunk(streams[0], tile_size)
+            streams = [stream._replace(job_chunk=job_chunk) for stream in streams]
+            accumulate, embed = accumulate_oversampled_tiles, oversampled_tile_embeddings
+        else:
+            accumulate, embed = accumulate_full_row_tiles, full_row_tile_embeddings
         tiles = cut(tile_size)
         parts = [None] * len(tiles)
         for noise_group, stream in enumerate(streams):
             members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
             items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
             if embeddings_only:
-                done = [full_row_tile_embeddings(stream, *item) for item in items]
+                done = [embed(stream, *item) for item in items]
             else:
-                done = accumulate_full_row_tiles(stream, items) if items else []
+                done = accumulate(stream, items) if items else []
             for k, part in zip(members, done):
                 parts[k] = part
         noise_owner = [owner for _, owner, _ in tiles]
@@ -288,6 +375,20 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
                 }
             )
+            if config.oversampling:
+                stats.diagnostics["oversampling"] = {
+                    "order": config.oversampling,
+                    "pass1_image_size": pass1_size,
+                    "pass2_image_size": 2 * radius,
+                    **{
+                        key: np.concatenate([part.diagnostics[key] for part in group_parts])
+                        for key in (
+                            "significant_samples_per_image",
+                            "significant_mass_per_image",
+                            "significant_capped_per_image",
+                        )
+                    },
+                }
             results.append(stats)
         return results
     function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
@@ -371,7 +472,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
-        stats = expectation_groups(dataset, state, config, halves, iteration)
+        stats = expectation_groups(dataset, state, config, halves, iteration, diameter_ang=diameter_ang)
         if config.optimizer == "momentum_sgd":
             radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
             _, proposed_momentum, diagnostics = momentum_step(
@@ -531,6 +632,8 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "elapsed_seconds": time.monotonic() - started,
             }
         )
+        if config.oversampling:
+            diagnostics["oversampling"] = _oversampling_record(stats, config, iteration)
         if config.optimizer == "momentum_sgd":
             diagnostics.update(
                 optimizer="momentum_sgd",
@@ -550,7 +653,9 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             break
     if state.iteration == config.iterations and not config.skip_final_embeddings:
         ids = np.arange(dataset.n_images)
-        final = expectation(dataset, state, config, ids, config.iterations, embeddings_only=True)
+        final = expectation(
+            dataset, state, config, ids, config.iterations, embeddings_only=True, diameter_ang=diameter_ang
+        )
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
         np.savez(output / "embeddings.npz", particle_ids=final.original_image_ids, z=np.asarray(final.embeddings))

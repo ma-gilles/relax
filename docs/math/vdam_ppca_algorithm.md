@@ -1140,8 +1140,9 @@ scientific contract; runnable code alone does not establish recovery.
   [Config](../../relax/ppca_initial_model/config.py) and the
   `relax ppca_initial_model` command therefore default to the dense stream:
   oversampling 0, `stream_coarse_recompute`, image batch 150 and rotation
-  block 512, as in the live runs. They refuse oversampling > 0, together with
-  its `--stream-full-fine-rows` and `--fine-devices` fine pass.
+  block 512, as in the live runs. They refuse that tile-union fine pass
+  (`--stream-full-fine-rows`, `--fine-devices`) and oversampling above 1;
+  oversampling 1 is the per-image scheme described below, opt-in.
   `--no-stream-coarse-recompute` selects the host-mask dense engine (q <= 2),
   which is the stream's test reference.
   The image batch is an upper bound on the particles in a tile. A tile holds
@@ -1164,7 +1165,10 @@ scientific contract; runnable code alone does not establish recovery.
     reader without both attributes is refused rather than planned as single
     particles.
 
-  A finished tile is released before the next one is read. Tiles are read
+  A finished tile is released before the next one is read, and a tile of
+  another size releases the previous tile's kept buffer before allocating its
+  own (two live buffers had run a dense HP4 eleven-state tile pair out of memory
+  on an 80 GB card: 101 and 49 images). Tiles are read
   ahead only within one accumulate call, and the controller makes one call
   per noise group. When every call of an update holds one tile at the plan
   without read-ahead, that plan is used and the next tile's reader is not
@@ -1189,8 +1193,8 @@ scientific contract; runnable code alone does not establish recovery.
   EMPIAR-10076 stage (`test_an_80_gb_card_keeps_the_requested_tile_at_every_stage`),
   and the controller's statistics do not depend on the tile size beyond float32
   reduction order (`test_controller_statistics_do_not_depend_on_the_tile_size`).
-- Adaptive oversampling, order 1 (October 3, 2026; engine only, not yet in the
-  controller, which still refuses oversampling > 0). This is RELION's two-pass
+- Adaptive oversampling, order 1 (October 3, 2026; `--oversampling 1`, opt-in;
+  oversampling 0 stays the default). This is RELION's two-pass
   scheme with per-image work, and replaces the tile-union design rejected above
   ([oversampled_stream](../../relax/ppca_refinement/oversampled_stream.py)).
   Pass 1 is the dense stream at the stage's order N over every rotation and
@@ -1213,6 +1217,25 @@ scientific contract; runnable code alone does not establish recovery.
   support. They match within float32 reduction order, on CPU and on GPU, for
   single particles (metric and trace-only) and tilt series. With fraction 1 and
   no cap, every coarse sample is kept and the result is the dense child grid.
+  As in RELION, pass 1 runs on a smaller image window than pass 2: the coarse
+  image size the coarse angular step resolves, `2 ceil(pixel ori_size /
+  (step/360 pi diameter / 1.2))`, at most the stage's
+  ([compute_coarse_image_size](../../relax/helpers/resolution.py), with RELION's
+  clamp; 50 against 62 pixels at the eleven-state HP3 stage). Only kept samples
+  become jobs. A job's child-shifted images are formed in its program from the
+  tile's unshifted operands and the reader's phase factors (`shift_phases`), so a
+  tile never holds its images at every child translation. The jobs per pass-2
+  program go through the planner (`plan_job_chunk`, the job programs' compiled
+  memory), as the tile size does.
+  `--maxsig` caps the kept samples (100). Each update records, in
+  `iterations.jsonl` under `oversampling`, the two window sizes, the kept
+  samples per image (median, mean), the share of images the cap stopped short of
+  the fraction, the posterior mass those images hold (mean, 5th percentile,
+  minimum) and the share of the batch both capped and below 0.99 of its mass.
+  When that share exceeds 5%, the update logs a warning suggesting a larger
+  `--maxsig`. On the eleven-state GT checkpoint (HP3, A100) the median image
+  keeps 2 samples (mean 12); 7% are capped, holding 0.988 of their mass on average
+  (5th percentile 0.951).
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials

@@ -235,7 +235,10 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")
     observation = observation if collect_observation else None
     layout.update(
-        n_real=B, n_observations=int(images.size), original_ids=particles.original_image_indices_from_local(ids)
+        n_real=B,
+        n_observations=int(images.size),
+        original_ids=particles.original_image_indices_from_local(ids),
+        frames=frames,
     )
     return tile, observation, layout
 
@@ -454,3 +457,17 @@ def tilt_frames(stream) -> int:
 
 
 load_tilt_tile.max_frames = tilt_frames
+
+
+def tilt_shift_phases(stream, layout, translations):
+    """Phase factors ``(T, K, F)`` of 3D shifts on a tile's frames (``layout["frames"]``) over the score window:
+    the factors :func:`load_tilt_tile`'s operands carry for those shifts (:func:`_tilt_operands`)."""
+    frames = layout["frames"]
+    _, constants, _ = _operand_layout(stream, 1, len(frames))
+    shifts = jnp.asarray(tilt_shifts(frames, translations))
+    arguments = jnp.einsum("ktd,fd->ktf", shifts, constants["lattice"], precision="highest")
+    return jnp.transpose(jnp.exp(jnp.complex64(-2j * np.pi) * arguments), (1, 0, 2))
+
+
+# Adaptive oversampling forms each job's child-shifted operands from these factors.
+load_tilt_tile.shift_phases = tilt_shift_phases

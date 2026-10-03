@@ -210,7 +210,7 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
         iteration_loop.sampling, "get_relion_hidden_rotation_grid", lambda *_args, **_kwargs: np.zeros((1, 3))
     )
 
-    def expectation(_dataset, _state, _config, ids, _iteration, *, embeddings_only=False):
+    def expectation(_dataset, _state, _config, ids, _iteration, *, embeddings_only=False, diameter_ang=None):
         if embeddings_only:
             return SimpleNamespace(original_image_ids=np.asarray(ids), embeddings=jnp.zeros((len(ids), 2)))
         return SimpleNamespace(

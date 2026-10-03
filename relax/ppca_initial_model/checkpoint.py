@@ -34,12 +34,18 @@ RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
 # resumes; one written with the setting changed holds a different model and does not.
 _RETIRED_CONFIG_DEFAULTS = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
 
+# Model settings added later and their defaults: a checkpoint written before a setting existed holds the model its
+# default gives, so the setting at that default is no part of the identity.
+_ADDED_CONFIG_DEFAULTS = {"max_significant": 100}
+
 
 def _identity_config(config_dict):
     return {
         key: value
         for key, value in canonical(config_dict).items()
-        if key not in RUNTIME_CONFIG_FIELDS and _RETIRED_CONFIG_DEFAULTS.get(key, ...) != value
+        if key not in RUNTIME_CONFIG_FIELDS
+        and _RETIRED_CONFIG_DEFAULTS.get(key, ...) != value
+        and _ADDED_CONFIG_DEFAULTS.get(key, ...) != value
     }
 
 
