@@ -289,3 +289,37 @@ def test_empty_high_shells_take_the_previous_shell():
     wsum = np.array([0.0, 4.0, 3.0, 2.0, 0.0])
     sigma2 = np.asarray(noise_relion.normalize_wsum_to_sigma2_noise(wsum, np.zeros(5), 1.0, shape))
     assert sigma2[4] == sigma2[3] > 1e-14
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("per_group", [False, True])
+def test_premultiplied_data_takes_relions_sigma2_floor(per_group):
+    """With CTF-premultiplied images RELION floors sigma2_noise at 1e-15 (ml_optimiser.cpp:5273-5274)."""
+
+    n_groups = 2 if per_group else None
+    shape = (N_SHELLS,) if n_groups is None else (n_groups, N_SHELLS)
+    stats = make_noise_stats(
+        wsum_sigma2_noise=np.zeros(shape),
+        wsum_img_power=np.full(shape, 1e-30),
+        wsum_sigma2_offset=1.0,
+        sumw=np.ones(n_groups) if per_group else 1.0,
+    )
+    radial = np.ones(shape)
+    rows = np.ones((n_groups or 1, SHAPE[0] * (SHAPE[1] // 2 + 1)))
+    noise = [rows if per_group else rows[0], rows if per_group else rows[0]]
+    floor = 1e-15 * float(SHAPE[0]) ** 4
+    for premultiplied in (False, True):
+        result = noise_updates.update_posterior_noise_variance(
+            [stats, stats],
+            noise_updates.NoiseModel(
+                variance_per_half=list(noise),
+                radial_per_half=[radial, radial],
+                average_variance=noise[0],
+                average_radial=radial,
+            ),
+            SHAPE,
+            k_class_enabled=False,
+            firstiter_cc=False,
+            ctf_premultiplied=premultiplied,
+        )
+        assert (np.min(result.noise_from_res) >= floor) == premultiplied

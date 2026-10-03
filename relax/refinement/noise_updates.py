@@ -272,7 +272,7 @@ def _combined_noise_stats(noise_stats_per_half):
 
 
 
-def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_shape):
+def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_shape, *, ctf_premultiplied=False):
     """One half's M-step noise update with one spectrum per optics group.
 
     ``stats`` carries ``[G, n_shells]`` sums and ``[G]`` ``sumw`` (RELION's
@@ -299,7 +299,9 @@ def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_
         if np.sum(wsum[g] + power[g]) == 0.0:
             continue
         radial[g] = np.asarray(
-            noise_relion.normalize_wsum_to_sigma2_noise(wsum[g], power[g], sumw[g], image_shape),
+            noise_relion.normalize_wsum_to_sigma2_noise(
+                wsum[g], power[g], sumw[g], image_shape, ctf_premultiplied=ctf_premultiplied
+            ),
             dtype=np.float64,
         )
         rows[g] = _shell_profile_pixel_row(radial[g], image_shape)
@@ -378,6 +380,22 @@ class NoiseUpdateResult:
     noise_from_res_per_half: list
 
 
+def datasets_store_premultiplied_ctf(experiment_datasets) -> bool:
+    """Whether some optics group stores CTF-premultiplied images (RELION's ``hasCtfPremultiplied``).
+
+    A subtomogram half is asked through its flat per-tilt dataset (``half.images``).
+    """
+    from relax.refinement.tomo_half import TomoHalf
+    from relax.relion import relion_ctf
+
+    return any(
+        relion_ctf.dataset_has_premultiplied_ctf(
+            dataset.images if isinstance(dataset, TomoHalf) else dataset, tuple(int(v) for v in dataset.image_shape)
+        )
+        for dataset in experiment_datasets
+    )
+
+
 def update_posterior_noise_variance(
     noise_stats_per_half,
     model: NoiseModel,
@@ -385,6 +403,7 @@ def update_posterior_noise_variance(
     *,
     k_class_enabled: bool,
     firstiter_cc: bool,
+    ctf_premultiplied: bool = False,
     dump_debug=None,
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update.
@@ -394,7 +413,8 @@ def update_posterior_noise_variance(
     refinement shares one sigma2_noise across classes (Class3D ordering);
     K=1 keeps independent per-half sigma2_noise.
 
-    When ``firstiter_cc`` is true, keeps the previous
+    ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies RELION's
+    1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
     sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
     first-iter noise update).
     """
@@ -440,6 +460,7 @@ def update_posterior_noise_variance(
                 np.asarray(previous_noise_radial_per_half[0], dtype=np.float64),
                 noise_variance_per_half[0],
                 image_shape,
+                ctf_premultiplied=ctf_premultiplied,
             )
             noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
             noise_variance_per_half = [noise_rows, noise_rows]
@@ -449,6 +470,7 @@ def update_posterior_noise_variance(
                 np.asarray(combined_noise_stats.wsum_img_power, dtype=np.float64),
                 combined_noise_stats.sumw,
                 image_shape,
+                ctf_premultiplied=ctf_premultiplied,
             )
             noise_from_res = np.asarray(noise_shared, dtype=np.float64)
             noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
@@ -464,6 +486,7 @@ def update_posterior_noise_variance(
                 ),
                 noise_variance_per_half[k_noise],
                 image_shape,
+                ctf_premultiplied=ctf_premultiplied,
             )
             noise_from_res_per_half.append(noise_k)
             noise_variance_per_half[k_noise] = noise_rows_k
@@ -476,6 +499,7 @@ def update_posterior_noise_variance(
                 np.asarray(stats_k.wsum_img_power, dtype=np.float64),
                 stats_k.sumw,
                 image_shape,
+                ctf_premultiplied=ctf_premultiplied,
             )
             noise_from_res_per_half.append(np.asarray(noise_k, dtype=np.float64))
             noise_variance_per_half[k_noise] = _shell_profile_pixel_row(noise_k, image_shape)
@@ -495,6 +519,7 @@ def update_posterior_noise_variance(
     )
     if dump_debug is not None:
         dump_debug(
+            image_shape=image_shape,
             noise_stats_per_half=noise_stats_per_half,
             previous_noise_radial_per_half=previous_noise_radial_per_half,
             noise_from_res_per_half=noise_from_res_per_half,

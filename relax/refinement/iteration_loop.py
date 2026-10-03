@@ -181,6 +181,7 @@ from relax.refinement.mean_helpers import (
 from relax.refinement.noise_updates import (
     _mean_noise_variance,
     _normalize_noise_variance_per_half,
+    datasets_store_premultiplied_ctf,
     initialize_noise_model,
     noise_model_from_pixels,
     noise_model_from_shells,
@@ -2505,7 +2506,6 @@ def refine_single_volume(
             _maybe_dump_noise_update_debug,
             iteration=iteration,
             current_size=current_size,
-            image_shape=image_geometry.image_shape,
         )
         noise_update = update_posterior_noise_variance(
             noise_stats_per_half,
@@ -2513,6 +2513,7 @@ def refine_single_volume(
             image_geometry.image_shape,
             k_class_enabled=k_class_enabled,
             firstiter_cc=relion_firstiter_cc_this_iter,
+            ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             dump_debug=noise_debug_dump,
         )
         noise_from_res = noise_update.noise_from_res
