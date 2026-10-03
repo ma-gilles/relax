@@ -23,8 +23,20 @@ ARCH="${RELAX_NATIVE_CUDA_ARCH:-${DEFAULT_ARCH}}"
 test -x "${PY}" || { echo "missing pixi environment at ${PY}" >&2; exit 2; }
 mkdir -p "${OUT}/relion_bind"
 OUT="$(cd "${OUT}" && pwd)"
+# Build from the output directory: `python -m` puts the working directory first on sys.path, so a job started
+# inside a RECOVAR checkout built that checkout's kernels instead of the pinned RECOVAR's (natives_bab1082,
+# 2026-10-03: libcuda_backproject.so without BackprojectIndexedRuntimeRadius).
+cd "${OUT}"
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
 export PYTHONNOUSERSITE=1 RELION_SRC_DIR
+"${PY}" - <<'PY' || exit 2
+import sys
+
+import recovar
+
+if not recovar.__file__.startswith(sys.prefix):
+    sys.exit(f"recovar imports from {recovar.__file__}, not the pixi environment {sys.prefix}")
+PY
 
 # The RELION binding is host code; build it before the CUDA module is loaded.
 RECOVAR_RELION_BIND_BUILD_DIR="${OUT}/relion_bind" "${PY}" "${ROOT}/relax/relion_bind/build.py" > "${OUT}/build_relion_bind.log" 2>&1
