@@ -15,8 +15,8 @@
     }
   },
   "current": {
-    "package": "vdam-deferred-fine-rows-20261003",
-    "source_commit": "7a43da425c3ce050c79cd83d84c2462854c0197f",
+    "package": "generic-coarse-scorer-removed-20261002",
+    "source_commit": "90fc40a22fb55e9fb9e05e4c984f77e539ba09fe",
     "metrics": {
       "files": [
         {
@@ -27,9 +27,9 @@
         },
         {
           "function_count": 2,
-          "nonblank_noncomment_lines": 256,
+          "nonblank_noncomment_lines": 254,
           "path": "relax/refinement/firstiter_cc.py",
-          "physical_lines": 290
+          "physical_lines": 287
         },
         {
           "function_count": 65,
@@ -45,9 +45,9 @@
         },
         {
           "function_count": 22,
-          "nonblank_noncomment_lines": 2038,
+          "nonblank_noncomment_lines": 2030,
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2259
+          "physical_lines": 2247
         },
         {
           "function_count": 25,
@@ -159,7 +159,7 @@
           "path": "relax/refinement/mean_helpers.py"
         },
         {
-          "line": 128,
+          "line": 127,
           "line_span": 59,
           "name": "_adaptive_pass2_grids",
           "parameter_count": 10,
@@ -231,14 +231,14 @@
           "path": "relax/refinement/full_refinement.py"
         },
         {
-          "line": 1784,
+          "line": 1772,
           "line_span": 459,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "path": "relax/refinement/half_scoring.py"
         },
         {
-          "line": 725,
+          "line": 713,
           "line_span": 449,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
@@ -289,8 +289,8 @@
         "large_argument_function_count": 11,
         "maximum_function_line_span": 5578,
         "maximum_parameter_count": 26,
-        "nonblank_noncomment_lines": 19021,
-        "physical_lines": 21585,
+        "nonblank_noncomment_lines": 19011,
+        "physical_lines": 21570,
         "very_large_argument_function_count": 2
       }
     }

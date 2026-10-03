@@ -494,7 +494,6 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 | Deprecated engine or route | What still routes to it on main | Resident work needed |
 |---|---|---|
-| Generic dense K-class coarse scorer (pass 1: `scoring.significance._compute_k_class_significance_batched`, `_score_block`, `_add_priors`, `_e_step_block_scores_normalized_cc`) | K=1 runs without the fresh BPref order (RELION-seeded or replay starts) and every normalized-CC (`--firstiter_cc`) pass; Class3D and VDAM at every K already score on RELION's exact coarse operands | Exact-operand coarse scoring for those passes, then delete the generic scorer with the temporary `relion_exact_coarse` switch (kspeed; Coarse scorer TODO below) |
 | Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
 
 Removal order:
@@ -526,15 +525,18 @@ Removal order:
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
 and pins none of these.
 
-Coarse scorer TODO (team-lead, 2026-09-27): one coarse path for every K. Class3D and VDAM at every
-K score pass 1 on RELION's exact coarse operands (`relion_exact_coarse`, set by
-`relax.refinement.half_scoring` and `relax.vdam.adaptive_estep`), and fresh K=1 Refine3D does too.
-K=1 runs without the fresh order (RELION-seeded or replay starts) and every normalized-CC pass
-(`--firstiter_cc`) still take the generic dense K-class scorer in
-`relax.scoring.significance._compute_k_class_significance_batched` (`_score_block`, `_add_priors`,
-`_e_step_block_scores_normalized_cc`). Owner speedw (from kspeed, team-lead 2026-10-02): move them,
-then delete the generic scorer and the temporary `relion_exact_coarse` switch
-(`relax.classification.k_class`) together.
+One coarse path for every K (done 2026-10-02, speedw; team-lead decision: pass 1 is CUDA-only, like
+pass 2): every pass 1 scores RELION's exact coarse operands in the pass-1 program, the Gaussian passes
+with the coarse GEMMs and the `--firstiter_cc` passes with RELION's coarse CC.
+`relax.scoring.significance._require_exact_pass1_operands` refuses a pass without the supplied RELION
+texture projector, half-spectrum float32 scoring or the custom CUDA backend, and the batch loop refuses
+data without RELION's CUDA image preprocessing. The generic dense scorer (`_score_block`, `_add_priors`,
+the score cache, the generic preprocessing and operands, the manual and dense coarse projectors), the
+`relion_exact_coarse` switch and the switches that selected those paths are removed (retired in
+`relax/renamed_environment.json`). The generic scorer's arithmetic stays as a float64 test oracle
+(`tests/helpers/generic_coarse_reference.py`, `tests/unit/test_pass1_program_generic_reference.py`), and
+`tests/helpers/exact_pass1_harness.py` runs pass 1 on CPU for the significance unit tests. The generic
+kernels in `relax/scoring/scoring.py` stay while dense `run_em` (deprecated, item 6) uses them.
 
 Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer, every
 class and rotation block of an image batch is scored, given its priors and reduced (class and global
@@ -553,8 +555,8 @@ near the 4e-6 ties differ (noise1_50k 63 vs 14 winner changes, pdb_k1_100k 18 vs
 lands identically (run_it001_data.star poses equal between the arms; versus RELION's it001, 5 of 50000
 and 0 of 100000 particles differ in both arms, RELION-vs-RELION 3 of 50000); both arms meet the map
 gate against every RELION run, masked GT FSC-AUC noise1 0.679361 vs 0.679342 (RELION 0.679354),
-pdb 0.692246 vs 0.692217 (RELION 0.692196). The per-class loop still serves the generic scorer above
-(datasets without RELION's CUDA preprocessing), pending its removal.
+pdb 0.692246 vs 0.692217 (RELION 0.692196). The per-class loop went with the generic scorer
+(One coarse path for every K, above).
 Removed (2026-10-02, team-lead's deletion list D1-D5, D7), each switch refused when set
 (`relax/renamed_environment.json` "retired", checked when relax is imported): the fused per-block pass-1
 program (`RELAX_PASS1_FUSED`); the fused-projector coarse scorer family (`RECOVAR_K1_COARSE_FUSED_PROJECTOR`,
