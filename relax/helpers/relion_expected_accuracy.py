@@ -18,6 +18,11 @@ device, every trial image of a chunk at once; the projection matrices, the step
 schedule and the stopping rule stay on the host. The SNR of a trial is summed over
 its images and pixels in the device's reduction order rather than RELION's serial
 order (float64 rounding, far below the ``pvalue`` step).
+The device arrays take the stable Fourier-window class of the current size
+(:func:`_capacity_size`): the images are laid out in the class's FFTW half grid and
+the projector slab is zero-padded to the class radius, so the three device programs
+compile once per class instead of once per current size (13 sizes in a 200-iteration
+VDAM run). The pixels outside the current size hold zeros and are not valid SNR terms.
 ``relax.relion_bind`` is the unit-test oracle
 (``tests/unit/test_relion_expected_accuracy_vs_relion_bind.py``).
 """
@@ -32,6 +37,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.helpers import relion_random
+from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
 
 PVALUE = 4.60517
 _PI = 3.14159265358979323846
@@ -90,27 +96,80 @@ def _inverse3(matrix):
     return inverse / determinant[..., None, None]
 
 
-class _Projector:
-    """A ``Projector`` of 3-D ``data`` (``[L, L, L // 2 + 1]``, Xmipp origin) at ``r_max``."""
+def _capacity_size(size: int, full_size: int) -> int:
+    """The stable Fourier-window class of ``size`` in a box of ``full_size`` (a shape, never a cutoff)."""
 
-    def __init__(self, data, r_max: int, padding_factor: int, image_size: int):
+    size, full_size = int(size), int(full_size)
+    if size <= 0 or size >= full_size or size % 2 or full_size % 2:
+        return size
+    return stable_fourier_window_current_size(size, full_size, quantum=stable_fourier_window_quantum())
+
+
+def _capacity_rows(size: int, capacity: int) -> np.ndarray:
+    """The row of each FFTW row of a ``size`` image in the ``capacity`` image (same frequency)."""
+
+    rows = np.arange(size)
+    return np.where(rows <= size // 2, rows, rows - size + capacity)
+
+
+def _to_capacity(values, capacity: int, fill) -> np.ndarray:
+    """``[..., size, size // 2 + 1]`` FFTW half images in the ``capacity`` layout, ``fill`` elsewhere."""
+
+    size, half = values.shape[-2:]
+    if capacity == size:
+        return values
+    out = np.full(values.shape[:-2] + (capacity, capacity // 2 + 1), fill, dtype=values.dtype)
+    out[..., _capacity_rows(size, capacity), :half] = values
+    return out
+
+
+def _visited_pixels(size: int):
+    """Rows, columns and signed row frequencies of the pixels ``Projector::project`` visits."""
+
+    half = size // 2 + 1
+    r_max_out = half - 1
+    rows = np.arange(size)
+    y = np.where(rows <= r_max_out, rows, rows - size)
+    x_max = np.floor(np.sqrt((r_max_out * r_max_out - y * y).astype(np.float64))).astype(np.int64)
+    # Row i, x in [0, FLOOR(sqrt(r_max_out^2 - y^2))].
+    row_index, x_index = np.nonzero(np.arange(half)[None, :] <= x_max[:, None])
+    return row_index, x_index, y[row_index]
+
+
+class _Projector:
+    """A ``Projector`` of 3-D ``data`` (``[L, L, L // 2 + 1]``, Xmipp origin) at ``r_max``.
+
+    ``capacity_image_size`` and ``capacity_r_max`` give the device shapes: the images take the
+    capacity's FFTW half layout and the slab is zero-padded to the capacity radius. The
+    visited pixels and the radius test stay those of ``image_size`` and ``r_max``.
+    """
+
+    def __init__(
+        self, data, r_max: int, padding_factor: int, image_size: int,
+        *, capacity_image_size: int | None = None, capacity_r_max: int | None = None,
+    ):
         self.data = np.ascontiguousarray(data, dtype=np.complex128)
-        self.real = np.ascontiguousarray(self.data.real)
-        self.imag = np.ascontiguousarray(self.data.imag)
         self.padding_factor = float(padding_factor)
         self.r_max_ref_2 = float(int(r_max * self.padding_factor) ** 2)
+        if capacity_r_max is not None:
+            # Projector::data of a larger r_max is this slab inside more zeros.
+            grow = 2 * (int(capacity_r_max * self.padding_factor) + 1) + 1 - self.data.shape[0]
+            if grow > 0 and grow % 2 == 0:
+                self.data = np.pad(self.data, ((grow // 2,) * 2, (grow // 2,) * 2, (0, grow // 2)))
+        self.real = np.ascontiguousarray(self.data.real)
+        self.imag = np.ascontiguousarray(self.data.imag)
         size = int(image_size)
-        half = size // 2 + 1
-        r_max_out = half - 1
-        rows = np.arange(size)
-        y = np.where(rows <= r_max_out, rows, rows - size)
-        x_max = np.floor(np.sqrt((r_max_out * r_max_out - y * y).astype(np.float64))).astype(np.int64)
-        # The pixels Projector::project visits: row i, x in [0, FLOOR(sqrt(r_max_out^2 - y^2))].
-        row_index, x_index = np.nonzero(np.arange(half)[None, :] <= x_max[:, None])
-        self.pixel_flat = row_index * half + x_index
-        self.pixel_x = x_index.astype(np.float64)
-        self.pixel_y = y[row_index].astype(np.float64)
-        self.shape = (size, half)
+        capacity = size if capacity_image_size is None else int(capacity_image_size)
+        half = capacity // 2 + 1
+        row_index, x_index, y = _visited_pixels(size)
+        # Pixels past the logical count project the origin into a spare column that is dropped.
+        spare = _visited_pixels(capacity)[0].size - row_index.size
+        self.pixel_flat = np.concatenate(
+            [_capacity_rows(size, capacity)[row_index] * half + x_index, np.full(spare, capacity * half)]
+        )
+        self.pixel_x = np.concatenate([x_index.astype(np.float64), np.zeros(spare)])
+        self.pixel_y = np.concatenate([y.astype(np.float64), np.zeros(spare)])
+        self.shape = (capacity, half)
 
     def a_inv(self, matrices):
         """``A^-1 * padding_factor`` of ``[M, 3, 3]`` ``A`` (host float64, matrix2d.h:1108-1123)."""
@@ -129,13 +188,14 @@ class _Projector:
         )
 
 
-@partial(jax.jit, static_argnames=("data_shape", "n_full", "r_max_ref_2"))
+@partial(jax.jit, static_argnames=("data_shape", "n_full"))
 def _project(real, imag, pixel_x, pixel_y, pixel_flat, a_inv, *, data_shape, n_full, r_max_ref_2):
     """``get2DFourierTransform(F, A)`` for ``[M, 3, 3]`` ``a_inv``; ``[M, H * W]`` real and imag.
 
     ``Projector::project`` (projector.cpp:630-790) at the pixels it visits: the
     rotated coordinate, the radius test, the Hermitian flip for ``xp < 0`` and
-    RELION's nested ``LIN_INTERP`` (projector.cpp:733-740).
+    RELION's nested ``LIN_INTERP`` (projector.cpp:733-740). ``pixel_flat`` equal to
+    ``n_full`` marks a spare pixel, which is dropped.
     """
 
     x, y = pixel_x[None, :], pixel_y[None, :]
@@ -175,8 +235,8 @@ def _project(real, imag, pixel_x, pixel_y, pixel_flat, a_inv, *, data_shape, n_f
     out_real = jnp.where(inside, interpolate(real), 0.0)
     out_imag = interpolate(imag)
     out_imag = jnp.where(inside, jnp.where(negative, -out_imag, out_imag), 0.0)
-    zeros = jnp.zeros((a_inv.shape[0], n_full), dtype=jnp.float64)
-    return zeros.at[:, pixel_flat].set(out_real), zeros.at[:, pixel_flat].set(out_imag)
+    zeros = jnp.zeros((a_inv.shape[0], n_full + 1), dtype=jnp.float64)
+    return zeros.at[:, pixel_flat].set(out_real)[:, :n_full], zeros.at[:, pixel_flat].set(out_imag)[:, :n_full]
 
 
 @partial(jax.jit, static_argnames=("shape", "oridim"))
@@ -287,7 +347,7 @@ def _chunk_errors(projector, device, matrices, *, rows, counts, eulers, draws, c
         _project, real, imag, pixel_x, pixel_y, pixel_flat,
         data_shape=tuple(int(v) for v in projector.data.shape),
         n_full=int(projector.shape[0] * projector.shape[1]),
-        r_max_ref_2=float(projector.r_max_ref_2),
+        r_max_ref_2=np.float64(projector.r_max_ref_2),
     )
     ctf = None if ctf is None else jnp.asarray(ctf.reshape(ctf.shape[0], -1))
     valid = jnp.asarray(valid.reshape(-1))
@@ -403,7 +463,11 @@ def expected_angular_errors(
     valid, denominator = _snr_terms(
         int(current_image_size), image_full_size, sigma2_noise, float(sigma2_fudge), remap_image_sizes
     )
-    ctf = None if ctf_images is None else np.asarray(ctf_images, dtype=np.float64)
+    # Device shapes: the stable window class of the image and of the projector radius.
+    capacity = _capacity_size(int(current_image_size), image_full_size)
+    capacity_r_max = _capacity_size(2 * int(projector_r_max), int(ori_size)) // 2
+    valid, denominator = _to_capacity(valid, capacity, False), _to_capacity(denominator, capacity, 1.0)
+    ctf = None if ctf_images is None else _to_capacity(np.asarray(ctf_images, dtype=np.float64), capacity, 0.0)
     left = None if projection_left is None else np.asarray(projection_left, dtype=np.float64).reshape(3, 3)
     image_eulers = eulers[image_trial]
 
@@ -420,12 +484,15 @@ def expected_angular_errors(
     class_counts = np.zeros(n_classes, dtype=np.int64)
     acc_rot, acc_trans = 999.0, 999.0
     # Trials are independent; a chunk bounds the per-step image arrays.
-    n_pixels = int(current_image_size) * (int(current_image_size) // 2 + 1)
+    n_pixels = capacity * (capacity // 2 + 1)
     chunks = _trial_chunks(counts, max(1, _CHUNK_VALUES // n_pixels))
     for k in range(n_classes):
         if pdf[k] < 0.01:
             continue
-        projector = _Projector(projector_data[k], int(projector_r_max), int(padding_factor), int(current_image_size))
+        projector = _Projector(
+            projector_data[k], int(projector_r_max), int(padding_factor), int(current_image_size),
+            capacity_image_size=capacity, capacity_r_max=capacity_r_max,
+        )
         device = projector.device()
         errors = [np.empty(n_trials), np.empty(n_trials)]
         for chunk in chunks:

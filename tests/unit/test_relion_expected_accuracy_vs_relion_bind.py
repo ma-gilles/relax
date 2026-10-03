@@ -115,6 +115,22 @@ def test_without_ctf_matches(current_size, padding):
     _assert_same(ours, oracle)
 
 
+@pytest.mark.parametrize("padding", [1, 2])
+def test_current_sizes_of_one_window_class_share_the_device_programs(padding):
+    """Sizes 18..24 are one quantum-8 class of a 32 box: exact against RELION, one compile each."""
+    from relax.helpers import relion_expected_accuracy as accuracy
+
+    case = _case(np.random.default_rng(3))
+    programs = (accuracy._project, accuracy._shift, accuracy._trial_snr)
+    counts = []
+    for current_size in (24, 22, 20, 18):
+        oracle = _oracle(case, size=32, current_size=current_size, padding=padding, do_ctf=False)
+        ours = _ours(case, size=32, current_size=current_size, padding=padding, ctf_images=None)
+        _assert_same(ours, oracle)
+        counts.append(tuple(program._cache_size() for program in programs))
+    assert len(set(counts)) == 1, counts
+
+
 def test_with_ctf_matches():
     size = 32
     case = _case(np.random.default_rng(5))
