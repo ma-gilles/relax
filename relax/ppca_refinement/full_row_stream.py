@@ -338,7 +338,6 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     ``(R, B, tri(q))``.
     """
     P, R = proj.shape[:2]
-    q = P - 1
     B = n_images
     T = Y1.shape[1] // B
     inner = jnp.dot(_real_imag(proj).reshape(P * R, -1), Y1, precision=_HIGHEST).reshape(P, R, B, T)
@@ -347,6 +346,15 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     real, imag = proj.real, proj.imag
     products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
     gram = jnp.dot(products.reshape(first.size * R, -1), ctf2, precision=_HIGHEST).reshape(first.size, R, B)
+    return _latent_scores(inner, gram, pose_log_prior)
+
+
+def _latent_scores(inner, gram, pose_log_prior):
+    """:func:`_latent_block` from its two GEMM outputs: ``inner`` ``(P, R, B, T)`` and the packed upper
+    ``gram`` ``(tri(P), R, B)``."""
+    P, R, B, T = inner.shape
+    q = P - 1
+    first, second = np.triu_indices(P)
     index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(first, second))}
     rho = gram[index[(0, 0)], :, :, None] - 2.0 * inner[0]
     prior = jnp.transpose(pose_log_prior, (1, 0, 2))
@@ -615,6 +623,15 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     lhs_images = jnp.dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(
         n_moments, R, F
     )
+    return _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
+
+
+def _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations):
+    """Backproject one block's M-step images into the carry: the packed LHS metric images ``(tri(P), R, F)``
+    and the planar RHS images ``(P, R, 2F)`` at ``rotations`` ``(R, 3, 3)``, as residual images, and their
+    noise-power correction."""
+    P = static.basis_size
+    F = lhs_images.shape[2]
     # The reconstruction operands equal the score operands without the
     # Hermitian weight (full-real observation: one window), so these residual
     # statistics are already divided by that weight. The RHS images enter the
@@ -1221,9 +1238,11 @@ def plan_tile_images(
     The budget is ``memory_bytes`` minus :data:`TILE_FRAGMENTATION_HEADROOM` of ``device_bytes``. On a
     GPU stream they default to what the device can still hand out after the stream's upload
     (:func:`relax.sparse_pass2.sparse_pass2_budget.device_available_bytes`) and the device's memory;
-    a CPU stream keeps ``requested``. At least one image per tile. Every stage (radius, window,
-    pose grid) is planned with its own shapes, once: with the probed defaults the plan is kept per
-    stage shape, measured at the stage's first update.
+    on a CPU stream to the host memory left to this process and the host memory it may use
+    (:mod:`relax.helpers.host_memory`). Every stage (radius, window, pose grid) is planned with its
+    own shapes, once: with the probed defaults the plan is kept per stage shape, measured at the
+    stage's first update. A stage whose one-image tile does not fit is refused: its rotation block
+    is too large for the device.
 
     ``tiles_per_call(size)`` gives the most tiles one :func:`accumulate_full_row_tiles` call holds at
     a tile size (never fewer for smaller tiles). Tiles are read ahead only within a call, so when
@@ -1238,11 +1257,11 @@ def plan_tile_images(
 
 
 def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipelined):
-    if memory_bytes is None and device_bytes is None and stream.static.cuda_kernels:
+    if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
         key = (_plan_shape_key(stream), int(requested), stream.device.id, pipelined)
         if key not in _PLANS:
-            _PLANS[key] = _planned_tile_images(stream, requested, _available_device_bytes(), None, pipelined=pipelined)
+            _PLANS[key] = _planned_tile_images(stream, requested, *_available_bytes(stream), pipelined=pipelined)
         return _PLANS[key]
     if not memory_bytes:
         return int(requested)
@@ -1256,6 +1275,14 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
     planned = _plan_tile_images(stream, requested, reader, budget_bytes, pipelined)
     peak, resident = reader(stream, planned)
     gib = 2**30
+    counted = tile_bytes(stream, planned, reader, pipelined=pipelined)
+    if counted > budget_bytes:
+        raise ValueError(
+            f"A tile of one image needs {counted / gib:.2f} GiB on the {stream.device.platform} "
+            f"(block programs {tile_program_bytes(stream, planned) / gib:.2f} GiB at rotation block "
+            f"{stream.rotation_block_size}), more than its {budget_bytes / gib:.2f} GiB budget: "
+            "use a smaller rotation block"
+        )
     logger.info(
         "PPCA tile plan: %d of %d images per tile (%d frames each); counted %.2f GiB of a %.2f GiB budget "
         "(%.2f GiB available, %.2f GiB device, headroom %.0f%%): stream %.2f GiB of which block programs "
@@ -1263,7 +1290,7 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
         planned,
         requested,
         _tile_frames(stream),
-        tile_bytes(stream, planned, reader, pipelined=pipelined) / gib,
+        counted / gib,
         budget_bytes / gib,
         memory_bytes / gib,
         (device_bytes or memory_bytes) / gib,
@@ -1298,14 +1325,22 @@ def _plan_shape_key(stream: FullRowStream) -> tuple:
     )
 
 
-def _available_device_bytes():
+def _available_bytes(stream):
+    """``(available, total)`` memory for the stream's tiles: the GPU's after the stream's upload and
+    its memory, or the host memory left to this process and the host memory it may use."""
+    if not stream.static.cuda_kernels:
+        from relax.helpers.host_memory import available_memory_bytes, resident_bytes
+
+        host = available_memory_bytes()
+        return host - resident_bytes(), host
     from relax.sparse_pass2 import sparse_pass2_budget as budget
 
-    return budget.device_available_bytes(
+    available = budget.device_available_bytes(
         budget._device_free_memory_bytes(),
         budget._jax_allocator_free_memory_bytes(),
         budget._jax_allocator_pool_free_bytes(),
     )
+    return available, None
 
 
 def _plan_tile_images(stream, requested, reader, budget_bytes, pipelined):

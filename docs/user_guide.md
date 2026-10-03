@@ -29,6 +29,30 @@ RELION_SRC_DIR=/path/to/relion/src pixi run build-relion-bind
 Run every command below inside the environment (`pixi shell`, or prefix each
 command with `pixi run`). Choose the GPU with `CUDA_VISIBLE_DEVICES`.
 
+## Supported GPUs
+
+relax needs an NVIDIA GPU of compute capability 6.0 (Pascal) or newer and at
+least 16 GB of memory. It has been run end to end on P100 16 GB (6.0), A100
+80 GB (8.0) and H100 80 GB (9.0), and on 80 GB cards limited to 16 to 40 GB; the
+[GPU compatibility matrix](development/gpu_compatibility.md) lists every
+workflow per card. Batch sizes and caches are sized from the card's free memory,
+so smaller cards run the same commands, more slowly.
+
+The default build compiles the kernels for compute capability 7.0 to 9.0 (and
+later cards through PTX). For a Pascal card (P100, GTX 10-series), add its
+architecture, with a CUDA 12 toolkit (CUDA 13 cannot build for cards older than
+compute capability 7.5):
+
+```bash
+export CUDA_ARCH="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_70,code=sm_70 -gencode arch=compute_80,code=sm_80"
+pixi run build-cuda                                    # relax's kernels
+pixi run python -m recovar.commands.build_custom_cuda --force  # RECOVAR's kernels
+```
+
+A library built without your card's architecture is refused when relax first
+loads it, with a message naming the card, the library's targets and the rebuild
+command.
+
 ## Inputs
 
 - **Particles**: a RELION 3.1+ particle STAR file with a `data_optics` block

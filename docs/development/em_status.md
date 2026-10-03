@@ -960,6 +960,16 @@ the score cache, the generic preprocessing and operands, the manual and dense co
 `tests/helpers/exact_pass1_harness.py` runs pass 1 on CPU for the significance unit tests. The generic
 kernels in `relax/scoring/scoring.py` stay while dense `run_em` (deprecated, item 6) uses them.
 
+Pass 1 on stable Fourier-window shapes: tried 2026-10-03, no gain, not landed (speedw; team-lead decision).
+`significance._compute_k_class_significance_batched` can score on a quantized physical window (runtime current size,
+zero-weight capacity rows; `stable_fourier_window_shapes`, default off). Turned on as the one path, a K1 noise1 5k
+standalone refine (oversampling 1, healpix 3, 12 iterations, cold cache, A100, JAX_LOG_COMPILES) compiled 2350
+programs in both arms, wall 895 vs 911 s: the coarse current size stays 38 (physical 40) through the run, so pass 1
+compiles once per signature (_coarse_pass1_blocks x4, exact operands x4, powerclass x10, window operands x10: about
+10 s of 330 s compile). etw's multishape census agrees (VDAM K1 pass 1 x16 / 6.8 s of about 170 s; Class3D not in the
+top 25). The compile cost sits in eager JAX primitives on new shapes (1362 compiles, 121 s: broadcast_in_dim x378,
+add, convert_element_type, gather, ...) and the pass-2/M-step programs.
+
 Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer, every
 class and rotation block of an image batch is scored, given its priors and reduced (class and global
 logsumexps, best pose and class) in one jitted program

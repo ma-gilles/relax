@@ -185,6 +185,33 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     assert tomo_coarse._coarse_batch_bytes() == tomo_coarse._COARSE_BATCH_BYTES
 
 
+def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
+    """On an 80 GB card the device-aware budget changes nothing: the texture path's rows take 8 B a pixel and a
+    quarter of the free memory exceeds the fixed 2 GiB, so the batches are those of the fixed budget (the policy in
+    docs/development/gpu_compatibility.md: small-card sizing is a no-op on large cards)."""
+
+    from relax.helpers import projection
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1 << 30
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 66 * gib)
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 70 * gib)
+    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(projection, "relion_coarse_packed_rows_serve", lambda *a: True)
+    assert tomo_coarse._coarse_batch_bytes() == tomo_coarse._COARSE_BATCH_BYTES
+    bytes_per_pixel = tomo_coarse._coarse_projection_bytes_per_pixel(
+        [object()], np.complex64, image_size=128, current_size=48, model_max_r=24
+    )
+    assert bytes_per_pixel == 8
+    for rotations, pixels in ((4608, 278), (36864, 921), (448, 2520)):
+        planned = tomo_coarse._coarse_batches(
+            [rotations] * 600, n_slots=41, n_trans=81, n_pixels=pixels,
+            projection_bytes_per_pixel=bytes_per_pixel, budget_bytes=tomo_coarse._coarse_batch_bytes(),
+        )
+        fixed = tomo_coarse._coarse_batches([rotations] * 600, n_slots=41, n_trans=81, n_pixels=pixels)
+        assert [(list(u), r, p, s) for u, r, p, s in planned] == [(list(u), r, p, s) for u, r, p, s in fixed]
+
+
 @pytest.mark.gpu
 def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
     """The batched per-image launch and one call per image score every (image, rotation, translation) alike."""

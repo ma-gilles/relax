@@ -178,6 +178,65 @@ def _reserve_module():
     return module
 
 
+# Log lines that start a stage: a refinement iteration, a PPCA tile plan (one per PPCA stage).
+STAGE_PATTERN = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ .*(=== RELION Iteration \d+|PPCA tile plan: .*)$")
+
+
+def _artifact_stages(out: Path) -> list[tuple[float, str]]:
+    """VDAM InitialModel writes no per-iteration log line; its written iterations (``run_itNNN_model.star``)
+    end its stages: each stage starts when the previous written iteration's model was saved."""
+
+    written = sorted(
+        (path.stat().st_mtime, int(match.group(1)))
+        for path in out.glob("run_it*_model.star")
+        if (match := re.match(r"run_it(\d+)_model\.star$", path.name))
+    )
+    starts, previous = [], 0.0
+    for stamp, iteration in written:
+        starts.append((previous, f"VDAM iterations up to {iteration}"))
+        previous = stamp
+    return starts
+
+
+def live_memory(path: Path, log_text: str, out: Path | None = None) -> dict:
+    """The run's live device memory: its peak, and per stage the largest sampled ``bytes_in_use`` and the
+    allocator's ``peak_bytes_in_use`` at the stage's end (cumulative). Stages start at ``STAGE_PATTERN`` lines,
+    or, for a run without them (VDAM), at its written iterations (:func:`_artifact_stages`)."""
+
+    if not path.exists():
+        return {"live_peak_mib": None}
+    samples = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    samples = [s for s in samples if s.get("bytes_in_use") is not None]
+    if not samples:
+        return {"live_peak_mib": None}
+    mib = 1 << 20
+    starts = []
+    for line in log_text.splitlines():
+        match = STAGE_PATTERN.match(line)
+        if match:
+            stamp = time.mktime(time.strptime(match.group(1), "%Y-%m-%d %H:%M:%S"))
+            starts.append((stamp, match.group(2)[:120]))
+    if not starts and out is not None:
+        starts = _artifact_stages(out)
+    stages = []
+    for index, (begin, label) in enumerate(starts):
+        end = starts[index + 1][0] if index + 1 < len(starts) else float("inf")
+        inside = [s for s in samples if begin <= s["t"] < end]
+        if inside:
+            stages.append(
+                {
+                    "stage": label,
+                    "max_in_use_mib": round(max(s["bytes_in_use"] for s in inside) / mib),
+                    "peak_in_use_at_end_mib": round((inside[-1].get("peak_bytes_in_use") or 0) / mib),
+                }
+            )
+    return {
+        "live_peak_mib": round(max(s.get("peak_bytes_in_use") or s["bytes_in_use"] for s in samples) / mib),
+        "pool_limit_mib": round((samples[-1].get("bytes_limit") or 0) / mib),
+        "live_stages": stages,
+    }
+
+
 def emulated_fraction(module: str, box: int, emulate_gb: float, total_bytes: int) -> float:
     """The XLA pool fraction of the real device that gives the pool an ``emulate_gb`` card would get."""
 
@@ -196,6 +255,13 @@ def main() -> int:
     parser.add_argument("--fixture", action="append", default=[], help="NAME=PATH overriding cells.FIXTURES")
     parser.add_argument("--emulate-gb", type=float, default=None)
     parser.add_argument("--timeout", type=float, default=None, help="seconds")
+    parser.add_argument(
+        "--live-memory",
+        action=argparse.BooleanOptionalAction,
+        default=os.environ.get("MATRIX_LIVE_MEMORY", "1") != "0",
+        help="record live memory from inside the run (default; MATRIX_LIVE_MEMORY=0 turns it off). "
+        "Keep it off in any run whose wall is quoted: the sampling thread shares the run's process",
+    )
     args = parser.parse_args()
 
     spec = CELLS[args.cell]
@@ -248,6 +314,13 @@ def main() -> int:
             "xla_mem_fraction": env["XLA_PYTHON_CLIENT_MEM_FRACTION"],
         }
 
+    # Live memory (memory_stats) from inside the relax process: live_memory/sitecustomize.py.
+    live = out / "live_memory.jsonl"
+    live.unlink(missing_ok=True)
+    record["live_memory_hook"] = bool(args.live_memory)
+    if args.live_memory:
+        env["RELAX_MATRIX_LIVE_MEMORY"] = str(live)
+        env["PYTHONPATH"] = os.pathsep.join(p for p in (str(HERE / "live_memory"), env.get("PYTHONPATH")) if p)
     log = out / "run.log"
     start = time.time()
     with open(log, "w") as handle:
@@ -285,8 +358,16 @@ def main() -> int:
         oom=[p for p in OOM_PATTERNS if p in text] if not completed else [],
         log_tail=text[-6000:] if not completed else "",
     )
+    record.update(live_memory(live, text, out))
     (out / "cell.json").write_text(json.dumps(record, indent=1) + "\n")
-    print(json.dumps({k: record[k] for k in ("cell", "completed", "exit_code", "wall_s", "peak_gpu_mib", "oom")}))
+    print(
+        json.dumps(
+            {
+                k: record.get(k)
+                for k in ("cell", "completed", "exit_code", "wall_s", "peak_gpu_mib", "live_peak_mib", "oom")
+            }
+        )
+    )
     print("GPU:", gpu["name"], gpu["compute_cap"], gpu["memory_total_mib"], "MiB")
     return 0 if completed else 1
 
