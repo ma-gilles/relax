@@ -1242,7 +1242,7 @@ changing rank does not change the optimizer schedule or observation model.
 
 ## 16. Subtomogram (cryo-ET) PPCA: design (October 2, 2026)
 
-*Design, not yet implemented.* The aim is the pose-free PPCA initial model of
+*Implemented October 2, 2026; first science in 16.9.* The aim is the pose-free PPCA initial model of
 sections 4-15 for RELION 5 subtomograms (2D tilt stacks), with both optimizers,
 on the streamed engine of section 14. Tomographic input, geometry, CTF and dose
 follow the subtomogram Refine3D/VDAM path that relax qualifies against RELION
@@ -1381,29 +1381,38 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
 3. Full rotation grid per stage only (`--oversampling 0
    --stream-coarse-recompute`); no coarse significance pass.
 
-### 16.7 Implementation boundary and checks
+### 16.7 Implementation and checks
 
-- `full_row_stream.py`: a tile may carry `K` frame matrices; projection and
-  scatter rotations expand block rows by frames; operands and pass-2 images
-  flatten `(frame, pixel)`; the tile loader is a stream argument; the noise
-  denominator counts tilt images. The SPA path keeps its shapes and arithmetic.
-- New `relax/ppca_initial_model/tomo.py`: tilt groups and tile order, the tilt
-  tile loader (exact CTF rows, per-image phases), the tilt bootstrap and initial
-  noise, and the controller's tilt expectation.
-- `TomoDataset` additionally records each image's frame and each particle's
-  tomogram (additive).
-- `iteration_loop.py` routes a tilt dataset through these and uses 3D offsets;
-  the command reads an optimisation set; simulator truth stays outside training.
+- [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py): a tile may
+  carry `K` frame matrices (`_TileArrays.frames`); projection and scatter
+  rotations expand block rows by frames (`_frame_rotations`); operands and pass-2
+  images flatten `(frame, pixel)`; the tile reader is a stream argument
+  (`tile_loader`); the noise denominator counts observed images. Single-particle
+  tiles keep their shapes and arithmetic.
+- [tomo.py](../../relax/ppca_initial_model/tomo.py): `TiltParticles` (tilt groups
+  from `TomoDataset`), `tilt_tiles`, the tilt tile reader `load_tilt_tile` (exact
+  RELION CTF rows with dose, per-image phases of the 3D shifts) and
+  `initialize_tilts`.
+- `TomoDataset` records each image's frame and each particle's tomogram.
+- [iteration_loop.py](../../relax/ppca_initial_model/iteration_loop.py) routes
+  `TiltParticles` through these with RELION's 3D shift grid and a 3D offset
+  variance; `relax ppca_initial_model --ios optimisation_set.star
+  --particle-diameter D --oversampling 0 --stream-coarse-recompute` trains on
+  the images, CTFs and tilt geometry only.
 
-Checks, in this order: (1) on CPU against a brute-force float64 model on a tiny
-problem (box 10, `q = 2`, three particles with four tilts each, one with a hidden
-tilt, several rotations and 3D shifts): the marginal log-likelihood
-`log N(y_i; A mu, A W W^T A^* + Sigma)` per pose from the dense joint covariance
-(no Woodbury), posterior weights, latent moments, LHS, residual gradient and
-noise sums from dense adjoints; (2) a one-frame identity group equals the SPA
-tile; (3) dropping a hidden tilt equals zeroing it; (4) a known 3D offset is
-recovered by the score maximum. Then the GPU path against the XLA path, and the
-science of the next subsection.
+Checks ([test_tomo_ppca.py](../../tests/unit/ppca_initial_model/test_tomo_ppca.py)):
+the tilt tile against a brute-force float64 joint Gaussian that stacks each
+particle's tilts with one latent and evaluates `log N(y; A mu, A W W^T A^T +
+D^-1)` from the dense covariance (box 8, `q = 2`, three particles, four frames,
+one hidden tilt, five rotations, seven 3D shifts): log-likelihood, embeddings,
+rotation mass, offset moment, LHS, residual gradient and noise sums agree to
+4.0e-6 of their scale (three problem seeds; float32 engine, CPU and GPU). Summed
+per-tilt marginals differ from it by more than 1e-3 relative; a hidden tilt equals
+a zero tilt; one identity frame equals the single-particle tile; both optimizers
+run through the controller. On the k3conf fixture (16.8) with the ground-truth
+model, the stream puts the top pose at the GT rotation for 45 of 45 particles and
+at the GT 3D offset (not its negative) for all 28 with offsets above 0.3 px, and
+GT-pose embeddings separate the three states for every particle.
 
 ### 16.8 Science plan
 
