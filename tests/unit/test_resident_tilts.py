@@ -333,3 +333,20 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
     np.testing.assert_array_equal(np.asarray(tables.n_blocks), [2, 2, 1])
     np.testing.assert_array_equal(np.asarray(tables.targets), np.where(views >= 0, views, 12))
     assert_matches(np.asarray(tables.angles)[1, 0, 2], angles[5][[1, 4]])
+
+
+@pytest.mark.unit
+def test_slot_views_take_every_per_image_operand():
+    """A tilt slot's M-step reads its units' images: every per-image chunk operand is in the slot view.
+
+    An operand left out keeps the chunk's image order, so a slot's unit u read the chunk's u-th image:
+    CTF-premultiplied tilt images backprojected another image's CTF weight (2026-10-03).
+    """
+
+    from relax.sparse_pass2.resident_pass2 import _ChunkStageOperands
+
+    view = set(resident_tilts._SLOT_VIEW_FIELDS)
+    chunk_only = set(resident_tilts._SLOT_CHUNK_ONLY_FIELDS)
+    assert not view & chunk_only
+    assert set(_ChunkStageOperands._fields) == view | chunk_only
+    assert "bpref_ctf2_over_nv_recon" in view

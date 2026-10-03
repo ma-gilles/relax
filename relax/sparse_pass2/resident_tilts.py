@@ -944,8 +944,22 @@ _SLOT_VIEW_FIELDS = (
     "group_ids",
     "optics_groups",
     "image_noise_scale",
+    "bpref_ctf2_over_nv_recon",
 )
 _SLOT_VIEW_FILL = {"scale": 1.0, "group_ids": -1}
+# The chunk operands a slot view does not take per image: the translated Wavg tiles it rebuilds with
+# each image's own phases, and the per-chunk tiles and CC operands the resident M-step never reads.
+# Every other per-image operand must be in _SLOT_VIEW_FIELDS, or the slot's units read the chunk's
+# first images' values (a premultiplied CTF weight did, 2026-10-03).
+_SLOT_CHUNK_ONLY_FIELDS = (
+    "shifted_recon",
+    "shifted_noise",
+    "raw_translated_wavg_rectangle",
+    "raw_translated_wavg_for_atomic",
+    "translation_sqdist_ang",
+    "score_shifted_cc",
+    "cc_half_batch_norm",
+)
 
 
 @partial(jax.jit, static_argnames=("image_shape",))
