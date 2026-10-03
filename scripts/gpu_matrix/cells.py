@@ -346,9 +346,13 @@ for _optimizer, _tag in (("vdam", "vdam"), ("momentum_sgd", "sgd")):
             "box": 64,
         }
 
-for _name, _seeds in (("vdam_k1_5k128", (41, 53)), ("tomo_vdam_k1_et09_it10", (2, 3))):
+for _name, _seeds in (("vdam_k1_5k128", (41, 53)), ("vdam_k4_5k128", (41, 53)), ("tomo_vdam_k1_et09_it10", (2, 3))):
     for _seed in _seeds:
         CELLS[f"{_name}_s{_seed}"] = _reseeded(_name, _seed)
+
+# Same-seed repeats on one GPU: the run-to-run spread of a nondeterministic GPU run.
+for _repeat in (2, 3):
+    CELLS[f"vdam_k4_5k128_r{_repeat}"] = dict(CELLS["vdam_k4_5k128"])
 
 
 def cell_fixtures(name: str) -> list[str]:
