@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from recovar.core import fourier_transform_utils
-from relax.diagnostics.relion_replay import _maybe_debug_replay_relion_references
+from relax.diagnostics.relion_replay import replay_class_relion_references, replay_k1_relion_references
 from recovar.utils.helpers import write_relion_mrc
 
 
@@ -26,7 +26,7 @@ def test_state_swap_force_loads_shared_kclass_maps(tmp_path):
         jnp.zeros((4, np.prod(shape)), dtype=jnp.complex64),
         jnp.ones((4, np.prod(shape)), dtype=jnp.complex64),
     ]
-    replayed = _maybe_debug_replay_relion_references(
+    replayed = replay_class_relion_references(
         means=original,
         perturb_replay_relion_dir=tmp_path,
         init_relion_iteration=0,
@@ -60,13 +60,12 @@ def test_state_swap_force_replays_target_references_without_environment(tmp_path
         jnp.ones(np.prod(shape), dtype=jnp.complex64),
     ]
 
-    replayed = _maybe_debug_replay_relion_references(
+    replayed = replay_k1_relion_references(
         means=original,
         perturb_replay_relion_dir=tmp_path,
         init_relion_iteration=0,
         iteration=4,
         volume_shape=shape,
-        n_classes=1,
         force=True,
     )
 
