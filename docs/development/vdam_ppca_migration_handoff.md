@@ -9,7 +9,7 @@ correction. The large RECOVAR-era input and output artifacts remain at their
 original paths. This is an implementation candidate, not an accepted RELAX
 science or performance result.
 
-The [source inventory and per-file hashes](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/INVENTORY.md)
+The source inventory and per-file hashes (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/INVENTORY.md`; outside the repository)
 identify the old source snapshots and new owners. The
 block repair receipt (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md)
 pins its candidate-6-relative patch and fixed-state tests. The shared
@@ -17,7 +17,7 @@ pins its candidate-6-relative patch and fixed-state tests. The shared
 commit `7c418660e39da7b452facf7fadd8eede4223b982`, fast-forward published
 to `dev2` after focused compatibility review. RELAX's pinned pixi environment
 now resolves that commit; `pixi install --frozen` and import provenance confirm
-the three optional fields. The [repin receipt](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/RECOVAR_REPIN_PENDING.md)
+the three optional fields. The repin receipt (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/RECOVAR_REPIN_PENDING.md`; outside the repository)
 records the coordinated dependency lineage. The earlier A100 readiness probe
 was queued against the immutable pre-repin `a2097a4` snapshot, whose numerical
 PPCA source and shared stats container bytes are unchanged by this repin.
@@ -25,7 +25,7 @@ PPCA source and shared stats container bytes are unchanged by this repin.
 The managed science gallery (artifact lost 2026-09-26, see em_work/LOSS_AUDIT_20260926.md)
 shows the completed 2k paired panels and 5k native-K3-only panels. The
 [historical pilot scorecard](../math/vdam_ppca_pilot_scorecard_v1.md) retains
-its RECOVAR-source measurements. The [faster K3 block-size evaluation](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/K3_BLOCKS500.md)
+its RECOVAR-source measurements. The faster K3 block-size evaluation (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/K3_BLOCKS500.md`; outside the repository)
 completed all-nine FSC fits and six-view panels: states 1–2 remain strong,
 state 0 remains poor, so all-state quality equivalence is not accepted. The
 5k PPCA run stopped cleanly at step 110
@@ -36,9 +36,9 @@ It has no final T200 maps or all-particle embeddings. Its continuation requires
 checkpoint/schema and fixed-state math validation against the migrated source;
 the checkpoint and existing outputs must remain immutable. The original
 7200-second trajectory cap and shared 8 GPU-hour package budget still apply.
-The [read-only schema probe](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/checkpoint_schema_probe.json)
+The read-only schema probe (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/checkpoint_schema_probe.json`; outside the repository)
 loaded every numeric step-110 field exactly into RELAX state types. The
-[explicit import tool](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/migrate_checkpoint110.py)
+explicit import tool (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/relax_ppca_migration_20260923/migrate_checkpoint110.py`; outside the repository)
 validated the original config, source and checkpoint in dry-run mode; it has
 not created a migrated checkpoint. A source-frozen matched-state float32 check
 is still required before import or continuation.

@@ -4,7 +4,7 @@ RELION's accelerated expectation executes two sampling passes, even at adaptive
 oversampling zero. In that case it retains the coarse numeric sum and maximum
 for subsequent normalization and Pmax, and does not prune fine support again.
 Source-pinned diagnosis and counterfactual are in the
-[coordination receipt](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/handoffs/em_zero_oversampling_counterfactual_20260913.md).
+coordination receipt (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/handoffs/em_zero_oversampling_counterfactual_20260913.md`; outside the repository).
 
 The existing float32 primitive builds raw fine weights as
 `expf(score + float32(50 - max_score))`. Its optional coarse denominator is a
@@ -13,13 +13,13 @@ Weights are divided by this denominator without re-normalizing retained support.
 `keep_all=True` retains finite, positive-weight selected candidates, not padding.
 The coarse controller maximum is preserved independently.
 
-[`_relion_pass2_reconstruction_probs_for_mstep`](../../recovar/em/sparse_pass2/sparse_pass2_posterior.py)
+[`_relion_pass2_reconstruction_probs_for_mstep`](../../relax/sparse_pass2/sparse_pass2_posterior.py)
 now forwards the existing `normalization_sum_weight` and `keep_all` controls to
 the float32 primitive, and rejects them on incompatible reconstruction paths.
 Defaults preserve the previous computation. Exact forwarding tests are in
 [`test_sparse_pass2_relion_f32_posterior.py`](../../tests/unit/test_sparse_pass2_relion_f32_posterior.py).
 
-[`_compute_k_class_significance_batched`](../../recovar/em/scoring/significance.py) now optionally returns
+[`_compute_k_class_significance_batched`](../../relax/scoring/significance.py) now optionally returns
 `relion_f32_sum_weight` and `relion_f32_max_posterior`. On the generic selector
 it uses the existing F32 primitive on the actual prior-weighted coarse scores,
 not exponentiated absolute log evidence. Its existing support, hard assignments,
@@ -37,7 +37,7 @@ weighted inputs to the GPU-only adjoint, noise sumw and rotation statistics
 in both bucket modes. The CPU test substitutes only the final CUDA deposition;
 it does not qualify the native scatter or reconstructed maps.
 
-[`run_dense_k_class_em_adaptive`](../../recovar/em/classification/k_class.py) activates this state only for zero-oversampling,
+[`run_dense_k_class_em_adaptive`](../../relax/classification/k_class.py) activates this state only for zero-oversampling,
 soft Gaussian K1 with F32 scoring and sparse x-half reconstruction. Nonzero
 oversampling, K4, firstiter_cc/hard winners and double scoring keep their previous
 routes. The dense fallback is excluded only for this active sparse-state path.

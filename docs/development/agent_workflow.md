@@ -6,8 +6,8 @@ bookkeeping and publication overhead, not validation fidelity.
 ## Model and work package
 
 Model selection and delegation are opt-in session choices. The selected RECOVAR
-workstream has an [Astra-led delegation policy](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/delegated/POLICY.md)
-and [activation/recovery instructions](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/delegated/README.md).
+workstream has an Astra-led delegation policy (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/delegated/POLICY.md`; outside the repository)
+and activation/recovery instructions (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/delegated/README.md`; outside the repository).
 Scientific requirements apply equally to every model. Earlier global model
 settings are historical; this profile does not change them.
 

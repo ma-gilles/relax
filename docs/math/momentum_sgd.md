@@ -24,7 +24,7 @@ a soft volume window and a maximum-frequency cutoff. The saved v5.0.6 job
 specification exposes a zero default sparsity strength and enabled positivity.
 These support an interpretation with no default Wiener volume penalty; they do
 not identify the optional sparsity formula or prove the proprietary update.
-See the [saved parameters](/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/csparc_sgd/abinit_params_v506.tsv).
+See the saved parameters (`/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/csparc_sgd/abinit_params_v506.tsv`; outside the repository).
 
 Implementation owners are [the optimizer](../../relax/sgd_initial_model/optimizer.py),
 [noise estimation](../../relax/sgd_initial_model/noise.py), and

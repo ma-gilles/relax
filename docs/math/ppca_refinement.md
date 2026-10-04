@@ -2,19 +2,19 @@
 
 This package refines a pose-marginalized PPCA model initialized from aligned
 K-class or GT volumes. It is not a native PPCA InitialModel/VDAM controller.
-The [package reading guide](../../recovar/em/ppca_refinement/README.md) maps
+The [package reading guide](../../relax/ppca_refinement/README.md) maps
 entry points and data flow. Historical experiments do not qualify this source.
 
 ## Implementation owners
 
-- [engine.py](../../recovar/em/ppca_refinement/engine.py) owns shared dense/local
+- [engine.py](../../relax/ppca_refinement/engine.py) owns shared dense/local
   scoring and accumulation. The independent score/moment formulation and
   augmented solve live in `recovar/ppca/`; preserve the `q=0` and `W=0` limits.
-- [refinement_loop.py](../../recovar/em/ppca_refinement/refinement_loop.py) owns
+- [refinement_loop.py](../../relax/ppca_refinement/refinement_loop.py) owns
   the maintained dense halfset resolution gate. The dense-to-local workflow
   calls the single-iteration owners directly. K-class execution lives in
-  [classification/k_class.py](../../recovar/em/classification/k_class.py).
-- [local_dataset.py](../../recovar/em/ppca_refinement/local_dataset.py) consumes
+  [classification/k_class.py](../../relax/classification/k_class.py).
+- [local_dataset.py](../../relax/ppca_refinement/local_dataset.py) consumes
   `LocalHypothesisLayout`; local priors and pruning constrain support without
   changing the PPCA score. Do not introduce a parallel local-search layout.
 - The model is `[mu, W_1, ..., W_q]`, with real latent `z ~ N(0, I)`.
@@ -42,7 +42,7 @@ failures. They do not replace the halfset resolution gate.
 
 ## Objective accounting
 
-Implementation: [diagnostics.py](../../recovar/em/ppca_refinement/diagnostics.py).
+Implementation: [diagnostics.py](../../relax/ppca_refinement/diagnostics.py).
 
 The runner reports three objective families separately:
 
@@ -66,7 +66,7 @@ augmented solve. Clean algorithmic experiments should use
 
 ## Bootstrap initialization
 
-Implementation: [initialization.py](../../recovar/em/ppca_refinement/initialization.py).
+Implementation: [initialization.py](../../relax/ppca_refinement/initialization.py).
 
 The bootstrap initializer consumes already aligned or explicitly
 alignment-checked class/GT volumes:
@@ -86,7 +86,7 @@ frame-conversion hooks. Production volume alignment remains a separate task.
 
 ## Known image-scale correction
 
-Implementation: [dense_dataset.py](../../recovar/em/ppca_refinement/dense_dataset.py).
+Implementation: [dense_dataset.py](../../relax/ppca_refinement/dense_dataset.py).
 
 Synthetic fixtures can include a known per-image signal scale
 `per_image_contrast`. When this is explicitly enabled, the PPCA score treats
@@ -106,7 +106,7 @@ scale correction and W-score tempering are both active.
 
 ## Post-solve mask/grid heuristic
 
-Implementation: [postprocess.py](../../recovar/em/ppca_refinement/postprocess.py).
+Implementation: [postprocess.py](../../relax/ppca_refinement/postprocess.py).
 
 The current default scoring model uses the post-solve PPCA reference:
 
@@ -130,8 +130,8 @@ the augmented solve.
 ## Halfset resolution gate
 
 Dense and local iteration publication share
-[`_finish_refinement_iteration`](../../recovar/em/ppca_refinement/refinement_loop.py);
-the gate itself remains in [`evaluate_halfset_resolution_gate`](../../recovar/em/ppca_refinement/schedule.py).
+[`_finish_refinement_iteration`](../../relax/ppca_refinement/refinement_loop.py);
+the gate itself remains in [`evaluate_halfset_resolution_gate`](../../relax/ppca_refinement/schedule.py).
 
 Resolution/current-size growth is allowed only when all first-pass checks pass:
 

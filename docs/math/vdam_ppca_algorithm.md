@@ -9,16 +9,16 @@ open for discussion. The aim is one PPCA model learned without supplied poses
 or reference volumes, followed later by mixtures of PPCA models.
 
 The user subsequently requested an executable handoff and accepted the random
-seed-map construction below. See the [implementation plan](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_implementation_plan.md)
+seed-map construction below. See the implementation plan (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_implementation_plan.md`; outside the repository)
 for work packages, proposed numerical defaults and validation, and the
-[short execution handoff](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_handoff.md) for the next agent.
+short execution handoff (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_handoff.md`; outside the repository) for the next agent.
 This document's derivations remain the scientific context; the plan explicitly
 distinguishes user decisions from bounded implementation assumptions.
 
 ## 1. Scope and source identity
 
 The starting description is the user's
-[VDAM algorithm document](/scratch/gpfs/CRYOEM/gilleslab/mg6942/vdam_dev_20260919/recovar_vdam_cap/docs/math/vdam_algorithm.md),
+VDAM algorithm document (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/vdam_dev_20260919/recovar_vdam_cap/docs/math/vdam_algorithm.md`; outside the repository),
 read at source commit `983edce72690a144b9fb26b43f10c28b3c18525d`.
 Its SHA-256 is
 `e834650772cf71387a901d2c1973fd74a343e25fc4592f6652bc6517087d7010`.
@@ -29,7 +29,7 @@ Here, *current* means the source in `codex/vdam-ppca` at
 `ca440f5e4a84106b77613434ee9d7af8bf2b8b3e`, based on reconciliation
 `f078ac1be64a21c2b478ef34b9f68db19920e23e`. Code links below refer to this
 checkout. Recheck these claims when incorporating later reconciliation work.
-The [workstream and historical recovery](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca.md) records
+The workstream and historical recovery (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca.md`; outside the repository) records
 the recovered PPCA branches and the policy for following reconciliation.
 
 ### Already decided with the user
@@ -574,7 +574,7 @@ current loading power alone can create a feedback loop: early shrinkage lowers
 the estimated prior variance, which causes further shrinkage. A frozen initial
 spectrum or a delayed/controlled update are alternatives to discuss.
 
-The [variance-prior notes](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/math/ppca_variance_prior_notes.md) distinguish physical
+The variance-prior notes (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/math/ppca_variance_prior_notes.md`; outside the repository) distinguish physical
 signal variance from RELION-style reconstruction tau. Existing fixed-pose
 estimators depend on poses and cannot be carried into ab-initio initialization
 unchanged. The [mean-prior adapter](../../relax/ppca_refinement/mean_regularization.py)
@@ -813,7 +813,7 @@ deviation. Run one debugging initialization, then three independent
 initializations on the same dataset. Multi-iteration runs belong on Slurm.
 
 The located source bank is
-[`~/mytigress/cryobench2/Ribosembly/vols/128_org`](/home/mg6942/mytigress/cryobench2/Ribosembly/vols/128_org).
+`~/mytigress/cryobench2/Ribosembly/vols/128_org` (`/home/mg6942/mytigress/cryobench2/Ribosembly/vols/128_org`; outside the repository).
 It contains 16 MRC maps, all with 128-cubed dimensions, 3-Angstrom voxels and
 zero header origins. The corresponding PDBs are in the sibling `pdbs/`
 directory. This is a header inventory, not proof of structural registration or
@@ -916,7 +916,7 @@ science qualification or performance claim is attached to this document.
 
 The new controller is [ppca_initial_model/iteration_loop.py](../../relax/ppca_initial_model/iteration_loop.py).
 Implementation validation and recovery experiments remain distinct. The
-[execution plan](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_implementation_plan.md) is still the
+execution plan (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_implementation_plan.md`; outside the repository) is still the
 scientific contract; runnable code alone does not establish recovery.
 
 - [noise.py](../../relax/ppca_initial_model/noise.py) uses coefficient
@@ -1403,7 +1403,7 @@ The current measurements and missing cells live in the
 
 ## 15. Small 2,000-particle exploratory pilot
 
-The [small-pilot plan](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_small_pilot_plan.md) fixes a
+The small-pilot plan (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_small_pilot_plan.md`; outside the repository) fixes a
 subset of the existing simulator fixture before training. An opt-in
 `stochastic_batch_size=200` in
 [PPCA Config](../../relax/ppca_initial_model/config.py) replaces only the
@@ -1437,7 +1437,7 @@ beyond the trained band.
 
 The user clarified that a unique common frame/hand across different states is
 not a necessary definition of recovery. The
-[visual comparison](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_visual_comparison.md) therefore
+visual comparison (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_visual_comparison.md`; outside the repository) therefore
 uses independent rigid rotation/translation/reflection for both methods and
 matches K3 classes only after fitting all nine class/GT pairs. The
 [comparison script](../../scripts/plot_vdam_ppca_comparison.py) preserves the

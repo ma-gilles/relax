@@ -3,7 +3,7 @@
 This file contains the program's quantitative gates and reproduction contracts.
 The active cleanup milestone, current evidence and next check live in
 [the EM status page](../development/em_status.md). Permanent development rules
-are in [the EM guide](../../recovar/em/AGENTS.md).
+are in [the EM guide](../../relax/AGENTS.md).
 
 The [complete historical program](https://github.com/ma-gilles/recovar-experiments/blob/8e43b06f8a43afc9a406bc9509899c338e7e4102/docs/math/em_parity_program_history_20260916.md)
 is preserved verbatim in the private experiment archive, including failed and
@@ -12,7 +12,7 @@ are historical, not instructions for the current tip. Current contract sections
 below are retained unchanged; archival does not waive any gate.
 
 The serialized-versus-runtime scale section at the end remains here because
-[replay overrides](../../recovar/em/diagnostics/relion_replay.py) reference it.
+[replay overrides](../../relax/diagnostics/relion_replay.py) reference it.
 Detailed investigation notes live in [the parity notes](relion_parity_agent_notes.md),
 and completion records in [best metrics](em_parity_best_metrics.md).
 
@@ -34,7 +34,7 @@ are diagnostic; unexplained mismatches are not excused as noise. Exact parity
 remains preferable. No numerical tolerance or baseline is changed, and the
 long-term speed objective remains. This allowance is not a measurement of
 current-source representative speed or a completed quality gate. See the
-[user-policy handoff](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/handoffs/vdam_quality_priority_20260909.json).
+user-policy handoff (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/pr179_coordination/handoffs/vdam_quality_priority_20260909.json`; outside the repository).
 
 ## Mode Contract
 
@@ -44,7 +44,7 @@ current-source representative speed or a completed quality gate. See the
   It is not a substitute for a corrected and qualified float32 implementation.
   Final K1/K4 quality and performance evidence must use the production path;
   preserve deliberate higher-precision host/metadata operations. See the
-  [mandatory precision policy](../../recovar/em/AGENTS.md).
+  [mandatory precision policy](../../relax/AGENTS.md).
 - **Strict oracle:** the default during parity closure; pinned RELION GUI
   behavior and full iteration trajectory, including `firstiter_cc` hard-winner
   semantics.

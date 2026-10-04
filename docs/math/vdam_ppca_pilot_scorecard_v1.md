@@ -36,7 +36,7 @@ Scientific acceptance: **not threshold-qualified; no completed recovery measurem
 
 ## Separate 2,000-particle exploratory pilot
 
-The [small-pilot handoff](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_small_pilot_handoff.md) records the original pair and confirmed input-sign repair. These are separate from the 20k rows above.
+The small-pilot handoff (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_small_pilot_handoff.md`; outside the repository) records the original pair and confirmed input-sign repair. These are separate from the 20k rows above.
 
 Seed 11; 60 iterations; state counts [679, 656, 665]. Training manifest SHA256: `bed5a2647f2e071bd20700dfb0a5490aa7d819c7138b4d3520a60129ee20aca6`. Subset-index SHA256: `f865f13721dd70737e4d7a12acf83382aa590e8b07b2a8048761e8cdd6f6b802`.
 
@@ -52,7 +52,7 @@ Original package allocation: 1.594 A100 GPU hours, including probes, tests and t
 
 ### Current per-state shape comparison
 
-The user clarified that common frame/hand is diagnostic, not a recovery requirement. The [six-column panels and protocol](/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_visual_comparison.md) use independent rigid rotation/translation/reflection for both methods and Hungarian matching after all nine K3/GT fits. Older shared-frame assignments above remain historical evidence.
+The user clarified that common frame/hand is diagnostic, not a recovery requirement. The six-column panels and protocol (`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/recovar_vdam_ppca_20260922/docs/development/vdam_ppca_visual_comparison.md`; outside the repository) use independent rigid rotation/translation/reflection for both methods and Hungarian matching after all nine K3/GT fits. Older shared-frame assignments above remain historical evidence.
 
 | State | PPCA active FSC AUC | K3 active FSC AUC | K3 class, 1-based | K3 mass |
 | --- | ---: | ---: | ---: | ---: |
@@ -60,6 +60,6 @@ The user clarified that common frame/hand is diagnostic, not a recovery requirem
 | 1 | 0.9863 | 0.9474 | 2 | 66.8% |
 | 2 | 0.9851 | 0.9846 | 1 | 32.3% |
 
-CPU job 14315426: completed, no retraining or GPU allocation. FSC uses shells 1–8 (48 Å nominal cutoff). PPCA and K3 state-0 local fits exhausted their evaluation budgets; full fit flags and all-pair scores remain in the [report](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_visual_comparison_20260923/comparison/report.json) (SHA256 `90cdfd0914455d726f166c80fba3bffdc7c746591b49e6660f81721f1f0a085b`). PPCA uses evaluation-label coordinate averages; K3 learns its classes. The comparison does not establish a general method ranking.
+CPU job 14315426: completed, no retraining or GPU allocation. FSC uses shells 1–8 (48 Å nominal cutoff). PPCA and K3 state-0 local fits exhausted their evaluation budgets; full fit flags and all-pair scores remain in the report (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_ppca_visual_comparison_20260923/comparison/report.json`; no longer available) (SHA256 `90cdfd0914455d726f166c80fba3bffdc7c746591b49e6660f81721f1f0a085b`). PPCA uses evaluation-label coordinate averages; K3 learns its classes. The comparison does not establish a general method ranking.
 
 Scientific interpretation: supports recovery of three coarse PPCA shapes in this seed/subset after independent rigid fitting; K3 has two strong matches and a nearly empty class; shared frame/hand is diagnostic; no agreed recovery threshold or 20k approval.

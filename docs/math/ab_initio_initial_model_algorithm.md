@@ -46,7 +46,7 @@ score_i(k,r,t) =
 ```
 
 RECOVAR's dense score kernel implements the expanded form in
-[`helpers/scoring.py::_score_rotation_block`](../../recovar/em/scoring/scoring.py):
+[`helpers/scoring.py::_score_rotation_block`](../../relax/scoring/scoring.py):
 
 ```text
 cross = -2 Re(conj(shifted_image) @ projected_volume)
@@ -57,11 +57,11 @@ score = -0.5 * (cross + norm)
 The same posterior algebra is used by:
 
 - standard dense EM and K-class/Class3D replay, through
-  [`em_engine.py::run_em`](../../recovar/em/dense/em_engine.py),
-  and [`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py);
+  [`em_engine.py::run_em`](../../relax/dense/em_engine.py),
+  and [`k_class.py::run_dense_k_class_em`](../../relax/classification/k_class.py);
 - native InitialModel, through
-  [`driver.py::_native_expectation_step`](../../recovar/em/vdam/driver.py)
-  and [`dense_adapter.py::run_dense_initial_model_estep`](../../recovar/em/vdam/dense_adapter.py).
+  [`driver.py::_native_expectation_step`](../../relax/vdam/driver.py)
+  and [`dense_adapter.py::run_dense_initial_model_estep`](../../relax/vdam/dense_adapter.py).
 
 The debugging rule is: equal per-hypothesis scores are not enough for map
 parity. The map also depends on the support being normalized over, the class
@@ -89,9 +89,9 @@ mu_k_new ~= Ft_y(k) / (Ft_ctf(k) + prior_precision_k)
 ```
 
 In RECOVAR dense EM this path is implemented by
-[`em_engine.py::run_em`](../../recovar/em/dense/em_engine.py)
+[`em_engine.py::run_em`](../../relax/dense/em_engine.py)
 for one class and
-[`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py)
+[`k_class.py::run_dense_k_class_em`](../../relax/classification/k_class.py)
 for joint class x pose normalization. RELION Class3D parity replay reads the
 previous and target RELION model STAR files in
 [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py), uses
@@ -113,9 +113,9 @@ fine pass:
 
 The support restriction is part of the algorithm, not an optimization detail.
 The helpers are
-[`helpers/significance.py::_compute_k_class_significance_batched`](../../recovar/em/scoring/significance.py)
+[`helpers/significance.py::_compute_k_class_significance_batched`](../../relax/scoring/significance.py)
 for coarse support and
-[`local_layout.py::build_pass2_hypothesis_layout`](../../recovar/em/local/local_layout.py)
+[`local_layout.py::build_pass2_hypothesis_layout`](../../relax/local/local_layout.py)
 for fine-support expansion.
 
 For K-class EM, \(\pi_k\) and each class's tau/reference-variance curve are
@@ -142,7 +142,7 @@ for iter = 1 .. nr_iter:
 ```
 
 The native RECOVAR entry point is
-[`driver.py::run_native_initial_model`](../../recovar/em/vdam/driver.py).
+[`driver.py::run_native_initial_model`](../../relax/vdam/driver.py).
 The independent command-reference options in
 [`tests/helpers/relion_initial_model_command.py::InitialModelJobOptions`](../../tests/helpers/relion_initial_model_command.py)
 mirror the RELION GUI command, while
@@ -150,11 +150,11 @@ mirror the RELION GUI command, while
 is only a command snapshot for parity/debugging.
 
 The loop is in
-[`iteration_loop.py::run_vdam_iterations`](../../recovar/em/vdam/iteration_loop.py).
+[`iteration_loop.py::run_vdam_iterations`](../../relax/vdam/iteration_loop.py).
 That loop deliberately does not know about JAX arrays or projection kernels. It
 selects subsets, applies RELION schedules, calls an injected expectation-step
 closure, then calls
-[`m_step.py::vdam_m_step`](../../recovar/em/vdam/m_step.py).
+[`m_step.py::vdam_m_step`](../../relax/vdam/m_step.py).
 
 The InitialModel state is not just a volume:
 
@@ -168,18 +168,18 @@ pdf_direction[k, r] = direction prior
 ```
 
 This state is created by
-[`init.py::initialise_denovo_state`](../../recovar/em/vdam/init.py)
+[`init.py::initialise_denovo_state`](../../relax/vdam/init.py)
 and bootstrapped by
 [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py).
 The dense E-step bridge in
-[`dense_adapter.py`](../../recovar/em/vdam/dense_adapter.py)
+[`dense_adapter.py`](../../relax/vdam/dense_adapter.py)
 converts `Iref` to dense Fourier means, runs dense or sparse K-class EM, packs
 selected particles by pseudo-halfset, and emits VDAM accumulators.
 
 The critical difference from standard EM is the M-step. Instead of
 `Ft_y / (Ft_ctf + prior_precision)`, InitialModel sends the BackProjector data
 through RELION VDAM primitives in
-[`m_step.py::vdam_m_step_single_class`](../../recovar/em/vdam/m_step.py):
+[`m_step.py::vdam_m_step_single_class`](../../relax/vdam/m_step.py):
 
 ```text
 vdam_reweight_grad(data, weight)
@@ -190,7 +190,7 @@ vdam_reconstruct_grad(Iref, momentum_data, weight, tau2_fudge, step_size)
 ```
 
 The dense-to-RELION BackProjector layout conversion is handled by
-[`layout.py::run_em_output_to_bpref`](../../recovar/em/vdam/layout.py).
+[`layout.py::run_em_output_to_bpref`](../../relax/vdam/layout.py).
 For the default dense InitialModel path, the RELION BPref frame scales are:
 
 ```text
@@ -199,7 +199,7 @@ bp_weight *=  N^4
 ```
 
 Those scales are implemented by
-[`layout.py::relion_bpref_frame_scales`](../../recovar/em/vdam/layout.py).
+[`layout.py::relion_bpref_frame_scales`](../../relax/vdam/layout.py).
 Applying them twice, or omitting them on a dense path, gives the common failure
 mode where scores look good but BPref or maps do not.
 
@@ -221,28 +221,28 @@ this branch show:
 Use this index only after reading the algorithm sections above.
 
 - RECOVAR execution command:
-  [`recovar.commands.initial_model`](../../recovar/commands/initial_model.py)
+  [`recovar.commands.initial_model`](../../relax/commands/initial_model.py)
 - Independent RELION GUI command snapshot:
   [`relion_initial_model_command.py`](../../tests/helpers/relion_initial_model_command.py)
 - Native InitialModel driver:
-  [`driver.py::run_native_initial_model`](../../recovar/em/vdam/driver.py)
+  [`driver.py::run_native_initial_model`](../../relax/vdam/driver.py)
 - Denovo state:
-  [`state.py::InitialModelState`](../../recovar/em/vdam/state.py),
-  [`init.py::initialise_denovo_state`](../../recovar/em/vdam/init.py)
+  [`state.py::InitialModelState`](../../relax/vdam/state.py),
+  [`init.py::initialise_denovo_state`](../../relax/vdam/init.py)
 - Bootstrap and noise:
-  [`initial_noise.py::compute_avg_unaligned_and_sigma2`](../../recovar/em/relion/initial_noise.py),
+  [`initial_noise.py::compute_avg_unaligned_and_sigma2`](../../relax/relion/initial_noise.py),
   [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py)
 - VDAM loop and schedules:
-  [`iteration_loop.py::run_vdam_iterations`](../../recovar/em/vdam/iteration_loop.py),
-  [`schedules.py`](../../recovar/em/vdam/schedules.py),
-  [`subset.py::select_vdam_subset`](../../recovar/em/vdam/subset.py)
+  [`iteration_loop.py::run_vdam_iterations`](../../relax/vdam/iteration_loop.py),
+  [`schedules.py`](../../relax/vdam/schedules.py),
+  [`subset.py::select_vdam_subset`](../../relax/vdam/subset.py)
 - InitialModel dense bridge and M-step:
-  [`dense_adapter.py`](../../recovar/em/vdam/dense_adapter.py),
-  [`layout.py`](../../recovar/em/vdam/layout.py),
-  [`m_step.py`](../../recovar/em/vdam/m_step.py)
+  [`dense_adapter.py`](../../relax/vdam/dense_adapter.py),
+  [`layout.py`](../../relax/vdam/layout.py),
+  [`m_step.py`](../../relax/vdam/m_step.py)
 - Standard dense EM / K-class:
-  [`em_engine.py`](../../recovar/em/dense/em_engine.py),
-  [`k_class.py`](../../recovar/em/classification/k_class.py)
+  [`em_engine.py`](../../relax/dense/em_engine.py),
+  [`k_class.py`](../../relax/classification/k_class.py)
 - K-class parity harness:
   [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py)
 
@@ -463,8 +463,8 @@ RELION BPref arrays. Frame/sign mistakes usually show up as good score parity
 but bad `BPref` or `Iref` parity.
 
 The dense E-step entry point lives in
-[`vdam/dense_adapter.py`](../../recovar/em/vdam/dense_adapter.py);
-[`vdam/estep_common.py`](../../recovar/em/vdam/estep_common.py) owns its configuration
+[`vdam/dense_adapter.py`](../../relax/vdam/dense_adapter.py);
+[`vdam/estep_common.py`](../../relax/vdam/estep_common.py) owns its configuration
 and result records. The old `gpu_pipeline.py` compatibility shim is removed.
 
 ## Detail: M-Step Math and VDAM Momenta
@@ -544,7 +544,7 @@ important blocks are:
   convergence counters and accuracy estimates used by replay code.
 
 RECOVAR parsing helpers for this state are concentrated in
-[`recovar/em/sampling.py`](../../recovar/em/sampling.py). In particular,
+[`recovar/em/sampling.py`](../../relax/sampling.py). In particular,
 `read_relion_model_metadata` reads current image size/resolution,
 `read_relion_optimiser_metadata` reads optimiser counters, and
 `read_relion_direction_prior` reads `model_pdf_orient_class_1`.
@@ -555,7 +555,7 @@ the K-class replay-specific readers: `_tau_spectrum` reads
 `model_pdf_orient_class_N` table.
 
 Native RECOVAR InitialModel currently writes a much smaller model STAR in
-[`driver.py::_write_model_star`](../../recovar/em/vdam/driver.py):
+[`driver.py::_write_model_star`](../../relax/vdam/driver.py):
 `data_model_classes` contains reference map paths and class distributions, and
 `data_model_optics_group_1` contains `_rlnSigma2Noise`. It does not yet write
 per-class `model_class_N` tau2/FSC/data-vs-prior tables or
@@ -565,16 +565,16 @@ difference from mature RELION model output, not an inferred RELION rule.
 ### InitialModel startup vs later iterations
 
 Native InitialModel starts cold. In
-[`init.py::initialise_denovo_state`](../../recovar/em/vdam/init.py),
+[`init.py::initialise_denovo_state`](../../relax/vdam/init.py),
 `tau2_class`, `fsc_halves_class`, and `data_vs_prior_class` are allocated as
 zeros for every class. The initial class prior is uniform (`pdf_class[k]=1/K`),
 and the initial direction prior is uniform over class x direction. The first
 data-dependent spectral state is `sigma2_noise`, estimated by
-[`initial_noise.py::compute_avg_unaligned_and_sigma2`](../../recovar/em/relion/initial_noise.py).
+[`initial_noise.py::compute_avg_unaligned_and_sigma2`](../../relax/relion/initial_noise.py).
 
 The InitialModel M-step in this branch does not explicitly compute and store a
 new `tau2_class` array after each native iteration. Instead,
-[`m_step.py::vdam_m_step_single_class`](../../recovar/em/vdam/m_step.py)
+[`m_step.py::vdam_m_step_single_class`](../../relax/vdam/m_step.py)
 passes the current reference, BPref data, BPref weights, `fsc_halves_class[k]`,
 `grad_current_stepsize`, the scheduled `tau2_fudge_factor`, and
 `mom1_noise_power` to the RELION binding `vdam_reconstruct_grad`. From RECOVAR
@@ -587,7 +587,7 @@ C++ primitive, not reimplemented Python code in this branch.
 Later native InitialModel iterations therefore reuse the same Python-carried
 state fields but update the reference through RELION's VDAM binding. The
 regularization strength seen by that binding changes through
-[`schedules.py::compute_tau2_fudge`](../../recovar/em/vdam/schedules.py),
+[`schedules.py::compute_tau2_fudge`](../../relax/vdam/schedules.py),
 which mirrors RELION `updateTau2Fudge`: for GUI InitialModel defaults
 `--tau2_fudge 4` and an empty scheme, the scheduled value grows from near `1`
 toward `4` over the gradient phases. This is different from standard dense EM,
@@ -596,15 +596,15 @@ where the Python reconstruction path receives an explicit tau spectrum.
 ### Standard EM/Class3D tau2 path
 
 The dense single-volume RELION-parity loop in
-[`recovar/em/refinement/iteration_loop.py`](../../recovar/em/refinement/iteration_loop.py)
+[`recovar/em/refinement/iteration_loop.py`](../../relax/refinement/iteration_loop.py)
 does use explicit tau2-like arrays. `_reconstruct_volume_eager` calls
-[`relion_functions.post_process_from_filter_v2`](../../recovar/reconstruction/relion_functions.py)
+[`relion_functions.post_process_from_filter_v2`](https://github.com/ma-gilles/recovar/blob/c60e3c26f893b6aa88e0f78db4f50c76352afedc/recovar/reconstruction/relion_functions.py)
 with `tau=mean_variance`, `tau2_fudge`, `use_spherical_mask=True`,
 `grid_correct=True`, and `minres_map=RELION_MINRES_MAP` unless a diagnostic
 variant overrides those defaults. `RELION_MINRES_MAP` is `5` in this branch.
 
 The lower-level regularization formula is in
-[`relion_functions.adjust_regularization_relion_style`](../../recovar/reconstruction/relion_functions.py):
+[`relion_functions.adjust_regularization_relion_style`](https://github.com/ma-gilles/recovar/blob/c60e3c26f893b6aa88e0f78db4f50c76352afedc/recovar/reconstruction/relion_functions.py):
 
 ```text
 regularized_weight = Ft_ctf + inv_tau
@@ -620,7 +620,7 @@ soft spherical mask, optionally applies a supplied mask, optionally applies
 gridding correction, and returns the Fourier map.
 
 For RELION-style tau2 updates from half-map weights, RECOVAR implements
-[`regularization_relion.compute_relion_tau2_from_weights`](../../recovar/em/reconstruction/regularization_relion.py):
+[`regularization_relion.compute_relion_tau2_from_weights`](../../relax/reconstruction/regularization_relion.py):
 
 ```text
 SSNR[s] = FSC[s] / (1 - FSC[s]) * tau2_fudge
@@ -628,7 +628,7 @@ sigma2[s] = 1 / (padding_factor^3 * avg_weight[s])
 tau2[s] = SSNR[s] * sigma2[s]
 ```
 
-[`regularization_relion.compute_data_vs_prior`](../../recovar/em/reconstruction/regularization_relion.py)
+[`regularization_relion.compute_data_vs_prior`](../../relax/reconstruction/regularization_relion.py)
 computes RELION's resolution-control ratio:
 
 ```text
@@ -652,7 +652,7 @@ joint class x pose hidden variable, but the M-step reconstructs each class with
 that class's own `Ft_y`, `Ft_ctf`, class weight/normalisation, and tau spectrum.
 
 RECOVAR's current dense K-class replay mirrors that layout at the E-step level:
-[`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py)
+[`k_class.py::run_dense_k_class_em`](../../relax/classification/k_class.py)
 accepts one mean and one `mean_variance` per class,
 then normalize evidence over class x pose. The parity harness
 [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py) reads
@@ -661,7 +661,7 @@ diagnostic variants through `_reconstruct_volume_eager`, and compares class
 maps after the best permutation.
 
 Native InitialModel is also K-aware in state layout and in
-[`dense_adapter.py::class_log_priors_from_state`](../../recovar/em/vdam/dense_adapter.py):
+[`dense_adapter.py::class_log_priors_from_state`](../../relax/vdam/dense_adapter.py):
 `pdf_class` becomes class log priors, sparse pass 2 unions significant support
 across classes per image, and `vdam_m_step` loops per class. However, because
 native InitialModel delegates the gradient reconstruction to `vdam_reconstruct_grad`
@@ -695,7 +695,7 @@ The data-vs-weight part of regularization enters through BPref / reconstruction
 weights. In standard reconstruction, `Ft_ctf` is the data weight and tau2 adds
 `inv_tau` to its denominator. In native InitialModel, dense E-step accumulators
 are converted to RELION BackProjector slabs by
-[`layout.py::run_em_output_to_bpref`](../../recovar/em/vdam/layout.py)
+[`layout.py::run_em_output_to_bpref`](../../relax/vdam/layout.py)
 and then handed to `vdam_reconstruct_grad`; that binding sees the BPref weight
 array, the current reference, `tau2_fudge_factor`, and `mom1_noise_power`. The
 Python-visible dense-to-BPref frame conversion is documented above: dense
@@ -780,7 +780,7 @@ The native path intentionally encodes these RELION GUI InitialModel assumptions:
   [the VDAM test helpers](../../tests/helpers/vdam.py) documents the RELION
   DC-exclusion convention. It is not part of production E-step execution.
 - RELION/RECOVAR volume frames differ. Use the helpers documented in
-  [`recovar/CLAUDE.md`](../../recovar/CLAUDE.md), not raw MRC loading, when
+  [`recovar/CLAUDE.md`](https://github.com/ma-gilles/recovar/blob/dev2/recovar/CLAUDE.md), not raw MRC loading, when
   comparing RELION and RECOVAR volumes.
 
 ## Differences from Standard Class3D / Dense EM
