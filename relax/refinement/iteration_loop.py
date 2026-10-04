@@ -2440,8 +2440,6 @@ def refine_single_volume(
             exact_acc_trans=iteration_accuracy.acc_trans_angstrom,
             log=logger,
         )
-        iter_acc_rot = accuracy_replay.acc_rot
-        iter_acc_trans = accuracy_replay.acc_trans
 
         # Reuse the assignment statistic computed by update_refinement_state.
         # Sampling transitions and optimiser replay preserve this field.
@@ -2467,22 +2465,7 @@ def refine_single_volume(
             _copy_optional_float_pair(sigma_offset.per_half_angstrom),
             None if per_class_sigma_offset is None else per_class_sigma_offset.tolist(),
         )
-        history.record_pose_accuracy_diagnostics(
-            float(iter_acc_rot) if iter_acc_rot is not None else np.nan,
-            float(iter_acc_trans) if iter_acc_trans is not None else np.nan,
-            np.full(n_classes, np.nan, dtype=np.float64)
-            if iteration_accuracy.acc_rot_per_class is None
-            else iteration_accuracy.acc_rot_per_class,
-            np.full(n_classes, np.nan, dtype=np.float64)
-            if iteration_accuracy.acc_trans_per_class_angstrom is None
-            else iteration_accuracy.acc_trans_per_class_angstrom,
-            np.full(n_classes, -1, dtype=np.int64)
-            if iteration_accuracy.class_counts is None
-            else iteration_accuracy.class_counts,
-            iteration_accuracy.status,
-            float(state.current_changes_optimal_orientations),
-            float(state.current_changes_optimal_offsets_angstrom),
-        )
+        history.record_pose_accuracy_diagnostics(accuracy_replay, iteration_accuracy, state, n_classes=n_classes)
 
         # Save assignments for next iteration's change tracking.
         # Use per_half.coarse_ha (indexed into trial_grid.rotations/base rotation grid)

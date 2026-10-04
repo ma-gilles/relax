@@ -213,25 +213,35 @@ class RefinementHistory:
         self.sigma_offset_per_half_trajectory.append(sigma_offset_per_half)
         self.per_class_sigma_offset_trajectory.append(per_class_sigma_offset)
 
-    def record_pose_accuracy_diagnostics(
-        self,
-        acc_rot,
-        acc_trans,
-        acc_rot_per_class,
-        acc_trans_per_class,
-        expected_accuracy_class_counts,
-        expected_accuracy_status,
-        smallest_change_angles,
-        smallest_change_offsets,
-    ) -> None:
-        self.acc_rot_trajectory.append(acc_rot)
-        self.acc_trans_trajectory.append(acc_trans)
-        self.acc_rot_per_class_trajectory.append(acc_rot_per_class)
-        self.acc_trans_per_class_trajectory.append(acc_trans_per_class)
-        self.expected_accuracy_class_counts_trajectory.append(expected_accuracy_class_counts)
-        self.expected_accuracy_status_trajectory.append(expected_accuracy_status)
-        self.smallest_change_angles_trajectory.append(smallest_change_angles)
-        self.smallest_change_offsets_trajectory.append(smallest_change_offsets)
+    def record_pose_accuracy_diagnostics(self, accuracy_replay, iteration_accuracy, state, *, n_classes: int) -> None:
+        """Record one iteration's accuracies and pose changes; what was not estimated is recorded as absent.
+
+        Reads ``accuracy_replay.acc_rot`` and ``acc_trans`` (the accuracy the convergence update admitted;
+        NaN when there is none); from ``iteration_accuracy`` the per-class accuracies (NaN for each of the
+        ``n_classes`` classes without an estimate), the class counts (-1 without) and the status; from
+        ``state`` the changes in optimal orientations and offsets.
+        """
+        acc_rot, acc_trans = accuracy_replay.acc_rot, accuracy_replay.acc_trans
+        self.acc_rot_trajectory.append(float(acc_rot) if acc_rot is not None else np.nan)
+        self.acc_trans_trajectory.append(float(acc_trans) if acc_trans is not None else np.nan)
+        self.acc_rot_per_class_trajectory.append(
+            np.full(n_classes, np.nan, dtype=np.float64)
+            if iteration_accuracy.acc_rot_per_class is None
+            else iteration_accuracy.acc_rot_per_class
+        )
+        self.acc_trans_per_class_trajectory.append(
+            np.full(n_classes, np.nan, dtype=np.float64)
+            if iteration_accuracy.acc_trans_per_class_angstrom is None
+            else iteration_accuracy.acc_trans_per_class_angstrom
+        )
+        self.expected_accuracy_class_counts_trajectory.append(
+            np.full(n_classes, -1, dtype=np.int64)
+            if iteration_accuracy.class_counts is None
+            else iteration_accuracy.class_counts
+        )
+        self.expected_accuracy_status_trajectory.append(iteration_accuracy.status)
+        self.smallest_change_angles_trajectory.append(float(state.current_changes_optimal_orientations))
+        self.smallest_change_offsets_trajectory.append(float(state.current_changes_optimal_offsets_angstrom))
 
     def to_dict(self) -> dict:
         """Return the trajectory entries of the function's result dict."""
