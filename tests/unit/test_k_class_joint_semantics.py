@@ -1349,7 +1349,6 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         state=state,
         cs=4,
         image_geometry=ImageGeometry(image_shape=(8, 8), pixel_size_angstrom=1.0),
-        k_class_enabled=True,
         n_classes=2,
         relion_half_inputs=half_inputs,
         previous_best_rotations=[None, None],

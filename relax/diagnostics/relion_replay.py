@@ -1036,7 +1036,6 @@ def apply_iter_replay_overrides(
     state,
     cs: int,
     image_geometry: ImageGeometry,
-    k_class_enabled: bool,
     n_classes: int,
     relion_half_inputs: tuple[HalfSet, HalfSet],
     previous_best_rotations: list,
@@ -1069,6 +1068,7 @@ def apply_iter_replay_overrides(
     """
 
     runtime_dtype = dtype
+    k_class_enabled = n_classes > 1
 
     _replay_prior_translations = None
     _model_star = None

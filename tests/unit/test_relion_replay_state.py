@@ -126,7 +126,6 @@ def test_sealed_sampling_override_never_reads_external_replay_files(monkeypatch,
         state=state,
         cs=8,
         image_geometry=ImageGeometry(image_shape=(8, 8), pixel_size_angstrom=2.0),
-        k_class_enabled=False,
         n_classes=1,
         relion_half_inputs=initialize_halfsets(
         (None, None),
@@ -209,7 +208,6 @@ def test_frozen_replay_explicitly_suppresses_external_direction_prior_reload(
         state=state,
         cs=8,
         image_geometry=ImageGeometry(image_shape=(8, 8), pixel_size_angstrom=1.0),
-        k_class_enabled=False,
         n_classes=1,
         relion_half_inputs=initialize_halfsets(
         (None, None),
@@ -495,7 +493,7 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
             do_local_search=False, translation_range=1.0, translation_step=1.0,
         ), cs=32,
         image_geometry=ImageGeometry(image_shape=(8, 8), pixel_size_angstrom=2.0),
-        k_class_enabled=n_classes > 1, n_classes=n_classes,
+        n_classes=n_classes,
         relion_half_inputs=initialize_halfsets(
         (None, None),
             previous_best_translations=None, previous_best_rotation_eulers=None,

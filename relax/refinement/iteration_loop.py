@@ -1125,7 +1125,6 @@ def refine_single_volume(
             state=state,
             cs=current_size,
             image_geometry=image_geometry,
-            k_class_enabled=k_class_enabled,
             n_classes=n_classes,
             relion_half_inputs=halves,
             previous_best_rotations=previous_best_rotations,
