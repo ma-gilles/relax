@@ -122,6 +122,8 @@ relax imports from this checkout, and RECOVAR (at the pinned commit) and JAX fro
 `.pixi/envs/default`.
 Explicitly build and identify custom CUDA libraries before GPU qualification;
 the current runtime loader can build missing libraries automatically.
+`pixi run doctor` (or any Python: `python scripts/dev/doctor.py`) checks all of this without changing anything, plus
+natives, fixtures, writable run roots, git state and idle GPUs, and prints the exact fix under each `WARN` or `FAIL`.
 
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) for exact setup, validation and PR
 requirements, [Della development](docs/development/della.md) for cluster resources

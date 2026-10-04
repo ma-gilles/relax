@@ -165,6 +165,8 @@ test-fast = "python -m pytest tests/ -q"
 # EM-parity fast tier: K=1 + K-class 128² 5k replay vs RELION. Needs RECOVAR_RELION_BIND_BUILD_DIR pointing at a
 # built _relion_bind_core*.so (harness trap 1).
 test-em-parity-fast = "python -m pytest -v -s --run-slow --run-integration --run-gpu tests/integration/test_em_parity_fast.py"
+# Checks only: environment against the pin and pixi.lock, natives, fixtures, writable roots, git, idle GPUs.
+doctor = "python scripts/dev/doctor.py"
 # CPU EM fast guard (dense/local engines, import boundaries, replay state; about a minute).
 test-em-fast-guard = "bash scripts/run_em_fast_guard.sh"
 # Test tiers (CONTRIBUTING.md "Test tiers"). Each freezes the checkout, verifies the fixture manifest,
