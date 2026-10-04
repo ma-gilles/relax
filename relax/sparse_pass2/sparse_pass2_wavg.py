@@ -337,6 +337,7 @@ def _relion_wavg_rectangle_power_contraction(shifted_power, posterior):
         jnp.asarray(posterior, dtype=jnp.float32),
         jnp.asarray(shifted_power, dtype=jnp.float32),
         preferred_element_type=jnp.float32,
+        precision=jax.lax.Precision.HIGHEST,
     ).astype(jnp.float32)
 
 

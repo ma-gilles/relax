@@ -84,7 +84,12 @@ def test_coupled_and_vdam_update_independent_reference(q, dtype, tol):
     a = rng.normal(size=(2, F, p, p)).astype(dtype)
     matrices = a @ a.swapaxes(-1, -2) + np.eye(p, dtype=dtype) * dtype(0.5)
     residual = (rng.normal(size=(2, F, p)) + 1j * rng.normal(size=(2, F, p))).astype(cdtype)
-    directions = jnp.stack([coupled_direction(pack_upper_tri(m), r, floor=0.2)[0] for m, r in zip(matrices, residual)])
+    directions = jnp.stack(
+        [
+            coupled_direction(pack_upper_tri(m), r, np.ones(len(r), bool), floor=0.2)[0]
+            for m, r in zip(matrices, residual)
+        ]
+    )
     refdir = np.stack(
         [
             np.linalg.solve(m.astype(np.float64), r.astype(np.complex128)[..., None])[..., 0]

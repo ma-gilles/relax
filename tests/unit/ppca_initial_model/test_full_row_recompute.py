@@ -207,8 +207,9 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     assert dense_called == [True]
 
 
-def test_defaults_are_the_dense_stream_and_oversampling_is_refused():
-    """The default engine is the qualified dense stream; oversampling and its fine pass are refused."""
+def test_defaults_are_the_dense_stream_and_oversampling_is_opt_in():
+    """The default engine is the qualified dense stream; adaptive oversampling 1 is opt-in on the stream (RELION's
+    --maxsig 100), oversampling 2 and the retired fine pass are refused."""
     config = Config()
     assert config.oversampling == 0 and config.stream_coarse_recompute
     assert (config.image_batch_size, config.rotation_block_size) == (150, 512)
@@ -220,9 +221,16 @@ def test_defaults_are_the_dense_stream_and_oversampling_is_refused():
     assert config.pass2_mass_floor == args.ppca_pass2_mass_floor == 1e-10
     host_mask = parser.parse_args(["manifest.json", "--output", "out", "--no-stream-coarse-recompute"])
     assert not host_mask.stream_coarse_recompute
-    for change in ({"oversampling": 1}, {"stream_full_fine_rows": True}, {"fine_devices": 2}):
+    for change in ({"oversampling": 2}, {"stream_full_fine_rows": True}, {"fine_devices": 2}):
         with pytest.raises(ValueError, match="section 14"):
             Config(stream_coarse_recompute=False, **change)
+    oversampled = parser.parse_args(["manifest.json", "--output", "out", "--oversampling", "1", "--maxsig", "50"])
+    assert (oversampled.oversampling, oversampled.maxsig, args.maxsig) == (1, 50, 100)
+    assert Config(oversampling=1).max_significant == config.max_significant == 100
+    with pytest.raises(ValueError, match="streamed engine"):
+        Config(oversampling=1, stream_coarse_recompute=False)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["manifest.json", "--output", "out", "--oversampling", "2"])
 
 
 def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
@@ -249,8 +257,15 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
     shape = (4, 4, 4)
     n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
     state = iteration_loop.State(
-        jnp.zeros((n_freq, 3), jnp.complex64), iteration_loop.empty_moments(jnp.zeros((n_freq, 3), jnp.complex64)),
-        jnp.ones(3, jnp.float32), 0, np.arange(8), np.random.default_rng(1).bit_generator.state, 2.0, 1, {"seed": 1},
+        jnp.zeros((n_freq, 3), jnp.complex64),
+        iteration_loop.empty_moments(jnp.zeros((n_freq, 3), jnp.complex64)),
+        jnp.ones(3, jnp.float32),
+        0,
+        np.arange(8),
+        np.random.default_rng(1).bit_generator.state,
+        2.0,
+        1,
+        {"seed": 1},
     )
     path = tmp_path / "old.npz"
     checkpoint.save(path, state, config, {"fixture": "tiny"})
@@ -301,11 +316,22 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
     def groups(_dataset, _state, _config, halves, _iteration, **_kwargs):
         return [
             SimpleNamespace(
-                residual_gradient=jnp.zeros((n_freq, 3), jnp.complex64), metric_trace=jnp.ones(n_freq, jnp.float32),
-                lhs_tri=None, rhs=None, residual_num=jnp.ones(3, jnp.float32), residual_den=jnp.ones(3, jnp.float32),
-                original_image_ids=np.asarray(ids), n_images=len(ids), log_likelihood=0.0,
-                diagnostics={"offset_second_sum_px2": 2.0, "rotation_mass": np.array([float(len(ids))]),
-                             "latent_covariance_trace_mean": 1.0, "pose_entropy_mean": 0.0, "pmax_mean": 1.0},
+                residual_gradient=jnp.zeros((n_freq, 3), jnp.complex64),
+                metric_trace=jnp.ones(n_freq, jnp.float32),
+                lhs_tri=None,
+                rhs=None,
+                residual_num=jnp.ones(3, jnp.float32),
+                residual_den=jnp.ones(3, jnp.float32),
+                original_image_ids=np.asarray(ids),
+                n_images=len(ids),
+                log_likelihood=0.0,
+                diagnostics={
+                    "offset_second_sum_px2": 2.0,
+                    "rotation_mass": np.array([float(len(ids))]),
+                    "latent_covariance_trace_mean": 1.0,
+                    "pose_entropy_mean": 0.0,
+                    "pmax_mean": 1.0,
+                },
             )
             for ids in halves
         ]
@@ -313,19 +339,37 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
     monkeypatch.setattr(iteration_loop, "expectation_groups", groups)
     monkeypatch.setattr(iteration_loop, "_curvature_trace", lambda stats, p: sum(s.metric_trace for s in stats))
     dataset = SimpleNamespace(n_images=40, grid_size=4, volume_shape=shape, voxel_size=1.0)
-    fp32 = Config(iterations=3, stages=((1, 1, 0),), optimizer="momentum_sgd", oversampling=0,
-                  stream_coarse_recompute=True, stochastic_batch_size=8, stochastic_all_iterations=True,
-                  skip_final_embeddings=True, gemm_precision="fp32")
+    fp32 = Config(
+        iterations=3,
+        stages=((1, 1, 0),),
+        optimizer="momentum_sgd",
+        oversampling=0,
+        stream_coarse_recompute=True,
+        stochastic_batch_size=8,
+        stochastic_all_iterations=True,
+        skip_final_embeddings=True,
+        gemm_precision="fp32",
+    )
     theta = jnp.zeros((n_freq, 3), jnp.complex64)
-    state = iteration_loop.State(theta, None, jnp.ones(3, jnp.float32), 1, np.arange(40),
-                                 np.random.default_rng(1).bit_generator.state, 2.0, 1, {"seed": 1},
-                                 sgd_momentum=jnp.zeros_like(theta))
+    state = iteration_loop.State(
+        theta,
+        None,
+        jnp.ones(3, jnp.float32),
+        1,
+        np.arange(40),
+        np.random.default_rng(1).bit_generator.state,
+        2.0,
+        1,
+        {"seed": 1},
+        sgd_momentum=jnp.zeros_like(theta),
+    )
     identity = {"fixture": "tiny"}
     checkpoint.save(tmp_path / "checkpoint_0001.npz", state, fp32, identity)
     auto = dataclasses.replace(fp32, gemm_precision="auto")
     with caplog.at_level(logging.WARNING, logger=iteration_loop.__name__):
-        iteration_loop.run(dataset, auto, tmp_path / "run", identity, diameter_ang=2.0,
-                           resume=tmp_path / "checkpoint_0001.npz")
+        iteration_loop.run(
+            dataset, auto, tmp_path / "run", identity, diameter_ang=2.0, resume=tmp_path / "checkpoint_0001.npz"
+        )
     resolved = iteration_loop._gemm_precision_used(auto)  # tf32 on an sm_80+ default device, else fp32
     assert f"resumed fp32 checkpoint under auto ({resolved})" in caplog.text
     records = [json.loads(line) for line in (tmp_path / "run" / "iterations.jsonl").read_text().splitlines()]

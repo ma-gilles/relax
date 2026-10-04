@@ -615,21 +615,21 @@ def test_one_wrong_boolean_makes_the_keys_disjoint():
 
 
 def test_the_environment_fields_are_read_by_the_constructor(monkeypatch):
-    """The three environment-read fields are why one constructor had to exist.
+    """The environment-read fields are why one constructor had to exist.
 
     Both callers must read them at the same moment. This pins that they come
     from the constructor rather than from either call site, so the only way to
     get two different values is to change the environment mid-iteration.
     """
 
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL", "1")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS", "0")
     one = rp._make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL", "2")
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS", "1")
     two = rp._make_chunk_program_spec(
         row_capacity=8192, image_capacity=32, use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=True, bpref_recon_operand=False, **_spec_kwargs(),
     )
-    assert one.block_unroll != two.block_unroll
+    assert one.static_block_trip != two.static_block_trip

@@ -67,9 +67,9 @@
         },
         {
           "function_count": 23,
-          "nonblank_noncomment_lines": 2034,
+          "nonblank_noncomment_lines": 2036,
           "path": "relax/refinement/full_refinement.py",
-          "physical_lines": 2311
+          "physical_lines": 2313
         },
         {
           "function_count": 12,
@@ -373,8 +373,8 @@
           "path": "relax/refinement/iteration_loop.py"
         },
         {
-          "line": 501,
-          "line_span": 1766,
+          "line": 502,
+          "line_span": 1767,
           "name": "main",
           "parameter_count": 1,
           "path": "relax/refinement/full_refinement.py"
@@ -452,12 +452,12 @@
         "large_argument_function_count": 26,
         "maximum_function_line_span": 2731,
         "maximum_parameter_count": 33,
-        "nonblank_noncomment_lines": 18760,
-        "physical_lines": 21449,
+        "nonblank_noncomment_lines": 18762,
+        "physical_lines": 21451,
         "very_large_argument_function_count": 4
       }
     },
-    "package": "package 2 merged with main d1ba3e8 (through the first package's merge 1b73943): one K1/Class3D decision for the numbered M-step on top of main's projector built on every scoring route, deferred fine rows and exact coarse operands",
+    "package": "package 2 merged with main 4efac62: one K1/Class3D decision for the numbered M-step on top of main's projector built on every scoring route, deferred fine rows and exact coarse operands",
     "source_commit": "e026a6401ab7a95d676da3f40d76462ce10d161f",
     "recorded_date": "2026-10-03"
   }

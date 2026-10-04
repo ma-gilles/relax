@@ -39,12 +39,20 @@ def metric_floor(image_size):
 
 
 @full_float32
-def coupled_direction(lhs_tri, residual_gradient, *, floor):
-    """Solve the symmetric block with an orthogonally invariant spectral floor."""
+def coupled_direction(lhs_tri, residual_gradient, support, *, floor):
+    """Solve the symmetric block with an orthogonally invariant spectral floor on the update's support.
+
+    ``support`` marks the rows the update keeps (radius within the stage radius, as
+    ``initialization.bandlimit_and_mask``). Rows outside hold only interpolation spill at the float floor;
+    they are neither solved nor checked, and their direction is zero (algorithm section 17).
+    """
+    support = np.asarray(support, bool)
+    kept = jnp.asarray(support)
     matrix = unpack_tri_to_full(jnp.asarray(lhs_tri), residual_gradient.shape[-1])
-    matrix = (matrix + matrix.swapaxes(-1, -2)) * 0.5
+    matrix = jnp.where(kept[:, None, None], (matrix + matrix.swapaxes(-1, -2)) * 0.5, 0)
+    residual_gradient = jnp.where(kept[:, None], jnp.asarray(residual_gradient), 0)
     values, vectors = jnp.linalg.eigh(matrix)
-    values_host = np.asarray(values)
+    values_host = np.asarray(values)[support]
     bound = 32 * np.finfo(values_host.dtype).eps * np.maximum(np.max(np.abs(values_host), axis=-1), floor)
     if not np.all(np.isfinite(values_host)) or np.any(values_host[:, 0] < -bound):
         raise ValueError("Nonfinite or materially indefinite PPCA metric")

@@ -19,10 +19,13 @@ class Config:
     iterations: int = 200
     seed: int = 11
     stages: tuple = ((1, 4, 1), (61, 8, 2), (111, 16, 3), (161, 32, 3))
-    # Oversampling > 0 (coarse significance, then a finer pass over the significant poses) is
-    # refused: measured slower than the dense grid (section 14 of docs/math/vdam_ppca_algorithm.md).
+    # Adaptive oversampling: 0 scores the stage's full pose grid; 1 is RELION's two passes (each image's
+    # significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py).
     oversampling: int = 0
+    # The adaptive fraction of the posterior mass the significant samples hold (RELION's --adaptive_fraction).
     target_mass: float = 0.999
+    # Significant coarse samples kept per image at most (RELION's --maxsig: 100 per class for gradient runs).
+    max_significant: int = 100
     shift_range: float = 6
     shift_step: float = 2
     image_batch_size: int = 150
@@ -62,19 +65,21 @@ class Config:
             raise ValueError("Invalid radius/HEALPix schedule")
         if not 0 < self.target_mass <= 1 or self.oversampling < 0:
             raise ValueError("Invalid pose support")
-        if self.oversampling > 0 or self.stream_full_fine_rows or self.fine_devices > 1:
+        if self.oversampling > 1 or self.stream_full_fine_rows or self.fine_devices > 1:
             raise ValueError(
-                "PPCA oversampling > 0 (and its --stream-full-fine-rows / --fine-devices pass) is not supported: "
-                "it measured slower than the dense pose grid; see section 14 of docs/math/vdam_ppca_algorithm.md"
+                "PPCA supports oversampling 0 and 1; the --stream-full-fine-rows / --fine-devices fine pass is "
+                "retired (section 14 of docs/math/vdam_ppca_algorithm.md)"
             )
+        if self.max_significant <= 0:
+            raise ValueError("max_significant must be positive")
         if min(self.image_batch_size, self.rotation_block_size, self.fine_image_tile_size, self.checkpoint_interval) <= 0:
             raise ValueError("Batch/checkpoint sizes must be positive")
         if self.fine_devices < 1 or (self.fine_devices > 1 and not self.stream_full_fine_rows):
             raise ValueError("Multiple fine devices require the streamed fine engine")
-        if self.stream_coarse_recompute and (
-            self.oversampling != 0 or self.fine_devices != 1 or self.stream_full_fine_rows
-        ):
-            raise ValueError("Coarse recomputation requires oversampling=0 and one device")
+        if self.oversampling and not self.stream_coarse_recompute:
+            raise ValueError("Adaptive oversampling runs on the streamed engine (stream_coarse_recompute)")
+        if self.stream_coarse_recompute and (self.fine_devices != 1 or self.stream_full_fine_rows):
+            raise ValueError("Coarse recomputation requires one device")
         if self.q > 2 and not self.stream_coarse_recompute:
             raise ValueError("Higher-rank InitialModel requires the streamed coarse recompute engine")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:

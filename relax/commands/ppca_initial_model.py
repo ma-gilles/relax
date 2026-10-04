@@ -32,7 +32,16 @@ def add_args(parser):
         "--oversampling",
         type=int,
         default=0,
-        help="0 only: oversampling > 0 measured slower than the dense grid (vdam_ppca_algorithm.md section 14)",
+        choices=(0, 1),
+        help="Adaptive oversampling: 0 scores each stage's full pose grid; 1 is RELION's two passes, the children "
+        "of each image's significant coarse samples (vdam_ppca_algorithm.md section 14)",
+    )
+    parser.add_argument(
+        "--maxsig",
+        type=int,
+        default=100,
+        help="Significant coarse samples kept per image at most with --oversampling 1 (RELION's --maxsig; 100 for "
+        "gradient runs with one class). Each update records how many images it stopped short of the 0.999 mass",
     )
     parser.add_argument("--shift-range", type=float, default=6)
     parser.add_argument("--shift-step", type=float, default=2)
@@ -311,6 +320,7 @@ def main(args=None):
         seed=args.seed,
         iterations=args.iterations,
         oversampling=args.oversampling,
+        max_significant=args.maxsig,
         shift_range=args.shift_range,
         shift_step=args.shift_step,
         image_batch_size=args.image_batch_size,

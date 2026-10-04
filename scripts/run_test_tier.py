@@ -59,6 +59,20 @@ TIERS_DIR = REPO_ROOT / "tests" / "tiers"
 RUN_BASE = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers")
 BUDGET_S = {"smoke": 5 * 60, "medium": 2 * 3600, "long": 8 * 3600}
 LOCAL_GPUS = ("1", "2", "3")  # physical GPU 0 of the development machine stays free
+LOCAL_GPUS_ENV = "RELAX_LOCAL_GPUS"  # a session's own subset, e.g. "1,3" (GPU 0 is never allowed)
+
+
+def local_gpus() -> tuple[str, ...]:
+    """The physical GPUs a local smoke may take: ``RELAX_LOCAL_GPUS`` (a comma list within 1-3), else 1-3."""
+
+    raw = os.environ.get(LOCAL_GPUS_ENV, "").strip()
+    if not raw:
+        return LOCAL_GPUS
+    chosen = tuple(index.strip() for index in raw.split(",") if index.strip())
+    outside = sorted(set(chosen) - set(LOCAL_GPUS))
+    if not chosen or outside:
+        raise SystemExit(f"{LOCAL_GPUS_ENV}={raw!r}: local GPUs must be a non-empty subset of {','.join(LOCAL_GPUS)}")
+    return chosen
 COARSE_ENGINES = ("auto", "gemm_hybrid", "gemm_dense")
 FAST = "tests/integration/test_em_parity_fast.py"
 LONG = "tests/long_test/test_em_parity_long.py"
@@ -844,7 +858,8 @@ def expected_start(script: Path) -> dt.datetime | None:
 
 
 def idle_local_gpu(gpu_model: str = "any") -> str | None:
-    """UUID of an idle physical GPU among 1-3 (no compute process, < 1 GiB used) of the requested model."""
+    """UUID of an idle physical GPU among 1-3 or ``RELAX_LOCAL_GPUS`` (no compute process, < 1 GiB used) of the requested model."""
+    allowed = local_gpus()
     try:
         gpus = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=index,uuid,memory.used,name", "--format=csv,noheader,nounits"], text=True
@@ -858,7 +873,7 @@ def idle_local_gpu(gpu_model: str = "any") -> str | None:
         index, uuid, used, name = (x.strip() for x in line.split(","))
         if gpu_model != "any" and gpu_model.lower() not in name.lower():
             continue
-        if index in LOCAL_GPUS and uuid not in busy and int(used) < 1024:
+        if index in allowed and uuid not in busy and int(used) < 1024:
             return uuid
     return None
 

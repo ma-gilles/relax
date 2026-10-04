@@ -466,7 +466,6 @@
   "RECOVAR_SPARSE_PASS2_PROJECTION_CACHE": "RELAX_SPARSE_PASS2_PROJECTION_CACHE",
   "RECOVAR_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES": "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE": "RELAX_SPARSE_PASS2_RESIDENT_CARRY_AVAL_PROBE",
-  "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_JIT": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_JIT",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_STATIC_BLOCKS",
   "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_TIMING": "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING",
@@ -671,6 +670,8 @@
   "RECOVAR_SIGNIFICANCE_SCORE_CACHE": "removed on 2026-10-02 with the generic coarse scorer: pass 1 always scores RELION's exact coarse operands (coarse GEMMs, exact+compact preprocessing) in the one pass-1 program",
   "RELAX_SIGNIFICANCE_SCORE_CACHE": "removed on 2026-10-02 with the generic coarse scorer: pass 1 always scores RELION's exact coarse operands (coarse GEMMs, exact+compact preprocessing) in the one pass-1 program",
   "RECOVAR_SIGNIFICANCE_SCORE_CACHE_MAX_GB": "removed on 2026-10-02 with the generic coarse scorer: pass 1 always scores RELION's exact coarse operands (coarse GEMMs, exact+compact preprocessing) in the one pass-1 program",
-  "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB": "removed on 2026-10-02 with the generic coarse scorer: pass 1 always scores RELION's exact coarse operands (coarse GEMMs, exact+compact preprocessing) in the one pass-1 program"
+  "RELAX_SIGNIFICANCE_SCORE_CACHE_MAX_GB": "removed on 2026-10-02 with the generic coarse scorer: pass 1 always scores RELION's exact coarse operands (coarse GEMMs, exact+compact preprocessing) in the one pass-1 program",
+  "RECOVAR_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL": "removed on 2026-10-03: the resident chunk program runs one M-step block per device-loop iteration; an unroll above 1 kept several blocks' transients live past the capacity plan (a latent OOM), and no default, benchmark or test used it",
+  "RELAX_SPARSE_PASS2_RESIDENT_CHUNK_BLOCK_UNROLL": "removed on 2026-10-03: the resident chunk program runs one M-step block per device-loop iteration; an unroll above 1 kept several blocks' transients live past the capacity plan (a latent OOM), and no default, benchmark or test used it"
  }
 }
