@@ -21,6 +21,13 @@ pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
 
 
+def _optics(image_sizes, pixel_sizes, *, multi_shape_halves=False):
+    return iteration_planning.RunOptics(
+        image_geometry=ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.0), model_pixel_size=1.0,
+        optics_image_sizes=image_sizes, optics_pixel_sizes=pixel_sizes, multi_shape_halves=multi_shape_halves,
+    )
+
+
 def _options(parity, init_relion_iteration):
     return RefinementOptions(
         parity=parity, schedule=RefinementSchedule(init_relion_iteration=init_relion_iteration),
@@ -148,11 +155,7 @@ def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypat
 def test_particle_remap_retains_independent_model_cutoff(
     model_size, optics_boxes, optics_pixels, image_size, model_window, image_window,
 ):
-    result = iteration_planning.plan_expectation_windows(
-        model_size, ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.0),
-        model_pixel_size=1.0, optics_image_sizes=optics_boxes,
-        optics_pixel_sizes=optics_pixels, log=LOG,
-    )
+    result = iteration_planning.plan_expectation_windows(model_size, _optics(optics_boxes, optics_pixels), log=LOG)
     assert result.image_size == image_size
     assert result.model_window_size == model_window
     assert result.image_window_size == image_window
@@ -160,8 +163,12 @@ def test_particle_remap_retains_independent_model_cutoff(
 
 def test_single_shape_cannot_hide_different_optics_window_sizes():
     with pytest.raises(NotImplementedError, match="one remapped image current size"):
-        iteration_planning.plan_expectation_windows(
-            64, ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.0),
-            model_pixel_size=1.0, optics_image_sizes=[128, 128],
-            optics_pixel_sizes=[1.0, 2.0], log=LOG,
-        )
+        iteration_planning.plan_expectation_windows(64, _optics([128, 128], [1.0, 2.0]), log=LOG)
+
+
+def test_shape_classes_are_not_remapped_by_the_single_shape_plan():
+    """Each shape class remaps its own support: the run-level plan keeps the model size."""
+    result = iteration_planning.plan_expectation_windows(
+        64, _optics([128], [0.5], multi_shape_halves=True), log=LOG,
+    )
+    assert result.image_size == 64

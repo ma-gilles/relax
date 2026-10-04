@@ -46,6 +46,7 @@ class LocalSampling:
 def prepare_numbered_local_sampling(
     search: LocalSearchSettings,
     grid: sampling.TrialGrid,
+    optics,
     *,
     base_translations,
     image_window_size: int | None,
@@ -53,10 +54,6 @@ def prepare_numbered_local_sampling(
     base_healpix_order: int,
     coarse_size_healpix_order: int,
     perturbation: float,
-    model_pixel_size: float,
-    original_model_size: int,
-    optics_image_sizes,
-    optics_pixel_sizes,
     particle_diameter_angstrom: float | None,
     log,
 ) -> LocalSampling:
@@ -64,6 +61,8 @@ def prepare_numbered_local_sampling(
 
     The supplied trial rows may be capped below the fine search order. Parent
     expansion defers that fine grid; its window uses the preceding sizing order.
+    Reads from ``optics`` (the run's ``RunOptics``), only when parents are expanded: the first optics
+    group's pixel and box size, else the model pixel size and the image box.
     """
     coarse_image_window_size = image_window_size
     coarse_angular_step_deg = None
@@ -97,8 +96,16 @@ def prepare_numbered_local_sampling(
                 coarse_angular_step_deg = healpix_angular_step(coarse_size_healpix_order)
                 coarse_image_window_size = relion_local_pass1_current_size(
                     pre_update_healpix_order=coarse_size_healpix_order,
-                    pixel_size=float(optics_pixel_sizes[0]) if optics_pixel_sizes is not None else model_pixel_size,
-                    ori_size=int(optics_image_sizes[0]) if optics_image_sizes is not None else original_model_size,
+                    pixel_size=(
+                        float(optics.optics_pixel_sizes[0])
+                        if optics.optics_pixel_sizes is not None
+                        else optics.model_pixel_size
+                    ),
+                    ori_size=(
+                        int(optics.optics_image_sizes[0])
+                        if optics.optics_image_sizes is not None
+                        else optics.image_geometry.box_size
+                    ),
                     particle_diameter=particle_diameter_angstrom,
                     current_size=image_window_size,
                 )

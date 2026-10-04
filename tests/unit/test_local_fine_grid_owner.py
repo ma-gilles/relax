@@ -20,6 +20,7 @@ from helpers.float_compare import matches
 
 import relax.refinement.iteration_loop as iteration_loop
 import relax.sampling as sampling_module
+from relax.helpers.resolution import ImageGeometry
 from relax.refinement import finalization, iteration_planning, local_sampling
 from relax.refinement.final_sampling import prepare_final_sampling
 from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
@@ -120,6 +121,13 @@ def test_controller_builds_local_search_grids_through_the_owners():
     assert source.count("clamp_relion_coarse_image_size(") == 2
 
 
+def _optics(image_sizes, pixel_sizes):
+    return iteration_planning.RunOptics(
+        image_geometry=ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=1.5), model_pixel_size=1.5,
+        optics_image_sizes=image_sizes, optics_pixel_sizes=pixel_sizes, multi_shape_halves=False,
+    )
+
+
 def _numbered_local_inputs(*, reuse=False, oversampling=0):
     import logging
 
@@ -139,8 +147,7 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0):
         grid=grid, base_translations=grid.translations,
         image_window_size=32, model_support_size=24, base_healpix_order=0,
         coarse_size_healpix_order=0, perturbation=0.125,
-        model_pixel_size=1.5, original_model_size=64,
-        optics_image_sizes=None, optics_pixel_sizes=None,
+        optics=_optics(None, None),
         particle_diameter_angstrom=100.0, log=logging.getLogger(__name__),
     )
 
@@ -152,7 +159,7 @@ def test_numbered_fine_grid_keeps_pose_metadata_and_does_not_read_unused_optics(
             raise AssertionError("Non-expanded local sampling must not read optics sizing")
 
     inputs = _numbered_local_inputs(reuse=reuse)
-    inputs.update(optics_image_sizes=UnusedOptics(), optics_pixel_sizes=UnusedOptics())
+    inputs.update(optics=_optics(UnusedOptics(), UnusedOptics()))
     result = prepare_numbered_local_sampling(**inputs)
     assert result.translations is inputs['grid'].translations
     assert result.base_translations is inputs['base_translations']
@@ -174,8 +181,7 @@ def test_numbered_fine_grid_keeps_pose_metadata_and_does_not_read_unused_optics(
 @pytest.mark.parametrize("sizing_order", [0, 1])
 def test_numbered_parent_window_uses_preceding_order_and_optics_geometry(monkeypatch, sizing_order):
     inputs = _numbered_local_inputs(oversampling=1)
-    inputs.update(coarse_size_healpix_order=sizing_order,
-                  optics_image_sizes=np.array([48]), optics_pixel_sizes=np.array([2.0]))
+    inputs.update(coarse_size_healpix_order=sizing_order, optics=_optics(np.array([48]), np.array([2.0])))
     calls = []
 
     def parent_window(**kwargs):

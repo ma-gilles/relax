@@ -115,6 +115,22 @@ def resolve_numbered_perturbation(
 
 
 @dataclass(frozen=True, kw_only=True)
+class RunOptics:
+    """The run's image and optics geometry: built once before the first iteration, never modified.
+
+    ``optics_image_sizes`` and ``optics_pixel_sizes`` are RELION's per-optics-group box and pixel sizes
+    (both None when the particles share the model's grid); ``multi_shape_halves`` says the halves hold
+    several image shapes, each remapping its own support.
+    """
+
+    image_geometry: ImageGeometry
+    model_pixel_size: float
+    optics_image_sizes: np.ndarray | None
+    optics_pixel_sizes: np.ndarray | None
+    multi_shape_halves: bool
+
+
+@dataclass(frozen=True, kw_only=True)
 class ExpectationWindows:
     """Model and particle Fourier widths for one numbered expectation."""
 
@@ -134,20 +150,16 @@ class ExpectationWindows:
         return None
 
 
-def plan_expectation_windows(
-    current_size: int,
-    image_geometry: ImageGeometry,
-    *,
-    model_pixel_size: float,
-    optics_image_sizes,
-    optics_pixel_sizes,
-    log: logging.Logger,
-) -> ExpectationWindows:
+def plan_expectation_windows(current_size: int, optics: RunOptics, *, log: logging.Logger) -> ExpectationWindows:
     """Remap single-shape optics while keeping model support independent.
 
-    Shape-class callers omit optics image sizes: each class remaps its own
-    support. See ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
+    Shape classes are not remapped here: each class remaps its own support. Reads every field of
+    ``optics``. See ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
+    image_geometry = optics.image_geometry
+    model_pixel_size = optics.model_pixel_size
+    optics_image_sizes = None if optics.multi_shape_halves else optics.optics_image_sizes
+    optics_pixel_sizes = optics.optics_pixel_sizes
     image_size = current_size
     if optics_image_sizes is not None:
         remapped = relion_optics_image_current_sizes(
@@ -188,20 +200,22 @@ class CoarseImageSize:
 def plan_adaptive_image_size(
     pre_update_healpix_order: int,
     windows: ExpectationWindows,
-    image_geometry: ImageGeometry,
+    optics: RunOptics,
     options: RefinementOptions,
     *,
-    optics_image_sizes,
-    optics_pixel_sizes,
     log: logging.Logger,
 ) -> CoarseImageSize:
     """Size pass 1 from incoming sampling, then admit an exact sealed width.
 
-    The fine grid can already have advanced to another order. Reads from ``options``:
+    The fine grid can already have advanced to another order. Reads from ``optics``: the image geometry
+    and the first optics group's box and pixel size; from ``options``:
     ``schedule.particle_diameter_ang`` and ``debug.sealed_sampling_state``. See
     ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
     sealed_sampling_state = options.debug.sealed_sampling_state
+    image_geometry = optics.image_geometry
+    optics_image_sizes = optics.optics_image_sizes
+    optics_pixel_sizes = optics.optics_pixel_sizes
     angular_step_deg = healpix_angular_step(pre_update_healpix_order)
     coarse_size = compute_coarse_image_size(
         angular_step_deg,

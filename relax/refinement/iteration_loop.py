@@ -130,6 +130,7 @@ from relax.refinement.half_scoring import (
     HalfScoringData,
 )
 from relax.refinement.iteration_planning import (
+    RunOptics,
     build_initial_coarse_grids,
     build_sealed_initial_coarse_grids,
     coarse_pass1_rotations,
@@ -849,6 +850,13 @@ def refine_single_volume(
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
+    optics = RunOptics(
+        image_geometry=image_geometry,
+        model_pixel_size=model_pixel_size,
+        optics_image_sizes=optics_image_sizes,
+        optics_pixel_sizes=optics_pixel_sizes,
+        multi_shape_halves=multi_shape_halves,
+    )
     # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
@@ -1650,14 +1658,7 @@ def refine_single_volume(
             )
         # First-iteration CC scores the full translation grid before choosing
         # its single winning pose (ml_optimiser.cpp:9181-9207).
-        expectation_windows = plan_expectation_windows(
-            scoring_current_size,
-            image_geometry,
-            model_pixel_size=model_pixel_size,
-            optics_image_sizes=None if multi_shape_halves else optics_image_sizes,
-            optics_pixel_sizes=optics_pixel_sizes,
-            log=logger,
-        )
+        expectation_windows = plan_expectation_windows(scoring_current_size, optics, log=logger)
         model_current_size_for_engine = expectation_windows.model_window_size
         image_current_size = expectation_windows.image_size
         cs_for_engine = expectation_windows.image_window_size
@@ -1675,16 +1676,13 @@ def refine_single_volume(
                     symmetry=symmetry,
                 ),
                 trial_grid,
+                optics,
                 base_translations=coarse_grids.base_translations,
                 image_window_size=cs_for_engine,
                 model_support_size=model_current_size_for_engine,
                 base_healpix_order=coarse_grids.rotation_grid.healpix_order,
                 coarse_size_healpix_order=coarse_size_healpix_order,
                 perturbation=random_perturbation,
-                model_pixel_size=model_pixel_size,
-                original_model_size=grid_size,
-                optics_image_sizes=optics_image_sizes,
-                optics_pixel_sizes=optics_pixel_sizes,
                 particle_diameter_angstrom=particle_diameter_ang,
                 log=logger,
             )
@@ -1745,8 +1743,7 @@ def refine_single_volume(
             #         orientations only.
 
             coarse_image_plan = plan_adaptive_image_size(
-                coarse_size_healpix_order, expectation_windows, image_geometry, options,
-                optics_image_sizes=optics_image_sizes, optics_pixel_sizes=optics_pixel_sizes, log=logger,
+                coarse_size_healpix_order, expectation_windows, optics, options, log=logger,
             )
             coarse_size = coarse_image_plan.size
             coarse_cs = coarse_size if coarse_size < grid_size else None

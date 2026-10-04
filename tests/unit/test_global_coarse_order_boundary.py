@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement.iteration_planning import ExpectationWindows, plan_adaptive_image_size
+from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_adaptive_image_size
 from relax.refinement.refinement_options import EngineDebugOptions, RefinementOptions, RefinementSchedule
 
 pytestmark = pytest.mark.unit
@@ -38,10 +38,11 @@ def _global_window(incoming, updated, *, current=172, sealed=None):
         current_healpix_order=updated,
         plan_adaptive_image_size=plan_adaptive_image_size,
         expectation_windows=ExpectationWindows(model_size=current, image_size=current, image_box_size=380),
-        image_geometry=ImageGeometry(image_shape=(380, 380), pixel_size_angstrom=1.400011),
-        source_pixel_size_angstrom=1.400011,
-        optics_pixel_sizes=[1.400011],
-        optics_image_sizes=[380],
+        optics=RunOptics(
+            image_geometry=ImageGeometry(image_shape=(380, 380), pixel_size_angstrom=1.400011),
+            model_pixel_size=1.400011, optics_image_sizes=[380], optics_pixel_sizes=[1.400011],
+            multi_shape_halves=False,
+        ),
         grid_size=380,
         particle_diameter_ang=250.0,
         options=RefinementOptions(
