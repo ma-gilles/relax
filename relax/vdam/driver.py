@@ -192,6 +192,7 @@ def _native_expectation_step(
                 dataset,
                 state,
                 sampling_plan=sampling_plan,
+                pass1_healpix_order=pass1_healpix_order,
                 particle_ids=ids,
                 halfset_ids=halfset_ids,
                 previous_offsets_px=previous_translations[ids],

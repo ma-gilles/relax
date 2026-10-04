@@ -38,12 +38,15 @@ logger = logging.getLogger(__name__)
 __all__ = ["run_tomo_initial_model_estep", "tomo_initial_model_sampling"]
 
 
-def tomo_initial_model_sampling(state: InitialModelState, sampling_plan, *, particle_diameter_ang: float):
+def tomo_initial_model_sampling(
+    state: InitialModelState, sampling_plan, *, particle_diameter_ang: float, pass1_healpix_order: int | None = None
+):
     """The iteration's :class:`relax.refinement.tomo_half.TomoSampling` from VDAM's sampling plan.
 
     The coarse size is RELION's ``image_coarse_size`` for the pass-1 order, as for single particles
     (:func:`relax.vdam.adaptive_estep._resolve_sparse_pass1_current_size`); the fine size is the
-    current size.
+    current size. ``pass1_healpix_order`` is the order before this iteration's sampling update:
+    RELION sets the sizes (expectationSetup step A) before it updates the sampling (step D).
     """
 
     from relax.refinement.tomo_half import TomoSampling
@@ -58,7 +61,7 @@ def tomo_initial_model_sampling(state: InitialModelState, sampling_plan, *, part
             {"current_size": None if int(state.current_size) <= 0 else int(state.current_size)},
             {
                 "particle_diameter_ang": float(particle_diameter_ang),
-                "pass1_healpix_order": order,
+                "pass1_healpix_order": order if pass1_healpix_order is None else int(pass1_healpix_order),
                 "healpix_order": order,
             },
         )
@@ -91,6 +94,7 @@ def run_tomo_initial_model_estep(
     particle_diameter_ang: float,
     padding_factor: int,
     optics_group_ids=None,
+    pass1_healpix_order: int | None = None,
 ) -> DenseInitialModelEstepResult:
     """One VDAM E-step over the subset's particles, both pseudo-halfsets in one pass.
 
@@ -118,7 +122,9 @@ def run_tomo_initial_model_estep(
     if group_ids.shape != particle_ids.shape or np.any((group_ids != 0) & (group_ids != 1)):
         raise ValueError("pseudo-halfset ids must give each selected particle 0 or 1")
     half = tomo_dataset.subset(particle_ids)
-    tomo_sampling = tomo_initial_model_sampling(state, sampling_plan, particle_diameter_ang=particle_diameter_ang)
+    tomo_sampling = tomo_initial_model_sampling(
+        state, sampling_plan, particle_diameter_ang=particle_diameter_ang, pass1_healpix_order=pass1_healpix_order
+    )
     order = int(tomo_sampling.healpix_order)
     n_coarse_rot = int(sampling.rotation_grid_size(order))
     relion_of_recovar = relion_order_of_recovar_rotations(order)
