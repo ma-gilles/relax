@@ -239,36 +239,6 @@ def bootstrap_current_size_from_ini_high_relion(
     return _bootstrap_current_size_relion(2 * init_shell, ori_size=ori_size, incr_size=incr_size)
 
 
-def _k1_data_vs_prior_for_scheduling(
-    *,
-    raw_fsc,
-    corrected_data_vs_prior,
-    current_size,
-    grid_size,
-    tau2_fudge,
-    dtype=np.float32,
-):
-    """Return the K=1 DVP curve RELION uses for current-resolution updates.
-
-    Auto-refine normally uses raw split-half FSC. If RELION's
-    ``--solvent_correct_fsc`` path is enabled, the corrected FSC-derived DVP
-    is passed here instead.
-    """
-    if corrected_data_vs_prior is not None:
-        return _truncate_data_vs_prior_for_current_size(
-            corrected_data_vs_prior,
-            current_size=current_size,
-            grid_size=grid_size,
-            dtype=dtype,
-        )
-
-    runtime_dtype = dtype
-    fsc_prev = np.asarray(raw_fsc, dtype=runtime_dtype).copy()
-    if int(current_size) < int(grid_size):
-        fsc_prev[min(len(fsc_prev), int(current_size) // 2 + 1) :] = 0.0
-    return np.asarray(fsc_to_relion_ssnr(fsc_prev, tau2_fudge=tau2_fudge), dtype=runtime_dtype)
-
-
 def _truncate_data_vs_prior_for_current_size(data_vs_prior, *, current_size, grid_size, dtype=np.float32):
     """Zero DVP shells beyond RELION's inclusive current-size boundary."""
     truncated = np.asarray(data_vs_prior, dtype=dtype).copy()
@@ -276,6 +246,19 @@ def _truncate_data_vs_prior_for_current_size(data_vs_prior, *, current_size, gri
         first_unavailable_shell = min(truncated.shape[-1], int(current_size) // 2 + 1)
         truncated[..., first_unavailable_shell:] = 0.0
     return truncated
+
+
+def class_resolution_shells(data_vs_prior, *, grid_size):
+    """Each class's ``updateCurrentResolution`` shell, in class order.
+
+    ``data_vs_prior`` is ``(n_classes, n_shells)``, already truncated to the
+    current size. Class3D scans each class without the split-half
+    high-resolution recheck; RELION's current resolution is the maximum.
+    """
+    return [
+        resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
+        for dvp_class in np.asarray(data_vs_prior)
+    ]
 
 
 def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_size, grid_size, dtype=np.float32):
@@ -296,10 +279,7 @@ def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_s
         dtype=dtype,
     )
     if k_class_enabled:
-        return max(
-            resolution_from_data_vs_prior(dvp_class, ori_size=grid_size, allow_high_res_recovery=False)
-            for dvp_class in np.asarray(dvp)
-        )
+        return max(class_resolution_shells(dvp, grid_size=grid_size))
     return resolution_from_data_vs_prior(dvp, ori_size=grid_size, allow_high_res_recovery=True)
 
 
@@ -410,56 +390,70 @@ class ResolutionEstimate:
     scheduling_shell: float
 
 
-def estimate_iteration_resolution(
+def estimate_k1_iteration_resolution(
+    data_vs_prior,
     *,
-    class_data_vs_prior,
-    tau2_update_details,
-    fsc,
-    k_class_enabled,
     current_size,
     grid_size,
     voxel_size,
-    tau2_fudge,
     emulate_relion_firstiter_cc,
     ini_high_angstrom,
     relion_iteration,
     dtype,
 ) -> ResolutionEstimate:
-    """Select the post-reconstruction prior curve and estimate resolution.
+    """Estimate the K1 resolution from the curve the split-half reconstruction used.
 
-    Class3D uses its recorded per-class curve; K1 prefers the curve used by
-    reconstruction and otherwise derives it from FSC. Keep the observed shell
-    separate from RELION's first-iteration ``ini_high`` scheduling override.
+    ``data_vs_prior`` is the half-1 ``ssnr_shells`` of the iteration's prior
+    estimate. The shell scan applies RELION's split-half high-resolution
+    recheck. Keep the observed shell separate from RELION's first-iteration
+    ``ini_high`` scheduling override.
     See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
     """
-    if k_class_enabled:
-        data_vs_prior = class_data_vs_prior
-    elif tau2_update_details is not None and tau2_update_details.get("ssnr_shells") is not None:
-        data_vs_prior = np.asarray(
-            tau2_update_details["ssnr_shells"],
-            dtype=dtype,
-        ).copy()
-    else:
-        data_vs_prior = np.asarray(
-            fsc_to_relion_ssnr(
-                np.asarray(fsc, dtype=dtype),
-                tau2_fudge=tau2_fudge,
-            ),
-            dtype=dtype,
-        )
     data_vs_prior = _truncate_data_vs_prior_for_current_size(
         data_vs_prior,
         current_size=current_size,
         grid_size=grid_size,
         dtype=dtype,
     )
-    observed_shell = relion_current_resolution_shell(
-        data_vs_prior,
-        k_class_enabled=k_class_enabled,
+    observed_shell = resolution_from_data_vs_prior(data_vs_prior, ori_size=grid_size, allow_high_res_recovery=True)
+    scheduling_shell = float(
+        _firstiter_cc_scheduling_resolution_shell(
+            observed_shell,
+            emulate_relion_firstiter_cc=emulate_relion_firstiter_cc,
+            ini_high_angstrom=ini_high_angstrom,
+            relion_iteration=relion_iteration,
+            grid_size=grid_size,
+            voxel_size=voxel_size,
+        )
+    )
+    return ResolutionEstimate(data_vs_prior, observed_shell, scheduling_shell)
+
+
+def estimate_class_iteration_resolution(
+    class_data_vs_prior,
+    *,
+    current_size,
+    grid_size,
+    voxel_size,
+    emulate_relion_firstiter_cc,
+    ini_high_angstrom,
+    relion_iteration,
+    dtype,
+) -> ResolutionEstimate:
+    """Estimate the Class3D resolution from the recorded ``(n_classes, n_shells)`` curves.
+
+    The observed shell is the maximum over classes, without the split-half
+    recheck. Keep it separate from RELION's first-iteration ``ini_high``
+    scheduling override.
+    See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
+    """
+    data_vs_prior = _truncate_data_vs_prior_for_current_size(
+        class_data_vs_prior,
         current_size=current_size,
         grid_size=grid_size,
         dtype=dtype,
     )
+    observed_shell = max(class_resolution_shells(data_vs_prior, grid_size=grid_size))
     scheduling_shell = float(
         _firstiter_cc_scheduling_resolution_shell(
             observed_shell,

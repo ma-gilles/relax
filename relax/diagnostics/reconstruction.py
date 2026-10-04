@@ -33,7 +33,6 @@ def audit_prejoin_accumulators(
     accumulator_shape,
     k_class_enabled,
     init_relion_iteration,
-    state_current_size,
     pixel_size_angstrom,
     log,
 ) -> bool:
@@ -85,7 +84,6 @@ def audit_prejoin_accumulators(
             context=finite_check.describe_context(
                 iteration=iteration,
                 relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
-                current_size=state_current_size,
             ),
         )
     return iteration_matches

@@ -289,6 +289,11 @@ class SnapshotCapture:
         ``begin`` precedes array capture so replacing the prior header releases
         the preceding checkpoint's retained arrays before new maps are copied.
         See ``docs/math/relion_refinement_algorithm.md#checkpoint-capture``.
+
+        ``fsc``, ``fsc_for_growth``, ``class_weights`` and ``class_assignments``
+        are stored as given: the caller passes ``None`` for the ones its mode
+        does not have (the two FSC curves in Class3D, the two class operands
+        in K=1).
         """
         k_class = int(self.n_classes) > 1
         tau2 = (
@@ -303,12 +308,8 @@ class SnapshotCapture:
             tau2_shells=tau2,
             data_vs_prior=np.array(data_vs_prior, dtype=np.float64),
             noise_shells=[np.array(shells, dtype=np.float64) for shells in noise_shells],
-            fsc=None if fsc is None or k_class else np.array(fsc, dtype=np.float64),
-            fsc_for_growth=(
-                None
-                if fsc_for_growth is None or k_class
-                else np.array(fsc_for_growth, dtype=np.float64)
-            ),
+            fsc=host_array(fsc, np.float64),
+            fsc_for_growth=host_array(fsc_for_growth, np.float64),
             unfiltered_means=(
                 None
                 if unfiltered_means is None or all(m is None for m in unfiltered_means)
@@ -324,9 +325,7 @@ class SnapshotCapture:
             if k_class else [p.shared.healpix_order for p in direction_priors]
         )
         assembly.values.update(
-            class_weights=(
-                None if not k_class else np.array(class_weights, dtype=np.float64)
-            ),
+            class_weights=host_array(class_weights, np.float64),
             direction_prior=(
                 host_half_pair(direction_prior)
                 if direction_prior is not None
@@ -353,9 +352,7 @@ class SnapshotCapture:
                 else np.array(group_ids, dtype=np.int64)
                 for group_ids, euler in zip([particle_half.group_ids for particle_half in half_inputs], eulers)
             ],
-            class_assignments=(
-                host_half_pair(class_assignments) if k_class else None
-            ),
+            class_assignments=host_half_pair(class_assignments),
             max_posterior=host_half_pair(max_posterior),
             significant_counts=host_half_pair(significant_counts),
             # No norm correction (a subtomogram run, --no_norm): RELION's 1.0 in relax's frame.

@@ -203,6 +203,54 @@ as a nested option. The final prior and final solve remain separate decisions
 because shared sums and the shared resolution update lie between them. The
 step 6 review with the user has not taken place.
 
+Package 2, lane A (the user chose on October 3 that a one-line shared statement
+may be written in both arms of a controller decision, with nothing reordered):
+the numbered M-step, from the accumulator audit to the `"recon"` stage mark, is
+one K1/Class3D decision instead of seven. Each arm lists its own ordered steps:
+accumulator combine or optional low-resolution join, previous references, prior
+estimate, tau2 install, reconstruction, optional first-CC reporting taper and,
+for K1, the tau2 volumes' move to the host. The
+[M-step mode map](final_local_sampling_patch_review.md#m-step-mode-map) gives
+the before and after. `estimate_iteration_resolution` is replaced by
+`estimate_k1_iteration_resolution` and `estimate_class_iteration_resolution`,
+called from the existing class-assignment decision; the K1 FSC fallback, which
+no prior estimate could reach, is removed. The Class3D rule (each class's shell
+without the split-half recheck) has one home, `class_resolution_shells`, which
+the class operation, the final pass's `relion_current_resolution_shell` and
+`plan_class_image_size` call. The profile-only return passes no
+class products, the direction-prior order is computed once per iteration, and
+`_maybe_host_offload_half0_local_accumulators` and `record_noise_and_tau2` no
+longer take the mode. `refine_single_volume` tests `k_class_enabled` 29 times
+instead of 39.
+
+The user then ruled that unreachable or production-unset code is deleted under
+the cleanup rules. Removed on that ruling, each after tracing its producers:
+the `do_solvent_fsc_correction` option with the block it gated in
+`estimate_split_half_prior` and the solvent-corrected FSC kernel in
+`regularization_relion.py` (no producer on any entry path);
+`_k1_data_vs_prior_for_scheduling` and its raw-FSC arm (the K1 curve is always
+set before `plan_halfmap_image_size` runs), with `plan_class_image_size` now
+calling the one truncation helper; the Class3D shared-prior fallback in
+`relion_direction_log_priors_for_half` (no Class3D path fills `shared`); and
+the always-`None` `state_current_size` operand of `audit_prejoin_accumulators`.
+Two changes alter execution without altering values: the K1 host move no
+longer copies the two per-half reconstruction tau2 volumes that nothing reads
+again, and a continued run no longer builds the start-up reference model,
+noise model, previous rotations, direction priors and sampling perturbation
+that its snapshot replaces (its "Perturbation init" log line no longer
+appears). Still present: `SplitHalfPrior.fsc_for_update`, now always the raw
+FSC, because removing it reaches the growth history and the snapshot format;
+and the class log priors, still computed before a continued Class3D run
+replaces them.
+
+Merged tree (main `d1ba3e8` at merge `e026a64`, then main `4efac62` at merge
+`b06644c`, which adds two lines to `full_refinement.py`): main's unconditional projector
+build sits in `refine_single_volume` ahead of the M-step and removes one test
+that was not a mode test. The M-step decision and the counts above are
+unchanged by the merge (29 tests of `k_class_enabled`, 14 keyword forwards);
+the function spans 2,731 lines, and the "after" lines of the M-step mode map
+are those of the merged tree.
+
 1. Inventory each reconstruction choice with its producer and consumers:
    split-half versus combined classes; prior volume versus shell curves;
    first-CC filter/taper; optional solvent mask; host staging/large-box behavior;
@@ -287,6 +335,16 @@ PPCA work and tomography safeguards. Incoming command/controller changes are
 adapted to the existing refactor owners. Scientific sequencing and visible
 updates remain unchanged by these interface migrations.
 
+Both refactor packages are since merged with GitHub main
+`d1ba3e83406c81ab77891e25d1a775d4a818e674`: the first package at `1b73943`, the
+second at `e026a64`; the branch then takes main through
+`4efac62a95353714bd6d120e38b595e99015ca52` (merge `b06644c`), whose only
+refinement change is the float32 matmul setting in `full_refinement.py`. Main's changes after `80f2b2b` are kept as main wrote
+them: the numbered iteration builds the scoring projector on every route (the
+"no projector scoring path" error is gone), the adaptive pass-2 grids come from
+`oversampling.prepare_adaptive_pass2_grids` with deferred fine rotations, and
+pass 1 scores RELION's exact coarse operands only.
+
 The first-CC margin now resolves in `command_options.resolve_firstiter_controls`,
 then enters the existing parity settings at the original command boundary.
 Numbered expectation and final dense execution consume those settings; the
@@ -347,7 +405,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2752/1766 for numerical/command controllers;
+Source spans are 2731/1767 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main

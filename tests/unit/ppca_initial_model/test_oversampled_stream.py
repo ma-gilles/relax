@@ -124,7 +124,13 @@ def test_significant_children_equal_the_dense_child_grid_on_that_support(fractio
     """Each image's children of its significant samples only: the dense child grid with that coarse support."""
     coarse, (fine_rotations, fine_translations) = _spa_stream()
     ostream = prepare_oversampled_stream(
-        coarse, fine_rotations, fine_translations, adaptive_fraction=fraction, max_significant=cap, job_chunk=16
+        coarse,
+        fine_rotations,
+        fine_translations,
+        adaptive_fraction=fraction,
+        max_significant=cap,
+        job_chunk=16,
+        fine_fraction=1.0,  # every scored child is accumulated, as the dense stream does
     )
     ids = np.arange(4)
     actual = accumulate_oversampled_tile(ostream, ids)
@@ -186,6 +192,71 @@ def test_significance_follows_relion(fraction, cap):
         assert capped[b] == (np.sort(weights.reshape(-1))[::-1][:cap].sum() <= fraction)
 
 
+@pytest.mark.parametrize("fine_fraction, tilts", [(0.9, False), (0.5, False), (0.999, False), (0.8, True)])
+def test_pass2_accumulates_the_significant_fine_samples(monkeypatch, fine_fraction, tilts):
+    """Pass 2 accumulates each image's significant fine samples (RELION's rule over the child weights, in float64
+    here from the job scores) and visits only the (image, child rotation) rows that hold one.
+
+    The job scores and latent means are the engine's (they equal the dense child grid's: the tests above with every
+    child accumulated); the expected kept mass per coarse rotation, embeddings and rows follow from them.
+    """
+    from relax.ppca_refinement import oversampled_stream as oss
+
+    if tilts:
+        import test_tomo_ppca as tomo
+
+        _particles, coarse, _arrays = tomo.make_problem(seed=4)
+        perturb = Rotation.from_rotvec(np.random.default_rng(1).normal(scale=0.05, size=(8, 3))).as_matrix()
+        fine_rotations = np.einsum("rab,cbd->rcad", np.asarray(coarse.arrays.rotations[:-1]), perturb)
+        fine_rotations = fine_rotations.reshape(-1, 3, 3).astype(np.float32)
+        fine_translations, _ = sampling.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
+        ids = np.arange(3)
+    else:
+        coarse, (fine_rotations, fine_translations) = _spa_stream()
+        ids = np.arange(4)
+    ostream = prepare_oversampled_stream(
+        coarse,
+        fine_rotations,
+        fine_translations,
+        adaptive_fraction=0.95,
+        max_significant=9,
+        job_chunk=8,
+        fine_fraction=fine_fraction,
+    )
+    scored, score_jobs = [], oss._score_jobs
+
+    def recording(results, arrays, tile, phases, table, order, start, **kwargs):
+        slots = np.asarray(order)[int(start) : int(start) + kwargs["chunk"]]
+        jobs = [np.asarray(x)[slots] for x in table]
+        out = score_jobs(results, arrays, tile, phases, table, order, start, **kwargs)
+        scored.append([*jobs, np.asarray(out.score)[slots], np.asarray(out.mean)[slots]])
+        return out
+
+    monkeypatch.setattr(oss, "_score_jobs", recording)
+    actual = accumulate_oversampled_tile(ostream, ids)
+    image, rotation, _translation, valid, score, mean = (np.concatenate(parts) for parts in zip(*scored))
+    n_coarse = coarse.arrays.rotations.shape[0] - 1
+    mass = np.zeros(n_coarse)
+    embeddings = np.zeros((len(ids), mean.shape[1]))
+    rows = 0
+    for b in range(len(ids)):
+        jobs = np.flatnonzero(valid & (image == b))
+        weights = np.exp(score[jobs].astype(np.float64) - score[jobs].max())  # (J_b, R_c, T_c)
+        weights /= weights.sum()
+        kept = _relion_significant(weights.reshape(-1), fine_fraction, weights.size).reshape(weights.shape)
+        assert weights[kept].sum() > fine_fraction and not kept.all()
+        np.add.at(mass, rotation[jobs], (weights * kept).sum(axis=(1, 2)))
+        embeddings[b] = np.einsum("jrt,jqrt->q", weights * kept, mean[jobs])
+        rows += int(kept.any(axis=2).sum())
+    diagnostics = actual.diagnostics
+    assert diagnostics["pass2_rows"] == rows < diagnostics["scored_fine_rows"] == int(valid.sum()) * 8
+    assert_matches(diagnostics["rotation_mass"], mass.astype(np.float32), rtol=DIAGNOSTIC_RTOL)
+    assert_matches(np.asarray(actual.embeddings), embeddings.astype(np.float32), rtol=DIAGNOSTIC_RTOL)
+    # Every scored child accumulated: the rows are the scored ones.
+    every = accumulate_oversampled_tile(ostream._replace(fine_fraction=1.0), ids)
+    assert every.diagnostics["pass2_rows"] == every.diagnostics["scored_fine_rows"]
+
+
 def test_padding_images_have_no_significant_samples():
     score = jnp.zeros((4, 3, 2), jnp.float32)
     rows = jnp.arange(4, dtype=jnp.int32)
@@ -197,11 +268,14 @@ def test_padding_images_have_no_significant_samples():
     assert not np.asarray(mass)[2:].any() and not np.asarray(capped)[2:].any()
 
 
-def test_subtomogram_children_equal_the_dense_child_grid():
-    """Tilt-series particles (shared latent over tilts, 3D shifts with 8 children each) through the tilt reader."""
+@pytest.mark.parametrize("planned", [None, 8])
+def test_subtomogram_children_equal_the_dense_child_grid(planned):
+    """Tilt-series particles (shared latent over tilts, 3D shifts with 8 children each) through the tilt reader;
+    with a planned tile size the reader pads the 3 particles to a tile of 4."""
     import test_tomo_ppca as tomo
 
     _particles, coarse, _arrays = tomo.make_problem(seed=4)
+    coarse = coarse._replace(tile_images=planned)
     perturb = Rotation.from_rotvec(np.random.default_rng(1).normal(scale=0.05, size=(8, 3))).as_matrix()
     coarse_rotations = np.asarray(coarse.arrays.rotations[:-1])
     fine_rotations = np.einsum("rab,cbd->rcad", coarse_rotations, perturb).reshape(-1, 3, 3).astype(np.float32)
@@ -209,7 +283,13 @@ def test_subtomogram_children_equal_the_dense_child_grid():
     assert fine_translations.shape == (8 * len(tomo.TRANSLATIONS), 3)
     np.testing.assert_array_equal(parent, np.repeat(np.arange(len(tomo.TRANSLATIONS)), 8))
     ostream = prepare_oversampled_stream(
-        coarse, fine_rotations, fine_translations, adaptive_fraction=0.95, max_significant=9, job_chunk=8
+        coarse,
+        fine_rotations,
+        fine_translations,
+        adaptive_fraction=0.95,
+        max_significant=9,
+        job_chunk=8,
+        fine_fraction=1.0,
     )
     ids = np.arange(3)
     actual = accumulate_oversampled_tile(ostream, ids)
@@ -223,7 +303,14 @@ def test_pass1_on_the_coarse_window_equals_the_dense_child_grid_at_the_pass2_win
     coarse, (fine_rotations, fine_translations) = _spa_stream(current_size=4)
     pass2, _ = _spa_stream(current_size=6)
     ostream = prepare_oversampled_stream(
-        coarse, fine_rotations, fine_translations, pass2=pass2, adaptive_fraction=0.9, max_significant=40, job_chunk=16
+        coarse,
+        fine_rotations,
+        fine_translations,
+        pass2=pass2,
+        adaptive_fraction=0.9,
+        max_significant=40,
+        job_chunk=16,
+        fine_fraction=1.0,
     )
     ids = np.arange(4)
     actual = accumulate_oversampled_tile(ostream, ids)
@@ -235,6 +322,49 @@ def test_pass1_on_the_coarse_window_equals_the_dense_child_grid_at_the_pass2_win
     )
     full = accumulate_oversampled_tile(same_window, ids).diagnostics["significant_samples"]
     assert any(not np.array_equal(a, b) for a, b in zip(actual.diagnostics["significant_samples"], full))
+
+
+@pytest.mark.parametrize("tilts", [False, True])
+def test_pass1_tile_from_the_pass2_tile_is_the_readers(tilts):
+    """Pass 1's operands, formed from the tile's unshifted pass-2 operands (window pixels times the coarse
+    translations' phase factors), are the ones the tile reader builds for the pass-1 stream."""
+    from relax.ppca_refinement import full_row_stream as frs
+    from relax.ppca_refinement import oversampled_stream as oss
+
+    if tilts:
+        import test_tomo_ppca as tomo
+
+        _particles, coarse, _arrays = tomo.make_problem(seed=4)
+        # A planned tile of 8 pads the 3 particles to a tile of 4 (the reader's size buckets).
+        coarse = coarse._replace(tile_images=8)
+        pass2, ids = coarse, np.arange(3)
+        fine_rotations = np.repeat(np.asarray(coarse.arrays.rotations[:-1]), 8, axis=0)
+        fine_translations, _ = sampling.get_oversampled_translation_grid(tomo.TRANSLATIONS, 1.5, 1)
+    else:
+        coarse, (fine_rotations, fine_translations) = _spa_stream(current_size=4)
+        pass2, ids = _spa_stream(current_size=6)[0], np.arange(4)
+    ostream = prepare_oversampled_stream(coarse, fine_rotations, fine_translations, pass2=pass2, max_significant=4)
+    slots = np.asarray(ostream.pass1_slots)
+    if tilts:
+        np.testing.assert_array_equal(slots[slots >= 0], np.flatnonzero(slots >= 0))  # one window
+    else:
+        assert 0 < (slots >= 0).sum() < frs._window_pixels(pass2)  # a smaller window
+    support = [None] * len(ids)
+    expected, _, expected_layout = frs._read_tile(coarse, ids, support, collect_observation=False)
+    tile, _, layout = frs._read_tile(ostream.base, ids, support, collect_observation=False)
+    actual, actual_layout = oss._pass1_tile(ostream, tile, layout, support)
+    assert actual.Y1.shape == expected.Y1.shape and actual.ctf2.shape == expected.ctf2.shape
+    assert actual.y_norm.shape[0] == (4 if tilts else len(ids)) and actual_layout.get("n_real") == expected_layout.get(
+        "n_real"
+    )
+    # One complex product per pixel in another order than the reader's: float32 rounding of the product.
+    assert_matches(np.asarray(actual.Y1), np.asarray(expected.Y1), rtol=STATISTICS_RTOL)
+    assert_matches(np.asarray(actual.ctf2), np.asarray(expected.ctf2), rtol=STATISTICS_RTOL)
+    np.testing.assert_array_equal(np.asarray(actual.rows), np.asarray(expected.rows))
+    np.testing.assert_array_equal(np.asarray(actual.coarse_mask), np.asarray(expected.coarse_mask))
+    assert {k: actual_layout[k] for k in ("n_blocks", "scored_rows")} == {
+        k: expected_layout[k] for k in ("n_blocks", "scored_rows")
+    }
 
 
 def test_capped_images_report_the_mass_they_hold():
@@ -317,9 +447,75 @@ def test_controller_runs_oversampled_updates_and_flags_the_cap(tmp_path, caplog,
         assert record["pass1_image_size"] <= record["pass2_image_size"] == 6
         assert 1 <= record["samples_median"] <= cap
         assert record["capped_fraction"] == (1.0 if warned else 0.0)
+        assert 0 < record["accumulated_fine_row_fraction"] <= 1
     assert any("consider a larger --maxsig" in r.message for r in caplog.records) == warned
     assert np.all(np.isfinite(np.asarray(state.theta)))
     assert np.load(tmp_path / "embeddings.npz")["z"].shape == (8, 2)
+
+
+def test_statistics_do_not_depend_on_the_job_chunk():
+    """The job chunk is a memory plan: chunks of 2 jobs and one chunk of all give the same statistics within
+    float32 reduction order (the moment scatter sums the same rows in another grouping)."""
+    coarse, (fine_rotations, fine_translations) = _spa_stream()
+    ids = np.arange(4)
+    results = []
+    for chunk in (2, 1024):
+        ostream = prepare_oversampled_stream(
+            coarse, fine_rotations, fine_translations, adaptive_fraction=0.9, max_significant=40, job_chunk=chunk
+        )
+        results.append(accumulate_oversampled_tile(ostream, ids))
+    small, large = results
+    _assert_same_statistics(small, large)
+    for key in ("significant_samples_per_image", "pass2_rows", "scored_fine_rows"):
+        np.testing.assert_array_equal(small.diagnostics[key], large.diagnostics[key])
+
+
+def test_job_chunk_fits_one_kernel_launch():
+    """The CUDA projector and scatter take 65535 rotations per launch: a chunk's jobs times their 8 child rotations
+    times the tile's frames stay within it (41 tilts: 128 jobs, not 256, which failed at the k3conf stage)."""
+    from types import SimpleNamespace
+
+    from relax.ppca_refinement import oversampled_stream as oss
+
+    def stream(frames, cuda_kernels=True):
+        loader = SimpleNamespace(operand_bytes=lambda *a: (0, 0), max_frames=lambda _stream: frames)
+        base = SimpleNamespace(tile_loader=loader if frames > 1 else None)
+        return SimpleNamespace(
+            fine=SimpleNamespace(static=SimpleNamespace(cuda_kernels=cuda_kernels)), base=base, rotation_children=8
+        )
+
+    assert oss.launch_job_chunk(stream(1)) == oss.MAX_JOB_CHUNK == 1024
+    assert oss.launch_job_chunk(stream(41)) == 128
+    assert 128 * 8 * 41 <= oss.KERNEL_LAUNCH_ROTATIONS < 256 * 8 * 41
+    assert oss.launch_job_chunk(stream(41, cuda_kernels=False)) == 1024
+    with pytest.raises(ValueError, match="one kernel launch"):
+        oss.launch_job_chunk(stream(10000))
+
+
+def test_chunks_cover_the_kept_positions_in_a_few_sizes():
+    """A tile's jobs run in whole chunks of the planned size, then of 1/4 and 1/16 of it; the padding is less than
+    one smallest chunk and addresses the padding slot."""
+    from relax.ppca_refinement import oversampled_stream as oss
+
+    assert (
+        oss._chunk_sizes(1024) == (1024, 256, 64) and oss._chunk_sizes(8) == (8, 2, 1) and oss._chunk_sizes(1) == (1,)
+    )
+    rng = np.random.default_rng(0)
+    for n_kept in (0, 1, 63, 64, 2000, 6500):
+        mask = np.zeros(15000, bool)
+        mask[rng.choice(15000, n_kept, replace=False)] = True
+        order, count, plan = oss._chunks(mask.reshape(150, 100), (1024, 256, 64), padding=15000)
+        order = np.asarray(order)
+        assert count == n_kept and order.shape == (15000 + 1024,)
+        np.testing.assert_array_equal(order[:n_kept], np.flatnonzero(mask))
+        assert np.all(order[n_kept:] == 15000)
+        covered = np.concatenate([np.arange(start, start + size) for start, size in plan] or [np.zeros(0, int)])
+        np.testing.assert_array_equal(covered, np.arange(covered.size))  # consecutive, no overlap
+        assert n_kept <= covered.size < n_kept + 64 and covered.size <= order.size
+        assert [size for _, size in plan] == sorted((size for _, size in plan), reverse=True)
+    assert [size for _, size in oss._chunks(np.ones(6500, bool), (1024, 256, 64), 0)[2]] == [1024] * 6 + [256] + [
+        64
+    ] * 2
 
 
 def test_job_chunk_plan_fits_the_budget():

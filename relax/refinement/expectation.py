@@ -597,7 +597,7 @@ def score_numbered_half(
             reconstruction_current_size=model_support_size,
             symmetry=symmetry,
             class_log_priors=class_log_priors if k_class_enabled else None,
-            class_rotation_log_prior=direction_priors.class_rotation_log_prior if k_class_enabled else None,
+            class_rotation_log_prior=direction_priors.class_rotation_log_prior,
             unit_seed_classes=seed_classes_k,
             normalized_cc=phase.variant.firstiter_score_mode_this_iter == "normalized_cc",
         )
@@ -612,7 +612,7 @@ def score_numbered_half(
             base_translations=sampling.base_translations,
             current_translations=phase.grid.translations,
             with_log_prior=False,
-            zero_cold_center=not k_class_enabled,
+            zero_cold_center=True,
             dtype=scoring_dtype,
         )
         local_result = _score_half_local_in_bpref_scope(
@@ -658,7 +658,7 @@ def score_numbered_half(
             sigma_offset_angstrom=sigma_offset_angstrom,
             base_translations=sampling.base_translations,
             current_translations=phase.grid.translations,
-            with_log_prior=not use_local,
+            with_log_prior=True,
             zero_cold_center=not k_class_enabled,
             dtype=scoring_dtype,
         )

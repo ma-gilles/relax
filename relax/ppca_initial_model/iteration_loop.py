@@ -127,7 +127,13 @@ def _oversampling_record(stats, config, iteration):
             low_mass=OVERSAMPLING_CAP_MASS,
         )
     )
-    record.update(adaptive_fraction=config.target_mass, max_significant=config.max_significant)
+    # Pass 2 accumulates the (image, child rotation) rows that hold a significant fine sample, of those it scored.
+    scored = sum(p["scored_fine_rows"] for p in parts)
+    record.update(
+        adaptive_fraction=config.target_mass,
+        max_significant=config.max_significant,
+        accumulated_fine_row_fraction=sum(p["accumulated_fine_rows"] for p in parts) / max(scored, 1),
+    )
     if record["capped_low_mass_fraction"] > OVERSAMPLING_CAP_WARNING:
         logger.warning(
             "update %d: --maxsig %d stopped %.1f%% of the batch's images short of the adaptive fraction %.3f with "
@@ -380,6 +386,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "order": config.oversampling,
                     "pass1_image_size": pass1_size,
                     "pass2_image_size": 2 * radius,
+                    "scored_fine_rows": sum(part.diagnostics["scored_fine_rows"] for part in group_parts),
+                    "accumulated_fine_rows": sum(part.diagnostics["pass2_rows"] for part in group_parts),
                     **{
                         key: np.concatenate([part.diagnostics[key] for part in group_parts])
                         for key in (

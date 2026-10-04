@@ -57,70 +57,22 @@ class TestResolutionScheduling:
         assert_matches(tapered[:, 12:], 0.0)
         assert bool(untapered[1, 10] > 3.0) and not bool(tapered[1, 10] > 3.0)
 
-    def test_k1_current_size_scheduling_raw_fsc_matches_gui_default(self):
-        """GUI-default K=1 scheduling uses raw FSC-derived DVP."""
-        raw_fsc = np.ones(129, dtype=np.float32) * 0.9
-        raw_fsc[0] = 1.0
-        raw_fsc[28:] = 0.0
-
-        dvp = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=None,
-            current_size=56,
-            grid_size=256,
-            tau2_fudge=1.0,
-        )
-        shell = regularization_relion.resolution_from_data_vs_prior(
-            dvp,
-            allow_high_res_recovery=True,
-        )
-        current_size = regularization_relion.compute_current_size_relion(
-            shell,
-            256,
-            ave_Pmax=1.0,
-            has_high_fsc_at_limit=True,
-        )
-
-        assert shell == 27
-        assert current_size == 118
-
     def test_k1_current_size_scheduling_keeps_boundary_shell(self):
-        """Raw-FSC and corrected-DVP scheduling must agree at current_size//2."""
+        """K1 scheduling keeps the shell at current_size//2 and zeroes the next."""
         current_size = 56
         boundary_shell = current_size // 2
-        raw_fsc = np.zeros(129, dtype=np.float32)
-        corrected_dvp = np.zeros_like(raw_fsc)
-        raw_fsc[:boundary_shell] = 0.05
+        corrected_dvp = np.zeros(129, dtype=np.float32)
         corrected_dvp[:boundary_shell] = 0.05
-        raw_fsc[boundary_shell] = 0.9
         corrected_dvp[boundary_shell] = 10.0
 
-        raw_dvp = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=None,
+        corrected = resolution_helpers._truncate_data_vs_prior_for_current_size(
+            corrected_dvp,
             current_size=current_size,
             grid_size=256,
-            tau2_fudge=1.0,
-        )
-        corrected = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=corrected_dvp,
-            current_size=current_size,
-            grid_size=256,
-            tau2_fudge=1.0,
         )
 
-        assert raw_dvp[boundary_shell] > 1.0
         assert corrected[boundary_shell] > 1.0
-        assert raw_dvp[boundary_shell + 1] < 1.0
         assert corrected[boundary_shell + 1] == 0.0
-        assert (
-            regularization_relion.resolution_from_data_vs_prior(
-                raw_dvp,
-                allow_high_res_recovery=True,
-            )
-            == boundary_shell
-        )
         assert (
             regularization_relion.resolution_from_data_vs_prior(
                 corrected,
@@ -244,19 +196,6 @@ class TestResolutionScheduling:
         )
         assert shell == 18
         assert current_size == 100
-
-        raw_fsc = np.ones(129, dtype=np.float32) * 0.9
-        raw_fsc[0] = 1.0
-        raw_fsc[28:] = 0.0
-        dvp = resolution_helpers._k1_data_vs_prior_for_scheduling(
-            raw_fsc=raw_fsc,
-            corrected_data_vs_prior=None,
-            current_size=56,
-            grid_size=256,
-            tau2_fudge=1.0,
-        )
-        assert regularization_relion.resolution_from_data_vs_prior(dvp, allow_high_res_recovery=True) == 27
-        assert dvp[29] < 1.0
 
     def test_firstiter_cc_scheduling_override_is_class_count_independent(self):
         """The ini_high rule also applies to Class3D/K-class iteration 1."""
@@ -494,13 +433,12 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
-def test_iteration_resolution_prefers_reconstruction_curve_and_keeps_window_edge(dtype):
+def test_k1_iteration_resolution_uses_reconstruction_curve_and_keeps_window_edge(dtype):
     curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, 9, 9], dtype=dtype)
     original = curve.tobytes()
-    estimate = resolution_helpers.estimate_iteration_resolution(
-        class_data_vs_prior=None, tau2_update_details={"ssnr_shells": curve},
-        fsc=np.zeros(9, dtype=dtype), k_class_enabled=False,
-        current_size=12, grid_size=16, voxel_size=1.5, tau2_fudge=1.0,
+    estimate = resolution_helpers.estimate_k1_iteration_resolution(
+        curve,
+        current_size=12, grid_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
         relion_iteration=2, dtype=dtype,
     )
@@ -516,17 +454,16 @@ def test_iteration_resolution_prefers_reconstruction_curve_and_keeps_window_edge
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
-def test_iteration_resolution_uses_all_class_curves(dtype):
+def test_class_iteration_resolution_uses_all_class_curves(dtype):
     curves = np.array([
         [0, 4, 3, 2, 1.1, .2, .2, .2, .2],
         [0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2],
         [0, 4, 3, 2, .2, .2, .2, .2, .2],
         [0, 4, 3, .2, .2, .2, .2, .2, .2],
     ], dtype=dtype)
-    estimate = resolution_helpers.estimate_iteration_resolution(
-        class_data_vs_prior=curves, tau2_update_details={"ssnr_shells": np.zeros(9)},
-        fsc=np.zeros(9, dtype=dtype), k_class_enabled=True,
-        current_size=16, grid_size=16, voxel_size=1.5, tau2_fudge=4.0,
+    estimate = resolution_helpers.estimate_class_iteration_resolution(
+        curves,
+        current_size=16, grid_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=False, ini_high_angstrom=12.0,
         relion_iteration=2, dtype=dtype,
     )
@@ -538,19 +475,33 @@ def test_iteration_resolution_uses_all_class_curves(dtype):
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
 @pytest.mark.parametrize("relion_iteration", [1, 2])
-@pytest.mark.parametrize("k_class_enabled", [False, True], ids=["k1", "k4"])
-def test_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
-    dtype, relion_iteration, k_class_enabled,
+def test_k1_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
+    dtype, relion_iteration,
 ):
     curve = np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype)
-    class_curves = np.tile(curve, (4, 1)) if k_class_enabled else None
-    estimate = resolution_helpers.estimate_iteration_resolution(
-        class_data_vs_prior=class_curves, tau2_update_details={"ssnr_shells": curve},
-        fsc=np.zeros(9, dtype=dtype), k_class_enabled=k_class_enabled,
-        current_size=16, grid_size=16, voxel_size=1.5, tau2_fudge=1.0,
+    estimate = resolution_helpers.estimate_k1_iteration_resolution(
+        curve,
+        current_size=16, grid_size=16, voxel_size=1.5,
         emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
         relion_iteration=relion_iteration, dtype=dtype,
     )
     assert estimate.observed_shell == 6
     assert_matches(estimate.scheduling_shell, 2.0 if relion_iteration == 1 else 6.0)
-    assert_matches(estimate.data_vs_prior, class_curves if k_class_enabled else curve)
+    assert_matches(estimate.data_vs_prior, curve)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
+@pytest.mark.parametrize("relion_iteration", [1, 2])
+def test_class_iteration_resolution_keeps_observed_and_firstiter_scheduling_signals_separate(
+    dtype, relion_iteration,
+):
+    class_curves = np.tile(np.array([0, 4, 3, 2, 1.1, 1.1, 1.1, .2, .2], dtype=dtype), (4, 1))
+    estimate = resolution_helpers.estimate_class_iteration_resolution(
+        class_curves,
+        current_size=16, grid_size=16, voxel_size=1.5,
+        emulate_relion_firstiter_cc=True, ini_high_angstrom=12.0,
+        relion_iteration=relion_iteration, dtype=dtype,
+    )
+    assert estimate.observed_shell == 6
+    assert_matches(estimate.scheduling_shell, 2.0 if relion_iteration == 1 else 6.0)
+    assert_matches(estimate.data_vs_prior, class_curves)

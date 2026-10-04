@@ -344,6 +344,36 @@ def _centered_full_half_axis_mask(shape, axis, dtype):
     return jnp.broadcast_to(keep.reshape(mask_shape), shape)
 
 
+def _relion_x_half_multiplicity_in_native_half(volume_shape, axis):
+    """How many of RELION's stored entries each entry of a native packed half stands for.
+
+    RELION's shell loops visit every stored entry of its half, ``k_axis >= 0`` along ``axis``, once. A native
+    packed half keeps the last axis' non-negative frequencies instead, and holds, for each of RELION's
+    entries, either that entry or its Hermitian mate. Where the last-axis frequency has a distinct mate (not
+    0, not an even axis' Nyquist), an entry stands for one of RELION's entries, or for two when its mate
+    lies in RELION's half as well: the ``k_axis = 0`` plane, and an even axis' Nyquist plane. On the last
+    axis' own-mate planes both mates are stored, and only those RELION stores count. The entries standing
+    for two take the value of one of them for both, so the plane must be Hermitian, as RELION's
+    ``enforceHermitianSymmetry`` leaves ``k_axis = 0``.
+
+    Returns int8 counts (0, 1 or 2) that broadcast over the packed half of ``volume_shape``.
+    """
+
+    axis = int(axis)
+    n_axis = int(volume_shape[axis])
+    n_last = int(volume_shape[-1])
+    coords = np.arange(-(n_axis // 2), n_axis - n_axis // 2, dtype=np.int64)
+    nyquist = (coords == -(n_axis // 2)) if n_axis % 2 == 0 else np.zeros(n_axis, dtype=bool)
+    stored = (coords >= 0) | nyquist
+    own_mate_plane = (coords == 0) | nyquist
+    last = np.arange(n_last // 2 + 1, dtype=np.int64)
+    last_own_mate = (last == 0) | ((n_last % 2 == 0) & (last == n_last // 2))
+    multiplicity = np.where(last_own_mate[None, :], stored[:, None], 1 + own_mate_plane[:, None]).astype(np.int8)
+    shape = [1, 1, n_last // 2 + 1]
+    shape[axis] = n_axis
+    return multiplicity.reshape(shape)
+
+
 @functools.partial(
     jax.jit,
     static_argnames=(
@@ -399,6 +429,13 @@ def _padded_shell_sums_device(
     shell_index = jnp.minimum(rounded.astype(jnp.int32), ori_half)
     if is_half_layout:
         included = radius_included
+        if full_half_axis != 2:
+            # A native half repacked from RELION x-half storage: RELION's half is along full_half_axis.
+            multiplicity = _relion_x_half_multiplicity_in_native_half(radial_volume_shape, full_half_axis)
+            included = included * jnp.broadcast_to(
+                jnp.asarray(multiplicity, dtype=jnp.float64),
+                radial_shape,
+            ).reshape(-1)
     else:
         # RELION iterates the stored half-complex axis only. For native RECOVAR
         # full volumes that axis is last; for full volumes expanded from RELION
@@ -440,11 +477,12 @@ def _compute_relion_weight_shell_stats(
         Shell binning rule. RELION's SSNR/tau2 update path uses ``round``
         while the Wiener reconstruct / current-size path uses ``floor``.
     full_half_axis : {-3, -2, -1, 0, 1, 2}
-        Axis that corresponds to the RELION half-complex packed dimension
-        when ``weight`` is a full Hermitian-expanded volume. Native RECOVAR
-        full volumes use the last axis (default). Full volumes expanded from
-        RELION x-half storage and transposed into RECOVAR public layout use
-        axis 0.
+        Axis that corresponds to the RELION half-complex packed dimension.
+        Native RECOVAR volumes use the last axis (default). Volumes expanded
+        or repacked from RELION x-half storage and transposed into RECOVAR
+        public layout use axis 0, as a full volume or as a packed half: a
+        packed half then counts its entries as RELION's half along that axis
+        does (:func:`_relion_x_half_multiplicity_in_native_half`).
 
     Returns
     -------
@@ -566,16 +604,36 @@ def _compute_relion_weight_shell_stats(
             else:
                 shell_index_np = np.floor(padded_dist_np / padding_factor).astype(np.int32)
             shell_index_np = np.minimum(shell_index_np, ori_half)
+            multiplicity_np = None
             if not is_half_layout:
                 radius_included_np = radius_included_np & _centered_full_half_axis_mask_np(
                     radial_shape,
                     full_half_axis,
                 )
+            elif full_half_axis != 2:
+                multiplicity_np = _relion_x_half_multiplicity_in_native_half(radial_volume_shape, full_half_axis)
+                radius_included_np &= multiplicity_np > 0
+            weight_grid_np = np.asarray(weight).reshape(radial_shape)
             shell_sum_np, shell_count_np = _numpy_bincount_shell_stats(
                 shell_index_np,
-                np.asarray(weight).reshape(radial_shape),
+                weight_grid_np,
                 radius_included_np,
             )
+            if multiplicity_np is not None:
+                # The entries that stand for two of RELION's lie on a few planes; count those once more.
+                other_axes = tuple(a for a in range(3) if a != full_half_axis)
+                for plane in np.flatnonzero(np.any(multiplicity_np == 2, axis=other_axes)):
+                    plane_index = [slice(None)] * 3
+                    plane_index[full_half_axis] = int(plane)
+                    plane_index = tuple(plane_index)
+                    twice = np.broadcast_to(multiplicity_np == 2, radial_shape)[plane_index]
+                    plane_sum, plane_count = _numpy_bincount_shell_stats(
+                        shell_index_np[plane_index],
+                        weight_grid_np[plane_index],
+                        radius_included_np[plane_index] & twice,
+                    )
+                    shell_sum_np = shell_sum_np + plane_sum
+                    shell_count_np = shell_count_np + plane_count
         else:
             shell_sum, shell_count = _padded_shell_sums_device(
                 weight,
@@ -623,6 +681,12 @@ def _compute_relion_weight_shell_stats(
                 relion_grid_shape,
                 full_half_axis,
                 jnp.float64,
+            ).reshape(-1)
+        elif full_half_axis != 2:
+            multiplicity = _relion_x_half_multiplicity_in_native_half(volume_shape, full_half_axis)
+            included = included * jnp.broadcast_to(
+                jnp.asarray(multiplicity, dtype=jnp.float64),
+                fourier_transform_utils.volume_shape_to_half_volume_shape(volume_shape),
             ).reshape(-1)
 
     if shell_sum_np is None:
@@ -1300,149 +1364,6 @@ def compute_relion_fsc_from_backprojector(
     if fsc_dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
         raise ValueError(f"output_dtype must be float32 or float64, got {output_dtype}")
     return jnp.asarray(fsc, dtype=fsc_dtype)
-
-
-@functools.lru_cache(maxsize=16)
-def _relion_rfft_shell_grid(volume_shape):
-    """Return RELION-style shell labels for NumPy ``rfftn`` volume spectra."""
-    volume_shape = tuple(int(s) for s in volume_shape)
-    if len(volume_shape) != 3 or len(set(volume_shape)) != 1:
-        raise ValueError(f"Expected cubic 3-D volume_shape, got {volume_shape}")
-    z = np.fft.fftfreq(volume_shape[0]) * volume_shape[0]
-    y = np.fft.fftfreq(volume_shape[1]) * volume_shape[1]
-    x = np.fft.rfftfreq(volume_shape[2]) * volume_shape[2]
-    zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
-    radius_sq = zz * zz + yy * yy + xx * xx
-    shell = _relion_round_away_from_zero(np.sqrt(radius_sq))
-    shell_count = volume_shape[2] // 2 + 1
-    valid = shell < shell_count
-    return shell.astype(np.int64), valid, radius_sq
-
-
-def _relion_fsc_from_real_maps_numpy(map0, map1):
-    """Mirror RELION ``getFSC`` for two real-space maps using NumPy FFTs."""
-    map0 = np.asarray(map0, dtype=np.float64)
-    map1 = np.asarray(map1, dtype=np.float64)
-    if map0.shape != map1.shape:
-        raise ValueError(f"map shapes must match, got {map0.shape} and {map1.shape}")
-    shell, valid, _ = _relion_rfft_shell_grid(tuple(map0.shape))
-    shell_count = map0.shape[-1] // 2 + 1
-
-    fft_axes = (0, 1, 2)
-    ft0 = np.fft.rfftn(map0, axes=fft_axes)
-    ft1 = np.fft.rfftn(map1, axes=fft_axes)
-    labels = shell[valid].reshape(-1)
-    ft0_flat = ft0[valid].reshape(-1)
-    ft1_flat = ft1[valid].reshape(-1)
-    numerator = np.bincount(labels, weights=(np.conj(ft0_flat) * ft1_flat).real, minlength=shell_count)
-    denom0 = np.bincount(labels, weights=np.abs(ft0_flat) ** 2, minlength=shell_count)
-    denom1 = np.bincount(labels, weights=np.abs(ft1_flat) ** 2, minlength=shell_count)
-    fsc = np.zeros(shell_count, dtype=np.float64)
-    nonzero = (denom0 * denom1) > 0.0
-    fsc[nonzero] = numerator[nonzero] / np.sqrt(denom0[nonzero] * denom1[nonzero])
-    fsc = np.where(np.isfinite(fsc), fsc, 0.0)
-    if fsc.size:
-        fsc[0] = 1.0
-    return fsc
-
-
-def _relion_randomize_phases_beyond_numpy(map_real, index, rng):
-    """Mirror RELION ``randomizePhasesBeyond`` for a real-space map."""
-    map_real = np.asarray(map_real, dtype=np.float64)
-    _, _, radius_sq = _relion_rfft_shell_grid(tuple(map_real.shape))
-    fft_axes = (0, 1, 2)
-    ft = np.fft.rfftn(map_real, axes=fft_axes)
-    randomize = radius_sq >= int(index) * int(index)
-    phases = rng.uniform(0.0, 2.0 * np.pi, size=ft.shape)
-    randomized = np.abs(ft) * (np.cos(phases) + 1j * np.sin(phases))
-    ft = np.where(randomize, randomized, ft)
-    return np.fft.irfftn(ft, s=map_real.shape, axes=fft_axes).real
-
-
-def compute_relion_solvent_corrected_true_fsc(
-    half_map0_real,
-    half_map1_real,
-    solvent_mask,
-    *,
-    current_size=None,
-    randomize_fsc_at=0.8,
-    rng_seed=0,
-    return_details=False,
-):
-    """Compute RELION's solvent-corrected gold-standard FSC for auto-refine.
-
-    RELION writes unfiltered split-half maps, computes their unmasked FSC,
-    masks both maps with the solvent mask, randomizes phases beyond the first
-    unmasked shell below 0.8, and then applies Richard Henderson's corrected
-    FSC formula before feeding the curve to ``updateSSNRarrays``.
-    """
-    half_map0_real = np.asarray(half_map0_real, dtype=np.float64)
-    half_map1_real = np.asarray(half_map1_real, dtype=np.float64)
-    if half_map0_real.shape != half_map1_real.shape:
-        raise ValueError(
-            f"half-map shapes must match, got {half_map0_real.shape} and {half_map1_real.shape}"
-        )
-    if solvent_mask is not None:
-        solvent_mask = np.asarray(solvent_mask, dtype=np.float64)
-        if solvent_mask.shape != half_map0_real.shape:
-            raise ValueError(
-                f"solvent_mask shape {solvent_mask.shape} does not match half-map shape {half_map0_real.shape}"
-            )
-
-    fsc_unmasked = _relion_fsc_from_real_maps_numpy(half_map0_real, half_map1_real)
-    randomize_at = -1
-    for idx in range(1, fsc_unmasked.size):
-        if fsc_unmasked[idx] < float(randomize_fsc_at):
-            randomize_at = idx
-            break
-
-    if solvent_mask is None or randomize_at <= 0:
-        fsc_masked = fsc_unmasked.copy()
-        fsc_random_masked = np.zeros_like(fsc_unmasked)
-        fsc_true = fsc_unmasked.copy()
-    else:
-        masked0 = half_map0_real * solvent_mask
-        masked1 = half_map1_real * solvent_mask
-        fsc_masked = _relion_fsc_from_real_maps_numpy(masked0, masked1)
-
-        rng = np.random.default_rng(int(rng_seed))
-        randomized0 = _relion_randomize_phases_beyond_numpy(half_map0_real, randomize_at, rng)
-        randomized1 = _relion_randomize_phases_beyond_numpy(half_map1_real, randomize_at, rng)
-        fsc_random_masked = _relion_fsc_from_real_maps_numpy(randomized0 * solvent_mask, randomized1 * solvent_mask)
-
-        if fsc_masked[0] <= 0.0:
-            fsc_masked[0] = 1.0
-        if fsc_unmasked[0] <= 0.0:
-            fsc_unmasked[0] = 1.0
-        if fsc_random_masked[0] <= 0.0:
-            fsc_random_masked[0] = 1.0
-
-        fsc_true = np.empty_like(fsc_masked)
-        handoff = int(randomize_at) + 2
-        fsc_true[:handoff] = fsc_masked[:handoff]
-        fsct = fsc_masked[handoff:]
-        fscn = fsc_random_masked[handoff:]
-        denom = 1.0 - fscn
-        corrected = np.where((fscn > fsct) | (denom <= 0.0), 0.0, (fsct - fscn) / denom)
-        fsc_true[handoff:] = corrected
-
-    fsc_true = np.where(np.isfinite(fsc_true), fsc_true, 0.0)
-    if current_size is not None:
-        zero_start = int(current_size) // 2 + 1
-        if zero_start < fsc_true.size:
-            fsc_true[zero_start:] = 0.0
-
-    out = jnp.asarray(fsc_true, dtype=jnp.float32)
-    if not return_details:
-        return out
-    details = {
-        "randomize_at": int(randomize_at),
-        "fsc_unmasked": fsc_unmasked.astype(np.float32),
-        "fsc_masked": fsc_masked.astype(np.float32),
-        "fsc_random_masked": fsc_random_masked.astype(np.float32),
-        "fsc_true": fsc_true.astype(np.float32),
-    }
-    return out, details
 
 
 def compute_data_vs_prior(

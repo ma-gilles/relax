@@ -93,7 +93,6 @@ class RelionParityOptions:
     final_sampling_replay_relion_dir: str | None = None
     emulate_relion_firstiter_cc: bool = False
     relion_firstiter_ini_high_angstrom: float | None = None
-    do_solvent_fsc_correction: bool = False
     first_iteration_score_mode: str = "gaussian"
     first_iteration_reconstruction_mode: str = "soft"
     image_fourier_backend: Literal["host_numpy", "jax_gpu", "relion_cuda"] = "host_numpy"

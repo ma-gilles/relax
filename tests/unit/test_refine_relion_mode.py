@@ -1201,7 +1201,7 @@ def test_final_all_data_runs_with_cold_start_only_override(
     def record_resolution_shell(dvp, **kwargs):
         resolution_calls.append({"dvp": np.asarray(dvp).copy(), **kwargs})
         shell = original_shell(dvp, **kwargs)
-        return forced_final_shell if len(resolution_calls) == 2 else shell
+        return forced_final_shell if len(resolution_calls) == 1 else shell
 
     monkeypatch.setattr(resolution_helpers, "relion_current_resolution_shell", record_resolution_shell)
     monkeypatch.setattr(finalization, "relion_current_resolution_shell", record_resolution_shell)
@@ -1230,8 +1230,10 @@ def test_final_all_data_runs_with_cold_start_only_override(
     # is forced to a known shell to check that its result reaches the state.
     grid = int(half_datasets[0].image_shape[0])
     voxel = float(half_datasets[0].voxel_size)
+    # Only the final pass goes through relion_current_resolution_shell; the numbered K1
+    # iteration estimates its shell in estimate_k1_iteration_resolution.
     final_call = resolution_calls[-1]
-    assert len(resolution_calls) == 2
+    assert len(resolution_calls) == 1
     assert final_call["current_size"] == grid
     assert_matches(final_call["dvp"], result["tau2_ssnr_final_all_data"].astype(np.float32))
     state = result["convergence_state"]
@@ -3261,7 +3263,6 @@ def test_half0_local_relion_accumulators_offload_to_host():
     out = score_outputs._maybe_host_offload_half0_local_accumulators(
         half_index=0,
         use_local=True,
-        k_class_enabled=False,
         score_result=result,
         log=iteration_loop_module.logger,
     )
@@ -3286,7 +3287,6 @@ def test_half0_local_relion_accumulator_offload_skips_non_x_half():
     out = score_outputs._maybe_host_offload_half0_local_accumulators(
         half_index=0,
         use_local=True,
-        k_class_enabled=False,
         score_result=result,
         log=iteration_loop_module.logger,
     )
@@ -6867,7 +6867,7 @@ class TestRelionModeSmokeTest:
                     assert_matches(manifest[key], np.asarray(grid))
                     assert manifest[key].dtype == grid.dtype
 
-    def test_k1_solvent_corrected_fsc_disabled_uses_raw_tau2_fsc(
+    def test_k1_raw_backprojector_fsc_feeds_tau2(
         self,
         fake_global_estep,
         half_datasets,
@@ -6875,7 +6875,7 @@ class TestRelionModeSmokeTest:
         translations,
         monkeypatch,
     ):
-        """GUI auto-refine default does not solvent-correct FSC for tau2."""
+        """The raw backprojector FSC drives tau2, as in GUI auto-refine without solvent-corrected FSC."""
         from relax.reconstruction import regularization_relion
 
         grid_size = int(np.sqrt(IMAGE_SIZE))
@@ -6883,22 +6883,11 @@ class TestRelionModeSmokeTest:
         raw_fsc = np.linspace(0.95, 0.55, n_shells, dtype=np.float32)
         raw_fsc[0] = 1.0
         tau2_fsc_inputs = []
-        corrected_called = {"value": False}
 
         monkeypatch.setattr(
             regularization_relion,
             "compute_relion_fsc_from_backprojector",
             lambda *_args, **_kwargs: jnp.asarray(raw_fsc),
-        )
-
-        def fail_corrected_fsc(*_args, **_kwargs):
-            corrected_called["value"] = True
-            raise AssertionError("solvent FSC correction should be disabled")
-
-        monkeypatch.setattr(
-            regularization_relion,
-            "compute_relion_solvent_corrected_true_fsc",
-            fail_corrected_fsc,
         )
 
         original_tau2 = regularization_relion.compute_relion_tau2_from_weights
@@ -6932,81 +6921,6 @@ class TestRelionModeSmokeTest:
         assert len(tau2_fsc_inputs) == 2
         for tau2_fsc in tau2_fsc_inputs:
             np.testing.assert_allclose(tau2_fsc, raw_fsc, atol=1e-7)
-        np.testing.assert_allclose(np.asarray(result["fsc_history"][0]), raw_fsc, atol=1e-7)
-        assert corrected_called["value"] is False
-
-    def test_k1_solvent_corrected_fsc_enabled_feeds_tau2_and_growth(
-        self,
-        fake_global_estep,
-        half_datasets,
-        init_volume,
-        translations,
-        monkeypatch,
-    ):
-        """If RELION enables solvent FSC correction, the corrected curve drives tau2."""
-        from relax.reconstruction import regularization_relion
-
-        grid_size = int(np.sqrt(IMAGE_SIZE))
-        n_shells = grid_size // 2 + 1
-        raw_fsc = np.linspace(0.95, 0.55, n_shells, dtype=np.float32)
-        raw_fsc[0] = 1.0
-        corrected_fsc = np.linspace(0.90, 0.05, n_shells, dtype=np.float32)
-        corrected_fsc[0] = 1.0
-        tau2_fsc_inputs = []
-
-        monkeypatch.setattr(
-            regularization_relion,
-            "compute_relion_fsc_from_backprojector",
-            lambda *_args, **_kwargs: jnp.asarray(raw_fsc),
-        )
-
-        def fake_corrected_fsc(*_args, **_kwargs):
-            return jnp.asarray(corrected_fsc), {
-                "randomize_at": 1,
-                "fsc_unmasked": raw_fsc,
-                "fsc_masked": corrected_fsc,
-                "fsc_random_masked": np.zeros_like(corrected_fsc),
-                "fsc_true": corrected_fsc,
-            }
-
-        monkeypatch.setattr(
-            regularization_relion,
-            "compute_relion_solvent_corrected_true_fsc",
-            fake_corrected_fsc,
-        )
-
-        original_tau2 = regularization_relion.compute_relion_tau2_from_weights
-
-        def wrap_tau2(Ft_ctf_0, Ft_ctf_1, fsc, *args, **kwargs):
-            tau2_fsc_inputs.append(np.asarray(fsc, dtype=np.float32).copy())
-            return original_tau2(Ft_ctf_0, Ft_ctf_1, fsc, *args, **kwargs)
-
-        monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", wrap_tau2)
-
-        result = refine_single_volume(
-            half_datasets,
-            init_volume,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
-            translations,
-            options=RefinementOptions(
-                disc_type="linear_interp",
-                schedule=RefinementSchedule(
-                    max_iter=1,
-                    init_current_size=16,
-                    init_healpix_order=2,
-                    max_healpix_order=3,
-                    particle_diameter_ang=200.0,
-                ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(adaptive_oversampling=0),
-                parity=RelionParityOptions(do_solvent_fsc_correction=True),
-            ),
-        )
-
-        assert len(tau2_fsc_inputs) == 2
-        for tau2_fsc in tau2_fsc_inputs:
-            np.testing.assert_allclose(tau2_fsc, corrected_fsc, atol=1e-7)
         np.testing.assert_allclose(np.asarray(result["fsc_history"][0]), raw_fsc, atol=1e-7)
 
     def test_firstiter_cc_lowpass_runs_before_solvent_flatten(self, monkeypatch):

@@ -36,13 +36,23 @@ def _inputs(n_classes, dtype, offset_dimension, empty_second_half):
         )
         for _ in range(2)
     ]
+    # The controller selects these four by mode: Class3D has no split-half FSC, K=1 no class operands.
+    if n_classes > 1:
+        by_mode = dict(
+            fsc=None, fsc_for_growth=None,
+            class_weights=np.full(n_classes, 1 / n_classes, dtype=dtype),
+            class_assignments=[np.zeros(n, dtype=np.int32) for n in rows],
+        )
+    else:
+        by_mode = dict(
+            fsc=np.linspace(1, 0, 5), fsc_for_growth=np.linspace(1, 0.5, 5),
+            class_weights=None, class_assignments=None,
+        )
     return dict(
-        means=maps, unfiltered_means=None,
+        **by_mode, means=maps, unfiltered_means=None,
         tau2_shells=np.ones((n_classes if n_classes > 1 else 2, 5), dtype=dtype),
         data_vs_prior=np.full(5, 2, dtype=dtype), noise_shells=[np.ones((2, 5), dtype=dtype)] * 2,
-        fsc=np.linspace(1, 0, 5), fsc_for_growth=np.linspace(1, 0.5, 5),
-        class_weights=np.full(n_classes, 1 / n_classes, dtype=dtype), direction_priors=priors,
-        half_inputs=halves, class_assignments=[np.zeros(n, dtype=np.int32) for n in rows],
+        direction_priors=priors, half_inputs=halves,
         max_posterior=[np.full(n, 0.75, dtype=dtype) for n in rows],
         significant_counts=[np.ones(n, dtype=np.int32) for n in rows], avg_norm_correction=(1.0, None),
     )
@@ -79,9 +89,11 @@ def test_complete_capture_copies_the_selected_model_and_particle_frame(n_classes
         assert result.direction_prior[0].shape == (4, 48)
         assert result.extra['direction_prior_order_half1'] == 1
         assert result.class_weights.dtype == np.float64
+        assert result.class_assignments[1].shape == (0 if empty_second_half else 2,)
     else:
         assert result.means[0] is not result.means[1]
-        assert result.fsc is not None and result.fsc_for_growth is not None
+        assert result.fsc.dtype == np.float64 and result.fsc_for_growth.dtype == np.float64
+        assert not np.shares_memory(result.fsc, inputs['fsc'])
         assert result.direction_prior[0].shape == (12,)
         assert result.extra['direction_prior_order_half1'] == 0
         assert result.class_weights is None and result.class_assignments is None

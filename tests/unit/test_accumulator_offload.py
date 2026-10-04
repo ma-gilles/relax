@@ -44,7 +44,7 @@ def test_offload_preserves_transfer_release_and_collection_order(monkeypatch):
 
     monkeypatch.setattr(score_outputs.jax, "device_get", device_get)
     actual = score_outputs._maybe_host_offload_half0_local_accumulators(
-        half_index=0, use_local=True, k_class_enabled=False, score_result=result,
+        half_index=0, use_local=True, score_result=result,
         log=SimpleNamespace(info=log_info),
     )
     assert actual is result
@@ -55,10 +55,10 @@ def test_offload_preserves_transfer_release_and_collection_order(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "half_index,use_local,k_class_enabled,axis",
-    [(1, True, False, 0), (0, False, False, 0), (0, True, True, 0), (0, True, False, None)],
+    "half_index,use_local,axis",
+    [(1, True, 0), (0, False, 0), (0, True, None)],
 )
-def test_ineligible_results_are_untouched(monkeypatch, half_index, use_local, k_class_enabled, axis):
+def test_ineligible_results_are_untouched(monkeypatch, half_index, use_local, axis):
     def unexpected(*args, **kwargs):
         pytest.fail("Ineligible result must not transfer, collect or log")
 
@@ -66,7 +66,7 @@ def test_ineligible_results_are_untouched(monkeypatch, half_index, use_local, k_
     y, ctf = object(), object()
     result = SimpleNamespace(Ft_y=y, Ft_ctf=ctf, mstep_full_half_axis=axis)
     actual = score_outputs._maybe_host_offload_half0_local_accumulators(
-        half_index=half_index, use_local=use_local, k_class_enabled=k_class_enabled,
+        half_index=half_index, use_local=use_local,
         score_result=result, log=SimpleNamespace(info=unexpected),
     )
     assert actual is result and result.Ft_y is y and result.Ft_ctf is ctf

@@ -13,6 +13,16 @@ PPCA work and tomography safeguards. Incoming command/controller changes are
 adapted to the existing refactor owners. Scientific sequencing and visible
 updates remain unchanged by these interface migrations.
 
+Both refactor packages are since merged with GitHub main
+`d1ba3e83406c81ab77891e25d1a775d4a818e674`: the first package at `1b73943`, the
+second at `e026a64`; the branch then takes main through
+`4efac62a95353714bd6d120e38b595e99015ca52` (merge `b06644c`), whose only
+refinement change is the float32 matmul setting in `full_refinement.py`. Main's changes after `80f2b2b` are kept as main wrote
+them: the numbered iteration builds the scoring projector on every route (the
+"no projector scoring path" error is gone), the adaptive pass-2 grids come from
+`oversampling.prepare_adaptive_pass2_grids` with deferred fine rotations, and
+pass 1 scores RELION's exact coarse operands only.
+
 The first-CC margin now resolves in `command_options.resolve_firstiter_controls`,
 then enters the existing parity settings at the original command boundary.
 Numbered expectation and final dense execution consume those settings; the
@@ -66,7 +76,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2752/1766 for numerical/command controllers;
+Source spans are 2731/1767 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main

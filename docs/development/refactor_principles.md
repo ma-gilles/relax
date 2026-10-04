@@ -932,6 +932,32 @@ and repeated mode decisions as well as operation ownership.
   the unused mode's set to `None` and chose the operation from `n_classes`; its
   five callers now call `reconstruct_numbered_k1_halfmaps` or
   `reconstruct_numbered_class_maps` directly and the builder is removed.
+- Sharing steps instead of a flagged sequence also applies to a controller's
+  own statements (user decision, October 3). When several tests of one mode are
+  separated only by one-line shared statements, make one decision and write
+  each shared statement in both arms at its existing position. Nothing is
+  reordered: if a shared statement cannot be written in both arms without
+  changing its position relative to another operation, log, timer or release,
+  keep the separate tests. Example: the numbered M-step tested the mode seven
+  times around two timer starts, the tau2 install and the reconstruction log;
+  it is now one decision whose arms each list their ordered steps.
+- A mode flag implied by an operand already in hand is a repeated decision.
+  Local search implies K1 in the numbered controller, so code reached only
+  under `use_local` takes no mode flag and selects no class operand. A flag
+  that only says whether another operand is `None` is replaced by testing that
+  operand. A value derived from operands that do not change is computed once,
+  where its inputs become final, and reused.
+- An option or arm that tests exercise but no entry path produces is
+  unreachable code, not a supported case (user ruling, October 3): trace the
+  command line, replay state, continuation and scripts, then delete it with the
+  tests that exist only for it, naming what was removed in the commit message.
+  Example: `do_solvent_fsc_correction` was set only by three unit tests; the
+  option, the block it gated and the corrected-FSC kernel are gone. Stop at a
+  stored format: `SplitHalfPrior.fsc_for_update` stays because snapshots and
+  the growth history carry it.
+- A change that alters execution but no value (a host copy no longer made, a
+  start-up value no longer built and then replaced) gets its own commit, whose
+  message states what differs at run time and which log lines disappear.
 
 Initial review targets: finalization repeated the K1 guard around unfiltered
 reconstruction, optional low-resolution joining and accumulator release; these
