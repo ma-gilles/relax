@@ -276,6 +276,36 @@ def test_final_pass_local_tomo_sampling_without_a_parent_pass_size(pass1_size):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("coarse_size, fine_size", [(None, None), (32, 48)])
+def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(local, coarse_size, fine_size):
+    """A global search samples the exhaustive grid's order with the run's perturbation; a local search one
+    oversampling order below its fine order with its own. A window of None is the full image."""
+    from types import SimpleNamespace
+
+    from relax.helpers.resolution import ImageGeometry
+    from relax.refinement.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
+
+    sampling = numbered_iteration_tomo_sampling(
+        SimpleNamespace(adaptive_oversampling=1, translation_range=0.4, translation_step=0.15),
+        ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=4.25),
+        local_sampling=(
+            SimpleNamespace(search=SimpleNamespace(healpix_order=6), perturbation=-0.2) if local else None
+        ),
+        grid_healpix_order=3,
+        random_perturbation=0.125,
+        coarse_size=coarse_size,
+        fine_size=fine_size,
+    )
+
+    assert isinstance(sampling, TomoSampling)
+    assert (sampling.healpix_order, sampling.oversampling_order) == (5 if local else 3, 1)
+    assert sampling.random_perturbation == (-0.2 if local else 0.125)
+    assert (sampling.coarse_size, sampling.fine_size) == (coarse_size or 64, fine_size or 64)
+    assert_matches(np.array([sampling.offset_range_angst, sampling.offset_step_angst]), np.array([1.7, 0.6375]))
+
+
+@pytest.mark.unit
 def test_tilt_image_power_above_the_cutoff_carries_one_over_n_images():
     """Above the norm cutoff a tilt image adds its power with 1 / n_images, not 1 (14547997 kept it at 1:
     the noise above the current size came out n_images times RELION's)."""

@@ -251,6 +251,45 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
             raise errors[int(k)]
 
 
+def run_numbered_halves(
+    run_half,
+    diagnostic_half_indices,
+    significance: SignificanceStatistics,
+    *,
+    overlap_halves: bool,
+    iteration: int,
+    log: logging.Logger,
+) -> None:
+    """Score the halves of a numbered iteration and close its expectation.
+
+    ``run_half(k)`` scores half ``k`` and records its outputs; the halves run one after another, or one
+    thread each when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
+    halves for a diagnostic stops here. Then the deferred preprocess checks are drained and the halves'
+    significant-sample counts combined.
+    """
+    _overlap_active = _half_overlap_active(
+        overlap_halves,
+        diagnostic_half_indices=diagnostic_half_indices,
+        log=log,
+    )
+    if _overlap_active:
+        _run_halves_overlapped(run_half, diagnostic_half_indices)
+    else:
+        for k in diagnostic_half_indices:
+            run_half(k)
+    if diagnostic_half_indices != (0, 1):
+        raise RuntimeError(
+            "targeted half-only significance diagnostic returned without writing its "
+            "complete target set; refusing to continue with one half missing"
+        )
+
+    # E-step + per-half M-step accumulators are now both populated.
+    _parity_dump.mark_stage(iteration, "e_step")
+    from relax.cuda.kernels import drain_relion_preprocess_checks
+    drain_relion_preprocess_checks()
+    significance.combine()
+
+
 @dataclass(frozen=True)
 class PreparedFinalHalf:
     """Priors and optics resolved on one final expectation's scoring frame."""

@@ -116,10 +116,9 @@ from relax.refinement.convergence import (
 )
 from relax.refinement.expectation import (
     SignificanceStatistics,
-    _half_overlap_active,
-    _run_halves_overlapped,
     prepare_numbered_expectation,
     record_numbered_half,
+    run_numbered_halves,
     score_numbered_half,
 )
 from relax.refinement.expectation_batches import BatchPlanner
@@ -206,7 +205,7 @@ from relax.refinement.result_files import (
     _model_result_fields,
     _numbered_result_metadata,
 )
-from relax.refinement.tomo_half import TomoHalf, TomoSampling
+from relax.refinement.tomo_half import TomoHalf, numbered_iteration_tomo_sampling
 from relax.relion.geometry import (
     IMAGE_MASK_EDGE_PIXELS,
     PROJECTION_PADDING_FACTOR,
@@ -1622,16 +1621,14 @@ def refine_single_volume(
             local_profile_history=history.local_profile_history,
         )
         if tomo_halves:
-            tomo_oversampling = int(state.adaptive_oversampling)
-            tomo_coarse_size = local_sampling.coarse_image_window_size if use_local else coarse_cs
-            numbered_tomo_sampling = TomoSampling(
-                healpix_order=int(local_sampling.search.healpix_order) - tomo_oversampling if use_local else int(coarse_grids.rotation_grid.healpix_order),
-                oversampling_order=tomo_oversampling,
-                offset_range_angst=float(state.translation_range) * image_geometry.pixel_size_angstrom,
-                offset_step_angst=float(state.translation_step) * image_geometry.pixel_size_angstrom,
-                random_perturbation=float(local_sampling.perturbation if use_local else random_perturbation),
-                coarse_size=int(image_geometry.image_shape[0] if tomo_coarse_size is None else tomo_coarse_size),
-                fine_size=int(image_geometry.image_shape[0] if cs_for_engine is None else cs_for_engine),
+            numbered_tomo_sampling = numbered_iteration_tomo_sampling(
+                state,
+                image_geometry,
+                local_sampling=local_sampling,
+                grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+                random_perturbation=random_perturbation,
+                coarse_size=local_sampling.coarse_image_window_size if use_local else coarse_cs,
+                fine_size=cs_for_engine,
             )
         else:
             numbered_tomo_sampling = None
@@ -1695,31 +1692,18 @@ def refine_single_volume(
                 k_class_enabled=k_class_enabled,
             )
 
-        _overlap_active = _half_overlap_active(
-            options.overlap.overlap_halves,
-            diagnostic_half_indices=diagnostic_half_indices,
+        run_numbered_halves(
+            _run_half_estep,
+            diagnostic_half_indices,
+            significance,
+            overlap_halves=options.overlap.overlap_halves,
+            iteration=iteration,
             log=logger,
         )
-        if _overlap_active:
-            _run_halves_overlapped(_run_half_estep, diagnostic_half_indices)
-            k = diagnostic_half_indices[-1]
-        else:
-            for k in diagnostic_half_indices:
-                _run_half_estep(k)
-        if diagnostic_half_indices != (0, 1):
-            raise RuntimeError(
-                "targeted half-only significance diagnostic returned without writing its "
-                "complete target set; refusing to continue with one half missing"
-            )
 
         Ft_y_0, Ft_y_1 = per_half.Ft_y
         Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
-        # E-step + per-half M-step accumulators are now both populated.
-        _parity_dump.mark_stage(iteration, "e_step")
-        from relax.cuda.kernels import drain_relion_preprocess_checks
-        drain_relion_preprocess_checks()
-        significance.combine()
         if (debug.stop_after_local_search_profile or stop_after_local_search) and use_local:
             elapsed = time.time() - t0
             logger.info(

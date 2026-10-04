@@ -271,6 +271,35 @@ class TomoSampling:
     fine_size: int
 
 
+def numbered_iteration_tomo_sampling(
+    state,
+    image_geometry,
+    *,
+    local_sampling,
+    grid_healpix_order: int,
+    random_perturbation: float,
+    coarse_size: int | None,
+    fine_size: int | None,
+) -> TomoSampling:
+    """A numbered iteration's subtomogram sampling from the refinement state.
+
+    ``local_sampling`` is the iteration's local-search sampling, or None for a global search on the
+    exhaustive grid of ``grid_healpix_order``. ``coarse_size`` and ``fine_size`` are the pass-1 and
+    pass-2 Fourier windows; None is the full image.
+    """
+    use_local = local_sampling is not None
+    tomo_oversampling = int(state.adaptive_oversampling)
+    return TomoSampling(
+        healpix_order=int(local_sampling.search.healpix_order) - tomo_oversampling if use_local else int(grid_healpix_order),
+        oversampling_order=tomo_oversampling,
+        offset_range_angst=float(state.translation_range) * image_geometry.pixel_size_angstrom,
+        offset_step_angst=float(state.translation_step) * image_geometry.pixel_size_angstrom,
+        random_perturbation=float(local_sampling.perturbation if use_local else random_perturbation),
+        coarse_size=int(image_geometry.image_shape[0] if coarse_size is None else coarse_size),
+        fine_size=int(image_geometry.image_shape[0] if fine_size is None else fine_size),
+    )
+
+
 def local_tomo_sampling(
     *,
     fine_order: int,
