@@ -16,9 +16,9 @@
   },
   "ceilings": {
     "recorded_date": "2026-10-04",
-    "source_commit": "d0af92ff92792833dfe9aaa2659e0979a2d49dd9",
+    "source_commit": "d86ea9020af24c83b6e37ad11eaf252c42a55c18",
     "totals": {
-      "maximum_function_line_span": 2193,
+      "maximum_function_line_span": 2153,
       "maximum_parameter_count": 33,
       "large_argument_function_count": 29,
       "very_large_argument_function_count": 4,
