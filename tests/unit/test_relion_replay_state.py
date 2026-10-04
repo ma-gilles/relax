@@ -435,26 +435,39 @@ def test_absent_final_reference_substitution_preserves_list_identity():
 
 
 @pytest.mark.parametrize(
-    "refs,source,diagnostic,kclass,error,match",
+    "refs,source,diagnostic,error,match",
     [
-        (None, 1, {}, False, RuntimeError, "source does not match"),
-        ([np.zeros(4), np.zeros(4)], 1, None, True, RuntimeError, "source does not match"),
-        ([np.zeros(4), np.zeros(4)], 2, None, True, RuntimeError, "K=1 only"),
-        ([np.zeros(4)], 2, None, False, ValueError, "exactly two half maps"),
-        ([np.zeros(4), np.zeros(3)], 2, None, False, ValueError, "shape mismatch"),
+        (None, 1, {}, RuntimeError, "source does not match"),
+        ([np.zeros(4)], 2, None, ValueError, "exactly two half maps"),
+        ([np.zeros(4), np.zeros(3)], 2, None, ValueError, "shape mismatch"),
     ],
 )
-def test_final_reference_substitution_rejects_invalid_boundary_and_maps(refs, source, diagnostic, kclass, error, match):
+def test_k1_final_reference_substitution_rejects_invalid_boundary_and_maps(refs, source, diagnostic, error, match):
     means = [jnp.zeros(4), jnp.zeros(4)]
     with pytest.raises(error, match=match):
-        relion_replay_module._prepare_final_replay_references(
+        relion_replay_module._prepare_k1_final_replay_references(
             replay=SimpleNamespace(final_replay_reference_maps=refs, final_replay_source_iteration=source),
             diagnostic_override=diagnostic,
             numbered_iteration_count=2,
             means=means,
             final_join_means=means,
-            k_class_enabled=kclass,
             logger=relion_replay_module.logger,
+        )
+
+
+@pytest.mark.parametrize(
+    "refs,source,diagnostic,error,match",
+    [
+        ([np.zeros(4), np.zeros(4)], 1, None, RuntimeError, "source does not match"),
+        ([np.zeros(4), np.zeros(4)], 2, None, RuntimeError, "K=1 only"),
+    ],
+)
+def test_class_final_boundary_rejects_a_mismatched_source_and_reference_maps(refs, source, diagnostic, error, match):
+    with pytest.raises(error, match=match):
+        relion_replay_module._validate_class_final_replay_boundary(
+            replay=SimpleNamespace(final_replay_reference_maps=refs, final_replay_source_iteration=source),
+            diagnostic_override=diagnostic,
+            numbered_iteration_count=2,
         )
 
 
