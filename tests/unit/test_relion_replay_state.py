@@ -10,7 +10,7 @@ from helpers.float_compare import assert_matches
 import relax.diagnostics.relion_replay as relion_replay_module
 import relax.helpers.orientation_priors as orientation_priors_module
 import relax.refinement.projector_preparation as projector_preparation
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
@@ -116,16 +116,7 @@ def test_sealed_sampling_override_never_reads_external_replay_files(monkeypatch,
         lambda path: pytest.fail(f"unexpected external model read: {path}"),
     )
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     result = relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override=None,
         perturb_replay_relion_dir=str(tmp_path / "wrong_prefix_and_iteration"),
@@ -209,16 +200,7 @@ def test_frozen_replay_explicitly_suppresses_external_direction_prior_reload(
         np.full(768, 1.0 / 768.0, dtype=np.float32),
     ]
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            priors, [3, 3], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(values, 3) for values in priors]
     relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override={"relion_projector_state": None},
         perturb_replay_relion_dir=str(tmp_path),
@@ -503,18 +485,7 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
             (tmp_path / f"run_it001_half{half}_model.star").touch()
         monkeypatch.setattr(relion_replay_module, "read_relion_direction_prior", lambda *a, **kw: prior.copy())
         monkeypatch.setattr(relion_replay_module, "read_relion_direction_priors", lambda *a, **kw: prior.copy())
-    global_priors, global_orders = [None, None], [None, None]
-    class_priors, class_orders = [None, None], [None, None]
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            class_priors, class_orders,
-            global_priors, global_orders, strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override=explicit,
         perturb_replay_relion_dir=str(tmp_path) if source == "model_file" else None,
@@ -539,9 +510,8 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
         direction_priors=direction_priors,
          symmetry=symmetry,
     )
-    selected = [p.classes if n_classes > 1 else p.shared for p in direction_priors]
-    loaded = [p.values for p in selected]
-    orders = [p.healpix_order for p in selected]
+    loaded = [p.values for p in direction_priors]
+    orders = [p.healpix_order for p in direction_priors]
     assert orders == [old_order, old_order]
     for value in loaded:
         assert value.shape == prior.shape
@@ -549,7 +519,7 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
     for half in range(2):
         result = orientation_priors_module.relion_direction_log_priors_for_half(
             use_local=False, scoring_healpix_order=new_order, n_classes=n_classes,
-            priors=direction_priors[half],
+            prior=direction_priors[half],
             sealed_sampling_state=None, dtype=np.float32,
             log=relion_replay_module.logger, half_index=half, symmetry=symmetry,
         )

@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.diagnostics.state_swap_probe import _STATE_SWAP_VARIANT_COMPONENTS
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
 
@@ -112,12 +112,7 @@ def _snapshot_state_swap_inputs(
     current_sigma_offset_angstrom_per_half,
     direction_priors,
 ):
-    class_priors, class_prior_orders = _copy_direction_prior_state(
-        [p.classes for p in direction_priors],
-    )
-    global_priors, global_prior_orders = _copy_direction_prior_state(
-        [p.shared for p in direction_priors],
-    )
+    priors, prior_orders = _copy_direction_prior_state(direction_priors)
     return {
         "state_fields": dict(state.__dict__),
         "cs": int(cs),
@@ -134,10 +129,8 @@ def _snapshot_state_swap_inputs(
         "previous_best_rotations": _copy_half_pair(previous_best_rotations),
         "current_sigma_offset_angstrom": float(current_sigma_offset_angstrom),
         "current_sigma_offset_angstrom_per_half": _copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
-        "class_direction_prior_per_half": class_priors,
-        "class_direction_prior_order_per_half": class_prior_orders,
-        "global_direction_prior_per_half": global_priors,
-        "global_direction_prior_order_per_half": global_prior_orders,
+        "direction_prior_per_half": priors,
+        "direction_prior_order_per_half": prior_orders,
     }
 
 
@@ -398,15 +391,9 @@ def _apply_state_swap_probe(
         previous_best_rotations = _copy_half_pair(recovar_snapshot["previous_best_rotations"])
     if "direction_prior" in components:
         direction_priors = [
-            HalfDirectionPriors(
-                classes=DirectionPrior(
-                    _copy_optional_array(recovar_snapshot["class_direction_prior_per_half"][k]),
-                    recovar_snapshot["class_direction_prior_order_per_half"][k],
-                ),
-                shared=DirectionPrior(
-                    _copy_optional_array(recovar_snapshot["global_direction_prior_per_half"][k]),
-                    recovar_snapshot["global_direction_prior_order_per_half"][k],
-                ),
+            DirectionPrior(
+                _copy_optional_array(recovar_snapshot["direction_prior_per_half"][k]),
+                recovar_snapshot["direction_prior_order_per_half"][k],
             )
             for k in range(2)
         ]

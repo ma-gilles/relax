@@ -1054,7 +1054,7 @@ def apply_iter_replay_overrides(
     See ``docs/math/em_parity_program.md`` under the 2026-07-15 targeted
     posterior discriminators for the serialized-versus-runtime scale contract.
 
-    Mutates ``state``, ``relion_half_inputs``, and each half's direction-prior state in place. Returns explicit new values for everything else.
+    Mutates ``state`` and ``relion_half_inputs``, and replaces entries of the ``direction_priors`` list in place. Returns explicit new values for everything else.
 
     Two override sources, applied in order:
 
@@ -1338,7 +1338,7 @@ def apply_iter_replay_overrides(
                     # updateAngularSampling/initialisePdfDirection. Remapping here
                     # would incorrectly retain learned anisotropy after refinement.
                     if k_class_enabled:
-                        direction_priors[_half_idx].classes = DirectionPrior(
+                        direction_priors[_half_idx] = DirectionPrior(
                             normalize_class_direction_prior(
                             _relion_direction_prior, n_classes,
                         ),
@@ -1348,11 +1348,11 @@ def apply_iter_replay_overrides(
                             "Replay override: class direction prior half-%d <- %s (%d classes, %d directions)",
                             _half_idx + 1,
                             _prior_star,
-                            direction_priors[_half_idx].classes.values.shape[0],
-                            direction_priors[_half_idx].classes.values.shape[1],
+                            direction_priors[_half_idx].values.shape[0],
+                            direction_priors[_half_idx].values.shape[1],
                         )
                     else:
-                        direction_priors[_half_idx].shared = DirectionPrior(
+                        direction_priors[_half_idx] = DirectionPrior(
                             _relion_direction_prior,
                             _relion_direction_prior_order,
                         )
@@ -1470,7 +1470,7 @@ def apply_iter_replay_overrides(
                 # updateAngularSampling/initialisePdfDirection. Remapping here
                 # would incorrectly retain learned anisotropy after refinement.
                 if k_class_enabled:
-                    direction_priors[_half_idx].classes = DirectionPrior(
+                    direction_priors[_half_idx] = DirectionPrior(
                         normalize_class_direction_prior(
                         prior_k, n_classes, dtype=runtime_dtype
                     ),
@@ -1479,11 +1479,11 @@ def apply_iter_replay_overrides(
                     logger.info(
                         "Replay override: class direction prior half-%d <- provided override (%d classes, %d directions)",
                         _half_idx + 1,
-                        direction_priors[_half_idx].classes.values.shape[0],
-                        direction_priors[_half_idx].classes.values.shape[1],
+                        direction_priors[_half_idx].values.shape[0],
+                        direction_priors[_half_idx].values.shape[1],
                     )
                 else:
-                    direction_priors[_half_idx].shared = DirectionPrior(
+                    direction_priors[_half_idx] = DirectionPrior(
                         prior_k,
                         prior_order_k,
                     )

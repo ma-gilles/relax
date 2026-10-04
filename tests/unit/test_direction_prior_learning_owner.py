@@ -82,7 +82,7 @@ def test_kclass_combines_halves_with_independent_copies():
 
 def test_history_records_float64_copies_of_k1_priors_and_none_for_missing():
     values = np.asarray([0.25, 0.75], dtype=np.float32)
-    priors = [op.HalfDirectionPriors(shared=op.DirectionPrior(values, 0)), op.HalfDirectionPriors()]
+    priors = [op.DirectionPrior(values, 0), op.DirectionPrior(None, None)]
     history = RefinementHistory()
     history.record_direction_prior(priors, k_class_enabled=False)
     stored = history.direction_prior_trajectory_per_half[0]
@@ -93,8 +93,7 @@ def test_history_records_float64_copies_of_k1_priors_and_none_for_missing():
 
 def test_history_records_class_zero_of_each_half_for_kclass():
     values = np.asarray([[0.1, 0.9], [0.6, 0.4]], dtype=np.float64)
-    priors = [op.HalfDirectionPriors(classes=op.DirectionPrior(values, 0)),
-              op.HalfDirectionPriors(classes=op.DirectionPrior(values.copy(), 0))]
+    priors = [op.DirectionPrior(values, 0), op.DirectionPrior(values.copy(), 0)]
     history = RefinementHistory()
     history.record_direction_prior(priors, k_class_enabled=True)
     stored = history.direction_prior_trajectory_per_half[0]

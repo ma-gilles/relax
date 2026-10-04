@@ -47,7 +47,7 @@ from relax.helpers.iteration_history import (
     _load_init_noise_radial_npz,
     _load_init_previous_best_poses_npz,
 )
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement import full_refinement as run_full_refinement
 from relax.refinement.full_refinement import (
     _k1_relion_live_initial_noise_enabled,
@@ -375,19 +375,7 @@ def test_frozen_scoring_state_negative_overwrite_regression():
             scale_corrections=np.ones(3, dtype=np.float32),
         ),
     )
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [
-            np.full(12, 1.0 / 12.0, dtype=np.float32),
-            np.full(12, 1.0 / 12.0, dtype=np.float32),
-        ], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(np.full(12, 1.0 / 12.0, dtype=np.float32), None) for _ in range(2)]
     expected = _frozen_scoring_state_arrays(
         means=[
             np.zeros(8, dtype=np.complex64),

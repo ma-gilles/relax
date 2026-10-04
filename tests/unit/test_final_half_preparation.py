@@ -7,7 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_numbered_expectation import numbered_inputs
 
-from relax.helpers.orientation_priors import HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.expectation import prepare_final_half
 from relax.refinement.final_sampling import FinalSampling, FinalSamplingSettings
 
@@ -26,7 +26,7 @@ def final_inputs():
                              base_translations=grid.translations, grid=grid)
     kwargs = dict(
         image_geometry=inputs['image_geometry'], sigma_offset_angstrom=2.,
-        noise_radial=half.noise_radial, direction_priors=HalfDirectionPriors(),
+        noise_radial=half.noise_radial, direction_prior=DirectionPrior(None, None),
         n_classes=1, use_local=False, coarse_angular_step_deg=None,
         particle_diameter_angstrom=3., sealed_sampling_state=None,
         symmetry='C1', dtype=np.float32,

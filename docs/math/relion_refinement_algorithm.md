@@ -390,8 +390,8 @@ not establish float32 projection arithmetic.
 Numbered replay retains the source sampling order of a learned direction prior
 in [`apply_iter_replay_overrides`](../../relax/diagnostics/relion_replay.py).
 `DirectionPrior` keeps that order with its probability array through replay,
-learning and checkpoint restoration; `HalfDirectionPriors` retains the shared
-and class payloads. Their initialization and learning operations live in
+learning and checkpoint restoration; each half-model holds one, a vector for
+K=1 and one row per class for Class3D. Their initialization and learning operations live in
 [`orientation_priors.py`](../../relax/helpers/orientation_priors.py).
 When that order differs from the scoring grid,
 [`relion_direction_log_priors_for_half`](../../relax/helpers/orientation_priors.py)

@@ -13,7 +13,7 @@ from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.helpers.convergence import RefinementState
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.reconstruction import regularization_relion
 from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
@@ -111,7 +111,7 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
         fsc=np.linspace(1.0, 0.0, 5),
         fsc_for_growth=np.linspace(0.9, 0.1, 5),
         class_weights=None,
-        direction_priors=[HalfDirectionPriors(shared=DirectionPrior(values, 1)) for values in direction_prior],
+        direction_priors=[DirectionPrior(values, 1) for values in direction_prior],
         half_inputs=half_inputs,
         class_assignments=None,
         max_posterior=[np.full(2, 0.7), np.full(2, 0.8)],

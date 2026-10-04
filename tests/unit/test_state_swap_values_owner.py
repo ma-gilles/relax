@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from relax.diagnostics import state_swap_runtime
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
@@ -20,16 +20,7 @@ def _inputs():
         previous_best_translations=[np.zeros((1, 2)), np.zeros((1, 2))],
         previous_best_rotation_eulers=[np.zeros((1, 3)), np.zeros((1, 3))],
     )
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [np.array([0.5]), np.array([0.5])], [4, 4],
-            [np.array([0.5]), np.array([0.5])], [4, 4], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(np.array([0.5]), 4), DirectionPrior(np.array([0.5]), 4)]
     tau2 = np.array([50.0])
     return dict(
         state=SimpleNamespace(a=1), cs=52, volume_shape=(1, 1, 1),
@@ -66,19 +57,19 @@ def test_unchanged_paths_return_the_input_objects():
 
 def test_missing_prior_keeps_its_saved_order_through_snapshot_and_restore():
     inputs = _inputs()
-    inputs["direction_priors"][0].shared = DirectionPrior(None, 3)
+    inputs["direction_priors"][0] = DirectionPrior(None, 3)
     snapshot_inputs = dict(inputs)
     snapshot_inputs.pop("volume_shape")
     snapshot = state_swap_runtime._snapshot_state_swap_inputs(**snapshot_inputs)
-    assert snapshot["global_direction_prior_per_half"][0] is None
-    assert snapshot["global_direction_prior_order_per_half"][0] == 3
+    assert snapshot["direction_prior_per_half"][0] is None
+    assert snapshot["direction_prior_order_per_half"][0] == 3
 
     restored = state_swap_runtime._apply_state_swap_probe(
         probe={"iteration": 6, "variant": "recovar_direction_prior"},
         iteration=6, recovar_snapshot=snapshot, **inputs,
     )
-    assert restored.direction_priors[0].shared.values is None
-    assert restored.direction_priors[0].shared.healpix_order == 3
+    assert restored.direction_priors[0].values is None
+    assert restored.direction_priors[0].healpix_order == 3
 
 
 @pytest.mark.parametrize("variant", ["recovar_noise_variance_only", "recovar_previous_noise_radial_only"])

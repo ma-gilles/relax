@@ -802,11 +802,10 @@ def refine_single_volume(
                 log=logger,
                 symmetry=symmetry, expected_order=saved_orders[0],
             )
-            for priors, order in zip(direction_priors, saved_orders, strict=True):
-                if k_class_enabled:
-                    priors.classes = DirectionPrior(priors.classes.values, order)
-                else:
-                    priors.shared = DirectionPrior(priors.shared.values, order)
+            direction_priors = [
+                DirectionPrior(prior.values, order)
+                for prior, order in zip(direction_priors, saved_orders, strict=True)
+            ]
         logger.info(
             "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
             "local_search=%s resolution=%.3f A",
@@ -1586,7 +1585,7 @@ def refine_single_volume(
                 use_local=use_local,
                 scoring_healpix_order=direction_prior_healpix_order,
                 n_classes=n_classes,
-                priors=direction_priors[_half_idx],
+                prior=direction_priors[_half_idx],
                 sealed_sampling_state=sealed_sampling_state,
                 dtype=scoring_dtype,
                 log=logger,
@@ -2216,9 +2215,9 @@ def refine_single_volume(
                     log=logger,
                     symmetry=symmetry,
                 )
-                for priors, learned in zip(direction_priors, learned_priors, strict=True):
+                for half_index, learned in enumerate(learned_priors):
                     if learned is not None:
-                        priors.shared = learned
+                        direction_priors[half_index] = learned
             else:
                 exhaustive_grid_size = rotation_grid_size(
                     current_rotation_grid.healpix_order,
@@ -2238,8 +2237,8 @@ def refine_single_volume(
                         dtype=scoring_dtype,
                         symmetry=symmetry,
                     )
-                    for priors, learned in zip(direction_priors, learned_priors, strict=True):
-                        priors.classes = learned
+                    for half_index, learned in enumerate(learned_priors):
+                        direction_priors[half_index] = learned
         if single_class_iteration:
             # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
             # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
@@ -2255,10 +2254,10 @@ def refine_single_volume(
             tau2_update_details = {
                 key: None if value is None else _copy_first_class(value) for key, value in tau2_update_details.items()
             }
-            for priors in direction_priors:
-                if priors.classes.values is not None:
-                    priors.classes = DirectionPrior(
-                        _copy_first_class(priors.classes.values), priors.classes.healpix_order,
+            for half_index, prior in enumerate(direction_priors):
+                if prior.values is not None:
+                    direction_priors[half_index] = DirectionPrior(
+                        _copy_first_class(prior.values), prior.healpix_order,
                     )
             class_weights = np.full(n_classes, float(class_weights[0]) / n_classes, dtype=np.float64)
             class_log_priors = np.log(class_weights)
@@ -3001,12 +3000,8 @@ def refine_single_volume(
                         )
                         _prior_order_k = state.healpix_order
                     if k_class_enabled:
-                        direction_priors[_half_idx].classes = DirectionPrior(
-                            normalize_class_direction_prior(_prior_k, n_classes, dtype=scoring_dtype),
-                            _prior_order_k,
-                        )
-                    else:
-                        direction_priors[_half_idx].shared = DirectionPrior(_prior_k, _prior_order_k)
+                        _prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=scoring_dtype)
+                    direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)
                 _final_replay_fields.append("direction_prior")
             logger.info(
                 "RELION replay: final all-data replays last numbered RELION state "

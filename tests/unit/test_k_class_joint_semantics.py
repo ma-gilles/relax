@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
@@ -1340,19 +1340,7 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
         image_corrections=None,
         scale_corrections=None,
     )
-    class_priors = [None, None]
-    class_orders = [None, None]
-
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            class_priors, class_orders,
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     result = apply_iter_replay_overrides(
         iter_replay_override=None,
         perturb_replay_relion_dir=str(tmp_path),
@@ -1376,8 +1364,8 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
     )
 
     assert calls == [str(tmp_path / "run_it001_model.star"), str(tmp_path / "run_it001_model.star")]
-    np.testing.assert_allclose(direction_priors[0].classes.values.sum(axis=1), np.ones(2), rtol=1e-6, atol=1e-6)
-    np.testing.assert_allclose(direction_priors[1].classes.values, direction_priors[0].classes.values, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(direction_priors[0].values.sum(axis=1), np.ones(2), rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(direction_priors[1].values, direction_priors[0].values, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(result.class_weights, raw_prior.sum(axis=1) / raw_prior.sum(), rtol=1e-6, atol=1e-6)
 
 

@@ -27,8 +27,8 @@ Class3D uses each half's retained M-step posterior mass, K=1 the half's noise
 
 Direction-prior construction, learning and scoring belong to
 [`orientation_priors`](../../relax/helpers/orientation_priors.py).
-`DirectionPrior` pairs probabilities with their HEALPix order;
-`HalfDirectionPriors` owns the shared and class payloads for one half-model.
+`DirectionPrior` pairs one half-model's probabilities with their HEALPix order:
+a vector for K=1, one row per class for Class3D, fixed where the prior is produced.
 `learn_k1_direction_priors` and `learn_class_direction_priors` return updates.
 K=1 collapses each half's rotation posterior at the order used for scoring and
 skips a half whose prior cannot form a RELION log prior, with the warning routed

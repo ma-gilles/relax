@@ -496,7 +496,7 @@ def _frozen_scoring_state_arrays(
         "image_corrections": [particle_half.image_corrections for particle_half in relion_half_inputs],
         "scale_corrections": [particle_half.scale_corrections for particle_half in relion_half_inputs],
         "noise_variance": noise_variance_per_half,
-        "direction_prior": [p.shared.values for p in direction_priors],
+        "direction_prior": [p.values for p in direction_priors],
     }
     arrays = {}
     for field_name, values in pair_fields.items():

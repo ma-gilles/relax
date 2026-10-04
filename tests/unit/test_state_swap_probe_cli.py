@@ -20,7 +20,7 @@ from relax.diagnostics.state_swap_runtime import (
     _scale_state_swap_reference_maps,
     _snapshot_state_swap_inputs,
 )
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
@@ -326,16 +326,7 @@ def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
         previous_best_translations=[np.zeros((1, 2)), np.ones((1, 2))],
         previous_best_rotation_eulers=[np.zeros((1, 3)), np.ones((1, 3))],
     )
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [np.array([0.4]), np.array([0.6])], [3, 3],
-            [np.array([0.4]), np.array([0.6])], [3, 3], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(np.array([0.4]), 3), DirectionPrior(np.array([0.6]), 3)]
     snapshot_tau2 = np.array([5.0])
     snapshot = _snapshot_state_swap_inputs(
         state=state,
@@ -357,16 +348,7 @@ def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
         direction_priors=direction_priors,
     )
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [np.array([0.5]), np.array([0.5])], [4, 4],
-            [np.array([0.5]), np.array([0.5])], [4, 4], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(np.array([0.5]), 4), DirectionPrior(np.array([0.5]), 4)]
     current_tau2 = np.array([50.0])
     restored = _apply_state_swap_probe(
         probe={"iteration": 6, "variant": "recovar_sigma_offset"},

@@ -316,14 +316,8 @@ class SnapshotCapture:
                 else host_half_pair(unfiltered_means)
             ),
         )
-        direction_prior = (
-            [p.classes.values for p in direction_priors]
-            if k_class else [p.shared.values for p in direction_priors]
-        )
-        direction_prior_order = (
-            [p.classes.healpix_order for p in direction_priors]
-            if k_class else [p.shared.healpix_order for p in direction_priors]
-        )
+        direction_prior = [p.values for p in direction_priors]
+        direction_prior_order = [p.healpix_order for p in direction_priors]
         assembly.values.update(
             class_weights=host_array(class_weights, np.float64),
             direction_prior=(

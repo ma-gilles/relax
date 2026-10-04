@@ -10,7 +10,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.helpers.convergence import RefinementState
-from relax.helpers.orientation_priors import DirectionPrior, HalfDirectionPriors
+from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement import iteration_loop, iteration_snapshot
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_snapshot import IterationSnapshot, SnapshotCapture
@@ -29,25 +29,21 @@ def _inputs(n_classes, dtype, offset_dimension, empty_second_half):
         group_ids=[None, np.zeros(rows[1], dtype=np.int64)], group_count=None,
     )
     maps = [np.full((n_classes, 8), h + 1, dtype=np.complex64) for h in range(2)]
-    priors = [
-        HalfDirectionPriors(
-            shared=DirectionPrior(np.full(12, 0.125, dtype=dtype), 0),
-            classes=DirectionPrior(np.full((n_classes, 48), 0.0625, dtype=dtype), 1),
-        )
-        for _ in range(2)
-    ]
     # The controller selects these four by mode: Class3D has no split-half FSC, K=1 no class operands.
+    # The direction prior has one row per class in Class3D and is one vector in K=1.
     if n_classes > 1:
         by_mode = dict(
             fsc=None, fsc_for_growth=None,
             class_weights=np.full(n_classes, 1 / n_classes, dtype=dtype),
             class_assignments=[np.zeros(n, dtype=np.int32) for n in rows],
         )
+        priors = [DirectionPrior(np.full((n_classes, 48), 0.0625, dtype=dtype), 1) for _ in range(2)]
     else:
         by_mode = dict(
             fsc=np.linspace(1, 0, 5), fsc_for_growth=np.linspace(1, 0.5, 5),
             class_weights=None, class_assignments=None,
         )
+        priors = [DirectionPrior(np.full(12, 0.125, dtype=dtype), 0) for _ in range(2)]
     return dict(
         **by_mode, means=maps, unfiltered_means=None,
         tau2_shells=np.ones((n_classes if n_classes > 1 else 2, 5), dtype=dtype),

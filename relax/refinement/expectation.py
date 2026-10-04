@@ -22,8 +22,8 @@ from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.iteration import _bpref_device_signature_active_for_numbered_half, _replay_manifest_array
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.orientation_priors import (
+    DirectionPrior,
     HalfDirectionLogPriors,
-    HalfDirectionPriors,
     HalfTranslationPriorInputs,
     make_relion_translation_log_prior,
     relion_direction_log_priors_for_half,
@@ -268,7 +268,7 @@ def prepare_final_half(
     image_geometry: ImageGeometry,
     sigma_offset_angstrom,
     noise_radial,
-    direction_priors: HalfDirectionPriors,
+    direction_prior: DirectionPrior,
     n_classes: int,
     use_local: bool,
     coarse_angular_step_deg,
@@ -300,7 +300,7 @@ def prepare_final_half(
         use_local=use_local,
         scoring_healpix_order=None if use_local else sampling.settings.grid_order,
         n_classes=n_classes,
-        priors=direction_priors,
+        prior=direction_prior,
         sealed_sampling_state=sealed_sampling_state,
         dtype=dtype,
         log=logger,

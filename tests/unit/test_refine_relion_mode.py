@@ -20,7 +20,6 @@ from helpers.pass1_programs import clear_pass1_programs
 from relax.helpers import oversampling as oversampling_grids
 from relax.helpers.orientation_priors import (
     DirectionPrior,
-    HalfDirectionPriors,
     _combined_class_direction_prior_from_halves,
 )
 from relax.helpers.resolution import ImageGeometry
@@ -662,16 +661,7 @@ def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_roun
     assert state_grid.shape[0] == 29
     assert rounded_star_grid.shape[0] == 25
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     result = iteration_loop_module.apply_iter_replay_overrides(
         iter_replay_override=None,
         perturb_replay_relion_dir=str(tmp_path),
@@ -781,16 +771,7 @@ def test_replay_override_preserves_half_specific_sigma_offsets():
     class Cryo:
         voxel_size = 1.0
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     result = iteration_loop_module.apply_iter_replay_overrides(
         iter_replay_override={
             "translation_sigma_angstrom": 99.0,
@@ -851,16 +832,7 @@ def test_replay_override_preserves_native_scale_and_rescales_star_image_correcti
         group_count=3000,
     )
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     iteration_loop_module.apply_iter_replay_overrides(
         iter_replay_override={
             "image_corrections": [
@@ -919,16 +891,7 @@ def test_replay_explicit_scoring_scale_preserves_image_to_scale_ratio():
     class Cryo:
         voxel_size = 1.0
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     iteration_loop_module.apply_iter_replay_overrides(
         iter_replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
@@ -979,16 +942,7 @@ def test_replay_cold_start_falls_back_to_serialized_scale():
         translation_step=1.0,
     )
 
-    direction_priors = [
-        HalfDirectionPriors(
-            classes=DirectionPrior(values, order),
-            shared=DirectionPrior(shared_values, shared_order),
-        )
-        for values, order, shared_values, shared_order in zip(
-            [None, None], [None, None],
-            [None, None], [None, None], strict=True,
-        )
-    ]
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     iteration_loop_module.apply_iter_replay_overrides(
         iter_replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],

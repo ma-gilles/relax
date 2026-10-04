@@ -109,13 +109,12 @@ class RefinementHistory:
         K-class runs record class 0 of each half's ``(n_classes, n_pixels)``
         prior; K=1 records the half's global prior. Missing priors stay ``None``.
         """
-        source = [p.classes if k_class_enabled else p.shared for p in direction_priors]
         self.direction_prior_trajectory_per_half.append(
             [
                 None
                 if prior_k.values is None
                 else np.asarray(prior_k.values[0] if k_class_enabled else prior_k.values, dtype=np.float64).copy()
-                for prior_k in source
+                for prior_k in direction_priors
             ]
         )
 

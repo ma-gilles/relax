@@ -460,7 +460,7 @@ def run_final_all_data(
                 image_geometry=image_geometry,
                 sigma_offset_angstrom=final_sigma_offset_k,
                 noise_radial=noise_model.radial_per_half[half.index],
-                direction_priors=direction_priors[half.index],
+                direction_prior=direction_priors[half.index],
                 n_classes=n_classes,
                 use_local=final_use_local,
                 coarse_angular_step_deg=final_local_sampling.coarse_angular_step_deg if final_use_local else None,
