@@ -285,3 +285,29 @@ def test_average_ctf2_divides_invtau2_as_relion_update_ssnr_arrays(bind, padding
         result = relion_vdam_m_step_host(**case, average_ctf2=spectrum)
         assert_matches(np.asarray(result["data_vs_prior"]), np.asarray(relion_dvp), rtol=1e-12)
         assert_matches(np.asarray(result["fourier_coverage"]), np.asarray(relion_coverage), rtol=1e-12)
+
+
+@pytest.mark.parametrize("padding", [1, 2])
+def test_bpref_slabs_of_one_window_class_share_the_pack_program(padding):
+    """Radii 5..8 of a 32 box are one quantum-8 class: the packed cube is the unpadded pack's, one program."""
+    import jax.numpy as jnp
+
+    from relax.relion import relion_vdam_mstep as helper
+
+    rng = np.random.default_rng(7)
+    size, capacity = 32, padding * 32 + 3
+    counts = []
+    for radius in (8, 7, 6, 5):
+        edge = 2 * padding * radius + 3
+        slab = rng.normal(size=(edge, edge, edge // 2 + 1)) + 1j * rng.normal(size=(edge, edge, edge // 2 + 1))
+        padded = helper._pad_bpref_to_window_class(slab, radius=radius, ori_size=size, padding_factor=padding)
+        assert padded.shape[0] == padding * 16 + 3
+        packed = np.asarray(helper._pack_bpref_to_capacity(jnp.asarray(padded), capacity=capacity))
+        expected = np.zeros((capacity, capacity, capacity // 2 + 1), np.complex128)
+        before = capacity // 2 - edge // 2
+        expected[before : before + edge, before : before + edge, : edge // 2 + 1] = slab
+        assert packed.tobytes() == expected.tobytes()
+        counts.append(helper._pack_bpref_to_capacity._cache_size())
+    assert len(set(counts)) == 1, counts
+    full = rng.normal(size=(size + 3, size + 3, size // 2 + 2))
+    assert helper._pad_bpref_to_window_class(full, radius=size // 2, ori_size=size, padding_factor=1) is full

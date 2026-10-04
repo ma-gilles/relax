@@ -29,6 +29,7 @@ from relax.helpers.deterministic_reduce import (
     fixed_order_shell_sums,
     static_shell_voxel_lists,
 )
+from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
 from relax.relion.relion_projector_setup import (
     setup_relion_projector,
     setup_relion_projector_uncorrected,
@@ -338,6 +339,25 @@ def _pack_bpref_to_capacity(value, *, capacity):
     return packed.at[before : before + value.shape[0], before : before + value.shape[1], : value.shape[2]].set(value)
 
 
+def _pad_bpref_to_window_class(value, *, radius: int, ori_size: int, padding_factor: int):
+    """A host BPref slab zero-padded to the slab of its stable Fourier-window class.
+
+    The device pack is one program per slab shape, and the slab follows RELION's current size,
+    which takes about thirty values in a 200-iteration run (62 compiles, 3.7 s, census 14974371).
+    Padded here to the class of ``2 * radius`` the slab keeps its centre, so the packed cube is
+    the same and the pack compiles once per class.
+    """
+
+    current_size = 2 * int(radius)
+    if not (0 < current_size < int(ori_size)) or int(ori_size) % 2:
+        return value
+    class_size = stable_fourier_window_current_size(current_size, int(ori_size), quantum=stable_fourier_window_quantum())
+    grow = int(padding_factor) * class_size + 3 - value.shape[0]
+    if grow <= 0 or grow % 2:
+        return value
+    return np.pad(value, ((grow // 2,) * 2, (grow // 2,) * 2, (0, grow // 2)))
+
+
 def relion_vdam_m_step_host(
     reference_relion,
     data_h0,
@@ -401,6 +421,10 @@ def relion_vdam_m_step_host(
         radius = r_max if r_max > 0 else ori_size // 2
         if shape[0] // 2 < padding_factor * radius or shape[0] > capacity:
             raise ValueError("BPref does not cover the logical radius or exceeds capacity")
+        if not isinstance(value, jax.Array):
+            value = _pad_bpref_to_window_class(
+                np.asarray(value), radius=radius, ori_size=ori_size, padding_factor=padding_factor
+            )
         return _pack_bpref_to_capacity(jnp.asarray(value), capacity=capacity)
 
     if np.shape(data_h0) != np.shape(weight_h0) or (
