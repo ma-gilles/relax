@@ -836,25 +836,25 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
-    "source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
-    "source_repo": "relax main 0cbdebd (frozen candidate cand_0cbdebd, sealed native libraries, pinned recovar 5514ac6), production defaults",
+    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults",
     "resolution_A": 8.235,
     "resolution_definition": "scorecard_band",
-    "masked_resolution_A": 5.309,
-    "wall_s": 1940,
+    "masked_resolution_A": 5.24,
+    "wall_s": 1914,
     "wall_definition": "job-script wall of srun python relax_run.py end to end (TERMINAL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 21,
     "jobs": [
-     "14676054"
+     "14956560"
     ],
-    "masked_band_auc": 0.9272,
+    "masked_band_auc": 0.9275,
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "gt": null,
-   "cross_engine": "map gate PASS (relax scripts/score_k1_map_gate.py): thresholds (merged >= 0.95, each half >= 0.90) met against 7 of 7 same-command RELION runs; against this job's RELION arm 0.9820/0.9744/0.9756; RELION-vs-RELION band merged 0.9862-0.9882, halves 0.9802-0.9833 / 0.9809-0.9840",
-   "cross_engine_masked_band_auc": 0.9981,
+   "cross_engine": "map gate PASS (relax scripts/score_k1_map_gate.py): thresholds (merged >= 0.95, each half >= 0.90) met against 6 of 6 same-command RELION runs; RELION-vs-RELION band merged 0.9864-0.9882, halves 0.9802-0.9833 / 0.9809-0.9840",
+   "cross_engine_masked_band_auc": 0.998,
    "time_ratio_relax_over_relion": 0.38,
    "matched": "yes",
    "matched_detail": {
@@ -866,6 +866,10 @@
     "timing_controlled": true
    },
    "notes": [
+    "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
+    "Refresh 2026-10-04, seed 42: relax 1914 s (was 1940 s) against RELION 5095 s from the row's earlier pair; 21 iterations, HEALPix order max 5; engine-reported final resolution 8.07 Å; scorecard-band resolution 8.23 Å (was 8.235), masked 5.24 Å (was 5.309).",
+    "Map gate per RELION run after the refresh (merged / half1 / half2): relion_flip64 0.9822/0.9742/0.9764; relion_flipcd 0.9824/0.9749/0.9764; relion_rep 0.9822/0.9747/0.9761; relion_r1 0.9818/0.9738/0.9759; relion_rf 0.9819/0.9737/0.9761; the row's RELION pair arm 0.9821/0.9745/0.9759. Below the RELION-vs-RELION band (reported only): relax__relion_0cb:half1_cross_engine_band_auc, relax__relion_0cb:half2_cross_engine_band_auc, relax__relion_0cb:merged_cross_engine_band_auc, relax__relion_flip64:half1_cross_engine_band_auc, relax__relion_flip64:half2_cross_engine_band_auc, relax__relion_flip64:merged_cross_engine_band_auc, relax__relion_flipcd:half1_cross_engine_band_auc, relax__relion_flipcd:half2_cross_engine_band_auc, relax__relion_flipcd:merged_cross_engine_band_auc, relax__relion_r1:half1_cross_engine_band_auc, relax__relion_r1:half2_cross_engine_band_auc, relax__relion_r1:merged_cross_engine_band_auc, relax__relion_rep:half1_cross_engine_band_auc, relax__relion_rep:half2_cross_engine_band_auc, relax__relion_rep:merged_cross_engine_band_auc, relax__relion_rf:half1_cross_engine_band_auc, relax__relion_rf:half2_cross_engine_band_auc, relax__relion_rf:merged_cross_engine_band_auc.",
+    "The 2026-10-04 map gate uses six of the seven RELION runs of the earlier scoring: the maps of relion_7e8 (7e885ab refresh pair) were not in the evidence store; its earlier value (0.9820 merged) is in the row history.",
     "Refresh 2026-09-29 on relax main 0cbdebd: same-node cold pair (job 14676054); relax 1940 s vs RELION MPI 3x4 5095 s.",
     "HEALPix order: relax max 5 over 21 iterations, RELION max 5 over 21; relax ran uncapped (K=1 HEALPix is uncapped as RELION since 96f33009).",
     "Engine-reported final resolution: relax 8.07 Å, RELION 8.07 Å; the table's resolutions are the scorecard band values (masked_fsc.py, frozen mask empiar10345_c1).",
@@ -933,9 +937,14 @@
        "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_watcher_20260923/scores/masked_relion_pairs_10345_20260925/rep_vs_sb/masked_fsc.json"
       ]
      }
+    },
+    "refresh_20261004": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10345_k1_autorefine_flipqual_cd26a5e/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10345_0cbdebd/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
-   "date": "2026-09-29",
+   "date": "2026-10-04",
    "history": [
     {
      "date": "2026-09-25",
@@ -980,13 +989,131 @@
      "relion_resolution_A": 8.235,
      "quality_pass": true,
      "time_ratio_relax_over_relion": 0.48
+    },
+    {
+     "date": "2026-09-29",
+     "note": "values before the 2026-10-04 refresh on relax main f6c8299b (relax arm only)",
+     "relax_source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
+     "relax_wall_s": 1940,
+     "relax_jobs": [
+      "14676054"
+     ],
+     "relax_resolution_A": 8.235,
+     "relax_masked_resolution_A": 5.309,
+     "relax_masked_band_auc": 0.9272,
+     "relax_iterations": 21,
+     "time_ratio_relax_over_relion": 0.38,
+     "quality_pass": true,
+     "quality_reason": "same resolution (8.23 Å, masked 5.31 Å); map gate thresholds met vs 7 of 7 RELION runs",
+     "cross_engine": "map gate PASS (relax scripts/score_k1_map_gate.py): thresholds (merged >= 0.95, each half >= 0.90) met against 7 of 7 same-command RELION runs; against this job's RELION arm 0.9820/0.9744/0.9756; RELION-vs-RELION band merged 0.9862-0.9882, halves 0.9802-0.9833 / 0.9809-0.9840",
+     "cross_engine_by_relion_run": [
+      {
+       "run": "relion_flip64",
+       "jobs": [],
+       "merged": 0.9825,
+       "half1": 0.9747,
+       "half2": 0.9766,
+       "meets_thresholds": true,
+       "masked_merged": 0.9981,
+       "masked_half1": 0.9963,
+       "masked_half2": 0.9966,
+       "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/k1_7e885ab/k1_10345_0cbdebd/score_masked/masked_fsc.json"
+      },
+      {
+       "run": "relion_flipcd",
+       "jobs": [],
+       "merged": 0.9825,
+       "half1": 0.9749,
+       "half2": 0.9765,
+       "meets_thresholds": true,
+       "null_reasons": {
+        "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
+       }
+      },
+      {
+       "run": "relion_rep",
+       "jobs": [],
+       "merged": 0.9825,
+       "half1": 0.9749,
+       "half2": 0.9763,
+       "meets_thresholds": true,
+       "null_reasons": {
+        "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
+       }
+      },
+      {
+       "run": "relion_r1",
+       "jobs": [],
+       "merged": 0.9818,
+       "half1": 0.9739,
+       "half2": 0.9757,
+       "meets_thresholds": true,
+       "null_reasons": {
+        "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
+       }
+      },
+      {
+       "run": "relion_rf",
+       "jobs": [],
+       "merged": 0.982,
+       "half1": 0.9741,
+       "half2": 0.9759,
+       "meets_thresholds": true,
+       "null_reasons": {
+        "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
+       }
+      },
+      {
+       "run": "relion_7e8",
+       "jobs": [],
+       "merged": 0.982,
+       "half1": 0.9741,
+       "half2": 0.9758,
+       "meets_thresholds": true,
+       "null_reasons": {
+        "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
+       }
+      },
+      {
+       "run": "this job's RELION arm",
+       "jobs": [
+        "14676054"
+       ],
+       "merged": 0.982,
+       "half1": 0.9744,
+       "half2": 0.9756,
+       "meets_thresholds": true,
+       "null_reasons": {
+        "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
+        "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
+       }
+      }
+     ],
+     "gt_relax": null,
+     "time_check": {
+      "a": "relax: Slurm job 14956560 (della-h21g4), one H100, one process, 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676054 (one H100, 12 CPUs). Not the same job or node: the refresh reran relax only.",
+      "b": "relax main 0cbdebd production defaults (every RELAX_* and XLA_PYTHON_CLIENT_MEM_FRACTION unset), standalone start-up, empty compile cache, HEALPix uncapped as RELION; --scratch_dir on node-local /tmp for both.",
+      "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, particle copy, compilation and final writes included.",
+      "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+     }
     }
    ],
    "time_check": {
-    "a": "RELION: 1 H100, relion_refine_mpi 3 ranks x 4 threads (12 CPUs, patched build). relax: 1 H100, one process, 12 CPUs. Both in job 14676054 on della-h19g1, started together; no --exclusive.",
+    "a": "relax: Slurm job 14956560 (della-h21g4), one H100, one process, 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676054 (one H100, 12 CPUs). Not the same job or node: the refresh reran relax only.",
     "b": "relax main 0cbdebd production defaults (every RELAX_* and XLA_PYTHON_CLIENT_MEM_FRACTION unset), standalone start-up, empty compile cache, HEALPix uncapped as RELION; --scratch_dir on node-local /tmp for both.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, particle copy, compilation and final writes included.",
-    "d": "H100 80GB HBM3 on both GPUs (GPU.csv); same node, same time."
+    "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
    },
    "mask": {
     "dataset": "empiar10345_c1",
@@ -996,21 +1123,21 @@
     {
      "run": "relion_flip64",
      "jobs": [],
-     "merged": 0.9825,
-     "half1": 0.9747,
-     "half2": 0.9766,
+     "merged": 0.9822,
+     "half1": 0.9742,
+     "half2": 0.9764,
      "meets_thresholds": true,
-     "masked_merged": 0.9981,
+     "masked_merged": 0.998,
      "masked_half1": 0.9963,
-     "masked_half2": 0.9966,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/k1_7e885ab/k1_10345_0cbdebd/score_masked/masked_fsc.json"
+     "masked_half2": 0.9965,
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10345_0cbdebd/score_masked/masked_fsc.json"
     },
     {
      "run": "relion_flipcd",
      "jobs": [],
-     "merged": 0.9825,
+     "merged": 0.9824,
      "half1": 0.9749,
-     "half2": 0.9765,
+     "half2": 0.9764,
      "meets_thresholds": true,
      "null_reasons": {
       "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
@@ -1021,9 +1148,9 @@
     {
      "run": "relion_rep",
      "jobs": [],
-     "merged": 0.9825,
-     "half1": 0.9749,
-     "half2": 0.9763,
+     "merged": 0.9822,
+     "half1": 0.9747,
+     "half2": 0.9761,
      "meets_thresholds": true,
      "null_reasons": {
       "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
@@ -1035,8 +1162,8 @@
      "run": "relion_r1",
      "jobs": [],
      "merged": 0.9818,
-     "half1": 0.9739,
-     "half2": 0.9757,
+     "half1": 0.9738,
+     "half2": 0.9759,
      "meets_thresholds": true,
      "null_reasons": {
       "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
@@ -1047,9 +1174,9 @@
     {
      "run": "relion_rf",
      "jobs": [],
-     "merged": 0.982,
-     "half1": 0.9741,
-     "half2": 0.9759,
+     "merged": 0.9819,
+     "half1": 0.9737,
+     "half2": 0.9761,
      "meets_thresholds": true,
      "null_reasons": {
       "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
@@ -1058,26 +1185,13 @@
      }
     },
     {
-     "run": "relion_7e8",
-     "jobs": [],
-     "merged": 0.982,
-     "half1": 0.9741,
-     "half2": 0.9758,
-     "meets_thresholds": true,
-     "null_reasons": {
-      "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
-      "masked_half1": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
-      "masked_half2": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only"
-     }
-    },
-    {
-     "run": "this job's RELION arm",
+     "run": "the row's RELION pair arm",
      "jobs": [
       "14676054"
      ],
-     "merged": 0.982,
-     "half1": 0.9744,
-     "half2": 0.9756,
+     "merged": 0.9821,
+     "half1": 0.9745,
+     "half2": 0.9759,
      "meets_thresholds": true,
      "null_reasons": {
       "masked_merged": "score_k1_map_gate.py computes masked metrics against the set's first RELION run (relion_flip64) only",
@@ -1125,7 +1239,7 @@
     }
    ],
    "quality_pass": true,
-   "quality_reason": "same resolution (8.23 Å, masked 5.31 Å); map gate thresholds met vs 7 of 7 RELION runs"
+   "quality_reason": "resolution 8.23 vs RELION 8.23 Å (masked 5.24 vs 5.31 Å); map gate thresholds met vs 6 of 6 RELION runs"
   },
   {
    "id": "empiar10081_hcn1_k1_autorefine_c4_resident_timed",
