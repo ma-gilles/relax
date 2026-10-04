@@ -41,14 +41,31 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
-def stage_snapshot(checkout: Path, host: str, root: str) -> tuple[str, str, str]:
+def snapshot_paths(checkout: Path) -> list[Path]:
+    """The checkout's tracked and unignored files, relative to it, as the snapshot ships them.
+
+    A symbolic link whose target is a file inside the checkout (``CLAUDE.md`` -> ``AGENTS.md``) is shipped as
+    that file's content under the link's own path. A link that leaves the checkout, or has no target, is
+    refused: the snapshot would otherwise depend on files that are not part of it.
+    """
+
     raw = subprocess.check_output(["git", "-C", str(checkout), "ls-files", "-c", "-o", "--exclude-standard", "-z"])
     paths = sorted({Path(os.fsdecode(item)) for item in raw.split(b"\0") if item})
-    if any((checkout / path).is_symlink() for path in paths):
-        raise RuntimeError("source symlinks are unsupported; copy their target into the checkout")
+    inside = checkout.resolve()
+    for path in paths:
+        if not (checkout / path).is_symlink():
+            continue
+        target = (checkout / path).resolve()
+        if not target.is_file() or not target.is_relative_to(inside):
+            raise RuntimeError(f"source symlink {path} points outside the checkout or at no file ({target})")
     paths = [path for path in paths if (checkout / path).is_file()]
     if not paths or any("\n" in str(path) or "\r" in str(path) for path in paths):
         raise RuntimeError("empty checkout or source path containing a newline")
+    return paths
+
+
+def stage_snapshot(checkout: Path, host: str, root: str) -> tuple[str, str, str]:
+    paths = snapshot_paths(checkout)
     manifest = "".join(f"{digest(checkout / path)}  {path.as_posix()}\n" for path in paths)
     source_id = hashlib.sha256(manifest.encode()).hexdigest()
     source = f"{root}/code/{source_id}"
@@ -65,6 +82,7 @@ def stage_snapshot(checkout: Path, host: str, root: str) -> tuple[str, str, str]
         run(
             "rsync",
             "-a",
+            "--copy-links",
             "--from0",
             f"--files-from={listing}",
             f"{checkout}/",
