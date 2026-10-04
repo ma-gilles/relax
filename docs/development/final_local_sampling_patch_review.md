@@ -251,6 +251,14 @@ belongs to the ownership package. The tomography capture lines are untouched.
 controller and pins the call order and the collector state at each call, for K1
 with and without a join and for Class3D with a positive join resolution.
 
+Later (2026-10-04, `refactor/final-pass-tail`): the reconstruction part decides the mode once. The line
+numbers in the table above are those of step 4. Each branch of the one `if k_class_enabled:` is its mode's
+whole sequence, so the shared statements between the prior and the solve are written in both branches: the
+merged sums, the half-axis metadata, the resolution update with its two log records. Statement order within
+each mode, the history write, the write of the resolution to `state` and the collector release are where they
+were. The two branches were not made operations, because those three writes lie between the steps. The result
+no longer selects on the mode: each branch builds its model fields.
+
 ### M-step mode map
 
 Package 2, lane A. The numbered M-step is the code of `refine_single_volume`

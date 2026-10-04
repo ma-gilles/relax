@@ -547,21 +547,99 @@ def run_final_all_data(
                 current_size=final_current_size, precision=final_precision, use_local=final_use_local, log=logger,
             )
 
-    final_Ft_y_0 = final_outs.Ft_y[0]
-    final_Ft_y_1 = final_outs.Ft_y[1]
-    final_Ft_ctf_0 = final_outs.Ft_ctf[0]
-    final_Ft_ctf_1 = final_outs.Ft_ctf[1]
     final_mstep_accumulator_shape = _resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,
         padded_volume_shape,
     )
     final_reconstruct_t0 = time.time()
-    final_unfiltered_means_for_output = None
-    if not k_class_enabled:
-        # K1 pre-join sequence, in this order: unfiltered half maps, optional
-        # low-resolution join, release of the pass outputs' references. Class3D
-        # has no half maps to keep unjoined and sums its two partitions below.
-        #
+    # The one mode decision of the final reconstruction. Each branch is its mode's whole sequence over the
+    # steps of final_reconstruction.py, in order: accumulators, prior, resolution, maps. Both bind final_maps,
+    # final_tau2_update_details, final_iter_fsc, final_unfiltered_means_for_output and final_model_fields.
+    #
+    # RELION calls updateCurrentResolution after the final all-data
+    # iteration too (ml_optimiser_mpi.cpp:4329), from that iteration's
+    # whole-data DVP, so rlnCurrentResolution reports the final half-map FSC
+    # at 0.143 rather than the last split-half iteration's 0.5 crossing.
+    # Nothing after that point schedules on the resolution.
+    if k_class_enabled:
+        # Class3D: the two partitions sum to one data set. Class weights from the posterior, one prior per
+        # class from its reference's power spectrum, the resolution, the class maps.
+        final_ft_y = final_outs.Ft_y[0] + final_outs.Ft_y[1]
+        final_ft_ctf = final_outs.Ft_ctf[0] + final_outs.Ft_ctf[1]
+        final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
+        class_weights = _class_weights_from_posterior(
+            final_outs.class_posterior,
+            n_classes,
+            class_weights,
+        )
+        history.record_class_weights(
+            class_weights,
+            _class_weights_from_posterior(
+                final_outs.class_full_posterior,
+                n_classes,
+                class_weights,
+            ),
+        )
+        _t_final_tau2 = time.time()
+        final_class_priors = final_reconstruction.compute_final_class_priors(
+            final_ft_ctf,
+            final_join_means[0],
+            projector=final_projectors[0],
+            n_classes=n_classes,
+            settings=reconstruction_settings,
+            current_size=final_current_size,
+            accumulator_shape=final_mstep_accumulator_shape,
+            full_half_axis=final_mstep_full_half_axis,
+        )
+        final_data_vs_prior = final_class_priors.data_vs_prior
+        logger.info(
+            "RELION final all-data Class3D tau2 from Iref power spectra: old_max=%.4e new_max=%.4e "
+            "dvp_shell_1=%.4f wall=%.1fs",
+            float(jnp.max(jnp.abs(reference_model.tau2))),
+            float(jnp.max(jnp.abs(final_class_priors.variance))),
+            float(np.asarray(final_data_vs_prior)[0, 1]) if np.asarray(final_data_vs_prior).shape[-1] > 1 else float("nan"),
+            time.time() - _t_final_tau2,
+        )
+        final_res_shell = relion_current_resolution_shell(
+            final_data_vs_prior,
+            k_class_enabled=True, current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
+        )
+        state.previous_resolution = state.current_resolution
+        state.current_resolution = shell_index_to_resolution_angstrom(
+            final_res_shell, image_geometry.box_size, image_geometry.pixel_size_angstrom
+        )
+        logger.info(
+            "RELION final all-data current resolution: shell=%d res=%.2f A (last split-half iteration %.2f A)",
+            int(final_res_shell),
+            state.current_resolution,
+            state.previous_resolution,
+        )
+        logger.info(
+            "RELION final all-data reconstruction start: current_size=%d n_classes=%d", final_current_size, n_classes,
+        )
+        final_maps = final_reconstruction.reconstruct_final_class_maps(
+            final_ft_y,
+            final_ft_ctf,
+            final_class_priors.shells,
+            class_weights=class_weights,
+            n_classes=n_classes,
+            settings=reconstruction_settings,
+            current_size=final_current_size,
+            accumulator_shape=final_mstep_accumulator_shape,
+        )
+        final_tau2_update_details = final_class_priors.details
+        final_iter_fsc = None
+        final_unfiltered_means_for_output = None
+        final_model_fields = _model_result_fields(
+            final_maps.merged, final_maps.halves, final_maps.halves[0], class_weights, final_outs.class_assignments,
+        )
+    else:
+        # K=1: unfiltered half maps, optional low-resolution join, release of the pass outputs' references;
+        # then the prior from the joined halves' FSC, the resolution, the merged map and the two half maps.
+        final_Ft_y_0 = final_outs.Ft_y[0]
+        final_Ft_y_1 = final_outs.Ft_y[1]
+        final_Ft_ctf_0 = final_outs.Ft_ctf[0]
+        final_Ft_ctf_1 = final_outs.Ft_ctf[1]
         # RELION writes run_half{1,2}_class001_unfil.mrc from the converged half
         # BackProjectors saved before joinTwoHalvesAtLowResolution mutates their
         # low-frequency voxels, with do_map=false.  Keep this separate from the
@@ -600,52 +678,9 @@ def run_final_all_data(
         # pre-join accumulators live only as long as the joined ones do.
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
         final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
-
-    final_ft_y = final_Ft_y_0 + final_Ft_y_1
-    final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
-    final_iter_fsc = None
-    final_mstep_full_half_axis = _resolve_mstep_full_half_axis(
-        final_outs.mstep_full_half_axis,
-        default_axis=-1,
-    )
-    if k_class_enabled:
-        class_weights = _class_weights_from_posterior(
-            final_outs.class_posterior,
-            n_classes,
-            class_weights,
-        )
-        history.record_class_weights(
-            class_weights,
-            _class_weights_from_posterior(
-                final_outs.class_full_posterior,
-                n_classes,
-                class_weights,
-            ),
-        )
-        _t_final_tau2 = time.time()
-        final_class_priors = final_reconstruction.compute_final_class_priors(
-            final_ft_ctf,
-            final_join_means[0],
-            projector=final_projectors[0],
-            n_classes=n_classes,
-            settings=reconstruction_settings,
-            current_size=final_current_size,
-            accumulator_shape=final_mstep_accumulator_shape,
-            full_half_axis=final_mstep_full_half_axis,
-        )
-        final_mean_variance = final_class_priors.variance
-        final_mean_variance_shells = final_class_priors.shells
-        final_data_vs_prior = final_class_priors.data_vs_prior
-        final_tau2_update_details = final_class_priors.details
-        logger.info(
-            "RELION final all-data Class3D tau2 from Iref power spectra: old_max=%.4e new_max=%.4e "
-            "dvp_shell_1=%.4f wall=%.1fs",
-            float(jnp.max(jnp.abs(reference_model.tau2))),
-            float(jnp.max(jnp.abs(final_mean_variance))),
-            float(np.asarray(final_data_vs_prior)[0, 1]) if np.asarray(final_data_vs_prior).shape[-1] > 1 else float("nan"),
-            time.time() - _t_final_tau2,
-        )
-    else:
+        final_ft_y = final_Ft_y_0 + final_Ft_y_1
+        final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
+        final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
         _t_final_tau2 = time.time()
         final_halfmap_prior = final_reconstruction.compute_final_halfmap_prior(
             (final_Ft_y_0, final_Ft_y_1),
@@ -657,68 +692,34 @@ def run_final_all_data(
             scoring_dtype=scoring_dtype,
         )
         final_iter_fsc = final_halfmap_prior.fsc
-        final_mean_variance = final_halfmap_prior.variance
         final_tau2_update_details = final_halfmap_prior.details
         logger.info(
             "RELION final all-data tau2 from joined FSC: old_max=%.4e new_max=%.4e "
             "fsc_shell_1=%.4f wall=%.1fs",
             float(jnp.max(jnp.abs(reference_model.tau2))),
-            float(jnp.max(jnp.abs(final_mean_variance))),
+            float(jnp.max(jnp.abs(final_halfmap_prior.variance))),
             float(np.asarray(final_iter_fsc)[1]) if np.asarray(final_iter_fsc).size > 1 else float("nan"),
             time.time() - _t_final_tau2,
         )
-
-    # RELION calls updateCurrentResolution after the final all-data
-    # iteration too (ml_optimiser_mpi.cpp:4329), from that iteration's
-    # whole-data DVP, so rlnCurrentResolution reports the final half-map FSC
-    # at 0.143 rather than the last split-half iteration's 0.5 crossing.
-    # Nothing after this point schedules on the resolution.
-    final_dvp = (
-        final_data_vs_prior
-        if k_class_enabled
-        else np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype)
-    )
-    final_res_shell = relion_current_resolution_shell(
-        final_dvp,
-        k_class_enabled=k_class_enabled,
-        current_size=final_current_size,
-        grid_size=grid_size,
-        dtype=scoring_dtype,
-    )
-    state.previous_resolution = state.current_resolution
-    state.current_resolution = shell_index_to_resolution_angstrom(
-        final_res_shell, image_geometry.box_size, image_geometry.pixel_size_angstrom
-    )
-    logger.info(
-        "RELION final all-data current resolution: shell=%d res=%.2f A (last split-half iteration %.2f A)",
-        int(final_res_shell),
-        state.current_resolution,
-        state.previous_resolution,
-    )
-
-    # Reconstruct the final volume from the COMBINED Ft_y/Ft_ctf accumulators
-    # at the full Nyquist resolution. Skip the join_halves step (we're already
-    # combining the two halves into one dataset for this final iter).
-    logger.info(
-        "RELION final all-data reconstruction start: current_size=%d n_classes=%d",
-        final_current_size,
-        n_classes,
-    )
-    if k_class_enabled:
-        final_maps = final_reconstruction.reconstruct_final_class_maps(
-            final_ft_y,
-            final_ft_ctf,
-            final_mean_variance_shells,
-            class_weights=class_weights,
-            n_classes=n_classes,
-            settings=reconstruction_settings,
-            current_size=final_current_size,
-            accumulator_shape=final_mstep_accumulator_shape,
+        final_res_shell = relion_current_resolution_shell(
+            np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype),
+            k_class_enabled=False, current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
         )
-        final_class_means = final_maps.halves[0]
-        class_assignments = final_outs.class_assignments
-    else:
-        final_class_means = None
+        state.previous_resolution = state.current_resolution
+        state.current_resolution = shell_index_to_resolution_angstrom(
+            final_res_shell, image_geometry.box_size, image_geometry.pixel_size_angstrom
+        )
+        logger.info(
+            "RELION final all-data current resolution: shell=%d res=%.2f A (last split-half iteration %.2f A)",
+            int(final_res_shell),
+            state.current_resolution,
+            state.previous_resolution,
+        )
+        logger.info(
+            "RELION final all-data reconstruction start: current_size=%d n_classes=%d", final_current_size, n_classes,
+        )
+        # Reconstruct the merged map from the COMBINED accumulators and each half map from its own, at the
+        # full Nyquist resolution. The list is the only owner, so each slot is freed after its solve.
         final_backprojections = [
             (final_ft_ctf, final_ft_y),
             (final_Ft_ctf_0, final_Ft_y_0),
@@ -728,13 +729,12 @@ def run_final_all_data(
         del final_Ft_ctf_0, final_Ft_y_0, final_Ft_ctf_1, final_Ft_y_1
         final_maps = final_reconstruction.reconstruct_final_halfmaps(
             final_backprojections,
-            final_mean_variance,
+            final_halfmap_prior.variance,
             settings=reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
-    merged_mean = final_maps.merged
-    final_means_for_output = final_maps.halves
+        final_model_fields = _model_result_fields(final_maps.merged, final_maps.halves, None, None, None)
     logger.info(
         "RELION final all-data reconstruction done: wall=%.1fs",
         time.time() - final_reconstruct_t0,
@@ -757,11 +757,7 @@ def run_final_all_data(
     )
 
     return {
-        **_model_result_fields(
-            merged_mean, final_means_for_output, final_class_means,
-            class_weights if k_class_enabled else None,
-            class_assignments if k_class_enabled else None,
-        ),
+        **final_model_fields,
         "unfiltered_means": final_unfiltered_means_for_output,
         "relion_follower_scale_replay_requested_iterations": replay_requested_iterations,
         "relion_follower_scale_replay_applied_iterations": replay_applied_iterations,
