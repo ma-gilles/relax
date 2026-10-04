@@ -572,8 +572,6 @@ def _score_half_dense_one_shape(
         em_kwargs["optics_group_ids"] = half.particles.optics_group_ids
     if sampling.model_current_size_for_engine is not None:
         em_kwargs["reconstruction_current_size"] = sampling.model_current_size_for_engine
-    if execution.preserve_bpref_particle_order and variant.k_class_enabled:
-        raise ValueError("RELION BPref particle-order preservation is K=1-only")
     if half.image_seed_classes is not None and not variant.k_class_enabled:
         raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
     if execution.preserve_bpref_particle_order:
