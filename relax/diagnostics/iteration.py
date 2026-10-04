@@ -23,6 +23,7 @@ import numpy as np
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.helpers.env_flags import parse_int_set
 from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import _relion_half_plane_shell_counts
 from relax.sampling import rotation_grid_size
 from relax.symmetry import canonicalize_rotational_symmetry, symmetry_operator_sha256
@@ -231,6 +232,63 @@ def _bpref_device_signature_active_for_numbered_half(
 def _replay_manifest_array(value, dtype=None):
     """Replay manifests use a float64 empty sentinel regardless of field dtype."""
     return np.array([]) if value is None else np.asarray(value, dtype=dtype)
+
+
+def write_final_half_manifest(
+    save_dir,
+    half,
+    final_sampling,
+    final_inputs,
+    *,
+    translation_search_base,
+    reference,
+    reference_model,
+    noise_variance,
+    current_size,
+    precision,
+    use_local: bool,
+    log,
+) -> None:
+    """Write ``manifest_final_half<k>.npz``: the operands one half was scored with in the final all-data pass.
+
+    Reads from ``half``: its index, corrections and previous translations; from ``final_sampling``: the
+    trial grid and the perturbation settings; from ``final_inputs`` (the half's ``PreparedFinalHalf``): the
+    direction and translation log priors and the engine prior centre; ``reference_model.tau2``;
+    ``precision.use_float64_scoring`` and ``use_float64_projections``.
+    """
+    _manifest_path = os.path.join(save_dir, f"manifest_final_half{half.index}.npz")
+    _manifest = {
+        "effective_rotations": np.asarray(final_sampling.grid.rotations, dtype=np.float32),
+        "current_translations": np.asarray(final_sampling.grid.translations, dtype=np.float32),
+        "rotation_log_prior": _replay_manifest_array(final_inputs.directions.rotation_log_prior, dtype=np.float64),
+        "translation_log_prior": np.asarray(final_inputs.translation_log_prior, dtype=np.float64),
+        "translation_prior_centers": np.asarray(final_inputs.translations.engine_prior_center, dtype=np.float64),
+        "image_corrections": _replay_manifest_array(half.image_corrections, dtype=np.float64),
+        "scale_corrections": _replay_manifest_array(half.scale_corrections, dtype=np.float64),
+        "image_pre_shifts": _replay_manifest_array(translation_search_base, dtype=np.float32),
+        "absolute_previous_translations": _replay_manifest_array(
+            half.translations, dtype=np.float32,
+        ),
+        "mean_vol_ft": np.asarray(reference),
+        "mean_variance": np.asarray(reference_model.tau2),
+        "noise_variance": np.asarray(noise_variance),
+        "current_size": np.int32(current_size),
+        "half_spectrum_scoring": np.bool_(True),
+        "use_float64_scoring": np.bool_(precision.use_float64_scoring),
+        "use_float64_projections": np.bool_(precision.use_float64_projections),
+        "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
+        "reconstruction_padding_factor": np.int32(RECONSTRUCTION_PADDING_FACTOR),
+        "score_with_masked_images": np.bool_(True),
+        "perturbation_instance": np.float64(final_sampling.settings.random_perturbation),
+        "perturbation_factor": np.float64(final_sampling.settings.perturbation_factor),
+        "perturbation_applied": np.bool_(final_sampling.settings.perturbation is not None),
+        "perturbation_relion_iteration": np.int32(final_sampling.settings.relion_iteration),
+        "local_search": np.bool_(use_local),
+        "iteration": np.int32(-1),
+        "half_index": np.int32(half.index),
+    }
+    np.savez(_manifest_path, **_manifest)
+    log.info("Final manifest dumped: %s", _manifest_path)
 
 
 def _dump_array_or_empty(arr):

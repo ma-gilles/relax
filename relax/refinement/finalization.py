@@ -6,7 +6,6 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 
 
 import logging
-import os
 import time
 
 import jax.numpy as jnp
@@ -27,7 +26,7 @@ from relax.dense.scoring_policy import (
     local_precision,
 )
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics.iteration import _replay_manifest_array
+from relax.diagnostics.iteration import write_final_half_manifest
 from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.env_flags import parse_env_flag_or_false
@@ -541,42 +540,12 @@ def run_final_all_data(
         )
         # --- Manifest dump for final all-data iteration (Phase 0.1) ---
         if debug.save_intermediates_dir is not None:
-            _manifest_path = os.path.join(
-                debug.save_intermediates_dir,
-                f"manifest_final_half{half.index}.npz",
+            write_final_half_manifest(
+                debug.save_intermediates_dir, half, final_sampling, final_inputs,
+                translation_search_base=translation_search_base, reference=final_join_means[half.index],
+                reference_model=reference_model, noise_variance=noise_model.variance_per_half[half.index],
+                current_size=final_current_size, precision=final_precision, use_local=final_use_local, log=logger,
             )
-            _manifest = {
-                "effective_rotations": np.asarray(final_sampling.grid.rotations, dtype=np.float32),
-                "current_translations": np.asarray(final_sampling.grid.translations, dtype=np.float32),
-                "rotation_log_prior": _replay_manifest_array(final_inputs.directions.rotation_log_prior, dtype=np.float64),
-                "translation_log_prior": np.asarray(final_inputs.translation_log_prior, dtype=np.float64),
-                "translation_prior_centers": np.asarray(final_inputs.translations.engine_prior_center, dtype=np.float64),
-                "image_corrections": _replay_manifest_array(half.image_corrections, dtype=np.float64),
-                "scale_corrections": _replay_manifest_array(half.scale_corrections, dtype=np.float64),
-                "image_pre_shifts": _replay_manifest_array(translation_search_base, dtype=np.float32),
-                "absolute_previous_translations": _replay_manifest_array(
-                    half.translations, dtype=np.float32,
-                ),
-                "mean_vol_ft": np.asarray(final_join_means[half.index]),
-                "mean_variance": np.asarray(reference_model.tau2),
-                "noise_variance": np.asarray(noise_model.variance_per_half[half.index]),
-                "current_size": np.int32(final_current_size),
-                "half_spectrum_scoring": np.bool_(True),
-                "use_float64_scoring": np.bool_(final_precision.use_float64_scoring),
-                "use_float64_projections": np.bool_(final_precision.use_float64_projections),
-                "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
-                "reconstruction_padding_factor": np.int32(RECONSTRUCTION_PADDING_FACTOR),
-                "score_with_masked_images": np.bool_(True),
-                "perturbation_instance": np.float64(final_sampling.settings.random_perturbation),
-                "perturbation_factor": np.float64(final_sampling.settings.perturbation_factor),
-                "perturbation_applied": np.bool_(final_sampling.settings.perturbation is not None),
-                "perturbation_relion_iteration": np.int32(final_sampling.settings.relion_iteration),
-                "local_search": np.bool_(final_use_local),
-                "iteration": np.int32(-1),
-                "half_index": np.int32(half.index),
-            }
-            np.savez(_manifest_path, **_manifest)
-            logger.info("Final manifest dumped: %s", _manifest_path)
 
     final_Ft_y_0 = final_outs.Ft_y[0]
     final_Ft_y_1 = final_outs.Ft_y[1]
