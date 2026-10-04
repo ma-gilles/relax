@@ -58,7 +58,7 @@ def effective_volumes(raw_volumes, voxel_size, box, *, atomic_solvent_correction
 
 def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
             atomic_solvent_correction=False, solvent_contrast_a=0.8,
-            solvent_contrast_B=2000.0, atomic_bfactor=0.0, maps=None):
+            solvent_contrast_B=2000.0, atomic_bfactor=0.0, maps=None, shift_sd_px=0.0, shift_max_px=5.0):
     import os
 
     maps, counts = validate_state_inputs(source, counts, maps)
@@ -95,8 +95,20 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
     labels = rng.permutation(np.repeat(np.arange(n_states), counts))
     n = len(labels)
     rotations = Rotation.random(n, random_state=rng).as_matrix().astype(np.float32)
-    # Existing simulator's standard random-sampling workflow uses zero shifts.
+    # Existing simulator's standard random-sampling workflow uses zero shifts. With shift_sd_px > 0 the
+    # shifts are continuous: isotropic Gaussian, redrawn until inside the disc of radius shift_max_px,
+    # from their own generator so that the labels and rotations are those of the zero-shift fixture.
     translations = np.zeros((n, 2), np.float32)
+    if shift_sd_px > 0:
+        if not 0 < shift_max_px <= 6.0:
+            raise ValueError("shift_max_px must lie inside the training shift range (6 px)")
+        shift_rng = np.random.default_rng([seed, 1])
+        shifts = shift_rng.normal(0.0, shift_sd_px, (n, 2))
+        outside = np.linalg.norm(shifts, axis=1) > shift_max_px
+        while outside.any():
+            shifts[outside] = shift_rng.normal(0.0, shift_sd_px, (int(outside.sum()), 2))
+            outside = np.linalg.norm(shifts, axis=1) > shift_max_px
+        translations = shifts.astype(np.float32)
     ctf = np.zeros((n, int(core.CTFParamIndex.TILT_ANGLE) + 1), np.float32)
     for field, value in [("DFU", 15000), ("DFV", 15000), ("VOLT", 300), ("CS", 2.7), ("W", 0.07), ("CONTRAST", 1)]:
         ctf[:, getattr(core.CTFParamIndex, field)] = value
@@ -189,7 +201,12 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
         "injected_spectrum": noise.tolist(),
         "noise_rng_batch_size": 64,
         "seed": seed,
-        "shift_distribution": "point mass at zero (standard simulator default)",
+        "shift_distribution": (
+            f"isotropic Gaussian, sd {shift_sd_px:g} px per axis, truncated to |shift| <= {shift_max_px:g} px "
+            f"(generator seeded [{seed}, 1]); truth.npz translations, in pixels"
+            if shift_sd_px > 0
+            else "point mass at zero (standard simulator default)"
+        ),
         "ctf": "constant defocus 15000 A, 300 kV, Cs 2.7 mm, amplitude contrast 0.07",
         "downsampling": "existing Fourier crop; common field of view preserved",
     }
@@ -229,12 +246,16 @@ def main():
     parser.add_argument("--solvent-contrast-a", type=float, default=0.8)
     parser.add_argument("--solvent-contrast-b", type=float, default=2000.0, help="Solvent-contrast B in angstrom^2")
     parser.add_argument("--atomic-bfactor", type=float, default=0.0, help="Additional atomic B in angstrom^2 (zero for pre-smoothed Ribosembly maps)")
+    parser.add_argument("--shift-sd-px", type=float, default=0.0,
+                        help="Per-axis sd of continuous Gaussian particle shifts in pixels (0: every shift is zero)")
+    parser.add_argument("--shift-max-px", type=float, default=5.0, help="Largest shift length in pixels (truncation)")
     args = parser.parse_args()
     prepare(args.output, args.source, args.counts, args.seed, args.box, args.noise_level,
             atomic_solvent_correction=args.atomic_solvent_correction,
             solvent_contrast_a=args.solvent_contrast_a,
             solvent_contrast_B=args.solvent_contrast_b,
-            atomic_bfactor=args.atomic_bfactor, maps=args.maps)
+            atomic_bfactor=args.atomic_bfactor, maps=args.maps,
+            shift_sd_px=args.shift_sd_px, shift_max_px=args.shift_max_px)
 
 
 if __name__ == "__main__":
