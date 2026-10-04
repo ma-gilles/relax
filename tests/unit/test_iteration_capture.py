@@ -92,7 +92,7 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
         per_half=SimpleNamespace(noise_stats=None if missing else [SimpleNamespace(wsum_norm_correction=object()),
                                                   SimpleNamespace(wsum_norm_correction=None)]),
         experiment_datasets=[half.dataset for half in halves], halves=halves,
-        follower_setup=setup, relion_firstiter_cc_this_iter=False, tomo_halves=False,
+        follower_setup=setup, first_iteration=SimpleNamespace(relion_firstiter_cc=False), tomo_halves=False,
         scoring_dtype=np.float32, iteration=2, current_size=12, logger=logging.getLogger(__name__),
         prepare_norm_scale_update=prepare, _update_relion_follower_corrections=update_followers,
         log_norm_scale_update=log_update,

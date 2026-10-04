@@ -1339,11 +1339,7 @@ def refine_single_volume(
         iter_replay_override = None
         if replay.replay_iteration_overrides is not None and iteration < len(replay.replay_iteration_overrides):
             iter_replay_override = replay.replay_iteration_overrides[iteration]
-        (
-            relion_firstiter_cc_this_iter,
-            firstiter_score_mode_this_iter,
-            firstiter_winner_take_all_this_iter,
-        ) = first_iteration_policy(options, iteration=iteration)
+        first_iteration = first_iteration_policy(options, iteration=iteration)
         numbered_relion_iteration = replay_policy._numbered_relion_iteration(init_relion_iteration, iteration)
 
         if follower_setup.follower_scale_state is not None:
@@ -1557,7 +1553,7 @@ def refine_single_volume(
             n_classes=n_classes,
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+            relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
             build_shared_projector=has_previous_iteration and replay_result.relion_projector_state is None,
             log=logger,
         )
@@ -1643,8 +1639,8 @@ def refine_single_volume(
             or (
                 int(state.adaptive_oversampling) == 0
                 and n_classes == 1
-                and firstiter_score_mode_this_iter == "gaussian"
-                and not firstiter_winner_take_all_this_iter
+                and first_iteration.score_mode == "gaussian"
+                and not first_iteration.winner_take_all
                 and not scoring_policy.DENSE_PRECISION.use_float64_scoring
             )
         ):
@@ -1837,10 +1833,10 @@ def refine_single_volume(
         # order; it makes the two callable independently, which is what the
         # overlap option uses. Serial dispatch stays the default.
         numbered_variant = DenseVariantPolicy(
-            firstiter_score_mode_this_iter=firstiter_score_mode_this_iter,
-            firstiter_winner_take_all_this_iter=firstiter_winner_take_all_this_iter,
+            firstiter_score_mode_this_iter=first_iteration.score_mode,
+            firstiter_winner_take_all_this_iter=first_iteration.winner_take_all,
             k_class_enabled=k_class_enabled,
-            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+            relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
             firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
             firstiter_fine_current_size=cs_for_engine if use_adaptive else None,
             firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
@@ -2065,7 +2061,7 @@ def refine_single_volume(
                 ),
                 iter_replay_override=iter_replay_override,
                 scoring_dtype=scoring_dtype,
-                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
             )
             history.data_vs_prior_trajectory.append(data_vs_prior_iter)
@@ -2092,7 +2088,7 @@ def refine_single_volume(
                 mstep_accumulator_shape=mstep_accumulator_shape,
                 mstep_full_half_axes=per_half.mstep_full_half_axis,
                 scoring_dtype=scoring_dtype,
-                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
                 bpref_boundary_iteration_matches=_bpref_boundary_iteration_matches,
             )
@@ -2396,7 +2392,7 @@ def refine_single_volume(
             noise_model,
             image_geometry.image_shape,
             k_class_enabled=k_class_enabled,
-            firstiter_cc=relion_firstiter_cc_this_iter,
+            firstiter_cc=first_iteration.relion_firstiter_cc,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             dump_debug=noise_debug_dump,
             summed_current_size=cs_for_engine if consistency.noise_shell_count == "summed" else None,
@@ -2405,7 +2401,7 @@ def refine_single_volume(
         noise_from_res = noise_update.noise_from_res
         noise_from_res_per_half = noise_update.noise_from_res_per_half
         noise_model = noise_update.model
-        if not relion_firstiter_cc_this_iter:
+        if not first_iteration.relion_firstiter_cc:
             _parity_dump.mark_stage(iteration, "noise_update")
 
         correction_report = NormScaleCorrectionReport()
@@ -2436,7 +2432,7 @@ def refine_single_volume(
                 per_half.noise_stats,
                 halves,
                 group_ids_per_half=group_ids_per_half,
-                firstiter_cc=relion_firstiter_cc_this_iter,
+                firstiter_cc=first_iteration.relion_firstiter_cc,
                 do_norm_correction=not tomo_halves,
                 do_scale_correction=follower_setup.follower_scale_state is None,
                 dtype=scoring_dtype,
@@ -2459,7 +2455,7 @@ def refine_single_volume(
                     noise_stats_per_half=per_half.noise_stats,
                     norm_scale_update=norm_scale_update,
                     relion_half_inputs=halves,
-                    relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                    relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                     dtype=scoring_dtype,
                     logger=logger,
                 )

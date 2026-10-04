@@ -178,8 +178,7 @@ def test_device_matrix_generation_gate(os, local, k, mode, hard, double, expecte
         use_local=local,
         state=SimpleNamespace(adaptive_oversampling=os),
         n_classes=k,
-        firstiter_score_mode_this_iter=mode,
-        firstiter_winner_take_all_this_iter=hard,
+        first_iteration=SimpleNamespace(score_mode=mode, winner_take_all=hard),
         scoring_policy=SimpleNamespace(DENSE_PRECISION=SimpleNamespace(use_float64_scoring=double)),
     )
     assert bool(got) is expected
