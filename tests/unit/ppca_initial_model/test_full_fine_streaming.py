@@ -473,10 +473,19 @@ def test_tiles_of_different_sizes_keep_one_kept_buffer_live(tile_problem, monkey
     monkeypatch.setattr(frs, "_empty_kept", recording_empty_kept)
     assert not kept_sizes()
     before = in_use()
-    # Sizes 2, 2, 1, 2: the second tile reuses the first one's buffer, the third and fourth allocate.
+    # Sizes 2, 2, 1, 2 run largest first (2, 2, 2, 1): the three tiles of 2 share one buffer, allocated first,
+    # and the tile of 1 allocates its own after that one is released.
     ids = [np.arange(2), np.arange(1, 3), np.arange(2, 3), np.arange(2)]
-    accumulate_full_row_tiles(stream, [(i, [None] * len(i)) for i in ids])
-    assert [n for n, _live, _bytes in allocations] == [2, 1, 2]
+    tiles = [(i, [None] * len(i)) for i in ids]
+    together = accumulate_full_row_tiles(stream, tiles)
+    assert [n for n, _live, _bytes in allocations] == [2, 1]
+    # Results come back in the given order, each the tile's own statistics.
+    for tile, actual in zip(tiles, together, strict=True):
+        expected = accumulate_full_row_tile(stream, *tile)
+        assert np.array_equal(actual.original_image_ids, expected.original_image_ids)
+        for name in ("lhs_tri", "residual_gradient", "embeddings"):
+            assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
+    del allocations[2:]  # the single-tile calls above allocated their own
     for n, live, used in allocations:
         assert live <= {n}  # no buffer of another tile size
         if used is not None:  # device allocators report live bytes; the host's does not
