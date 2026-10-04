@@ -16,37 +16,54 @@ pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("previous,native,n_classes,advance", [
-    (False, True, 1, False),
-    (True, True, 1, True),
-    (True, False, 1, False),
-    (True, True, 4, False),
-])
-def test_native_sampling_uses_completed_iteration_counters(previous, native, n_classes, advance):
-    state = RefinementState(
+def _stalled_state():
+    return RefinementState(
         healpix_order=2, max_healpix_order=5,
         acc_rot=1.0, acc_trans=0.5,
         smallest_changes_optimal_orientations=1.0,
         nr_iter_wo_resol_gain=2, nr_iter_wo_large_hidden_variable_changes=2,
     )
-    result = convergence.advance_expectation_sampling(
+
+
+@pytest.mark.parametrize("previous,native,advance", [
+    (False, True, False),
+    (True, True, True),
+    (True, False, False),
+])
+def test_k1_native_sampling_uses_completed_iteration_counters(previous, native, advance):
+    state = _stalled_state()
+    result = convergence.advance_k1_expectation_sampling(
         state, AdaptiveOptions(), iteration=0,
-        has_previous_iteration=previous, native_sampling_boundary=native,
-        n_classes=n_classes, log=LOG,
+        has_previous_iteration=previous, native_sampling_boundary=native, log=LOG,
     )
     assert result.healpix_order == (3 if advance else 2)
     if not advance:
         assert result is state
 
 
-@pytest.mark.parametrize("previous,native,n_classes", [(False, True, 1), (True, True, 1), (True, False, 4)])
-def test_explicit_schedule_precedes_native_advance(previous, native, n_classes, monkeypatch):
+def test_class3d_sampling_ignores_completed_iteration_counters():
+    state = _stalled_state()
+    result = convergence.advance_class_expectation_sampling(state, AdaptiveOptions(), iteration=0, log=LOG)
+    assert result.healpix_order == 2
+    assert result is state
+
+
+@pytest.mark.parametrize("previous,native", [(False, True), (True, True)])
+def test_explicit_schedule_precedes_k1_native_advance(previous, native, monkeypatch):
     state = RefinementState(healpix_order=2, max_healpix_order=5)
     monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
-    result = convergence.advance_expectation_sampling(
+    result = convergence.advance_k1_expectation_sampling(
         state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1,
-        has_previous_iteration=previous, native_sampling_boundary=native,
-        n_classes=n_classes, log=LOG,
+        has_previous_iteration=previous, native_sampling_boundary=native, log=LOG,
+    )
+    assert result.healpix_order == 3
+
+
+def test_explicit_schedule_sets_the_class3d_order(monkeypatch):
+    state = RefinementState(healpix_order=2, max_healpix_order=5)
+    monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
+    result = convergence.advance_class_expectation_sampling(
+        state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1, log=LOG,
     )
     assert result.healpix_order == 3
 

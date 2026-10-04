@@ -33,6 +33,56 @@ def uses_native_auto_refine(*, native_sampling_boundary: bool, n_classes: int) -
     return native_sampling_boundary and n_classes == 1
 
 
+def _scheduled_healpix_order_state(
+    state: RefinementState, adaptive: AdaptiveOptions, *, iteration: int, log: logging.Logger,
+) -> RefinementState:
+    """Install this iteration's order of an explicit HEALPix schedule."""
+    target_order = int(adaptive.relion_healpix_orders[iteration])
+    state = _apply_relion_healpix_order_oracle(
+        state, target_order, iteration_number=iteration + 1,
+    )
+    log.info(
+        "HEALPix-order oracle: iteration %d using healpix_order=%d",
+        iteration + 1, target_order,
+    )
+    return state
+
+
+def advance_k1_expectation_sampling(
+    state: RefinementState,
+    adaptive: AdaptiveOptions,
+    *,
+    iteration: int,
+    has_previous_iteration: bool,
+    native_sampling_boundary: bool,
+    log: logging.Logger,
+) -> RefinementState:
+    """Choose the next K=1 angular grid after accuracy, before expectation.
+
+    Native auto-refine uses the preceding iteration's stall counters. An
+    explicit HEALPix schedule takes precedence, including on the first iteration.
+    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy``.
+    """
+    if adaptive.relion_healpix_orders is not None:
+        state = _scheduled_healpix_order_state(state, adaptive, iteration=iteration, log=log)
+    elif has_previous_iteration and native_sampling_boundary:
+        state = update_angular_sampling(state)
+    return state
+
+
+def advance_class_expectation_sampling(
+    state: RefinementState,
+    adaptive: AdaptiveOptions,
+    *,
+    iteration: int,
+    log: logging.Logger,
+) -> RefinementState:
+    """Class3D keeps its angular grid unless an explicit HEALPix schedule sets this iteration's order."""
+    if adaptive.relion_healpix_orders is not None:
+        state = _scheduled_healpix_order_state(state, adaptive, iteration=iteration, log=log)
+    return state
+
+
 def advance_expectation_sampling(
     state: RefinementState,
     adaptive: AdaptiveOptions,
@@ -43,26 +93,22 @@ def advance_expectation_sampling(
     n_classes: int,
     log: logging.Logger,
 ) -> RefinementState:
-    """Choose the next angular grid after accuracy, before expectation.
+    """The one remaining mode decision of the expectation sampling transition.
 
-    Native auto-refine uses the preceding iteration's stall counters. An
-    explicit HEALPix schedule takes precedence, including on the first iteration.
-    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy``.
+    K=1 may advance natively (``advance_k1_expectation_sampling``); Class3D
+    never does (``advance_class_expectation_sampling``). Remove this dispatch
+    when the K1 and Class3D trajectories call those directly.
     """
-    if adaptive.relion_healpix_orders is not None:
-        target_order = int(adaptive.relion_healpix_orders[iteration])
-        state = _apply_relion_healpix_order_oracle(
-            state, target_order, iteration_number=iteration + 1,
+    if n_classes == 1:
+        return advance_k1_expectation_sampling(
+            state,
+            adaptive,
+            iteration=iteration,
+            has_previous_iteration=has_previous_iteration,
+            native_sampling_boundary=native_sampling_boundary,
+            log=log,
         )
-        log.info(
-            "HEALPix-order oracle: iteration %d using healpix_order=%d",
-            iteration + 1, target_order,
-        )
-    elif has_previous_iteration and uses_native_auto_refine(
-        native_sampling_boundary=native_sampling_boundary, n_classes=n_classes,
-    ):
-        state = update_angular_sampling(state)
-    return state
+    return advance_class_expectation_sampling(state, adaptive, iteration=iteration, log=log)
 
 
 class ConvergenceUpdate(NamedTuple):
