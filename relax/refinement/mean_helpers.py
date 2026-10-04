@@ -632,7 +632,11 @@ def estimate_class_priors(
             n_classes,
             int(current_size),
             kclass_tau2_source,
-            "host transform" if projector_power_spectrum is None else "scoring projector",
+            (
+                "scoring projector"
+                if projector_power_spectrum is not None and settings.shell_pair_counting == "relion"
+                else "host transform"
+            ),
         )
         class_prior = estimate_class_prior(
             previous_half_maps[0],
