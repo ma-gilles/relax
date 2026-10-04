@@ -57,6 +57,7 @@ from relax.ppca_refinement.residual_statistics import full_float32
 
 logger = logging.getLogger(__name__)
 
+
 def _json(value):
     if isinstance(value, (np.ndarray, jnp.ndarray)):
         return np.asarray(value).tolist()
@@ -113,6 +114,13 @@ def _merge_statistics(parts):
 # posterior mass, for more than OVERSAMPLING_CAP_WARNING of its images, logs a warning.
 OVERSAMPLING_CAP_MASS = 0.99
 OVERSAMPLING_CAP_WARNING = 0.05
+
+
+def oversampled_update(config, iteration) -> bool:
+    """Whether the update at ``iteration`` runs adaptive oversampling: the last stage's updates do; the earlier
+    stages run the dense grid of their order (their posteriors are flat, the significant-sample cap cannot follow
+    them, and the dense grid costs less there; section 14 of docs/math/vdam_ppca_algorithm.md)."""
+    return bool(config.oversampling) and iteration >= config.stages[-1][0]
 
 
 def _oversampling_record(stats, config, iteration):
@@ -284,9 +292,11 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
             ]
 
         # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
-        pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if config.oversampling else 2 * radius
+        oversampled = oversampled_update(config, iteration)
+        pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
         streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
         pass2_streams = make_streams(geometry) if pass1_size != 2 * radius else streams
+
         # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
         # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
         # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
@@ -308,7 +318,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
 
         tile_size = plan_tile_images(streams[0], config.image_batch_size, tiles_per_call=tiles_per_call)
         streams = [stream._replace(tile_images=tile_size) for stream in streams]
-        if config.oversampling:
+        if oversampled:
             fine_rotations, fine_translations = relion_child_grids(hp, translations, config.shift_step)
             streams = [
                 prepare_oversampled_stream(
@@ -343,11 +353,13 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         for group in range(len(ids)):
             group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
             if embeddings_only:
-                results.append(DensePPCAEmbeddings(
-                    jnp.concatenate([part.embeddings for part in group_parts]),
-                    np.concatenate([part.original_image_ids for part in group_parts]),
-                    sum(part.n_images for part in group_parts),
-                ))
+                results.append(
+                    DensePPCAEmbeddings(
+                        jnp.concatenate([part.embeddings for part in group_parts]),
+                        np.concatenate([part.original_image_ids for part in group_parts]),
+                        sum(part.n_images for part in group_parts),
+                    )
+                )
                 continue
             stats = _merge_statistics(group_parts)
             if tilts:
@@ -356,13 +368,15 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 stats = dataclasses.replace(
                     stats,
                     **{
-                        name: jnp.stack([
-                            sum(
-                                (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
-                                jnp.zeros_like(getattr(group_parts[0], name)),
-                            )
-                            for g in range(len(streams))
-                        ])
+                        name: jnp.stack(
+                            [
+                                sum(
+                                    (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
+                                    jnp.zeros_like(getattr(group_parts[0], name)),
+                                )
+                                for g in range(len(streams))
+                            ]
+                        )
                         for name in ("residual_num", "residual_den")
                     },
                 )
@@ -381,7 +395,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
                 }
             )
-            if config.oversampling:
+            if oversampled:
                 stats.diagnostics["oversampling"] = {
                     "order": config.oversampling,
                     "pass1_image_size": pass1_size,
@@ -417,8 +431,18 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     return stats
 
 
-def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_after=None,
-        stop_file=None, log_direction_prior=True):
+def run(
+    dataset,
+    config,
+    output,
+    identity,
+    diameter_ang,
+    *,
+    resume=None,
+    stop_after=None,
+    stop_file=None,
+    log_direction_prior=True,
+):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     resumed_precision = None
@@ -638,7 +662,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 "elapsed_seconds": time.monotonic() - started,
             }
         )
-        if config.oversampling:
+        if "oversampling" in stats[0].diagnostics:
             diagnostics["oversampling"] = _oversampling_record(stats, config, iteration)
         if config.optimizer == "momentum_sgd":
             diagnostics.update(

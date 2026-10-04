@@ -386,10 +386,13 @@ def test_capped_images_report_the_mass_they_hold():
 
 
 # These random particles have nearly flat posteriors: 0.999 of the mass needs most of the coarse poses.
-@pytest.mark.parametrize("cap, fraction, warned", [(100, 0.05, False), (1, 0.999, True)])
-def test_controller_runs_oversampled_updates_and_flags_the_cap(tmp_path, caplog, cap, fraction, warned):
-    """Two oversampled updates of subtomogram particles through the controller: each update records the windows and
-    the significant samples, and a cap that stops most images short of their mass logs a warning."""
+@pytest.mark.parametrize(
+    "cap, fraction, warned, stages", [(100, 0.05, False, ((1, 3, 0),)), (1, 0.999, True, ((1, 3, 0), (2, 3, 0)))]
+)
+def test_controller_runs_oversampled_updates_and_flags_the_cap(tmp_path, caplog, cap, fraction, warned, stages):
+    """Oversampled updates of subtomogram particles through the controller: each records the windows and the
+    significant samples, and a cap that stops most images short of their mass logs a warning. Oversampling runs
+    in the last stage only: with a second stage from update 2, update 1 is the dense stream's."""
     import json
     import logging
 
@@ -423,7 +426,7 @@ def test_controller_runs_oversampled_updates_and_flags_the_cap(tmp_path, caplog,
     config = Config(
         q=2,
         iterations=2,
-        stages=((1, 3, 0),),
+        stages=stages,
         oversampling=1,
         max_significant=cap,
         target_mass=fraction,
@@ -441,7 +444,9 @@ def test_controller_runs_oversampled_updates_and_flags_the_cap(tmp_path, caplog,
         iteration_loop._direction_ids.cache_clear()
     rows = [json.loads(line) for line in (tmp_path / "iterations.jsonl").read_text().splitlines()]
     assert [row["iteration"] for row in rows] == [1, 2]
-    for row in rows:
+    oversampled = [row for row in rows if row["iteration"] >= stages[-1][0]]
+    assert [("oversampling" in row) for row in rows] == [row["iteration"] >= stages[-1][0] for row in rows]
+    for row in oversampled:
         record = row["oversampling"]
         assert record["order"] == 1 and record["max_significant"] == cap
         assert record["pass1_image_size"] <= record["pass2_image_size"] == 6

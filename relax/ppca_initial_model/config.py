@@ -19,8 +19,9 @@ class Config:
     iterations: int = 200
     seed: int = 11
     stages: tuple = ((1, 4, 1), (61, 8, 2), (111, 16, 3), (161, 32, 3))
-    # Adaptive oversampling: 0 scores the stage's full pose grid; 1 is RELION's two passes (each image's
-    # significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py).
+    # Adaptive oversampling: 0 scores every stage's full pose grid; 1 runs the last stage with RELION's two passes
+    # (each image's significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py)
+    # and the earlier stages dense (iteration_loop.oversampled_update).
     oversampling: int = 0
     # The adaptive fraction of the posterior mass the significant samples hold (RELION's --adaptive_fraction).
     target_mass: float = 0.999

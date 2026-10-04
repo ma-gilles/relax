@@ -33,8 +33,9 @@ def add_args(parser):
         type=int,
         default=0,
         choices=(0, 1),
-        help="Adaptive oversampling: 0 scores each stage's full pose grid; 1 is RELION's two passes, the children "
-        "of each image's significant coarse samples (vdam_ppca_algorithm.md section 14)",
+        help="Adaptive oversampling: 0 scores each stage's full pose grid; 1 runs the last stage with RELION's two "
+        "passes, the children of each image's significant coarse samples, and the earlier stages dense "
+        "(vdam_ppca_algorithm.md section 14)",
     )
     parser.add_argument(
         "--maxsig",
