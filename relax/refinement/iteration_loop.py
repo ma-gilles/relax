@@ -2437,7 +2437,7 @@ def refine_single_volume(
                 voxel_size=source_pixel_size_angstrom,
                 current_size=current_size,
                 dvp_iter=resolution_estimate.data_vs_prior,
-                fsc=locals().get("fsc"),
+                fsc=fsc,
                 grid_size=grid_size,
                 iteration=iteration,
                 mstep_accumulator_shape=mstep_accumulator_shape,
