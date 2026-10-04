@@ -566,6 +566,18 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   differs by 1.3e-3 and 6.5e-4 in the two pseudo-halves and the map by 3.3e-3. With the coarse pass on the
   direct-square kernel (diagnostic) the kept sets agree for 197 of 200, BPref data to 1.3e-4 and 2.8e-4 and
   the map to 2.6e-4 to 4.1e-4, against 198 of 200, 1.4e-4 and 1.6e-4, and 1.7e-4 between two RELION runs.
+  A second defect, fixed (2026-10-04): on an iteration that updates the sampling (10, 20, ...) RELION sets
+  the coarse image size before it updates the angular sampling (expectationSetup, ml_optimiser.cpp:3914
+  before :3945), so that iteration still scores its coarse pass at the previous order's size. The
+  single-particle E-step already took that order; the subtomogram E-step used the updated one (coarse size
+  22 instead of 12 at iteration 10 of this case): 2.5 significant samples per particle against RELION's
+  24.2, a different best pose for 28.5 % of the particles and a different offset for 22.5 %, where three
+  RELION runs agree on all 200. With the fix: 24.5 significant samples, 8.5 % and 6.5 % (iteration 20:
+  20.0 % -> 10.5 % of poses). Every subtomogram VDAM row measured before this fix crossed those iterations
+  with the wrong coarse size and is rerun on it. The trajectory is still outside RELION's same-seed range
+  after both changes: per iteration, best poses differ from RELION for 1.7 % (iterations 2-9), 3.6 %
+  (10-19) and 6.9 % (20-30) of the particles with a direct-square coarse pass (4.1 %, 6.1 %, 10.0 % with
+  the GEMM scorer), where RELION runs differ from each other by 0.5 %, 1.0 % and 2.5 %; OPEN.
   SPA VDAM with K>1 uses the same scorer. Fix in progress: keep the GEMM scorer and re-score the samples
   near the cut with RELION's arithmetic when the cap binds. et09 one-group seed 2 on main b44f33e scores
   0.988222 and 0.988187 against RELION's 0.988241-0.988392, so that row is open on current code too. The
