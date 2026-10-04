@@ -166,7 +166,20 @@ def _normalize_class_log_priors(n_classes: int, class_log_priors=None) -> np.nda
     return log_priors - log_norm
 
 
-def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, init_direction_prior=None) -> tuple[np.ndarray, np.ndarray]:
+class ClassMixture(NamedTuple):
+    """The class log priors scored against and the class weights they come from, both ``[K]`` float64."""
+
+    log_priors: np.ndarray
+    weights: np.ndarray
+
+
+def class_mixture_from_weights(weights: np.ndarray) -> ClassMixture:
+    """The mixture whose log priors are the logarithm of ``weights``."""
+
+    return ClassMixture(np.log(weights), weights)
+
+
+def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, init_direction_prior=None) -> ClassMixture:
     """Return normalized log priors for the class axis and class weights, defaulting to uniform."""
     class_log_priors = _normalize_class_log_priors(n_classes, init_class_log_priors)
     class_weights = np.exp(class_log_priors)
@@ -177,7 +190,7 @@ def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, ini
                 raise ValueError("RELION direction-prior row sums imply a zero-probability class")
             class_weights = inferred_class_weights
             class_log_priors = np.log(class_weights)
-    return class_log_priors, class_weights
+    return ClassMixture(class_log_priors, class_weights)
 
 
 def _snapshot_and_release_previous_k1_means(means):

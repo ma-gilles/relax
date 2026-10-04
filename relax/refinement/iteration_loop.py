@@ -165,6 +165,7 @@ from relax.refinement.mean_helpers import (
     _stack_class_tau2_update_details,
     _updated_mean_variance_per_half,
     align_k1_volume_signs,
+    class_mixture_from_weights,
     estimate_class_priors,
     estimate_split_half_prior,
     initialize_reference_model,
@@ -506,7 +507,7 @@ def refine_single_volume(
     source_faithful_spectrum_norm = _fresh_k1_spectrum_norm_default(
         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
     )
-    class_log_priors, class_weights = _initialize_class_log_priors(
+    class_mixture = _initialize_class_log_priors(
         n_classes,
         k_class.init_class_log_priors,
         replay.init_direction_prior,
@@ -783,8 +784,7 @@ def refine_single_volume(
         if k_class_enabled:
             class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
             previous_class_assignments = [None if c is None else c.copy() for c in class_assignments]
-            class_weights = np.asarray(resume.class_weights, dtype=np.float64)
-            class_log_priors = np.log(class_weights)
+            class_mixture = class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64))
         previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=scoring_dtype)
         sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
         relion_incr_size = int(resume.incr_size)
@@ -1164,11 +1164,10 @@ def refine_single_volume(
         if replay_saved_healpix_order is not None:
             replay_saved_healpix_order = int(state.healpix_order)
         if k_class_enabled and replay_result.class_weights is not None:
-            class_weights = np.asarray(replay_result.class_weights, dtype=np.float64)
-            class_log_priors = np.log(class_weights)
+            class_mixture = class_mixture_from_weights(np.asarray(replay_result.class_weights, dtype=np.float64))
             logger.info(
                 "Replay override: class priors <- direction-prior row sums (%s)",
-                ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(class_weights)),
+                ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(class_mixture.weights)),
             )
 
         reference_model.maps = _maybe_debug_replay_relion_references(
@@ -1272,7 +1271,7 @@ def refine_single_volume(
                         reference_fourier=reference_model.maps[0],
                         best_eulers_deg=previous_eulers_half1,
                         class_ids=accuracy_class_ids,
-                        class_weights=class_weights,
+                        class_weights=class_mixture.weights,
                         sigma2_noise_native=noise_model.radial_per_half[0],
                         current_image_size=current_size,
                     )
@@ -1791,7 +1790,7 @@ def refine_single_volume(
                 numbered_expectation,
                 tomo_sampling=numbered_tomo_sampling,
                 direction_priors=direction_log_priors[k],
-                class_log_priors=class_log_priors,
+                class_log_priors=class_mixture.log_priors,
                 sigma_offset_angstrom=_sigma_offset_for_half(
                     sigma_offset.shared_angstrom, sigma_offset.per_half_angstrom, k,
                 ),
@@ -1895,23 +1894,24 @@ def refine_single_volume(
                 "significant_counts": [significance.recorded],
             }
         if k_class_enabled:
-            class_weights = _class_weights_from_posterior(
-                class_posterior_per_half,
-                n_classes,
-                class_weights,
+            class_mixture = class_mixture_from_weights(
+                _class_weights_from_posterior(
+                    class_posterior_per_half,
+                    n_classes,
+                    class_mixture.weights,
+                )
             )
-            class_log_priors = np.log(class_weights)
             history.record_class_weights(
-                class_weights,
+                class_mixture.weights,
                 _class_weights_from_posterior(
                     class_full_posterior_per_half,
                     n_classes,
-                    class_weights,
+                    class_mixture.weights,
                 ),
             )
             logger.info(
                 "K-class occupancies: %s",
-                ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(class_weights)),
+                ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(class_mixture.weights)),
             )
         mstep_accumulator_shape = _resolve_mstep_accumulator_shape(
             per_half.mstep_accumulator_shape,
@@ -2254,8 +2254,9 @@ def refine_single_volume(
                     direction_priors[half_index] = DirectionPrior(
                         _copy_first_class(prior.values), prior.healpix_order,
                     )
-            class_weights = np.full(n_classes, float(class_weights[0]) / n_classes, dtype=np.float64)
-            class_log_priors = np.log(class_weights)
+            class_mixture = class_mixture_from_weights(
+                np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)
+            )
             logger.info("Class3D one-reference start: copied class 1 to every class after the CC iteration")
         history.record_direction_prior(
             direction_priors,
@@ -2709,7 +2710,7 @@ def refine_single_volume(
                 noise_model.radial_per_half,
                 fsc=fsc,
                 fsc_for_growth=None if k_class_enabled else tau2_fsc_for_update,
-                class_weights=class_weights if k_class_enabled else None,
+                class_weights=class_mixture.weights if k_class_enabled else None,
                 direction_priors=direction_priors,
                 half_inputs=halves,
                 class_assignments=class_assignments if k_class_enabled else None,
@@ -2836,7 +2837,7 @@ def refine_single_volume(
             )
         merged_mean, merged_class_means = _merged_mean_from_halves(
             reference_model.maps,
-            class_weights if k_class_enabled else None,
+            class_mixture.weights if k_class_enabled else None,
         )
         (
             replay_requested_iterations,
@@ -2849,7 +2850,7 @@ def refine_single_volume(
         return {
             **_model_result_fields(
                 merged_mean, reference_model.maps, merged_class_means,
-                class_weights if k_class_enabled else None,
+                class_mixture.weights if k_class_enabled else None,
                 class_assignments if k_class_enabled else None,
             ),
             "relion_follower_scale_replay_requested_iterations": replay_requested_iterations,
@@ -3050,9 +3051,9 @@ def refine_single_volume(
         perturb_replay_relion_dir=perturb_replay_relion_dir,
         current_sigma_offset_angstrom=sigma_offset.shared_angstrom,
         current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
-        class_weights=class_weights,
+        class_weights=class_mixture.weights,
         class_assignments=class_assignments,
-        class_log_priors=class_log_priors,
+        class_log_priors=class_mixture.log_priors,
         previous_data_vs_prior_for_scheduling=previous_data_vs_prior_for_scheduling,
         iteration=iteration,
         collect_local_search_profile=collect_local_search_profile,

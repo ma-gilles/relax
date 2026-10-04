@@ -14,6 +14,7 @@ from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement import iteration_loop, iteration_snapshot
 from relax.refinement.half_inputs import SigmaOffset, initialize_halfsets
 from relax.refinement.iteration_snapshot import IterationSnapshot, SnapshotCapture
+from relax.refinement.mean_helpers import class_mixture_from_weights
 
 pytestmark = pytest.mark.unit
 
@@ -122,7 +123,7 @@ def test_actual_controller_releases_previous_captured_maps_before_copying_new_ma
         reference_model=SimpleNamespace(maps=inputs['means']), unreg_means=None,
         mean_signal_variance_shells=inputs['tau2_shells'], previous_data_vs_prior_for_scheduling=inputs['data_vs_prior'],
         noise_model=SimpleNamespace(radial_per_half=inputs['noise_shells']), fsc=inputs['fsc'],
-        class_weights=inputs['class_weights'], direction_priors=inputs['direction_priors'], halves=inputs['half_inputs'],
+        class_mixture=class_mixture_from_weights(inputs['class_weights']), direction_priors=inputs['direction_priors'], halves=inputs['half_inputs'],
         class_assignments=inputs['class_assignments'], max_posterior_per_half=inputs['max_posterior'],
         significance=SimpleNamespace(per_half=inputs['significant_counts']),
         correction_report=SimpleNamespace(avg_norm_correction_per_half=inputs['avg_norm_correction']),
