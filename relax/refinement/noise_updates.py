@@ -436,8 +436,6 @@ def update_posterior_noise_variance(
 
     if k_class_enabled:
         combined_noise_stats = _combined_noise_stats(noise_stats_per_half)
-        if combined_noise_stats is None:
-            raise RuntimeError("K-class noise update expected at least one NoiseStats object")
         if np.ndim(combined_noise_stats.wsum_sigma2_noise) == 2:
             # Several optics groups (subtomogram Class3D): one spectrum per group, as for K=1.
             noise_from_res, noise_rows = _per_optics_group_sigma2_noise(
