@@ -176,8 +176,6 @@ def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, ini
 
 def _snapshot_and_release_previous_k1_means(means):
     """Copy both K1 references to host before releasing their active buffers."""
-    if len(means) != 2:
-        raise ValueError(f"K=1 refinement requires exactly two half maps, got {len(means)}")
     previous_means = [
         np.asarray(mean).copy() if mean is not None else None for mean in means
     ]
@@ -1271,8 +1269,6 @@ def _reconstruct_k1_maps(
 ) -> list:
     """Reconstruct both K=1 halves while preserving RELION buffer lifetime."""
 
-    if len(tau_by_half) != 2:
-        raise ValueError("K=1 reconstruction tau2 requires exactly two halves")
     cs_int = int(current_size) if current_size is not None else None
     reconstructed_means = []
     retained_device_numerator = retained_first_numerator
