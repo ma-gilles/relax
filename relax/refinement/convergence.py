@@ -18,6 +18,7 @@ from relax.helpers.convergence import (
     _apply_relion_healpix_order_oracle,
     _approx_acc_rot_policy_for_convergence,
     calculate_expected_angular_errors,
+    hard_class_change_fraction,
     update_angular_sampling,
     update_refinement_state,
 )
@@ -323,8 +324,7 @@ def update_class_iteration_convergence(
         previous_rotation_matrices=pose_comparison.previous_rotations,
         current_translations_pixel=pose_comparison.current_translations_pixels,
         previous_translations_pixel=pose_comparison.previous_translations_pixels,
-        current_classes=current_classes,
-        previous_classes=previous_classes,
+        current_changes_classes=hard_class_change_fraction(current_classes, previous_classes),
         ave_pmax_override=ave_pmax,
         voxel_size_angstrom=image_geometry.pixel_size_angstrom,
         update_sampling=False,

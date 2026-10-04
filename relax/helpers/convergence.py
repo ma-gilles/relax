@@ -1247,6 +1247,26 @@ def _apply_relion_healpix_order_oracle(state, target_order, *, iteration_number)
 # ---------------------------------------------------------------------------
 
 
+def hard_class_change_fraction(current_classes, previous_classes) -> float:
+    """Fraction of particles whose hard class assignment changed since the previous iteration.
+
+    ``previous_classes`` is ``None`` when no previous iteration recorded class
+    assignments; the change is then unknown and reported as infinite.
+    """
+    if previous_classes is None:
+        return float("inf")
+    current_classes_arr = np.asarray(current_classes)
+    previous_classes_arr = np.asarray(previous_classes)
+    if current_classes_arr.shape != previous_classes_arr.shape:
+        raise ValueError(
+            "current_classes and previous_classes must have matching shapes; "
+            f"got {current_classes_arr.shape} and {previous_classes_arr.shape}",
+        )
+    return float(
+        np.count_nonzero(current_classes_arr != previous_classes_arr) / current_classes_arr.size
+    ) if current_classes_arr.size else 0.0
+
+
 def update_refinement_state(
     state: RefinementState,
     current_assignments: np.ndarray,
@@ -1262,8 +1282,7 @@ def update_refinement_state(
     previous_rotation_matrices: Optional[np.ndarray] = None,
     current_translations_pixel: Optional[np.ndarray] = None,
     previous_translations_pixel: Optional[np.ndarray] = None,
-    current_classes: Optional[np.ndarray] = None,
-    previous_classes: Optional[np.ndarray] = None,
+    current_changes_classes: float = 0.0,
     ave_pmax_override: Optional[float] = None,
     voxel_size_angstrom: float = 1.0,
     update_sampling: bool = True,
@@ -1305,11 +1324,11 @@ def update_refinement_state(
         Per-particle translation vectors in PIXEL units, shape ``(n_images, 2)``.
         When both provided, the RELION-exact
         ``current_changes_optimal_offsets_angstrom`` is computed.
-    current_classes, previous_classes : np.ndarray, optional
-        Per-particle hard class assignments for K-class refinement.  When both
-        are provided, ``current_changes_optimal_classes`` is the number of
-        particles whose hard class changed.  When omitted, single-class refine
-        keeps the historical zero class-change behavior.
+    current_changes_classes : float, default 0.0
+        Fraction of particles whose hard class changed, recorded as
+        ``current_changes_optimal_classes``.  K-class refinement passes
+        :func:`hard_class_change_fraction` of its assignments; single-class
+        refine has no class change and keeps the zero.
     ave_pmax_override : float, optional
         Authoritative optimizer scalar. When supplied, use this instead of the
         raw mean of ``max_posterior_per_image``. Split-half RELION uses half
@@ -1360,21 +1379,6 @@ def update_refinement_state(
         previous_translations_pixel,
         voxel_size_angstrom,
     )
-    if current_classes is None and previous_classes is None:
-        current_changes_classes = 0.0
-    elif current_classes is None or previous_classes is None:
-        current_changes_classes = float("inf")
-    else:
-        current_classes_arr = np.asarray(current_classes)
-        previous_classes_arr = np.asarray(previous_classes)
-        if current_classes_arr.shape != previous_classes_arr.shape:
-            raise ValueError(
-                "current_classes and previous_classes must have matching shapes; "
-                f"got {current_classes_arr.shape} and {previous_classes_arr.shape}",
-            )
-        current_changes_classes = float(
-            np.count_nonzero(current_classes_arr != previous_classes_arr) / current_classes_arr.size
-        ) if current_classes_arr.size else 0.0
 
     # --- Compute Pmax ---
     ave_pmax = state.ave_Pmax

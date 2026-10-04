@@ -29,6 +29,7 @@ from relax.helpers.convergence import (
     compute_ave_Pmax,
     compute_translation_changes,
     effective_angular_step,
+    hard_class_change_fraction,
     healpix_angular_step,
     refine_angular_sampling,
     relion_mpi_hidden_variable_change_is_small,
@@ -924,8 +925,10 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,
-            current_classes=np.array([0, 0, 1, 1, 2], dtype=np.int32),
-            previous_classes=np.array([0, 1, 1, 0, 2], dtype=np.int32),
+            current_changes_classes=hard_class_change_fraction(
+                np.array([0, 0, 1, 1, 2], dtype=np.int32),
+                np.array([0, 1, 1, 0, 2], dtype=np.int32),
+            ),
         )
         assert updated.current_changes_optimal_classes == pytest.approx(0.4)
         assert updated.smallest_changes_optimal_classes == 0
@@ -1537,8 +1540,7 @@ def test_computed_assignment_fraction_survives_sampling_transition(update_sampli
         previous_rotation_matrices=np.tile(np.eye(3), (4, 1, 1)),
         current_translations_pixel=np.zeros((4, 2)),
         previous_translations_pixel=np.zeros((4, 2)),
-        current_classes=np.zeros(4, dtype=int),
-        previous_classes=np.zeros(4, dtype=int),
+        current_changes_classes=hard_class_change_fraction(np.zeros(4, dtype=int), np.zeros(4, dtype=int)),
         ave_pmax_override=1.0,
         check_convergence_now=False,
     )
