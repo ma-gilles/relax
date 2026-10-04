@@ -763,6 +763,30 @@ def make_relion_direction_log_prior(direction_prior, healpix_order, rotations=No
     return log_prior
 
 
+def relion_direction_log_priors(
+    direction_priors, options, *, use_local: bool, scoring_healpix_order, dtype: np.dtype, log,
+) -> list[HalfDirectionLogPriors]:
+    """Both halves' direction log priors for one expectation, half 1 then half 2.
+
+    Each half scores with its own model's prior (:func:`relion_direction_log_priors_for_half`). Reads from
+    ``options``: ``k_class.n_classes``, ``debug.sealed_sampling_state`` and ``symmetry.point_group``.
+    """
+    return [
+        relion_direction_log_priors_for_half(
+            use_local=use_local,
+            scoring_healpix_order=scoring_healpix_order,
+            n_classes=int(options.k_class.n_classes),
+            prior=prior,
+            sealed_sampling_state=options.debug.sealed_sampling_state,
+            dtype=dtype,
+            log=log,
+            half_index=half_index,
+            symmetry=options.symmetry.point_group,
+        )
+        for half_index, prior in enumerate(direction_priors)
+    ]
+
+
 def relion_local_search_sigmas(state, *, use_local):
     """Orientational prior widths (radians) of a RELION local angular search.
 

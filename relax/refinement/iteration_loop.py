@@ -85,7 +85,7 @@ from relax.helpers.orientation_priors import (
     initial_direction_priors_from_snapshot,
     learn_class_direction_priors,
     learn_k1_direction_priors,
-    relion_direction_log_priors_for_half,
+    relion_direction_log_priors,
 )
 from relax.helpers.resolution import (
     ImageGeometry,
@@ -1616,7 +1616,6 @@ def refine_single_volume(
         # exact rotations selected in the previous iteration, not the nearest
         # snapped grid indices.
         adaptive_pass1_rotations = None
-        direction_log_priors = [None, None]
         use_local = state.do_local_search and all(half.rotation_eulers is not None for half in halves)
         if use_local and k_class_enabled:
             # Class3D keeps global searches: RELION switches to local searches from the
@@ -1665,19 +1664,10 @@ def refine_single_volume(
             sealed_sampling_state, trial_grid, use_local=use_local,
         )
 
-        for _half_idx in range(2):
-            half_direction_priors = relion_direction_log_priors_for_half(
-                use_local=use_local,
-                scoring_healpix_order=direction_prior_healpix_order,
-                n_classes=n_classes,
-                prior=direction_priors[_half_idx],
-                sealed_sampling_state=sealed_sampling_state,
-                dtype=scoring_dtype,
-                log=logger,
-                half_index=_half_idx,
-                symmetry=symmetry,
-            )
-            direction_log_priors[_half_idx] = half_direction_priors
+        direction_log_priors = relion_direction_log_priors(
+            direction_priors, options, use_local=use_local, scoring_healpix_order=direction_prior_healpix_order,
+            dtype=scoring_dtype, log=logger,
+        )
 
         # --- Run E+M on each half-set ---
         # Two modes: single-pass (adaptive_oversampling=0) or two-pass

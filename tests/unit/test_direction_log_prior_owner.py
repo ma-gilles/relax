@@ -115,3 +115,18 @@ def test_half_index_only_labels_the_log(caplog):
     with caplog.at_level(logging.INFO, logger=__name__):
         _priors(direction_prior=_prior(14), direction_prior_order=ORDER, half_index=1)
     assert "half-2" in caplog.text
+
+
+def test_both_halves_are_expanded_in_half_order_with_their_own_prior():
+    from relax.refinement.refinement_options import RefinementOptions
+
+    first, second = _prior(1), _prior(2)
+    pair = op.relion_direction_log_priors(
+        [op.DirectionPrior(first, ORDER), op.DirectionPrior(second, ORDER)], RefinementOptions(),
+        use_local=False, scoring_healpix_order=ORDER, dtype=np.float32, log=logging.getLogger(__name__),
+    )
+    assert len(pair) == 2
+    for half_index, (got, values) in enumerate(zip(pair, (first, second), strict=True)):
+        expected = _priors(direction_prior=values, direction_prior_order=ORDER, half_index=half_index)
+        assert_matches(got.rotation_log_prior, expected.rotation_log_prior)
+        assert got.class_rotation_log_prior is None
