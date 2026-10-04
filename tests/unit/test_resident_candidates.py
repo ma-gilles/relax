@@ -230,6 +230,33 @@ def test_chunks_are_contiguous_ordered_and_cover_every_row_exactly_once():
     assert covered_rows == tables.n_rows
 
 
+def test_the_chunks_of_a_pass_share_its_largest_image_class():
+    from relax.sparse_pass2.resident_candidates import share_image_capacity
+
+    # Nine one-row images: a full 8-image chunk and a one-image tail in the 2-image class;
+    # then a 40-row image, past the largest row class, which runs alone in its own class.
+    tables = _synthetic_tables([1] * 9 + [40])
+    chunks = plan_capacity_chunks(
+        tables, row_capacity_ladder=ROW_CAPACITY_LADDER, image_capacity_ladder=IMAGE_CAPACITY_LADDER
+    )
+    assert [chunk.image_capacity for chunk in chunks] == [8, 2, 2]
+    shared = share_image_capacity(chunks, ROW_CAPACITY_LADDER)
+    assert [chunk.image_capacity for chunk in shared] == [8, 8, 2]
+    assert [chunk.row_capacity for chunk in shared] == [chunk.row_capacity for chunk in chunks]
+    for chunk, before in zip(shared, chunks):
+        assert (chunk.image_start, chunk.image_stop, chunk.row_start, chunk.row_stop) == (
+            before.image_start, before.image_stop, before.row_start, before.row_stop
+        )
+        materialized = materialize_chunk(tables, chunk)
+        assert materialized["image_ids"].shape == (chunk.image_capacity,)
+        assert int(materialized["n_valid_images"]) == chunk.n_valid_images
+    # A pass of overflow chunks only keeps their class.
+    alone = plan_capacity_chunks(
+        _synthetic_tables([40]), row_capacity_ladder=ROW_CAPACITY_LADDER, image_capacity_ladder=IMAGE_CAPACITY_LADDER
+    )
+    assert share_image_capacity(alone, ROW_CAPACITY_LADDER) == alone
+
+
 def test_materialize_chunk_padded_rows_never_validate_any_cell():
     row_counts = [3, 5, 2, 7, 1, 4, 6, 2, 1, 1, 9]
     tables = _synthetic_tables(row_counts)

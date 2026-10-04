@@ -56,7 +56,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.sparse_pass2.resident_candidates import CapacityChunk, plan_capacity_chunks
+from relax.sparse_pass2.resident_candidates import CapacityChunk, plan_capacity_chunks, share_image_capacity
 
 __all__ = [
     "ResidentLocalTables",
@@ -261,11 +261,12 @@ def plan_local_capacity_chunks(
     a ~87k-row maximum), so one-image chunks are expected, not exceptional.
     """
 
-    return plan_capacity_chunks(
+    chunks = plan_capacity_chunks(
         tables,
         row_capacity_ladder=row_capacity_ladder,
         image_capacity_ladder=image_capacity_ladder,
     )
+    return share_image_capacity(chunks, row_capacity_ladder)
 
 
 def expand_local_mask_rows(tables: ResidentLocalTables, start: int, stop: int) -> np.ndarray:

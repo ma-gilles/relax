@@ -133,6 +133,7 @@ from relax.sparse_pass2.resident_candidates import (
     materialize_chunk,
     merge_class_tables,
     plan_capacity_chunks,
+    share_image_capacity,
     table_block_starts,
 )
 from relax.sparse_pass2.resident_operands import (
@@ -3821,16 +3822,19 @@ def _resident_pass2(
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder
         mstep_block_rows = memory_plan.mstep_block_rows
-        chunks = [
-            chunk
-            for block in tables.blocks()
-            for chunk in plan_capacity_chunks(
-                tables,
-                row_capacity_ladder=row_ladder,
-                image_capacity_ladder=image_ladder,
-                image_range=block,
-            )
-        ]
+        chunks = share_image_capacity(
+            [
+                chunk
+                for block in tables.blocks()
+                for chunk in plan_capacity_chunks(
+                    tables,
+                    row_capacity_ladder=row_ladder,
+                    image_capacity_ladder=image_ladder,
+                    image_range=block,
+                )
+            ],
+            row_ladder,
+        )
         plan = ResidentPass2Plan(
             chunks=tuple(chunks),
             row_capacity_ladder=tuple(row_ladder),

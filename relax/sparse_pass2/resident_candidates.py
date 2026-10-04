@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -64,6 +64,7 @@ __all__ = [
     "expand_mask_rows",
     "materialize_chunk",
     "plan_capacity_chunks",
+    "share_image_capacity",
     "table_block_starts",
 ]
 
@@ -815,6 +816,29 @@ def plan_capacity_chunks(
             i = best_stop
 
     return chunks
+
+
+def share_image_capacity(chunks, row_capacity_ladder) -> list[CapacityChunk]:
+    """Give every regular chunk of one pass the largest image class the pass uses.
+
+    The chunk programs are keyed on the image capacity, so a pass whose last chunk
+    holds fewer images than the others compiled them again for that one chunk (512,
+    then 128, then 32 images as a VDAM subset grows past a multiple of 512; a third
+    of the chunk-program compiles of a Class3D run). The slots past a chunk's own
+    images are padding, as within any class, and the memory plan already counts a
+    regular chunk at the largest image class. One-image overflow chunks (rows past
+    the largest row class) keep their class: they run their own programs.
+    """
+
+    largest_row = max(int(v) for v in row_capacity_ladder)
+    regular = [chunk for chunk in chunks if int(chunk.row_capacity) <= largest_row]
+    if not regular:
+        return list(chunks)
+    shared = max(int(chunk.image_capacity) for chunk in regular)
+    return [
+        replace(chunk, image_capacity=shared) if int(chunk.row_capacity) <= largest_row else chunk
+        for chunk in chunks
+    ]
 
 
 # Candidate rows one image block's tables may hold: about 1.3 GB of merged
