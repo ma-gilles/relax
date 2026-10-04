@@ -140,6 +140,10 @@ def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=
             return None
         if any(value is None for value in values):
             raise ValueError(f"Cannot aggregate mixed missing/present noise field {name}")
+        if len(values) == 1:
+            # One class has nothing to add (as the host branch above): the stacked sum compiled once
+            # per field and per subset size, 102 programs in a 200-iteration VDAM run (census 14974371).
+            return jnp.asarray(values[0])
         return _stacked_sum(tuple(jnp.asarray(value) for value in values))
 
     summed_sigma2_noise = _sum_field("wsum_sigma2_noise")

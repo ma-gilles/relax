@@ -504,16 +504,36 @@ def _require_supported(condition: bool, message: str) -> None:
         )
 
 
-@partial(jax.jit, donate_argnums=(0,))
-def _place_batch(buffer: jax.Array, batch: jax.Array, start) -> jax.Array:
-    """Write one preparation batch into its capacity buffer at runtime row ``start``.
+@partial(jax.jit, static_argnames=("buffer_rows",))
+def _start_buffers(batch: dict, *, buffer_rows: int) -> dict:
+    """The capacity buffers of every operand, zero, with the first preparation batch at row 0.
 
-    Pure data movement. ``start`` is a traced scalar, so one program serves
-    every batch of a (capacity, batch size, operand) triple; a concatenation of
-    the batches was keyed on their count, which follows the subset size.
+    One program for all the operands of a (capacity, batch size) pair; allocating and placing
+    each operand by itself was two programs per operand and capacity (about 70 small compiles
+    in a 200-iteration VDAM run, census 14974371).
     """
 
-    return jax.lax.dynamic_update_slice_in_dim(buffer, batch, start, axis=0)
+    return {
+        name: jax.lax.dynamic_update_slice_in_dim(
+            jnp.zeros((buffer_rows,) + value.shape[1:], dtype=value.dtype), value, 0, axis=0
+        )
+        for name, value in batch.items()
+    }
+
+
+@partial(jax.jit, donate_argnums=(0,))
+def _place_batches(buffers: dict, batch: dict, start) -> dict:
+    """Write one preparation batch of every operand into its capacity buffer at runtime row ``start``.
+
+    Pure data movement. ``start`` is a traced scalar, so one program serves every batch of a
+    (capacity, batch size) pair; a concatenation of the batches was keyed on their count, which
+    follows the subset size.
+    """
+
+    return {
+        name: jax.lax.dynamic_update_slice_in_dim(buffers[name], value, start, axis=0)
+        for name, value in batch.items()
+    }
 
 
 @jax.jit
@@ -923,10 +943,10 @@ def prepare_resident_half_operands(
                 elif flag != present:
                     raise ValueError(f"{name} availability changed between image batches")
 
-            for name, value in batch_arrays.items():
-                if name not in buffers:
-                    buffers[name] = jnp.zeros((buffer_rows,) + tuple(value.shape[1:]), dtype=value.dtype)
-                buffers[name] = _place_batch(buffers[name], value, np.int32(start))
+            if not buffers:
+                buffers = _start_buffers(batch_arrays, buffer_rows=int(buffer_rows))
+            else:
+                buffers = _place_batches(buffers, batch_arrays, np.int32(start))
             fetched_order.append(fetched_indices)
 
     fetched_all = np.concatenate(fetched_order)
@@ -947,7 +967,11 @@ def prepare_resident_half_operands(
     if np.unique(destination).size != n_images:
         raise ValueError("the dataset did not return every requested image exactly once")
     # Rows past n_images keep their buffer rows: padding no chunk addresses.
-    reorder = jnp.asarray(np.concatenate([inverse, np.arange(n_images, image_capacity, dtype=np.int64)]))
+    reorder_np = np.concatenate([inverse, np.arange(n_images, image_capacity, dtype=np.int64)])
+    # A dataset that returned the images in the requested order needs no gather; the buffers
+    # may hold more rows than the capacity (a whole number of batches), so they are still cut.
+    in_order = bool(np.array_equal(reorder_np, np.arange(image_capacity))) and int(buffer_rows) == int(image_capacity)
+    reorder = jnp.asarray(reorder_np)
 
     def stack(name, required=False):
         present = name in buffers
@@ -957,7 +981,7 @@ def prepare_resident_half_operands(
             return None
         # Popped so each capacity buffer is freed once its reordered copy
         # exists: the preparation peaks at the operands plus one array.
-        return _reorder_rows(buffers.pop(name), reorder)
+        return buffers.pop(name) if in_order else _reorder_rows(buffers.pop(name), reorder)
 
     translation_prior_np = np.zeros((image_capacity, int(n_fine_trans)), dtype=score_real_dtype)
     if fine_translation_prior_2d is not None:

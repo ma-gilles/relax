@@ -350,12 +350,12 @@ def test_batch_window_operands_issue_no_eager_dispatch():
 
 
 def _place_all(parts, rows):
-    buffer = jnp.zeros((rows,) + parts[0].shape[1:], dtype=parts[0].dtype)
-    start = 0
-    for part in parts:
-        buffer = ro._place_batch(buffer, part, np.int32(start))
+    buffers = ro._start_buffers({"x": parts[0]}, buffer_rows=rows)
+    start = parts[0].shape[0]
+    for part in parts[1:]:
+        buffers = ro._place_batches(buffers, {"x": part}, np.int32(start))
         start += part.shape[0]
-    return buffer
+    return buffers["x"]
 
 
 def test_placed_batches_reordered_match_the_concatenation():
@@ -376,9 +376,33 @@ def test_batch_placement_and_reorder_issue_no_eager_dispatch():
     parts = tuple(jnp.asarray(rng.standard_normal((3, 2)), dtype=jnp.float32) for _ in range(4))
     reorder = jnp.asarray(rng.permutation(12), dtype=jnp.int64)
     ro._reorder_rows(_place_all(parts, 12), reorder)
-    buffer = jnp.zeros((12, 2), dtype=jnp.float32)
     with _DispatchCounter() as folded:
-        for index, part in enumerate(parts):
-            buffer = ro._place_batch(buffer, part, np.int32(3 * index))
-        ro._reorder_rows(buffer, reorder)
+        ro._reorder_rows(_place_all(parts, 12), reorder)
     assert folded.count == 0, folded.by_primitive
+
+
+def test_every_operand_of_a_batch_is_placed_by_one_program():
+    """Operands of different widths and dtypes share the start and the place programs."""
+
+    rng = np.random.default_rng(9)
+
+    def batch():
+        return {
+            "wide": jnp.asarray(rng.standard_normal((3, 5)), dtype=jnp.float32),
+            "narrow": jnp.asarray(rng.standard_normal((3, 2)) + 1j, dtype=jnp.complex64),
+            "flat": jnp.asarray(rng.standard_normal(3), dtype=jnp.float64),
+        }
+
+    batches = [batch() for _ in range(3)]
+    start_programs, place_programs = ro._start_buffers._cache_size(), ro._place_batches._cache_size()
+    buffers = ro._start_buffers(batches[0], buffer_rows=12)
+    for index, part in enumerate(batches[1:], start=1):
+        buffers = ro._place_batches(buffers, part, np.int32(3 * index))
+    assert ro._start_buffers._cache_size() == start_programs + 1
+    assert ro._place_batches._cache_size() == place_programs + 1
+    for name in batches[0]:
+        reference = np.concatenate([np.asarray(part[name]) for part in batches], axis=0)
+        placed = np.asarray(buffers[name])
+        assert placed.dtype == reference.dtype and placed.shape[0] == 12
+        assert placed[:9].tobytes() == reference.tobytes()
+        assert not placed[9:].any()
