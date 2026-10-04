@@ -7,7 +7,7 @@ from relax.sparse_pass2 import sparse_pass2_window
 
 
 def test_owner_casts_and_rewindows_in_double(monkeypatch):
-    monkeypatch.setattr(sparse_pass2_window, "make_scoring_half_image_weights", lambda shape, *, relion_half_sum, exclude_relion_redundant_x0: jnp.ones((4,), dtype=jnp.float32) * (2.0 if exclude_relion_redundant_x0 else 1.0))
+    monkeypatch.setattr(sparse_pass2_window, "make_scoring_half_image_weights", lambda shape, *, relion_half_sum, exclude_relion_redundant_x0, **consistency: jnp.ones((4,), dtype=jnp.float32) * (2.0 if exclude_relion_redundant_x0 else 1.0))
 
     class Window:
         @staticmethod
