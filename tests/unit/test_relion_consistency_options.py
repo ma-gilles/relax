@@ -29,6 +29,7 @@ OPTIONS = [
     ("shell_pair_counting", "relion", "once"),
     ("noise_shell_count", "relion", "summed"),
     ("initial_noise_pair_counting", "relion", "once"),
+    ("nyquist_column_counting", "relion", "once"),
 ]
 NON_DEFAULT = pytest.mark.parametrize("name,value", [(name, value) for name, _, value in OPTIONS])
 BASE_ARGS = ["--data_dir", "data", "--output", "out"]
@@ -160,6 +161,8 @@ def test_run_files_record_the_option(monkeypatch, name, value):
     run_tiny_refinement(
         monkeypatch,
         max_iter=1,
+        # The CC support needs the CC iteration it acts on.
+        parity=dict(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0),
         consistency=RelionConsistencyOptions(**{name: value}),
         checkpoint=CheckpointOptions(writer=writer),
     )

@@ -153,6 +153,7 @@ _CONSISTENCY_CHOICES = {
     "shell_pair_counting": ("relion", "once"),
     "noise_shell_count": ("relion", "summed"),
     "initial_noise_pair_counting": ("relion", "once"),
+    "nyquist_column_counting": ("relion", "once"),
 }
 
 
@@ -183,6 +184,10 @@ class RelionConsistencyOptions:
     # counts them once. "once" counts every pair once at start-up too. The command applies it (the
     # start-up noise is estimated before the refinement loop).
     initial_noise_pair_counting: Literal["relion", "once"] = "relion"
+    # On the Nyquist column of a full-size image both members of each Hermitian pair are stored
+    # and RELION's per-image sums (Gaussian score, image power, noise, norm and scale sums,
+    # Npix_per_shell) drop neither, unlike the kx = 0 column; "once" counts each pair once.
+    nyquist_column_counting: Literal["relion", "once"] = "relion"
 
     def __post_init__(self):
         for name, choices in _CONSISTENCY_CHOICES.items():
@@ -235,6 +240,10 @@ def require_consistency_route(
         raise NotImplementedError(
             f"RELION-consistency options {chosen} are implemented for single-particle refinement of one "
             f"image shape from relax's own state; not with {', '.join(reasons)}"
+        )
+    if consistency.nyquist_column_counting != "relion" and options.adaptive.coarse_engine == "gemm_dense":
+        raise NotImplementedError(
+            "nyquist_column_counting is not implemented for the experimental gemm_dense coarse engine"
         )
     if consistency.gridding_kernel != "radial" and options.k_class.n_classes != 1:
         raise NotImplementedError(

@@ -2431,6 +2431,7 @@ def refine_single_volume(
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             dump_debug=noise_debug_dump,
             summed_current_size=cs_for_engine if consistency.noise_shell_count == "summed" else None,
+            nyquist_column_counting=consistency.nyquist_column_counting,
         )
         noise_from_res = noise_update.noise_from_res
         noise_from_res_per_half = noise_update.noise_from_res_per_half

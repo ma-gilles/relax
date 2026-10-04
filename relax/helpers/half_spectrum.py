@@ -84,6 +84,26 @@ def _host_half_spectrum_plan(image_shape):
     )
 
 
+def redundant_nyquist_column_pixels(image_shape) -> np.ndarray:
+    """Packed-half pixels of the Nyquist column whose Hermitian mate RELION's per-image sums also count.
+
+    On the Nyquist column ``jp = N/2`` of a full-size image the pixels ``(N/2, ip)`` and ``(N/2, -ip)``
+    are one Hermitian pair, and RELION's support rule (``!(jp == 0 && ip < 0)``) drops neither, so the
+    pair counts twice where every other pair counts once. The mask marks the ``ip < 0`` members (this
+    layout's rows ``ky = -(N/2 - 1) .. -1`` of the last column; ``ky = -N/2`` is RELION's ``ip = +N/2``),
+    which a sum that counts each pair once leaves out, as RELION leaves out ``jp = 0, ip < 0``.
+    Returns a flat bool array over the packed half image; all False for an odd width.
+    """
+
+    height, width = _normalize_image_shape(image_shape)
+    half_width = width // 2 + 1
+    mask = np.zeros((height, half_width), dtype=bool)
+    if width % 2 == 0:
+        ky = np.arange(-(height // 2), height - height // 2)
+        mask[:, -1] = (ky < 0) & ~((height % 2 == 0) & (ky == -(height // 2)))
+    return _readonly(mask.reshape(-1))
+
+
 def _normalize_image_shape(image_shape):
     image_shape = tuple(int(size) for size in image_shape)
     if len(image_shape) != 2:
@@ -105,6 +125,7 @@ def make_scoring_half_image_weights(
     *,
     relion_half_sum: bool,
     exclude_relion_redundant_x0: bool = True,
+    nyquist_column_counting: str = "relion",
 ):
     """Return half-spectrum weights for likelihood scoring.
 
@@ -120,14 +141,27 @@ def make_scoring_half_image_weights(
     iterate over every pixel in the rectangular FFTW crop, including both
     sides of the centered ``kx=0`` axis.  Those callers must pass
     ``exclude_relion_redundant_x0=False``.
+
+    The opt-in consistency rule ``nyquist_column_counting="once"`` (docs/math/relion_consistency_options.md)
+    also zeroes the redundant members of the full-size Nyquist column in the Gaussian weights
+    (:func:`redundant_nyquist_column_pixels`).
     """
 
     image_shape = _normalize_image_shape(image_shape)
     plan = _host_half_spectrum_plan(image_shape)
-    if relion_half_sum:
-        weights = plan.relion_scoring_weights if exclude_relion_redundant_x0 else plan.relion_cc_scoring_weights
-        return jnp.asarray(weights)
-    return jnp.asarray(plan.hermitian_weights)
+    if nyquist_column_counting not in ("relion", "once"):
+        raise ValueError(f"nyquist_column_counting must be 'relion' or 'once', got {nyquist_column_counting!r}")
+    if not relion_half_sum:
+        if nyquist_column_counting != "relion":
+            raise NotImplementedError("nyquist_column_counting applies to RELION's half-sum weights only")
+        return jnp.asarray(plan.hermitian_weights)
+    if not exclude_relion_redundant_x0:
+        # RELION's normalized-CC kernels apply no mask at all, the Nyquist column included.
+        return jnp.asarray(plan.relion_cc_scoring_weights)
+    weights = plan.relion_scoring_weights
+    if nyquist_column_counting == "once":
+        weights = np.where(redundant_nyquist_column_pixels(image_shape), np.float32(0.0), weights)
+    return jnp.asarray(weights)
 
 
 def make_shell_indices_half(image_shape):
@@ -143,11 +177,23 @@ def half_spectrum_dc_index(image_shape) -> int:
     return plan.dc_index
 
 
-def make_relion_noise_shell_indices_half(image_shape):
-    """Return RELION's non-redundant half-plane shell indices for noise sums."""
+def make_relion_noise_shell_indices_half(image_shape, nyquist_column_counting: str = "relion"):
+    """Return RELION's non-redundant half-plane shell indices for noise sums.
 
-    plan = _host_half_spectrum_plan(_normalize_image_shape(image_shape))
-    return jnp.asarray(plan.relion_noise_shell_indices)
+    ``nyquist_column_counting="once"`` gives the redundant members of the Nyquist column
+    (:func:`redundant_nyquist_column_pixels`) the sentinel shell too, so each of its pairs counts once.
+    """
+
+    image_shape = _normalize_image_shape(image_shape)
+    plan = _host_half_spectrum_plan(image_shape)
+    if nyquist_column_counting == "relion":
+        return jnp.asarray(plan.relion_noise_shell_indices)
+    if nyquist_column_counting != "once":
+        raise ValueError(f"nyquist_column_counting must be 'relion' or 'once', got {nyquist_column_counting!r}")
+    sentinel = np.int32(image_shape[0] // 2 + 1)
+    return jnp.asarray(
+        np.where(redundant_nyquist_column_pixels(image_shape), sentinel, plan.relion_noise_shell_indices)
+    )
 
 
 def mask_relion_noise_shell_indices_to_current_window(

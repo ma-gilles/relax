@@ -675,6 +675,7 @@ def score_numbered_half(
                 disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
                 source_faithful_spectrum_norm=(source_faithful_spectrum_norm),
                 relion_translation_angle_scale=(relion_translation_angle_scale),
+                nyquist_column_counting=options.consistency.nyquist_column_counting,
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,
@@ -736,6 +737,7 @@ def score_numbered_half(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
+            nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

@@ -740,6 +740,7 @@ def prepare_resident_half_operands(
         ),
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         noise_optics_groups=kwargs.get("noise_optics_groups"),
+        nyquist_column_counting=kwargs.get("nyquist_column_counting", "relion"),
     )
 
     score_indices = jnp.asarray(window_indices, dtype=jnp.int32)

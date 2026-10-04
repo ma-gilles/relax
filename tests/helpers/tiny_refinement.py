@@ -164,3 +164,57 @@ def run_tiny_refinement(monkeypatch, *, parity=None, n_classes=1, max_iter=2, en
             **option_groups,
         ),
     )
+
+
+class _Reached(Exception):
+    """Raised by a recorder standing in for a GPU-only engine stage."""
+
+
+def engine_stage_kwargs(monkeypatch, **engine_kwargs):
+    """What ``run_dense_k_class_em_adaptive`` hands its GPU-only stages, without running them.
+
+    The coarse significance pass (Gaussian and first-iteration CC routes) and the resident pass 2
+    are replaced by recorders; returns ``{"pass1": kwargs, "pass1_cc": kwargs, "pass2": kwargs}``
+    for a K=1 half of three mock images with ``engine_kwargs`` added to the engine's keywords.
+    """
+
+    from relax.classification import k_class
+    from relax.scoring import significance
+    from relax.sparse_pass2 import resident_pass2
+
+    recorded = []
+
+    def recorder(*_args, **kwargs):
+        recorded.append(kwargs)
+        raise _Reached
+
+    monkeypatch.setattr(significance, "_compute_k_class_significance_batched", recorder)
+    monkeypatch.setattr(resident_pass2, "compute_pass2_stats_resident", recorder)
+    dataset = MockHalfSet(3, np.random.default_rng(0))
+    coarse = np.repeat(np.eye(3, dtype=np.float32)[None], 4, axis=0)
+    fine = np.repeat(np.eye(3, dtype=np.float32)[None], 8, axis=0)
+    translations, fine_translations = np.zeros((2, 2), np.float32), np.zeros((4, 2), np.float32)
+    rotation_parents, translation_parents = np.repeat(np.arange(4), 2), np.repeat(np.arange(2), 2)
+    means = jnp.zeros((1, VOLUME_SIZE), jnp.complex64)
+    keywords = dict(half_spectrum_scoring=True, mstep_relion_x_half=True, **engine_kwargs)
+    stages = {}
+    for name, cc in (("pass1", False), ("pass1_cc", True)):
+        try:
+            k_class.run_dense_k_class_em_adaptive(
+                dataset, means, None, jnp.ones(IMAGE_SIZE), coarse, translations, fine, fine_translations,
+                rotation_parents, translation_parents, "linear_interp",
+                oversampling_order=1, coarse_healpix_order=0, firstiter_cc_pass2_only_best_coarse=cc, **keywords,
+            )
+        except _Reached:
+            stages[name] = recorded[-1]
+    try:
+        k_class._run_sparse_k_class_adaptive_pass2(
+            dataset, means, jnp.ones((1, VOLUME_SIZE)), jnp.ones(IMAGE_SIZE), coarse, translations, fine, None,
+            rotation_parents, fine_translations, translation_parents, [[np.array([0], np.int32)] * 3], "linear_interp",
+            class_log_priors=np.zeros(1), accumulate_noise=True, return_best_pose_details=False,
+            coarse_healpix_order=0, oversampling_order=1, random_perturbation=0.0,
+            engine_kwargs=dict(keywords, current_size=None),
+        )
+    except _Reached:
+        stages["pass2"] = recorded[-1]
+    return stages

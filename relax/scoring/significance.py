@@ -889,12 +889,17 @@ def _compute_k_class_significance_batched(
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     tree_rescore_max_margin: float | None = None,
+    nyquist_column_counting: str = "relion",
 ):
     """Find significant samples from one posterior over ``class x rotation x translation``.
 
     ``noise_variance`` is one shared spectrum or ``[G, P]`` rows of G optics groups;
     with rows, ``optics_group_ids`` gives each image's group and every image scores
     with its own group's spectrum (:mod:`relax.helpers.optics_noise`).
+
+    ``nyquist_column_counting="once"`` drops the redundant members of the full-size Nyquist
+    column from the Gaussian weights and from the image power
+    (docs/math/relion_consistency_options.md).
     """
 
     if return_class_second and not return_class_best:
@@ -907,7 +912,7 @@ def _compute_k_class_significance_batched(
     from recovar.reconstruction import noise as noise_utils
 
     from relax.helpers.fourier_window import make_fourier_window_spec, relion_fftw_order_for_square_score_window
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights
+    from relax.helpers.half_spectrum import make_scoring_half_image_weights, redundant_nyquist_column_pixels
     from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, tiled_half_image_phase_factors
     from relax.helpers.oversampling import find_significant_rotations as _find_sig
     from relax.helpers.preprocessing import (
@@ -981,6 +986,7 @@ def _compute_k_class_significance_batched(
         image_shape,
         relion_half_sum=half_spectrum_scoring,
         exclude_relion_redundant_x0=score_mode != "normalized_cc",
+        nyquist_column_counting=nyquist_column_counting,
     )
     window_spec_kwargs = {}
     if score_mode == "normalized_cc":
@@ -2006,6 +2012,14 @@ def _compute_k_class_significance_batched(
                     relion_preprocess_kwargs=relion_preprocess_kwargs,
                     image_indices=batch_image_indices,
                 )
+                if nyquist_column_counting != "relion":
+                    # The score weights are zero on these pixels; zeroing them here also takes them
+                    # out of powerClass's high-shell image power (the diff2 constant).
+                    processed_direct = jnp.where(
+                        jnp.asarray(redundant_nyquist_column_pixels(image_shape))[None, :],
+                        jnp.zeros((), dtype=processed_direct.dtype),
+                        processed_direct,
+                    )
                 exact_operands = _assemble_relion_exact_coarse_gaussian_operands(
                     experiment_dataset,
                     processed_direct,

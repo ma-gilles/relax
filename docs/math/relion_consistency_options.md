@@ -103,3 +103,30 @@ and the count. Every later `sigma2_noise` update counts each pair of `kx = 0` on
 for the average image's spectrum. The command applies it when it estimates the start-up noise
 (`prepare_startup_noise` -> `estimate_startup_sigma2` -> `compute_avg_unaligned_and_sigma2`), for
 K=1 and Class3D; the start-up tau2 and data_vs_prior follow from that noise.
+
+## `--nyquist_column_counting {relion,once}`
+
+RELION's per-image sums run over the FFTW half image and drop the redundant half of the `kx = 0`
+column with `!(jp == 0 && ip < 0)` (`MlOptimiser::updateImageSizeAndResolutionPointers`, where
+`Mresol_fine`, `Mresol_coarse` and `Npix_per_shell` are filled, `ml_optimiser.cpp:5717-5730`). On a
+full-size image of even size `N` the last stored column `jp = N/2` is its own mirror: `(N/2, ip)`
+and `(N/2, -ip)` are one Hermitian pair, both stored, and the rule drops neither. Those pairs count
+twice where every other pair counts once, in the Gaussian score, the image power, the noise, norm
+and scale sums and in `Npix_per_shell`. A cropped image has no such column (its last column is
+`jp = cs/2` of a full-size row that has a distinct mate), so only expectations at the box are
+affected, and there only shells `>= N/2`, which lie outside the reference sphere.
+
+`once` leaves out the members `jp = N/2, ip < 0` (`redundant_nyquist_column_pixels`,
+`relax/helpers/half_spectrum.py`), through arrays built in Python only:
+
+| Quantity | Function |
+| --- | --- |
+| Gaussian score weights of pass 1, pass 2, the first-iteration tree rescore and local search | `make_scoring_half_image_weights` (`_compute_k_class_significance_batched`, `_pass2_half_weights`) |
+| image power of the coarse pass (the high-shell constant of the squared difference) | the processed image of `_compute_k_class_significance_batched` |
+| noise, image-power, norm-correction and scale sums of pass 2 and local search | the image the noise statistics read in `prepare_unshifted_bucket_operands` |
+| `Npix_per_shell` of the noise update | `make_relion_noise_shell_indices_half`, through `normalize_wsum_to_sigma2_noise` |
+
+The first-iteration normalized cross-correlation applies no mask at all and is not changed by this
+option. The expected-accuracy estimate is not changed either: the reference is zero on those
+pixels. Refused: CTF-premultiplied images (RELION's average CTF^2 divides by `Npix_per_shell`),
+the experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.

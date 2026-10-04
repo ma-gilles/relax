@@ -444,6 +444,7 @@ def compute_local_search_resident(
     reconstruction_volume_current_size=None,
     symmetry_label="C1",
     reconstruction_image_radius=None,
+    nyquist_column_counting="relion",
 ) -> LocalEMResult:
     """Run one K=1 local-search fine pass 2 on the device-resident stages.
 
@@ -460,6 +461,10 @@ def compute_local_search_resident(
     local engine returns for this configuration. See the module docstring for
     the three arithmetic differences that are deliberate and for why the
     pass-1 parent probe is not routed here.
+
+    ``nyquist_column_counting`` is the consistency option of the per-image sums
+    (docs/math/relion_consistency_options.md): it changes the scoring weights and the image
+    the noise statistics read, for the fine pass and its parent probe alike.
     """
 
     from recovar import cuda_backproject
@@ -596,6 +601,7 @@ def compute_local_search_resident(
         half_spectrum_scoring=half_spectrum_scoring,
         relion_firstiter_score_mode="gaussian",
         use_float64_scoring=use_float64_scoring,
+        nyquist_column_counting=nyquist_column_counting,
     )
     del half_weights
     relion_score_full_to_compact = jnp.asarray(
@@ -791,6 +797,8 @@ def compute_local_search_resident(
             relion_exact_bpref_operands=dataset_needs_exact_ctf(experiment_dataset),
             noise_optics_groups=optics_groups_np,
         )
+        if nyquist_column_counting != "relion":
+            bucket_io_kwargs["nyquist_column_counting"] = nyquist_column_counting
         if score_only:
             # RELION's pass 1 (the local adaptive parent probe): score, posterior and
             # significance only, no M-step and no accumulators. See _run_resident_parent_probe.

@@ -377,6 +377,7 @@ def _run_sparse_k_class_adaptive_pass2(
             base_engine_kwargs.get("bpref_device_signature_active", False)
         ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        nyquist_column_counting=base_engine_kwargs.get("nyquist_column_counting", "relion"),
         **({"symmetry_label": base_engine_kwargs["symmetry_label"]}
            if base_engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(base_engine_kwargs),
@@ -822,6 +823,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             False,
         ),
         score_mode="normalized_cc",
+        nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
         collect_significance=_significance_debug_dump_matches(
             current_size=engine_kwargs.get("current_size"),
@@ -1142,6 +1144,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             pass2_kwargs.get("bpref_device_signature_active", False)
         ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        nyquist_column_counting=pass2_kwargs.get("nyquist_column_counting", "relion"),
         # Images on another grid (K=1 shape classes): the reference-model M-step size and
         # image radius, as the Gaussian route passes them.
         reconstruction_volume_current_size=pass2_kwargs.get("reconstruction_volume_current_size"),
@@ -1727,6 +1730,7 @@ def run_dense_k_class_em_adaptive(
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
+            nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         )
         if reuse_zero_oversampling_coarse_state:
             sig_kwargs["return_relion_f32_normalization"] = True

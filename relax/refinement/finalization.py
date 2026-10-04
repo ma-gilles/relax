@@ -318,6 +318,7 @@ def run_final_all_data(
             disable_adjoint_y=debug.disable_adjoint_y,
             disable_adjoint_ctf=debug.disable_adjoint_ctf,
             relion_translation_angle_scale=relion_translation_angle_scale,
+            nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,
@@ -371,6 +372,7 @@ def run_final_all_data(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=parity.firstiter_cc_tree_rescore_max_margin,
+            nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
     final_outs = PerHalfOutputs()
     for half, projector in zip(halves, final_projectors, strict=True):

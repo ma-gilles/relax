@@ -398,6 +398,15 @@ def parse_refinement_args(argv=None):
         "column twice, unlike every later sigma2 update; once counts every pair once.",
     )
     parser.add_argument(
+        "--nyquist_column_counting",
+        choices=("relion", "once"),
+        default="relion",
+        help="How the per-image sums count the Hermitian pairs of the Nyquist column of a full-size image. "
+        "relion (default) keeps both members of each pair (the support rule drops only kx = 0, ky < 0), so "
+        "they count twice in the Gaussian score, the image power, the noise, norm and scale sums and "
+        "Npix_per_shell; once counts each pair once.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
@@ -947,6 +956,7 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
         shell_pair_counting=args.shell_pair_counting,
         noise_shell_count=args.noise_shell_count,
         initial_noise_pair_counting=args.initial_noise_pair_counting,
+        nyquist_column_counting=args.nyquist_column_counting,
     )
     chosen = options.non_default()
     if not chosen:

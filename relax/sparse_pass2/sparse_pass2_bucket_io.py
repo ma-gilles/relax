@@ -21,7 +21,11 @@ from relax.diagnostics import finite_check
 from relax.diagnostics.sparse_pass2_dump import _add_sparse_group_timing
 from relax.helpers.dtype_policy import DensePrecisionPolicy, audit_operand_precision
 from relax.helpers.env_flags import parse_env_binary_flag
-from relax.helpers.half_spectrum import make_half_image_weights, make_shell_indices_half
+from relax.helpers.half_spectrum import (
+    make_half_image_weights,
+    make_shell_indices_half,
+    redundant_nyquist_column_pixels,
+)
 from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, half_image_phase_factors
 from relax.helpers.optics_noise import noise_rows, pixel_rows
 from relax.helpers.preprocessing import (
@@ -336,6 +340,7 @@ def prepare_unshifted_bucket_operands(
     relion_exact_bpref_operands=False,
     stage_timing=None,
     noise_optics_groups=None,
+    nyquist_column_counting="relion",
 ) -> UnshiftedBucketOperands:
     """Per-image half of :func:`_prepare_bucket_io`, statement for statement.
 
@@ -346,6 +351,13 @@ def prepare_unshifted_bucket_operands(
 
     ``noise_variance_half`` is one shared spectrum or a per-optics-group table
     whose rows ``noise_optics_groups`` selects per image (:mod:`relax.helpers.optics_noise`).
+
+    ``nyquist_column_counting="once"`` zeroes, in the image the noise statistics read
+    (``processed_score_half_for_noise``), the redundant members of the full-size Nyquist
+    column (:func:`relax.helpers.half_spectrum.redundant_nyquist_column_pixels`). The
+    reference is zero there (beyond the model sphere), so the noise sums, the image power
+    and its high-shell tail, and the norm-correction and scale sums then count each of the
+    column's Hermitian pairs once; the score image is weighted separately.
     """
 
     optics_group_rows = jnp.ndim(noise_variance_half) == 2 and noise_optics_groups is not None
@@ -527,6 +539,12 @@ def prepare_unshifted_bucket_operands(
         else processed_score_half_raw
     )
     processed_score_half_for_noise = processed_score_half_raw
+    if nyquist_column_counting != "relion":
+        processed_score_half_for_noise = jnp.where(
+            jnp.asarray(redundant_nyquist_column_pixels(image_shape))[None, :],
+            jnp.zeros((), dtype=processed_score_half_raw.dtype),
+            processed_score_half_raw,
+        )
 
     # Per-image image corrections follow the image-only convention (the removed dense engine's).
     if image_corrections is not None:
@@ -735,6 +753,7 @@ def _prepare_bucket_io(
     return_native_bpref_operands=False,
     stage_timing=None,
     noise_optics_groups=None,
+    nyquist_column_counting="relion",
 ):
     """Run preprocessing for a batch of images (translations tiled, CTF/noise ratios).
 
@@ -768,6 +787,7 @@ def _prepare_bucket_io(
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         stage_timing=stage_timing,
         noise_optics_groups=noise_optics_groups,
+        nyquist_column_counting=nyquist_column_counting,
     )
     substage_t0 = time.time()
     (

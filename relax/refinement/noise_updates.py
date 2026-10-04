@@ -359,7 +359,14 @@ def _combined_noise_stats(noise_stats_per_half):
 
 
 def _per_optics_group_sigma2_noise(
-    stats, previous_radial, previous_rows, image_shape, *, ctf_premultiplied=False, summed_current_size=None
+    stats,
+    previous_radial,
+    previous_rows,
+    image_shape,
+    *,
+    ctf_premultiplied=False,
+    summed_current_size=None,
+    nyquist_column_counting="relion",
 ):
     """One half's M-step noise update with one spectrum per optics group.
 
@@ -394,6 +401,7 @@ def _per_optics_group_sigma2_noise(
                 image_shape,
                 ctf_premultiplied=ctf_premultiplied,
                 summed_current_size=summed_current_size,
+                nyquist_column_counting=nyquist_column_counting,
             ),
             dtype=np.float64,
         )
@@ -521,7 +529,7 @@ def _noise_update_keeping_previous_spectra(model: NoiseModel) -> NoiseUpdateResu
     )
 
 
-def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_current_size):
+def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_current_size, nyquist_column_counting):
     """One optics group's M-step noise update: the float64 shell profile and its flat pixel row."""
     from relax.reconstruction import noise_relion
 
@@ -532,6 +540,7 @@ def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_cur
         image_shape,
         ctf_premultiplied=ctf_premultiplied,
         summed_current_size=summed_current_size,
+        nyquist_column_counting=nyquist_column_counting,
     )
     return np.asarray(sigma2_noise, dtype=np.float64), _shell_profile_pixel_row(sigma2_noise, image_shape)
 
@@ -590,6 +599,7 @@ def update_k1_posterior_noise_variance(
     ctf_premultiplied: bool = False,
     dump_debug=None,
     summed_current_size=None,
+    nyquist_column_counting="relion",
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update of the two half-models.
 
@@ -605,6 +615,8 @@ def update_k1_posterior_noise_variance(
     ``summed_current_size`` (the expectation's image current size) divides each
     shell by the pixels that expectation summed instead of RELION's full-image
     ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``); None is RELION's count.
+    ``nyquist_column_counting`` must be the rule the expectation's sums were accumulated with:
+    ``"once"`` counts each Hermitian pair of the full-size Nyquist column once.
     """
 
     _require_noise_stats_of_both_halves(noise_stats_per_half)
@@ -625,10 +637,15 @@ def update_k1_posterior_noise_variance(
                 image_shape,
                 ctf_premultiplied=ctf_premultiplied,
                 summed_current_size=summed_current_size,
+                nyquist_column_counting=nyquist_column_counting,
             )
         else:
             noise_k, noise_rows_k = _one_group_sigma2_noise(
-                stats_k, image_shape, ctf_premultiplied=ctf_premultiplied, summed_current_size=summed_current_size
+                stats_k,
+                image_shape,
+                ctf_premultiplied=ctf_premultiplied,
+                summed_current_size=summed_current_size,
+                nyquist_column_counting=nyquist_column_counting,
             )
         noise_from_res_per_half.append(noise_k)
         noise_variance_per_half[k_noise] = noise_rows_k
@@ -648,6 +665,7 @@ def update_class_posterior_noise_variance(
     ctf_premultiplied: bool = False,
     dump_debug=None,
     summed_current_size=None,
+    nyquist_column_counting="relion",
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update shared by every class (Class3D ordering).
 
@@ -664,6 +682,8 @@ def update_class_posterior_noise_variance(
     ``summed_current_size`` (the expectation's image current size) divides each
     shell by the pixels that expectation summed instead of RELION's full-image
     ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``); None is RELION's count.
+    ``nyquist_column_counting`` must be the rule the expectation's sums were accumulated with:
+    ``"once"`` counts each Hermitian pair of the full-size Nyquist column once.
     """
 
     _require_noise_stats_of_both_halves(noise_stats_per_half)
@@ -680,11 +700,13 @@ def update_class_posterior_noise_variance(
             image_shape,
             ctf_premultiplied=ctf_premultiplied,
             summed_current_size=summed_current_size,
+            nyquist_column_counting=nyquist_column_counting,
         )
     else:
         noise_from_res, noise_rows = _one_group_sigma2_noise(
             combined_noise_stats, image_shape,
             ctf_premultiplied=ctf_premultiplied, summed_current_size=summed_current_size,
+            nyquist_column_counting=nyquist_column_counting,
         )
     noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
     noise_variance_per_half = [noise_rows, noise_rows]
@@ -704,6 +726,7 @@ def update_posterior_noise_variance(
     ctf_premultiplied: bool = False,
     dump_debug=None,
     summed_current_size=None,
+    nyquist_column_counting="relion",
 ) -> NoiseUpdateResult:
     """The one remaining mode decision of the noise update.
 
@@ -717,5 +740,5 @@ def update_posterior_noise_variance(
     return update(
         noise_stats_per_half, model, image_shape,
         firstiter_cc=firstiter_cc, ctf_premultiplied=ctf_premultiplied, dump_debug=dump_debug,
-        summed_current_size=summed_current_size,
+        summed_current_size=summed_current_size, nyquist_column_counting=nyquist_column_counting,
     )

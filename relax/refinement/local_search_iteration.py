@@ -129,6 +129,9 @@ class LocalSearchKernelPolicy:
     projection_scale: float = 1.0
     reconstruction_volume_current_size: int | None = None
     reconstruction_image_radius: float | None = None
+    # RelionConsistencyOptions.nyquist_column_counting: how the per-image sums count the Hermitian
+    # pairs of the full-size Nyquist column.
+    nyquist_column_counting: str = "relion"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -430,6 +433,7 @@ def _run_local_search_iteration(
         reconstruction_volume_current_size=kernel.reconstruction_volume_current_size,
         symmetry_label=grid.symmetry,
         reconstruction_image_radius=kernel.reconstruction_image_radius,
+        nyquist_column_counting=kernel.nyquist_column_counting,
     )
     record_pass_engine("local_probe" if support.score_only else "local", "resident")
     result = _LocalSearchIterationResult(

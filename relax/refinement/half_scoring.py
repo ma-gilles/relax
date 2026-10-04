@@ -251,6 +251,9 @@ class DenseExecutionPolicy:
     relion_translation_angle_scale: float = 1.0
     # The K=1 --firstiter_cc coarse-tree top-2 rescore margin (RelionParityOptions); None is off.
     firstiter_cc_tree_rescore_max_margin: float | None = None
+    # RelionConsistencyOptions.nyquist_column_counting: how the per-image sums count the
+    # Hermitian pairs of the full-size Nyquist column.
+    nyquist_column_counting: str = "relion"
 
 
 def _score_adaptive_kclass_dense(
@@ -582,6 +585,8 @@ def _score_half_dense_one_shape(
         em_kwargs["firstiter_cc_tree_rescore_max_margin"] = float(execution.firstiter_cc_tree_rescore_max_margin)
     if float(execution.relion_translation_angle_scale) != 1.0:
         em_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
+    if execution.nyquist_column_counting != "relion":
+        em_kwargs["nyquist_column_counting"] = execution.nyquist_column_counting
     if execution.diagnostic_float64_pass2:
         logger.info(
             "Diagnostic genuine-float64 adaptive pass 2 at iteration %d; pass 1 and prior boundaries remain f32",
@@ -1077,6 +1082,8 @@ class LocalExecutionPolicy:
     disable_adjoint_ctf: bool
     source_faithful_spectrum_norm: bool = False
     relion_translation_angle_scale: float = 1.0
+    # RelionConsistencyOptions.nyquist_column_counting (see DenseExecutionPolicy).
+    nyquist_column_counting: str = "relion"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1616,6 +1623,7 @@ def _score_half_local_one_shape(
                 optics.reference_current_size,
                 optics.projection_scale,
             ),
+            nyquist_column_counting=execution.nyquist_column_counting,
     )
     local_support = LocalSearchSupportPolicy(
             disable_adjoint_y=execution.disable_adjoint_y,
