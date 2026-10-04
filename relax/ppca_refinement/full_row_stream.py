@@ -1452,31 +1452,34 @@ def accumulate_full_row_tile(
 def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool = True) -> list[AugmentedPPCAStats]:
     """:func:`accumulate_full_row_tile` for each ``(image_indices, significant_rows)`` in ``tiles``.
 
-    While the device runs tile k's passes, the host finishes tile k-1 (its
-    statistics are complete) and reads and preprocesses tile k+1. Consecutive
-    tiles of one shape reuse one pose-kept buffer, and a tile of another size
-    releases it before allocating its own, so a single tile's worth is live
-    (what :func:`stream_tile_bytes` counts).
+    The tiles run largest first (results come back in the given order): the largest pose-kept buffer
+    is allocated once, while the device memory is unfragmented, and reused by every tile of its size;
+    a tile of another size releases it before allocating its own, so a single tile's worth is live
+    (what :func:`stream_tile_bytes` counts). In the given order, a batch of 101 + 49 + 101 + 49 images
+    reallocated the large buffer between smaller ones, and its compacted pass-2 copy (16 GiB in one
+    array at the eleven-state HEALPix 4 stage) no longer found a contiguous block on an 80 GB card.
+    While the device runs a tile's passes, the host finishes the tile before it (its statistics are
+    complete) and reads and preprocesses the next one.
     """
+    order = sorted(range(len(tiles)), key=lambda k: -np.asarray(tiles[k][0]).size)  # stable: ties keep their order
     with jax.default_device(stream.device):
-        loaded = _read_tile(stream, *tiles[0], collect_observation=True) if tiles else None
-        results, kept, previous = [], None, None
-        for index, (image_indices, _significant) in enumerate(tiles):
+        loaded = _read_tile(stream, *tiles[order[0]], collect_observation=True) if tiles else None
+        results, kept, previous = [None] * len(tiles), None, None
+        for position, index in enumerate(order):
             if kept is not None and kept.score.shape[1] != loaded[0].y_norm.shape[0]:
                 # A tile of another size gets its own kept buffer: release this one first, so one is live.
                 kept = None
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
             loaded = None
             if previous is not None:
-                results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
+                results[previous[0]] = _finish_full_row_tile(stream, *previous[1:], enforce_x0=enforce_x0)
             # Only this tile's operands stay live while the next one is read (tile_bytes counts that).
             previous = None
-            loaded = (
-                _read_tile(stream, *tiles[index + 1], collect_observation=True) if index + 1 < len(tiles) else None
-            )
-            previous = (image_indices, *pending)
+            if position + 1 < len(order):
+                loaded = _read_tile(stream, *tiles[order[position + 1]], collect_observation=True)
+            previous = (index, tiles[index][0], *pending)
         if previous is not None:
-            results.append(_finish_full_row_tile(stream, *previous, enforce_x0=enforce_x0))
+            results[previous[0]] = _finish_full_row_tile(stream, *previous[1:], enforce_x0=enforce_x0)
         return results
 
 
