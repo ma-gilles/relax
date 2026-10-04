@@ -1050,7 +1050,12 @@ def _compute_k_class_significance_batched(
         try:
             _validate_coarse_gaussian_gemm_projection_cache_request(
                 n_rotations=n_rot,
-                relion_projector_dtype=relion_projector_half[0].dtype,
+                # The dtype of the class stack: indexing a device array for it dispatched a slice per pass.
+                relion_projector_dtype=(
+                    relion_projector_half.dtype
+                    if hasattr(relion_projector_half, "dtype")
+                    else relion_projector_half[0].dtype
+                ),
             )
         except (ValueError, TypeError) as reason:
             if coarse_gaussian_gemm_projection_cache_explicit:
