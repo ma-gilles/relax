@@ -1113,19 +1113,6 @@ def main() -> None:
         help="HEALPix subdivision and translation subdivision passes used by --adaptive-2pass.",
     )
     parser.add_argument(
-        "--accumulate-noise",
-        action="store_true",
-        help="Accumulate RELION-style noise statistics during the replay E/M step.",
-    )
-    parser.add_argument(
-        "--relion-x-half-mstep",
-        action="store_true",
-        help=(
-            "Use the RELION Class3D x-half BPref accumulation layout in the "
-            "replay M-step. Required for device-signature contribution audits."
-        ),
-    )
-    parser.add_argument(
         "--square-window",
         dest="square_window",
         action="store_true",
@@ -1617,7 +1604,8 @@ def main() -> None:
     )
     common_em_kwargs = dict(
         class_log_priors=class_log_priors,
-        accumulate_noise=bool(args.accumulate_noise),
+        # The resident pass 2 is the production pass: it always accumulates the noise statistics.
+        accumulate_noise=True,
         image_batch_size=base_batch_plan.image_batch_size,
         rotation_block_size=base_batch_plan.rotation_block_size,
         class_rotation_log_prior=class_rotation_log_prior,
@@ -1642,7 +1630,8 @@ def main() -> None:
         relion_firstiter_score_mode=str(firstiter_cc_mode["score_mode"]),
         relion_projector_half=relion_projector_half_by_class,
         relion_projector_r_max=relion_projector_r_max,
-        mstep_relion_x_half=bool(args.relion_x_half_mstep),
+        # The resident pass 2 accumulates in RELION's x-half BPref layout, as production Class3D does.
+        mstep_relion_x_half=True,
     )
     # Build pass-2 fine grid (oversampled) using RELION-parity HEALPix children.
     # Mirrors ml_optimiser.cpp::expectationOneParticle line 5022 onward where

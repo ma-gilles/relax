@@ -952,7 +952,7 @@ Removal order:
    `dense/dense_big_jit.py`, `reference/sparse_pass2.py`, `scoring/score_constraints.py`, `k_class.run_dense_k_class_em`, the dense
    adaptive pass 2 and its fallbacks, the `_m_step_block_*` kernels and the direct routes in `half_scoring` are removed. Every
    global pass runs `run_dense_k_class_em_adaptive` (pass 1 in `significance.py`, pass 2 on the resident engine); `sparse_pass2=False`
-   is refused, `scripts/run_k_class_parity.py` refuses a replay without `--adaptive-2pass`, and `RELAX_K1_DENSE_PASS2`,
+   is refused, `scripts/run_k_class_parity.py` refuses a replay without `--adaptive-2pass` and always runs the production pass 2 (x-half M-step, noise sums), and `RELAX_K1_DENSE_PASS2`,
    `RELAX_K_CLASS_DENSE_PASS2*`, `RELAX_K1_SKIP_SIGNIFICANCE_PRUNING` and `RELAX_DISABLE_SPARSE_PASS2` are retired. The dense block
    scorers stay as test references in `tests/helpers/dense_block_scores.py` and `tests/helpers/dense_posterior_reference.py`.
 
