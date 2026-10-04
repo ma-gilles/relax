@@ -20,10 +20,18 @@ def test_latent_rotation_equivariance(dtype, tol):
     residual = (rng.normal(size=(2, 9, 3)) + 1j * rng.normal(size=(2, 9, 3))).astype(complex_dtype)
     Q = np.eye(3, dtype=dtype)
     Q[1:, 1:] = np.array([[0.6, -0.8], [0.8, 0.6]], dtype=dtype)
-    dirs = jnp.stack([coupled_direction(pack_upper_tri(a), r, floor=0.4)[0] for a, r in zip(matrices, residual)])
+    dirs = jnp.stack(
+        [
+            coupled_direction(pack_upper_tri(a), r, np.ones(len(r), bool), floor=0.4)[0]
+            for a, r in zip(matrices, residual)
+        ]
+    )
     transformed = Q.T @ matrices @ Q
     dirs_q = jnp.stack(
-        [coupled_direction(pack_upper_tri(a), r, floor=0.4)[0] for a, r in zip(transformed, residual @ Q)]
+        [
+            coupled_direction(pack_upper_tri(a), r, np.ones(len(r), bool), floor=0.4)[0]
+            for a, r in zip(transformed, residual @ Q)
+        ]
     )
     # Rotate the references on the host: a default-precision GPU matmul would be TF32.
     np.testing.assert_allclose(dirs_q, np.asarray(dirs) @ Q, atol=tol, rtol=tol)
@@ -58,7 +66,9 @@ def test_zero_disagreement_and_new_support():
 
 def test_indefinite_metric_rejected():
     with pytest.raises(ValueError, match="indefinite"):
-        coupled_direction(jnp.array([[-1.0, 0.0, 1.0]], jnp.float32), jnp.ones((1, 2), jnp.complex64), floor=1.0)
+        coupled_direction(
+            jnp.array([[-1.0, 0.0, 1.0]], jnp.float32), jnp.ones((1, 2), jnp.complex64), np.ones(1, bool), floor=1.0
+        )
 
 
 def test_metric_units():
