@@ -1860,7 +1860,11 @@ def _compute_k_class_significance_batched(
                     )
 
     pending_batch = None
-    with prefetched_batches(
+    from relax.cuda.kernels import deferred_relion_preprocess_checks
+
+    # The image preprocess kernel's finite check is read at the end of the loop: read at each call, it
+    # waits for the previous batch's score program inside the next batch's preparation.
+    with deferred_relion_preprocess_checks(), prefetched_batches(
         iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)
     ) as batches:
         for batch_data, _, _, ctf_params, _, _, indices in batches:

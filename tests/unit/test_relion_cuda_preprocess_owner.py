@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import jax.numpy as jnp
 import pytest
 
 from relax.helpers import preprocessing
@@ -34,3 +35,37 @@ def test_datasets_without_a_backend_are_not_cuda():
 
 def test_initial_model_patch_point_is_the_owner():
     assert adaptive_estep.uses_relion_cuda_image_preprocessing is preprocessing.uses_relion_cuda_image_preprocessing
+
+
+def test_deferred_check_scope_defers_inside_and_drains_on_normal_exit(monkeypatch):
+    """Inside the scope the kernel call defers by default; leaving it drains, and an error skips the drain."""
+    from relax.cuda import kernels as em_cuda_kernels
+
+    seen = []
+
+    def fake_jit(images, factors, shifts, radius, width, apply_mask, lane, atomic, check_now):
+        seen.append(bool(check_now))
+        return images, images, jnp.zeros((1,), dtype=jnp.int32)
+
+    drains = []
+    monkeypatch.delenv(em_cuda_kernels.RELION_PREPROCESS_DEFERRED_CHECK_ENV, raising=False)
+    monkeypatch.setattr(em_cuda_kernels, "_relion_preprocess_real_f32_jit", fake_jit)
+    monkeypatch.setattr(em_cuda_kernels, "_queue_relion_preprocess_check", lambda count: None)
+    monkeypatch.setattr(em_cuda_kernels, "drain_relion_preprocess_checks", lambda: drains.append(1))
+    call = lambda: em_cuda_kernels.relion_preprocess_real_f32(jnp.zeros((1, 4, 4)), None, None, 1.0, 1.0)  # noqa: E731
+
+    call()
+    with em_cuda_kernels.deferred_relion_preprocess_checks():
+        call()
+        with em_cuda_kernels.deferred_relion_preprocess_checks():
+            call()
+        call()
+    call()
+    # check_now: synchronous outside the scope, deferred inside (nested scopes included).
+    assert seen == [True, False, False, False, True]
+    assert len(drains) == 2  # one per scope left normally
+
+    with pytest.raises(KeyError):
+        with em_cuda_kernels.deferred_relion_preprocess_checks():
+            raise KeyError("loop failure")
+    assert len(drains) == 2 and em_cuda_kernels._RELION_PREPROCESS_DEFERRED_SCOPES == 0
