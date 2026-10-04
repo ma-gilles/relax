@@ -147,9 +147,9 @@
      }
     },
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10073_k1_autorefine_flipqual_64499e8/s42/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10073/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10073_k1_autorefine_flipqual_64499e8/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10073/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -297,7 +297,7 @@
      "masked_merged": 0.9989,
      "masked_half1": 0.9967,
      "masked_half2": 0.9967,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10073/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10073/score_masked/masked_fsc.json"
     },
     {
      "run": "relion_rep",
@@ -476,9 +476,9 @@
      ]
     },
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10097_k1_autorefine_resident_ef6234c/s42/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10097full/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10097_k1_autorefine_resident_ef6234c/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10097full/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -632,7 +632,7 @@
      "masked_merged": 0.9941,
      "masked_half1": 0.9871,
      "masked_half2": 0.9864,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10097full/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10097full/score_masked/masked_fsc.json"
     },
     {
      "run": "cd26a5e flip job's RELION arm",
@@ -882,7 +882,7 @@
      "scorer": "relax scripts/masked_fsc.py score + bigbox cross_final.py",
      "relion_patched_score": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bigbox_20260925/pair10202_20260928/score_relion_only"
     },
-    "refresh_20261004_failed_attempt": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10202_k1_autorefine_i1/s0/relax"
+    "refresh_20261004_failed_attempt": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10202_k1_autorefine_i1/s0/relax"
    },
    "date": "2026-09-29",
    "mask": {
@@ -1042,9 +1042,9 @@
      }
     },
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10345_k1_autorefine_flipqual_cd26a5e/s42/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10345_0cbdebd/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10345_k1_autorefine_flipqual_cd26a5e/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10345_0cbdebd/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -1233,7 +1233,7 @@
      "masked_merged": 0.998,
      "masked_half1": 0.9963,
      "masked_half2": 0.9965,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10345_0cbdebd/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10345_0cbdebd/score_masked/masked_fsc.json"
     },
     {
      "run": "relion_flipcd",
@@ -1465,9 +1465,9 @@
      }
     },
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10081_hcn1_k1_autorefine_c4_resident_timed/s42/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_hcn1_c4/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10081_hcn1_k1_autorefine_c4_resident_timed/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_hcn1_c4/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -1615,7 +1615,7 @@
      "masked_merged": 0.9984,
      "masked_half1": 0.9972,
      "masked_half2": 0.9974,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_hcn1_c4/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_hcn1_c4/score_masked/masked_fsc.json"
     },
     {
      "run": "relion_seedrep",
@@ -2118,9 +2118,9 @@
     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_kspeed_20260925/k100_d7f9a7a/SCORE.json",
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/tools/score_class3d.py",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a/s0/relax",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a_f6c8299.json"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a/s0/relax",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_ribosembly_k4_100k256_class3d_15it_resident_d7f9a7a_f6c8299.json"
     }
    },
    "date": "2026-10-04",
@@ -2223,7 +2223,7 @@
     "relion": 0.679354,
     "relax": 0.679352,
     "same_seed_map_fsc_auc": 0.999998,
-    "masked_gt_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_noise1_50k/masked_gt/masked_fsc.json",
+    "masked_gt_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_noise1_50k/masked_gt/masked_fsc.json",
     "earlier": {
      "metric": "masked GT FSC-AUC, full spectrum (kspeed SCORE.json, scripts.em_tier_bands)",
      "relion": 0.300762,
@@ -2283,9 +2283,9 @@
      ]
     },
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/noise1_k1_50k256_autorefine_resident_ef6234c/s1775735620/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_noise1_50k/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/noise1_k1_50k256_autorefine_resident_ef6234c/s1775735620/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_noise1_50k/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -2417,7 +2417,7 @@
      "masked_merged": 1.0,
      "masked_half1": 1.0,
      "masked_half2": 1.0,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_noise1_50k/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_noise1_50k/score_masked/masked_fsc.json"
     },
     {
      "run": "relion_ref",
@@ -2535,7 +2535,7 @@
     "relion": 0.692196,
     "relax": 0.692195,
     "same_seed_map_fsc_auc": 0.999995,
-    "masked_gt_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_pdb_100k/masked_gt/masked_fsc.json",
+    "masked_gt_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_pdb_100k/masked_gt/masked_fsc.json",
     "earlier": {
      "metric": "merged GT FSC-AUC (unmasked, full spectrum; k1_completion_band.py with relax's label-aware loaders)",
      "relion": 0.469886,
@@ -2601,9 +2601,9 @@
      "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/tools/score_k1_pdb100k.sh"
     },
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09/s1775735620/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_pdb_100k/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/pdb_k1_100k256_noise1_bf80_autorefine_resident_589ce09/s1775735620/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_pdb_100k/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -2736,7 +2736,7 @@
      "masked_merged": 1.0,
      "masked_half1": 1.0,
      "masked_half2": 1.0,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/k1_pdb_100k/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_pdb_100k/score_masked/masked_fsc.json"
     },
     {
      "run": "relion_ref",
@@ -2922,11 +2922,11 @@
      "67": 0.98588
     },
     "masked_gt_json": [
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s42/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s29/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s53/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s61/masked_fsc.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s67/masked_fsc.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s42/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s29/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s53/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s61/masked_fsc.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gt_s67/masked_fsc.json"
     ],
     "relax_fixed_seed_runs": {
      "53": [
@@ -3019,22 +3019,26 @@
     "score_sbatch": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/ng_k1_50k_seeds/score_cpu.sbatch",
     "refresh_20261004": {
      "arms": [
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s42/relax",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s29/relax",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s53/relax",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s61/relax",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s67/relax"
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s42/relax",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s29/relax",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s53/relax",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s61/relax",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_50k256_snr05_autorefine/s67/relax"
      ],
      "gate_json": [
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s42/score.json",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s29/score.json",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s53/score.json",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s61/score.json",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s67/score.json"
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s42/score.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s29/score.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s53/score.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s61/score.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s67/score.json"
      ],
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
-     "seed53_control": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_s53_ctrl",
-     "seed53_relion_repeats": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/relion_reps/synth_k1_50k256_snr05_s53"
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "seed53_control": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_s53_ctrl",
+     "seed53_relion_repeats": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/relion_reps/synth_k1_50k256_snr05_s53",
+     "seed53_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_rep/synth_k1_50k256_snr05_autorefine/s53",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299_rep/synth_k1_50k256_snr05_autorefine/s53"
+     ]
     }
    },
    "date": "2026-10-04",
@@ -3157,7 +3161,7 @@
      "masked_merged": 0.9924,
      "masked_half1": 0.9887,
      "masked_half2": 0.9886,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s42/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ng_k1_50k_seeds/gate_s42/score_masked/masked_fsc.json"
     },
     {
      "run": "same-command RELION run, seed 29",
@@ -3274,7 +3278,7 @@
     "relion": 0.884115,
     "relax": 0.884109,
     "same_seed_map_fsc_auc": 0.999961,
-    "masked_gt_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/ng_k1_100k_1a/masked_gt/masked_fsc.json",
+    "masked_gt_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/ng_k1_100k_1a/masked_gt/masked_fsc.json",
     "relion_repeat": 0.884137,
     "relion_band": [
      0.884115,
@@ -3324,9 +3328,9 @@
     "scorer": "relax scripts/score_k1_map_gate.py",
     "score_json_repeat": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/k1_7e885ab/ng_k1_100k_1a_rep/score.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_100k256_1a_b18_autorefine/s42/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/ng_k1_100k_1a/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_k1_100k256_1a_b18_autorefine/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/ng_k1_100k_1a/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -3436,7 +3440,7 @@
      "masked_merged": 1.0,
      "masked_half1": 0.9999,
      "masked_half2": 1.0,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/k1/ng_k1_100k_1a/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/ng_k1_100k_1a/score_masked/masked_fsc.json"
     }
    ]
   },
@@ -3532,9 +3536,9 @@
     ],
     "scorer": "relax scripts/score_k1_map_gate.py",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ms2_icos_512_autorefine/s43/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ms2_512/gate_s43/score.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ms2_icos_512_autorefine/s43/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ms2_512/gate_s43/score.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -3615,7 +3619,7 @@
      "masked_merged": 0.9999,
      "masked_half1": 0.9998,
      "masked_half2": 0.9998,
-     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ms2_512/gate_s43/score_masked/masked_fsc.json"
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ms2_512/gate_s43/score_masked/masked_fsc.json"
     }
    ]
   },
@@ -3744,11 +3748,11 @@
     "scorer": "relax scripts/masked_fsc.py score + scripts/score_k1_map_gate.py",
     "refresh_20261004": {
      "arms": [
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ms2_icos_448_b40_autorefine/s1/relax",
-      "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ms2_icos_448_b40_autorefine/s2/relax"
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ms2_icos_448_b40_autorefine/s1/relax",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ms2_icos_448_b40_autorefine/s2/relax"
      ],
-     "scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ms2_s3b",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ms2_s3b",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -4504,9 +4508,12 @@
     "score_json_float_reference": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_c3d_pdb_k4_50k_7e885ab.json",
     "bpd_arms": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/bpd_relion_20260930",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/pdb_k4_50k_class3d_15it_resident_bench/s1775735620/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_pdb_k4_50k_f6c8299.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/pdb_k4_50k_class3d_15it_resident_bench/s1775735620/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_pdb_k4_50k_f6c8299.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "control_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms/pdb_k4_50k_class3d_15it_resident_bench/s1775735620"
+     ]
     }
    },
    "date": "2026-10-04",
@@ -4864,9 +4871,9 @@
     "score_json_float_reference": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_ng_c3d_k2_50k_0cbdebd.json",
     "bpd_arms": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/bpd_relion_20260930",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_pdb_k2_50k256_snr05_class3d_25it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_synth_pdb_k2_50k256_snr05_class3d_25it_f6c8299.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_pdb_k2_50k256_snr05_class3d_25it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_synth_pdb_k2_50k256_snr05_class3d_25it_f6c8299.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -5102,9 +5109,9 @@
     "score_json_float_reference": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/scoring/SCORE_ng_c3d_k4_100k_7d1af75.json",
     "bpd_arms": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/bpd_relion_20260930",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ribo_k4_100k256_snr05_class3d_25it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_synth_ribo_k4_100k256_snr05_class3d_25it_f6c8299.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ribo_k4_100k256_snr05_class3d_25it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_synth_ribo_k4_100k256_snr05_class3d_25it_f6c8299.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -5352,12 +5359,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_noise1_50k_0cbdebd_s67/s67"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/noise1_k1_50k256_initialmodel_vdam_200it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_noise1_k1_50k256_initialmodel_vdam_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/noise1_k1_50k256_initialmodel_vdam_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/noise1_k1_50k256_initialmodel_vdam_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_noise1_k1_50k256_initialmodel_vdam_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/noise1_k1_50k256_initialmodel_vdam_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "c0_relax_s53_r2",
       "c0_relax_s53_r3"
@@ -5716,6 +5723,7 @@
     "Earlier record (before the 2026-09-27 refresh): Seed-29 spread, closed 2026-09-25 as basin sampling: with 8 relax runs (four more on main 791b53b, job 14423354) and 7 RELION runs (two more, 14421081), reference FSC-AUC relax mean 0.3275 (0.3161-0.3381, sd 0.0081), RELION mean 0.3312 (0.3229-0.3354, sd 0.0039): means equal (Welch p = 0.29), spread 2.1x RELION's (F-test p = 0.049, Levene p = 0.023). In both engines the final score falls as class 2's population rises (relax 0.122-0.135, RELION 0.124-0.127). No per-step mechanism: same-seed repeats of either engine first differ at iterations 48-61 and grow at the same rate through iteration 70 (spread trace 14421081), and one-step relax replays from the uninterrupted RELION run's checkpoints at iterations 60-199 (14425671) match RELION's next iteration at its 6-decimal STAR rounding (class-2 weight within 4.5e-7 with alternating sign, data_vs_prior within 4e-4, class assignment 100%).",
     "Earlier record (before the 2026-09-27 refresh): All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.3328 unmasked / 0.3338 masked; relax_s29 vs reference 0.3110 unmasked / 0.3120 masked; relion_s41 vs reference 0.3797 unmasked / 0.3802 masked; relax_s41 vs reference 0.1360 unmasked / 0.1364 masked; relion_s53 vs reference 0.4528 unmasked / 0.4536 masked; relax_s53 vs reference 0.4410 unmasked / 0.4416 masked; x_relion_s29_20260919 vs reference 0.3277 unmasked / 0.3288 masked; x_relax_s29_20260919 vs reference 0.3070 unmasked / 0.3080 masked; relaxfix_s29 vs reference 0.3301 unmasked / 0.3312 masked; relaxfix_s41 vs reference 0.3849 unmasked / 0.3855 masked; relaxfix_s53 vs reference 0.4509 unmasked / 0.4517 masked; relion_rep_s29 vs reference 0.3326 unmasked / 0.3336 masked; relion_rep_s53 vs reference 0.4555 unmasked / 0.4563 masked; relion_s29 vs relax_s29 0.9443 / 0.9635; relion_s29 vs relion_s41 0.8247 / 0.8363; relion_s29 vs relax_s41 0.1275 / 0.1363; relion_s29 vs relion_s53 0.8538 / 0.8667; relion_s29 vs relax_s53 0.8332 / 0.8457; relion_s29 vs x_relion_s29_20260919 0.9573 / 0.9729; relion_s29 vs x_relax_s29_20260919 0.9413 / 0.9622; relion_s29 vs relaxfix_s29 0.9525 / 0.9697; relion_s29 vs relaxfix_s41 0.8239 / 0.8357; relion_s29 vs relaxfix_s53 0.8532 / 0.8660; relion_s29 vs relion_rep_s29 0.9663 / 0.9810; relion_s29 vs relion_rep_s53 0.8595 / 0.8720; relax_s29 vs relion_s41 0.7948 / 0.8075; relax_s29 vs relax_s41 0.1286 / 0.1368; relax_s29 vs relion_s53 0.8322 / 0.8457; relax_s29 vs relax_s53 0.8300 / 0.8433; relax_s29 vs x_relion_s29_20260919 0.9482 / 0.9656; relax_s29 vs x_relax_s29_20260919 0.9585 / 0.9759; relax_s29 vs relaxfix_s29 0.9444 / 0.9635; relax_s29 vs relaxfix_s41 0.7925 / 0.8054; relax_s29 vs relaxfix_s53 0.8395 / 0.8530; relax_s29 vs relion_rep_s29 0.9401 / 0.9587; relax_s29 vs relion_rep_s53 0.8342 / 0.8480; relion_s41 vs relax_s41 0.1308 / 0.1413; relion_s41 vs relion_s53 0.8662 / 0.8724; relion_s41 vs relax_s53 0.8464 / 0.8522; relion_s41 vs x_relion_s29_20260919 0.8145 / 0.8267; relion_s41 vs x_relax_s29_20260919 0.7940 / 0.8074; relion_s41 vs relaxfix_s29 0.8146 / 0.8279; relion_s41 vs relaxfix_s41 0.9746 / 0.9809; relion_s41 vs relaxfix_s53 0.8660 / 0.8722; relion_s41 vs relion_rep_s29 0.8282 / 0.8400; relion_s41 vs relion_rep_s53 0.8770 / 0.8825; relax_s41 vs relion_s53 0.5811 / 0.5854; relax_s41 vs relax_s53 0.5840 / 0.5880; relax_s41 vs x_relion_s29_20260919 0.4854 / 0.4967; relax_s41 vs x_relax_s29_20260919 0.4795 / 0.4908; relax_s41 vs relaxfix_s29 0.4911 / 0.5032; relax_s41 vs relaxfix_s41 0.5235 / 0.5391; relax_s41 vs relaxfix_s53 0.5813 / 0.5856; relax_s41 vs relion_rep_s29 0.4717 / 0.4831; relax_s41 vs relion_rep_s53 0.5737 / 0.5783; relion_s53 vs relax_s53 0.9803 / 0.9803; relion_s53 vs x_relion_s29_20260919 0.8602 / 0.8728; relion_s53 vs x_relax_s29_20260919 0.8440 / 0.8580; relion_s53 vs relaxfix_s29 0.8555 / 0.8687; relion_s53 vs relaxfix_s41 0.8654 / 0.8715; relion_s53 vs relaxfix_s53 0.9980 / 0.9980; relion_s53 vs relion_rep_s29 0.8516 / 0.8644; relion_s53 vs relion_rep_s53 0.9904 / 0.9910; relax_s53 vs x_relion_s29_20260919 0.8474 / 0.8598; relax_s53 vs x_relax_s29_20260919 0.8324 / 0.8461; relax_s53 vs relaxfix_s29 0.8465 / 0.8594; relax_s53 vs relaxfix_s41 0.8445 / 0.8504; relax_s53 vs relaxfix_s53 0.9808 / 0.9809; relax_s53 vs relion_rep_s29 0.8359 / 0.8484; relax_s53 vs relion_rep_s53 0.9657 / 0.9664; x_relion_s29_20260919 vs x_relax_s29_20260919 0.9476 / 0.9671; x_relion_s29_20260919 vs relaxfix_s29 0.9648 / 0.9800; x_relion_s29_20260919 vs relaxfix_s41 0.8116 / 0.8242; x_relion_s29_20260919 vs relaxfix_s53 0.8628 / 0.8751; x_relion_s29_20260919 vs relion_rep_s29 0.9726 / 0.9822; x_relion_s29_20260919 vs relion_rep_s53 0.8590 / 0.8718; x_relax_s29_20260919 vs relaxfix_s29 0.9467 / 0.9668; x_relax_s29_20260919 vs relaxfix_s41 0.7917 / 0.8057; x_relax_s29_20260919 vs relaxfix_s53 0.8469 / 0.8606; x_relax_s29_20260919 vs relion_rep_s29 0.9399 / 0.9605; x_relax_s29_20260919 vs relion_rep_s53 0.8428 / 0.8568; relaxfix_s29 vs relaxfix_s41 0.8152 / 0.8287; relaxfix_s29 vs relaxfix_s53 0.8646 / 0.8777; relaxfix_s29 vs relion_rep_s29 0.9567 / 0.9729; relaxfix_s29 vs relion_rep_s53 0.8600 / 0.8735; relaxfix_s41 vs relaxfix_s53 0.8642 / 0.8704; relaxfix_s41 vs relion_rep_s29 0.8262 / 0.8381; relaxfix_s41 vs relion_rep_s53 0.8762 / 0.8817; relaxfix_s53 vs relion_rep_s29 0.8509 / 0.8637; relaxfix_s53 vs relion_rep_s53 0.9892 / 0.9898; relion_rep_s29 vs relion_rep_s53 0.8600 / 0.8723.",
     "Earlier record (before the 2026-09-27 refresh): Fixed (retained-mass normalization, 2026-09-24): the class splits match RELION at all three seeds, the seed-mean reference FSC-AUC equals RELION's, and relax's same-seed runs span RELION's at seeds 29 and 53. The seed-29 spread (2.1x RELION's, borderline) is closed as basin sampling: means equal and per-step parity at RELION's rounding floor.",
+    "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
     "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded."
    ],
    "null_reasons": {},
@@ -5881,6 +5889,7 @@
     "Earlier record (before the 2026-09-27 refresh): Earlier runs: P3 pair on relax main 02b4cb3 (job 14373890, pre-read): relax 0.1460 vs RELION 0.1227, 3554 / 795 s; pre-split recovar 25cc4475b (2026-09-19): relax 0.1369 vs RELION 0.1435.",
     "Earlier record (before the 2026-09-27 refresh): All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1236 unmasked / 0.1235 masked; relax_s29 vs reference 0.1418 unmasked / 0.1412 masked; relion_s41 vs reference 0.1851 unmasked / 0.1861 masked; relax_s41 vs reference 0.1996 unmasked / 0.1995 masked; relion_s53 vs reference 0.0901 unmasked / 0.0935 masked; relax_s53 vs reference 0.0926 unmasked / 0.0962 masked; x_relion_s29_20260919 vs reference 0.1435 unmasked / 0.1427 masked; x_relax_s29_20260919 vs reference 0.1369 unmasked / 0.1363 masked; x_relion_main_pair_02b4cb3 vs reference 0.1227 unmasked / 0.1232 masked; x_relax_main_pair_02b4cb3 vs reference 0.1460 unmasked / 0.1447 masked; relaxfix_s29 vs reference 0.1441 unmasked / 0.1433 masked; relion_s29 vs relax_s29 0.8521 / 0.8548; relion_s29 vs relion_s41 0.2125 / 0.2336; relion_s29 vs relax_s41 0.3018 / 0.3670; relion_s29 vs relion_s53 0.1606 / 0.4017; relion_s29 vs relax_s53 0.1657 / 0.3696; relion_s29 vs x_relion_s29_20260919 0.8668 / 0.8616; relion_s29 vs x_relax_s29_20260919 0.8715 / 0.8746; relion_s29 vs x_relion_main_pair_02b4cb3 0.9051 / 0.9019; relion_s29 vs x_relax_main_pair_02b4cb3 0.8552 / 0.8573; relion_s29 vs relaxfix_s29 0.8419 / 0.8513; relax_s29 vs relion_s41 0.2251 / 0.2493; relax_s29 vs relax_s41 0.2676 / 0.3190; relax_s29 vs relion_s53 0.1787 / 0.3927; relax_s29 vs relax_s53 0.1875 / 0.3733; relax_s29 vs x_relion_s29_20260919 0.8808 / 0.8713; relax_s29 vs x_relax_s29_20260919 0.9266 / 0.9285; relax_s29 vs x_relion_main_pair_02b4cb3 0.8500 / 0.8554; relax_s29 vs x_relax_main_pair_02b4cb3 0.9120 / 0.9077; relax_s29 vs relaxfix_s29 0.8396 / 0.8447; relion_s41 vs relax_s41 0.1017 / 0.1630; relion_s41 vs relion_s53 0.1278 / 0.2311; relion_s41 vs relax_s53 0.1228 / 0.2267; relion_s41 vs x_relion_s29_20260919 0.2170 / 0.2363; relion_s41 vs x_relax_s29_20260919 0.2115 / 0.2447; relion_s41 vs x_relion_main_pair_02b4cb3 0.2042 / 0.2315; relion_s41 vs x_relax_main_pair_02b4cb3 0.2264 / 0.2659; relion_s41 vs relaxfix_s29 0.2173 / 0.2378; relax_s41 vs relion_s53 0.1474 / 0.2491; relax_s41 vs relax_s53 0.1664 / 0.2465; relax_s41 vs x_relion_s29_20260919 0.2717 / 0.3217; relax_s41 vs x_relax_s29_20260919 0.2591 / 0.3172; relax_s41 vs x_relion_main_pair_02b4cb3 0.2614 / 0.3175; relax_s41 vs x_relax_main_pair_02b4cb3 0.2630 / 0.3462; relax_s41 vs relaxfix_s29 0.2661 / 0.3249; relion_s53 vs relax_s53 0.8254 / 0.8290; relion_s53 vs x_relion_s29_20260919 0.1746 / 0.3885; relion_s53 vs x_relax_s29_20260919 0.1827 / 0.4045; relion_s53 vs x_relion_main_pair_02b4cb3 0.1757 / 0.4042; relion_s53 vs x_relax_main_pair_02b4cb3 0.1724 / 0.3782; relion_s53 vs relaxfix_s29 0.1581 / 0.3798; relax_s53 vs x_relion_s29_20260919 0.1813 / 0.3652; relax_s53 vs x_relax_s29_20260919 0.4157 / 0.4957; relax_s53 vs x_relion_main_pair_02b4cb3 0.1851 / 0.3890; relax_s53 vs x_relax_main_pair_02b4cb3 0.1871 / 0.3667; relax_s53 vs relaxfix_s29 0.1777 / 0.3584; x_relion_s29_20260919 vs x_relax_s29_20260919 0.8821 / 0.8815; x_relion_s29_20260919 vs x_relion_main_pair_02b4cb3 0.8541 / 0.8568; x_relion_s29_20260919 vs x_relax_main_pair_02b4cb3 0.8857 / 0.8855; x_relion_s29_20260919 vs relaxfix_s29 0.8878 / 0.8918; x_relax_s29_20260919 vs x_relion_main_pair_02b4cb3 0.8680 / 0.8750; x_relax_s29_20260919 vs x_relax_main_pair_02b4cb3 0.9275 / 0.9322; x_relax_s29_20260919 vs relaxfix_s29 0.8528 / 0.8653; x_relion_main_pair_02b4cb3 vs x_relax_main_pair_02b4cb3 0.8415 / 0.8514; x_relion_main_pair_02b4cb3 vs relaxfix_s29 0.8168 / 0.8305; x_relax_main_pair_02b4cb3 vs relaxfix_s29 0.8834 / 0.8825.",
     "Earlier record (before the 2026-09-27 refresh): Not a bug: relax (fix and before) is at or above RELION at every scored seed; the fix leaves K=4 seed 29 at 0.1441 against RELION 0.1236.",
+    "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
     "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded."
    ],
    "null_reasons": {},
@@ -6117,12 +6126,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k15/s29"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k15_50k256_initialmodel_vdam_200it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k15_50k256_initialmodel_vdam_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k15_50k256_initialmodel_vdam_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "c0_relax_s29",
       "c0_relax_s41",
@@ -6388,12 +6397,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k4_0cbdebd_s67/s67"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k4_100k256_initialmodel_vdam_k4_200it/s41/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k4_100k256_initialmodel_vdam_k4_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k4_100k256_initialmodel_vdam_k4_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k4_100k256_initialmodel_vdam_k4_200it/s41/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k4_100k256_initialmodel_vdam_k4_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k4_100k256_initialmodel_vdam_k4_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "c0_relax_s41_r2",
       "c0_relax_s41_r3"
@@ -6655,12 +6664,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s67/s67"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "c0_relax_s29_r2",
       "bpd_relion_s29_r2",
@@ -6676,7 +6685,7 @@
       "rep62_relax_s67_r3",
       "bpd_relion_s67_r2"
      ],
-     "same_seed_repeats": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/pdbk2_vdam_reps"
+     "same_seed_repeats": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/pdbk2_vdam_reps"
     }
    },
    "mask": {
@@ -6934,12 +6943,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k4_100k_0cbdebd_s67/s67"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "c0_relax_s29_r2",
       "c0_relax_s29_r3",
@@ -7199,12 +7208,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1_0cbdebd_s53/s53"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k4_100k256_initialmodel_vdam_k1_200it/s41/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k4_100k256_initialmodel_vdam_k1_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k4_100k256_initialmodel_vdam_k1_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k4_100k256_initialmodel_vdam_k1_200it/s41/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k4_100k256_initialmodel_vdam_k1_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k4_100k256_initialmodel_vdam_k1_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "p_rf_relion_s41",
       "p_rf_relion_s29",
@@ -7443,15 +7452,20 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10097_0cbdebd/s41"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10097_initialmodel_vdam_200it/s41/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10097_initialmodel_vdam_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10097_initialmodel_vdam_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10097_initialmodel_vdam_200it/s41/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10097_initialmodel_vdam_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10097_initialmodel_vdam_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "c0_relax_s41_r2",
       "c0_relax_s41_r3"
+     ],
+     "control_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms/empiar10097_initialmodel_vdam_200it/s41",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_rep/empiar10097_initialmodel_vdam_200it/s41",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299_rep/empiar10097_initialmodel_vdam_200it/s41"
      ]
     }
    },
@@ -7701,12 +7715,12 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_100k_0cbdebd_s67/s67"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10076_100k256_initialmodel_vdam_200it/s29/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10076_100k256_initialmodel_vdam_200it.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10076_100k256_initialmodel_vdam_200it.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10076_100k256_initialmodel_vdam_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10076_100k256_initialmodel_vdam_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10076_100k256_initialmodel_vdam_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "p_rf_relion_s29",
       "c0_relax_s41_r2",
@@ -8098,16 +8112,16 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_hcn1_0cbdebd/s42"
     ],
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align/s42/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
-     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
-     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
      "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
      "arms_not_rescored": [
       "p_rf_relion_s42"
      ],
-     "seed42_check": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/hcn1_vdam_control"
+     "seed42_check": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/hcn1_vdam_control"
     }
    },
    "mask": {
@@ -8479,10 +8493,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_01_base_2000_256_tomo_autorefine_241140e/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_01_base/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_01_base/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_01_base_2000_256_tomo_autorefine_241140e/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_01_base/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_01_base/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -8655,10 +8669,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_02_n5k_5000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_02_n5k/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_02_n5k/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_02_n5k_5000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_02_n5k/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_02_n5k/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -8830,10 +8844,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_05_snr_low_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_05_snr_low/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_05_snr_low/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_05_snr_low_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_05_snr_low/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_05_snr_low/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -9005,10 +9019,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_06_snr_high_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_06_snr_high/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_06_snr_high/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_06_snr_high_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_06_snr_high/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_06_snr_high/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -9181,10 +9195,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_07_tilt45_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_07_tilt45/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_07_tilt45/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_07_tilt45_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_07_tilt45/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_07_tilt45/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -9356,10 +9370,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_08_tilt6_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_08_tilt6/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_08_tilt6/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_08_tilt6_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_08_tilt6/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_08_tilt6/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -9544,11 +9558,14 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_09_box192_2000_192_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_09_box192/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_09_box192/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
-     "control": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/controls2"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_09_box192_2000_192_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_09_box192/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_09_box192/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "control": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/controls2",
+     "control_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/w2_09_control"
+     ]
     }
    },
    "date": "2026-10-04",
@@ -9735,10 +9752,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_10_box320_2000_320_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_10_box320/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_10_box320/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_10_box320_2000_320_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_10_box320/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_10_box320/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -9918,10 +9935,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_11_optics2_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_11_optics2/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_11_optics2/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_11_optics2_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_11_optics2/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_11_optics2/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -10097,10 +10114,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_12_c4_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_12_c4/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_12_c4/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_12_c4_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_12_c4/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_12_c4/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -10272,10 +10289,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_13_noise_colored_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_13_noise_colored/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_13_noise_colored/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_13_noise_colored_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_13_noise_colored/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_13_noise_colored/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -10462,10 +10479,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_14_prefori_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_14_prefori/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_14_prefori/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_14_prefori_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_14_prefori/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_14_prefori/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -10644,10 +10661,10 @@
     "scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/scripts/score_case.py",
     "handoff": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_bench_20260926/HANDOFF.json",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_15_offsets_large_2000_256_tomo_autorefine_bb9cae4/s1/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_15_offsets_large/score_relax.json",
-     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_15_offsets_large/cross_map_relax.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/cryoet_w2_15_offsets_large_2000_256_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_15_offsets_large/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo/w2_15_offsets_large/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -11489,9 +11506,9 @@
     "scorer": "relax scripts/score_k1_map_gate.py",
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_s3b_10k_20260924/project",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/multioptics_s3b_10k_autorefine/s20260924/relax",
-     "scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/ms2_s3b",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/multioptics_s3b_10k_autorefine/s20260924/relax",
+     "scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/ms2_s3b",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -11781,9 +11798,9 @@
     "spec": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/specs/mag.json",
     "wall_pair": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/c3d_mag_wall",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/optics_mag_k2_10k256_class3d_25it/s0/relax",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_optics_mag_k2_10k256_class3d_25it_f6c8299.json",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/optics_mag_k2_10k256_class3d_25it/s0/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_optics_mag_k2_10k256_class3d_25it_f6c8299.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
     }
    },
    "date": "2026-10-04",
@@ -11985,7 +12002,7 @@
    "notes": [
     "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
     "Refresh 2026-10-04, seed 1 (the only seed rerun): mean masked GT FSC-AUC relax 0.466423 and class accuracy 0.7137, both identical to the earlier a7683d50 run; wall 484 s (was 1243 s, 1.74x) against stock GPU RELION 714 s: 0.68x. The gain is the resident stable windows for images on another grid (acb14b2c, etw). The 'Speed' and 'Walls of the other seeds' notes below describe the a7683d50 runs.",
-    "Same-seed spread (bindw, relax main 7a060fa, job 14973509; scored with the row's scorer, job 14974613): three repeats of the seed-1 command give mean masked GT FSC-AUC 0.466423, 0.466265, 0.466423 and class accuracy 0.7137, 0.7140, 0.7137. Runs of the same code are identical after iteration 1 and then follow one of at least three trajectories (tie flips from iteration 2; final maps about 2.5e-2 apart, 99.5% of class assignments equal). In the row's metric that spread is 1.6e-4, against a margin of +5.2e-3 over stock CPU RELION at this seed. The refreshed f6c8299b run and the earlier a7683d50 run are on the same trajectory as two of the three repeats.",
+    "Same-seed spread (bindw, relax main 7a060fa, job 14973509; scored with the row's scorer, job 14974613): three repeats of the seed-1 command give mean masked GT FSC-AUC 0.466423, 0.466265, 0.466423 and class accuracy 0.7137, 0.7140, 0.7137. Runs of the same code are identical after iteration 1 and then follow one of at least three trajectories (tie flips from iteration 2; final maps about 2.5e-2 apart, 99.5% of class assignments equal). In the row's metric that spread is 1.6e-4, against a margin of +5.2e-3 over stock CPU RELION at this seed. The refreshed f6c8299b run and the earlier a7683d50 run are on the same trajectory as two of the three repeats. RELION's GPU path splits early as well: two same-seed runs of five iterations (etw, job 14978654, mpiscale build non-MPI) are identical at iteration 1 and differ from iteration 2 (class maps about 1e-3 apart at iteration 5); the row's reference, CPU RELION, is bit-reproducible.",
     "Speed (team-lead 2026-10-02): dedicated cold pair, seed 1, relax 1243 s vs stock GPU RELION non-MPI 714 s (1.74x), one 2-GPU job.",
     "Class3D K=2 several-image-shapes feature row (etw, relax#12; team-lead 2026-10-02): relax main a7683d50 at seeds 1-3, each in one 2-GPU job with stock RELION 5.0.1 GPU non-MPI --j 12 (walls) and judged against stock RELION 5.0.1 CPU (seed 1: etw's two runs 14825345; seeds 2-3: 14868235). The stock GPU RELION maps score lower (mean masked GT FSC-AUC s1/s2/s3 0.3892/0.4025/0.4039): its pass 1 skips the scale difference between image shapes (relax#12), so it is the wall only.",
     "Commands: relax class3d --n_classes 2 --init_resolution 40 --particle_diameter_ang 200 --healpix_order 2 --offset_range 5 --offset_step 1 --tau2_fudge 4 --max_iter 25 --seed S (default --firstiter_cc); RELION relion_refine --K 2 --tau2_fudge 4 --iter 25 --healpix_order 2 --offset_range 5 --offset_step 1 --particle_diameter 200 --ini_high 40 --ctf --flatten_solvent --zero_mask --norm --scale --pad 2 --pool 3 --dont_combine_weights_via_disc --firstiter_cc --random_seed S.",
@@ -12022,10 +12039,14 @@
     "wall_pair": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/c3d_twoshape/s1",
     "reference_caveat_diagnostic": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/myscratch_tmp/etw_kshape_census_20261003",
     "refresh_20261004": {
-     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/multioptics_k2_10k128_class3d_25it/s1/relax",
-     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
-     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_multioptics_k2_10k128_class3d_25it_f6c8299.json",
-     "same_seed_repeats_score": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_multishape_repeats_7a060fa.json"
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/multioptics_k2_10k128_class3d_25it/s1/relax",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_multioptics_k2_10k128_class3d_25it_f6c8299.json",
+     "same_seed_repeats_score": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/SCORE_c3d_multishape_repeats_7a060fa.json",
+     "same_seed_repeats_runs": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bindw_20260930/vdam10k/multishape_7a060fa",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/mshape_repro_20261004"
+     ]
     }
    },
    "date": "2026-10-04",
