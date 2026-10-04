@@ -279,10 +279,11 @@ def load_particle_inputs(
         in {"1", "true", "yes", "on"}
     )
     particle_read_policy = ParticleReadPolicy.from_args(args)
-    particle_scratch = prepare_particle_reads(
+    tomo_run = is_relion5_2d_stack_star(os.path.join(args.data_dir, "particles.star"))
+    # A subtomogram particle STAR names no image stacks; load_tomo_dataset stages from its per-tilt STAR.
+    particle_scratch = None if tomo_run else prepare_particle_reads(
         os.path.join(args.data_dir, "particles.star"), particle_read_policy
     )
-    tomo_run = is_relion5_2d_stack_star(os.path.join(args.data_dir, "particles.star"))
     shape_class_rows = None if tomo_run else optics_shape_class_rows(os.path.join(args.data_dir, "particles.star"))
     if tomo_run:
         # RELION 5 subtomogram 2D stacks (S4.2): the units are the particles, each over its tilt images.
@@ -294,8 +295,8 @@ def load_particle_inputs(
             flat_star,
             datadir=args.data_dir,
             lazy=not particle_read_policy.preread_images,
+            read_policy=particle_read_policy,
         )
-        assert_reads_from_scratch(ds.images, particle_scratch)
         logger.info(
             "Subtomogram particles: %d particles over %d tilt images (%s)",
             ds.n_units, int(ds.unit_image_offsets[-1]), flat_star,

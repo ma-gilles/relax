@@ -447,14 +447,15 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         scratch_dir=str(opts.scratch_dir or ""),
         keep_free_scratch_gb=float(opts.keep_free_scratch_gb),
     )
-    particle_scratch = prepare_particle_reads(
+    tomo = opts.fn_tomograms is not None
+    # A subtomogram particle STAR names no image stacks; load_tomo_dataset stages from its per-tilt STAR.
+    particle_scratch = None if tomo else prepare_particle_reads(
         opts.fn_img,
         particle_read_policy,
         datadir=opts.datadir,
         strip_prefix=opts.strip_prefix,
     )
     profile.record("particle_scratch")
-    tomo = opts.fn_tomograms is not None
     tilt_images = None
     if tomo:
         # RELION 5 subtomogram 2D stacks (--ios): the particles are the units, each over its tilt images.
@@ -464,6 +465,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             os.path.join(os.path.dirname(os.path.abspath(opts.outputname)), "particles_2d.star"),
             datadir=opts.datadir or os.path.dirname(os.path.abspath(opts.fn_img)),
             lazy=not particle_read_policy.preread_images,
+            read_policy=particle_read_policy,
         )
         image_dataset = dataset.images
         n_particles = int(dataset.n_units)

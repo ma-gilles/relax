@@ -82,6 +82,42 @@ def test_command_particle_loading_preserves_tilt_particle_identity(project, tmp_
 
 
 @pytest.mark.unit
+def test_command_particle_loading_stages_subtomogram_stacks_to_scratch_dir(project, tmp_path, monkeypatch):
+    """--scratch_dir copies the stacks of the per-tilt STAR; the particle STAR has no _rlnImageName (relax #15)."""
+    import os
+    import signal
+
+    from relax.refinement import particle_loading
+
+    out, _ = project
+    monkeypatch.delenv("RECOVAR_CACHE_DIR", raising=False)
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "0")
+    monkeypatch.setattr(signal, "signal", lambda *args: None)
+    scratch_dir = tmp_path / "local"
+    scratch_dir.mkdir()
+
+    def load(name, scratch):
+        args = SimpleNamespace(
+            data_dir=str(out), output=str(tmp_path / name), preread_images=False,
+            scratch_dir=scratch, keep_free_scratch_gb=0.0, particle_diameter_ang=120.0,
+            width_mask_edge_px=5.0, relion_softmask_reduction="control",
+            image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
+        )
+        return particle_loading.load_particle_inputs(args).dataset
+
+    streamed = load("streamed", "")
+    staged = load("staged", str(scratch_dir))
+    (run_dir,) = os.listdir(scratch_dir)
+    assert run_dir.startswith("relax_volatile_")
+    stacks = staged.images.image_source.backend.source.stack_files()
+    assert stacks and all(path.startswith(str(scratch_dir / run_dir) + os.sep) for path in stacks)
+    assert not any(path.startswith(str(scratch_dir)) for path in streamed.images.image_source.backend.source.stack_files())
+    assert np.array_equal(staged.image_rows, streamed.image_rows)
+    for unit in range(staged.n_units):
+        assert_matches(staged.unit_images(unit), streamed.unit_images(unit))
+
+
+@pytest.mark.unit
 def test_relion_tomo_damping_matches_relion_formula():
     freq_sq = np.array([0.0, 1e-4, 1e-2, 0.03])
     ne = 0.245 * np.power(freq_sq[1:], -0.8325) + 2.81

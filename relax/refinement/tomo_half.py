@@ -145,16 +145,25 @@ class TomoDataset:
         return np.concatenate(batches, axis=0)
 
 
-def load_tomo_dataset(particles_star, tomograms_star, flat_star, *, datadir, lazy: bool) -> TomoDataset:
-    """A RELION 5 2D-stack project as a :class:`TomoDataset`; the per-tilt STAR is written to ``flat_star``."""
+def load_tomo_dataset(
+    particles_star, tomograms_star, flat_star, *, datadir, lazy: bool, read_policy=None
+) -> TomoDataset:
+    """A RELION 5 2D-stack project as a :class:`TomoDataset`; the per-tilt STAR is written to ``flat_star``.
+
+    ``read_policy`` (:class:`relax.helpers.particle_io.ParticleReadPolicy`) applies ``--scratch_dir`` to
+    the stacks the per-tilt STAR names: the particle STAR has no ``_rlnImageName`` rows to stage from.
+    """
 
     from recovar.data_io.cryoem_dataset import load_dataset
     from recovar.data_io.starfile import read_star
 
+    from relax.helpers.particle_io import assert_reads_from_scratch, prepare_particle_reads
     from relax.relion.tomo_input import flatten_relion5_tomo
 
     flat_star = flatten_relion5_tomo(particles_star, tomograms_star, flat_star)
+    scratch = None if read_policy is None else prepare_particle_reads(str(flat_star), read_policy, datadir=datadir)
     images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
+    assert_reads_from_scratch(images, scratch)
     return TomoDataset(images, read_star(str(flat_star))[0], particles_star, tomograms_star)
 
 
