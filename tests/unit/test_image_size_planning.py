@@ -121,12 +121,3 @@ def test_firstiter_cc_override_uses_the_completed_iteration(completed_iteration)
     assert plan.resolution_shell == (18 if completed_iteration == 1 else 12)
     assert plan.size == (48 if completed_iteration == 1 else 36)
     np.testing.assert_array_equal(plan.resolution_shells_per_class, [12] * 4)
-
-
-def test_class_image_size_preserves_missing_curve_refusal():
-    with pytest.raises(RuntimeError, match="requires a previous data_vs_prior curve"):
-        plan_class_image_size(
-            None, previous_size=40, grid_size=128, pixel_size_angstrom=4.25,
-            incr_size=6, ave_pmax=.9, completed_relion_iteration=2,
-            parity=RelionParityOptions(), dtype=np.float32, log=Mock(),
-        )

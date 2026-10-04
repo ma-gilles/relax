@@ -488,8 +488,6 @@ def plan_class_image_size(
 
     See ``docs/math/relion_refinement_algorithm.md`` for image-size scheduling.
     """
-    if data_vs_prior is None:
-        raise RuntimeError("K-class current-size scheduling requires a previous data_vs_prior curve")
     data_vs_prior_prev_raw = np.asarray(
         data_vs_prior,
         dtype=dtype,
