@@ -246,10 +246,9 @@ def test_sigma_offset_update_uses_the_total_weight_over_optics_groups():
         wsum_sigma2_offset=60.0, sumw=np.array([3.0, 7.0]),
     )
     single = make_noise_stats(wsum_sigma2_noise=np.ones(5), wsum_img_power=np.zeros(5), wsum_sigma2_offset=60.0, sumw=10.0)
-    kwargs = dict(noise_stats_per_half_per_class=None, current_sigma_offset_angstrom_per_half=[5.0, 5.0],
-                  n_classes=1, state_fallback_offsets_angstrom=np.nan)
-    a = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[groups, groups], **kwargs)
-    b = noise_updates.update_c1_sigma_offset_from_posterior(noise_stats_per_half=[single, single], **kwargs)
+    kwargs = dict(current_sigma_offset_angstrom_per_half=[5.0, 5.0], state_fallback_offsets_angstrom=np.nan)
+    a = noise_updates.update_k1_sigma_offset_from_posterior(noise_stats_per_half=[groups, groups], **kwargs)
+    b = noise_updates.update_k1_sigma_offset_from_posterior(noise_stats_per_half=[single, single], **kwargs)
     assert a.current_sigma_offset_angstrom_per_half == b.current_sigma_offset_angstrom_per_half
 
 
@@ -268,10 +267,10 @@ def test_class3d_sigma_offset_per_class_diagnostic_takes_per_group_weight_sums()
         for n in (3.0, 7.0)
     ]
     kwargs = dict(current_sigma_offset_angstrom_per_half=[5.0, 5.0], n_classes=2, state_fallback_offsets_angstrom=np.nan)
-    a = noise_updates.update_c1_sigma_offset_from_posterior(
+    a = noise_updates.update_class_sigma_offset_from_posterior(
         noise_stats_per_half=[groups[0], groups[1]], noise_stats_per_half_per_class=[groups, None], **kwargs
     )
-    b = noise_updates.update_c1_sigma_offset_from_posterior(
+    b = noise_updates.update_class_sigma_offset_from_posterior(
         noise_stats_per_half=[single[0], single[1]], noise_stats_per_half_per_class=[single, None], **kwargs
     )
     assert a.current_sigma_offset_angstrom_per_half == b.current_sigma_offset_angstrom_per_half

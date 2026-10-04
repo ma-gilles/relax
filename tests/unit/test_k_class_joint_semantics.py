@@ -36,7 +36,7 @@ from relax.helpers.types import (
     make_noise_stats,
     make_relion_stats,
 )
-from relax.refinement.noise_updates import update_c1_sigma_offset_from_posterior
+from relax.refinement.noise_updates import update_class_sigma_offset_from_posterior
 from relax.relion.relion_metadata import read_relion_direction_priors
 from relax.sparse_pass2.sparse_pass2_bucket_io import _relion_translation_angles_f32
 
@@ -678,7 +678,7 @@ def test_k_class_sigma_offset_live_update_uses_shared_relion_aggregate():
         ),
     )
 
-    result = update_c1_sigma_offset_from_posterior(
+    result = update_class_sigma_offset_from_posterior(
         noise_stats_per_half=aggregate,
         noise_stats_per_half_per_class=per_class,
         current_sigma_offset_angstrom_per_half=[1.5, 1.5],
