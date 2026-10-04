@@ -318,10 +318,9 @@ def _has_numbered_replay_iteration_overrides(replay_iteration_overrides) -> bool
     return any(override is not None for override in replay_iteration_overrides[1:])
 
 
-def _validate_bpref_particle_order_scope(
+def _validate_k1_bpref_particle_order_scope(
     *,
     preserve_bpref_particle_order: bool,
-    n_classes: int,
     init_relion_iteration: int,
     perturb_replay_relion_dir,
     replay_iteration_overrides,
@@ -346,8 +345,6 @@ def _validate_bpref_particle_order_scope(
 
     if not preserve_bpref_particle_order:
         return
-    if int(n_classes) != 1:
-        raise ValueError("RELION BPref particle-order preservation is K=1-only")
     if sealed_sampling_state is not None or sealed_scoring_context is not None:
         raise ValueError(
             "RELION BPref particle-order preservation cannot alter a sealed boundary"
@@ -390,6 +387,44 @@ def _validate_bpref_particle_order_scope(
         raise ValueError(
             "numbered replay state without perturbation replay has no RELION trajectory"
         )
+
+
+def _validate_bpref_particle_order_scope(
+    *,
+    preserve_bpref_particle_order: bool,
+    n_classes: int,
+    init_relion_iteration: int,
+    perturb_replay_relion_dir,
+    replay_iteration_overrides,
+    sealed_sampling_state,
+    sealed_scoring_context,
+    allow_replayed_bpref_particle_order: bool = False,
+    allow_state_swap_fresh_bpref_particle_order: bool = False,
+    continues_own_run: bool = False,
+) -> None:
+    """Fail closed unless RELION's physical order can be preserved for this run.
+
+    This is the one remaining mode decision of the order-scope check, to be
+    removed when the K=1 trajectory calls
+    ``_validate_k1_bpref_particle_order_scope`` directly: Class3D refuses the
+    preservation and has no scope to check.
+    """
+
+    if int(n_classes) != 1:
+        if preserve_bpref_particle_order:
+            raise ValueError("RELION BPref particle-order preservation is K=1-only")
+        return
+    _validate_k1_bpref_particle_order_scope(
+        preserve_bpref_particle_order=preserve_bpref_particle_order,
+        init_relion_iteration=init_relion_iteration,
+        perturb_replay_relion_dir=perturb_replay_relion_dir,
+        replay_iteration_overrides=replay_iteration_overrides,
+        sealed_sampling_state=sealed_sampling_state,
+        sealed_scoring_context=sealed_scoring_context,
+        allow_replayed_bpref_particle_order=allow_replayed_bpref_particle_order,
+        allow_state_swap_fresh_bpref_particle_order=allow_state_swap_fresh_bpref_particle_order,
+        continues_own_run=continues_own_run,
+    )
 
 
 def _state_swap_reference_dir(perturb_replay_relion_dir, *, iteration: int, force: bool):
