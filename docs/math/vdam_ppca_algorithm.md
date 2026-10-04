@@ -1836,6 +1836,138 @@ spread; it was not caused by the unmodelled contrast.
 A future contrast model would need to start only after the poses settle. It must
 also be judged from random starts, not from the GT start.
 
+### 16.11 Real data: EMPIAR-10499 (October 3-4, 2026)
+
+Data. EMPIAR-10499, *M. pneumoniae* 70S ribosomes in situ: 18,466 particles from
+64 tilt series, about 41 tilts each, box 128 at 3.906 A (fixture
+`em_fixtures/empiar_10499_relion5`; RELION 5 Refine3D of it reaches 7.94 A). There
+is no ground truth. The references are RELION's Refine3D poses and map, the
+RECOVAR cryo-ET analysis of the same particles at fixed Warp/M poses (mean,
+eigenvolumes and embeddings), and the 1,811 particles that a cryoDRGN-ET filtering
+removed (junk and free 50S together). The fixture's particle rows are sorted by
+tilt series and differ from the `M_particles.star` order of those references for
+35% of the particles; scores map them by particle name.
+
+Geometry. Warp/M refined each particle's tilt geometry, so every particle is its
+own tilt group and tiles would hold one particle. The runs use a regrouped copy of
+the project in which each particle's per-tilt rotation is replaced by its tilt
+series' mean rotation for that tilt (64 groups; residual angle median 1.91 deg, p90
+4.99 deg, growing with tilt). With poses fixed, the mean map is the same under
+both geometries at 31 A (masked FSC 1.000 on every shell).
+
+Runs. `q = 4`, random start, VDAM, `--oversampling 0 --stream-coarse-recompute`,
+the default stages (radius 4/8/16/32 at HEALPix 1/2/3/3, 200 updates of 200
+particles; radius 32 is 15.6 A), 3D shifts within 2 px at 1 px, particle diameter
+300 A. A pilot (seed 11) stopped at update 165 on the metric check: one frequency
+row outside the stage radius had a near rank-1 metric at float32 roundoff. The
+coupled direction is now solved and checked on the update's support only (16ca4e5,
+40cf41d). The pilot continued from update 160 at 40cf41d; seeds 11, 12 and 13 then
+ran fresh at 40cf41d. Scores, after one rigid registration of the mean map to
+RELION's (both hands tried): the angle of each particle's top pose from RELION's
+after the best global rotation; the masked FSC against RELION's map (mask
+`ET_ribo_mask.mrc` with a 2 px Gaussian edge) of the model mean and of the
+population average `mu + W zbar`, `zbar` the mean posterior latent; the
+cross-validated AUC of the removed set from the latent (logistic regression; the
+RECOVAR embedding with four dimensions scores .81); the canonical correlations of
+the latent with the RECOVAR embedding and between seeds.
+
+| Run | Pose median, fraction < 10 deg | Masked FSC, model mean, shells 8 / 16 / 24 / 28 | Masked FSC, `mu + W zbar` | Loading / mean power | Removed-set AUC | Canonical correlations with RECOVAR |
+| --- | --- | --- | --- | --- | --- | --- |
+| pilot, seed 11 | 4.07 deg, .961 | .991 / .986 / .939 / .904 | .989 / .962 / .902 / .854 | .22 | .787 | .88 .49 .07 .02 |
+| seed 11 | 4.09 deg, .955 | .958 / .958 / .912 / .864 | .990 / .962 / .902 / .849 | .39 | .787 | .87 .55 .04 .01 |
+| seed 12 | 3.96 deg, .963 | .988 / .989 / .966 / .937 | .990 / .968 / .925 / .889 | .11 | .796 | .88 .42 .02 .00 |
+| seed 13 | 3.94 deg, .963 | .992 / .989 / .969 / .942 | .989 / .973 / .937 / .894 | .11 | .798 | .90 .37 .01 .00 |
+
+Shell `s` is 500 A / `s`. Every run has RELION's hand. No mean map crosses FSC 0.5
+inside the band, so the maps are limited by the 15.6 A band. The RECOVAR mean at
+fixed poses scores .997-1.000 masked on every shell.
+
+Seed agreement, against thresholds fixed before the three seeds ran: the pose
+median stays within 0.5 deg across seeds (range 0.14); the removed-set AUC within
+.02 (range .012); the first canonical correlation between two seeds' latents is
+above .8 (.868, .869, .890). All three hold. The second canonical correlation
+between seeds is .38, .28 and .23, and the third and fourth are below .06: at
+`q = 4` one latent direction is reproducible on this dataset. It is the direction
+shared with the RECOVAR embedding, and it separates the removed set. Top poses of
+two seeds differ by 5.2-5.3 deg (median, after the best global rotation).
+
+Open: the posterior latents are not zero-mean. The mean posterior latent is up to
+1.7 prior standard deviations from zero (seed 12, first coordinate), so part of
+the average map sits in the loadings and the model mean is not the population
+average. At low resolution the population average agrees with RELION in every run
+(.989-.998 masked at shells 4-8) where the model mean spreads from .958 to .992 at
+shell 8. Beyond 30 A the loadings are noisier than the mean, and the model mean is
+the better map; there the seeds differ (masked FSC .912 to .969 at 21 A), and the
+run with the most loading power has the worst mean map. The pilot and the fresh
+seed 11 use the same minibatches but differ from the first update (the
+support-only solve changes the edge-shell rows), so they count as two draws.
+
+Poses or data model. At update 160 (radius 16) the pilot's mean scored .972 masked
+on shells 8-12. For 2,000 random particles scored at RELION's pose only, the mean
+M-step of the same model gives .992; `relion_reconstruct` of the same particles
+against RELION's full map gives .996. Pose error on the 7.5 deg grid is therefore
+the larger part. A smaller difference remains with poses fixed: against
+`relion_reconstruct` of the same particles at the same poses, the fixed-pose mean
+differs by a smooth field at shells 0-4 (beyond 125 A), mostly outside the particle
+(correlation .99 inside 30 px of the box centre, .72 at 40-50 px, where two RELION
+reconstructions agree at .99). It is not the padding (RELION at padding 1 and 2
+agree), the per-series noise weighting, the regrouped geometry, the pose source or
+the image loading, and the fitted loadings explain it no better than chance. The
+cause is not identified (fixture `HANDOFF.txt`).
+
+Oversampling 1 in the last stage. Each run's update-160 checkpoint continued
+through radius 32 with `--oversampling 1` (277749f; oversampling 0 gives the same
+numbers at 277749f and 40cf41d). Both models of a run were scored with a dense
+HEALPix 4 pose pass over the same 4,000 random particles. Rule fixed before the
+three fresh seeds ran: oversampling 1 is better on the pose median and on the masked
+FSC of the model mean at shells 24 and 28 in every seed.
+
+| Run | Pose median, oversampling 0 / 1 | Masked FSC shells 24 / 28, model mean, 0 | same, 1 | `mu + W zbar`, 0 | `mu + W zbar`, 1 |
+| --- | --- | --- | --- | --- | --- |
+| pilot, seed 11 | 3.32 / 2.85 deg | .939 / .904 | .960 / .929 | .902 / .854 | .948 / .921 |
+| seed 11 | 3.35 / 2.95 deg | .912 / .864 | .918 / .879 | .902 / .849 | .969 / .950 |
+| seed 12 | 3.16 / 2.67 deg | .966 / .937 | .968 / .945 | .925 / .889 | .962 / .943 |
+| seed 13 | 3.20 / 2.67 deg | .969 / .942 | .974 / .956 | .937 / .894 | .953 / .926 |
+
+The rule holds in the three fresh seeds (the pilot was the trial that suggested
+it). The pose median improves by 0.4-0.5 deg; the model mean by .002-.006 at shell
+24 and .008-.015 at shell 28; the population average by .02-.07 and .03-.10.
+The fraction of poses beyond 10 deg does not change (.03-.05). The radius 32 update
+takes 76-77 s against 83 s (H100); 1.5% of particles reach the 100-sample cap.
+
+Momentum SGD (learning rate 1.6, seeds 11 and 12, otherwise as the VDAM seeds,
+40cf41d). Stated before the runs: on the simulated fixture SGD gave a sharper mean
+map and a less reliable separation than VDAM (section 16.9).
+
+| Run | Pose median, fraction < 10 deg | Masked FSC `mu + W zbar`, shells 8 / 16 / 24 / 28 | Loading / mean power | Removed-set AUC | Canonical correlations with RECOVAR | between the two seeds |
+| --- | --- | --- | --- | --- | --- | --- |
+| SGD, seed 11 | 3.99 deg, .960 | .996 / .994 / .972 / .939 | 1.79 | .780 | .93 .77 .35 .02 | .94 .90 .47 .08 |
+| SGD, seed 12 | 3.98 deg, .960 | .996 / .993 / .969 / .937 | 1.62 | .787 | .93 .81 .27 .01 | |
+| VDAM, seed 11 | 4.09 deg, .955 | .990 / .962 / .902 / .849 | .39 | .787 | .87 .55 .04 .01 | .87 .38 .02 .01 |
+| VDAM, seed 12 | 3.96 deg, .963 | .990 / .968 / .925 / .889 | .11 | .796 | .88 .42 .02 .00 | |
+
+The map prediction holds: SGD's population average is closer to RELION at every
+shell from 16 on, and level with the best VDAM model means of the first table
+(.969 / .942 at shells 24 / 28). The
+separation prediction does not hold here: the removed-set AUC is the same, and
+SGD's latent has two directions shared between seeds (.94, .90) and with the
+RECOVAR embedding (.93, .77-.81), where VDAM has one. In the SGD models the mean
+is not a map of the particle: the loadings hold 1.6-1.8 times the mean's power, the
+mean posterior latent is up to 1.4 prior standard deviations from zero with a
+spread of .4 in that coordinate, and the model mean alone scores .19-.29 masked
+at shells 4-8. The SGD models were therefore registered to RELION by their
+population average. Two seeds; SGD is seed-fragile on the simulated fixture at
+this learning rate, so this is not yet a default.
+
+Wall, one seed on an H100: reading the images 3.5-4.5 min (47 GB from 18,466 stack
+files, one thread; a parallel reader would shorten it); radius 4, 8 and 16 stages
+495, 524 and 1,104 s; radius 32 3,580 s; the final pose pass and embeddings 8 min;
+about 1 h 50 in all. On an A100 the radius 32 update takes 135 s and a seed 2 h 50.
+
+Jobs 14944779 and 14957154 (pilot), 14963424 and 14970619 (seeds), 14963878 and
+14974315 (oversampling), 14974370 (momentum SGD), 14949391 (update-160 pose pass). Evidence in
+`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/empiar10499/`.
+
 
 ## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)
 
