@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import numpy as np
 import pytest
+from helpers import natives
 from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
 
@@ -66,7 +67,7 @@ def _native(bind, case):
 
 @pytest.fixture(scope="module")
 def bind():
-    from relax.relion_bind import _relion_bind_core
+    _relion_bind_core = natives.relion_bind_core()
 
     assert hasattr(_relion_bind_core, "vdam_m_step_transaction")
     assert hasattr(_relion_bind_core, "vdam_first_moment_initializes"), "build native branch certificate"

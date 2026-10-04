@@ -7,6 +7,7 @@ from functools import partial
 import jax
 import numpy as np
 import pytest
+from helpers import natives
 from helpers.float_compare import assert_matches
 
 from relax.diagnostics.vdam_native_mstep import vdam_m_step_single_class_native
@@ -23,7 +24,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(scope="module")
 def transaction_bind():
-    from relax.relion_bind import _relion_bind_core as bind
+    bind = natives.relion_bind_core()
 
     assert hasattr(bind, "vdam_m_step_transaction"), "build the transaction binding"
     return bind

@@ -204,8 +204,13 @@ class Item:
 # ----------------------------------------------------------------------------- plans
 
 
+# Every tier builds the native libraries before it runs (build_natives), so a tier's pytest stops when
+# the RELION binding does not import instead of skipping the tests that need it (tests/helpers/natives.py).
+REQUIRE_NATIVES = "--require-natives"
+
+
 def _pytest(py: str, *args: str, flags=PARITY_FLAGS) -> list[str]:
-    return [py, "-m", "pytest", "-p", "no:cacheprovider", "-v", "-s", *flags, *args]
+    return [py, "-m", "pytest", "-p", "no:cacheprovider", "-v", "-s", REQUIRE_NATIVES, *flags, *args]
 
 
 def changed_paths(src: Path, base: str) -> list[str]:
@@ -374,7 +379,7 @@ def sweep_opt_in_env(src: Path) -> dict[str, str]:
 
 def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[Item]:
     py = str(src / ".pixi" / "envs" / "default" / "bin" / "python")
-    guard = Item("cpu_fast_guard", ["bash", "scripts/run_em_fast_guard.sh"], False, 90)
+    guard = Item("cpu_fast_guard", ["bash", "scripts/run_em_fast_guard.sh", REQUIRE_NATIVES], False, 90)
     # The InitialModel and K-class unit contracts the retired EM merge guard ran after merges.
     merge_units = Item(
         "cpu_merge_units",

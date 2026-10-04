@@ -838,6 +838,7 @@ class TestRunVdamIterations:
 
         np.testing.assert_allclose(out.pdf_class, [0.0, 1.0])
 
+    @pytest.mark.requires_relion_bind
     def test_random_seed_zero_skips_particle_shuffle(self, monkeypatch):
         state = initialise_denovo_state(
             ori_size=8,
@@ -868,6 +869,7 @@ class TestRunVdamIterations:
         assert_matches(out.subset_particle_ids, np.array([0, 2, 1, 3]))
         assert_matches(out.subset_halfset_ids, np.array([0, 0, 1, 1], dtype=np.int8))
 
+    @pytest.mark.requires_relion_bind
     def test_random_seed_zero_preserves_relion_sorted_idx_base_order(self, monkeypatch):
         state = initialise_denovo_state(
             ori_size=8,

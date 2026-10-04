@@ -16,6 +16,7 @@ if str(TESTS_DIR) not in sys.path:
 # GPU 0 of the shared development node belongs to other users. Outside Slurm, a session whose
 # CUDA_VISIBLE_DEVICES is unset or includes GPU 0 runs on the CPU, set before JAX is imported
 # (helpers/gpu_guard.py); GPU tests then skip with the reason.
+from helpers import natives  # noqa: E402
 from helpers.gpu_guard import cpu_only_reason, gpu_uuids_by_index  # noqa: E402
 
 GPU_GUARD_REASON = cpu_only_reason(os.environ, gpu_uuids_by_index())
@@ -231,8 +232,23 @@ def pytest_addoption(parser):
     )
 
 
+    parser.addoption(
+        "--require-natives",
+        action="store_true",
+        default=False,
+        help=(
+            "the built RELION binding is required: stop before collection when it does not import, "
+            "instead of skipping the tests that need it (helpers/natives.py). The test tiers pass this."
+        ),
+    )
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "unit: fast, isolated unit tests")
+    config.addinivalue_line(
+        "markers",
+        f"{natives.MARKER}: needs the built RELION binding; skipped without it, unless --require-natives",
+    )
     config.addinivalue_line("markers", "integration: multi-module integration tests")
     config.addinivalue_line("markers", "gpu: tests requiring CUDA/GPU runtime")
     config.addinivalue_line("markers", "slow: long-running tests")
@@ -253,6 +269,29 @@ def pytest_configure(config):
         "em_parity_long: EM-long parity regression tests (256² 50k full ab-initio "
         "K=1 / K=4 vs RELION); requires --em-parity-long flag and a GPU; ~2-4 hr per case",
     )
+
+
+def pytest_sessionstart(session):
+    if session.config.getoption("--require-natives"):
+        error = natives.relion_bind_error()
+        if error:
+            raise pytest.UsageError(
+                f"--require-natives: {natives.BINDING} does not import ({error}). Build it with "
+                "`pixi run build-relion-bind`, or set RECOVAR_RELION_BIND_BUILD_DIR to a directory holding it."
+            )
+
+
+class _RelionBindAbsentModule(pytest.Module):
+    """A test module whose top-level import of the RELION binding cannot succeed: one skip, with the reason."""
+
+    def collect(self):
+        pytest.skip(natives.SKIP_REASON)
+
+
+def pytest_pycollect_makemodule(module_path, parent):
+    if natives.relion_bind_error() and natives.module_needs_binding(module_path):
+        return _RelionBindAbsentModule.from_parent(parent, path=module_path)
+    return None
 
 
 def pytest_report_header(config):
@@ -287,6 +326,8 @@ def pytest_collection_modifyitems(config, items):
     skip_tiny_metrics = pytest.mark.skip(reason="need --run-tiny-metrics to run")
     skip_long_test = pytest.mark.skip(reason="need --long-test to run")
     skip_em_parity_long = pytest.mark.skip(reason="need --em-parity-long to run")
+    # With --require-natives a missing binding stopped the session in pytest_sessionstart.
+    skip_relion_bind = pytest.mark.skip(reason=natives.SKIP_REASON) if natives.relion_bind_error() else None
 
     for item in items:
         # item.keywords also contains package/path names like tests/long_test;
@@ -305,6 +346,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_long_test)
         if has_em_parity_long_marker and not run_em_parity_long:
             item.add_marker(skip_em_parity_long)
+        if skip_relion_bind is not None and item.get_closest_marker(natives.MARKER) is not None:
+            item.add_marker(skip_relion_bind)
 
 
 def _memory_map_count():

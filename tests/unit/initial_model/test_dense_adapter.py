@@ -664,6 +664,7 @@ def test_relion_projector_to_dense_volume_truncates_oversize(monkeypatch):
     assert_matches(half[2, 2, :3], rev[3, 3, :3])
 
 
+@pytest.mark.requires_relion_bind
 def test_projector_conversion_uses_relion_frame(monkeypatch):
     calls = []
 

@@ -941,6 +941,7 @@ class TestOversampledGridGeneration:
         assert rotation_grid_size(nside_level) > parent_rotations.max()
         assert not np.allclose(matrices[:8], matrices[8:])
 
+    @pytest.mark.requires_relion_bind
     def test_oversampled_rotation_grid_from_samples_matches_relion_binding(self):
         """Child orientations should match RELION's oversampled local-search grid."""
         import healpy as hp
@@ -1000,6 +1001,7 @@ class TestOversampledGridGeneration:
         for p_idx in range(len(parent_rotations)):
             assert np.sum(parent_map == p_idx) == 8
 
+    @pytest.mark.requires_relion_bind
     def test_oversampled_rotation_grid_from_samples_matches_relion_binding_with_perturbation(self):
         """RELION perturbation must also be applied to oversampled child orientations."""
         import healpy as hp

@@ -7,6 +7,7 @@ from helpers.float_compare import assert_matches
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize("symmetry", ["C1", "D5", "O", "I1"])
 @pytest.mark.parametrize("oversampling", [0, 1])
 def test_batched_symmetry_rows_match_scalar_source(symmetry, oversampling):
@@ -32,6 +33,7 @@ def test_batched_symmetry_rows_match_scalar_source(symmetry, oversampling):
     assert_matches(actual, expected)
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize("symmetry", ["D5", "O", "I1"])
 @pytest.mark.parametrize("order", [3, 4])
 @pytest.mark.parametrize("oversampling", [0, 1])
@@ -57,6 +59,7 @@ def test_batched_symmetry_rows_match_scalar_source_for_random_rows(symmetry, ord
     assert_matches(actual, expected)
 
 
+@pytest.mark.requires_relion_bind
 def test_symmetric_sampling_is_built_once_per_order_and_symmetry():
     """Per-image local-search calls must not rebuild the point-group grid.
 
@@ -91,6 +94,7 @@ def test_symmetric_sampling_is_built_once_per_order_and_symmetry():
     assert symmetric_sampling_cache_info() == {"builds": 3, "entries": 3}
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize("symmetry", ["C4", "D5", "I1"])
 @pytest.mark.parametrize("oversampling", [0, 1])
 def test_cached_symmetric_sampling_rows_equal_a_fresh_build(symmetry, oversampling):
