@@ -1181,6 +1181,28 @@ scientific contract; runnable code alone does not establish recovery.
   counted (`tiles_per_call`); otherwise it is. A stage is planned
   once, from its shapes, and the plan is logged ("PPCA tile plan", in the
   command's run.log). Each update records the planned size as `tile_images`.
+
+  A plan counts bytes; the allocator hands out a block only from one
+  contiguous region of its pool. Without preallocation
+  (`XLA_PYTHON_CLIENT_PREALLOCATE=false`, the setting of every test tier and
+  benchmark) the pool grows by regions sized by the requests so far, so the
+  small early stages left a pool of small regions in which the last stage's
+  8.48 GiB tilt-reader block found no room, with 9.2 GiB in use of a 36.4 GiB
+  pool (k3conf cryo-ET on an A100 40 GB, Polar 413542; the reader's count was
+  right: 4.83 GiB counted against 4.87 GiB measured at 33 shifts). Each new
+  plan therefore allocates and releases one block of its counted bytes, or of
+  all the allocator may still take when that is less
+  ([reserve_plan_region](../../relax/ppca_refinement/full_row_stream.py)), so
+  the pool grows by one region of at least that size before the stage runs. A
+  preallocated pool has nothing left to take, and the plans do not change
+  (the same tile sizes and counted bytes at every stage with and without it).
+  On an H100 with the allocator limited to the 40 GB card's pool (Slurm
+  14993921, `em_work/relax_ppca_dense_speed_20261001/jobs/slurm_pool_region_emulation_a4ec984b`)
+  main fails at the first radius-32 update and the fix completes the 24
+  updates in 175 s; limited to a 16 GB card's pool it completes in 193 s, and
+  on the full pool in 141 s with and without it. The full-pool runs with and
+  without it differ as two runs of main do (5e-5 relative after one update in
+  both pairs, Slurm 14995021): the engine is not bitwise repeatable.
   On an emulated 16 GB H100 (job 14939163,
   `em_fixtures/ppca_evidence_20261003/em_work/relax_gpuport_20261003/della_ppca_fb33c09`; r31/HP3 cryo-ET, 41 tilts, batch
   150) the r31 stage plans 33 particles (block programs 2.13 GiB) and SGD and
