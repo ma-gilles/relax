@@ -322,6 +322,12 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_consistency_counting", f"K={k} with the summed noise count and both pair countings set to once, "
             "current sizes 4, 6, 8 of a box of 8", n_classes=k, join=0.0, consistency=counting, current_sizes=(4, 6, 8),
             max_iter=3, converge_after=3, dump=False, writer=True)
+    # --mode relax: the bundle the command resolves for this route (K=1 sets all six options; Class3D keeps
+    # the radial gridding window), with the CC iteration its CC-support option needs.
+    for k in (1, 2):
+        add(f"k{k}_mode_relax", f"K={k} with the consistency options --mode relax resolves to, first-iteration CC, "
+            "current sizes 4, 6, 8 of a box of 8", n_classes=k, join=0.0, cc=True, consistency="mode_relax",
+            current_sizes=(4, 6, 8), max_iter=3, converge_after=3, dump=False, writer=True)
     for k in (1, 2):
         add(f"k{k}_sealed_sampling", f"K={k}, one iteration on a sealed sampling state (captured directions, psi "
             "angles, translations and sizes), adaptive oversampling 1", n_classes=k, join=0.0, sealed=True,
@@ -360,6 +366,8 @@ MUTATIONS = (
      "the shells-to-pixel-row noise expansion is doubled", True),
     ("noise_summed_count_dropped", 'if consistency.noise_shell_count == "summed" else None,', 'if consistency.noise_shell_count == "never" else None,',
      "the summed noise count is never forwarded to the noise update", True),
+    ("mode_relax_class_gridding_not_skipped", 'not_honoured["gridding_kernel"] = "Class3D\'s tau2 is the power of the radially corrected reference"', "pass",
+     "--mode relax sets the separable gridding window in Class3D, which the loop refuses", True),
     ("sealed_rotation_ids_dropped", "if sealed_sampling_state is None or use_local:", "if True:",
      "a sealed capture's rotation ids never reach the scorer", True),
     ("shared_tau2_half2_doubled", "return [tau2, tau2]", "return [tau2, tau2 * 2]",
@@ -735,7 +743,17 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             extra["adaptive"] = refinement_options.AdaptiveOptions(**adaptive_fields)
         if overlap:
             extra["overlap"] = refinement_options.HalfOverlapOptions(overlap_halves=True)
-        if consistency:
+        if consistency == "mode_relax":
+            if hasattr(refinement_options, "relax_mode_consistency"):
+                extra["consistency"], _ = refinement_options.relax_mode_consistency(
+                    {}, n_classes=n_classes, has_cc_iteration=cc, coarse_engine="auto", ctf_premultiplied=False)
+            else:
+                # A source older than the mode (the base of the commit that added it): the six options by name.
+                extra["consistency"] = refinement_options.RelionConsistencyOptions(
+                    shell_pair_counting="once", noise_shell_count="summed", initial_noise_pair_counting="once",
+                    nyquist_column_counting="once", firstiter_cc_support="gaussian",
+                    **({"gridding_kernel": "separable"} if n_classes == 1 else {}))
+        elif consistency:
             extra["consistency"] = refinement_options.RelionConsistencyOptions(**consistency)
         writer_object = Writer() if writer else None
         if writer or resume is not None:
