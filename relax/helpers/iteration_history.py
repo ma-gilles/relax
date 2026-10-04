@@ -101,22 +101,36 @@ class RefinementHistory:
 
     # -- per-iteration E-step / M-step outputs --------------------------
 
+    def _record_direction_prior_values(self, values_per_half) -> None:
+        """Append float64 copies of one prior per half; missing priors stay ``None``."""
+        self.direction_prior_trajectory_per_half.append(
+            [None if values is None else np.asarray(values, dtype=np.float64).copy() for values in values_per_half]
+        )
+
+    def record_k1_direction_prior(self, direction_priors) -> None:
+        """Record float64 copies of each half's learned global direction prior."""
+        self._record_direction_prior_values(prior_k.values for prior_k in direction_priors)
+
+    def record_first_class_direction_prior(self, direction_priors) -> None:
+        """Record float64 copies of class 0 of each half's ``(n_classes, n_pixels)`` direction prior."""
+        self._record_direction_prior_values(
+            None if prior_k.values is None else prior_k.values[0] for prior_k in direction_priors
+        )
+
     def record_direction_prior(
         self, direction_priors, *, k_class_enabled: bool
     ) -> None:
-        """Record float64 copies of each half's learned direction prior.
+        """The one remaining mode decision of the direction-prior history.
 
-        K-class runs record class 0 of each half's ``(n_classes, n_pixels)``
-        prior; K=1 records the half's global prior. Missing priors stay ``None``.
+        K-class runs record class 0 of each half's prior
+        (``record_first_class_direction_prior``); K=1 records the half's global
+        prior (``record_k1_direction_prior``). Remove this dispatch when the K1
+        and Class3D trajectories call those directly.
         """
-        self.direction_prior_trajectory_per_half.append(
-            [
-                None
-                if prior_k.values is None
-                else np.asarray(prior_k.values[0] if k_class_enabled else prior_k.values, dtype=np.float64).copy()
-                for prior_k in direction_priors
-            ]
-        )
+        if k_class_enabled:
+            self.record_first_class_direction_prior(direction_priors)
+        else:
+            self.record_k1_direction_prior(direction_priors)
 
     def record_rotation_posterior(self, rotation_posterior_per_half) -> None:
         """Record float64 copies of the pre-collapse orientation posterior.

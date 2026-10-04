@@ -84,7 +84,7 @@ def test_history_records_float64_copies_of_k1_priors_and_none_for_missing():
     values = np.asarray([0.25, 0.75], dtype=np.float32)
     priors = [op.DirectionPrior(values, 0), op.DirectionPrior(None, None)]
     history = RefinementHistory()
-    history.record_direction_prior(priors, k_class_enabled=False)
+    history.record_k1_direction_prior(priors)
     stored = history.direction_prior_trajectory_per_half[0]
     assert stored[1] is None
     assert stored[0].dtype == np.float64 and stored[0].tolist() == [0.25, 0.75]
@@ -95,7 +95,7 @@ def test_history_records_class_zero_of_each_half_for_kclass():
     values = np.asarray([[0.1, 0.9], [0.6, 0.4]], dtype=np.float64)
     priors = [op.DirectionPrior(values, 0), op.DirectionPrior(values.copy(), 0)]
     history = RefinementHistory()
-    history.record_direction_prior(priors, k_class_enabled=True)
+    history.record_first_class_direction_prior(priors)
     stored = history.direction_prior_trajectory_per_half[0]
     assert [s.tolist() for s in stored] == [[0.1, 0.9], [0.1, 0.9]]
     assert all(s.dtype == np.float64 and not np.shares_memory(s, values) for s in stored)
