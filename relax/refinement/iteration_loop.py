@@ -13,6 +13,7 @@ See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 import logging
 import os
 import time
+from dataclasses import replace
 from functools import partial, wraps
 
 import jax
@@ -145,6 +146,7 @@ from relax.refinement.iteration_planning import (
     plan_expectation_windows,
     plan_halfmap_image_size,
     plan_initial_image_size,
+    refresh_coarse_grids,
     resolve_numbered_perturbation,
 )
 from relax.refinement.iteration_snapshot import (
@@ -558,7 +560,7 @@ def refine_single_volume(
         int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
     )
     if sealed_sampling_state is not None:
-        initial_grids = build_sealed_initial_coarse_grids(
+        coarse_grids = build_sealed_initial_coarse_grids(
             sealed_sampling_state,
             initialized_healpix_order=(
                 schedule.init_healpix_order if resume is None else state.healpix_order
@@ -568,7 +570,7 @@ def refine_single_volume(
             log=logger,
         )
     else:
-        initial_grids = build_initial_coarse_grids(
+        coarse_grids = build_initial_coarse_grids(
             initial_grid_order,
             translations if resume is None else None,
             translation_range=(
@@ -581,10 +583,7 @@ def refine_single_volume(
             voxel_size=source_pixel_size_angstrom,
             symmetry=symmetry,
         )
-    current_rotation_grid = initial_grids.rotation_grid
-    base_translations = initial_grids.base_translations
-    current_translations = initial_grids.translations
-    # Unperturbed base grid — `current_translations` may be replaced per-iter by
+    # Unperturbed base grid — `coarse_grids.translations` may be replaced per-iter by
     # a perturbed copy (SamplingPerturbation). Keep the base so each iter
     # perturbs a fresh copy rather than compounding prior perturbations.
     # Keep RELION's host-RFLOAT base grid separate so each perturbation starts
@@ -705,7 +704,7 @@ def refine_single_volume(
             n_classes=n_classes,
             dtype=scoring_dtype,
             log=logger,
-            symmetry=symmetry, expected_order=current_rotation_grid.healpix_order,
+            symmetry=symmetry, expected_order=coarse_grids.rotation_grid.healpix_order,
         )
     _mark_setup_phase("direction_prior")
 
@@ -1284,71 +1283,25 @@ def refine_single_volume(
         # OOMs the GPU.  Instead, keep the order-4 grid as the "base" and
         # rely on local search + oversampling to achieve finer angular steps.
         # The order is still tracked for sigma calculation.
-        if state.healpix_order != current_rotation_grid.healpix_order:
-            new_order = _exhaustive_grid_order_for_state(state)
-            if new_order != current_rotation_grid.healpix_order:
-                logger.info(
-                    "Regenerating rotation grid: order %d -> %d",
-                    current_rotation_grid.healpix_order,
-                    new_order,
-                )
-                current_rotation_grid = sampling.relion_scoring_rotation_grid(
-                    new_order, dtype=scoring_dtype,
-                    symmetry=symmetry,
-                )
-            else:
-                logger.info(
-                    "Angular step refined to order %d (exhaustive grid stays at order %d — local search handles finer sampling)",
-                    state.healpix_order,
-                    current_rotation_grid.healpix_order,
-                )
-
-            # Regenerate translation grid based on updated parameters
-            base_translations = sampling._relion_base_translation_grid(
-                state.translation_range,
-                state.translation_step,
-                n_classes=n_classes,
-                voxel_size=source_pixel_size_angstrom,
-            )
-            current_translations = jnp.asarray(base_translations, dtype=scoring_dtype)
-            logger.info(
-                "New grid: %d rotations, %d translations (range=%.1f, step=%.1f)",
-                current_rotation_grid.rotations.shape[0],
-                current_translations.shape[0],
-                state.translation_range,
-                state.translation_step,
-            )
-        elif perturb_replay_relion_dir is not None and sealed_sampling_state is None:
-            # Translation params may have changed under replay without an
-            # hp_order bump. Regenerate the translation grid to match RELION.
-            _new_t_source = sampling._relion_base_translation_grid(
-                state.translation_range,
-                state.translation_step,
-                n_classes=n_classes,
-                voxel_size=source_pixel_size_angstrom,
-            )
-            _new_t = jnp.asarray(_new_t_source, dtype=scoring_dtype)
-            if _new_t.shape != base_translations.shape or not jnp.allclose(
-                _new_t,
-                np.asarray(base_translations, dtype=scoring_dtype),
-            ):
-                current_translations = _new_t
-                base_translations = _new_t_source
-                logger.info(
-                    "Replay: regenerated translation grid: %d translations (range=%.2f px, step=%.2f px)",
-                    current_translations.shape[0],
-                    state.translation_range,
-                    state.translation_step,
-                )
+        coarse_grids = refresh_coarse_grids(
+            coarse_grids,
+            state,
+            n_classes=n_classes,
+            voxel_size=source_pixel_size_angstrom,
+            symmetry=symmetry,
+            dtype=scoring_dtype,
+            replay_translations=perturb_replay_relion_dir is not None and sealed_sampling_state is None,
+            log=logger,
+        )
 
         # --- Local angular search bookkeeping ---
         # Once RELION enters local search, each image should search around its
         # own previous orientation on the true current HEALPix order. Use the
         # exact rotations selected in the previous iteration, not the nearest
         # snapped grid indices.
-        effective_rotations = current_rotation_grid.rotations
+        effective_rotations = coarse_grids.rotation_grid.rotations
         effective_rotation_eulers = np.asarray(
-            current_rotation_grid.rotation_eulers,
+            coarse_grids.rotation_grid.rotation_eulers,
             dtype=scoring_dtype,
         )
         effective_mstep_rotations = None
@@ -1378,7 +1331,7 @@ def refine_single_volume(
         if _replay_meta is not None or parity.perturb_factor > 0:
             # Use RELION's actual hp_order when replaying (recovar's current
             # grid order may be capped at MAX_FULL_GRID_ORDER=4 for memory).
-            _angsamp_order = int(_replay_meta["healpix_order"]) if _replay_meta is not None else current_rotation_grid.healpix_order
+            _angsamp_order = int(_replay_meta["healpix_order"]) if _replay_meta is not None else coarse_grids.rotation_grid.healpix_order
             angsamp_deg = relion_angular_sampling_deg(_angsamp_order, adaptive_oversampling=0)
             trial_grid = sampling._perturbed_trial_grid(
                 rotation_eulers=effective_rotation_eulers,
@@ -1388,7 +1341,7 @@ def refine_single_volume(
                     use_grid_eulers=sealed_sampling_state is not None,
                     symmetry=symmetry,
                 ),
-                base_translations=base_translations,
+                base_translations=coarse_grids.base_translations,
                 translation_step=float(state.translation_step),
                 random_perturbation=random_perturbation,
                 angular_sampling_deg=angsamp_deg,
@@ -1397,7 +1350,7 @@ def refine_single_volume(
             effective_rotations = trial_grid.rotations
             effective_rotation_eulers = trial_grid.rotation_eulers
             effective_mstep_rotations = trial_grid.mstep_rotations
-            current_translations = trial_grid.translations
+            coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
         # RELION's coarse device geometry also applies at OS0. Keep this
         # separate from host fine/M-step geometry; see docs/math/zero_coarse_geometry.md.
         if not use_local and (
@@ -1413,7 +1366,7 @@ def refine_single_volume(
             adaptive_pass1_order = (
                 int(_replay_meta["healpix_order"])
                 if _replay_meta is not None
-                else int(current_rotation_grid.healpix_order)
+                else int(coarse_grids.rotation_grid.healpix_order)
             )
             adaptive_pass1_use_float64 = bool(scoring_policy.DENSE_PRECISION.use_float64_scoring)
             adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
@@ -1464,12 +1417,12 @@ def refine_single_volume(
                     rotations=effective_rotations,
                     rotation_eulers=effective_rotation_eulers,
                     mstep_rotations=effective_mstep_rotations,
-                    translations=current_translations,
+                    translations=coarse_grids.translations,
                 ),
-                base_translations=base_translations,
+                base_translations=coarse_grids.base_translations,
                 image_window_size=cs_for_engine,
                 model_support_size=model_current_size_for_engine,
-                base_healpix_order=current_rotation_grid.healpix_order,
+                base_healpix_order=coarse_grids.rotation_grid.healpix_order,
                 coarse_size_healpix_order=coarse_size_healpix_order,
                 perturbation=random_perturbation,
                 model_pixel_size=model_pixel_size,
@@ -1483,7 +1436,7 @@ def refine_single_volume(
             local_sampling = None
         direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
             use_local=use_local,
-            current_healpix_order=current_rotation_grid.healpix_order,
+            current_healpix_order=coarse_grids.rotation_grid.healpix_order,
             state_healpix_order=state.healpix_order,
             adaptive_oversampling=state.adaptive_oversampling,
             local_search_order=local_sampling.search.healpix_order if use_local else None,
@@ -1665,14 +1618,14 @@ def refine_single_volume(
                 rotations=effective_rotations,
                 rotation_eulers=effective_rotation_eulers,
                 mstep_rotations=effective_mstep_rotations,
-                translations=current_translations,
+                translations=coarse_grids.translations,
             ),
             expectation_windows,
             local_sampling=local_sampling,
             variant=numbered_variant,
             use_adaptive=use_adaptive,
-            base_translations=base_translations,
-            current_healpix_order=current_rotation_grid.healpix_order,
+            base_translations=coarse_grids.base_translations,
+            current_healpix_order=coarse_grids.rotation_grid.healpix_order,
             oversampling_order=state.adaptive_oversampling,
             translation_step=state.translation_step,
             random_perturbation=random_perturbation,
@@ -1689,7 +1642,7 @@ def refine_single_volume(
             tomo_oversampling = int(state.adaptive_oversampling)
             tomo_coarse_size = local_sampling.coarse_image_window_size if use_local else coarse_cs
             numbered_tomo_sampling = TomoSampling(
-                healpix_order=int(local_sampling.search.healpix_order) - tomo_oversampling if use_local else int(current_rotation_grid.healpix_order),
+                healpix_order=int(local_sampling.search.healpix_order) - tomo_oversampling if use_local else int(coarse_grids.rotation_grid.healpix_order),
                 oversampling_order=tomo_oversampling,
                 offset_range_angst=float(state.translation_range) * image_geometry.pixel_size_angstrom,
                 offset_step_angst=float(state.translation_step) * image_geometry.pixel_size_angstrom,
@@ -1755,7 +1708,7 @@ def refine_single_volume(
                 profile_history=history.global_profile_history,
                 iteration=iteration,
                 image_window_size=cs_for_engine,
-                healpix_order=current_rotation_grid.healpix_order,
+                healpix_order=coarse_grids.rotation_grid.healpix_order,
                 k_class_enabled=k_class_enabled,
             )
 
@@ -2142,7 +2095,7 @@ def refine_single_volume(
                         direction_priors[half_index] = learned
             else:
                 exhaustive_grid_size = rotation_grid_size(
-                    current_rotation_grid.healpix_order,
+                    coarse_grids.rotation_grid.healpix_order,
                     symmetry=symmetry,
                 )
                 if (
@@ -2155,7 +2108,7 @@ def refine_single_volume(
                     learned_priors = learn_class_direction_priors(
                         class_rotation_posterior_per_half,
                         n_classes=n_classes,
-                        healpix_order=current_rotation_grid.healpix_order,
+                        healpix_order=coarse_grids.rotation_grid.healpix_order,
                         dtype=scoring_dtype,
                         symmetry=symmetry,
                     )
@@ -2269,7 +2222,7 @@ def refine_single_volume(
                 hard_assignments=hard_assignments,
                 coarse_ha=coarse_ha,
                 effective_rotations=effective_rotations,
-                current_translations=current_translations,
+                current_translations=coarse_grids.translations,
                 use_local=use_local,
                 local_search_order=local_sampling.search.healpix_order if use_local else None,
                 cs=current_size,
@@ -2384,7 +2337,7 @@ def refine_single_volume(
         pose_update = prepare_particle_pose_update(
             per_half,
             halves,
-            current_translations,
+            coarse_grids.translations,
             previous_rotations=previous_best_rotations,
             local_sampling=local_sampling if use_local else None,
             dtype=scoring_dtype,
@@ -2530,7 +2483,7 @@ def refine_single_volume(
             native_sampling_boundary=native_sampling_boundary,
             scheduling_resolution_shell=resolution_estimate.scheduling_shell,
             replay_dir=perturb_replay_relion_dir,
-            translations=current_translations,
+            translations=coarse_grids.translations,
             current_assignments=current_combined_ha,
             previous_assignments=previous_combined_ha,
             current_classes=current_combined_classes,
@@ -2972,7 +2925,7 @@ def refine_single_volume(
         tomo_halves=tomo_halves,
         native_sampling_boundary=native_sampling_boundary,
         n_classes=n_classes,
-        rotation_grid=current_rotation_grid,
+        rotation_grid=coarse_grids.rotation_grid,
         random_perturbation=random_perturbation,
         perturb_rng=perturb_rng,
         perturb_replay_relion_dir=perturb_replay_relion_dir,

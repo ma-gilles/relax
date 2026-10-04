@@ -18,7 +18,7 @@ from relax.diagnostics.relion_replay import (
     _restore_convergence_state_from_replay_restart,
     _sealed_sampling_base_grids,
 )
-from relax.helpers.convergence import RefinementState, healpix_angular_step
+from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_for_state, healpix_angular_step
 from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.resolution import (
     ImageGeometry,
@@ -290,8 +290,12 @@ def initialize_refinement_state(
 
 
 @dataclass(frozen=True)
-class InitialCoarseGrids:
-    """Exhaustive coarse trial grid selected for refinement startup."""
+class CoarseGrids:
+    """The exhaustive coarse trial grid: built at start-up, rebuilt by ``refresh_coarse_grids``.
+
+    ``translations`` is the device grid the expectation scores; the numbered loop replaces it with the
+    iteration's perturbed copy, while ``base_translations`` keeps the unperturbed host coordinates.
+    """
 
     rotation_grid: sampling.RotationGrid
     base_translations: np.ndarray
@@ -307,7 +311,7 @@ def build_initial_coarse_grids(
     n_classes,
     voxel_size,
     symmetry="C1",
-) -> InitialCoarseGrids:
+) -> CoarseGrids:
     """Pair RELION's canonical initial rotations with its translation grid."""
 
     dtype = _dense_global_scoring_dtype()
@@ -324,11 +328,90 @@ def build_initial_coarse_grids(
             voxel_size=voxel_size,
         )
     base_translations = np.asarray(translations, dtype=np.float64)
-    return InitialCoarseGrids(
+    return CoarseGrids(
         rotation_grid=rotation_grid,
         base_translations=base_translations,
         translations=jnp.asarray(translations, dtype=dtype),
     )
+
+
+def refresh_coarse_grids(
+    grids: CoarseGrids,
+    state: RefinementState,
+    *,
+    n_classes,
+    voxel_size,
+    symmetry: str,
+    dtype,
+    replay_translations: bool,
+    log: logging.Logger,
+) -> CoarseGrids:
+    """The exhaustive coarse grids of ``state``'s sampling, rebuilt where they changed.
+
+    A new HEALPix order rebuilds the rotation grid (up to the exhaustive-grid cap) and the translation
+    grid. With ``replay_translations`` a replayed translation range or step rebuilds the translation
+    grid alone. ``grids.translations`` may be a perturbed copy; a rebuild replaces it with the base grid.
+    """
+    current_rotation_grid = grids.rotation_grid
+    base_translations = grids.base_translations
+    current_translations = grids.translations
+    if state.healpix_order != current_rotation_grid.healpix_order:
+        new_order = _exhaustive_grid_order_for_state(state)
+        if new_order != current_rotation_grid.healpix_order:
+            log.info(
+                "Regenerating rotation grid: order %d -> %d",
+                current_rotation_grid.healpix_order,
+                new_order,
+            )
+            current_rotation_grid = sampling.relion_scoring_rotation_grid(
+                new_order, dtype=dtype,
+                symmetry=symmetry,
+            )
+        else:
+            log.info(
+                "Angular step refined to order %d (exhaustive grid stays at order %d — local search handles finer sampling)",
+                state.healpix_order,
+                current_rotation_grid.healpix_order,
+            )
+
+        # Regenerate translation grid based on updated parameters
+        base_translations = sampling._relion_base_translation_grid(
+            state.translation_range,
+            state.translation_step,
+            n_classes=n_classes,
+            voxel_size=voxel_size,
+        )
+        current_translations = jnp.asarray(base_translations, dtype=dtype)
+        log.info(
+            "New grid: %d rotations, %d translations (range=%.1f, step=%.1f)",
+            current_rotation_grid.rotations.shape[0],
+            current_translations.shape[0],
+            state.translation_range,
+            state.translation_step,
+        )
+    elif replay_translations:
+        # Translation params may have changed under replay without an
+        # hp_order bump. Regenerate the translation grid to match RELION.
+        _new_t_source = sampling._relion_base_translation_grid(
+            state.translation_range,
+            state.translation_step,
+            n_classes=n_classes,
+            voxel_size=voxel_size,
+        )
+        _new_t = jnp.asarray(_new_t_source, dtype=dtype)
+        if _new_t.shape != base_translations.shape or not jnp.allclose(
+            _new_t,
+            np.asarray(base_translations, dtype=dtype),
+        ):
+            current_translations = _new_t
+            base_translations = _new_t_source
+            log.info(
+                "Replay: regenerated translation grid: %d translations (range=%.2f px, step=%.2f px)",
+                current_translations.shape[0],
+                state.translation_range,
+                state.translation_step,
+            )
+    return CoarseGrids(current_rotation_grid, base_translations, current_translations)
 
 
 def build_sealed_initial_coarse_grids(
@@ -338,7 +421,7 @@ def build_sealed_initial_coarse_grids(
     voxel_size,
     symmetry: str,
     log: logging.Logger,
-) -> InitialCoarseGrids:
+) -> CoarseGrids:
     """Materialize and validate a schema-v3 sealed initial sampling grid."""
 
     rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
@@ -357,7 +440,7 @@ def build_sealed_initial_coarse_grids(
         int(rotation_eulers.shape[0]),
         int(current_translations.shape[0]),
     )
-    return InitialCoarseGrids(
+    return CoarseGrids(
         rotation_grid=sampling.RotationGrid(
             rotations=rotations, rotation_eulers=rotation_eulers,
             healpix_order=healpix_order, symmetry=symmetry,
