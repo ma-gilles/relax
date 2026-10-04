@@ -269,8 +269,6 @@ def _relion_k1_translation_angle_scale(
         return 1.0
     model_pixel_size = float(model_pixel_size)
     optics = np.asarray(optics_pixel_sizes, dtype=np.float64).reshape(-1)
-    if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
-        raise ValueError("RELION model pixel size must be positive and finite")
     if optics.size == 0 or not np.all(np.isfinite(optics)) or np.any(optics <= 0.0):
         raise ValueError("RELION optics pixel sizes must be non-empty, positive, and finite")
     unique_optics = np.unique(optics)
