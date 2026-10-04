@@ -927,11 +927,12 @@ def apply_optimiser_convergence_replay(
     optimiser_iteration,
     replay_dir,
     replay_prefix,
-    sealed_sampling_state,
     logger,
 ):
     """Apply numbered optimiser controls after the native state update.
 
+    ``metadata`` exists only for a replay directory without sealed sampling
+    (``read_optimiser_accuracy_replay``), so ``replay_dir`` is a path here.
     Mutate the existing state in metadata order. Missing fields retain their
     computed values. An unnumbered final optimiser may close the numbered
     replay only when the next sampling STAR is absent.
@@ -970,11 +971,7 @@ def apply_optimiser_convergence_replay(
     # streams therefore end one iteration before the final pass; do not
     # request run_it{N+1}_sampling.star when RELION already recorded the
     # final convergence state in run_optimiser.star.
-    if (
-        replay_dir is not None
-        and sealed_sampling_state is None
-        and not state.has_converged
-    ):
+    if not state.has_converged:
         _next_sampling_star = os.path.join(
             replay_dir,
             f"{replay_prefix}_it{optimiser_iteration + 1:03d}_sampling.star",

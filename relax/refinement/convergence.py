@@ -184,7 +184,6 @@ def update_iteration_convergence(
             optimiser_iteration=accuracy_replay.optimiser_iteration,
             replay_dir=replay_dir,
             replay_prefix=parity.perturb_replay_relion_prefix,
-            sealed_sampling_state=sealed_sampling_state,
             logger=log,
         )
     return ConvergenceUpdate(state, accuracy_replay)

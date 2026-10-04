@@ -18,7 +18,6 @@ def _apply(state, metadata, tmp_path, **overrides):
         optimiser_iteration=20,
         replay_dir=str(tmp_path),
         replay_prefix="run",
-        sealed_sampling_state=None,
         logger=logging.getLogger(__name__),
     )
     kwargs.update(overrides)
@@ -65,7 +64,7 @@ def test_missing_controls_preserve_computed_state(tmp_path, metadata):
     assert asdict(state) == before
 
 
-@pytest.mark.parametrize("boundary", ["final", "next", "missing_sampling", "missing_optimiser", "sealed", "no_replay"])
+@pytest.mark.parametrize("boundary", ["final", "next", "missing_sampling", "missing_optimiser"])
 def test_final_convergence_requires_end_of_numbered_replay(tmp_path, boundary):
     if boundary != "missing_sampling":
         (tmp_path / "run_sampling.star").touch()
@@ -74,12 +73,7 @@ def test_final_convergence_requires_end_of_numbered_replay(tmp_path, boundary):
     if boundary == "next":
         (tmp_path / "run_it021_sampling.star").touch()
     state = RefinementState()
-    overrides = {}
-    if boundary == "sealed":
-        overrides["sealed_sampling_state"] = {}
-    if boundary == "no_replay":
-        overrides["replay_dir"] = None
-    _apply(state, {}, tmp_path, **overrides)
+    _apply(state, {}, tmp_path)
     assert state.has_converged is (boundary == "final")
 
 
