@@ -466,14 +466,17 @@ RELION against RELION (same band FSC-AUCs):
 | fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 2 | 0.9943 | 0.9929 | 0.9928 |
 | same-command repeat 1 vs same-command repeat 2 | 0.9999 | 0.9998 | 0.9999 |
 
-### synth_k1_50k256_snr05 (new generation, SNR 0.04, B 40) (relax `0cbdebda5`)
+### synth_k1_50k256_snr05 (new generation, SNR 0.04, B 40) (relax `f6c8299b6`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| relion_a3 | — | 0.9298 | 0.9073 | 0.9065 | 0.9925 | 0.9890 | 0.9887 | not met |
-| this job's RELION arm | 14676053 | 0.9293 | 0.9063 | 0.9064 | — | — | — | not met |
+| the row's RELION pair arm (seed 42) | 14676053 | 0.9289 | 0.9056 | 0.9061 | 0.9924 | 0.9887 | 0.9886 | not met |
+| same-command RELION run, seed 29 | 14684319 | 0.8922 | 0.7588 | 0.7625 | — | — | — | not met |
+| same-command RELION run, seed 53 | 14684320 | 0.8789 | 0.7506 | 0.7429 | — | — | — | not met |
+| same-command RELION run, seed 61 | 14684343 | 0.8916 | 0.7634 | 0.7512 | — | — | — | not met |
+| same-command RELION run, seed 67 | 14684344 | 0.8748 | 0.7543 | 0.7338 | — | — | — | not met |
 
 ### synth_k1_100k256_1A_b18 (new generation, high resolution: 1.0 Å/px, B 18, SNR 0.035) (relax `f6c8299b6`)
 
