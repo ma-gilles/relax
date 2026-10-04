@@ -55,7 +55,7 @@ from relax.scoring.coarse_gaussian_gemm import (
     _plan_coarse_gaussian_gemm_projection_cache,
     _validate_coarse_gaussian_gemm_projection_cache_request,
 )
-from relax.scoring.coarse_publication import coarse_square_layout_metadata
+from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
     _relion_coarse_gaussian_gemm_scores_jit,
@@ -1539,6 +1539,7 @@ def _compute_k_class_significance_batched(
 
     # The class and rotation prior terms of the pass-1 program, built at its first batch.
     pass1_prior_terms = None
+    exact_rotation_prior = None
 
     sig_rot_any = np.zeros((n_classes, n_rot), dtype=bool)
     n_sig_all = np.empty(n_images, dtype=np.int32)
@@ -2082,73 +2083,50 @@ def _compute_k_class_significance_batched(
                     # The program's values are the with-prior scores here.
                     normalization_score_mats.append(batched_support_values)
                 if relion_f32_coarse_support_enabled:
-                    from relax.helpers.oversampling import relion_cuda_f32_coarse_posterior
-
-                    posterior_min_diff2_offsets = -relion_raw_score_max
-                    if relion_exact_coarse_weight_order:
-                        from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights
-
-                        if rotation_log_prior_padded is None:
-                            exact_rotation_prior = jnp.zeros(n_rot, dtype=jnp.float32)
-                        else:
-                            exact_rotation_prior = jnp.asarray(
-                                rotation_log_prior_padded[0, :n_rot],
-                                dtype=jnp.float32,
-                            )
-                        exact_rotation_prior = exact_rotation_prior + jnp.asarray(
-                            class_log_priors_np[0],
-                            dtype=jnp.float32,
-                        )
-                        if batch_translation_log_prior is None:
-                            exact_translation_prior = jnp.zeros((batch_size, n_trans), dtype=jnp.float32)
-                        elif translation_log_prior.ndim == 1:
-                            exact_translation_prior = jnp.broadcast_to(
-                                jnp.asarray(batch_translation_log_prior, dtype=jnp.float32)[None, :],
-                                (batch_size, n_trans),
-                            )
-                        else:
-                            exact_translation_prior = jnp.asarray(batch_translation_log_prior, dtype=jnp.float32)
-                        batch_values = relion_cuda_f32_coarse_log_weights(
-                            batch_values.reshape(batch_size, n_rot, n_trans),
-                            exact_rotation_prior,
-                            exact_translation_prior,
-                        ).reshape(batch_size, -1)
-                        # The RELION-order log weights already carry min_diff2.
-                        posterior_min_diff2_offsets = None
-                    (
-                        batch_weights,
-                        batch_sig_mask,
-                        batch_n_sig,
-                        batch_cutoff_count,
-                        _batch_sum_weight,
-                        _batch_significant_weight,
-                    ) = relion_cuda_f32_coarse_posterior(
+                    # The float32 posterior and what the batch publishes from it are one program
+                    # (coarse_support_posterior). K=1 hands it the pre-prior scores and the priors:
+                    # RELION's log-weight order (relion_exact_coarse_weight_order above).
+                    if relion_exact_coarse_weight_order and exact_rotation_prior is None:
+                        exact_rotation_prior = (
+                            jnp.zeros(n_rot, dtype=jnp.float32)
+                            if rotation_log_prior_padded is None
+                            else jnp.asarray(rotation_log_prior_padded[0, :n_rot], dtype=jnp.float32)
+                        ) + jnp.asarray(class_log_priors_np[0], dtype=jnp.float32)
+                    support = coarse_support_posterior(
                         batch_values,
+                        relion_raw_score_max,
+                        exact_rotation_prior,
+                        (
+                            None
+                            if not relion_exact_coarse_weight_order
+                            else np.zeros(n_trans, dtype=np.float32)
+                            if batch_translation_log_prior is None
+                            else batch_translation_log_prior
+                        ),
+                        exact_weight_order=relion_exact_coarse_weight_order,
+                        n_trans=int(n_trans),
                         adaptive_fraction=float(adaptive_fraction),
                         max_significants=max_significants,
                         tie_score_ulps=int(relion_f32_coarse_tie_ulps),
-                        min_diff2_offsets=posterior_min_diff2_offsets,
                     )
+                    batch_weights = support["weights"]
+                    batch_sig_mask = support["mask"]
+                    batch_n_sig = support["n_significant"]
+                    batch_cutoff_count = support["cutoff_count"]
+                    _batch_sum_weight = support["sum_weight"]
+                    _batch_significant_weight = support["significant_weight"]
+                    batch_sig_rot_mask = support["rotation_mask"]
                     if relion_exact_coarse_weight_order:
                         # RELION publishes the coarse winner from these weights.
-                        best_argmax_batch = jnp.argmax(batch_weights, axis=1).astype(jnp.int32)
-                        best_class_batch = jnp.zeros(batch_size, dtype=jnp.int32)
+                        best_argmax_batch = support["winner"]
+                        best_class_batch = zeros_i32
                     relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
                         _batch_sum_weight,
                         dtype=np.float32,
                     )[:actual_batch_size]
+                    batch_pmax_host = np.asarray(support["pmax"], dtype=np.float32)[:actual_batch_size]
                     if return_relion_f32_normalization:
-                        relion_f32_max_posterior[start_idx:end_idx] = (
-                            _coarse_max_posterior_for_host(batch_weights, actual_batch_size)
-                        )
-                    batch_sig_rot_mask = jnp.any(
-                        batch_sig_mask.reshape(
-                            batch_size,
-                            n_classes * n_rot,
-                            n_trans,
-                        ),
-                        axis=2,
-                    )
+                        relion_f32_max_posterior[start_idx:end_idx] = batch_pmax_host
                 else:
                     batch_weights = batch_values
                     if return_relion_f32_normalization:
@@ -2256,9 +2234,7 @@ def _compute_k_class_significance_batched(
                 best_score_np[output_slice] + log_score_offset[output_slice]
             ).astype(score_real_dtype)
             if relion_f32_coarse_support_enabled and collect_significance:
-                max_posterior[start_idx:end_idx] = _coarse_max_posterior_for_host(
-                    batch_weights, actual_batch_size,
-                )
+                max_posterior[start_idx:end_idx] = batch_pmax_host
             else:
                 max_posterior[start_idx:end_idx] = np.exp(
                     best_score_np[output_slice] - global_log_z_np[output_slice]

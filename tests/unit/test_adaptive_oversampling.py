@@ -217,24 +217,17 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
 
     install_exact_pass1_mocks(monkeypatch)
     monkeypatch.setattr(significance, "_k1_relion_f32_coarse_support_enabled", lambda **kwargs: True)
-    original_weights = oversampling.relion_cuda_f32_coarse_log_weights
-    original_posterior = oversampling.relion_cuda_f32_coarse_posterior
+    support_program = significance.coarse_support_posterior
 
     def run(n_classes, rotation_log_prior, translation_log_prior):
-        weight_calls, posterior_calls = [], []
+        calls = []
 
-        def record_weights(raw_scores, rotation_prior, translation_prior):
-            log_weights = original_weights(raw_scores, rotation_prior, translation_prior)
-            weight_calls.append((np.asarray(raw_scores), np.asarray(rotation_prior), np.asarray(log_weights)))
-            return log_weights
+        def record(values, raw_max, rotation_prior, translation_prior, **static):
+            support = support_program(values, raw_max, rotation_prior, translation_prior, **static)
+            calls.append((np.asarray(values), raw_max, rotation_prior, translation_prior, static, support))
+            return support
 
-        def record_posterior(scores_flat, **kwargs):
-            result = original_posterior(scores_flat, **kwargs)
-            posterior_calls.append((np.asarray(scores_flat), kwargs.get("min_diff2_offsets"), np.asarray(result[0])))
-            return result
-
-        monkeypatch.setattr(oversampling, "relion_cuda_f32_coarse_log_weights", record_weights)
-        monkeypatch.setattr(oversampling, "relion_cuda_f32_coarse_posterior", record_posterior)
+        monkeypatch.setattr(significance, "coarse_support_posterior", record)
         args, projector = _exact_pass1_call(n_classes)
         result = significance._compute_k_class_significance_batched(
             *args,
@@ -247,36 +240,54 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
             image_batch_size=2,
             rotation_block_size=2,
         )
-        return result, weight_calls, posterior_calls
+        return result, calls
 
     rotation_log_prior = np.linspace(0, -0.4, 5, dtype=np.float32)
     translation_log_prior = np.array([[0, -0.1], [-0.2, 0], [0, -0.3]], dtype=np.float32)
-    result, weight_calls, posterior_calls = run(1, rotation_log_prior, translation_log_prior)
-    assert len(weight_calls) == len(posterior_calls) == 2
+    result, calls = run(1, rotation_log_prior, translation_log_prior)
+    assert len(calls) == 2
     image_start = 0
-    for (raw_scores, rotation_prior, log_weights), (posterior_input, offsets, weights) in zip(
-        weight_calls, posterior_calls
-    ):
-        assert_matches(posterior_input, log_weights.reshape(log_weights.shape[0], -1))
-        assert offsets is None
+    for raw_scores, _, rotation_prior, translation_prior, static, support in calls:
+        assert static["exact_weight_order"] is True and static["n_trans"] == 2
         assert_matches(rotation_prior, rotation_log_prior)
-        rows = min(2, 3 - image_start)
-        assert_matches(
-            result[2][image_start : image_start + rows],
-            np.argmax(weights, axis=1)[:rows],
+        # The program is the loose composition: RELION-order log weights, then the posterior
+        # without a further min_diff2 offset.
+        log_weights = oversampling.relion_cuda_f32_coarse_log_weights(
+            raw_scores.reshape(raw_scores.shape[0], 5, 2), rotation_prior, translation_prior
         )
+        expected = oversampling.relion_cuda_f32_coarse_posterior(
+            log_weights.reshape(raw_scores.shape[0], -1),
+            adaptive_fraction=0.9,
+            max_significants=4,
+            tie_score_ulps=static["tie_score_ulps"],
+            min_diff2_offsets=None,
+        )
+        for name, value in zip(
+            ("weights", "mask", "n_significant", "cutoff_count", "sum_weight", "significant_weight"), expected
+        ):
+            assert_matches(np.asarray(support[name]), np.asarray(value))
+        weights = np.asarray(support["weights"])
+        assert np.array_equal(np.asarray(support["winner"]), np.argmax(weights, axis=1))
+        assert_matches(np.asarray(support["pmax"]), weights.max(axis=1))
+        assert np.array_equal(
+            np.asarray(support["rotation_mask"]), np.asarray(support["mask"]).reshape(-1, 5, 2).any(axis=2)
+        )
+        rows = min(2, 3 - image_start)
+        assert_matches(result[2][image_start : image_start + rows], np.argmax(weights, axis=1)[:rows])
         image_start += rows
 
     # The support pass receives the scores before any prior was added.
-    _, flat_weight_calls, _ = run(1, np.zeros(5, dtype=np.float32), np.zeros((3, 2), dtype=np.float32))
-    for (raw_scores, _, log_weights), (flat_raw_scores, _, flat_log_weights) in zip(weight_calls, flat_weight_calls):
+    _, flat_calls = run(1, np.zeros(5, dtype=np.float32), np.zeros((3, 2), dtype=np.float32))
+    for (raw_scores, *_, support), (flat_raw_scores, *_, flat_support) in zip(calls, flat_calls):
         assert_matches(raw_scores, flat_raw_scores)
-        assert not np.array_equal(log_weights, flat_log_weights)
+        assert not np.array_equal(np.asarray(support["weights"]), np.asarray(flat_support["weights"]))
 
-    # K > 1 keeps its existing absolute-frame support path.
-    _, class_weight_calls, class_posterior_calls = run(2, rotation_log_prior, translation_log_prior)
-    assert not class_weight_calls
-    assert class_posterior_calls and all(offsets is not None for _, offsets, _ in class_posterior_calls)
+    # K > 1 keeps its existing absolute-frame support path: with-prior scores and the min_diff2 offset.
+    _, class_calls = run(2, rotation_log_prior, translation_log_prior)
+    assert class_calls
+    for _, raw_max, rotation_prior, translation_prior, static, _ in class_calls:
+        assert static["exact_weight_order"] is False
+        assert raw_max is not None and rotation_prior is None and translation_prior is None
 
 
 @pytest.mark.parametrize(
