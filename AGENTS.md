@@ -1,216 +1,109 @@
-# relax development contract
+# RELAX agent guide
 
-relax is RELION in JAX. It imports RECOVAR (pinned in `pyproject.toml` and `pixi.toml`)
-for the shared numerical core; RECOVAR never imports relax.
-Engineering priorities are correctness, GPU performance, then clarity.
+RELAX reimplements RELION's refinement in JAX with CUDA kernels: `relax refine` (Refine3D, and subtomogram
+averaging on RELION 5 particles), `relax class3d`, `relax initial_model` (VDAM), `relax ppca_initial_model`.
+It imports RECOVAR at one commit pinned in `pixi.toml`; RECOVAR never imports RELAX.
+Priorities, in order: correctness, GPU performance, clarity.
 
-## Agent collaboration
+## Start
 
-- Treat requests for implementation as authorization to complete the work.
-  Resolve routine choices from context and continue independent work while
-  material questions remain open. Prepare a reviewable result before requesting
-  any still-required approval for publication or an external action.
-- Explicit user instructions take precedence over skill guidance. Apply scoped
-  repository requirements to the affected workflow. If an instruction blocks
-  progress, cite its file and exact rule, explaining the unresolved decision.
-- Incorporate corrections and answer side questions while retaining the active
-  objective, completed work and running jobs. Use a concise handoff when moving
-  to a fresh thread; link evidence instead of repeating experiment histories.
-- Delegate only when authorized; for EM, follow `relax/SUBAGENTS.md`.
-  Preserve the user's Terra/Astra workload choices and exclusive source ownership.
-- Report outcomes and limitations in plain, concise prose. Use tables for
-  comparisons and keep required evidence in linked artifacts.
-- Complete the checks required for the affected scope. Repeat or broaden them
-  only for changed behavior, failures, unresolved concerns or required qualification.
-  Documentation/instruction edits use mirror and link checks; numerical fixes
-  still require focused regressions and the applicable scientific ladder.
+- Run `pixi run doctor` (under any Python: `python scripts/dev/doctor.py`). Fix each `FAIL` with the command
+  printed under it; a `WARN` names something a task may need.
+- Work in your own worktree and branch. Never modify the source snapshot of a queued or running job; the tier
+  commands freeze their own copy.
+- Before editing a file, read the `AGENTS.md` in its directory and in each directory above it. They exist in
+  `relax/`, `relax/refinement/`, `relax/sparse_pass2/`, `relax/ppca_refinement/`, `tests/`, `scripts/`, `docs/`.
+- Accounts, writable roots, local GPUs, Slurm requests, data layout and cleanup are governed by the owner's
+  global instruction file, which the tool loads at session start. This repository's guides do not repeat it.
+- The owner's explicit instruction outranks every guide and skill. If a rule here blocks the task, quote the
+  rule and its file, and ask.
 
-See [the agent workflow](docs/development/agent_workflow.md) for session-specific
-model/delegation evidence and compact task handoffs.
+## Rules
 
-## Changing recovar from relax work
+1. Production EM is float32. Double precision is a labelled diagnostic, never a default and never the fix.
+2. The default path reproduces RELION 5.0.1, including its inconsistencies. An intentional difference is a
+   named opt-in option, tested and qualified.
+3. Do not change a tolerance, gate, threshold, baseline or pinned output without the owner's instruction. This
+   covers `tests/tiers/fsc_thresholds.json`, `tests/tiers/pinned_fast_cases.json`, the pinned references in
+   `tests/baselines/`, every tolerance in a test, and the `pixi run regen-*` commands.
+4. No test or merge check requires bitwise or ULP-exact float equality; compare with
+   `tests/helpers/float_compare.py`. Integers and discrete logic stay exact.
+5. No fallback, skip or default that hides a failure. A missing measurement is not a pass.
+6. Change RECOVAR in RECOVAR (`dev2`), then repin here. Never copy, wrap or keep a variant of its code
+   (CONTRIBUTING.md, "Changing RECOVAR").
+7. Delete, without asking, the code that `docs/development/refactor_principles.md` covers: unreachable arms,
+   options nothing in production sets, test-only cases, redundant checks, unused temporaries. One decision per
+   commit, with its trace (the entry paths checked, what was removed) in the message.
+8. Ask the owner about a choice of taste or of capability, one question at a time. Continue the work that does
+   not depend on the answer.
+9. When two modes share a sequence, share the steps and write the sequence in each mode. Pass no mode flag
+   below the point where the mode is decided.
+10. A structural change preserves casts, reduction order, JIT boundaries, required buffer lifetimes, serialized
+    formats and scientific defaults. Commit correctness, performance and structure separately.
+11. Keep diffs focused: do not reformat untouched code; commit no data, binaries, run outputs or credentials.
+12. Merge bug fixes and qualified work to `main` yourself, often: rebase onto `origin/main`, pass the tier for
+    the change on the rebased commit, push as a fast-forward. Never force-push (CONTRIBUTING.md, "Landing").
+13. Delegate to sub-agents only when the owner has allowed it; one writer per file (`relax/SUBAGENTS.md`).
 
-relax imports recovar and pins one recovar commit (`pyproject.toml`, `pixi.toml`).
-When relax work needs recovar to change (a new optional argument, a fix, a hook or a
-shared helper), make that change in recovar itself. This is permitted and encouraged.
-Do not copy recovar code into relax with a twist, wrap it to patch its behaviour, or
-keep a second variant of a recovar formula: one implementation, in recovar.
+## Commands
 
-1. Branch from recovar `origin/dev2`, commit the change with its focused tests, and
-   push it to recovar `dev2` as a fast-forward (never force; never `dev` or `main`).
-   Keep recovar's own defaults and public API unchanged unless the user decides
-   otherwise; recovar must keep working without relax, and must never import relax.
-2. Repin relax to the new `dev2` commit in `pyproject.toml` and `pixi.toml`,
-   regenerate `pixi.lock`, and land the relax side on relax `main` in the same batch.
-
-## Start and resume
-
-1. Establish the task, checkout, branch and current evidence before editing.
-   User instructions and authorization persist across turns. Do not ask again
-   for work already covered by the task.
-2. Read the applicable scoped guides below. Historical experiment notes are
-   evidence for their recorded source; their old next actions are not current
-   instructions. Use the [codebase map](docs/development/codebase.md) to locate
-   the workflow entry point and the modules that own its state and kernels.
-3. Print `git rev-parse HEAD`, `git status --short --branch`,
-   `git diff HEAD --stat`, and `git diff HEAD | sha256sum` before validation.
-   Record untracked files used by a run. A worktree name is not provenance.
-4. Choose one concrete change and its smallest useful check. Preserve unrelated
-   work. Keep control checkouts and queued/running candidates immutable.
-
-Metrics are tracked in standing artifacts, not only in run reports: the EMPIAR
-real-data scorecard, the synthetic fixed-suite scorecards, the pinned completion
-baselines and the per-run parity ledgers. Read the value your change touches
-before running, and write the new value back after. `relax/CLAUDE.md`
-lists each artifact with the command that regenerates or checks it, and records
-two setup traps that make the parity tier look red for reasons that are not
-numerical. End-to-end runs are what fill the real-data rows; short tests do not
-substitute for them.
-
-| Affected area | Read before working |
+| Need | Command |
 | --- | --- |
-| Python source and numerical conventions | [recovar/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev2/recovar/CLAUDE.md) (applies to relax source too) |
-| Tests, tolerances and baselines | [tests/CLAUDE.md](tests/CLAUDE.md) |
-| EM and RELION parity | [relax/AGENTS.md](relax/AGENTS.md) |
-| PPCA refinement | [relax/ppca_refinement/AGENTS.md](relax/ppca_refinement/AGENTS.md) |
-| CUDA and FFI | [recovar/cuda/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev2/recovar/cuda/CLAUDE.md) (applies to `relax/cuda/` too) |
-| Documentation | [recovar docs/CLAUDE.md](https://github.com/ma-gilles/recovar/blob/dev2/docs/CLAUDE.md) (same conventions for relax `docs/`) |
+| Environment, natives, fixtures, write access, idle GPUs | `pixi run doctor` |
+| CPU guard: undefined names, import boundaries, four fast test files | `pixi run test-em-fast-guard` |
+| One test file (CPU unless `CUDA_VISIBLE_DEVICES` names an idle GPU 1-3) | `pixi run python -m pytest -v tests/unit/<file>.py` |
+| Guides and the file links of every tracked Markdown file | `python scripts/check_agent_guides.py` |
+| What a tier would run for this checkout | `python scripts/run_test_tier.py plan smoke` |
+| Qualify | `pixi run test-smoke`, `pixi run test-medium`, `pixi run test-long` |
+| Is a control-candidate difference inside GPU noise | `python scripts/em_tier_noise_envelope.py check --control <basetemp> --candidate <basetemp>` |
 
-## Context and work packages
-
-Use [the agent workflow](docs/development/agent_workflow.md): compact file handoffs,
-on-demand history, scripted evidence and one publication per cohesive batch.
-Model selection and delegation are session choices, not scientific requirements.
-Cost control must not reduce the scientific goal or gates.
-
-## Implement and review
-
-- For readability refactors, follow the user-agreed
-  [refactor principles](docs/development/refactor_principles.md). Review the
-  main calling flow with the user before extending the first example broadly.
-- Prefer small functions with explicit inputs, units, layouts and ownership.
-  Use simple containers when they clarify state; avoid forwarding layers.
-- Separate correctness repairs, performance changes and structural cleanup.
-  Preserve numerical casts, reduction order, JIT boundaries, memory lifetime,
-  serialized formats and scientific defaults during cleanup. Preserve non-EM
-  public APIs. EM APIs may change when this simplifies the implementation;
-  migrate affected callers, tests and documentation in the same change.
-- For the readability refactor, unused temporary arrays may expire after their
-  last use (explicit user approval, October 2, 2026). Preserve required buffer
-  lifetimes, aliases and asynchronous execution contracts. Qualify final quality,
-  peak memory and GPU performance after the complete source is frozen.
-- Remove private dead code only after checking callers, dynamic registration,
-  CLI entry points, tests, notebooks and serialized/imported names. Keep
-  independent numerical references independent of production code.
-- For shared-helper extraction, trace imports through dependent modules as
-  well as direct call sites. Collect the applicable test inventory before a
-  broad run; testing only the edited modules can miss a retired re-export.
-- Validate assumptions early. Do not hide errors with fallback results, skipped
-  checks or fabricated success. Resolve TODOs with evidence before removing them.
-- Keep math documentation linked to implementing functions, and docstrings
-  linked back to the documented formulation. Update both when behavior changes.
-- Never widen a scientific tolerance or change `tests/baselines/` without an
-  explicit user instruction. Missing measurements are not passing comparisons.
-- Keep diffs focused. Do not reformat unrelated code or commit large datasets,
-  checkpoints, binaries, generated run outputs or credentials.
-
-## Environment and validation
-
-Use the checkout's frozen pixi environment. Before Python imports, select CPU
-or assigned GPU visibility and remove Python/conda contamination. Verify
-relax imports from this checkout, and RECOVAR (at the pinned commit) and JAX from its
-`.pixi/envs/default`.
-Explicitly build and identify custom CUDA libraries before GPU qualification;
-the current runtime loader can build missing libraries automatically.
-`pixi run doctor` (or any Python: `python scripts/dev/doctor.py`) checks all of this without changing anything, plus
-natives, fixtures, writable run roots, git state and idle GPUs, and prints the exact fix under each `WARN` or `FAIL`.
-
-Follow [CONTRIBUTING.md](CONTRIBUTING.md) for exact setup, validation and PR
-requirements, [Della development](docs/development/della.md) for cluster resources
-and paper-data paths, and [benchmark contracts](docs/development/benchmarks.md)
-for reusable accuracy and performance evidence. Use Slurm for integration,
-multi-iteration, long or contention-sensitive GPU work. Reserve local GPUs for
-short checks following the user's device policy.
-For Polar as an alternate Slurm target, follow the [agent quick guide](docs/development/polar_agents.md)
-and its linked runbook. Stage a lock-matched environment and frozen source on
-the Math-visible share, and keep job inputs and outputs on Polar's shared
-`/scratch/network`.
-
-For EM-only work, use the scoped EM validation ladder. Shared pipeline or
-repository-wide cleanup requires the applicable SPA/ET and downstream checks
-as well. Existing authorization for that scope covers its necessary validation;
-a genuinely new scientific objective requires a separate decision.
-
-## Test tiers
-
-Pick the tier from the change, run it with one command, and record its receipt
-(SHA, tier, pass/fail, job id, GPU model; the tier commands write it, and append it to
-`$RELAX_TEST_RECEIPTS` when set) in your handoff. Budgets, pass criteria and
-fixtures are in [CONTRIBUTING.md](CONTRIBUTING.md#test-tiers). This is a written
-rule, not a hook.
+## Which tier
 
 | Change | Tier |
 | --- | --- |
-| docs, tests, scripts | CPU checks (`pixi run test-em-fast-guard`, the affected unit tests, `python scripts/check_agent_guides.py`) |
+| docs, tests, scripts | CPU checks: `pixi run test-em-fast-guard`, the affected unit tests, `python scripts/check_agent_guides.py` |
 | engine or numerical code | `pixi run test-smoke` |
 | a numerical change | `pixi run test-medium` |
 | a default flip, an engine replacement, a milestone | `pixi run test-long` |
 
-Every tier runs on Slurm in the cryoem partition, each as one job (smoke 1 GPU,
-medium and long one multi-GPU job). Only smoke may run locally: when cryoem cannot
-start it promptly, it runs on one idle local GPU 1-3 (never GPU 0). The medium tier also runs
-periodically on `main`. Baseline regeneration (`pixi run regen-*`) runs only on
-the user's explicit request.
+Each tier command freezes the checkout, verifies fixtures, builds the natives, runs as one Slurm job and writes
+`RECEIPT.json` in its run root. Only smoke may run on a local GPU. When the default run root is not writable
+for your account, pass `--run-root <directory>`. Budgets, contents and pass criteria: CONTRIBUTING.md.
 
-## Branches and delivery
+## Map
 
-relax `main` is the integration branch. Feature branches are fine for isolation, but
-merge each into `main` as a fast-forward as soon as its checks pass; do not park
-finished branches. recovar changes follow "Changing recovar from relax work" above.
-Branches are fine for isolation, but they are temporary: once a branch is merged, delete it
-(local and remote); if it is abandoned, record why in the task handoff and delete it. Do not
-leave finished or dead branches behind. Keep only `main`/`dev`/`dev2`, active work and
-branches the user explicitly asked to keep.
-Preserve an explicitly pinned control.
+| Path | Owns |
+| --- | --- |
+| `relax/commands/`, `relax/command_line.py` | the `relax <command>` entry points |
+| `relax/refinement/` | Refine3D and Class3D: options, controller, expectation, reconstruction, finalization, run files |
+| `relax/scoring/` | coarse pass: scores, significance, candidate layouts |
+| `relax/sparse_pass2/` | fine pass: the device-resident pass-2 engine (CUDA only) |
+| `relax/local/`, `relax/classification/` | exact local-search layout and backprojection; K-class execution and results |
+| `relax/dense/` | score payloads and scoring policy; the dense GEMM coarse pass and experiment |
+| `relax/reconstruction/`, `relax/relion/` | RELION M-step, regularization and noise; RELION metadata, CTF, projector, normalization |
+| `relax/vdam/`, `relax/ppca_initial_model/`, `relax/sgd_initial_model/` | InitialModel variants |
+| `relax/ppca_refinement/` | pose-marginal PPCA refinement |
+| `relax/helpers/`, `relax/sampling.py`, `relax/healpix_sampling.py`, `relax/symmetry.py` | shared layouts, planning, grids |
+| `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |
+| `relax/diagnostics/`, `relax/reference/`, `relax/relion_bind/` | capture and replay; independent references; the RELION binding (never imported by production code) |
+| `tests/tiers/`, `tests/baselines/`, `tests/fixtures/` | gates and pinned outputs; pinned references and the benchmark ledger; the fixture manifest |
+| `scripts/` | the tier runner, `dev/doctor.py`, launchers, scorecard renderers, analysis |
 
-Merge criterion: judge a candidate against its control by the approved gates in
-`tests/tiers/fsc_thresholds.json`, never by bitwise equality. GPU runs of the same code are
-not bit-reproducible; racing reductions move printed metrics by about 1e-13 to 1e-6.
-`tests/tiers/gpu_noise_envelope.json` records that same-code spread per fast-tier case and
-metric: check a control-candidate difference with `python scripts/em_tier_noise_envelope.py
-check --control <basetemp> --candidate <basetemp>` instead of rerunning. A difference outside
-the envelope is a real change of the numbers, which the gates then judge.
+## Where to look
 
-No bitwise floats (user rule, 2026-09-24): no test or merge check requires bitwise or
-ULP-exact equality of floating-point values, not even under
-`RELAX_EM_DETERMINISTIC_REDUCTIONS=1`. Compare floats with relative bands sized to the
-measured noise plus a margin (`tests/helpers/float_compare.py`); integers and discrete logic
-(shapes, counts, indices, capacities) stay exact, and float-tie-dependent discrete outputs
-(hard assignments, significance counts) allow a small measured flip fraction. This approves
-turning bitwise float asserts into measured bands, not widening an existing tolerance beyond
-noise.
+- Algorithm to code, step by step: `docs/math/relion_refinement_algorithm.md`.
+- Workflow entry points: `docs/development/codebase.md`. RELION defaults: `docs/development/relion_defaults.md`.
+- Refactor rules with their examples: `docs/development/refactor_principles.md`.
+- Conventions shared with RECOVAR (numerical source, CUDA and FFI, documentation): RECOVAR's own guides,
+  `recovar/CLAUDE.md`, `recovar/cuda/CLAUDE.md` and `docs/CLAUDE.md` in its repository.
+- State of the work: `docs/development/em_status.md`. It is a ledger of more than 100 KB: search it for your topic.
+- Polar as a Slurm target: `docs/development/polar_agents.md`.
+- Planned, not present yet: a per-change check command, a behaviour-fingerprint harness, an evidence store, a
+  short status page, project skills.
 
-Merge as you go: land each qualified piece on `main` as soon as its checks pass, not at the
-end of the task. Keep a list of your unmerged commits (SHA, subject, what blocks each) in
-your handoff. Rebasing an implementation creates a new candidate that needs fresh
-validation, except when every commit it moves over changes only docs, tests or scripts (no
-code under `relax/`, no native sources, no pixi manifest or lock): then the CPU checks of the
-rebased head suffice.
+## Reporting
 
-Validate forward: when a candidate passed its GPU validation at the previous head, the rebase
-is conflict-free, and main's new code commits touch neither the candidate's files nor its
-engine path, push after the CPU checks at the rebased head and run the GPU validation
-afterwards, fixing forward if it fails. A fresh GPU run before pushing is required only when
-main's new code overlaps the candidate's files or engine path. This keeps a candidate from
-chasing a main that moves every hour.
-Never force-push unless explicitly asked. Before pushing or opening a PR, follow
-all applicable checks and table requirements in CONTRIBUTING.md and scoped guides.
-
-Report the change, its reason, exact checks and job IDs, outcomes and unresolved
-limitations, reproduction commands, artifact paths, `git status --short --branch`
-and `git diff HEAD --stat`. Distinguish executed, quality-accepted and
-performance-qualified results. Do not claim completion with required jobs pending.
-
-Every `AGENTS.md` and `CLAUDE.md` in the same directory must remain byte-for-byte
-identical (root, `relax/`, `relax/ppca_refinement/`, `tests/`). Run
-`python scripts/check_agent_guides.py` after editing any of them.
+State the change and its reason, the checks with their job IDs, receipts and artifact paths, the outcomes,
+what is not yet qualified, and `git status --short --branch`. Separate executed, quality-accepted and
+performance-qualified results. For a run outside the tier commands, record `git rev-parse HEAD` and `git diff HEAD | sha256sum`.
+Do not claim completion while a required job is pending or a required gate is open.
