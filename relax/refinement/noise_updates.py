@@ -91,8 +91,6 @@ def update_c1_sigma_offset_from_posterior(
                 offset_dims=offset_dims,
             )
         )
-    if len(per_half_values) != 2:
-        raise ValueError(f"noise_stats_per_half must contain two halves, got {len(per_half_values)}")
     per_half_sigma_offset = np.asarray(per_half_values, dtype=np.float64)
     if n_classes > 1:
         shared_sigma_offset = _sigma_offset_from_moment(
