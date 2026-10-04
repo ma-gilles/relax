@@ -282,8 +282,6 @@ def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_
     spectrum. Returns the ``[G, n_shells]`` shell profiles and ``[G, P]`` pixel rows.
     """
 
-    from recovar.reconstruction import noise
-
     from relax.reconstruction import noise_relion
 
     wsum = np.asarray(stats.wsum_sigma2_noise, dtype=np.float64)
@@ -304,7 +302,7 @@ def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_
             noise_relion.normalize_wsum_to_sigma2_noise(wsum[g], power[g], sumw[g], image_shape),
             dtype=np.float64,
         )
-        rows[g] = jnp.asarray(noise.make_radial_noise(radial[g], image_shape)).reshape(-1)
+        rows[g] = _shell_profile_pixel_row(radial[g], image_shape)
     return radial, jnp.stack(rows)
 
 
@@ -342,16 +340,19 @@ def noise_model_from_pixels(noise_variance, image_shape, *, dtype):
     )
 
 
-def noise_pixel_rows(noise_shells, image_shape):
-    """Expand one half's noise shells (``(S,)`` or ``(G, S)``) to pixel rows."""
+def _shell_profile_pixel_row(shell_profile, image_shape):
+    """Expand one ``(S,)`` shell profile to its flat pixel row; the operand keeps its array type and dtype."""
     from recovar.reconstruction import noise
 
+    return jnp.asarray(noise.make_radial_noise(shell_profile, image_shape)).reshape(-1)
+
+
+def noise_pixel_rows(noise_shells, image_shape):
+    """Expand one half's noise shells (``(S,)`` or ``(G, S)``) to pixel rows."""
     shells = np.asarray(noise_shells, dtype=np.float64)
     if shells.ndim == 1:
-        return jnp.asarray(noise.make_radial_noise(shells, image_shape)).reshape(-1)
-    return jnp.stack(
-        [jnp.asarray(noise.make_radial_noise(row, image_shape)).reshape(-1) for row in shells]
-    )
+        return _shell_profile_pixel_row(shells, image_shape)
+    return jnp.stack([_shell_profile_pixel_row(row, image_shape) for row in shells])
 
 
 def noise_model_from_shells(noise_shells, image_shape):
@@ -397,8 +398,6 @@ def update_posterior_noise_variance(
     sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
     first-iter noise update).
     """
-
-    from recovar.reconstruction import noise
 
     from relax.reconstruction import noise_relion
 
@@ -453,9 +452,7 @@ def update_posterior_noise_variance(
             )
             noise_from_res = np.asarray(noise_shared, dtype=np.float64)
             noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
-            noise_variance_shared = jnp.asarray(
-                noise.make_radial_noise(noise_shared, image_shape),
-            ).reshape(-1)
+            noise_variance_shared = _shell_profile_pixel_row(noise_shared, image_shape)
             noise_variance_per_half = [noise_variance_shared, noise_variance_shared]
     elif np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2:
         noise_from_res_per_half = []
@@ -481,9 +478,7 @@ def update_posterior_noise_variance(
                 image_shape,
             )
             noise_from_res_per_half.append(np.asarray(noise_k, dtype=np.float64))
-            noise_variance_per_half[k_noise] = jnp.asarray(
-                noise.make_radial_noise(noise_k, image_shape),
-            ).reshape(-1)
+            noise_variance_per_half[k_noise] = _shell_profile_pixel_row(noise_k, image_shape)
         noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
 
     # Log per-shell noise comparison (first 10 shells) for convergence diagnostics.
