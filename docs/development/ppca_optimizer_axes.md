@@ -39,8 +39,19 @@ coordinates, and the two are hard to tell apart, so PPCA is hard to regularise.
   under VDAM the weak state sits at latent zero.
 - Hypothesis (owner). This scale trade is why, under VDAM, the mean appears to be at much lower resolution
   than the PCs, and in the end the mean is absorbed into the PCs.
-- Open. A regulariser that fixes the scale split between loadings and latents; whether shrinking the
-  loadings only, with no half-sets, keeps the weak component.
+- Measured: the hypothesis holds as a gauge effect. VDAM's latents are not centred (`|E[z]|` 1.6–1.7, rms
+  `|z|` 2.8 against a unit prior, loadings 3–6 times smaller than SGD's), so part of the average structure
+  sits in `W E[z]`. Per band, the FSC of VDAM's mean against the true mean is .88/.71/.75/.65/.28/.37, and of
+  `mu + W E[z]` .97/.91/.92/.87/.54/.67 (SGD's mean: .97/.94/.92/.88/.73/.70). Score and report the mean in
+  the centred gauge; an earlier "loss of the common frame" under VDAM was this artefact.
+- Measured (continuation runs, three seeds). The gate makes the three-state solution the attractor: VDAM
+  recovers the weak state from an SGD model that had lost it (3 of 3, within 200 updates). The gate on the
+  mean is what poses the weak state; the gate on the loadings alone gives the clusters without the pose.
+  Plain SGD keeps whichever solution it is given at learning rate 1.2 and destroys the three-state one at 4.8
+  within 100–300 updates (loadings grow sevenfold, latents are pinned, then the pose is lost, the clusters
+  merge last); a smaller step (0.3) recovers nothing.
+- Open. A regulariser that fixes the scale split between loadings and latents; whether shrinkage with no
+  half-sets can do what the gate does. Under test: re-whitening the latents after each update.
 
 ## 3. PCs can stand in for pose sampling that is too coarse
 
@@ -59,10 +70,33 @@ cannot support.
   span and compare it with the share for the true components. (b) Look at the latent space: absorbed pose
   error shows as streaks, one true state spread along a line or split into several clusters; on synthetic
   data, regress the latent coordinates on each particle's residual pose error.
-- Nothing is measured yet on this axis.
+- Measured on saved models. Both optimisers absorb pose error into the latents, SGD much more. Within the
+  strong state, the regression of the latent on the residual rotation error has R2 .70–.86 under plain SGD
+  and .35–.55 under VDAM (null .02); the PCs' rigid-motion share in shells 11–15 is .17–.21 under SGD and
+  .03–.05 under VDAM (truth .02). Both rise when the gate loosens.
+- Measured with poses given and held fixed (no pose search; exact EM; 20,000 particles). Absorption rises
+  with the injected error: rotation error of 0 / 2 / 4 / 8 degrees gives clustering ARI 1.00 / 1.00 / .95 /
+  .34. Shift error dominates (measured on a variant of the set with a defocus spread, shifts and non-negative
+  truth): a shift error of 1.68 pixels rms alone gives ARI .18 where 4 degrees of rotation alone leaves 1.00,
+  and 2 degrees with 0.84 pixel already merges the clusters (.41–.45) at two components. Rotation and
+  translation errors of equal size at the particle radius do not
+  behave alike; they do roughly if the radius is replaced by the radius of gyration (about a third of it).
+  Extra components take pose error and leave the state separation intact for rotation error (ARI .95 / .98 /
+  .98 at 2 / 3 / 8 components), and help but do not suffice for shift error.
+- Constant. For rotation, the PCs' rigid share leaves the truth's at the shell where `d = c R dtheta` with
+  `c` about 3.5 (`R` the particle radius). For shifts the departure is at or below the lowest shell scanned
+  (`c` at least 15).
+- Metric. Use the clustering score (adjusted Rand index of a mixture fitted to the latent means, against the
+  true states) as the headline, not the between-state R2: R2 falls with the number of components and mixes
+  pose error with heterogeneity.
 
 ## 4. Refining the pose grid
 
 How and when the rotation and translation grids are refined as resolution grows, and how that interacts
 with axes 1 and 3 (a grid refined too late invites absorption; refined too early it costs time with no
-gain). Open; no measurements.
+gain).
+
+- Measured. With true poses snapped to the training grid (7.5 degrees, 2 pixels) on a set with real shifts,
+  exact EM cannot separate three states (ARI .43): the translation step, not the rotation step, limits
+  heterogeneity there. Refine or interpolate the shift grid before band-limiting the PCs.
+- Open. The refinement schedule, and its cost.
