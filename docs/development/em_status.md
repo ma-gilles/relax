@@ -596,6 +596,33 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   continuation (the et09/et15 audits above, the iteration-60/70/80 audit of this case) is superseded by
   the fresh-run measurements; their resolution, SSNR and tau2 comparisons are M-step outputs and are not
   the quantities at issue.
+  Single-particle VDAM is not affected (2026-10-04, jobs 14974373 and 14974374, plain K=1 10k/256, seed 1,
+  iteration 2, where all 200 images sit at the cap of 100 and 7 % have a relative gap under 1e-3 at the
+  cut): relax on main against RELION, and RELION against RELION:
+
+  | | map it1 | map it2 | BPref data per half | poses differing |
+  | --- | --- | --- | --- | --- |
+  | RELION vs RELION | 6.3e-7 | 7.4e-7 | 3.9e-6, 3.7e-6 | - |
+  | relax main 10001a8 | 8.8e-7 | 1.1e-6 | 5.4e-6, 5.0e-6 | 0 of 200 |
+  | relax with the exact re-score | 7.9e-7 | 1.0e-6 | 5.2e-6, 4.9e-6 | 0 of 200 |
+
+  With one image per particle the GEMM scorer reproduces RELION's cut; the subtomogram difference comes
+  from adding 41 tilt images' diff2. The exact re-score is therefore a subtomogram change only. K=4
+  (pdb_k4_5k_128, job 14971087): maps within 1.3e-5 over iterations 1-3, the cap of 400 does not bind.
+- VDAM on optics groups of several image shapes (single particles; multioptics_k2_10k128, K=1; branch
+  not on main; 2026-10-04): OPEN. CPU RELION is the reference on these rows only, because GPU RELION drops
+  the coarse scale difference of a group on another box (ma-gilles/relax#12); CPU RELION is
+  bit-reproducible, so a same-seed range has no width, and the rule the user set is the seed distribution:
+  relax passes if its seed mean is not below the reference's by more than the standard error of the
+  difference on the same seeds. Masked GT FSC-AUC: relax 0.64479 and GPU RELION 0.64484 over 12 seeds
+  (paired difference -0.00005 +/- 0.00057); CPU RELION 0.65381, 0.64695, 0.64833 on seeds 1-3, relax
+  0.0047 below (standard error 0.0016) and GPU RELION 0.0048 below (0.0006), so the row does not pass yet
+  (three more CPU seeds running). At iteration 1, from the same start, relax with CPU RELION's translation
+  defect emulated (ma-gilles/relax#13, diagnostic) reproduces CPU RELION (map 4.6e-4, 1 % of the other
+  group's poses) and relax as written differs by that defect (4.1e-3; GPU RELION 7.8e-3); end to end the
+  emulation scores 0.0008 +/- 0.0003 below relax over 10 seeds, so the defect is not what CPU RELION
+  gains from. K=2 on this fixture collapses to one class in both programs and is a plumbing check only.
+  Scores: `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/scores/{mshape_0d73d5b,mshape_seeds}`.
   SPA VDAM with K>1 uses the same scorer. Fix in progress: keep the GEMM scorer and re-score the samples
   near the cut with RELION's arithmetic when the cap binds. et09 one-group seed 2 on main b44f33e scores
   0.988222 and 0.988187 against RELION's 0.988241-0.988392, so that row is open on current code too. The
