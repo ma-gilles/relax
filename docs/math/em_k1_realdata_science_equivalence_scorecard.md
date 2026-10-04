@@ -294,17 +294,17 @@ No gate reads these values. All rows, including synthetic data: `docs/benchmarks
 Rows from `tests/baselines/relion_vs_relax_benchmarks.json` whose RELION reference has same-command
 repeats. These are the current relax runs, not the frozen calibration runs above.
 
-### EMPIAR-10073 (flip pair) (relax `7e885ab30`)
+### EMPIAR-10073 (flip pair) (relax `f6c8299b6`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| relion_flipqual | — | 0.9841 | 0.9714 | 0.9708 | 0.9981 | 0.9949 | 0.9947 | met |
-| relion_rep | — | 0.9849 | 0.9726 | 0.9727 | — | — | — | met |
-| relion_speedbench | — | 0.9839 | 0.9706 | 0.9707 | — | — | — | met |
-| relion_rf | — | 0.9915 | 0.9839 | 0.9833 | — | — | — | met |
-| this job's RELION arm | 14643275 | 0.9835 | 0.9695 | 0.9704 | — | — | — | met |
+| relion_flipqual | — | 0.9913 | 0.9834 | 0.9830 | 0.9989 | 0.9967 | 0.9967 | met |
+| relion_rep | — | 0.9903 | 0.9810 | 0.9818 | — | — | — | met |
+| relion_speedbench | — | 0.9915 | 0.9838 | 0.9832 | — | — | — | met |
+| relion_rf | — | 0.9838 | 0.9706 | 0.9705 | — | — | — | met |
+| the row's RELION pair arm | 14643275 | 0.9912 | 0.9825 | 0.9835 | — | — | — | met |
 
 RELION against RELION (same band FSC-AUCs):
 
@@ -497,14 +497,13 @@ RELION against RELION (same band FSC-AUCs):
 | fixture reference relion_autorefine_k1_it015_os1 vs same-command repeat 2 | 0.9943 | 0.9929 | 0.9928 |
 | same-command repeat 1 vs same-command repeat 2 | 0.9999 | 0.9998 | 0.9999 |
 
-### synth_ms2_icos_512 (MS2 capsid, I2, box 512 at 1.0 Å/px, B 15) (relax `b0fdcc4d1`)
+### synth_ms2_icos_512 (MS2 capsid, I2, box 512 at 1.0 Å/px, B 15) (relax `f6c8299b6`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
 | RELION run | Jobs | Merged | Half 1 | Half 2 | Masked merged | Masked half 1 | Masked half 2 | Thresholds |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| relion_s42 | — | 0.9581 | 0.8817 | 0.8828 | 0.9803 | 0.9346 | 0.9350 | not met |
-| this job's RELION arm | 14702513 | 0.9997 | 0.9995 | 0.9995 | — | — | — | met |
+| the row's RELION pair arm (seed 43) | 14702513 | 0.9998 | 0.9996 | 0.9997 | 0.9999 | 0.9998 | 0.9998 | met |
 
 ### synth_ms2_icos_448_b40 (MS2 capsid, I2, box 448 at 0.788 Å/px, B 40; EMPIAR-10202-like regime) (relax `f6c8299b6`)
 
