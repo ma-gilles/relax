@@ -1055,6 +1055,23 @@ kernels of `relax/scoring/scoring.py` that only dense `run_em` used left with it
 
 Pass 1 on stable Fourier-window shapes: tried 2026-10-03, no gain, not landed (speedw; team-lead decision).
 
+Stable Fourier-window quantum 16 for Class3D and auto-refine (default 8): tried 2026-10-04, not adopted (etw;
+team-lead decision). Same-node cold H100 pairs through `RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM=16`:
+multishape Class3D K=2 10k/128 475 -> 429 s (one pair, job 14954459, real compiles of 0.2 s or more 184 -> 147); pdb
+K4 50k/256 Class3D 421/418 -> 407/403 s (two rounds with the GPUs swapped, job 14971138, real compiles 63-64 -> 56-57,
+maps inside the same-quantum repeat spread of 2e-3 to 6e-3); K=1 auto-refine on 10k/256 351/347 -> 351/348 s (job
+14971165, real compiles unchanged), with one quantum-16 run 7.3e-3 from the other three in the merged map against
+4.8e-4 between the two quantum-8 runs, which two runs per quantum cannot attribute. Peak device memory (nvidia-smi)
+was equal at 80 GB; 16 GB was not measured. A 3.5% gain on K4 and none on K=1 does not justify a second quantum scoped
+to one workflow.
+
+Eager single-primitive call sites as jitted programs, the four not already on main (data_vs_prior tail mask,
+scale-correction pixel mask, per-image noise rows, `_pad_accumulator_to_class`): tried 2026-10-03/04, not landed (etw;
+team-lead decision). They remove about 220 sub-0.2 s compile events, about 5 s of a 480 s cold multishape Class3D K=2
+run (call-site census, job 14955029; it3 maps equal to 7e-7, medium 14955020 pass before the rebase): 1% is below what
+a pair resolves and not worth a medium run. The window gathers and the exact CTF gather of the same series are on main
+as 65f16e5 and 54cbb65.
+
 Pass-1 batch loop (2026-10-04, speedw; relax 0ae37fd, 54cbb65, 4efac62, 3636596): after the score program, one
 program per batch (`coarse_publication.coarse_support_posterior`) forms the K=1 RELION-order log weights, the float32
 posterior, the winner, Pmax and the rotation mask; the device CTF row gather is one program
