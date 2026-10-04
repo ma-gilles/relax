@@ -15,7 +15,9 @@ updates remain unchanged by these interface migrations.
 
 Both refactor packages are since merged with GitHub main
 `d1ba3e83406c81ab77891e25d1a775d4a818e674`: the first package at `1b73943`, the
-second at `e026a64`. Main's changes after `80f2b2b` are kept as main wrote
+second at `e026a64`; the branch then takes main through
+`3136641b2ccc4240a71caa690d6cf0098f70cefd` (merge `09dfcc8`), which changes
+no refinement file. Main's changes after `80f2b2b` are kept as main wrote
 them: the numbered iteration builds the scoring projector on every route (the
 "no projector scoring path" error is gone), the adaptive pass-2 grids come from
 `oversampling.prepare_adaptive_pass2_grids` with deferred fine rotations, and
