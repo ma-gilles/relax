@@ -1230,10 +1230,7 @@ def refine_single_volume(
         ", ".join(f"{key}={value:.1f}s" for key, value in setup_phase_seconds.items()),
     )
     native_sampling_boundary = replay_policy._native_sampling_boundary_for_iteration(
-        iteration=iteration,
-        perturb_replay_relion_dir=perturb_replay_relion_dir,
-        perturb_replay_max_iter=perturb_replay_max_iter,
-        sealed_sampling_state=sealed_sampling_state,
+        options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
     )
     # A numbered RELION sampling STAR is the state *after* the expectation
     # transition that produced it.  The next expectation computes
@@ -1313,10 +1310,7 @@ def refine_single_volume(
             perturb_replay_relion_dir = None
             replay_saved_healpix_order = None
         native_sampling_boundary = replay_policy._native_sampling_boundary_for_iteration(
-            iteration=iteration,
-            perturb_replay_relion_dir=perturb_replay_relion_dir,
-            perturb_replay_max_iter=perturb_replay_max_iter,
-            sealed_sampling_state=sealed_sampling_state,
+            options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
         )
         # RELION checks convergence at the top of iteration n from the
         # completed n-1 statistics and the fine-enough decision latched during
@@ -1347,7 +1341,7 @@ def refine_single_volume(
             relion_firstiter_cc_this_iter,
             firstiter_score_mode_this_iter,
             firstiter_winner_take_all_this_iter,
-        ) = first_iteration_policy(parity, init_relion_iteration=init_relion_iteration, iteration=iteration)
+        ) = first_iteration_policy(options, iteration=iteration)
         numbered_relion_iteration = replay_policy._numbered_relion_iteration(init_relion_iteration, iteration)
 
         if follower_setup.follower_scale_state is not None:
@@ -1670,9 +1664,8 @@ def refine_single_volume(
         # the coarse grid IS the trial grid so we apply directly here.
         random_perturbation = resolve_numbered_perturbation(
             random_perturbation,
-            parity,
+            options,
             iteration=iteration,
-            init_relion_iteration=init_relion_iteration,
             replay_metadata=_replay_meta,
             replay_dir=perturb_replay_relion_dir,
             rng=perturb_rng,

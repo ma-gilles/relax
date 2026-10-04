@@ -10,10 +10,21 @@ from relax import sampling
 from relax.helpers.convergence import RefinementState
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import convergence, iteration_planning
-from relax.refinement.refinement_options import AdaptiveOptions, RelionParityOptions
+from relax.refinement.refinement_options import (
+    AdaptiveOptions,
+    RefinementOptions,
+    RefinementSchedule,
+    RelionParityOptions,
+)
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
+
+
+def _options(parity, init_relion_iteration):
+    return RefinementOptions(
+        parity=parity, schedule=RefinementSchedule(init_relion_iteration=init_relion_iteration),
+    )
 
 
 def _stalled_state():
@@ -80,7 +91,7 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
             relion_iteration=11 + iteration, rng=reference_rng,
         )
         current = iteration_planning.resolve_numbered_perturbation(
-            current, parity, iteration=iteration, init_relion_iteration=10,
+            current, _options(parity, 10), iteration=iteration,
             replay_metadata=None, replay_dir=None, rng=rng, log=LOG,
         )
         assert_matches(current, expected)
@@ -92,8 +103,8 @@ def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
     rng = np.random.default_rng(23)
     reference_rng = np.random.default_rng(23)
     result = iteration_planning.resolve_numbered_perturbation(
-        0.125, RelionParityOptions(perturb_factor=0.5),
-        iteration=0, init_relion_iteration=10,
+        0.125, _options(RelionParityOptions(perturb_factor=0.5), 10),
+        iteration=0,
         replay_metadata={"sealed_v3": sealed, "random_perturbation": 0.25,
                          "perturbation_factor": 0.5, "healpix_order": 3},
         replay_dir=str(tmp_path), rng=rng, log=LOG,
@@ -105,11 +116,11 @@ def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
 def test_replay_restart_uses_physical_iteration(tmp_path):
     (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
     result = iteration_planning.resolve_numbered_perturbation(
-        0.125, RelionParityOptions(
+        0.125, _options(RelionParityOptions(
             perturb_factor=0.5, perturb_replay_precision="seed_exact",
             perturb_replay_restart_state_iterations=(11,),
             perturb_replay_relion_dir=str(tmp_path),
-        ), iteration=0, init_relion_iteration=11,
+        ), 11), iteration=0,
         replay_metadata={"random_perturbation": -0.06873, "perturbation_factor": 0.5,
                          "healpix_order": 3},
         replay_dir=str(tmp_path), rng=None, log=LOG,
@@ -120,8 +131,8 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
 def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
     monkeypatch.setattr(sampling, "_advance_relion_perturbation", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = iteration_planning.resolve_numbered_perturbation(
-        0.25, RelionParityOptions(perturb_factor=0.0), iteration=2,
-        init_relion_iteration=10, replay_metadata=None, replay_dir=None,
+        0.25, _options(RelionParityOptions(perturb_factor=0.0), 10), iteration=2,
+        replay_metadata=None, replay_dir=None,
         rng=None, log=LOG,
     )
     assert_matches(result, 0.25)

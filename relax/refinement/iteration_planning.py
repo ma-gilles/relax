@@ -50,10 +50,9 @@ if TYPE_CHECKING:
 
 def resolve_numbered_perturbation(
     previous_perturbation: float,
-    parity: RelionParityOptions,
+    options: RefinementOptions,
     *,
     iteration: int,
-    init_relion_iteration: int,
     replay_metadata,
     replay_dir: str | None,
     rng,
@@ -62,9 +61,13 @@ def resolve_numbered_perturbation(
     """Resolve sealed, STAR-replayed or native perturbation, in that order.
 
     Only native sampling advances the run RNG. Replay may instead reconstruct
-    the seeded sequence from a restart iteration. See
+    the seeded sequence from a restart iteration. Reads from ``options``:
+    ``schedule.init_relion_iteration``; ``parity.perturb_factor``, ``perturb_seed`` and the
+    ``perturb_replay_*`` prefix, precision and restart-state iterations. See
     ``docs/math/relion_refinement_algorithm.md#2-sampling-grids-and-units``.
     """
+    parity = options.parity
+    init_relion_iteration = options.schedule.init_relion_iteration
     if replay_metadata is not None:
         if replay_metadata.get("sealed_v3", False):
             perturbation = float(replay_metadata["random_perturbation"])
@@ -349,12 +352,16 @@ class FirstIterationPolicy(NamedTuple):
     winner_take_all: bool
 
 
-def first_iteration_policy(parity: RelionParityOptions, *, init_relion_iteration, iteration) -> FirstIterationPolicy:
+def first_iteration_policy(options: RefinementOptions, *, iteration) -> FirstIterationPolicy:
     """RELION's first-iteration CC emulation, the score mode and whether one pose takes all the weight.
 
     Normalised cross-correlation scoring and hard reconstruction apply to iteration 1 of a run that
     starts at RELION iteration 0, under ``--firstiter_cc`` emulation or the two diagnostic options.
+    Reads from ``options``: ``schedule.init_relion_iteration``; ``parity.emulate_relion_firstiter_cc``,
+    ``first_iteration_score_mode`` and ``first_iteration_reconstruction_mode``.
     """
+    parity = options.parity
+    init_relion_iteration = options.schedule.init_relion_iteration
     relion_firstiter_cc_this_iter = bool(
         parity.emulate_relion_firstiter_cc and init_relion_iteration == 0 and iteration == 0
     )

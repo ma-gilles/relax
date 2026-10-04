@@ -616,10 +616,12 @@ def test_native_sampling_boundary_transitions_at_replay_cutoff(
 ):
     assert (
         relion_replay_module._native_sampling_boundary_for_iteration(
+            RefinementOptions(
+                parity=RelionParityOptions(perturb_replay_max_iter=cutoff),
+                debug=EngineDebugOptions(sealed_sampling_state=sealed),
+            ),
             iteration=iteration,
-            perturb_replay_relion_dir=replay_dir,
-            perturb_replay_max_iter=cutoff,
-            sealed_sampling_state=sealed,
+            replay_dir=replay_dir,
         )
         is expected_native
     )

@@ -147,25 +147,21 @@ def _past_perturb_replay_max_iter(iteration: int, perturb_replay_max_iter: int |
     return (int(iteration) + 1) > int(perturb_replay_max_iter)
 
 
-def _native_sampling_boundary_for_iteration(
-    *,
-    iteration: int,
-    perturb_replay_relion_dir: str | None,
-    perturb_replay_max_iter: int | None,
-    sealed_sampling_state,
-) -> bool:
+def _native_sampling_boundary_for_iteration(options, *, iteration: int, replay_dir: str | None) -> bool:
     """Return whether this physical iteration owns sampling and convergence.
 
     A diagnostic replay cutoff is a real ownership boundary, not merely a
     guard around STAR reads. Once crossed, RECOVAR must resume its native
     expected-accuracy, angular-sampling, and convergence transitions.
+    ``replay_dir`` is the replay directory still live at this iteration. Reads from ``options``:
+    ``parity.perturb_replay_max_iter`` and ``debug.sealed_sampling_state``.
     """
 
-    replay_active = perturb_replay_relion_dir is not None and not _past_perturb_replay_max_iter(
+    replay_active = replay_dir is not None and not _past_perturb_replay_max_iter(
         iteration,
-        perturb_replay_max_iter,
+        options.parity.perturb_replay_max_iter,
     )
-    return not replay_active and sealed_sampling_state is None
+    return not replay_active and options.debug.sealed_sampling_state is None
 
 
 def _check_final_replay_source_iteration(*, replay, diagnostic_override, numbered_iteration_count) -> None:
