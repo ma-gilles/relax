@@ -28,7 +28,7 @@ def _stats(rng, n_groups=None, sumw=None):
 
 
 def _update(stats_per_half, noise_per_half, radial_per_half):
-    return noise_updates.update_posterior_noise_variance(
+    return noise_updates.update_k1_posterior_noise_variance(
         stats_per_half,
         noise_updates.NoiseModel(
             variance_per_half=list(noise_per_half),
@@ -37,7 +37,6 @@ def _update(stats_per_half, noise_per_half, radial_per_half):
             average_radial=np.mean(np.stack(radial_per_half), axis=0),
         ),
         SHAPE,
-        k_class_enabled=False,
         firstiter_cc=False,
     )
 
@@ -87,7 +86,7 @@ def test_class3d_update_keeps_one_spectrum_per_group_and_ignores_the_empty_accum
     )
     previous_radial = np.ones((2, N_SHELLS))
     previous_rows = np.ones((2, SHAPE[0] * SHAPE[1]))
-    result = noise_updates.update_posterior_noise_variance(
+    result = noise_updates.update_class_posterior_noise_variance(
         [stats, empty],
         noise_updates.NoiseModel(
             variance_per_half=[previous_rows, previous_rows],
@@ -96,7 +95,6 @@ def test_class3d_update_keeps_one_spectrum_per_group_and_ignores_the_empty_accum
             average_radial=previous_radial,
         ),
         SHAPE,
-        k_class_enabled=True,
         firstiter_cc=False,
     )
     k1 = _update([stats, stats], [previous_rows, previous_rows], [previous_radial, previous_radial])
@@ -112,9 +110,9 @@ def test_firstiter_cc_retains_noise_buffers_and_history_precision():
     rows = [np.ones(256, dtype=np.float32), np.full(256, 2.0, dtype=np.float32)]
     model = noise_updates.noise_model_from_pixels(rows, SHAPE, dtype=np.float32)
     original_pixels = list(model.variance_per_half)
-    result = noise_updates.update_posterior_noise_variance(
+    result = noise_updates.update_k1_posterior_noise_variance(
         [_stats(np.random.default_rng(3)), _stats(np.random.default_rng(4))],
-        model, SHAPE, k_class_enabled=False, firstiter_cc=True,
+        model, SHAPE, firstiter_cc=True,
     )
     assert result.model.variance_per_half is model.variance_per_half
     assert all(a is b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
@@ -131,9 +129,9 @@ def test_k1_update_replaces_pixels_in_the_owned_list():
         [np.ones(256, dtype=np.float32), np.ones(256, dtype=np.float32)], SHAPE, dtype=np.float32,
     )
     original_pixels = list(model.variance_per_half)
-    result = noise_updates.update_posterior_noise_variance(
+    result = noise_updates.update_k1_posterior_noise_variance(
         [_stats(np.random.default_rng(5)), _stats(np.random.default_rng(6))],
-        model, SHAPE, k_class_enabled=False, firstiter_cc=False,
+        model, SHAPE, firstiter_cc=False,
     )
     assert result.model.variance_per_half is model.variance_per_half
     assert all(a is not b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
@@ -309,7 +307,7 @@ def test_premultiplied_data_takes_relions_sigma2_floor(per_group):
     noise = [rows if per_group else rows[0], rows if per_group else rows[0]]
     floor = 1e-15 * float(SHAPE[0]) ** 4
     for premultiplied in (False, True):
-        result = noise_updates.update_posterior_noise_variance(
+        result = noise_updates.update_k1_posterior_noise_variance(
             [stats, stats],
             noise_updates.NoiseModel(
                 variance_per_half=list(noise),
@@ -318,7 +316,6 @@ def test_premultiplied_data_takes_relions_sigma2_floor(per_group):
                 average_radial=radial,
             ),
             SHAPE,
-            k_class_enabled=False,
             firstiter_cc=False,
             ctf_premultiplied=premultiplied,
         )

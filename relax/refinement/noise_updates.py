@@ -396,117 +396,64 @@ def datasets_store_premultiplied_ctf(experiment_datasets) -> bool:
     )
 
 
-def update_posterior_noise_variance(
-    noise_stats_per_half,
-    model: NoiseModel,
-    image_shape,
-    *,
-    k_class_enabled: bool,
-    firstiter_cc: bool,
-    ctf_premultiplied: bool = False,
-    dump_debug=None,
-) -> NoiseUpdateResult:
-    """RELION-style posterior-weighted noise update.
-
-    Sums the ``wsum_sigma2_noise``/``wsum_img_power`` accumulators from
-    both half-sets and normalizes via RELION's M-step formula. K-class
-    refinement shares one sigma2_noise across classes (Class3D ordering);
-    K=1 keeps independent per-half sigma2_noise.
-
-    ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies RELION's
-    1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
-    sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
-    first-iter noise update).
-    """
-
-    from relax.reconstruction import noise_relion
-
-    noise_variance_per_half = model.variance_per_half
-    previous_noise_radial_per_half = model.radial_per_half
-    previous_noise_radial = model.average_radial
-
+def _require_noise_stats_of_both_halves(noise_stats_per_half):
     if noise_stats_per_half[0] is None or noise_stats_per_half[1] is None:
         raise RuntimeError(
             "RELION mode expected per-half NoiseStats from the EM engine; "
             "ensure accumulate_noise=True is plumbed through pass 2.",
         )
 
-    if firstiter_cc:
-        noise_from_res_per_half = [
-            np.asarray(noise_k, dtype=np.float64)
-            for noise_k in previous_noise_radial_per_half
-        ]
-        noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
-        logger.info(
-            "RELION iter-1 CC emulation: keeping previous sigma2_noise (skip first-iter noise update)",
-        )
-        return NoiseUpdateResult(
-            model=NoiseModel(
-                noise_variance_per_half,
-                previous_noise_radial_per_half,
-                _mean_noise_variance(noise_variance_per_half),
-                previous_noise_radial,
-            ),
-            noise_from_res=noise_from_res,
-            noise_from_res_per_half=noise_from_res_per_half,
-        )
 
-    if k_class_enabled:
-        combined_noise_stats = _combined_noise_stats(noise_stats_per_half)
-        if np.ndim(combined_noise_stats.wsum_sigma2_noise) == 2:
-            # Several optics groups (subtomogram Class3D): one spectrum per group, as for K=1.
-            noise_from_res, noise_rows = _per_optics_group_sigma2_noise(
-                combined_noise_stats,
-                np.asarray(previous_noise_radial_per_half[0], dtype=np.float64),
-                noise_variance_per_half[0],
-                image_shape,
-                ctf_premultiplied=ctf_premultiplied,
-            )
-            noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
-            noise_variance_per_half = [noise_rows, noise_rows]
-        else:
-            noise_shared = noise_relion.normalize_wsum_to_sigma2_noise(
-                np.asarray(combined_noise_stats.wsum_sigma2_noise, dtype=np.float64),
-                np.asarray(combined_noise_stats.wsum_img_power, dtype=np.float64),
-                combined_noise_stats.sumw,
-                image_shape,
-                ctf_premultiplied=ctf_premultiplied,
-            )
-            noise_from_res = np.asarray(noise_shared, dtype=np.float64)
-            noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
-            noise_variance_shared = _shell_profile_pixel_row(noise_shared, image_shape)
-            noise_variance_per_half = [noise_variance_shared, noise_variance_shared]
-    elif np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2:
-        noise_from_res_per_half = []
-        for k_noise, stats_k in enumerate(noise_stats_per_half):
-            noise_k, noise_rows_k = _per_optics_group_sigma2_noise(
-                stats_k,
-                np.asarray(
-                    previous_noise_radial_per_half[k_noise], dtype=np.float64
-                ),
-                noise_variance_per_half[k_noise],
-                image_shape,
-                ctf_premultiplied=ctf_premultiplied,
-            )
-            noise_from_res_per_half.append(noise_k)
-            noise_variance_per_half[k_noise] = noise_rows_k
-        noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
-    else:
-        noise_from_res_per_half = []
-        for k_noise, stats_k in enumerate(noise_stats_per_half):
-            noise_k = noise_relion.normalize_wsum_to_sigma2_noise(
-                np.asarray(stats_k.wsum_sigma2_noise, dtype=np.float64),
-                np.asarray(stats_k.wsum_img_power, dtype=np.float64),
-                stats_k.sumw,
-                image_shape,
-                ctf_premultiplied=ctf_premultiplied,
-            )
-            noise_from_res_per_half.append(np.asarray(noise_k, dtype=np.float64))
-            noise_variance_per_half[k_noise] = _shell_profile_pixel_row(noise_k, image_shape)
-        noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
+def _noise_update_keeping_previous_spectra(model: NoiseModel) -> NoiseUpdateResult:
+    """RELION's iter-1 CC emulation skips the first-iteration noise update: the model keeps its arrays."""
+    noise_variance_per_half = model.variance_per_half
+    previous_noise_radial_per_half = model.radial_per_half
+    noise_from_res_per_half = [
+        np.asarray(noise_k, dtype=np.float64)
+        for noise_k in previous_noise_radial_per_half
+    ]
+    noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
+    logger.info(
+        "RELION iter-1 CC emulation: keeping previous sigma2_noise (skip first-iter noise update)",
+    )
+    return NoiseUpdateResult(
+        model=NoiseModel(
+            noise_variance_per_half,
+            previous_noise_radial_per_half,
+            _mean_noise_variance(noise_variance_per_half),
+            model.average_radial,
+        ),
+        noise_from_res=noise_from_res,
+        noise_from_res_per_half=noise_from_res_per_half,
+    )
 
+
+def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied):
+    """One optics group's M-step noise update: the float64 shell profile and its flat pixel row."""
+    from relax.reconstruction import noise_relion
+
+    sigma2_noise = noise_relion.normalize_wsum_to_sigma2_noise(
+        np.asarray(stats.wsum_sigma2_noise, dtype=np.float64),
+        np.asarray(stats.wsum_img_power, dtype=np.float64),
+        stats.sumw,
+        image_shape,
+        ctf_premultiplied=ctf_premultiplied,
+    )
+    return np.asarray(sigma2_noise, dtype=np.float64), _shell_profile_pixel_row(sigma2_noise, image_shape)
+
+
+def _report_noise_update(
+    noise_stats_per_half,
+    model: NoiseModel,
+    image_shape,
+    noise_variance_per_half,
+    noise_from_res_per_half,
+    noise_from_res,
+    dump_debug,
+) -> NoiseUpdateResult:
+    """Log and dump the new spectra against ``model``'s, then build the updated model."""
     # Log per-shell noise comparison (first 10 shells) for convergence diagnostics.
-    old_noise_radial = np.asarray(previous_noise_radial).reshape(
+    old_noise_radial = np.asarray(model.average_radial).reshape(
         -1, np.shape(noise_from_res)[-1]
     )[0]
     new_noise_radial = np.asarray(noise_from_res).reshape(-1, np.shape(noise_from_res)[-1])[0]
@@ -521,7 +468,7 @@ def update_posterior_noise_variance(
         dump_debug(
             image_shape=image_shape,
             noise_stats_per_half=noise_stats_per_half,
-            previous_noise_radial_per_half=previous_noise_radial_per_half,
+            previous_noise_radial_per_half=model.radial_per_half,
             noise_from_res_per_half=noise_from_res_per_half,
             noise_from_res=noise_from_res,
         )
@@ -537,4 +484,127 @@ def update_posterior_noise_variance(
         ),
         noise_from_res=noise_from_res,
         noise_from_res_per_half=noise_from_res_per_half,
+    )
+
+
+def update_k1_posterior_noise_variance(
+    noise_stats_per_half,
+    model: NoiseModel,
+    image_shape,
+    *,
+    firstiter_cc: bool,
+    ctf_premultiplied: bool = False,
+    dump_debug=None,
+) -> NoiseUpdateResult:
+    """RELION-style posterior-weighted noise update of the two half-models.
+
+    Each half normalizes its own ``wsum_sigma2_noise``/``wsum_img_power``
+    accumulators via RELION's M-step formula and keeps an independent
+    sigma2_noise; the pixel rows replace the entries of the model's list.
+
+    ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies RELION's
+    1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
+    sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
+    first-iter noise update).
+    """
+
+    _require_noise_stats_of_both_halves(noise_stats_per_half)
+    if firstiter_cc:
+        return _noise_update_keeping_previous_spectra(model)
+
+    noise_variance_per_half = model.variance_per_half
+    several_optics_groups = np.ndim(noise_stats_per_half[0].wsum_sigma2_noise) == 2
+    noise_from_res_per_half = []
+    for k_noise, stats_k in enumerate(noise_stats_per_half):
+        if several_optics_groups:
+            noise_k, noise_rows_k = _per_optics_group_sigma2_noise(
+                stats_k,
+                np.asarray(
+                    model.radial_per_half[k_noise], dtype=np.float64
+                ),
+                noise_variance_per_half[k_noise],
+                image_shape,
+                ctf_premultiplied=ctf_premultiplied,
+            )
+        else:
+            noise_k, noise_rows_k = _one_group_sigma2_noise(stats_k, image_shape, ctf_premultiplied=ctf_premultiplied)
+        noise_from_res_per_half.append(noise_k)
+        noise_variance_per_half[k_noise] = noise_rows_k
+    noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
+    return _report_noise_update(
+        noise_stats_per_half, model, image_shape,
+        noise_variance_per_half, noise_from_res_per_half, noise_from_res, dump_debug,
+    )
+
+
+def update_class_posterior_noise_variance(
+    noise_stats_per_half,
+    model: NoiseModel,
+    image_shape,
+    *,
+    firstiter_cc: bool,
+    ctf_premultiplied: bool = False,
+    dump_debug=None,
+) -> NoiseUpdateResult:
+    """RELION-style posterior-weighted noise update shared by every class (Class3D ordering).
+
+    Sums the ``wsum_sigma2_noise``/``wsum_img_power`` accumulators from
+    both half-sets and normalizes via RELION's M-step formula. Both halves
+    take the one pixel array in a new list and independent copies of the
+    shell profile.
+
+    ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies RELION's
+    1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
+    sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
+    first-iter noise update).
+    """
+
+    _require_noise_stats_of_both_halves(noise_stats_per_half)
+    if firstiter_cc:
+        return _noise_update_keeping_previous_spectra(model)
+
+    combined_noise_stats = _combined_noise_stats(noise_stats_per_half)
+    if np.ndim(combined_noise_stats.wsum_sigma2_noise) == 2:
+        # Several optics groups (subtomogram Class3D): one spectrum per group, as for K=1.
+        noise_from_res, noise_rows = _per_optics_group_sigma2_noise(
+            combined_noise_stats,
+            np.asarray(model.radial_per_half[0], dtype=np.float64),
+            model.variance_per_half[0],
+            image_shape,
+            ctf_premultiplied=ctf_premultiplied,
+        )
+    else:
+        noise_from_res, noise_rows = _one_group_sigma2_noise(
+            combined_noise_stats, image_shape, ctf_premultiplied=ctf_premultiplied,
+        )
+    noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
+    noise_variance_per_half = [noise_rows, noise_rows]
+    return _report_noise_update(
+        noise_stats_per_half, model, image_shape,
+        noise_variance_per_half, noise_from_res_per_half, noise_from_res, dump_debug,
+    )
+
+
+def update_posterior_noise_variance(
+    noise_stats_per_half,
+    model: NoiseModel,
+    image_shape,
+    *,
+    k_class_enabled: bool,
+    firstiter_cc: bool,
+    ctf_premultiplied: bool = False,
+    dump_debug=None,
+) -> NoiseUpdateResult:
+    """The one remaining mode decision of the noise update.
+
+    K-class refinement shares one sigma2_noise across classes
+    (``update_class_posterior_noise_variance``); K=1 keeps independent
+    per-half sigma2_noise (``update_k1_posterior_noise_variance``). Remove
+    this dispatch when the K1 and Class3D trajectories call those directly.
+    """
+
+    update = update_class_posterior_noise_variance if k_class_enabled else update_k1_posterior_noise_variance
+    return update(
+        noise_stats_per_half, model, image_shape,
+        firstiter_cc=firstiter_cc, ctf_premultiplied=ctf_premultiplied, dump_debug=dump_debug,
     )
