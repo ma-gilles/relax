@@ -546,13 +546,23 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   11, whose SSNR after iteration 64 is 1.0096 (RELION) and 1.0036 (relax) while shells 13-15 are already
   above 1; same-seed RELION runs differ by 0.3-1.0 % in SSNR by iteration 60. One iteration from RELION's
   iteration 60, 70 and 80 states (job 14952421) reproduces RELION's next resolution and its SSNR to 1e-4 at
-  shells 8-25 (per-particle Pmax difference unsigned, median below 4e-4). Same job, same node, one H100
+  shells 8-25 (per-particle Pmax difference unsigned, median below 4e-4); the map after that step differs
+  by 1.9e-3 to 4.6e-3, against 4e-6 to 7e-6 between two RELION builds. Same job, same node, one H100
   each: relax 7004 s, the two RELION runs 10205 and 9900 s (the first RELION run, with the coarser step,
   took 5010 s on another node). Final maps: masked GT FSC-AUC 0.97645 (relax) and 0.97646 (first RELION
-  run). The beam-tilt and magnification cases refine at iteration 90 in both programs. Open under the
-  range rule: at iteration 10 relax's SSNR differs from RELION's by up to 1.2 % (shells 2-10) while RELION
-  runs differ by 0.01-0.2 % there; a one-step audit from RELION's iteration 3 and 9 states is queued (job
-  14963370). Evidence: `em_work/cryoet_vdam_20261001/{relion/etob2l_plain,plain_probe,audit/etob2l_plain_s1}`,
+  run). The beam-tilt and magnification cases refine at iteration 90 in both programs. OPEN under the
+  range rule: relax is outside RELION's same-seed range early in the run. Map relative L2 to RELION,
+  every iteration written in both: 0 at iteration 1, 4.1e-3 at iteration 2, 2.1e-2 at iteration 10, where
+  the three RELION runs differ by 0.4e-3 to 4.6e-3 and two relax revisions by 0.2e-3 (by iteration 60 the
+  ranges touch: RELION 3.5-4.8e-2, relax 5.3-5.9e-2). The first departing step is iteration 2, from an
+  identical state: best poses and offsets equal for all 200 particles, Pmax within 2e-4, and the update
+  differs by 1 % of its norm, evenly over shells and without a scale. Every particle is at the coarse cap
+  of 100 significant samples there. So the one-step map differences of the replay audits (0.5e-3 to
+  4.6e-3 here and on et09/et15) are above RELION's own reproducibility and are not explained yet; whether
+  they come from near-tie membership at the cap or from the reconstruction sums is being split. The
+  diagnostic continuation is not valid from a checkpoint whose next iteration updates the sampling (9,
+  19, ...): it does not carry the previous offset step into RELION's subtomogram rule (3.0 A against 4.25 A
+  at iteration 10); the forward run is right. Evidence: `em_work/cryoet_vdam_20261001/{relion/etob2l_plain,plain_probe,audit/etob2l_plain_s1}`,
   summary in `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/plain_probe_summary.json`.
 - With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
   particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
