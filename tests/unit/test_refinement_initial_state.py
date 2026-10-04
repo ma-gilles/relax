@@ -170,3 +170,12 @@ def test_frozen_numbered_restart_refuses_already_converged_state():
     options = RefinementOptions(replay=ReplayState(init_refinement_state_fields={'has_converged': True}))
     with pytest.raises(ValueError, match='cannot already be converged'):
         _initialize(options)
+
+
+def test_k1_options_refuse_class3d_seed_classes():
+    """Seed classes belong to a Class3D one-reference start; K=1 has no classes to seed."""
+    seeds = np.zeros(4, dtype=np.int64)
+    assert KClassOptions(n_classes=4, first_iteration_seed_classes=seeds).first_iteration_seed_classes is seeds
+    assert KClassOptions(n_classes=1).first_iteration_seed_classes is None
+    with pytest.raises(ValueError, match="K=1 has no classes to seed"):
+        KClassOptions(n_classes=1, first_iteration_seed_classes=seeds)

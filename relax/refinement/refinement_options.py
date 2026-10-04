@@ -329,6 +329,10 @@ class KClassOptions:
     # iteration, 0-based, per input particle row (input_particle_table.relion_class3d_seed_classes).
     first_iteration_seed_classes: Any | None = None
 
+    def __post_init__(self):
+        if int(self.n_classes) == 1 and self.first_iteration_seed_classes is not None:
+            raise ValueError("first_iteration_seed_classes seeds a Class3D start; K=1 has no classes to seed")
+
 
 @dataclass(frozen=True)
 class SymmetryOptions:
