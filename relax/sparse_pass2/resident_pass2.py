@@ -2392,7 +2392,11 @@ def center_pad_relion_projector_half(half, *, logical_r_max: int, physical_size:
     logical = 2 * int(padding_factor) * int(logical_r_max) + 3
     offset = (size - logical) // 2
     x_pad = size // 2 + 1 - (int(padding_factor) * int(logical_r_max) + 2)
-    return jnp.pad(jnp.asarray(half), ((offset, offset), (offset, offset), (0, x_pad)))
+    widths = ((offset, offset), (offset, offset), (0, x_pad))
+    if not isinstance(half, jax.Array):
+        # A host slab is padded on the host: the device pad compiled once per logical size.
+        return jnp.asarray(np.pad(np.asarray(half), widths))
+    return jnp.pad(half, widths)
 
 
 def _resident_stable_window_plan(
@@ -2516,6 +2520,7 @@ def _resident_pass2(
     preserve_bpref_particle_order: bool = False,
     source_faithful_spectrum_norm: bool = False,
     symmetry_label: str = "C1",
+    keep_physical_bpref: bool = False,
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
@@ -4563,7 +4568,9 @@ def _resident_pass2(
             class_Ft_ctf,
             finalize_shape,
         )
-        if finalize_physical:
+        # ``keep_physical_bpref``: the caller slices the logical cube out of the physical one itself
+        # (VDAM's accumulator adapter, on the host), so no crop program compiles per logical size.
+        if finalize_physical and not keep_physical_bpref:
             class_Ft_y = crop_public_full_volume(class_Ft_y, program_recon_volume_shape, logical_recon_volume_shape)
             class_Ft_ctf = crop_public_full_volume(
                 class_Ft_ctf, program_recon_volume_shape, logical_recon_volume_shape
@@ -4802,6 +4809,7 @@ def compute_pass2_stats_resident(
     preserve_bpref_particle_order: bool = False,
     source_faithful_spectrum_norm: bool = False,
     symmetry_label: str = "C1",
+    keep_physical_bpref: bool = False,
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,

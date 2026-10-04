@@ -233,3 +233,21 @@ def test_run_em_output_to_bpref_rejects_unknown_compact_accumulator_shape():
             r_max=19,
             padding_factor=1,
         )
+
+
+def test_a_physical_class_cube_gives_the_logical_bpref_slab():
+    """A pass that keeps its BPref at the physical cube hands the adapter the same slab as the cropped cube."""
+    from relax.vdam.layout import relion_x_public_output_to_bpref
+
+    rng = np.random.default_rng(3)
+    ori_size, r_max = 32, 5
+    logical, physical = 2 * (r_max + 1) + 1, 2 * (8 + 1) + 1
+    start = (physical - logical) // 2
+    data = rng.normal(size=(physical,) * 3) + 1j * rng.normal(size=(physical,) * 3)
+    weight = rng.uniform(0.5, 2.0, size=(physical,) * 3)
+    crop = (slice(start, start + logical),) * 3
+    expected = relion_x_public_output_to_bpref(data[crop].reshape(-1), weight[crop].reshape(-1), ori_size, r_max)
+    actual = relion_x_public_output_to_bpref(data.reshape(-1), weight.reshape(-1), ori_size, r_max)
+    assert actual[0].shape == (logical, logical, r_max + 2)
+    assert actual[0].tobytes() == expected[0].tobytes()
+    assert actual[1].tobytes() == expected[1].tobytes()

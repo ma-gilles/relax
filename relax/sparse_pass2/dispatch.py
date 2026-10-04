@@ -81,6 +81,7 @@ def compute_pass2_stats_sparse(
     preserve_bpref_particle_order: bool = False,
     source_faithful_spectrum_norm: bool = False,
     symmetry_label: str = "C1",
+    keep_physical_bpref: bool = False,
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     reconstruction_volume_current_size=None,
@@ -206,6 +207,7 @@ def compute_pass2_stats_sparse(
         nyquist_column_counting=nyquist_column_counting,
         firstiter_cc_support=firstiter_cc_support,
         **({"symmetry_label": symmetry_label} if symmetry_label != "C1" else {}),
+        **({"keep_physical_bpref": True} if keep_physical_bpref else {}),
         **(
             {"relion_translation_angle_scale": float(relion_translation_angle_scale)}
             if float(relion_translation_angle_scale) != 1.0

@@ -41,6 +41,11 @@ def _as_centered_bpref_source(
             compact_size // 2,
             effective_radius,
         )
+    # A stable-window pass may leave its BPref at the odd cube of its physical window class
+    # (``keep_physical_bpref``): the logical cube is its centre, and the slab is cut from there.
+    edge = round(arr.size ** (1.0 / 3.0))
+    if edge**3 == arr.size and edge % 2 == 1 and edge > compact_size:
+        return arr.reshape(edge, edge, edge), edge // 2, effective_radius
     raise ValueError(
         "expected either an original-box centered Fourier cube of size "
         f"{full_size**3} or a current-size BackProjector cube of size {compact_size**3}; got shape {arr.shape}"

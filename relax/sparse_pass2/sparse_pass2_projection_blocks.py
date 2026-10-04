@@ -481,10 +481,11 @@ def projection_window_union(
         position = np.searchsorted(union, window)
         clipped = np.minimum(position, max(union.size - 1, 0))
         inside = (position < union.size) & (union[clipped] == window) if union.size else np.zeros(window.shape, bool)
-        return jnp.asarray(np.where(inside, position, union.size), dtype=jnp.int32)
+        # Cast on the host: a device cast of the int64 array compiled once per window size.
+        return jnp.asarray(np.where(inside, position, union.size).astype(np.int32))
 
     return ProjectionWindowUnion(
-        indices=jnp.asarray(union, dtype=jnp.int32),
+        indices=jnp.asarray(union.astype(np.int32)),
         score_take=take(score_np),
         recon_take=None if recon_np is None else take(recon_np),
         projector_output_size=int(projector_output_size),

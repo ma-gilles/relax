@@ -382,6 +382,7 @@ def _run_sparse_k_class_adaptive_pass2(
         **({"symmetry_label": base_engine_kwargs["symmetry_label"]}
            if base_engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(base_engine_kwargs),
+        **({"keep_physical_bpref": True} if base_engine_kwargs.get("keep_physical_bpref") else {}),
     )
     # VDAM's pseudo-halfset accumulator slots (class + K * group): the resident engine only.
     reconstruction_groups = base_engine_kwargs.get("reconstruction_group_ids") is not None

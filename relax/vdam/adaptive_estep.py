@@ -378,6 +378,8 @@ def run_adaptive_initial_model_estep(
         window_at_box=True,  # RELION's radial window at the box too (ml_optimiser.cpp:5784-5793)
         sparse_pass2=True,
         mstep_relion_x_half=True,
+        # The accumulator adapter below cuts the logical BPref slab out of the pass's physical cube.
+        keep_physical_bpref=True,
         # Difference 1: the SGD backprojection of the residual.
         mstep_subtract_ctf_projection=bool(group_kwargs["reconstruction_subtract_projected_reference"]),
         score_with_masked_images=bool(group_kwargs["score_with_masked_images"]),
