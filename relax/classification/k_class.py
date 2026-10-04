@@ -378,6 +378,7 @@ def _run_sparse_k_class_adaptive_pass2(
         ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         nyquist_column_counting=base_engine_kwargs.get("nyquist_column_counting", "relion"),
+        firstiter_cc_support=base_engine_kwargs.get("firstiter_cc_support", "relion"),
         **({"symmetry_label": base_engine_kwargs["symmetry_label"]}
            if base_engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(base_engine_kwargs),
@@ -823,6 +824,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
             False,
         ),
         score_mode="normalized_cc",
+        firstiter_cc_support=engine_kwargs.get("firstiter_cc_support", "relion"),
         nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
         collect_significance=_significance_debug_dump_matches(
@@ -1145,6 +1147,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         nyquist_column_counting=pass2_kwargs.get("nyquist_column_counting", "relion"),
+        firstiter_cc_support=pass2_kwargs.get("firstiter_cc_support", "relion"),
         # Images on another grid (K=1 shape classes): the reference-model M-step size and
         # image radius, as the Gaussian route passes them.
         reconstruction_volume_current_size=pass2_kwargs.get("reconstruction_volume_current_size"),
@@ -1730,6 +1733,7 @@ def run_dense_k_class_em_adaptive(
             tree_rescore_max_margin=engine_kwargs.get("firstiter_cc_tree_rescore_max_margin"),
             optics_group_ids=engine_kwargs.get("optics_group_ids"),
             pad_final_image_batch=bool(significance_pad_final_image_batch),
+            firstiter_cc_support=engine_kwargs.get("firstiter_cc_support", "relion"),
             nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
         )
         if reuse_zero_oversampling_coarse_state:

@@ -400,8 +400,11 @@ def _assemble_relion_exact_coarse_gaussian_operands(
     )
 
 
-def _relion_cc_inverse_power_from_processed(processed_half, score_indices=None):
+def _relion_cc_inverse_power_from_processed(processed_half, score_indices=None, power_weights=None):
     """Return RELION firstiter-CC ``1/sum(norm(Fimg))`` in binary64.
+
+    ``power_weights`` (one per summed pixel) restricts the sum to the pixels the score counts;
+    None is RELION's sum over every pixel of the window.
 
     The strict tree rescore uses a per-image FFT to reproduce RELION's
     ``windowFourierTransform``. Its normalization must come from that same
@@ -416,6 +419,8 @@ def _relion_cc_inverse_power_from_processed(processed_half, score_indices=None):
         processed_half.real * processed_half.real
         + processed_half.imag * processed_half.imag
     )
+    if power_weights is not None:
+        power_terms = power_terms * jnp.asarray(power_weights, dtype=power_terms.dtype)[None, :]
     image_power = jnp.sum(power_terms, axis=-1, keepdims=True)
     return jnp.reciprocal(
         jnp.maximum(image_power, jnp.asarray(1e-30, dtype=jnp.float64))

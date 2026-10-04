@@ -89,6 +89,7 @@ def compute_pass2_stats_sparse(
     reconstruction_group_count=None,
     dense_gemm_full_grid: bool = False,
     nyquist_column_counting: str = "relion",
+    firstiter_cc_support: str = "relion",
 ):
     """Exact sparse pass 2 over per-image significant coarse samples.
 
@@ -203,6 +204,7 @@ def compute_pass2_stats_sparse(
         preserve_bpref_particle_order=preserve_bpref_particle_order,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         nyquist_column_counting=nyquist_column_counting,
+        firstiter_cc_support=firstiter_cc_support,
         **({"symmetry_label": symmetry_label} if symmetry_label != "C1" else {}),
         **(
             {"relion_translation_angle_scale": float(relion_translation_angle_scale)}

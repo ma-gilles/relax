@@ -130,3 +130,26 @@ The first-iteration normalized cross-correlation applies no mask at all and is n
 option. The expected-accuracy estimate is not changed either: the reference is zero on those
 pixels. Refused: CTF-premultiplied images (RELION's average CTF^2 divides by `Npix_per_shell`),
 the experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.
+
+## `--firstiter_cc_support {relion,gaussian}`
+
+The first iteration of a refinement from a low-resolution reference scores by normalized
+cross-correlation (`--firstiter_cc`). RELION's CC kernels loop over every pixel of the cropped FFTW
+rectangle with no mask: both copies of the `kx = 0` column, the DC pixel and the corners beyond
+shell `cs/2` enter the cross term, the reference power and the image power `Xi2`. Every Gaussian
+iteration instead scores on `Mresol_fine > 0`: shells `1 .. cs/2`, without `jp = 0, ip < 0` and
+without DC. The first iteration therefore picks its poses on a different set of pixels, with the
+`kx = 0` column at double weight, from all later ones.
+
+`gaussian` scores the CC iteration on the Gaussian support (`gaussian_support_weights`,
+`relax/helpers/half_spectrum.py`), through arrays built in Python only:
+
+| Quantity | Function |
+| --- | --- |
+| weights of the cross term and the reference power, pass 1, the tree rescore and pass 2 | `make_scoring_half_image_weights(firstiter_cc_support_size=...)` (`_compute_k_class_significance_batched`, `_pass2_half_weights`) |
+| image power of pass 1 | `_relion_cc_inverse_power_from_processed(power_weights=...)` |
+| image power `Xi2` of pass 2 | `prepare_unshifted_bucket_operands(cc_power_weights=...)` |
+
+The noise, norm and scale sums of the CC iteration and its backprojection are RELION's (they are
+not part of the score). Refused: a run without a CC iteration (`--no-firstiter_cc`), the
+experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.

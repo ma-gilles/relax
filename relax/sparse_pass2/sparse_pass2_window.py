@@ -162,11 +162,14 @@ def _pass2_half_weights(
     relion_firstiter_score_mode,
     use_float64_scoring: bool,
     nyquist_column_counting: str = "relion",
+    firstiter_cc_support: str = "relion",
+    current_size=None,
 ):
     """Scoring half-image weights of a pass 2, full and windowed, in the scoring precision.
 
-    ``nyquist_column_counting`` is the consistency option of
-    :func:`relax.helpers.half_spectrum.make_scoring_half_image_weights`.
+    ``nyquist_column_counting`` and ``firstiter_cc_support`` are the consistency options of
+    :func:`relax.helpers.half_spectrum.make_scoring_half_image_weights`; a normalized-CC pass with
+    ``firstiter_cc_support="gaussian"`` is weighted on the Gaussian support of ``current_size``.
     """
 
     normalized_cc = relion_firstiter_score_mode == "normalized_cc"
@@ -175,6 +178,11 @@ def _pass2_half_weights(
         relion_half_sum=half_spectrum_scoring,
         exclude_relion_redundant_x0=not normalized_cc,
         nyquist_column_counting=nyquist_column_counting,
+        firstiter_cc_support_size=(
+            (image_shape[0] if current_size is None else current_size)
+            if normalized_cc and firstiter_cc_support == "gaussian"
+            else None
+        ),
     )
     half_weights_windowed = window_spec.score_values(half_weights)
     if use_float64_scoring:

@@ -889,6 +889,7 @@ def _compute_k_class_significance_batched(
     relion_translation_angle_scale: float = 1.0,
     optics_group_ids=None,
     tree_rescore_max_margin: float | None = None,
+    firstiter_cc_support: str = "relion",
     nyquist_column_counting: str = "relion",
 ):
     """Find significant samples from one posterior over ``class x rotation x translation``.
@@ -897,9 +898,10 @@ def _compute_k_class_significance_batched(
     with rows, ``optics_group_ids`` gives each image's group and every image scores
     with its own group's spectrum (:mod:`relax.helpers.optics_noise`).
 
-    ``nyquist_column_counting="once"`` drops the redundant members of the full-size Nyquist
-    column from the Gaussian weights and from the image power
-    (docs/math/relion_consistency_options.md).
+    ``firstiter_cc_support="gaussian"`` weights a normalized-CC pass, and its image power, on
+    the Gaussian support of the current size; ``nyquist_column_counting="once"`` drops the
+    redundant members of the full-size Nyquist column from the Gaussian weights and from the
+    image power (docs/math/relion_consistency_options.md).
     """
 
     if return_class_second and not return_class_best:
@@ -982,11 +984,15 @@ def _compute_k_class_significance_batched(
         )
     means_for_proj = [means_array[class_index] for class_index in range(n_classes)]
 
+    cc_gaussian_support = score_mode == "normalized_cc" and firstiter_cc_support == "gaussian"
     half_weights = make_scoring_half_image_weights(
         image_shape,
         relion_half_sum=half_spectrum_scoring,
         exclude_relion_redundant_x0=score_mode != "normalized_cc",
         nyquist_column_counting=nyquist_column_counting,
+        firstiter_cc_support_size=(
+            (image_shape[0] if current_size is None else current_size) if cc_gaussian_support else None
+        ),
     )
     window_spec_kwargs = {}
     if score_mode == "normalized_cc":
@@ -1982,6 +1988,7 @@ def _compute_k_class_significance_batched(
                     _relion_cc_inverse_power_from_processed(
                         exact_cc_processed,
                         window_indices if use_window else None,
+                        (half_weights_windowed if use_window else half_weights) if cc_gaussian_support else None,
                     ),
                     jnp.asarray(batch_scale_np, dtype=jnp.float32),
                     phase_factors=exact_cc_phase_factors,

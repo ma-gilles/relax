@@ -104,6 +104,23 @@ def redundant_nyquist_column_pixels(image_shape) -> np.ndarray:
     return _readonly(mask.reshape(-1))
 
 
+def gaussian_support_weights(image_shape, current_size) -> np.ndarray:
+    """1 on the pixels the Gaussian likelihood scores at ``current_size``, 0 elsewhere (flat packed half).
+
+    RELION's Gaussian support (``Mresol_fine > 0``): rounded shells ``1 .. current_size / 2`` of the
+    cropped image, without ``jp = 0, ip < 0``, the DC pixel and the crop's missing row. ``None`` or a
+    size at the box is the full-size support.
+    """
+    from relax.helpers.fourier_window import make_fourier_window_indices_np
+
+    height, width = _normalize_image_shape(image_shape)
+    size = height if current_size is None else min(int(current_size), height)
+    indices, _ = make_fourier_window_indices_np((height, width), size)
+    weights = np.zeros(height * (width // 2 + 1), dtype=np.float32)
+    weights[indices] = 1.0
+    return weights
+
+
 def _normalize_image_shape(image_shape):
     image_shape = tuple(int(size) for size in image_shape)
     if len(image_shape) != 2:
@@ -126,6 +143,7 @@ def make_scoring_half_image_weights(
     relion_half_sum: bool,
     exclude_relion_redundant_x0: bool = True,
     nyquist_column_counting: str = "relion",
+    firstiter_cc_support_size=None,
 ):
     """Return half-spectrum weights for likelihood scoring.
 
@@ -142,9 +160,11 @@ def make_scoring_half_image_weights(
     sides of the centered ``kx=0`` axis.  Those callers must pass
     ``exclude_relion_redundant_x0=False``.
 
-    The opt-in consistency rule ``nyquist_column_counting="once"`` (docs/math/relion_consistency_options.md)
-    also zeroes the redundant members of the full-size Nyquist column in the Gaussian weights
-    (:func:`redundant_nyquist_column_pixels`).
+    Two opt-in consistency rules change RELION's weights (docs/math/relion_consistency_options.md):
+    ``nyquist_column_counting="once"`` also zeroes the redundant members of the full-size Nyquist
+    column in the Gaussian weights (:func:`redundant_nyquist_column_pixels`), and
+    ``firstiter_cc_support_size`` (a current size, or the box) replaces the normalized-CC weights by
+    the Gaussian support of that size (:func:`gaussian_support_weights`).
     """
 
     image_shape = _normalize_image_shape(image_shape)
@@ -152,13 +172,18 @@ def make_scoring_half_image_weights(
     if nyquist_column_counting not in ("relion", "once"):
         raise ValueError(f"nyquist_column_counting must be 'relion' or 'once', got {nyquist_column_counting!r}")
     if not relion_half_sum:
-        if nyquist_column_counting != "relion":
-            raise NotImplementedError("nyquist_column_counting applies to RELION's half-sum weights only")
+        if nyquist_column_counting != "relion" or firstiter_cc_support_size is not None:
+            raise NotImplementedError("the consistency rules apply to RELION's half-sum weights only")
         return jnp.asarray(plan.hermitian_weights)
-    if not exclude_relion_redundant_x0:
+    if exclude_relion_redundant_x0:
+        if firstiter_cc_support_size is not None:
+            raise ValueError("firstiter_cc_support_size is the normalized-CC weights' (exclude_relion_redundant_x0=False)")
+        weights = plan.relion_scoring_weights
+    elif firstiter_cc_support_size is not None:
+        weights = gaussian_support_weights(image_shape, firstiter_cc_support_size)
+    else:
         # RELION's normalized-CC kernels apply no mask at all, the Nyquist column included.
         return jnp.asarray(plan.relion_cc_scoring_weights)
-    weights = plan.relion_scoring_weights
     if nyquist_column_counting == "once":
         weights = np.where(redundant_nyquist_column_pixels(image_shape), np.float32(0.0), weights)
     return jnp.asarray(weights)

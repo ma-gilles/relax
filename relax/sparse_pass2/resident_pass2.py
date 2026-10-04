@@ -2528,6 +2528,7 @@ def _resident_pass2(
     unit_rotation_log_prior=None,
     dense_gemm_full_grid: bool = False,
     nyquist_column_counting: str = "relion",
+    firstiter_cc_support: str = "relion",
 ):
     """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
 
@@ -2554,16 +2555,19 @@ def _resident_pass2(
     or pixel size): the image-side windows keep ``reconstruction_current_size`` in image
     pixels, the accumulator and its adjoint radius use the reference model size.
 
-    ``nyquist_column_counting`` is the consistency option of the per-image sums
-    (docs/math/relion_consistency_options.md). It changes only arrays built here: the
-    scoring weights (``_pass2_half_weights``) and the image the noise statistics read
-    (``prepare_unshifted_bucket_operands``). Subtomogram and full-grid GEMM passes refuse it.
+    ``nyquist_column_counting`` and ``firstiter_cc_support`` are the consistency options of the
+    per-image sums (docs/math/relion_consistency_options.md). They change only arrays built
+    here: the scoring weights (``_pass2_half_weights``), the image the noise statistics read
+    and the normalized-CC image power (``prepare_unshifted_bucket_operands``). Subtomogram and
+    full-grid GEMM passes refuse them.
     """
 
-    if nyquist_column_counting != "relion" and (tilt is not None or dense_gemm_full_grid):
+    if (nyquist_column_counting != "relion" or firstiter_cc_support != "relion") and (
+        tilt is not None or dense_gemm_full_grid
+    ):
         raise NotImplementedError(
-            "nyquist_column_counting is implemented for the single-particle resident pass 2 only "
-            "(not subtomogram or full-grid GEMM passes)"
+            "nyquist_column_counting / firstiter_cc_support are implemented for the single-particle "
+            "resident pass 2 only (not subtomogram or full-grid GEMM passes)"
         )
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -3063,6 +3067,8 @@ def _resident_pass2(
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         use_float64_scoring=use_float64_scoring,
         nyquist_column_counting=nyquist_column_counting,
+        firstiter_cc_support=firstiter_cc_support,
+        current_size=current_size,
     )
     if stable_window_plan is None:
         relion_score_full_to_compact = jnp.asarray(
@@ -3917,6 +3923,9 @@ def _resident_pass2(
     )
     if nyquist_column_counting != "relion":
         bucket_io_kwargs["nyquist_column_counting"] = nyquist_column_counting
+    if firstiter_cc and firstiter_cc_support != "relion":
+        # Xi2 over the pixels the normalized CC counts (the score window's weights).
+        bucket_io_kwargs["cc_power_weights"] = half_weights_windowed
     # Without the half's resident operands (streamed projections, or operands
     # too large), a chunk prepares its own images' unshifted operands (T16)
     # where they are supported, instead of translated tiles: several times
@@ -4801,6 +4810,7 @@ def compute_pass2_stats_resident(
     reconstruction_group_count=None,
     dense_gemm_full_grid: bool = False,
     nyquist_column_counting: str = "relion",
+    firstiter_cc_support: str = "relion",
 ):
     """Device-resident K=1 sparse pass 2, relax's one pass-2 engine.
 

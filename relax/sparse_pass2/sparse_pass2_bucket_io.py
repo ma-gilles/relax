@@ -340,6 +340,7 @@ def prepare_unshifted_bucket_operands(
     relion_exact_bpref_operands=False,
     stage_timing=None,
     noise_optics_groups=None,
+    cc_power_weights=None,
     nyquist_column_counting="relion",
 ) -> UnshiftedBucketOperands:
     """Per-image half of :func:`_prepare_bucket_io`, statement for statement.
@@ -351,6 +352,10 @@ def prepare_unshifted_bucket_operands(
 
     ``noise_variance_half`` is one shared spectrum or a per-optics-group table
     whose rows ``noise_optics_groups`` selects per image (:mod:`relax.helpers.optics_noise`).
+
+    ``cc_power_weights`` (normalized CC only; one weight per score-window pixel) restricts
+    the image power ``Xi2`` to the pixels the score counts. None is RELION's sum over the
+    whole window.
 
     ``nyquist_column_counting="once"`` zeroes, in the image the noise statistics read
     (``processed_score_half_for_noise``), the redundant members of the full-size Nyquist
@@ -501,6 +506,8 @@ def prepare_unshifted_bucket_operands(
             abs2_half = jnp.abs(processed_score_half_raw) ** 2
         if window_indices is not None:
             abs2_half = abs2_half[:, window_indices]
+        if cc_power_weights is not None:
+            abs2_half = abs2_half * jnp.asarray(cc_power_weights, dtype=abs2_half.dtype)[None, :]
         batch_norm = jnp.sum(abs2_half, axis=-1, keepdims=True).real
     else:
         # batch_norm starts from raw processed-score images, then follows the
@@ -753,6 +760,7 @@ def _prepare_bucket_io(
     return_native_bpref_operands=False,
     stage_timing=None,
     noise_optics_groups=None,
+    cc_power_weights=None,
     nyquist_column_counting="relion",
 ):
     """Run preprocessing for a batch of images (translations tiled, CTF/noise ratios).
@@ -787,6 +795,7 @@ def _prepare_bucket_io(
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         stage_timing=stage_timing,
         noise_optics_groups=noise_optics_groups,
+        cc_power_weights=cc_power_weights,
         nyquist_column_counting=nyquist_column_counting,
     )
     substage_t0 = time.time()

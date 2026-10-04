@@ -30,6 +30,7 @@ OPTIONS = [
     ("noise_shell_count", "relion", "summed"),
     ("initial_noise_pair_counting", "relion", "once"),
     ("nyquist_column_counting", "relion", "once"),
+    ("firstiter_cc_support", "relion", "gaussian"),
 ]
 NON_DEFAULT = pytest.mark.parametrize("name,value", [(name, value) for name, _, value in OPTIONS])
 BASE_ARGS = ["--data_dir", "data", "--output", "out"]

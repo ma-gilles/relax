@@ -251,8 +251,9 @@ class DenseExecutionPolicy:
     relion_translation_angle_scale: float = 1.0
     # The K=1 --firstiter_cc coarse-tree top-2 rescore margin (RelionParityOptions); None is off.
     firstiter_cc_tree_rescore_max_margin: float | None = None
-    # RelionConsistencyOptions.nyquist_column_counting: how the per-image sums count the
-    # Hermitian pairs of the full-size Nyquist column.
+    # RelionConsistencyOptions: the support of the first-iteration normalized CC, and how the
+    # per-image sums count the Hermitian pairs of the full-size Nyquist column.
+    firstiter_cc_support: str = "relion"
     nyquist_column_counting: str = "relion"
 
 
@@ -585,6 +586,8 @@ def _score_half_dense_one_shape(
         em_kwargs["firstiter_cc_tree_rescore_max_margin"] = float(execution.firstiter_cc_tree_rescore_max_margin)
     if float(execution.relion_translation_angle_scale) != 1.0:
         em_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
+    if execution.firstiter_cc_support != "relion":
+        em_kwargs["firstiter_cc_support"] = execution.firstiter_cc_support
     if execution.nyquist_column_counting != "relion":
         em_kwargs["nyquist_column_counting"] = execution.nyquist_column_counting
     if execution.diagnostic_float64_pass2:

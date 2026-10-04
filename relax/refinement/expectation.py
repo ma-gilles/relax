@@ -737,6 +737,7 @@ def score_numbered_half(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
+            firstiter_cc_support=options.consistency.firstiter_cc_support,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
         dense_result = _score_half_dense_in_bpref_scope(

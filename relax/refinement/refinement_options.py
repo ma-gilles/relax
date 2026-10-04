@@ -154,6 +154,7 @@ _CONSISTENCY_CHOICES = {
     "noise_shell_count": ("relion", "summed"),
     "initial_noise_pair_counting": ("relion", "once"),
     "nyquist_column_counting": ("relion", "once"),
+    "firstiter_cc_support": ("relion", "gaussian"),
 }
 
 
@@ -188,6 +189,10 @@ class RelionConsistencyOptions:
     # and RELION's per-image sums (Gaussian score, image power, noise, norm and scale sums,
     # Npix_per_shell) drop neither, unlike the kx = 0 column; "once" counts each pair once.
     nyquist_column_counting: Literal["relion", "once"] = "relion"
+    # RELION's first-iteration normalized-CC kernels apply no mask: both kx = 0 copies, the DC
+    # pixel and the corners of the cropped rectangle are summed. "gaussian" scores the CC
+    # iteration on the support and weights of the Gaussian iterations.
+    firstiter_cc_support: Literal["relion", "gaussian"] = "relion"
 
     def __post_init__(self):
         for name, choices in _CONSISTENCY_CHOICES.items():
@@ -241,9 +246,19 @@ def require_consistency_route(
             f"RELION-consistency options {chosen} are implemented for single-particle refinement of one "
             f"image shape from relax's own state; not with {', '.join(reasons)}"
         )
-    if consistency.nyquist_column_counting != "relion" and options.adaptive.coarse_engine == "gemm_dense":
+    if (
+        consistency.nyquist_column_counting != "relion" or consistency.firstiter_cc_support != "relion"
+    ) and options.adaptive.coarse_engine == "gemm_dense":
         raise NotImplementedError(
-            "nyquist_column_counting is not implemented for the experimental gemm_dense coarse engine"
+            "nyquist_column_counting / firstiter_cc_support are not implemented for the experimental "
+            "gemm_dense coarse engine"
+        )
+    if consistency.firstiter_cc_support != "relion" and not (
+        options.parity.emulate_relion_firstiter_cc or options.parity.first_iteration_score_mode == "normalized_cc"
+    ):
+        raise NotImplementedError(
+            f"firstiter_cc_support={consistency.firstiter_cc_support!r} needs the first-iteration "
+            "cross-correlation (--firstiter_cc); this run has no CC iteration"
         )
     if consistency.gridding_kernel != "radial" and options.k_class.n_classes != 1:
         raise NotImplementedError(

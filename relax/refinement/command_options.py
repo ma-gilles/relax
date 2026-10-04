@@ -407,6 +407,14 @@ def parse_refinement_args(argv=None):
         "Npix_per_shell; once counts each pair once.",
     )
     parser.add_argument(
+        "--firstiter_cc_support",
+        choices=("relion", "gaussian"),
+        default="relion",
+        help="Support of the first-iteration normalized cross-correlation (--firstiter_cc). relion (default) "
+        "sums every pixel of the cropped rectangle, as RELION's CC kernels do (both kx = 0 copies, DC, the "
+        "corners); gaussian scores it on the support and weights of the Gaussian iterations.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
@@ -957,6 +965,7 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
         noise_shell_count=args.noise_shell_count,
         initial_noise_pair_counting=args.initial_noise_pair_counting,
         nyquist_column_counting=args.nyquist_column_counting,
+        firstiter_cc_support=args.firstiter_cc_support,
     )
     chosen = options.non_default()
     if not chosen:
@@ -979,6 +988,8 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
         relion_state.append("--init_relion_iteration")
     if relion_state:
         raise SystemExit(f"{flags}: not available with RELION-seeded or replayed state ({', '.join(relion_state)})")
+    if options.firstiter_cc_support != "relion" and not args.firstiter_cc:
+        raise SystemExit(f"--firstiter_cc_support {options.firstiter_cc_support} needs --firstiter_cc (the CC iteration)")
     if options.gridding_kernel != "radial" and int(args.n_classes) != 1:
         raise SystemExit(f"--gridding_kernel {options.gridding_kernel} is implemented for K=1 auto-refine only")
     return options

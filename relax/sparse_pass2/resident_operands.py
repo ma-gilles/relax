@@ -740,6 +740,7 @@ def prepare_resident_half_operands(
         ),
         relion_exact_bpref_operands=relion_exact_bpref_operands,
         noise_optics_groups=kwargs.get("noise_optics_groups"),
+        cc_power_weights=kwargs.get("cc_power_weights"),
         nyquist_column_counting=kwargs.get("nyquist_column_counting", "relion"),
     )
 
