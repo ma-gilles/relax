@@ -182,7 +182,7 @@ ssh polar 'cat /scratch/network/mg6942/relax-polar/runs/RUN_ID/slurm-JOB_ID.out'
 To copy a finished run back to Della without removing Polar's copy:
 
 ```bash
-python scripts/polar/fetch.py RUN_ID /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/polar_runs/RUN_ID
+python scripts/polar/fetch.py RUN_ID "$FETCH_ROOT/polar_runs/RUN_ID"   # FETCH_ROOT: a Della directory you can write
 ```
 
 The [Slurm `sbatch` manual](https://slurm.schedmd.com/sbatch.html) describes

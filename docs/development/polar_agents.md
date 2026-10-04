@@ -54,7 +54,7 @@ durable store when the job finishes.
 ```bash
 ssh polar 'squeue -u "$USER"'
 ssh polar 'sacct -j JOB_ID --format=JobID,State,ExitCode,Elapsed,NodeList'
-python /home/mg6942/relax/scripts/polar/fetch.py RUN_ID /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/polar_runs/RUN_ID
+python /home/mg6942/relax/scripts/polar/fetch.py RUN_ID "$FETCH_ROOT/polar_runs/RUN_ID"   # FETCH_ROOT: a Della directory you can write (global instruction file)
 ```
 
 Each Polar run keeps `submission.json`, `slurm-JOB_ID.out` and

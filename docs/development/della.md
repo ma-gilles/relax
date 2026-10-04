@@ -1,9 +1,9 @@
 # Development on Princeton Della
 
-Use pixi, an isolated feature worktree and unique run roots. Keep long-lived
-EM source checkouts under `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/`;
-the GILLES project filesystem is quota-constrained. Curated fixtures stay in
-place. Never erase a fixture to make room for disposable outputs.
+Use pixi, an isolated feature worktree and unique run roots. Where checkouts,
+outputs and scratch go, and which roots both accounts can write, is stated in
+the owner's global instruction file; this page does not name them. Curated
+fixtures stay in place. Never erase a fixture to make room for disposable outputs.
 
 ## GPU placement
 
@@ -16,8 +16,8 @@ inside that restricted process refers to the selected physical GPU.
 
 Slurm jobs use the scheduler's assigned visibility; do not replace it with the
 local 1/2/3 rule. Use Slurm for GPU, integration, multi-iteration, long or
-contention-sensitive work. Queue waits are expected. Compare timing pairs on
-the same physical GPU sequentially, and record its model, UUID and driver.
+contention-sensitive work. Queue waits are expected. Arrange a timing pair as
+the owner's global instruction file says, and record the GPU model, UUID and driver.
 
 For CPU setup and tests, set both `CUDA_VISIBLE_DEVICES=''` and
 `JAX_PLATFORMS=cpu` before imports. GPU placement needs a fresh process with
@@ -33,17 +33,17 @@ roots:
 ```bash
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
 export PYTHONNOUSERSITE=1 XLA_PYTHON_CLIENT_PREALLOCATE=false
-export TMPDIR=/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/${SLURM_JOB_ID}/tmp
-export PIXI_HOME=/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/${SLURM_JOB_ID}/pixi_home
-export RATTLER_CACHE_DIR=/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/${SLURM_JOB_ID}/rattler_cache
-export RECOVAR_JAX_CACHE_DIR=/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/${SLURM_JOB_ID}/jax_cache
+# RUN_ROOT: this run's own directory, under a root the global instruction file lists as writable.
+export TMPDIR=${RUN_ROOT}/runtime/${SLURM_JOB_ID}/tmp
+export PIXI_HOME=${RUN_ROOT}/runtime/${SLURM_JOB_ID}/pixi_home
+export RATTLER_CACHE_DIR=${RUN_ROOT}/runtime/${SLURM_JOB_ID}/rattler_cache
+export RECOVAR_JAX_CACHE_DIR=${RUN_ROOT}/runtime/${SLURM_JOB_ID}/jax_cache
 export JAX_COMPILATION_CACHE_DIR="$RECOVAR_JAX_CACHE_DIR"
 mkdir -p "$TMPDIR" "$PIXI_HOME" "$RATTLER_CACHE_DIR" "$RECOVAR_JAX_CACHE_DIR"
 ```
 
-Save bulky disposable runs under
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/<dated-run-name>/`, or the other
-scratch roots specified below, with a `SAFE_TO_DELETE` marker. Keep small
+Save bulky disposable runs where the data-organization section of the owner's
+global instruction file says, with a `SAFE_TO_DELETE` marker. Keep small
 manifests, commands, checksums, measurements and logs in durable review records.
 Freeze the source and input identities from submission until completion.
 
@@ -146,8 +146,7 @@ dataset runner fails fast when `METHOD != covariance` and `--use-ppca` is absent
 
 Before submitting, record the repo commit, exact command line, resolved input
 paths, Slurm job IDs, output root, and key logs. Save bulky disposable outputs
-under `/scratch/gpfs/GILLES/mg6942/` or overflow
-`/scratch/gpfs/CRYOEM/gilleslab/` with a `SAFE_TO_DELETE` marker.
+where the owner's global instruction file says, with a `SAFE_TO_DELETE` marker.
 
 
 For PPCA comparisons, use at least 20 EM iterations. Shorter runs are smoke

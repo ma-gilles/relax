@@ -51,14 +51,15 @@ Outputs must be in a new directory outside the checkout.
 
 ```bash
 # CPU example; select the checkout's pixi Python and verify imports for real tests.
+# RUN_ROOT: a new directory under a root the owner's global instruction file lists as writable.
 CUDA_VISIBLE_DEVICES='' JAX_PLATFORMS=cpu PYTHONNOUSERSITE=1 \
   .pixi/envs/default/bin/python scripts/em_work_package.py \
-  --output /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/PACKAGE_checks \
+  --output "$RUN_ROOT/PACKAGE_checks" \
   run -- .pixi/envs/default/bin/python scripts/check_agent_guides.py
 
 # Watch existing exact IDs; this does not submit, restart, cancel or qualify them.
 .pixi/envs/default/bin/python scripts/em_work_package.py \
-  --output /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/PACKAGE_watch \
+  --output "$RUN_ROOT/PACKAGE_watch" \
   watch JOB_ID ANOTHER_JOB_ID
 ```
 

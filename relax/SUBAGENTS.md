@@ -76,8 +76,8 @@ other writers, assign exact files, then integrate serially.
   most three GPUs total and only after `nvidia-smi` confirms that each selected
   GPU is idle and not in use by someone else.
 - Reuse immutable fixtures and completed RELION outputs. Each writer gets a
-  distinct source checkout under the CRYOEM `mg6942/em_dev/` root when needed,
-  plus a distinct `em_work/codex/<dated-run-name>/` output/runtime root.
+  distinct source checkout when needed, plus a distinct dated output/runtime
+  root, both under a root the owner's global instruction file lists as writable.
 - Every disposable root gets `SAFE_TO_DELETE`; never delete another agent’s
   root during the program.
 - The patched RELION checkout/build is a mutex. The primary explicitly grants

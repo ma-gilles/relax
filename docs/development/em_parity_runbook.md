@@ -65,18 +65,17 @@ Python/conda variables, and create per-job runtime roots:
 
 ```bash
 RUN_ID="${SLURM_JOB_ID:-manual}"
-export TMPDIR="/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/$RUN_ID/tmp"
-export PIXI_HOME="/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/$RUN_ID/pixi_home"
-export RATTLER_CACHE_DIR="/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/runtime/$RUN_ID/rattler_cache"
+# RUN_ROOT: this run's own directory, under a root the global instruction file lists as writable.
+export TMPDIR="$RUN_ROOT/runtime/$RUN_ID/tmp"
+export PIXI_HOME="$RUN_ROOT/runtime/$RUN_ID/pixi_home"
+export RATTLER_CACHE_DIR="$RUN_ROOT/runtime/$RUN_ID/rattler_cache"
 mkdir -p "$TMPDIR" "$PIXI_HOME" "$RATTLER_CACHE_DIR"
 ```
 
-Put bulky disposable runs under
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/<dated-run-name>/` and create a
-`SAFE_TO_DELETE` marker at the run root. Do not put long-lived matrices under
-the shared `_agent_scratch` roots. Keep long-lived EM source checkouts under
-`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/`, not the quota-constrained
-GILLES project filesystem. Preserve curated fixtures in place.
+Put bulky disposable runs and source checkouts where the data-organization
+section of the owner's global instruction file says, and create a
+`SAFE_TO_DELETE` marker at each disposable run root. Preserve curated fixtures
+in place.
 
 Particle images are read the way RELION reads them
 ([`relax/helpers/particle_io.py`](../../relax/helpers/particle_io.py)). Auto-refine,
