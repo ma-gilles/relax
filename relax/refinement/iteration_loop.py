@@ -1366,8 +1366,7 @@ def refine_single_volume(
         # and angular sampling select this expectation's grid.
         if not has_previous_iteration:
             image_size_plan = plan_initial_image_size(
-                schedule,
-                parity=parity,
+                options,
                 grid_size=grid_size,
                 pixel_size_angstrom=source_pixel_size_angstrom,
                 incr_size=relion_incr_size,
@@ -1431,13 +1430,12 @@ def refine_single_volume(
 
         current_size = resolve_current_size(
             image_size_plan,
+            options,
             previous_size=prev_cs if has_previous_iteration else None,
             incr_size=relion_incr_size,
             has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
             ave_pmax=state.ave_Pmax,
             iteration=iteration,
-            oracle_sizes=adaptive.relion_current_sizes,
-            init_current_size=schedule.init_current_size,
             grid_size=grid_size,
             log=logger,
         )

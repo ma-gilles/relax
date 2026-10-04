@@ -11,7 +11,7 @@ from relax.refinement.iteration_planning import (
     plan_halfmap_image_size,
     plan_initial_image_size,
 )
-from relax.refinement.refinement_options import RefinementSchedule, RelionParityOptions
+from relax.refinement.refinement_options import RefinementOptions, RefinementSchedule, RelionParityOptions
 
 pytestmark = pytest.mark.unit
 
@@ -19,8 +19,10 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("dtype", [np.float32, np.float64], ids=["production-f32", "diagnostic-f64"])
 def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
     plan = plan_initial_image_size(
-        RefinementSchedule(init_current_size=32, init_fsc=np.zeros(65, dtype=dtype)),
-        parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=30.),
+        RefinementOptions(
+            schedule=RefinementSchedule(init_current_size=32, init_fsc=np.zeros(65, dtype=dtype)),
+            parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=30.),
+        ),
         grid_size=128, pixel_size_angstrom=4.25, incr_size=16,
         has_high_fsc_at_limit=True, dtype=dtype, log=Mock(),
     )
@@ -33,8 +35,8 @@ def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
 @pytest.mark.parametrize("restart_iteration", [0, 2])
 def test_initial_fallback_retains_its_distinct_default_growth(restart_iteration):
     plan = plan_initial_image_size(
-        RefinementSchedule(init_current_size=32, init_relion_iteration=restart_iteration),
-        parity=RelionParityOptions(), grid_size=128, pixel_size_angstrom=4.25,
+        RefinementOptions(schedule=RefinementSchedule(init_current_size=32, init_relion_iteration=restart_iteration)),
+        grid_size=128, pixel_size_angstrom=4.25,
         incr_size=16, has_high_fsc_at_limit=True, dtype=np.float32, log=Mock(),
     )
     # Without ini_high/FSC, the existing bootstrap uses its own ten-shell default.
@@ -49,8 +51,8 @@ def test_initial_fsc_updates_growth_and_scheduling_curve(dtype):
     fsc[:10] = .8
     original = fsc.tobytes()
     plan = plan_initial_image_size(
-        RefinementSchedule(init_current_size=40, init_fsc=fsc, init_ave_Pmax=.2),
-        parity=RelionParityOptions(), grid_size=128, pixel_size_angstrom=4.25,
+        RefinementOptions(schedule=RefinementSchedule(init_current_size=40, init_fsc=fsc, init_ave_Pmax=.2)),
+        grid_size=128, pixel_size_angstrom=4.25,
         incr_size=6, has_high_fsc_at_limit=False, dtype=dtype, log=Mock(),
     )
     # Truncation at shell 20 makes incr_size 21 - 10 + 5 = 16.

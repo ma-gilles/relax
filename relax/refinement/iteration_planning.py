@@ -45,7 +45,7 @@ from relax.refinement.iteration_snapshot import validate_resume_snapshot as _val
 from relax.sampling import _relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
-    from relax.refinement.refinement_options import RefinementOptions, RefinementSchedule, RelionParityOptions
+    from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
 
 
 def resolve_numbered_perturbation(
@@ -293,23 +293,24 @@ def initialize_refinement_state(
 
 def resolve_current_size(
     image_size_plan,
+    options: RefinementOptions,
     *,
     previous_size,
     incr_size,
     has_high_fsc_at_limit,
     ave_pmax,
     iteration: int,
-    oracle_sizes,
-    init_current_size,
     grid_size,
     log: logging.Logger,
 ) -> int:
     """This iteration's current size: the planned size quantised, or the size an oracle schedule gives.
 
     ``previous_size`` is the preceding iteration's size, None for a run's first iteration (which logs no
-    decision). ``oracle_sizes`` are per-iteration sizes that replace the plan; past their end the last one
-    holds, and a non-positive entry means ``init_current_size``.
+    decision). Reads from ``options``: ``adaptive.relion_current_sizes``, per-iteration sizes that replace
+    the plan (past their end the last one holds), and ``schedule.init_current_size``, which a non-positive
+    entry means.
     """
+    oracle_sizes = options.adaptive.relion_current_sizes
     current_size = quantize_current_size(image_size_plan.size, ori_size=grid_size)
     if previous_size is not None:
         log.info(
@@ -330,7 +331,7 @@ def resolve_current_size(
         else:
             oracle_cs = int(oracle_sizes[-1])
         if oracle_cs <= 0:
-            oracle_cs = int(init_current_size)
+            oracle_cs = int(options.schedule.init_current_size)
         current_size = quantize_current_size(oracle_cs, ori_size=grid_size)
         log.info(
             "Current-size oracle: iteration %d using current_size=%d",
@@ -639,9 +640,8 @@ class ClassImageSize:
 
 
 def plan_initial_image_size(
-    schedule: RefinementSchedule,
+    options: RefinementOptions,
     *,
-    parity: RelionParityOptions,
     grid_size,
     pixel_size_angstrom,
     incr_size,
@@ -651,8 +651,12 @@ def plan_initial_image_size(
 ) -> ImageSizeUpdate:
     """Resolve startup ini_high, initial FSC or bootstrap width in that order.
 
+    Reads from ``options``: ``schedule.init_relion_iteration``, ``init_fsc``, ``init_current_size`` and
+    ``init_ave_Pmax``; ``parity.relion_firstiter_ini_high_angstrom`` and ``tau2_fudge``.
     See ``docs/math/relion_refinement_algorithm.md`` for image-size scheduling.
     """
+    schedule = options.schedule
+    parity = options.parity
     if schedule.init_relion_iteration == 0:
         seeded_cs = bootstrap_current_size_from_ini_high_relion(
             grid_size,
