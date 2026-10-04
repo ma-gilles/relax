@@ -839,6 +839,26 @@ labeled diagnostic only.
   scale difference in pass 1, reaches 0.3880/0.6102. VDAM on several shapes is not wired yet; its
   engine-level loop will use `optics_shapes.shape_class_engine_inputs` and `merge_k_class_engine_results`.
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930/score_twoshape_68d7ea1_out.json`.
+  Same-seed reproducibility (2026-10-04, etw): same-code relax runs of this fixture end on different
+  trajectories (it25 class maps 2.6e-2 apart, class assignments equal for 99.5%; bindw jobs 14972806,
+  14973509), and so do same-seed RELION runs, so a pair on this fixture is compared against a same-seed range
+  on both sides, not against one run. relax (main b4845c2, jobs 14978430, 14986271): iteration 1's E-step
+  outputs are identical; its M-step shell sums differ in the last bits (tau2 shell sum 1e-7, class maps
+  1.8e-7 relative), and at iteration 2 Pmax differs for 95% of the images (max 4e-6), the significant count for
+  10-16 images and one best rotation. `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` does not change this. Two RELION
+  5.0.1 GPU runs (non-MPI, seed 1, the oracle command, 5 iterations, job 14978654), run a against run b:
+
+  | Iteration | Significant count differs | Pmax differs (max) | Poses differ | Class maps, relative L2 |
+  | --- | --- | --- | --- | --- |
+  | 1 | 0 | 0 | 0 | 1.7e-8 |
+  | 2 | 92 | 1414 (4e-6) | 1 | 7e-7 |
+  | 3 | 19 | 6803 (9e-5) | 1 | 3e-6 to 5e-6 |
+  | 4 | 3 | 9385 (0.027) | 0 | 2e-5 |
+  | 5 | 3 | 7347 (0.32) | 2 | 0.9e-3 to 1.3e-3 |
+
+  Class assignments are equal in all five iterations. The split is GPU last-bit differences in the
+  iteration-1 reconstruction amplified by this fixture's near-ties, in both programs. Evidence:
+  `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_onengine_20260926/mshape_repro_20261004`.
   Resident stable windows on another grid (2026-10-03): a pass whose images are on another grid than the
   reference takes the stable-window plan on its own image grid, and its reference-model cube takes its own
   physical class (`resident_pass2._stable_reference_volume_class`); before, every such pass kept the logical
