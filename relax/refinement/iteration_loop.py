@@ -80,7 +80,6 @@ from relax.helpers.expected_accuracy import (
     estimate_iteration_accuracy,
     prepare_relion_half1_trial_order,
 )
-from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import (
     DirectionPrior,
@@ -144,6 +143,7 @@ from relax.refinement.iteration_planning import (
     plan_halfmap_image_size,
     plan_initial_image_size,
     refresh_coarse_grids,
+    resolve_current_size,
     resolve_numbered_perturbation,
 )
 from relax.refinement.iteration_snapshot import (
@@ -1375,7 +1375,6 @@ def refine_single_volume(
                 dtype=scoring_dtype,
                 log=logger,
             )
-            current_size = image_size_plan.size
             data_vs_prior_iter = image_size_plan.data_vs_prior
             if data_vs_prior_iter is not None:
                 previous_data_vs_prior_for_scheduling = data_vs_prior_iter
@@ -1408,7 +1407,6 @@ def refine_single_volume(
                         incr_size=relion_incr_size,
                         state=state,
                     )
-                current_size = image_size_plan.size
             else:
                 image_size_plan = plan_halfmap_image_size(
                     history.fsc_history,
@@ -1426,40 +1424,24 @@ def refine_single_volume(
                     dtype=scoring_dtype,
                     log=logger,
                 )
-                current_size = image_size_plan.size
                 data_vs_prior_iter = image_size_plan.data_vs_prior
                 previous_data_vs_prior_for_scheduling = data_vs_prior_iter
                 relion_incr_size = image_size_plan.incr_size
                 relion_has_high_fsc_at_limit = image_size_plan.has_high_fsc_at_limit
 
-        current_size = quantize_current_size(current_size, ori_size=grid_size)
-        if has_previous_iteration:
-            logger.info(
-                "RELION current-size decision: iter=%d prev=%d res_shell=%d "
-                "incr_size=%d high_fsc_at_limit=%s ave_Pmax=%.6f raw=%d quantized=%d",
-                iteration + 1,
-                int(prev_cs),
-                int(image_size_plan.resolution_shell),
-                int(relion_incr_size),
-                bool(relion_has_high_fsc_at_limit),
-                float(state.ave_Pmax),
-                int(image_size_plan.raw_size),
-                int(current_size),
-            )
+        current_size = resolve_current_size(
+            image_size_plan,
+            previous_size=prev_cs if has_previous_iteration else None,
+            incr_size=relion_incr_size,
+            has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
+            ave_pmax=state.ave_Pmax,
+            iteration=iteration,
+            oracle_sizes=adaptive.relion_current_sizes,
+            init_current_size=schedule.init_current_size,
+            grid_size=grid_size,
+            log=logger,
+        )
         del image_size_plan
-        if adaptive.relion_current_sizes is not None:
-            if iteration < len(adaptive.relion_current_sizes):
-                oracle_cs = int(adaptive.relion_current_sizes[iteration])
-            else:
-                oracle_cs = int(adaptive.relion_current_sizes[-1])
-            if oracle_cs <= 0:
-                oracle_cs = int(schedule.init_current_size)
-            current_size = quantize_current_size(oracle_cs, ori_size=grid_size)
-            logger.info(
-                "Current-size oracle: iteration %d using current_size=%d",
-                iteration + 1,
-                current_size,
-            )
 
         # RELION updates image_coarse_size before updateAngularSampling at the
         # start of expectation(). Preserve that incoming sampling order even

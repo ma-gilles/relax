@@ -386,6 +386,8 @@ MUTATIONS = (
      "the one-reference class copy leaves each class's own direction prior", True),
     ("first_iteration_cc_every_iteration", "parity.emulate_relion_firstiter_cc and init_relion_iteration == 0 and iteration == 0", "parity.emulate_relion_firstiter_cc and init_relion_iteration == 0",
      "the first-iteration CC emulation applies to every iteration", True),
+    ("current_size_not_quantised", "current_size = quantize_current_size(image_size_plan.size, ori_size=grid_size)", "current_size = int(image_size_plan.size) + 1",
+     "the planned current size is used one pixel larger and unquantised", True),
     ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history.to_dict(),', '"final_all_data_ran": True,\n**history.to_dict(),',
      "the result of a run without a final pass says the final pass ran", True),
 )

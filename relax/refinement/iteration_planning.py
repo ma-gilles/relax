@@ -291,6 +291,55 @@ def initialize_refinement_state(
     return state
 
 
+def resolve_current_size(
+    image_size_plan,
+    *,
+    previous_size,
+    incr_size,
+    has_high_fsc_at_limit,
+    ave_pmax,
+    iteration: int,
+    oracle_sizes,
+    init_current_size,
+    grid_size,
+    log: logging.Logger,
+) -> int:
+    """This iteration's current size: the planned size quantised, or the size an oracle schedule gives.
+
+    ``previous_size`` is the preceding iteration's size, None for a run's first iteration (which logs no
+    decision). ``oracle_sizes`` are per-iteration sizes that replace the plan; past their end the last one
+    holds, and a non-positive entry means ``init_current_size``.
+    """
+    current_size = quantize_current_size(image_size_plan.size, ori_size=grid_size)
+    if previous_size is not None:
+        log.info(
+            "RELION current-size decision: iter=%d prev=%d res_shell=%d "
+            "incr_size=%d high_fsc_at_limit=%s ave_Pmax=%.6f raw=%d quantized=%d",
+            iteration + 1,
+            int(previous_size),
+            int(image_size_plan.resolution_shell),
+            int(incr_size),
+            bool(has_high_fsc_at_limit),
+            float(ave_pmax),
+            int(image_size_plan.raw_size),
+            int(current_size),
+        )
+    if oracle_sizes is not None:
+        if iteration < len(oracle_sizes):
+            oracle_cs = int(oracle_sizes[iteration])
+        else:
+            oracle_cs = int(oracle_sizes[-1])
+        if oracle_cs <= 0:
+            oracle_cs = int(init_current_size)
+        current_size = quantize_current_size(oracle_cs, ori_size=grid_size)
+        log.info(
+            "Current-size oracle: iteration %d using current_size=%d",
+            iteration + 1,
+            current_size,
+        )
+    return current_size
+
+
 class FirstIterationPolicy(NamedTuple):
     """How one numbered iteration scores and reconstructs: only a run's first iteration departs."""
 
