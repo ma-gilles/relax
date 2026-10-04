@@ -388,16 +388,16 @@ def _class_tau2_update_details(
     Ft_ctf_class,
     tau2_shells_recovar_frame,
     shell_stats,
-    volume_shape,
+    settings: ReconstructionSettings,
     *,
-    padding_factor,
-    tau2_fudge,
     current_size: int,
     full_half_axis,
     accumulator_volume_shape,
     average_ctf2=None,
 ):
     """Data-vs-prior and the host tau2 detail record for one class.
+
+    Reads from ``settings``: ``volume_shape``, ``padding_factor`` and ``tau2_fudge``.
 
     ``shell_stats`` are the round-shell weight statistics of ``Ft_ctf_class``.
     ``average_ctf2`` is RELION's average CTF^2 of CTF-premultiplied images
@@ -410,9 +410,9 @@ def _class_tau2_update_details(
     data_vs_prior = regularization_relion.compute_data_vs_prior(
         Ft_ctf_class,
         tau2_shells_recovar_frame,
-        volume_shape,
-        padding_factor=padding_factor,
-        tau2_fudge=tau2_fudge,
+        settings.volume_shape,
+        padding_factor=settings.padding_factor,
+        tau2_fudge=settings.tau2_fudge,
         current_size=current_size,
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_volume_shape,
@@ -427,7 +427,7 @@ def _class_tau2_update_details(
         "sigma2_shells": np.asarray(
             jnp.where(
                 shell_stats["avg_weight_shells"] > 0,
-                1.0 / (padding_factor**3 * shell_stats["avg_weight_shells"]),
+                1.0 / (settings.padding_factor**3 * shell_stats["avg_weight_shells"]),
                 0.0,
             ),
             dtype=np.float64,
@@ -516,9 +516,7 @@ def estimate_class_prior(
         accumulator_volume_shape=accumulator_shape,
     )
     data_vs_prior, details = _class_tau2_update_details(
-        denominators[class_index], shells, weight_shells, settings.volume_shape,
-        padding_factor=settings.padding_factor,
-        tau2_fudge=settings.tau2_fudge,
+        denominators[class_index], shells, weight_shells, settings,
         current_size=current_size,
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_shape,

@@ -120,10 +120,10 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         assert denominator == "denominator" and kwargs["shell_rounding"] == "round"
         return weight_shells
 
-    def normalize(denominator, prior, statistics, shape, **kwargs):
+    def normalize(denominator, prior, statistics, settings, **kwargs):
         calls.append("data vs prior")
         assert denominator == "denominator" and statistics is weight_shells
-        assert_matches(kwargs["tau2_fudge"], 4.0)
+        assert_matches(settings.tau2_fudge, 4.0)
         return prior, details
 
     monkeypatch.setattr(mean_helpers, "_class_tau2_from_iref_power_spectrum", estimate)
@@ -326,6 +326,16 @@ class TestClassTau2FromIrefPowerSpectrum:
 
 class TestClassTau2UpdateDetails:
     @staticmethod
+    def _settings(tau2_fudge):
+        return mean_helpers.ReconstructionSettings(
+            grid_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
+            padding_factor=PADDING_FACTOR, projection_padding_factor=2,
+            minres_map=5, width_mask_edge=5, fmask_edge=2,
+            tau2_fudge=tau2_fudge, particle_diameter_angstrom=None,
+            first_iteration_lowpass_angstrom=None,
+        )
+
+    @staticmethod
     def _inputs():
         rng = np.random.default_rng(3)
         ft_ctf = jnp.asarray(rng.uniform(0.5, 2.0, int(np.prod(ACCUMULATOR_SHAPE))) + 0j, dtype=jnp.complex64)
@@ -347,9 +357,7 @@ class TestClassTau2UpdateDetails:
             ft_ctf,
             tau2_shells,
             shell_stats,
-            VOLUME_SHAPE,
-            padding_factor=PADDING_FACTOR,
-            tau2_fudge=4.0,
+            self._settings(4.0),
             current_size=GRID_SIZE,
             full_half_axis=-1,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
@@ -400,9 +408,7 @@ class TestClassTau2UpdateDetails:
             ft_ctf,
             tau2_shells,
             zero_stats,
-            VOLUME_SHAPE,
-            padding_factor=PADDING_FACTOR,
-            tau2_fudge=1.0,
+            self._settings(1.0),
             current_size=GRID_SIZE,
             full_half_axis=-1,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
