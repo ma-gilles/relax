@@ -88,3 +88,18 @@ other shell, and every shell at the box, is exact.
 updates; the numbered iterations pass the expectation's image current size. The sums themselves
 and the kernels that accumulate them are unchanged. Not changed: RELION's average CTF^2 of
 CTF-premultiplied images divides by the same `Npix_per_shell` and keeps it.
+
+## `--initial_noise_pair_counting {relion,once}`
+
+The start-up noise spectrum (`calculateSumOfPowerSpectraAndAverageImage`,
+`ml_optimiser.cpp:2968-2977`, and `getSpectrum` of the average image, `fftw.cpp:1010-1039`) averages
+the power of every stored pixel of each image's FFTW half. The Hermitian pairs of the `kx = 0`
+column (and of an even image's Nyquist column) have both members stored and count twice, in the sum
+and the count. Every later `sigma2_noise` update counts each pair of `kx = 0` once
+(`!(jp == 0 && ip < 0)`), so the first spectrum and the later ones are different shell means.
+
+`once` takes the shell mean over the whole 2-D transform instead
+(`whole_transform_power_spectrum`, `relax/refinement/startup_noise.py`), for the image spectra and
+for the average image's spectrum. The command applies it when it estimates the start-up noise
+(`prepare_startup_noise` -> `estimate_startup_sigma2` -> `compute_avg_unaligned_and_sigma2`), for
+K=1 and Class3D; the start-up tau2 and data_vs_prior follow from that noise.

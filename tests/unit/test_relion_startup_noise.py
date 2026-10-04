@@ -160,6 +160,7 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch):
     def prepare(dataset, **kwargs):
         calls.append(kwargs)
         assert kwargs["output_dtype"] == np.float32
+        assert kwargs["pair_counting"] == "once"  # the command's consistency option reaches the estimate
         return startup_noise.StartupNoise(radial=spectrum, pixel_variance=pixels)
 
     monkeypatch.setattr(startup_noise, "prepare_startup_noise", prepare)
@@ -175,6 +176,7 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch):
         relion_fresh_initial_noise_optics_group_ids=np.ones(3),
         relion_mask_params=(12., 3), relion_optics_pixel_sizes=np.array([1.25]),
         class3d_noise_optics_pixel_sizes=None, _double_image_preprocessing=False,
+        consistency_options=SimpleNamespace(initial_noise_pair_counting="once"),
         logger=logging.getLogger(__name__),
         frozen_boundary_cli=SimpleNamespace(expand_boundary_noise=lambda noise, shape: pixels),
         iteration_history=SimpleNamespace(_load_init_noise_radial_npz=lambda path, iteration:

@@ -152,6 +152,7 @@ _CONSISTENCY_CHOICES = {
     "gridding_kernel": ("radial", "separable"),
     "shell_pair_counting": ("relion", "once"),
     "noise_shell_count": ("relion", "summed"),
+    "initial_noise_pair_counting": ("relion", "once"),
 }
 
 
@@ -177,6 +178,11 @@ class RelionConsistencyOptions:
     # shell on the full image, but below the box it sums shell current_size / 2 on a crop that lacks
     # one row, so that shell's sigma2 is 3.6-7.1% low; "summed" counts the pixels that were summed.
     noise_shell_count: Literal["relion", "summed"] = "relion"
+    # The start-up noise spectrum averages each image's power over every stored pixel of its FFTW
+    # half, which counts the Hermitian pairs of the kx = 0 column twice; every later sigma2 update
+    # counts them once. "once" counts every pair once at start-up too. The command applies it (the
+    # start-up noise is estimated before the refinement loop).
+    initial_noise_pair_counting: Literal["relion", "once"] = "relion"
 
     def __post_init__(self):
         for name, choices in _CONSISTENCY_CHOICES.items():

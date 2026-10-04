@@ -15,7 +15,7 @@ from recovar import utils
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset
 from relax.relion import relion_metadata
-from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
+from relax.relion.initial_noise import _radial_power_spectrum, compute_avg_unaligned_and_sigma2
 
 
 class StartupNoise(NamedTuple):
@@ -90,6 +90,26 @@ def class3d_noise_order(our_particles):
 
 
 
+def whole_transform_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.ndarray:
+    """Per-shell mean ``|FFT(image)|²`` over the whole transform: every Hermitian pair counted once.
+
+    RELION's start-up spectrum (``relax.relion.initial_noise._radial_power_spectrum``) averages every
+    stored pixel of the FFTW half, which counts the pairs whose two members are both stored (the
+    ``kx = 0`` column and an even image's Nyquist column) twice. Same scale: ``1 / (H W)``.
+    """
+    height, width = image_real.shape[-2:]
+    power = np.abs(np.fft.fft2(image_real) / (height * width)) ** 2
+    ky = np.fft.fftfreq(height, d=1.0) * height
+    kx = np.fft.fftfreq(width, d=1.0) * width
+    shell = np.round(np.sqrt(ky[:, None] ** 2 + kx[None, :] ** 2)).astype(np.int64)
+    keep = shell < n_shells
+    total = np.bincount(shell[keep], weights=power[keep], minlength=n_shells)
+    return total / np.maximum(np.bincount(shell[keep], minlength=n_shells), 1)
+
+
+_POWER_SPECTRUM = {"relion": _radial_power_spectrum, "once": whole_transform_power_spectrum}
+
+
 def estimate_startup_sigma2(
     dataset,
     *,
@@ -100,6 +120,7 @@ def estimate_startup_sigma2(
     width_mask_edge_px: int,
     minimum_nr_particles: int = 1000,
     group_pixel_sizes=None,
+    pair_counting: str = "relion",
 ) -> np.ndarray:
     """Reproduce RELION's process-resident fresh AutoRefine noise spectrum.
 
@@ -110,6 +131,9 @@ def estimate_startup_sigma2(
     values. A ``MultiShapeDataset`` needs ``group_pixel_sizes`` (one per sorted
     optics label): each image is masked with its group's pixel size and brought
     onto the model grid (``image_pixel_size``, the reference box) first.
+    ``pair_counting`` is the spectra's Hermitian-pair counting: ``"relion"`` averages
+    every stored pixel of the FFTW half, ``"once"`` the whole transform
+    (:func:`whole_transform_power_spectrum`).
     """
 
     source_rows = np.asarray(source_rows, dtype=np.int64).reshape(-1)
@@ -178,6 +202,7 @@ def estimate_startup_sigma2(
         nr_optics_groups=len(unique_optics),
         # A subtomogram iterator is already capped per particle; every one of its images counts.
         minimum_nr_particles=int(dataset.unit_image_offsets[-1]) if tomo else int(minimum_nr_particles),
+        power_spectrum=_POWER_SPECTRUM[pair_counting],
         **(
             {}
             if group_pixel_sizes is None
@@ -199,12 +224,13 @@ def estimate_startup_sigma2(
 
 def prepare_startup_noise(
     dataset, *, source_rows, optics_group_ids, mask_params,
-    optics_pixel_sizes, output_dtype=np.float32,
+    optics_pixel_sizes, output_dtype=np.float32, pair_counting="relion",
 ):
     """Estimate fresh noise on the model grid and expand it for scoring.
 
     Radial noise stays float64 in RECOVAR units; pixel variance uses output_dtype.
     Rows follow sorted optics labels; a single group returns flat arrays.
+    ``pair_counting`` is the image spectra's Hermitian-pair counting.
     See docs/math/relion_refinement_algorithm.md#start-up-noise.
     """
     if (
@@ -230,7 +256,7 @@ def prepare_startup_noise(
             float(dataset.voxel_size) if multi_shape else float(np.asarray(optics_pixel_sizes).reshape(-1)[0])
         ),
         particle_diameter_ang=float(mask_params[0]), width_mask_edge_px=int(mask_params[1]),
-        group_pixel_sizes=group_pixel_sizes,
+        group_pixel_sizes=group_pixel_sizes, pair_counting=pair_counting,
     )
     # One spectrum per optics group (MlModel::sigma2_noise[optics_group]); one group
     # keeps the flat layout of the single-optics path.

@@ -1157,6 +1157,7 @@ def main(command=None):
                 relion_optics_pixel_sizes if args.n_classes == 1 else class3d_noise_optics_pixel_sizes
             ),
             output_dtype=np.float64 if _double_image_preprocessing else np.float32,
+            pair_counting=consistency_options.initial_noise_pair_counting,
         )
         initial_noise_radial = initial_noise.radial
         noise_variance = initial_noise.pixel_variance

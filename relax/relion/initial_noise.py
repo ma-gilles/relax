@@ -161,12 +161,13 @@ def compute_avg_unaligned_and_sigma2(
     minimum_nr_particles: int = 1000,
     group_pixel_sizes=None,
     model_pixel_size: float | None = None,
+    power_spectrum=_radial_power_spectrum,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """``calculateSumOfPowerSpectra`` + ``setSigmaNoiseEstimates`` (per-group cap defaults to RELION's 1000).
 
-    With ``group_pixel_sizes`` (one per optics group, groups on other pixel sizes or
-    boxes) each image is masked with its own group's pixel size and brought onto the
-    model grid (``_rescale_to_model_grid``) before it enters the sums, as RELION does.
+    With ``group_pixel_sizes`` (one per optics group, groups on other pixel sizes or boxes) each image is masked
+    with its own group's pixel size and brought onto the model grid (``_rescale_to_model_grid``) before it enters
+    the sums, as RELION does. ``power_spectrum(image, n_shells)`` is an image's shell-mean power (RELION's by default).
     """
     n_shells = ori_size // 2 + 1
 
@@ -195,8 +196,7 @@ def compute_avg_unaligned_and_sigma2(
             img = _softmask_outside_map(img, radius_px, float(width_mask_edge_px))
 
         Mavg += img
-        ind_spect = _radial_power_spectrum(img, n_shells)
-        sum_sigma2[opt_grp] += ind_spect
+        sum_sigma2[opt_grp] += power_spectrum(img, n_shells)
         sumw[opt_grp] += 1.0
         per_group_done[opt_grp] += 1
         total_done += 1
@@ -210,7 +210,7 @@ def compute_avg_unaligned_and_sigma2(
     Mavg /= total_sum
 
     # Power spectrum of the averaged image (divided by 2 for 2-dim complex plane)
-    mavg_spect = _radial_power_spectrum(Mavg, n_shells) / 2.0
+    mavg_spect = power_spectrum(Mavg, n_shells) / 2.0
 
     sigma2_per_group = np.zeros_like(sum_sigma2)
     for g in range(nr_optics_groups):

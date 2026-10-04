@@ -390,6 +390,14 @@ def parse_refinement_args(argv=None):
         "divides each shell by the pixels the expectation summed.",
     )
     parser.add_argument(
+        "--initial_noise_pair_counting",
+        choices=("relion", "once"),
+        default="relion",
+        help="How the start-up noise spectrum counts Hermitian pairs. relion (default) averages each "
+        "image's power over every stored pixel of its FFTW half, which counts the pairs of the kx = 0 "
+        "column twice, unlike every later sigma2 update; once counts every pair once.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
@@ -938,6 +946,7 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
         gridding_kernel=args.gridding_kernel,
         shell_pair_counting=args.shell_pair_counting,
         noise_shell_count=args.noise_shell_count,
+        initial_noise_pair_counting=args.initial_noise_pair_counting,
     )
     chosen = options.non_default()
     if not chosen:
