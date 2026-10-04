@@ -1508,21 +1508,8 @@ def refine_single_volume(
             )
 
         reference_model.maps = _maybe_debug_replay_relion_references(
-            means=reference_model.maps,
-            perturb_replay_relion_dir=(
-                None
-                if sealed_sampling_state is not None and not state_swap_target_this_iteration
-                else perturb_replay_relion_dir
-            ),
-            perturb_replay_relion_prefix=perturb_replay_relion_prefix,
-            init_relion_iteration=init_relion_iteration,
-            iteration=iteration,
+            reference_model, options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
             volume_shape=volume_shape,
-            n_classes=n_classes,
-            force=(
-                state_swap_target_this_iteration
-                and bool(debug.state_swap_probe.get("replay_relion_references", False))
-            ),
         )
 
         (
