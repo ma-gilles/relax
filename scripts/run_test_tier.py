@@ -572,6 +572,16 @@ def execute(items: list[Item], run_root: Path, src: Path, gpus: list[str]) -> li
         return {"name": item.name, "gpu": gpu, "rc": None, "status": "fail", "wall_s": 0.0, "estimate_s": item.seconds,
                 "required": item.required, "junit": {}, "note": f"not run: a prerequisite in {item.after} failed"}
 
+    def run(item: Item, gpu: str | None) -> dict:
+        # An item whose run raises (a missing interpreter, an unwritable run root) fails like any other:
+        # a worker thread that died without a result left the items after it waiting forever.
+        try:
+            return run_item(item, run_root, src, gpu)
+        except Exception as error:
+            return {"name": item.name, "gpu": gpu, "rc": None, "status": "fail", "wall_s": 0.0,
+                    "estimate_s": item.seconds, "required": item.required, "junit": {},
+                    "note": f"not run: {type(error).__name__}: {error}"}
+
     def gpu_worker(gpu: str) -> None:
         while True:
             with lock:
@@ -583,14 +593,14 @@ def execute(items: list[Item], run_root: Path, src: Path, gpus: list[str]) -> li
                         pending.remove(choice)
                         break
                     lock.wait(timeout=30)
-            finish(choice, blocked(choice, gpu) if state(choice) == "blocked" else run_item(choice, run_root, src, gpu))
+            finish(choice, blocked(choice, gpu) if state(choice) == "blocked" else run(choice, gpu))
 
     def cpu_worker() -> None:
         for item in (i for i in items if not i.gpu):
             with lock:
                 while state(item) == "waiting":
                     lock.wait(timeout=30)
-            finish(item, blocked(item, None) if state(item) == "blocked" else run_item(item, run_root, src, None))
+            finish(item, blocked(item, None) if state(item) == "blocked" else run(item, None))
 
     threads = [threading.Thread(target=cpu_worker)] + [threading.Thread(target=gpu_worker, args=(g,)) for g in gpus]
     for t in threads:

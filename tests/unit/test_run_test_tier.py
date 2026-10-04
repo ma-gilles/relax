@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import threading
 from argparse import Namespace
 from pathlib import Path
 
@@ -285,6 +286,39 @@ def test_executor_honours_dependencies_and_skips_after_failures(tmp_path):
     results = {r["name"]: r for r in run_test_tier.execute(items, tmp_path, tmp_path, ["g0", "g1"])}
     assert [results[n]["status"] for n in ("setup", "arm", "summary")] == ["pass"] * 3
     assert results["broken"]["status"] == "fail" and results["after_broken"]["rc"] is None
+
+
+def test_executor_fails_an_item_whose_run_raises_and_releases_its_dependants(tmp_path, monkeypatch):
+    ok = [sys.executable, "-c", "pass"]
+    run_item = run_test_tier.run_item
+
+    def raising(item, *args):
+        if item.name in ("gpu_raises", "cpu_raises"):
+            raise FileNotFoundError(2, "No such file or directory", "src/.pixi/envs/default/bin/python")
+        return run_item(item, *args)
+
+    monkeypatch.setattr(run_test_tier, "run_item", raising)
+    items = [
+        run_test_tier.Item("gpu_raises", ok, True, 3),
+        run_test_tier.Item("after_gpu", ok, False, 1, after=["gpu_raises"]),
+        run_test_tier.Item("cpu_raises", ok, False, 1),
+        run_test_tier.Item("after_cpu", ok, True, 2, after=["cpu_raises"]),
+        run_test_tier.Item("independent", ok, True, 1),
+    ]
+    done = []
+    worker = threading.Thread(
+        target=lambda: done.extend(run_test_tier.execute(items, tmp_path, tmp_path, ["g0"])), daemon=True
+    )
+    worker.start()
+    worker.join(timeout=120)
+    assert not worker.is_alive(), "the executor is still waiting on an item whose run raised"
+    results = {r["name"]: r for r in done}
+    for name in ("gpu_raises", "cpu_raises"):
+        assert (results[name]["status"], results[name]["rc"]) == ("fail", None)
+        assert results[name]["note"].startswith("not run: FileNotFoundError")
+    for name in ("after_gpu", "after_cpu"):
+        assert results[name]["status"] == "fail" and "a prerequisite" in results[name]["note"]
+    assert results["independent"]["status"] == "pass"
 
 
 def test_tier_jobs_follow_the_slurm_sizing_rule(tmp_path):
