@@ -19,7 +19,8 @@ from relax.refinement.mean_helpers import class_mixture_from_weights
 pytestmark = pytest.mark.unit
 
 
-def _inputs(n_classes, dtype, offset_dimension, empty_second_half):
+def _shared_inputs(dtype, offset_dimension, empty_second_half):
+    """The operands both checkpoint forms take, in the layout both modes share."""
     rows = (2, 0 if empty_second_half else 2)
     halves = initialize_halfsets(
         (None, None),
@@ -29,29 +30,36 @@ def _inputs(n_classes, dtype, offset_dimension, empty_second_half):
         scale_corrections=[np.ones(n, dtype=dtype) for n in rows],
         group_ids=[None, np.zeros(rows[1], dtype=np.int64)], group_count=None,
     )
-    maps = [np.full((n_classes, 8), h + 1, dtype=np.complex64) for h in range(2)]
-    # The controller selects these four by mode: Class3D has no split-half FSC, K=1 no class operands.
-    # The direction prior has one row per class in Class3D and is one vector in K=1.
-    if n_classes > 1:
-        by_mode = dict(
-            fsc=None, fsc_for_growth=None,
-            class_weights=np.full(n_classes, 1 / n_classes, dtype=dtype),
-            class_assignments=[np.zeros(n, dtype=np.int32) for n in rows],
-        )
-        priors = [DirectionPrior(np.full((n_classes, 48), 0.0625, dtype=dtype), 1) for _ in range(2)]
-    else:
-        by_mode = dict(
-            fsc=np.linspace(1, 0, 5), fsc_for_growth=np.linspace(1, 0.5, 5),
-            class_weights=None, class_assignments=None,
-        )
-        priors = [DirectionPrior(np.full(12, 0.125, dtype=dtype), 0) for _ in range(2)]
     return dict(
-        **by_mode, means=maps, unfiltered_means=None,
-        tau2_shells=np.ones((n_classes if n_classes > 1 else 2, 5), dtype=dtype),
+        unfiltered_means=None,
         data_vs_prior=np.full(5, 2, dtype=dtype), noise_shells=[np.ones((2, 5), dtype=dtype)] * 2,
-        direction_priors=priors, half_inputs=halves,
+        half_inputs=halves,
         max_posterior=[np.full(n, 0.75, dtype=dtype) for n in rows],
         significant_counts=[np.ones(n, dtype=np.int32) for n in rows], avg_norm_correction=(1.0, None),
+    )
+
+
+def _k1_inputs(dtype, offset_dimension, empty_second_half):
+    """``finish_k1`` operands: one map and one tau2 curve per half, the FSC curves, one prior vector per half."""
+    return dict(
+        **_shared_inputs(dtype, offset_dimension, empty_second_half),
+        means=[np.full((1, 8), h + 1, dtype=np.complex64) for h in range(2)],
+        tau2_shells_per_half=np.ones((2, 5), dtype=dtype),
+        fsc=np.linspace(1, 0, 5), fsc_for_growth=np.linspace(1, 0.5, 5),
+        direction_priors=[DirectionPrior(np.full(12, 0.125, dtype=dtype), 0) for _ in range(2)],
+    )
+
+
+def _class_inputs(n_classes, dtype, offset_dimension, empty_second_half):
+    """``finish_class`` operands: a class stack, one tau2 curve and one prior row per class, the class operands."""
+    rows = (2, 0 if empty_second_half else 2)
+    return dict(
+        **_shared_inputs(dtype, offset_dimension, empty_second_half),
+        means=[np.full((n_classes, 8), h + 1, dtype=np.complex64) for h in range(2)],
+        tau2_shells=np.ones((n_classes, 5), dtype=dtype),
+        class_weights=np.full(n_classes, 1 / n_classes, dtype=dtype),
+        class_assignments=[np.zeros(n, dtype=np.int32) for n in rows],
+        direction_priors=[DirectionPrior(np.full((n_classes, 48), 0.0625, dtype=dtype), 1) for _ in range(2)],
     )
 
 
@@ -64,14 +72,7 @@ def _begin(capture):
     )
 
 
-@pytest.mark.parametrize('n_classes', [1, 4])
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
-@pytest.mark.parametrize('offset_dimension', [2, 3])
-@pytest.mark.parametrize('empty_second_half', [False, True])
-def test_complete_capture_copies_the_selected_model_and_particle_frame(n_classes, dtype, offset_dimension, empty_second_half):
-    inputs = _inputs(n_classes, dtype, offset_dimension, empty_second_half)
-    capture = SnapshotCapture(n_classes=n_classes, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
-    result = capture.finish(_begin(capture), **inputs)
+def _assert_shared_capture(result, dtype, offset_dimension, empty_second_half):
     assert isinstance(result, IterationSnapshot)
     assert result.tau2_shells.dtype == np.float64
     assert result.noise_shells[0].shape == (2, 5)
@@ -80,25 +81,48 @@ def test_complete_capture_copies_the_selected_model_and_particle_frame(n_classes
     assert result.group_ids[0].tolist() == [0, 0]
     # A half without norm correction records RELION's 1.0 in relax's frame (grid_size ** 2).
     assert_matches(result.avg_norm_correction, (1.0, 16.0**2))
-    if n_classes == 4:
-        assert result.means[0] is result.means[1]
-        assert result.fsc is None and result.fsc_for_growth is None
-        assert result.direction_prior[0].shape == (4, 48)
-        assert result.extra['direction_prior_order_half1'] == 1
-        assert result.class_weights.dtype == np.float64
-        assert result.class_assignments[1].shape == (0 if empty_second_half else 2,)
-    else:
-        assert result.means[0] is not result.means[1]
-        assert result.fsc.dtype == np.float64 and result.fsc_for_growth.dtype == np.float64
-        assert not np.shares_memory(result.fsc, inputs['fsc'])
-        assert result.direction_prior[0].shape == (12,)
-        assert result.extra['direction_prior_order_half1'] == 0
-        assert result.class_weights is None and result.class_assignments is None
+
+
+def _assert_capture_owns_its_copies(result, inputs):
     before = result.means[0].copy()
     inputs['means'][0][:] = 99
     inputs['half_inputs'][0].translations[:] = 99
     assert_matches(result.means[0], before)
     assert not np.shares_memory(result.translations[0], inputs['half_inputs'][0].translations)
+
+
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('offset_dimension', [2, 3])
+@pytest.mark.parametrize('empty_second_half', [False, True])
+def test_k1_capture_copies_the_half_maps_and_particle_frame(dtype, offset_dimension, empty_second_half):
+    inputs = _k1_inputs(dtype, offset_dimension, empty_second_half)
+    capture = SnapshotCapture(n_classes=1, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
+    result = capture.finish_k1(_begin(capture), **inputs)
+    _assert_shared_capture(result, dtype, offset_dimension, empty_second_half)
+    assert result.means[0] is not result.means[1]
+    assert result.fsc.dtype == np.float64 and result.fsc_for_growth.dtype == np.float64
+    assert not np.shares_memory(result.fsc, inputs['fsc'])
+    assert result.direction_prior[0].shape == (12,)
+    assert result.extra['direction_prior_order_half1'] == 0
+    assert result.class_weights is None and result.class_assignments is None
+    _assert_capture_owns_its_copies(result, inputs)
+
+
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('offset_dimension', [2, 3])
+@pytest.mark.parametrize('empty_second_half', [False, True])
+def test_class_capture_copies_the_class_stack_and_particle_frame(dtype, offset_dimension, empty_second_half):
+    inputs = _class_inputs(4, dtype, offset_dimension, empty_second_half)
+    capture = SnapshotCapture(n_classes=4, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
+    result = capture.finish_class(_begin(capture), **inputs)
+    _assert_shared_capture(result, dtype, offset_dimension, empty_second_half)
+    assert result.means[0] is result.means[1]
+    assert result.fsc is None and result.fsc_for_growth is None
+    assert result.direction_prior[0].shape == (4, 48)
+    assert result.extra['direction_prior_order_half1'] == 1
+    assert result.class_weights.dtype == np.float64
+    assert result.class_assignments[1].shape == (0 if empty_second_half else 2,)
+    _assert_capture_owns_its_copies(result, inputs)
 
 
 def _controller_capture_block():
@@ -109,7 +133,7 @@ def _controller_capture_block():
 
 
 def test_actual_controller_releases_previous_captured_maps_before_copying_new_maps(monkeypatch):
-    inputs = _inputs(4, np.float32, 2, True)
+    inputs = _class_inputs(4, np.float32, 2, True)
     capture = SnapshotCapture(n_classes=4, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
     old = _begin(capture)
     old.values['means'] = [np.ones(8, dtype=np.complex64)]
@@ -122,7 +146,7 @@ def test_actual_controller_releases_previous_captured_maps_before_copying_new_ma
         random_perturbation=0.125, model_acc_rot_per_class=np.ones(4), model_acc_trans_per_class=np.ones(4),
         reference_model=SimpleNamespace(maps=inputs['means']), unreg_means=None,
         mean_signal_variance_shells=inputs['tau2_shells'], previous_data_vs_prior_for_scheduling=inputs['data_vs_prior'],
-        noise_model=SimpleNamespace(radial_per_half=inputs['noise_shells']), fsc=inputs['fsc'],
+        noise_model=SimpleNamespace(radial_per_half=inputs['noise_shells']), fsc=None,
         class_mixture=class_mixture_from_weights(inputs['class_weights']), direction_priors=inputs['direction_priors'], halves=inputs['half_inputs'],
         class_assignments=inputs['class_assignments'], max_posterior_per_half=inputs['max_posterior'],
         significance=SimpleNamespace(per_half=inputs['significant_counts']),

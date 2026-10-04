@@ -106,14 +106,12 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
         group_ids=[None, np.ones(2, dtype=np.int64)],
         group_count=None,
     )
-    result = capture.finish(
+    result = capture.finish_k1(
         snapshot, means, unfiltered, tau2, np.arange(5, dtype=np.float32), noise,
         fsc=np.linspace(1.0, 0.0, 5),
         fsc_for_growth=np.linspace(0.9, 0.1, 5),
-        class_weights=None,
         direction_priors=[DirectionPrior(values, 1) for values in direction_prior],
         half_inputs=half_inputs,
-        class_assignments=None,
         max_posterior=[np.full(2, 0.7), np.full(2, 0.8)],
         significant_counts=[np.ones(2, dtype=np.int32), np.full(2, 2, dtype=np.int32)],
         avg_norm_correction=(0.95, None),

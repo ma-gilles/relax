@@ -390,6 +390,13 @@ MUTATIONS = (
      "the planned current size is used one pixel larger and unquantised", True),
     ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history.to_dict(),', '"final_all_data_ran": True,\n**history.to_dict(),',
      "the result of a run without a final pass says the final pass ran", True),
+    # One per per-mode operation split out of a function that received the mode, and one per dispatch left.
+    ("checkpoint_reads_k1_layout", "if int(self.n_classes) > 1:\nreturn self.finish_class(", "if False:\nreturn self.finish_class(",
+     "every checkpoint is completed in the K1 layout", True),
+    ("k1_checkpoint_growth_fsc_dropped", "fsc_for_growth=host_array(fsc_for_growth, np.float64),", "fsc_for_growth=None,",
+     "a K1 checkpoint loses the curve that drives image-size growth", True),
+    ("class_checkpoint_weights_dropped", "class_weights=host_array(class_weights, np.float64),", "class_weights=None,",
+     "a Class3D checkpoint loses the class weights", True),
 )
 
 

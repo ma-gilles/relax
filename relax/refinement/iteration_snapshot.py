@@ -208,6 +208,77 @@ def validate_resume_snapshot(snapshot: IterationSnapshot, *, init_relion_iterati
         raise ValueError("cannot continue from the run files: " + "; ".join(problems))
 
 
+def _host_spectra(data_vs_prior, noise_shells) -> dict:
+    """The spectra every checkpoint holds in one layout: the scheduling curve and each half's noise shells."""
+
+    return dict(
+        data_vs_prior=np.array(data_vs_prior, dtype=np.float64),
+        noise_shells=[np.array(shells, dtype=np.float64) for shells in noise_shells],
+    )
+
+
+def _host_unfiltered_means(unfiltered_means):
+    """Host copies of the unregularized maps, or ``None`` when no half has one."""
+
+    if unfiltered_means is None or all(m is None for m in unfiltered_means):
+        return None
+    return host_half_pair(unfiltered_means)
+
+
+def _host_direction_prior(direction_priors):
+    """Host copies of the two halves' direction priors, or ``None`` when neither half has one."""
+
+    direction_prior = [p.values for p in direction_priors]
+    if any(prior is not None for prior in direction_prior):
+        return host_half_pair(direction_prior)
+    return None
+
+
+def _host_particle_state(
+    half_inputs, max_posterior, significant_counts, avg_norm_correction, *, direction_priors, grid_size
+) -> dict:
+    """Per-particle arrays of both halves, the norm corrections, and the dtype and prior-order tags."""
+
+    direction_prior_order = [p.healpix_order for p in direction_priors]
+    eulers = host_half_pair([particle_half.rotation_eulers for particle_half in half_inputs])
+    translations = host_half_pair([particle_half.translations for particle_half in half_inputs])
+    image_corrections = host_half_pair([particle_half.image_corrections for particle_half in half_inputs])
+
+    def dtype_name(values):
+        present = [value for value in values if value is not None]
+        return str(present[0].dtype) if present else "float32"
+
+    return dict(
+        rotation_eulers=eulers,
+        translations=translations,
+        image_corrections=image_corrections,
+        scale_corrections=host_half_pair([particle_half.scale_corrections for particle_half in half_inputs]),
+        group_ids=[
+            np.zeros(0 if euler is None else len(euler), dtype=np.int64)
+            if group_ids is None
+            else np.array(group_ids, dtype=np.int64)
+            for group_ids, euler in zip([particle_half.group_ids for particle_half in half_inputs], eulers)
+        ],
+        max_posterior=host_half_pair(max_posterior),
+        significant_counts=host_half_pair(significant_counts),
+        # No norm correction (a subtomogram run, --no_norm): RELION's 1.0 in relax's frame.
+        avg_norm_correction=tuple(
+            float(grid_size) ** 2 if value is None else float(value) for value in avg_norm_correction
+        ),
+        extra={
+            "euler_dtype": dtype_name(eulers),
+            "translation_dtype": dtype_name(translations),
+            "correction_dtype": dtype_name(image_corrections),
+            **{
+                f"direction_prior_order_half{h + 1}": (
+                    -1 if order is None else int(order)
+                )
+                for h, order in enumerate(direction_prior_order or [])
+            },
+        },
+    )
+
+
 @dataclass
 class _SnapshotAssembly:
     """Host-owned fields accumulated before one complete snapshot is published."""
@@ -284,85 +355,146 @@ class SnapshotCapture:
         significant_counts,
         avg_norm_correction,
     ) -> IterationSnapshot:
-        """Copy maps, spectra, priors and particles into a complete checkpoint.
+        """Complete a checkpoint in the layout of the run's mode.
+
+        This is the one remaining mode decision of checkpoint capture, to be
+        removed when the K=1 and Class3D trajectories call ``finish_k1`` and
+        ``finish_class`` directly. Each form takes its own mode's operands: the
+        caller passes ``None`` for the two FSC curves in Class3D and for the
+        two class operands in K=1, and those are not forwarded.
+        """
+        if int(self.n_classes) > 1:
+            return self.finish_class(
+                assembly,
+                means,
+                unfiltered_means,
+                tau2_shells,
+                data_vs_prior,
+                noise_shells,
+                class_weights=class_weights,
+                direction_priors=direction_priors,
+                half_inputs=half_inputs,
+                class_assignments=class_assignments,
+                max_posterior=max_posterior,
+                significant_counts=significant_counts,
+                avg_norm_correction=avg_norm_correction,
+            )
+        return self.finish_k1(
+            assembly,
+            means,
+            unfiltered_means,
+            tau2_shells,
+            data_vs_prior,
+            noise_shells,
+            fsc=fsc,
+            fsc_for_growth=fsc_for_growth,
+            direction_priors=direction_priors,
+            half_inputs=half_inputs,
+            max_posterior=max_posterior,
+            significant_counts=significant_counts,
+            avg_norm_correction=avg_norm_correction,
+        )
+
+    def finish_k1(
+        self,
+        assembly,
+        means,
+        unfiltered_means,
+        tau2_shells_per_half,
+        data_vs_prior,
+        noise_shells,
+        *,
+        fsc,
+        fsc_for_growth,
+        direction_priors,
+        half_inputs,
+        max_posterior,
+        significant_counts,
+        avg_norm_correction,
+    ) -> IterationSnapshot:
+        """Copy a K=1 iteration's maps, spectra, priors and particles into a complete checkpoint.
+
+        One map and one tau2 curve per half, the split-half FSC and the curve
+        that drives image-size growth; no class operands.
 
         ``begin`` precedes array capture so replacing the prior header releases
         the preceding checkpoint's retained arrays before new maps are copied.
         See ``docs/math/relion_refinement_algorithm.md#checkpoint-capture``.
-
-        ``fsc``, ``fsc_for_growth``, ``class_weights`` and ``class_assignments``
-        are stored as given: the caller passes ``None`` for the ones its mode
-        does not have (the two FSC curves in Class3D, the two class operands
-        in K=1).
         """
-        k_class = int(self.n_classes) > 1
-        tau2 = (
-            np.array(tau2_shells, dtype=np.float64)
-            if k_class
-            else np.stack(
-                [np.asarray(shells, dtype=np.float64) for shells in tau2_shells]
-            )
-        )
+        tau2 = np.stack([np.asarray(shells, dtype=np.float64) for shells in tau2_shells_per_half])
         assembly.values.update(
-            means=[host_array(means[0])] * 2 if k_class else host_half_pair(means),
+            means=host_half_pair(means),
             tau2_shells=tau2,
-            data_vs_prior=np.array(data_vs_prior, dtype=np.float64),
-            noise_shells=[np.array(shells, dtype=np.float64) for shells in noise_shells],
+            **_host_spectra(data_vs_prior, noise_shells),
             fsc=host_array(fsc, np.float64),
             fsc_for_growth=host_array(fsc_for_growth, np.float64),
-            unfiltered_means=(
-                None
-                if unfiltered_means is None or all(m is None for m in unfiltered_means)
-                else host_half_pair(unfiltered_means)
-            ),
+            unfiltered_means=_host_unfiltered_means(unfiltered_means),
         )
-        direction_prior = [p.values for p in direction_priors]
-        direction_prior_order = [p.healpix_order for p in direction_priors]
+        assembly.values.update(
+            class_weights=None,
+            direction_prior=_host_direction_prior(direction_priors),
+        )
+        assembly.values.update(
+            **_host_particle_state(
+                half_inputs,
+                max_posterior,
+                significant_counts,
+                avg_norm_correction,
+                direction_priors=direction_priors,
+                grid_size=self.grid_size,
+            ),
+            class_assignments=None,
+        )
+        return IterationSnapshot(**assembly.values)
+
+    def finish_class(
+        self,
+        assembly,
+        means,
+        unfiltered_means,
+        tau2_shells,
+        data_vs_prior,
+        noise_shells,
+        *,
+        class_weights,
+        direction_priors,
+        half_inputs,
+        class_assignments,
+        max_posterior,
+        significant_counts,
+        avg_norm_correction,
+    ) -> IterationSnapshot:
+        """Copy a Class3D iteration's maps, spectra, priors and particles into a complete checkpoint.
+
+        One class stack that both half slots hold, one tau2 curve per class,
+        the class weights and each particle's class; no FSC curves.
+
+        ``begin`` precedes array capture so replacing the prior header releases
+        the preceding checkpoint's retained arrays before new maps are copied.
+        See ``docs/math/relion_refinement_algorithm.md#checkpoint-capture``.
+        """
+        tau2 = np.array(tau2_shells, dtype=np.float64)
+        assembly.values.update(
+            means=[host_array(means[0])] * 2,
+            tau2_shells=tau2,
+            **_host_spectra(data_vs_prior, noise_shells),
+            fsc=None,
+            fsc_for_growth=None,
+            unfiltered_means=_host_unfiltered_means(unfiltered_means),
+        )
         assembly.values.update(
             class_weights=host_array(class_weights, np.float64),
-            direction_prior=(
-                host_half_pair(direction_prior)
-                if direction_prior is not None
-                and any(prior is not None for prior in direction_prior)
-                else None
-            ),
+            direction_prior=_host_direction_prior(direction_priors),
         )
-        eulers = host_half_pair([particle_half.rotation_eulers for particle_half in half_inputs])
-        translations = host_half_pair([particle_half.translations for particle_half in half_inputs])
-        image_corrections = host_half_pair([particle_half.image_corrections for particle_half in half_inputs])
-
-        def dtype_name(values):
-            present = [value for value in values if value is not None]
-            return str(present[0].dtype) if present else "float32"
-
         assembly.values.update(
-            rotation_eulers=eulers,
-            translations=translations,
-            image_corrections=image_corrections,
-            scale_corrections=host_half_pair([particle_half.scale_corrections for particle_half in half_inputs]),
-            group_ids=[
-                np.zeros(0 if euler is None else len(euler), dtype=np.int64)
-                if group_ids is None
-                else np.array(group_ids, dtype=np.int64)
-                for group_ids, euler in zip([particle_half.group_ids for particle_half in half_inputs], eulers)
-            ],
-            class_assignments=host_half_pair(class_assignments),
-            max_posterior=host_half_pair(max_posterior),
-            significant_counts=host_half_pair(significant_counts),
-            # No norm correction (a subtomogram run, --no_norm): RELION's 1.0 in relax's frame.
-            avg_norm_correction=tuple(
-                float(self.grid_size) ** 2 if value is None else float(value) for value in avg_norm_correction
+            **_host_particle_state(
+                half_inputs,
+                max_posterior,
+                significant_counts,
+                avg_norm_correction,
+                direction_priors=direction_priors,
+                grid_size=self.grid_size,
             ),
-            extra={
-                "euler_dtype": dtype_name(eulers),
-                "translation_dtype": dtype_name(translations),
-                "correction_dtype": dtype_name(image_corrections),
-                **{
-                    f"direction_prior_order_half{h + 1}": (
-                        -1 if order is None else int(order)
-                    )
-                    for h, order in enumerate(direction_prior_order or [])
-                },
-            },
+            class_assignments=host_half_pair(class_assignments),
         )
         return IterationSnapshot(**assembly.values)
