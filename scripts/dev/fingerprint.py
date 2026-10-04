@@ -316,6 +316,12 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_accuracy", f"K={k} with a stand-in expected-accuracy estimate that succeeds", n_classes=k, join=0.0, accuracy=True, max_iter=3, converge_after=3, dump=False, writer=True)
     add("k1_accuracy_order1", "K=1 from HEALPix order 1 with the stand-in accuracy estimate (native sampling may advance)", n_classes=1, join=0.0, accuracy=True, init_order=1, max_iter=4, converge_after=4, dump=False)
     add("k1_replay_cutoff", "K=1 STAR replay disabled after iteration 1 (--replay-override-max-iter)", n_classes=1, join=0.0, star_prior=[2, 2, 2, 2], replay_max_iter=1, max_iter=3, converge_after=3, dump=False)
+    # Non-default RELION-consistency options: the loop forwards them only when one is set.
+    counting = dict(noise_shell_count="summed", shell_pair_counting="once", nyquist_column_counting="once")
+    for k in (1, 2):
+        add(f"k{k}_consistency_counting", f"K={k} with the summed noise count and both pair countings set to once, "
+            "current sizes 4, 6, 8 of a box of 8", n_classes=k, join=0.0, consistency=counting, current_sizes=(4, 6, 8),
+            max_iter=3, converge_after=3, dump=False, writer=True)
     return cases
 
 
@@ -346,6 +352,8 @@ MUTATIONS = (
      "the current-size shell cut-off moves by one", True),
     ("noise_rows_doubled", "return jnp.asarray(noise.make_radial_noise(shell_profile, image_shape)).reshape(-1)", "return jnp.asarray(noise.make_radial_noise(shell_profile, image_shape)).reshape(-1) * 2",
      "the shells-to-pixel-row noise expansion is doubled", True),
+    ("noise_summed_count_dropped", 'if consistency.noise_shell_count == "summed" else None,', 'if consistency.noise_shell_count == "never" else None,',
+     "the summed noise count is never forwarded to the noise update", True),
     ("shared_tau2_half2_doubled", "return [tau2, tau2]", "return [tau2, tau2 * 2]",
      "the shared tau2 pair differs between halves", True),
     ("next_sampling_star_skipped", "if not state.has_converged:\n_next_sampling_star", "if False:\n_next_sampling_star",
@@ -622,7 +630,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     def run_case(n_classes, join, *, max_iter=4, converge_after=2, dump=True, cc=False, oversampling=0, env=None,
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
                  iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
-                 seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None):
+                 seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
+                 consistency=None, current_sizes=None):
         first_pass = None
         if continued:
             first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
@@ -712,10 +721,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         if orders is not None:
             adaptive_fields["relion_healpix_orders"] = tuple(orders)
             init_order = int(orders[0])
+        if current_sizes is not None:
+            adaptive_fields["relion_current_sizes"] = tuple(current_sizes)
         if adaptive_fields:
             extra["adaptive"] = refinement_options.AdaptiveOptions(**adaptive_fields)
         if overlap:
             extra["overlap"] = refinement_options.HalfOverlapOptions(overlap_halves=True)
+        if consistency:
+            extra["consistency"] = refinement_options.RelionConsistencyOptions(**consistency)
         writer_object = Writer() if writer else None
         if writer or resume is not None:
             extra["checkpoint"] = refinement_options.CheckpointOptions(writer=writer_object, resume=resume)
