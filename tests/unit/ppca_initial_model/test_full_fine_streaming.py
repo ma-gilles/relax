@@ -442,6 +442,47 @@ def test_pipelined_tiles_match_separate_tiles(tile_problem):
             assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
 
 
+def test_tiles_of_different_sizes_keep_one_kept_buffer_live(tile_problem, monkeypatch):
+    """A tile of another size allocates its kept buffer after the previous tile's is released: the planner
+    counts one (two live buffers ran a dense HEALPix 4 tile pair of 101 and 49 images out of 80 GB)."""
+    import jax
+
+    from relax.ppca_refinement import full_row_stream as frs
+
+    _dataset, _mu, _W, stream, _host = tile_problem
+    capacity = len(stream.block_starts) * stream.rotation_block_size
+    T, q = int(stream.translations.shape[0]), stream.static.basis_size - 1
+
+    def kept_sizes():
+        # Tile sizes of the live kept buffers, from their latent means (q, rows, images, translations): the bulk
+        # of a buffer. On CUDA a new buffer is not listed on the device before its first use, so both platforms are read.
+        arrays = [x for platform in {"cpu", stream.device.platform} for x in jax.live_arrays(platform)]
+        return {x.shape[2] for x in arrays if x.ndim == 4 and x.shape[:2] == (q, capacity) and x.shape[3] == T}
+
+    def in_use():
+        stats = stream.device.memory_stats()
+        return None if stats is None else stats["bytes_in_use"]
+
+    allocations, empty_kept = [], frs._empty_kept
+
+    def recording_empty_kept(capacity, n_images, *args):
+        kept = empty_kept(capacity, n_images, *args)
+        allocations.append((n_images, kept_sizes(), in_use()))
+        return kept
+
+    monkeypatch.setattr(frs, "_empty_kept", recording_empty_kept)
+    assert not kept_sizes()
+    before = in_use()
+    # Sizes 2, 2, 1, 2: the second tile reuses the first one's buffer, the third and fourth allocate.
+    ids = [np.arange(2), np.arange(1, 3), np.arange(2, 3), np.arange(2)]
+    accumulate_full_row_tiles(stream, [(i, [None] * len(i)) for i in ids])
+    assert [n for n, _live, _bytes in allocations] == [2, 1, 2]
+    for n, live, used in allocations:
+        assert live <= {n}  # no buffer of another tile size
+        if used is not None:  # device allocators report live bytes; the host's does not
+            assert used - before <= tile_bytes(stream, 2)
+
+
 def test_full_row_stream_rejects_parents_outside_coarse_grid(tile_problem):
     dataset, mu, W, stream, host = tile_problem
     kwargs = {key: host[key] for key in ("rotations", "translations", "rotation_log_prior", "translation_log_prior",

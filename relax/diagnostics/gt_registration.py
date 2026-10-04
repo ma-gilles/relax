@@ -30,8 +30,10 @@ class RigidFitControls:
     objective_sample_size: int = 25
     allow_mirror: bool = True
     final_interpolation_order: int = 1
-    maxiter: int = 35
-    maxfev: int = 1600
+    # Powell budgets, not tolerances: xtol/ftol decide convergence. The known-shift control needs 1258-1600+ evaluations
+    # depending on the BLAS thread count (2026-10-03), so the earlier 35/1600 budget cut converged fits off at 4 threads.
+    maxiter: int = 140
+    maxfev: int = 6400
     xtol: float = 1e-5
     ftol: float = 1e-8
 
