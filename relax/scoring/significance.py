@@ -1050,7 +1050,12 @@ def _compute_k_class_significance_batched(
         try:
             _validate_coarse_gaussian_gemm_projection_cache_request(
                 n_rotations=n_rot,
-                relion_projector_dtype=relion_projector_half[0].dtype,
+                # The dtype of the class stack: indexing a device array for it dispatched a slice per pass.
+                relion_projector_dtype=(
+                    relion_projector_half.dtype
+                    if hasattr(relion_projector_half, "dtype")
+                    else relion_projector_half[0].dtype
+                ),
             )
         except (ValueError, TypeError) as reason:
             if coarse_gaussian_gemm_projection_cache_explicit:
@@ -1860,7 +1865,11 @@ def _compute_k_class_significance_batched(
                     )
 
     pending_batch = None
-    with prefetched_batches(
+    from relax.cuda.kernels import deferred_relion_preprocess_checks
+
+    # The image preprocess kernel's finite check is read at the end of the loop: read at each call, it
+    # waits for the previous batch's score program inside the next batch's preparation.
+    with deferred_relion_preprocess_checks(), prefetched_batches(
         iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)
     ) as batches:
         for batch_data, _, _, ctf_params, _, _, indices in batches:

@@ -392,6 +392,7 @@ def test_experiment_read_order_uses_micrograph_lexicographic_order():
     assert initial_model_io._experiment_read_order(main).tolist() == [0, 2, 3, 4, 1]
 
 
+@pytest.mark.requires_relion_bind
 def test_seed_zero_halfsets_use_relion_experiment_position_parity(monkeypatch):
     main = pd.DataFrame(
         {

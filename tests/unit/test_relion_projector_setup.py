@@ -50,6 +50,7 @@ def _existing_float32_policy(control1, candidate1, candidate2, control2):
     return panels
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize("size", [8, 16])
 @pytest.mark.parametrize("padding", [1, 2])
 @pytest.mark.parametrize("full", [False, True])
@@ -127,6 +128,7 @@ def test_corrected_projector_float32_keeps_compute_precision():
     assert np.all(np.isfinite(np.asarray(power)))
 
 
+@pytest.mark.requires_relion_bind
 def test_positive_nyquist_only_and_inclusive_sphere():
     from relax.relion_bind import _relion_bind_core as bind
 
@@ -169,6 +171,7 @@ def _float64_power_bound(size, padding):
     return 2 * _float64_fft_bound(size, padding) + np.sqrt(voxels) * np.finfo(np.float64).eps
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize("size", [8, 16])
 @pytest.mark.parametrize("padding", [1, 2])
 @pytest.mark.parametrize("full", [False, True])
@@ -212,6 +215,7 @@ def test_host_window_build_is_chunking_invariant():
     assert all(value < _float64_power_bound(16, 2) for value in _relative_metrics(whole[1], chunked[1]).values())
 
 
+@pytest.mark.requires_relion_bind
 def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
     """The JAX backend has one device build: the window core, dispatched chunk by chunk."""
 

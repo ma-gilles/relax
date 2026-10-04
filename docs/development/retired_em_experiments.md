@@ -16,10 +16,10 @@ waive a scientific gate.
 | Single-component frozen-boundary variants | Variant builder, diagnostic implementation and exclusive tests | Maintained frozen-boundary capture and reader |
 
 The 19 GF46/raw-cache files are available at [the last retained source](https://github.com/ma-gilles/recovar/tree/4e3e5396d8c5fee4e207b9df3acb7f9987e17473/scripts),
-with [exact paths, hashes, test inventory and caller audit](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_retired_experiments_20260912/result.json).
-The 88 fixed K1 capture scripts have their own [source/hash inventory and archive](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_fixed_capture_retirement_20260912/result.json).
+with exact paths, hashes, test inventory and caller audit (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_retired_experiments_20260912/result.json`; outside the repository).
+The 88 fixed K1 capture scripts have their own source/hash inventory and archive (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_fixed_capture_retirement_20260912/result.json`; outside the repository).
 
-The seven fixed report-builder files have a separate [source/hash inventory and archive](/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_fixed_report_retirement_20260912/result.json).
+The seven fixed report-builder files have a separate source/hash inventory and archive (`/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_fixed_report_retirement_20260912/result.json`; outside the repository).
 
 Their frozen reports are preserved in the private [experiment archive](https://github.com/ma-gilles/recovar-experiments/tree/f34b8e79320116a9965954156f4edfe14257929a), with original paths and hashes in its manifest. The parity dashboard links to immutable archived reports.
 Restore the recorded experiment source and environment for reproduction; do not

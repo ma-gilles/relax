@@ -14,6 +14,7 @@ from helpers.vdam import relative_metrics
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize("classes,current_size,padding", [(1, 8, 1), (2, 12, 1), (1, 16, 2)])
 def test_shared_device_projector_matches_both_native_calls(
     classes, current_size, padding, monkeypatch, tmp_path

@@ -1,15 +1,41 @@
-"""Report structural metrics for production refinement Python modules."""
+"""Report structural metrics for production refinement Python modules and hold them under ceilings.
+
+    python scripts/report_refinement_structure.py --format markdown            # the current metrics
+    python scripts/report_refinement_structure.py --check <ceilings.json>       # exit 1 above a ceiling
+    python scripts/report_refinement_structure.py --lower-ceilings <ceilings.json>
+
+The checked file (``docs/development/refinement_structure_metrics.json``) records upper bounds, not
+the current values, so a commit regenerates it only to tighten it. ``--lower-ceilings`` rewrites each
+bound to the current value where that is lower (the line totals keep ``LINE_TOTAL_HEADROOM``) and
+never raises one. Raising a ceiling is a hand edit of the file, with the reason in the commit message.
+"""
 
 from __future__ import annotations
 
 import argparse
 import ast
+import datetime as dt
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 LARGE_ARGUMENT_THRESHOLD = 10
 VERY_LARGE_ARGUMENT_THRESHOLD = 20
 EXCLUDED_FILENAMES = {"__init__.py"}
+CEILING_SCHEMA_VERSION = 2
+# Totals that may not grow. File and function counts are not bounded: splitting a module raises them.
+STRUCTURE_CEILINGS = (
+    "maximum_function_line_span",
+    "maximum_parameter_count",
+    "large_argument_function_count",
+    "very_large_argument_function_count",
+)
+# The line totals grow with ordinary feature work, so their ceilings sit this fraction above the value
+# they were recorded from, rounded up to LINE_TOTAL_ROUNDING lines.
+LINE_TOTAL_CEILINGS = ("physical_lines", "nonblank_noncomment_lines")
+LINE_TOTAL_HEADROOM = 0.05
+LINE_TOTAL_ROUNDING = 100
 
 
 def _parameter_count(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
@@ -115,32 +141,92 @@ def _format_markdown(metrics: dict) -> str:
     return "\n".join(output)
 
 
-def _checked_snapshot(path: Path) -> dict:
+def ceilings_for(totals: dict) -> dict:
+    """The tightest ceilings the current ``totals`` allow."""
+    ceilings = {name: totals[name] for name in STRUCTURE_CEILINGS}
+    for name in LINE_TOTAL_CEILINGS:
+        with_headroom = totals[name] * (1 + LINE_TOTAL_HEADROOM)
+        ceilings[name] = -int(-with_headroom // LINE_TOTAL_ROUNDING) * LINE_TOTAL_ROUNDING
+    return ceilings
+
+
+def exceeded(totals: dict, ceilings: dict) -> list[str]:
+    """One line per total above its ceiling; empty when the code is within every bound."""
+    return [
+        f"{name}: {totals[name]:,} exceeds the ceiling {ceiling:,}"
+        for name, ceiling in ceilings.items()
+        if totals[name] > ceiling
+    ]
+
+
+def lowered(ceilings: dict, totals: dict) -> dict:
+    """``ceilings`` tightened to what ``totals`` allow; no bound is raised and none is added."""
+    tightest = ceilings_for(totals)
+    return {name: min(ceiling, tightest[name]) for name, ceiling in ceilings.items()}
+
+
+def read_ceilings(path: Path) -> dict:
     payload = json.loads(path.read_text())
-    if payload.get("schema_version") != 1 or "current" not in payload:
-        raise ValueError(f"unsupported refinement structure snapshot: {path}")
-    return payload["current"]["metrics"]
+    ceilings = payload.get("ceilings", {}).get("totals")
+    if payload.get("schema_version") != CEILING_SCHEMA_VERSION or not isinstance(ceilings, dict):
+        raise ValueError(f"unsupported refinement structure ceilings: {path}")
+    unknown = sorted(set(ceilings) - {*STRUCTURE_CEILINGS, *LINE_TOTAL_CEILINGS})
+    if unknown:
+        raise ValueError(f"unknown ceilings in {path}: {', '.join(unknown)}")
+    return ceilings
+
+
+def _source_commit(repo_root: Path) -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def lower_ceilings(path: Path, totals: dict, repo_root: Path) -> list[str]:
+    """Rewrite ``path`` with every ceiling the code is below tightened; return what changed."""
+    payload = json.loads(path.read_text())
+    before = read_ceilings(path)
+    after = lowered(before, totals)
+    changes = [f"{name}: {before[name]:,} -> {after[name]:,}" for name in before if after[name] != before[name]]
+    if changes:
+        payload["ceilings"] = {
+            "recorded_date": dt.date.today().isoformat(),
+            "source_commit": _source_commit(repo_root),
+            "totals": after,
+        }
+        path.write_text(json.dumps(payload, indent=2) + "\n")
+    return changes
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--format", choices=("json", "markdown"), default="json")
+    parser.add_argument("--check", type=Path, help="Fail when a current total exceeds its ceiling in this file")
     parser.add_argument(
-        "--check",
+        "--lower-ceilings",
         type=Path,
-        help="Fail unless current metrics equal the checked snapshot's current metrics",
+        help="After a clean-up: lower the ceilings in this file to what the code now allows; never raises one",
     )
     args = parser.parse_args(argv)
 
     repo_root = Path(__file__).resolve().parents[1]
     metrics = collect_metrics(repo_root)
+    if args.lower_ceilings is not None:
+        path = args.lower_ceilings if args.lower_ceilings.is_absolute() else repo_root / args.lower_ceilings
+        over = exceeded(metrics["totals"], read_ceilings(path))
+        changes = lower_ceilings(path, metrics["totals"], repo_root)
+        print("\n".join(changes) if changes else "no ceiling can be lowered", file=sys.stderr)
+        if over:
+            print("left unchanged, the code is above it:\n" + "\n".join(over), file=sys.stderr)
+        return 1 if over else 0
     if args.check is not None:
-        snapshot_path = args.check
-        if not snapshot_path.is_absolute():
-            snapshot_path = repo_root / snapshot_path
-        expected = _checked_snapshot(snapshot_path)
-        if metrics != expected:
-            print(json.dumps({"expected": expected, "actual": metrics}, indent=2, sort_keys=True))
+        path = args.check if args.check.is_absolute() else repo_root / args.check
+        over = exceeded(metrics["totals"], read_ceilings(path))
+        if over:
+            print("\n".join(over), file=sys.stderr)
             return 1
 
     if args.format == "markdown":

@@ -6,7 +6,7 @@ selection: the CUDA texture implementation also derives its compact texture
 extent and origin from the radius. Gathering the same image pixels afterward
 does not make a projection computed with a different radius equivalent.
 
-Implementation: [`_compute_sparse_pass2_projections_block`](../../recovar/em/sparse_pass2/sparse_pass2_projection_blocks.py).
+Implementation: [`_compute_sparse_pass2_projections_block`](../../relax/sparse_pass2/sparse_pass2_projection_blocks.py).
 The helper also reads `max_r` to infer a supplied RELION projector's output crop,
 but must not consume it before the generic call. An explicit `None` and an
 omitted argument retain their distinct underlying-projector meanings. Explicit
@@ -45,7 +45,7 @@ the allocated image extent. Explicit exact-disk masking remains a diagnostic
 option. The compact coarse certificate and rescorer share this canonical
 radius rule by default when the texture route is available.
 
-Implementation: [`_project_relion_projector_texture`](../../recovar/em/helpers/projection.py).
+Implementation: [`_project_relion_projector_texture`](../../relax/helpers/projection.py).
 Boundary regressions live in `tests/unit/test_coarse_rotated_radius.py` and
 `tests/unit/test_cuda_relion_fine_diff2.py`; their focused results do not replace
 matched trajectory qualification.

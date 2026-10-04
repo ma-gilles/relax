@@ -4102,7 +4102,8 @@ def relion_preprocess_real_f32(
     image, fails closed with ``CUDA: invalid argument`` after one per-call
     read-back of the per-image sums.
 
-    ``deferred_finite_check`` (default from
+    ``deferred_finite_check`` (default: on inside a
+    :func:`deferred_relion_preprocess_checks` block, else from
     ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``, off) removes that per-call
     read-back and stream synchronization: the device counts invalid images
     into a small array that is queued for
@@ -4113,7 +4114,7 @@ def relion_preprocess_real_f32(
     """
 
     if deferred_finite_check is None:
-        deferred_finite_check = relion_preprocess_deferred_check_requested()
+        deferred_finite_check = _RELION_PREPROCESS_DEFERRED_SCOPES > 0 or relion_preprocess_deferred_check_requested()
     # A Python queue cannot retain status tracers from the local big JIT.
     # Keep the native fail-closed check inside that compiled execution.
     if type(jax.core.trace_ctx.trace).__name__ != "EvalTrace":
@@ -4157,6 +4158,31 @@ def relion_preprocess_deferred_check_requested() -> bool:
     if token not in {"0", "1"}:
         raise ValueError(f"{RELION_PREPROCESS_DEFERRED_CHECK_ENV} must be 0 or 1")
     return token == "1"
+
+
+# Open :func:`deferred_relion_preprocess_checks` scopes (the batch loops run on one thread).
+_RELION_PREPROCESS_DEFERRED_SCOPES = 0
+
+
+@contextmanager
+def deferred_relion_preprocess_checks():
+    """Defer the soft-mask check of every ``relion_preprocess_real_f32`` call in the block to its end.
+
+    A batch loop that keeps the device busy while the host prepares the next batch cannot afford the
+    synchronous check: its read-back waits for everything queued before it. Inside the block the calls
+    queue their invalid-image counts instead, and leaving the block normally drains them
+    (:func:`drain_relion_preprocess_checks`), which raises for an invalid image: the same failure, at
+    the end of the loop instead of at the image's batch. An exception from the block propagates
+    unchanged; the queued checks stay for the next drain.
+    """
+
+    global _RELION_PREPROCESS_DEFERRED_SCOPES
+    _RELION_PREPROCESS_DEFERRED_SCOPES += 1
+    try:
+        yield
+    finally:
+        _RELION_PREPROCESS_DEFERRED_SCOPES -= 1
+    drain_relion_preprocess_checks()
 
 
 def _queue_relion_preprocess_check(invalid_count: jax.Array) -> None:

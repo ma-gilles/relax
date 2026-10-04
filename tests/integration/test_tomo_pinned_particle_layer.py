@@ -36,6 +36,7 @@ import mrcfile
 import numpy as np
 import pytest
 import starfile
+from helpers import natives
 from helpers.em_fixtures import fixture_root, require_fixture_sets
 from helpers.relion_projector_reference import make_projector, project
 
@@ -74,7 +75,8 @@ def pinned():
 
     from relax.refinement import tomo_particles as tp
     from relax.relion import relion_ctf, tomo_input
-    from relax.relion_bind import _relion_bind_core as bind
+
+    bind = natives.relion_bind_core()
 
     project_dir = DATA
     flat = project_dir / "particles_2d.star"

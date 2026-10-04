@@ -8,6 +8,7 @@ from relax.helpers.expected_accuracy import relion_auto_refine_half_orders, reli
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.requires_relion_bind
 def test_mt19937_paired_reference():
     from relax.relion_bind import _relion_bind_core as bind
 
@@ -44,6 +45,7 @@ def test_half_orders_need_no_binding(monkeypatch):
     assert_matches(second, np.array([5, 0, 2, 3, 4, 1, 6]) + 10)
 
 
+@pytest.mark.requires_relion_bind
 def test_half1_trial_order_is_the_paired_first_half():
     from relax.helpers.expected_accuracy import relion_half1_trial_order
     from relax.relion_bind import _relion_bind_core as bind

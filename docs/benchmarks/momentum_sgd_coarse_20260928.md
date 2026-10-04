@@ -36,11 +36,11 @@ Class occupancy is a separate diagnostic and is not inferred from the fixed
 uniform STAR prior.
 
 Registered, equally band-limited map panels:
-[seed 11](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/seed11_registered_3row_band15.png),
-[seed 12](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/seed12_registered_3row_band15.png).
+seed 11 (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/seed11_registered_3row_band15.png`; outside the repository),
+seed 12 (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/seed12_registered_3row_band15.png`; outside the repository).
 Each panel uses its own 2nd–98th percentile display scale, so compare morphology,
-not absolute amplitude. Full [FSC curves and round comparison](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/r2_vs_r3_comparison.md)
-and [timing/protocol audit](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/timing_summary.md) remain beside the runs.
+not absolute amplitude. Full FSC curves and round comparison (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/r2_vs_r3_comparison.md`; outside the repository)
+and timing/protocol audit (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/timing_summary.md`; outside the repository) remain beside the runs.
 
 ## Matched protocol and measured cost
 
@@ -69,7 +69,7 @@ Integration source: `ae1165193c3d75afa64ffb1d6524e85b75237538`, frozen at
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/tier_integration_r4/src`.
 RECOVAR pin: `5514ac6e2cb63ce1e9d1d88662f80dc4a4a8e70c`.
 Native-source fingerprint: `211d2f14684542eaf652f1a107875f2eb1cd204735de09678f620f01496e3032`.
-[NATIVE.json](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/native_e2401c4c/NATIVE.json) records binary identities.
+NATIVE.json (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/native_e2401c4c/NATIVE.json`; no longer available) records binary identities.
 The intervening main rebase removes an unused exact-local VDAM path; active
 adaptive functions and moved numerical helpers were checked for AST equality.
 Later tomography-only upstream changes are outside this execution path.
@@ -82,7 +82,7 @@ Later tomography-only upstream changes are outside this execution path.
 - Medium job 14629153 on f81 passed 27/27 items: 10,938 tests, zero failures,
   five optional unit skips, no required parity skip. Twelve approved FSC/Pmax
   cases passed; K1 5k converged at 12 iterations and stayed in the RELION band.
-  [Extracted tables](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/tier_medium_r2/extracted_fast_tables.md).
+  Extracted tables (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/tier_medium_r2/extracted_fast_tables.md`; outside the repository).
   The K4 nonadaptive replay has no approved FSC floor; its recorded .66139 AUC
   is not a passing FSC claim. A100 pinned-output comparison was not configured.
 - First medium job 14627542 failed setup/stub/import/inventory/report checks;
@@ -94,7 +94,7 @@ Later tomography-only upstream changes are outside this execution path.
   1.40e-5. Two of 300 seed 11 latest poses differ; saved outputs lack competing
   winner margins, so their individual cause is unresolved. Agreement is close,
   not bitwise. A same-source repeat provides context, not a new tolerance.
-  [Detailed source comparison](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/integration_pilot_r4/source_invariance_report.json).
+  Detailed source comparison (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/integration_pilot_r4/source_invariance_report.json`; outside the repository).
 - Focused post-rebase CPU checks passed. Existing upstream whole-file formatting
   and five Ruff import-order findings were identified as unchanged baseline
   findings; unrelated files were not reformatted.
@@ -111,7 +111,7 @@ established the corrected convention. Clean-image median cosine is .9945 with
 the native convention and .0386 with the old transpose. A second reporting fix
 scores classes containing 1–19 particles in primary pose metrics. The optional
 particle-fitted-frame diagnostic still needs 20. Both changes leave map fits and
-FSC unchanged. The [v4 report](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_pose_bridge/comparison_pose_v4.md)
+FSC unchanged. The v4 report (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_pose_bridge/comparison_pose_v4.md`; outside the repository)
 and `evaluation_pose_v4.json` files are authoritative. All 12 runs cover 19,996
 of 20,000 saved particles; four were unvisited and have class 0. STAR poses/classes
 are last-visited minibatch estimates, not fresh final-map inference. Shift error
@@ -119,7 +119,7 @@ is not qualified because its map-registration/origin boundary remains to be chec
 
 The inherited coarse support cap is 300 joint hypotheses per image. Pass2
 renormalizes within that support, so metadata named `full` describes only that
-selected support. The [iteration 1 mass diagnostic](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_coarse_mass/REPORT.md)
+selected support. The iteration 1 mass diagnostic (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_coarse_mass/REPORT.md`; outside the repository)
 measures .41–.53 percent retained mass for SGD and 3.44–11.44 percent for VDAM on
 four sampled images. This is a significant shared approximation; it is not
 proof of why a particular state fails. No support-cap override has been added.
@@ -154,6 +154,6 @@ establish general three-state robustness. Posterior-support sensitivity is a
 separate follow-up so it cannot confound that matrix.
 
 All jobs from this first package are terminal; job 14627542 failed as recorded,
-all subsequent required checks completed. [Job registry](/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/JOBS.json)
+all subsequent required checks completed. Job registry (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/JOBS.json`; outside the repository)
 records exact status and allocated cost: 5.44861 GPU-hours
 including the failed qualification, pilots and diagnostics.

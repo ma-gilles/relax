@@ -54,3 +54,25 @@ def test_the_subprocess_is_the_fallback_without_nvml(monkeypatch):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     assert budget._device_free_memory_bytes() == 7 * 1024**2
     assert calls
+
+
+def test_the_device_total_is_nvidia_smis_whole_mebibytes_without_a_subprocess(monkeypatch):
+    """The memory limit reads NVML's total, floored to the MiB figure nvidia-smi prints, and spawns nothing."""
+
+    class _Total:
+        def nvmlDeviceGetMemoryInfo(self, handle, memory_ref):
+            memory = ctypes.cast(memory_ref, ctypes.POINTER(budget._NvmlMemory)).contents
+            memory.total = 81559 * 1024**2 + 12345
+            return 0
+
+    def no_subprocess(*args, **kwargs):
+        raise AssertionError("nvidia-smi was spawned although NVML answered")
+
+    monkeypatch.setattr(budget, "_nvml_devices", lambda: (_Total(), {"0": 10, "GPU-aaa": 10}))
+    monkeypatch.setattr(budget.subprocess, "run", no_subprocess)
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", raising=False)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-aaa")
+    assert budget._device_memory_limit_bytes() == 81559 * 1024**2
+    monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * 1024**3)
+    assert budget._device_memory_limit_bytes() == 40 * 1024**3

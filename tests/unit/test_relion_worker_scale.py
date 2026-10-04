@@ -247,6 +247,7 @@ def test_dynamic_dispatch_rejects_overlap_and_missing_positions():
         make_relion_dispatch_schedule_from_chunks(**kwargs)
 
 
+@pytest.mark.requires_relion_bind
 def test_class3d_shuffle_is_always_original_seed_plus_one():
     particle_ids = np.arange(10_000, dtype=np.int64)
 

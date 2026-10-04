@@ -189,6 +189,17 @@ def _device_memory_limit_bytes() -> int | None:
         except ValueError:
             pass
 
+    # NVML answers in microseconds; the nvidia-smi subprocess (the fallback below) took about 40 ms
+    # per pass, 1.25 s of a 60 s window of late 10k VDAM iterations (py-spy). nvidia-smi prints the
+    # total in whole MiB, and the budgets were sized from that figure: keep it.
+    mebibyte = 1024 * 1024
+    nvml_total = _nvml_memory_bytes(os.environ.get("CUDA_VISIBLE_DEVICES"), "total")
+    if nvml_total is not None:
+        memory_bytes = (nvml_total // mebibyte) * mebibyte
+        allocator_limit = _jax_allocator_limit_bytes()
+        if allocator_limit is not None:
+            memory_bytes = min(int(memory_bytes), int(allocator_limit))
+        return _share(memory_bytes)
     try:
         query = subprocess.run(
             [
@@ -266,8 +277,8 @@ def _nvml_devices():
     return _NVML_DEVICES
 
 
-def _nvml_free_memory_bytes(visible_devices: str | None) -> int | None:
-    """Free memory of the first visible GPU from NVML, the reading nvidia-smi prints.
+def _nvml_memory_bytes(visible_devices: str | None, field: str) -> int | None:
+    """``field`` (``"free"`` or ``"total"``) of the first visible GPU's memory from NVML, as nvidia-smi reads it.
 
     Selects the device as :func:`_nvidia_smi_visible_device_memory_bytes` does;
     ``None`` when NVML is unavailable or the device is not found.
@@ -291,7 +302,13 @@ def _nvml_free_memory_bytes(visible_devices: str | None) -> int | None:
     memory = _NvmlMemory()
     if lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(memory)) != 0:
         return None
-    return int(memory.free)
+    return int(getattr(memory, field))
+
+
+def _nvml_free_memory_bytes(visible_devices: str | None) -> int | None:
+    """Free memory of the first visible GPU from NVML, the reading nvidia-smi prints."""
+
+    return _nvml_memory_bytes(visible_devices, "free")
 
 
 def _device_free_memory_bytes() -> int | None:

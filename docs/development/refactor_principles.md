@@ -259,8 +259,10 @@ Tolerance for interface repair does not authorize silent scientific changes.
 Collect tests through indirect consumers, diagnostic owners and source guards,
 not just names of edited functions. Migrate their constructors and assertions
 to the real interfaces while preserving numerical checks. Run the repository's
-import-lint check before freezing a candidate. Refresh current engineering
-structure metrics after extraction; preserve their historical baseline and
+import-lint check before freezing a candidate. The engineering structure
+metrics are held under ceilings (`scripts/report_refinement_structure.py`):
+lower them with `--lower-ceilings` after an extraction that shrinks the code,
+do not regenerate the file otherwise; preserve their historical baseline and
 every scientific baseline.
 
 ## Numerical and performance boundaries

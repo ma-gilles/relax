@@ -324,6 +324,20 @@ def _moment_real_sum_and_magnitude(moment):
     return jnp.sum(real), jnp.sum(jnp.abs(real))
 
 
+@partial(jax.jit, static_argnames=("capacity",))
+def _pack_bpref_to_capacity(value, *, capacity):
+    """Zero-pad a centered half volume to the M-step's capacity cube, on the device.
+
+    The host built this cube (zeros and one slice write) and uploaded it at every iteration: 6.2 s of a
+    60 s window of late 10k VDAM iterations (py-spy). The device pads the uploaded BPref instead; the
+    values are np.pad's zero padding.
+    """
+
+    before = capacity // 2 - value.shape[0] // 2
+    packed = jnp.zeros((capacity, capacity, capacity // 2 + 1), dtype=value.dtype)
+    return packed.at[before : before + value.shape[0], before : before + value.shape[1], : value.shape[2]].set(value)
+
+
 def relion_vdam_m_step_host(
     reference_relion,
     data_h0,
@@ -381,17 +395,13 @@ def relion_vdam_m_step_host(
     capacity = padding_factor * ori_size + 3
 
     def pack(value):
-        value = np.asarray(value)
-        if value.ndim != 3 or value.shape[0] != value.shape[1] or value.shape[2] != value.shape[0] // 2 + 1:
+        shape = np.shape(value)
+        if len(shape) != 3 or shape[0] != shape[1] or shape[2] != shape[0] // 2 + 1:
             raise ValueError("BPref must be a centered half volume")
         radius = r_max if r_max > 0 else ori_size // 2
-        if value.shape[0] // 2 < padding_factor * radius or value.shape[0] > capacity:
+        if shape[0] // 2 < padding_factor * radius or shape[0] > capacity:
             raise ValueError("BPref does not cover the logical radius or exceeds capacity")
-        # Zeros plus one slice write equals np.pad's zero padding at half its cost.
-        before = capacity // 2 - value.shape[0] // 2
-        packed = np.zeros((capacity, capacity, capacity // 2 + 1), dtype=value.dtype)
-        packed[before : before + value.shape[0], before : before + value.shape[1], : value.shape[2]] = value
-        return packed
+        return _pack_bpref_to_capacity(jnp.asarray(value), capacity=capacity)
 
     if np.shape(data_h0) != np.shape(weight_h0) or (
         pseudo and (np.shape(data_h0) != np.shape(data_h1) or np.shape(data_h1) != np.shape(weight_h1))

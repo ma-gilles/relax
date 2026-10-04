@@ -67,7 +67,7 @@ compile cache, one seed (relax 4f1f49b unless noted).
 | Tomo Class3D et13, 3 iterations | 346 | 415 | 724 (main 5b44d0b) | pending: hardware busy | pending: hardware busy |
 | Tomo VDAM K1 et09, 10 iterations | 115 | 119 | 216 | pending: hardware busy | pending: hardware busy |
 | Tomo VDAM K2 et15, 10 iterations | 121 | 139 | 185 | pending: hardware busy | pending: hardware busy |
-| PPCA tomo VDAM / SGD, 24 iterations (main 7b1e4da; P100 main 06266b9b) | 201 / 200 | — | 3921 / 3631 | pending: hardware busy | pending: hardware busy |
+| PPCA tomo VDAM / SGD, 24 iterations (main 7b1e4da; P100 main 23c3ebd, live-memory sampler on) | 201 / 200 | — | 3857 / 3592 | pending: hardware busy | pending: hardware busy |
 
 Agreement with the H100 run of the same commit and seed:
 
@@ -103,7 +103,7 @@ fixes below applied where noted):
 | VDAM K1 50k/256, 8 iterations | 878 | 746 | 396 | 403 |
 | Tomo Refine3D s1 | 1650 (main 5b44d0b) | — | — | — |
 | Tomo Class3D et13 / VDAM K1 / VDAM K2 | 275 (main 5b44d0b) / 138 / 156 | — | — | — |
-| PPCA tomo VDAM / SGD, default tile | 242 / 240 (candidate fb33c09e) | — | — | — |
+| PPCA tomo VDAM / SGD, default tile | 183 / 183 (main 23c3ebd, live-memory sampler on) | — | — | — |
 | Refine3D K1 50k/256, 15 iterations | 16800 (main 7b1e4da) | — | — | — |
 
 ## Minimum compute capability
@@ -127,7 +127,7 @@ Fixed:
 | A native build started inside a recovar checkout compiled that checkout | builds run in their output directory, and natives record the recovar kernel sources they compiled; `native_sources.py check` refuses any other (adfa7f8, 5d69a51) | unit test with a shadowing checkout |
 | `relax ppca_initial_model` failed outside a git checkout | source identity records `head: None` (302748d3, ppcaspeed) | Polar runs start |
 | A relax command or script started inside a recovar checkout imported that checkout's recovar | importing relax refuses a recovar outside the installed package or editable checkout; `RELAX_ALLOW_SHADOWED_RECOVAR=1` permits it (relax/__init__.py `_reject_shadowed_recovar`) | unit and subprocess tests (`python -m relax.commands.*` and `python -c "import relax"`) with a shadowing package |
-| PPCA tomo at the default tile ran out of memory on 16 GB cards at the first radius-31 iteration (tile reader, then `_score_tile`) | the tile planner counts the block programs from XLA's memory analysis and the next tile's reader (main 06266b9b, ppcaspeed) | 16 GB emulation and a real P100 complete; P100 live peak 11.96 GiB against 12.33 GiB counted at r31 |
+| PPCA tomo at the default tile ran out of memory on 16 GB cards at the first radius-31 iteration (tile reader, then `_score_tile`) | the tile planner counts the block programs from XLA's memory analysis and the next tile's reader (main 06266b9b, ppcaspeed) | 16 GB emulation and a real P100 complete; P100 live peak 11.96 GiB against 12.33 GiB counted at r31. Unchanged on main 23c3ebd (P100 11.96 GiB, emulation 11.95 GiB against 12.36 GiB counted): the two later kept-buffer fixes (b3057db, 23c3ebd) leave the walls and the live peak of this fixture as they were at d1ba3e83 |
 
 Open:
 

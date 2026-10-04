@@ -148,6 +148,7 @@ def test_icosahedral_conventions_are_distinct_ordered_sets():
         assert not np.array_equal(rotational_operators(left), rotational_operators(right))
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize(
     "label", ["C1", "C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )
@@ -204,6 +205,7 @@ def test_symmetry_reduced_coarse_grid_matches_relion_binding(label):
     assert np.all(metadata["directions_ipix"] < 12 * (2**order) ** 2)
 
 
+@pytest.mark.requires_relion_bind
 @pytest.mark.parametrize(
     "label", ["C1", "C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
 )

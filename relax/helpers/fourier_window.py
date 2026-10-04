@@ -149,16 +149,34 @@ class FourierWindowSpec:
         return kwargs
 
     def score_values(self, values):
-        return values if self.score_indices is None else values[..., self.score_indices]
+        return values if self.score_indices is None else _window_values(values, self.score_indices)
 
     def recon_values(self, values):
-        return values if self.recon_indices is None else values[..., self.recon_indices]
+        return values if self.recon_indices is None else _window_values(values, self.recon_indices)
 
     def score_or_full_indices(self, n_half: int, *, dtype=jnp.int32):
         return self.score_indices if self.score_indices is not None else jnp.arange(int(n_half), dtype=dtype)
 
     def recon_or_full_indices(self, n_half: int, *, dtype=jnp.int32):
         return self.recon_indices if self.recon_indices is not None else jnp.arange(int(n_half), dtype=dtype)
+
+
+@jax.jit
+def _take_last_axis(values, indices):
+    return values[..., indices]
+
+
+def _window_values(values, indices):
+    """``values[..., indices]``; for device arrays as one program per shape.
+
+    Loose advanced indexing of a device array compiles its index arithmetic one primitive at a time
+    for every new window size (104 of the 518 single-primitive compiles of a plain 10k VDAM run).
+    Host arrays keep NumPy indexing and their type.
+    """
+
+    if isinstance(values, jax.Array) and isinstance(indices, jax.Array):
+        return _take_last_axis(values, indices)
+    return values[..., indices]
 
 
 @dataclass(frozen=True)
