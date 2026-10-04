@@ -130,6 +130,7 @@ def prepare_scoring_projector(
     RELION's own transform is a test oracle only. ``gridding_kernel`` is the
     setup's correction window; a ``reusable`` projector must have been built
     with the same one, and a non-radial window has its own cache entries.
+    The power spectrum always counts as RELION does (every stored coefficient once).
     """
 
     if reusable is not None:

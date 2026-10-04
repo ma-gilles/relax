@@ -371,6 +371,16 @@ def parse_refinement_args(argv=None):
         "is implemented for K=1 single-particle auto-refine only and is refused elsewhere.",
     )
     parser.add_argument(
+        "--shell_pair_counting",
+        choices=("relion", "once"),
+        default="relion",
+        help="How the 3-D shell statistics behind tau2, data-vs-prior, the half-map FSC and the "
+        "current-size scheduling count Hermitian pairs. relion (default) visits every stored entry of "
+        "the x-half volume, which counts the pairs of the kx = 0 plane twice (updateSSNRarrays, "
+        "calculateDownSampledFourierShellCorrelation, computeFourierTransformMap, getSpectrum); once "
+        "counts every pair once. The 1/1000 weight floor inside the reconstruction keeps RELION's counting.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
@@ -915,7 +925,9 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
     refinement loop refuses the particle types it cannot honour once the data is loaded.
     """
 
-    options = RelionConsistencyOptions(gridding_kernel=args.gridding_kernel)
+    options = RelionConsistencyOptions(
+        gridding_kernel=args.gridding_kernel, shell_pair_counting=args.shell_pair_counting
+    )
     chosen = options.non_default()
     if not chosen:
         return options

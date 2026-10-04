@@ -41,3 +41,31 @@ with padding 2).
 
 A separable projector-cache entry has its own key. Class3D refuses the option: its tau2 is the
 power spectrum of the radially corrected reference.
+
+## `--shell_pair_counting {relion,once}`
+
+RELION keeps Fourier volumes as the half `x >= 0` and its shell statistics loop over every stored
+entry with weight 1. A Hermitian pair `(k, -k)` with `kx != 0` is stored once; on the plane
+`kx = 0` both members are stored, so those pairs count twice, in the sum and in the count alike.
+The shell statistic is then a reweighted mean that leans towards the `kx = 0` plane; it equals the
+mean over the whole Fourier grid only when the quantity is isotropic.
+
+`once` weights the entries whose mate is stored too by 1/2 (the `kx = 0` plane, an even grid's
+Nyquist plane, and the origin, which is its own mate), which makes every sum and count exactly
+half the one over the whole Fourier grid, every voxel once. Both public layouts of an accumulator
+give that statistic: the full layout expanded from RELION's x-half, and the native packed half
+that accumulators of 200M voxels or more are repacked to (`_pair_once_weights`,
+`relax/reconstruction/regularization_relion.py`).
+
+| RELION loop | relax function | Feeds |
+| --- | --- | --- |
+| `BackProjector::updateSSNRarrays` (`backprojector.cpp:1066-1090`, `1129-1190`) | `_compute_relion_weight_shell_stats` (device, host and native-grid branches), through `compute_relion_tau2_from_weights` and `compute_data_vs_prior` | K=1 sigma2 and tau2 = SSNR sigma2; Class3D data_vs_prior; the current-size and resolution scheduling |
+| `calculateDownSampledFourierShellCorrelation` (`backprojector.cpp:995-1039`) | `compute_relion_fsc_from_backprojector` (streamed packed-half and full-expansion paths) | the gold-standard half-map FSC of every numbered iteration and of the final pass |
+| `Projector::computeFourierTransformMap` power spectrum (`projector.cpp:509-530`) | `_mask_and_shell_power`, through `compute_relion_tau2_from_iref_power_spectrum` | the Class3D tau2 of every iteration and of the final pass (under `once` the class spectrum is built separately; the scoring projector's own spectrum keeps RELION's counting) |
+| `getSpectrum` of the start-up reference (`fftw.cpp:1010-1039`, `ml_model.cpp:1588`) | `_relion_power_spectrum_3d` / `_whole_grid_power_spectrum_3d`, through `relion_initial_tau2_and_data_vs_prior` | the start-up tau2 and data_vs_prior |
+
+Not changed: the 1/1000 weight floor inside the reconstruction (`BackProjector::reconstruct`,
+`backprojector.cpp:1515-1574`) is computed in RECOVAR (`_relion_reconstruct_floor_volume`) and keeps
+RELION's counting. It only replaces weights below a thousandth of their shell mean, so the two
+countings give the same map unless a voxel sits within the difference of the two shell means of
+that threshold. `getFSC` on real-space maps has no caller on the refinement path.

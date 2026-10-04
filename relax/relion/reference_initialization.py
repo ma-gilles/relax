@@ -64,6 +64,27 @@ def _relion_power_spectrum_3d(volume: np.ndarray, n_shells: int) -> np.ndarray:
 
 
 
+def _whole_grid_power_spectrum_3d(volume: np.ndarray, n_shells: int) -> np.ndarray:
+    """:func:`_relion_power_spectrum_3d` with every Hermitian pair counted once.
+
+    ``getSpectrum`` (fftw.cpp:1010-1039) visits every coefficient of the FFTW half once, so the pairs
+    whose two members are both stored (the ``kx = 0`` and Nyquist ``kx`` planes) count twice. This is
+    the shell mean of ``|F|^2`` over the whole Fourier grid, every coefficient once.
+    """
+    vol = np.asarray(volume, dtype=np.float64)
+    n = int(vol.shape[0])
+    power = np.abs(np.fft.fftn(vol) / float(vol.size)) ** 2
+    k = np.fft.fftfreq(n, d=1.0) * n
+    shell = np.floor(np.sqrt(k[:, None, None] ** 2 + k[None, :, None] ** 2 + k[None, None, :] ** 2) + 0.5).astype(np.int64)
+    valid = shell < int(n_shells)
+    total = np.bincount(shell[valid], weights=power[valid], minlength=int(n_shells))
+    count = np.bincount(shell[valid], minlength=int(n_shells))
+    return np.where(count > 0, total / np.maximum(count, 1), 0.0)
+
+
+_POWER_SPECTRUM_3D = {"relion": _relion_power_spectrum_3d, "once": _whole_grid_power_spectrum_3d}
+
+
 def relion_initial_tau2_and_data_vs_prior(
     iref_relion: np.ndarray,
     *,
@@ -71,18 +92,19 @@ def relion_initial_tau2_and_data_vs_prior(
     avg_sigma2_noise: np.ndarray,
     nr_particles: int,
     pdf_class: float = 1.0,
+    shell_pair_counting: str = "relion",
 ) -> tuple[np.ndarray, np.ndarray]:
     """One class of ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557-1626).
-    The reference uses RELION's frame after low-pass filtering; noise averages
-    optics groups with noise. Return RELION-unit tau2 and data/prior spectra,
-    each with ``ori_size // 2 + 1`` shells.
+    The reference uses RELION's frame after low-pass filtering; noise averages optics groups with noise.
+    ``shell_pair_counting`` is the pair counting of its power spectrum ("relion" or "once").
+    Return RELION-unit tau2 and data/prior spectra, each with ``ori_size // 2 + 1`` shells.
     """
     iref = np.asarray(iref_relion, dtype=np.float64)
     ori_size = int(iref.shape[0])
     avg_sigma2_noise = np.asarray(avg_sigma2_noise, dtype=np.float64).reshape(-1)
     if avg_sigma2_noise.shape != (ori_size // 2 + 1,) or np.any(avg_sigma2_noise <= 0.0) or nr_particles <= 0:
         raise ValueError("need a positive noise spectrum of ori_size // 2 + 1 shells and nr_particles > 0")
-    spectrum = _relion_power_spectrum_3d(iref, ori_size // 2 + 1)
+    spectrum = _POWER_SPECTRUM_3D[shell_pair_counting](iref, ori_size // 2 + 1)
     spectrum *= float(ori_size * ori_size) / 2.0
     tau2 = float(tau2_fudge) * spectrum
     return tau2, _relion_data_vs_prior(tau2, avg_sigma2_noise, nr_particles, pdf_class)

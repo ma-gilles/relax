@@ -109,6 +109,7 @@ def setup_relion_projector_on_host(
     compute_dtype=jnp.float64,
     chunk_bytes: int | None = None,
     gridding_kernel: str = "radial",
+    shell_pair_counting: str = "relion",
 ) -> tuple[np.ndarray, np.ndarray]:
     """:func:`setup_relion_projector` for one ``r_max``, dispatched chunk by chunk to host arrays.
 
@@ -124,9 +125,14 @@ def setup_relion_projector_on_host(
 
     ``gridding_kernel`` selects the real-space correction window: RELION's
     ``"radial"`` one or the ``"separable"`` per-axis product.
+    ``shell_pair_counting`` is how the shell power counts the Hermitian pairs of
+    the stored half: ``"relion"`` counts every stored coefficient once, so the
+    pairs of the ``x = 0`` plane twice; ``"once"`` counts every pair once.
     """
     if gridding_kernel not in GRIDDING_KERNELS:
         raise ValueError(f"gridding_kernel must be one of {GRIDDING_KERNELS}, got {gridding_kernel!r}")
+    if shell_pair_counting not in ("relion", "once"):
+        raise ValueError(f"shell_pair_counting must be 'relion' or 'once', got {shell_pair_counting!r}")
     reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
     radius = ori_size // 2 if int(r_max) < 0 else min(int(r_max), ori_size // 2)
     window = radius
@@ -139,7 +145,7 @@ def setup_relion_projector_on_host(
         reference = _gridding_corrected_separable(reference, ori_size=ori_size, padding_factor=padding_factor)
     return _build_projector_window(
         reference, radius, ori_size, padding_factor, window,
-        chunk_bytes=chunk_bytes, to_host=True, output_radius=radius,
+        chunk_bytes=chunk_bytes, to_host=True, output_radius=radius, pair_once=shell_pair_counting == "once",
     )
 
 
@@ -182,7 +188,8 @@ _CHUNK_BYTES = 2 * 1024**3
 
 
 def _build_projector_window(
-    reference, r_max, ori_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None
+    reference, r_max, ori_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None,
+    pair_once=False,
 ):
     """RELION's computeFourierTransformMap evaluated inside a static window, one axis at a time.
 
@@ -199,6 +206,8 @@ def _build_projector_window(
     passes differs from native; tests/unit/test_relion_projector_setup.py holds
     the float64 bound. ``to_host`` collects each chunk on the host (eager calls
     only), cropped to the window of ``output_radius`` when that is smaller.
+    ``pair_once`` counts each Hermitian pair once in the shell power
+    (:func:`_mask_and_shell_power`); the projector data does not depend on it.
     """
     n, pf = int(ori_size), int(padding_factor)
     m = pf * n
@@ -233,7 +242,7 @@ def _build_projector_window(
     for y0 in range(0, size, cy):
         block = _transform_z(xy[:, y0 : y0 + cy], yz_index, fft_size=m)
         block, block_sums, block_counts = _mask_and_shell_power(
-            block, r_max, ori_size=n, padding_factor=pf, size=size, y_start=y0
+            block, r_max, ori_size=n, padding_factor=pf, size=size, y_start=y0, pair_once=pair_once
         )
         if to_host:
             if slab is None:
@@ -252,7 +261,11 @@ def _build_projector_window(
         projector = slab
     else:
         projector = blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=1)
-    spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=sums.dtype))
+    if pair_once:
+        # A shell that holds only self-mated coefficients (the origin) has a count of 1/2.
+        spectrum = jnp.where(counts > 0, sums / jnp.where(counts > 0, counts, 1), jnp.zeros((), dtype=sums.dtype))
+    else:
+        spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=sums.dtype))
     return (projector, np.asarray(jax.device_get(spectrum))) if to_host else (projector, spectrum)
 
 
@@ -298,9 +311,17 @@ def _transform_z(block, yz_index, *, fft_size: int):
     return jnp.take(fz, yz_index, axis=0)
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "size", "y_start"))
-def _mask_and_shell_power(block, r_max, *, ori_size: int, padding_factor: int, size: int, y_start: int):
-    """Scale, mask and shell-sum window rows ``y_start:`` (``block`` is ``[L, cy, n_x]``)."""
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "size", "y_start", "pair_once"))
+def _mask_and_shell_power(
+    block, r_max, *, ori_size: int, padding_factor: int, size: int, y_start: int, pair_once: bool = False
+):
+    """Scale, mask and shell-sum window rows ``y_start:`` (``block`` is ``[L, cy, n_x]``).
+
+    The shell sums visit every stored coefficient once, as ``computeFourierTransformMap`` does
+    (projector.cpp:509-530), which counts the Hermitian pairs of the ``x = 0`` plane twice.
+    ``pair_once`` weights the coefficients whose mate is stored too (``x = 0`` and the Nyquist
+    ``x``) by 1/2 in the sums and the counts, so every pair counts once.
+    """
 
     fft_size = padding_factor * ori_size
     real_dtype = block.real.dtype
@@ -326,6 +347,11 @@ def _mask_and_shell_power(block, r_max, *, ori_size: int, padding_factor: int, s
     projector = jnp.where(valid, block, jnp.asarray(0, dtype=block.dtype))
     # Native uses norm(complex)/2 rather than abs(complex)**2/2.
     power = (projector.real * projector.real + projector.imag * projector.imag) / 2.0
+    counted = valid.astype(real_dtype)
+    if pair_once:
+        pair_weight = jnp.where((x == 0) | (x == fft_size // 2), 0.5, 1.0).astype(real_dtype)
+        power = power * pair_weight
+        counted = counted * pair_weight
     n_shells = ori_size // 2 + 1
     if deterministic_reductions_enabled():
         # ``bincount`` lowers to a scatter-add with duplicate shells (float
@@ -334,12 +360,12 @@ def _mask_and_shell_power(block, r_max, *, ori_size: int, padding_factor: int, s
             size, padding_factor, n_shells, clamp_to_last=True, rows=(y_start, y_start + rows)
         )
         sums = fixed_order_shell_sums(power.reshape(-1), shell_lists, real_dtype)
-        counts = fixed_order_shell_sums(valid.reshape(-1).astype(real_dtype), shell_lists, real_dtype)
+        counts = fixed_order_shell_sums(counted.reshape(-1), shell_lists, real_dtype)
     else:
         shells = jnp.floor(jnp.sqrt(r2.astype(real_dtype)) / padding_factor + 0.5).astype(jnp.int32)
         shells = jnp.minimum(shells, ori_size // 2).reshape(-1)
         sums = jnp.bincount(shells, weights=power.reshape(-1), length=n_shells)
-        counts = jnp.bincount(shells, weights=valid.reshape(-1).astype(real_dtype), length=n_shells)
+        counts = jnp.bincount(shells, weights=counted.reshape(-1), length=n_shells)
     return projector, sums, counts
 
 
@@ -373,6 +399,7 @@ def reference_to_relion_projector_half_maps_and_power(
     projector_data_dtype=None,
     compute_dtype=np.float64,
     gridding_kernel: str = "radial",
+    shell_pair_counting: str = "relion",
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Convert references to native-layout half maps and their corrected spectrum.
 
@@ -384,8 +411,8 @@ def reference_to_relion_projector_half_maps_and_power(
 
     ``projector_data_dtype`` is what the caller wants the slab in; ``None`` keeps
     complex64, whose consumer is the InitialModel engine. Refinement asks for
-    complex128 explicitly. ``gridding_kernel`` is the correction window of
-    :func:`setup_relion_projector_on_host`.
+    complex128 explicitly. ``gridding_kernel`` and ``shell_pair_counting`` are the
+    correction window and the spectrum's pair counting of :func:`setup_relion_projector_on_host`.
     """
     compute_dtype = np.dtype(compute_dtype)
     if compute_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
@@ -411,7 +438,7 @@ def reference_to_relion_projector_half_maps_and_power(
         projector_data, power = setup_relion_projector_on_host(
             swap_relion_volume_layout(ref), r_max, ori_size=n,
             padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
-            gridding_kernel=gridding_kernel,
+            gridding_kernel=gridding_kernel, shell_pair_counting=shell_pair_counting,
         )
         dtype = np.complex64 if projector_data_dtype is None else np.dtype(projector_data_dtype)
         halves.append(np.asarray(projector_data).astype(dtype, copy=False))

@@ -257,6 +257,7 @@ def compute_relion_tau2_from_iref_power_spectrum(
     current_size=None,
     return_details=False,
     projector_power_spectrum=None,
+    shell_pair_counting="relion",
 ):
     """Compute RELION-style tau2 from a previous Iref Fourier volume.
 
@@ -280,7 +281,8 @@ def compute_relion_tau2_from_iref_power_spectrum(
     projector scales the transform by ``normfft = pf^3 * ori_size``
     (``data_dim=2``) where RELION's ``ReferenceTau2`` uses the ``data_dim=3``
     scale (``normfft = pf^3``), so its power is ``ori_size^2`` times larger and
-    is divided back here. Without it, the same projector setup is built here.
+    is divided back here. Without it, the same projector setup is built here,
+    with ``shell_pair_counting`` (a supplied spectrum carries its own).
     """
 
     volume_shape = tuple(int(s) for s in volume_shape)
@@ -298,6 +300,7 @@ def compute_relion_tau2_from_iref_power_spectrum(
             vol_real[None],
             current_size=-1 if current_size is None else current_size,
             padding_factor=int(padding_factor),
+            shell_pair_counting=shell_pair_counting,
         )
         relion_power_spectrum = projector_power[0] / float(volume_shape[0]) ** 2
 
@@ -374,6 +377,59 @@ def _relion_x_half_multiplicity_in_native_half(volume_shape, axis):
     return multiplicity.reshape(shape)
 
 
+# How a 3-D shell statistic counts the Hermitian pairs of a stored half volume: "relion" visits every
+# stored entry once, which counts the pairs on the stored axis' zero plane twice (both mates are stored
+# there); "once" counts every pair once. See docs/math/relion_consistency_options.md.
+SHELL_PAIR_COUNTINGS = ("relion", "once")
+
+
+def _require_shell_pair_counting(shell_pair_counting) -> bool:
+    """Whether every Hermitian pair counts once; an unknown name is an error."""
+
+    if shell_pair_counting not in SHELL_PAIR_COUNTINGS:
+        raise ValueError(f"shell_pair_counting must be one of {SHELL_PAIR_COUNTINGS}, got {shell_pair_counting!r}")
+    return shell_pair_counting == "once"
+
+
+def _own_mate_planes(size, *, half_axis):
+    """Indices along one Fourier axis of the planes that are their own Hermitian mirror.
+
+    Frequency 0, and the Nyquist frequency of an even axis: ``size // 2`` and 0 on a centered full
+    axis, 0 and ``size // 2`` on the non-negative half of an rfft axis (``half_axis``).
+    """
+
+    size = int(size)
+    zero = 0 if half_axis else size // 2
+    if size % 2:
+        return (zero,)
+    return (zero, size // 2 if half_axis else 0)
+
+
+def _pair_once_weights(volume_shape, *, is_half_layout, full_half_axis):
+    """Weight of each stored entry of a Fourier volume when every Hermitian pair counts once.
+
+    A sum with these weights is half the sum over the whole Fourier grid, in every layout: an entry
+    whose mate is not stored stands for its pair (weight 1); on a plane that is its own mirror both
+    mates are stored and each takes 1/2, as does an entry that is its own mate (the origin). A full
+    layout keeps RELION's stored half along ``full_half_axis`` (weight 0 elsewhere); a packed half
+    is weighted on its own stored axis, the last, whatever ``full_half_axis`` says.
+
+    Returns float64 weights that broadcast over the layout.
+    """
+
+    axis = 2 if is_half_layout else int(full_half_axis)
+    size = int(volume_shape[axis])
+    if is_half_layout:
+        weights = np.ones(size // 2 + 1, dtype=np.float64)
+    else:
+        coords = np.arange(-(size // 2), size - size // 2)
+        weights = ((coords >= 0) | ((size % 2 == 0) & (coords == -(size // 2)))).astype(np.float64)
+    weights[list(_own_mate_planes(size, half_axis=is_half_layout))] = 0.5
+    shape = [1, 1, 1]
+    shape[axis] = weights.shape[0]
+    return weights.reshape(shape)
+
+
 @functools.partial(
     jax.jit,
     static_argnames=(
@@ -386,6 +442,7 @@ def _relion_x_half_multiplicity_in_native_half(volume_shape, axis):
         "shell_rounding",
         "ori_half",
         "n_shells",
+        "pair_once",
     ),
 )
 def _padded_shell_sums_device(
@@ -400,6 +457,7 @@ def _padded_shell_sums_device(
     shell_rounding,
     ori_half,
     n_shells,
+    pair_once=False,
 ):
     """The padded-grid shell sums of :func:`_compute_relion_weight_shell_stats` on the device.
 
@@ -427,7 +485,12 @@ def _padded_shell_sums_device(
     scaled_dist = padded_dist / padding_factor
     rounded = jnp.floor(scaled_dist + 0.5) if shell_rounding == "round" else jnp.floor(scaled_dist)
     shell_index = jnp.minimum(rounded.astype(jnp.int32), ori_half)
-    if is_half_layout:
+    if pair_once:
+        pair_weights = _pair_once_weights(
+            radial_volume_shape, is_half_layout=is_half_layout, full_half_axis=full_half_axis
+        )
+        included = radius_included * jnp.broadcast_to(jnp.asarray(pair_weights), radial_shape).reshape(-1)
+    elif is_half_layout:
         included = radius_included
         if full_half_axis != 2:
             # A native half repacked from RELION x-half storage: RELION's half is along full_half_axis.
@@ -455,6 +518,7 @@ def _compute_relion_weight_shell_stats(
     shell_rounding="round",
     full_half_axis=-1,
     accumulator_volume_shape=None,
+    shell_pair_counting="relion",
 ):
     """Match RELION's shell-wise weight averaging for tau2 diagnostics.
 
@@ -483,6 +547,12 @@ def _compute_relion_weight_shell_stats(
         public layout use axis 0, as a full volume or as a packed half: a
         packed half then counts its entries as RELION's half along that axis
         does (:func:`_relion_x_half_multiplicity_in_native_half`).
+    shell_pair_counting : {"relion", "once"}
+        ``"relion"`` visits every stored entry once, as ``updateSSNRarrays``
+        does, so the Hermitian pairs on the stored axis' zero plane count
+        twice. ``"once"`` counts every pair once
+        (:func:`_pair_once_weights`); sums and counts are then half the
+        full-grid ones in every layout, and the plane must be Hermitian.
 
     Returns
     -------
@@ -541,6 +611,7 @@ def _compute_relion_weight_shell_stats(
         full_half_axis += 3
     if full_half_axis not in {0, 1, 2}:
         raise ValueError(f"full_half_axis must identify one Fourier axis, got {full_half_axis!r}")
+    pair_once = _require_shell_pair_counting(shell_pair_counting)
 
     round_fn = (lambda values: jnp.floor(values + 0.5)) if shell_rounding == "round" else jnp.floor
     shell_sum_np = None
@@ -610,7 +681,7 @@ def _compute_relion_weight_shell_stats(
                     radial_shape,
                     full_half_axis,
                 )
-            elif full_half_axis != 2:
+            elif full_half_axis != 2 and not pair_once:
                 multiplicity_np = _relion_x_half_multiplicity_in_native_half(radial_volume_shape, full_half_axis)
                 radius_included_np &= multiplicity_np > 0
             weight_grid_np = np.asarray(weight).reshape(radial_shape)
@@ -634,6 +705,20 @@ def _compute_relion_weight_shell_stats(
                     )
                     shell_sum_np = shell_sum_np + plane_sum
                     shell_count_np = shell_count_np + plane_count
+            if pair_once:
+                # Both mates of the stored axis' own-mirror planes were counted; take half of each back.
+                stored_axis = 2 if is_half_layout else full_half_axis
+                for plane in _own_mate_planes(radial_volume_shape[stored_axis], half_axis=is_half_layout):
+                    plane_index = [slice(None)] * 3
+                    plane_index[stored_axis] = int(plane)
+                    plane_index = tuple(plane_index)
+                    plane_sum, plane_count = _numpy_bincount_shell_stats(
+                        shell_index_np[plane_index],
+                        weight_grid_np[plane_index],
+                        radius_included_np[plane_index],
+                    )
+                    shell_sum_np = shell_sum_np - 0.5 * plane_sum
+                    shell_count_np = shell_count_np - 0.5 * plane_count
         else:
             shell_sum, shell_count = _padded_shell_sums_device(
                 weight,
@@ -650,6 +735,7 @@ def _compute_relion_weight_shell_stats(
                 shell_rounding=shell_rounding,
                 ori_half=int(ori_half),
                 n_shells=int(n_shells),
+                pair_once=pair_once,
             )
             avg_weight = jnp.where(shell_count > 0, shell_sum / shell_count, 0.0)
             return {
@@ -676,7 +762,13 @@ def _compute_relion_weight_shell_stats(
         else:
             max_r_native = int(_relion_round_away_from_zero(np.asarray(float(r_max))))
             included = (radial_raw * radial_raw < float(max_r_native * max_r_native)).astype(jnp.float64)
-        if not is_half_layout:
+        if pair_once:
+            pair_weights = _pair_once_weights(volume_shape, is_half_layout=is_half_layout, full_half_axis=full_half_axis)
+            included = included * jnp.broadcast_to(
+                jnp.asarray(pair_weights),
+                fourier_transform_utils.volume_shape_to_half_volume_shape(volume_shape) if is_half_layout else volume_shape,
+            ).reshape(-1)
+        elif not is_half_layout:
             included = included * _centered_full_half_axis_mask(
                 relion_grid_shape,
                 full_half_axis,
@@ -718,6 +810,7 @@ def compute_relion_tau2_from_weights(
     accumulator_volume_shape=None,
     weight_combination="average",
     output_dtype=jnp.float32,
+    shell_pair_counting="relion",
 ):
     """Compute tau2 from CTF weights and external FSC (RELION's updateSSNRarrays).
 
@@ -747,6 +840,9 @@ def compute_relion_tau2_from_weights(
         RELION ``RFLOAT`` precision for the weight combination, FSC, and
         returned tau2 arrays. Defaults to float32 for compatibility; the
         dense double-precision refinement path passes float64.
+    shell_pair_counting : {"relion", "once"}
+        How the shell average of the weight counts Hermitian pairs
+        (:func:`_compute_relion_weight_shell_stats`).
     """
     prior_dtype = jnp.dtype(output_dtype)
     if prior_dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
@@ -790,6 +886,7 @@ def compute_relion_tau2_from_weights(
         r_max=r_max,
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_volume_shape,
+        shell_pair_counting=shell_pair_counting,
     )
     shell_sum = shell_stats["shell_sum"]
     shell_count = shell_stats["shell_count"]
@@ -870,6 +967,7 @@ def _compute_relion_fsc_from_packed_half_streamed(
     *,
     padding_factor,
     r_max,
+    pair_once=False,
 ):
     """Reduce native packed-half BPref arrays without expanding full cubes.
 
@@ -886,6 +984,8 @@ def _compute_relion_fsc_from_packed_half_streamed(
     bounded slab.  The final valid native cells are retained in canonical
     z/y/x order and passed to one shell ``bincount`` per statistic; this
     avoids changing the last-stage floating-point reduction topology.
+    ``pair_once`` weights the cells of RELION's ``x = 0`` plane, where both
+    Hermitian mates are stored, by 1/2 in the three shell sums.
     """
 
     volume_shape = tuple(int(value) for value in volume_shape)
@@ -977,6 +1077,7 @@ def _compute_relion_fsc_from_packed_half_streamed(
     avg0_valid = np.empty(valid_count, dtype=np.complex128)
     avg1_valid = np.empty(valid_count, dtype=np.complex128)
     shell_labels = np.empty(valid_count, dtype=np.int64)
+    pair_weights = np.empty(valid_count, dtype=np.float64) if pair_once else None
 
     def _gather_full_slab(half_grid, z_indices, *, conjugate):
         slab = np.empty(
@@ -1037,25 +1138,36 @@ def _compute_relion_fsc_from_packed_half_streamed(
             avg0_valid[cursor : cursor + count] = 0.0
             avg1_valid[cursor : cursor + count] = 0.0
         shell_labels[cursor : cursor + count] = target_shells
+        if pair_once:
+            pair_weights[cursor : cursor + count] = np.broadcast_to(
+                np.where(target_x == 0.0, 0.5, 1.0)[None, :], target_valid.shape
+            )[target_valid]
         cursor += count
     if cursor != valid_count:
         raise RuntimeError(
             f"Streamed RELION FSC filled {cursor} valid cells; expected {valid_count}"
         )
 
+    cross_terms = (np.conj(avg0_valid) * avg1_valid).real
+    power0_terms = np.abs(avg0_valid) ** 2
+    power1_terms = np.abs(avg1_valid) ** 2
+    if pair_once:
+        cross_terms, power0_terms, power1_terms = (
+            terms * pair_weights for terms in (cross_terms, power0_terms, power1_terms)
+        )
     numerator = np.bincount(
         shell_labels,
-        weights=(np.conj(avg0_valid) * avg1_valid).real,
+        weights=cross_terms,
         minlength=shell_count,
     )
     denom0 = np.bincount(
         shell_labels,
-        weights=np.abs(avg0_valid) ** 2,
+        weights=power0_terms,
         minlength=shell_count,
     )
     denom1 = np.bincount(
         shell_labels,
-        weights=np.abs(avg1_valid) ** 2,
+        weights=power1_terms,
         minlength=shell_count,
     )
     fsc = np.zeros(shell_count, dtype=np.float64)
@@ -1142,6 +1254,7 @@ def compute_relion_fsc_from_backprojector(
     accumulator_volume_shape=None,
     output_dtype=jnp.float32,
     full_is_hermitian=False,
+    shell_pair_counting="relion",
 ):
     """Compute RELION's gold-standard FSC from backprojector accumulators.
 
@@ -1161,7 +1274,14 @@ def compute_relion_fsc_from_backprojector(
     BackProjectors). Their packed half then carries every value the full path
     reads, so the streamed packed-half reduction runs on it instead of the
     full cubes: 2.2 s instead of 6.4 s at a 515^3 accumulator, equal FSC.
+
+    ``shell_pair_counting`` ``"relion"`` sums every stored cell of the
+    downsampled half, as ``calculateDownSampledFourierShellCorrelation`` does,
+    so the Hermitian pairs of its ``x = 0`` plane count twice; ``"once"``
+    weights that plane by 1/2 in the numerator and both denominators.
     """
+
+    pair_once = _require_shell_pair_counting(shell_pair_counting)
 
     volume_shape = tuple(int(s) for s in volume_shape)
     if len(volume_shape) != 3 or len(set(volume_shape)) != 1:
@@ -1221,6 +1341,7 @@ def compute_relion_fsc_from_backprojector(
             padded_shape,
             padding_factor=pf,
             r_max=r_max,
+            pair_once=pair_once,
         )
         if dump_dir:
             pathlib.Path(dump_dir).mkdir(parents=True, exist_ok=True)
@@ -1314,9 +1435,17 @@ def compute_relion_fsc_from_backprojector(
     avg0_flat = avg0[shell_valid].reshape(-1)
     avg1_flat = avg1[shell_valid].reshape(-1)
 
-    numerator = np.bincount(shell_labels, weights=(np.conj(avg0_flat) * avg1_flat).real, minlength=shell_count)
-    denom0 = np.bincount(shell_labels, weights=np.abs(avg0_flat) ** 2, minlength=shell_count)
-    denom1 = np.bincount(shell_labels, weights=np.abs(avg1_flat) ** 2, minlength=shell_count)
+    cross_terms = (np.conj(avg0_flat) * avg1_flat).real
+    power0_terms = np.abs(avg0_flat) ** 2
+    power1_terms = np.abs(avg1_flat) ** 2
+    if pair_once:
+        pair_weights = np.where(rx[shell_valid].reshape(-1) == 0.0, 0.5, 1.0)
+        cross_terms, power0_terms, power1_terms = (
+            terms * pair_weights for terms in (cross_terms, power0_terms, power1_terms)
+        )
+    numerator = np.bincount(shell_labels, weights=cross_terms, minlength=shell_count)
+    denom0 = np.bincount(shell_labels, weights=power0_terms, minlength=shell_count)
+    denom1 = np.bincount(shell_labels, weights=power1_terms, minlength=shell_count)
     fsc = np.zeros(shell_count, dtype=np.float64)
     nonzero = (denom0 * denom1) > 0.0
     fsc[nonzero] = numerator[nonzero] / np.sqrt(denom0[nonzero] * denom1[nonzero])
@@ -1375,6 +1504,7 @@ def compute_data_vs_prior(
     current_size=None,
     full_half_axis=-1,
     accumulator_volume_shape=None,
+    shell_pair_counting="relion",
 ):
     """Compute RELION's data_vs_prior ratio per radial shell.
 
@@ -1407,6 +1537,9 @@ def compute_data_vs_prior(
         Optional current image size. When provided, shells beyond
         ``current_size // 2`` are zeroed to match RELION's current-resolution
         truncation during growth updates.
+    shell_pair_counting : {"relion", "once"}
+        How the shell average of the weight counts Hermitian pairs
+        (:func:`_compute_relion_weight_shell_stats`).
 
     Returns
     -------
@@ -1421,6 +1554,7 @@ def compute_data_vs_prior(
         shell_rounding="round",
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_volume_shape,
+        shell_pair_counting=shell_pair_counting,
     )["avg_weight_shells"].astype(jnp.asarray(tau2).dtype)
     tau2 = jnp.asarray(tau2)
     if tau2.shape[0] != avg_weight.shape[0]:

@@ -150,6 +150,7 @@ class RelionParityOptions:
 
 _CONSISTENCY_CHOICES = {
     "gridding_kernel": ("radial", "separable"),
+    "shell_pair_counting": ("relion", "once"),
 }
 
 
@@ -166,6 +167,11 @@ class RelionConsistencyOptions:
     # RELION's radial sinc²(|x| / (pf N)) or the per-axis product (the trilinear kernel's exact
     # transform). "separable" is K=1 single-particle refinement only.
     gridding_kernel: Literal["radial", "separable"] = "radial"
+    # How the 3-D shell statistics behind tau2, data-vs-prior, the half-map FSC and the scheduling
+    # count Hermitian pairs: RELION's loops over the stored x-half count the pairs of the kx = 0
+    # plane twice; "once" counts every pair once. The reconstruction's 1/1000 weight floor (RECOVAR)
+    # keeps RELION's counting.
+    shell_pair_counting: Literal["relion", "once"] = "relion"
 
     def __post_init__(self):
         for name, choices in _CONSISTENCY_CHOICES.items():

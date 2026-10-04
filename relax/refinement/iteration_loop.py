@@ -905,6 +905,7 @@ def refine_single_volume(
         particle_diameter_angstrom=schedule.particle_diameter_ang,
         first_iteration_lowpass_angstrom=parity.relion_firstiter_ini_high_angstrom,
         gridding_kernel=consistency.gridding_kernel,
+        shell_pair_counting=consistency.shell_pair_counting,
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,

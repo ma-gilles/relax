@@ -247,6 +247,7 @@ def _relion_start_tau2_and_data_vs_prior(
     tau2_fudge: float,
     nr_particles: int,
     pdf_class: float = 1.0,
+    shell_pair_counting: str = "relion",
 ):
     """RELION's start-up tau2 (RECOVAR units) and data_vs_prior (RELION units) of one class.
 
@@ -277,6 +278,7 @@ def _relion_start_tau2_and_data_vs_prior(
         avg_sigma2_noise=sigma2[:n_shells],
         nr_particles=int(nr_particles),
         pdf_class=float(pdf_class),
+        shell_pair_counting=shell_pair_counting,
     )
     mean_variance = jnp.asarray(
         utils.make_radial_image(tau2 * n4, volume_shape, extend_last_frequency=True)
@@ -1308,6 +1310,7 @@ def main(command=None):
             volume_shape=ds.volume_shape,
             tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
             nr_particles=int(ds_half1.n_units),
+            shell_pair_counting=consistency_options.shell_pair_counting,
         )
         logger.info(
             "RELION start-up tau2/data_vs_prior (initialiseDataVersusPrior): %d shells with data_vs_prior > 3",
@@ -1329,6 +1332,7 @@ def main(command=None):
                     tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
                     nr_particles=int(ds.n_units),
                     pdf_class=1.0 / n_classes,
+                    shell_pair_counting=consistency_options.shell_pair_counting,
                 )[1]
                 for reference in relion_start_class_references_real
             ],

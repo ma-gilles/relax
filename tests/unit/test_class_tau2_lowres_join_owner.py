@@ -315,6 +315,7 @@ class TestClassTau2FromIrefPowerSpectrum:
             "current_size": 6,
             "return_details": True,
             "projector_power_spectrum": None,
+            "shell_pair_counting": "relion",
         }
         expected_tau2 = relion_tau2 * jnp.asarray(frame_scale, dtype=jnp.float32)
         expected_shells_relion = jnp.asarray(relion_shells, dtype=jnp.float32)

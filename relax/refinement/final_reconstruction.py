@@ -88,6 +88,7 @@ def compute_final_halfmap_prior(
         accumulator_volume_shape=accumulator_shape,
         output_dtype=scoring_dtype,
         full_is_hermitian=True,
+        shell_pair_counting=settings.shell_pair_counting,
     )
     variance, _, details = regularization_relion.compute_relion_tau2_from_weights(
         denominators[0],
@@ -103,6 +104,7 @@ def compute_final_halfmap_prior(
         accumulator_volume_shape=accumulator_shape,
         weight_combination="sum",
         output_dtype=scoring_dtype,
+        shell_pair_counting=settings.shell_pair_counting,
     )
     return HalfmapPrior(variance=variance, fsc=fsc, details=details)
 

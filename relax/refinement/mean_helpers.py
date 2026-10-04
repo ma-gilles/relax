@@ -348,6 +348,7 @@ def _class_tau2_from_iref_power_spectrum(
     current_size: int,
     frame_scale: float,
     projector_power_spectrum=None,
+    shell_pair_counting="relion",
 ):
     """Class3D tau2 for one class from its previous ``Iref`` power spectrum.
 
@@ -368,6 +369,7 @@ def _class_tau2_from_iref_power_spectrum(
         current_size=current_size,
         return_details=True,
         projector_power_spectrum=projector_power_spectrum,
+        shell_pair_counting=shell_pair_counting,
     )
     mean_signal_variance = mean_signal_variance_relion * jnp.asarray(
         frame_scale,
@@ -394,6 +396,7 @@ def _class_tau2_update_details(
     full_half_axis,
     accumulator_volume_shape,
     average_ctf2=None,
+    shell_pair_counting="relion",
 ):
     """Data-vs-prior and the host tau2 detail record for one class.
 
@@ -416,6 +419,7 @@ def _class_tau2_update_details(
         current_size=current_size,
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_volume_shape,
+        shell_pair_counting=shell_pair_counting,
     )
     if average_ctf2 is not None:
         count = min(int(data_vs_prior.shape[0]), int(np.asarray(average_ctf2).shape[0]))
@@ -503,9 +507,13 @@ def estimate_class_prior(
             padding_factor=settings.padding_factor,
             current_size=current_size,
             frame_scale=frame_scale,
+            # The scoring projector's spectrum counts as RELION does; another counting builds its own.
             projector_power_spectrum=(
-                None if projector_power_spectrum is None else projector_power_spectrum[class_index]
+                None
+                if projector_power_spectrum is None or settings.shell_pair_counting != "relion"
+                else projector_power_spectrum[class_index]
             ),
+            shell_pair_counting=settings.shell_pair_counting,
         )
     weight_shells = regularization_relion._compute_relion_weight_shell_stats(
         denominators[class_index], settings.volume_shape,
@@ -514,6 +522,7 @@ def estimate_class_prior(
         shell_rounding="round",
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_shape,
+        shell_pair_counting=settings.shell_pair_counting,
     )
     data_vs_prior, details = _class_tau2_update_details(
         denominators[class_index], shells, weight_shells, settings,
@@ -521,6 +530,7 @@ def estimate_class_prior(
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_shape,
         average_ctf2=average_ctf2,
+        shell_pair_counting=settings.shell_pair_counting,
     )
     return ClassPriorEstimate(
         variance=variance, shells=shells, relion_shells=relion_shells,
@@ -1198,6 +1208,10 @@ class ReconstructionSettings:
     # Real-space gridding-correction window of every reconstruction ("radial" is RELION's);
     # "separable" is K=1 only and the class operations refuse it.
     gridding_kernel: str = "radial"
+    # How the 3-D shell statistics behind tau2, data-vs-prior and the half-map FSC count Hermitian
+    # pairs: "relion" counts those of the stored half's zero plane twice, "once" every pair once.
+    # The 1/1000 weight floor inside the reconstruction (RECOVAR) keeps RELION's counting.
+    shell_pair_counting: str = "relion"
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.
@@ -1258,6 +1272,7 @@ def estimate_split_half_prior(
         r_max=current_size // 2,
         accumulator_volume_shape=accumulator_shape,
         output_dtype=scoring_dtype,
+        shell_pair_counting=settings.shell_pair_counting,
     )
     log.info(
         "Computed iter-%d FSC for tau2 (RELION backprojector path): %.1fs",
@@ -1284,6 +1299,7 @@ def estimate_split_half_prior(
             full_half_axis=-1 if full_half_axis is None else int(full_half_axis),
             accumulator_volume_shape=accumulator_shape,
             output_dtype=scoring_dtype,
+            shell_pair_counting=settings.shell_pair_counting,
         )
         mean_signal_variance_per_half.append(mean_signal_variance_k)
         tau2_update_details_per_half.append(tau2_update_details_k)
