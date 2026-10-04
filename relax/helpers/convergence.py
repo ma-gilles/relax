@@ -21,7 +21,7 @@ G (angular sampling), H (speed tricks).
 import logging
 import os
 from dataclasses import dataclass, field, replace
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 
@@ -173,6 +173,45 @@ def concatenate_assignments_or_none(assignments_per_half):
     if all(assignments is not None for assignments in assignments_per_half):
         return concatenate_assignments(assignments_per_half)
     return None
+
+
+class ExpectationStatistics(NamedTuple):
+    """Particle statistics of one completed expectation, the two halves joined in half order.
+
+    Built once per numbered iteration by :func:`expectation_statistics` and not modified. The convergence
+    update, the Pmax history record, the parity dump and the iteration log read it.
+    """
+
+    # Coarse-grid assignment of every particle, and the preceding iteration's (None before one was recorded).
+    assignments: np.ndarray
+    previous_assignments: Optional[np.ndarray]
+    # Each particle's posterior maximum.
+    max_posterior: np.ndarray
+    # RELION's optimizer Pmax (half 1's sum over its normalization mass) and that mass.
+    ave_pmax: float
+    ave_pmax_mass: float
+
+
+def expectation_statistics(per_half, previous_assignments, pmax_mass_per_half) -> ExpectationStatistics:
+    """Join the halves' assignments and posterior maxima and take RELION's optimizer Pmax.
+
+    Reads from ``per_half`` (the iteration's ``PerHalfOutputs``): ``max_posterior`` and ``coarse_ha``, the
+    assignments indexed into the trial grid whether or not adaptive oversampling ran.
+    ``previous_assignments`` are the preceding iteration's coarse assignments per half;
+    ``pmax_mass_per_half`` is the mode's Pmax normalization mass per half.
+    """
+    if any(pmax is None for pmax in per_half.max_posterior):
+        raise RuntimeError(
+            "RELION mode expected per-image posterior maxima from the EM engine",
+        )
+    max_posterior, ave_pmax, ave_pmax_mass = _relion_optimizer_average_pmax(per_half.max_posterior, pmax_mass_per_half)
+    return ExpectationStatistics(
+        assignments=concatenate_assignments(per_half.coarse_ha),
+        previous_assignments=concatenate_assignments_or_none(previous_assignments),
+        max_posterior=max_posterior,
+        ave_pmax=ave_pmax,
+        ave_pmax_mass=ave_pmax_mass,
+    )
 
 
 def healpix_angular_step(order: int) -> float:

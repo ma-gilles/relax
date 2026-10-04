@@ -66,11 +66,11 @@ from relax.diagnostics.state_swap_runtime import (
 from relax.helpers.convergence import (
     _direction_prior_healpix_order_for_scoring,
     _exhaustive_grid_order_for_state,
-    _relion_optimizer_average_pmax,
     _relion_pmax_normalization_mass_per_half,
     check_convergence,
     concatenate_assignments,
     concatenate_assignments_or_none,
+    expectation_statistics,
 )
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.expected_accuracy import (
@@ -2250,34 +2250,24 @@ def refine_single_volume(
                 symmetry=symmetry,
             )
 
-        # --- Compute ave_Pmax from the actual E-step maxima ---
-        if any(pmax is None for pmax in per_half.max_posterior):
-            raise RuntimeError(
-                "RELION mode expected per-image posterior maxima from the EM engine",
-            )
-        combined_max_posterior, ave_pmax, ave_pmax_denominator = _relion_optimizer_average_pmax(
-            per_half.max_posterior,
+        # --- This expectation's particle statistics: joined assignments, posterior maxima, optimizer Pmax ---
+        statistics = expectation_statistics(
+            per_half,
+            previous_assignments,
             _relion_pmax_normalization_mass_per_half(per_half, k_class_enabled=k_class_enabled),
         )
         if k_class_enabled:
             logger.info(
                 "Class3D optimizer Pmax: value=%.9f numerator=%.9f "
                 "half1_mstep_posterior_mass=%.9f half1_particle_count=%d",
-                ave_pmax,
+                statistics.ave_pmax,
                 float(np.sum(np.asarray(per_half.max_posterior[0]), dtype=np.float64)),
-                ave_pmax_denominator,
+                statistics.ave_pmax_mass,
                 int(np.asarray(per_half.max_posterior[0]).size),
             )
-        history.record_pmax(ave_pmax, ave_pmax_denominator, combined_max_posterior.copy())
+        history.record_pmax(statistics.ave_pmax, statistics.ave_pmax_mass, statistics.max_posterior.copy())
         history.record_pass2_engines(take_pass_engines())
         history.record_coarse_engines(take_coarse_engine_calls())
-
-        # --- Track per-image best assignments for convergence detection ---
-        # Combine both half-sets' assignments into a single array for
-        # update_refinement_state.  Use per_half.coarse_ha (indexed into
-        # trial_grid.rotations) for consistent convergence tracking.
-        current_combined_ha = concatenate_assignments(per_half.coarse_ha)
-        previous_combined_ha = concatenate_assignments_or_none(previous_assignments)
 
         # tau2 was already updated BEFORE the Wiener solve (matching RELION's
         # reconstruct() which calls updateSSNRarrays before the filter).
@@ -2499,12 +2489,9 @@ def refine_single_volume(
             scheduling_resolution_shell=resolution_estimate.scheduling_shell,
             replay_dir=perturb_replay_relion_dir,
             translations=coarse_grids.translations,
-            current_assignments=current_combined_ha,
-            previous_assignments=previous_combined_ha,
+            statistics=statistics,
             current_classes=current_combined_classes,
             previous_classes=previous_combined_classes,
-            max_posterior=combined_max_posterior,
-            ave_pmax=ave_pmax,
             significant_counts=significance.convergence,
             exact_acc_rot=iteration_accuracy.acc_rot,
             exact_acc_trans=iteration_accuracy.acc_trans_angstrom,
@@ -2624,7 +2611,7 @@ def refine_single_volume(
                 random_perturbation=random_perturbation,
                 settings=reconstruction_settings,
                 pixel_size_angstrom=source_pixel_size_angstrom,
-                ave_pmax=ave_pmax,
+                ave_pmax=statistics.ave_pmax,
                 fsc=fsc,
                 noise_variance=noise_model.average_variance,
                 means=reference_model.maps,
@@ -2662,7 +2649,7 @@ def refine_single_volume(
             current_size,
             resolution_estimate.scheduling_shell,
             res_angstrom,
-            ave_pmax,
+            statistics.ave_pmax,
             state.healpix_order,
             state.has_converged,
             elapsed,

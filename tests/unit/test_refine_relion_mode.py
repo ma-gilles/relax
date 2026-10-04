@@ -58,7 +58,7 @@ from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics.relion_replay import _replay_control_model_iteration
 from relax.helpers import dtype_policy as dtype_policy_module
 from relax.helpers import resolution as resolution_helpers
-from relax.helpers.convergence import RefinementState, healpix_angular_step
+from relax.helpers.convergence import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
 from relax.helpers.half_volume_mstep import (
     relion_backprojector_volume_shape,
 )
@@ -147,7 +147,7 @@ def test_relion_optimizer_average_pmax_uses_kclass_mstep_mass():
     pmax = [np.asarray([0.1, 0.2]), np.asarray([0.3])]
     class_mstep_mass = [np.asarray([0.9, 0.08]), np.asarray([1.8, 0.15])]
 
-    combined, average, denominator = iteration_loop_module._relion_optimizer_average_pmax(
+    combined, average, denominator = _relion_optimizer_average_pmax(
         pmax,
         [np.sum(class_mstep_mass[0]), np.sum(class_mstep_mass[1])],
     )
@@ -159,7 +159,7 @@ def test_relion_optimizer_average_pmax_uses_kclass_mstep_mass():
 
 
 def test_relion_optimizer_average_pmax_uses_k1_mstep_mass():
-    _, average, denominator = iteration_loop_module._relion_optimizer_average_pmax(
+    _, average, denominator = _relion_optimizer_average_pmax(
         [np.asarray([0.1, 0.2]), np.asarray([0.3])],
         [1.8, 0.9],
     )
@@ -174,7 +174,7 @@ def test_relion_optimizer_average_pmax_preserves_double_particle_values():
         np.asarray([0.987654321098765], dtype=np.float64),
     ]
 
-    combined, average, denominator = iteration_loop_module._relion_optimizer_average_pmax(pmax)
+    combined, average, denominator = _relion_optimizer_average_pmax(pmax)
 
     assert combined.dtype == np.float64
     assert_matches(combined, np.concatenate(pmax))

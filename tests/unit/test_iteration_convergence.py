@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.convergence import RefinementState
+from relax.helpers.convergence import ExpectationStatistics, RefinementState
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.convergence import update_class_iteration_convergence, update_k1_iteration_convergence
 from relax.refinement.half_inputs import PoseComparison
@@ -51,11 +51,21 @@ def _operands(options, state, dtype, pixel_size, overrides):
     return state, poses, kwargs
 
 
+def _with_statistics(kwargs):
+    """Gather the four particle statistics into the record the operations take."""
+    kwargs = dict(kwargs)
+    kwargs['statistics'] = ExpectationStatistics(
+        assignments=kwargs.pop('current_assignments'), previous_assignments=kwargs.pop('previous_assignments'),
+        max_posterior=kwargs.pop('max_posterior'), ave_pmax=kwargs.pop('ave_pmax'), ave_pmax_mass=1.0,
+    )
+    return kwargs
+
+
 def _update_k1(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **overrides):
     options = RefinementOptions() if options is None else options
     overrides.setdefault('native_sampling_boundary', True)
     state, poses, kwargs = _operands(options, state, dtype, pixel_size, overrides)
-    return update_k1_iteration_convergence(state, poses, options, **kwargs)
+    return update_k1_iteration_convergence(state, poses, options, **_with_statistics(kwargs))
 
 
 def _update_class(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **overrides):
@@ -63,7 +73,7 @@ def _update_class(*, options=None, state=None, dtype=np.float32, pixel_size=1.5,
     overrides.setdefault('current_classes', np.zeros(3, dtype=np.int32))
     overrides.setdefault('previous_classes', np.zeros(3, dtype=np.int32))
     state, poses, kwargs = _operands(options, state, dtype, pixel_size, overrides)
-    return update_class_iteration_convergence(state, poses, options, **kwargs)
+    return update_class_iteration_convergence(state, poses, options, **_with_statistics(kwargs))
 
 
 @pytest.mark.parametrize('dtype', [np.float32, np.float64])

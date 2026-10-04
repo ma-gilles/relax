@@ -14,6 +14,7 @@ from relax.diagnostics.relion_replay import (
     read_optimiser_accuracy_replay,
 )
 from relax.helpers.convergence import (
+    ExpectationStatistics,
     RefinementState,
     _apply_relion_healpix_order_oracle,
     _approx_acc_rot_policy_for_convergence,
@@ -200,16 +201,16 @@ def update_k1_iteration_convergence(
     replay_dir: str | None,
     scheduling_resolution_shell: float,
     translations,
-    current_assignments,
-    previous_assignments,
-    max_posterior,
-    ave_pmax: float,
+    statistics: ExpectationStatistics,
     significant_counts,
     exact_acc_rot: float | None,
     exact_acc_trans: float | None,
     log: logging.Logger,
 ) -> ConvergenceUpdate:
     """Update completed-iteration statistics of K=1 auto-refine, then apply optimiser controls.
+
+    Reads from ``statistics`` (the expectation's ``ExpectationStatistics``): ``assignments``,
+    ``previous_assignments``, ``max_posterior`` and ``ave_pmax``.
 
     Native auto-refine tests convergence at the next permitted loop boundary;
     this operation preserves that timing. Approximate support accuracy only
@@ -235,19 +236,19 @@ def update_k1_iteration_convergence(
     )
     state = update_refinement_state(
         state,
-        current_assignments=current_assignments,
-        previous_assignments=previous_assignments,
+        current_assignments=statistics.assignments,
+        previous_assignments=statistics.previous_assignments,
         n_translations=n_trans_current,
         translations=translations,
         new_resolution=new_res_angstrom,
-        max_posterior_per_image=max_posterior,
+        max_posterior_per_image=statistics.max_posterior,
         acc_rot=accuracy_replay.convergence_acc_rot,
         acc_trans=accuracy_replay.convergence_acc_trans,
         current_rotation_matrices=pose_comparison.current_rotations,
         previous_rotation_matrices=pose_comparison.previous_rotations,
         current_translations_pixel=pose_comparison.current_translations_pixels,
         previous_translations_pixel=pose_comparison.previous_translations_pixels,
-        ave_pmax_override=ave_pmax,
+        ave_pmax_override=statistics.ave_pmax,
         voxel_size_angstrom=image_geometry.pixel_size_angstrom,
         update_sampling=not native_sampling_boundary,
         check_convergence_now=not native_sampling_boundary,
@@ -275,18 +276,18 @@ def update_class_iteration_convergence(
     replay_dir: str | None,
     scheduling_resolution_shell: float,
     translations,
-    current_assignments,
-    previous_assignments,
+    statistics: ExpectationStatistics,
     current_classes,
     previous_classes,
-    max_posterior,
-    ave_pmax: float,
     significant_counts,
     exact_acc_rot: float | None,
     exact_acc_trans: float | None,
     log: logging.Logger,
 ) -> ConvergenceUpdate:
     """Update completed-iteration statistics of Class3D, then apply optimiser controls.
+
+    Reads from ``statistics`` (the expectation's ``ExpectationStatistics``): ``assignments``,
+    ``previous_assignments``, ``max_posterior`` and ``ave_pmax``.
 
     Class3D records the hard class changes and never advances its sampling or
     tests convergence here. Approximate support accuracy only reaches the state
@@ -312,12 +313,12 @@ def update_class_iteration_convergence(
     )
     state = update_refinement_state(
         state,
-        current_assignments=current_assignments,
-        previous_assignments=previous_assignments,
+        current_assignments=statistics.assignments,
+        previous_assignments=statistics.previous_assignments,
         n_translations=n_trans_current,
         translations=translations,
         new_resolution=new_res_angstrom,
-        max_posterior_per_image=max_posterior,
+        max_posterior_per_image=statistics.max_posterior,
         acc_rot=accuracy_replay.convergence_acc_rot,
         acc_trans=accuracy_replay.convergence_acc_trans,
         current_rotation_matrices=pose_comparison.current_rotations,
@@ -325,7 +326,7 @@ def update_class_iteration_convergence(
         current_translations_pixel=pose_comparison.current_translations_pixels,
         previous_translations_pixel=pose_comparison.previous_translations_pixels,
         current_changes_classes=hard_class_change_fraction(current_classes, previous_classes),
-        ave_pmax_override=ave_pmax,
+        ave_pmax_override=statistics.ave_pmax,
         voxel_size_angstrom=image_geometry.pixel_size_angstrom,
         update_sampling=False,
         check_convergence_now=False,
@@ -346,12 +347,9 @@ def update_iteration_convergence(
     replay_dir: str | None,
     scheduling_resolution_shell: float,
     translations,
-    current_assignments,
-    previous_assignments,
+    statistics: ExpectationStatistics,
     current_classes,
     previous_classes,
-    max_posterior,
-    ave_pmax: float,
     significant_counts,
     exact_acc_rot: float | None,
     exact_acc_trans: float | None,
@@ -375,12 +373,9 @@ def update_iteration_convergence(
             replay_dir=replay_dir,
             scheduling_resolution_shell=scheduling_resolution_shell,
             translations=translations,
-            current_assignments=current_assignments,
-            previous_assignments=previous_assignments,
+            statistics=statistics,
             current_classes=current_classes,
             previous_classes=previous_classes,
-            max_posterior=max_posterior,
-            ave_pmax=ave_pmax,
             significant_counts=significant_counts,
             exact_acc_rot=exact_acc_rot,
             exact_acc_trans=exact_acc_trans,
@@ -396,10 +391,7 @@ def update_iteration_convergence(
         replay_dir=replay_dir,
         scheduling_resolution_shell=scheduling_resolution_shell,
         translations=translations,
-        current_assignments=current_assignments,
-        previous_assignments=previous_assignments,
-        max_posterior=max_posterior,
-        ave_pmax=ave_pmax,
+        statistics=statistics,
         significant_counts=significant_counts,
         exact_acc_rot=exact_acc_rot,
         exact_acc_trans=exact_acc_trans,
