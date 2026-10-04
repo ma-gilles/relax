@@ -73,3 +73,12 @@ def test_the_live_memory_hook_does_not_start_jax(tmp_path):
     env = dict(os.environ, PYTHONPATH=str(hook), RELAX_MATRIX_LIVE_MEMORY=str(tmp_path / "live.jsonl"))
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "False"
+
+
+def test_emulated_fraction_reserves_the_projector_texture_for_refine_and_class3d():
+    """--emulate-gb sizes the pool as relax would on the small card; refine and class3d reserve their texture."""
+    total = 80 * 1024**3
+    plain = run_cell.emulated_fraction("relax.commands.initial_model", 256, 16.0, total)
+    assert plain == pytest.approx(0.90 * 16 / 80)
+    for module in ("relax.commands.refine", "relax.commands.class3d"):
+        assert 0.0 < run_cell.emulated_fraction(module, 256, 16.0, total) <= plain
