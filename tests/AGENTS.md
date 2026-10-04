@@ -1,175 +1,77 @@
-# Test Development Rules
+# tests/: rules for tests, gates and pinned files
 
-## Hard Rules (non-negotiable)
+The root guide applies. Tier budgets, contents and pass criteria are in CONTRIBUTING.md.
 
-### NEVER widen tolerance to make tests pass
-Do not change `_TOL`, `tol_frac`, `HIGH_VARIANCE_TOKENS`, or add skip/ignore logic for specific metrics. If a test fails, **fix the code**, not the test. You may **suggest** a tolerance change and wait for explicit approval, but never implement it unilaterally.
+## What this directory owns
 
-### Local runs stay off GPU 0
-Outside a Slurm allocation, a test session whose `CUDA_VISIBLE_DEVICES` is unset or includes
-GPU 0 of the shared node (by index or UUID) runs on the CPU, and GPU tests skip with that reason
-(`tests/helpers/gpu_guard.py`, applied in `conftest.py` before JAX is imported). To run GPU tests
-locally, set `CUDA_VISIBLE_DEVICES` to the UUID of an idle GPU 1-3 after checking `nvidia-smi`.
+| Path | Holds |
+| --- | --- |
+| `unit/` (and `unit/initial_model/`, `unit/ppca_initial_model/`, `unit/ppca_refinement/`, `unit/test_relion_bind/`) | about 580 test files; "unit" is a location, not a size: some need a GPU, the RELION binding or external fixtures |
+| `integration/`, `ppca_abinitio/` | parity replays (`integration/test_em_parity_fast.py`), end-to-end and long cases |
+| `helpers/` | `float_compare.py`, `em_fixtures.py`, `natives.py`, `gpu_guard.py`, NumPy references, mocks |
+| `tiers/` | `fsc_thresholds.json` (gates), `pinned_fast_cases.json` (pinned outputs per GPU model), `gpu_noise_envelope.json`, `gpu_file_seconds.json`, `gpu_path_map.json` |
+| `baselines/` | `em_parity_completion_*.json` and `parity/` (pinned references); `relion_vs_relax_benchmarks.json` (a results ledger) |
+| `fixtures/em_fixture_manifest.json` | per fixture set: root, sizes, sha256, RELION command and seed |
 
-### No bitwise or ULP-exact float asserts
-No test requires bitwise or ULP-exact equality of floating-point values, not even under
-`RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (user rule, 2026-09-24): GPU reductions race, and CPU
-results move in their last bits with a compiler, library or fusion change. Use
-`helpers.float_compare.assert_matches` / `matches`: exact for integers, booleans and strings,
-and for floats a relative band against the array's largest magnitude (defaults float32 1e-6,
-float64 1e-13, sized to the measured same-code noise of about 1 float32 ULP and a few float64
-ULP). Pass a larger `rtol` only with the measured noise cited next to it. Float-tie-dependent
-discrete outputs (hard assignments, significance counts) allow a small measured flip fraction
-(`flip_fraction`). Exact byte checks remain for data that no float computation touches: an
-input buffer that must not be modified, and file or fixture checksums. This rule converts
-bitwise asserts into bands; it does not approve widening an existing tolerance beyond noise.
+## Rules
 
-### Float64 companion required when tolerance is loosened
-If a new or modified test must use a tolerance wider than machine-epsilon (e.g. `atol=1e-5` for float32 code), **add a float64 companion test** that runs the same comparison with tighter tolerances (e.g. `atol=1e-8`). The companion helps test whether rounding explains the gap. Pattern:
-```python
-def test_foo():
-    """Float32 test — tolerance limited by single precision."""
-    d = make_data(float_dtype=np.float32)
-    compare(d, atol=1e-5)
+1. Fix the code, not the test. Do not widen an `rtol`, an `atol`, a threshold or a flip fraction, and do not
+   add a skip or an ignore, to make a test pass. Propose the change to the owner and wait.
+2. No test requires bitwise or ULP-exact float equality, not even under `RELAX_EM_DETERMINISTIC_REDUCTIONS=1`.
+   Compare floats with `helpers.float_compare.assert_matches` or `matches` (relative to the array's largest
+   magnitude; defaults 1e-6 for float32, 1e-13 for float64). Pass a larger `rtol` only with the measured noise
+   cited beside it. Tie-dependent discrete outputs use `flip_fraction`. Byte equality is only for data no float
+   computation touches: an input that must stay unmodified, a file checksum.
+3. `tiers/fsc_thresholds.json`, `tiers/pinned_fast_cases.json`, `baselines/em_parity_completion_*.json` and
+   `baselines/parity/` change only on the owner's instruction; so do the regeneration commands
+   `pixi run regen-fixture-manifest` and `pixi run regen-pinned-fast`. `baselines/relion_vs_relax_benchmarks.json`
+   is updated when a benchmark is rerun; regenerate its pages with `python scripts/render_benchmark_table.py`.
+4. Resolve external data through `helpers/em_fixtures.py`. A missing file or a checksum difference fails the
+   test; it never skips.
+5. Mark a test that needs the built RELION binding `requires_relion_bind`. It skips without the binding and
+   stops the session under `--require-natives`, which the tiers pass.
+6. Tests call behaviour. No new test reads source text or executes slices of it. An existing one is converted
+   when the code it pins is extracted into something callable.
+7. A test names the operation it exercises and passes that operation's operands. Do not write a builder that
+   accepts every mode's operands and picks the operation: it keeps removed cases alive.
+8. Declare what a comparison must contain: the metric and stage inventory, finite values, executed counts.
+   A comparison over whatever keys survived proves nothing.
+9. Write scores and ledgers under a unique run root, never beside a pinned file.
 
-def test_foo_f64():
-    """Float64 companion — checks the same comparison at higher precision."""
-    jax.config.update("jax_enable_x64", True)
-    d = make_data(float_dtype=np.float64)
-    compare(d, atol=1e-8)  # ≥3 orders tighter
-```
-The f64 test must tighten **by at least 3 orders of magnitude**. If it cannot, investigate the discrepancy before changing the implementation or claiming that rounding explains it.
+## Markers and options
 
-### NEVER modify files in `tests/baselines/`
-Baselines are ground truth generated from the OLD published recovar code (`~/recovar`) with PDB volumes and GT mask. They represent the correct behavior of the published algorithm. Modifying them silently accepts regressions. Only exception: the user explicitly says "regenerate the baseline for X".
+`--strict-markers` is on. Used here: `unit`; `gpu` (run when a GPU is visible, or with `--run-gpu`);
+`integration` (`--run-integration`); `slow` (`--run-slow`); `em_parity_long` (`--em-parity-long`);
+`requires_relion_bind`. Registered but used by no test: `tiny_metrics`, `long_test`, `gpu_memory_matrix`, `io`.
 
-### NEVER use `pytest -q` for long-running tests
-The `-q` flag suppresses all output until completion. For multi-hour GPU tests, this gives zero progress visibility. Use no flag or `-v` instead.
+`conftest.py` does three things to every session: outside Slurm, with `CUDA_VISIBLE_DEVICES` unset or naming
+GPU 0, it forces the CPU and skips GPU tests (`helpers/gpu_guard.py`); it removes inherited run-control
+variables such as `RELAX_TEST_RECEIPTS` (`RUN_CONTROL_ENV`); it seeds NumPy with 0 before each test.
 
-### Comparison tables must be visible
-Use `logging.info()` or `sys.stderr` for regression comparison tables — NOT `print()` (pytest captures stdout on pass). Every regression test must save scores to JSON AND print a comparison table showing current vs baseline with % change.
+## Tests for a change here
 
-## Test Tiers & Markers
+- The changed file: `pixi run python -m pytest -v tests/unit/<file>.py`.
+- A changed helper: the files that import it, `grep -rl 'helpers.<name>\|import <name>' tests`.
+- `pixi run test-em-fast-guard` when you touch `test_em_fast_guardrail.py`, `test_relion_replay_state.py`,
+  `test_healpix_order_oracle.py` or `test_resolution_scheduling.py`. Keep their case inventory when you
+  reorganize tests.
+- A new or changed GPU test: `python scripts/run_test_tier.py plan smoke` must list it; then `pixi run test-smoke`.
 
-| Marker | Flag | Purpose |
-|--------|------|---------|
-| `unit` | (always runs) | Fast isolated tests, no GPU, no subprocess |
-| `integration` | `--run-integration` | Multi-module, may spawn subprocesses |
-| `gpu` | `--run-gpu` | Requires CUDA GPU |
-| `slow` | `--run-slow` | Takes more than a few seconds |
-| `tiny_metrics` | `--run-tiny-metrics` | Quick quality check (32^3, ~800 images) |
-| `long_test` | `--long-test` | Full regression suite (128^3, 50k images, 6-12h) |
-| `gpu_memory_matrix` | `--long-test` | 14-cell GPU memory matrix (7 budgets x 2 backends); also exposed via recovar's `scripts/run_gpu_memory_matrix.sh` |
+## Pitfalls
 
-`--long-test` implies `--run-integration`, `--run-slow`, `--run-gpu`.
-
-The `gpu_memory_matrix` marker exists alongside `long_test` so the
-GPU integration matrix can be selected explicitly (e.g.
-`pytest -m gpu_memory_matrix --long-test`) or driven from the Slurm
-submitter for parallel cells.
-
-Many tests generate synthetic data locally. EM replay/trajectory tests also
-require curated external particle and RELION fixtures. Check the selected test's
-input inventory before submitting. Missing fixtures may skip an optional local
-check, but a qualification job must fail if a required case did not execute.
-
-### Fast EM Guardrail
-
-For dense/local EM refactor work, run:
-`pixi run test-em-fast-guard`
-
-This CPU-default guardrail runs tiny deterministic dense big-JIT, local exact
-EM, Fourier-window, dtype-policy, and helper-path tests. It is intended to
-finish in under about 60 seconds without the 5k parity dataset. To run it on a
-local GPU, check `nvidia-smi` first and then use
-`EM_FAST_GUARD_BACKEND=gpu pixi run test-em-fast-guard`.
-
-The same command checks the helper/controller import boundary, captured replay
-state, explicit HEALPix schedules, and the current-size/first-iteration
-resolution rules. These cases use small in-memory fixtures;
-they require no external RELION capture or GPU allocation on the default CPU
-path. Keep their case inventory intact when reorganizing tests.
-
-## Baseline Management
-
-```
-tests/baselines/
-  run_test_all_metrics/long_generated/     # SPA + ET quality baselines (from OLD code)
-  run_test_outliers_pipeline/long_generated/ # Outlier baselines (from OLD code)
-  compute_state_regression/                 # compute_state baselines
-  pipeline_functions_isolated/              # Per-function baselines
-  pipeline_with_indices/                    # Subset selection baselines
-  */perf_baseline*.json                     # Hardware-specific performance controls
-```
-
-**Quality baselines** (`all_scores*.json`): Sacred. From OLD code. NEVER auto-update.
-**Performance baselines** (`perf_baseline*.json`): From NEW code, specific to
-hardware and workload. Keep the existing 10% regression warning policy.
-The legacy performance helper can write missing hardware entries; isolate its
-output before running it. This behavior does not authorize modifying committed
-baselines during cleanup. Store newly measured controls separately and obtain an
-explicit user instruction before replacing any established expected result.
-
-### Baseline generation workflow
-1. **Current code** generates synthetic datasets
-2. **Old `~/recovar` code** (conda env) runs pipeline on that data
-3. **Current code** computes metrics on the old output
-
-## How to Add Tests
-
-- **Unit tests** → `tests/unit/`. Mark `@pytest.mark.unit`. No GPU, no subprocesses.
-- **Integration tests** → `tests/integration/`. Mark `integration`, add `slow`/`gpu` as needed.
-- **Quality regression** → mark `long_test`. Use `log_comparison_table()` from `helpers/metrics_regression.py`.
-- Keep tests deterministic: `conftest.py` auto-seeds numpy with `seed=0`.
-- One behavior per test; prefer small focused tests over omnibus.
-
-## GPU Test Patterns
-
-```python
-# Subprocess tests must use gpu_subprocess_env() for proper GPU isolation
-from conftest import gpu_subprocess_env
-subprocess.run(cmd, check=True, env=gpu_subprocess_env())
-```
-
-This sets `XLA_PYTHON_CLIENT_PREALLOCATE=false`, pins `XLA_PYTHON_CLIENT_MEM_FRACTION=.90` for reproducible baselines, can auto-select a least-loaded GPU, and isolates Python paths. Set the allowed device visibility explicitly first; automatic selection alone does not enforce the reserved-local-GPU rule below.
-
-Any other child interpreter that imports `recovar` (`-c`, `-m` or `python scripts/...`) must pin
-this checkout too: the shared environment's editable finder can resolve `recovar` to another
-checkout, and `python scripts/x.py` never puts the repo root on `sys.path`.
-
-```python
-from conftest import repo_python_command, repo_subprocess_env
-subprocess.run(repo_python_command("-m", "recovar.command_line", "pipeline", "--help"), env=repo_subprocess_env())
-```
-
-`repo_subprocess_env(env)` prepends the repo root to `PYTHONPATH` and leaves device settings
-alone; `repo_python_command` runs the invocation unchanged, then exits the child with
-`REPO_IMPORT_ROOT_FAILURE_STATUS` (86) unless `recovar` came from under the repo root.
-
-## Backend and run isolation
-
-Before pytest collection, unset `PYTHONPATH`, `PYTHONHOME`, `CONDA_PREFIX` and
-`VIRTUAL_ENV`; set `PYTHONNOUSERSITE=1`. CPU checks use
-`CUDA_VISIBLE_DEVICES='' JAX_PLATFORMS=cpu`. GPU checks use the allocated device
-visibility with `JAX_PLATFORMS=cuda,cpu` and verify a GPU is actually the default
-backend. RECOVAR also needs a CPU device for host transfers.
-
-Local Della GPU 0 is reserved for other users. Use only idle physical GPUs 1–3
-for short development checks, selected by UUID before imports. Slurm allocation
-visibility remains authoritative on compute nodes. See
-[the cluster runbook](../docs/development/della.md).
-
-Save scores and ledgers under a unique run root, separately from immutable
-baselines. Require the declared metric/stage inventory, finite numeric values,
-expected executed counts and explicit skip/failure status. Existing partial
-function tests declare their metric subset explicitly. A comparison over only
-whatever keys survived cannot establish that the whole workload passed.
-
-## Key Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `LONG_METRICS_OUTPUT_BASE` | pytest tmp_path | Redirect large outputs off home quota |
-| `LONG_METRICS_TOL_FRAC` | 0.01 | Allowed relative metric degradation |
-| `LONG_METRICS_WRITE_BASELINE` | 0 | Set to 1 to regenerate baselines |
-| `CUDA_VISIBLE_DEVICES` | auto-selected | GPU selection |
+- A GPU test the tier runner cannot recognise is in no tier's GPU sweep. `scripts/run_test_tier.py` selects files
+  whose text matches `GPU_TEST_SIGNS` (`pytest.mark.gpu`, `@requires_..._gpu`, `_gpu_available(`,
+  `custom_cuda_lib`, ...). `test_resident_pass2_driver.py` is selected through its `requires_resident_gpu`
+  `skipif`; a file that skips on some other condition is counted as a CPU file.
+- A green CPU run can be mostly skips. Read the skip reasons (`-ra` is on) before reporting a pass.
+- `pixi run test-fast` is `pytest tests/ -q` over the whole tree. It is not a fast loop.
+- `unit/test_em_deterministic_reductions.py` changes process-wide JAX state at import and must run in its own
+  pytest process; the tier runner isolates it (`ISOLATE`).
+- A subprocess that imports `relax` must use `conftest.repo_python_command` with `repo_subprocess_env()`
+  (or `gpu_subprocess_env()` for a GPU child): the shared environment's editable install can resolve to
+  another checkout, and `python scripts/x.py` does not put the repository root on `sys.path`.
+- Many existing tests read source text. `unit/test_k1_mean_lifecycle.py` asserts statement order inside
+  `refine_single_volume` with `source.index(...)`; a behaviour-preserving move fails it. Grep the name you
+  move in `tests/` first, and convert the test when its code becomes callable (rule 6).
+- Pinned outputs are compared only within one GPU model, and `tiers/pinned_fast_cases.json` holds H100
+  entries. Pin the model (`--gpu-model h100`) on both arms of a numerical comparison.
