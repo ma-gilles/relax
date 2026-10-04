@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from relax.diagnostics import frozen_boundary_cli
 from relax.diagnostics.state_swap_probe import add_state_swap_probe_arguments
 from relax.helpers.particle_io import add_particle_read_arguments
+from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.relion import input_poses
 
 if TYPE_CHECKING:
@@ -359,6 +360,15 @@ def parse_refinement_args(argv=None):
         "Class3D. If --relion_init_dir has run_it000_optimiser.star, its "
         "rlnTau2FudgeFactor/rlnTau2FudgeArg value takes precedence. Higher "
         "values produce smoother volumes (stronger prior).",
+    )
+    parser.add_argument(
+        "--gridding_kernel",
+        choices=("radial", "separable"),
+        default="radial",
+        help="Real-space gridding-correction window of the scoring projector and the "
+        "reconstructions. radial (default) is RELION's sinc^2(|x| / (pad * box)); separable is the "
+        "per-axis sinc^2 product, the exact transform of the trilinear kernel. separable "
+        "is implemented for K=1 single-particle auto-refine only and is refused elsewhere.",
     )
     parser.add_argument(
         "--perturb_factor",
@@ -895,6 +905,41 @@ def require_command_n_classes(command: str, n_classes: int) -> None:
         raise SystemExit("relax class3d needs --n_classes K with K >= 2; use relax refine for K=1")
     if command not in {"refine", "class3d"}:
         raise ValueError(f"unknown refinement command {command!r}")
+
+
+def resolve_consistency_options(args) -> RelionConsistencyOptions:
+    """The RELION-consistency options of the command line, refused where the run cannot honour them.
+
+    A run seeded from, replaying or continuing RELION's own state takes statistics, references or
+    projectors computed with RELION's rules, so every non-default option is refused there; the
+    refinement loop refuses the particle types it cannot honour once the data is loaded.
+    """
+
+    options = RelionConsistencyOptions(gridding_kernel=args.gridding_kernel)
+    chosen = options.non_default()
+    if not chosen:
+        return options
+    flags = ", ".join(f"--{name} {value}" for name, value in chosen.items())
+    relion_state = [
+        flag
+        for flag, value in (
+            ("--perturb_replay_relion_dir", args.perturb_replay_relion_dir),
+            ("--relion_init_dir", args.relion_init_dir),
+            ("--frozen-boundary-dir", args.frozen_boundary_dir),
+            ("--init_noise_from_npz", args.init_noise_from_npz),
+            ("--final-replay-relion-dir", args.final_replay_relion_dir),
+            ("--relion-projector-capture-dir", args.relion_projector_capture_dir),
+            ("--state-swap-variant", args.state_swap_variant),
+        )
+        if value is not None
+    ]
+    if int(args.init_relion_iteration) != 0:
+        relion_state.append("--init_relion_iteration")
+    if relion_state:
+        raise SystemExit(f"{flags}: not available with RELION-seeded or replayed state ({', '.join(relion_state)})")
+    if options.gridding_kernel != "radial" and int(args.n_classes) != 1:
+        raise SystemExit(f"--gridding_kernel {options.gridding_kernel} is implemented for K=1 auto-refine only")
+    return options
 
 
 def find_relion_optimiser_star(args):

@@ -59,6 +59,7 @@ def reconstruct_unfiltered_halfmaps(
                 accumulator_volume_shape=accumulator_shape,
                 use_spherical_mask=True,
                 grid_correct=True,
+                gridding_kernel=settings.gridding_kernel,
             ).reshape(-1)
         )
         for half_ctf, half_y in zip(denominators, numerators, strict=True)
@@ -161,6 +162,7 @@ def reconstruct_final_class_maps(
     accumulator_shape: tuple,
 ) -> FinalMaps:
     """Reconstruct class maps and their posterior-weighted merged map."""
+    mean_helpers._require_radial_gridding_for_classes(settings)
     class_means = jnp.stack(
         [
             mean_helpers._reconstruct_volume_eager(
@@ -218,6 +220,7 @@ def reconstruct_final_halfmaps(
                     minres_map=settings.minres_map,
                     current_size=current_size,
                     accumulator_volume_shape=accumulator_shape,
+                    gridding_kernel=settings.gridding_kernel,
                 ).reshape(-1)
             )
         )

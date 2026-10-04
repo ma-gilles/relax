@@ -36,6 +36,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
         "grid_size", "voxel_size", "volume_shape", "padding_factor",
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
+        "gridding_kernel",
     )
     for name in (
         "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",

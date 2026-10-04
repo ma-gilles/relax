@@ -230,6 +230,21 @@ def gridding_correct_volume_real(volume_real: jnp.ndarray, ori_size: int, paddin
     return volume_real / (sinc * sinc)
 
 
+def gridding_correct_volume_real_separable(
+    volume_real: jnp.ndarray, ori_size: int, padding_factor: int = 1
+) -> jnp.ndarray:
+    """:func:`gridding_correct_volume_real` with the per-axis window ``prod_i sinc²(x_i / (ori * padding_factor))``.
+
+    The exact real-space transform of the trilinear kernel (RECOVAR's
+    ``griddingCorrect_square``); RELION's radial window is its isotropic
+    approximation. The window is invariant under the axis swap of RELION's layout.
+    """
+    from recovar.reconstruction.relion_functions import griddingCorrect_square
+
+    corrected, _ = griddingCorrect_square(volume_real, ori_size, padding_factor, order=1)
+    return corrected.astype(volume_real.dtype)
+
+
 def centered_full_to_relion_half(volume_centered_full: jnp.ndarray) -> jnp.ndarray:
     """Convert recovar's centered full Fourier volume (N, N, N) to RELION's
     Projector half-complex layout (N, N, N//2+1).

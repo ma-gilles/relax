@@ -115,6 +115,7 @@ def prepare_scoring_projector(
     real_references=None,
     dump_label: str | None = None,
     reusable: ProjectorReuse | None = None,
+    gridding_kernel: str = "radial",
 ) -> PreparedProjector:
     """Prepare RELION ``Projector::data`` slabs from current Fourier references.
 
@@ -126,7 +127,9 @@ def prepare_scoring_projector(
 
     The slabs come from the device projector setup
     (:func:`relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power`);
-    RELION's own transform is a test oracle only.
+    RELION's own transform is a test oracle only. ``gridding_kernel`` is the
+    setup's correction window; a ``reusable`` projector must have been built
+    with the same one, and a non-radial window has its own cache entries.
     """
 
     if reusable is not None:
@@ -176,6 +179,9 @@ def prepare_scoring_projector(
             dtype=np.int64,
         )
         hasher.update(cache_params.tobytes())
+        if gridding_kernel != "radial":
+            # Radial entries keep their keys; another window never reads them.
+            hasher.update(f"gridding-kernel-{gridding_kernel}".encode("utf-8"))
         hasher.update(refs_for_hash.view(np.uint8))
         cache_path = os.path.join(cache_dir, f"projector_{hasher.hexdigest()[:24]}.npz")
         if os.path.exists(cache_path):
@@ -212,6 +218,7 @@ def prepare_scoring_projector(
         # Refinement consumes complex128, which its own log line reports; the
         # setup narrows to complex64 (the InitialModel consumer) unless told otherwise.
         projector_data_dtype="complex128",
+        gridding_kernel=gridding_kernel,
     )
     if cache_path is not None:
         os.makedirs(cache_dir, exist_ok=True)
@@ -291,3 +298,15 @@ def _validate_captured_relion_projector_for_iteration(
             replay_state.projector_half_by_half, replay_state.projector_r_max_by_half, strict=True
         )
     ]
+
+
+def require_projectors_for_gridding_kernel(projectors, gridding_kernel: str) -> None:
+    """Refuse a non-radial gridding window when a half would be scored without its projector slab.
+
+    A scorer handed no slab pads and corrects the reference itself, with RELION's radial window.
+    """
+
+    if gridding_kernel != "radial" and any(projector is None for projector in projectors):
+        raise NotImplementedError(
+            f"gridding_kernel={gridding_kernel!r} needs every half's RELION projector slab built with that window"
+        )

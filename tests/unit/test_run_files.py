@@ -41,7 +41,7 @@ N_SHELLS = BOX // 2 + 1
 
 def test_snapshot_capture_has_a_staged_run_lifecycle():
     assert tuple(field.name for field in dataclasses.fields(SnapshotCapture)) == (
-        "n_classes", "grid_size", "voxel_size", "tau2_fudge",
+        "n_classes", "grid_size", "voxel_size", "tau2_fudge", "consistency",
     )
     assert tuple(inspect.signature(SnapshotCapture.begin).parameters) == (
         "self", "relion_iteration", "state", "sigma_offset_angstrom_per_half",

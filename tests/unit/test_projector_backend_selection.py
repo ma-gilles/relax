@@ -149,8 +149,8 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
     )
     calls = []
 
-    def transform(real, *, current_size, padding_factor, projector_data_dtype):
-        assert real is real_references
+    def transform(real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel):
+        assert real is real_references and gridding_kernel == "radial"
         calls.append((current_size, padding_factor, projector_data_dtype))
         return (
             np.ones((n_classes, 3, 3, 2), dtype=np.complex128),

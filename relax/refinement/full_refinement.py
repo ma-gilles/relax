@@ -509,6 +509,7 @@ def main(command=None):
     args = command_options.parse_refinement_args()
     if command is not None:
         command_options.require_command_n_classes(command, int(args.n_classes))
+    consistency_options = command_options.resolve_consistency_options(args)
     if cache_directory:
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
@@ -1892,6 +1893,7 @@ def main(command=None):
                 preserve_bpref_particle_order=use_fresh_auto_refine_order,
                 firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
             ),
+            consistency=consistency_options,
             local_search=LocalSearchOptions(
                 auto_local_healpix_order=sampling_kwargs["auto_local_healpix_order"],
                 local_search_profile_mode=args.local_search_profile,

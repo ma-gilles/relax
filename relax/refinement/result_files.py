@@ -74,6 +74,7 @@ def final_pass_result_fields(
     prior_details,
     fsc,
     k_class_enabled,
+    gridding_kernel,
 ) -> dict:
     """Format final-pass diagnostics, including legacy sentinels and host casts.
 
@@ -133,7 +134,7 @@ def final_pass_result_fields(
         "final_all_data_sampling_offset_range": sampling.translation_range,
         "final_all_data_sampling_offset_step": sampling.translation_step,
         "final_all_data_grid_correct": True,
-        "final_all_data_gridding_correct": "radial",
+        "final_all_data_gridding_correct": gridding_kernel,
     }
 
 

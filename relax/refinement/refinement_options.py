@@ -148,6 +148,85 @@ class RelionParityOptions:
         )
 
 
+_CONSISTENCY_CHOICES = {
+    "gridding_kernel": ("radial", "separable"),
+}
+
+
+@dataclass(frozen=True)
+class RelionConsistencyOptions:
+    """Opt-in corrections of RELION's own mathematical inconsistencies, for studying their effect.
+
+    The first value of each option is RELION's rule and the default; relax reproduces RELION
+    with every option at its default. A route that cannot honour a non-default value refuses it.
+    See ``docs/math/relion_consistency_options.md``.
+    """
+
+    # Real-space gridding-correction window of the scoring projector and the reconstructions:
+    # RELION's radial sinc²(|x| / (pf N)) or the per-axis product (the trilinear kernel's exact
+    # transform). "separable" is K=1 single-particle refinement only.
+    gridding_kernel: Literal["radial", "separable"] = "radial"
+
+    def __post_init__(self):
+        for name, choices in _CONSISTENCY_CHOICES.items():
+            if getattr(self, name) not in choices:
+                raise ValueError(f"{name} must be one of {choices}, got {getattr(self, name)!r}")
+
+    def non_default(self) -> dict[str, str]:
+        """The options that depart from RELION's rule, by name."""
+
+        return {
+            name: getattr(self, name) for name, choices in _CONSISTENCY_CHOICES.items() if getattr(self, name) != choices[0]
+        }
+
+
+def require_consistency_route(
+    options: RefinementOptions, *, subtomograms: bool, several_image_shapes: bool
+) -> RelionConsistencyOptions:
+    """The run's consistency options, refused on the routes that keep RELION's rules.
+
+    Subtomogram particles and optics groups on several image shapes run their own scorers,
+    which no option reaches. Replayed, frozen or swapped RELION state (statistics, references,
+    captured projectors) was computed with RELION's rules. The separable gridding window is
+    threaded through K=1 only: Class3D's tau2 is the power of the radially corrected reference.
+    """
+
+    consistency = options.consistency
+    chosen = consistency.non_default()
+    if not chosen:
+        return consistency
+    replay, debug = options.replay, options.debug
+    relion_state = (
+        options.parity.perturb_replay_relion_dir is not None
+        or replay.replay_iteration_overrides is not None
+        or replay.final_replay_override is not None
+        or replay.final_replay_reference_maps is not None
+        or replay.init_refinement_state_fields is not None
+        or debug.sealed_sampling_state is not None
+        or debug.state_swap_probe is not None
+    )
+    reasons = [
+        reason
+        for reason, present in (
+            ("subtomogram particles", subtomograms),
+            ("optics groups on several image shapes", several_image_shapes),
+            ("replayed or frozen RELION state", relion_state),
+        )
+        if present
+    ]
+    if reasons:
+        raise NotImplementedError(
+            f"RELION-consistency options {chosen} are implemented for single-particle refinement of one "
+            f"image shape from relax's own state; not with {', '.join(reasons)}"
+        )
+    if consistency.gridding_kernel != "radial" and options.k_class.n_classes != 1:
+        raise NotImplementedError(
+            f"gridding_kernel={consistency.gridding_kernel!r} is implemented for K=1 single-particle refinement "
+            f"only (n_classes={options.k_class.n_classes})"
+        )
+    return consistency
+
+
 @dataclass(frozen=True)
 class LocalSearchOptions:
     """Local angular-search controls."""
@@ -313,6 +392,7 @@ class RefinementOptions:
     # external positional construction retains its pre-symmetry meaning.
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
     checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)
+    consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
 
 
 def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max_healpix_order):
@@ -382,6 +462,8 @@ __all__ = [
     "RefinementSchedule",
     "AdaptiveOptions",
     "RelionParityOptions",
+    "RelionConsistencyOptions",
+    "require_consistency_route",
     "LocalSearchOptions",
     "ExpectedAccuracyOptions",
     "EngineDebugOptions",

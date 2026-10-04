@@ -204,6 +204,14 @@ def validate_resume_snapshot(snapshot: IterationSnapshot, *, init_relion_iterati
         problems.append("sampling oracles do not apply to a continuation")
     if options.replay.init_reference_real is not None:
         problems.append("a continuation projects its Fourier references, not initial real maps")
+    written_with = {
+        key[len("consistency_") :]: str(value) for key, value in snapshot.extra.items() if key.startswith("consistency_")
+    }
+    if written_with != options.consistency.non_default():
+        problems.append(
+            f"the run files were written with RELION-consistency options {written_with}, "
+            f"this run asks for {options.consistency.non_default()}"
+        )
     if problems:
         raise ValueError("cannot continue from the run files: " + "; ".join(problems))
 
@@ -235,9 +243,12 @@ def _host_direction_prior(direction_priors):
 
 
 def _host_particle_state(
-    half_inputs, max_posterior, significant_counts, avg_norm_correction, *, direction_priors, grid_size
+    half_inputs, max_posterior, significant_counts, avg_norm_correction, *, direction_priors, grid_size, consistency
 ) -> dict:
-    """Per-particle arrays of both halves, the norm corrections, and the dtype and prior-order tags."""
+    """Per-particle arrays of both halves, the norm corrections, and the dtype, prior-order and consistency tags.
+
+    ``consistency`` is the run's non-default RELION-consistency options (``SnapshotCapture.consistency``).
+    """
 
     direction_prior_order = [p.healpix_order for p in direction_priors]
     eulers = host_half_pair([particle_half.rotation_eulers for particle_half in half_inputs])
@@ -275,6 +286,7 @@ def _host_particle_state(
                 )
                 for h, order in enumerate(direction_prior_order or [])
             },
+            **{f"consistency_{name}": value for name, value in sorted(consistency.items())},
         },
     )
 
@@ -294,6 +306,9 @@ class SnapshotCapture:
     grid_size: int
     voxel_size: float
     tau2_fudge: float
+    # The run's non-default RELION-consistency options (RelionConsistencyOptions.non_default),
+    # recorded so a continuation cannot silently mix two rules.
+    consistency: dict = field(default_factory=dict)
 
     def begin(
         self,
@@ -442,6 +457,7 @@ class SnapshotCapture:
                 avg_norm_correction,
                 direction_priors=direction_priors,
                 grid_size=self.grid_size,
+                consistency=self.consistency,
             ),
             class_assignments=None,
         )
@@ -494,6 +510,7 @@ class SnapshotCapture:
                 avg_norm_correction,
                 direction_priors=direction_priors,
                 grid_size=self.grid_size,
+                consistency=self.consistency,
             ),
             class_assignments=host_half_pair(class_assignments),
         )

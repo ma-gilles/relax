@@ -287,6 +287,7 @@ def run_final_all_data(
             padding_factor=PROJECTION_PADDING_FACTOR,
             n_classes=n_classes,
             dump_label=f"final_half{half.index}",
+            gridding_kernel=reconstruction_settings.gridding_kernel,
         )
         for half, reference in zip(halves, final_join_means, strict=True)
     ]
@@ -797,5 +798,6 @@ def run_final_all_data(
             prior_details=final_tau2_update_details,
             fsc=final_iter_fsc,
             k_class_enabled=k_class_enabled,
+            gridding_kernel=reconstruction_settings.gridding_kernel,
         ),
     }

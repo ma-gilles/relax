@@ -736,6 +736,10 @@ def _pad_accumulator_to_class(values, logical_shape, physical_shape):
     return padded.reshape(-1) if flat else padded
 
 
+# RECOVAR's name of each gridding-correction window (``post_process_from_filter_v2``).
+_RECOVAR_GRIDDING_CORRECT = {"radial": "radial", "separable": "square"}
+
+
 def _reconstruct_volume_eager(
     Ft_ctf,
     Ft_y,
@@ -754,13 +758,18 @@ def _reconstruct_volume_eager(
     preserve_output_precision=False,
     relion_filter_scale=None,
     retained_device_numerator=None,
+    gridding_kernel="radial",
 ):
     """Eager RELION-style reconstruction from full or half Fourier accumulators.
 
     This keeps the reconstruction boundary out of a single monolithic JIT while
     letting the local exact path keep its accumulators in packed half-volume
-    layout until the final iDFT boundary.
+    layout until the final iDFT boundary. ``gridding_kernel`` is the real-space
+    correction window: RELION's ``"radial"`` one or the ``"separable"`` per-axis product.
     """
+    if gridding_kernel not in _RECOVAR_GRIDDING_CORRECT:
+        raise ValueError(f"gridding_kernel must be 'radial' or 'separable', got {gridding_kernel!r}")
+    gridding_correct = _RECOVAR_GRIDDING_CORRECT[gridding_kernel]
     from recovar.reconstruction import relion_functions
 
     from relax.reconstruction import relion_functions_relion
@@ -782,7 +791,7 @@ def _reconstruct_volume_eager(
         kernel="triangular",
         use_spherical_mask=use_spherical_mask,
         grid_correct=grid_correct,
-        gridding_correct="radial",
+        gridding_correct=gridding_correct,
         kernel_width=1,
         tau2_fudge=tau2_fudge,
         gridding_padding_factor=projection_padding_factor,
@@ -1084,7 +1093,7 @@ def _reconstruct_volume_eager(
             kernel="triangular",
             use_spherical_mask=use_spherical_mask,
             grid_correct=grid_correct,
-            gridding_correct="radial",
+            gridding_correct=gridding_correct,
             kernel_width=1,
             return_real_space=return_real_space,
             gridding_padding_factor=projection_padding_factor,
@@ -1097,7 +1106,7 @@ def _reconstruct_volume_eager(
             kernel="triangular",
             use_spherical_mask=use_spherical_mask,
             grid_correct=grid_correct,
-            gridding_correct="radial",
+            gridding_correct=gridding_correct,
             kernel_width=1,
             return_real_space=return_real_space,
             gridding_padding_factor=projection_padding_factor,
@@ -1186,12 +1195,24 @@ class ReconstructionSettings:
     tau2_fudge: float
     particle_diameter_angstrom: float | None
     first_iteration_lowpass_angstrom: float | None
+    # Real-space gridding-correction window of every reconstruction ("radial" is RELION's);
+    # "separable" is K=1 only and the class operations refuse it.
+    gridding_kernel: str = "radial"
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.
         object.__setattr__(self, "voxel_size", float(self.voxel_size))
         if self.particle_diameter_angstrom is not None:
             object.__setattr__(self, "particle_diameter_angstrom", float(self.particle_diameter_angstrom))
+
+
+def _require_radial_gridding_for_classes(settings: ReconstructionSettings) -> None:
+    """Class3D keeps RELION's radial window: its tau2 is the power of the radially corrected reference."""
+
+    if settings.gridding_kernel != "radial":
+        raise NotImplementedError(
+            f"gridding_kernel={settings.gridding_kernel!r} is K=1 only; class reconstructions keep the radial window"
+        )
 
 
 @dataclass(frozen=True)
@@ -1317,6 +1338,7 @@ def _reconstruct_k1_maps(
             tau_is_1d=True,
             preserve_output_precision=True,
             relion_filter_scale=float(settings.volume_shape[0] ** 4),
+            gridding_kernel=settings.gridding_kernel,
             **(
                 {"retained_device_numerator": retained_device_numerator}
                 if k == 0 and retained_device_numerator is not None
@@ -1345,6 +1367,7 @@ def _reconstruct_class_maps(
 ):
     """Reconstruct the shared Class3D stack from combined accumulators."""
 
+    _require_radial_gridding_for_classes(settings)
     _t_recon = time.time()
     cs_int = int(current_size) if current_size is not None else None
     shared_class_maps = []
@@ -1672,6 +1695,7 @@ def reconstruct_unregularized_k1_halfmaps(
             projection_padding_factor=settings.projection_padding_factor,
             minres_map=settings.minres_map,
             accumulator_volume_shape=accumulator_volume_shape,
+            gridding_kernel=settings.gridding_kernel,
         )
         for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
     ]
@@ -1687,6 +1711,7 @@ def reconstruct_unregularized_class_means(
 ) -> list:
     """Reconstruct the shared K-class stack from combined accumulators."""
 
+    _require_radial_gridding_for_classes(settings)
     unreg_shared = jnp.stack(
         [
             _reconstruct_volume_eager(

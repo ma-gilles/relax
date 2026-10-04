@@ -193,8 +193,13 @@ from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
     prepare_initial_real_references,
     prepare_scoring_projector,
+    require_projectors_for_gridding_kernel,
 )
-from relax.refinement.refinement_options import RefinementOptions, with_validated_sampling_schedule
+from relax.refinement.refinement_options import (
+    RefinementOptions,
+    require_consistency_route,
+    with_validated_sampling_schedule,
+)
 from relax.refinement.result_files import (
     _model_result_fields,
     _numbered_result_metadata,
@@ -846,6 +851,8 @@ def refine_single_volume(
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
     # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
+    # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
+    consistency = require_consistency_route(options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves)
     relion_translation_angle_scale = (
         # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
@@ -897,12 +904,14 @@ def refine_single_volume(
         tau2_fudge=parity.tau2_fudge,
         particle_diameter_angstrom=schedule.particle_diameter_ang,
         first_iteration_lowpass_angstrom=parity.relion_firstiter_ini_high_angstrom,
+        gridding_kernel=consistency.gridding_kernel,
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,
         grid_size=grid_size,
         voxel_size=image_geometry.pixel_size_angstrom,
         tau2_fudge=tau2_fudge,
+        consistency=consistency.non_default(),
     )
 
     configure_half_image_preprocessing(
@@ -1115,6 +1124,7 @@ def refine_single_volume(
         optimizer_random_seed=effective_optimizer_random_seed,
         expected_accuracy=expected_accuracy,
         optics_group_ids=optics_group_ids_per_half[0],
+        gridding_kernel=consistency.gridding_kernel,
     )
 
     follower_setup = setup_relion_follower_scale_state(
@@ -1811,8 +1821,10 @@ def refine_single_volume(
                         else None
                     ),
                     dump_label=f"iter{iteration:03d}_half{half.index}",
+                    gridding_kernel=consistency.gridding_kernel,
                 )
                 projectors[half.index] = projector
+            require_projectors_for_gridding_kernel(projectors, consistency.gridding_kernel)
             logger.info(
                 # The slab dtype decides whether pass-2 projection runs on
                 # the native texture projector or the vmapped JAX fallback
