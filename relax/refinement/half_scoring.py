@@ -581,8 +581,6 @@ def _score_half_dense_one_shape(
     if execution.firstiter_cc_tree_rescore_max_margin is not None:
         em_kwargs["firstiter_cc_tree_rescore_max_margin"] = float(execution.firstiter_cc_tree_rescore_max_margin)
     if float(execution.relion_translation_angle_scale) != 1.0:
-        if variant.k_class_enabled:
-            raise ValueError("the RELION model/optics translation-angle scale is K=1-only")
         em_kwargs["relion_translation_angle_scale"] = float(execution.relion_translation_angle_scale)
     if execution.diagnostic_float64_pass2:
         logger.info(
