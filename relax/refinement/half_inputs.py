@@ -348,3 +348,20 @@ def _mean_sigma_offset_per_half(values):
     if per_half is None:
         return None
     return float(0.5 * (per_half[0] + per_half[1]))
+
+
+@dataclass(frozen=True)
+class SigmaOffset:
+    """The translation prior width in Angstrom: the value the halves share and each half's own.
+
+    A producer supplies both; the shared value is not always the mean of the two.
+    """
+
+    shared_angstrom: object
+    per_half_angstrom: object
+
+
+def sigma_offset_from_halves(per_half) -> SigmaOffset:
+    """Each half's width with their mean as the shared value."""
+
+    return SigmaOffset(_mean_sigma_offset_per_half(per_half), per_half)

@@ -12,7 +12,7 @@ from helpers.float_compare import assert_matches
 from relax.helpers.convergence import RefinementState
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement import iteration_loop, iteration_snapshot
-from relax.refinement.half_inputs import initialize_halfsets
+from relax.refinement.half_inputs import SigmaOffset, initialize_halfsets
 from relax.refinement.iteration_snapshot import IterationSnapshot, SnapshotCapture
 
 pytestmark = pytest.mark.unit
@@ -117,7 +117,7 @@ def test_actual_controller_releases_previous_captured_maps_before_copying_new_ma
         checkpoint_writer=lambda snapshot: None, numbered_relion_iteration=2,
         k_class_enabled=True, relion_incr_size=8, relion_has_high_fsc_at_limit=True,
         snapshot_capture=capture, state=RefinementState(iteration=1),
-        current_sigma_offset_angstrom_per_half=(2.0, 3.0), current_size=12,
+        sigma_offset=SigmaOffset(2.5, (2.0, 3.0)), current_size=12,
         random_perturbation=0.125, model_acc_rot_per_class=np.ones(4), model_acc_trans_per_class=np.ones(4),
         reference_model=SimpleNamespace(maps=inputs['means']), unreg_means=None,
         mean_signal_variance_shells=inputs['tau2_shells'], previous_data_vs_prior_for_scheduling=inputs['data_vs_prior'],

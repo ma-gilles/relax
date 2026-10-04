@@ -123,13 +123,14 @@ from relax.refinement.expectation import (
 )
 from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.half_inputs import (
+    SigmaOffset,
     _as_sigma_offset_half_pair,
-    _mean_sigma_offset_per_half,
     _normalize_sigma_offset_per_half,
     _sigma_offset_for_half,
     initialize_halfsets,
     prepare_particle_pose_update,
     prepare_pose_comparison,
+    sigma_offset_from_halves,
 )
 from relax.refinement.half_scoring import (
     DenseVariantPolicy,
@@ -689,8 +690,7 @@ def refine_single_volume(
     # posterior-weighted offset moment when the E-step path propagates it.
     # RELION stores and updates this quantity in Angstrom², and its default
     # lower bound is min_sigma2_offset=2 Å² (ml_optimiser.cpp).
-    current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom)
-    current_sigma_offset_angstrom = _mean_sigma_offset_per_half(current_sigma_offset_angstrom_per_half)
+    sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom))
     expected_accuracy_trial_local_indices = None
     expected_accuracy_trial_particle_ids = None
     relion_incr_size = int(schedule.init_relion_incr_size)
@@ -786,8 +786,7 @@ def refine_single_volume(
             class_weights = np.asarray(resume.class_weights, dtype=np.float64)
             class_log_priors = np.log(class_weights)
         previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=scoring_dtype)
-        current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(resume.sigma_offset_angstrom)
-        current_sigma_offset_angstrom = _mean_sigma_offset_per_half(current_sigma_offset_angstrom_per_half)
+        sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
         relion_incr_size = int(resume.incr_size)
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         random_perturbation = float(resume.random_perturbation)
@@ -878,8 +877,8 @@ def refine_single_volume(
             noise_model=noise_model,
             relion_half_inputs=halves,
             previous_best_rotations=previous_best_rotations,
-            current_sigma_offset_angstrom=current_sigma_offset_angstrom,
-            current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+            current_sigma_offset_angstrom=sigma_offset.shared_angstrom,
+            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
             direction_priors=direction_priors,
         )
 
@@ -894,7 +893,7 @@ def refine_single_volume(
             ),
             relion_half_inputs=halves,
             noise_variance_per_half=noise_model.variance_per_half,
-            current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
             direction_priors=direction_priors,
             experiment_datasets=experiment_datasets,
             sealed_sampling_state=sealed_sampling_state,
@@ -1129,8 +1128,8 @@ def refine_single_volume(
             relion_half_inputs=halves,
             previous_best_rotations=previous_best_rotations,
             noise_model=noise_model,
-            current_sigma_offset_angstrom=current_sigma_offset_angstrom,
-            current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+            current_sigma_offset_angstrom=sigma_offset.shared_angstrom,
+            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
             direction_priors=direction_priors,
             preserve_existing_direction_prior=replay.preserve_initial_direction_prior,
             sealed_sampling_state=sealed_sampling_state,
@@ -1158,9 +1157,9 @@ def refine_single_volume(
                 )
             reference_model.tau2 = jnp.asarray(replay_mean_variance)
             logger.info("Replay override: K=1 tau2/mean_variance <- model.star")
-        current_sigma_offset_angstrom = replay_result.current_sigma_offset_angstrom
-        current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(
-            replay_result.current_sigma_offset_angstrom_per_half
+        sigma_offset = SigmaOffset(
+            replay_result.current_sigma_offset_angstrom,
+            _as_sigma_offset_half_pair(replay_result.current_sigma_offset_angstrom_per_half),
         )
         if replay_saved_healpix_order is not None:
             replay_saved_healpix_order = int(state.healpix_order)
@@ -1195,8 +1194,8 @@ def refine_single_volume(
             reference_model,
             noise_model,
             previous_best_rotations,
-            current_sigma_offset_angstrom,
-            current_sigma_offset_angstrom_per_half,
+            swapped_sigma_offset_angstrom,
+            swapped_sigma_offset_angstrom_per_half,
             direction_priors,
         ) = _apply_state_swap_probe(
             probe=debug.state_swap_probe,
@@ -1205,6 +1204,7 @@ def refine_single_volume(
             volume_shape=volume_shape,
             **_state_swap_inputs(),
         )
+        sigma_offset = SigmaOffset(swapped_sigma_offset_angstrom, swapped_sigma_offset_angstrom_per_half)
         if not parity.use_per_half_mean_variance:
             # State-swap diagnostics historically replace the one shared tau2.
             # Do not leave the scorer pointing at pre-swap aliases.
@@ -1337,8 +1337,8 @@ def refine_single_volume(
         history.record_scheduling(
             current_size,
             state.healpix_order,
-            float(current_sigma_offset_angstrom),
-            _copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
+            float(sigma_offset.shared_angstrom),
+            _copy_optional_float_pair(sigma_offset.per_half_angstrom),
         )
         scoring_current_size = int(current_size)
 
@@ -1793,7 +1793,7 @@ def refine_single_volume(
                 direction_priors=direction_log_priors[k],
                 class_log_priors=class_log_priors,
                 sigma_offset_angstrom=_sigma_offset_for_half(
-                    current_sigma_offset_angstrom, current_sigma_offset_angstrom_per_half, k,
+                    sigma_offset.shared_angstrom, sigma_offset.per_half_angstrom, k,
                 ),
                 batch_planner=batch_planner,
                 image_geometry=image_geometry,
@@ -2627,19 +2627,19 @@ def refine_single_volume(
         sigma_offset_result = update_c1_sigma_offset_from_posterior(
             noise_stats_per_half=noise_stats_per_half,
             noise_stats_per_half_per_class=noise_stats_per_half_per_class,
-            current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
             n_classes=n_classes,
             state_fallback_offsets_angstrom=state.current_changes_optimal_offsets_angstrom,
             offset_dims=3 if tomo_halves else 2,
         )
-        current_sigma_offset_angstrom = sigma_offset_result.current_sigma_offset_angstrom
-        current_sigma_offset_angstrom_per_half = _normalize_sigma_offset_per_half(
-            sigma_offset_result.current_sigma_offset_angstrom_per_half
+        sigma_offset = SigmaOffset(
+            sigma_offset_result.current_sigma_offset_angstrom,
+            _normalize_sigma_offset_per_half(sigma_offset_result.current_sigma_offset_angstrom_per_half),
         )
         per_class_sigma_offset = sigma_offset_result.per_class_sigma_offset_angstrom
         history.record_sigma_offset_update(
-            float(current_sigma_offset_angstrom),
-            _copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
+            float(sigma_offset.shared_angstrom),
+            _copy_optional_float_pair(sigma_offset.per_half_angstrom),
             None if per_class_sigma_offset is None else per_class_sigma_offset.tolist(),
         )
         history.record_pose_accuracy_diagnostics(
@@ -2688,7 +2688,7 @@ def refine_single_volume(
             snapshot = snapshot_capture.begin(
                 numbered_relion_iteration,
                 state,
-                sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+                sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
                 current_size=current_size,
                 incr_size=incr_size_after,
                 has_high_fsc_at_limit=high_fsc_after,
@@ -2725,7 +2725,7 @@ def refine_single_volume(
                 init_relion_iteration=init_relion_iteration,
                 state=state,
                 current_size=current_size,
-                sigma_offset_angstrom=current_sigma_offset_angstrom,
+                sigma_offset_angstrom=sigma_offset.shared_angstrom,
                 random_perturbation=random_perturbation,
                 settings=reconstruction_settings,
                 pixel_size_angstrom=source_pixel_size_angstrom,
@@ -2927,18 +2927,15 @@ def refine_single_volume(
             _final_replay_fields = []
             _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")
             if _final_replay_sigma_per_half is not None:
-                current_sigma_offset_angstrom_per_half = _normalize_sigma_offset_per_half(
-                    _final_replay_sigma_per_half
-                )
-                current_sigma_offset_angstrom = _mean_sigma_offset_per_half(
-                    current_sigma_offset_angstrom_per_half
+                sigma_offset = sigma_offset_from_halves(
+                    _normalize_sigma_offset_per_half(_final_replay_sigma_per_half)
                 )
                 _final_replay_fields.append("translation_sigma_angstrom_per_half")
             _final_replay_sigma = final_replay_override.get("translation_sigma_angstrom")
             if _final_replay_sigma is not None and _final_replay_sigma_per_half is None:
-                current_sigma_offset_angstrom = float(_final_replay_sigma)
-                current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(
-                    current_sigma_offset_angstrom
+                sigma_offset = SigmaOffset(
+                    float(_final_replay_sigma),
+                    _as_sigma_offset_half_pair(float(_final_replay_sigma)),
                 )
                 _final_replay_fields.append("translation_sigma_angstrom")
             _final_replay_prev_trans = final_replay_override.get("previous_best_translations")
@@ -3051,8 +3048,8 @@ def refine_single_volume(
         random_perturbation=random_perturbation,
         perturb_rng=perturb_rng,
         perturb_replay_relion_dir=perturb_replay_relion_dir,
-        current_sigma_offset_angstrom=current_sigma_offset_angstrom,
-        current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+        current_sigma_offset_angstrom=sigma_offset.shared_angstrom,
+        current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
         class_weights=class_weights,
         class_assignments=class_assignments,
         class_log_priors=class_log_priors,
