@@ -95,6 +95,7 @@ class TracePPCAStats(AugmentedPPCAStats):
 
     metric_trace: jax.Array | None = None
 
+
 logger = logging.getLogger(__name__)
 _HIGHEST = jax.lax.Precision.HIGHEST
 GEMM_PRECISIONS = ("auto", "fp32", "tf32")
@@ -119,6 +120,8 @@ def resolve_gemm_precision(requested: str, device) -> str:
 def _gemm(static):
     """Precision of the four stream GEMMs: full float32, or one TF32 tensor-core pass with float32 accumulation."""
     return jax.lax.DotAlgorithmPreset.TF32_TF32_F32 if static.gemm_precision == "tf32" else _HIGHEST
+
+
 # Window pixels per GEMM row multiple on GPU streams: unaligned fp32 operands (2F = 3002 at
 # 10076) select cuBLAS's align1 kernels, about 4% slower on A100 (jobs/local_*/gemm_align).
 _GEMM_ALIGN = 4
@@ -619,7 +622,9 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     F = tile.ctf2_recon.shape[1] // _n_frames(tile)
     n_moments = sums.shape[0]  # packed (1 + q) x (1 + q) moment channels
     rotations = _frame_rotations(tile, arrays.rotations[_block_rows(tile, start, block_size)])
-    rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=_gemm(static)).reshape(P, R, 2 * F)
+    rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=_gemm(static)).reshape(
+        P, R, 2 * F
+    )
     lhs_images = jnp.dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(
         n_moments, R, F
     )
@@ -911,7 +916,9 @@ def _prepare_full_row_stream(
     if not same_window:
         raise ValueError("Full-row residuals require one score and reconstruction window")
     forward_config = (
-        ForwardModelConfig.from_dataset(experiment_dataset, disc_type=disc_type, process_fn=experiment_dataset.process_images)
+        ForwardModelConfig.from_dataset(
+            experiment_dataset, disc_type=disc_type, process_fn=experiment_dataset.process_images
+        )
         if tile_loader is None
         else None
     )
@@ -1262,6 +1269,8 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
         key = (_plan_shape_key(stream), int(requested), stream.device.id, pipelined)
         if key not in _PLANS:
             _PLANS[key] = _planned_tile_images(stream, requested, *_available_bytes(stream), pipelined=pipelined)
+            if stream.static.cuda_kernels:
+                reserve_plan_region(stream.device, tile_bytes(stream, _PLANS[key], pipelined=pipelined))
         return _PLANS[key]
     if not memory_bytes:
         return int(requested)
@@ -1341,6 +1350,59 @@ def _available_bytes(stream):
         budget._jax_allocator_pool_free_bytes(),
     )
     return available, None
+
+
+# Memory a plan's region leaves to the device (allocator rounding and the device's other users).
+PLAN_REGION_MARGIN_BYTES = 256 * 2**20
+
+
+def plan_region_bytes(counted_bytes, limit_bytes, pool_bytes, physical_free_bytes) -> int:
+    """Size of the one block that gives a plan's counted bytes contiguous memory in the allocator's pool.
+
+    The counted bytes, or, when the allocator may no longer take that much from the device, all it
+    still may: its limit minus its pool, bounded by the device's free memory, less
+    :data:`PLAN_REGION_MARGIN_BYTES`. Zero when a reading is missing or nothing is left to take (a
+    preallocated pool, or a pool earlier plans grew to its limit).
+    """
+    if limit_bytes is None or pool_bytes is None or physical_free_bytes is None:
+        return 0
+    unreserved = min(int(limit_bytes) - int(pool_bytes), int(physical_free_bytes)) - PLAN_REGION_MARGIN_BYTES
+    return max(0, min(int(counted_bytes), unreserved))
+
+
+def reserve_plan_region(device, counted_bytes) -> int:
+    """Give a plan's counted bytes one contiguous region of the GPU allocator's pool; returns the block's bytes.
+
+    A plan counts bytes, and the allocator hands out a block only from one contiguous region.
+    Without preallocation (``XLA_PYTHON_CLIENT_PREALLOCATE=false``) the pool grows by regions sized
+    by the requests so far, so the small early stages leave a pool of small regions in which a later
+    stage's large block finds no room while its bytes are free: an 8.48 GiB tilt-reader block failed
+    with 9.2 GiB in use of a 36.4 GiB pool on a 40 GB A100 (Polar 413542; reproduced on an H100
+    limited to that pool, Slurm 14992893, where the same run with a preallocated pool passes).
+    Allocating :func:`plan_region_bytes` as one block and releasing it makes the allocator grow the
+    pool by a region of at least that size, unless the pool already has such a block free. The plan
+    and the results do not change: the allocator can hand out the same bytes before and after, and
+    the pool only takes earlier what the planned tiles would take.
+    """
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    stats = device.memory_stats() or {}
+    size = plan_region_bytes(
+        counted_bytes, stats.get("bytes_limit"), stats.get("pool_bytes"), budget._device_free_memory_bytes()
+    )
+    megabytes = size // 2**20
+    if megabytes == 0:
+        return 0
+    with jax.default_device(device):
+        jnp.zeros((megabytes, 2**20), jnp.uint8).block_until_ready()
+    grown = int(device.memory_stats()["pool_bytes"]) - int(stats["pool_bytes"])
+    if grown:
+        logger.info(
+            "PPCA tile plan: the allocator pool grew by %.2f GiB for one block of %.2f GiB",
+            grown / 2**30,
+            megabytes / 2**10,
+        )
+    return megabytes * 2**20
 
 
 def _plan_tile_images(stream, requested, reader, budget_bytes, pipelined):

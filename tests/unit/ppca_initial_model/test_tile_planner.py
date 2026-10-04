@@ -9,7 +9,9 @@ from relax import sampling
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.full_row_stream import (
+    PLAN_REGION_MARGIN_BYTES,
     TILE_FRAGMENTATION_HEADROOM,
+    plan_region_bytes,
     plan_tile_images,
     prepare_full_row_stream,
     stream_tile_bytes,
@@ -229,3 +231,61 @@ def test_a_cpu_stream_refuses_a_rotation_block_its_host_cannot_hold():
         pytest.skip("a CPU stream")
     with pytest.raises(ValueError, match="rotation block 512"):
         plan_tile_images(stream, 150, memory_bytes=64 * GIB, device_bytes=64 * GIB)
+
+
+def test_a_preallocated_pool_has_no_region_to_take():
+    """The region rule is a no-op on a pool that already holds its limit, at any device size."""
+    for limit in (16 * GIB, 36 * GIB, 72 * GIB):
+        assert plan_region_bytes(0.8 * limit, limit, limit, 8 * GIB) == 0
+    assert plan_region_bytes(30 * GIB, None, None, None) == 0
+
+
+def test_a_grown_pool_takes_the_plan_as_one_block_bounded_by_what_is_left():
+    """The 40 GB A100 last stage (30.78 GiB counted, 36.4 GiB limit): the plan's bytes while the
+    allocator may still take them, else everything it still may, never more than the device has free."""
+    counted, limit = int(30.78 * GIB), int(36.4 * GIB)
+    assert plan_region_bytes(counted, limit, 1 * GIB, 38 * GIB) == counted
+    assert plan_region_bytes(counted, limit, 8 * GIB, 38 * GIB) == limit - 8 * GIB - PLAN_REGION_MARGIN_BYTES
+    assert plan_region_bytes(counted, limit, 8 * GIB, 20 * GIB) == 20 * GIB - PLAN_REGION_MARGIN_BYTES
+    assert plan_region_bytes(counted, limit, limit - PLAN_REGION_MARGIN_BYTES, 38 * GIB) == 0
+
+
+_REGION_SCRIPT = """
+import sys
+import jax, jax.numpy as jnp
+from relax.ppca_refinement.full_row_stream import reserve_plan_region
+device = jax.devices()[0]
+block = lambda megabytes: jnp.zeros((megabytes, 2**20), jnp.uint8)
+limit = device.memory_stats()["bytes_limit"] // 2**20
+# Two kept blocks of 30% of the limit: a grown pool puts each in a region of its own.
+if sys.argv[1] == "reserve":
+    taken = reserve_plan_region(device, 0.9 * limit * 2**20)
+    assert taken > 0.8 * limit * 2**20, taken
+    assert reserve_plan_region(device, 0.9 * limit * 2**20) == 0
+kept = [block(3 * limit // 10), block(3 * limit // 10)]
+try:
+    block(35 * limit // 100).block_until_ready()
+    print("FITS")
+except Exception as error:
+    print("FRAGMENTED" if "RESOURCE_EXHAUSTED" in str(error) else repr(error))
+"""
+
+
+@pytest.mark.parametrize("mode, outcome", [("grow", "FRAGMENTED"), ("reserve", "FITS")])
+def test_a_plan_region_keeps_a_grown_pool_contiguous(mode, outcome, tmp_path):
+    """Without preallocation a pool grown block by block refuses a block that is 35% of its limit
+    with 40% free; after the plan's region is taken the same allocations fit."""
+    import os
+    import subprocess
+    import sys
+
+    import jax
+
+    if jax.devices()[0].platform not in {"gpu", "cuda"}:
+        pytest.skip("the allocator pool is a GPU allocator's")
+    env = dict(os.environ, XLA_PYTHON_CLIENT_PREALLOCATE="false", XLA_PYTHON_CLIENT_MEM_FRACTION=".10")
+    env.pop("TF_GPU_ALLOCATOR", None)
+    run = subprocess.run(
+        [sys.executable, "-c", _REGION_SCRIPT, mode], env=env, capture_output=True, text=True, cwd=os.getcwd()
+    )
+    assert run.stdout.strip().splitlines()[-1:] == [outcome], run.stdout[-2000:] + run.stderr[-2000:]
