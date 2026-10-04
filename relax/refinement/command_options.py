@@ -381,6 +381,15 @@ def parse_refinement_args(argv=None):
         "counts every pair once. The 1/1000 weight floor inside the reconstruction keeps RELION's counting.",
     )
     parser.add_argument(
+        "--noise_shell_count",
+        choices=("relion", "summed"),
+        default="relion",
+        help="Pixel count per shell of the sigma2_noise update. relion (default) counts every shell on "
+        "the full image (Npix_per_shell); below the box the sums of shell current_size / 2 run on the "
+        "cropped image, which lacks one row, so that shell's sigma2 comes out 3.6-7.1%% low. summed "
+        "divides each shell by the pixels the expectation summed.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
@@ -926,7 +935,9 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
     """
 
     options = RelionConsistencyOptions(
-        gridding_kernel=args.gridding_kernel, shell_pair_counting=args.shell_pair_counting
+        gridding_kernel=args.gridding_kernel,
+        shell_pair_counting=args.shell_pair_counting,
+        noise_shell_count=args.noise_shell_count,
     )
     chosen = options.non_default()
     if not chosen:

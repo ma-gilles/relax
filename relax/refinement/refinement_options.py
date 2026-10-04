@@ -151,6 +151,7 @@ class RelionParityOptions:
 _CONSISTENCY_CHOICES = {
     "gridding_kernel": ("radial", "separable"),
     "shell_pair_counting": ("relion", "once"),
+    "noise_shell_count": ("relion", "summed"),
 }
 
 
@@ -172,6 +173,10 @@ class RelionConsistencyOptions:
     # plane twice; "once" counts every pair once. The reconstruction's 1/1000 weight floor (RECOVAR)
     # keeps RELION's counting.
     shell_pair_counting: Literal["relion", "once"] = "relion"
+    # The pixel count that turns the noise sums of an expectation into sigma2: RELION counts every
+    # shell on the full image, but below the box it sums shell current_size / 2 on a crop that lacks
+    # one row, so that shell's sigma2 is 3.6-7.1% low; "summed" counts the pixels that were summed.
+    noise_shell_count: Literal["relion", "summed"] = "relion"
 
     def __post_init__(self):
         for name, choices in _CONSISTENCY_CHOICES.items():

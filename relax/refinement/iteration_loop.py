@@ -2430,6 +2430,7 @@ def refine_single_volume(
             firstiter_cc=relion_firstiter_cc_this_iter,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             dump_debug=noise_debug_dump,
+            summed_current_size=cs_for_engine if consistency.noise_shell_count == "summed" else None,
         )
         noise_from_res = noise_update.noise_from_res
         noise_from_res_per_half = noise_update.noise_from_res_per_half

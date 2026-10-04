@@ -69,3 +69,22 @@ Not changed: the 1/1000 weight floor inside the reconstruction (`BackProjector::
 RELION's counting. It only replaces weights below a thousandth of their shell mean, so the two
 countings give the same map unless a voxel sits within the difference of the two shell means of
 that threshold. `getFSC` on real-space maps has no caller on the refinement path.
+
+## `--noise_shell_count {relion,summed}`
+
+The M-step turns the noise sums of an expectation into
+`sigma2_noise[s] = wsum[s] / (2 sumw Npix_per_shell[s])` (`ml_optimiser.cpp:5246-5285`).
+`Npix_per_shell` counts the pixels of every shell on the full image (`:5717-5730`). The sums of
+shells up to `current_size / 2` run on the cropped image (`windowFourierTransform`, rows
+`-(cs/2 - 1) .. +cs/2`, `fftw.h:807-856`), which has no row `-cs/2`; higher shells come from the full
+image (`power_img`). Below the box the pixels `(jp >= 1, ip = -cs/2)` of shell `cs/2` are therefore
+counted and never summed, and `sigma2_noise[cs/2]` is low by that fraction: 52 of 56 pixels at box
+64 and current size 32 (-7.1%), 89 of 94 at 128/64 (-5.3%), 212 of 220 at 256/128 (-3.6%). Every
+other shell, and every shell at the box, is exact.
+
+`summed` divides each shell by the pixels the expectation summed
+(`summed_noise_pixels_per_shell`, `relax/reconstruction/noise_relion.py`), through
+`update_posterior_noise_variance` for the K=1 per-half, the Class3D shared and the per-optics-group
+updates; the numbered iterations pass the expectation's image current size. The sums themselves
+and the kernels that accumulate them are unchanged. Not changed: RELION's average CTF^2 of
+CTF-premultiplied images divides by the same `Npix_per_shell` and keeps it.

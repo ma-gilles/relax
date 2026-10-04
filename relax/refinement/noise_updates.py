@@ -358,7 +358,9 @@ def _combined_noise_stats(noise_stats_per_half):
 
 
 
-def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_shape, *, ctf_premultiplied=False):
+def _per_optics_group_sigma2_noise(
+    stats, previous_radial, previous_rows, image_shape, *, ctf_premultiplied=False, summed_current_size=None
+):
     """One half's M-step noise update with one spectrum per optics group.
 
     ``stats`` carries ``[G, n_shells]`` sums and ``[G]`` ``sumw`` (RELION's
@@ -386,7 +388,12 @@ def _per_optics_group_sigma2_noise(stats, previous_radial, previous_rows, image_
             continue
         radial[g] = np.asarray(
             noise_relion.normalize_wsum_to_sigma2_noise(
-                wsum[g], power[g], sumw[g], image_shape, ctf_premultiplied=ctf_premultiplied
+                wsum[g],
+                power[g],
+                sumw[g],
+                image_shape,
+                ctf_premultiplied=ctf_premultiplied,
+                summed_current_size=summed_current_size,
             ),
             dtype=np.float64,
         )
@@ -514,7 +521,7 @@ def _noise_update_keeping_previous_spectra(model: NoiseModel) -> NoiseUpdateResu
     )
 
 
-def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied):
+def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_current_size):
     """One optics group's M-step noise update: the float64 shell profile and its flat pixel row."""
     from relax.reconstruction import noise_relion
 
@@ -524,6 +531,7 @@ def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied):
         stats.sumw,
         image_shape,
         ctf_premultiplied=ctf_premultiplied,
+        summed_current_size=summed_current_size,
     )
     return np.asarray(sigma2_noise, dtype=np.float64), _shell_profile_pixel_row(sigma2_noise, image_shape)
 
@@ -581,6 +589,7 @@ def update_k1_posterior_noise_variance(
     firstiter_cc: bool,
     ctf_premultiplied: bool = False,
     dump_debug=None,
+    summed_current_size=None,
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update of the two half-models.
 
@@ -592,6 +601,10 @@ def update_k1_posterior_noise_variance(
     1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
     sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
     first-iter noise update).
+
+    ``summed_current_size`` (the expectation's image current size) divides each
+    shell by the pixels that expectation summed instead of RELION's full-image
+    ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``); None is RELION's count.
     """
 
     _require_noise_stats_of_both_halves(noise_stats_per_half)
@@ -611,9 +624,12 @@ def update_k1_posterior_noise_variance(
                 noise_variance_per_half[k_noise],
                 image_shape,
                 ctf_premultiplied=ctf_premultiplied,
+                summed_current_size=summed_current_size,
             )
         else:
-            noise_k, noise_rows_k = _one_group_sigma2_noise(stats_k, image_shape, ctf_premultiplied=ctf_premultiplied)
+            noise_k, noise_rows_k = _one_group_sigma2_noise(
+                stats_k, image_shape, ctf_premultiplied=ctf_premultiplied, summed_current_size=summed_current_size
+            )
         noise_from_res_per_half.append(noise_k)
         noise_variance_per_half[k_noise] = noise_rows_k
     noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
@@ -631,6 +647,7 @@ def update_class_posterior_noise_variance(
     firstiter_cc: bool,
     ctf_premultiplied: bool = False,
     dump_debug=None,
+    summed_current_size=None,
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update shared by every class (Class3D ordering).
 
@@ -643,6 +660,10 @@ def update_class_posterior_noise_variance(
     1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
     sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
     first-iter noise update).
+
+    ``summed_current_size`` (the expectation's image current size) divides each
+    shell by the pixels that expectation summed instead of RELION's full-image
+    ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``); None is RELION's count.
     """
 
     _require_noise_stats_of_both_halves(noise_stats_per_half)
@@ -658,10 +679,12 @@ def update_class_posterior_noise_variance(
             model.variance_per_half[0],
             image_shape,
             ctf_premultiplied=ctf_premultiplied,
+            summed_current_size=summed_current_size,
         )
     else:
         noise_from_res, noise_rows = _one_group_sigma2_noise(
-            combined_noise_stats, image_shape, ctf_premultiplied=ctf_premultiplied,
+            combined_noise_stats, image_shape,
+            ctf_premultiplied=ctf_premultiplied, summed_current_size=summed_current_size,
         )
     noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
     noise_variance_per_half = [noise_rows, noise_rows]
@@ -680,6 +703,7 @@ def update_posterior_noise_variance(
     firstiter_cc: bool,
     ctf_premultiplied: bool = False,
     dump_debug=None,
+    summed_current_size=None,
 ) -> NoiseUpdateResult:
     """The one remaining mode decision of the noise update.
 
@@ -693,4 +717,5 @@ def update_posterior_noise_variance(
     return update(
         noise_stats_per_half, model, image_shape,
         firstiter_cc=firstiter_cc, ctf_premultiplied=ctf_premultiplied, dump_debug=dump_debug,
+        summed_current_size=summed_current_size,
     )

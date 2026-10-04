@@ -24,8 +24,41 @@ def apply_relion_sigma2_floors(sigma2, *, unit: float = 1.0, ctf_premultiplied: 
     return out
 
 
+def summed_noise_pixels_per_shell(image_shape, current_size) -> np.ndarray:
+    """How many pixels of each shell an expectation at ``current_size`` actually sums into the noise spectrum.
+
+    Shells up to ``current_size / 2`` are summed on RELION's cropped image, which has no row
+    ``-current_size / 2``; higher shells come from the full image (``power_img``). RELION's
+    ``Npix_per_shell`` counts every shell on the full image, so below the box its count of shell
+    ``current_size / 2`` includes the pixels of that missing row (``jp >= 1, ip = -cs/2``), which no
+    sum contains. At the box (or ``current_size`` None) the two counts agree.
+    """
+    from relax.helpers.fourier_window import make_fourier_window_indices_np
+    from relax.helpers.half_spectrum import (
+        bin_shell_values_np,
+        make_relion_noise_shell_indices_half,
+        mask_relion_noise_shell_indices_to_current_window,
+    )
+
+    shell_indices = make_relion_noise_shell_indices_half(image_shape)
+    if current_size is not None and int(current_size) < int(image_shape[0]):
+        window_indices, _ = make_fourier_window_indices_np(image_shape, int(current_size))
+        shell_indices = mask_relion_noise_shell_indices_to_current_window(
+            shell_indices, image_shape, int(current_size), window_indices
+        )
+    n_shells = int(image_shape[0]) // 2 + 1
+    return bin_shell_values_np(np.ones(np.shape(shell_indices)), shell_indices, n_shells)
+
+
 def normalize_wsum_to_sigma2_noise(
-    wsum_sigma2_noise, wsum_img_power, sumw, image_shape, *, ctf_premultiplied=False, apply_floors=True
+    wsum_sigma2_noise,
+    wsum_img_power,
+    sumw,
+    image_shape,
+    *,
+    ctf_premultiplied=False,
+    apply_floors=True,
+    summed_current_size=None,
 ):
     """Convert posterior-weighted noise accumulators to per-shell noise variance.
 
@@ -55,6 +88,11 @@ def normalize_wsum_to_sigma2_noise(
         2-D image dimensions, e.g. ``(128, 128)``.
     ctf_premultiplied : bool
         RELION floors sigma2 at 1e-15 (its units) only for CTF-premultiplied data.
+    summed_current_size : int or None
+        None (default) divides by RELION's ``Npix_per_shell``, counted on the full image. An
+        expectation below the box sums shell ``current_size / 2`` on a crop that lacks one row, so
+        that shell's sigma2 comes out low (3.6-7.1%); passing the expectation's image current size
+        divides every shell by the pixels it summed (:func:`summed_noise_pixels_per_shell`).
 
     Returns
     -------
@@ -82,6 +120,9 @@ def normalize_wsum_to_sigma2_noise(
         shell_indices,
         n_shells,
     )
+
+    if summed_current_size is not None:
+        Npix_per_shell = jnp.asarray(summed_noise_pixels_per_shell(image_shape, summed_current_size), dtype=jnp.float32)
 
     total_wsum = wsum_sigma2_noise + wsum_img_power
     sigma2 = total_wsum / (2.0 * sumw * jnp.maximum(Npix_per_shell, 1.0))

@@ -27,6 +27,7 @@ pytestmark = pytest.mark.unit
 OPTIONS = [
     ("gridding_kernel", "radial", "separable"),
     ("shell_pair_counting", "relion", "once"),
+    ("noise_shell_count", "relion", "summed"),
 ]
 NON_DEFAULT = pytest.mark.parametrize("name,value", [(name, value) for name, _, value in OPTIONS])
 BASE_ARGS = ["--data_dir", "data", "--output", "out"]
