@@ -557,9 +557,18 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   ranges touch: RELION 3.5-4.8e-2, relax 5.3-5.9e-2). The first departing step is iteration 2, from an
   identical state: best poses and offsets equal for all 200 particles, Pmax within 2e-4, and the update
   differs by 1 % of its norm, evenly over shells and without a scale. Every particle is at the coarse cap
-  of 100 significant samples there. So the one-step map differences of the replay audits (0.5e-3 to
-  4.6e-3 here and on et09/et15) are above RELION's own reproducibility and are not explained yet; whether
-  they come from near-tie membership at the cap or from the reconstruction sums is being split. The
+  of 100 significant samples there. Localized (2026-10-04, jobs 14967796 and 14970694; RELION's coarse kept
+  sets and BPref accumulators dumped for that step): the coarse scorer's rounding at the significance cap.
+  The subtomogram coarse pass uses the SPA coarse GEMM scorer, whose expansion differs from RELION's
+  direct square by about one float32 unit of a diff2 near 2640 (2.4e-4); at the cap 7 % of particles have
+  a relative gap under 1e-3 at the cut and 1.5 % an exact tie, so the kept set differs for 6 of 200
+  particles (both programs use the same inclusive cut and the same normalisation). BPref data then
+  differs by 1.3e-3 and 6.5e-4 in the two pseudo-halves and the map by 3.3e-3. With the coarse pass on the
+  direct-square kernel (diagnostic) the kept sets agree for 197 of 200, BPref data to 1.3e-4 and 2.8e-4 and
+  the map to 2.6e-4 to 4.1e-4, against 198 of 200, 1.4e-4 and 1.6e-4, and 1.7e-4 between two RELION runs.
+  SPA VDAM with K>1 uses the same scorer. Fix in progress: keep the GEMM scorer and re-score the samples
+  near the cut with RELION's arithmetic when the cap binds. et09 one-group seed 2 on main b44f33e scores
+  0.988222 and 0.988187 against RELION's 0.988241-0.988392, so that row is open on current code too. The
   diagnostic continuation is not valid from a checkpoint whose next iteration updates the sampling (9,
   19, ...): it does not carry the previous offset step into RELION's subtomogram rule (3.0 A against 4.25 A
   at iteration 10); the forward run is right. Evidence: `em_work/cryoet_vdam_20261001/{relion/etob2l_plain,plain_probe,audit/etob2l_plain_s1}`,
