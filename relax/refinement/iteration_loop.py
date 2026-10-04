@@ -135,6 +135,7 @@ from relax.refinement.iteration_planning import (
     build_initial_coarse_grids,
     build_sealed_initial_coarse_grids,
     coarse_pass1_rotations,
+    first_iteration_policy,
     initialize_refinement_state,
     perturbed_trial_grid,
     plan_adaptive_image_size,
@@ -1342,21 +1343,11 @@ def refine_single_volume(
         iter_replay_override = None
         if replay.replay_iteration_overrides is not None and iteration < len(replay.replay_iteration_overrides):
             iter_replay_override = replay.replay_iteration_overrides[iteration]
-        relion_firstiter_cc_this_iter = bool(
-            parity.emulate_relion_firstiter_cc and init_relion_iteration == 0 and iteration == 0
-        )
-        first_iter_normalized_cc_this_iter = bool(
-            parity.first_iteration_score_mode == "normalized_cc" and init_relion_iteration == 0 and iteration == 0
-        )
-        first_iter_hard_reconstruction_this_iter = bool(
-            parity.first_iteration_reconstruction_mode == "hard" and init_relion_iteration == 0 and iteration == 0
-        )
-        firstiter_score_mode_this_iter = (
-            "normalized_cc" if (relion_firstiter_cc_this_iter or first_iter_normalized_cc_this_iter) else "gaussian"
-        )
-        firstiter_winner_take_all_this_iter = bool(
-            relion_firstiter_cc_this_iter or first_iter_hard_reconstruction_this_iter
-        )
+        (
+            relion_firstiter_cc_this_iter,
+            firstiter_score_mode_this_iter,
+            firstiter_winner_take_all_this_iter,
+        ) = first_iteration_policy(parity, init_relion_iteration=init_relion_iteration, iteration=iteration)
         numbered_relion_iteration = replay_policy._numbered_relion_iteration(init_relion_iteration, iteration)
 
         if follower_setup.follower_scale_state is not None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
@@ -289,6 +289,40 @@ def initialize_refinement_state(
         )
         state = resume.refinement_state(state)
     return state
+
+
+class FirstIterationPolicy(NamedTuple):
+    """How one numbered iteration scores and reconstructs: only a run's first iteration departs."""
+
+    relion_firstiter_cc: bool
+    score_mode: str
+    winner_take_all: bool
+
+
+def first_iteration_policy(parity: RelionParityOptions, *, init_relion_iteration, iteration) -> FirstIterationPolicy:
+    """RELION's first-iteration CC emulation, the score mode and whether one pose takes all the weight.
+
+    Normalised cross-correlation scoring and hard reconstruction apply to iteration 1 of a run that
+    starts at RELION iteration 0, under ``--firstiter_cc`` emulation or the two diagnostic options.
+    """
+    relion_firstiter_cc_this_iter = bool(
+        parity.emulate_relion_firstiter_cc and init_relion_iteration == 0 and iteration == 0
+    )
+    first_iter_normalized_cc_this_iter = bool(
+        parity.first_iteration_score_mode == "normalized_cc" and init_relion_iteration == 0 and iteration == 0
+    )
+    first_iter_hard_reconstruction_this_iter = bool(
+        parity.first_iteration_reconstruction_mode == "hard" and init_relion_iteration == 0 and iteration == 0
+    )
+    firstiter_score_mode_this_iter = (
+        "normalized_cc" if (relion_firstiter_cc_this_iter or first_iter_normalized_cc_this_iter) else "gaussian"
+    )
+    firstiter_winner_take_all_this_iter = bool(
+        relion_firstiter_cc_this_iter or first_iter_hard_reconstruction_this_iter
+    )
+    return FirstIterationPolicy(
+        relion_firstiter_cc_this_iter, firstiter_score_mode_this_iter, firstiter_winner_take_all_this_iter,
+    )
 
 
 @dataclass(frozen=True)
