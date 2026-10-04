@@ -10,6 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
+from relax.dense import scoring_policy
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.frozen_boundary import _restore_diagnostic_frozen_boundary_state
 from relax.diagnostics.relion_replay import (
@@ -41,6 +42,7 @@ from relax.reconstruction.regularization_relion import (
     update_relion_growth_state_from_fsc,
 )
 from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
+from relax.sampling import _relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions, RefinementSchedule, RelionParityOptions
@@ -412,6 +414,79 @@ def refresh_coarse_grids(
                 state.translation_step,
             )
     return CoarseGrids(current_rotation_grid, base_translations, current_translations)
+
+
+def perturbed_trial_grid(
+    rotation_eulers,
+    base_translations,
+    random_perturbation: float,
+    *,
+    grid_healpix_order: int,
+    replay_metadata,
+    translation_step,
+    use_grid_eulers: bool,
+    symmetry: str,
+    dtype,
+) -> sampling.TrialGrid:
+    """This iteration's trial grid: the coarse grid under RELION's sampling perturbation.
+
+    ``rotation_eulers`` are the coarse grid's working Euler rows and ``base_translations`` its
+    unperturbed host translations. The angular sampling that scales the perturbation is the grid's
+    HEALPix order, or the replayed order when ``replay_metadata`` supplies one.
+    """
+    # Use RELION's actual hp_order when replaying (recovar's current
+    # grid order may be capped at MAX_FULL_GRID_ORDER=4 for memory).
+    _angsamp_order = int(replay_metadata["healpix_order"]) if replay_metadata is not None else grid_healpix_order
+    angsamp_deg = sampling.relion_angular_sampling_deg(_angsamp_order, adaptive_oversampling=0)
+    return sampling._perturbed_trial_grid(
+        rotation_eulers=rotation_eulers,
+        mstep_source_eulers=sampling._relion_mstep_source_eulers(
+            rotation_eulers,
+            _angsamp_order,
+            use_grid_eulers=use_grid_eulers,
+            symmetry=symmetry,
+        ),
+        base_translations=base_translations,
+        translation_step=float(translation_step),
+        random_perturbation=random_perturbation,
+        angular_sampling_deg=angsamp_deg,
+        dtype=dtype,
+    )
+
+
+def coarse_pass1_rotations(
+    source_eulers,
+    random_perturbation: float,
+    *,
+    grid_healpix_order: int,
+    replay_metadata,
+    perturb_factor: float,
+    log: logging.Logger,
+):
+    """RELION's device-built rotations for the pass-1 coarse scorer, or None where the host grid serves.
+
+    ``source_eulers`` are the unperturbed coarse Euler rows (float64). The perturbation applies only
+    when the trial grid is perturbed: under replay, or with a positive ``perturb_factor``.
+    """
+    adaptive_pass1_order = (
+        int(replay_metadata["healpix_order"])
+        if replay_metadata is not None
+        else int(grid_healpix_order)
+    )
+    adaptive_pass1_use_float64 = bool(scoring_policy.DENSE_PRECISION.use_float64_scoring)
+    adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
+        source_eulers,
+        random_perturbation if (replay_metadata is not None or perturb_factor > 0) else 0.0,
+        sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
+        use_float64=adaptive_pass1_use_float64,
+    )
+    if adaptive_pass1_rotations is not None:
+        log.info(
+            "RELION adaptive pass 1: using %s-built coarse scorer rotations; "
+            "fine/M-step rotations remain host-generated",
+            "double-precision CUDA" if adaptive_pass1_use_float64 else "CUDA",
+        )
+    return adaptive_pass1_rotations
 
 
 def build_sealed_initial_coarse_grids(

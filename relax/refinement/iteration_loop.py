@@ -140,7 +140,9 @@ from relax.refinement.half_scoring import (
 from relax.refinement.iteration_planning import (
     build_initial_coarse_grids,
     build_sealed_initial_coarse_grids,
+    coarse_pass1_rotations,
     initialize_refinement_state,
+    perturbed_trial_grid,
     plan_adaptive_image_size,
     plan_class_image_size,
     plan_expectation_windows,
@@ -224,8 +226,6 @@ from relax.relion.relion_worker_scale import (
     setup_relion_follower_scale_state,
 )
 from relax.sampling import (
-    _relion_adaptive_pass1_rotations,
-    relion_angular_sampling_deg,
     relion_sampling_perturbation_for_iteration,
     rotation_grid_size,
 )
@@ -1329,22 +1329,15 @@ def refine_single_volume(
             log=logger,
         )
         if _replay_meta is not None or parity.perturb_factor > 0:
-            # Use RELION's actual hp_order when replaying (recovar's current
-            # grid order may be capped at MAX_FULL_GRID_ORDER=4 for memory).
-            _angsamp_order = int(_replay_meta["healpix_order"]) if _replay_meta is not None else coarse_grids.rotation_grid.healpix_order
-            angsamp_deg = relion_angular_sampling_deg(_angsamp_order, adaptive_oversampling=0)
-            trial_grid = sampling._perturbed_trial_grid(
-                rotation_eulers=effective_rotation_eulers,
-                mstep_source_eulers=sampling._relion_mstep_source_eulers(
-                    effective_rotation_eulers,
-                    _angsamp_order,
-                    use_grid_eulers=sealed_sampling_state is not None,
-                    symmetry=symmetry,
-                ),
-                base_translations=coarse_grids.base_translations,
-                translation_step=float(state.translation_step),
-                random_perturbation=random_perturbation,
-                angular_sampling_deg=angsamp_deg,
+            trial_grid = perturbed_trial_grid(
+                effective_rotation_eulers,
+                coarse_grids.base_translations,
+                random_perturbation,
+                grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+                replay_metadata=_replay_meta,
+                translation_step=state.translation_step,
+                use_grid_eulers=sealed_sampling_state is not None,
+                symmetry=symmetry,
                 dtype=scoring_dtype,
             )
             effective_rotations = trial_grid.rotations
@@ -1363,24 +1356,14 @@ def refine_single_volume(
                 and not scoring_policy.DENSE_PRECISION.use_float64_scoring
             )
         ):
-            adaptive_pass1_order = (
-                int(_replay_meta["healpix_order"])
-                if _replay_meta is not None
-                else int(coarse_grids.rotation_grid.healpix_order)
-            )
-            adaptive_pass1_use_float64 = bool(scoring_policy.DENSE_PRECISION.use_float64_scoring)
-            adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
+            adaptive_pass1_rotations = coarse_pass1_rotations(
                 adaptive_pass1_source_eulers,
-                random_perturbation if (_replay_meta is not None or parity.perturb_factor > 0) else 0.0,
-                relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
-                use_float64=adaptive_pass1_use_float64,
+                random_perturbation,
+                grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+                replay_metadata=_replay_meta,
+                perturb_factor=parity.perturb_factor,
+                log=logger,
             )
-            if adaptive_pass1_rotations is not None:
-                logger.info(
-                    "RELION adaptive pass 1: using %s-built coarse scorer rotations; "
-                    "fine/M-step rotations remain host-generated",
-                    "double-precision CUDA" if adaptive_pass1_use_float64 else "CUDA",
-                )
         # First-iteration CC scores the full translation grid before choosing
         # its single winning pose (ml_optimiser.cpp:9181-9207).
         expectation_windows = plan_expectation_windows(

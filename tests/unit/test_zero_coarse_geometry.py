@@ -168,7 +168,7 @@ def test_device_matrix_generation_gate(os, local, k, mode, hard, double, expecte
             and any(isinstance(t, ast.Name) and t.id == "adaptive_pass1_rotations" for t in s.targets)
             and isinstance(s.value, ast.Call)
             and isinstance(s.value.func, ast.Name)
-            and s.value.func.id == "_relion_adaptive_pass1_rotations"
+            and s.value.func.id == "coarse_pass1_rotations"
             for s in n.body
         )
     ]

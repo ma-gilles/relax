@@ -6760,7 +6760,7 @@ class TestRelionModeSmokeTest:
         scoring_rotations = []
         scoring_grids = []
         monkeypatch.setattr(
-            iteration_loop_module, "_relion_adaptive_pass1_rotations",
+            iteration_planning_module, "_relion_adaptive_pass1_rotations",
             lambda eulers, *args, **kwargs: sampling_module._relion_euler_angles_to_matrix(eulers).astype(np.float32),
         )
         score_half = finalization._score_half_dense_in_bpref_scope
