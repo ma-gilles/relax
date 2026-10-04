@@ -148,6 +148,10 @@ def _register_both_hands(mv, tg, required=True):
             "fine_start_corr": f.fine_start_score,
             "fine_corr": f.fine_score,
             "fine_evaluations": f.fine_evaluations,
+            "lowpass_optimizer_success": f.lowpass_optimizer_success,
+            "lowpass_evaluations": f.lowpass_evaluations,
+            "fine_optimizer_success": f.fine_optimizer_success,
+            "fine_optimizer_message": f.fine_optimizer_message,
         }
         for h, f in fits.items()
     }
@@ -378,10 +382,35 @@ def score_cell(cell, fit_workers=1):
     }
 
 
+def _unconverged_fits(node, path=""):
+    """Paths of every registration record in a cell result whose low-pass or fine optimizer stopped on its budget."""
+    found = []
+    if isinstance(node, dict):
+        if "fine_optimizer_success" in node and not (
+            node["fine_optimizer_success"] and node["lowpass_optimizer_success"]
+        ):
+            found.append(
+                {
+                    "fit": path,
+                    "lowpass_optimizer_success": node["lowpass_optimizer_success"],
+                    "fine_optimizer_success": node["fine_optimizer_success"],
+                    "fine_optimizer_message": node["fine_optimizer_message"],
+                }
+            )
+        for key, value in node.items():
+            found += _unconverged_fits(value, f"{path}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found += _unconverged_fits(value, f"{path}[{index}]")
+    return found
+
+
 def _run(args):
     cell, out, fit_workers = args
     try:
         result = score_cell(cell, fit_workers)
+        # A fit that stopped on its budget is flagged here, never silently accepted (2026-10-03).
+        result["unconverged_fits"] = _unconverged_fits({"arms": result["arms"], "pairs": result["pairs"]})
     except Exception as exc:  # recorded, never hidden
         import traceback
 

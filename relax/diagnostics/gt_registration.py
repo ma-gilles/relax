@@ -425,6 +425,12 @@ class RigidHandFit:
     fine_start_score: float
     fine_score: float
     fine_evaluations: int
+    # Optimizer status of the kept low-pass start and of the fine stage. False means the fit stopped on its evaluation or
+    # iteration budget instead of converging; the transform is still returned and the caller must report it.
+    lowpass_optimizer_success: bool
+    lowpass_evaluations: int
+    fine_optimizer_success: bool
+    fine_optimizer_message: str
 
 
 def refine_rigid_fit(
@@ -436,13 +442,17 @@ def refine_rigid_fit(
     mirror_x: bool = False,
     shell: int = 16,
     samples: int = 48,
-    maxiter: int = 35,
-    maxfev: int = 1600,
-) -> tuple[np.ndarray, np.ndarray, float, float, int]:
+    maxiter: int = 140,
+    maxfev: int = 6400,
+) -> tuple[np.ndarray, np.ndarray, float, float, int, bool, str]:
     """Fine stage: Powell on the continuous objective low-passed at ``shell`` and sampled on a ``samples``^3 grid, from
     a coarser fit. The default fit scores shell 8 on 25^3 points; that leaves sub-voxel and sub-degree misfits which
     move a full-spectrum FSC by up to 0.13 FSC-AUC and make it jitter between equivalent starts (2026-10-01).
-    Returns (rotation, translation, start score, final score, evaluations); the start is kept if Powell does not improve it."""
+    Returns (rotation, translation, start score, final score, evaluations, optimizer success, optimizer message); the
+    start is kept if Powell does not improve it. ``maxiter``/``maxfev`` are budgets, not tolerances (xtol/ftol decide
+    convergence): with the earlier 35/1600 budget 12% of the fine fits behind the published VDAM scores stopped on the
+    evaluation cap (2026-10-03), so the status is returned and must be recorded by the caller. Sized on the K=15 fixture
+    (65 fits run to convergence): the fine stage needed up to 3573 evaluations and the low-pass stage up to 4408."""
     moving, target = _volume(volume), _volume(reference)
     mirror = np.diag([-1.0 if mirror_x else 1.0, 1.0, 1.0])
     score = _continuous_score(moving, target, shell, samples)
@@ -464,6 +474,8 @@ def refine_rigid_fit(
         -float(start),
         -float(min(fit.fun, start)),
         int(fit.nfev),
+        bool(fit.success),
+        str(fit.message),
     )
 
 
@@ -501,7 +513,7 @@ def fit_rigid_both_hands(
         if not fits:
             continue
         best = max(fits, key=lambda a: float(a.score))
-        rot, tr, s0, s1, nfev = refine_rigid_fit(
+        rot, tr, s0, s1, nfev, fine_ok, fine_message = refine_rigid_fit(
             moving,
             target,
             best.rotation_matrix,
@@ -520,5 +532,9 @@ def fit_rigid_both_hands(
             fine_start_score=s0,
             fine_score=s1,
             fine_evaluations=nfev,
+            lowpass_optimizer_success=bool(best.receipt.optimizer_success),
+            lowpass_evaluations=int(best.receipt.optimizer_evaluations),
+            fine_optimizer_success=fine_ok,
+            fine_optimizer_message=fine_message,
         )
     return out

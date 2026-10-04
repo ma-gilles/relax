@@ -358,6 +358,7 @@ def test_both_hands_fine_fit_recovers_subvoxel_subdegree_transform(hand, save):
         },
     )
     assert chosen == ("mirror" if hand else "proper")
+    assert fit.lowpass_optimizer_success and fit.fine_optimizer_success, fit.fine_optimizer_message
     assert corr[chosen] >= floor - 1e-4
     assert angle < 0.2 and shift < 0.05  # control limits of the fine stage (the coarse fit's are 2 deg and 0.5 voxel)
 
@@ -380,3 +381,21 @@ def test_both_hands_fine_fit_is_start_independent():
             )
         )
     assert max(corrs) - min(corrs) < 1e-4, corrs
+
+
+def test_both_hands_fit_reports_a_fine_stage_that_stops_on_its_budget(monkeypatch):
+    """A fine stage cut short by its evaluation budget must be visible in the hand record (2026-10-03: 12% of the fine fits
+    behind the published VDAM scores had stopped on the old cap unreported)."""
+    from relax.diagnostics.gt_metrics import relion_alignment_rotations
+
+    reference = analytic_volume()
+    moving = analytic_volume(
+        transform=Rotation.from_rotvec([0.31, -0.42, 0.27]).as_matrix(), translation=np.array([2.25, -3.5, 1.125])
+    )
+    real = rigid.refine_rigid_fit
+    monkeypatch.setattr(rigid, "refine_rigid_fit", lambda *args, **kwargs: real(*args, **{**kwargs, "maxfev": 5}))
+    fit = rigid.fit_rigid_both_hands(moving, reference, relion_alignment_rotations(2)[::3], starts=1)["proper"]
+    assert fit.lowpass_optimizer_success
+    assert not fit.fine_optimizer_success
+    assert "evaluations" in fit.fine_optimizer_message
+    assert fit.fine_evaluations <= 60  # Powell finishes its current line search after the budget is reached
