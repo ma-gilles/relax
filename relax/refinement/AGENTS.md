@@ -44,6 +44,8 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
   `pixi run python -m pytest -q tests/unit/test_refinement_structure_metrics.py`.
 - The CPU tests that name the module you changed:
   `grep -rl 'refinement.<module>\|refinement import .*<module>' tests/unit | xargs pixi run python -m pytest -q`.
+- For a move-only change to the controller or its callees: `pixi run fingerprint check <base> --work-dir <scratch>`
+  must report 0 differences. `pixi run fingerprint cases` lists what runs and what it does not cover.
 - Then `pixi run test-smoke`. `python scripts/run_test_tier.py plan smoke` prints the GPU files it selects for
   your diff and the ones it defers to the medium tier.
 - A change to scoring, reconstruction, noise, priors or convergence is a numerical change: `pixi run test-medium`.

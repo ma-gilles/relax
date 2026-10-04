@@ -54,6 +54,7 @@ Priorities, in order: correctness, GPU performance, clarity.
 | One test file (CPU unless `CUDA_VISIBLE_DEVICES` names an idle GPU 1-3) | `pixi run python -m pytest -v tests/unit/<file>.py` |
 | Guides and the file links of every tracked Markdown file | `python scripts/check_agent_guides.py` |
 | What a tier would run for this checkout | `python scripts/run_test_tier.py plan smoke` |
+| Show that a refactor preserves behaviour (controller, small CPU cases; not a GPU tier) | `pixi run fingerprint check <base>` |
 | Qualify | `pixi run test-smoke`, `pixi run test-medium`, `pixi run test-long` |
 | Is a control-candidate difference inside GPU noise | `python scripts/em_tier_noise_envelope.py check --control <basetemp> --candidate <basetemp>` |
 
@@ -98,8 +99,8 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
   `recovar/CLAUDE.md`, `recovar/cuda/CLAUDE.md` and `docs/CLAUDE.md` in its repository.
 - State of the work: `docs/development/em_status.md`. It is a ledger of more than 100 KB: search it for your topic.
 - Polar as a Slurm target: `docs/development/polar_agents.md`.
-- Planned, not present yet: a per-change check command, a behaviour-fingerprint harness, an evidence store, a
-  short status page, project skills.
+- Planned, not present yet: a per-change check command, an evidence store, a short status page, project
+  skills.
 
 ## Reporting
 
