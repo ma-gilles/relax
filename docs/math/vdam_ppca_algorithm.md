@@ -1168,7 +1168,13 @@ scientific contract; runnable code alone does not establish recovery.
   A finished tile is released before the next one is read, and a tile of
   another size releases the previous tile's kept buffer before allocating its
   own (two live buffers had run a dense HP4 eleven-state tile pair out of memory
-  on an 80 GB card: 101 and 49 images). Tiles are read
+  on an 80 GB card: 101 and 49 images). The tiles of one accumulate call run
+  largest first, so the large kept buffer is allocated once on unfragmented
+  memory; results return in the given order. That ordering is a precaution, not
+  a proven cure: the allocation failure it answers (16 GiB for the compacted
+  pass-2 means, update 95 of a dense HP4 eleven-state arm on an H100, Slurm
+  14948876) happened once in three runs of that arm without the change and did
+  not recur in reruns with or without it (14960561, 14961834). Tiles are read
   ahead only within one accumulate call, and the controller makes one call
   per noise group. When every call of an update holds one tile at the plan
   without read-ahead, that plan is used and the next tile's reader is not
@@ -1259,8 +1265,32 @@ scientific contract; runnable code alone does not establish recovery.
   step on either side of their parent (0.5 px here) and never on it, so every
   image is fitted 0.71 px off (the recorded offset variance is 0.25 px^2 per
   axis). Halving the step halves that offset and brings oversampling 1 to within
-  0.001 FSC and 0.008 R^2 of dense HP4 at 0.17 of its time. A fixture with
-  continuous shifts is the fair comparison for the default step. The fine
+  0.001 FSC and 0.008 R^2 of dense HP4 at 0.17 of its time.
+  On the continuous-shift twin of that fixture
+  (`em_fixtures/ppca_elevenstate_contshift_box64_20261004`: Gaussian shifts, sd 2 px,
+  truncated at 5 px; same maps, labels, rotations and noise) the order reverses.
+  From the GT start with the true shift-prior variance, 150 updates, three seeds,
+  evaluator at HEALPix 4 with a 1 px shift grid (state FSC / latent R^2 / GT power
+  captured / pose median in degrees / share of poses within 10 degrees / seconds
+  per update): dense HP3 0.931-0.933 / 0.559-0.565 / 0.878-0.882 / 2.86-2.94 /
+  0.902-0.908 / 1.43; oversampling 1 at the default 2 px step 0.948-0.949 /
+  0.594 / 0.909-0.912 / 2.81-2.83 / 0.910-0.912 / 0.92; the GT start itself 0.981 /
+  0.570 / 0.999 / 2.75 / 0.934. Oversampling 1 is better than dense HP3 on every
+  column on every seed, at 0.64 of its time. One seed each for reference: dense
+  HP4 0.938 / 0.530 / 0.881 / 2.93 / 0.904 at 15.1 s per update (no pass-2 row is
+  skipped under continuous shifts), oversampling 1 with a 1 px step 0.955 / 0.654 /
+  0.924 / 2.84 / 0.916 at 1.35 s. The gate fixed
+  beforehand (oversampling 1 inside the dense HP3 seed range widened by its width,
+  or better, on each metric) passes. Two cautions from this fixture. The
+  evaluator must resolve the shifts: with its 2 px inference grid the same
+  checkpoints score 5.4-5.5 against 5.5-5.6 degrees and the GT start only R^2 0.25
+  and 6.0 degrees. And a GT start made on the zero-shift fixture carries the floor
+  of the shift-prior variance (0.056 px^2), under which the dense 2 px grid cannot
+  leave zero shift (a node costs 36 nats) while oversampling's children, which
+  take their parent's prior, can: that start must be given the fixture's variance
+  (`harness10/make_contshift_gt_init.py`) or the comparison is decided by the prior
+  (evidence: `jobs/local_gate2_contshift_v2_a100_277749fe`,
+  `jobs/local_gate2_contshift_eval1px_a100_20261004` in the evidence tree below). The fine
   significance rule changes none of these scores: the engine before it gives
   0.950 / 0.701 / 0.873 per seed. On the cryo-ET k3conf fixture (default schedule,
   three seeds, H100) oversampling 1 reaches the dense HP4 last stage on state
@@ -1301,6 +1331,30 @@ scientific contract; runnable code alone does not establish recovery.
   `--maxsig`. On the eleven-state GT checkpoint (HP3, A100) the median image
   keeps 2 samples (mean 12); 7% are capped, holding 0.988 of their mass on average
   (5th percentile 0.951).
+  The warning reports coverage, not a wrong result. On the continuous-shift
+  fixture a third of the images (34-37%) are capped below 0.99 of their mass at
+  the cap of 100 (capped images keep 0.96 on average) and oversampling 1 is still
+  the better result against both dense grids (above). What the count distribution
+  looks like everywhere: the median image needs 1 to 9 samples; a minority needs
+  hundreds (kept mass at caps 100 / 400 / 1600: eleven-state GT 0.9988 / 0.9995 /
+  0.9997; random start 0.9946 / 0.9985 / 0.9994; EMPIAR-10076 update 500 0.880 /
+  0.900 / 0.922, where a quarter of the images want more than 16,000 samples;
+  cryo-ET k3conf update 190 needs one sample per image).
+  Tried and rejected (October 4, 2026): spending the cap as a per-tile budget (one
+  common cap per tile, the largest whose total stays within 100 samples per image,
+  up to 1600 per image), a fixed cap of 400, and a dense fallback for tiles with
+  more than 5% of their images capped below 0.99. On the continuous-shift fixture
+  (three seeds; 2 px evaluator) fixed 100, fixed 400, budget 100 and budget 50
+  give the same state FSC (0.927-0.929), latent R^2 (0.28-0.295) and captured
+  power (0.91) at 0.92, 1.58, 1.13 and 0.89 s per update; fixed 400 improves the
+  pose median by about 0.05 degree. The fallback with that trigger took every
+  tile there, returning dense HP3's (worse) result at 1.84 s, and took every tile
+  on EMPIAR-10076 at updates 500 and 2550, costing dense HP3 plus pass 1 (0.76-0.78
+  against 0.55-0.57 s). The fixed cap of 100 stays; the share of images below
+  0.99 is not a trigger that separates the stages where oversampling 1 loses from
+  those where it wins (evidence, same tree: `jobs/local_maxsig_curve_a100_277749fe`,
+  `jobs/local_os1_science_maxsig400_a100_277749fe`,
+  `jobs/local_budget_cap_a100_a23f3234`, `jobs/local_budget_cap_a100_1f7f8747`).
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials
