@@ -1351,13 +1351,9 @@ def refine_single_volume(
         # and angular sampling select this expectation's grid.
         if not has_previous_iteration:
             image_size_plan = plan_initial_image_size(
-                options,
-                grid_size=grid_size,
-                pixel_size_angstrom=source_pixel_size_angstrom,
-                incr_size=relion_incr_size,
-                has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
-                dtype=scoring_dtype,
-                log=logger,
+                options, grid_size=grid_size, pixel_size_angstrom=source_pixel_size_angstrom,
+                incr_size=relion_incr_size, has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
+                dtype=scoring_dtype, log=logger,
             )
             data_vs_prior_iter = image_size_plan.data_vs_prior
             if data_vs_prior_iter is not None:
@@ -1414,15 +1410,9 @@ def refine_single_volume(
                 relion_has_high_fsc_at_limit = image_size_plan.has_high_fsc_at_limit
 
         current_size = resolve_current_size(
-            image_size_plan,
-            options,
-            previous_size=prev_cs if has_previous_iteration else None,
-            incr_size=relion_incr_size,
-            has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
-            ave_pmax=state.ave_Pmax,
-            iteration=iteration,
-            grid_size=grid_size,
-            log=logger,
+            image_size_plan, options, previous_size=prev_cs if has_previous_iteration else None,
+            incr_size=relion_incr_size, has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
+            ave_pmax=state.ave_Pmax, iteration=iteration, grid_size=grid_size, log=logger,
         )
         del image_size_plan
 
@@ -1606,13 +1596,8 @@ def refine_single_volume(
         # rely on local search + oversampling to achieve finer angular steps.
         # The order is still tracked for sigma calculation.
         coarse_grids = refresh_coarse_grids(
-            coarse_grids,
-            state,
-            options,
-            voxel_size=source_pixel_size_angstrom,
-            dtype=scoring_dtype,
-            replay_dir=perturb_replay_relion_dir,
-            log=logger,
+            coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
+            replay_dir=perturb_replay_relion_dir, log=logger,
         )
 
         # --- Local angular search bookkeeping ---
@@ -1633,13 +1618,8 @@ def refine_single_volume(
         # AFTER oversampling. At adaptive_oversampling=0 (os0 RELION runs),
         # the coarse grid IS the trial grid so we apply directly here.
         random_perturbation = resolve_numbered_perturbation(
-            random_perturbation,
-            options,
-            iteration=iteration,
-            replay_metadata=_replay_meta,
-            replay_dir=perturb_replay_relion_dir,
-            rng=perturb_rng,
-            log=logger,
+            random_perturbation, options, iteration=iteration, replay_metadata=_replay_meta,
+            replay_dir=perturb_replay_relion_dir, rng=perturb_rng, log=logger,
         )
         trial_grid = iteration_trial_grid(
             coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta, dtype=scoring_dtype,
@@ -1658,12 +1638,8 @@ def refine_single_volume(
             )
         ):
             adaptive_pass1_rotations = coarse_pass1_rotations(
-                coarse_grids.rotation_grid,
-                random_perturbation,
-                options,
-                replay_metadata=_replay_meta,
-                dtype=scoring_dtype,
-                log=logger,
+                coarse_grids.rotation_grid, random_perturbation, options,
+                replay_metadata=_replay_meta, dtype=scoring_dtype, log=logger,
             )
         # First-iteration CC scores the full translation grid before choosing
         # its single winning pose (ml_optimiser.cpp:9181-9207).
@@ -1708,9 +1684,7 @@ def refine_single_volume(
         else:
             local_sampling = None
         direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
-            state,
-            use_local=use_local,
-            grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+            state, use_local=use_local, grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
             local_search_order=local_sampling.search.healpix_order if use_local else None,
         )
         coarse_rotation_ids_for_scoring = (
@@ -1775,13 +1749,8 @@ def refine_single_volume(
             #         orientations only.
 
             coarse_image_plan = plan_adaptive_image_size(
-                coarse_size_healpix_order,
-                expectation_windows,
-                image_geometry,
-                options,
-                optics_image_sizes=optics_image_sizes,
-                optics_pixel_sizes=optics_pixel_sizes,
-                log=logger,
+                coarse_size_healpix_order, expectation_windows, image_geometry, options,
+                optics_image_sizes=optics_image_sizes, optics_pixel_sizes=optics_pixel_sizes, log=logger,
             )
             coarse_size = coarse_image_plan.size
             coarse_cs = coarse_size if coarse_size < grid_size else None
