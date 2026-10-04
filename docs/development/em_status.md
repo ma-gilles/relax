@@ -578,6 +578,24 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   after both changes: per iteration, best poses differ from RELION for 1.7 % (iterations 2-9), 3.6 %
   (10-19) and 6.9 % (20-30) of the particles with a direct-square coarse pass (4.1 %, 6.1 %, 10.0 % with
   the GEMM scorer), where RELION runs differ from each other by 0.5 %, 1.0 % and 2.5 %; OPEN.
+  What the remaining difference is (2026-10-04, RELION's and relax's coarse diff2 rows and prior terms dumped
+  per particle from fresh runs, jobs 14973183 and 14973184): from an identical state (iteration 2) the old
+  offsets are equal for 200 of 200 particles, sigma2_offset is equal, the orientation and offset priors
+  agree to 1e-5, and the coarse diff2 rows agree to a residual standard deviation of 3.8e-4 (1.6 float32
+  units of a diff2 near 2640; largest cell 1.7e-3 to 2.4e-3) with the direct-square pass. There is no
+  prior, unit or pre-shift difference. That rounding moves the membership of the two significance cuts
+  (the cap for 1.5 % of particles at iteration 2, the 0.999 mass cut for 6-15 % later) and now and then the
+  winner; a different winner changes the particle's carried offset and prior, which then differ for good
+  (two such particles of 200 at iteration 8), so the difference compounds. The rows are judged on the
+  outcome once the exact re-score at both cuts is in.
+  Restart-based replays are superseded: relax's diagnostic continuation (`--diagnostic-continue-optimiser`;
+  there is no user-facing resume for VDAM, Refine3D or Class3D, so this is audit code only) does not rebuild
+  the E-step input that RELION's `--continue` has. From RELION's iteration-8 checkpoint its coarse diff2
+  rows differ from RELION's by a residual standard deviation of 1.15, against 0.045 between fresh runs at
+  that iteration. Every pose, Pmax and significant-sample figure quoted on this page from a one-iteration
+  continuation (the et09/et15 audits above, the iteration-60/70/80 audit of this case) is superseded by
+  the fresh-run measurements; their resolution, SSNR and tau2 comparisons are M-step outputs and are not
+  the quantities at issue.
   SPA VDAM with K>1 uses the same scorer. Fix in progress: keep the GEMM scorer and re-score the samples
   near the cut with RELION's arithmetic when the cap binds. et09 one-group seed 2 on main b44f33e scores
   0.988222 and 0.988187 against RELION's 0.988241-0.988392, so that row is open on current code too. The
