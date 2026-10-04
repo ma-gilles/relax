@@ -207,6 +207,55 @@ class RelionConsistencyOptions:
         }
 
 
+# What ``--mode relax`` sets: the consistent value of each option it includes. Add or remove an
+# option here; ``relax_mode_consistency`` names the routes on which an entry keeps RELION's value.
+RELAX_MODE_CONSISTENCY = {
+    "gridding_kernel": "separable",
+    "shell_pair_counting": "once",
+    "noise_shell_count": "summed",
+    "initial_noise_pair_counting": "once",
+    "nyquist_column_counting": "once",
+    "firstiter_cc_support": "gaussian",
+}
+
+
+def relax_mode_consistency(
+    explicit: dict[str, str],
+    *,
+    n_classes: int,
+    has_cc_iteration: bool,
+    coarse_engine: str,
+    ctf_premultiplied: bool,
+) -> tuple[RelionConsistencyOptions, dict[str, str]]:
+    """The options of ``--mode relax`` on one route, and why each skipped one keeps RELION's rule.
+
+    ``explicit`` holds the options the user set by name; they override the mode and are not
+    skipped (the route guards judge them as they judge any explicit option). Every other entry of
+    ``RELAX_MODE_CONSISTENCY`` is applied unless this route does not honour it: the separable
+    gridding window in Class3D, the CC support without a CC iteration, the per-image options with
+    the ``gemm_dense`` coarse engine, and the Nyquist-column counting on CTF-premultiplied images.
+    Routes that honour no option at all (``require_consistency_route``) are the caller's to refuse.
+    """
+
+    not_honoured = {}
+    if int(n_classes) != 1:
+        not_honoured["gridding_kernel"] = "Class3D's tau2 is the power of the radially corrected reference"
+    if not has_cc_iteration:
+        not_honoured["firstiter_cc_support"] = "this run has no CC iteration (--no-firstiter_cc)"
+    if coarse_engine == "gemm_dense":
+        for name in ("nyquist_column_counting", "firstiter_cc_support"):
+            not_honoured.setdefault(name, "not implemented for the experimental gemm_dense coarse engine")
+    if ctf_premultiplied:
+        not_honoured["nyquist_column_counting"] = (
+            "CTF-premultiplied images: RELION's average CTF^2 divides by the full-image Npix_per_shell"
+        )
+    skipped = {
+        name: reason for name, reason in not_honoured.items() if name in RELAX_MODE_CONSISTENCY and name not in explicit
+    }
+    chosen = {name: value for name, value in RELAX_MODE_CONSISTENCY.items() if name not in skipped}
+    return RelionConsistencyOptions(**{**chosen, **explicit}), skipped
+
+
 def require_consistency_route(
     options: RefinementOptions, *, subtomograms: bool, several_image_shapes: bool
 ) -> RelionConsistencyOptions:

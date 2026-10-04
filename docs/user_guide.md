@@ -195,6 +195,7 @@ The same inputs as the subtomogram auto-refine.
   `--scratch_dir DIR` copies the stacks to local disk first (RELION's
   `--preread_images` and `--scratch_dir`).
 - `--max_iter N` limits the number of iterations.
-- `--gridding_kernel separable` and the other opt-in corrections of RELION's own inconsistencies are
-  described in [RELION-consistency options](math/relion_consistency_options.md); every default is
-  RELION's rule.
+- `--mode relax` sets every opt-in correction of RELION's own inconsistencies (`--gridding_kernel separable`
+  and five others, each also a flag of its own); they are described in
+  [RELION-consistency options](math/relion_consistency_options.md). The default, `--mode relion`, keeps
+  RELION's rule everywhere.

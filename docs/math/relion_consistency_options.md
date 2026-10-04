@@ -5,9 +5,51 @@ self-consistent. Each such place has an opt-in option that applies the consisten
 effect on a refinement can be measured. Every default is RELION's rule; with every option at its
 default relax runs the same operations as before the options existed.
 
+## `--mode {relion,relax}`
+
+`relax refine` and `relax class3d` take `--mode`. `relion` (the default) reproduces RELION: every option
+below keeps RELION's rule unless it is given by name. `relax` sets every option to its consistent value:
+
+| Option | `--mode relion` | `--mode relax` |
+| --- | --- | --- |
+| `--gridding_kernel` | `radial` | `separable` |
+| `--shell_pair_counting` | `relion` | `once` |
+| `--noise_shell_count` | `relion` | `summed` |
+| `--initial_noise_pair_counting` | `relion` | `once` |
+| `--nyquist_column_counting` | `relion` | `once` |
+| `--firstiter_cc_support` | `relion` | `gaussian` |
+
+The bundle is one constant, `RELAX_MODE_CONSISTENCY` (`relax/refinement/refinement_options.py`). The command
+resolves the mode to options once (`resolve_consistency_options`, `relax/refinement/command_options.py`); the
+refinement sees the options only.
+
+- An option given by name overrides the mode (`--mode relax --gridding_kernel radial`), and is refused as it is
+  without the mode where its route does not honour it.
+- Where the run does not honour an option the mode would set, the option keeps RELION's rule and the log says
+  why, one line per option (`relax_mode_consistency`):
+
+  | Run | Option kept at RELION's rule |
+  | --- | --- |
+  | Class3D (`--n_classes` above 1) | `--gridding_kernel` |
+  | no CC iteration (`--no-firstiter_cc`) | `--firstiter_cc_support` |
+  | the experimental `gemm_dense` coarse engine | `--nyquist_column_counting`, `--firstiter_cc_support` |
+  | CTF-premultiplied images | `--nyquist_column_counting` |
+
+- Where no option is available the mode is refused: subtomogram particles, optics groups on several image
+  shapes, and a run seeded from, replaying or frozen at RELION's own state (the list below).
+- The optimiser STAR records the mode (`_relax_mode`, written for `relax` only) beside the options it resolved
+  to (`_relax_consistency_<name>`), and the start-up log prints them. A continuation must resolve to the
+  recorded options; the mode itself is a label, so the same options given by name continue the run.
+
+Measured effect: no measurable effect on two synthetic K=1 fixtures (5,000 particles at box 128 and 10,000 at
+box 256, full auto-refinement, three or four seeds; ground-truth map FSC, pose error, reported resolution and
+iterations to convergence against the default's seed-to-seed spread). Not tested on real data or Class3D.
+
+## The options
+
 The options are the fields of `RelionConsistencyOptions`
 (`relax/refinement/refinement_options.py`) and flags of `relax refine` / `relax class3d`.
-`require_consistency_route` and `resolve_consistency_options`
+`require_consistency_route` (the refinement) and `require_consistency_arguments`
 (`relax/refinement/command_options.py`) refuse a non-default value wherever it would not be
 honoured:
 

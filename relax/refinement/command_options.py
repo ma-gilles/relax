@@ -6,6 +6,7 @@ run. This module owns CLI configuration; numerical refinement options remain in
 """
 
 import argparse
+import logging
 import math
 import os
 from collections.abc import MutableMapping
@@ -15,11 +16,17 @@ from typing import TYPE_CHECKING, NamedTuple
 from relax.diagnostics import frozen_boundary_cli
 from relax.diagnostics.state_swap_probe import add_state_swap_probe_arguments
 from relax.helpers.particle_io import add_particle_read_arguments
-from relax.refinement.refinement_options import RelionConsistencyOptions
+from relax.refinement.refinement_options import (
+    RELAX_MODE_CONSISTENCY,
+    RelionConsistencyOptions,
+    relax_mode_consistency,
+)
 from relax.relion import input_poses
 
 if TYPE_CHECKING:
     from relax.relion.relion_worker_scale import RelionDispatchSchedule
+
+logger = logging.getLogger(__name__)
 
 ## ALL THIS SHOULD OF CONSTANTS SHOULD BE MOVED AND RECORDED SOMEWHERE - NOT PEPPERED THROUGHOUT CODE- OR AT THE TOP?
 # pipeline_jobs.cpp:4191 (Refine3D), 3697 (Class3D): "Mask diameter (A)" 200.
@@ -362,9 +369,22 @@ def parse_refinement_args(argv=None):
         "values produce smoother volumes (stronger prior).",
     )
     parser.add_argument(
+        "--mode",
+        choices=("relion", "relax"),
+        default="relion",
+        help="relion (default) reproduces RELION, including the places where its arithmetic is not "
+        "self-consistent. relax sets every RELION-consistency option below to its consistent value: "
+        + ", ".join(f"--{name} {value}" for name, value in RELAX_MODE_CONSISTENCY.items())
+        + ". An option given explicitly overrides the mode. Where the run does not honour one of them "
+        "(Class3D keeps the radial gridding window; no CC iteration; the gemm_dense coarse engine; "
+        "CTF-premultiplied images) relax keeps RELION's rule for that option and logs why; it is refused "
+        "where no option is available (subtomograms, several image shapes, RELION-seeded or replayed state). "
+        "See docs/math/relion_consistency_options.md.",
+    )
+    parser.add_argument(
         "--gridding_kernel",
         choices=("radial", "separable"),
-        default="radial",
+        default=None,
         help="Real-space gridding-correction window of the scoring projector and the "
         "reconstructions. radial (default) is RELION's sinc^2(|x| / (pad * box)); separable is the "
         "per-axis sinc^2 product, the exact transform of the trilinear kernel. separable "
@@ -373,7 +393,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--shell_pair_counting",
         choices=("relion", "once"),
-        default="relion",
+        default=None,
         help="How the 3-D shell statistics behind tau2, data-vs-prior, the half-map FSC and the "
         "current-size scheduling count Hermitian pairs. relion (default) visits every stored entry of "
         "the x-half volume, which counts the pairs of the kx = 0 plane twice (updateSSNRarrays, "
@@ -383,7 +403,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--noise_shell_count",
         choices=("relion", "summed"),
-        default="relion",
+        default=None,
         help="Pixel count per shell of the sigma2_noise update. relion (default) counts every shell on "
         "the full image (Npix_per_shell); below the box the sums of shell current_size / 2 run on the "
         "cropped image, which lacks one row, so that shell's sigma2 comes out 3.6-7.1%% low. summed "
@@ -392,7 +412,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--initial_noise_pair_counting",
         choices=("relion", "once"),
-        default="relion",
+        default=None,
         help="How the start-up noise spectrum counts Hermitian pairs. relion (default) averages each "
         "image's power over every stored pixel of its FFTW half, which counts the pairs of the kx = 0 "
         "column twice, unlike every later sigma2 update; once counts every pair once.",
@@ -400,7 +420,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--nyquist_column_counting",
         choices=("relion", "once"),
-        default="relion",
+        default=None,
         help="How the per-image sums count the Hermitian pairs of the Nyquist column of a full-size image. "
         "relion (default) keeps both members of each pair (the support rule drops only kx = 0, ky < 0), so "
         "they count twice in the Gaussian score, the image power, the noise, norm and scale sums and "
@@ -409,7 +429,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--firstiter_cc_support",
         choices=("relion", "gaussian"),
-        default="relion",
+        default=None,
         help="Support of the first-iteration normalized cross-correlation (--firstiter_cc). relion (default) "
         "sums every pixel of the cropped rectangle, as RELION's CC kernels do (both kx = 0 copies, DC, the "
         "corners); gaussian scores it on the support and weights of the Gaussian iterations.",
@@ -951,26 +971,28 @@ def require_command_n_classes(command: str, n_classes: int) -> None:
         raise ValueError(f"unknown refinement command {command!r}")
 
 
-def resolve_consistency_options(args) -> RelionConsistencyOptions:
-    """The RELION-consistency options of the command line, refused where the run cannot honour them.
+def _explicit_consistency_options(args) -> dict[str, str]:
+    """The RELION-consistency options given on the command line, by name."""
+
+    names = RelionConsistencyOptions.__dataclass_fields__
+    return {name: getattr(args, name) for name in names if getattr(args, name) is not None}
+
+
+def require_consistency_arguments(args) -> None:
+    """Refuse, from the command line alone, the consistency options and ``--mode relax`` the run cannot honour.
 
     A run seeded from, replaying or continuing RELION's own state takes statistics, references or
-    projectors computed with RELION's rules, so every non-default option is refused there; the
-    refinement loop refuses the particle types it cannot honour once the data is loaded.
+    projectors computed with RELION's rules, so every non-default option and ``--mode relax`` are
+    refused there. An explicit option is refused where its route does not honour it; ``--mode relax``
+    skips such an option instead (``resolve_consistency_options``).
     """
 
-    options = RelionConsistencyOptions(
-        gridding_kernel=args.gridding_kernel,
-        shell_pair_counting=args.shell_pair_counting,
-        noise_shell_count=args.noise_shell_count,
-        initial_noise_pair_counting=args.initial_noise_pair_counting,
-        nyquist_column_counting=args.nyquist_column_counting,
-        firstiter_cc_support=args.firstiter_cc_support,
-    )
-    chosen = options.non_default()
-    if not chosen:
-        return options
-    flags = ", ".join(f"--{name} {value}" for name, value in chosen.items())
+    explicit = RelionConsistencyOptions(**_explicit_consistency_options(args))
+    chosen = explicit.non_default()
+    requested = ["--mode relax"] if args.mode == "relax" else []
+    requested += [f"--{name} {value}" for name, value in chosen.items()]
+    if not requested:
+        return
     relion_state = [
         flag
         for flag, value in (
@@ -987,11 +1009,60 @@ def resolve_consistency_options(args) -> RelionConsistencyOptions:
     if int(args.init_relion_iteration) != 0:
         relion_state.append("--init_relion_iteration")
     if relion_state:
-        raise SystemExit(f"{flags}: not available with RELION-seeded or replayed state ({', '.join(relion_state)})")
-    if options.firstiter_cc_support != "relion" and not args.firstiter_cc:
-        raise SystemExit(f"--firstiter_cc_support {options.firstiter_cc_support} needs --firstiter_cc (the CC iteration)")
-    if options.gridding_kernel != "radial" and int(args.n_classes) != 1:
-        raise SystemExit(f"--gridding_kernel {options.gridding_kernel} is implemented for K=1 auto-refine only")
+        raise SystemExit(
+            f"{', '.join(requested)}: not available with RELION-seeded or replayed state ({', '.join(relion_state)})"
+        )
+    if explicit.firstiter_cc_support != "relion" and not args.firstiter_cc:
+        raise SystemExit(f"--firstiter_cc_support {explicit.firstiter_cc_support} needs --firstiter_cc (the CC iteration)")
+    if explicit.gridding_kernel != "radial" and int(args.n_classes) != 1:
+        raise SystemExit(f"--gridding_kernel {explicit.gridding_kernel} is implemented for K=1 auto-refine only")
+
+
+def resolve_consistency_options(
+    args, *, subtomograms: bool = False, several_image_shapes: bool = False, dataset=None
+) -> RelionConsistencyOptions:
+    """The run's RELION-consistency options: the command line's, under ``--mode relax`` the mode's.
+
+    This is the one place the mode is read; everything after it sees the options only. With
+    ``--mode relion`` the options are those given explicitly (RELION's rule otherwise). With
+    ``--mode relax`` they are ``RELAX_MODE_CONSISTENCY`` with the explicit options on top, less the
+    ones this route does not honour, each logged with its reason (``relax_mode_consistency``);
+    subtomogram particles and optics groups on several image shapes honour none and refuse the mode.
+    ``dataset`` is read under ``--mode relax`` only, for whether its STAR stores CTF-premultiplied images.
+    """
+
+    require_consistency_arguments(args)
+    explicit = _explicit_consistency_options(args)
+    if args.mode != "relax":
+        return RelionConsistencyOptions(**explicit)
+    no_option_route = [
+        reason
+        for reason, present in (
+            ("subtomogram particles", subtomograms),
+            ("optics groups on several image shapes", several_image_shapes),
+        )
+        if present
+    ]
+    if no_option_route:
+        raise SystemExit(
+            "--mode relax: the RELION-consistency options are implemented for single-particle refinement of one "
+            f"image shape from relax's own state; not with {', '.join(no_option_route)}"
+        )
+    from relax.relion import relion_ctf
+
+    options, skipped = relax_mode_consistency(
+        explicit,
+        n_classes=int(args.n_classes),
+        has_cc_iteration=bool(args.firstiter_cc),
+        coarse_engine=args.coarse_engine,
+        ctf_premultiplied=(
+            dataset is not None
+            and relion_ctf.dataset_has_premultiplied_ctf(dataset, tuple(int(v) for v in dataset.image_shape))
+        ),
+    )
+    logger.info("--mode relax: RELION-consistency options %s", options.non_default())
+    for name, reason in skipped.items():
+        logger.info("--mode relax: %s keeps RELION's rule (%s): %s", name, getattr(options, name), reason)
     return options
 
 

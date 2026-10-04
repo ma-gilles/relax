@@ -22,8 +22,8 @@
       "maximum_parameter_count": 28,
       "large_argument_function_count": 29,
       "very_large_argument_function_count": 4,
-      "physical_lines": 22500,
-      "nonblank_noncomment_lines": 19600
+      "physical_lines": 22600,
+      "nonblank_noncomment_lines": 19700
     }
   }
 }

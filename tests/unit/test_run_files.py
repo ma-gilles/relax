@@ -328,6 +328,29 @@ def test_auto_refine_run_files_round_trip(tmp_path):
         assert_matches(read.unfiltered_means[h], snapshot.unfiltered_means[h], rtol=1e-6)
 
 
+def test_optimiser_star_records_mode_relax_and_relions_mode_writes_nothing(tmp_path):
+    rng = np.random.default_rng(0)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    snapshot = _k1_snapshot([4, 3], rng)
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    for mode, recorded in (("relion", None), ("relax", "relax")):
+        writer = RunFileWriter(
+            tmp_path / mode,
+            settings=RunSettings(
+                output_root=str(tmp_path / mode / "run"), random_seed=17, nr_iter=25, particle_diameter=200.0, mode=mode
+            ),
+            input_star=input_star,
+            half_rows=half_rows,
+            background=False,
+        )
+        optimiser = writer(snapshot)
+        assert read_star_blocks(optimiser)["relax_state"].get("relax_mode") == recorded
+        read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+        _assert_snapshots_match(read, snapshot)
+        assert "mode" not in read.extra
+
+
 def test_subtomogram_run_files_round_trip_3d_offsets(tmp_path):
     """Subtomogram particles' 3D offsets go to rlnOriginXAngst/Y/Z and come back (--continue)."""
 

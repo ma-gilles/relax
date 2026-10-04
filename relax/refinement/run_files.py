@@ -214,6 +214,9 @@ class RunSettings:
     perturbation_factor: float = 0.5
     padding_factor: float = 2.0
     command_line: str = ""
+    # The command's --mode, recorded beside the consistency options it resolved to (a label; the
+    # options are what a continuation must repeat). RELION's mode writes nothing.
+    mode: str = "relion"
 
 
 class RunFileWriter:
@@ -785,6 +788,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
     ]
     relax_items = [
         ("relax_format", RUN_FILES_FORMAT),
+        *([("relax_mode", settings.mode)] if settings.mode != "relion" else []),
         ("relax_relion_iteration", int(snapshot.relion_iteration)),
         ("relax_n_classes", int(snapshot.n_classes)),
         ("relax_ori_size", int(snapshot.ori_size)),
@@ -885,6 +889,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
         and key
         not in {
             "relax_format",
+            "relax_mode",
             "relax_relion_iteration",
             "relax_n_classes",
             "relax_ori_size",

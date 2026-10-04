@@ -511,7 +511,7 @@ def main(command=None):
     args = command_options.parse_refinement_args()
     if command is not None:
         command_options.require_command_n_classes(command, int(args.n_classes))
-    consistency_options = command_options.resolve_consistency_options(args)
+    command_options.require_consistency_arguments(args)
     if cache_directory:
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
@@ -597,6 +597,10 @@ def main(command=None):
     ds = particle_inputs.dataset
     tomo_run = particle_inputs.tomographic
     shape_class_rows = particle_inputs.shape_class_rows
+    # The one place --mode is read: after it the run carries the options only.
+    consistency_options = command_options.resolve_consistency_options(
+        args, subtomograms=tomo_run, several_image_shapes=shape_class_rows is not None, dataset=ds
+    )
     relion_mask_params = particle_inputs.mask_parameters
     _double_image_preprocessing = particle_inputs.double_preprocessing
     del particle_inputs
@@ -1810,6 +1814,7 @@ def main(command=None):
                     offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
                     perturbation_factor=float(args.perturb_factor),
                     command_line=" ".join(sys.orig_argv),
+                    mode=args.mode,
                 ),
                 input_star=os.path.join(args.data_dir, "particles.star"),
                 half_rows=[particle_layout.half1_rows, particle_layout.half2_rows],
