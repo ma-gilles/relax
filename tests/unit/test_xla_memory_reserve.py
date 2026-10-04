@@ -85,6 +85,42 @@ def test_reserve_does_nothing_after_backend_start_or_without_a_device(monkeypatc
     assert reserve.os.environ[reserve.MEM_FRACTION_ENV] == ".90"
 
 
+def test_start_up_check_is_a_no_op_when_the_texture_fits_beside_the_pool():
+    default_pool = int(0.90 * H100_TOTAL_BYTES)  # recovar's limit, no reserve applied
+    for box in (128, 256, 400):
+        reserve.require_projector_texture_reserve(box, 2, pool_limit_bytes=default_pool, device_total_bytes=H100_TOTAL_BYTES)
+    # A run that reserved passes for every box: the limit XLA got from the four-decimal fraction the reserve wrote.
+    for box in (560, 626, 800):
+        fraction = float(f"{reserve.xla_memory_fraction(box, 2, H100_TOTAL_BYTES):.4f}")
+        reserve.require_projector_texture_reserve(
+            box, 2, pool_limit_bytes=int(fraction * H100_TOTAL_BYTES), device_total_bytes=H100_TOTAL_BYTES
+        )
+    # Nothing to check without a box, on CPU (no pool limit) or without a device total.
+    reserve.require_projector_texture_reserve(None, 2, pool_limit_bytes=default_pool, device_total_bytes=H100_TOTAL_BYTES)
+
+
+def test_start_up_check_refuses_a_backend_started_without_the_reserve(monkeypatch):
+    with pytest.raises(RuntimeError) as err:
+        reserve.require_projector_texture_reserve(
+            800, 2, pool_limit_bytes=int(0.90 * H100_TOTAL_BYTES), device_total_bytes=H100_TOTAL_BYTES
+        )
+    message = str(err.value)
+    for part in (
+        "may grow to 71.68 GiB of this 79.65 GiB device",
+        "15.35 GiB RELION projector texture of a 800-pixel model at padding 2",
+        "reserve_for_refinement",
+        "XLA_PYTHON_CLIENT_MEM_FRACTION=0.7696",
+    ):
+        assert part in message
+    # The defaults read the running backend and the visible device; neither known means no check.
+    monkeypatch.setattr(reserve, "_backend_pool_limit_bytes", lambda: None)
+    monkeypatch.setattr(reserve, "_visible_device_total_bytes", lambda: H100_TOTAL_BYTES)
+    reserve.require_projector_texture_reserve(800, 2)
+    monkeypatch.setattr(reserve, "_backend_pool_limit_bytes", lambda: int(0.90 * H100_TOTAL_BYTES))
+    with pytest.raises(RuntimeError, match="leaves no room"):
+        reserve.require_projector_texture_reserve(800, 2)
+
+
 def test_reference_maps_follow_the_drivers_flags(tmp_path, monkeypatch):
     data_dir = tmp_path / "inputs"
     data_dir.mkdir()

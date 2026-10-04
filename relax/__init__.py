@@ -77,10 +77,7 @@ def _reserve_refinement_projector_memory(*, argv=None, orig_argv=None) -> str | 
     from relax.relion.geometry import PROJECTION_PADDING_FACTOR
 
     argv = sys.argv if argv is None else argv
-    record = reserve.reserve_for_reference_maps(
-        reserve.reference_maps_from_argv(argv[1:]),
-        padding_factor=PROJECTION_PADDING_FACTOR,
-    )
+    record = reserve.reserve_for_refinement(argv[1:], padding_factor=PROJECTION_PADDING_FACTOR)
     return None if record is None else reserve.format_reserve_record(record)
 
 

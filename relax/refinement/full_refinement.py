@@ -571,6 +571,14 @@ def main(command=None):
     # relax/__init__.py sized the XLA pool for the projector texture before the backend started.
     if relax._XLA_RESERVE_LOG_LINE is not None:
         logger.info("%s", relax._XLA_RESERVE_LOG_LINE)
+    # An entry point that started the backend without that reserve is refused here, not in the final pass.
+    from relax.helpers import xla_memory_reserve
+    from relax.relion.geometry import PROJECTION_PADDING_FACTOR
+
+    xla_memory_reserve.require_projector_texture_reserve(
+        xla_memory_reserve.model_box_from_map_headers(xla_memory_reserve.reference_maps_from_argv(sys.argv[1:])),
+        PROJECTION_PADDING_FACTOR,
+    )
 
     # Verify GPU
     devices = jax.devices()

@@ -15,13 +15,20 @@ JAX backend initialises: the texture of the largest local-search slab
 ``import recovar`` initialises the backend (``recovar.jax_config`` queries the
 devices), and ``import relax`` imports recovar, so the reserve has to run before
 either. ``relax/__init__.py`` (``_reserve_refinement_projector_memory``) calls
-:func:`reserve_for_reference_maps` for ``relax refine`` and ``relax class3d``
-before it imports recovar; other entry points call
-:func:`reserve_projector_texture_memory` with the model box before their first
-``jax``, ``recovar`` or ``relax`` import. This module therefore imports only the
-standard library (and ``mrcfile`` inside a function), so it can run while the
-package is still initialising, or be loaded by file path. Called after the
-backend has started, the reserve does nothing and says so in its record.
+:func:`reserve_for_refinement` for ``relax refine`` and ``relax class3d``
+before it imports recovar; any other entry point that runs a refinement in its
+own process (a benchmark runner, a notebook) calls :func:`reserve_for_refinement`
+with the refinement's arguments before its first ``jax``, ``recovar`` or ``relax``
+import. This module therefore imports only the standard library (and ``mrcfile``
+or ``jax`` inside a function), so it can run while the package is still
+initialising, or be loaded by file path. Called after the backend has started,
+the reserve does nothing and says so in its record.
+
+The pool cannot be shrunk once the backend runs, so the refinement driver calls
+:func:`require_projector_texture_reserve` at start-up: an entry point that
+skipped the reserve is refused in the first seconds instead of failing when the
+final pass opens its full-box texture (EMPIAR-10202, box 800, after 6 h 17 min
+in job 14963923, relax#17).
 """
 
 from __future__ import annotations
@@ -199,6 +206,64 @@ def reserve_for_reference_maps(paths, padding_factor: int) -> dict | None:
     """:func:`reserve_projector_texture_memory` for the box of the first existing map in ``paths``."""
 
     return reserve_projector_texture_memory(model_box_from_map_headers(paths), padding_factor)
+
+
+def reserve_for_refinement(argv, padding_factor: int) -> dict | None:
+    """The reserve for a refinement's command-line arguments (without the program name).
+
+    The one call an entry point makes before the JAX backend starts; see the module docstring.
+    """
+
+    return reserve_for_reference_maps(reference_maps_from_argv(argv), padding_factor)
+
+
+def _backend_pool_limit_bytes() -> int | None:
+    """The running GPU backend's XLA pool limit; ``None`` on CPU or when the backend does not report one."""
+
+    import jax
+
+    if jax.default_backend() != "gpu":
+        return None
+    limit = (jax.devices()[0].memory_stats() or {}).get("bytes_limit")
+    return None if not limit else int(limit)
+
+
+def require_projector_texture_reserve(
+    model_box: int | None,
+    padding_factor: int,
+    *,
+    pool_limit_bytes: int | None = None,
+    device_total_bytes: int | None = None,
+) -> None:
+    """Refuse a refinement whose running XLA pool leaves no room for its projector texture.
+
+    The pool limit must be no larger than the one :func:`xla_memory_fraction` gives for ``model_box``, which
+    is what :func:`reserve_for_refinement` sets. A run that reserved, or whose texture fits beside
+    recovar's default pool, passes unchanged. ``pool_limit_bytes`` and ``device_total_bytes`` default to
+    the running backend's and the visible device's.
+    """
+
+    if model_box is None:
+        return
+    pool_limit_bytes = _backend_pool_limit_bytes() if pool_limit_bytes is None else int(pool_limit_bytes)
+    device_total_bytes = _visible_device_total_bytes() if device_total_bytes is None else int(device_total_bytes)
+    if pool_limit_bytes is None or device_total_bytes is None:
+        return
+    fraction = xla_memory_fraction(model_box, padding_factor, device_total_bytes)
+    # The reserve writes the fraction with four decimals, and XLA rounds the limit to its own page size.
+    if pool_limit_bytes <= (fraction + 1e-3) * device_total_bytes:
+        return
+    texture = relion_projector_texture_bytes(model_box, padding_factor)
+    raise RuntimeError(
+        f"the XLA memory pool may grow to {pool_limit_bytes / 1024**3:.2f} GiB of this "
+        f"{device_total_bytes / 1024**3:.2f} GiB device, which leaves no room for the "
+        f"{texture / 1024**3:.2f} GiB RELION projector texture of a {int(model_box)}-pixel model at padding "
+        f"{int(padding_factor)} plus {_CONTEXT_AND_SCRATCH_BYTES / 1024**3:.1f} GiB context and scratch: the texture "
+        "is allocated outside the pool, and the final pass would fail after the pool has grown. The pool limit is "
+        "fixed when the JAX backend starts. Start the run with `relax refine` or `relax class3d`, or call "
+        "relax.helpers.xla_memory_reserve.reserve_for_refinement(arguments, padding_factor) before the first "
+        f"import of jax, recovar or relax (it sets {MEM_FRACTION_ENV}={fraction:.4f} for this run)."
+    )
 
 
 def format_reserve_record(record: dict) -> str:
