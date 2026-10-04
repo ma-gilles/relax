@@ -243,8 +243,8 @@ FSC, because removing it reaches the growth history and the snapshot format;
 and the class log priors, still computed before a continued Class3D run
 replaces them.
 
-Merged tree (main `d1ba3e8` at merge `e026a64`, then main `3136641` at merge
-`09dfcc8` with no refinement change): main's unconditional projector
+Merged tree (main `d1ba3e8` at merge `e026a64`, then main `4efac62` at merge
+`b06644c`, which adds two lines to `full_refinement.py`): main's unconditional projector
 build sits in `refine_single_volume` ahead of the M-step and removes one test
 that was not a mode test. The M-step decision and the counts above are
 unchanged by the merge (29 tests of `k_class_enabled`, 14 keyword forwards);
@@ -338,8 +338,8 @@ updates remain unchanged by these interface migrations.
 Both refactor packages are since merged with GitHub main
 `d1ba3e83406c81ab77891e25d1a775d4a818e674`: the first package at `1b73943`, the
 second at `e026a64`; the branch then takes main through
-`3136641b2ccc4240a71caa690d6cf0098f70cefd` (merge `09dfcc8`), which changes
-no refinement file. Main's changes after `80f2b2b` are kept as main wrote
+`4efac62a95353714bd6d120e38b595e99015ca52` (merge `b06644c`), whose only
+refinement change is the float32 matmul setting in `full_refinement.py`. Main's changes after `80f2b2b` are kept as main wrote
 them: the numbered iteration builds the scoring projector on every route (the
 "no projector scoring path" error is gone), the adaptive pass-2 grids come from
 `oversampling.prepare_adaptive_pass2_grids` with deferred fine rotations, and
@@ -405,7 +405,7 @@ primitives retain one implementation.
 
 The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
 show the scientific order, producer/consumer ownership and actual caller together.
-Source spans are 2731/1766 for numerical/command controllers;
+Source spans are 2731/1767 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
 scientific, real-data, memory and matched-GPU speed gates pass and delivery to main
