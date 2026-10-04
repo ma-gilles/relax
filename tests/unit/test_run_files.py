@@ -665,3 +665,17 @@ def test_keep_iterations_removes_older_run_files_only(tmp_path):
     assert "final_merged.mrc" in names and "run_it009_optimiser.star" in names
     with pytest.raises(ValueError, match="keep_iterations"):
         _writer(tmp_path, input_star, half_rows, keep_iterations=-1)
+
+
+def test_estimated_resolution_is_the_last_shell_before_data_vs_prior_drops_below_one():
+    """``rlnEstimatedResolution`` of a class follows MlModel::calculateTotalFourierCoverage (ml_model.cpp:1646-1657)."""
+
+    from types import SimpleNamespace
+
+    from relax.refinement.run_files import _estimated_resolution_angstrom as estimate
+
+    snapshot = SimpleNamespace(pixel_size=2.0, ori_size=64)
+    # Shells 0-3 are at or above 1, shell 4 is the first below: maxres 3, 128 A / 3. A later shell above 1 is ignored.
+    assert estimate(np.array([999.0, 8.0, 2.0, 1.0, 0.5, 3.0]), snapshot) == pytest.approx(128.0 / 3.0)
+    assert estimate(np.array([999.0, 8.0, 2.0]), snapshot) == pytest.approx(64.0)
+    assert estimate(np.array([999.0, 0.2, 5.0]), snapshot) == float("inf")

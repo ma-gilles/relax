@@ -425,6 +425,19 @@ def _resolution_columns(snapshot, n_shells):
     return shells, resolution, angstrom
 
 
+def _estimated_resolution_angstrom(data_vs_prior, snapshot) -> float:
+    """A class's ``rlnEstimatedResolution``: the last shell before ``data_vs_prior`` first drops below 1.
+
+    ``MlModel::calculateTotalFourierCoverage`` (ml_model.cpp:1646-1657): ``1 / getResolution(maxres)``, which is
+    infinite when shell 1 is already below 1.
+    """
+    below = np.flatnonzero(np.asarray(data_vs_prior, dtype=np.float64) < 1.0)
+    maxres = int(below[0]) - 1 if below.size else len(data_vs_prior) - 1
+    if maxres <= 0:
+        return float("inf")
+    return float(snapshot.pixel_size) * float(snapshot.ori_size) / maxres
+
+
 def _past_current_size(n_shells: int, current_size: int) -> np.ndarray:
     return np.arange(n_shells) > int(current_size) // 2
 
@@ -518,6 +531,10 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             else np.ones(int(snapshot.n_classes)) / int(snapshot.n_classes)
         )
         n_classes = int(snapshot.n_classes)
+        tau2 = np.asarray(snapshot.tau2_shells, dtype=np.float64)
+        dvp = np.asarray(snapshot.data_vs_prior, dtype=np.float64)
+        if not snapshot.k_class:
+            tau2, dvp = _relion_spectra_past_current_size(tau2, dvp, snapshot)
         text.append(
             _loop_block(
                 "model_classes",
@@ -526,13 +543,13 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
                     "rlnClassDistribution": class_weights,
                     "rlnAccuracyRotations": snapshot.acc_rot_per_class,
                     "rlnAccuracyTranslationsAngst": snapshot.acc_trans_per_class_angstrom,
+                    "rlnEstimatedResolution": [
+                        _estimated_resolution_angstrom(dvp[k] if snapshot.k_class else dvp, snapshot)
+                        for k in range(n_classes)
+                    ],
                 },
             )
         )
-        tau2 = np.asarray(snapshot.tau2_shells, dtype=np.float64)
-        dvp = np.asarray(snapshot.data_vs_prior, dtype=np.float64)
-        if not snapshot.k_class:
-            tau2, dvp = _relion_spectra_past_current_size(tau2, dvp, snapshot)
         for k in range(n_classes):
             tau2_k = tau2[k] if snapshot.k_class else tau2[h]
             dvp_k = dvp[k] if snapshot.k_class else dvp
