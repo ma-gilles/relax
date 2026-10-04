@@ -55,6 +55,11 @@ class ReferenceModel:
     tau2_per_half: list
 
 
+def shared_tau2_per_half(tau2) -> list:
+    """Both halves score with the one shared tau2: the pair refers to that array twice."""
+    return [tau2, tau2]
+
+
 def initialize_reference_model(
     half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, log
 ):
@@ -81,7 +86,7 @@ def initialize_reference_model(
         log.info("Initialized exact per-half K=1 tau2 priors")
     else:
         mean_variance = initial_mean_variance
-        mean_variance_per_half = [mean_variance, mean_variance]
+        mean_variance_per_half = shared_tau2_per_half(mean_variance)
     return ReferenceModel(maps=half_maps, tau2=mean_variance, tau2_per_half=mean_variance_per_half)
 
 
@@ -93,7 +98,7 @@ def reference_model_from_snapshot(snapshot, volume_shape, *, k_class_enabled, dt
     if k_class_enabled:
         maps[1] = maps[0]
     tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
-    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=[tau2, tau2])
+    return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=shared_tau2_per_half(tau2))
 
 
 class HostTau2(NamedTuple):
@@ -140,7 +145,7 @@ def _updated_mean_variance_per_half(
             jnp.asarray(updated_mean_variance_per_half[0]),
             jnp.asarray(updated_mean_variance_per_half[1]),
         ]
-    return [shared_mean_variance, shared_mean_variance]
+    return shared_tau2_per_half(shared_mean_variance)
 
 
 def _normalize_class_log_priors(n_classes: int, class_log_priors=None) -> np.ndarray:

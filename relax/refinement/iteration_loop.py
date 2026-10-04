@@ -174,6 +174,7 @@ from relax.refinement.mean_helpers import (
     reconstruct_unregularized_k1_halfmaps,
     reference_model_from_snapshot,
     share_kclass_volume_signs,
+    shared_tau2_per_half,
     taper_first_cc_class_prior,
     taper_first_cc_k1_prior,
 )
@@ -1206,11 +1207,7 @@ def refine_single_volume(
         if not parity.use_per_half_mean_variance:
             # State-swap diagnostics historically replace the one shared tau2.
             # Do not leave the scorer pointing at pre-swap aliases.
-            reference_model.tau2_per_half = _updated_mean_variance_per_half(
-                reference_model.tau2,
-                reference_model.tau2_per_half,
-                use_per_half_mean_variance=False,
-            )
+            reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
         if state_swap_target_this_iteration:
             history.state_swap_probe_applied_relion_iterations.append(int(init_relion_iteration) + int(iteration) + 1)
         if frozen_initial_scoring_state is not None and iteration == 0:
@@ -1999,7 +1996,7 @@ def refine_single_volume(
                 time.time() - _t_unreg_first,
             )
             reference_model.tau2 = mean_signal_variance
-            reference_model.tau2_per_half = [reference_model.tau2, reference_model.tau2]
+            reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
 
             # --- Free previous-iteration means to reclaim GPU memory ---
             # (previous_means already snapshotted earlier for FSC sign alignment)
@@ -2243,7 +2240,7 @@ def refine_single_volume(
             reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
             mean_signal_variance = _copy_first_class(mean_signal_variance)
             reference_model.tau2 = mean_signal_variance
-            reference_model.tau2_per_half = [reference_model.tau2, reference_model.tau2]
+            reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
             mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
             data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
             history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
