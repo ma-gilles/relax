@@ -519,3 +519,12 @@ def test_idle_local_gpu_skips_gpus_outside_the_session_subset(monkeypatch):
     monkeypatch.setattr(run_test_tier.subprocess, "check_output", fake_check_output)
     monkeypatch.setenv("RELAX_LOCAL_GPUS", "3")
     assert run_test_tier.idle_local_gpu() == "GPU-three"
+
+
+def test_cpu_merge_units_name_existing_tests():
+    """A renamed or deleted test must leave the tier's CPU merge list: pytest fails the whole item on one stale id."""
+    for node in run_test_tier.CPU_MERGE_UNITS:
+        path, *parts = node.split("::")
+        source = (REPO_ROOT / path).read_text()
+        for part in parts:
+            assert f"def {part}(" in source or f"class {part}" in source, node

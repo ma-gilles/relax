@@ -124,7 +124,7 @@ CPU_MERGE_UNITS = (
     "tests/unit/test_k_class_joint_semantics.py",
     "tests/unit/test_refine_relion_mode.py::TestRelionModeSmokeTest::test_relion_sigma_offset_prior_center_matches_store_weighted_sums_units",
     "tests/unit/test_refine_relion_mode.py::test_relion_mode_writes_absolute_translations_from_previous_offset",
-    "tests/unit/test_refine_relion_mode.py::test_relion_mode_dense_k_class_writes_absolute_translations_from_previous_offset",
+    "tests/unit/test_refine_relion_mode.py::test_relion_mode_k_class_writes_absolute_translations_from_previous_offset",
 )
 SWEEP_EXCLUDE = {FAST, E2E}
 # Files that change process-wide JAX state at import and must not share a pytest process.
