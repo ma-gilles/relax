@@ -16,14 +16,14 @@
   },
   "ceilings": {
     "recorded_date": "2026-10-04",
-    "source_commit": "277749fec5c8fab7204c0e16407895d580ab7bcd",
+    "source_commit": "f515508f4f52cb376b5cd68890b0c508ee400b0a",
     "totals": {
-      "maximum_function_line_span": 2731,
+      "maximum_function_line_span": 2720,
       "maximum_parameter_count": 33,
       "large_argument_function_count": 26,
       "very_large_argument_function_count": 4,
-      "physical_lines": 22600,
-      "nonblank_noncomment_lines": 19800
+      "physical_lines": 22300,
+      "nonblank_noncomment_lines": 19500
     }
   }
 }
