@@ -23,8 +23,8 @@ arithmetic on the same CPU; it is a check for move-only commits, not a merge gat
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
-emulation; sealed sampling state; captured RELION projectors; GPU operation order, peak memory and
-array lifetimes.
+emulation; captured RELION projectors; a sealed sampling state beyond one global iteration; GPU
+operation order, peak memory and array lifetimes.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ NOT_COVERED = (
     "symmetry other than C1",
     "tomography",
     "multi-shape optics halves",
-    "follower-scale emulation, sealed sampling state, captured RELION projectors",
+    "follower-scale emulation, captured RELION projectors; a sealed sampling state beyond one global iteration",
     "GPU operation order, peak memory and array lifetimes",
 )
 # A log template containing one of these formats a wall time: its template is kept, its text dropped.
@@ -322,6 +322,10 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_consistency_counting", f"K={k} with the summed noise count and both pair countings set to once, "
             "current sizes 4, 6, 8 of a box of 8", n_classes=k, join=0.0, consistency=counting, current_sizes=(4, 6, 8),
             max_iter=3, converge_after=3, dump=False, writer=True)
+    for k in (1, 2):
+        add(f"k{k}_sealed_sampling", f"K={k}, one iteration on a sealed sampling state (captured directions, psi "
+            "angles, translations and sizes), adaptive oversampling 1", n_classes=k, join=0.0, sealed=True,
+            oversampling=1, max_iter=1, converge_after=None, dump=False)
     return cases
 
 
@@ -354,6 +358,8 @@ MUTATIONS = (
      "the shells-to-pixel-row noise expansion is doubled", True),
     ("noise_summed_count_dropped", 'if consistency.noise_shell_count == "summed" else None,', 'if consistency.noise_shell_count == "never" else None,',
      "the summed noise count is never forwarded to the noise update", True),
+    ("sealed_rotation_ids_dropped", "if sealed_sampling_state is None or use_local:", "if True:",
+     "a sealed capture's rotation ids never reach the scorer", True),
     ("shared_tau2_half2_doubled", "return [tau2, tau2]", "return [tau2, tau2 * 2]",
      "the shared tau2 pair differs between halves", True),
     ("next_sampling_star_skipped", "if not state.has_converged:\n_next_sampling_star", "if False:\n_next_sampling_star",
@@ -631,7 +637,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
                  iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
                  seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
-                 consistency=None, current_sizes=None):
+                 consistency=None, current_sizes=None, sealed=False):
         first_pass = None
         if continued:
             first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
@@ -764,6 +770,22 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             debug_fields["assert_initial_scoring_state_immutable"] = True
         if dump:
             debug_fields["save_intermediates_dir"] = dump_dir
+        if sealed:
+            # A schema-v3 sealed sampling state: three order-2 directions, two psi angles, three translations.
+            debug_fields["sealed_sampling_state"] = {
+                "consumer_relion_iteration": 1,
+                "directions_ipix": np.asarray([7, 19, 103], dtype=np.int64),
+                "rot_angles_deg": np.asarray([10.0, 20.0, 30.0], dtype=np.float64),
+                "tilt_angles_deg": np.asarray([40.0, 50.0, 60.0], dtype=np.float64),
+                "psi_angles_deg": np.asarray([0.0, 90.0], dtype=np.float64),
+                "translations_x_angstrom": np.asarray([-1.0, 0.0, 1.0], dtype=np.float64),
+                "translations_y_angstrom": np.asarray([0.0, 1.0, 0.0], dtype=np.float64),
+                "healpix_order_original": 2, "psi_step_deg": 90.0,
+                "offset_range_angstrom": 1.0, "offset_step_angstrom": 1.0,
+                "perturbation_factor": 0.5, "random_perturbation": 0.125,
+                "sigma_rot_deg": 0.0, "sigma_psi_deg": 0.0,
+                "coarse_size": 4, "current_size": 6,
+            }
         if debug_fields:
             extra["debug"] = refinement_options.EngineDebugOptions(**debug_fields)
         if perturb is not None:
