@@ -89,8 +89,8 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
 
     namespace = dict(
         NormScaleCorrectionReport=NormScaleCorrectionReport, np=np,
-        noise_stats_per_half=None if missing else [SimpleNamespace(wsum_norm_correction=object()),
-                                                  SimpleNamespace(wsum_norm_correction=None)],
+        per_half=SimpleNamespace(noise_stats=None if missing else [SimpleNamespace(wsum_norm_correction=object()),
+                                                  SimpleNamespace(wsum_norm_correction=None)]),
         experiment_datasets=[half.dataset for half in halves], halves=halves,
         follower_setup=setup, relion_firstiter_cc_this_iter=False, tomo_halves=False,
         scoring_dtype=np.float32, iteration=2, current_size=12, logger=logging.getLogger(__name__),

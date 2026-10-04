@@ -1735,23 +1735,12 @@ def refine_single_volume(
         # Track the rotation grids used for pose extraction.
         # When adaptive oversampling is active, ha_k indices refer to the
         # oversampled grid (from pass 2), not trial_grid.rotations.
+        # ``per_half.coarse_ha`` holds the coarse-grid assignments (always indexed into
+        # trial_grid.rotations, even when adaptive oversampling is used).
         per_half = PerHalfOutputs()
+        # The assignments outlive the iteration: the result, the next accuracy estimate and the final pass read them.
         hard_assignments = per_half.hard_assignments
         class_assignments = per_half.class_assignments
-        class_posterior_per_half = per_half.class_posterior
-        class_full_posterior_per_half = per_half.class_full_posterior
-        max_posterior_per_half = per_half.max_posterior
-        rotation_posterior_per_half = per_half.rotation_posterior
-        class_rotation_posterior_per_half = per_half.class_rotation_posterior
-        pose_rotations = per_half.pose_rotations  # rotations to use with ha for poses
-        pose_rotation_eulers = per_half.pose_rotation_eulers
-        best_pose_rotations = per_half.best_pose_rotations
-        best_pose_rotation_eulers = per_half.best_pose_rotation_eulers
-        best_pose_translations = per_half.best_pose_translations
-        translation_search_bases = per_half.translation_search_bases
-        # Coarse-grid assignments for local search tracking (always indexed
-        # into trial_grid.rotations, even when adaptive oversampling is used).
-        coarse_ha = per_half.coarse_ha
         if use_adaptive:
             # --- TWO-PASS ADAPTIVE OVERSAMPLING (RELION parity) ---
             # Pass 1: coarse E-step at reduced resolution to find
@@ -1774,12 +1763,6 @@ def refine_single_volume(
                 state.adaptive_oversampling,
                 (f"{float(particle_diameter_ang):.1f} A" if particle_diameter_ang is not None else "box_size"),
             )
-
-        # D.2: per-class noise stats (K-tuple of NoiseStats per half) for the
-        # per-class sigma_offset C1 update at end-of-iter. K=1 paths leave
-        # this None; K-class paths populate from k_class_result.noise_stats.
-        noise_stats_per_half = per_half.noise_stats
-        noise_stats_per_half_per_class = per_half.noise_stats_per_class
 
         projectors = [None, None]
         captured_projector_state = replay_result.relion_projector_state
@@ -2006,7 +1989,7 @@ def refine_single_volume(
         if k_class_enabled:
             class_mixture = class_mixture_from_weights(
                 _class_weights_from_posterior(
-                    class_posterior_per_half,
+                    per_half.class_posterior,
                     n_classes,
                     class_mixture.weights,
                 )
@@ -2014,7 +1997,7 @@ def refine_single_volume(
             history.record_class_weights(
                 class_mixture.weights,
                 _class_weights_from_posterior(
-                    class_full_posterior_per_half,
+                    per_half.class_full_posterior,
                     n_classes,
                     class_mixture.weights,
                 ),
@@ -2117,11 +2100,11 @@ def refine_single_volume(
 
         history.significant_counts.append(significance.recorded)
 
-        history.record_rotation_posterior(rotation_posterior_per_half)
-        if all(rot_sum is not None for rot_sum in rotation_posterior_per_half):
+        history.record_rotation_posterior(per_half.rotation_posterior)
+        if all(rot_sum is not None for rot_sum in per_half.rotation_posterior):
             if not k_class_enabled:
                 learned_priors = learn_k1_direction_priors(
-                    rotation_posterior_per_half,
+                    per_half.rotation_posterior,
                     direction_prior_order=direction_prior_healpix_order,
                     expected_rotation_count=rotation_grid_size(
                         direction_prior_healpix_order,
@@ -2143,11 +2126,11 @@ def refine_single_volume(
                     trial_grid.rotations.shape[0] == exhaustive_grid_size
                     and all(
                         rot_sum is not None
-                        for rot_sum in class_rotation_posterior_per_half
+                        for rot_sum in per_half.class_rotation_posterior
                     )
                 ):
                     learned_priors = learn_class_direction_priors(
-                        class_rotation_posterior_per_half,
+                        per_half.class_rotation_posterior,
                         n_classes=n_classes,
                         healpix_order=coarse_grids.rotation_grid.healpix_order,
                         dtype=scoring_dtype,
@@ -2254,7 +2237,7 @@ def refine_single_volume(
                 noise_variance_per_half=noise_model.variance_per_half,
                 mean_variance=reference_model.tau2,
                 hard_assignments=hard_assignments,
-                coarse_ha=coarse_ha,
+                coarse_ha=per_half.coarse_ha,
                 effective_rotations=trial_grid.rotations,
                 current_translations=coarse_grids.translations,
                 use_local=use_local,
@@ -2268,26 +2251,22 @@ def refine_single_volume(
             )
 
         # --- Compute ave_Pmax from the actual E-step maxima ---
-        if any(pmax is None for pmax in max_posterior_per_half):
+        if any(pmax is None for pmax in per_half.max_posterior):
             raise RuntimeError(
                 "RELION mode expected per-image posterior maxima from the EM engine",
             )
         combined_max_posterior, ave_pmax, ave_pmax_denominator = _relion_optimizer_average_pmax(
-            max_posterior_per_half,
-            _relion_pmax_normalization_mass_per_half(
-                k_class_enabled=k_class_enabled,
-                class_posterior_per_half=class_posterior_per_half,
-                noise_stats_per_half=noise_stats_per_half,
-            ),
+            per_half.max_posterior,
+            _relion_pmax_normalization_mass_per_half(per_half, k_class_enabled=k_class_enabled),
         )
         if k_class_enabled:
             logger.info(
                 "Class3D optimizer Pmax: value=%.9f numerator=%.9f "
                 "half1_mstep_posterior_mass=%.9f half1_particle_count=%d",
                 ave_pmax,
-                float(np.sum(np.asarray(max_posterior_per_half[0]), dtype=np.float64)),
+                float(np.sum(np.asarray(per_half.max_posterior[0]), dtype=np.float64)),
                 ave_pmax_denominator,
-                int(np.asarray(max_posterior_per_half[0]).size),
+                int(np.asarray(per_half.max_posterior[0]).size),
             )
         history.record_pmax(ave_pmax, ave_pmax_denominator, combined_max_posterior.copy())
         history.record_pass2_engines(take_pass_engines())
@@ -2295,9 +2274,9 @@ def refine_single_volume(
 
         # --- Track per-image best assignments for convergence detection ---
         # Combine both half-sets' assignments into a single array for
-        # update_refinement_state.  Use coarse_ha (indexed into
+        # update_refinement_state.  Use per_half.coarse_ha (indexed into
         # trial_grid.rotations) for consistent convergence tracking.
-        current_combined_ha = concatenate_assignments(coarse_ha)
+        current_combined_ha = concatenate_assignments(per_half.coarse_ha)
         previous_combined_ha = concatenate_assignments_or_none(previous_assignments)
 
         # tau2 was already updated BEFORE the Wiener solve (matching RELION's
@@ -2392,10 +2371,10 @@ def refine_single_volume(
                 rotation_eulers_deg_per_half=[poses.eulers_deg for poses in pose_update.current],
                 relative_translations_pixels_per_half=[poses.relative_translations_pixels for poses in pose_update.current],
                 absolute_translations_pixels_per_half=[poses.translations_pixels for poses in pose_update.current],
-                max_posterior_per_half=max_posterior_per_half,
+                max_posterior_per_half=per_half.max_posterior,
                 significant_counts_per_half=significance.per_half,
                 hard_assignments_per_half=hard_assignments,
-                coarse_hard_assignments_per_half=coarse_ha,
+                coarse_hard_assignments_per_half=per_half.coarse_ha,
                 original_image_indices_per_half=[_source_image_indices(ds) for ds in experiment_datasets],
             )
 
@@ -2423,7 +2402,7 @@ def refine_single_volume(
             current_size=current_size,
         )
         noise_update = update_posterior_noise_variance(
-            noise_stats_per_half,
+            per_half.noise_stats,
             noise_model,
             image_geometry.image_shape,
             k_class_enabled=k_class_enabled,
@@ -2441,14 +2420,14 @@ def refine_single_volume(
 
         correction_report = NormScaleCorrectionReport()
         can_update_norm_scale = (
-            noise_stats_per_half is not None
+            per_half.noise_stats is not None
             and all(
                 stats_k is not None
                 and (
                     getattr(stats_k, "wsum_norm_correction", None) is not None
                     or int(experiment_datasets[_half_idx].n_units) == 0
                 )
-                for _half_idx, stats_k in enumerate(noise_stats_per_half)
+                for _half_idx, stats_k in enumerate(per_half.noise_stats)
             )
         )
         if follower_setup.follower_scale_state is not None and not can_update_norm_scale:
@@ -2464,7 +2443,7 @@ def refine_single_volume(
                 for _half_idx, group_ids_k in enumerate([particle_half.group_ids for particle_half in halves])
             ]
             norm_scale_update = prepare_norm_scale_update(
-                noise_stats_per_half,
+                per_half.noise_stats,
                 halves,
                 group_ids_per_half=group_ids_per_half,
                 firstiter_cc=relion_firstiter_cc_this_iter,
@@ -2487,7 +2466,7 @@ def refine_single_volume(
             else:
                 correction_report.group_scale_corrections_per_half = _update_relion_follower_corrections(
                     follower_setup,
-                    noise_stats_per_half=noise_stats_per_half,
+                    noise_stats_per_half=per_half.noise_stats,
                     norm_scale_update=norm_scale_update,
                     relion_half_inputs=halves,
                     relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
@@ -2542,9 +2521,8 @@ def refine_single_volume(
         # Posterior-weighted RELION update with fallback to hard-assignment
         # proxy; see ``update_c1_sigma_offset_from_posterior`` for details.
         sigma_offset_result = update_c1_sigma_offset_from_posterior(
-            noise_stats_per_half=noise_stats_per_half,
-            noise_stats_per_half_per_class=noise_stats_per_half_per_class,
-            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
+            per_half,
+            sigma_offset,
             n_classes=n_classes,
             state_fallback_offsets_angstrom=state.current_changes_optimal_offsets_angstrom,
             offset_dims=3 if tomo_halves else 2,
@@ -2577,10 +2555,10 @@ def refine_single_volume(
         )
 
         # Save assignments for next iteration's change tracking.
-        # Use coarse_ha (indexed into trial_grid.rotations/base rotation grid)
+        # Use per_half.coarse_ha (indexed into trial_grid.rotations/base rotation grid)
         # so that local search and convergence detection work correctly
         # regardless of whether adaptive oversampling was used.
-        previous_assignments = [ha.copy() if ha is not None else None for ha in coarse_ha]
+        previous_assignments = [ha.copy() if ha is not None else None for ha in per_half.coarse_ha]
         previous_class_assignments = [cls.copy() if cls is not None else None for cls in class_assignments]
         _parity_dump.mark_stage(iteration, "convergence")
 
@@ -2630,7 +2608,7 @@ def refine_single_volume(
                 direction_priors=direction_priors,
                 half_inputs=halves,
                 class_assignments=class_assignments if k_class_enabled else None,
-                max_posterior=max_posterior_per_half,
+                max_posterior=per_half.max_posterior,
                 significant_counts=significance.per_half,
                 avg_norm_correction=correction_report.avg_norm_correction_per_half,
             )
@@ -2703,7 +2681,6 @@ def refine_single_volume(
         Ft_y_combined = Ft_ctf_combined = None
         unreg_means = previous_means = None
         tau2_update_details_per_half = None
-        noise_stats_per_half = noise_stats_per_half_per_class = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None
         if parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"):

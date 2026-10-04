@@ -197,8 +197,9 @@ class PerHalfOutputs:
     Class counts and class/rotation summaries live inside their halfset slot.
     Unpopulated slots are ``None``; an empty scored half can hold empty arrays.
 
-    ``frozen=True`` prevents rebinding fields. The controller deliberately aliases
-    these lists and records complete scoring results with ``update_from``.
+    ``frozen=True`` prevents rebinding fields. The controller reads the lists through
+    this record, keeps the two assignment lists past the iteration, and records
+    complete scoring results with ``update_from``.
     """
 
     hard_assignments: list = field(default_factory=lambda: [None, None])

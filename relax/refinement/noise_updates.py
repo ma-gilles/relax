@@ -195,15 +195,17 @@ def update_class_sigma_offset_from_posterior(
 
 
 def update_c1_sigma_offset_from_posterior(
+    per_half,
+    sigma_offset,
     *,
-    noise_stats_per_half,
-    noise_stats_per_half_per_class,
-    current_sigma_offset_angstrom_per_half,
     n_classes: int,
     state_fallback_offsets_angstrom: float,
     offset_dims: int = 2,
 ) -> SigmaOffsetUpdateResult:
     """The one remaining mode decision of the ``sigma_offset`` update.
+
+    Reads from ``per_half`` (the iteration's ``PerHalfOutputs``): ``noise_stats`` and, for Class3D,
+    ``noise_stats_per_class``; from ``sigma_offset`` (the current ``SigmaOffset``): ``per_half_angstrom``.
 
     Class3D shares one pooled value between the halves and reports per-class
     values (``update_class_sigma_offset_from_posterior``); K=1 updates each
@@ -213,16 +215,16 @@ def update_c1_sigma_offset_from_posterior(
 
     if n_classes > 1:
         return update_class_sigma_offset_from_posterior(
-            noise_stats_per_half=noise_stats_per_half,
-            noise_stats_per_half_per_class=noise_stats_per_half_per_class,
-            current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+            noise_stats_per_half=per_half.noise_stats,
+            noise_stats_per_half_per_class=per_half.noise_stats_per_class,
+            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
             n_classes=n_classes,
             state_fallback_offsets_angstrom=state_fallback_offsets_angstrom,
             offset_dims=offset_dims,
         )
     return update_k1_sigma_offset_from_posterior(
-        noise_stats_per_half=noise_stats_per_half,
-        current_sigma_offset_angstrom_per_half=current_sigma_offset_angstrom_per_half,
+        noise_stats_per_half=per_half.noise_stats,
+        current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
         state_fallback_offsets_angstrom=state_fallback_offsets_angstrom,
         offset_dims=offset_dims,
     )

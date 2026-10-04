@@ -148,7 +148,7 @@ def test_actual_controller_releases_previous_captured_maps_before_copying_new_ma
         mean_signal_variance_shells=inputs['tau2_shells'], previous_data_vs_prior_for_scheduling=inputs['data_vs_prior'],
         noise_model=SimpleNamespace(radial_per_half=inputs['noise_shells']), fsc=None,
         class_mixture=class_mixture_from_weights(inputs['class_weights']), direction_priors=inputs['direction_priors'], halves=inputs['half_inputs'],
-        class_assignments=inputs['class_assignments'], max_posterior_per_half=inputs['max_posterior'],
+        class_assignments=inputs['class_assignments'], per_half=SimpleNamespace(max_posterior=inputs['max_posterior']),
         significance=SimpleNamespace(per_half=inputs['significant_counts']),
         correction_report=SimpleNamespace(avg_norm_correction_per_half=inputs['avg_norm_correction']),
         snapshot=old,
