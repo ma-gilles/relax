@@ -98,6 +98,7 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
   `docs/development/refactor_principles.md`.
 - Conventions shared with RECOVAR (numerical source, CUDA and FFI, documentation): RECOVAR's own guides,
   `recovar/CLAUDE.md`, `recovar/cuda/CLAUDE.md` and `docs/CLAUDE.md` in its repository.
+- PPCA ab initio, the four development axes: `docs/development/ppca_optimizer_axes.md`.
 - State of the work: `docs/development/em_status.md`. It is a ledger of more than 100 KB: search it for your topic.
 - Polar as a Slurm target: `docs/development/polar_agents.md`.
 - Planned, not present yet: a per-change check command, an evidence store, a short status page, project
