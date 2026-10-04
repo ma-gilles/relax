@@ -34,8 +34,9 @@ from relax.helpers.expected_accuracy import _expected_accuracy_class_ids
 from relax.helpers.orientation_priors import relion_local_search_sigmas, relion_translation_search_base
 from relax.helpers.resolution import (
     clamp_relion_coarse_image_size,
+    class_current_resolution_shell,
     compute_coarse_image_size,
-    relion_current_resolution_shell,
+    k1_current_resolution_shell,
     shell_index_to_resolution_angstrom,
 )
 from relax.refinement import final_reconstruction
@@ -600,9 +601,8 @@ def run_final_all_data(
             float(np.asarray(final_data_vs_prior)[0, 1]) if np.asarray(final_data_vs_prior).shape[-1] > 1 else float("nan"),
             time.time() - _t_final_tau2,
         )
-        final_res_shell = relion_current_resolution_shell(
-            final_data_vs_prior,
-            k_class_enabled=True, current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
+        final_res_shell = class_current_resolution_shell(
+            final_data_vs_prior, current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
         )
         state.previous_resolution = state.current_resolution
         state.current_resolution = shell_index_to_resolution_angstrom(
@@ -701,9 +701,9 @@ def run_final_all_data(
             float(np.asarray(final_iter_fsc)[1]) if np.asarray(final_iter_fsc).size > 1 else float("nan"),
             time.time() - _t_final_tau2,
         )
-        final_res_shell = relion_current_resolution_shell(
+        final_res_shell = k1_current_resolution_shell(
             np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype),
-            k_class_enabled=False, current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
+            current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
         )
         state.previous_resolution = state.current_resolution
         state.current_resolution = shell_index_to_resolution_angstrom(

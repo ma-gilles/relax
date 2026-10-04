@@ -267,26 +267,29 @@ def class_resolution_shells(data_vs_prior, *, grid_size):
     ]
 
 
-def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_size, grid_size, dtype=np.float32):
-    """Return RELION's ``updateCurrentResolution`` shell from a DVP curve.
+def k1_current_resolution_shell(data_vs_prior, *, current_size, grid_size, dtype=np.float32):
+    """Return RELION's ``updateCurrentResolution`` shell from a K=1 DVP curve.
 
     Mirrors ``MlOptimiser::updateCurrentResolution`` (relion/src/
     ml_optimiser.cpp:6753): the last shell before data_vs_prior drops below
-    1, maximised over classes. Split-half auto-refine (K=1) also applies the
-    high-resolution recheck. ``data_vs_prior`` is ``(n_shells,)`` for K=1 and
-    ``(n_classes, n_shells)`` for K>1. Shells beyond ``current_size`` are
+    1, with split-half auto-refine's high-resolution recheck.
+    ``data_vs_prior`` is ``(n_shells,)``. Shells beyond ``current_size`` are
     unavailable and zeroed first. See docs/math/relion_refinement_algorithm.md
     section 7 for the split-half and final all-data curves.
     """
-    dvp = _zero_shells_past_current_size(
-        data_vs_prior,
-        current_size=current_size,
-        grid_size=grid_size,
-        dtype=dtype,
-    )
-    if k_class_enabled:
-        return max(class_resolution_shells(dvp, grid_size=grid_size))
+    dvp = _zero_shells_past_current_size(data_vs_prior, current_size=current_size, grid_size=grid_size, dtype=dtype)
     return resolution_from_data_vs_prior(dvp, ori_size=grid_size, allow_high_res_recovery=True)
+
+
+def class_current_resolution_shell(data_vs_prior, *, current_size, grid_size, dtype=np.float32):
+    """Return RELION's ``updateCurrentResolution`` shell from the classes' DVP curves.
+
+    ``data_vs_prior`` is ``(n_classes, n_shells)``. Shells beyond
+    ``current_size`` are zeroed first; the result is the maximum over classes
+    of each class's shell (``class_resolution_shells``, no recheck).
+    """
+    dvp = _zero_shells_past_current_size(data_vs_prior, current_size=current_size, grid_size=grid_size, dtype=dtype)
+    return max(class_resolution_shells(dvp, grid_size=grid_size))
 
 
 def initialize_resolution_from_fsc(

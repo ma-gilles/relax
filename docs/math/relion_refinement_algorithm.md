@@ -823,7 +823,7 @@ the actual returned fields instead of assuming one fixed four-item tuple.
 
 `convergence_state.current_resolution` follows RELION's
 `updateCurrentResolution`: the last shell before data_vs_prior drops below 1,
-computed by `relion_current_resolution_shell` in
+computed by `k1_current_resolution_shell` and `class_current_resolution_shell` in
 [`resolution.py`](../../relax/helpers/resolution.py). In numbered split-half
 iterations the K=1 curve is the half-map SSNR `fsc / (1 - fsc)`, so the
 crossing is at FSC 0.5. RELION also runs the update after the final all-data
