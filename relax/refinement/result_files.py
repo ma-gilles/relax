@@ -73,7 +73,8 @@ def final_pass_result_fields(
     accuracy_status,
     prior_details,
     fsc,
-    k_class_enabled,
+    prior_weight_combination,
+    class_assignments,
     gridding_kernel,
 ) -> dict:
     """Format final-pass diagnostics, including legacy sentinels and host casts.
@@ -81,6 +82,8 @@ def final_pass_result_fields(
     The controller retains scores, sampling and reconstruction scratch while this
     immediate-return formatter runs. Engine recordings are consumed in the same
     return-field order as the original finalization boundary.
+    ``prior_weight_combination`` names the mode's prior rule ("sum" for K=1, "class_iref" for
+    Class3D); ``class_assignments`` is the per-half class assignments, None for K=1.
     """
     return {
         "final_all_data_ran": True,
@@ -121,11 +124,11 @@ def final_pass_result_fields(
             if prior_details is None
             else np.asarray(prior_details["ssnr_shells"], dtype=np.float64)
         ),
-        "tau2_weight_combination_final_all_data": "class_iref" if k_class_enabled else "sum",
+        "tau2_weight_combination_final_all_data": prior_weight_combination,
         "final_all_data_best_rotation_eulers": scores.best_pose_rotation_eulers,
         "final_all_data_best_translations": scores.best_pose_translations,
         "final_all_data_max_posterior": scores.max_posterior,
-        "final_all_data_class_assignments": scores.class_assignments if k_class_enabled else None,
+        "final_all_data_class_assignments": class_assignments,
         "final_all_data_sampling_perturbation": sampling.random_perturbation,
         "final_all_data_sampling_perturbation_applied": (sampling.perturbation is not None),
         "final_all_data_sampling_relion_iteration": sampling.relion_iteration,

@@ -555,7 +555,8 @@ def run_final_all_data(
     final_reconstruct_t0 = time.time()
     # The one mode decision of the final reconstruction. Each branch is its mode's whole sequence over the
     # steps of final_reconstruction.py, in order: accumulators, prior, resolution, maps. Both bind final_maps,
-    # final_tau2_update_details, final_iter_fsc, final_unfiltered_means_for_output and final_model_fields.
+    # final_tau2_update_details, final_iter_fsc, final_unfiltered_means_for_output, final_model_fields and
+    # the two mode operands of final_pass_result_fields.
     #
     # RELION calls updateCurrentResolution after the final all-data
     # iteration too (ml_optimiser_mpi.cpp:4329), from that iteration's
@@ -630,8 +631,10 @@ def run_final_all_data(
         final_tau2_update_details = final_class_priors.details
         final_iter_fsc = None
         final_unfiltered_means_for_output = None
+        final_prior_weight_combination = "class_iref"
+        final_class_assignments = final_outs.class_assignments
         final_model_fields = _model_result_fields(
-            final_maps.merged, final_maps.halves, final_maps.halves[0], class_weights, final_outs.class_assignments,
+            final_maps.merged, final_maps.halves, final_maps.halves[0], class_weights, final_class_assignments,
         )
     else:
         # K=1: unfiltered half maps, optional low-resolution join, release of the pass outputs' references;
@@ -734,6 +737,8 @@ def run_final_all_data(
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
+        final_prior_weight_combination = "sum"
+        final_class_assignments = None
         final_model_fields = _model_result_fields(final_maps.merged, final_maps.halves, None, None, None)
     logger.info(
         "RELION final all-data reconstruction done: wall=%.1fs",
@@ -771,7 +776,8 @@ def run_final_all_data(
             accuracy_status=final_expected_accuracy_status,
             prior_details=final_tau2_update_details,
             fsc=final_iter_fsc,
-            k_class_enabled=k_class_enabled,
+            prior_weight_combination=final_prior_weight_combination,
+            class_assignments=final_class_assignments,
             gridding_kernel=reconstruction_settings.gridding_kernel,
         ),
     }
