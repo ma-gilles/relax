@@ -2,13 +2,15 @@
 
 The root guide and `relax/AGENTS.md` apply. Rules: the short list in
 `docs/development/refactor_rules.md`, the full record in `docs/development/refactor_principles.md`.
+A refactor slice follows `docs/development/refactor_procedure.md`; `docs/development/module_template.md` uses
+this directory as its worked example and lists where it still falls short.
 Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## What this directory owns
 
 | Module | Owns |
 | --- | --- |
-| `full_refinement.py` | `relax refine` and `relax class3d`: `run_from_command_line`, `main` (one 1,767-line function) |
+| `full_refinement.py` | `relax refine` and `relax class3d`: `run_from_command_line`, `main` (one 1,791-line function) |
 | `command_options.py`, `refinement_options.py` | the flags, the RELION GUI job defaults, input-mode admission; the grouped options `refine_single_volume(options=...)` accepts |
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
 | `iteration_planning.py`, `convergence.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |

@@ -95,7 +95,8 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 - Algorithm to code, step by step: `docs/math/relion_refinement_algorithm.md`.
 - Workflow entry points: `docs/development/codebase.md`. RELION defaults: `docs/development/relion_defaults.md`.
 - Refactor rules: the short list in `docs/development/refactor_rules.md`; the full record with examples in
-  `docs/development/refactor_principles.md`.
+  `docs/development/refactor_principles.md`. How to run one refactor slice, with its gate scripts:
+  `docs/development/refactor_procedure.md`. The shape a module should end in: `docs/development/module_template.md`.
 - Conventions shared with RECOVAR (numerical source, CUDA and FFI, documentation): RECOVAR's own guides,
   `recovar/CLAUDE.md`, `recovar/cuda/CLAUDE.md` and `docs/CLAUDE.md` in its repository.
 - PPCA ab initio, the four development axes: `docs/development/ppca_optimizer_axes.md`.
