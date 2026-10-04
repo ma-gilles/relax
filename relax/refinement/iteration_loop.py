@@ -281,14 +281,10 @@ def _relion_k1_translation_angle_scale(
 
 
 
-def _should_use_adaptive_search(
-    *,
-    adaptive_oversampling: int,
-    use_local: bool,
-    n_rotations: int,
-    symmetry: str,
-) -> bool:
+def _should_use_adaptive_search(state, options: RefinementOptions, *, use_local: bool, n_rotations: int) -> bool:
     """Keep non-C1 refinement on its supported sparse/x-half route.
+
+    Reads ``state.adaptive_oversampling`` and ``options.symmetry.point_group``.
 
     Small C1 grids may use the direct dense path. Point-group symmetry cannot:
     symmetry reduction itself can make a valid grid smaller than that cutoff
@@ -297,9 +293,9 @@ def _should_use_adaptive_search(
     Ported from final Q 22efd8065.
     """
 
-    if int(adaptive_oversampling) <= 0 or bool(use_local):
+    if int(state.adaptive_oversampling) <= 0 or bool(use_local):
         return False
-    return int(n_rotations) > 16 or str(symmetry).upper() != "C1"
+    return int(n_rotations) > 16 or str(options.symmetry.point_group).upper() != "C1"
 
 
 def _optics_group_ids_per_half(optics_group_ids_per_half, noise_variance_per_half, experiment_datasets):
@@ -1630,11 +1626,10 @@ def refine_single_volume(
         coarse_grids = refresh_coarse_grids(
             coarse_grids,
             state,
-            n_classes=n_classes,
+            options,
             voxel_size=source_pixel_size_angstrom,
-            symmetry=symmetry,
             dtype=scoring_dtype,
-            replay_translations=perturb_replay_relion_dir is not None and sealed_sampling_state is None,
+            replay_dir=perturb_replay_relion_dir,
             log=logger,
         )
 
@@ -1720,13 +1715,7 @@ def refine_single_volume(
         model_current_size_for_engine = expectation_windows.model_window_size
         image_current_size = expectation_windows.image_size
         cs_for_engine = expectation_windows.image_window_size
-        sigma_rot, sigma_psi = relion_local_search_sigmas(
-            state.sigma_rot,
-            state.sigma_psi,
-            use_local=use_local,
-            healpix_order=state.healpix_order,
-            adaptive_oversampling=state.adaptive_oversampling,
-        )
+        sigma_rot, sigma_psi = relion_local_search_sigmas(state, use_local=use_local)
 
         # Angular step behind this iteration's pass-1 coarse size, when RELION's
         # adaptive formula sets it (shape classes recompute their own from it).
@@ -1761,10 +1750,9 @@ def refine_single_volume(
         else:
             local_sampling = None
         direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
+            state,
             use_local=use_local,
-            current_healpix_order=coarse_grids.rotation_grid.healpix_order,
-            state_healpix_order=state.healpix_order,
-            adaptive_oversampling=state.adaptive_oversampling,
+            grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
             local_search_order=local_sampling.search.healpix_order if use_local else None,
         )
         coarse_rotation_ids_for_scoring = (
@@ -1799,10 +1787,7 @@ def refine_single_volume(
         # coarse/fine (adaptive_oversampling>=1).
         significance = SignificanceStatistics()
         use_adaptive = _should_use_adaptive_search(
-            adaptive_oversampling=state.adaptive_oversampling,
-            use_local=use_local,
-            n_rotations=effective_rotations.shape[0],
-            symmetry=symmetry,
+            state, options, use_local=use_local, n_rotations=effective_rotations.shape[0],
         )
         # Track the rotation grids used for pose extraction.
         # When adaptive oversampling is active, ha_k indices refer to the
@@ -1835,10 +1820,9 @@ def refine_single_volume(
                 coarse_size_healpix_order,
                 expectation_windows,
                 image_geometry,
-                particle_diameter_angstrom=particle_diameter_ang,
+                options,
                 optics_image_sizes=optics_image_sizes,
                 optics_pixel_sizes=optics_pixel_sizes,
-                sealed_sampling_state=sealed_sampling_state,
                 log=logger,
             )
             coarse_size = coarse_image_plan.size

@@ -222,13 +222,7 @@ def run_final_all_data(
     ## THIS ALL SHOULD BE AN OBJECT/DICT/ENUM OR SOMETHING PROBABLY WITH THESE DECISIONS OR SOMETHING?
     ## SHOULD BE WANTING TO DEFINE 100 THINGS LIKE THIS
     if final_use_local:
-        final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(
-            state.sigma_rot,
-            state.sigma_psi,
-            use_local=True,
-            healpix_order=state.healpix_order,
-            adaptive_oversampling=state.adaptive_oversampling,
-        )
+        final_sigma_rot, final_sigma_psi = relion_local_search_sigmas(state, use_local=True)
         final_search = LocalSearchSettings(
             healpix_order=final_sampling.settings.perturbation_order + state.adaptive_oversampling,
             oversampling_order=state.adaptive_oversampling,

@@ -763,8 +763,10 @@ def make_relion_direction_log_prior(direction_prior, healpix_order, rotations=No
     return log_prior
 
 
-def relion_local_search_sigmas(sigma_rot, sigma_psi, *, use_local, healpix_order, adaptive_oversampling):
+def relion_local_search_sigmas(state, *, use_local):
     """Orientational prior widths (radians) of a RELION local angular search.
+
+    Reads from ``state``: ``sigma_rot``, ``sigma_psi``, ``healpix_order`` and ``adaptive_oversampling``.
 
     A configured ``sigma_rot`` is kept and ``sigma_psi`` falls back to it when
     unset. Without a configured width, a local search uses twice the
@@ -774,9 +776,10 @@ def relion_local_search_sigmas(sigma_rot, sigma_psi, *, use_local, healpix_order
     final all-data pass share this rule.
     """
 
-    sigma_psi = sigma_psi if sigma_psi > 0 else sigma_rot
+    sigma_rot = state.sigma_rot
+    sigma_psi = state.sigma_psi if state.sigma_psi > 0 else sigma_rot
     if use_local and sigma_rot <= 0:
-        step_rad = np.deg2rad(healpix_angular_step(healpix_order) / (2**adaptive_oversampling))
+        step_rad = np.deg2rad(healpix_angular_step(state.healpix_order) / (2**state.adaptive_oversampling))
         sigma_rot = np.sqrt(2.0 * 2.0) * step_rad
         sigma_psi = sigma_rot
     return sigma_rot, sigma_psi

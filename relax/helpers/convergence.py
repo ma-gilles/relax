@@ -562,24 +562,24 @@ def _native_final_perturbation_healpix_order(state, final_current_healpix_order:
     return int(final_current_healpix_order)
 
 def _direction_prior_healpix_order_for_scoring(
+    state,
     *,
     use_local: bool,
-    current_healpix_order: int,
-    state_healpix_order: int,
-    adaptive_oversampling: int,
+    grid_healpix_order: int,
     local_search_order: int | None,
 ) -> int:
     """Return the grid order whose global rotations receive ``pdf_direction`` priors.
 
     RELION's local-search branch scores the explicit local direction/psi
     priors instead of ``mymodel.pdf_direction``. Callers must only use this
-    for exhaustive/global scoring.
+    for exhaustive/global scoring. ``grid_healpix_order`` is the exhaustive coarse grid's order.
+    Reads from ``state``: ``healpix_order`` and ``adaptive_oversampling``.
     """
 
     if not use_local:
-        return int(current_healpix_order)
-    if int(adaptive_oversampling) > 0:
-        return int(state_healpix_order)
+        return int(grid_healpix_order)
+    if int(state.adaptive_oversampling) > 0:
+        return int(state.healpix_order)
     if local_search_order is None:
         raise ValueError("local_search_order is required when local search is active")
     return int(local_search_order)

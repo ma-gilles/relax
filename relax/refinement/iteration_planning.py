@@ -189,24 +189,25 @@ def plan_adaptive_image_size(
     pre_update_healpix_order: int,
     windows: ExpectationWindows,
     image_geometry: ImageGeometry,
+    options: RefinementOptions,
     *,
-    particle_diameter_angstrom: float | None,
     optics_image_sizes,
     optics_pixel_sizes,
-    sealed_sampling_state,
     log: logging.Logger,
 ) -> CoarseImageSize:
     """Size pass 1 from incoming sampling, then admit an exact sealed width.
 
-    The fine grid can already have advanced to another order. See
+    The fine grid can already have advanced to another order. Reads from ``options``:
+    ``schedule.particle_diameter_ang`` and ``debug.sealed_sampling_state``. See
     ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
+    sealed_sampling_state = options.debug.sealed_sampling_state
     angular_step_deg = healpix_angular_step(pre_update_healpix_order)
     coarse_size = compute_coarse_image_size(
         angular_step_deg,
         float(optics_pixel_sizes[0]) if optics_pixel_sizes is not None else image_geometry.pixel_size_angstrom,
         int(optics_image_sizes[0]) if optics_image_sizes is not None else image_geometry.box_size,
-        particle_diameter=particle_diameter_angstrom,
+        particle_diameter=options.schedule.particle_diameter_ang,
     )
     coarse_size = clamp_relion_coarse_image_size(
         coarse_size,
@@ -431,20 +432,25 @@ def build_initial_coarse_grids(
 def refresh_coarse_grids(
     grids: CoarseGrids,
     state: RefinementState,
+    options: RefinementOptions,
     *,
-    n_classes,
     voxel_size,
-    symmetry: str,
     dtype,
-    replay_translations: bool,
+    replay_dir: str | None,
     log: logging.Logger,
 ) -> CoarseGrids:
     """The exhaustive coarse grids of ``state``'s sampling, rebuilt where they changed.
 
     A new HEALPix order rebuilds the rotation grid (up to the exhaustive-grid cap) and the translation
-    grid. With ``replay_translations`` a replayed translation range or step rebuilds the translation
-    grid alone. ``grids.translations`` may be a perturbed copy; a rebuild replaces it with the base grid.
+    grid. Under a live STAR replay (``replay_dir``) without sealed sampling, a replayed translation range
+    or step rebuilds the translation grid alone. ``grids.translations`` may be a perturbed copy; a rebuild
+    replaces it with the base grid. Reads from ``state``: ``healpix_order`` (and the fields the
+    exhaustive-grid cap reads), ``translation_range`` and ``translation_step``; from ``options``:
+    ``k_class.n_classes``, ``symmetry.point_group`` and ``debug.sealed_sampling_state``.
     """
+    n_classes = int(options.k_class.n_classes)
+    symmetry = options.symmetry.point_group
+    replay_translations = replay_dir is not None and options.debug.sealed_sampling_state is None
     current_rotation_grid = grids.rotation_grid
     base_translations = grids.base_translations
     current_translations = grids.translations

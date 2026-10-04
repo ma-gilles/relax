@@ -117,6 +117,7 @@ from relax.refinement.refinement_options import (
     RefinementSchedule,
     RelionParityOptions,
     ReplayState,
+    SymmetryOptions,
 )
 from relax.relion import relion_ctf
 from relax.sampling import (
@@ -9947,7 +9948,13 @@ def test_non_c1_small_rotation_grid_keeps_adaptive_sparse_route():
     and diverged from RELION Class3D in iteration 1.
     """
 
-    choose = iteration_loop_module._should_use_adaptive_search
+    def choose(*, adaptive_oversampling, use_local, n_rotations, symmetry):
+        return iteration_loop_module._should_use_adaptive_search(
+            RefinementState(adaptive_oversampling=adaptive_oversampling),
+            RefinementOptions(symmetry=SymmetryOptions(point_group=symmetry)),
+            use_local=use_local, n_rotations=n_rotations,
+        )
+
     assert choose(adaptive_oversampling=1, use_local=False, n_rotations=12, symmetry="O")
     assert choose(adaptive_oversampling=1, use_local=False, n_rotations=5, symmetry="I1")
     assert choose(adaptive_oversampling=1, use_local=False, n_rotations=144, symmetry="C4")
