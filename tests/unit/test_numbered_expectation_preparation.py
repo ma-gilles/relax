@@ -15,7 +15,6 @@ from test_numbered_expectation import numbered_inputs
 
 from relax.refinement import expectation
 from relax.refinement.iteration_planning import ExpectationWindows
-from relax.sampling import TrialGrid
 
 pytestmark = pytest.mark.unit
 
@@ -127,9 +126,7 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
 
     scope = dict(
         prepare_numbered_expectation=expectation.prepare_numbered_expectation,
-        sampling=SimpleNamespace(TrialGrid=TrialGrid),
-        effective_rotations=grid.rotations, effective_rotation_eulers=grid.rotation_eulers,
-        effective_mstep_rotations=grid.mstep_rotations,
+        trial_grid=grid,
         expectation_windows=windows, local_sampling=inputs['local_sampling'],
         numbered_variant=inputs['variant'], use_adaptive=adaptive,
         coarse_grids=SimpleNamespace(

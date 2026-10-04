@@ -23,7 +23,6 @@ import numpy as np
 from recovar import utils
 from recovar.data_io import cryoem_dataset
 
-from relax import sampling
 from relax.dense import scoring_policy
 from relax.dense.score_outputs import (
     PerHalfOutputs,
@@ -136,7 +135,7 @@ from relax.refinement.iteration_planning import (
     coarse_pass1_rotations,
     first_iteration_policy,
     initialize_refinement_state,
-    perturbed_trial_grid,
+    iteration_trial_grid,
     plan_adaptive_image_size,
     plan_class_image_size,
     plan_expectation_windows,
@@ -1638,12 +1637,6 @@ def refine_single_volume(
         # own previous orientation on the true current HEALPix order. Use the
         # exact rotations selected in the previous iteration, not the nearest
         # snapped grid indices.
-        effective_rotations = coarse_grids.rotation_grid.rotations
-        effective_rotation_eulers = np.asarray(
-            coarse_grids.rotation_grid.rotation_eulers,
-            dtype=scoring_dtype,
-        )
-        effective_mstep_rotations = None
         adaptive_pass1_rotations = None
         direction_log_priors = [None, None]
         use_local = state.do_local_search and all(half.rotation_eulers is not None for half in halves)
@@ -1651,7 +1644,6 @@ def refine_single_volume(
             # Class3D keeps global searches: RELION switches to local searches from the
             # HEALPix order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
             raise RuntimeError("K>1 (Class3D) reached local angular searches; RELION never does")
-        adaptive_pass1_source_eulers = np.asarray(effective_rotation_eulers, dtype=np.float64)
         # --- Apply RELION SamplingPerturbation to the trial grid for this iter ---
         # healpix_sampling.cpp:1909-1934 (rotations) + 1810-1820 (translations)
         # Perturbation is a rigid rotation of SO(3): A := A @ R_perturb applied
@@ -1666,22 +1658,10 @@ def refine_single_volume(
             rng=perturb_rng,
             log=logger,
         )
-        if _replay_meta is not None or parity.perturb_factor > 0:
-            trial_grid = perturbed_trial_grid(
-                effective_rotation_eulers,
-                coarse_grids.base_translations,
-                random_perturbation,
-                grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
-                replay_metadata=_replay_meta,
-                translation_step=state.translation_step,
-                use_grid_eulers=sealed_sampling_state is not None,
-                symmetry=symmetry,
-                dtype=scoring_dtype,
-            )
-            effective_rotations = trial_grid.rotations
-            effective_rotation_eulers = trial_grid.rotation_eulers
-            effective_mstep_rotations = trial_grid.mstep_rotations
-            coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
+        trial_grid = iteration_trial_grid(
+            coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta, dtype=scoring_dtype,
+        )
+        coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
         # RELION's coarse device geometry also applies at OS0. Keep this
         # separate from host fine/M-step geometry; see docs/math/zero_coarse_geometry.md.
         if not use_local and (
@@ -1695,11 +1675,11 @@ def refine_single_volume(
             )
         ):
             adaptive_pass1_rotations = coarse_pass1_rotations(
-                adaptive_pass1_source_eulers,
+                coarse_grids.rotation_grid,
                 random_perturbation,
-                grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
+                options,
                 replay_metadata=_replay_meta,
-                perturb_factor=parity.perturb_factor,
+                dtype=scoring_dtype,
                 log=logger,
             )
         # First-iteration CC scores the full translation grid before choosing
@@ -1728,12 +1708,7 @@ def refine_single_volume(
                     sigma_psi=sigma_psi,
                     symmetry=symmetry,
                 ),
-                sampling.TrialGrid(
-                    rotations=effective_rotations,
-                    rotation_eulers=effective_rotation_eulers,
-                    mstep_rotations=effective_mstep_rotations,
-                    translations=coarse_grids.translations,
-                ),
+                trial_grid,
                 base_translations=coarse_grids.base_translations,
                 image_window_size=cs_for_engine,
                 model_support_size=model_current_size_for_engine,
@@ -1762,7 +1737,7 @@ def refine_single_volume(
         )
         if (
             coarse_rotation_ids_for_scoring is not None
-            and coarse_rotation_ids_for_scoring.shape != (int(effective_rotations.shape[0]),)
+            and coarse_rotation_ids_for_scoring.shape != (int(trial_grid.rotations.shape[0]),)
         ):
             raise RuntimeError(
                 "sealed captured rotation IDs do not match the directly materialized scorer grid"
@@ -1787,11 +1762,11 @@ def refine_single_volume(
         # coarse/fine (adaptive_oversampling>=1).
         significance = SignificanceStatistics()
         use_adaptive = _should_use_adaptive_search(
-            state, options, use_local=use_local, n_rotations=effective_rotations.shape[0],
+            state, options, use_local=use_local, n_rotations=trial_grid.rotations.shape[0],
         )
         # Track the rotation grids used for pose extraction.
         # When adaptive oversampling is active, ha_k indices refer to the
-        # oversampled grid (from pass 2), not effective_rotations.
+        # oversampled grid (from pass 2), not trial_grid.rotations.
         per_half = PerHalfOutputs()
         hard_assignments = per_half.hard_assignments
         class_assignments = per_half.class_assignments
@@ -1807,7 +1782,7 @@ def refine_single_volume(
         best_pose_translations = per_half.best_pose_translations
         translation_search_bases = per_half.translation_search_bases
         # Coarse-grid assignments for local search tracking (always indexed
-        # into effective_rotations, even when adaptive oversampling is used).
+        # into trial_grid.rotations, even when adaptive oversampling is used).
         coarse_ha = per_half.coarse_ha
         if use_adaptive:
             # --- TWO-PASS ADAPTIVE OVERSAMPLING (RELION parity) ---
@@ -1924,12 +1899,7 @@ def refine_single_volume(
             firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
         )
         numbered_expectation = prepare_numbered_expectation(
-            sampling.TrialGrid(
-                rotations=effective_rotations,
-                rotation_eulers=effective_rotation_eulers,
-                mstep_rotations=effective_mstep_rotations,
-                translations=coarse_grids.translations,
-            ),
+            trial_grid,
             expectation_windows,
             local_sampling=local_sampling,
             variant=numbered_variant,
@@ -2207,7 +2177,7 @@ def refine_single_volume(
                     symmetry=symmetry,
                 )
                 if (
-                    effective_rotations.shape[0] == exhaustive_grid_size
+                    trial_grid.rotations.shape[0] == exhaustive_grid_size
                     and all(
                         rot_sum is not None
                         for rot_sum in class_rotation_posterior_per_half
@@ -2322,7 +2292,7 @@ def refine_single_volume(
                 mean_variance=reference_model.tau2,
                 hard_assignments=hard_assignments,
                 coarse_ha=coarse_ha,
-                effective_rotations=effective_rotations,
+                effective_rotations=trial_grid.rotations,
                 current_translations=coarse_grids.translations,
                 use_local=use_local,
                 local_search_order=local_sampling.search.healpix_order if use_local else None,
@@ -2363,7 +2333,7 @@ def refine_single_volume(
         # --- Track per-image best assignments for convergence detection ---
         # Combine both half-sets' assignments into a single array for
         # update_refinement_state.  Use coarse_ha (indexed into
-        # effective_rotations) for consistent convergence tracking.
+        # trial_grid.rotations) for consistent convergence tracking.
         current_combined_ha = concatenate_assignments(coarse_ha)
         previous_combined_ha = concatenate_assignments_or_none(previous_assignments)
 
@@ -2642,7 +2612,7 @@ def refine_single_volume(
         )
 
         # Save assignments for next iteration's change tracking.
-        # Use coarse_ha (indexed into effective_rotations/base rotation grid)
+        # Use coarse_ha (indexed into trial_grid.rotations/base rotation grid)
         # so that local search and convergence detection work correctly
         # regardless of whether adaptive oversampling was used.
         previous_assignments = [ha.copy() if ha is not None else None for ha in coarse_ha]

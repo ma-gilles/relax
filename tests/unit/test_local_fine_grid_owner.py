@@ -269,7 +269,7 @@ def test_controller_passes_the_point_group_to_every_grid_owner():
     """Every regular and final-pass grid owner call carries the refinement point group (final Q a087087cc)."""
 
     tree = ast.parse(textwrap.dedent(inspect.getsource(iteration_loop.refine_single_volume))
-                     + textwrap.dedent(inspect.getsource(iteration_planning.perturbed_trial_grid))
+                     + textwrap.dedent(inspect.getsource(iteration_planning.iteration_trial_grid))
                      + textwrap.dedent(inspect.getsource(prepare_numbered_local_sampling))
                      + textwrap.dedent(inspect.getsource(prepare_final_local_sampling))
                      + textwrap.dedent(inspect.getsource(prepare_final_sampling)))

@@ -513,38 +513,51 @@ def refresh_coarse_grids(
     return CoarseGrids(current_rotation_grid, base_translations, current_translations)
 
 
-def perturbed_trial_grid(
-    rotation_eulers,
-    base_translations,
+def iteration_trial_grid(
+    grids: CoarseGrids,
+    state: RefinementState,
+    options: RefinementOptions,
     random_perturbation: float,
     *,
-    grid_healpix_order: int,
     replay_metadata,
-    translation_step,
-    use_grid_eulers: bool,
-    symmetry: str,
     dtype,
 ) -> sampling.TrialGrid:
-    """This iteration's trial grid: the coarse grid under RELION's sampling perturbation.
+    """This iteration's trial grid: the coarse grid, under RELION's sampling perturbation where one applies.
 
-    ``rotation_eulers`` are the coarse grid's working Euler rows and ``base_translations`` its
-    unperturbed host translations. The angular sampling that scales the perturbation is the grid's
-    HEALPix order, or the replayed order when ``replay_metadata`` supplies one.
+    A perturbation applies under replay (``replay_metadata``) or with a positive perturbation factor;
+    otherwise the coarse rotations and the grid's current translations are the trial grid, without exact
+    M-step rotations. The angular sampling that scales the perturbation is the grid's HEALPix order, or
+    the replayed order when ``replay_metadata`` supplies one. Reads from ``grids``: the rotation grid
+    (rotations, Euler rows, order), ``base_translations`` (the unperturbed host translations) and
+    ``translations``; ``state.translation_step``; from ``options``: ``parity.perturb_factor``,
+    ``debug.sealed_sampling_state`` (a sealed grid keeps its own Euler rows) and ``symmetry.point_group``.
     """
+    rotation_grid = grids.rotation_grid
+    rotation_eulers = np.asarray(
+        rotation_grid.rotation_eulers,
+        dtype=dtype,
+    )
+    if not (replay_metadata is not None or options.parity.perturb_factor > 0):
+        return sampling.TrialGrid(
+            rotations=rotation_grid.rotations,
+            rotation_eulers=rotation_eulers,
+            mstep_rotations=None,
+            translations=grids.translations,
+        )
     # Use RELION's actual hp_order when replaying (recovar's current
     # grid order may be capped at MAX_FULL_GRID_ORDER=4 for memory).
-    _angsamp_order = int(replay_metadata["healpix_order"]) if replay_metadata is not None else grid_healpix_order
+    _angsamp_order = int(replay_metadata["healpix_order"]) if replay_metadata is not None else rotation_grid.healpix_order
     angsamp_deg = sampling.relion_angular_sampling_deg(_angsamp_order, adaptive_oversampling=0)
     return sampling._perturbed_trial_grid(
         rotation_eulers=rotation_eulers,
         mstep_source_eulers=sampling._relion_mstep_source_eulers(
             rotation_eulers,
             _angsamp_order,
-            use_grid_eulers=use_grid_eulers,
-            symmetry=symmetry,
+            use_grid_eulers=options.debug.sealed_sampling_state is not None,
+            symmetry=options.symmetry.point_group,
         ),
-        base_translations=base_translations,
-        translation_step=float(translation_step),
+        base_translations=grids.base_translations,
+        translation_step=float(state.translation_step),
         random_perturbation=random_perturbation,
         angular_sampling_deg=angsamp_deg,
         dtype=dtype,
@@ -552,23 +565,26 @@ def perturbed_trial_grid(
 
 
 def coarse_pass1_rotations(
-    source_eulers,
+    rotation_grid: sampling.RotationGrid,
     random_perturbation: float,
+    options: RefinementOptions,
     *,
-    grid_healpix_order: int,
     replay_metadata,
-    perturb_factor: float,
+    dtype,
     log: logging.Logger,
 ):
     """RELION's device-built rotations for the pass-1 coarse scorer, or None where the host grid serves.
 
-    ``source_eulers`` are the unperturbed coarse Euler rows (float64). The perturbation applies only
-    when the trial grid is perturbed: under replay, or with a positive ``perturb_factor``.
+    The source is the unperturbed coarse Euler rows of ``rotation_grid``, in the scoring ``dtype`` and
+    then widened to float64. The perturbation applies only when the trial grid is perturbed: under
+    replay, or with a positive ``options.parity.perturb_factor``.
     """
+    source_eulers = np.asarray(np.asarray(rotation_grid.rotation_eulers, dtype=dtype), dtype=np.float64)
+    perturb_factor = options.parity.perturb_factor
     adaptive_pass1_order = (
         int(replay_metadata["healpix_order"])
         if replay_metadata is not None
-        else int(grid_healpix_order)
+        else int(rotation_grid.healpix_order)
     )
     adaptive_pass1_use_float64 = bool(scoring_policy.DENSE_PRECISION.use_float64_scoring)
     adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
