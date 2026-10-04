@@ -67,7 +67,7 @@ compile cache, one seed (relax 4f1f49b unless noted).
 | Tomo Class3D et13, 3 iterations | 346 | 415 | 724 (main 5b44d0b) | pending: hardware busy | pending: hardware busy |
 | Tomo VDAM K1 et09, 10 iterations | 115 | 119 | 216 | pending: hardware busy | pending: hardware busy |
 | Tomo VDAM K2 et15, 10 iterations | 121 | 139 | 185 | pending: hardware busy | pending: hardware busy |
-| PPCA tomo VDAM / SGD, 24 iterations (main 7b1e4da) | 201 / 200 | — | pending (main 06266b9b, Polar 413527) | pending: hardware busy | pending: hardware busy |
+| PPCA tomo VDAM / SGD, 24 iterations (main 7b1e4da; P100 main 06266b9b) | 201 / 200 | — | 3921 / 3631 | pending: hardware busy | pending: hardware busy |
 
 Agreement with the H100 run of the same commit and seed:
 
@@ -78,13 +78,16 @@ Agreement with the H100 run of the same commit and seed:
 | Class3D K2 / K4 5k/128 | masked GT FSC-AUC, class accuracy | identical to 6 digits | identical to 6 digits | — |
 | Tomo Class3D et13 | mean GT FSC-AUC (H100 0.356106) | 0.356105 | — | — |
 | VDAM K1 5k/128 | masked GT FSC-AUC (H100 0.0842) | 0.0849, cross 0.966 | 0.0931, cross 0.918 | seeds 41/53: 0.345 / 0.131 |
-| VDAM K4 5k/128 | weighted masked GT FSC-AUC (H100 0.241) | 0.236, cross 0.926 | 0.256, cross 0.882 | same-seed repeats 0.263 / 0.275, cross 0.934 / 0.918 |
+| VDAM K4 5k/128 | weighted masked GT FSC-AUC (H100 0.241) | 0.236, cross 0.926 | 0.256 / 0.214 / 0.235, cross 0.882 / 0.834 / 0.856 | H100 repeats 0.263 / 0.275, cross 0.934 / 0.918; P100 repeats cross the P100 run 0.906 / 0.914 |
 | Tomo VDAM K1 et09, 10 iterations | masked GT FSC-AUC (H100 0.3926) | 0.3926, cross 1.000 | 0.3804, cross 0.997 | seeds 2/3: 0.512 / 0.308 |
 | PPCA tomo (TF32 on both) | log-likelihood, loading subspace | within 2e-7 relative, cosines ≥ 0.9999998 | — | — |
 
 The deterministic workflows (Refine3D, Class3D) agree across GPU models to 1e-5 or better. The stochastic
-ones (VDAM, 200 iterations or a stopped run) differ across GPU models by less than they differ across
-repeats or seeds on one H100.
+ones (VDAM, 200 iterations or a stopped run) reach the same ground-truth quality on every GPU, within the
+spread of repeats and seeds on one GPU. Their maps agree within one architecture (repeats: 0.92 to 0.93 on
+H100, 0.91 on P100) more closely than across sm_60 and sm_90 (0.83 to 0.88): an architecture-level float
+shift (reduction and atomic order in the custom kernels; production EM matmuls run at HIGHEST precision, so
+not TF32), not P100 instability. Different seeds agree at 0.42 to 0.46.
 
 ### Small-memory emulation
 
@@ -101,12 +104,12 @@ fixes below applied where noted):
 | Tomo Refine3D s1 | 1650 (main 5b44d0b) | — | — | — |
 | Tomo Class3D et13 / VDAM K1 / VDAM K2 | 275 (main 5b44d0b) / 138 / 156 | — | — | — |
 | PPCA tomo VDAM / SGD, default tile | 242 / 240 (candidate fb33c09e) | — | — | — |
-| Refine3D K1 50k/256, 15 iterations | pending on main 7b1e4da | — | — | — |
+| Refine3D K1 50k/256, 15 iterations | 16800 (main 7b1e4da) | — | — | — |
 
 ## Minimum compute capability
 
 relax runs on compute capability 6.0 when its native libraries are built for it; P100 runs every workflow
-above (PPCA on main 06266b9b pending, see open issue 1). The default build targets 7.0 to 9.0, plus PTX for later cards.
+above. The default build targets 7.0 to 9.0, plus PTX for later cards.
 `scripts/build_test_natives.sh` takes `RELAX_NATIVE_CUDA_ARCH` for other targets. A library without the
 card's architecture is refused when relax first loads it: recovar's preflight reads the targets from the
 library's fat binary, with or without `cuobjdump`, and checks every library (recovar c60e3c26f). Before
@@ -119,19 +122,16 @@ Fixed:
 | Issue | Fix | Evidence |
 | --- | --- | --- |
 | Tomo coarse pass ran out of memory on 16 GB (6.4 to 7.6 GiB batch): fixed 2 GiB budget at 8 B a pixel, no device cap | `_coarse_batches` counts the bytes of the projection path that serves and is capped at a quarter of `device_available_bytes` (dbbb49c) | 16 GB emulation and P100 complete, GT FSC-AUC equal to H100 to 1e-6 |
-| Final tau2 shell statistics ran out of memory at box 256 on 16 GB, after 15 iterations | `_shell_stats_on_host` sends them to the host when their device arrays exceed `_SHELL_STATS_DEVICE_SHARE` of the free memory (29e862a, f4ea273) | host and device equal at 512³; the 15-iteration case is pending (job 14937566) |
+| Final tau2 shell statistics ran out of memory at box 256 on 16 GB, after 15 iterations | `_shell_stats_on_host` sends them to the host when their device arrays exceed `_SHELL_STATS_DEVICE_SHARE` of the free memory (29e862a, f4ea273) | host and device equal at 512³; the failing case, Refine3D K1 50k/256 for 15 iterations at 16 GB, completes on main 7b1e4da (Slurm 14937566, 16800 s) |
 | Preflight skipped without `cuobjdump`; one library's verdict exempted the next | fat-binary reader, per-library verdict (recovar c60e3c26f) | P100 and H100 refuse an unbuilt architecture in 4 to 6 s |
 | A native build started inside a recovar checkout compiled that checkout | builds run in their output directory, and natives record the recovar kernel sources they compiled; `native_sources.py check` refuses any other (adfa7f8, 5d69a51) | unit test with a shadowing checkout |
 | `relax ppca_initial_model` failed outside a git checkout | source identity records `head: None` (302748d3, ppcaspeed) | Polar runs start |
-| A relax command started inside a recovar checkout imported that checkout's recovar | relax commands refuse a recovar outside the installed package or editable checkout; `RELAX_ALLOW_SHADOWED_RECOVAR=1` permits it (relax/__init__.py `_reject_shadowed_recovar`) | unit and subprocess tests with a shadowing package |
+| A relax command or script started inside a recovar checkout imported that checkout's recovar | importing relax refuses a recovar outside the installed package or editable checkout; `RELAX_ALLOW_SHADOWED_RECOVAR=1` permits it (relax/__init__.py `_reject_shadowed_recovar`) | unit and subprocess tests (`python -m relax.commands.*` and `python -c "import relax"`) with a shadowing package |
+| PPCA tomo at the default tile ran out of memory on 16 GB cards at the first radius-31 iteration (tile reader, then `_score_tile`) | the tile planner counts the block programs from XLA's memory analysis and the next tile's reader (main 06266b9b, ppcaspeed) | 16 GB emulation and a real P100 complete; P100 live peak 11.96 GiB against 12.33 GiB counted at r31 |
 
 Open:
 
-1. PPCA tomo at the default tile ran out of memory on 16 GB cards at the first radius-31 iteration, first in
-   the tile reader, then in `_score_tile` (main 302748d3 to 625259f8). The planner on main 06266b9b counts
-   the block programs from XLA's memory analysis and the next tile's reader; it passes at 16 GB on H100
-   (tile 33 at r31, live peak 12.80 GiB against 12.94 GiB counted). The real P100 run is pending.
-2. The V100 and A100 40 GB rows are pending: hardware busy (Polar's V100 and A100 nodes run multi-day
+1. The V100 and A100 40 GB rows are pending: hardware busy (Polar's V100 and A100 nodes run multi-day
    workloads). Their cells stay queued and fill in when the nodes free up. Meanwhile the P100 (16 GB, an
    older architecture than V100), the A100 80 GB (sm_80) and the 16 to 40 GB emulation cover them.
 

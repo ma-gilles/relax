@@ -14,6 +14,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar.data_io.starfile import star_column
@@ -749,10 +750,20 @@ def _relion_exact_ctf_half_from_source_star(
     )
     batch_slots = _evaluate_exact_ctf_rows(cache, original_indices, image_h, image_w)
     block, device_rows = _exact_ctf_device_rows(cache, batch_slots, width)
-    rows = jnp.asarray(device_rows)
+    return _gather_ctf_rows(block, device_rows, None if pixel_indices is None else pixel_indices.astype(np.int32))
+
+
+@jax.jit
+def _gather_ctf_rows(block, rows, pixel_indices):
+    """``block[rows]``, or ``block[rows][:, pixel_indices]``, as one program.
+
+    Loose advanced indexing builds its gather on the host at every call: 3.1 s of a 60 s window of late
+    10k VDAM iterations (py-spy, 510 coarse batches).
+    """
+
     if pixel_indices is None:
         return jnp.take(block, rows, axis=0)
-    return block[rows[:, None], jnp.asarray(pixel_indices, dtype=jnp.int32)[None, :]]
+    return block[rows[:, None], pixel_indices[None, :]]
 
 
 _EXACT_CTF_DEVICE_GB_ENV = "RELAX_RELION_EXACT_CTF_DEVICE_GB"

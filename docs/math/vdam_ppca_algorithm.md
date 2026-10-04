@@ -1820,3 +1820,18 @@ c9d0a11 (jobs 14930390 and 14930399):
 
 The eleven-state runs kept radius 31 under the rule (full-data SNR well above one)
 and scored as without it (.956 for all three seeds).
+
+Support-only solve (October 3, 2026). The coupled direction of section 6.2 is solved
+and checked only on the update's own support, the rows
+[`bandlimit_and_mask`](../../relax/ppca_initial_model/initialization.py) keeps (radius
+at most the stage radius); rows outside get a zero direction and no coverage, so their
+moments stay uninitialized until a later stage reaches them
+([`coupled_direction`](../../relax/ppca_initial_model/update.py)). Outside the support
+the metric holds only interpolation spill, and a spill row can sit at the float floor:
+the EMPIAR-10499 pilot stopped at update 165, four updates into the radius-32 stage,
+on one row of 1,064,960 at radius 33.3 whose near-rank-one 5x5 metric had largest
+eigenvalue 2.1e-9 (floor 1.86e-9) and smallest -1.6e-14 against the bound 7.9e-15;
+nothing was non-finite. The update-199 stop above is the same class. The 32-eps check
+is unchanged on the support. Tests: `tests/unit/ppca_initial_model/test_coupled_direction.py`
+(that row outside the support passes, inside it still stops the update) and
+`test_metric_is_positive_semidefinite_on_every_row` in `test_tomo_ppca.py`.

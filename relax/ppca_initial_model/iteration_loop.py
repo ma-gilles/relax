@@ -454,11 +454,7 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         raise ValueError("Both pseudo-halfsets need particles")
     mask = support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
     shells = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape), np.int32).reshape(-1)
-    sgd_radii = (
-        np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
-        if config.optimizer == "momentum_sgd"
-        else None
-    )
+    radii = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     for iteration in range(state.iteration + 1, end + 1):
@@ -473,14 +469,14 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
         stats = expectation_groups(dataset, state, config, halves, iteration, diameter_ang=diameter_ang)
+        radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
         if config.optimizer == "momentum_sgd":
-            radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
             _, proposed_momentum, diagnostics = momentum_step(
                 state.theta,
                 state.sgd_momentum,
                 sum(result.residual_gradient for result in stats),
                 _curvature_trace(stats, config.q + 1),
-                sgd_radii <= radius,
+                radii <= radius,
                 learning_rate=config.sgd_learning_rate,
                 floor=metric_floor(dataset.grid_size),
             )
@@ -493,10 +489,12 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
             directions = []
             metric_info = []
             coverage = []
+            # The update's own support: the rows bandlimit_and_mask keeps below.
+            support = radii <= radius
             for half, result in enumerate(stats):
                 try:
                     direction, info = coupled_direction(
-                        result.lhs_tri, result.residual_gradient, floor=metric_floor(dataset.grid_size)
+                        result.lhs_tri, result.residual_gradient, support, floor=metric_floor(dataset.grid_size)
                     )
                 except ValueError:
                     # Keep the state and the offending statistics for diagnosis, as the noise update does.
@@ -510,7 +508,8 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                     raise
                 directions.append(direction)
                 metric_info.append(info)
-                coverage.append(jnp.trace(unpack_tri_to_full(result.lhs_tri, config.q + 1), axis1=-2, axis2=-1) > 0)
+                covered = jnp.trace(unpack_tri_to_full(result.lhs_tri, config.q + 1), axis1=-2, axis2=-1) > 0
+                coverage.append(covered & jnp.asarray(support))
             theta, moments, diagnostics = stochastic_update(
                 state.theta,
                 state.moments,
@@ -521,7 +520,6 @@ def run(dataset, config, output, identity, diameter_ang, *, resume=None, stop_af
                 fudge=fudge,
                 image_size=dataset.grid_size,
             )
-            radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
             momentum = None
         numerator = sum(s.residual_num for s in stats)

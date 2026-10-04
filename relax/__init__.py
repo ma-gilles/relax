@@ -121,25 +121,13 @@ def _reject_renamed_environment(*, environ=None):
         )
 
 
-def _launched_as_relax_command(argv=None, orig_argv=None) -> bool:
-    """Whether this interpreter runs a relax command (``relax <cmd>`` or ``python -m relax.commands.<cmd>``)."""
+def _reject_shadowed_recovar(*, environ=None, origin=None):
+    """Refuse to import relax when ``recovar`` resolves outside its installed location.
 
-    argv = tuple(sys.argv if argv is None else argv)
-    orig_argv = tuple(getattr(sys, "orig_argv", ()) if orig_argv is None else orig_argv)
-    if argv and os.path.basename(str(argv[0])) == "relax":
-        return True
-    return any(
-        orig_argv[index] == "-m" and str(orig_argv[index + 1]).startswith(("relax.commands.", "relax.command_line"))
-        for index in range(len(orig_argv) - 1)
-    )
-
-
-def _reject_shadowed_recovar(*, argv=None, orig_argv=None, environ=None, origin=None):
-    """Refuse to run a relax command when ``recovar`` resolves outside its installed location.
-
-    ``python -m`` and ``python -c`` put the working directory first on ``sys.path``, so a command started
-    inside a recovar checkout ran that checkout's recovar instead of the pinned one, with no error (2026-09-25,
-    and three times in the week of 2026-10-03). The installed location is the pinned distribution's package, or
+    ``python -m`` and ``python -c`` put the working directory first on ``sys.path``, so a command or script
+    started inside a recovar checkout ran that checkout's recovar instead of the pinned one, with no error
+    (2026-09-25, and three times in the week of 2026-10-03). relax checks here, before its first ``recovar``
+    import, so every entry point is covered. The installed location is the pinned distribution's package, or
     the checkout an editable install points to. ``RELAX_ALLOW_SHADOWED_RECOVAR=1`` permits another location for
     deliberate recovar development.
     """
@@ -149,7 +137,7 @@ def _reject_shadowed_recovar(*, argv=None, orig_argv=None, environ=None, origin=
     import json
 
     environ = os.environ if environ is None else environ
-    if environ.get("RELAX_ALLOW_SHADOWED_RECOVAR") == "1" or not _launched_as_relax_command(argv, orig_argv):
+    if environ.get("RELAX_ALLOW_SHADOWED_RECOVAR") == "1":
         return
     if origin is None:
         spec = importlib.util.find_spec("recovar")
@@ -169,7 +157,7 @@ def _reject_shadowed_recovar(*, argv=None, orig_argv=None, environ=None, origin=
     if any(resolved == root or resolved.startswith(root.rstrip(os.sep) + os.sep) for root in allowed):
         return
     raise RuntimeError(
-        f"relax refuses to start: recovar resolves to {resolved}, not to the installed recovar at "
+        f"relax refuses to import: recovar resolves to {resolved}, not to the installed recovar at "
         f"{' or '.join(allowed)}. A recovar checkout in the working directory or on PYTHONPATH shadows the "
         "pinned recovar; run from another directory, or set RELAX_ALLOW_SHADOWED_RECOVAR=1 for deliberate "
         "recovar development."
