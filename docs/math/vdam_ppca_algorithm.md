@@ -1210,24 +1210,89 @@ scientific contract; runnable code alone does not establish recovery.
   The posterior over those poses and the latent variable, and every statistic, are
   the dense stream's restricted to them; the rotation mass (for the direction
   prior) is summed into the order-N parents. Each kept sample is one job (image,
-  coarse rotation, coarse translation), laid out image-major with `max_significant`
-  slots per image and run in fixed-size chunks.
-  The test (`test_oversampled_stream.py`) compares the result with the dense
-  stream over the whole child grid, with each image's kept samples as its coarse
-  support. They match within float32 reduction order, on CPU and on GPU, for
-  single particles (metric and trace-only) and tilt series. With fraction 1 and
-  no cap, every coarse sample is kept and the result is the dense child grid.
+  coarse rotation, coarse translation). A tile's samples have image-major slots,
+  `max_significant` per image; only the used ones are scored, in chunks that write
+  their results at their slots, so every pass-2 program has one shape per tile size.
+  Pass 2 then accumulates each image's significant fine samples only: the same rule
+  over the child weights (the largest until their sum exceeds the adaptive fraction,
+  and every weight at least the last one counted; RELION's `exp_significant_weight`
+  in `storeWeightedSums`), with the image's normalization over every scored child.
+  The M-step images are formed and backprojected per kept (image, child rotation)
+  row; a child rotation none of whose shifts is significant for its image is not
+  visited. Each update records the share of scored rows it accumulated
+  (`accumulated_fine_row_fraction`: about 0.09 at the eleven-state GT checkpoint,
+  0.22 from its random start, 0.61 at the EMPIAR-10076 update-500 checkpoint,
+  whose posteriors are flat).
+  The tests (`test_oversampled_stream.py`) compare the result, with every scored
+  child accumulated (fine fraction 1), with the dense stream over the whole child
+  grid, with each image's kept samples as its coarse support. They match within
+  float32 reduction order, on CPU and on GPU, for single particles (metric and
+  trace-only) and tilt series, also in padded tiles. With fraction 1 and no cap,
+  every coarse sample is kept and the result is the dense child grid. The fine
+  rule is checked against RELION's loop in float64 on the engine's job scores: the
+  kept mass per coarse rotation, the embeddings and the accumulated rows.
   As in RELION, pass 1 runs on a smaller image window than pass 2: the coarse
   image size the coarse angular step resolves, `2 ceil(pixel ori_size /
   (step/360 pi diameter / 1.2))`, at most the stage's
   ([compute_coarse_image_size](../../relax/helpers/resolution.py), with RELION's
-  clamp; 50 against 62 pixels at the eleven-state HP3 stage). Only kept samples
-  become jobs. A job's child-shifted images are formed in its program from the
-  tile's unshifted operands and the reader's phase factors (`shift_phases`), so a
-  tile never holds its images at every child translation. The jobs per pass-2
-  program go through the planner (`plan_job_chunk`, the job programs' compiled
-  memory), as the tile size does.
-  `--maxsig` caps the kept samples (100). Each update records, in
+  clamp; 50 against 62 pixels at the eleven-state HP3 stage). A tile's images are
+  read once, unshifted at the pass-2 window: the pass-1 operands are their pixels
+  inside the pass-1 window times the coarse shifts' phase factors, and a job's
+  child-shifted images are formed in its program from the same operands and the
+  reader's phase factors (`shift_phases`), so a tile never holds its images at
+  every child translation. The jobs per pass-2 program go through the planner
+  (`plan_job_chunk`: at most 1024, halved until the job programs' compiled memory
+  fits, as the tile size does), and at most as many as one launch of the CUDA
+  projector and scatter takes (65535 rotations: jobs x 8 children x tilts, so 128
+  jobs at 41 tilts). A tile runs whole chunks of the planned size, then of 1/4 and
+  1/16 of it.
+  Science against the dense grids (October 3-4, 2026; eleven-state fixture, 150
+  updates from the GT checkpoint, one evaluator at HEALPix 4; state FSC / latent
+  R^2 / GT power captured / seconds per update on an A100):
+  dense HP3 0.957 / 0.728 / 0.908 / 1.45; dense HP4 0.965 / 0.764 / 0.927 / 7.29;
+  oversampling 1 at HP3 with the default 2 px shift step 0.950 / 0.701 / 0.873 /
+  0.74; with a 1 px shift step 0.964 / 0.756 / 0.919 / 1.26 (dense HP3 at that
+  step: 0.958 / 0.727 / 0.909 / 2.60). The seed spread of the 2 px arms is 0.001
+  in FSC and 0.003 in R^2 (three seeds; the 1 px and HP4 arms are one or two).
+  The 2 px result is below dense HP3 because this fixture's shifts are all exactly
+  zero: zero is a node of the dense grid, but RELION's child shifts sit a quarter
+  step on either side of their parent (0.5 px here) and never on it, so every
+  image is fitted 0.71 px off (the recorded offset variance is 0.25 px^2 per
+  axis). Halving the step halves that offset and brings oversampling 1 to within
+  0.001 FSC and 0.008 R^2 of dense HP4 at 0.17 of its time. A fixture with
+  continuous shifts is the fair comparison for the default step. The fine
+  significance rule changes none of these scores: the engine before it gives
+  0.950 / 0.701 / 0.873 per seed. On the cryo-ET k3conf fixture (default schedule,
+  three seeds, H100) oversampling 1 reaches the dense HP4 last stage on state
+  masked AUC and latent R^2 at the dense HP3 run time: from the random start
+  0.761-0.765 and 0.79-0.84 against 0.751-0.757 and 0.77-0.80 (dense HP3
+  0.711-0.725 and 0.62-0.67), pose medians 4.1-5.3 degrees against 3.4-4.2 (dense
+  HP3 4.1-4.9); from the GT start 0.949 / 0.939 / 2.05 degrees against 0.948 /
+  0.944 / 1.99 (dense HP3 0.945 / 0.896 / 2.38). Evidence, under
+  `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_dense_speed_20261001/jobs/`:
+  `local_os1_science_e11_a100_dd709820`, `local_os1_science_refs_a100_20261003`,
+  `local_os1_science_shiftstep_a100_20261003`, `slurm_os1_science_e11_h100_20261003`
+  (14948876), `slurm_os1fine_science_e11_h100_20261003_40994eed` (14954551),
+  `slurm_os1fine_science_tomo_h100_20261003_40994eed` (14954552); tables by
+  `harness9/summarize_os1_science.py`.
+  Tried and rejected for pass 1 (October 3, 2026): scoring it with the mean alone
+  (the components zeroed, which would cut its GEMMs by the basis size). The
+  samples that score selects hold, under the full model, 0.94 of an image's mass on
+  average at the eleven-state GT checkpoint (5th percentile 0.43), 0.15 from the
+  random start at update 4000 and 0.39 at the EMPIAR-10076 update-500 checkpoint,
+  against 0.9985, 0.994 and 0.82 for the full model's own selection at the same
+  cap; taking its 1000 largest samples instead reaches 0.30 and 0.62 in the last
+  two. Once the components carry structure, the latent decides which poses matter
+  (`harness9/pass1_meanonly_probe.py` and `jobs/local_meanonly_probe_dd709820` of
+  the same evidence tree).
+  Grouping jobs by coarse rotation to share projections was measured too: an
+  update's jobs touch nearly as many coarse rotations as there are jobs (96% at
+  the eleven-state checkpoint, 75% at EMPIAR-10076), so there is nothing to share.
+  `--maxsig` caps the kept samples (100). At the EMPIAR-10076 update-500
+  checkpoint, whose posteriors are flat, the cap leaves the kept samples 0.82 of
+  an image's mass on average (38% of the images below 0.99): oversampling 1 at
+  such a stage is a coarser approximation than its adaptive fraction says, and
+  the cap warning below reports it. Each update records, in
   `iterations.jsonl` under `oversampling`, the two window sizes, the kept
   samples per image (median, mean), the share of images the cap stopped short of
   the fraction, the posterior mass those images hold (mean, 5th percentile,

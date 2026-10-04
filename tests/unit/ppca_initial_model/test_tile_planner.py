@@ -185,6 +185,41 @@ def test_an_80_gb_card_keeps_the_requested_tile_at_every_stage(kind, stage):
     assert plan_tile_images(stream, 150, memory_bytes=device - _resident(stream), device_bytes=device) == 150
 
 
+@pytest.mark.gpu
+@pytest.mark.parametrize(
+    "kind, stage", [("subtomogram", (31, 3)), ("single_particle", (31, 3)), ("single_particle", (16, 3))]
+)
+def test_an_80_gb_card_keeps_the_largest_oversampling_job_chunk(kind, stage):
+    """Adaptive oversampling's job plan changes nothing on a large card either: on 80 GB a pass-2 program takes
+    as many jobs as one kernel launch does (1024 for single particles, 128 at 41 tilts), with the compiled job
+    programs and the job results of 150 particles x 100 samples counted."""
+    from relax.ppca_refinement.oversampled_stream import (
+        job_program_bytes,
+        launch_job_chunk,
+        plan_job_chunk,
+        prepare_oversampled_stream,
+    )
+
+    stream = (_tilt_stream if kind == "subtomogram" else _spa_stream)(*stage)
+    n_rotations = int(stream.arrays.rotations.shape[0]) - 1
+    dimensions = int(stream.translations.shape[1])
+    # The planner reads shapes only: zero child grids of RELION's sizes (8 child rotations, 2^D child shifts).
+    ostream = prepare_oversampled_stream(
+        stream,
+        np.zeros((8 * n_rotations, 3, 3), np.float32),
+        np.zeros(((1 << dimensions) * int(stream.translations.shape[0]), dimensions), np.float32),
+    )
+    device = 80 * GIB
+    largest = launch_job_chunk(ostream)
+    assert largest == (128 if kind == "subtomogram" else 1024)
+    assert plan_job_chunk(ostream, 150, memory_bytes=device - _resident(stream), device_bytes=device) == largest
+    # A 16 GB card plans fewer jobs per program when the largest chunk does not fit it.
+    small = 16 * GIB
+    planned = plan_job_chunk(ostream, 150, memory_bytes=small - _resident(stream), device_bytes=small)
+    budget = small - _resident(stream) - TILE_FRAGMENTATION_HEADROOM * small
+    assert planned <= largest and job_program_bytes(ostream, 150, planned) <= budget
+
+
 def test_a_cpu_stream_refuses_a_rotation_block_its_host_cannot_hold():
     """On the CPU the moment program's XLA adjoint holds one half volume per block image and channel: the
     k3conf r31 stage at rotation block 512 needs far more than a 64 GiB host, and is refused before any
