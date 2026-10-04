@@ -96,6 +96,167 @@ def _expected_accuracy_class_ids(class_assignments_half1, *, k_class_enabled, n_
     return np.zeros(int(n_units), dtype=np.int32)
 
 
+@dataclass(frozen=True)
+class IterationAccuracy:
+    """One numbered iteration's expected-accuracy estimate, or why there is none.
+
+    ``status`` is ``"ok"``, ``"skipped_firstiter_cc"``, ``"unavailable_inputs"`` or ``"error:..."``.
+    ``sampling_accuracy`` is the ``(acc_rot, acc_trans)`` the sampling state takes: the estimate, infinity
+    when the estimate was due and could not be made, ``None`` when the state keeps its values.
+    ``published`` says the trials and per-class values are those of a completed estimate.
+    """
+
+    status: str
+    acc_rot: float | None
+    acc_trans_angstrom: float | None
+    acc_rot_per_class: np.ndarray | None
+    acc_trans_per_class_angstrom: np.ndarray | None
+    class_counts: np.ndarray | None
+    trial_local_indices: np.ndarray | None
+    trial_particle_ids: np.ndarray | None
+    sampling_accuracy: tuple[float, float] | None
+    published: bool
+
+
+def estimate_iteration_accuracy(
+    inputs: Half1AccuracyInputs,
+    reference,
+    *,
+    best_eulers_deg,
+    class_assignments,
+    class_weights,
+    sigma2_noise_native,
+    current_size,
+    image_box_size,
+    n_classes: int,
+    iteration: int,
+    native_sampling_boundary: bool,
+    relion_firstiter_cc_this_iter: bool,
+    build_shared_projector: bool,
+    log: logging.Logger,
+):
+    """Estimate half 1's expected accuracy before a numbered expectation; ``(IterationAccuracy, projector)``.
+
+    ``reference``, ``best_eulers_deg``, ``class_assignments`` and ``sigma2_noise_native`` are half 1's.
+    With ``build_shared_projector`` the estimate projects through a ``ProjectorReuse`` of ``reference``
+    built here and returned, which the scoring projector setup then reuses: RELION computes each class's
+    projector once per iteration. A failed estimate is reported, not raised.
+    """
+    shared_projector_half1 = None
+    exact_acc_rot_this_iter = None
+    exact_acc_trans_this_iter = None
+    exact_acc_rot_per_class_this_iter = None
+    exact_acc_trans_per_class_this_iter = None
+    exact_accuracy_class_counts_this_iter = None
+    expected_accuracy_trial_local_indices = None
+    expected_accuracy_trial_particle_ids = None
+    sampling_accuracy = None
+    published = False
+    exact_accuracy_status_this_iter = "skipped_firstiter_cc"
+    should_estimate_exact_accuracy = not relion_firstiter_cc_this_iter
+    if native_sampling_boundary and should_estimate_exact_accuracy:
+        if inputs.trial_order_local is None or best_eulers_deg is None:
+            exact_accuracy_status_this_iter = "unavailable_inputs"
+            sampling_accuracy = (float("inf"), float("inf"))
+            log.warning(
+                "RELION exact expected accuracy unavailable at iteration %d; "
+                "convergence remains fail-closed",
+                iteration + 1,
+            )
+        else:
+            accuracy_class_ids = _expected_accuracy_class_ids(
+                class_assignments,
+                k_class_enabled=n_classes > 1,
+                n_units=inputs.dataset.n_units,
+            )
+            if build_shared_projector:
+                # Iteration 1 may project the initial real references and a
+                # replay may supply a captured projector; both keep their own.
+                from relax.refinement.projector_preparation import ProjectorReuse, prepare_scoring_projector
+
+                shared_projector_size = min(int(current_size), int(image_box_size))
+                shared_projector_half1 = ProjectorReuse(
+                    references=reference,
+                    current_size=shared_projector_size,
+                    image_box_size=image_box_size,
+                    projector=prepare_scoring_projector(
+                        reference,
+                        volume_shape=inputs.volume_shape,
+                        current_size=shared_projector_size,
+                        padding_factor=inputs.padding_factor,
+                        n_classes=n_classes,
+                        dump_label=f"iter{iteration:03d}_half0",
+                    ),
+                )
+            try:
+                accuracy = inputs.estimate(
+                    projector_data=None if shared_projector_half1 is None else shared_projector_half1.projector.data,
+                    reference_fourier=reference,
+                    best_eulers_deg=best_eulers_deg,
+                    class_ids=accuracy_class_ids,
+                    class_weights=class_weights,
+                    sigma2_noise_native=sigma2_noise_native,
+                    current_image_size=current_size,
+                )
+                exact_acc_rot_this_iter = float(accuracy.acc_rot)
+                exact_acc_trans_this_iter = float(accuracy.acc_trans_angstrom)
+                exact_acc_rot_per_class_this_iter = np.asarray(
+                    accuracy.acc_rot_per_class,
+                    dtype=np.float64,
+                ).copy()
+                exact_acc_trans_per_class_this_iter = np.asarray(
+                    accuracy.acc_trans_per_class_angstrom,
+                    dtype=np.float64,
+                ).copy()
+                exact_accuracy_class_counts_this_iter = np.asarray(
+                    accuracy.class_counts,
+                    dtype=np.int64,
+                ).copy()
+                expected_accuracy_trial_local_indices = np.asarray(
+                    accuracy.trial_local_indices,
+                    dtype=np.int64,
+                ).copy()
+                expected_accuracy_trial_particle_ids = np.asarray(
+                    accuracy.trial_particle_ids,
+                    dtype=np.int64,
+                ).copy()
+                exact_accuracy_status_this_iter = "ok"
+                published = True
+                sampling_accuracy = (exact_acc_rot_this_iter, exact_acc_trans_this_iter)
+                log.info(
+                    "RELION exact expected accuracy: acc_rot=%.3f deg, acc_trans=%.4f A "
+                    "(trials=%d, first_particle_ids=%s)",
+                    exact_acc_rot_this_iter,
+                    exact_acc_trans_this_iter,
+                    int(accuracy.trial_local_indices.size),
+                    accuracy.trial_particle_ids[:5].tolist(),
+                )
+            except Exception as exc:
+                exact_accuracy_status_this_iter = f"error:{type(exc).__name__}:{exc}"
+                sampling_accuracy = (float("inf"), float("inf"))
+                log.warning(
+                    "RELION exact expected-accuracy estimation failed at iteration %d; "
+                    "convergence remains fail-closed: %s",
+                    iteration + 1,
+                    exc,
+                )
+    return (
+        IterationAccuracy(
+            status=exact_accuracy_status_this_iter,
+            acc_rot=exact_acc_rot_this_iter,
+            acc_trans_angstrom=exact_acc_trans_this_iter,
+            acc_rot_per_class=exact_acc_rot_per_class_this_iter,
+            acc_trans_per_class_angstrom=exact_acc_trans_per_class_this_iter,
+            class_counts=exact_accuracy_class_counts_this_iter,
+            trial_local_indices=expected_accuracy_trial_local_indices,
+            trial_particle_ids=expected_accuracy_trial_particle_ids,
+            sampling_accuracy=sampling_accuracy,
+            published=published,
+        ),
+        shared_projector_half1,
+    )
+
+
 def estimate_relion_expected_accuracy_from_prepared_inputs(
     *,
     references_relion,

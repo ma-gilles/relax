@@ -76,7 +76,7 @@ from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.expected_accuracy import (
     RELION_DEFAULT_SIGMA2_FUDGE,
     Half1AccuracyInputs,
-    _expected_accuracy_class_ids,
+    estimate_iteration_accuracy,
     prepare_relion_half1_trial_order,
 )
 from relax.helpers.fourier_window import quantize_current_size
@@ -193,7 +193,6 @@ from relax.refinement.noise_updates import (
 from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.particle_loading import configure_half_image_preprocessing
 from relax.refinement.projector_preparation import (
-    ProjectorReuse,
     _validate_captured_relion_projector_for_iteration,
     prepare_initial_real_references,
     prepare_scoring_projector,
@@ -1224,102 +1223,30 @@ def refine_single_volume(
         # expected-accuracy estimate and reused by the scoring projector setup
         # below: RELION computes each class's projector once per iteration.
         shared_projector_half1 = None
-        exact_acc_rot_this_iter = None
-        exact_acc_trans_this_iter = None
-        exact_acc_rot_per_class_this_iter = None
-        exact_acc_trans_per_class_this_iter = None
-        exact_accuracy_class_counts_this_iter = None
-        exact_accuracy_status_this_iter = "skipped_firstiter_cc"
-        should_estimate_exact_accuracy = not relion_firstiter_cc_this_iter
-        if native_sampling_boundary and should_estimate_exact_accuracy:
-            previous_eulers_half1 = halves[0].rotation_eulers
-            if expected_accuracy_trial_order is None or previous_eulers_half1 is None:
-                exact_accuracy_status_this_iter = "unavailable_inputs"
-                state.acc_rot = float("inf")
-                state.acc_trans = float("inf")
-                logger.warning(
-                    "RELION exact expected accuracy unavailable at iteration %d; "
-                    "convergence remains fail-closed",
-                    iteration + 1,
-                )
-            else:
-                accuracy_class_ids = _expected_accuracy_class_ids(
-                    class_assignments[0],
-                    k_class_enabled=k_class_enabled,
-                    n_units=experiment_datasets[0].n_units,
-                )
-                if has_previous_iteration and replay_result.relion_projector_state is None:
-                    # Iteration 1 may project the initial real references and a
-                    # replay may supply a captured projector; both keep their own.
-                    shared_projector_size = min(int(current_size), int(grid_size))
-                    shared_projector_half1 = ProjectorReuse(
-                        references=reference_model.maps[0],
-                        current_size=shared_projector_size,
-                        image_box_size=grid_size,
-                        projector=prepare_scoring_projector(
-                            reference_model.maps[0],
-                            volume_shape=volume_shape,
-                            current_size=shared_projector_size,
-                            padding_factor=PROJECTION_PADDING_FACTOR,
-                            n_classes=n_classes,
-                            dump_label=f"iter{iteration:03d}_half0",
-                        ),
-                    )
-                try:
-                    accuracy = expected_accuracy_inputs.estimate(
-                        projector_data=None if shared_projector_half1 is None else shared_projector_half1.projector.data,
-                        reference_fourier=reference_model.maps[0],
-                        best_eulers_deg=previous_eulers_half1,
-                        class_ids=accuracy_class_ids,
-                        class_weights=class_mixture.weights,
-                        sigma2_noise_native=noise_model.radial_per_half[0],
-                        current_image_size=current_size,
-                    )
-                    exact_acc_rot_this_iter = float(accuracy.acc_rot)
-                    exact_acc_trans_this_iter = float(accuracy.acc_trans_angstrom)
-                    exact_acc_rot_per_class_this_iter = np.asarray(
-                        accuracy.acc_rot_per_class,
-                        dtype=np.float64,
-                    ).copy()
-                    exact_acc_trans_per_class_this_iter = np.asarray(
-                        accuracy.acc_trans_per_class_angstrom,
-                        dtype=np.float64,
-                    ).copy()
-                    exact_accuracy_class_counts_this_iter = np.asarray(
-                        accuracy.class_counts,
-                        dtype=np.int64,
-                    ).copy()
-                    expected_accuracy_trial_local_indices = np.asarray(
-                        accuracy.trial_local_indices,
-                        dtype=np.int64,
-                    ).copy()
-                    expected_accuracy_trial_particle_ids = np.asarray(
-                        accuracy.trial_particle_ids,
-                        dtype=np.int64,
-                    ).copy()
-                    exact_accuracy_status_this_iter = "ok"
-                    model_acc_rot_per_class = exact_acc_rot_per_class_this_iter.copy()
-                    model_acc_trans_per_class = exact_acc_trans_per_class_this_iter.copy()
-                    state.acc_rot = exact_acc_rot_this_iter
-                    state.acc_trans = exact_acc_trans_this_iter
-                    logger.info(
-                        "RELION exact expected accuracy: acc_rot=%.3f deg, acc_trans=%.4f A "
-                        "(trials=%d, first_particle_ids=%s)",
-                        exact_acc_rot_this_iter,
-                        exact_acc_trans_this_iter,
-                        int(accuracy.trial_local_indices.size),
-                        accuracy.trial_particle_ids[:5].tolist(),
-                    )
-                except Exception as exc:
-                    exact_accuracy_status_this_iter = f"error:{type(exc).__name__}:{exc}"
-                    state.acc_rot = float("inf")
-                    state.acc_trans = float("inf")
-                    logger.warning(
-                        "RELION exact expected-accuracy estimation failed at iteration %d; "
-                        "convergence remains fail-closed: %s",
-                        iteration + 1,
-                        exc,
-                    )
+        iteration_accuracy, shared_projector_half1 = estimate_iteration_accuracy(
+            expected_accuracy_inputs,
+            reference_model.maps[0],
+            best_eulers_deg=halves[0].rotation_eulers,
+            class_assignments=class_assignments[0],
+            class_weights=class_mixture.weights,
+            sigma2_noise_native=noise_model.radial_per_half[0],
+            current_size=current_size,
+            image_box_size=grid_size,
+            n_classes=n_classes,
+            iteration=iteration,
+            native_sampling_boundary=native_sampling_boundary,
+            relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+            build_shared_projector=has_previous_iteration and replay_result.relion_projector_state is None,
+            log=logger,
+        )
+        if iteration_accuracy.sampling_accuracy is not None:
+            # The estimate, or infinity when it was due and could not be made (convergence stays fail-closed).
+            state.acc_rot, state.acc_trans = iteration_accuracy.sampling_accuracy
+        if iteration_accuracy.published:
+            expected_accuracy_trial_local_indices = iteration_accuracy.trial_local_indices
+            expected_accuracy_trial_particle_ids = iteration_accuracy.trial_particle_ids
+            model_acc_rot_per_class = iteration_accuracy.acc_rot_per_class.copy()
+            model_acc_trans_per_class = iteration_accuracy.acc_trans_per_class_angstrom.copy()
 
         # Accuracy and the preceding iteration's stall counters select this
         # expectation's grid; completed-iteration updates remain after M-step.
@@ -2611,8 +2538,8 @@ def refine_single_volume(
             max_posterior=combined_max_posterior,
             ave_pmax=ave_pmax,
             significant_counts=significance.convergence,
-            exact_acc_rot=exact_acc_rot_this_iter,
-            exact_acc_trans=exact_acc_trans_this_iter,
+            exact_acc_rot=iteration_accuracy.acc_rot,
+            exact_acc_trans=iteration_accuracy.acc_trans_angstrom,
             log=logger,
         )
         iter_acc_rot = accuracy_replay.acc_rot
@@ -2647,15 +2574,15 @@ def refine_single_volume(
             float(iter_acc_rot) if iter_acc_rot is not None else np.nan,
             float(iter_acc_trans) if iter_acc_trans is not None else np.nan,
             np.full(n_classes, np.nan, dtype=np.float64)
-            if exact_acc_rot_per_class_this_iter is None
-            else exact_acc_rot_per_class_this_iter,
+            if iteration_accuracy.acc_rot_per_class is None
+            else iteration_accuracy.acc_rot_per_class,
             np.full(n_classes, np.nan, dtype=np.float64)
-            if exact_acc_trans_per_class_this_iter is None
-            else exact_acc_trans_per_class_this_iter,
+            if iteration_accuracy.acc_trans_per_class_angstrom is None
+            else iteration_accuracy.acc_trans_per_class_angstrom,
             np.full(n_classes, -1, dtype=np.int64)
-            if exact_accuracy_class_counts_this_iter is None
-            else exact_accuracy_class_counts_this_iter,
-            exact_accuracy_status_this_iter,
+            if iteration_accuracy.class_counts is None
+            else iteration_accuracy.class_counts,
+            iteration_accuracy.status,
             float(state.current_changes_optimal_orientations),
             float(state.current_changes_optimal_offsets_angstrom),
         )

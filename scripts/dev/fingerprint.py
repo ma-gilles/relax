@@ -353,7 +353,7 @@ MUTATIONS = (
     ("previous_data_vs_prior_doubled", "data_vs_prior_prev_raw = np.asarray(", "data_vs_prior_prev_raw = 2 * np.asarray(",
      "the half-map size plan reads a doubled previous curve", False),
     # One per operation of the numbered iteration that is, or is to become, a function of its own.
-    ("accuracy_projector_size", "shared_projector_size = min(int(current_size), int(grid_size))", "shared_projector_size = min(int(current_size) - 2, int(grid_size))",
+    ("accuracy_projector_size", "shared_projector_size = min(int(current_size), int(image_box_size))", "shared_projector_size = min(int(current_size) - 2, int(image_box_size))",
      "the accuracy estimate's shared projector is built two pixels small", True),
     ("accuracy_status", 'exact_accuracy_status_this_iter = "ok"', 'exact_accuracy_status_this_iter = "okay"',
      "a successful accuracy estimate reports another status", True),
