@@ -122,9 +122,14 @@ def test_capture_precedes_guard_failure(settings, monkeypatch):
 def test_actual_controller_audits_before_join_and_snapshot():
     source = inspect.getsource(iteration_loop.refine_single_volume)
     audit = source.index('reconstruction_diagnostics.audit_prejoin_accumulators(')
-    combine = source.index('Ft_y_combined = _combine_optional_half_accumulators(', audit)
-    join = source.index('join_half_accumulators_at_low_resolution(', combine)
-    snapshot = source.index('_snapshot_and_release_previous_k1_means(reference_model.maps)', join)
-    postjoin_dump = source.index('reconstruction_diagnostics.write_bpref_accumulators(', snapshot)
-    split_prior = source.index('estimate_split_half_prior(', postjoin_dump)
-    assert audit < combine < join < snapshot < postjoin_dump < split_prior
+    class_call = source.index('class_maximization(', audit)
+    k1_call = source.index('k1_maximization(', class_call)
+    assert audit < class_call < k1_call
+    class_source = inspect.getsource(iteration_loop.class_maximization)
+    assert class_source.index('Ft_y_combined = _combine_optional_half_accumulators(') >= 0
+    k1_source = inspect.getsource(iteration_loop.k1_maximization)
+    join = k1_source.index('join_half_accumulators_at_low_resolution(')
+    snapshot = k1_source.index('_snapshot_and_release_previous_k1_means(reference_model.maps)', join)
+    postjoin_dump = k1_source.index('reconstruction_diagnostics.write_bpref_accumulators(', snapshot)
+    split_prior = k1_source.index('estimate_split_half_prior(', postjoin_dump)
+    assert join < snapshot < postjoin_dump < split_prior

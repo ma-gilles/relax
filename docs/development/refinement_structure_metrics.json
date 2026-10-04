@@ -20,7 +20,7 @@
     "totals": {
       "maximum_function_line_span": 2501,
       "maximum_parameter_count": 33,
-      "large_argument_function_count": 26,
+      "large_argument_function_count": 28,
       "very_large_argument_function_count": 4,
       "physical_lines": 22300,
       "nonblank_noncomment_lines": 19500

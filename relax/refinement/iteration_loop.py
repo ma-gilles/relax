@@ -15,6 +15,7 @@ import os
 import time
 from dataclasses import replace
 from functools import partial, wraps
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -332,6 +333,351 @@ def _copy_first_class(stacked):
     if isinstance(stacked, np.ndarray):
         return np.broadcast_to(stacked[:1], stacked.shape).copy()
     return jnp.broadcast_to(stacked[:1], stacked.shape)
+
+
+class ClassMaximization(NamedTuple):
+    """What a Class3D M-step leaves for the rest of its iteration (the model is written in place)."""
+
+    Ft_y_combined: object
+    Ft_ctf_combined: object
+    # The references the M-step replaced, on the device; the iteration releases them at its end.
+    previous_means: list
+    tau2_shells: object
+    data_vs_prior: object
+    tau2_update_details: dict
+
+
+def class_maximization(
+    reference_model,
+    Ft_y_per_half,
+    Ft_ctf_per_half,
+    reconstruction_settings: ReconstructionSettings,
+    *,
+    parity,
+    halves,
+    n_classes: int,
+    iteration: int,
+    current_size,
+    image_current_size,
+    mstep_accumulator_shape,
+    mstep_full_half_axis,
+    projector_power_spectrum,
+    iter_replay_override,
+    replay,
+    scoring_dtype,
+    relion_firstiter_cc_this_iter: bool,
+    source_pixel_size_angstrom,
+    data_vs_prior_trajectory: list,
+) -> ClassMaximization:
+    """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
+
+    In order: combine the half accumulators, take each class's tau2 from the previous reference's power
+    spectrum, append the data-vs-prior curve to ``data_vs_prior_trajectory``, replace
+    ``reference_model``'s tau2, release its maps and replace them with the reconstruction; after a
+    first-iteration CC pass, taper the reported curves. The caller installs the returned curve as the
+    next iteration's scheduling curve.
+    """
+    Ft_y_0, Ft_y_1 = Ft_y_per_half
+    Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
+    Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
+    Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
+    # K-class 256px maps are large enough that materializing both
+    # previous class stacks on the host immediately after pass 2 can
+    # SIGBUS under Slurm/tmp quota pressure.  JAX arrays are immutable;
+    # keep device references here and let the later per-class tau2/sign
+    # code transfer only the slices it actually needs.
+    previous_means = [jnp.asarray(mean) if mean is not None else None for mean in reference_model.maps]
+    _t_unreg_first = time.time()
+    class_priors = estimate_class_priors(
+        previous_means,
+        Ft_y_combined,
+        Ft_ctf_combined,
+        reconstruction_settings,
+        half_denominators=(Ft_ctf_0, Ft_ctf_1),
+        prior_tau2=reference_model.tau2,
+        halves=halves,
+        n_classes=n_classes,
+        iteration=iteration,
+        current_size=current_size,
+        image_current_size=image_current_size,
+        accumulator_shape=mstep_accumulator_shape,
+        full_half_axis=mstep_full_half_axis,
+        projector_power_spectrum=projector_power_spectrum,
+        iter_replay_override=iter_replay_override,
+        replay=replay,
+        scoring_dtype=scoring_dtype,
+        started_at=_t_unreg_first,
+        log=logger,
+    )
+    mean_signal_variance = class_priors.variance
+    mean_signal_variance_shells = class_priors.shells
+    data_vs_prior_iter = class_priors.data_vs_prior
+    tau2_update_details_per_class = class_priors.details_per_class
+    kclass_tau2_source = class_priors.source
+    del class_priors
+    data_vs_prior_trajectory.append(data_vs_prior_iter)
+    tau2_update_details = _stack_class_tau2_update_details(tau2_update_details_per_class)
+    del tau2_update_details_per_class
+    logger.info(
+        "Computed iter-%d Class3D tau2 from %s: %.1fs",
+        iteration + 1,
+        kclass_tau2_source,
+        time.time() - _t_unreg_first,
+    )
+    reference_model.tau2 = mean_signal_variance
+    reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
+
+    # --- Free previous-iteration means to reclaim GPU memory ---
+    # (previous_means already snapshotted earlier for FSC sign alignment)
+    for k in range(2):
+        reference_model.maps[k] = None
+
+    # --- Now reconstruct the regularized means ---
+    _t_recon = time.time()
+    reference_model.maps[:] = reconstruct_numbered_class_maps(
+        Ft_y_combined,
+        Ft_ctf_combined,
+        mean_signal_variance_shells,
+        reconstruction_settings,
+        n_classes=n_classes,
+        iteration=iteration,
+        current_size=current_size,
+        accumulator_volume_shape=mstep_accumulator_shape,
+        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+    )
+    logger.info(
+        "Regularized reconstruction (2 halves + flatten): %.1fs",
+        time.time() - _t_recon,
+    )
+    if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+        # Class3D tapers each class's tau2_class and data_vs_prior_class the
+        # same way (ml_optimiser.cpp:6389-6420). RELION's comment calls this
+        # output only, but the next E-step gates each class's scale sums on
+        # data_vs_prior_class > 3 (:10473), so the untapered curve let
+        # shells past ini_high into iteration 2's scale correction. The
+        # class tau2 volumes are recomputed from the Iref power next
+        # iteration, so only the shell curves carry the taper.
+        data_vs_prior_iter = _firstiter_cc_ini_high_tapered(
+            data_vs_prior_iter,
+            reconstruction_settings.grid_size,
+            source_pixel_size_angstrom,
+            parity.relion_firstiter_ini_high_angstrom,
+            filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
+        )
+        data_vs_prior_trajectory[-1] = data_vs_prior_iter
+        tapered_prior = taper_first_cc_class_prior(
+            mean_signal_variance_shells,
+            tau2_update_details,
+            reconstruction_settings,
+            pixel_size_angstrom=source_pixel_size_angstrom,
+        )
+        mean_signal_variance_shells = tapered_prior.shells
+        tau2_update_details = tapered_prior.details
+        del tapered_prior
+        logger.info(
+            "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
+            float(parity.relion_firstiter_ini_high_angstrom),
+        )
+    return ClassMaximization(
+        Ft_y_combined,
+        Ft_ctf_combined,
+        previous_means,
+        mean_signal_variance_shells,
+        data_vs_prior_iter,
+        tau2_update_details,
+    )
+
+
+class K1Maximization(NamedTuple):
+    """What a K=1 M-step leaves for the rest of its iteration (the model is written in place)."""
+
+    # The half accumulators the solve used: joined at low resolution when that is on.
+    Ft_y_per_half: tuple
+    Ft_ctf_per_half: tuple
+    # Host copies of the references the M-step replaced, for sign alignment.
+    previous_means: list
+    fsc: object
+    fsc_for_update: object
+    tau2_update_details: dict
+    tau2_update_details_per_half: list
+
+
+def k1_maximization(
+    reference_model,
+    Ft_y_per_half,
+    Ft_ctf_per_half,
+    reconstruction_settings: ReconstructionSettings,
+    *,
+    parity,
+    pixel_resolutions,
+    current_resolution,
+    iteration: int,
+    current_size,
+    mstep_accumulator_shape,
+    mstep_full_half_axes,
+    scoring_dtype,
+    relion_firstiter_cc_this_iter: bool,
+    source_pixel_size_angstrom,
+    bpref_boundary_iteration_matches,
+) -> K1Maximization:
+    """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
+
+    In order: join the half accumulators at low resolution when requested, copy the previous references
+    to host and release them, estimate the split-half prior from this iteration's FSC, replace
+    ``reference_model``'s tau2 and maps; after a first-iteration CC pass, taper the reported tau2; then
+    park the tau2 volumes on the host.
+    """
+    Ft_y_0, Ft_y_1 = Ft_y_per_half
+    Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
+    retained_Ft_y_0_device = None
+    # RELION's --low_resol_join_halves averages the low-resolution shells of
+    # the K=1 half accumulators before the Wiener solve; see
+    # join_half_accumulators_at_low_resolution for the rationale and cap.
+    if parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
+        Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1, retained_Ft_y_0_device = join_half_accumulators_at_low_resolution(
+            (Ft_y_0, Ft_y_1),
+            (Ft_ctf_0, Ft_ctf_1),
+            accumulator_volume_shape=mstep_accumulator_shape,
+            grid_size=reconstruction_settings.grid_size,
+            voxel_size=source_pixel_size_angstrom,
+            padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+            low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+            pixel_resolutions=pixel_resolutions,
+            current_resolution=current_resolution,
+            preserve_inputs=False,
+            return_retained_first_numerator=True,
+        )
+    previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
+    _t_unreg_first = time.time()
+    # Optional dump of post-join Ft_y, Ft_ctf for shell-by-shell parity
+    # comparison against RELION's RELAX_MSTEP_DUMP_DIR. Activated by
+    # RELAX_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
+    _bpref_accum_dir = os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR")
+    if _bpref_accum_dir and bpref_boundary_iteration_matches:
+        reconstruction_diagnostics.write_bpref_accumulators(
+            _bpref_accum_dir,
+            stage="accum",
+            iteration=iteration,
+            current_size=current_size,
+            padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+            grid_size=reconstruction_settings.grid_size,
+            voxel_size=source_pixel_size_angstrom,
+            volume_shape=reconstruction_settings.volume_shape,
+            accumulator_shape=mstep_accumulator_shape,
+            Ft_y_0=Ft_y_0,
+            Ft_y_1=Ft_y_1,
+            Ft_ctf_0=Ft_ctf_0,
+            Ft_ctf_1=Ft_ctf_1,
+        )
+    split_prior = estimate_split_half_prior(
+        (Ft_y_0, Ft_y_1),
+        (Ft_ctf_0, Ft_ctf_1),
+        reconstruction_settings,
+        current_size=current_size,
+        accumulator_shape=mstep_accumulator_shape,
+        full_half_axes=mstep_full_half_axes,
+        iteration=iteration,
+        scoring_dtype=scoring_dtype,
+        started_at=_t_unreg_first,
+        log=logger,
+    )
+    current_iter_fsc = split_prior.fsc
+    tau2_fsc_for_update = split_prior.fsc_for_update
+    mean_signal_variance = split_prior.variance
+    mean_signal_variance_per_half = split_prior.variance_per_half
+    mean_signal_variance_shells_per_half = split_prior.shells_per_half
+    tau2_update_details_per_half = split_prior.details_per_half
+    # Diagnostics follow the half-1 model.star, matching the parity report.
+    tau2_update_details = tau2_update_details_per_half[0]
+    del split_prior
+    logger.info(
+        "tau2 update from THIS-iter FSC: old_max=%.4e new_max=%.4e half_max=(%.4e, %.4e)",
+        float(jnp.max(jnp.abs(reference_model.tau2))),
+        float(jnp.max(jnp.abs(mean_signal_variance))),
+        float(jnp.max(jnp.abs(mean_signal_variance_per_half[0]))),
+        float(jnp.max(jnp.abs(mean_signal_variance_per_half[1]))),
+    )
+    reference_model.tau2 = mean_signal_variance
+    reference_model.tau2_per_half = _updated_mean_variance_per_half(
+        reference_model.tau2,
+        mean_signal_variance_per_half,
+        use_per_half_mean_variance=parity.use_per_half_mean_variance,
+    )
+
+    # --- Now reconstruct the regularized means ---
+    # (the previous K=1 references were released by the snapshot above)
+    _t_recon = time.time()
+    reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
+        (Ft_y_0, Ft_y_1),
+        (Ft_ctf_0, Ft_ctf_1),
+        mean_signal_variance_shells_per_half,
+        reconstruction_settings,
+        iteration=iteration,
+        current_size=current_size,
+        accumulator_volume_shape=mstep_accumulator_shape,
+        relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+        retained_first_numerator=retained_Ft_y_0_device,
+    )
+    logger.info(
+        "Regularized reconstruction (2 halves + flatten): %.1fs",
+        time.time() - _t_recon,
+    )
+    retained_Ft_y_0_device = None
+
+    # RELION reconstructs the first-iteration CC maps with the untapered
+    # updateSSNRarrays tau2.  Only afterwards does
+    # initialLowPassFilterReferences taper tau2/data_vs_prior for the
+    # model state and reporting; that tapered spectrum is explicitly not
+    # used in the reconstruction calculation (ml_optimiser.cpp:5296-5328).
+    if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
+        tapered_prior = taper_first_cc_k1_prior(
+            mean_signal_variance_per_half,
+            tau2_update_details_per_half,
+            reconstruction_settings,
+            pixel_size_angstrom=source_pixel_size_angstrom,
+            scoring_dtype=scoring_dtype,
+        )
+        mean_signal_variance = tapered_prior.variance
+        mean_signal_variance_per_half = tapered_prior.variance_per_half
+        tau2_update_details_per_half = tapered_prior.details_per_half
+        del tapered_prior
+        reference_model.tau2 = mean_signal_variance
+        reference_model.tau2_per_half = _updated_mean_variance_per_half(
+            reference_model.tau2,
+            mean_signal_variance_per_half,
+            use_per_half_mean_variance=parity.use_per_half_mean_variance,
+        )
+        tau2_update_details = tau2_update_details_per_half[0]
+        logger.info(
+            "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
+            "with ini_high=%.2f A",
+            float(parity.relion_firstiter_ini_high_angstrom),
+        )
+    # The K=1 tau2 volumes are read again only by the next M-step (the
+    # resident E-step does not use them). Keep them on the host between
+    # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
+    # float32 volumes are 8 GB of the device floor (GPU census, bigbox
+    # 14480607). The per-half reconstruction volumes are not read again:
+    # drop them here instead of copying them.
+    (
+        reference_model.tau2,
+        reference_model.tau2_per_half,
+        mean_signal_variance,
+    ) = _host_tau2_volumes(
+        reference_model.tau2,
+        reference_model.tau2_per_half,
+        mean_signal_variance,
+    )
+    mean_signal_variance_per_half = None
+    return K1Maximization(
+        (Ft_y_0, Ft_y_1),
+        (Ft_ctf_0, Ft_ctf_1),
+        previous_means,
+        current_iter_fsc,
+        tau2_fsc_for_update,
+        tau2_update_details,
+        tau2_update_details_per_half,
+    )
 
 
 def _with_stable_window_class_history(refine):
@@ -1786,29 +2132,26 @@ def refine_single_volume(
         # Snapshot the previous-iter means BEFORE the reconstruction so sign
         # alignment has a reference at iter 1.
         if k_class_enabled:
-            Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
-            Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
-            # K-class 256px maps are large enough that materializing both
-            # previous class stacks on the host immediately after pass 2 can
-            # SIGBUS under Slurm/tmp quota pressure.  JAX arrays are immutable;
-            # keep device references here and let the later per-class tau2/sign
-            # code transfer only the slices it actually needs.
-            previous_means = [jnp.asarray(mean) if mean is not None else None for mean in reference_model.maps]
-            _t_unreg_first = time.time()
-            class_priors = estimate_class_priors(
-                previous_means,
+            (
                 Ft_y_combined,
                 Ft_ctf_combined,
+                previous_means,
+                mean_signal_variance_shells,
+                data_vs_prior_iter,
+                tau2_update_details,
+            ) = class_maximization(
+                reference_model,
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
                 reconstruction_settings,
-                half_denominators=(Ft_ctf_0, Ft_ctf_1),
-                prior_tau2=reference_model.tau2,
+                parity=parity,
                 halves=halves,
                 n_classes=n_classes,
                 iteration=iteration,
                 current_size=current_size,
                 image_current_size=image_current_size,
-                accumulator_shape=mstep_accumulator_shape,
-                full_half_axis=mstep_full_half_axis,
+                mstep_accumulator_shape=mstep_accumulator_shape,
+                mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=(
                     None
                     if not has_previous_iteration or projectors[0] is None
@@ -1817,221 +2160,37 @@ def refine_single_volume(
                 iter_replay_override=iter_replay_override,
                 replay=replay,
                 scoring_dtype=scoring_dtype,
-                started_at=_t_unreg_first,
-                log=logger,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                source_pixel_size_angstrom=source_pixel_size_angstrom,
+                data_vs_prior_trajectory=history.data_vs_prior_trajectory,
             )
-            mean_signal_variance = class_priors.variance
-            mean_signal_variance_shells = class_priors.shells
-            data_vs_prior_iter = class_priors.data_vs_prior
-            tau2_update_details_per_class = class_priors.details_per_class
-            kclass_tau2_source = class_priors.source
-            del class_priors
-            history.data_vs_prior_trajectory.append(data_vs_prior_iter)
             previous_data_vs_prior_for_scheduling = data_vs_prior_iter
-            tau2_update_details = _stack_class_tau2_update_details(tau2_update_details_per_class)
-            del tau2_update_details_per_class
-            logger.info(
-                "Computed iter-%d Class3D tau2 from %s: %.1fs",
-                iteration + 1,
-                kclass_tau2_source,
-                time.time() - _t_unreg_first,
-            )
-            reference_model.tau2 = mean_signal_variance
-            reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
-
-            # --- Free previous-iteration means to reclaim GPU memory ---
-            # (previous_means already snapshotted earlier for FSC sign alignment)
-            for k in range(2):
-                reference_model.maps[k] = None
-
-            # --- Now reconstruct the regularized means ---
-            _t_recon = time.time()
-            reference_model.maps[:] = reconstruct_numbered_class_maps(
-                Ft_y_combined,
-                Ft_ctf_combined,
-                mean_signal_variance_shells,
-                reconstruction_settings,
-                n_classes=n_classes,
-                iteration=iteration,
-                current_size=current_size,
-                accumulator_volume_shape=mstep_accumulator_shape,
-                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-            )
-            logger.info(
-                "Regularized reconstruction (2 halves + flatten): %.1fs",
-                time.time() - _t_recon,
-            )
-            if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
-                # Class3D tapers each class's tau2_class and data_vs_prior_class the
-                # same way (ml_optimiser.cpp:6389-6420). RELION's comment calls this
-                # output only, but the next E-step gates each class's scale sums on
-                # data_vs_prior_class > 3 (:10473), so the untapered curve let
-                # shells past ini_high into iteration 2's scale correction. The
-                # class tau2 volumes are recomputed from the Iref power next
-                # iteration, so only the shell curves carry the taper.
-                data_vs_prior_iter = _firstiter_cc_ini_high_tapered(
-                    data_vs_prior_iter,
-                    grid_size,
-                    source_pixel_size_angstrom,
-                    parity.relion_firstiter_ini_high_angstrom,
-                    filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
-                )
-                history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
-                previous_data_vs_prior_for_scheduling = data_vs_prior_iter
-                tapered_prior = taper_first_cc_class_prior(
-                    mean_signal_variance_shells,
-                    tau2_update_details,
-                    reconstruction_settings,
-                    pixel_size_angstrom=source_pixel_size_angstrom,
-                )
-                mean_signal_variance_shells = tapered_prior.shells
-                tau2_update_details = tapered_prior.details
-                del tapered_prior
-                logger.info(
-                    "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
-                    float(parity.relion_firstiter_ini_high_angstrom),
-                )
         else:
-            retained_Ft_y_0_device = None
-            # RELION's --low_resol_join_halves averages the low-resolution shells of
-            # the K=1 half accumulators before the Wiener solve; see
-            # join_half_accumulators_at_low_resolution for the rationale and cap.
-            if parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
-                Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1, retained_Ft_y_0_device = join_half_accumulators_at_low_resolution(
-                    (Ft_y_0, Ft_y_1),
-                    (Ft_ctf_0, Ft_ctf_1),
-                    accumulator_volume_shape=mstep_accumulator_shape,
-                    grid_size=grid_size,
-                    voxel_size=source_pixel_size_angstrom,
-                    padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-                    low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
-                    pixel_resolutions=history.pixel_resolutions,
-                    current_resolution=getattr(state, "current_resolution", float("inf")),
-                    preserve_inputs=False,
-                    return_retained_first_numerator=True,
-                )
-            previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
-            _t_unreg_first = time.time()
-            # Optional dump of post-join Ft_y, Ft_ctf for shell-by-shell parity
-            # comparison against RELION's RELAX_MSTEP_DUMP_DIR. Activated by
-            # RELAX_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
-            _bpref_accum_dir = os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR")
-            if _bpref_accum_dir and _bpref_boundary_iteration_matches:
-                reconstruction_diagnostics.write_bpref_accumulators(
-                    _bpref_accum_dir,
-                    stage="accum",
-                    iteration=iteration,
-                    current_size=current_size,
-                    padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-                    grid_size=grid_size,
-                    voxel_size=source_pixel_size_angstrom,
-                    volume_shape=volume_shape,
-                    accumulator_shape=mstep_accumulator_shape,
-                    Ft_y_0=Ft_y_0,
-                    Ft_y_1=Ft_y_1,
-                    Ft_ctf_0=Ft_ctf_0,
-                    Ft_ctf_1=Ft_ctf_1,
-                )
-            split_prior = estimate_split_half_prior(
-                (Ft_y_0, Ft_y_1),
-                (Ft_ctf_0, Ft_ctf_1),
-                reconstruction_settings,
-                current_size=current_size,
-                accumulator_shape=mstep_accumulator_shape,
-                full_half_axes=per_half.mstep_full_half_axis,
-                iteration=iteration,
-                scoring_dtype=scoring_dtype,
-                started_at=_t_unreg_first,
-                log=logger,
-            )
-            current_iter_fsc = split_prior.fsc
-            tau2_fsc_for_update = split_prior.fsc_for_update
-            mean_signal_variance = split_prior.variance
-            mean_signal_variance_per_half = split_prior.variance_per_half
-            mean_signal_variance_shells_per_half = split_prior.shells_per_half
-            tau2_update_details_per_half = split_prior.details_per_half
-            # Diagnostics follow the half-1 model.star, matching the parity report.
-            tau2_update_details = tau2_update_details_per_half[0]
-            del split_prior
-            logger.info(
-                "tau2 update from THIS-iter FSC: old_max=%.4e new_max=%.4e half_max=(%.4e, %.4e)",
-                float(jnp.max(jnp.abs(reference_model.tau2))),
-                float(jnp.max(jnp.abs(mean_signal_variance))),
-                float(jnp.max(jnp.abs(mean_signal_variance_per_half[0]))),
-                float(jnp.max(jnp.abs(mean_signal_variance_per_half[1]))),
-            )
-            reference_model.tau2 = mean_signal_variance
-            reference_model.tau2_per_half = _updated_mean_variance_per_half(
-                reference_model.tau2,
-                mean_signal_variance_per_half,
-                use_per_half_mean_variance=parity.use_per_half_mean_variance,
-            )
-
-            # --- Now reconstruct the regularized means ---
-            # (the previous K=1 references were released by the snapshot above)
-            _t_recon = time.time()
-            reference_model.maps[:] = reconstruct_numbered_k1_halfmaps(
-                (Ft_y_0, Ft_y_1),
-                (Ft_ctf_0, Ft_ctf_1),
-                mean_signal_variance_shells_per_half,
-                reconstruction_settings,
-                iteration=iteration,
-                current_size=current_size,
-                accumulator_volume_shape=mstep_accumulator_shape,
-                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
-                retained_first_numerator=retained_Ft_y_0_device,
-            )
-            logger.info(
-                "Regularized reconstruction (2 halves + flatten): %.1fs",
-                time.time() - _t_recon,
-            )
-            retained_Ft_y_0_device = None
-
-            # RELION reconstructs the first-iteration CC maps with the untapered
-            # updateSSNRarrays tau2.  Only afterwards does
-            # initialLowPassFilterReferences taper tau2/data_vs_prior for the
-            # model state and reporting; that tapered spectrum is explicitly not
-            # used in the reconstruction calculation (ml_optimiser.cpp:5296-5328).
-            if relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom is not None:
-                tapered_prior = taper_first_cc_k1_prior(
-                    mean_signal_variance_per_half,
-                    tau2_update_details_per_half,
-                    reconstruction_settings,
-                    pixel_size_angstrom=source_pixel_size_angstrom,
-                    scoring_dtype=scoring_dtype,
-                )
-                mean_signal_variance = tapered_prior.variance
-                mean_signal_variance_per_half = tapered_prior.variance_per_half
-                tau2_update_details_per_half = tapered_prior.details_per_half
-                del tapered_prior
-                reference_model.tau2 = mean_signal_variance
-                reference_model.tau2_per_half = _updated_mean_variance_per_half(
-                    reference_model.tau2,
-                    mean_signal_variance_per_half,
-                    use_per_half_mean_variance=parity.use_per_half_mean_variance,
-                )
-                tau2_update_details = tau2_update_details_per_half[0]
-                logger.info(
-                    "RELION iter-1 CC emulation: tapered post-reconstruction tau2/data-vs-prior "
-                    "with ini_high=%.2f A",
-                    float(parity.relion_firstiter_ini_high_angstrom),
-                )
-            # The K=1 tau2 volumes are read again only by the next M-step (the
-            # resident E-step does not use them). Keep them on the host between
-            # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
-            # float32 volumes are 8 GB of the device floor (GPU census, bigbox
-            # 14480607). The per-half reconstruction volumes are not read again:
-            # drop them here instead of copying them.
             (
-                reference_model.tau2,
-                reference_model.tau2_per_half,
-                mean_signal_variance,
-            ) = _host_tau2_volumes(
-                reference_model.tau2,
-                reference_model.tau2_per_half,
-                mean_signal_variance,
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
+                previous_means,
+                current_iter_fsc,
+                tau2_fsc_for_update,
+                tau2_update_details,
+                tau2_update_details_per_half,
+            ) = k1_maximization(
+                reference_model,
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
+                reconstruction_settings,
+                parity=parity,
+                pixel_resolutions=history.pixel_resolutions,
+                current_resolution=getattr(state, "current_resolution", float("inf")),
+                iteration=iteration,
+                current_size=current_size,
+                mstep_accumulator_shape=mstep_accumulator_shape,
+                mstep_full_half_axes=per_half.mstep_full_half_axis,
+                scoring_dtype=scoring_dtype,
+                relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+                source_pixel_size_angstrom=source_pixel_size_angstrom,
+                bpref_boundary_iteration_matches=_bpref_boundary_iteration_matches,
             )
-            mean_signal_variance_per_half = None
         _parity_dump.mark_stage(iteration, "recon")
 
         history.significant_counts.append(significance.recorded)
@@ -2079,8 +2238,7 @@ def refine_single_volume(
             # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
             # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
             reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
-            mean_signal_variance = _copy_first_class(mean_signal_variance)
-            reference_model.tau2 = mean_signal_variance
+            reference_model.tau2 = _copy_first_class(reference_model.tau2)
             reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
             mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
             data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
@@ -2626,7 +2784,7 @@ def refine_single_volume(
         Ft_ctf_0 = Ft_ctf_1 = None
         Ft_y_combined = Ft_ctf_combined = None
         unreg_means = previous_means = None
-        mean_signal_variance_per_half = mean_signal_variance_shells_per_half = tau2_update_details_per_half = None
+        tau2_update_details_per_half = None
         noise_stats_per_half = noise_stats_per_half_per_class = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None

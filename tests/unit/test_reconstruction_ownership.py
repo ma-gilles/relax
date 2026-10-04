@@ -46,15 +46,19 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     source = inspect.getsource(iteration_loop_module.refine_single_volume)
     settings = source.index("reconstruction_settings = ReconstructionSettings(")
     loop = source.index("while (schedule.force_max_iter_after_convergence")
-    for operation_name, solve_name, filter_name, flatten_name in (
+    for maximization_name, operation_name, solve_name, filter_name, flatten_name in (
         (
-            "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
+            "k1_maximization", "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
             "_apply_relion_initial_lowpass_filter", "_apply_relion_solvent_flatten_k1",
         ),
-        ("reconstruct_numbered_class_maps", "_reconstruct_class_maps", "_lowpass_class_stack", "_flatten_class_stack"),
+        (
+            "class_maximization", "reconstruct_numbered_class_maps", "_reconstruct_class_maps",
+            "_lowpass_class_stack", "_flatten_class_stack",
+        ),
     ):
-        reconstruction = source.index(operation_name + "(", loop)
-        assert settings < loop < reconstruction
+        maximization = source.index(maximization_name + "(", loop)
+        assert settings < loop < maximization
+        assert operation_name + "(" in inspect.getsource(getattr(iteration_loop_module, maximization_name))
         operation = inspect.getsource(getattr(mean_helpers_module, operation_name))
         solve = operation.index(solve_name + "(")
         premask = operation.index("_capture_premask_mean(", solve)

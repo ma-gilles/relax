@@ -34,19 +34,22 @@ def test_snapshot_and_release_previous_k1_means_owns_host_copies(complex_dtype):
 def test_k1_mean_release_precedes_tau_and_reconstruction():
     source = inspect.getsource(iteration_loop.refine_single_volume)
     initial_alias_release = source.index("del init_volume")
-    release = source.index(
+    maximization_call = source.index("k1_maximization(", initial_alias_release)
+    maximization = inspect.getsource(iteration_loop.k1_maximization)
+    release = maximization.index(
         "previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)"
     )
-    tau_update = source.index(
+    tau_update = maximization.index(
         "estimate_split_half_prior(",
         release,
     )
-    reconstruction = source.index(
+    reconstruction = maximization.index(
         "reconstruct_numbered_k1_halfmaps(",
         tau_update,
     )
 
-    assert initial_alias_release < release < tau_update < reconstruction
+    assert initial_alias_release < maximization_call
+    assert release < tau_update < reconstruction
     operation = inspect.getsource(mean_helpers.estimate_split_half_prior)
     assert operation.index("compute_relion_fsc_from_backprojector(") < operation.index("compute_relion_tau2_from_weights(")
 

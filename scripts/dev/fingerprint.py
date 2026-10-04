@@ -371,6 +371,15 @@ MUTATIONS = (
      "the halves' significant-sample counts are never combined", True),
     ("final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)", "direction_priors[_half_idx] = DirectionPrior(_prior_k, None)",
      "the final-pass replay installs a prior without its HEALPix order", True),
+    ("k1_mstep_join_radius", "low_resolution_angstrom=parity.low_resol_join_halves_angstrom,\npixel_resolutions=pixel_resolutions,", "low_resolution_angstrom=0.5 * parity.low_resol_join_halves_angstrom,\npixel_resolutions=pixel_resolutions,",
+     "the K=1 M-step joins the half accumulators out to twice the requested resolution (the previous "
+     "resolution caps the join radius in these cases)", False),
+    ("k1_mstep_details_from_half2", "tau2_update_details = tau2_update_details_per_half[0]\ndel split_prior", "tau2_update_details = tau2_update_details_per_half[1]\ndel split_prior",
+     "the K=1 M-step reports half 2's tau2 details", True),
+    ("class_mstep_curve_doubled", "data_vs_prior_trajectory.append(data_vs_prior_iter)", "data_vs_prior_trajectory.append(2 * data_vs_prior_iter)",
+     "the Class3D M-step publishes a doubled data-vs-prior curve to the history", True),
+    ("class_mstep_keeps_old_tau2", "reference_model.tau2 = mean_signal_variance\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)", "pass\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)",
+     "the Class3D M-step does not install its new tau2", True),
     ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history.to_dict(),', '"final_all_data_ran": True,\n**history.to_dict(),',
      "the result of a run without a final pass says the final pass ran", True),
 )
