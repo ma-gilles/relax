@@ -334,7 +334,6 @@ def _copy_first_class(stacked):
 def copy_first_class_to_every_class(
     reference_model,
     direction_priors,
-    data_vs_prior_trajectory: list,
     *,
     mean_signal_variance_shells,
     data_vs_prior_iter,
@@ -344,9 +343,9 @@ def copy_first_class_to_every_class(
 ):
     """Give every class the first class's model after the CC iteration of a one-reference Class3D start.
 
-    Writes ``reference_model``'s maps and tau2, the entries of ``direction_priors`` and the last entry of
-    ``data_vs_prior_trajectory`` in place; returns the copied tau2 shells, data-vs-prior curve and tau2
-    details, and the class mixture with the first class's weight shared equally.
+    Writes ``reference_model``'s maps and tau2 and the entries of ``direction_priors`` in place; returns
+    the copied tau2 shells, data-vs-prior curve and tau2 details, and the class mixture with the first
+    class's weight shared equally. The caller records the returned curve as the iteration's.
     """
     # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
     # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
@@ -356,7 +355,6 @@ def copy_first_class_to_every_class(
     reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
     mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
     data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
-    data_vs_prior_trajectory[-1] = data_vs_prior_iter
     tau2_update_details = {
         key: None if value is None else _copy_first_class(value) for key, value in tau2_update_details.items()
     }
@@ -389,10 +387,9 @@ def class_maximization(
     Ft_y_per_half,
     Ft_ctf_per_half,
     reconstruction_settings: ReconstructionSettings,
+    options: RefinementOptions,
     *,
-    parity,
     halves,
-    n_classes: int,
     iteration: int,
     current_size,
     image_current_size,
@@ -400,20 +397,21 @@ def class_maximization(
     mstep_full_half_axis,
     projector_power_spectrum,
     iter_replay_override,
-    replay,
     scoring_dtype,
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
-    data_vs_prior_trajectory: list,
 ) -> ClassMaximization:
     """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
 
     In order: combine the half accumulators, take each class's tau2 from the previous reference's power
-    spectrum, append the data-vs-prior curve to ``data_vs_prior_trajectory``, replace
-    ``reference_model``'s tau2, release its maps and replace them with the reconstruction; after a
-    first-iteration CC pass, taper the reported curves. The caller installs the returned curve as the
-    next iteration's scheduling curve.
+    spectrum, replace ``reference_model``'s tau2, release its maps and replace them with the
+    reconstruction; after a first-iteration CC pass, taper the reported curves. The caller records the
+    returned data-vs-prior curve in the history and installs it as the next iteration's scheduling curve.
+    Reads ``reference_model.maps`` and ``tau2``; from ``options``: ``k_class.n_classes``, ``replay`` (the
+    diagnostic tau2 replay) and ``parity.relion_firstiter_ini_high_angstrom``.
     """
+    parity = options.parity
+    n_classes = int(options.k_class.n_classes)
     Ft_y_0, Ft_y_1 = Ft_y_per_half
     Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
     Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
@@ -441,7 +439,7 @@ def class_maximization(
         full_half_axis=mstep_full_half_axis,
         projector_power_spectrum=projector_power_spectrum,
         iter_replay_override=iter_replay_override,
-        replay=replay,
+        replay=options.replay,
         scoring_dtype=scoring_dtype,
         started_at=_t_unreg_first,
         log=logger,
@@ -452,7 +450,6 @@ def class_maximization(
     tau2_update_details_per_class = class_priors.details_per_class
     kclass_tau2_source = class_priors.source
     del class_priors
-    data_vs_prior_trajectory.append(data_vs_prior_iter)
     tau2_update_details = _stack_class_tau2_update_details(tau2_update_details_per_class)
     del tau2_update_details_per_class
     logger.info(
@@ -501,7 +498,6 @@ def class_maximization(
             parity.relion_firstiter_ini_high_angstrom,
             filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
         )
-        data_vs_prior_trajectory[-1] = data_vs_prior_iter
         tapered_prior = taper_first_cc_class_prior(
             mean_signal_variance_shells,
             tau2_update_details,
@@ -2090,9 +2086,8 @@ def refine_single_volume(
                 (Ft_y_0, Ft_y_1),
                 (Ft_ctf_0, Ft_ctf_1),
                 reconstruction_settings,
-                parity=parity,
+                options,
                 halves=halves,
-                n_classes=n_classes,
                 iteration=iteration,
                 current_size=current_size,
                 image_current_size=image_current_size,
@@ -2104,12 +2099,11 @@ def refine_single_volume(
                     else projectors[0].power_spectrum
                 ),
                 iter_replay_override=iter_replay_override,
-                replay=replay,
                 scoring_dtype=scoring_dtype,
                 relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
-                data_vs_prior_trajectory=history.data_vs_prior_trajectory,
             )
+            history.data_vs_prior_trajectory.append(data_vs_prior_iter)
             previous_data_vs_prior_for_scheduling = data_vs_prior_iter
         else:
             (
@@ -2188,13 +2182,13 @@ def refine_single_volume(
             ) = copy_first_class_to_every_class(
                 reference_model,
                 direction_priors,
-                history.data_vs_prior_trajectory,
                 mean_signal_variance_shells=mean_signal_variance_shells,
                 data_vs_prior_iter=data_vs_prior_iter,
                 tau2_update_details=tau2_update_details,
                 class_mixture=class_mixture,
                 n_classes=n_classes,
             )
+            history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
             previous_data_vs_prior_for_scheduling = data_vs_prior_iter
         history.record_direction_prior(
             direction_priors,
