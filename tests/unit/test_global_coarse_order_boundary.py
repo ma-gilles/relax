@@ -37,7 +37,9 @@ def _global_window(incoming, updated, *, current=172, sealed=None):
         coarse_size_healpix_order=incoming,
         current_healpix_order=updated,
         plan_adaptive_image_size=plan_adaptive_image_size,
-        expectation_windows=ExpectationWindows(model_size=current, image_size=current, image_box_size=380),
+        sampling_plan=SimpleNamespace(
+            windows=ExpectationWindows(model_size=current, image_size=current, image_box_size=380),
+        ),
         optics=RunOptics(
             image_geometry=ImageGeometry(image_shape=(380, 380), pixel_size_angstrom=1.400011),
             model_pixel_size=1.400011, optics_image_sizes=[380], optics_pixel_sizes=[1.400011],

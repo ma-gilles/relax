@@ -1145,6 +1145,18 @@ def _sealed_sampling_base_grids(sealed_sampling_state, *, voxel_size_angstrom, d
     return rotations, eulers, jnp.asarray(translations, dtype=dtype)
 
 
+def sealed_rotation_ids_for_scoring(sealed_sampling_state, trial_grid, *, use_local: bool):
+    """A sealed capture's rotation ids for a global scorer grid, checked against the trial grid; else None."""
+    if sealed_sampling_state is None or use_local:
+        return None
+    rotation_ids = _sealed_sampling_rotation_ids(sealed_sampling_state)
+    if rotation_ids.shape != (int(trial_grid.rotations.shape[0]),):
+        raise RuntimeError(
+            "sealed captured rotation IDs do not match the directly materialized scorer grid"
+        )
+    return rotation_ids
+
+
 def _sealed_sampling_rotation_ids(sealed_sampling_state):
     """Map captured direction/psi rows to canonical coarse rotation IDs."""
 

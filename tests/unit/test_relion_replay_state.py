@@ -559,3 +559,16 @@ def test_class_replay_keeps_prior_grid_identity_across_sampling_change(monkeypat
     _assert_prior_keeps_its_grid_and_is_reset_by_the_scorer(
         operands["direction_priors"], prior, old_order, new_order, n_classes, symmetry
     )
+
+
+def test_sealed_rotation_ids_are_checked_against_the_global_trial_grid():
+    sealed = {"directions_ipix": [0, 2], "psi_angles_deg": [0.0, 90.0], "healpix_order_original": 0}
+    grid = SimpleNamespace(rotations=np.zeros((4, 3, 3)))
+    ids = relion_replay_module.sealed_rotation_ids_for_scoring(sealed, grid, use_local=False)
+    np.testing.assert_array_equal(ids, [0, 2, 12, 14])
+    assert relion_replay_module.sealed_rotation_ids_for_scoring(None, grid, use_local=False) is None
+    assert relion_replay_module.sealed_rotation_ids_for_scoring(sealed, grid, use_local=True) is None
+    with pytest.raises(RuntimeError, match="do not match the directly materialized scorer grid"):
+        relion_replay_module.sealed_rotation_ids_for_scoring(
+            sealed, SimpleNamespace(rotations=np.zeros((5, 3, 3))), use_local=False,
+        )

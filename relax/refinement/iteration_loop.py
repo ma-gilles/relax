@@ -53,10 +53,10 @@ from relax.diagnostics.iteration import (
 from relax.diagnostics.relion_replay import (
     _has_numbered_replay_iteration_overrides,
     _maybe_debug_replay_relion_references,
-    _sealed_sampling_rotation_ids,
     _validate_bpref_particle_order_scope,
     apply_final_replay_state,
     apply_iter_replay_overrides,
+    sealed_rotation_ids_for_scoring,
 )
 from relax.diagnostics.state_swap_runtime import (
     _apply_state_swap_probe,
@@ -86,7 +86,6 @@ from relax.helpers.orientation_priors import (
     learn_class_direction_priors,
     learn_k1_direction_priors,
     relion_direction_log_priors_for_half,
-    relion_local_search_sigmas,
 )
 from relax.helpers.resolution import (
     ImageGeometry,
@@ -139,7 +138,6 @@ from relax.refinement.iteration_planning import (
     iteration_trial_grid,
     plan_adaptive_image_size,
     plan_class_image_size,
-    plan_expectation_windows,
     plan_halfmap_image_size,
     plan_initial_image_size,
     refresh_coarse_grids,
@@ -149,10 +147,7 @@ from relax.refinement.iteration_planning import (
 from relax.refinement.iteration_snapshot import (
     SnapshotCapture,
 )
-from relax.refinement.local_sampling import (
-    LocalSearchSettings,
-    prepare_numbered_local_sampling,
-)
+from relax.refinement.local_sampling import plan_expectation_sampling
 from relax.refinement.mean_helpers import (
     ReconstructionSettings,
     _class_weights_from_posterior,
@@ -1658,52 +1653,17 @@ def refine_single_volume(
             )
         # First-iteration CC scores the full translation grid before choosing
         # its single winning pose (ml_optimiser.cpp:9181-9207).
-        expectation_windows = plan_expectation_windows(scoring_current_size, optics, log=logger)
-        model_current_size_for_engine = expectation_windows.model_window_size
-        image_current_size = expectation_windows.image_size
-        cs_for_engine = expectation_windows.image_window_size
-        sigma_rot, sigma_psi = relion_local_search_sigmas(state, use_local=use_local)
-
-        # Angular step behind this iteration's pass-1 coarse size, when RELION's
-        # adaptive formula sets it (shape classes recompute their own from it).
-        if use_local:
-            local_sampling = prepare_numbered_local_sampling(
-                LocalSearchSettings(
-                    healpix_order=state.healpix_order + state.adaptive_oversampling,
-                    oversampling_order=int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0,
-                    sigma_rot=sigma_rot,
-                    sigma_psi=sigma_psi,
-                    symmetry=symmetry,
-                ),
-                trial_grid,
-                optics,
-                base_translations=coarse_grids.base_translations,
-                image_window_size=cs_for_engine,
-                model_support_size=model_current_size_for_engine,
-                base_healpix_order=coarse_grids.rotation_grid.healpix_order,
-                coarse_size_healpix_order=coarse_size_healpix_order,
-                perturbation=random_perturbation,
-                particle_diameter_angstrom=particle_diameter_ang,
-                log=logger,
-            )
-        else:
-            local_sampling = None
+        sampling_plan = plan_expectation_sampling(
+            trial_grid, coarse_grids, state, options, optics, current_size=scoring_current_size,
+            use_local=use_local, perturbation=random_perturbation, coarse_size_healpix_order=coarse_size_healpix_order,
+        )
         direction_prior_healpix_order = _direction_prior_healpix_order_for_scoring(
             state, use_local=use_local, grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
-            local_search_order=local_sampling.search.healpix_order if use_local else None,
+            local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
         )
-        coarse_rotation_ids_for_scoring = (
-            _sealed_sampling_rotation_ids(sealed_sampling_state)
-            if sealed_sampling_state is not None and not use_local
-            else None
+        coarse_rotation_ids_for_scoring = sealed_rotation_ids_for_scoring(
+            sealed_sampling_state, trial_grid, use_local=use_local,
         )
-        if (
-            coarse_rotation_ids_for_scoring is not None
-            and coarse_rotation_ids_for_scoring.shape != (int(trial_grid.rotations.shape[0]),)
-        ):
-            raise RuntimeError(
-                "sealed captured rotation IDs do not match the directly materialized scorer grid"
-            )
 
         for _half_idx in range(2):
             half_direction_priors = relion_direction_log_priors_for_half(
@@ -1743,7 +1703,7 @@ def refine_single_volume(
             #         orientations only.
 
             coarse_image_plan = plan_adaptive_image_size(
-                coarse_size_healpix_order, expectation_windows, optics, options, log=logger,
+                coarse_size_healpix_order, sampling_plan.windows, optics, options, log=logger,
             )
             coarse_size = coarse_image_plan.size
             coarse_cs = coarse_size if coarse_size < grid_size else None
@@ -1752,7 +1712,7 @@ def refine_single_volume(
                 "Adaptive oversampling: pass 1 at coarse_size=%s, "
                 "pass 2 at current_size=%s (oversampling=%d, particle_diameter=%s)",
                 coarse_cs,
-                cs_for_engine,
+                sampling_plan.windows.image_window_size,
                 state.adaptive_oversampling,
                 (f"{float(particle_diameter_ang):.1f} A" if particle_diameter_ang is not None else "box_size"),
             )
@@ -1765,7 +1725,7 @@ def refine_single_volume(
         if captured_projector_state is not None:
             projectors = _validate_captured_relion_projector_for_iteration(
                 captured_projector_state,
-                current_size=model_current_size_for_engine,
+                current_size=sampling_plan.windows.model_window_size,
                 volume_shape=volume_shape,
                 padding_factor=PROJECTION_PADDING_FACTOR,
                 n_classes=n_classes,
@@ -1773,7 +1733,7 @@ def refine_single_volume(
             logger.info(
                 "RELION mode: using captured exact Projector::data at current_size=%s "
                 "r_max=%s manifest=%s",
-                model_current_size_for_engine,
+                sampling_plan.windows.model_window_size,
                 None if projectors[0] is None else projectors[0].r_max,
                 captured_projector_state.source_manifest_sha256,
             )
@@ -1788,7 +1748,7 @@ def refine_single_volume(
                 projector = prepare_scoring_projector(
                     reference_model.maps[half.index],
                     volume_shape=volume_shape,
-                    current_size=model_current_size_for_engine,
+                    current_size=sampling_plan.windows.model_window_size,
                     padding_factor=PROJECTION_PADDING_FACTOR,
                     n_classes=n_classes,
                     reusable=shared_projector_half1 if half.index == 0 else None,
@@ -1809,7 +1769,7 @@ def refine_single_volume(
                 # so record it rather than leaving the path implicit.
                 "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
                 "dtype=%s in %.2fs",
-                model_current_size_for_engine,
+                sampling_plan.windows.model_window_size,
                 None if projectors[0] is None else projectors[0].r_max,
                 None if projectors[0] is None else projectors[0].data.dtype,
                 time.time() - projector_t0,
@@ -1835,14 +1795,14 @@ def refine_single_volume(
             k_class_enabled=k_class_enabled,
             relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
             firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
-            firstiter_fine_current_size=cs_for_engine if use_adaptive else None,
+            firstiter_fine_current_size=sampling_plan.windows.image_window_size if use_adaptive else None,
             firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
             firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
         )
         numbered_expectation = prepare_numbered_expectation(
             trial_grid,
-            expectation_windows,
-            local_sampling=local_sampling,
+            sampling_plan.windows,
+            local_sampling=sampling_plan.local,
             variant=numbered_variant,
             use_adaptive=use_adaptive,
             base_translations=coarse_grids.base_translations,
@@ -1863,11 +1823,11 @@ def refine_single_volume(
             numbered_tomo_sampling = numbered_iteration_tomo_sampling(
                 state,
                 image_geometry,
-                local_sampling=local_sampling,
+                local_sampling=sampling_plan.local,
                 grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
                 random_perturbation=random_perturbation,
-                coarse_size=local_sampling.coarse_image_window_size if use_local else coarse_cs,
-                fine_size=cs_for_engine,
+                coarse_size=sampling_plan.local.coarse_image_window_size if use_local else coarse_cs,
+                fine_size=sampling_plan.windows.image_window_size,
             )
         else:
             numbered_tomo_sampling = None
@@ -1926,7 +1886,7 @@ def refine_single_volume(
                 significance,
                 profile_history=history.global_profile_history,
                 iteration=iteration,
-                image_window_size=cs_for_engine,
+                image_window_size=sampling_plan.windows.image_window_size,
                 healpix_order=coarse_grids.rotation_grid.healpix_order,
                 k_class_enabled=k_class_enabled,
             )
@@ -2048,7 +2008,7 @@ def refine_single_volume(
                 halves=halves,
                 iteration=iteration,
                 current_size=current_size,
-                image_current_size=image_current_size,
+                image_current_size=sampling_plan.windows.image_size,
                 mstep_accumulator_shape=mstep_accumulator_shape,
                 mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=(
@@ -2234,7 +2194,7 @@ def refine_single_volume(
                 effective_rotations=trial_grid.rotations,
                 current_translations=coarse_grids.translations,
                 use_local=use_local,
-                local_search_order=local_sampling.search.healpix_order if use_local else None,
+                local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
                 cs=current_size,
                 state=state,
                 n_classes=n_classes,
@@ -2335,7 +2295,7 @@ def refine_single_volume(
             halves,
             coarse_grids.translations,
             previous_rotations=previous_best_rotations,
-            local_sampling=local_sampling if use_local else None,
+            local_sampling=sampling_plan.local if use_local else None,
             dtype=scoring_dtype,
         )
         previous_best_rotations = [poses.rotations for poses in pose_update.current]
@@ -2392,7 +2352,7 @@ def refine_single_volume(
             firstiter_cc=first_iteration.relion_firstiter_cc,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
             dump_debug=noise_debug_dump,
-            summed_current_size=cs_for_engine if consistency.noise_shell_count == "summed" else None,
+            summed_current_size=sampling_plan.windows.image_window_size if consistency.noise_shell_count == "summed" else None,
             nyquist_column_counting=consistency.nyquist_column_counting,
         )
         noise_from_res = noise_update.noise_from_res

@@ -1,13 +1,19 @@
 """Prepare local-search grids and pass sizes for refinement."""
 
+import logging
 from dataclasses import dataclass
 
 import numpy as np
 
 from relax import sampling
 from relax.helpers.convergence import healpix_angular_step
+from relax.helpers.orientation_priors import relion_local_search_sigmas
 from relax.helpers.resolution import ImageGeometry, relion_local_pass1_current_size
+from relax.refinement.iteration_planning import ExpectationWindows, plan_expectation_windows
 from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
+
+# The numbered controller's log: its operations log under its name wherever they live.
+logger = logging.getLogger("relax.refinement.iteration_loop")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -201,3 +207,67 @@ def prepare_final_local_sampling(
         angular_step_deg=angular_step_deg,
         coarse_angular_step_deg=coarse_angular_step_deg,
     )
+
+
+@dataclass(frozen=True)
+class ExpectationSampling:
+    """Where and how finely one numbered expectation scores; built once per iteration, read-only.
+
+    ``windows`` are the model and image Fourier widths. ``local`` is the local-search sampling, None for
+    a global search.
+    """
+
+    windows: ExpectationWindows
+    local: LocalSampling | None
+
+
+def plan_expectation_sampling(
+    trial_grid: sampling.TrialGrid,
+    coarse_grids,
+    state,
+    options,
+    optics,
+    *,
+    current_size: int,
+    use_local: bool,
+    perturbation: float,
+    coarse_size_healpix_order: int,
+) -> ExpectationSampling:
+    """Plan the Fourier windows and, for a local search, the local sampling of one numbered expectation.
+
+    ``use_local`` is the trajectory's decision to search locally; ``perturbation`` is this iteration's
+    sampling perturbation and ``coarse_size_healpix_order`` the order that sized pass 1 before the
+    sampling advanced. In order: the expectation windows, then the local-search prior widths and sampling.
+    Reads from ``coarse_grids``: ``base_translations`` and the rotation grid's order; from ``state``:
+    ``healpix_order``, ``adaptive_oversampling``, ``sigma_rot`` and ``sigma_psi``; from ``options``:
+    ``symmetry.point_group`` and ``schedule.particle_diameter_ang``; ``optics`` as the window plan and the
+    local sampling read it.
+    """
+    windows = plan_expectation_windows(current_size, optics, log=logger)
+    sigma_rot, sigma_psi = relion_local_search_sigmas(state, use_local=use_local)
+
+    # Angular step behind this iteration's pass-1 coarse size, when RELION's
+    # adaptive formula sets it (shape classes recompute their own from it).
+    if use_local:
+        local_sampling = prepare_numbered_local_sampling(
+            LocalSearchSettings(
+                healpix_order=state.healpix_order + state.adaptive_oversampling,
+                oversampling_order=int(state.adaptive_oversampling) if state.adaptive_oversampling > 0 else 0,
+                sigma_rot=sigma_rot,
+                sigma_psi=sigma_psi,
+                symmetry=options.symmetry.point_group,
+            ),
+            trial_grid,
+            optics,
+            base_translations=coarse_grids.base_translations,
+            image_window_size=windows.image_window_size,
+            model_support_size=windows.model_window_size,
+            base_healpix_order=coarse_grids.rotation_grid.healpix_order,
+            coarse_size_healpix_order=coarse_size_healpix_order,
+            perturbation=perturbation,
+            particle_diameter_angstrom=options.schedule.particle_diameter_ang,
+            log=logger,
+        )
+    else:
+        local_sampling = None
+    return ExpectationSampling(windows, local_sampling)

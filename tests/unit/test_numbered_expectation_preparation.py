@@ -127,7 +127,7 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
     scope = dict(
         prepare_numbered_expectation=expectation.prepare_numbered_expectation,
         trial_grid=grid,
-        expectation_windows=windows, local_sampling=inputs['local_sampling'],
+        sampling_plan=SimpleNamespace(windows=windows, local=inputs['local_sampling']),
         numbered_variant=inputs['variant'], use_adaptive=adaptive,
         coarse_grids=SimpleNamespace(
             rotation_grid=SimpleNamespace(healpix_order=2), base_translations=inputs['base_translations'],

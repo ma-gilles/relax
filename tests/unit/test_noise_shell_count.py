@@ -171,15 +171,16 @@ def test_refinement_hands_the_noise_update_the_expectations_image_size(monkeypat
     """The image window of each numbered expectation reaches the K=1 noise update (None at the box)."""
     import dataclasses
 
-    from relax.refinement import iteration_loop
+    from relax.refinement import local_sampling
 
-    plan = iteration_loop.plan_expectation_windows
+    # plan_expectation_sampling (local_sampling.py) plans the windows the loop then reads.
+    plan = local_sampling.plan_expectation_windows
     image_sizes = iter([6, 8])  # the 8-pixel mock box itself never plans a window below the box
 
     def plan_below_the_box(*args, **kwargs):
         return dataclasses.replace(plan(*args, **kwargs), image_size=next(image_sizes))
 
-    monkeypatch.setattr(iteration_loop, "plan_expectation_windows", plan_below_the_box)
+    monkeypatch.setattr(local_sampling, "plan_expectation_windows", plan_below_the_box)
     calls = record_calls(monkeypatch, noise_relion, "normalize_wsum_to_sigma2_noise")
 
     run_tiny_refinement(monkeypatch, consistency=RelionConsistencyOptions(noise_shell_count=count))
