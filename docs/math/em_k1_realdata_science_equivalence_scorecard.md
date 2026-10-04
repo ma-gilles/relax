@@ -506,7 +506,7 @@ relax against each same-command RELION run (band FSC-AUC over the scorecard band
 | relion_s42 | — | 0.9581 | 0.8817 | 0.8828 | 0.9803 | 0.9346 | 0.9350 | not met |
 | this job's RELION arm | 14702513 | 0.9997 | 0.9995 | 0.9995 | — | — | — | met |
 
-### synth_ms2_icos_448_b40 (MS2 capsid, I2, box 448 at 0.788 Å/px, B 40; EMPIAR-10202-like regime) (relax `7d1af75ac`)
+### synth_ms2_icos_448_b40 (MS2 capsid, I2, box 448 at 0.788 Å/px, B 40; EMPIAR-10202-like regime) (relax `f6c8299b6`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
