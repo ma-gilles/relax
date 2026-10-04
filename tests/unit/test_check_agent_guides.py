@@ -1,4 +1,4 @@
-"""The document checker: link classes, what it scans, and that this checkout passes it."""
+"""The document checker: link classes, guide links, what it scans, and that this checkout passes it."""
 
 from pathlib import Path
 
@@ -70,6 +70,47 @@ def test_every_markdown_file_is_scanned_without_git_metadata(tmp_path):
         (tmp_path / name).write_text("")
     names = [p.relative_to(tmp_path).as_posix() for p in check_agent_guides.tracked_markdown(tmp_path)]
     assert names == ["README.md", "docs/math/a.md"]
+
+
+def _guide_tree(tmp_path, directories=("", "relax", "tests")):
+    for directory in directories:
+        (tmp_path / directory).mkdir(exist_ok=True)
+        (tmp_path / directory / "AGENTS.md").write_text("rules\n")
+        (tmp_path / directory / "CLAUDE.md").symlink_to("AGENTS.md")
+    (tmp_path / "CONTRIBUTING.md").write_text("how\n")
+    return tmp_path
+
+
+def test_a_guide_with_its_link_beside_it_has_no_finding(tmp_path):
+    assert check_agent_guides.check_guides(_guide_tree(tmp_path)) == []
+
+
+def test_each_guide_link_fault_is_reported_per_directory(tmp_path):
+    root = _guide_tree(tmp_path, ("", "relax", "tests", "copy", "bare", "elsewhere", "orphan"))
+    (root / "copy" / "CLAUDE.md").unlink()
+    (root / "copy" / "CLAUDE.md").write_text("rules\n")  # the same bytes, but a second file to keep in step
+    (root / "bare" / "CLAUDE.md").unlink()
+    (root / "elsewhere" / "CLAUDE.md").unlink()
+    (root / "elsewhere" / "CLAUDE.md").symlink_to("../AGENTS.md")
+    (root / "orphan" / "AGENTS.md").unlink()
+
+    assert check_agent_guides.check_guides(root) == [
+        "missing guide link: bare/CLAUDE.md (ln -s AGENTS.md CLAUDE.md)",
+        "guide link is not the symbolic link AGENTS.md: copy/CLAUDE.md",
+        "guide link is not the symbolic link AGENTS.md: elsewhere/CLAUDE.md",
+        "guide link without its guide: orphan/CLAUDE.md needs a regular file AGENTS.md beside it",
+    ]
+
+
+def test_a_missing_required_guide_is_reported(tmp_path):
+    root = _guide_tree(tmp_path, ("", "relax"))
+    assert check_agent_guides.check_guides(root) == ["missing guide: tests/AGENTS.md"]
+
+
+def test_a_guide_link_does_not_repeat_the_findings_of_its_guide(tmp_path):
+    root = _guide_tree(tmp_path)
+    (root / "relax" / "AGENTS.md").write_text("[gone](absent.md)\n")
+    assert check_agent_guides.check_guides(root) == ["relax/AGENTS.md:1: missing link target absent.md"]
 
 
 def test_this_checkout_has_no_finding():

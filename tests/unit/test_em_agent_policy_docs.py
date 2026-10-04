@@ -2,23 +2,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 EM_DIR = ROOT / "relax"
-CLAUDE = EM_DIR / "CLAUDE.md"
 AGENTS = EM_DIR / "AGENTS.md"
 LEDGER = ROOT / "docs" / "math" / "em_parity_best_metrics.md"
 RUNBOOK = ROOT / "docs" / "development" / "em_parity_runbook.md"
-CONTRIBUTING = ROOT / "CONTRIBUTING.md"
-
-
-def test_em_agent_guides_stay_in_sync():
-    assert CLAUDE.read_text() == AGENTS.read_text()
 
 
 def test_em_agent_guides_pin_validation_policy():
-    # Procedures belong to the runbook; the always-loaded guide must link to them.
-    guide = CLAUDE.read_text()
+    # Procedures belong to the runbook; the package guide must link to them.
+    guide = AGENTS.read_text()
     for anchor in ("validation-ladder", "benchmark-design-and-reporting"):
         assert f"../docs/development/em_parity_runbook.md#{anchor}" in guide
-    assert "cmp relax/AGENTS.md relax/CLAUDE.md" in CONTRIBUTING.read_text()
     runbook = RUNBOOK.read_text()
     required = [
         "at most once every 3-4 hours",

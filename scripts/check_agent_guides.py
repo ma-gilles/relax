@@ -1,32 +1,30 @@
-"""Check mirrored agent contracts and the local file links of every tracked Markdown file.
+"""Check the agent guides and the local file links of every tracked Markdown file.
 
-Findings come in four classes, each printed with its file and line:
+``AGENTS.md`` is the one guide of a directory; ``CLAUDE.md`` beside it is a symbolic link to it, so both agent
+tools read the same file. Findings come in four classes, each printed with its file and line:
 
 - ``missing link target``: a relative link whose target does not exist in the checkout.
 - ``absolute-path link``: a link to an absolute filesystem path. It names one site's (often one
   account's) directory, so it cannot be checked from a checkout; cite the path as plain text.
 - ``unreadable link target``: the current account may not inspect the target (the path leaves the
   checkout through a symlink or ``..`` into a directory it cannot enter).
-- mirror and guide findings: a mirrored pair differs, or a required guide is missing or empty.
+- guide findings: a directory's ``CLAUDE.md`` is not the relative symbolic link ``AGENTS.md``, an
+  ``AGENTS.md`` has no such link beside it, or a required guide is missing or empty.
 
 The exit status is 1 when there is any finding.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-MIRRORS = (
-    ("AGENTS.md", "CLAUDE.md"),
-    ("relax/AGENTS.md", "relax/CLAUDE.md"),
-    ("relax/ppca_refinement/AGENTS.md", "relax/ppca_refinement/CLAUDE.md"),
-    ("tests/AGENTS.md", "tests/CLAUDE.md"),
-)
-REQUIRED_GUIDES = ("CONTRIBUTING.md", "tests/CLAUDE.md")
+GUIDE, GUIDE_LINK = "AGENTS.md", "CLAUDE.md"
+REQUIRED_GUIDES = ("AGENTS.md", "CONTRIBUTING.md", "relax/AGENTS.md", "tests/AGENTS.md")
 # Directories that hold no tracked documents; used only when the checkout has no git metadata.
 UNTRACKED_PARTS = {".git", ".pixi", ".tmp", "site", "build", "dist", "node_modules", "__pycache__"}
 
@@ -117,17 +115,31 @@ def check_links(root: Path, documents: list[Path]) -> list[str]:
     return errors
 
 
-def check_guides(root: Path) -> list[str]:
-    errors = []
-    for first, second in MIRRORS:
-        paths = root / first, root / second
-        if not all(path.is_file() for path in paths):
-            errors.append(f"missing required mirror: {first} or {second}")
-        elif paths[0].read_bytes() != paths[1].read_bytes():
-            errors.append(f"agent contracts differ: {first} and {second}")
+def is_guide_link(path: Path) -> bool:
+    """Whether ``path`` is a ``CLAUDE.md`` that is the relative symbolic link ``AGENTS.md``."""
+    return path.name == GUIDE_LINK and path.is_symlink() and os.readlink(path) == GUIDE
 
-    guides = {root / name for pair in MIRRORS for name in pair}
-    guides.update(root / name for name in REQUIRED_GUIDES)
+
+def check_guide_links(root: Path, documents: list[Path]) -> list[str]:
+    """One finding per directory whose ``CLAUDE.md`` is not a symbolic link to the ``AGENTS.md`` beside it."""
+    errors = []
+    for directory in sorted({document.parent for document in documents if document.name in (GUIDE, GUIDE_LINK)}):
+        guide, link = directory / GUIDE, directory / GUIDE_LINK
+        name = link.relative_to(root)
+        if guide.is_symlink() or not guide.is_file():
+            errors.append(f"guide link without its guide: {name} needs a regular file {GUIDE} beside it")
+        elif not link.is_symlink() and not link.exists():
+            errors.append(f"missing guide link: {name} (ln -s {GUIDE} {GUIDE_LINK})")
+        elif not is_guide_link(link):
+            errors.append(f"guide link is not the symbolic link {GUIDE}: {name}")
+    return errors
+
+
+def check_guides(root: Path) -> list[str]:
+    tracked = tracked_markdown(root)
+    errors = check_guide_links(root, tracked)
+
+    guides = {root / name for name in REQUIRED_GUIDES}
     guides.update((root / "docs/development").glob("*.md"))
     for guide in sorted(guides):
         if not guide.is_file():
@@ -135,8 +147,9 @@ def check_guides(root: Path) -> list[str]:
         elif not guide.read_text().strip():
             errors.append(f"empty guide: {guide.relative_to(root)}")
 
-    documents = sorted({*tracked_markdown(root), *(guide for guide in guides if guide.is_file())})
-    return errors + check_links(root, documents)
+    # A guide link has the links of its guide, which is checked under its own name.
+    documents = sorted({*tracked, *(guide for guide in guides if guide.is_file())})
+    return errors + check_links(root, [document for document in documents if not is_guide_link(document)])
 
 
 def main() -> int:
@@ -146,10 +159,11 @@ def main() -> int:
         print("\n".join(errors), file=sys.stderr)
         classes = ("missing link target", "absolute-path link", "unreadable link target")
         counts = {name: sum(f": {name}" in error for error in errors) for name in classes}
-        counts["mirror or guide"] = len(errors) - sum(counts.values())
+        counts["guide"] = len(errors) - sum(counts.values())
         print("; ".join(f"{count} {name}" for name, count in counts.items() if count), file=sys.stderr)
         return 1
-    print(f"Agent mirrors and the file links of {len(tracked_markdown(root))} Markdown files are valid.")
+    documents = [document for document in tracked_markdown(root) if not is_guide_link(document)]
+    print(f"The agent guides and the file links of {len(documents)} Markdown files are valid.")
     return 0
 
 
