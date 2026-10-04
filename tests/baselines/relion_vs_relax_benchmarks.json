@@ -9717,7 +9717,8 @@
     "Walls of the other seeds' pairs: s2 relax 1278 s / RELION 734 s; s3 relax 1258 s / RELION 792 s.",
     "seed 1: mean masked GT FSC-AUC relax 0.466423 / RELION CPU 0.461239/0.461239; class accuracy 0.7137 vs 0.7105/0.7105",
     "seed 2: mean masked GT FSC-AUC relax 0.470061 / RELION CPU 0.469442; class accuracy 0.7347 vs 0.7382",
-    "seed 3: mean masked GT FSC-AUC relax 0.425485 / RELION CPU 0.425192; class accuracy 0.7044 vs 0.7188"
+    "seed 3: mean masked GT FSC-AUC relax 0.425485 / RELION CPU 0.425192; class accuracy 0.7044 vs 0.7188",
+    "Accuracy reference caveat (team-lead 2026-10-03, etw): stock RELION 5.0.1's CPU path phase-shifts trial translations with the model box (ori_size) instead of the optics group's own box (ml_optimiser.cpp:7006, :7034, :7394; ma-gilles/relax#13), so for a group on another box the applied shift is box_g / ori_size times the nominal offset. relax applies the physical shift, as RELION's GPU path does; no patched RELION build is used. Iteration-1 diagnostic (one reference, --firstiter_cc, seed 1; relative L2 difference of the unmasked class-1 map, ||relax - RELION|| / ||RELION||, relax ab91c0f vs stock CPU RELION): 2.0e-3 as is; 2.6e-4 when relax emulates the defect (one uncommitted diagnostic line, recorded in the run's PROVENANCE.txt); 3.3e-4 for the same-shape control fixture multioptics_k2same_10k128_20260930. The row keeps stock CPU RELION as its accuracy reference."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
@@ -9743,7 +9744,8 @@
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930",
     "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/tools/c3d_feature_row.py",
     "spec": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/specs/twoshape.json",
-    "wall_pair": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/c3d_twoshape/s1"
+    "wall_pair": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newrows_20261002/c3d_twoshape/s1",
+    "reference_caveat_diagnostic": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/myscratch_tmp/etw_kshape_census_20261003"
    },
    "date": "2026-10-02",
    "quality_pass": true,
