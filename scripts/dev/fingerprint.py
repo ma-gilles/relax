@@ -361,7 +361,7 @@ MUTATIONS = (
      "a rebuilt coarse translation grid has twice the range", True),
     ("replay_translations_reversed", "base_translations = _new_t_source", "base_translations = _new_t_source[::-1]",
      "a translation grid rebuilt under replay is installed reversed", True),
-    ("trial_grid_step", "translation_step=float(translation_step),\nrandom_perturbation=random_perturbation,\nangular_sampling_deg=angsamp_deg,", "translation_step=2 * float(translation_step),\nrandom_perturbation=random_perturbation,\nangular_sampling_deg=angsamp_deg,",
+    ("trial_grid_step", "translation_step=float(state.translation_step),\nrandom_perturbation=random_perturbation,\nangular_sampling_deg=angsamp_deg,", "translation_step=2 * float(state.translation_step),\nrandom_perturbation=random_perturbation,\nangular_sampling_deg=angsamp_deg,",
      "the perturbed trial grid shifts translations by twice the step", True),
     ("pass1_angular_sampling", "sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),", "sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=1),",
      "the pass-1 coarse rotations are perturbed by the oversampled step", True),
