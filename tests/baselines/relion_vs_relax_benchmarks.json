@@ -5982,8 +5982,8 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 55075.0,
-    "wall_definition": "sum over seeds 29/41/53/61/67 of the arm-script walls (WALL.json), each run cold on one H100",
+    "wall_s": 9732.0,
+    "wall_definition": "arm-script wall (WALL.json) of the seed-29 RELION run of the row's 0cbdebd pair (job 14643103); the earlier row quoted the sum over five seeds",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
@@ -6002,28 +6002,24 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 26303.0,
+    "wall_s": 3813,
     "wall_definition": "sum over seeds 29/41/53/61/67 of the arm-script walls (WALL.json), each run cold on one H100",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14853966",
-     "14853966",
-     "14853967",
-     "14853967",
-     "14853968"
+     "14956555"
     ],
     "masked_band_auc": null,
-    "source_sha": "62ab6ae6da870bfe7dac88718f33a939be9b34fa",
-    "source_repo": "relax main 62ab6ae (frozen candidate refresh_20260927/cand_62ab6ae: radix-select significance cuts 5aaa558c/ddd5ce2a; sealed native libraries rebuilt from its native sources 874be99ab20a, pinned recovar 5514ac6), production defaults"
+    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults"
    },
    "initial_model": {
     "reference": "ground truth (simulator maps; mean of the class maps for alignment when K>1), RELION file frame",
     "aggregate": "K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class",
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
-    "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/bpd2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+    "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+    "score_json": "docs/benchmarks/initialmodel_scores/rf2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
     "relion": {
      "run": "bpd_relion_s29",
      "fsc_auc": 0.1739,
@@ -6032,26 +6028,28 @@
      "masked_res_05_A": 77.71
     },
     "relax": {
-     "run": "r62_relax_s29",
-     "fsc_auc": 0.1696,
-     "masked_fsc_auc": 0.1812,
-     "res_05_A": 12.09,
-     "masked_res_05_A": 11.57
+     "run": "rf2_relax_s29",
+     "fsc_auc": 0.1796,
+     "masked_fsc_auc": 0.1931,
+     "res_05_A": 11.33,
+     "masked_res_05_A": 11.1
     },
     "cross": {
-     "fsc_auc": 0.3854,
-     "masked_fsc_auc": 0.4652
+     "fsc_auc": 0.3892,
+     "masked_fsc_auc": 0.4728,
+     "relion_run": "bpd_relion_s29"
     },
     "relion_repeat": {
      "pair": "RELION seed 29 vs seed 41 (different-seed repeat; seed 53 in the notes)",
      "fsc_auc": 0.0504,
      "masked_fsc_auc": 0.0771
-    }
+    },
+    "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470"
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.48,
+   "time_ratio_relax_over_relion": 0.39,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -6062,6 +6060,10 @@
     "timing_controlled": true
    },
    "notes": [
+    "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
+    "Refresh 2026-10-04, seed 29 (the only seed rerun): population-weighted masked FSC-AUC against the reference relax 0.19312 vs same-seed RELION 0.18531 (RELION same-seed runs 0.16106-0.18531); wall 3813 s (was 26303.0 s) against RELION 55075.0 s from the row's earlier pair. Seeds 41/53/61/67 keep the row's earlier relax runs (62ab6ae and earlier), rescored.",
+    "Wall (refresh): only seed 29 was rerun, so the row now quotes the seed-29 pair, relax 3813 s against RELION 9732 s (0.39x), instead of the five-seed sums of the earlier row (relax 26303 s, RELION 55075 s, 0.48x). At seed 29 the earlier relax run on 62ab6ae took 6060 s.",
+    "Scorer (2026-10-04): every arm whose maps are in the evidence store (14 arms) was rescored with relax main 5744444f (fine-stage Powell budget 140 iterations / 6400 evaluations, optimizer status recorded; earlier scores came from a 35 / 1600 budget on which 12% of fine fits stopped). No fit in this row is flagged as unconverged. Largest old-minus-new difference on the verdict metric in this row: 8.0e-04 (bpd_relion_s61), against a same-seed spread of 2.4e-02, so the scorer change is immaterial here and 3 arm(s) whose maps were not kept (rep62_relax_s61_r3, rep62_relax_s61_r4, bpd_relion_s61_r2) stay in the range rule with their earlier-scorer values. The verdict rests on seeds 29/41/53/61/67. On the one row sized with an unlimited budget (K=15 ribosembly, seed 29) the verdict metric moved by under 1e-8.",
     "Same-seed repeats 2026-10-02 at s61 (team-lead, run-range rule) on main 62ab6ae (seed_repeats_20261002_62ab6ae/vdam_k15_s61, job 14865049): relax r3 and r4 and one double-accumulation RELION run r2. relax r2 hit a GPU out-of-memory error at iteration ~151 (RESOURCE_EXHAUSTED 2.07 GiB in the resident pass-2 projection gather) and was rerun as r4 (job 14869727).",
     "Relax arms rerun 2026-10-02 on main 62ab6ae (team-lead), each seed on its own H100 (two or three seeds per job) with the row arms' exact command (--j 12), cold on one H100 + 12 CPUs (refresh_20260927/vdam_ribo_k15_62ab6ae); RELION walls and maps are the earlier same-node pair runs (build_patched walls, double-accumulation maps), also cold on H100.",
     "Rescored 2026-10-01 with the fixed VDAM scorer (tools/score_vdam.py): every class is also registered on its own (to the reference mean and, for K*R <= 16, to each reference class), in both hands, three coarse starts each; each (class, reference class) pair uses its best registration by unmasked FSC-AUC before the Hungarian match. The earlier consensus-only registration (one fit of the population-weighted mean, hand chosen at low pass) misregistered K>1 classes; regression test tools/test_score_vdam_pair.py (incl. a phase-randomized and a white-noise control class, both < 0.05).",
@@ -6113,21 +6115,39 @@
     ],
     "earlier_run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k15/s29"
-    ]
+    ],
+    "refresh_20261004": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/ribosembly_k15_50k256_initialmodel_vdam_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "arms_not_rescored": [
+      "c0_relax_s29",
+      "c0_relax_s41",
+      "c0_relax_s53",
+      "c0_relax_s61",
+      "c0_relax_s67",
+      "rep62_relax_s61_r3",
+      "bpd_relion_s61_r2",
+      "rep62_relax_s61_r4"
+     ]
+    }
    },
    "mask": {
     "dataset": "ribosembly_k15_50k256_c1",
     "sha256": "8fe2c4cd8b74d59043836b02d0720839a18ed98870c6ee3307d0c2b4d277bd72"
    },
-   "date": "2026-10-02",
+   "date": "2026-10-04",
    "time_check": {
-    "a": "relax walls: the 62ab6ae reruns, each seed its own srun --exact -n1 -c12 --gres=gpu:h100:1 step (relax --j 12), two or three seeds per job, one per GPU; RELION walls: the earlier same-node pair runs, build_patched relion_refine --j 12 (non-MPI) on one H100 + 12 CPUs. Both arms cold on H100 80GB HBM3, not the same job. Headline: summed walls over all seeds.",
+    "a": "relax: Slurm job 14956555 (della-h20g4), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676159, 14676160, 14676161, 14676162, 14694879. Not the same job or node: the refresh reran relax only.",
     "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
-    "d": "H100 80GB HBM3 for every arm (GPU.csv per arm); relax and RELION in different jobs"
+    "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
    },
    "quality_pass": true,
-   "quality_reason": "masked ref FSC-AUC: worst s67 −0.0077 vs same-seed RELION; run ranges compared at s61 (both engines repeated); inside across-seed band",
+   "quality_reason": "masked ref FSC-AUC: worst s67 −0.0076 vs same-seed RELION; run ranges compared at s61 (both engines repeated); inside or above across-seed band",
    "history": [
     {
      "date": "2026-09-26",
@@ -6159,6 +6179,49 @@
      "relion_masked_fsc_auc": 0.1093,
      "quality_pass": false,
      "time_ratio_relax_over_relion": 3.96
+    },
+    {
+     "date": "2026-10-02",
+     "note": "values before the 2026-10-04 refresh on relax main f6c8299b (relax arm at the quote seed) and the rescoring with the sized-budget scorer 5744444f",
+     "relax_source_sha": "62ab6ae6da870bfe7dac88718f33a939be9b34fa",
+     "relax_wall_s": 26303.0,
+     "relax_jobs": [
+      "14853966",
+      "14853966",
+      "14853967",
+      "14853967",
+      "14853968"
+     ],
+     "time_ratio_relax_over_relion": 0.48,
+     "quality_pass": true,
+     "quality_reason": "masked ref FSC-AUC: worst s67 −0.0077 vs same-seed RELION; run ranges compared at s61 (both engines repeated); inside across-seed band",
+     "initial_model_relax": {
+      "run": "r62_relax_s29",
+      "fsc_auc": 0.1696,
+      "masked_fsc_auc": 0.1812,
+      "res_05_A": 12.09,
+      "masked_res_05_A": 11.57
+     },
+     "initial_model_relion": {
+      "run": "bpd_relion_s29",
+      "fsc_auc": 0.1739,
+      "masked_fsc_auc": 0.1853,
+      "res_05_A": 77.71,
+      "masked_res_05_A": 77.71
+     },
+     "initial_model_cross": {
+      "fsc_auc": 0.3854,
+      "masked_fsc_auc": 0.4652
+     },
+     "score_json": "docs/benchmarks/initialmodel_scores/bpd2_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "time_check": {
+      "a": "relax: Slurm job 14956555 (della-h20g4), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676159, 14676160, 14676161, 14676162, 14694879. Not the same job or node: the refresh reran relax only.",
+      "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
+      "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
+      "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+     },
+     "relion_wall_s": 55075.0,
+     "relion_wall_definition": "sum over seeds 29/41/53/61/67 of the arm-script walls (WALL.json), each run cold on one H100"
     }
    ]
   },
@@ -6482,28 +6545,24 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 1282.0,
+    "wall_s": 813,
     "wall_definition": "arm-script wall (WALL.json) of the relax wrapper process, end to end (import, checks, compilation, run)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14676169",
-     "14718357",
-     "14718361",
-     "14718364",
-     "14718368"
+     "14956562"
     ],
     "masked_band_auc": null,
-    "source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
-    "source_repo": "relax main 0cbdebd (frozen candidate refresh_20260927/cand_0cbdebd: vdamfast 6f3de9d5, bigbox pass-2 fixes; sealed native libraries, pinned recovar 5514ac6), production defaults"
+    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults"
    },
    "initial_model": {
     "reference": "ground truth (simulator maps of the fixture; mean of the class maps for alignment when K>1), RELION file frame",
     "aggregate": "K>1: reference and cross-engine FSC-AUCs are population-weighted means over Hungarian-matched classes (weights rlnClassDistribution); the FSC 0.5 value is that of the most populated class",
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
-    "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/bpd2_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+    "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+    "score_json": "docs/benchmarks/initialmodel_scores/rf2_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
     "relion": {
      "run": "bpd_relion_s29",
      "fsc_auc": 0.2919,
@@ -6512,21 +6571,23 @@
      "masked_res_05_A": 77.71
     },
     "relax": {
-     "run": "c0_relax_s29",
-     "fsc_auc": 0.0779,
-     "masked_fsc_auc": 0.0801,
-     "res_05_A": 68.0,
+     "run": "rf2_relax_s29",
+     "fsc_auc": 0.0729,
+     "masked_fsc_auc": 0.0757,
+     "res_05_A": 77.71,
      "masked_res_05_A": 68.0
     },
     "cross": {
-     "fsc_auc": 0.0596,
-     "masked_fsc_auc": 0.0629
-    }
+     "fsc_auc": 0.0458,
+     "masked_fsc_auc": 0.0468,
+     "relion_run": "bpd_relion_s29"
+    },
+    "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470"
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.58,
+   "time_ratio_relax_over_relion": 0.37,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -6537,6 +6598,10 @@
     "timing_controlled": true
    },
    "notes": [
+    "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
+    "Refresh 2026-10-04, seed 29 (the only seed rerun): population-weighted masked FSC-AUC against the reference relax 0.07573 vs same-seed RELION 0.29428 (RELION same-seed runs 0.06516-0.29516); wall 813 s (was 1282.0 s) against RELION 2195.0 s from the row's earlier pair. Seeds 41/53/61/67 keep the row's earlier relax runs (0cbdebd and earlier), rescored.",
+    "Same-seed repeats rerun 2026-10-04 (team-lead): the row's earlier ranges rested on runs whose maps had not been kept, so relax was rerun three times at each of seeds 29, 41, 61, 67 on f6c8299b (jobs 14978342-14978345) and RELION (the row's double-accumulation build) twice at each of those seeds (jobs 14978346, 14978347); all scored with 5744444f (job 14986222). Population-weighted masked FSC-AUC, relax / RELION: seed 29: 0.07573, 0.07372, 0.29445, 0.07012 / 0.29428, 0.06516, 0.29516; seed 41: 0.29140, 0.29096, 0.29064 / 0.29170, 0.29070, 0.29100; seed 53: 0.46875 / 0.46893; seed 61: 0.46573, 0.46556, 0.46623 / 0.46680, 0.46502, 0.46577; seed 67: 0.05298, 0.54895, 0.14854 / 0.05971, 0.17708, 0.07135. Both engines fall into a low basin on some runs at seeds 29 and 67 (values near 0.06-0.18); the ranges overlap at all four repeated seeds. At seeds 41, 61 and 67 the relax values are the new f6c8299b repeats (the row's earlier 0cbdebd runs at those seeds are in the score file); seed 53 keeps the earlier single pair.",
+    "Scorer (2026-10-04): every arm whose maps are in the evidence store (31 arms) was rescored with relax main 5744444f (fine-stage Powell budget 140 iterations / 6400 evaluations, optimizer status recorded; earlier scores came from a 35 / 1600 budget on which 12% of fine fits stopped). No fit in this row is flagged as unconverged. Largest old-minus-new difference on the verdict metric in this row: 3.8e-04 (c0_relax_s53), against a smallest relax-RELION gap of 1.7e-04; that is not ten times smaller, so the 13 arm(s) whose maps were not kept (c0_relax_s29_r2, bpd_relion_s29_r2, c0_relax_s29_r3, bpd_relion_s29_r3, rep62_relax_s41_r2, rep62_relax_s41_r3, bpd_relion_s41_r2, rep62_relax_s61_r2, rep62_relax_s61_r3, bpd_relion_s61_r2, rep62_relax_s67_r2, rep62_relax_s67_r3, bpd_relion_s67_r2) are excluded from the verdict. The verdict rests on seeds 29/41/53/61/67. On the one row sized with an unlimited budget (K=15 ribosembly, seed 29) the verdict metric moved by under 1e-8.",
     "Same-seed repeats 2026-10-02 (team-lead, run-range rule) at s41/s61/s67: two relax runs each on main 62ab6ae and one double-accumulation RELION run each (seed_repeats_20261002_62ab6ae, jobs 14859791-14859796); the seed's first relax run stays the row's 0cbdebd arm.",
     "Rescored 2026-10-01 with the fixed VDAM scorer (tools/score_vdam.py): every class is also registered on its own (to the reference mean and, for K*R <= 16, to each reference class), in both hands, three coarse starts each; each (class, reference class) pair uses its best registration by unmasked FSC-AUC before the Hungarian match. The earlier consensus-only registration (one fit of the population-weighted mean, hand chosen at low pass) misregistered K>1 classes; regression test tools/test_score_vdam_pair.py (incl. a phase-randomized and a white-noise control class, both < 0.05).",
     "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION build_patched (RELION 5.0.1 f2c1a38 plus env-gated debug dumps, CUDA arch 80). Same-node A/B on VDAM pdb K2 s29 against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the mpiscale flags: build_patched 1864 s vs stock 2226 s, and with the GPUs swapped 2143 s vs 2195 s (stock slower by 19% and 2.4%; em_work/relax_bench_k1plus_20260925/stock90_ab_20261001/vdam_pdbk2), so the quoted RELION walls are the fastest RELION tested.",
@@ -6588,21 +6653,45 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s53/s53",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s61/s61",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/newgen_20260927/pairs/ng_vdam_k2_50k_0cbdebd_s67/s67"
-    ]
+    ],
+    "refresh_20261004": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it/s29/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "arms_not_rescored": [
+      "c0_relax_s29_r2",
+      "bpd_relion_s29_r2",
+      "c0_relax_s29_r3",
+      "bpd_relion_s29_r3",
+      "rep62_relax_s41_r2",
+      "rep62_relax_s41_r3",
+      "bpd_relion_s41_r2",
+      "rep62_relax_s61_r2",
+      "rep62_relax_s61_r3",
+      "bpd_relion_s61_r2",
+      "rep62_relax_s67_r2",
+      "rep62_relax_s67_r3",
+      "bpd_relion_s67_r2"
+     ],
+     "same_seed_repeats": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/pdbk2_vdam_reps"
+    }
    },
    "mask": {
     "dataset": "synth_pdb_k2_50k256_snr05_c1",
     "sha256": "845d54f8877884441940a2e48aa19edc0ab248821ebc913a2f4288aa6dc2c786"
    },
-   "date": "2026-10-02",
+   "date": "2026-10-04",
    "time_check": {
-    "a": "Ratio from the seed-29 same-node pair (job 14676169, della-h19g2): relax and RELION started together as two srun --exact -n1 -c12 --gres=gpu:h100:1 steps, one H100 and 12 CPUs each; RELION build_patched relion_refine --j 12 (non-MPI), relax --j 12. Other seeds: s41 job 14718357 (0.61x); s53 job 14718361 (0.69x); s61 job 14718364 (0.58x); s67 job 14718368 (0.60x).",
+    "a": "relax: Slurm job 14956562 (della-h19g2), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676169, 14718357, 14718361, 14718364, 14718368. Not the same job or node: the refresh reran relax only.",
     "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
-    "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time for each pair"
+    "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
    },
    "quality_pass": true,
-   "quality_reason": "masked ref FSC-AUC: worst s41 +1.0e-4 vs same-seed RELION; run ranges compared at s29/s41/s61/s67 (both engines repeated); inside or above across-seed band",
+   "quality_reason": "masked ref FSC-AUC: worst s53 −1.7e-4 vs same-seed RELION; run ranges compared at s29/s41/s61/s67 (both engines repeated); inside or above across-seed band",
    "history": [
     {
      "date": "2026-09-28",
@@ -6635,6 +6724,47 @@
      "relion_masked_fsc_auc": 0.0386,
      "quality_pass": false,
      "time_ratio_relax_over_relion": 0.58
+    },
+    {
+     "date": "2026-10-02",
+     "note": "values before the 2026-10-04 refresh on relax main f6c8299b (relax arm at the quote seed) and the rescoring with the sized-budget scorer 5744444f",
+     "relax_source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
+     "relax_wall_s": 1282.0,
+     "relax_jobs": [
+      "14676169",
+      "14718357",
+      "14718361",
+      "14718364",
+      "14718368"
+     ],
+     "time_ratio_relax_over_relion": 0.58,
+     "quality_pass": true,
+     "quality_reason": "masked ref FSC-AUC: worst s41 +1.0e-4 vs same-seed RELION; run ranges compared at s29/s41/s61/s67 (both engines repeated); inside or above across-seed band",
+     "initial_model_relax": {
+      "run": "c0_relax_s29",
+      "fsc_auc": 0.0779,
+      "masked_fsc_auc": 0.0801,
+      "res_05_A": 68.0,
+      "masked_res_05_A": 68.0
+     },
+     "initial_model_relion": {
+      "run": "bpd_relion_s29",
+      "fsc_auc": 0.2919,
+      "masked_fsc_auc": 0.2943,
+      "res_05_A": 77.71,
+      "masked_res_05_A": 77.71
+     },
+     "initial_model_cross": {
+      "fsc_auc": 0.0596,
+      "masked_fsc_auc": 0.0629
+     },
+     "score_json": "docs/benchmarks/initialmodel_scores/bpd2_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+     "time_check": {
+      "a": "relax: Slurm job 14956562 (della-h19g2), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676169, 14718357, 14718361, 14718364, 14718368. Not the same job or node: the refresh reran relax only.",
+      "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
+      "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
+      "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+     }
     }
    ]
   },
@@ -7872,24 +8002,24 @@
     "resolution_definition": null,
     "relion_reported_resolution_A": null,
     "masked_resolution_A": null,
-    "wall_s": 818.0,
+    "wall_s": 565,
     "wall_definition": "arm-script wall (WALL.json) of the relax wrapper process, end to end (import, checks, compilation, run)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
-     "14676151"
+     "14956564"
     ],
     "masked_band_auc": null,
-    "source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
-    "source_repo": "relax main 0cbdebd (frozen candidate refresh_20260927/cand_0cbdebd: vdamfast 6f3de9d5, bigbox pass-2 fixes; sealed native libraries, pinned recovar 5514ac6), production defaults"
+    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults"
    },
    "initial_model": {
     "reference": "RELION's C4 auto-refine final merged map of the same particles (job 14313014), the frozen mask's reference; agreement with the refined structure, not a gold-standard resolution",
     "aggregate": null,
     "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
-    "alignment": "rigid (HEALPix-2 seed + x-mirror, continuous rotation+translation fit, sign +1); cubic apply. Arm vs reference: arm consensus fitted to the reference mean. Pair: b consensus fitted directly onto a's reference-frame consensus.",
-    "score_json": "docs/benchmarks/initialmodel_scores/c0_empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
+    "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+    "score_json": "docs/benchmarks/initialmodel_scores/rf2_empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
     "relion": {
      "run": "c0_relion_s42",
      "fsc_auc": 0.3657,
@@ -7898,26 +8028,28 @@
      "masked_res_05_A": 6.66
     },
     "relax": {
-     "run": "c0_relax_s42",
-     "fsc_auc": 0.3609,
-     "masked_fsc_auc": 0.4148,
-     "res_05_A": 6.53,
-     "masked_res_05_A": 6.53
+     "run": "rf2_relax_s42",
+     "fsc_auc": 0.3601,
+     "masked_fsc_auc": 0.4091,
+     "res_05_A": 6.79,
+     "masked_res_05_A": 6.79
     },
     "cross": {
-     "fsc_auc": 0.5808,
-     "masked_fsc_auc": 0.8238
+     "fsc_auc": 0.8742,
+     "masked_fsc_auc": 0.9495,
+     "relion_run": "c0_relion_s42"
     },
     "relion_repeat": {
      "pair": "RELION seed 42 in this job vs relion_c4_initial_model (earlier run of the same command and seed)",
      "fsc_auc": 0.5529,
      "masked_fsc_auc": 0.7186
-    }
+    },
+    "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470"
    },
    "gt": null,
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.49,
+   "time_ratio_relax_over_relion": 0.34,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -7928,6 +8060,10 @@
     "timing_controlled": true
    },
    "notes": [
+    "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
+    "Refresh 2026-10-04, seed 42 (the only seed rerun): population-weighted masked FSC-AUC against the reference relax 0.40906 vs same-seed RELION 0.41475 (RELION same-seed runs 0.40627-0.41475); wall 565 s (was 818.0 s) against RELION 1676.0 s from the row's earlier pair.",
+    "Seed 42 range check (job 14978147, one node; scoring 14986221, all maps after the C4 symmetry-alignment step): f6c8299b runs 0.40906, 0.41399; RELION runs 0.41475, 0.40627 (the row's run and one more with the same command and build). Both engines spread by 5e-3 to 8e-3 at this seed and the ranges overlap, so the range rule applies and the row passes. A single pre-refactor d1ba3e83 run scored 0.39439 and the earlier 0cbdebd run 0.41480; with this spread one run per head does not show a change.",
+    "Scorer (2026-10-04): every arm whose maps are in the evidence store (8 arms) was rescored with relax main 5744444f (fine-stage Powell budget 140 iterations / 6400 evaluations, optimizer status recorded; earlier scores came from a 35 / 1600 budget on which 12% of fine fits stopped). No fit in this row is flagged as unconverged. Largest old-minus-new difference on the verdict metric in this row: 3.9e-05 (p_relion_c4_initial_model), against a smallest relax-RELION gap of 5.7e-03, so the scorer change is immaterial here. The verdict rests on seeds 42. On the one row sized with an unlimited budget (K=15 ribosembly, seed 29) the verdict metric moved by under 1e-8.",
     "Rescored 2026-10-01 with the fixed VDAM scorer (tools/score_vdam.py): every class is also registered on its own (to the reference mean and, for K*R <= 16, to each reference class), in both hands, three coarse starts each; each (class, reference class) pair uses its best registration by unmasked FSC-AUC before the Hungarian match. The earlier consensus-only registration (one fit of the population-weighted mean, hand chosen at low pass) misregistered K>1 classes; regression test tools/test_score_vdam_pair.py (incl. a phase-randomized and a white-noise control class, both < 0.05).",
     "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION build_patched (RELION 5.0.1 f2c1a38 plus env-gated debug dumps, CUDA arch 80). Same-node A/B on VDAM pdb K2 s29 against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the mpiscale flags: build_patched 1864 s vs stock 2226 s, and with the GPUs swapped 2143 s vs 2195 s (stock slower by 19% and 2.4%; em_work/relax_bench_k1plus_20260925/stock90_ab_20261001/vdam_pdbk2), so the quoted RELION walls are the fastest RELION tested.",
     "VDAM refresh 2026-09-29 on relax main 0cbdebd (includes vdamfast's 6f3de9d5 resident image classes): same-node cold pair per seed, relax and RELION build_patched relion_refine --j 12, one H100 and 12 CPUs each; seeds 42. The RELION band holds every earlier RELION run of the same command in the row's score plus this refresh's.",
@@ -7960,21 +8096,33 @@
     ],
     "earlier_run_roots": [
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_hcn1_0cbdebd/s42"
-    ]
+    ],
+    "refresh_20261004": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/out/rf2_empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
+     "verdicts": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/vdam/VERDICTS.json",
+     "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/cand_f6c8299",
+     "arms_not_rescored": [
+      "p_rf_relion_s42"
+     ],
+     "seed42_check": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/hcn1_vdam_control"
+    }
    },
    "mask": {
     "dataset": "empiar10081_hcn1_c4",
     "sha256": "4003c7dea2f37cb8db7f32f1903d5b82a9b2519af7d1ece0c149fca70c9fb0af"
    },
-   "date": "2026-10-01",
+   "date": "2026-10-04",
    "time_check": {
-    "a": "Ratio from the seed-42 same-node pair (job 14676151, della-h21g2): relax and RELION started together as two srun --exact -n1 -c12 --gres=gpu:h100:1 steps, one H100 and 12 CPUs each; RELION build_patched relion_refine --j 12 (non-MPI), relax --j 12. Other seeds: .",
+    "a": "relax: Slurm job 14956564 (della-h19g3), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676151. Not the same job or node: the refresh reran relax only.",
     "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
-    "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time for each pair"
+    "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
    },
    "quality_pass": true,
-   "quality_reason": "masked ref FSC-AUC: worst s42 +6.4e-4 vs same-seed RELION; inside or above across-seed band",
+   "quality_reason": "masked ref FSC-AUC: worst s42 +0.0077 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside across-seed band",
    "history": [
     {
      "date": "2026-09-24",
@@ -8017,6 +8165,43 @@
      "relion_masked_fsc_auc": 0.4095,
      "quality_pass": true,
      "time_ratio_relax_over_relion": 0.49
+    },
+    {
+     "date": "2026-10-01",
+     "note": "values before the 2026-10-04 refresh on relax main f6c8299b (relax arm at the quote seed) and the rescoring with the sized-budget scorer 5744444f",
+     "relax_source_sha": "0cbdebda5dca72766a89052a3be35b1ce138ba28",
+     "relax_wall_s": 818.0,
+     "relax_jobs": [
+      "14676151"
+     ],
+     "time_ratio_relax_over_relion": 0.49,
+     "quality_pass": true,
+     "quality_reason": "masked ref FSC-AUC: worst s42 +6.4e-4 vs same-seed RELION; inside or above across-seed band",
+     "initial_model_relax": {
+      "run": "c0_relax_s42",
+      "fsc_auc": 0.3609,
+      "masked_fsc_auc": 0.4148,
+      "res_05_A": 6.53,
+      "masked_res_05_A": 6.53
+     },
+     "initial_model_relion": {
+      "run": "c0_relion_s42",
+      "fsc_auc": 0.3657,
+      "masked_fsc_auc": 0.4148,
+      "res_05_A": 6.79,
+      "masked_res_05_A": 6.66
+     },
+     "initial_model_cross": {
+      "fsc_auc": 0.5808,
+      "masked_fsc_auc": 0.8238
+     },
+     "score_json": "docs/benchmarks/initialmodel_scores/c0_empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align.json",
+     "time_check": {
+      "a": "relax: Slurm job 14956564 (della-h19g3), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14676151. Not the same job or node: the refresh reran relax only.",
+      "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
+      "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
+      "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+     }
     }
    ]
   },
