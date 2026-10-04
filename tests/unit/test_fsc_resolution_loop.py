@@ -1,4 +1,11 @@
-"""Current-size, FSC history and windowing tests for single-volume refinement."""
+"""Current-size, FSC history and windowing tests for single-volume refinement.
+
+The loop runs at adaptive oversampling 1 (the CLI default) on the CPU stand-in
+for the global E-step (``helpers.fake_adaptive_engine``): the engine's pass 2 runs
+only on the device-resident GPU engine, and these tests check the iteration
+loop's scheduling, not the engine. Each half-set call backprojects its own random
+Hermitian volume, so the half-map FSC is finite and below one.
+"""
 
 import numpy as np
 import pytest
@@ -8,6 +15,7 @@ import relax.sampling as sampling_module
 pytest.importorskip("jax")
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume
+from helpers.fake_adaptive_engine import install_fake_adaptive_engine
 
 from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement.iteration_loop import refine_single_volume
@@ -94,8 +102,8 @@ def _identity_process_half(batch, apply_image_mask=False):
 class MockDataset:
     """Minimal mock of CryoEMDataset for unit testing the refinement loop.
 
-    Supports the subset of the dataset API needed by run_em, noise
-    estimation, prior computation, and pose updates.
+    Supports the subset of the dataset API needed by the refinement loop,
+    noise estimation, prior computation, and pose updates.
     """
 
     def __init__(self, n_images, rng):
@@ -188,6 +196,20 @@ def translations():
 
 
 @pytest.fixture(autouse=True)
+def fake_global_estep(monkeypatch):
+    """The CPU stand-in for the adaptive engine; each call backprojects a new random volume."""
+
+    calls = []
+
+    def random_half_map(k, size):
+        side = round(size ** (1.0 / 3.0))
+        return _hermitian_volume((side, side, side), seed=1000 + len(calls) * 7 + k)
+
+    install_fake_adaptive_engine(monkeypatch, calls, Ft_y=random_half_map)
+    return calls
+
+
+@pytest.fixture(autouse=True)
 def generated_relion_rotation_grid(monkeypatch):
     """Keep loop tests independent of the optional compiled RELION binding."""
 
@@ -227,7 +249,7 @@ class TestOracleMode:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=3),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes),
+                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
         )
 
@@ -248,7 +270,7 @@ class TestOracleMode:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=3, init_current_size=32),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes),
+                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
         )
 
@@ -271,7 +293,7 @@ class TestOracleMode:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=2),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes),
+                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
         )
 
@@ -304,6 +326,7 @@ class TestResolutionProgression:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=3, init_current_size=32),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=AdaptiveOptions(adaptive_oversampling=1),
             ),
         )
 
@@ -313,7 +336,7 @@ class TestResolutionProgression:
         # but should not drop below the scaled minimum of 4.
         assert sizes[-1] >= 4, f"Resolution collapsed: sizes={sizes}"
 
-    def test_fsc_history_populated(self, half_datasets, init_volume, translations):
+    def test_fsc_history_populated(self, half_datasets, init_volume, translations, fake_global_estep):
         """FSC history has one entry per iteration."""
         result = refine_single_volume(
             half_datasets,
@@ -325,6 +348,7 @@ class TestResolutionProgression:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=3, init_current_size=32),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=AdaptiveOptions(adaptive_oversampling=1),
             ),
         )
 
@@ -335,6 +359,9 @@ class TestResolutionProgression:
         # Each FSC curve should have valid entries
         for fsc in result["fsc_history"]:
             assert jnp.all(jnp.isfinite(fsc))
+        # Every half-set E-step ran the adaptive engine at oversampling 1.
+        assert len(fake_global_estep) >= 2 * 3
+        assert {call["kwargs"]["oversampling_order"] for call in fake_global_estep} == {1}
 
     def test_wall_times_positive(self, half_datasets, init_volume, translations):
         """Wall times should be positive."""
@@ -348,6 +375,7 @@ class TestResolutionProgression:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=2, init_current_size=32),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=AdaptiveOptions(adaptive_oversampling=1),
             ),
         )
 
@@ -376,7 +404,7 @@ class TestOneIterationWithWindowing:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=1),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=[4]),
+                adaptive=AdaptiveOptions(relion_current_sizes=[4], adaptive_oversampling=1),
             ),
         )
 
@@ -396,7 +424,7 @@ class TestOneIterationWithWindowing:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=1),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=[128]),
+                adaptive=AdaptiveOptions(relion_current_sizes=[128], adaptive_oversampling=1),
             ),
         )
 
@@ -416,7 +444,7 @@ class TestOneIterationWithWindowing:
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(max_iter=1),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=[32]),
+                adaptive=AdaptiveOptions(relion_current_sizes=[32], adaptive_oversampling=1),
             ),
         )
 

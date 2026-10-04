@@ -1,23 +1,52 @@
 """Materialized dense posterior reference for adaptive-oversampling tests.
 
 Preserved from the former runtime ``compute_e_step_weights`` API after caller
-review found only test consumers. This retains its own two-sweep orchestration
-and complete host posterior; it still shares preprocessing and scoring kernels
-with production, so it is not an independent reference for those kernels.
+review found only test consumers. This retains its own two-sweep orchestration,
+rotation blocking and complete host posterior; it still shares preprocessing and
+scoring kernels with production, so it is not an independent reference for those
+kernels.
 """
+
+from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
-
+from helpers.dense_block_scores import _score_rotation_block
 from recovar.core.configs import ForwardModelConfig
-from relax.dense.em_engine import _iter_dense_rotation_blocks
+from recovar.reconstruction import noise as noise_utils
+
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.fourier_window import make_fourier_window_spec
 from relax.helpers.half_spectrum import make_half_image_weights
 from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
 from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import _score_rotation_block, _update_logsumexp
-from recovar.reconstruction import noise as noise_utils
+from relax.scoring.scoring import _update_logsumexp
+
+
+@dataclass(frozen=True)
+class _DenseRotationBlock:
+    """Host-side metadata for one padded dense rotation block."""
+
+    index: int
+    r0: int
+    r1: int
+    rotations: np.ndarray
+    actual_rot: int
+
+
+def _iter_dense_rotation_blocks(rotations_padded, n_rot: int, n_blocks: int, rotation_block_size: int):
+    """Yield the padded rotation blocks of the materialized posterior sweeps."""
+
+    for block_index in range(n_blocks):
+        r0 = block_index * rotation_block_size
+        r1 = r0 + rotation_block_size
+        yield _DenseRotationBlock(
+            index=block_index,
+            r0=r0,
+            r1=r1,
+            rotations=rotations_padded[r0:r1],
+            actual_rot=max(0, min(rotation_block_size, n_rot - r0)),
+        )
 
 
 def compute_e_step_weights(

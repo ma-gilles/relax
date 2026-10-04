@@ -55,81 +55,6 @@ def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
     ]
 
 
-def test_direct_k1_dense_route_is_an_explicit_four_input_variant():
-    scorer = tree("half_scoring.py")
-    helper = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_score_direct_k1_dense"
-    )
-    assert [argument.arg for argument in helper.args.args] == [
-        "half",
-        "sampling",
-        "execution",
-        "em_kwargs",
-    ]
-    dispatcher = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_half_dense_one_shape"
-    )
-    calls = [
-        node
-        for node in ast.walk(dispatcher)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_score_direct_k1_dense"
-    ]
-    assert len(calls) == 1
-    assert [argument.id for argument in calls[0].args] == [
-        "half",
-        "sampling",
-        "execution",
-        "em_kwargs",
-    ]
-
-
-def test_direct_kclass_dense_route_is_an_explicit_five_input_variant():
-    scorer = tree("half_scoring.py")
-    helper = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_direct_kclass_dense"
-    )
-    assert [argument.arg for argument in helper.args.args] == [
-        "half",
-        "sampling",
-        "priors",
-        "execution",
-        "optics",
-        "em_kwargs",
-    ]
-    dispatcher = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_half_dense_one_shape"
-    )
-    calls = [
-        node
-        for node in ast.walk(dispatcher)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_score_direct_kclass_dense"
-    ]
-    assert len(calls) == 1
-    assert [argument.id for argument in calls[0].args] == [
-        "half",
-        "sampling",
-        "priors",
-        "execution",
-        "optics",
-        "em_kwargs",
-    ]
-
-
 def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
     scorer = tree("half_scoring.py")
     helper = next(
@@ -261,18 +186,17 @@ def test_device_matrix_generation_gate(os, local, k, mode, hard, double, expecte
 
 
 @pytest.mark.parametrize(
-    "os,sparse,xhalf,mode,double,override,expected",
+    "os,xhalf,mode,double,override,expected",
     [
-        (0, True, True, "gaussian", False, True, True),
-        (0, True, True, "gaussian", False, False, False),
-        (1, True, True, "gaussian", False, True, False),
-        (0, False, True, "gaussian", False, True, False),
-        (0, True, False, "gaussian", False, True, False),
-        (0, True, True, "normalized_cc", False, True, False),
-        (0, True, True, "gaussian", True, True, False),
+        (0, True, "gaussian", False, True, True),
+        (0, True, "gaussian", False, False, False),
+        (1, True, "gaussian", False, True, False),
+        (0, False, "gaussian", False, True, False),
+        (0, True, "normalized_cc", False, True, False),
+        (0, True, "gaussian", True, True, False),
     ],
 )
-def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, override, expected):
+def test_only_coarse_engine_operand_changes(os, xhalf, mode, double, override, expected):
     k1_route = next(
         node
         for node in tree("half_scoring.py").body
@@ -307,7 +231,6 @@ def test_only_coarse_engine_operand_changes(os, sparse, xhalf, mode, double, ove
         pass2_grids=SimpleNamespace(coarse_rotations=coarse, fine_rotations=fine),
         sampling=SimpleNamespace(coarse_scoring_rotations=native if override else None),
         adaptive_os=os,
-        sparse_pass2=sparse,
         relion_x_half_mstep=xhalf,
         variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
         execution=SimpleNamespace(diagnostic_float64_pass2=double),

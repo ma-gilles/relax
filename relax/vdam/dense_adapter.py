@@ -1,8 +1,9 @@
-"""InitialModel E-step adapter on the dense K-class engine.
+"""InitialModel E-step configuration and class inputs for the adaptive K-class route.
 
 The hidden variable axis is ``class x pose``; pseudo-halfsets share one E-step
 (reconstruction accumulators are split per halfset) so projection/scoring isn't
 duplicated while the VDAM M-step still gets independent halfset BackProjectors.
+The E-step itself runs in :mod:`relax.vdam.adaptive_estep`.
 """
 
 from __future__ import annotations
@@ -16,29 +17,21 @@ import numpy as np
 from recovar.reconstruction.noise import make_radial_noise
 from recovar.utils.helpers import get_gpu_memory_total
 
-from relax.classification.k_class import run_dense_k_class_em
 from relax.helpers.orientation_priors import (
     relion_round_away_from_zero,
     relion_sigma_offset_prior_center,
 )
 from relax.relion import relion_projector_setup
-from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines, warn_deprecated_engine
+from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.vdam import native_sampling
 from relax.vdam.adaptive_estep import run_adaptive_initial_model_estep
 from relax.vdam.estep_common import (
-    _PARTICLE_RESULT_FIELDS,
     DenseInitialModelEstepConfig,
     DenseInitialModelEstepResult,
-    _add_accumulator_weight_meta,
-    _arrays_to_accumulators,
-    _empty_accumulator,
-    _estep_meta,
-    _group_local_kwargs,
-    _relion_projector_dense_rotations,
 )
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import NativeSamplingPlan
-from relax.vdam.state import InitialModelState, VdamAccumulator
+from relax.vdam.state import InitialModelState
 
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
@@ -210,13 +203,6 @@ def _dense_estep_config(
             raise ValueError("translation_parent contains indices outside the coarse translation prior")
         translation_log_prior = coarse_translation_log_prior[:, translation_parent]
 
-    sparse_pass2_enabled = os.environ.get("RELAX_DISABLE_SPARSE_PASS2", "") not in (
-        "1",
-        "true",
-        "TRUE",
-    )
-    if sampling_plan.rotations is None and not sparse_pass2_enabled:
-        raise ValueError("Deferred fine rotations require sparse pass 2")
     engine_kwargs: dict = {
         "score_with_masked_images": True,
         "reconstruct_with_masked_images": False,
@@ -225,33 +211,30 @@ def _dense_estep_config(
         "relion_firstiter_score_mode": "gaussian",
         "image_pre_shifts": image_pre_shifts,
         "translation_prior_centers": relion_sigma_offset_prior_center(translation_offsets),
-        # RELAX_DISABLE_SPARSE_PASS2=1 forces dense path (cuFFT plan OOM at 256²+).
         # Oversampling zero is still RELION's adaptive two-pass algorithm: its
-        # fine children are the coarse samples themselves.  Keep it on the
-        # same exact significance/local route as positive oversampling instead
-        # of falling back to RECOVAR's algebraic dense engine.
-        "sparse_pass2": sparse_pass2_enabled,
+        # fine children are the coarse samples themselves, on the same exact
+        # significance route as positive oversampling.
+        "sparse_pass2": True,
     }
-    if sparse_pass2_enabled or int(sampling_plan.oversampling) > 0:
-        engine_kwargs.update(
-            healpix_order=int(sampling_plan.healpix_order),
-            oversampling_order=int(sampling_plan.oversampling),
-            translation_step=float(sampling_plan.offset_step_px),
-            random_perturbation=float(sampling_plan.random_perturbation),
-            coarse_translations=coarse_translations,
-            particle_diameter_ang=float(opts.particle_diameter),
-            pass1_healpix_order=int(pass1_healpix_order),
-            return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
-        )
-        # The adaptive route rebuilds RELION's fine translations from the
-        # unperturbed host grid (``prepare_adaptive_pass2_grids``).
-        if sampling_plan.coarse_base_translations is None:
-            raise ValueError("the adaptive route needs the sampling plan's host-double coarse grid")
-        engine_kwargs["coarse_base_translations"] = np.asarray(
-            sampling_plan.coarse_base_translations, dtype=np.float64
-        )
-        if _af := os.environ.get("RELAX_ADAPTIVE_FRACTION"):
-            engine_kwargs["adaptive_fraction"] = float(_af)
+    engine_kwargs.update(
+        healpix_order=int(sampling_plan.healpix_order),
+        oversampling_order=int(sampling_plan.oversampling),
+        translation_step=float(sampling_plan.offset_step_px),
+        random_perturbation=float(sampling_plan.random_perturbation),
+        coarse_translations=coarse_translations,
+        particle_diameter_ang=float(opts.particle_diameter),
+        pass1_healpix_order=int(pass1_healpix_order),
+        return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
+    )
+    # The adaptive route rebuilds RELION's fine translations from the
+    # unperturbed host grid (``prepare_adaptive_pass2_grids``).
+    if sampling_plan.coarse_base_translations is None:
+        raise ValueError("the adaptive route needs the sampling plan's host-double coarse grid")
+    engine_kwargs["coarse_base_translations"] = np.asarray(
+        sampling_plan.coarse_base_translations, dtype=np.float64
+    )
+    if _af := os.environ.get("RELAX_ADAPTIVE_FRACTION"):
+        engine_kwargs["adaptive_fraction"] = float(_af)
     for env_var, kwarg in (
         ("RELAX_USE_FLOAT64_SCORING", "use_float64_scoring"),
         ("RELAX_HALF_SPECTRUM_SCORING", "half_spectrum_scoring"),
@@ -311,34 +294,6 @@ def class_log_priors_from_state(state: InitialModelState) -> np.ndarray:
     return out
 
 
-def _image_groups(
-    particle_ids: np.ndarray | None,
-    halfset_ids: np.ndarray | None,
-    *,
-    n_images: int,
-    pseudo_halfsets: bool,
-) -> list[tuple[int, np.ndarray]]:
-    ids = np.arange(n_images, dtype=np.int64) if particle_ids is None else np.asarray(particle_ids, dtype=np.int64)
-    if ids.ndim != 1:
-        raise ValueError(f"particle_ids must be 1D, got {ids.shape}")
-    if np.any(ids < 0) or np.any(ids >= n_images):
-        raise ValueError("particle_ids contains entries outside the dataset")
-
-    if not pseudo_halfsets:
-        return [(0, ids)]
-
-    if halfset_ids is None:
-        h0, h1 = ids[0::2], ids[1::2]
-    else:
-        halves = np.asarray(halfset_ids, dtype=np.int8)
-        if halves.shape != ids.shape:
-            raise ValueError(f"halfset_ids shape {halves.shape} must match particle_ids shape {ids.shape}")
-        if np.any((halves != 0) & (halves != 1)):
-            raise ValueError("halfset_ids must contain only 0/1 values")
-        h0, h1 = ids[halves == 0], ids[halves == 1]
-    return [(0, h0), (1, h1)]
-
-
 def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEstepConfig) -> dict[str, Any]:
     engine_kwargs = {
         "current_size": None if state.current_size <= 0 else state.current_size,
@@ -349,7 +304,7 @@ def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEste
         "half_spectrum_scoring": True,
         "score_with_masked_images": True,
         "reconstruct_with_masked_images": True,
-        "sparse_pass2": False,
+        "sparse_pass2": True,
         # RELION InitialModel BPref uses the rounded radial reconstruction support
         # encoded by Minvsigma2, not the full square Fourier crop.
         "recon_square_window": False,
@@ -368,31 +323,6 @@ def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEste
     if engine_kwargs["projection_padding_factor"] != engine_kwargs["reconstruction_padding_factor"]:
         raise ValueError("InitialModel dense E-step requires matching projection/reconstruction padding factors")
     return engine_kwargs
-
-
-_DENSE_RUN_EM_REJECT = frozenset(
-    {
-        # InitialModel-only kwargs the dense run_em wrapper doesn't accept.
-        "reconstruct_with_masked_images",
-        "recon_square_window",
-        "recon_exact_radius",
-        "reconstruction_subtract_projected_reference",
-        "projection_mask_current_image_disk",
-        "relion_projector_shape",
-        # Sparse/local engine kwargs that run_dense_k_class_em rejects.
-        "return_profile",
-        "return_best_pose_details",
-        "return_stats",
-        "disable_adjoint_y",
-        "disable_adjoint_ctf",
-        "normalization_log_evidence",
-    }
-)
-
-
-def _dense_run_em_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Drop kwargs unsupported by the dense run_em wrapper (sparse-only escape hatch)."""
-    return {k: v for k, v in kwargs.items() if k not in _DENSE_RUN_EM_REJECT}
 
 
 def _relion_projector_to_dense_volume(projector_data: np.ndarray, ori_size: int) -> np.ndarray:
@@ -434,13 +364,6 @@ def relion_projector_half_maps_to_dense_means(projector_half_maps: np.ndarray, o
             scale = float(tok)
         means.append(dense.reshape(-1) * scale)
     return np.asarray(means, dtype=np.complex64)
-
-
-def _dense_rotations_for_config(rotations: Any, config: DenseInitialModelEstepConfig) -> np.ndarray:
-    rotations_np = np.asarray(rotations, dtype=np.float32)
-    if not config.relion_projector_frame:
-        return rotations_np
-    return _relion_projector_dense_rotations(rotations_np)
 
 
 # (attr_name_on_result, dtype) for fields harvested per halfset and concatenated.
@@ -598,131 +521,51 @@ def run_dense_initial_model_estep(
     particle_ids: np.ndarray | None = None,
     halfset_ids: np.ndarray | None = None,
 ) -> DenseInitialModelEstepResult:
-    """Run the InitialModel E-step with RELION-compatible pseudo-halfset routing."""
+    """Run the InitialModel E-step with RELION-compatible pseudo-halfset routing.
+
+    VDAM's one E-step route is the adaptive pass-1/pass-2 route on the
+    device-resident pass 2; the dense E-step was removed on 2026-10-03.
+    """
     class_log_priors = (
         class_log_priors_from_state(state) if config.class_log_priors is None else np.asarray(config.class_log_priors)
     )
-    groups = _image_groups(
-        particle_ids,
-        halfset_ids,
-        n_images=int(experiment_dataset.n_images),
-        pseudo_halfsets=state.pseudo_halfsets,
-    )
     engine_kwargs = _dense_engine_kwargs(state, config)
-    if bool(engine_kwargs.get("sparse_pass2", False)):
-        selected_particle_ids = (
-            np.arange(int(experiment_dataset.n_images), dtype=np.int64)
-            if particle_ids is None
-            else np.asarray(particle_ids, dtype=np.int64)
+    if not bool(engine_kwargs["sparse_pass2"]):
+        raise RuntimeError(
+            "the dense VDAM E-step was removed on 2026-10-03 (with RELAX_DISABLE_SPARSE_PASS2): "
+            "the InitialModel E-step runs only on the adaptive route over the device-resident pass 2; "
+            "do not set sparse_pass2=False in the E-step engine kwargs"
         )
-        if state.pseudo_halfsets:
-            selected_halfset_ids = (
-                np.arange(selected_particle_ids.size, dtype=np.int32) % 2
-                if halfset_ids is None
-                else np.asarray(halfset_ids, dtype=np.int32)
-            )
-        else:
-            selected_halfset_ids = None
-        # VDAM's one E-step route: the adaptive pass-1/pass-2 route on the device-resident pass 2.
-        means, mean_variance, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(
-            state, config, dense_means=False
-        )
-        result = run_adaptive_initial_model_estep(
-            experiment_dataset,
-            state,
-            config,
-            class_log_priors=class_log_priors,
-            joint_particle_ids=selected_particle_ids,
-            joint_halfset_ids=selected_halfset_ids,
-            means=means,
-            mean_variance=mean_variance,
-            relion_projector_half_by_class=relion_projector_half_by_class,
-            relion_projector_r_max=relion_projector_r_max,
-            engine_kwargs=engine_kwargs,
-        )
-        result.meta["pass2_engine"] = "adaptive"
-        result.meta["pass2_engines"] = take_pass_engines()
-        result.meta["coarse_engine_calls"] = take_coarse_engine_calls()
-        return result
-
-    # Sparse execution constructs its own coarse/local rotation operands.
-    if np.ndim(config.noise_variance) != 1:
-        raise NotImplementedError("the deprecated dense VDAM E-step takes one optics group")
-    means, mean_variance, _, _ = _resolve_class_inputs(state, config)
-    warn_deprecated_engine("dense", "global", "RELAX_DISABLE_SPARSE_PASS2 selects the dense VDAM E-step")
-    if config.rotations is None:
-        raise ValueError("Dense execution requires materialized rotations")
-    dense_rotations = _dense_rotations_for_config(config.rotations, config)
-    halfset_results: dict[int, Any] = {}
-    accumulators: list[VdamAccumulator] = []
-    for halfset_idx, image_indices in groups:
-        if image_indices.size == 0:
-            accumulators.extend(_empty_accumulator(state, k, halfset_idx) for k in range(state.K))
-            continue
-        result = run_dense_k_class_em(
-            experiment_dataset,
-            means,
-            mean_variance,
-            config.noise_variance,
-            dense_rotations,
-            config.translations,
-            config.disc_type,
-            class_log_priors=class_log_priors,
-            image_batch_size=config.image_batch_size,
-            rotation_block_size=config.rotation_block_size,
-            image_indices=image_indices,
-            accumulate_noise=True,
-            **_dense_run_em_kwargs(
-                _group_local_kwargs(
-                    engine_kwargs,
-                    image_indices,
-                    n_images=int(experiment_dataset.n_images),
-                )
-            ),
-        )
-        halfset_results[halfset_idx] = result
-        accumulators.extend(
-            _arrays_to_accumulators(
-                result.Ft_y,
-                result.Ft_ctf,
-                state,
-                halfset_idx=halfset_idx,
-                relion_bpref_frame=config.relion_bpref_frame,
-                relion_projector_frame=config.relion_projector_frame,
-                padding_factor=config.padding_factor,
-            )
-        )
-
-    selected_particle_ids: list[np.ndarray] = []
-    field_lists: dict[str, list[np.ndarray]] = {attr: [] for attr, _ in _PARTICLE_RESULT_FIELDS}
-    max_posterior: list[np.ndarray] = []
-    for halfset_idx, image_indices in groups:
-        result = halfset_results.get(halfset_idx)
-        if result is None:
-            continue
-        attrs = {attr: getattr(result, attr, None) for attr, _ in _PARTICLE_RESULT_FIELDS}
-        stats = getattr(result, "stats", None)
-        pmax = None if stats is None else getattr(stats, "max_posterior_per_image", None)
-        if pmax is None and all(v is None for v in attrs.values()):
-            continue
-        selected_particle_ids.append(np.asarray(image_indices, dtype=np.int64))
-        for attr, dtype in _PARTICLE_RESULT_FIELDS:
-            if attrs[attr] is not None:
-                field_lists[attr].append(np.asarray(attrs[attr], dtype=dtype))
-        if pmax is not None:
-            max_posterior.append(np.asarray(pmax, dtype=np.float32))
-
-    meta = _estep_meta(halfset_results)
-    _add_accumulator_weight_meta(meta, accumulators, state.K)
-    if selected_particle_ids:
-        meta["selected_particle_ids"] = np.concatenate(selected_particle_ids).astype(np.int64, copy=False)
-    for attr, dtype in _PARTICLE_RESULT_FIELDS:
-        if field_lists[attr]:
-            meta[attr] = np.concatenate(field_lists[attr]).astype(dtype, copy=False)
-    if max_posterior:
-        meta["max_posterior_per_image"] = np.concatenate(max_posterior).astype(np.float32, copy=False)
-    return DenseInitialModelEstepResult(
-        accumulators=accumulators,
-        meta=meta,
-        halfset_results=halfset_results,
+    selected_particle_ids = (
+        np.arange(int(experiment_dataset.n_images), dtype=np.int64)
+        if particle_ids is None
+        else np.asarray(particle_ids, dtype=np.int64)
     )
+    if state.pseudo_halfsets:
+        selected_halfset_ids = (
+            np.arange(selected_particle_ids.size, dtype=np.int32) % 2
+            if halfset_ids is None
+            else np.asarray(halfset_ids, dtype=np.int32)
+        )
+    else:
+        selected_halfset_ids = None
+    means, mean_variance, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(
+        state, config, dense_means=False
+    )
+    result = run_adaptive_initial_model_estep(
+        experiment_dataset,
+        state,
+        config,
+        class_log_priors=class_log_priors,
+        joint_particle_ids=selected_particle_ids,
+        joint_halfset_ids=selected_halfset_ids,
+        means=means,
+        mean_variance=mean_variance,
+        relion_projector_half_by_class=relion_projector_half_by_class,
+        relion_projector_r_max=relion_projector_r_max,
+        engine_kwargs=engine_kwargs,
+    )
+    result.meta["pass2_engine"] = "adaptive"
+    result.meta["pass2_engines"] = take_pass_engines()
+    result.meta["coarse_engine_calls"] = take_coarse_engine_calls()
+    return result

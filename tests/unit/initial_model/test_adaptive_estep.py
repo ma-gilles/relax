@@ -110,6 +110,8 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
     key = adaptive_estep.relion_order_of_recovar_rotations(1)
     prior_relion = np.arange(n_classes * key.size, dtype=np.float32).reshape(n_classes, key.size)
+    # One coarse translation prior row per image of the whole dataset.
+    translation_prior = np.arange(4 * len(plan.coarse_translations), dtype=np.float32).reshape(4, -1)
 
     def fake_route(dataset, *args, **kwargs):
         calls.append(dict(kwargs, n_images=int(dataset.n_images)))
@@ -155,6 +157,7 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
         "translation_step": plan.offset_step_px,
         "max_significants": 200,
         "class_rotation_log_prior": prior_relion,
+        "coarse_translation_log_prior": translation_prior,
         "current_size": 8,
         "reconstruction_subtract_projected_reference": True,
         "score_with_masked_images": True,
@@ -183,9 +186,58 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     assert calls[0]["max_significants"] == 200
     assert calls[0]["mstep_subtract_ctf_projection"] is True
     assert_matches(calls[0]["class_rotation_log_prior"], prior_relion[:, key])
+    # The subset's rows, in subset order; RELION reuses them for every oversampled child.
+    assert_matches(calls[0]["translation_log_prior"], translation_prior[[3, 0, 2]])
     assert accumulator_calls[0]["halfset_idx"] is None and accumulator_calls[0]["reconstruction_group_count"] == 2
     assert result.meta["halfset_ids"] == (0, 1)
     # vdam_m_step's positional contract: halfset 0 of each class, then halfset 1.
     assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [
         (h, k) for h in range(2) for k in range(n_classes)
     ]
+
+
+@pytest.mark.parametrize("pseudo_halfsets", [False, True])
+def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(monkeypatch, pseudo_halfsets):
+    from relax.vdam.estep_common import DenseInitialModelEstepConfig
+    from relax.vdam.init import initialise_denovo_state
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the adaptive route ran on an empty subset")
+
+    monkeypatch.setattr(adaptive_estep, "run_dense_k_class_em_adaptive", forbidden)
+    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
+    plan = native_sampling._build_sampling_plan(opts, iteration=2, defer_fine_rotations=True)
+    state = initialise_denovo_state(
+        ori_size=8, pixel_size=1.0, K=2, nr_iter=4, n_directions=4, pseudo_halfsets=pseudo_halfsets
+    )
+    config = DenseInitialModelEstepConfig(
+        noise_variance=np.ones(64, dtype=np.float32),
+        rotations=None,
+        translations=plan.translations,
+        relion_bpref_frame=True,
+        engine_kwargs={},
+    )
+    result = adaptive_estep.run_adaptive_initial_model_estep(
+        _Dataset(),
+        state,
+        config,
+        class_log_priors=np.zeros(2),
+        joint_particle_ids=np.zeros(0, dtype=np.int64),
+        joint_halfset_ids=np.zeros(0, dtype=np.int32) if pseudo_halfsets else None,
+        means=None,
+        mean_variance=None,
+        relion_projector_half_by_class=np.zeros((2, 1)),
+        relion_projector_r_max=1,
+        engine_kwargs={
+            "healpix_order": 1,
+            "oversampling_order": 1,
+            "random_perturbation": plan.random_perturbation,
+            "coarse_translations": plan.coarse_translations,
+            "coarse_base_translations": plan.coarse_base_translations,
+            "translation_step": plan.offset_step_px,
+        },
+    )
+    halves = (0, 1) if pseudo_halfsets else (0,)
+    assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [(h, k) for h in halves for k in range(2)]
+    assert all(not np.any(a.data) and not np.any(a.weight) for a in result.accumulators)
+    assert result.meta == {"pass2_engine": "adaptive"}

@@ -25,8 +25,6 @@ _coarse_entries: list[dict] = []
 _DEPRECATED_ENGINES = {
     "exact_local": "the exact local engine",
     "local": "the VDAM exact-local E-step (exact local engine)",
-    "dense": "the dense run_em engine",
-    "per_image_reference": "the per-image reference pass 2 (dense run_em per image)",
 }
 
 _warned: set[tuple[str, str, str]] = set()

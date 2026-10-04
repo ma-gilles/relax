@@ -132,7 +132,7 @@ def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, 
         coarse_current_size=4, fine_current_size=6,
         coarse_healpix_order=1, oversampling_order=1,
         coarse_engine="gemm_dense", symmetry_label=symmetry,
-        mstep_relion_x_half=configured_native, sparse_pass2=False,
+        mstep_relion_x_half=configured_native,
         relion_f32_normalization_sum_weight=jnp.ones(2, jnp.float32),
     )
     assert len(seen) == 1

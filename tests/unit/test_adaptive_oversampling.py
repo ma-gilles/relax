@@ -25,7 +25,6 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.dense_posterior_reference import compute_e_step_weights
 from helpers.em_arrays import _hermitian_volume, _make_rotations, _raw_real_image_2d
 
-from relax.dense.em_engine import run_em
 from relax.helpers.oversampling import (
     _find_significant_mask_full_sort,
     _find_significant_mask_topk,
@@ -1100,59 +1099,6 @@ class TestOversampledGridGeneration:
 # ===========================================================================
 
 
-class TestRefineWithAdaptive:
-    """Run a few iterations with adaptive_oversampling=1 and verify sanity."""
-
-    def test_adaptive_0_matches_standard(self):
-        """adaptive_oversampling=0 should give the standard path's hard assignments."""
-        n_images = 5
-        n_rot = 10
-
-        ds = MockDataset(n_images=n_images, seed=42)
-        volume = _hermitian_volume(VOLUME_SHAPE, seed=42)
-        rotations = _make_rotations(n_rot, seed=12)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
-            dtype=jnp.float32,
-        )
-        noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
-
-        # Standard path
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=n_images,
-            rotation_block_size=n_rot,
-        )
-        ha_std = em_result.hard_assignments
-        del em_result
-
-        # Weights path
-        weights, ha_w = compute_e_step_weights(
-            ds,
-            volume,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=n_images,
-            rotation_block_size=n_rot,
-        )
-
-        # Hard assignments should match
-        assert_matches(
-            ha_std,
-            ha_w,
-            err_msg="E-step weights hard assignments differ from run_em",
-        )
-
-
 # ===========================================================================
 # Test 6: compute_e_step_weights with windowing
 # ===========================================================================
@@ -1296,68 +1242,6 @@ class TestEStepWeightsWindowed:
             ha_1,
             ha_2,
             err_msg="Hard assignments differ between batch sizes",
-        )
-
-
-class TestMaskedCartesianGrid:
-    """Verify run_em respects sparse candidate masks."""
-
-    def test_rotation_translation_mask_matches_manual_masking(self):
-        ds = MockDataset(n_images=1, seed=5)
-        volume = jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64)
-        mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32)
-        noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        rotations = _make_rotations(5, seed=19)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [-1.0, 0.0]],
-            dtype=jnp.float32,
-        )
-
-        weights, hard_assignments = compute_e_step_weights(
-            ds,
-            volume,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=1,
-            rotation_block_size=3,
-        )
-        valid_mask = np.ones((rotations.shape[0], translations.shape[0]), dtype=bool)
-        valid_mask.reshape(-1)[int(hard_assignments[0])] = False
-
-        masked_weights = weights.reshape(rotations.shape[0], translations.shape[0]).copy()
-        masked_weights[~valid_mask] = 0.0
-        masked_weights /= masked_weights.sum()
-        expected_argmax = int(masked_weights.reshape(-1).argmax())
-        expected_pmax = float(masked_weights.max())
-
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=1,
-            rotation_block_size=3,
-            rotation_translation_mask=valid_mask,
-            return_stats=True,
-        )
-        _ = em_result.mean
-        masked_ha = em_result.hard_assignments
-        _ = em_result.Ft_y
-        _ = em_result.Ft_ctf
-        masked_stats = em_result.stats
-        del em_result
-
-        assert int(masked_ha[0]) == expected_argmax
-        np.testing.assert_allclose(
-            np.asarray(masked_stats.max_posterior_per_image),
-            np.array([expected_pmax], dtype=np.float32),
-            atol=1e-5,
-            rtol=1e-5,
         )
 
 

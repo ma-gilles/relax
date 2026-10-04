@@ -25,7 +25,6 @@ RELION_ADAPTIVE_FRACTION = float(np.float32("0.999"))
 _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT"
 _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY"
 _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT"
-_K1_SKIP_SIGNIFICANCE_PRUNING_ENV = "RELAX_K1_SKIP_SIGNIFICANCE_PRUNING"
 _K1_RELION_X_HALF_MSTEP_ENV = "RELAX_K1_RELION_X_HALF_MSTEP"
 _K_CLASS_RELION_X_HALF_MSTEP_ENV = "RELAX_K_CLASS_RELION_X_HALF_MSTEP"
 _TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -175,12 +174,6 @@ def _local_adaptive_pass2_denominator_support_mode() -> str | None:
         value,
     )
     return None
-
-
-def _k1_skip_significance_pruning_enabled() -> bool:
-    """Diagnostic switch: evaluate the full K=1 adaptive fine grid."""
-
-    return parse_env_flag_or_false(_K1_SKIP_SIGNIFICANCE_PRUNING_ENV, logger=logger)
 
 
 def _dense_global_scoring_dtype() -> np.dtype:

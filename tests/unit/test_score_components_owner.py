@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from helpers import dense_block_scores
 from helpers.float_compare import matches
 
 from relax.scoring import scoring
@@ -21,8 +22,8 @@ def test_components_match_the_documented_gemms():
     expected_norms = jnp.matmul(ctf2, proj_abs2.T, precision=jax.lax.Precision.HIGHEST)
     assert matches(np.asarray(cross), np.asarray(expected_cross))
     assert matches(np.asarray(norms), np.asarray(expected_norms))
-    residual = scoring._e_step_block_scores(shifted, ctf2, proj_w, proj_abs2, n_images, n_trans)
+    residual = dense_block_scores._e_step_block_scores(shifted, ctf2, proj_w, proj_abs2, n_images, n_trans)
     assert matches(np.asarray(residual), np.asarray(-0.5 * (cross + norms[..., None])))
-    cc = scoring._e_step_block_scores_normalized_cc(shifted, jnp.zeros(n_images), ctf2, proj_w, proj_abs2, n_images, n_trans, (4, 4), (4, 4, 4))
+    cc = dense_block_scores._e_step_block_scores_normalized_cc(shifted, jnp.zeros(n_images), ctf2, proj_w, proj_abs2, n_images, n_trans, (4, 4), (4, 4, 4))
     denom = jnp.sqrt(jnp.maximum(norms, jnp.asarray(1e-30, dtype=norms.dtype)))
     assert matches(np.asarray(cc), np.asarray((-0.5 * cross) / denom[..., None]))

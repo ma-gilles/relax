@@ -148,12 +148,6 @@ class FourierWindowSpec:
             kwargs["return_abs2"] = bool(return_abs2)
         return kwargs
 
-    def dense_big_jit_projection_max_r(self):
-        return self.projection_max_r if self.use_window else "auto"
-
-    def dense_big_jit_backprojection_max_r(self):
-        return self.max_r if self.use_window else "auto"
-
     def score_values(self, values):
         return values if self.score_indices is None else values[..., self.score_indices]
 

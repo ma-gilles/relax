@@ -528,9 +528,9 @@ def _prepare_per_image_pass2_inputs(
 ):
     """Compute per-image oversampled rotations / parent maps / candidate masks.
 
-    Mirrors the per-image branch in the reference implementation in
-    :func:`compute_pass2_stats_sparse_perimage_reference` exactly so the
-    batched path is a strict per-image equivalent.
+    Builds each image's oversampled children exactly as the per-image reference
+    pass 2 did (removed on 2026-10-03), so the batched path is a strict per-image
+    equivalent.
 
     ``dtype`` controls the precision of every fine/oversampled rotation
     matrix this function builds or accepts: the RELION-supplied fine

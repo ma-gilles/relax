@@ -467,7 +467,6 @@ The implementation owners are:
 | Image/CTF/noise preparation and translation phases | [`preprocessing.py`](../../relax/helpers/preprocessing.py), `preprocess_batch` and `preprocess_batch_firstiter_cc` |
 | Projection and projection-dependent residual statistics | [`projection.py`](../../relax/helpers/projection.py), `compute_projections_block` and `compute_relion_projector_projections_block` |
 | Gaussian and normalized-CC block scores | [`scoring.py`](../../relax/scoring/scoring.py), `_score_rotation_block` and `_e_step_block_scores_windowed` |
-| Priors, candidate masks and class/external-normalizer constraints | [`score_constraints.py`](../../relax/scoring/score_constraints.py), `DenseScoreConstraints` |
 | Scoring weights for the selected Fourier convention | [`half_spectrum.py`](../../relax/helpers/half_spectrum.py), `make_scoring_half_image_weights` |
 
 The half-image layout has `H * (W//2 + 1)` entries. RELION half-sum scoring and
@@ -521,26 +520,16 @@ constructs the engine policy. Extraction changes source ownership, without a
 new JIT boundary, numerical formula or device pass.
 
 **Blockwise normalization within one grid.**
-[`em_engine.run_em`](../../relax/dense/em_engine.py) processes
-image batches and rotation blocks. Its first sweep collects normalization and
-best-pose statistics; its second sweep recomputes scores for accumulation.
-`_update_logsumexp` and `_merge_block_logsumexp` in `helpers/scoring.py` combine
-block normalizers. An external `normalization_log_evidence` can normalize this
-class against a joint class/pose distribution. `score_only` skips accumulation;
-other options can skip negligible second-sweep blocks or use fused execution.
-The complete image × rotation × translation score tensor is not required.
-
-`run_em` returns `DenseEMResult`, defined in
-[`helpers/types.py`](../../relax/helpers/types.py).
-Read `mean`, `hard_assignments`, `Ft_y` and `Ft_ctf` by name. Optional `stats`,
-`noise_stats` and `profile` fields are `None` when disabled; the corresponding
-flags still control the same computations. The result container stores existing
-array references. Callers no longer decode a different tuple layout for each
-flag combination.
+The coarse pass ([`significance.py`](../../relax/scoring/significance.py)) processes image
+batches and rotation blocks; `_update_logsumexp` and `_merge_block_logsumexp` in
+`helpers/scoring.py` combine block normalizers, so the complete image × rotation ×
+translation score tensor is not required. The single-grid dense engine (`run_em`) that
+recomputed every score in a second sweep for accumulation was removed on 2026-10-03;
+accumulation now always runs in the sparse fine pass.
 
 **Adaptive coarse-to-fine search.**
 [`k_class.py`](../../relax/classification/k_class.py) owns
-`run_dense_k_class_em` and `run_dense_k_class_em_adaptive`.
+`run_dense_k_class_em_adaptive`.
 [`significance.py`](../../relax/scoring/significance.py)
 computes joint coarse class/pose evidence and significant support, including
 K=1 routed through the class-aware implementation.
@@ -637,9 +626,8 @@ mu_c      ≈ Ft_y[c] / (Ft_ctf[c] + prior_precision[c])
 ```
 
 These equations omit layout, interpolation, normalization and padding details.
-`P_r*` inserts a 2D slice into the 3D accumulator. Dense accumulation belongs to
-`em_engine._dense_mstep_block` and the scoring/adjoint helpers; local and sparse
-routes have their own implementations. `Ft_y` is complex. `Ft_ctf` represents
+`P_r*` inserts a 2D slice into the 3D accumulator. Accumulation belongs to the resident sparse pass
+([`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py)) and the resident local pass. `Ft_y` is complex. `Ft_ctf` represents
 real weights, although some return layouts store it in a complex array.
 
 [`half_volume_mstep.py`](../../relax/helpers/half_volume_mstep.py)

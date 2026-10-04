@@ -56,9 +56,9 @@ score = -0.5 * (cross + norm)
 
 The same posterior algebra is used by:
 
-- standard dense EM and K-class/Class3D replay, through
-  [`em_engine.py::run_em`](../../recovar/em/dense/em_engine.py),
-  and [`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py);
+- standard EM and K-class/Class3D replay, through
+  [`k_class.py::run_dense_k_class_em_adaptive`](../../relax/classification/k_class.py)
+  (the single-grid dense engine `run_em` / `run_dense_k_class_em` was removed on 2026-10-03);
 - native InitialModel, through
   [`driver.py::_native_expectation_step`](../../recovar/em/vdam/driver.py)
   and [`dense_adapter.py::run_dense_initial_model_estep`](../../recovar/em/vdam/dense_adapter.py).
@@ -88,11 +88,9 @@ Then the M-step solves a Wiener-like reconstruction:
 mu_k_new ~= Ft_y(k) / (Ft_ctf(k) + prior_precision_k)
 ```
 
-In RECOVAR dense EM this path is implemented by
-[`em_engine.py::run_em`](../../recovar/em/dense/em_engine.py)
-for one class and
-[`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py)
-for joint class x pose normalization. RELION Class3D parity replay reads the
+In relax this path is implemented by
+[`k_class.py::run_dense_k_class_em_adaptive`](../../relax/classification/k_class.py)
+for one class and for joint class x pose normalization. RELION Class3D parity replay reads the
 previous and target RELION model STAR files in
 [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py), uses
 the RELION class distributions and per-class tau spectra, then compares the
@@ -240,9 +238,8 @@ Use this index only after reading the algorithm sections above.
   [`dense_adapter.py`](../../recovar/em/vdam/dense_adapter.py),
   [`layout.py`](../../recovar/em/vdam/layout.py),
   [`m_step.py`](../../recovar/em/vdam/m_step.py)
-- Standard dense EM / K-class:
-  [`em_engine.py`](../../recovar/em/dense/em_engine.py),
-  [`k_class.py`](../../recovar/em/classification/k_class.py)
+- Standard EM / K-class:
+  [`k_class.py`](../../relax/classification/k_class.py)
 - K-class parity harness:
   [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py)
 
@@ -409,13 +406,13 @@ VDAM. Its responsibilities are:
 - Build class log priors from `state.pdf_class` with
   `class_log_priors_from_state`.
 - Split or pack selected particles into pseudo-halfset reconstruction groups.
-- Run the dense or sparse-pass2 K-class E-step.
+- Run the adaptive K-class E-step (coarse pass 1, sparse pass 2).
 - Convert dense `Ft_y` / `Ft_ctf` into `VdamAccumulator` objects.
 - Return E-step metadata used for `pdf_class`, `pdf_direction`, particle
   offsets, class assignments, and per-iteration artifacts.
 
-The dense, non-sparse path calls `run_dense_k_class_em` once with all classes.
-When pseudo-halfsets are active, both halves are packed into one dense E-step
+The adaptive route calls `run_dense_k_class_em_adaptive` once with all classes.
+When pseudo-halfsets are active, both halves are packed into one E-step
 and separated only in the returned grouped reconstruction accumulators. This
 avoids duplicating projection/scoring work while still giving VDAM independent
 halfset BackProjectors.
@@ -651,8 +648,8 @@ per-class reference-variance table. The K-class E-step normalizes over the
 joint class x pose hidden variable, but the M-step reconstructs each class with
 that class's own `Ft_y`, `Ft_ctf`, class weight/normalisation, and tau spectrum.
 
-RECOVAR's current dense K-class replay mirrors that layout at the E-step level:
-[`k_class.py::run_dense_k_class_em`](../../recovar/em/classification/k_class.py)
+The K-class replay mirrors that layout at the E-step level:
+[`k_class.py::run_dense_k_class_em_adaptive`](../../relax/classification/k_class.py)
 accepts one mean and one `mean_variance` per class,
 then normalize evidence over class x pose. The parity harness
 [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py) reads

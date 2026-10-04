@@ -26,7 +26,6 @@ from relax.helpers.orientation_priors import (
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
-from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 
 pytest.importorskip("jax")
 import healpy as hp
@@ -34,6 +33,7 @@ import jax
 import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _hermitian_volume, _make_rotations
+from helpers.fake_adaptive_engine import adaptive_result, fake_adaptive_engine, install_fake_adaptive_engine
 from helpers.refinement_specs import (
     local_half_owners,
     local_iteration_keywords,
@@ -50,20 +50,17 @@ import relax.refinement.iteration_loop as iteration_loop_module
 import relax.refinement.iteration_planning as iteration_planning_module
 import relax.refinement.projector_preparation as projector_preparation
 import relax.sampling as sampling_module
-from relax.classification.k_class import run_dense_k_class_em
 from relax.classification.k_class_results import (
     KClassEMResult,
     _resolve_class_mstep_posterior_sums,
     _sum_noise_stats,
 )
 from relax.dense import score_outputs, scoring_policy
-from relax.dense.em_engine import _batch_parameter_rows, run_em
 from relax.diagnostics.relion_replay import _replay_control_model_iteration
 from relax.helpers import dtype_policy as dtype_policy_module
 from relax.helpers import resolution as resolution_helpers
 from relax.helpers.convergence import RefinementState, healpix_angular_step
 from relax.helpers.half_volume_mstep import (
-    half_volume_accumulators_to_full,
     relion_backprojector_volume_shape,
 )
 from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
@@ -86,7 +83,7 @@ from relax.helpers.resolution import (
     relion_optics_image_current_sizes,
     shell_index_to_resolution_angstrom,
 )
-from relax.helpers.types import DenseEMResult, LocalEMResult, NoiseStats, RelionStats
+from relax.helpers.types import LocalEMResult, NoiseStats, RelionStats
 from relax.local.local_layout import (
     EXACT_LOCAL_BUCKET_RADIX_ENV,
     LocalHypothesisLayout,
@@ -138,7 +135,6 @@ from relax.sampling import (
     rotation_grid_n_in_planes,
     rotation_grid_size,
 )
-from relax.scoring.score_constraints import DenseScoreConstraints
 from relax.scoring.significance import (
     _capture_offset_free_and_absolute_float32_scores,
     _compute_k_class_significance_batched,
@@ -550,24 +546,6 @@ def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch):
     )
 
 
-
-
-def test_k1_skip_significance_pruning_env_defaults_to_disabled(monkeypatch):
-    env_name = "RELAX_K1_SKIP_SIGNIFICANCE_PRUNING"
-    monkeypatch.delenv(env_name, raising=False)
-    assert scoring_policy._k1_skip_significance_pruning_enabled() is False
-
-    monkeypatch.setenv(env_name, "0")
-    assert scoring_policy._k1_skip_significance_pruning_enabled() is False
-
-    monkeypatch.setenv(env_name, "false")
-    assert scoring_policy._k1_skip_significance_pruning_enabled() is False
-
-    monkeypatch.setenv(env_name, "1")
-    assert scoring_policy._k1_skip_significance_pruning_enabled() is True
-
-    monkeypatch.setenv(env_name, "unexpected")
-    assert scoring_policy._k1_skip_significance_pruning_enabled() is False
 
 
 def test_kclass_final_reconstruction_does_not_predivide_class_accumulators():
@@ -1198,6 +1176,7 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
 
 
 def test_final_all_data_runs_with_cold_start_only_override(
+    fake_global_estep,
     half_datasets,
     init_volume,
     translations,
@@ -1261,6 +1240,7 @@ def test_final_all_data_runs_with_cold_start_only_override(
 
 
 def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(
+    fake_global_estep,
     half_datasets,
     init_volume,
     translations,
@@ -1325,59 +1305,18 @@ def _mock_local_search_result(
     )
 
 
-def _mock_dense_em_result(
-    *,
-    n_images,
-    n_rotations,
-    volume_size,
-    n_shells,
-    hard_assignments=None,
-    Ft_y=None,
-    Ft_ctf=None,
-    sigma2_offset=0.0,
-):
-    """Minimal dense result for controller tests, with explicit per-test overrides."""
-    return DenseEMResult(
-        mean=None,
-        hard_assignments=(
-            np.zeros(n_images, dtype=np.int32)
-            if hard_assignments is None else hard_assignments
-        ),
-        Ft_y=jnp.zeros(volume_size, dtype=jnp.complex64) if Ft_y is None else Ft_y,
-        Ft_ctf=jnp.ones(volume_size, dtype=jnp.complex64) if Ft_ctf is None else Ft_ctf,
-        stats=RelionStats(
-            log_evidence_per_image=jnp.zeros(n_images, dtype=jnp.float32),
-            best_log_score_per_image=jnp.zeros(n_images, dtype=jnp.float32),
-            max_posterior_per_image=jnp.ones(n_images, dtype=jnp.float32),
-            rotation_posterior_sums=jnp.ones(n_rotations, dtype=jnp.float32),
-        ),
-        noise_stats=NoiseStats(
-            wsum_sigma2_noise=jnp.ones(n_shells, dtype=jnp.float32),
-            wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
-            wsum_sigma2_offset=sigma2_offset,
-            sumw=float(n_images),
-        ),
-    )
+# The global E-step's CPU stand-in (helpers.fake_adaptive_engine) with its default result.
+_mock_run_adaptive_em = fake_adaptive_engine()
 
 
-def _mock_run_dense_em(
-    experiment_dataset,
-    mean,
-    mean_variance,
-    noise_variance,
-    rotations,
-    translations,
-    disc_type,
-    **kwargs,
-):
-    n_shells = experiment_dataset.image_shape[0] // 2 + 1
-    recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
-    return _mock_dense_em_result(
-        n_images=experiment_dataset.n_units,
-        n_rotations=np.asarray(rotations).shape[0],
-        volume_size=recon_vol_size,
-        n_shells=n_shells,
-    )
+def _random_half_maps(calls):
+    """``Ft_y`` for the fake engine: a new random Hermitian volume per call, so the two half maps differ."""
+
+    def half_map(k, size):
+        side = round(size ** (1.0 / 3.0))
+        return _hermitian_volume((side, side, side), seed=3000 + 7 * len(calls) + k)
+
+    return half_map
 
 
 def _mock_reconstruction_accumulator_size(experiment_dataset, kwargs, *, current_size=None):
@@ -3206,18 +3145,29 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
         grid = phase.grid
         dataset = data.particles.dataset
         shape = kwargs["padded_volume_shape"]
-        dense = _mock_dense_em_result(
-            n_images=dataset.n_units, n_rotations=len(grid.rotations),
-            volume_size=int(np.prod(shape)), n_shells=dataset.image_shape[0] // 2 + 1,
-        )
+        n_images, size, n_shells = dataset.n_units, int(np.prod(shape)), dataset.image_shape[0] // 2 + 1
+        hard_assignments = np.zeros(n_images, dtype=np.int32)
         return score_outputs.HalfScoreResult(
-            ha=dense.hard_assignments, Ft_y=dense.Ft_y, Ft_ctf=dense.Ft_ctf,
-            em_stats=dense.stats, noise_stats=dense.noise_stats,
+            ha=hard_assignments,
+            Ft_y=jnp.zeros(size, dtype=jnp.complex64),
+            Ft_ctf=jnp.ones(size, dtype=jnp.complex64),
+            em_stats=RelionStats(
+                log_evidence_per_image=jnp.zeros(n_images, dtype=jnp.float32),
+                best_log_score_per_image=jnp.zeros(n_images, dtype=jnp.float32),
+                max_posterior_per_image=jnp.ones(n_images, dtype=jnp.float32),
+                rotation_posterior_sums=jnp.ones(len(grid.rotations), dtype=jnp.float32),
+            ),
+            noise_stats=NoiseStats(
+                wsum_sigma2_noise=jnp.ones(n_shells, dtype=jnp.float32),
+                wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
+                wsum_sigma2_offset=0.0,
+                sumw=float(n_images),
+            ),
             pose_rotations=grid.rotations, pose_rotation_eulers=grid.rotation_eulers,
             best_pose_rotations=np.tile(np.eye(3, dtype=np.float32), (dataset.n_units, 1, 1)),
             best_pose_rotation_eulers=np.zeros((dataset.n_units, 3), dtype=np.float64),
             best_pose_translations=np.zeros((dataset.n_units, 2), dtype=np.float32),
-            coarse_ha=dense.hard_assignments,
+            coarse_ha=hard_assignments,
             mstep_accumulator_shape=shape,
         )
 
@@ -3913,140 +3863,6 @@ def test_local_adaptive_parent_support_probe_is_score_only():
     assert "score_only=True" in parent_call
 
 
-def test_run_em_dense_can_return_half_volume_accumulators(rng, monkeypatch):
-    monkeypatch.setenv("RECOVAR_DISABLE_CUDA", "1")
-    dataset = MockDataset(1, rng)
-    mean = _hermitian_volume(VOLUME_SHAPE, seed=118)
-    mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 10.0
-    noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-    rotations = _make_rotations(2, seed=120)
-    translations = np.zeros((1, 2), dtype=np.float32)
-
-    full = run_em(
-        dataset,
-        mean,
-        mean_variance,
-        noise_variance,
-        rotations,
-        translations,
-        "linear_interp",
-        image_batch_size=1,
-        rotation_block_size=4,
-        current_size=None,
-        score_with_masked_images=True,
-        return_stats=True,
-        sparse_pass2=False,
-        relion_half_volume_mstep=True,
-    )
-    half = run_em(
-        dataset,
-        mean,
-        mean_variance,
-        noise_variance,
-        rotations,
-        translations,
-        "linear_interp",
-        image_batch_size=1,
-        rotation_block_size=4,
-        current_size=None,
-        score_with_masked_images=True,
-        return_stats=True,
-        sparse_pass2=False,
-        relion_half_volume_mstep=True,
-        return_half_volume_accumulators=True,
-    )
-
-    half_shape = ftu.volume_shape_to_half_volume_shape(dataset.volume_shape)
-    assert full.mean is None
-    assert half.mean is None
-    assert np.asarray(full.Ft_y).size == VOLUME_SIZE
-    assert np.asarray(full.Ft_ctf).size == VOLUME_SIZE
-    assert np.asarray(half.Ft_y).size == int(np.prod(half_shape))
-    assert np.asarray(half.Ft_ctf).size == int(np.prod(half_shape))
-    Ft_y_half_full, Ft_ctf_half_full = half_volume_accumulators_to_full(
-        half.Ft_y,
-        half.Ft_ctf,
-        dataset.volume_shape,
-    )
-    np.testing.assert_allclose(np.asarray(Ft_y_half_full), np.asarray(full.Ft_y), rtol=1e-5, atol=1e-5)
-    np.testing.assert_allclose(np.asarray(Ft_ctf_half_full), np.asarray(full.Ft_ctf), rtol=1e-5, atol=1e-5)
-    assert_matches(np.asarray(half.hard_assignments), np.asarray(full.hard_assignments))
-    np.testing.assert_allclose(
-        np.asarray(half.stats.log_evidence_per_image),
-        np.asarray(full.stats.log_evidence_per_image),
-        rtol=1e-5,
-        atol=1e-5,
-    )
-
-
-def test_dense_k_class_identical_means_split_global_posterior(rng):
-    dataset = MockDataset(2, rng)
-    mean = _hermitian_volume(VOLUME_SHAPE, seed=141)
-    means = jnp.stack([mean, mean], axis=0)
-    mean_variance = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 10.0
-    noise_variance = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-    rotations = _make_rotations(2, seed=149)
-    translations = np.zeros((1, 2), dtype=np.float32)
-
-    em_result = run_em(
-        dataset,
-        mean,
-        mean_variance,
-        noise_variance,
-        rotations,
-        translations,
-        "linear_interp",
-        image_batch_size=2,
-        rotation_block_size=4,
-        current_size=None,
-        score_with_masked_images=True,
-        return_stats=True,
-        sparse_pass2=False,
-    )
-    _ = em_result.mean
-    ha_base = em_result.hard_assignments
-    Ft_y_base = em_result.Ft_y
-    Ft_ctf_base = em_result.Ft_ctf
-    stats_base = em_result.stats
-    del em_result
-    result = run_dense_k_class_em(
-        dataset,
-        means,
-        mean_variance,
-        noise_variance,
-        rotations,
-        translations,
-        "linear_interp",
-        image_batch_size=2,
-        rotation_block_size=4,
-        current_size=None,
-        score_with_masked_images=True,
-        sparse_pass2=False,
-    )
-
-    assert_matches(np.asarray(result.per_class_hard_assignments[0]), ha_base)
-    np.testing.assert_allclose(np.asarray(result.Ft_y[0]), 0.5 * np.asarray(Ft_y_base), rtol=5e-3, atol=1e-5)
-    np.testing.assert_allclose(np.asarray(result.Ft_ctf[0]), 0.5 * np.asarray(Ft_ctf_base), rtol=5e-3, atol=1e-5)
-    np.testing.assert_allclose(
-        np.asarray(jnp.sum(result.Ft_y, axis=0)),
-        np.asarray(Ft_y_base),
-        rtol=5e-3,
-        atol=1e-5,
-    )
-    np.testing.assert_allclose(
-        np.asarray(result.stats.log_evidence_per_image),
-        np.asarray(stats_base.log_evidence_per_image),
-        rtol=1e-5,
-        atol=1e-5,
-    )
-    np.testing.assert_allclose(
-        np.asarray(result.class_posterior_sums),
-        np.full(2, dataset.n_images / 2.0, dtype=np.float32),
-        rtol=5e-3,
-        atol=1e-5,
-    )
-
-
 def test_k1_mstep_preserves_retained_pose_support_mass():
     """K=1 must not replace significant-support mass with image count."""
     retained_sumw = 2.9975
@@ -4286,7 +4102,14 @@ class MockDataset:
         return np.asarray(indices, dtype=np.int64)
 
 
-def test_dense_engine_routes_relion_cuda_norm_and_shift_before_fft(rng):
+def test_pass2_operands_route_relion_cuda_norm_and_shift_before_fft(rng):
+    """The pass-2 operand preparation (prepare_unshifted_bucket_operands, which the resident
+    engine calls once per half) hands RELION's normalization and integer shift to strict CUDA."""
+    from recovar.core.configs import ForwardModelConfig
+    from recovar.reconstruction import noise as noise_utils
+
+    from relax.sparse_pass2.sparse_pass2_bucket_io import prepare_unshifted_bucket_operands
+
     dataset = MockDataset(1, rng)
     dataset.image_source.backend.image_mask_mode = "relion_background_fill"
     dataset.image_source.backend.relion_fourier_backend = "relion_cuda"
@@ -4299,22 +4122,24 @@ def test_dense_engine_routes_relion_cuda_norm_and_shift_before_fft(rng):
         captured.update(batch=np.asarray(batch), apply_image_mask=apply_image_mask, **kwargs)
         raise _CapturedStrictPreprocess
 
+    config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)
+    batch, _, _, ctf_params, _, _, image_indices = next(dataset.iter_batches(1))
     dataset.process_images_half = capture_process
     with pytest.raises(_CapturedStrictPreprocess):
-        run_em(
+        prepare_unshifted_bucket_operands(
             dataset,
-            _hermitian_volume(VOLUME_SHAPE, seed=881),
-            jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 10.0,
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            _make_rotations(1, seed=882),
-            np.zeros((1, 2), dtype=np.float32),
-            "linear_interp",
-            image_batch_size=1,
-            rotation_block_size=1,
+            batch,
+            ctf_params,
+            image_indices,
+            noise_variance_half=noise_utils.to_batched_half_pixel_noise(
+                jnp.ones(IMAGE_SIZE, dtype=jnp.float32), IMAGE_SHAPE
+            ).squeeze(),
+            config=config,
             score_with_masked_images=True,
             image_corrections=np.asarray([0.8], dtype=np.float32),
             scale_corrections=np.asarray([2.0], dtype=np.float32),
             image_pre_shifts=np.asarray([[1.0, -1.0]], dtype=np.float32),
+            use_float64_scoring=False,
         )
 
     # Raw pixels reach strict CUDA unchanged; RELION normalization and the
@@ -4563,6 +4388,20 @@ def translations():
     return jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
 
 
+@pytest.fixture
+def fake_global_estep(monkeypatch):
+    """The CPU stand-in for the global E-step (``helpers.fake_adaptive_engine``).
+
+    Every global E-step runs ``run_dense_k_class_em_adaptive``, whose pass 2 runs only on
+    the device-resident GPU engine. Loop tests replace it; each call backprojects a new
+    random Hermitian volume so the two half maps differ. Returns the recorded calls.
+    """
+
+    calls = []
+    install_fake_adaptive_engine(monkeypatch, calls, Ft_y=_random_half_maps(calls))
+    return calls
+
+
 @pytest.fixture(autouse=True)
 def _clear_parity_dump_env(monkeypatch):
     """Isolate these tests from ambient RELION-parity-dump debugging env vars.
@@ -4606,7 +4445,7 @@ class TestRelionModeSmokeTest:
         class PriorChecked(Exception):
             pass
 
-        def check_first_engine_call(dataset, mean, *args, **kwargs):
+        def check_first_engine_call(dataset, means, *args, **kwargs):
             # Native acc_ml_optimiser_impl.h uses Angstrom sampling translations
             # and multiplies their squared distance by pixel_size**2 again.
             # This fixture uses exactly representable distances and sigma=10 A.
@@ -4618,7 +4457,7 @@ class TestRelionModeSmokeTest:
             assert np.any(prior < 0.0)
             raise PriorChecked
 
-        monkeypatch.setattr(half_scoring, "run_em", check_first_engine_call)
+        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", check_first_engine_call)
         with pytest.raises(PriorChecked):
             refine_single_volume(
                 half_datasets, init_volume,
@@ -4632,6 +4471,7 @@ class TestRelionModeSmokeTest:
                         max_healpix_order=2, init_translation_sigma_angstrom=10.0,
                     ),
                     batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                    adaptive=AdaptiveOptions(adaptive_oversampling=1),
                     parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 ),
             )
@@ -4646,6 +4486,7 @@ class TestRelionModeSmokeTest:
 
     def test_firstiter_cc_reconstructs_before_tau2_reporting_taper(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -5037,6 +4878,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_refinement_runs_2_iterations(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -5078,6 +4920,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_mode_does_not_finalize_after_max_iter_exhaustion(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -5103,6 +4946,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_mode_joins_lowres_halves_on_first_iteration(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -5161,9 +5005,8 @@ class TestRelionModeSmokeTest:
     ):
         """The final joined reconstruction still scores each half against its own map."""
         original_update = convergence_policy.update_refinement_state
-        original_run_em = half_scoring.run_em
         original_reconstruct = mean_helpers_module._reconstruct_volume_eager
-        run_em_mean_ids = []
+        engine_calls = []
         reconstruction_calls = []
         expected_accuracy_current_sizes = []
 
@@ -5171,11 +5014,6 @@ class TestRelionModeSmokeTest:
             updated = original_update(*args, **kwargs)
             updated.has_converged = True
             return updated
-
-        def spy_run_em(dataset, mean, *args, **kwargs):
-            _ = dataset
-            run_em_mean_ids.append(id(mean))
-            return original_run_em(dataset, mean, *args, **kwargs)
 
         def spy_reconstruct(*args, **kwargs):
             volume = original_reconstruct(*args, **kwargs)
@@ -5201,12 +5039,8 @@ class TestRelionModeSmokeTest:
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_em", spy_run_em)
-        monkeypatch.setattr(
-            mean_helpers_module,
-            "_reconstruct_volume_eager",
-            spy_reconstruct,
-        )
+        install_fake_adaptive_engine(monkeypatch, engine_calls, Ft_y=_random_half_maps(engine_calls))
+        monkeypatch.setattr(mean_helpers_module, "_reconstruct_volume_eager", spy_reconstruct)
         monkeypatch.setattr(
             expected_accuracy_module,
             "relion_half1_trial_order",
@@ -5238,8 +5072,8 @@ class TestRelionModeSmokeTest:
 
         assert result["convergence_state"].has_converged is True
         assert len(result["wall_times"]) == 2
-        assert len(run_em_mean_ids) == 4
-        assert run_em_mean_ids[-2] != run_em_mean_ids[-1]
+        assert len(engine_calls) == 4
+        assert not np.array_equal(np.asarray(engine_calls[-2]["means"]), np.asarray(engine_calls[-1]["means"]))
         assert expected_accuracy_current_sizes == [IMAGE_SHAPE[0]]
         assert result["final_all_data_expected_accuracy_status"] == "ok"
         assert result["final_all_data_acc_rot"] == pytest.approx(1.25)
@@ -5269,7 +5103,7 @@ class TestRelionModeSmokeTest:
         original_update = convergence_policy.update_refinement_state
         original_tau2 = regularization_relion.compute_relion_tau2_from_weights
         ctf_values = [2.0, 4.0, 7.0, 11.0]
-        run_em_call = {"idx": 0}
+        engine_call = {"idx": 0}
         whole_tau2_calls = []
 
         def force_convergence_after_first_iter(*args, **kwargs):
@@ -5277,30 +5111,18 @@ class TestRelionModeSmokeTest:
             updated.has_converged = True
             return updated
 
-        def fake_run_em(
-            experiment_dataset,
-            mean,
-            mean_variance,
-            noise_variance,
-            rotations_arg,
-            translations_arg,
-            disc_type,
-            **kwargs,
-        ):
-            del mean, mean_variance, noise_variance, translations_arg, disc_type
-            idx = run_em_call["idx"]
-            run_em_call["idx"] += 1
-            n_images = experiment_dataset.n_units
-            n_shells = experiment_dataset.image_shape[0] // 2 + 1
-            recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
+        def fake_adaptive(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
+                          coarse_translations, fine_rotations, *grids, **kwargs):
+            idx = engine_call["idx"]
+            engine_call["idx"] += 1
             ctf_value = ctf_values[idx]
-            return _mock_dense_em_result(
-                n_images=n_images,
-                n_rotations=np.asarray(rotations_arg).shape[0],
-                volume_size=recon_vol_size,
-                n_shells=n_shells,
-                Ft_y=jnp.ones(recon_vol_size, dtype=jnp.complex64),
-                Ft_ctf=jnp.full(recon_vol_size, ctf_value, dtype=jnp.complex64),
+            return adaptive_result(
+                experiment_dataset,
+                means,
+                fine_rotations,
+                kwargs,
+                Ft_y=lambda _k, size: jnp.ones(size, dtype=jnp.complex64),
+                Ft_ctf=lambda _k, size: jnp.full(size, ctf_value, dtype=jnp.complex64),
             )
 
         def spy_tau2(Ft_ctf_0, Ft_ctf_1, fsc, *args, **kwargs):
@@ -5318,7 +5140,7 @@ class TestRelionModeSmokeTest:
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_em", fake_run_em)
+        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
         monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_weights", spy_tau2)
 
         result = refine_single_volume(
@@ -5336,7 +5158,7 @@ class TestRelionModeSmokeTest:
         )
 
         assert result["convergence_state"].has_converged is True
-        assert run_em_call["idx"] == 4
+        assert engine_call["idx"] == 4
         assert len(whole_tau2_calls) == 1
         final_half0, final_half1 = whole_tau2_calls[0]
         np.testing.assert_allclose(final_half0, ctf_values[2], atol=0.0)
@@ -5353,6 +5175,7 @@ class TestRelionModeSmokeTest:
     )
     def test_relion_final_iteration_runs_k1_prejoin_sequence_in_order(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -5459,7 +5282,7 @@ class TestRelionModeSmokeTest:
     ):
         """The final K=1 all-data E-step uses the previous iter's pdf_direction."""
         original_update = convergence_policy.update_refinement_state
-        original_run_em = half_scoring.run_em
+        engine_calls = []
         custom_eulers = np.zeros((N_ROTATIONS, 3), dtype=np.float32)
         learned_direction_priors = [
             np.array([0.7, 0.3], dtype=np.float32),
@@ -5469,7 +5292,6 @@ class TestRelionModeSmokeTest:
             np.linspace(0.0, -0.4, N_ROTATIONS, dtype=np.float32),
             np.linspace(-1.0, -1.4, N_ROTATIONS, dtype=np.float32),
         ]
-        run_em_rotation_priors = []
         collapse_calls = []
         make_prior_calls = []
 
@@ -5499,18 +5321,12 @@ class TestRelionModeSmokeTest:
                 return expected_rotation_log_priors[1]
             raise AssertionError(f"unexpected direction prior {prior}")
 
-        def spy_run_em(dataset, mean, *args, **kwargs):
-            _ = dataset, mean
-            prior = kwargs.get("rotation_log_prior")
-            run_em_rotation_priors.append(None if prior is None else np.asarray(prior).copy())
-            return original_run_em(dataset, mean, *args, **kwargs)
-
         monkeypatch.setattr(
             convergence_policy,
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_em", spy_run_em)
+        install_fake_adaptive_engine(monkeypatch, engine_calls)
         monkeypatch.setattr(iteration_loop_module, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(half_scoring, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(
@@ -5550,6 +5366,10 @@ class TestRelionModeSmokeTest:
         )
 
         assert result["convergence_state"].has_converged is True
+        run_em_rotation_priors = [
+            None if call["kwargs"].get("rotation_log_prior") is None else np.asarray(call["kwargs"]["rotation_log_prior"])
+            for call in engine_calls
+        ]
         assert run_em_rotation_priors[:2] == [None, None]
         np.testing.assert_allclose(run_em_rotation_priors[-2], expected_rotation_log_priors[0])
         np.testing.assert_allclose(run_em_rotation_priors[-1], expected_rotation_log_priors[1])
@@ -5569,29 +5389,19 @@ class TestRelionModeSmokeTest:
     ):
         """The final all-data E-step still uses RELION's pdf_offset prior."""
         original_update = convergence_policy.update_refinement_state
-        original_run_em = half_scoring.run_em
-        run_em_translation_priors = []
-        run_em_translation_prior_centers = []
+        engine_calls = []
 
         def force_convergence_after_first_iter(*args, **kwargs):
             updated = original_update(*args, **kwargs)
             updated.has_converged = True
             return updated
 
-        def spy_run_em(dataset, mean, *args, **kwargs):
-            _ = dataset, mean
-            prior = kwargs.get("translation_log_prior")
-            centers = kwargs.get("translation_prior_centers")
-            run_em_translation_priors.append(None if prior is None else np.asarray(prior).copy())
-            run_em_translation_prior_centers.append(None if centers is None else np.asarray(centers).copy())
-            return original_run_em(dataset, mean, *args, **kwargs)
-
         monkeypatch.setattr(
             convergence_policy,
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_em", spy_run_em)
+        install_fake_adaptive_engine(monkeypatch, engine_calls)
 
         result = refine_single_volume(
             half_datasets,
@@ -5608,14 +5418,18 @@ class TestRelionModeSmokeTest:
         )
 
         assert result["convergence_state"].has_converged is True
+        run_em_translation_priors = [call["kwargs"].get("translation_log_prior") for call in engine_calls]
+        run_em_translation_prior_centers = [call["kwargs"].get("translation_prior_centers") for call in engine_calls]
         assert len(run_em_translation_priors) == 4
         assert len(run_em_translation_prior_centers) == 4
         for final_prior in run_em_translation_priors[-2:]:
             assert final_prior is not None
+            final_prior = np.asarray(final_prior)
             assert final_prior.size > 0
             assert np.all(np.isfinite(final_prior))
         for final_centers in run_em_translation_prior_centers[-2:]:
             assert final_centers is not None
+            final_centers = np.asarray(final_centers)
             assert final_centers.shape[-1] == 2
             assert np.all(np.isfinite(final_centers))
 
@@ -5628,26 +5442,21 @@ class TestRelionModeSmokeTest:
     ):
         """The joined final E-step retains each random subset's noise model."""
         original_update = convergence_policy.update_refinement_state
-        original_run_em = half_scoring.run_em
+        engine_calls = []
         replay_noise_h1 = np.linspace(2.0, 3.0, IMAGE_SIZE, dtype=np.float32)
         replay_noise_h2 = np.linspace(5.0, 6.0, IMAGE_SIZE, dtype=np.float32)
-        run_em_noise = []
 
         def force_convergence_after_first_iter(*args, **kwargs):
             updated = original_update(*args, **kwargs)
             updated.has_converged = True
             return updated
 
-        def spy_run_em(dataset, mean, mean_variance, noise_variance, *args, **kwargs):
-            run_em_noise.append(np.asarray(noise_variance, dtype=np.float32).copy())
-            return original_run_em(dataset, mean, mean_variance, noise_variance, *args, **kwargs)
-
         monkeypatch.setattr(
             convergence_policy,
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_em", spy_run_em)
+        install_fake_adaptive_engine(monkeypatch, engine_calls)
 
         result = refine_single_volume(
             half_datasets,
@@ -5670,6 +5479,7 @@ class TestRelionModeSmokeTest:
         )
 
         assert result["convergence_state"].has_converged is True
+        run_em_noise = [np.asarray(call["noise_variance"], dtype=np.float32) for call in engine_calls]
         assert len(run_em_noise) == 4
         assert_matches(run_em_noise[-2], replay_noise_h1)
         assert_matches(run_em_noise[-1], replay_noise_h2)
@@ -5685,8 +5495,7 @@ class TestRelionModeSmokeTest:
     ):
         """The final all-data E-step follows RELION local-search state."""
         original_update = convergence_policy.update_refinement_state
-        original_run_em = half_scoring.run_em
-        run_em_calls = []
+        engine_calls = []
         local_calls = []
 
         def fake_rotation_grid_size(_order, symmetry="C1"):
@@ -5726,10 +5535,6 @@ class TestRelionModeSmokeTest:
             updated.do_local_search = True
             updated.healpix_order = max(updated.healpix_order, updated.auto_local_healpix_order)
             return updated
-
-        def spy_run_em(dataset, mean, *args, **kwargs):
-            run_em_calls.append((dataset.n_units, id(mean)))
-            return original_run_em(dataset, mean, *args, **kwargs)
 
         def fake_local_search(
             experiment_dataset,
@@ -5822,7 +5627,7 @@ class TestRelionModeSmokeTest:
             "update_refinement_state",
             force_converged_local_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_em", spy_run_em)
+        install_fake_adaptive_engine(monkeypatch, engine_calls)
         monkeypatch.setattr(iteration_loop_module, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(half_scoring, "rotation_grid_size", fake_rotation_grid_size)
         monkeypatch.setattr(
@@ -5868,7 +5673,8 @@ class TestRelionModeSmokeTest:
         )
 
         assert result["convergence_state"].has_converged is True
-        assert len(run_em_calls) == 2
+        # The first iteration's global E-step, one per half; the final iteration is local.
+        assert len(engine_calls) == 2
         assert len(local_calls) == 2
         assert local_calls[0]["mean_id"] != local_calls[1]["mean_id"]
         assert all(call["current_size"] == IMAGE_SHAPE[0] for call in local_calls)
@@ -5892,6 +5698,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_final_iteration_supports_k_class(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -5938,6 +5745,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_final_iteration_supports_k4_exactly_once(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -6001,6 +5809,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_k4_does_not_finalize_after_max_iter_even_when_diagnostic_force_enabled(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -6062,9 +5871,6 @@ class TestRelionModeSmokeTest:
             return updated
 
         adaptive_calls = []
-
-        def fail_direct_dense_k_class(*_args, **_kwargs):
-            raise AssertionError("adaptive K-class final all-data routed to direct dense K-class scoring")
 
         def fake_adaptive_k_class(
             experiment_dataset,
@@ -6152,7 +5958,6 @@ class TestRelionModeSmokeTest:
             "update_refinement_state",
             force_convergence_after_first_iter,
         )
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em", fail_direct_dense_k_class)
         monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
         monkeypatch.setattr(iteration_planning_module, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
         monkeypatch.setattr(finalization, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
@@ -6187,130 +5992,9 @@ class TestRelionModeSmokeTest:
         assert all(call["relion_fine_mstep_prune"] is True for call in final_calls)
         assert all(call["n_fine_rot"] >= call["n_coarse_rot"] for call in final_calls)
 
-    def test_relion_firstiter_k_class_dense_pass2_env_routes_dense(
-        self,
-        half_datasets,
-        init_volume,
-        translations,
-        monkeypatch,
-    ):
-        adaptive_calls = []
-
-        def fake_adaptive_k_class(
-            experiment_dataset,
-            means,
-            mean_variance,
-            noise_variance,
-            coarse_rotations,
-            coarse_translations,
-            fine_rotations,
-            fine_translations,
-            rot_parent_map,
-            trans_parent_map,
-            disc_type,
-            **kwargs,
-        ):
-            _ = (
-                mean_variance,
-                noise_variance,
-                coarse_rotations,
-                coarse_translations,
-                rot_parent_map,
-                trans_parent_map,
-                disc_type,
-            )
-            adaptive_calls.append(kwargs.get("sparse_pass2"))
-            n_classes = int(np.asarray(means).shape[0])
-            n_images = int(experiment_dataset.n_units)
-            n_shells = int(experiment_dataset.image_shape[0]) // 2 + 1
-            padding_factor = int(kwargs.get("reconstruction_padding_factor", 1))
-            recon_vol_size = int(np.prod(experiment_dataset.volume_shape)) * (padding_factor**3)
-            n_fine_rot = int(np.asarray(fine_rotations).shape[0])
-            per_class_stats = tuple(
-                RelionStats(
-                    log_evidence_per_image=jnp.zeros(n_images, dtype=jnp.float32),
-                    best_log_score_per_image=jnp.zeros(n_images, dtype=jnp.float32),
-                    max_posterior_per_image=jnp.ones(n_images, dtype=jnp.float32),
-                    rotation_posterior_sums=jnp.ones(n_fine_rot, dtype=jnp.float32),
-                )
-                for _ in range(n_classes)
-            )
-            per_class_noise = tuple(
-                NoiseStats(
-                    wsum_sigma2_noise=jnp.ones(n_shells, dtype=jnp.float32),
-                    wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
-                    wsum_sigma2_offset=0.0,
-                    sumw=float(n_images) / float(n_classes),
-                )
-                for _ in range(n_classes)
-            )
-            aggregate_noise = NoiseStats(
-                wsum_sigma2_noise=jnp.ones(n_shells, dtype=jnp.float32),
-                wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
-                wsum_sigma2_offset=0.0,
-                sumw=float(n_images),
-            )
-            return KClassEMResult(
-                new_means=None,
-                Ft_y=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
-                Ft_ctf=jnp.ones((n_classes, recon_vol_size), dtype=jnp.complex64),
-                per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
-                class_assignments=jnp.zeros(n_images, dtype=jnp.int32),
-                pose_assignments=jnp.zeros(n_images, dtype=jnp.int32),
-                class_responsibilities=jnp.full((n_classes, n_images), 1.0 / n_classes, dtype=jnp.float32),
-                class_posterior_sums=jnp.full(n_classes, n_images / n_classes, dtype=jnp.float32),
-                stats=per_class_stats[0],
-                per_class_stats=per_class_stats,
-                noise_stats=per_class_noise,
-                aggregate_noise_stats=aggregate_noise,
-                best_pose_rotations=jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (n_images, 3, 3)),
-                best_pose_translations=jnp.zeros((n_images, 2), dtype=jnp.float32),
-                best_pose_rotation_ids=jnp.zeros(n_images, dtype=jnp.int32),
-                significant_counts=jnp.ones(n_images, dtype=jnp.int32),
-            )
-
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
-        monkeypatch.setattr(iteration_planning_module, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
-        monkeypatch.setattr(finalization, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
-        monkeypatch.setattr(iteration_planning_module, "clamp_relion_coarse_image_size", lambda coarse, *_args: int(coarse))
-        monkeypatch.setattr(finalization, "clamp_relion_coarse_image_size", lambda coarse, *_args: int(coarse))
-
-        def run_once():
-            adaptive_calls.clear()
-            refine_single_volume(
-                half_datasets,
-                init_volume,
-                jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-                jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
-                translations,
-                options=RefinementOptions(
-                    disc_type="linear_interp",
-                    schedule=RefinementSchedule(
-                        max_iter=1,
-                        init_current_size=4,
-                        init_healpix_order=1,
-                        max_healpix_order=1,
-                        skip_final_iteration=True,
-                    ),
-                    batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                    adaptive=AdaptiveOptions(adaptive_oversampling=1),
-                    parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
-                    k_class=KClassOptions(
-                        n_classes=2,
-                        init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
-                    ),
-                ),
-            )
-            return list(adaptive_calls)
-
-        monkeypatch.delenv("RELAX_K_CLASS_DENSE_PASS2", raising=False)
-        assert run_once() == [True, True]
-
-        monkeypatch.setenv("RELAX_K_CLASS_DENSE_PASS2", "1")
-        assert run_once() == [False, False]
-
     def test_relion_mode_finite_outputs(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -6346,6 +6030,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_mode_dense_k_class_finite_outputs(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -6399,86 +6084,49 @@ class TestRelionModeSmokeTest:
         half_datasets,
         init_volume,
         translations,
+        monkeypatch,
     ):
         """ave_Pmax should use half 1's engine posterior maxima, as RELION MPI does."""
-        sigma_offset_angstrom = 10.0
-        init_noise = jnp.ones(IMAGE_SIZE, dtype=jnp.float32)
-        init_tau = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
+        # Each half's engine reports its own posterior maxima and weight total (sumw).
+        pmax_per_half = [
+            np.linspace(0.2, 0.9, half_datasets[0].n_units, dtype=np.float32),
+            np.linspace(0.6, 0.1, half_datasets[1].n_units, dtype=np.float32),
+        ]
+        engine_calls = []
 
-        _rotation_grid_relion_rotations = sampling_module.relion_scoring_rotation_grid(2)
-        relion_rotations = _rotation_grid_relion_rotations.rotations
-        _ = _rotation_grid_relion_rotations.rotation_eulers
-        expected_per_half = []
-        expected_mass_per_half = []
-        for dataset in half_datasets:
-            em_result = run_em(
-                dataset,
-                init_volume,
-                init_tau,
-                init_noise,
-                relion_rotations,
-                translations,
-                "linear_interp",
-                # Match the controller's explicit cold-start Gaussian input.
-                translation_log_prior=(
-                    -0.5 * np.sum(np.asarray(translations, dtype=np.float32) ** 2, axis=-1)
-                    * dataset.voxel_size ** 4 / sigma_offset_angstrom ** 2
-                ),
-                image_batch_size=N_IMAGES,
-                rotation_block_size=N_ROTATIONS,
-                current_size=16,
-                score_with_masked_images=True,
-                half_spectrum_scoring=True,
-                projection_padding_factor=PROJECTION_PADDING_FACTOR,
-                reconstruction_padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-                do_gridding_correction=True,
-                square_window=scoring_policy.RELION_FOURIER_WINDOW_SQUARE,
-                return_stats=True,
-                accumulate_noise=True,
-            )
-            _ = em_result.mean
-            _ = em_result.hard_assignments
-            _ = em_result.Ft_y
-            _ = em_result.Ft_ctf
-            stats = em_result.stats
-            noise_stats = em_result.noise_stats
-            del em_result
-            expected_per_half.append(np.asarray(stats.max_posterior_per_image))
-            expected_mass_per_half.append(float(np.asarray(noise_stats.sumw)))
-        expected_ave_pmax = float(np.sum(expected_per_half[0], dtype=np.float64) / expected_mass_per_half[0])
+        def fake_adaptive(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
+                          coarse_translations, fine_rotations, *grids, **kwargs):
+            pmax = pmax_per_half[len(engine_calls)]
+            engine_calls.append(kwargs)
+            return adaptive_result(experiment_dataset, means, fine_rotations, kwargs, max_posterior=pmax)
 
+        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
         result = refine_single_volume(
             half_datasets,
             init_volume,
-            init_noise,
-            init_tau,
+            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
             options=RefinementOptions(
                 disc_type="linear_interp",
                 schedule=RefinementSchedule(
                     max_iter=1,
-                    init_translation_sigma_angstrom=sigma_offset_angstrom,
+                    init_translation_sigma_angstrom=10.0,
                     init_current_size=16,
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(adaptive_oversampling=0),
+                adaptive=AdaptiveOptions(adaptive_oversampling=1),
             ),
         )
 
-        assert result["ave_Pmax_trajectory"] == pytest.approx(
-            [expected_ave_pmax],
-            abs=1e-6,
-        )
-        assert result["ave_Pmax_denominator_trajectory"] == pytest.approx(
-            [expected_mass_per_half[0]],
-            abs=1e-6,
-        )
-        assert result["convergence_state"].ave_Pmax == pytest.approx(
-            expected_ave_pmax,
-            abs=1e-6,
-        )
+        assert len(engine_calls) == 2
+        half1_mass = float(half_datasets[0].n_units)
+        expected_ave_pmax = float(np.sum(pmax_per_half[0], dtype=np.float64) / half1_mass)
+        assert result["ave_Pmax_trajectory"] == pytest.approx([expected_ave_pmax], abs=1e-6)
+        assert result["ave_Pmax_denominator_trajectory"] == pytest.approx([half1_mass], abs=1e-6)
+        assert result["convergence_state"].ave_Pmax == pytest.approx(expected_ave_pmax, abs=1e-6)
 
     @pytest.mark.gpu  # pass 2 runs only on the device-resident engine
     def test_relion_mode_forwards_particle_diameter_to_coarse_size(
@@ -6598,66 +6246,6 @@ class TestRelionModeSmokeTest:
         )
         assert integer_pre_shifts_or_none(shifts, np.array([1], dtype=np.int32)) is None
 
-    def test_dense_batch_parameter_rows_accepts_selected_image_arrays(self):
-        selected_values = np.asarray([[10.0], [11.0], [12.0], [13.0]], dtype=np.float32)
-        selected_position = {10000: 0, 10002: 1, 10004: 2, 10006: 3}
-
-        rows = _batch_parameter_rows(
-            selected_values,
-            batch_indices=np.asarray([10004, 10002], dtype=np.int64),
-            start=1,
-            end=3,
-            selected_image_count=4,
-            source_image_count=50000,
-            selected_position=selected_position,
-            name="image_pre_shifts",
-        )
-
-        assert_matches(rows, selected_values[[2, 1]])
-
-    def test_dense_batch_parameter_rows_accepts_full_dataset_arrays(self):
-        full_values = np.arange(12, dtype=np.float32).reshape(6, 2)
-
-        rows = _batch_parameter_rows(
-            full_values,
-            batch_indices=np.asarray([5, 2], dtype=np.int64),
-            start=1,
-            end=3,
-            selected_image_count=4,
-            source_image_count=6,
-            name="image_corrections",
-        )
-
-        assert_matches(rows, full_values[[5, 2]])
-
-    def test_dense_score_constraints_use_selected_rows_for_per_image_priors(self):
-        constraints = DenseScoreConstraints.from_inputs(
-            rotation_log_prior=np.arange(12, dtype=np.float32).reshape(3, 4),
-            translation_log_prior=np.arange(6, dtype=np.float32).reshape(3, 2) + 100.0,
-            rotation_translation_mask=np.arange(24).reshape(3, 4, 2) % 3 == 0,
-            n_images=3,
-            n_rot=4,
-            n_trans=2,
-            n_rot_padded=4,
-        )
-
-        rotation_prior, translation_prior, candidate_mask, _valid = constraints.block_inputs(
-            r0=1,
-            r1=3,
-            start=0,
-            end=2,
-            batch_count=2,
-            rotation_block_size=2,
-            rows=np.asarray([2, 0], dtype=np.int64),
-        )
-
-        assert_matches(np.asarray(rotation_prior), np.asarray([[9, 10], [1, 2]], dtype=np.float32))
-        assert_matches(np.asarray(translation_prior), np.asarray([[104, 105], [100, 101]], dtype=np.float32))
-        assert_matches(
-            np.asarray(candidate_mask),
-            (np.arange(24).reshape(3, 4, 2) % 3 == 0)[[2, 0], 1:3, :],
-        )
-
     def test_relion_translation_prior_center_matches_accelerated_pdf_offset_units(self):
         prev = np.array([[0.0, -1.0], [1.0, 0.0], [-0.82310355, -0.82310355]], dtype=np.float32)
         expected = np.array([[0.0, 1.0 / 4.25], [-1.0 / 4.25, 0.0], [1.0 / 4.25, 1.0 / 4.25]], dtype=np.float32)
@@ -6737,50 +6325,6 @@ class TestRelionModeSmokeTest:
         expected = np.stack(expected, axis=0)
         assert combined.shape == (2, n_dirs)
         np.testing.assert_allclose(combined, expected, rtol=1e-6, atol=1e-8)
-
-    def test_engine_translation_log_prior_changes_pmax(self, half_datasets, init_volume):
-        rotations = _make_rotations(1, seed=17)
-        translations = jnp.array(
-            [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
-            dtype=jnp.float32,
-        )
-        half_datasets[0]._images = np.zeros_like(half_datasets[0]._images)
-        uniform_stats = run_em(
-            half_datasets[0],
-            jnp.zeros_like(init_volume),
-            jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=1,
-            return_stats=True,
-        ).stats
-        biased_prior = np.log(np.array([100.0, 1.0, 1.0], dtype=np.float32))
-        biased_stats = run_em(
-            half_datasets[0],
-            jnp.zeros_like(init_volume),
-            jnp.ones(VOLUME_SIZE, dtype=jnp.float32),
-            jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=1,
-            translation_log_prior=biased_prior,
-            return_stats=True,
-        ).stats
-        assert np.allclose(
-            np.asarray(uniform_stats.max_posterior_per_image),
-            1.0 / 3.0,
-            atol=1e-6,
-        )
-        assert np.allclose(
-            np.asarray(biased_stats.max_posterior_per_image),
-            100.0 / 102.0,
-            atol=1e-6,
-        )
 
     def test_significance_batched_supports_padded_rotation_log_prior(
         self,
@@ -7020,23 +6564,6 @@ class TestRelionModeSmokeTest:
             projection = jnp.ones((n_rot, n_half), dtype=jnp.complex64)
             return projection, jnp.ones((n_rot, n_half), dtype=jnp.float32)
 
-        def fake_gemm_scores(
-            _shifted,
-            _batch_norm,
-            _score_weight,
-            projections,
-            _projection_abs2,
-            n_images,
-            n_trans,
-            _n_windowed,
-            _image_shape,
-            _volume_shape,
-        ):
-            assert int(projections.shape[0]) == 2
-            assert int(n_trans) == 1
-            scores = jnp.asarray(original_scores, dtype=jnp.float32)
-            return jnp.broadcast_to(scores[None, :, None], (int(n_images), 2, 1))
-
         def fake_tree_rescore(
             shifted_candidates,
             _score_weight_candidates,
@@ -7054,11 +6581,6 @@ class TestRelionModeSmokeTest:
             projection_module,
             "compute_relion_projector_projections_block",
             fake_projector,
-        )
-        monkeypatch.setattr(
-            scoring_module,
-            "_e_step_block_scores_windowed_normalized_cc",
-            fake_gemm_scores,
         )
         def fake_cc_gemm_scores(_proj, _shifted, _weight, _count, *, n_images, n_trans):
             return jnp.broadcast_to(
@@ -7219,6 +6741,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_mode_convergence_state(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7255,6 +6778,7 @@ class TestRelionModeSmokeTest:
     @pytest.mark.parametrize("per_half", [False, True])
     def test_relion_mode_uses_tau2_from_weights_for_prior(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7345,6 +6869,7 @@ class TestRelionModeSmokeTest:
 
     def test_k1_solvent_corrected_fsc_disabled_uses_raw_tau2_fsc(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7412,6 +6937,7 @@ class TestRelionModeSmokeTest:
 
     def test_k1_solvent_corrected_fsc_enabled_feeds_tau2_and_growth(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7615,6 +7141,7 @@ class TestRelionModeSmokeTest:
 
     def test_k1_save_intermediates_reconstructs_unregularized_half_maps(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7710,6 +7237,7 @@ class TestRelionModeSmokeTest:
     @pytest.mark.parametrize("n_classes", [1, 2])
     def test_save_intermediates_writes_source_aligned_particle_states(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7767,6 +7295,7 @@ class TestRelionModeSmokeTest:
 
     def test_k1_save_intermediates_can_skip_unregularized_half_maps(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7806,6 +7335,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_mode_current_size_no_longer_uses_weight_based_data_vs_prior(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7840,6 +7370,7 @@ class TestRelionModeSmokeTest:
 
     def test_relion_mode_trajectories_populated(
         self,
+        fake_global_estep,
         half_datasets,
         init_volume,
         translations,
@@ -7885,32 +7416,14 @@ class TestRelionModeSmokeTest:
         noise_offset_wsums = [12.0, 20.0]
         call_idx = {"value": 0}
 
-        def fake_run_em(
-            experiment_dataset,
-            mean,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            disc_type,
-            **kwargs,
-        ):
-            _ = (mean, mean_variance, noise_variance, disc_type, kwargs)
+        def fake_adaptive(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
+                          coarse_translations, fine_rotations, *grids, **kwargs):
             idx = call_idx["value"]
             call_idx["value"] += 1
             offset_wsum = noise_offset_wsums[min(idx, len(noise_offset_wsums) - 1)]
-            n_images = experiment_dataset.n_units
-            n_shells = experiment_dataset.image_shape[0] // 2 + 1
-            recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
-            return _mock_dense_em_result(
-                n_images=n_images,
-                n_rotations=np.asarray(rotations).shape[0],
-                volume_size=recon_vol_size,
-                n_shells=n_shells,
-                sigma2_offset=offset_wsum,
-            )
+            return adaptive_result(experiment_dataset, means, fine_rotations, kwargs, sigma2_offset=offset_wsum)
 
-        monkeypatch.setattr(half_scoring, "run_em", fake_run_em)
+        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
 
         result = refine_single_volume(
             half_datasets,
@@ -7953,29 +7466,12 @@ class TestRelionModeSmokeTest:
         half2_noise = half1_noise * 3.0
         captured_noise = []
 
-        def fake_run_em(
-            experiment_dataset,
-            mean,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            disc_type,
-            **kwargs,
-        ):
-            _ = (mean, mean_variance, translations, disc_type, kwargs)
+        def fake_adaptive(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
+                          coarse_translations, fine_rotations, *grids, **kwargs):
             captured_noise.append(np.asarray(noise_variance, dtype=np.float32))
-            n_images = experiment_dataset.n_units
-            n_shells = experiment_dataset.image_shape[0] // 2 + 1
-            recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
-            return _mock_dense_em_result(
-                n_images=n_images,
-                n_rotations=np.asarray(rotations).shape[0],
-                volume_size=recon_vol_size,
-                n_shells=n_shells,
-            )
+            return adaptive_result(experiment_dataset, means, fine_rotations, kwargs)
 
-        monkeypatch.setattr(half_scoring, "run_em", fake_run_em)
+        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
 
         refine_single_volume(
             half_datasets,
@@ -8155,20 +7651,22 @@ class TestRelionModeSmokeTest:
         assert result["expected_accuracy_status_trajectory"] == ["unavailable_inputs"]
         assert np.isinf(result["convergence_state"].acc_rot)
 
-    def test_k1_zero_oversampling_skips_adaptive_engine(
+    def test_k1_zero_oversampling_enters_adaptive_engine(
         self,
         half_datasets,
         init_volume,
         translations,
         monkeypatch,
     ):
-        """The accepted K=1 os=0 path must remain on direct dense EM."""
+        """K=1 at oversampling 0 without scale groups runs the adaptive engine's single pass.
 
-        def fail_adaptive(*_args, **_kwargs):
-            raise AssertionError("adaptive_oversampling=0 entered the adaptive K-class engine")
+        The direct dense engine this configuration used was removed on 2026-10-03; the
+        adaptive engine's one coarse pass on the current grid is RELION's single pass.
+        """
 
+        engine_calls = []
+        install_fake_adaptive_engine(monkeypatch, engine_calls)
         rotations_many = _make_rotations(20, seed=334)
-        monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fail_adaptive)
         monkeypatch.setattr(
             sampling_module,
             "relion_scoring_rotation_grid",
@@ -8195,6 +7693,12 @@ class TestRelionModeSmokeTest:
         )
 
         assert np.asarray(result["mean"]).shape == (VOLUME_SIZE,)
+        assert len(engine_calls) == 2
+        for call in engine_calls:
+            assert call["kwargs"]["oversampling_order"] == 0
+            assert call["kwargs"]["coarse_current_size"] == call["kwargs"]["fine_current_size"]
+            assert call["kwargs"]["sparse_pass2"] is True
+            assert np.asarray(call["fine_rotations"]).shape == np.asarray(call["coarse_rotations"]).shape
 
     def test_k_class_adaptive_significant_counts_are_recorded_without_convergence_effect(
         self,
@@ -8773,7 +8277,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8899,7 +8403,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -8992,7 +8496,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -9075,7 +8579,7 @@ def _run_refine_with_stubbed_exact_local_batch_sizes(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -9207,7 +8711,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -9295,25 +8799,10 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
     prev_h1 = np.zeros((half_datasets[0].n_units, 3), dtype=np.float32)
     prev_h2 = np.zeros((half_datasets[1].n_units, 3), dtype=np.float32)
 
-    def fake_run_em(
-        experiment_dataset,
-        mean,
-        mean_variance,
-        noise_variance,
-        rotations,
-        translations,
-        disc_type,
-        **kwargs,
-    ):
-        dense_calls.append(int(np.asarray(rotations).shape[0]))
-        n_shells = experiment_dataset.image_shape[0] // 2 + 1
-        recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
-        return _mock_dense_em_result(
-            n_images=experiment_dataset.n_units,
-            n_rotations=np.asarray(rotations).shape[0],
-            volume_size=recon_vol_size,
-            n_shells=n_shells,
-        )
+    def fake_adaptive(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
+                      coarse_translations, fine_rotations, *grids, **kwargs):
+        dense_calls.append(int(np.asarray(coarse_rotations).shape[0]))
+        return adaptive_result(experiment_dataset, means, fine_rotations, kwargs)
 
     def fake_grouped_local_search(
         experiment_dataset,
@@ -9373,7 +8862,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
             best_pose_details,
         )
 
-    monkeypatch.setattr(half_scoring, "run_em", fake_run_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -9440,28 +8929,20 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
     prev_h2 = np.array([[-1.6, 2.4]], dtype=np.float32)
     chosen_trans = np.asarray(translations[1], dtype=np.float32)
 
-    def fake_run_em(
-        experiment_dataset,
-        mean,
-        mean_variance,
-        noise_variance,
-        rotations,
-        translations,
-        disc_type,
-        **kwargs,
-    ):
-        n_shells = experiment_dataset.image_shape[0] // 2 + 1
-        recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
-        hard_assignment = np.full(experiment_dataset.n_units, 1, dtype=np.int32)
-        return _mock_dense_em_result(
-            n_images=experiment_dataset.n_units,
-            n_rotations=np.asarray(rotations).shape[0],
-            volume_size=recon_vol_size,
-            n_shells=n_shells,
-            hard_assignments=hard_assignment,
+    def fake_adaptive(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
+                      coarse_translations, fine_rotations, *grids, **kwargs):
+        # The engine reports each image's best translation on the search grid around old_offset.
+        n_images = experiment_dataset.n_units
+        return adaptive_result(
+            experiment_dataset,
+            means,
+            fine_rotations,
+            kwargs,
+            pose_assignments=np.full(n_images, 1, dtype=np.int32),
+            best_pose_translations=np.repeat(chosen_trans[None, :], n_images, axis=0),
         )
 
-    monkeypatch.setattr(half_scoring, "run_em", fake_run_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive)
 
     result = refine_single_volume(
         half_datasets,
@@ -9479,7 +8960,7 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
                 skip_final_iteration=True,
             ),
             batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
-            adaptive=AdaptiveOptions(adaptive_oversampling=0),
+            adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
         ),
     )
@@ -9551,17 +9032,18 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             {"tau2_shells": tau2_shells_relion},
         )
 
-    def fake_run_dense_k_class_em(
+    def fake_adaptive_k_class(
         experiment_dataset,
         means,
         mean_variance,
         noise_variance,
+        coarse_rotations,
+        coarse_translations,
         rotations,
-        translations,
-        disc_type,
+        *grids_and_disc_type,
         **kwargs,
     ):
-        del mean_variance, noise_variance, translations, disc_type
+        del mean_variance, noise_variance, coarse_rotations, coarse_translations, grids_and_disc_type
         n_images = int(experiment_dataset.n_units)
         n_shells = experiment_dataset.image_shape[0] // 2 + 1
         recon_vol_size = _mock_reconstruction_accumulator_size(experiment_dataset, kwargs)
@@ -9608,7 +9090,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         )
 
     monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_iref_power_spectrum", fake_iref_tau2)
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em", fake_run_dense_k_class_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
 
     result = refine_single_volume(
         half_datasets,
@@ -9739,12 +9221,12 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 assert_matches(saved["reconstruct_floor_shell_count"], stats["shell_count"])
 
 
-def test_relion_mode_dense_k_class_writes_absolute_translations_from_previous_offset(
+def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
     rng,
     init_volume,
     monkeypatch,
 ):
-    """Dense K-class RELION-mode writeback should use old_offset + selected delta."""
+    """K-class RELION-mode writeback (oversampling 0) should use old_offset + selected delta."""
 
     half_datasets = [MockDataset(1, rng), MockDataset(1, rng)]
     for ds in half_datasets:
@@ -9757,14 +9239,15 @@ def test_relion_mode_dense_k_class_writes_absolute_translations_from_previous_of
     ]
     dense_calls = []
 
-    def fake_run_dense_k_class_em(
+    def fake_adaptive_k_class(
         experiment_dataset,
         means,
         mean_variance,
         noise_variance,
+        coarse_rotations,
+        coarse_translations,
         rotations,
-        translations,
-        disc_type,
+        *grids_and_disc_type,
         **kwargs,
     ):
         half_idx = len(dense_calls)
@@ -9816,7 +9299,7 @@ def test_relion_mode_dense_k_class_writes_absolute_translations_from_previous_of
             best_pose_rotation_ids=jnp.zeros(n_images, dtype=jnp.int32),
         )
 
-    monkeypatch.setattr(half_scoring, "run_dense_k_class_em", fake_run_dense_k_class_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
 
     result = refine_single_volume(
         half_datasets,
@@ -9973,7 +9456,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         "relion_scoring_rotation_grid",
         lambda order, *, dtype=np.float32, symmetry="C1": sampling_module.RotationGrid(rotations=fake_get_grid(order).astype(dtype), rotation_eulers=fake_get_grid_eulers(order).astype(dtype), healpix_order=order, symmetry=symmetry),
     )
-    monkeypatch.setattr(half_scoring, "run_em", _mock_run_dense_em)
+    monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", _mock_run_adaptive_em)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", local_iteration_keywords(fake_grouped_local_search))
     monkeypatch.setattr(
         orientation_priors_module,
@@ -10118,12 +9601,19 @@ def test_texture_centered_crop_preserves_kernel_owned_rounded_outer_shell():
 
 
 def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, monkeypatch):
-    """The production firstiter route must reconstruct each image in exactly one class."""
+    """The production firstiter route must reconstruct each image in exactly one class.
+
+    The fine pass is the sparse global-winner subset pass; its device-resident pass 2 is
+    replaced by a stand-in that refines each image to its class's coarse winner and
+    reports one unit of posterior mass per image.
+    """
 
     import copy
 
     import relax.classification.k_class as k_class_module
+    from relax.helpers.types import SparsePass2Output, make_relion_stats
     from relax.scoring import significance as significance_module
+    from relax.sparse_pass2 import dispatch as sparse_dispatch
 
     class SubsetMockDataset(MockDataset):
         def subset(self, image_indices):
@@ -10181,6 +9671,37 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         "_compute_k_class_significance_batched",
         fake_joint_coarse_score,
     )
+    sparse_calls = []
+
+    def fake_sparse_pass2(subset, volume, _mean_variance, _noise_variance, translations_arg, samples, **kwargs):
+        sparse_calls.append(kwargs)
+        n_subset = int(subset.n_units)
+        n_trans = int(np.asarray(translations_arg).shape[0])
+        # Each image's support is its class's single coarse winner (rotation * n_trans + translation).
+        winners = np.asarray([int(np.asarray(sample).reshape(-1)[0]) for sample in samples], dtype=np.int32)
+        n_shells = IMAGE_SHAPE[0] // 2 + 1
+        return SparsePass2Output(
+            jnp.zeros_like(volume),
+            jnp.ones_like(jnp.real(volume)),
+            winners % n_trans,
+            np.repeat(np.eye(3, dtype=np.float32)[None], n_subset, axis=0),
+            np.zeros((n_subset, 2), dtype=np.float32),
+            winners // n_trans,
+            make_relion_stats(
+                log_evidence_per_image=np.zeros(n_subset, dtype=np.float32),
+                best_log_score_per_image=np.zeros(n_subset, dtype=np.float32),
+                max_posterior_per_image=np.ones(n_subset, dtype=np.float32),
+                rotation_posterior_sums=np.zeros(2, dtype=np.float32),
+            ),
+            noise_stats=NoiseStats(
+                wsum_sigma2_noise=jnp.ones(n_shells, dtype=jnp.float32),
+                wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
+                wsum_sigma2_offset=0.0,
+                sumw=float(n_subset),
+            ),
+        )
+
+    monkeypatch.setattr(sparse_dispatch, "compute_pass2_stats_sparse", fake_sparse_pass2)
 
     dataset = SubsetMockDataset(n_images, rng)
     mean = _hermitian_volume(VOLUME_SHAPE, seed=145)
@@ -10208,13 +9729,16 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
         accumulate_noise=True,
         relion_firstiter_score_mode="normalized_cc",
         relion_firstiter_winner_take_all=True,
-        sparse_pass2=False,
+        sparse_pass2=True,
         image_batch_size=n_images,
         rotation_block_size=rotations.shape[0],
         score_with_masked_images=True,
     )
 
     assert len(score_calls) == 1
+    # One fine pass per class with images, each a winner-take-all normalized-CC pass.
+    assert len(sparse_calls) == n_classes
+    assert all(call["relion_firstiter_winner_take_all"] is True for call in sparse_calls)
     assert_matches(np.asarray(result.class_assignments), expected_classes)
     expected_poses = coarse_hard[expected_classes, np.arange(n_images)]
     assert_matches(np.asarray(result.pose_assignments), expected_poses)

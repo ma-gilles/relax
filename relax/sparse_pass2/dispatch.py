@@ -1,11 +1,10 @@
-"""Route a sparse pass 2 to the device-resident engine (or the deprecated per-image reference)."""
+"""Route a sparse pass 2 to the device-resident engine."""
 
 import logging
 
 import numpy as np
 
-from relax.reference.sparse_pass2 import _compute_pass2_stats_sparse_perimage_reference
-from relax.sparse_pass2.engine_record import record_pass_engine, warn_deprecated_engine
+from relax.sparse_pass2.engine_record import record_pass_engine
 
 # Preserve the category consumed by existing run-log collectors.
 logger = logging.getLogger("relax.helpers.oversampling")
@@ -76,7 +75,6 @@ def compute_pass2_stats_sparse(
     relion_projector_half=None,
     relion_projector_r_max=None,
     adaptive_fraction=0.999,
-    use_perimage_reference=False,
     bpref_device_signature_active: bool = False,
     bpref_class_index: int = 0,
     include_unweighted_norm_high_shell: bool = True,
@@ -100,10 +98,9 @@ def compute_pass2_stats_sparse(
     Implementation note
     -------------------
     The device-resident driver
-    (:func:`relax.sparse_pass2.resident_pass2.compute_pass2_stats_resident`) runs the pass.
-    The per-image Python loop is preserved as
-    :func:`_compute_pass2_stats_sparse_perimage_reference` (``use_perimage_reference=True``,
-    or a full-grid C1 pass without significance supports); it is deprecated.
+    (:func:`relax.sparse_pass2.resident_pass2.compute_pass2_stats_resident`) runs every
+    pass; a configuration its checks refuse is an error. The per-image reference pass 2
+    (a dense ``run_em`` per image) was removed on 2026-10-03.
 
     ``relion_exact_fine_gaussian`` selects the float32 scorer that follows
     RELION's fine-search diff2/minimum ordering. Float64 diagnostics retain
@@ -130,194 +127,14 @@ def compute_pass2_stats_sparse(
             "external score normalization mode does not match this pass: "
             f"external={normalization_score_mode!r}, pass={relion_firstiter_score_mode!r}"
         )
-    if use_perimage_reference and (return_score_log_z or return_score_log_z_only):
-        raise NotImplementedError("score-logZ returns are only implemented by the resident sparse pass 2")
-    if (
-        use_perimage_reference
-        and relion_exact_fine_gaussian
-        and relion_firstiter_score_mode == "gaussian"
-        and not use_float64_scoring
-    ):
-        raise NotImplementedError(
-            "exact RELION fine Gaussian scoring requires the resident sparse pass 2"
-        )
-    if use_perimage_reference and group_ids is not None:
-        logger.warning(
-            "Sparse per-image reference pass-2 does not accumulate native group-scale correction stats; "
-            "use the resident sparse pass 2 for native scale updates."
-        )
-    if use_perimage_reference and fine_mstep_rotations_override is not None:
-        raise NotImplementedError(
-            "fine_mstep_rotations_override is only implemented by the resident sparse pass 2",
-        )
-    full_grid_reference = (
-        symmetry_label == "C1"
-        and all(samples is None for samples in significant_sample_indices)
-        and not return_score_log_z
-        and not return_score_log_z_only
-        and normalization_log_z is None
-        and relion_f32_normalization_sum_weight is None
-        and normalization_other_score_log_z is None
-        and normalization_score_mode is None
-        and group_ids is None
-        and scale_correction_group_count is None
-        and scale_correction_data_vs_prior is None
-        and fine_rotations_override is None
-        and fine_mstep_rotations_override is None
-        and fine_rotation_parent_override is None
-        and fine_translations_override is None
-        and fine_translation_parent_override is None
-        and not relion_x_half_mstep
-        and not relion_fine_mstep_prune
-        and relion_firstiter_score_mode == "gaussian"
-        and not relion_firstiter_winner_take_all
-        and include_unweighted_norm_high_shell
-        and not preserve_bpref_particle_order
-        and reconstruction_current_size is None
-        and not (
-            relion_exact_fine_gaussian
-            and not use_float64_scoring
-        )
-    )
-    if not use_perimage_reference and not full_grid_reference:
-        from relax.sparse_pass2.resident_pass2 import compute_pass2_stats_resident
+    from relax.sparse_pass2.resident_pass2 import compute_pass2_stats_resident
 
-        # The device-resident pass 2 is relax's one pass-2 engine: a configuration its
-        # checks refuse (ResidentConfigurationUnsupported) is an error, not a fallback.
-        record_pass_engine("global", "gemm_dense" if dense_gemm_full_grid else "resident")
-        return compute_pass2_stats_resident(
-            experiment_dataset,
-            volume,
-            noise_variance,
-            translations,
-            significant_sample_indices,
-            nside_level,
-            disc_type,
-            oversampling_order=oversampling_order,
-            current_size=current_size,
-            reconstruction_current_size=reconstruction_current_size,
-            translation_step=translation_step,
-            rotation_log_prior=rotation_log_prior,
-            score_with_masked_images=score_with_masked_images,
-            return_stats=return_stats,
-            translation_log_prior=translation_log_prior,
-            accumulate_noise=accumulate_noise,
-            half_spectrum_scoring=half_spectrum_scoring,
-            projection_padding_factor=projection_padding_factor,
-            projection_mask_current_image_disk=projection_mask_current_image_disk,
-            reconstruction_padding_factor=reconstruction_padding_factor,
-            image_corrections=image_corrections,
-            scale_corrections=scale_corrections,
-            group_ids=group_ids,
-            scale_correction_group_count=scale_correction_group_count,
-            scale_correction_data_vs_prior=scale_correction_data_vs_prior,
-            image_pre_shifts=image_pre_shifts,
-            use_float64_scoring=use_float64_scoring,
-            translation_prior_centers=translation_prior_centers,
-            do_gridding_correction=do_gridding_correction,
-            square_window=square_window,
-            window_at_box=window_at_box,
-            random_perturbation=random_perturbation,
-            normalization_log_z=normalization_log_z,
-            relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
-            relion_coarse_hard_assignment=relion_coarse_hard_assignment,
-            relion_coarse_max_posterior=relion_coarse_max_posterior,
-            normalization_other_score_log_z=normalization_other_score_log_z,
-            normalization_score_mode=normalization_score_mode,
-            return_score_log_z=return_score_log_z,
-            return_score_log_z_only=return_score_log_z_only,
-            disable_adjoint_y=disable_adjoint_y,
-            disable_adjoint_ctf=disable_adjoint_ctf,
-            fine_source_eulers_override=fine_source_eulers_override,
-            return_source_eulers=return_source_eulers,
-            fine_rotations_override=fine_rotations_override,
-            fine_mstep_rotations_override=fine_mstep_rotations_override,
-            fine_rotation_parent_override=fine_rotation_parent_override,
-            fine_translations_override=fine_translations_override,
-            fine_translation_parent_override=fine_translation_parent_override,
-            relion_half_volume_mstep=relion_half_volume_mstep,
-            relion_x_half_mstep=relion_x_half_mstep,
-            mstep_subtract_ctf_projection=mstep_subtract_ctf_projection,
-            relion_fine_mstep_prune=relion_fine_mstep_prune,
-            relion_firstiter_score_mode=relion_firstiter_score_mode,
-            relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
-            relion_exact_fine_gaussian=relion_exact_fine_gaussian,
-            relion_fine_diff2_fused_ffi=relion_fine_diff2_fused_ffi,
-            relion_f32_fine_posterior=relion_f32_fine_posterior,
-            relion_exact_fine_normalized_cc=relion_exact_fine_normalized_cc,
-            relion_projector_half=relion_projector_half,
-            relion_projector_r_max=relion_projector_r_max,
-            adaptive_fraction=adaptive_fraction,
-            dense_gemm_full_grid=dense_gemm_full_grid,
-            bpref_device_signature_active=bpref_device_signature_active,
-            bpref_class_index=bpref_class_index,
-            include_unweighted_norm_high_shell=include_unweighted_norm_high_shell,
-            preserve_bpref_particle_order=preserve_bpref_particle_order,
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-            **({"symmetry_label": symmetry_label} if symmetry_label != "C1" else {}),
-            **(
-                {"relion_translation_angle_scale": float(relion_translation_angle_scale)}
-                if float(relion_translation_angle_scale) != 1.0
-                else {}
-            ),
-            **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
-            **(
-                {
-                    "reconstruction_group_ids": reconstruction_group_ids,
-                    "reconstruction_group_count": reconstruction_group_count,
-                }
-                if reconstruction_group_ids is not None or reconstruction_group_count is not None
-                else {}
-            ),
-            **(
-                {"reconstruction_volume_current_size": int(reconstruction_volume_current_size)}
-                if reconstruction_volume_current_size is not None
-                else {}
-            ),
-            **(
-                {"reconstruction_image_radius": float(reconstruction_image_radius)}
-                if reconstruction_image_radius is not None
-                else {}
-            ),
-        )
-
-    if any(value is not None for value in (
-        optics_group_ids, reconstruction_volume_current_size, reconstruction_image_radius,
-    )):
-        raise NotImplementedError(
-            "per-optics-group noise and images on another grid run on the device-resident "
-            "sparse pass 2 only"
-        )
-    if any(value is not None for value in (
-        relion_f32_normalization_sum_weight, relion_coarse_hard_assignment, relion_coarse_max_posterior,
-    )):
-        raise NotImplementedError("coarse float32 normalization requires the resident sparse pass 2")
-    if float(relion_translation_angle_scale) != 1.0:
-        raise NotImplementedError(
-            "RELION model/optics translation-angle scaling requires the resident sparse pass 2"
-        )
-    if relion_projector_half is not None:
-        raise NotImplementedError("RELION projector sparse pass-2 requires the resident sparse pass 2")
-    if reconstruction_current_size is not None:
-        raise NotImplementedError(
-            "separate score/reconstruction current sizes require the resident sparse pass 2",
-        )
-    if window_at_box and (current_size is None or int(current_size) >= int(experiment_dataset.image_shape[0])):
-        raise NotImplementedError("RELION's window at the full box requires the bucketed sparse pass-2 path")
-
-    # DEPRECATED route: to be removed once the resident engine covers a full-grid C1 pass
-    # without significance supports; see em_status 'One engine' TODO.
-    warn_deprecated_engine(
-        "per_image_reference",
-        "global",
-        "use_perimage_reference=True"
-        if use_perimage_reference
-        else "a full-grid C1 pass without significance supports takes the per-image reference",
-    )
-    return _compute_pass2_stats_sparse_perimage_reference(
+    # The device-resident pass 2 is relax's one pass-2 engine: a configuration its
+    # checks refuse (ResidentConfigurationUnsupported) is an error, not a fallback.
+    record_pass_engine("global", "gemm_dense" if dense_gemm_full_grid else "resident")
+    return compute_pass2_stats_resident(
         experiment_dataset,
         volume,
-        mean_variance,
         noise_variance,
         translations,
         significant_sample_indices,
@@ -325,6 +142,7 @@ def compute_pass2_stats_sparse(
         disc_type,
         oversampling_order=oversampling_order,
         current_size=current_size,
+        reconstruction_current_size=reconstruction_current_size,
         translation_step=translation_step,
         rotation_log_prior=rotation_log_prior,
         score_with_masked_images=score_with_masked_images,
@@ -333,23 +151,81 @@ def compute_pass2_stats_sparse(
         accumulate_noise=accumulate_noise,
         half_spectrum_scoring=half_spectrum_scoring,
         projection_padding_factor=projection_padding_factor,
+        projection_mask_current_image_disk=projection_mask_current_image_disk,
         reconstruction_padding_factor=reconstruction_padding_factor,
         image_corrections=image_corrections,
         scale_corrections=scale_corrections,
+        group_ids=group_ids,
+        scale_correction_group_count=scale_correction_group_count,
+        scale_correction_data_vs_prior=scale_correction_data_vs_prior,
         image_pre_shifts=image_pre_shifts,
-        translation_prior_centers=translation_prior_centers,
         use_float64_scoring=use_float64_scoring,
+        translation_prior_centers=translation_prior_centers,
         do_gridding_correction=do_gridding_correction,
         square_window=square_window,
+        window_at_box=window_at_box,
         random_perturbation=random_perturbation,
         normalization_log_z=normalization_log_z,
+        relion_f32_normalization_sum_weight=relion_f32_normalization_sum_weight,
+        relion_coarse_hard_assignment=relion_coarse_hard_assignment,
+        relion_coarse_max_posterior=relion_coarse_max_posterior,
         normalization_other_score_log_z=normalization_other_score_log_z,
+        normalization_score_mode=normalization_score_mode,
+        return_score_log_z=return_score_log_z,
+        return_score_log_z_only=return_score_log_z_only,
         disable_adjoint_y=disable_adjoint_y,
         disable_adjoint_ctf=disable_adjoint_ctf,
+        fine_source_eulers_override=fine_source_eulers_override,
+        return_source_eulers=return_source_eulers,
+        fine_rotations_override=fine_rotations_override,
+        fine_mstep_rotations_override=fine_mstep_rotations_override,
+        fine_rotation_parent_override=fine_rotation_parent_override,
+        fine_translations_override=fine_translations_override,
+        fine_translation_parent_override=fine_translation_parent_override,
         relion_half_volume_mstep=relion_half_volume_mstep,
+        relion_x_half_mstep=relion_x_half_mstep,
+        mstep_subtract_ctf_projection=mstep_subtract_ctf_projection,
+        relion_fine_mstep_prune=relion_fine_mstep_prune,
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         relion_firstiter_winner_take_all=relion_firstiter_winner_take_all,
+        relion_exact_fine_gaussian=relion_exact_fine_gaussian,
+        relion_fine_diff2_fused_ffi=relion_fine_diff2_fused_ffi,
+        relion_f32_fine_posterior=relion_f32_fine_posterior,
+        relion_exact_fine_normalized_cc=relion_exact_fine_normalized_cc,
+        relion_projector_half=relion_projector_half,
+        relion_projector_r_max=relion_projector_r_max,
+        adaptive_fraction=adaptive_fraction,
+        dense_gemm_full_grid=dense_gemm_full_grid,
+        bpref_device_signature_active=bpref_device_signature_active,
+        bpref_class_index=bpref_class_index,
+        include_unweighted_norm_high_shell=include_unweighted_norm_high_shell,
+        preserve_bpref_particle_order=preserve_bpref_particle_order,
+        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         **({"symmetry_label": symmetry_label} if symmetry_label != "C1" else {}),
+        **(
+            {"relion_translation_angle_scale": float(relion_translation_angle_scale)}
+            if float(relion_translation_angle_scale) != 1.0
+            else {}
+        ),
+        **({"optics_group_ids": optics_group_ids} if optics_group_ids is not None else {}),
+        **(
+            {
+                "reconstruction_group_ids": reconstruction_group_ids,
+                "reconstruction_group_count": reconstruction_group_count,
+            }
+            if reconstruction_group_ids is not None or reconstruction_group_count is not None
+            else {}
+        ),
+        **(
+            {"reconstruction_volume_current_size": int(reconstruction_volume_current_size)}
+            if reconstruction_volume_current_size is not None
+            else {}
+        ),
+        **(
+            {"reconstruction_image_radius": float(reconstruction_image_radius)}
+            if reconstruction_image_radius is not None
+            else {}
+        ),
     )
 
 

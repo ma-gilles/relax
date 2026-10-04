@@ -472,24 +472,6 @@ def relion_cuda_f32_coarse_posterior(
     return probabilities, mask, n_significant, cutoff_count, sum_weight, threshold
 
 
-def _map_translation_log_prior_to_fine_grid(
-    translation_log_prior,
-    fine_translation_parent,
-):
-    """Map coarse-grid translation priors onto oversampled translation children."""
-    if translation_log_prior is None:
-        return None
-    translation_log_prior = np.asarray(translation_log_prior)
-    fine_translation_parent = np.asarray(fine_translation_parent, dtype=np.int64)
-    if translation_log_prior.ndim == 1:
-        return translation_log_prior[fine_translation_parent]
-    if translation_log_prior.ndim == 2:
-        return translation_log_prior[:, fine_translation_parent]
-    raise ValueError(
-        f"translation_log_prior must be 1D or 2D, got {translation_log_prior.ndim} dimensions",
-    )
-
-
 # ---------------------------------------------------------------------------
 # Significance pruning
 # ---------------------------------------------------------------------------

@@ -392,7 +392,6 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
         _safe_dense_k_class_rotation_block_size(29, expected_coarse_ibs),
     )
     assert captured["firstiter_cc_pass2_only_best_coarse"] is True
-    assert captured["skip_significance_pruning"] is False
     assert captured["relion_fine_mstep_prune"] is True
     assert np.all(captured["fine_mstep_rotations_override"] == 0.25)
 

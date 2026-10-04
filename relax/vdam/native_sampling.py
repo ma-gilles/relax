@@ -847,29 +847,3 @@ def _class_rotation_log_prior_for_sampling(
 
 
 
-def _expand_class_rotation_log_prior_for_dense_fine_grid(
-    class_rotation_log_prior: np.ndarray,
-    sampling_plan: NativeSamplingPlan,
-) -> np.ndarray:
-    """Broadcast coarse direction priors onto dense oversampled rotations."""
-
-    prior = np.asarray(class_rotation_log_prior, dtype=np.float32)
-    if int(sampling_plan.oversampling) <= 0:
-        return prior
-    if prior.ndim != 2:
-        raise ValueError(f"class_rotation_log_prior must be 2D, got {prior.ndim} dimensions")
-
-    _rotations, parent_map = sampling.get_oversampled_relion_hidden_rotation_grid_from_samples(
-        np.arange(prior.shape[1], dtype=np.int64),
-        parent_nside_level=int(sampling_plan.healpix_order),
-        oversampling_order=int(sampling_plan.oversampling),
-        random_perturbation=float(sampling_plan.random_perturbation),
-    )
-    parent_map = np.asarray(parent_map, dtype=np.int64)
-    expected = int(np.asarray(sampling_plan.rotations).shape[0])
-    if parent_map.shape != (expected,):
-        raise ValueError(
-            "oversampled rotation parent map shape does not match dense rotations: "
-            f"got {parent_map.shape}, expected ({expected},)",
-        )
-    return prior[:, parent_map].astype(np.float32, copy=False)

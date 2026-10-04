@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.classification.k_class import _sparse_pass2_selected, run_dense_k_class_em_adaptive
+from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.helpers.batch_planning import (
     _plan_kclass_adaptive_grid_batch_sizes,
     _safe_dense_k_class_rotation_block_size,
@@ -88,10 +88,9 @@ class FirstIterCCExecution:
 def single_class_bucketed_pass2_selected(*, firstiter: bool) -> bool:
     """Whether K=1 plans its batches for the sparse projector/BPref lifetime.
 
-    Only the ``--firstiter_cc`` pass does (its compact batch planning), and only while the
-    ``RELAX_K_CLASS_DENSE_PASS2`` diagnostic keeps the sparse pass 2.
+    Only the ``--firstiter_cc`` pass does (its compact batch planning).
     """
-    return bool(firstiter and _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2"))
+    return bool(firstiter)
 
 
 def _score_kclass_firstiter_cc_pass2(
@@ -155,9 +154,8 @@ def _score_kclass_firstiter_cc_pass2(
     n_classes = int(np.asarray(data.mean).shape[0]) if np.asarray(data.mean).ndim >= 2 else 1
     firstiter_significance_image_batch_size = None
     firstiter_significance_rotation_block_size = None
-    firstiter_sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
     if grid.symmetry != "C1" and batching.em_kwargs.get("coarse_engine") != "gemm_dense":
-        if not firstiter_sparse_pass2 or not batching.em_kwargs.get("mstep_relion_x_half", False):
+        if not batching.em_kwargs.get("mstep_relion_x_half", False):
             raise RuntimeError(f"{grid.symmetry} requires sparse RELION x-half BPref reconstruction")
     if batching.safe_batch_sizes is not None:
         batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
@@ -180,38 +178,33 @@ def _score_kclass_firstiter_cc_pass2(
             safe_batch_sizes=batching.safe_batch_sizes,
             significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
         )
-        if firstiter_sparse_pass2:
-            requested_firstiter_image_batch_size = int(
-                batching.em_kwargs.get("image_batch_size", batching.image_batch_size)
-            )
-            firstiter_image_batch_size = min(
-                requested_firstiter_image_batch_size,
-                _safe_firstiter_cc_image_batch_size(
-                    fine_trans.shape[0],
-                    data.image_shape,
-                ),
-            )
-            firstiter_rotation_block_size = min(
-                int(batching.em_kwargs.get("rotation_block_size", batch_plan.pass2_rotation_block_size)),
-                _safe_dense_k_class_rotation_block_size(
-                    fine_trans.shape[0],
-                    firstiter_image_batch_size,
-                ),
-            )
-        else:
-            firstiter_image_batch_size = batch_plan.pass2_image_batch_size
-            firstiter_rotation_block_size = batch_plan.pass2_rotation_block_size
+        requested_firstiter_image_batch_size = int(
+            batching.em_kwargs.get("image_batch_size", batching.image_batch_size)
+        )
+        firstiter_image_batch_size = min(
+            requested_firstiter_image_batch_size,
+            _safe_firstiter_cc_image_batch_size(
+                fine_trans.shape[0],
+                data.image_shape,
+            ),
+        )
+        firstiter_rotation_block_size = min(
+            int(batching.em_kwargs.get("rotation_block_size", batch_plan.pass2_rotation_block_size)),
+            _safe_dense_k_class_rotation_block_size(
+                fine_trans.shape[0],
+                firstiter_image_batch_size,
+            ),
+        )
         firstiter_significance_image_batch_size = batch_plan.significance_image_batch_size
         firstiter_significance_rotation_block_size = batch_plan.significance_rotation_block_size
         data.logger.info(
             "STRICT-PARITY: iter-1 K-class adaptive batch sizing "
             "coarse image_batch_size=%d rotation_block_size=%d; "
-            "fine image_batch_size=%d rotation_block_size=%d (%s pass2)",
+            "fine image_batch_size=%d rotation_block_size=%d (sparse pass2)",
             firstiter_significance_image_batch_size,
             firstiter_significance_rotation_block_size,
             firstiter_image_batch_size,
             firstiter_rotation_block_size,
-            "sparse" if firstiter_sparse_pass2 else "dense",
         )
     else:
         requested_firstiter_image_batch_size = int(
@@ -236,12 +229,11 @@ def _score_kclass_firstiter_cc_pass2(
     firstiter_em_kwargs = dict(batching.em_kwargs)
     firstiter_em_kwargs["image_batch_size"] = firstiter_image_batch_size
     firstiter_em_kwargs["rotation_block_size"] = firstiter_rotation_block_size
-    firstiter_em_kwargs["sparse_pass2"] = firstiter_sparse_pass2
+    firstiter_em_kwargs["sparse_pass2"] = True
     data.logger.info(
-        "STRICT-PARITY %srouting iter-1 K-class through %s run_dense_k_class_em_adaptive "
+        "STRICT-PARITY %srouting iter-1 K-class through sparse run_dense_k_class_em_adaptive "
         "(oversampling=%d, relion_x_half_mstep=%s, best_coarse_subset=True)",
         execution.log_label,
-        "sparse" if firstiter_sparse_pass2 else "dense",
         adaptive_os_local,
         bool(firstiter_em_kwargs.get("mstep_relion_x_half", False)),
     )
@@ -266,7 +258,6 @@ def _score_kclass_firstiter_cc_pass2(
         accumulate_noise=True,
         return_best_pose_details=True,
         firstiter_cc_pass2_only_best_coarse=True,
-        skip_significance_pruning=False,
         image_seed_classes=data.image_seed_classes,
         relion_fine_mstep_prune=True,
         significance_image_batch_size=firstiter_significance_image_batch_size,
@@ -275,7 +266,7 @@ def _score_kclass_firstiter_cc_pass2(
         coarse_rotation_ids=grid.coarse_rotation_ids,
         oversampling_order=int(adaptive_os_local),
         fine_mstep_rotations_override=(
-            fine_mstep_rot if firstiter_sparse_pass2 or batching.em_kwargs.get("coarse_engine") == "gemm_dense" else None
+            fine_mstep_rot
         ),
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,

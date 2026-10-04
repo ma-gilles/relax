@@ -28,9 +28,9 @@
       },
       "totals": {
         "file_count": 27,
-        "physical_lines": 21545,
-        "nonblank_noncomment_lines": 18857,
-        "function_count": 365,
+        "physical_lines": 21355,
+        "nonblank_noncomment_lines": 18687,
+        "function_count": 362,
         "large_argument_function_count": 26,
         "very_large_argument_function_count": 4,
         "maximum_parameter_count": 33,
@@ -81,8 +81,8 @@
         },
         {
           "path": "relax/refinement/firstiter_cc.py",
-          "physical_lines": 288,
-          "nonblank_noncomment_lines": 255,
+          "physical_lines": 279,
+          "nonblank_noncomment_lines": 246,
           "function_count": 2
         },
         {
@@ -99,9 +99,9 @@
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "physical_lines": 2092,
-          "nonblank_noncomment_lines": 1892,
-          "function_count": 21
+          "physical_lines": 1911,
+          "nonblank_noncomment_lines": 1731,
+          "function_count": 18
         },
         {
           "path": "relax/refinement/iteration_loop.py",
@@ -415,17 +415,17 @@
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 1620,
+          "line": 1439,
           "name": "_score_half_local_one_shape",
           "parameter_count": 7,
           "line_span": 456
         },
         {
           "path": "relax/refinement/half_scoring.py",
-          "line": 634,
+          "line": 474,
           "name": "_score_half_dense_one_shape",
           "parameter_count": 7,
-          "line_span": 450
+          "line_span": 428
         },
         {
           "path": "relax/refinement/mean_helpers.py",
@@ -457,7 +457,7 @@
         }
       ]
     },
-    "package": "merge of main d1ba3e8 after e6a0521: projector built on every scoring route, deferred fine rows, exact coarse operands only",
+    "package": "dense-engine-removed-20261003",
     "source_commit": "ec91c9c5fe95a430bceb0f7dabafaf2266cc7a9e",
     "recorded_date": "2026-10-03"
   }

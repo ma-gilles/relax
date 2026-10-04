@@ -922,7 +922,7 @@ what still routes to them. Inventory and line estimates (relax bc6d3e1):
 
 | Deprecated engine or route | What still routes to it on main | Resident work needed |
 |---|---|---|
-| Dense `run_em` (`dense/em_engine.py`, `dense_big_jit.py`, `k_class.run_dense_k_class_em`) and the per-image reference route (`reference/sparse_pass2.py`) | Nothing in production (the CLI always builds scale groups and supplies RELION's projector): oversampling 0 without scale groups, `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2`, VDAM `RELAX_DISABLE_SPARSE_PASS2`, the dense K-class fallbacks, a full-grid C1 pass without supports | Move the joint `--firstiter_cc` coarse probe (pass 1) out of the dense K-class wrapper |
+| (none) | Dense `run_em`, `dense_big_jit.py`, `k_class.run_dense_k_class_em` and the per-image reference route were the last; removed 2026-10-03 (item 6) | - |
 
 Removal order:
 
@@ -948,7 +948,13 @@ Removal order:
    resident local pass, and `local/local_em_engine.run_local_em_exact`, the `local/` modules only it reached
    and the helpers, diagnostics and tests that served it are removed; `local_layout` and the M-step row
    helpers in `local_backprojection` stay.
-6. Dense `run_em` and the per-image reference (about 4k lines).
+6. Dense `run_em` and the per-image reference (done 2026-10-03, about 10k lines with their tests): `dense/em_engine.py`,
+   `dense/dense_big_jit.py`, `reference/sparse_pass2.py`, `scoring/score_constraints.py`, `k_class.run_dense_k_class_em`, the dense
+   adaptive pass 2 and its fallbacks, the `_m_step_block_*` kernels and the direct routes in `half_scoring` are removed. Every
+   global pass runs `run_dense_k_class_em_adaptive` (pass 1 in `significance.py`, pass 2 on the resident engine); `sparse_pass2=False`
+   is refused, `scripts/run_k_class_parity.py` refuses a replay without `--adaptive-2pass`, and `RELAX_K1_DENSE_PASS2`,
+   `RELAX_K_CLASS_DENSE_PASS2*`, `RELAX_K1_SKIP_SIGNIFICANCE_PRUNING` and `RELAX_DISABLE_SPARSE_PASS2` are retired. The dense block
+   scorers stay as test references in `tests/helpers/dense_block_scores.py` and `tests/helpers/dense_posterior_reference.py`.
 
 Tomography (S4) runs only on the resident engine (`compute_tilt_pass2_stats_resident`)
 and pins none of these.
@@ -964,7 +970,7 @@ the score cache, the generic preprocessing and operands, the manual and dense co
 `relax/renamed_environment.json`). The generic scorer's arithmetic stays as a float64 test oracle
 (`tests/helpers/generic_coarse_reference.py`, `tests/unit/test_pass1_program_generic_reference.py`), and
 `tests/helpers/exact_pass1_harness.py` runs pass 1 on CPU for the significance unit tests. The generic
-kernels in `relax/scoring/scoring.py` stay while dense `run_em` (deprecated, item 6) uses them.
+kernels of `relax/scoring/scoring.py` that only dense `run_em` used left with it (item 6).
 
 Pass 1 on stable Fourier-window shapes: tried 2026-10-03, no gain, not landed (speedw; team-lead decision).
 `significance._compute_k_class_significance_batched` can score on a quantized physical window (runtime current size,

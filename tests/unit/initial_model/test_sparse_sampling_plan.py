@@ -8,7 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax import sampling
-from relax.vdam import dense_adapter, driver, native_options, native_sampling
+from relax.vdam import driver, native_options, native_sampling
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.state import NativeParticleState
 
@@ -39,23 +39,6 @@ def test_deferred_plan_preserves_geometry(monkeypatch, order, oversampling, pert
     for field in fields(dense):
         if field.name != "rotations":
             assert_matches(getattr(sparse, field.name), getattr(dense, field.name))
-
-
-def test_deferred_plan_cannot_enter_dense_execution(monkeypatch):
-    monkeypatch.setenv("RELAX_DISABLE_SPARSE_PASS2", "1")
-    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=0)
-    plan = native_sampling._build_sampling_plan(opts, defer_fine_rotations=True)
-    with pytest.raises(ValueError, match="Deferred fine rotations require sparse"):
-        dense_adapter._dense_estep_config(
-            SimpleNamespace(voxel_size=1.0, n_images=2),
-            opts,
-            np.ones(33, dtype=np.float32),
-            plan,
-            np.zeros((2, 2), dtype=np.float32),
-            sigma_offset_angstrom=10.0,
-            class_log_priors=np.zeros(opts.nr_classes, dtype=np.float64),
-            pass1_healpix_order=plan.healpix_order,
-        )
 
 
 def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):

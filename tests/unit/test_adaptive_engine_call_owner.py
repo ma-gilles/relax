@@ -6,16 +6,17 @@ from relax.classification import k_class
 from relax.refinement import half_scoring
 
 
-def test_sparse_pass2_switch_reads_only_positive_values(monkeypatch):
+def test_the_dense_pass2_switches_are_gone_and_refused():
+    assert not hasattr(k_class, "_sparse_pass2_selected")
+    import json
+    from pathlib import Path
+
+    import relax
+
+    retired = json.loads((Path(relax.__file__).parent / "renamed_environment.json").read_text())
+    text = json.dumps(retired)
     for env_name in ("RELAX_K1_DENSE_PASS2", "RELAX_K_CLASS_DENSE_PASS2"):
-        monkeypatch.delenv(env_name, raising=False)
-        assert k_class._sparse_pass2_selected(env_name) is True
-        for value in ("1", "true", " YES ", "on"):
-            monkeypatch.setenv(env_name, value)
-            assert k_class._sparse_pass2_selected(env_name) is False
-        for value in ("", "0", "no", "off", "maybe"):
-            monkeypatch.setenv(env_name, value)
-            assert k_class._sparse_pass2_selected(env_name) is True
+        assert env_name in text
 
 
 def _grids(fine_mstep):
@@ -32,9 +33,9 @@ def _grids(fine_mstep):
     )
 
 
-def test_common_engine_keywords_follow_the_sparse_switch():
+def test_common_engine_keywords_are_the_sparse_pass2_keywords():
     fine_mstep = np.ones((4, 3, 3), dtype=np.float32)
-    def common_kwargs(*, sparse_pass2, max_significants):
+    def common_kwargs(*, max_significants):
         return half_scoring._adaptive_engine_common_kwargs(
             _grids(fine_mstep),
             half_scoring.DensePriorSpec(
@@ -68,22 +69,21 @@ def test_common_engine_keywords_follow_the_sparse_switch():
                 bpref_device_signature_active=False,
                 debug_iteration=3,
             ),
-            sparse_pass2=sparse_pass2,
         )
 
-    sparse = common_kwargs(sparse_pass2=True, max_significants=None)
-    dense = common_kwargs(sparse_pass2=False, max_significants=5)
+    sparse = common_kwargs(max_significants=None)
+    capped = common_kwargs(max_significants=5)
     expected_keys = {
         "class_log_priors", "accumulate_noise", "adaptive_fraction", "max_significants",
         "relion_fine_mstep_prune", "coarse_healpix_order", "fine_mstep_rotations_override",
         "return_best_pose_details", "bpref_device_signature_active", "debug_iteration",
     }
-    assert set(sparse) == set(dense) == expected_keys
+    assert set(sparse) == set(capped) == expected_keys
     assert sparse["accumulate_noise"] is True
     assert sparse["adaptive_fraction"] == half_scoring.RELION_ADAPTIVE_FRACTION
-    assert sparse["max_significants"] == -1 and dense["max_significants"] == 5
-    assert sparse["relion_fine_mstep_prune"] is True and dense["relion_fine_mstep_prune"] is False
-    assert sparse["fine_mstep_rotations_override"] is fine_mstep and dense["fine_mstep_rotations_override"] is None
+    assert sparse["max_significants"] == -1 and capped["max_significants"] == 5
+    assert sparse["relion_fine_mstep_prune"] is True and capped["relion_fine_mstep_prune"] is True
+    assert sparse["fine_mstep_rotations_override"] is fine_mstep
     assert type(sparse["coarse_healpix_order"]) is int and sparse["coarse_healpix_order"] == 2
     assert sparse["class_log_priors"] == "priors" and sparse["debug_iteration"] == 3
 

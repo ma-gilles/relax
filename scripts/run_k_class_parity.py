@@ -1101,8 +1101,9 @@ def main() -> None:
         action="store_true",
         help=(
             "Run RELION-style adaptive 2-pass: pass-1 coarse significance pruning + "
-            "pass-2 oversampled fine grid evaluation with the pass-1 mask broadcast "
-            "to fine children. Mirrors ml_optimiser.cpp::expectationOneParticle line 5022."
+            "sparse pass 2 over the significant samples' oversampled children. Mirrors "
+            "ml_optimiser.cpp::expectationOneParticle line 5022. Required: the single-pass "
+            "dense replay was removed on 2026-10-03."
         ),
     )
     parser.add_argument(
@@ -1115,11 +1116,6 @@ def main() -> None:
         "--accumulate-noise",
         action="store_true",
         help="Accumulate RELION-style noise statistics during the replay E/M step.",
-    )
-    parser.add_argument(
-        "--sparse-pass2",
-        action="store_true",
-        help="Use the sparse bucketed adaptive pass-2 path instead of dense pass-2.",
     )
     parser.add_argument(
         "--relion-x-half-mstep",
@@ -1226,6 +1222,11 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    if not args.adaptive_2pass:
+        parser.error(
+            "the single-pass dense K-class replay (run_dense_k_class_em) was removed on 2026-10-03; "
+            "pass --adaptive-2pass (the adaptive engine with the device-resident sparse pass 2)"
+        )
     if args.relion_native_lane_softmask_reduction and args.image_fourier_backend != "relion_cuda":
         parser.error(
             "--relion-native-lane-softmask-reduction requires "
@@ -1305,7 +1306,6 @@ def main() -> None:
     from recovar.reconstruction import noise as recon_noise
     from recovar.utils import helpers
 
-    from relax.classification.k_class import run_dense_k_class_em
     from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
     from relax.helpers.map_io import write_map
     from relax.helpers.orientation_priors import (
@@ -1634,7 +1634,7 @@ def main() -> None:
         use_float64_projections=False,
         do_gridding_correction=True,
         square_window=bool(args.square_window),
-        sparse_pass2=bool(args.sparse_pass2),
+        sparse_pass2=True,
         relion_firstiter_winner_take_all=bool(firstiter_cc_mode["emulate"]),
         # Match RELION's do_firstiter_cc branch in getAllSquaredDifferences
         # only when the optimiser CLI requested --firstiter_cc, unless the
@@ -1644,111 +1644,97 @@ def main() -> None:
         relion_projector_r_max=relion_projector_r_max,
         mstep_relion_x_half=bool(args.relion_x_half_mstep),
     )
-    if args.adaptive_2pass:
-        # Build pass-2 fine grid (oversampled) using RELION-parity HEALPix children.
-        # Mirrors ml_optimiser.cpp::expectationOneParticle line 5022 onward where
-        # nr_sampling_passes=2 and exp_current_oversampling=adaptive_oversampling
-        # for pass-2 only. Recovar evaluates the FULL fine grid but masks out
-        # fine poses whose coarse parent did not survive pass-1's
-        # adaptive_fraction pruning.
-        from relax.classification.k_class import run_dense_k_class_em_adaptive
-        from relax.sampling import (
-            get_oversampled_rotation_grid_from_samples,
-        )
+    # Build pass-2 fine grid (oversampled) using RELION-parity HEALPix children.
+    # Mirrors ml_optimiser.cpp::expectationOneParticle line 5022 onward where
+    # nr_sampling_passes=2 and exp_current_oversampling=adaptive_oversampling
+    # for pass-2 only. Pass 2 evaluates only the children of the coarse
+    # samples that survive pass-1's adaptive_fraction pruning.
+    from relax.classification.k_class import run_dense_k_class_em_adaptive
+    from relax.sampling import (
+        get_oversampled_rotation_grid_from_samples,
+    )
 
-        adaptive_os = int(args.adaptive_oversampling)
-        all_coarse_rot_indices = np.arange(int(rotations.shape[0]), dtype=np.int64)
-        fine_rotations, rot_parent_map = get_oversampled_rotation_grid_from_samples(
-            all_coarse_rot_indices,
-            parent_nside_level=int(healpix_order),
-            oversampling_order=adaptive_os,
-            random_perturbation=random_perturbation,
-        )
-        fine_rotations = np.asarray(fine_rotations, dtype=np.float32)
-        rot_parent_map = np.asarray(rot_parent_map, dtype=np.int64)
-        # Translations: oversample base_translations (pre-perturbation) and
-        # apply RELION's per-iteration perturbation to the fine grid the same
-        # way as the coarse path.
-        fine_translations, trans_parent_map = _relion_adaptive_fine_translation_grid(
-            base_translations,
-            offset_step_px,
-            adaptive_os,
-            random_perturbation,
-        )
-        fine_batch_plan = _safe_k_class_replay_batch_plan(
-            requested_image_batch_size=args.image_batch_size,
-            requested_rotation_block_size=args.rotation_block_size,
-            n_rot=int(fine_rotations.shape[0]),
-            n_trans=int(fine_translations.shape[0]),
-            n_classes=n_classes,
-            image_shape=image_shape,
-            volume_shape=volume_shape,
-            padding_factor=args.reconstruction_padding_factor,
-            current_size=current_size,
-        )
-        significance_support_batch_plan = base_batch_plan
-        print(
-            "  adaptive 2-pass: fine grid "
-            f"rotations={fine_rotations.shape[0]} (parents {rotations.shape[0]}, "
-            f"max children/parent={int(np.bincount(rot_parent_map).max())}), "
-            f"translations={fine_translations.shape[0]} (parents {translations.shape[0]}, "
-            f"max children/parent={int(np.bincount(trans_parent_map).max())}), "
-            f"adaptive_fraction={args.significance_adaptive_fraction:.4f}"
-        )
-        print(
-            "  adaptive batch sizing: "
-            + _batch_plan_note("coarse_pass1", base_batch_plan)
-            + "; "
-            + _batch_plan_note("fine_pass2", fine_batch_plan)
-        )
-        # RELION firstiter_cc uses normalized-CC scoring, but patched storeWavg
-        # dumps retain a small adaptive pass-2 posterior support. The legacy
-        # single-best-coarse shortcut is kept only as an explicit diagnostic.
-        firstiter_cc = bool(firstiter_cc_mode["emulate"]) and bool(
-            args.firstiter_cc_pass2_only_best_coarse
-        )
-        adaptive_em_kwargs = dict(common_em_kwargs)
-        adaptive_em_kwargs["image_batch_size"] = fine_batch_plan.image_batch_size
-        adaptive_em_kwargs["rotation_block_size"] = fine_batch_plan.rotation_block_size
-        adaptive_em_kwargs["relion_fine_mstep_prune"] = bool(args.sparse_pass2)
-        result = run_dense_k_class_em_adaptive(
-            ds,
-            means,
-            mean_variance_prev,
-            noise_variance,
-            coarse_scoring_rotations,
-            translations.astype(np.float32),
-            fine_rotations,
-            fine_translations,
-            rot_parent_map,
-            trans_parent_map,
-            args.disc_type,
-            coarse_engine=args.coarse_engine,
-            adaptive_fraction=args.significance_adaptive_fraction,
-            max_significants=int(max_significants["active_max_significants"]),
-            coarse_current_size=coarse_engine_current_size,
-            fine_current_size=current_size,
-            current_size=current_size,
-            firstiter_cc_pass2_only_best_coarse=firstiter_cc,
-            significance_image_batch_size=base_batch_plan.image_batch_size,
-            significance_rotation_block_size=base_batch_plan.rotation_block_size,
-            bpref_device_signature_active=bool(
-                os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
-            ),
-            **adaptive_em_kwargs,
-        )
-    else:
-        result = run_dense_k_class_em(
-            ds,
-            means,
-            mean_variance_prev,
-            noise_variance,
-            coarse_scoring_rotations,
-            translations.astype(np.float32),
-            args.disc_type,
-            current_size=current_size,
-            **common_em_kwargs,
-        )
+    adaptive_os = int(args.adaptive_oversampling)
+    all_coarse_rot_indices = np.arange(int(rotations.shape[0]), dtype=np.int64)
+    fine_rotations, rot_parent_map = get_oversampled_rotation_grid_from_samples(
+        all_coarse_rot_indices,
+        parent_nside_level=int(healpix_order),
+        oversampling_order=adaptive_os,
+        random_perturbation=random_perturbation,
+    )
+    fine_rotations = np.asarray(fine_rotations, dtype=np.float32)
+    rot_parent_map = np.asarray(rot_parent_map, dtype=np.int64)
+    # Translations: oversample base_translations (pre-perturbation) and
+    # apply RELION's per-iteration perturbation to the fine grid the same
+    # way as the coarse path.
+    fine_translations, trans_parent_map = _relion_adaptive_fine_translation_grid(
+        base_translations,
+        offset_step_px,
+        adaptive_os,
+        random_perturbation,
+    )
+    fine_batch_plan = _safe_k_class_replay_batch_plan(
+        requested_image_batch_size=args.image_batch_size,
+        requested_rotation_block_size=args.rotation_block_size,
+        n_rot=int(fine_rotations.shape[0]),
+        n_trans=int(fine_translations.shape[0]),
+        n_classes=n_classes,
+        image_shape=image_shape,
+        volume_shape=volume_shape,
+        padding_factor=args.reconstruction_padding_factor,
+        current_size=current_size,
+    )
+    significance_support_batch_plan = base_batch_plan
+    print(
+        "  adaptive 2-pass: fine grid "
+        f"rotations={fine_rotations.shape[0]} (parents {rotations.shape[0]}, "
+        f"max children/parent={int(np.bincount(rot_parent_map).max())}), "
+        f"translations={fine_translations.shape[0]} (parents {translations.shape[0]}, "
+        f"max children/parent={int(np.bincount(trans_parent_map).max())}), "
+        f"adaptive_fraction={args.significance_adaptive_fraction:.4f}"
+    )
+    print(
+        "  adaptive batch sizing: "
+        + _batch_plan_note("coarse_pass1", base_batch_plan)
+        + "; "
+        + _batch_plan_note("fine_pass2", fine_batch_plan)
+    )
+    # RELION firstiter_cc uses normalized-CC scoring, but patched storeWavg
+    # dumps retain a small adaptive pass-2 posterior support. The legacy
+    # single-best-coarse shortcut is kept only as an explicit diagnostic.
+    firstiter_cc = bool(firstiter_cc_mode["emulate"]) and bool(
+        args.firstiter_cc_pass2_only_best_coarse
+    )
+    adaptive_em_kwargs = dict(common_em_kwargs)
+    adaptive_em_kwargs["image_batch_size"] = fine_batch_plan.image_batch_size
+    adaptive_em_kwargs["rotation_block_size"] = fine_batch_plan.rotation_block_size
+    adaptive_em_kwargs["relion_fine_mstep_prune"] = True
+    result = run_dense_k_class_em_adaptive(
+        ds,
+        means,
+        mean_variance_prev,
+        noise_variance,
+        coarse_scoring_rotations,
+        translations.astype(np.float32),
+        fine_rotations,
+        fine_translations,
+        rot_parent_map,
+        trans_parent_map,
+        args.disc_type,
+        coarse_engine=args.coarse_engine,
+        adaptive_fraction=args.significance_adaptive_fraction,
+        max_significants=int(max_significants["active_max_significants"]),
+        coarse_current_size=coarse_engine_current_size,
+        fine_current_size=current_size,
+        current_size=current_size,
+        firstiter_cc_pass2_only_best_coarse=firstiter_cc,
+        significance_image_batch_size=base_batch_plan.image_batch_size,
+        significance_rotation_block_size=base_batch_plan.rotation_block_size,
+        bpref_device_signature_active=bool(
+            os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
+        ),
+        **adaptive_em_kwargs,
+    )
     bpref_diagnostics.clear_bpref_contribution_dump_context()
     elapsed_s = time.time() - t0
     print(f"  RECOVAR K-class E/M step completed in {elapsed_s:.1f}s")

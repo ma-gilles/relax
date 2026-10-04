@@ -176,7 +176,7 @@ def _ctf2_over_noise_and_ctf2(ctf_half, noise_variance_half):
 
 @partial(jax.jit, static_argnames=("multiply_inverse_noise",))
 def _gaussian_batch_norm(processed_score_half_raw, noise_operand, norm_half_weights, *, multiply_inverse_noise: bool):
-    """Dense ``run_em`` image-norm term: weighted |image|^2 / sigma2 summed per image."""
+    """Gaussian image-norm term: weighted |image|^2 / sigma2 summed per image."""
 
     power = jnp.abs(processed_score_half_raw) ** 2
     if multiply_inverse_noise:
@@ -491,8 +491,8 @@ def prepare_unshifted_bucket_operands(
             abs2_half = abs2_half[:, window_indices]
         batch_norm = jnp.sum(abs2_half, axis=-1, keepdims=True).real
     else:
-        # batch_norm starts from raw processed-score images, then follows dense
-        # run_em's image-only correction convention below.
+        # batch_norm starts from raw processed-score images, then follows the
+        # image-only correction convention below.
         norm_half_weights = make_half_image_weights(image_shape)
         batch_norm = _gaussian_batch_norm(
             processed_score_half_raw,
@@ -528,13 +528,12 @@ def prepare_unshifted_bucket_operands(
     )
     processed_score_half_for_noise = processed_score_half_raw
 
-    # Per-image image corrections follow dense run_em's image-only convention.
+    # Per-image image corrections follow the image-only convention (the removed dense engine's).
     if image_corrections is not None:
         batch_corr = jnp.asarray(batch_corr_np)
         image_only_corr = batch_corr / batch_scale
-        # Note: corrections are applied to the per-translation-tiled arrays in
-        # run_em, but multiplication by a per-image scalar commutes with the
-        # tiling and shifting so we apply it before tiling for efficiency.
+        # Multiplication by a per-image scalar commutes with the translation
+        # tiling and shifting, so the correction is applied before tiling.
         applied_corr = batch_scale if relion_cuda_preprocess else batch_corr
         # A premultiplied image is backprojected without the scale correction
         # (premultiplied_bpref_weights); it keeps only the image correction.
@@ -739,9 +738,9 @@ def _prepare_bucket_io(
 ):
     """Run preprocessing for a batch of images (translations tiled, CTF/noise ratios).
 
-    Mirrors the ``run_em``/``_preprocess_batch`` pipeline exactly so the
-    bucketed sparse pass-2 path is bit-for-bit identical to calling
-    ``run_em`` per image.
+    Mirrors the ``_preprocess_batch`` pipeline so the bucketed sparse pass 2
+    scores the same operands as the dense per-image calculation it replaced
+    (removed on 2026-10-03).
     """
     if return_windowed_shifted:
         if window_indices is None:

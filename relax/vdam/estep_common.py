@@ -102,25 +102,6 @@ def _group_local_kwargs(
     return out
 
 
-def _relion_projector_dense_rotations(rotations: np.ndarray) -> np.ndarray:
-    """Map RELION rotation matrices to dense slicing rotations for Projector::data."""
-
-    rotations = np.asarray(rotations, dtype=np.float64)
-    if rotations.ndim != 3 or rotations.shape[1:] != (3, 3):
-        raise ValueError(f"rotations must have shape (R, 3, 3), got {rotations.shape}")
-    swap_xz = np.array(
-        (
-            (0.0, 0.0, 1.0),
-            (0.0, 1.0, 0.0),
-            (1.0, 0.0, 0.0),
-        ),
-        dtype=np.float64,
-    )
-    flip_x = np.diag((-1.0, 1.0, 1.0)).astype(np.float64)
-    inv_t = np.linalg.inv(rotations).transpose(0, 2, 1)
-    return np.einsum("rij,jk,kl->ril", inv_t, swap_xz, flip_x).astype(np.float32)
-
-
 def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAccumulator], K: int) -> None:
     """Record RELION BPref weight totals used to normalize class prior updates."""
 

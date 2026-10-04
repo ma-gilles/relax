@@ -15,14 +15,9 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
-from relax.classification.k_class import (
-    _sparse_pass2_selected,
-    run_dense_k_class_em,
-    run_dense_k_class_em_adaptive,
-)
+from relax.classification.k_class import run_dense_k_class_em_adaptive
 from relax.cuda import kernels as em_cuda_kernels
 from relax.dense import scoring_policy
-from relax.dense.em_engine import run_em
 from relax.dense.score_outputs import (
     HalfScoreResult,
     _collapse_fine_pose_assignments_to_coarse,
@@ -40,7 +35,6 @@ from relax.dense.scoring_policy import (
     RELION_FOURIER_WINDOW_SQUARE,
     _dense_global_scoring_dtype,
     _k1_relion_x_half_mstep_enabled,
-    _k1_skip_significance_pruning_enabled,
     _k_class_relion_x_half_mstep_enabled,
     local_precision,
 )
@@ -86,7 +80,6 @@ from relax.sampling import (
     relion_angular_sampling_deg,
     rotation_grid_size,
 )
-from relax.sparse_pass2.engine_record import warn_deprecated_engine
 
 logger = logging.getLogger("relax.dense.half_scoring")
 
@@ -122,36 +115,17 @@ def _expand_significant_samples_to_full_parent_translations(
 
 
 
-def _dense_uses_adaptive_engine(adaptive_oversampling, group_ids) -> bool:
-    """Whether dense scoring (K=1 or K-class) runs through the adaptive/sparse engine.
-
-    RELION accumulates the group-scale sufficient statistics (``XA``/``AA``)
-    and the per-particle norm-correction residuals (``ml_optimiser.cpp``
-    ``storeWeightedSums``) in every expectation pass, whatever the oversampling
-    order. Only RECOVAR's adaptive/sparse engine accumulates them, so scoring
-    with RELION scale groups uses that engine at the requested oversampling
-    order, including 0, where its single coarse pass on the current grid is
-    RELION's single pass with significance pruning. Without scale groups,
-    oversampling 0 keeps the direct dense engine.
-    """
-
-    return int(adaptive_oversampling) > 0 or group_ids is not None
-
-
 def _adaptive_engine_common_kwargs(
     pass2_grids: AdaptivePass2Grids,
     priors: "DensePriorSpec",
     batching: "DenseBatchPolicy",
     sampling: "DenseSamplingSpec",
     execution: "DenseExecutionPolicy",
-    *,
-    sparse_pass2,
-    full_grid_mstep: bool = False,
 ) -> dict:
     """Owner-derived keywords shared by both adaptive dense routes.
 
     Both routes accumulate noise, keep RELION's adaptive significance fraction
-    and prune the fine M-step rotations only when pass 2 is sparse. Route-local
+    and prune the fine M-step rotations of the sparse pass 2. Route-local
     batch sizes, Fourier sizes and oversampling order stay beside each engine
     call rather than being hidden in a one-call plan.
     """
@@ -161,9 +135,9 @@ def _adaptive_engine_common_kwargs(
         accumulate_noise=True,
         adaptive_fraction=RELION_ADAPTIVE_FRACTION,
         max_significants=(-1 if batching.max_significants is None else int(batching.max_significants)),
-        relion_fine_mstep_prune=bool(sparse_pass2),
+        relion_fine_mstep_prune=True,
         coarse_healpix_order=int(sampling.current_healpix_order),
-        fine_mstep_rotations_override=(pass2_grids.fine_mstep_rotations if sparse_pass2 or full_grid_mstep else None),
+        fine_mstep_rotations_override=pass2_grids.fine_mstep_rotations,
         return_best_pose_details=execution.return_best_pose_details,
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
@@ -279,110 +253,6 @@ class DenseExecutionPolicy:
     firstiter_cc_tree_rescore_max_margin: float | None = None
 
 
-def _score_direct_k1_dense(
-    half: HalfScoringData,
-    sampling: DenseSamplingSpec,
-    execution: DenseExecutionPolicy,
-    em_kwargs,
-) -> HalfScoreResult:
-    """Run the legacy single-pass K=1 dense engine."""
-
-    if half.particles.optics_group_ids is not None:
-        raise NotImplementedError(
-            "the single-pass dense engine keeps one optics group's noise spectrum"
-        )
-    if dataset_projection_magnification(half.particles.dataset) is not None:
-        raise NotImplementedError("the single-pass dense engine does not implement anisotropic magnification")
-    # Scale groups never reach the direct dense engine: see
-    # _dense_uses_adaptive_engine.
-    warn_deprecated_engine(
-        "dense",
-        "global",
-        "a K=1 pass at oversampling 0 without scale groups takes the direct dense engine",
-    )
-    direct_em_kwargs = dict(em_kwargs)
-    direct_em_kwargs.pop("group_ids", None)
-    direct_em_kwargs.pop("scale_correction_group_count", None)
-    direct_em_kwargs.pop("scale_correction_data_vs_prior", None)
-    # Exact fine-Gaussian scoring is implemented only by sparse pass 2. This
-    # branch is the single dense pass used when adaptive oversampling is off.
-    direct_em_kwargs.pop("relion_exact_fine_gaussian", None)
-    direct_em_kwargs.pop("reconstruction_current_size", None)
-    # A single dense pass projects the means itself; it has no pass 1 to read the projector.
-    direct_em_kwargs.pop("relion_projector_half", None)
-    direct_em_kwargs.pop("relion_projector_r_max", None)
-    em_result = run_em(
-        half.particles.dataset,
-        half.reference,
-        half.mean_variance,
-        half.noise_variance,
-        sampling.effective_rotations,
-        sampling.current_translations,
-        execution.disc_type,
-        return_stats=True,
-        accumulate_noise=True,
-        disable_adjoint_y=execution.disable_adjoint_y,
-        disable_adjoint_ctf=execution.disable_adjoint_ctf,
-        **direct_em_kwargs,
-    )
-    return HalfScoreResult(
-        ha=em_result.hard_assignments,
-        Ft_y=em_result.Ft_y,
-        Ft_ctf=em_result.Ft_ctf,
-        em_stats=em_result.stats,
-        noise_stats=em_result.noise_stats,
-        mstep_accumulator_shape=None,
-    )
-
-
-def _score_direct_kclass_dense(
-    half: HalfScoringData,
-    sampling: DenseSamplingSpec,
-    priors: DensePriorSpec,
-    execution: DenseExecutionPolicy,
-    optics: OpticsSpec,
-    em_kwargs,
-):
-    """Run the legacy single-pass K-class dense engine."""
-
-    if optics.projection_scale != 1.0 or optics.reference_current_size is not None:
-        raise NotImplementedError("the single-pass dense engine keeps the images on the reference grid")
-    if dataset_projection_magnification(half.particles.dataset) is not None:
-        raise NotImplementedError("the single-pass dense engine does not implement anisotropic magnification")
-    warn_deprecated_engine(
-        "dense",
-        "global",
-        "a K-class pass at oversampling 0 without scale groups takes the direct dense engine",
-    )
-    dense_em_kwargs = dict(em_kwargs)
-    # The direct dense K-class wrapper delegates to run_em, which does not
-    # implement RELION x-half accumulators. Keep that branch on its historical
-    # layout and avoid tagging its full-volume output as x-half-expanded.
-    dense_em_kwargs.pop("mstep_relion_x_half", None)
-    dense_em_kwargs.pop("group_ids", None)
-    dense_em_kwargs.pop("scale_correction_group_count", None)
-    dense_em_kwargs.pop("scale_correction_data_vs_prior", None)
-    # Exact fine-Gaussian scoring is implemented only by sparse pass 2. A
-    # non-adaptive dense iteration has no fine pass to select.
-    dense_em_kwargs.pop("relion_exact_fine_gaussian", None)
-    dense_em_kwargs.pop("reconstruction_current_size", None)
-    dense_em_kwargs.pop("relion_projector_half", None)
-    dense_em_kwargs.pop("relion_projector_r_max", None)
-    return run_dense_k_class_em(
-        half.particles.dataset,
-        half.reference,
-        half.mean_variance,
-        half.noise_variance,
-        sampling.effective_rotations,
-        sampling.current_translations,
-        execution.disc_type,
-        class_log_priors=priors.class_log_priors,
-        accumulate_noise=True,
-        return_best_pose_details=execution.return_best_pose_details,
-        **dense_em_kwargs,
-    )
-
-
 def _score_adaptive_kclass_dense(
     half: HalfScoringData,
     sampling: DenseSamplingSpec,
@@ -447,26 +317,13 @@ def _score_adaptive_kclass_dense(
         adaptive_em_kwargs["image_batch_size"],
         adaptive_em_kwargs["rotation_block_size"],
     )
-    sparse_pass2 = _sparse_pass2_selected("RELAX_K_CLASS_DENSE_PASS2")
-    if symmetry != "C1" and not sparse_pass2 and sampling.coarse_engine != "gemm_dense":
-        raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
-    adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
+    adaptive_em_kwargs["sparse_pass2"] = True
     logger.info(
         "RELION adaptive K-class routing through run_dense_k_class_em_adaptive "
-        "(oversampling=%d, pass2_backend=%s, fine_mstep_prune=%s)",
+        "(oversampling=%d, pass2_backend=sparse, fine_mstep_prune=True)",
         adaptive_os,
-        "sparse" if sparse_pass2 else "dense",
-        bool(sparse_pass2),
     )
-    common_kwargs = _adaptive_engine_common_kwargs(
-        pass2_grids,
-        priors,
-        batching,
-        sampling,
-        execution,
-        sparse_pass2=sparse_pass2,
-        full_grid_mstep=sampling.coarse_engine == "gemm_dense",
-    )
+    common_kwargs = _adaptive_engine_common_kwargs(pass2_grids, priors, batching, sampling, execution)
     # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag): the
     # projection and backprojection matrices carry it.
     projected, grid_kwargs = engine_projection_inputs(
@@ -552,37 +409,22 @@ def _score_adaptive_k1_dense(
         symmetry=symmetry,
     )
     adaptive_em_kwargs = dict(base_em_kwargs)
-    sparse_pass2 = _sparse_pass2_selected("RELAX_K1_DENSE_PASS2")
-    if symmetry != "C1" and not sparse_pass2 and sampling.coarse_engine != "gemm_dense":
-        raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
-    skip_significance_pruning = _k1_skip_significance_pruning_enabled()
-    adaptive_em_kwargs["sparse_pass2"] = sparse_pass2
+    adaptive_em_kwargs["sparse_pass2"] = True
     if half.scale_group_ids is not None:
         adaptive_em_kwargs["group_ids"] = half.scale_group_ids
     if relion_x_half_mstep:
         adaptive_em_kwargs["mstep_relion_x_half"] = True
     logger.info(
         "RELION adaptive K=1 routing through run_dense_k_class_em_adaptive "
-        "(oversampling=%d, pass2_backend=%s, skip_significance_pruning=%s, "
-        "fine_mstep_prune=%s, relion_x_half_mstep=%s, supplied_ppref=%s, "
+        "(oversampling=%d, pass2_backend=sparse, "
+        "fine_mstep_prune=True, relion_x_half_mstep=%s, supplied_ppref=%s, "
         "engine_ppref=%s)",
         adaptive_os,
-        "sparse" if sparse_pass2 else "dense",
-        bool(skip_significance_pruning),
-        bool(sparse_pass2),
         bool(relion_x_half_mstep),
         half.projector is not None,
         adaptive_em_kwargs.get("relion_projector_half") is not None,
     )
-    common_kwargs = _adaptive_engine_common_kwargs(
-        pass2_grids,
-        priors,
-        batching,
-        sampling,
-        execution,
-        sparse_pass2=sparse_pass2,
-        full_grid_mstep=sampling.coarse_engine == "gemm_dense",
-    )
+    common_kwargs = _adaptive_engine_common_kwargs(pass2_grids, priors, batching, sampling, execution)
     projected, grid_kwargs = engine_projection_inputs(
         half.particles.dataset,
         scale=optics.projection_scale,
@@ -592,7 +434,6 @@ def _score_adaptive_k1_dense(
                 sampling.coarse_scoring_rotations
                 if sampling.coarse_scoring_rotations is not None
                 and adaptive_os == 0
-                and sparse_pass2
                 and relion_x_half_mstep
                 and variant.firstiter_score_mode_this_iter == "gaussian"
                 and not execution.diagnostic_float64_pass2
@@ -616,7 +457,6 @@ def _score_adaptive_k1_dense(
         pass2_grids.rotation_parent_map,
         pass2_grids.translation_parent_map,
         execution.disc_type,
-        skip_significance_pruning=skip_significance_pruning,
         pass2_use_float64_scoring=True if execution.diagnostic_float64_pass2 else None,
         pass2_use_float64_projections=True if execution.diagnostic_float64_pass2 else None,
         coarse_translation_phase_source=pass2_grids.coarse_translation_phase_source,
@@ -691,8 +531,8 @@ def _score_half_dense_one_shape(
     symmetry = canonicalize_rotational_symmetry(sampling.symmetry)
     if symmetry != "C1" and int(sampling.oversampling_order) <= 0 and sampling.coarse_engine != "gemm_dense":
         raise NotImplementedError(
-            f"{symmetry} non-adaptive dense reconstruction is unsupported; "
-            "use the adaptive sparse or exact-local RELION x-half M-step"
+            f"{symmetry} reconstruction at adaptive oversampling 0 is unsupported; "
+            "use adaptive oversampling >= 1 or the exact-local RELION x-half M-step"
         )
     safe_ibs, safe_rbs = batching.safe_batch_sizes(
         sampling.effective_rotations.shape[0],
@@ -709,7 +549,6 @@ def _score_half_dense_one_shape(
         "relion_exact_fine_gaussian": scoring_policy.RELION_EXACT_FINE_GAUSSIAN,
         "do_gridding_correction": True,
         "square_window": RELION_FOURIER_WINDOW_SQUARE,
-        "sparse_pass2": False,
         "image_batch_size": safe_ibs,
         "rotation_block_size": safe_rbs,
         "current_size": sampling.cs_for_engine,
@@ -735,13 +574,7 @@ def _score_half_dense_one_shape(
         em_kwargs["reconstruction_current_size"] = sampling.model_current_size_for_engine
     if execution.preserve_bpref_particle_order and variant.k_class_enabled:
         raise ValueError("RELION BPref particle-order preservation is K=1-only")
-    if half.image_seed_classes is not None and (
-        not variant.k_class_enabled
-        or not (
-            variant.relion_firstiter_cc_this_iter
-            or _dense_uses_adaptive_engine(sampling.oversampling_order, half.scale_group_ids)
-        )
-    ):
+    if half.image_seed_classes is not None and not variant.k_class_enabled:
         raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
     if execution.preserve_bpref_particle_order:
         em_kwargs["preserve_bpref_particle_order"] = True
@@ -864,7 +697,7 @@ def _score_half_dense_one_shape(
                 firstiter_execution,
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
-        elif sampling.coarse_engine != "auto" or _dense_uses_adaptive_engine(sampling.oversampling_order, half.scale_group_ids):
+        else:
             k_class_result, pass2_grids = _score_adaptive_kclass_dense(
                 half,
                 sampling,
@@ -881,16 +714,6 @@ def _score_half_dense_one_shape(
             trans_pmap_for_collapse = pass2_grids.translation_parent_map
             n_trans_fine_for_collapse = pass2_grids.n_fine_translations
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
-        else:
-            k_class_result = _score_direct_kclass_dense(
-                half,
-                sampling,
-                priors,
-                execution,
-                optics,
-                em_kwargs,
-            )
-            k_class_mstep_full_half_axis_this_score = None
         if optics.projection_scale != 1.0 or magnification is not None:
             # Poses are reported unscaled and unmagnified; only projection used the transformed matrices.
             def unmagnified(rotations):
@@ -926,161 +749,157 @@ def _score_half_dense_one_shape(
         score_result.mstep_accumulator_shape = getattr(k_class_result, "mstep_accumulator_shape", None)
         return score_result
 
-    if sampling.coarse_engine != "auto" or execution.preserve_bpref_particle_order or _dense_uses_adaptive_engine(
-        sampling.oversampling_order, half.scale_group_ids
-    ):
-        if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
-            raise NotImplementedError("K=1 adaptive oversampling does not support adjoint ablation flags")
-        adaptive_os_local = int(sampling.oversampling_order)
-        rot_pmap_for_collapse = None
-        trans_pmap_for_collapse = None
-        n_trans_fine_for_collapse = None
-        fine_rotations_for_pose = None
-        if variant.relion_firstiter_cc_this_iter:
-            if adaptive_os_local <= 0:
-                # The sparse engine supplies group statistics and per-particle
-                # BPref launches even for a single pass on the current grid.
-                firstiter_coarse_current_size = sampling.cs_for_engine
-                firstiter_fine_current_size = sampling.cs_for_engine
-                logger.info(
-                    "RELION K=1 group statistics or BPref order at oversampling 0: single pass through the "
-                    "adaptive engine (current_size=%s)",
-                    sampling.cs_for_engine,
-                )
-            k1_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
-            if symmetry != "C1" and not k1_relion_x_half_mstep:
-                raise RuntimeError(
-                    f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
-                    "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
-                    "custom CUDA is unsupported for non-C1 symmetry"
-                )
-            (
-                k1_adaptive_result,
-                rot_pmap_for_collapse,
-                trans_pmap_for_collapse,
-                n_trans_fine_for_collapse,
-                adaptive_os_local,
-            ) = _score_kclass_firstiter_cc_pass2(
-                replace(firstiter_data, mean=jnp.asarray(half.reference)[None, :]),
-                replace(
-                    firstiter_grid,
-                    # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
-                    projection_rotations=lambda rotations: projection_rotations(
-                        rotations,
-                        optics.projection_scale,
-                        dataset_projection_magnification(half.particles.dataset),
-                    ),
+    if execution.disable_adjoint_y or execution.disable_adjoint_ctf:
+        raise NotImplementedError("K=1 adaptive oversampling does not support adjoint ablation flags")
+    adaptive_os_local = int(sampling.oversampling_order)
+    rot_pmap_for_collapse = None
+    trans_pmap_for_collapse = None
+    n_trans_fine_for_collapse = None
+    fine_rotations_for_pose = None
+    if variant.relion_firstiter_cc_this_iter:
+        if adaptive_os_local <= 0:
+            # The sparse engine supplies group statistics and per-particle
+            # BPref launches even for a single pass on the current grid.
+            firstiter_coarse_current_size = sampling.cs_for_engine
+            firstiter_fine_current_size = sampling.cs_for_engine
+            logger.info(
+                "RELION K=1 group statistics or BPref order at oversampling 0: single pass through the "
+                "adaptive engine (current_size=%s)",
+                sampling.cs_for_engine,
+            )
+        k1_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
+        if symmetry != "C1" and not k1_relion_x_half_mstep:
+            raise RuntimeError(
+                f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
+                "RELAX_K1_RELION_X_HALF_MSTEP=0, CPU-only execution, or disabled "
+                "custom CUDA is unsupported for non-C1 symmetry"
+            )
+        (
+            k1_adaptive_result,
+            rot_pmap_for_collapse,
+            trans_pmap_for_collapse,
+            n_trans_fine_for_collapse,
+            adaptive_os_local,
+        ) = _score_kclass_firstiter_cc_pass2(
+            replace(firstiter_data, mean=jnp.asarray(half.reference)[None, :]),
+            replace(
+                firstiter_grid,
+                # Images on another grid (applyScaleDifference) or magnified (applyAnisoMag).
+                projection_rotations=lambda rotations: projection_rotations(
+                    rotations,
+                    optics.projection_scale,
+                    dataset_projection_magnification(half.particles.dataset),
                 ),
-                firstiter_policy,
-                replace(
-                    firstiter_batching,
-                    em_kwargs={
-                        **em_kwargs,
-                        **({"mstep_relion_x_half": True} if k1_relion_x_half_mstep else {}),
-                        **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
-                    },
-                ),
-                replace(firstiter_execution, log_label="K=1 "),
-            )
-        else:
-            k1_adaptive_result, pass2_grids = _score_adaptive_k1_dense(
-                half,
-                sampling,
-                priors,
-                batching,
-                variant,
-                execution,
-                optics,
-                em_kwargs,
-                symmetry=symmetry,
-            )
-            rot_pmap_for_collapse = pass2_grids.rotation_parent_map
-            trans_pmap_for_collapse = pass2_grids.translation_parent_map
-            n_trans_fine_for_collapse = pass2_grids.n_fine_translations
-            fine_rotations_for_pose = pass2_grids.fine_rotations
-        ha_k = np.asarray(k1_adaptive_result.pose_assignments, dtype=np.int32)
-        Ft_y_k = _select_single_class_accumulator(k1_adaptive_result.Ft_y, label="Ft_y")
-        Ft_ctf_k = _select_single_class_accumulator(k1_adaptive_result.Ft_ctf, label="Ft_ctf")
-        em_stats_k = _collapse_single_class_stats_to_coarse(
-            k1_adaptive_result.stats,
-            rot_parent_map=rot_pmap_for_collapse,
-            n_rot_coarse=sampling.effective_rotations.shape[0],
-            dtype=_dense_global_scoring_dtype(),
-        )
-        noise_stats_k = k1_adaptive_result.aggregate_noise_stats
-        if noise_stats_k is None and k1_adaptive_result.noise_stats is not None:
-            noise_stats_k = k1_adaptive_result.noise_stats[0]
-        if noise_stats_k is None:
-            raise RuntimeError("K=1 adaptive path did not return noise statistics")
-        coarse_ha_k = _coarse_pose_assignments(
-            ha_k,
-            rot_parent_map=rot_pmap_for_collapse,
-            trans_parent_map=trans_pmap_for_collapse,
-            n_trans_coarse=sampling.current_translations.shape[0],
-            n_trans_fine=n_trans_fine_for_collapse,
-        )
-        if execution.return_best_pose_details:
-            if k1_adaptive_result.best_pose_rotations is None or k1_adaptive_result.best_pose_translations is None:
-                raise RuntimeError("K=1 adaptive path did not return best pose details")
-            pose_dtype = _dense_global_scoring_dtype()
-            best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
-            magnification = dataset_projection_magnification(half.particles.dataset)
-            if optics.projection_scale != 1.0 or magnification is not None:
-                # Poses are reported unscaled and unmagnified; only projection used the transformed matrices.
-                best_rots = np.asarray(
-                    reported_rotations(best_rots, optics.projection_scale, magnification), dtype=pose_dtype
-                )
-            best_eulers = (
-                np.asarray(k1_adaptive_result.best_pose_eulers_deg, dtype=np.float64)
-                if k1_adaptive_result.best_pose_eulers_deg is not None
-                else utils.R_to_relion(best_rots, degrees=True).astype(pose_dtype)
-            )
-            best_translations = np.asarray(
-                k1_adaptive_result.best_pose_translations, dtype=pose_dtype
-            )
-        else:
-            best_rots = best_eulers = best_translations = None
-        if fine_rotations_for_pose is None and rot_pmap_for_collapse is not None:
-            fine_rotations_for_pose = prepare_adaptive_pass2_grids(
-                sampling.effective_rotations,
-                sampling.current_translations,
-                sampling.base_translations,
-                healpix_order=sampling.current_healpix_order,
-                adaptive_oversampling=adaptive_os_local,
-                translation_step=sampling.translation_step,
-                random_perturbation=sampling.random_perturbation,
-                coarse_rotation_ids=sampling.coarse_rotation_ids,
-                symmetry=symmetry,
-            ).fine_rotations
-        fine_rotation_eulers_for_pose = None
-        if fine_rotations_for_pose is not None and _parity_dump.is_active():
-            fine_rotation_eulers_for_pose = utils.R_to_relion(
-                np.asarray(fine_rotations_for_pose, dtype=np.float32),
-                degrees=True,
-            ).astype(np.float32)
-        return HalfScoreResult(
-            ha=ha_k,
-            Ft_y=Ft_y_k,
-            Ft_ctf=Ft_ctf_k,
-            em_stats=em_stats_k,
-            noise_stats=noise_stats_k,
-            best_pose_rotations=best_rots,
-            best_pose_rotation_eulers=best_eulers,
-            best_pose_translations=best_translations,
-            coarse_ha=coarse_ha_k,
-            pose_rotations=fine_rotations_for_pose,
-            pose_rotation_eulers=fine_rotation_eulers_for_pose,
-            significant_counts=(
-                None
-                if k1_adaptive_result.significant_counts is None
-                else np.asarray(k1_adaptive_result.significant_counts, dtype=np.int32)
             ),
-            profile_summary=k1_adaptive_result.profile_summary,
-            mstep_full_half_axis=k1_adaptive_result.mstep_full_half_axis,
-            mstep_accumulator_shape=getattr(k1_adaptive_result, "mstep_accumulator_shape", None),
+            firstiter_policy,
+            replace(
+                firstiter_batching,
+                em_kwargs={
+                    **em_kwargs,
+                    **({"mstep_relion_x_half": True} if k1_relion_x_half_mstep else {}),
+                    **reference_grid_kwargs(optics.reference_current_size, optics.projection_scale),
+                },
+            ),
+            replace(firstiter_execution, log_label="K=1 "),
         )
+    else:
+        k1_adaptive_result, pass2_grids = _score_adaptive_k1_dense(
+            half,
+            sampling,
+            priors,
+            batching,
+            variant,
+            execution,
+            optics,
+            em_kwargs,
+            symmetry=symmetry,
+        )
+        rot_pmap_for_collapse = pass2_grids.rotation_parent_map
+        trans_pmap_for_collapse = pass2_grids.translation_parent_map
+        n_trans_fine_for_collapse = pass2_grids.n_fine_translations
+        fine_rotations_for_pose = pass2_grids.fine_rotations
+    ha_k = np.asarray(k1_adaptive_result.pose_assignments, dtype=np.int32)
+    Ft_y_k = _select_single_class_accumulator(k1_adaptive_result.Ft_y, label="Ft_y")
+    Ft_ctf_k = _select_single_class_accumulator(k1_adaptive_result.Ft_ctf, label="Ft_ctf")
+    em_stats_k = _collapse_single_class_stats_to_coarse(
+        k1_adaptive_result.stats,
+        rot_parent_map=rot_pmap_for_collapse,
+        n_rot_coarse=sampling.effective_rotations.shape[0],
+        dtype=_dense_global_scoring_dtype(),
+    )
+    noise_stats_k = k1_adaptive_result.aggregate_noise_stats
+    if noise_stats_k is None and k1_adaptive_result.noise_stats is not None:
+        noise_stats_k = k1_adaptive_result.noise_stats[0]
+    if noise_stats_k is None:
+        raise RuntimeError("K=1 adaptive path did not return noise statistics")
+    coarse_ha_k = _coarse_pose_assignments(
+        ha_k,
+        rot_parent_map=rot_pmap_for_collapse,
+        trans_parent_map=trans_pmap_for_collapse,
+        n_trans_coarse=sampling.current_translations.shape[0],
+        n_trans_fine=n_trans_fine_for_collapse,
+    )
+    if execution.return_best_pose_details:
+        if k1_adaptive_result.best_pose_rotations is None or k1_adaptive_result.best_pose_translations is None:
+            raise RuntimeError("K=1 adaptive path did not return best pose details")
+        pose_dtype = _dense_global_scoring_dtype()
+        best_rots = np.asarray(k1_adaptive_result.best_pose_rotations, dtype=pose_dtype)
+        magnification = dataset_projection_magnification(half.particles.dataset)
+        if optics.projection_scale != 1.0 or magnification is not None:
+            # Poses are reported unscaled and unmagnified; only projection used the transformed matrices.
+            best_rots = np.asarray(
+                reported_rotations(best_rots, optics.projection_scale, magnification), dtype=pose_dtype
+            )
+        best_eulers = (
+            np.asarray(k1_adaptive_result.best_pose_eulers_deg, dtype=np.float64)
+            if k1_adaptive_result.best_pose_eulers_deg is not None
+            else utils.R_to_relion(best_rots, degrees=True).astype(pose_dtype)
+        )
+        best_translations = np.asarray(
+            k1_adaptive_result.best_pose_translations, dtype=pose_dtype
+        )
+    else:
+        best_rots = best_eulers = best_translations = None
+    if fine_rotations_for_pose is None and rot_pmap_for_collapse is not None:
+        fine_rotations_for_pose = prepare_adaptive_pass2_grids(
+            sampling.effective_rotations,
+            sampling.current_translations,
+            sampling.base_translations,
+            healpix_order=sampling.current_healpix_order,
+            adaptive_oversampling=adaptive_os_local,
+            translation_step=sampling.translation_step,
+            random_perturbation=sampling.random_perturbation,
+            coarse_rotation_ids=sampling.coarse_rotation_ids,
+            symmetry=symmetry,
+        ).fine_rotations
+    fine_rotation_eulers_for_pose = None
+    if fine_rotations_for_pose is not None and _parity_dump.is_active():
+        fine_rotation_eulers_for_pose = utils.R_to_relion(
+            np.asarray(fine_rotations_for_pose, dtype=np.float32),
+            degrees=True,
+        ).astype(np.float32)
+    return HalfScoreResult(
+        ha=ha_k,
+        Ft_y=Ft_y_k,
+        Ft_ctf=Ft_ctf_k,
+        em_stats=em_stats_k,
+        noise_stats=noise_stats_k,
+        best_pose_rotations=best_rots,
+        best_pose_rotation_eulers=best_eulers,
+        best_pose_translations=best_translations,
+        coarse_ha=coarse_ha_k,
+        pose_rotations=fine_rotations_for_pose,
+        pose_rotation_eulers=fine_rotation_eulers_for_pose,
+        significant_counts=(
+            None
+            if k1_adaptive_result.significant_counts is None
+            else np.asarray(k1_adaptive_result.significant_counts, dtype=np.int32)
+        ),
+        profile_summary=k1_adaptive_result.profile_summary,
+        mstep_full_half_axis=k1_adaptive_result.mstep_full_half_axis,
+        mstep_accumulator_shape=getattr(k1_adaptive_result, "mstep_accumulator_shape", None),
+    )
 
-    return _score_direct_k1_dense(half, sampling, execution, em_kwargs)
 
 
 def _dense_owners_for_shape(

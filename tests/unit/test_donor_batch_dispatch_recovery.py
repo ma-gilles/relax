@@ -1,8 +1,6 @@
 """Donor memory policy and metadata-only batch shape regressions."""
 import numpy as np
-from relax.helpers.shape_buckets import pad_batch_data_ctf_and_valid_mask
 from relax.scoring.significance import _pad_significance_preprocess_inputs
-from helpers.float_compare import assert_matches
 
 
 class ShapeOnlyBatch:
@@ -14,9 +12,5 @@ class ShapeOnlyBatch:
 def test_unpadded_batch_shape_does_not_copy_to_host():
     batch = ShapeOnlyBatch()
     ctf = np.ones((3, 9))
-    out = pad_batch_data_ctf_and_valid_mask(batch, ctf, 3)
-    assert out[0] is batch and out[1] is ctf
-    assert_matches(out[2], [True, True, True])
-    assert out[3:] == (3, 3)
     out = _pad_significance_preprocess_inputs(batch, ctf, None, None, None, None, target_size=3)
     assert out[0] is batch and out[1] is ctf

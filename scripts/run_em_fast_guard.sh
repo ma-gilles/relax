@@ -59,7 +59,7 @@ for helper in (
 for diagnostic in ("iteration", "reconstruction"):
     importlib.import_module(f"relax.diagnostics.{diagnostic}")
 execution_modules = (
-    "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class", "dense.em_engine",
+    "refinement.iteration_loop", "refinement.half_scoring", "classification.k_class",
     "scoring.significance", "sparse_pass2.resident_pass2", "sparse_pass2.dispatch",
     "refinement.firstiter_cc", "refinement.local_search_iteration",
 )
@@ -75,9 +75,6 @@ tests=(
   tests/unit/test_relion_replay_state.py
   tests/unit/test_healpix_order_oracle.py
   tests/unit/test_resolution_scheduling.py
-  tests/unit/test_dense_big_jit.py::test_dense_big_jit_pass1_matches_dense_primitives_for_modes
-  tests/unit/test_dense_big_jit.py::test_dense_big_jit_mstep_matches_dense_primitives_and_adjoint
-  tests/unit/test_dense_big_jit.py::test_dense_big_jit_masks_padded_image_rows
 )
 
 exec "$PYTHON_BIN" -m pytest "${tests[@]}" -q "$@"

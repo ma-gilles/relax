@@ -299,8 +299,7 @@ class TestPosteriorParity:
 
         jax.config.update("jax_enable_x64", True)
         import jax.numpy as jnp
-
-        from relax.scoring.scoring import _e_step_block_scores
+        from helpers.dense_block_scores import _e_step_block_scores
 
         s = _setup_scenario()
         N = s["N"]

@@ -203,14 +203,13 @@ Per-half dispatch belongs to
 [`half_scoring`](../../relax/refinement/half_scoring.py).
 Its dense and local adapters prepare engine arguments, retain adaptive/first-CC
 routing, and write class/pose fields into the caller-owned `PerHalfOutputs`.
-`_dense_uses_adaptive_engine` states the engine rule for K=1 and K-class scoring:
-RELION's `storeWeightedSums` accumulates the group-scale `XA`/`AA` sums and the
-norm-correction residuals in every pass, so scoring with RELION scale groups uses
-the adaptive/sparse engine at the requested oversampling order, including 0, where
-its single coarse pass on the current grid is RELION's single pass; positive
-oversampling always keeps the two-pass adaptive expectation (pass 1 at the
-current size when no reduced coarse size exists); the direct dense engine serves
-only runs without scale groups at oversampling 0
+Every global K=1 and K-class scoring call runs the adaptive/sparse engine at the requested
+oversampling order, including 0, where its single coarse pass on the current grid is RELION's
+single pass (RELION's `storeWeightedSums` accumulates the group-scale `XA`/`AA` sums and the
+norm-correction residuals in every pass); positive oversampling keeps the two-pass adaptive
+expectation (pass 1 at the current size when no reduced coarse size exists). The direct dense
+engine (`run_em`) that served runs without scale groups at oversampling 0 was removed on
+2026-10-03
 ([`test_dense_scale_group_routing.py`](../../tests/unit/test_dense_scale_group_routing.py)).
 [`prepare_adaptive_pass2_grids`](../../relax/helpers/oversampling.py) materializes the perturbed coarse grid, the
 oversampled children with parent maps, the fine M-step rotations and the coarse
@@ -220,9 +219,9 @@ translation phase source for both routes
 identically to `run_dense_k_class_em_adaptive` (noise accumulation, RELION's adaptive
 fraction, the fine M-step rotations pruned only for sparse pass 2); the K=1 call adds
 significance skipping, the diagnostic float64 pass 2 and the host-double coarse
-translation phases, and the K-class call plans its own batches. `k_class._sparse_pass2_selected`
-reads the `RELAX_K1_DENSE_PASS2` / `RELAX_K_CLASS_DENSE_PASS2` diagnostic switches
-for the three adaptive call sites, and `_coarse_pose_assignments` collapses fine pose
+translation phases, and the K-class call plans its own batches. Pass 2 always runs on the
+device-resident sparse engine (the dense pass 2 and its `RELAX_K1_DENSE_PASS2` /
+`RELAX_K_CLASS_DENSE_PASS2` switches were removed on 2026-10-03), and `_coarse_pose_assignments` collapses fine pose
 assignments onto the coarse grid when a fine pass ran
 ([`test_adaptive_engine_call_owner.py`](../../tests/unit/test_adaptive_engine_call_owner.py)).
 [`heterogeneity._fixed_rotation_covariance_images`](../../relax/reference/heterogeneity.py) accumulates the
@@ -279,18 +278,10 @@ scorers share the same kwargs object; policy imports do not load engine modules.
 These owners have no imports back into the controller. Log messages are unchanged,
 with namespaces following the owner of each moved function.
 
-The dense single-class kernel is
-[`em_engine.run_em`](../../relax/dense/em_engine.py).
-It returns `DenseEMResult` from
-[`helpers.types`](../../relax/helpers/types.py), with
-named `mean`, `hard_assignments`, `Ft_y`, `Ft_ctf`, `stats`, `noise_stats` and
-`profile` fields. Optional outputs are `None` when their existing flags are
-disabled; changing flags no longer changes tuple positions. The container does
-not copy arrays. Controller and K-class callers read these fields directly.
 Local searches (the fine pass and RELION's pass-1 parent probe) run on the device-resident
 local pass, [`resident_local_pass2`](../../relax/sparse_pass2/resident_local_pass2.py).
-[`k_class`](../../relax/classification/k_class.py) supplies dense,
-adaptive and local K-class orchestration.
+[`k_class`](../../relax/classification/k_class.py) supplies adaptive
+and local K-class orchestration.
 [`k_class_inputs`](../../relax/classification/k_class_inputs.py) owns
 class-axis validation, shared/per-class array selection and local prior layouts.
 It imports no execution engines; engine-specific keyword filtering stays in `k_class`.
@@ -607,7 +598,7 @@ Import execution entry points explicitly from their owners:
 ```python
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.classification.k_class_results import KClassEMResult
-from relax.classification.k_class import run_dense_k_class_em
+from relax.classification.k_class import run_dense_k_class_em_adaptive
 ```
 
 The package initializer does not re-export these names. The CPU fast guard

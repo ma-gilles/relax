@@ -650,7 +650,6 @@ def test_symmetry_reduced_coarse_tie_break_uses_relion_direction_major_order(lab
 @pytest.mark.parametrize(
     ("sparse_pass2", "x_half", "message"),
     [
-        (False, True, "requires sparse pass 2"),
         (True, False, "requires RELION x-half BPref"),
     ],
 )
@@ -710,7 +709,7 @@ def test_non_c1_adaptive_engine_requires_explicit_oversampling_order():
 
 
 @pytest.mark.parametrize("n_classes", [1, 2])
-def test_non_c1_nonadaptive_dense_reconstruction_fails_before_run_em(
+def test_non_c1_zero_oversampling_reconstruction_fails_before_scoring(
     monkeypatch,
     n_classes,
 ):
@@ -718,8 +717,8 @@ def test_non_c1_nonadaptive_dense_reconstruction_fails_before_run_em(
 
     monkeypatch.setattr(
         iteration_loop,
-        "run_em",
-        lambda *_args, **_kwargs: pytest.fail("unsupported non-C1 route called run_em"),
+        "run_dense_k_class_em_adaptive",
+        lambda *_args, **_kwargs: pytest.fail("unsupported non-C1 route reached the adaptive engine"),
     )
 
     common = dict(
@@ -763,7 +762,7 @@ def test_non_c1_nonadaptive_dense_reconstruction_fails_before_run_em(
         max_significants=-1,
         symmetry="I1",
     )
-    with pytest.raises(NotImplementedError, match="non-adaptive dense"):
+    with pytest.raises(NotImplementedError, match="at adaptive oversampling 0 is unsupported"):
         iteration_loop._score_half_dense(*_symmetric_dense_owners(iteration_loop, common))
 
 
@@ -986,7 +985,7 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
     from relax.refinement import half_scoring
 
     monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
-    for name in ("prepare_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_em", "run_dense_k_class_em_adaptive"):
+    for name in ("prepare_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_dense_k_class_em_adaptive"):
         monkeypatch.setattr(
             half_scoring,
             name,

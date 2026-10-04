@@ -140,7 +140,6 @@
 "tests/unit/test_cuda_relion_wavg_flat_rows.py": 1,
 "tests/unit/test_cuda_sparse_pass2_segmented_posterior.py": 8,
 "tests/unit/test_debug_relion_reference_replay.py": 0,
-"tests/unit/test_dense_big_jit.py": 1,
 "tests/unit/test_dense_iteration_behavior.py": 0,
 "tests/unit/test_dense_scale_group_routing.py": 0,
 "tests/unit/test_dense_shape_buckets.py": 0,

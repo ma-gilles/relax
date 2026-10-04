@@ -4,9 +4,12 @@ Tests:
 1. test_window_indices_at_full_resolution: At current_size=128, all N_half pixels included.
 2. test_window_indices_subset: At current_size=32, strict subset, count ~ pi*(16)^2 / 2.
 3. test_windowed_e_step_matches_full: At current_size=128, windowed path == non-windowed.
-4. test_windowed_m_step_roundtrip: Project -> window -> GEMM -> scatter -> adjoint.
-5. test_adjoint_dot_product_windowed: <Ax, y> == <x, A*y> for windowed operator.
-6. test_iteration_at_each_current_size: One run_em at current_size=32,64,128.
+4. test_adjoint_dot_product_windowed: <Ax, y> == <x, A*y> for windowed operator.
+
+The dense ``run_em`` iterations at each current size, its windowed M-step and its block
+invariance were removed with the dense engine (2026-10-03); the resident pass 2 is checked
+at windowed and full-box current sizes against the RELION E-step reference
+(``test_resident_relion_reference``) and for block invariance in ``test_resident_pass2_driver``.
 """
 
 import math
@@ -16,14 +19,13 @@ import pytest
 from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
-import jax
 import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
+from helpers.dense_block_scores import _e_step_block_scores
 from helpers.em_arrays import _hermitian_volume, _raw_real_image_2d
 from recovar import core
 from recovar.core.configs import ForwardModelConfig
 
-from relax.dense.em_engine import run_em
 from relax.helpers.fourier_window import (
     ALLOWED_CURRENT_SIZES,
     make_fourier_window_indices_np,
@@ -40,7 +42,7 @@ from relax.helpers.half_spectrum import (
 )
 from relax.helpers.preprocessing import preprocess_batch as _preprocess_batch
 from relax.helpers.projection import compute_projections_block as _compute_projections_block
-from relax.scoring.scoring import _e_step_block_scores, _e_step_block_scores_windowed, _m_step_block_windowed
+from relax.scoring.scoring import _e_step_block_scores_windowed
 
 pytestmark = pytest.mark.unit
 
@@ -614,8 +616,6 @@ class TestFourierWindowSpec:
         assert spec.n_score == 26 * (26 // 2 + 1)
         assert spec.n_recon == 265
         assert spec.projection_kwargs()["max_r"] == 13.0
-        assert spec.dense_big_jit_projection_max_r() == 13.0
-        assert spec.dense_big_jit_backprojection_max_r() == 13.0
         assert set(np.asarray(spec.recon_indices_np)).issubset(set(np.asarray(spec.score_indices_np)))
 
     def test_optics_remap_can_use_larger_score_window_than_model_reconstruction(self):
@@ -720,114 +720,7 @@ class TestFourierWindowSpec:
 
 
 # ===========================================================================
-# Test 4: Windowed M-step roundtrip
-# ===========================================================================
-
-
-class TestWindowedMStepRoundtrip:
-    """Project -> window -> GEMM -> scatter -> adjoint: energy only at low freq."""
-
-    def test_ft_y_energy_at_low_frequencies(self, seeded_inputs):
-        """M-step with small window should produce Ft_y with energy only at low-freq shells."""
-        s = seeded_inputs
-        config = s["config"]
-        volume = s["volume"]
-        rotations = s["rotations"]
-        translations = s["translations"]
-        noise_variance = s["noise_variance"]
-        ds = s["dataset"]
-
-        n_images = ds.n_units
-        n_trans = translations.shape[0]
-        n_rot = rotations.shape[0]
-        current_size = 4  # small window
-
-        batch_data = jnp.asarray(ds._images)
-        ctf_params = jnp.asarray(ds.CTF_params)
-
-        # Preprocess
-        shifted_half, batch_norm, ctf2_over_nv_half = _preprocess_batch(
-            ds,
-            batch_data,
-            ctf_params,
-            _constant_half_noise_variance(noise_variance),
-            translations,
-            config,
-        )
-
-        # Window
-        window_indices, n_windowed = make_fourier_window_indices_np(IMAGE_SHAPE, current_size)
-        wi = jnp.asarray(window_indices)
-        shifted_w = shifted_half[:, wi]
-        ctf2_w = ctf2_over_nv_half[:, wi]
-
-        # Projections (windowed)
-        proj_half, proj_abs2_half = _compute_projections_block(
-            volume, rotations, IMAGE_SHAPE, VOLUME_SHAPE, "linear_interp"
-        )
-        half_weights = make_half_image_weights(IMAGE_SHAPE)
-        hw = half_weights[wi]
-        proj_w = proj_half[:, wi]
-        proj_abs2_w = proj_abs2_half[:, wi]
-        proj_w_weighted = proj_w * hw
-        proj_abs2_w_weighted = proj_abs2_w * hw
-
-        # E-step to get scores
-        scores = _e_step_block_scores_windowed(
-            shifted_w,
-            batch_norm,
-            ctf2_w,
-            proj_w_weighted,
-            proj_abs2_w_weighted,
-            hw,
-            n_images,
-            n_trans,
-            n_windowed,
-            IMAGE_SHAPE,
-            VOLUME_SHAPE,
-        )
-        scores_flat = scores.reshape(n_images, -1)
-        log_Z = jax.scipy.special.logsumexp(scores_flat, axis=1)
-
-        # M-step (windowed)
-        Ft_y = jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64)
-        Ft_ctf = jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64)
-
-        (Ft_y, Ft_ctf, probs, _, _, summed_w, ctf_probs_w) = _m_step_block_windowed(
-            shifted_w,
-            scores,
-            log_Z,
-            rotations,
-            ctf2_w,
-            Ft_y,
-            Ft_ctf,
-            n_images,
-            n_trans,
-        )
-
-        # Scatter back to full half-spectrum
-        n_half = H * (W // 2 + 1)
-        summed_half = jnp.zeros((n_rot, n_half), dtype=summed_w.dtype)
-        summed_half = summed_half.at[:, wi].set(summed_w)
-
-        # Adjoint
-        Ft_y = core.adjoint_slice_volume(
-            summed_half,
-            rotations,
-            IMAGE_SHAPE,
-            VOLUME_SHAPE,
-            "linear_interp",
-            volume=Ft_y,
-            half_image=True,
-        )
-
-        # The volume Ft_y should have non-zero values (the adjoint distributes energy)
-        assert jnp.any(jnp.abs(Ft_y) > 0), "Ft_y should be non-zero"
-        assert jnp.all(jnp.isfinite(Ft_y)), "Ft_y should be finite"
-
-
-# ===========================================================================
-# Test 5: Adjoint dot product test for windowed operator
+# Test 4: Adjoint dot product test for windowed operator
 # ===========================================================================
 
 
@@ -972,111 +865,7 @@ class TestAdjointDotProductWindowed:
 
 
 # ===========================================================================
-# Test 6: Full iteration at each current_size
-# ===========================================================================
-
-
-class TestIterationAtEachCurrentSize:
-    """Run one full run_em iteration at each allowed current_size."""
-
-    @pytest.mark.parametrize("current_size", [4, 6, 8])
-    def test_iteration_produces_finite_results(self, seeded_inputs, current_size):
-        """run_em with current_size produces finite outputs and valid hard assignments."""
-        s = seeded_inputs
-        ds = s["dataset"]
-        volume = s["volume"]
-        noise_variance = s["noise_variance"]
-        rotations = np.array(s["rotations"])
-        translations = np.array(s["translations"])
-        mean_variance = np.ones(VOLUME_SIZE, dtype=np.float32) * 100.0
-
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=N_ROTATIONS,
-            current_size=current_size,
-        )
-        new_mean = em_result.mean
-        ha = em_result.hard_assignments
-        Ft_y = em_result.Ft_y
-        Ft_ctf = em_result.Ft_ctf
-        del em_result
-
-        # All outputs should be finite
-        assert np.all(np.isfinite(np.array(new_mean))), f"new_mean not finite at cs={current_size}"
-        assert np.all(np.isfinite(np.array(Ft_y))), f"Ft_y not finite at cs={current_size}"
-        assert np.all(np.isfinite(np.array(Ft_ctf))), f"Ft_ctf not finite at cs={current_size}"
-
-        # Hard assignments should be valid
-        assert ha.shape == (N_IMAGES,)
-        assert np.all(ha >= 0)
-        assert np.all(ha < N_ROTATIONS * N_TRANSLATIONS)
-
-    def test_full_resolution_matches_no_window(self, seeded_inputs):
-        """current_size=8 (full for 8x8 images) should match current_size=None."""
-        s = seeded_inputs
-        ds = s["dataset"]
-        volume = s["volume"]
-        noise_variance = s["noise_variance"]
-        rotations = np.array(s["rotations"])
-        translations = np.array(s["translations"])
-        mean_variance = np.ones(VOLUME_SIZE, dtype=np.float32) * 100.0
-
-        # No windowing
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=N_ROTATIONS,
-            current_size=None,
-        )
-        new_mean_none = em_result.mean
-        ha_none = em_result.hard_assignments
-        _ = em_result.Ft_ctf
-        del em_result
-
-        # current_size = 8 (full resolution for 8x8)
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=N_ROTATIONS,
-            current_size=8,
-        )
-        new_mean_8 = em_result.mean
-        ha_8 = em_result.hard_assignments
-        _ = em_result.Ft_ctf
-        del em_result
-
-        # current_size=8 for 8x8 images is NOT windowed (use_window is False
-        # when current_size >= image_shape[0]), so these should be identical
-        np.testing.assert_allclose(
-            np.array(new_mean_none),
-            np.array(new_mean_8),
-            atol=1e-5,
-            err_msg="current_size=8 should match no windowing for 8x8 images",
-        )
-        assert_matches(ha_none, ha_8)
-
-
-# ===========================================================================
-# Test 7: Quantize current_size
+# Test 5: Quantize current_size
 # ===========================================================================
 
 
@@ -1118,67 +907,8 @@ class TestQuantizeCurrentSize:
 
 
 # ===========================================================================
-# Test 9: Multiple rotation blocks with windowing
+# Test 6: RELION's window at the full box
 # ===========================================================================
-
-
-class TestWindowedMultipleBlocks:
-    """Results should be identical regardless of rotation block size with windowing."""
-
-    def test_block_size_invariance(self, seeded_inputs):
-        """Windowed results with block_size=N_ROT vs block_size=2 should match."""
-        s = seeded_inputs
-        ds = s["dataset"]
-        volume = s["volume"]
-        noise_variance = s["noise_variance"]
-        rotations = np.array(s["rotations"])
-        translations = np.array(s["translations"])
-        mean_variance = np.ones(VOLUME_SIZE, dtype=np.float32) * 100.0
-        current_size = 4
-
-        # All rotations in one block
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=N_ROTATIONS,
-            current_size=current_size,
-        )
-        new_mean_1 = em_result.mean
-        ha_1 = em_result.hard_assignments
-        _ = em_result.Ft_ctf
-        del em_result
-
-        # Split into blocks of 2
-        em_result = run_em(
-            ds,
-            volume,
-            mean_variance,
-            noise_variance,
-            rotations,
-            translations,
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=2,
-            current_size=current_size,
-        )
-        new_mean_2 = em_result.mean
-        ha_2 = em_result.hard_assignments
-        _ = em_result.Ft_ctf
-        del em_result
-
-        np.testing.assert_allclose(
-            np.array(new_mean_1),
-            np.array(new_mean_2),
-            atol=1e-4,
-            err_msg="Mean differs between single-block and multi-block with windowing",
-        )
-        assert_matches(ha_1, ha_2)
 
 
 @pytest.mark.unit
@@ -1283,47 +1013,3 @@ def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
     np.testing.assert_array_equal(clipped.score_indices_np, single.score_indices_np)
 
 
-def test_dense_run_em_window_at_box_scores_relions_window_at_the_box(seeded_inputs):
-    """VDAM's dense E-step (window_at_box) keeps RELION's window when the current size is the box.
-
-    RELION's resolution pointers cut ``ires >= N/2 + 1`` at every size, so the box is the windowed
-    path at ``current_size = N``: ``None`` and ``8`` agree, the unwindowed box path does not (it
-    scores and backprojects another support), and the frequency (3, 4) of an 8-pixel box, at
-    radius 5 = N/2 + 1, changes nothing.
-    """
-    s = seeded_inputs
-    ds = s["dataset"]
-    y, x = np.indices(IMAGE_SHAPE)
-    corner = MockDataset(np.random.default_rng(SEED))
-    corner._images = ds._images + np.cos(2.0 * np.pi * (3.0 * x + 4.0 * y) / IMAGE_SHAPE[0])[None].astype(np.float32)
-
-    def outputs(dataset, current_size, window_at_box):
-        result = run_em(
-            dataset,
-            s["volume"],
-            np.ones(VOLUME_SIZE, dtype=np.float32) * 100.0,
-            s["noise_variance"],
-            np.array(s["rotations"]),
-            np.array(s["translations"]),
-            "linear_interp",
-            image_batch_size=N_IMAGES,
-            rotation_block_size=N_ROTATIONS,
-            current_size=current_size,
-            window_at_box=window_at_box,
-            return_stats=True,
-        )
-        # float32 inputs: the added wave moves the other pixels' FFT by float32 rounding only. The best
-        # score is left out: its image-power term covers every pixel (RELION's highres_Xi2), a per-image
-        # constant the posterior does not see.
-        return (
-            np.asarray(result.Ft_y, np.complex64),
-            np.asarray(result.Ft_ctf, np.complex64),
-            np.asarray(result.stats.max_posterior_per_image, np.float32),
-        )
-
-    at_box = outputs(ds, 8, True)
-    for a, b in zip(outputs(ds, None, True), at_box):
-        assert_matches(a, b)
-    for a, b in zip(outputs(corner, 8, True), at_box):
-        assert_matches(a, b)
-    assert not matches(outputs(ds, 8, False)[0], at_box[0])

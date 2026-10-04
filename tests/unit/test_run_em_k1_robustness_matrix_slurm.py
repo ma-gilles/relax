@@ -781,8 +781,6 @@ def test_relion_binary_identity_is_recorded_in_case_job(tmp_path):
 @pytest.mark.parametrize(
     "case, env_name, value",
     [
-        ("32", "RELAX_K1_DENSE_PASS2", "1"),
-        ("32", "RELAX_K1_SKIP_SIGNIFICANCE_PRUNING", "1"),
         ("4", "RECOVAR_K1_COARSE_GAUSSIAN_FFI", "1"),
         ("7", "RELAX_K1_BPREF_EXECUTION_ORDER_CHUNK_SIZE", "220"),
         ("10", "RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "0"),

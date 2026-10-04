@@ -343,6 +343,7 @@ def test_k_class_replay_rejects_stop_after_pass2_with_contribution_capture(
             "--data-star",
             "/tmp/particles.star",
             "--stop-after-pass2-dump",
+            "--adaptive-2pass",
         ],
     )
 
@@ -369,6 +370,7 @@ def test_k_class_replay_stop_after_contribution_requires_exact_target_filters(
             "--data-star",
             "/tmp/particles.star",
             "--stop-after-contribution-dump",
+            "--adaptive-2pass",
         ],
     )
 

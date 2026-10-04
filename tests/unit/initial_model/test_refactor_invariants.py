@@ -136,39 +136,6 @@ def test_ensure_field_helper_preserves_metadata_array_identity():
 # ---------------------------------------------------------------------------
 
 
-def test_dense_run_em_reject_is_frozenset_with_pinned_contents():
-    """Reject list became a module-level frozenset (was a per-call list).
-
-    Pins the exact contents: the refactor froze this set so callers don't
-    pass unsupported kwargs to ``run_em``. A merge that adds entries must
-    update this test deliberately.
-    """
-    from relax.vdam.dense_adapter import _DENSE_RUN_EM_REJECT
-
-    assert isinstance(_DENSE_RUN_EM_REJECT, frozenset)
-    expected = frozenset(
-        {
-            "disable_adjoint_ctf",
-            "disable_adjoint_y",
-                "normalization_log_evidence",
-                "projection_mask_current_image_disk",
-                "recon_exact_radius",
-            "recon_square_window",
-            "reconstruct_with_masked_images",
-            "reconstruction_subtract_projected_reference",
-            "relion_projector_shape",
-            "return_best_pose_details",
-            "return_profile",
-            "return_stats",
-        }
-    )
-    assert _DENSE_RUN_EM_REJECT == expected, (
-        f"_DENSE_RUN_EM_REJECT contents drifted; "
-        f"added: {sorted(_DENSE_RUN_EM_REJECT - expected)}, "
-        f"removed: {sorted(expected - _DENSE_RUN_EM_REJECT)}"
-    )
-
-
 def test_sparse_pass2_result_fields_is_tuple_of_typed_attrs():
     """``_PARTICLE_RESULT_FIELDS`` is the single source of truth for which
     estep meta attributes get concatenated across sparse pass-2 batches.

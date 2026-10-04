@@ -182,7 +182,7 @@ def _sum_k_class_noise_stats(
 ) -> NoiseStats | None:
     """Aggregate Class3D noise stats with RELION's single global sum_weight.
 
-    Each per-class ``run_em`` call normalizes posteriors over poses within one
+    Each per-class engine call normalizes posteriors over poses within one
     class and reports ``sumw == n_images``.  RELION normalizes over the joint
     class x pose grid, so ``sum_weight`` is the sum of class responsibilities
     over images, not ``n_classes * n_images``.  Newer fused K-class paths

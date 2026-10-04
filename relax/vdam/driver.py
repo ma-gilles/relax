@@ -307,11 +307,6 @@ def _native_expectation_step(
             sampling_state,
             int(sampling_plan.healpix_order),
         )
-        if not bool(config.engine_kwargs.get("sparse_pass2", False)):
-            class_rotation_log_prior = native_sampling._expand_class_rotation_log_prior_for_dense_fine_grid(
-                class_rotation_log_prior,
-                sampling_plan,
-            )
         config.engine_kwargs["class_rotation_log_prior"] = class_rotation_log_prior
         config.engine_kwargs.setdefault(
             "max_significants",

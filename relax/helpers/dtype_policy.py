@@ -153,30 +153,6 @@ class DensePrecisionPolicy:
             proj_abs2_for_noise.astype(self.score_real_dtype),
         )
 
-    def cast_dense_big_jit_inputs(
-        self,
-        shifted_score,
-        shifted_recon,
-        score_weight,
-        recon_weight,
-        score_half_weights,
-        proj_score,
-    ):
-        shifted_score = shifted_score.astype(self.score_complex_dtype)
-        shifted_recon = shifted_recon.astype(self.score_complex_dtype)
-        score_weight = score_weight.astype(self.score_real_dtype)
-        recon_weight = recon_weight.astype(self.score_real_dtype)
-        score_half_weights = score_half_weights.astype(self.score_real_dtype)
-        proj_score = proj_score.astype(self.score_complex_dtype)
-        return (
-            shifted_score,
-            shifted_recon,
-            score_weight,
-            recon_weight,
-            score_half_weights,
-            proj_score,
-        )
-
 
 def _diagnostic_float64_pass2_matches(debug_iteration: int | None) -> bool:
     """Select genuine-f64 pass 2 without perturbing an earlier f32 boundary."""

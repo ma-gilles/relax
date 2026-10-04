@@ -316,16 +316,6 @@ def _relion_x_half_volume_to_full_device(volume_flat, recon_volume_shape):
     return relion_full.transpose(2, 1, 0).reshape(-1)
 
 
-def half_volume_accumulators_to_full(Ft_y, Ft_ctf, recon_volume_shape):
-    """Convert half-volume M-step accumulators back to the public full-volume contract."""
-
-    recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
-    return (
-        _half_volume_to_full_flat(Ft_y, recon_volume_shape),
-        _half_volume_to_full_flat(Ft_ctf, recon_volume_shape),
-    )
-
-
 def relion_x_half_volume_to_full(volume_flat, recon_volume_shape, *, force_host: bool = False):
     """Expand a RELION-layout ``(z, y, xhalf)`` accumulator to RECOVAR full layout.
 

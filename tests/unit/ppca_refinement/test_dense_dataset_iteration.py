@@ -24,7 +24,7 @@ from relax.ppca_refinement.refinement_loop import (
     run_dense_ppca_refinement_loop,
 )
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
-from relax.scoring.scoring import _e_step_block_scores
+from helpers.dense_block_scores import _e_step_block_scores
 from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit

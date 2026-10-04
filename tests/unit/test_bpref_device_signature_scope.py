@@ -261,9 +261,10 @@ def test_active_capture_accepts_fused_kclass_route(monkeypatch):
     )
 
 
-def test_later_capture_support_excludes_dense_full_support_fallback():
+def test_later_capture_support_is_the_sparse_soft_posterior_pass():
     source = inspect.getsource(k_class.run_dense_k_class_em_adaptive)
     support_start = source.index("later_soft_particle_fused_supported =")
     support_end = source.index("fused_atomic_diagnostic_supported =", support_start)
     support_block = source[support_start:support_end]
-    assert "and not skip_significance_pruning" in support_block
+    assert "and not firstiter_cc_pass2_only_best_coarse" in support_block
+    assert "skip_significance_pruning" not in source
