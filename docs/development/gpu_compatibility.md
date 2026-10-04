@@ -67,7 +67,7 @@ compile cache, one seed (relax 4f1f49b unless noted).
 | Tomo Class3D et13, 3 iterations | 346 | 415 | 724 (main 5b44d0b) | pending: hardware busy | pending: hardware busy |
 | Tomo VDAM K1 et09, 10 iterations | 115 | 119 | 216 | pending: hardware busy | pending: hardware busy |
 | Tomo VDAM K2 et15, 10 iterations | 121 | 139 | 185 | pending: hardware busy | pending: hardware busy |
-| PPCA tomo VDAM / SGD, 24 iterations (main 7b1e4da; P100 main 23c3ebd, live-memory sampler on) | 201 / 200 | — | 3857 / 3592 | pending: hardware busy | pending: hardware busy |
+| PPCA tomo VDAM / SGD, 24 iterations (main 7b1e4da; Polar cards main 23c3ebd, live-memory sampler on) | 201 / 200 | — | 3857 / 3592 | 2184 / 2134 | out of memory at radius 32 (open issue 2) |
 
 Agreement with the H100 run of the same commit and seed:
 
@@ -128,12 +128,18 @@ Fixed:
 | `relax ppca_initial_model` failed outside a git checkout | source identity records `head: None` (302748d3, ppcaspeed) | Polar runs start |
 | A relax command or script started inside a recovar checkout imported that checkout's recovar | importing relax refuses a recovar outside the installed package or editable checkout; `RELAX_ALLOW_SHADOWED_RECOVAR=1` permits it (relax/__init__.py `_reject_shadowed_recovar`) | unit and subprocess tests (`python -m relax.commands.*` and `python -c "import relax"`) with a shadowing package |
 | PPCA tomo at the default tile ran out of memory on 16 GB cards at the first radius-31 iteration (tile reader, then `_score_tile`) | the tile planner counts the block programs from XLA's memory analysis and the next tile's reader (main 06266b9b, ppcaspeed) | 16 GB emulation and a real P100 complete; P100 live peak 11.96 GiB against 12.33 GiB counted at r31. Unchanged on main 23c3ebd (P100 11.96 GiB, emulation 11.95 GiB against 12.36 GiB counted): the two later kept-buffer fixes (b3057db, 23c3ebd) leave the walls and the live peak of this fixture as they were at d1ba3e83 |
+| EMPIAR-10202 (box 800) died in the final all-data pass after 6 h 17 min: the 15.35 GiB projector texture, a CUDA allocation outside XLA's pool, did not fit once the pool had grown (relax#17). The benchmark runner imported relax before naming the command, so the texture reserve was skipped and the pool limit stayed 0.90 | `reserve_for_refinement` is the one call an entry point makes before the backend starts, and the refinement driver refuses at start-up a backend whose pool limit leaves no room for the run's texture (`require_projector_texture_reserve`, main 7242fae). The reserve changes the pool fraction above box 548 on an 80 GB card, above box 320 on 40 GB, and for every box on 16 GB | probe on an H100: texture fails at 0.90 after a 58 GiB pool, succeeds at 0.77; same-node pair from iteration 24 (14986821): without the reserve the final pass fails, with it the run completes (iteration 1594 s against 1450 s, final pass 1797 s); on a P100 an in-process caller that skips the reserve is refused in seconds, and the reserved caller and the command line run |
 
 Open:
 
-1. The V100 and A100 40 GB rows are pending: hardware busy (Polar's V100 and A100 nodes run multi-day
-   workloads). Their cells stay queued and fill in when the nodes free up. Meanwhile the P100 (16 GB, an
-   older architecture than V100), the A100 80 GB (sm_80) and the 16 to 40 GB emulation cover them.
+1. The V100 and A100 40 GB rows other than PPCA are pending: hardware busy (Polar's V100 and A100 nodes run
+   multi-day workloads). Their cells stay queued and fill in when the nodes free up. Meanwhile the P100 (16 GB,
+   an older architecture than V100), the A100 80 GB (sm_80) and the 16 to 40 GB emulation cover them.
+2. PPCA tomo runs out of memory on a real A100 40 GB at main 23c3ebd (Polar 413542, both optimizers, after
+   167 s and 119 s): at radius 32 the planner keeps the full tile of 150 and counts 30.78 GiB of a 31.68 GiB
+   budget, and the tile reader (`load_tilt_tile`) then fails to allocate 8.48 GiB. The 16 GB cards pass
+   because their tile is cut to 33, and the 80 GB cards have room to spare, so the count of the reader at a
+   full tile is short only where the budget is nearly used. With ppcaspeed.
 
 ## Policy audit of the 2026-10-03 landings
 
