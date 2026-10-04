@@ -471,21 +471,17 @@ def test_class_final_boundary_rejects_a_mismatched_source_and_reference_maps(ref
         )
 
 
-@pytest.mark.parametrize("source", ["explicit", "model_file"])
-@pytest.mark.parametrize("symmetry", ["C1", "C4"])
-@pytest.mark.parametrize("n_classes", [1, 4])
-def test_replay_keeps_prior_grid_identity_across_sampling_change(
-    monkeypatch, tmp_path, source, symmetry, n_classes,
-):
-    """The scorer resets an old-grid prior, as RELION updateAngularSampling does."""
+def _old_grid_prior(symmetry, old_order):
     from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
 
-    old_order, new_order = 1, 2
     count = rotation_grid_size(old_order, symmetry) // rotation_grid_n_in_planes(old_order)
     prior = np.zeros(count, dtype=np.float32)
     prior[:2] = [0.75, 0.25]
-    if n_classes > 1:
-        prior = np.stack([np.roll(prior, k) for k in range(n_classes)])
+    return prior
+
+
+def _sampling_change_operands(monkeypatch, tmp_path, source, prior, new_order, symmetry):
+    """The operands both replay operations take for a prior learned on the grid before a sampling change."""
     explicit = {"direction_prior": [prior, prior.copy()]} if source == "explicit" else None
     if source == "model_file":
         monkeypatch.setattr(relion_replay_module, "read_relion_sampling_metadata", lambda path: {
@@ -494,10 +490,7 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
         })
         for half in [1, 2]:
             (tmp_path / f"run_it001_half{half}_model.star").touch()
-        monkeypatch.setattr(relion_replay_module, "read_relion_direction_prior", lambda *a, **kw: prior.copy())
-        monkeypatch.setattr(relion_replay_module, "read_relion_direction_priors", lambda *a, **kw: prior.copy())
-    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
-    relion_replay_module.apply_iter_replay_overrides(
+    return dict(
         iter_replay_override=explicit,
         perturb_replay_relion_dir=str(tmp_path) if source == "model_file" else None,
         init_relion_iteration=0, iteration=1,
@@ -506,7 +499,6 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
             do_local_search=False, translation_range=1.0, translation_step=1.0,
         ), cs=32,
         image_geometry=ImageGeometry(image_shape=(8, 8), pixel_size_angstrom=2.0),
-        n_classes=n_classes,
         relion_half_inputs=initialize_halfsets(
         (None, None),
             previous_best_translations=None, previous_best_rotation_eulers=None,
@@ -518,9 +510,12 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
                                                   radial_per_half=[None, None],
                                                   average_radial=None,
                                               ), current_sigma_offset_angstrom=1.0,
-        direction_priors=direction_priors,
+        direction_priors=[DirectionPrior(None, None), DirectionPrior(None, None)],
          symmetry=symmetry,
     )
+
+
+def _assert_prior_keeps_its_grid_and_is_reset_by_the_scorer(direction_priors, prior, old_order, new_order, n_classes, symmetry):
     loaded = [p.values for p in direction_priors]
     orders = [p.healpix_order for p in direction_priors]
     assert orders == [old_order, old_order]
@@ -536,3 +531,31 @@ def test_replay_keeps_prior_grid_identity_across_sampling_change(
         )
         assert result.rotation_log_prior is None
         assert result.class_rotation_log_prior is None
+
+
+@pytest.mark.parametrize("source", ["explicit", "model_file"])
+@pytest.mark.parametrize("symmetry", ["C1", "C4"])
+def test_k1_replay_keeps_prior_grid_identity_across_sampling_change(monkeypatch, tmp_path, source, symmetry):
+    """The scorer resets an old-grid prior, as RELION updateAngularSampling does."""
+    old_order, new_order = 1, 2
+    prior = _old_grid_prior(symmetry, old_order)
+    operands = _sampling_change_operands(monkeypatch, tmp_path, source, prior, new_order, symmetry)
+    monkeypatch.setattr(relion_replay_module, "read_relion_direction_prior", lambda *a, **kw: prior.copy())
+    relion_replay_module.apply_k1_iter_replay_overrides(**operands)
+    _assert_prior_keeps_its_grid_and_is_reset_by_the_scorer(
+        operands["direction_priors"], prior, old_order, new_order, 1, symmetry
+    )
+
+
+@pytest.mark.parametrize("source", ["explicit", "model_file"])
+@pytest.mark.parametrize("symmetry", ["C1", "C4"])
+def test_class_replay_keeps_prior_grid_identity_across_sampling_change(monkeypatch, tmp_path, source, symmetry):
+    """The scorer resets an old-grid prior, as RELION updateAngularSampling does."""
+    old_order, new_order, n_classes = 1, 2, 4
+    prior = np.stack([np.roll(_old_grid_prior(symmetry, old_order), k) for k in range(n_classes)])
+    operands = _sampling_change_operands(monkeypatch, tmp_path, source, prior, new_order, symmetry)
+    monkeypatch.setattr(relion_replay_module, "read_relion_direction_priors", lambda *a, **kw: prior.copy())
+    relion_replay_module.apply_class_iter_replay_overrides(n_classes=n_classes, **operands)
+    _assert_prior_keeps_its_grid_and_is_reset_by_the_scorer(
+        operands["direction_priors"], prior, old_order, new_order, n_classes, symmetry
+    )
