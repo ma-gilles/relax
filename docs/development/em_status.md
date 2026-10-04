@@ -1031,7 +1031,11 @@ posterior, the winner, Pmax and the rotation mask; the device CTF row gather is 
 (`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`_publish_batch` in
 `significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
 before that batch's score program, and the image preprocess kernel's finite check is read at the end of the loop
-(`kernels.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. A dump
+(`kernels.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
+check's queue belongs to the loop: a failure names pass 1 and each batch with an invalid image (batch number, positions
+in the pass, dataset image range; the kernel reports a count per call), it is raised before pass 1 returns, and a loop
+that fails for another reason drops its unread checks. The check reads the soft-mask background, so it sees a
+non-finite pixel there, as the per-call check did. A dump
 batch publishes at once. Outputs are unchanged: fixed-state replays (plain 10k K=1 it130 -> 131; ribosome it150 ->
 151 at K15, K4, K1) give identical per-particle `rlnNrOfSignificantSamples`, Pmax and class. Measured: median
 60-image coarse batch 73-98 ms -> 42-51 ms (one A100, it130 -> 131); plain 10k/256 K=1 full VDAM run on one H100

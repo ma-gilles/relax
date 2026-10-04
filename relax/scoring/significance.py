@@ -1869,13 +1869,17 @@ def _compute_k_class_significance_batched(
 
     # The image preprocess kernel's finite check is read at the end of the loop: read at each call, it
     # waits for the previous batch's score program inside the next batch's preparation.
-    with deferred_relion_preprocess_checks(), prefetched_batches(
+    with deferred_relion_preprocess_checks("pass 1") as preprocess_checks, prefetched_batches(
         iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)
     ) as batches:
         for batch_data, _, _, ctf_params, _, _, indices in batches:
             _coarse_batch_starts.append(time.time())
             actual_batch_size = len(indices)
             end_idx = start_idx + actual_batch_size
+            preprocess_checks.at(
+                f"batch {len(_coarse_batch_starts) - 1} (images {start_idx}-{end_idx - 1} of the pass, "
+                f"dataset images {int(indices[0])}-{int(indices[-1])})"
+            )
             # The outputs a batch has only on some routes; _publish_batch receives every name.
             batch_pmax = batch_weights = batch_sig_mask = batch_sig_rot_mask = batch_n_sig = batch_cutoff_count = None
             _batch_sum_weight = _batch_significant_weight = None

@@ -4106,15 +4106,15 @@ def relion_preprocess_real_f32(
     :func:`deferred_relion_preprocess_checks` block, else from
     ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``, off) removes that per-call
     read-back and stream synchronization: the device counts invalid images
-    into a small array that is queued for
-    :func:`drain_relion_preprocess_checks`, which the K-class pass-2 loop
-    calls at every bucket-group boundary and the iteration loop after each
-    E-step.  Until the drain, an invalid image carries NaN in its masked
-    exterior; the drain then raises the same failure, later.
+    into a small array that is queued on the open block, which reads it when
+    the block ends, or else for :func:`drain_relion_preprocess_checks`, which
+    the iteration loop calls after each E-step.  Until that read, an invalid
+    image carries NaN in its masked exterior; the read then raises the same
+    failure, later.
     """
 
     if deferred_finite_check is None:
-        deferred_finite_check = _RELION_PREPROCESS_DEFERRED_SCOPES > 0 or relion_preprocess_deferred_check_requested()
+        deferred_finite_check = bool(_RELION_PREPROCESS_DEFERRED_SCOPES) or relion_preprocess_deferred_check_requested()
     # A Python queue cannot retain status tracers from the local big JIT.
     # Keep the native fail-closed check inside that compiled execution.
     if type(jax.core.trace_ctx.trace).__name__ != "EvalTrace":
@@ -4160,34 +4160,76 @@ def relion_preprocess_deferred_check_requested() -> bool:
     return token == "1"
 
 
-# Open :func:`deferred_relion_preprocess_checks` scopes (the batch loops run on one thread).
-_RELION_PREPROCESS_DEFERRED_SCOPES = 0
+class DeferredPreprocessChecks:
+    """The soft-mask checks queued inside one :func:`deferred_relion_preprocess_checks` block.
+
+    ``at(label)`` names the batch the next preprocess calls belong to; the failure message lists
+    the labels of the batches that held an invalid image (the kernel reports a count per call, not
+    which images of the call).
+    """
+
+    def __init__(self, where: str):
+        self.where = str(where)
+        self.label = "unlabelled batch"
+        self.pending: list[tuple[str, jax.Array]] = []
+
+    def at(self, label: str) -> None:
+        self.label = str(label)
+
+    def queue(self, invalid_count: jax.Array) -> None:
+        self.pending.append((self.label, invalid_count))
+        if len(self.pending) >= _RELION_PREPROCESS_PENDING_LIMIT:
+            self.raise_if_invalid()
+
+    def raise_if_invalid(self) -> int:
+        """Wait on the queued checks; raise naming every batch with an invalid image. Returns the number read."""
+
+        pending, self.pending = self.pending, []
+        if not pending:
+            return 0
+        counts = np.asarray(jnp.stack([jnp.sum(count) for _, count in pending])).astype(np.int64)
+        if int(counts.sum()):
+            batches = "; ".join(f"{label}: {int(count)} image(s)" for (label, _), count in zip(pending, counts) if count)
+            raise RuntimeError(
+                f"RELION CUDA preprocessing (deferred check, {self.where}): {int(counts.sum())} image(s) had a "
+                f"non-positive or non-finite soft-mask background, in {batches}"
+            )
+        return len(pending)
+
+
+# Open :func:`deferred_relion_preprocess_checks` scopes, innermost last (the batch loops run on one thread).
+_RELION_PREPROCESS_DEFERRED_SCOPES: list[DeferredPreprocessChecks] = []
 
 
 @contextmanager
-def deferred_relion_preprocess_checks():
+def deferred_relion_preprocess_checks(where: str):
     """Defer the soft-mask check of every ``relion_preprocess_real_f32`` call in the block to its end.
 
     A batch loop that keeps the device busy while the host prepares the next batch cannot afford the
     synchronous check: its read-back waits for everything queued before it. Inside the block the calls
-    queue their invalid-image counts instead, and leaving the block normally drains them
-    (:func:`drain_relion_preprocess_checks`), which raises for an invalid image: the same failure, at
-    the end of the loop instead of at the image's batch. An exception from the block propagates
-    unchanged; the queued checks stay for the next drain.
+    queue their invalid-image counts on the yielded :class:`DeferredPreprocessChecks` (the loop names
+    each batch with ``at``), and leaving the block normally reads them and raises for an invalid image,
+    naming ``where`` and the batches: the same failure, at the end of the loop instead of at the image's
+    batch. The queue belongs to the block: an exception from the block propagates unchanged and the
+    block's unread checks are dropped with it, so they cannot be reported against a later pass.
     """
 
-    global _RELION_PREPROCESS_DEFERRED_SCOPES
-    _RELION_PREPROCESS_DEFERRED_SCOPES += 1
+    checks = DeferredPreprocessChecks(where)
+    _RELION_PREPROCESS_DEFERRED_SCOPES.append(checks)
     try:
-        yield
+        yield checks
     finally:
-        _RELION_PREPROCESS_DEFERRED_SCOPES -= 1
-    drain_relion_preprocess_checks()
+        _RELION_PREPROCESS_DEFERRED_SCOPES.pop()
+    checks.raise_if_invalid()
 
 
 def _queue_relion_preprocess_check(invalid_count: jax.Array) -> None:
-    """Queue one device invalid-image count; drain when the queue is full."""
+    """Queue one device invalid-image count: on the innermost open scope, else on the process queue
+    (``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``), which drains when full."""
 
+    if _RELION_PREPROCESS_DEFERRED_SCOPES:
+        _RELION_PREPROCESS_DEFERRED_SCOPES[-1].queue(invalid_count)
+        return
     with _RELION_PREPROCESS_PENDING_LOCK:
         _RELION_PREPROCESS_PENDING_CHECKS.append(invalid_count)
         full = len(_RELION_PREPROCESS_PENDING_CHECKS) >= _RELION_PREPROCESS_PENDING_LIMIT
