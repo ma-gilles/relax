@@ -326,6 +326,8 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_sealed_sampling", f"K={k}, one iteration on a sealed sampling state (captured directions, psi "
             "angles, translations and sizes), adaptive oversampling 1", n_classes=k, join=0.0, sealed=True,
             oversampling=1, max_iter=1, converge_after=None, dump=False)
+    add("k1_sealed_final", "K=1 on a sealed sampling state that converges after its iteration: the final pass "
+        "reuses the sealed grid", n_classes=1, join=0.0, sealed=True, max_iter=1, converge_after=1, dump=False)
     return cases
 
 
