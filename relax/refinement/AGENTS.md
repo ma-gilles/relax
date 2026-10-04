@@ -53,7 +53,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## Pitfalls
 
-- `refine_single_volume` is 2,036 lines and its ceiling is 2,036. One added line fails
+- `refine_single_volume` is 2,031 lines and its ceiling is 2,031. One added line fails
   `test_refinement_structure_metrics.py`: extract or delete before you add.
 - Tests pin the controller's source text. `tests/unit/test_k1_mean_lifecycle.py` asserts that `del init_volume`
   precedes `_snapshot_and_release_previous_k1_means(reference_model.maps)`, which precedes
