@@ -2168,29 +2168,11 @@ def refine_single_volume(
         if debug.save_intermediates_dir is not None:
             _save_iteration_intermediates(
                 debug.save_intermediates_dir,
-                iteration=iteration,
-                Ft_y_0=Ft_y_0,
-                Ft_y_1=Ft_y_1,
-                Ft_ctf_0=Ft_ctf_0,
-                Ft_ctf_1=Ft_ctf_1,
-                means=reference_model.maps,
-                unreg_means=unreg_means,
-                fsc=fsc,
-                noise_variance=noise_model.average_variance,
-                noise_variance_per_half=noise_model.variance_per_half,
-                mean_variance=reference_model.tau2,
-                hard_assignments=hard_assignments,
-                coarse_ha=per_half.coarse_ha,
-                effective_rotations=trial_grid.rotations,
-                current_translations=coarse_grids.translations,
-                use_local=use_local,
-                local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
-                cs=current_size,
-                state=state,
-                n_classes=n_classes,
-                volume_shape=volume_shape,
-                voxel_size=source_pixel_size_angstrom,
-                symmetry=symmetry,
+                (Ft_y_0, Ft_y_1),
+                (Ft_ctf_0, Ft_ctf_1),
+                reference_model, noise_model, per_half, trial_grid, sampling_plan, options,
+                iteration=iteration, unreg_means=unreg_means, fsc=fsc, cs=current_size, state=state,
+                volume_shape=volume_shape, voxel_size=source_pixel_size_angstrom,
             )
 
         # --- This expectation's particle statistics: joined assignments, posterior maxima, optimizer Pmax ---
@@ -2298,16 +2280,7 @@ def refine_single_volume(
         )
         if debug.save_intermediates_dir is not None:
             _save_iteration_particle_states(
-                debug.save_intermediates_dir,
-                iteration=iteration,
-                rotation_matrices_per_half=[poses.rotations for poses in pose_update.current],
-                rotation_eulers_deg_per_half=[poses.eulers_deg for poses in pose_update.current],
-                relative_translations_pixels_per_half=[poses.relative_translations_pixels for poses in pose_update.current],
-                absolute_translations_pixels_per_half=[poses.translations_pixels for poses in pose_update.current],
-                max_posterior_per_half=per_half.max_posterior,
-                significant_counts_per_half=significance.per_half,
-                hard_assignments_per_half=hard_assignments,
-                coarse_hard_assignments_per_half=per_half.coarse_ha,
+                debug.save_intermediates_dir, pose_update.current, per_half, significance, iteration=iteration,
                 original_image_indices_per_half=[_source_image_indices(ds) for ds in experiment_datasets],
             )
 

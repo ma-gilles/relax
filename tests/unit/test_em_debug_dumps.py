@@ -11,6 +11,14 @@ from relax.diagnostics.iteration import _save_iteration_particle_states, _source
 pytestmark = pytest.mark.unit
 
 
+def _poses(rotations, eulers, relative, absolute):
+    return [
+        SimpleNamespace(rotations=rotations[k], eulers_deg=eulers[k], relative_translations_pixels=relative[k],
+                        translations_pixels=absolute[k])
+        for k in range(2)
+    ]
+
+
 def _per_half(value1, value2):
     return [np.asarray(value1), np.asarray(value2)]
 
@@ -28,15 +36,10 @@ def test_save_iteration_particle_states_preserves_source_aligned_values(tmp_path
 
     _save_iteration_particle_states(
         str(tmp_path),
+        _poses(rotations, eulers, relative, absolute),
+        SimpleNamespace(max_posterior=pmax, hard_assignments=hard, coarse_ha=coarse),
+        SimpleNamespace(per_half=counts),
         iteration=2,
-        rotation_matrices_per_half=rotations,
-        rotation_eulers_deg_per_half=eulers,
-        relative_translations_pixels_per_half=relative,
-        absolute_translations_pixels_per_half=absolute,
-        max_posterior_per_half=pmax,
-        significant_counts_per_half=counts,
-        hard_assignments_per_half=hard,
-        coarse_hard_assignments_per_half=coarse,
         original_image_indices_per_half=original,
     )
 
@@ -59,15 +62,10 @@ def test_save_iteration_particle_states_rejects_misaligned_fields(tmp_path):
     with pytest.raises(ValueError, match="not source-aligned for half 1"):
         _save_iteration_particle_states(
             str(tmp_path),
+            _poses(one, one, one, one),
+            SimpleNamespace(max_posterior=misaligned, hard_assignments=one, coarse_ha=one),
+            SimpleNamespace(per_half=one),
             iteration=0,
-            rotation_matrices_per_half=one,
-            rotation_eulers_deg_per_half=one,
-            relative_translations_pixels_per_half=one,
-            absolute_translations_pixels_per_half=one,
-            max_posterior_per_half=misaligned,
-            significant_counts_per_half=one,
-            hard_assignments_per_half=one,
-            coarse_hard_assignments_per_half=one,
             original_image_indices_per_half=one,
         )
 

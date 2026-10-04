@@ -809,36 +809,31 @@ def _write_iteration_debug_metadata(
     from relax.helpers import map_io
 
     monkeypatch.setattr(map_io, "write_map_from_ft", lambda *_args, **_kwargs: None)
-    kwargs = dict(
+    from relax.refinement.refinement_options import RefinementOptions, SymmetryOptions
+
+    _save_iteration_intermediates(
+        str(output_dir),
+        (None, None),
+        (None, None),
+        SimpleNamespace(
+            maps=[np.zeros(8, dtype=np.complex64), np.zeros(8, dtype=np.complex64)], tau2=np.ones(2, dtype=np.float32),
+        ),
+        SimpleNamespace(
+            average_variance=np.ones(2, dtype=np.float32),
+            variance_per_half=[np.ones(2, dtype=np.float32), np.ones(2, dtype=np.float32)],
+        ),
+        SimpleNamespace(hard_assignments=[None, None], coarse_ha=[None, None]),
+        SimpleNamespace(rotations=np.empty((0, 3, 3), dtype=np.float32), translations=np.zeros((1, 2), dtype=np.float32)),
+        SimpleNamespace(local=SimpleNamespace(search=SimpleNamespace(healpix_order=3))),
+        RefinementOptions() if symmetry is None else RefinementOptions(symmetry=SymmetryOptions(point_group=symmetry)),
         iteration=0,
-        Ft_y_0=None,
-        Ft_y_1=None,
-        Ft_ctf_0=None,
-        Ft_ctf_1=None,
-        means=[np.zeros(8, dtype=np.complex64), np.zeros(8, dtype=np.complex64)],
         unreg_means=[None, None],
         fsc=np.ones(2, dtype=np.float32),
-        noise_variance=np.ones(2, dtype=np.float32),
-        noise_variance_per_half=[
-            np.ones(2, dtype=np.float32),
-            np.ones(2, dtype=np.float32),
-        ],
-        mean_variance=np.ones(2, dtype=np.float32),
-        hard_assignments=[None, None],
-        coarse_ha=[None, None],
-        effective_rotations=np.empty((0, 3, 3), dtype=np.float32),
-        current_translations=np.zeros((1, 2), dtype=np.float32),
-        use_local=True,
-        local_search_order=3,
         cs=6,
         state=SimpleNamespace(healpix_order=3, sigma_rot=1.25),
-        n_classes=1,
         volume_shape=(2, 2, 2),
         voxel_size=1.0,
     )
-    if symmetry is not None:
-        kwargs["symmetry"] = symmetry
-    _save_iteration_intermediates(str(output_dir), **kwargs)
     return np.load(output_dir / "it000_meta.npy", allow_pickle=True).item()
 
 

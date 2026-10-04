@@ -253,30 +253,30 @@ def _source_image_indices(dataset) -> np.ndarray:
 
 def _save_iteration_particle_states(
     save_dir: str,
+    poses,
+    per_half,
+    significance,
     *,
     iteration: int,
-    rotation_matrices_per_half,
-    rotation_eulers_deg_per_half,
-    relative_translations_pixels_per_half,
-    absolute_translations_pixels_per_half,
-    max_posterior_per_half,
-    significant_counts_per_half,
-    hard_assignments_per_half,
-    coarse_hard_assignments_per_half,
     original_image_indices_per_half,
 ) -> None:
-    """Write source-aligned resolved particle state for one sealed iteration."""
+    """Write source-aligned resolved particle state for one sealed iteration.
+
+    Reads from ``poses`` (each half's ``ParticlePoses``): the rotations, Euler angles and relative and
+    absolute translations; from ``per_half`` (the iteration's ``PerHalfOutputs``): ``max_posterior``,
+    ``hard_assignments`` and ``coarse_ha``; from ``significance``: the per-half significant-sample counts.
+    """
 
     os.makedirs(save_dir, exist_ok=True)
     per_half_fields = {
-        "rotation_matrices": rotation_matrices_per_half,
-        "rotation_eulers_deg": rotation_eulers_deg_per_half,
-        "relative_translations_pixels": relative_translations_pixels_per_half,
-        "absolute_translations_pixels": absolute_translations_pixels_per_half,
-        "max_posterior": max_posterior_per_half,
-        "significant_counts": significant_counts_per_half,
-        "fine_hard_assignment": hard_assignments_per_half,
-        "coarse_hard_assignment": coarse_hard_assignments_per_half,
+        "rotation_matrices": [half_poses.rotations for half_poses in poses],
+        "rotation_eulers_deg": [half_poses.eulers_deg for half_poses in poses],
+        "relative_translations_pixels": [half_poses.relative_translations_pixels for half_poses in poses],
+        "absolute_translations_pixels": [half_poses.translations_pixels for half_poses in poses],
+        "max_posterior": per_half.max_posterior,
+        "significant_counts": significance.per_half,
+        "fine_hard_assignment": per_half.hard_assignments,
+        "coarse_hard_assignment": per_half.coarse_ha,
         "original_image_indices": original_image_indices_per_half,
     }
     for half_index in range(2):
@@ -309,34 +309,47 @@ def _save_iteration_particle_states(
 
 def _save_iteration_intermediates(
     save_dir: str,
+    numerators,
+    denominators,
+    reference_model,
+    noise_model,
+    per_half,
+    trial_grid,
+    sampling_plan,
+    options,
     *,
     iteration: int,
-    Ft_y_0,
-    Ft_y_1,
-    Ft_ctf_0,
-    Ft_ctf_1,
-    means,
     unreg_means,
     fsc,
-    noise_variance,
-    noise_variance_per_half,
-    mean_variance,
-    hard_assignments,
-    coarse_ha,
-    effective_rotations,
-    current_translations,
-    use_local: bool,
-    local_search_order: int,
     cs: int,
     state,
-    n_classes: int,
     volume_shape,
     voxel_size: float,
-    symmetry: str = "C1",
 ) -> None:
-    """Write per-iteration intermediate volumes + diagnostics to ``save_dir``."""
+    """Write per-iteration intermediate volumes + diagnostics to ``save_dir``.
+
+    ``numerators`` and ``denominators`` are the two halves' M-step accumulators as the reconstruction used
+    them. Reads ``reference_model.maps`` and ``tau2``; ``noise_model.average_variance`` and
+    ``variance_per_half``; ``per_half.hard_assignments`` and ``coarse_ha``; ``trial_grid.rotations`` and
+    ``translations``; ``sampling_plan.local`` (its search order, when the search is local);
+    ``state.healpix_order`` and ``sigma_rot``; ``options.k_class.n_classes`` and ``symmetry.point_group``.
+    """
     from relax.helpers.map_io import write_map_from_ft
 
+    Ft_y_0, Ft_y_1 = numerators
+    Ft_ctf_0, Ft_ctf_1 = denominators
+    means = reference_model.maps
+    mean_variance = reference_model.tau2
+    noise_variance = noise_model.average_variance
+    noise_variance_per_half = noise_model.variance_per_half
+    hard_assignments = per_half.hard_assignments
+    coarse_ha = per_half.coarse_ha
+    effective_rotations = trial_grid.rotations
+    current_translations = trial_grid.translations
+    use_local = sampling_plan.local is not None
+    local_search_order = sampling_plan.local.search.healpix_order if use_local else None
+    n_classes = int(options.k_class.n_classes)
+    symmetry = options.symmetry.point_group
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, f"it{iteration:03d}_Ft_y_0.npy"), _dump_array_or_empty(Ft_y_0))
     np.save(os.path.join(save_dir, f"it{iteration:03d}_Ft_y_1.npy"), _dump_array_or_empty(Ft_y_1))
