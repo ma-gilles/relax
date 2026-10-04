@@ -999,6 +999,24 @@ the score cache, the generic preprocessing and operands, the manual and dense co
 kernels in `relax/scoring/scoring.py` stay while dense `run_em` (deprecated, item 6) uses them.
 
 Pass 1 on stable Fourier-window shapes: tried 2026-10-03, no gain, not landed (speedw; team-lead decision).
+
+Pass-1 batch loop (2026-10-04, speedw; relax 0ae37fd, 54cbb65, 4efac62, 3636596): after the score program, one
+program per batch (`coarse_publication.coarse_support_posterior`) forms the K=1 RELION-order log weights, the float32
+posterior, the winner, Pmax and the rotation mask; the device CTF row gather is one program
+(`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`_publish_batch` in
+`significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
+before that batch's score program, and the image preprocess kernel's finite check is read at the end of the loop
+(`kernels.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. A dump
+batch publishes at once. Outputs are unchanged: fixed-state replays (plain 10k K=1 it130 -> 131; ribosome it150 ->
+151 at K15, K4, K1) give identical per-particle `rlnNrOfSignificantSamples`, Pmax and class. Measured: median
+60-image coarse batch 73-98 ms -> 42-51 ms (one A100, it130 -> 131); plain 10k/256 K=1 full VDAM run on one H100
+node, both arms concurrent, 257 s -> 221 s with the first three commits (job 14957274; no RELION arm in that job).
+K15 is GPU-bound in pass 1 and moves by about 2%.
+
+Late plain 10k K=1 iterations after these changes (py-spy, 60 s, relax 3636596): pass 2 41% of the main thread, pass 1
+30%, the VDAM M-step 12%, the expected-accuracy estimate 7%. Open: pass 2 waits 11 s of the 60 s for the
+iteration's images to be read a second time (pass 1 already read them); the expected-accuracy estimate rebuilds a
+host float64 projector from the references at every iteration.
 `significance._compute_k_class_significance_batched` can score on a quantized physical window (runtime current size,
 zero-weight capacity rows; `stable_fourier_window_shapes`, default off). Turned on as the one path, a K1 noise1 5k
 standalone refine (oversampling 1, healpix 3, 12 iterations, cold cache, A100, JAX_LOG_COMPILES) compiled 2350
