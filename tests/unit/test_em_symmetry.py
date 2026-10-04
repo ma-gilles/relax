@@ -833,7 +833,6 @@ def _write_iteration_debug_metadata(
         cs=6,
         state=SimpleNamespace(healpix_order=3, sigma_rot=1.25),
         n_classes=1,
-        k_class_enabled=False,
         volume_shape=(2, 2, 2),
         voxel_size=1.0,
     )

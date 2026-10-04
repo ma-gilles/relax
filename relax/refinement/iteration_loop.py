@@ -2351,7 +2351,6 @@ def refine_single_volume(
                 cs=current_size,
                 state=state,
                 n_classes=n_classes,
-                k_class_enabled=k_class_enabled,
                 volume_shape=volume_shape,
                 voxel_size=source_pixel_size_angstrom,
                 symmetry=symmetry,
