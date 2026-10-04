@@ -1,6 +1,7 @@
 # relax/refinement/: Refine3D and Class3D controller
 
-The root guide and `relax/AGENTS.md` apply. Rules with their examples: `docs/development/refactor_principles.md`.
+The root guide and `relax/AGENTS.md` apply. Rules: the short list in
+`docs/development/refactor_rules.md`, the full record in `docs/development/refactor_principles.md`.
 Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## What this directory owns

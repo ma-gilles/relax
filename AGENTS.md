@@ -94,7 +94,8 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 
 - Algorithm to code, step by step: `docs/math/relion_refinement_algorithm.md`.
 - Workflow entry points: `docs/development/codebase.md`. RELION defaults: `docs/development/relion_defaults.md`.
-- Refactor rules with their examples: `docs/development/refactor_principles.md`.
+- Refactor rules: the short list in `docs/development/refactor_rules.md`; the full record with examples in
+  `docs/development/refactor_principles.md`.
 - Conventions shared with RECOVAR (numerical source, CUDA and FFI, documentation): RECOVAR's own guides,
   `recovar/CLAUDE.md`, `recovar/cuda/CLAUDE.md` and `docs/CLAUDE.md` in its repository.
 - State of the work: `docs/development/em_status.md`. It is a ledger of more than 100 KB: search it for your topic.
