@@ -11601,6 +11601,160 @@
    "feature_reference": "several optics groups (pixel sizes and boxes) in the default K=1 auto-refine: RELION 5.0.1 + MPI scale-sum patch, relion_refine_mpi 3 ranks x 4 threads on one H100, same job as relax (accuracy and wall)"
   },
   {
+   "id": "cryoet_eto_premult_1000_128_tomo_autorefine_ad433cd",
+   "section": "feature_checks",
+   "table": "cryoet",
+   "dataset": "eto_premult (subtomogram, CTF-premultiplied) (feature)",
+   "empiar_id": null,
+   "particles": 1000,
+   "box": 128,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "cryo-ET auto-refine K=1 (RELION 5 tomo Refine3D, --firstiter_cc), CTF-premultiplied subtomogram stacks",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 f2c1a38 + MPI scale-group fix (mpiscale build), srun 3 ranks x relion_refine_mpi --j 4, one H100",
+    "resolution_A": 11.33,
+    "resolution_definition": "half_fsc_0143",
+    "relion_reported_resolution_A": 11.3333,
+    "masked_resolution_A": 8.242,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen",
+    "wall_s": null,
+    "wall_definition": "job-script wall of srun relion_refine_mpi, seed 1 (WALL.json)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "14915317",
+     "14924753",
+     "14967497",
+     "14924751",
+     "14930636",
+     "14924752",
+     "14930637"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "ad433cd601dfc3c80110e276371019cf0f1168f3",
+    "source_repo": "relax main ad433cd (subtomogram CTF-premultiplied support enabled by 5ccb618; etoptics' snapshot, natives checked), production defaults",
+    "resolution_A": 11.33,
+    "resolution_definition": "half_fsc_0143",
+    "masked_resolution_A": 8.242,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen",
+    "wall_s": null,
+    "wall_definition": "not quoted: the ad433cd runs shared one node four at a time (955-1091 s, not speed evidence)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "14974242"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "masked GT FSC-AUC, full spectrum, frozen mask etoptics_8c9c_b40_c1 (cryoet_optics_premult_20261004/scripts score_case.py); seed 1 quoted",
+    "relion": 0.57706,
+    "relax": 0.57406,
+    "relion_band": [
+     0.57307,
+     0.58146
+    ],
+    "relion_band_runs": [
+     "seed 1 x6",
+     "seed 2 x2",
+     "seed 3 x2"
+    ],
+    "relax_per_seed": {
+     "1": 0.57406,
+     "2": 0.57348,
+     "3": 0.58409
+    },
+    "relion_per_seed": {
+     "1": 0.57706,
+     "2": 0.57322,
+     "3": 0.58146
+    },
+    "relax_fixed_seed_runs": {
+     "1": [
+      0.57406,
+      0.57751
+     ]
+    },
+    "relion_fixed_seed_runs": {
+     "1": [
+      0.57706,
+      0.57648,
+      0.57741,
+      0.57922,
+      0.57435,
+      0.57841
+     ],
+     "2": [
+      0.57322,
+      0.57307
+     ],
+     "3": [
+      0.58146,
+      0.57961
+     ]
+    }
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": null,
+   "matched": "no",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Feature check (etoptics, team-lead 2026-10-04): subtomogram particles whose 2D stacks are CTF-premultiplied (rlnCtfDataAreCtfPremultiplied 1), supported on relax main since 5ccb618 (landed as ad433cd). Fixture eto_premult: 1000 particles, 8 tomograms / optics groups, 41 tilts, box 128 at 2.125 A, total B 40, SNR 0.005. Refine3D auto-refine with --firstiter_cc from a 40 A reference.",
+    "Masked GT FSC-AUC, relax ad433cd / RELION: seed 1 0.57406, 0.57751 / six runs 0.57435-0.57922; seed 2 0.57348 / 0.57322, 0.57307; seed 3 0.58409 / 0.58146, 0.57961. Reported final resolution 11.33 A in both programs. A negative control with the premultiplied flag forced to 0 scores 0.114.",
+    "Caveat (etoptics): on this fixture the resolution estimate never passes 18 A during the numbered iterations and same-seed scatter is about 5e-3 in both programs (seed 1: six RELION runs span 4.9e-3, relax runs 3.5e-3); do not use the row for fine comparisons.",
+    "Speed pending: the relax runs on ad433cd shared one node four at a time (955-1091 s), so they are not speed evidence. Same-node cold pairs exist only on pre-landing relax heads (relax 1105 / 1138 / 1001 s against RELION relion_refine_mpi 3 x 4 threads 2495 / 2657 / 2461 s, jobs 14922757, 14915317, 14924751, 14924752); RELION there is the MPI auto-refine configuration, not non-MPI --j 12. The cell will be filled from one same-node cold pair on a main sha against RELION's fastest stock configuration for this case."
+   ],
+   "null_reasons": {
+    "relion.wall_s": "speed pending: no same-node cold pair on a relax main sha yet (the paired walls 2495/2657/2461 s belong to pre-landing relax heads)",
+    "relax.wall_s": "speed pending: the ad433cd relax runs shared a node four at a time; a same-node cold pair on a main sha is requested from etoptics",
+    "time_ratio_relax_over_relion": "speed pending a same-node cold pair on a relax main sha (team-lead 2026-10-04)",
+    "cross_engine": "relax-vs-RELION map agreement not computed for this row",
+    "cross_engine_masked_band_auc": "relax-vs-RELION map agreement not computed for this row",
+    "relion.iterations": "not recorded in the score files",
+    "relax.iterations": "not recorded in the score files",
+    "relion.masked_band_auc": "not computed for this row",
+    "relax.masked_band_auc": "not computed for this row"
+   },
+   "mask": {
+    "dataset": "etoptics_8c9c_b40_c1",
+    "sha256": "f61225868a67121edd1fd613ef9b0998ea605dfc44941b5f610cbe00469f460e"
+   },
+   "evidence": {
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004",
+    "score_json": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_premult_ad433cd_s123.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_premult_repeats_s1.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_premult_fix_s123.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_premult_relion_r2_s23.json"
+    ],
+    "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/relion_refs",
+    "evidence_dir": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/",
+    "source": "etoptics, 2026-10-04"
+   },
+   "date": "2026-10-04",
+   "history": [],
+   "quality_pass": true,
+   "quality_reason": "worst s2 +2.6e-4 vs same-seed RELION; run ranges compared at s1 (both engines repeated); inside or above across-seed band (masked GT FSC-AUC, frozen mask)",
+   "label": "eto_premult",
+   "feature_reference": "CTF-premultiplied subtomogram 2D stacks (rlnCtfDataAreCtfPremultiplied 1) in Refine3D: stock RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, seeds 1-3 (six runs at seed 1, two each at seeds 2 and 3); accuracy only, speed pending a same-node pair on a main sha"
+  },
+  {
    "id": "optics_mag_k2_10k256_class3d_25it",
    "section": "feature_checks",
    "dataset": "optics_mag_k2_10k256 (synth_pdb_k2_50k256_snr05 particles re-imaged with anisotropic magnification, one optics group, MagMat [[1.015, 0.004], [0.004, 0.990]])",

@@ -231,6 +231,16 @@
    "generation": "recipe",
    "sanity": "PASS: box fraction 0.015, 1 component(s), captures 0.955 of positive density, strong density outside hard mask 0.0000, edge-clear True"
   },
+  "etoptics_8c9c_b40_c1": {
+   "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/masks/etoptics_8c9c_b40_c1/MASK.json",
+   "mask_sha256": "f61225868a67121edd1fd613ef9b0998ea605dfc44941b5f610cbe00469f460e",
+   "symmetry": "C1",
+   "box": 128,
+   "pixel_size_A": 2.125,
+   "source_role": "ground truth (class mean for K=2) of the etoptics fixture family, simulator output on optics group 1's grid",
+   "generation": "recipe",
+   "sanity": "PASS: box fraction 0.092, 1 component(s), captures 0.940 of positive density, strong density outside hard mask 0.0000, edge-clear True"
+  },
   "fixed34_k101_c1": {
    "mask_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/em_relion_parity_fixed34/k1-01/masks/fixed34_k101_c1/MASK.json",
    "mask_sha256": "74253532c379621cea0f730c89b7245b9f67506d54f8b09a021116e791d316d2",
