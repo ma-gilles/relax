@@ -335,6 +335,47 @@ def _copy_first_class(stacked):
     return jnp.broadcast_to(stacked[:1], stacked.shape)
 
 
+def copy_first_class_to_every_class(
+    reference_model,
+    direction_priors,
+    data_vs_prior_trajectory: list,
+    *,
+    mean_signal_variance_shells,
+    data_vs_prior_iter,
+    tau2_update_details,
+    class_mixture,
+    n_classes: int,
+):
+    """Give every class the first class's model after the CC iteration of a one-reference Class3D start.
+
+    Writes ``reference_model``'s maps and tau2, the entries of ``direction_priors`` and the last entry of
+    ``data_vs_prior_trajectory`` in place; returns the copied tau2 shells, data-vs-prior curve and tau2
+    details, and the class mixture with the first class's weight shared equally.
+    """
+    # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
+    # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
+    # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
+    reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
+    reference_model.tau2 = _copy_first_class(reference_model.tau2)
+    reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
+    mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
+    data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
+    data_vs_prior_trajectory[-1] = data_vs_prior_iter
+    tau2_update_details = {
+        key: None if value is None else _copy_first_class(value) for key, value in tau2_update_details.items()
+    }
+    for half_index, prior in enumerate(direction_priors):
+        if prior.values is not None:
+            direction_priors[half_index] = DirectionPrior(
+                _copy_first_class(prior.values), prior.healpix_order,
+            )
+    class_mixture = class_mixture_from_weights(
+        np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)
+    )
+    logger.info("Class3D one-reference start: copied class 1 to every class after the CC iteration")
+    return mean_signal_variance_shells, data_vs_prior_iter, tau2_update_details, class_mixture
+
+
 class ClassMaximization(NamedTuple):
     """What a Class3D M-step leaves for the rest of its iteration (the model is written in place)."""
 
@@ -2234,28 +2275,22 @@ def refine_single_volume(
                     for half_index, learned in enumerate(learned_priors):
                         direction_priors[half_index] = learned
         if single_class_iteration:
-            # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
-            # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
-            # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
-            reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
-            reference_model.tau2 = _copy_first_class(reference_model.tau2)
-            reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
-            mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
-            data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
-            history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
-            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
-            tau2_update_details = {
-                key: None if value is None else _copy_first_class(value) for key, value in tau2_update_details.items()
-            }
-            for half_index, prior in enumerate(direction_priors):
-                if prior.values is not None:
-                    direction_priors[half_index] = DirectionPrior(
-                        _copy_first_class(prior.values), prior.healpix_order,
-                    )
-            class_mixture = class_mixture_from_weights(
-                np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)
+            (
+                mean_signal_variance_shells,
+                data_vs_prior_iter,
+                tau2_update_details,
+                class_mixture,
+            ) = copy_first_class_to_every_class(
+                reference_model,
+                direction_priors,
+                history.data_vs_prior_trajectory,
+                mean_signal_variance_shells=mean_signal_variance_shells,
+                data_vs_prior_iter=data_vs_prior_iter,
+                tau2_update_details=tau2_update_details,
+                class_mixture=class_mixture,
+                n_classes=n_classes,
             )
-            logger.info("Class3D one-reference start: copied class 1 to every class after the CC iteration")
+            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
         history.record_direction_prior(
             direction_priors,
             k_class_enabled=k_class_enabled,

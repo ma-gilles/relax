@@ -380,6 +380,10 @@ MUTATIONS = (
      "the Class3D M-step publishes a doubled data-vs-prior curve to the history", True),
     ("class_mstep_keeps_old_tau2", "reference_model.tau2 = mean_signal_variance\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)", "pass\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)",
      "the Class3D M-step does not install its new tau2", True),
+    ("class_copy_keeps_class_weights", "np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)", "np.asarray(class_mixture.weights, dtype=np.float64)",
+     "the one-reference class copy leaves the class weights as they were", True),
+    ("class_copy_skips_direction_priors", "_copy_first_class(prior.values), prior.healpix_order,", "prior.values, prior.healpix_order,",
+     "the one-reference class copy leaves each class's own direction prior", True),
     ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history.to_dict(),', '"final_all_data_ran": True,\n**history.to_dict(),',
      "the result of a run without a final pass says the final pass ran", True),
 )
