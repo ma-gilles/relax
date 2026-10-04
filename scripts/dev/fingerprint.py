@@ -326,7 +326,7 @@ CASES = _cases()
 # The first thirteen are the set the refactor workers used; a False marks a known blind spot of the cases.
 # A target must occur in exactly one place of the tree: when a statement is rewritten, update its entry.
 MUTATIONS = (
-    ("final_class_prior_not_normalised", "_prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=scoring_dtype)", "pass",
+    ("final_class_prior_not_normalised", "_prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=dtype)", "pass",
      "the final-pass replay prior of a class run is installed unnormalised", True),
     ("resumed_prior_order_dropped", "DirectionPrior(prior.values, order)", "DirectionPrior(prior.values, None)",
      "a resumed direction prior loses its saved HEALPix order", True),
@@ -369,6 +369,8 @@ MUTATIONS = (
      "half 1's scoring projector is rebuilt instead of reusing the accuracy projector", True),
     ("significance_not_combined", "significance.combine()", "pass",
      "the halves' significant-sample counts are never combined", True),
+    ("final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)", "direction_priors[_half_idx] = DirectionPrior(_prior_k, None)",
+     "the final-pass replay installs a prior without its HEALPix order", True),
     ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history.to_dict(),', '"final_all_data_ran": True,\n**history.to_dict(),',
      "the result of a run without a final pass says the final pass ran", True),
 )

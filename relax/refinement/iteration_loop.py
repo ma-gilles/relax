@@ -51,16 +51,15 @@ from relax.diagnostics.iteration import (
     dump_numbered_iteration,
 )
 from relax.diagnostics.relion_replay import (
-    _apply_replay_correction_overrides,
     _has_numbered_replay_iteration_overrides,
     _maybe_debug_replay_relion_references,
     _sealed_sampling_rotation_ids,
     _validate_bpref_particle_order_scope,
+    apply_final_replay_state,
     apply_iter_replay_overrides,
 )
 from relax.diagnostics.state_swap_runtime import (
     _apply_state_swap_probe,
-    _copy_half_pair,
     _copy_optional_float_pair,
     _snapshot_state_swap_inputs,
 )
@@ -84,16 +83,11 @@ from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.iteration_history import RefinementHistory
 from relax.helpers.orientation_priors import (
     DirectionPrior,
-    infer_direction_prior_healpix_order,
     initial_direction_priors_from_snapshot,
     learn_class_direction_priors,
     learn_k1_direction_priors,
-    normalize_class_direction_prior,
-    normalize_class_direction_prior_per_half,
-    normalize_direction_prior_per_half,
     relion_direction_log_priors_for_half,
     relion_local_search_sigmas,
-    remap_half_direction_prior_to_healpix_order,
 )
 from relax.helpers.resolution import (
     ImageGeometry,
@@ -188,7 +182,6 @@ from relax.refinement.noise_updates import (
     _normalize_noise_variance_per_half,
     datasets_store_premultiplied_ctf,
     initialize_noise_model,
-    noise_model_from_pixels,
     noise_model_from_shells,
     update_c1_sigma_offset_from_posterior,
     update_posterior_noise_variance,
@@ -2772,81 +2765,19 @@ def refine_single_volume(
             logger=logger,
         )
         if final_replay_override is not None:
-            _final_replay_fields = []
-            _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")
-            if _final_replay_sigma_per_half is not None:
-                sigma_offset = sigma_offset_from_halves(
-                    _normalize_sigma_offset_per_half(_final_replay_sigma_per_half)
-                )
-                _final_replay_fields.append("translation_sigma_angstrom_per_half")
-            _final_replay_sigma = final_replay_override.get("translation_sigma_angstrom")
-            if _final_replay_sigma is not None and _final_replay_sigma_per_half is None:
-                sigma_offset = SigmaOffset(
-                    float(_final_replay_sigma),
-                    _as_sigma_offset_half_pair(float(_final_replay_sigma)),
-                )
-                _final_replay_fields.append("translation_sigma_angstrom")
-            _final_replay_prev_trans = final_replay_override.get("previous_best_translations")
-            if _final_replay_prev_trans is not None:
-                for particle_half, value_for_half in zip(halves, _copy_half_pair(_final_replay_prev_trans), strict=True):
-                    particle_half.translations = value_for_half
-                _final_replay_fields.append("previous_best_translations")
-            _final_replay_prev_eulers = final_replay_override.get("previous_best_rotation_eulers")
-            if _final_replay_prev_eulers is not None:
-                for particle_half, value_for_half in zip(halves, _copy_half_pair(_final_replay_prev_eulers), strict=True):
-                    particle_half.rotation_eulers = value_for_half
-                _final_replay_fields.append("previous_best_rotation_eulers")
-            _final_replay_fields.extend(
-                _apply_replay_correction_overrides(
-                    relion_half_inputs=halves,
-                    replay_override=final_replay_override,
-                )
-            )
-            _final_replay_noise = final_replay_override.get("noise_variance")
-            if _final_replay_noise is not None:
-                noise_model = noise_model_from_pixels(
-                    _final_replay_noise, image_geometry.image_shape, dtype=scoring_dtype,
-                )
-                _final_replay_fields.append("noise_variance")
-            _final_replay_dir_prior = final_replay_override.get("direction_prior")
-            if _final_replay_dir_prior is not None:
-                if k_class_enabled:
-                    _final_replay_priors = normalize_class_direction_prior_per_half(
-                        _final_replay_dir_prior,
-                        n_classes,
-                        dtype=scoring_dtype,
-                    )
-                else:
-                    _final_replay_priors = normalize_direction_prior_per_half(
-                        _final_replay_dir_prior, dtype=scoring_dtype
-                    )
-                for _half_idx in range(2):
-                    if _final_replay_priors[_half_idx] is None:
-                        continue
-                    _prior_k = np.asarray(_final_replay_priors[_half_idx], dtype=scoring_dtype)
-                    _prior_order_k = infer_direction_prior_healpix_order(
-                        _prior_k[0] if k_class_enabled else _prior_k,
-                        symmetry=symmetry, expected_order=state.healpix_order,
-                    )
-                    if _prior_order_k != state.healpix_order:
-                        _prior_k = remap_half_direction_prior_to_healpix_order(
-                            _prior_k,
-                            _prior_order_k,
-                            state.healpix_order,
-                            n_classes=n_classes if k_class_enabled else None,
-                            dtype=scoring_dtype,
-                            symmetry=symmetry,
-                        )
-                        _prior_order_k = state.healpix_order
-                    if k_class_enabled:
-                        _prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=scoring_dtype)
-                    direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)
-                _final_replay_fields.append("direction_prior")
-            logger.info(
-                "RELION replay: final all-data replays last numbered RELION state "
-                "(previous_state_index=%d, fields=%s)",
-                final_replay_override_index,
-                ",".join(_final_replay_fields) if _final_replay_fields else "<none>",
+            sigma_offset, noise_model = apply_final_replay_state(
+                final_replay_override,
+                halves,
+                direction_priors,
+                sigma_offset=sigma_offset,
+                noise_model=noise_model,
+                n_classes=n_classes,
+                healpix_order=state.healpix_order,
+                image_shape=image_geometry.image_shape,
+                symmetry=symmetry,
+                dtype=scoring_dtype,
+                override_index=final_replay_override_index,
+                log=logger,
             )
     elif not k_class_enabled and final_replay_disabled and final_replay_has_overrides:
         logger.info(

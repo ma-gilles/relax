@@ -986,12 +986,12 @@ def test_replay_explicit_paired_image_scale_state_remains_exact(with_resident_st
     )
 
     with pytest.raises(ValueError, match="Replay scale requires"):
-        iteration_loop_module._apply_replay_correction_overrides(
+        relion_replay_module._apply_replay_correction_overrides(
             relion_half_inputs=relion_half_inputs,
             replay_override={"scale_corrections": [np.asarray([4.0, 5.0]), None]},
         )
 
-    iteration_loop_module._apply_replay_correction_overrides(
+    relion_replay_module._apply_replay_correction_overrides(
         relion_half_inputs=relion_half_inputs,
         replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
@@ -1005,10 +1005,7 @@ def test_replay_explicit_paired_image_scale_state_remains_exact(with_resident_st
 
 
 def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
-    source = inspect.getsource(iteration_loop_module.refine_single_volume)
-    final_start = source.index("final_replay_last_numbered_state")
-    final_end = source.index("final_use_local =", final_start)
-    final_replay_source = source[final_start:final_end]
+    final_replay_source = inspect.getsource(relion_replay_module.apply_final_replay_state)
 
     assert "_apply_replay_correction_overrides(" in final_replay_source
     assert "_final_replay_img_corr" not in final_replay_source
@@ -1021,7 +1018,7 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
         image_corrections=[np.asarray([9.0, 9.0]), np.asarray([], dtype=np.float32)],
         scale_corrections=[np.asarray([8.0, 10.0]), np.asarray([], dtype=np.float32)],
     )
-    applied = iteration_loop_module._apply_replay_correction_overrides(
+    applied = relion_replay_module._apply_replay_correction_overrides(
         relion_half_inputs=relion_half_inputs,
         replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
