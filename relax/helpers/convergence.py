@@ -30,25 +30,45 @@ from relax.helpers.types import total_sumw
 
 logger = logging.getLogger(__name__)
 
-def _relion_pmax_normalization_mass_per_half(*, k_class_enabled: bool, class_posterior_per_half, noise_stats_per_half):
-    """Per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
+def _relion_class_pmax_normalization_mass_per_half(class_posterior_per_half):
+    """Class3D per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
 
     Class3D divides half 1's Pmax sum by that half's retained M-step posterior
-    mass, the sum of ``wsum_model.pdf_class``; K=1 divides by the half's noise
-    ``sumw`` particle mass. Both are float64 host scalars; a missing K=1 noise
-    statistic stays ``None``.
+    mass, the sum of ``wsum_model.pdf_class``, as a float64 host scalar.
     """
 
-    if k_class_enabled:
-        return [
-            float(np.sum(np.asarray(mass, dtype=np.float64), dtype=np.float64))
-            for mass in class_posterior_per_half
-        ]
+    return [
+        float(np.sum(np.asarray(mass, dtype=np.float64), dtype=np.float64))
+        for mass in class_posterior_per_half
+    ]
+
+
+def _relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half):
+    """K=1 per-half normalization mass for :func:`_relion_optimizer_average_pmax`.
+
+    K=1 divides by the half's noise ``sumw`` particle mass, a float64 host
+    scalar; a missing noise statistic stays ``None``.
+    """
+
     return [
         # The particle mass over all optics groups when the half carries one sum per group.
         None if stats is None else total_sumw(stats.sumw)
         for stats in noise_stats_per_half
     ]
+
+
+def _relion_pmax_normalization_mass_per_half(*, k_class_enabled: bool, class_posterior_per_half, noise_stats_per_half):
+    """The one remaining mode decision of the Pmax normalization mass.
+
+    Class3D takes the class posterior mass
+    (:func:`_relion_class_pmax_normalization_mass_per_half`), K=1 the noise
+    particle mass (:func:`_relion_k1_pmax_normalization_mass_per_half`). Remove
+    this dispatch when the K1 and Class3D trajectories call those directly.
+    """
+
+    if k_class_enabled:
+        return _relion_class_pmax_normalization_mass_per_half(class_posterior_per_half)
+    return _relion_k1_pmax_normalization_mass_per_half(noise_stats_per_half)
 
 
 def _relion_optimizer_average_pmax(max_posterior_per_half, normalization_mass_per_half=None):
