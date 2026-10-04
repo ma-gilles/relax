@@ -171,7 +171,7 @@ and bootstrapped by
 [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py).
 The dense E-step bridge in
 [`dense_adapter.py`](../../relax/vdam/dense_adapter.py)
-converts `Iref` to dense Fourier means, runs dense or sparse K-class EM, packs
+passes RELION's projector of `Iref` to the adaptive K-class E-step, packs
 selected particles by pseudo-halfset, and emits VDAM accumulators.
 
 The critical difference from standard EM is the M-step. Instead of
@@ -401,8 +401,9 @@ but its support and M-step differ from standard reconstruction EM.
 `dense_adapter.py` is the bridge between native dense K-class EM and RELION
 VDAM. Its responsibilities are:
 
-- Convert `InitialModelState.Iref` to dense Fourier means with
-  `reference_to_dense_means`.
+- Build RELION's projector from `InitialModelState.Iref` once per iteration
+  (`prepare_relion_projector_class_inputs_and_power`); the E-step scores with
+  that projector and builds no dense Fourier means (`_resolve_class_inputs`).
 - Build class log priors from `state.pdf_class` with
   `class_log_priors_from_state`.
 - Split or pack selected particles into pseudo-halfset reconstruction groups.

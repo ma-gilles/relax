@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -11,11 +12,8 @@ from helpers.float_compare import assert_matches
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_coarse_significance_image_batch_size
 from relax.vdam.dense_adapter import (
-    _relion_projector_to_dense_volume,
     _resolve_class_inputs,
     class_log_priors_from_state,
-    reference_to_dense_means,
-    relion_projector_half_maps_to_dense_means,
     run_dense_initial_model_estep,
 )
 from relax.vdam.estep_common import (
@@ -352,17 +350,8 @@ def test_estep_meta_keeps_each_halfset_profile_summary():
     assert "halfset_1_profile_summary" not in meta
 
 
-def test_initial_model_estep_uses_current_state_reference_when_means_omitted(monkeypatch):
+def test_initial_model_estep_without_a_projector_is_refused(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
-
-    def fake_reference_to_dense_means(references):
-        refs = np.asarray(references)
-        return np.full((refs.shape[0], refs.shape[1] ** 3), refs[0, 0, 0, 0], dtype=np.complex64)
-
-    monkeypatch.setattr(
-        "relax.vdam.dense_adapter.reference_to_dense_means",
-        fake_reference_to_dense_means,
-    )
     state = initialise_denovo_state(
         ori_size=8,
         pixel_size=1.0,
@@ -371,7 +360,6 @@ def test_initial_model_estep_uses_current_state_reference_when_means_omitted(mon
         n_directions=4,
         pseudo_halfsets=False,
     )
-    state.Iref[0, 0, 0, 0] = 7.0
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         rotations=np.eye(3, dtype=np.float32)[None],
@@ -379,12 +367,9 @@ def test_initial_model_estep_uses_current_state_reference_when_means_omitted(mon
         relion_bpref_frame=False,
     )
 
-    run_dense_initial_model_estep(_Dataset(), state, config)
-
-    assert len(calls) == 1
-    np.testing.assert_allclose(calls[0]["means"], 7.0)
-    np.testing.assert_allclose(calls[0]["mean_variance"], 49.0)
-    assert calls[0]["relion_projector_half_by_class"] is None
+    with pytest.raises(ValueError, match="scores with RELION's projector"):
+        run_dense_initial_model_estep(_Dataset(), state, config)
+    assert not calls
 
 
 def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch):
@@ -394,93 +379,6 @@ def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch)
     # The resident route reads only K and the dtype of the dense means: a NaN stand-in.
     assert np.asarray(calls[0]["means"]).shape == (2, 1) and np.all(np.isnan(calls[0]["means"]))
     assert np.all(np.isnan(calls[0]["mean_variance"]))
-
-
-def test_reference_to_dense_means_uses_scoring_fourier_scale(monkeypatch):
-    def fake_dft3(values):
-        return np.asarray(values) + 2.0j
-
-    def fake_gridding_correct(values, *args, **kwargs):
-        return np.asarray(values) + 1.0, None
-
-    monkeypatch.setattr("recovar.core.fourier_transform_utils.get_dft3", fake_dft3)
-    monkeypatch.setattr("recovar.reconstruction.relion_functions.griddingCorrect", fake_gridding_correct)
-
-    refs = np.zeros((1, 4, 4, 4), dtype=np.float32)
-
-    means = reference_to_dense_means(refs)
-
-    assert means.shape == (1, 4**3)
-    np.testing.assert_allclose(means, 1.0 + 2.0j)
-
-
-def test_relion_projector_to_dense_volume_embeds_cropped_slab(monkeypatch):
-    captured = {}
-
-    def fake_half_to_full(half, shape):
-        captured["half"] = np.asarray(half)
-        captured["shape"] = shape
-        return np.asarray(half) + 1.0j
-
-    monkeypatch.setattr("recovar.core.fourier_transform_utils.half_volume_to_full_volume", fake_half_to_full)
-
-    slab = np.arange(3 * 3 * 2, dtype=np.float64).reshape(3, 3, 2).astype(np.complex128)
-    out = _relion_projector_to_dense_volume(slab, 4)
-
-    assert captured["shape"] == (4, 4, 4)
-    half = captured["half"]
-    assert half.shape == (4, 4, 3)
-    assert_matches(half[1:4, 1:4, :2], slab[::-1, :, :])
-    np.testing.assert_allclose(out, half + 1.0j)
-
-
-def test_relion_projector_to_dense_volume_handles_ori_size_boundary(monkeypatch):
-    """When current_size == ori_size, RELION's cropped projector has y/z dim
-    2*r_max+1 = ori_size+1. The embedding loop must drop the redundant
-    Nyquist row (Hermitian conjugate of index 0) without raising."""
-    captured = {}
-
-    def fake_half_to_full(half, shape):
-        captured["half"] = np.asarray(half)
-        return np.asarray(half)
-
-    monkeypatch.setattr("recovar.core.fourier_transform_utils.half_volume_to_full_volume", fake_half_to_full)
-
-    # ori_size=4 → r_max=2 → cropped shape (5, 5, 3)
-    slab = np.arange(5 * 5 * 3, dtype=np.float64).reshape(5, 5, 3).astype(np.complex128)
-    _relion_projector_to_dense_volume(slab, 4)
-
-    half = captured["half"]
-    assert half.shape == (4, 4, 3)
-    # Index iz=4 (extra Nyquist) must be dropped, not raise.
-    # The first 4 rows (iz=0..3) of the reversed slab map to half[0..3, :, :].
-    assert_matches(half[0:4, 0:4, :3], slab[::-1, :, :][0:4, 0:4, :3])
-
-
-def test_relion_projector_to_dense_volume_truncates_oversize(monkeypatch):
-    """Slabs larger than the representable half-volume are truncated to the
-    in-range subset rather than rejected. This handles VDAM iters where
-    autosampling pushes current_size up to (or slightly above) ori_size and
-    RELION emits cropped projectors of shape (2*r_max+1, 2*r_max+1, r_max+1)
-    that exceed RECOVAR's (ori_size, ori_size, ori_size/2+1) layout."""
-    captured = {}
-
-    def fake_half_to_full(half, shape):
-        captured["half"] = np.asarray(half)
-        return np.asarray(half)
-
-    monkeypatch.setattr("recovar.core.fourier_transform_utils.half_volume_to_full_volume", fake_half_to_full)
-    # ori_size=4 → max half (4, 4, 3). Pass an even larger (7, 7, 4) slab.
-    slab = np.arange(7 * 7 * 4, dtype=np.float64).reshape(7, 7, 4).astype(np.complex128)
-    _relion_projector_to_dense_volume(slab, 4)
-    half = captured["half"]
-    assert half.shape == (4, 4, 3)
-    # Center of slab (index 3) maps to center of half (index 2).
-    # iz=3 → z = 3-3+2 = 2 ✓, iz=2 → z = 1, iz=4 → z = 3, iz=0/1/5/6 → out of range.
-    # Reversed slab[::-1] at iz=2 = original slab[4]; at iz=3 = slab[3]; etc.
-    rev = slab[::-1, :, :]
-    assert_matches(half[1, 1, :3], rev[2, 2, :3])
-    assert_matches(half[2, 2, :3], rev[3, 3, :3])
 
 
 @pytest.mark.requires_relion_bind
@@ -506,16 +404,11 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
         )
         return np.ones((3, 3, 2), dtype=np.complex128), np.zeros(1), ori_size, padding_factor, 1, 0, interpolator
 
-    def fake_embed(projector_data, ori_size):
-        assert projector_data.shape == (3, 3, 2)
-        return np.full((ori_size, ori_size, ori_size), 2.0 + 3.0j, dtype=np.complex128)
-
     monkeypatch.setattr("recovar.utils.helpers.recovar_volume_to_relion", fake_recovar_volume_to_relion)
     monkeypatch.setattr(
         "relax.relion_bind._relion_bind_core.compute_fourier_transform_map",
         fake_compute_fourier_transform_map,
     )
-    monkeypatch.setattr("relax.vdam.dense_adapter._relion_projector_to_dense_volume", fake_embed)
 
     refs = np.zeros((1, 4, 4, 4), dtype=np.float32)
     from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
@@ -523,11 +416,9 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
     projector_maps, _ = native_reference_to_relion_projector_half_maps(
         refs, current_size=2, padding_factor=1, projector_data_dtype=np.complex64
     )
-    means = relion_projector_half_maps_to_dense_means(projector_maps, refs.shape[-1])
 
-    assert means.shape == (1, 4**3)
-    assert means.dtype == np.complex64
-    np.testing.assert_allclose(means, -16.0 * (2.0 + 3.0j))
+    assert np.asarray(projector_maps).shape == (1, 3, 3, 2)
+    assert np.asarray(projector_maps).dtype == np.complex64
     assert len(calls) == 1
     call = calls[0]
     np.testing.assert_allclose(call["vol"], np.full((4, 4, 4), 10.0, dtype=np.float64))
@@ -574,49 +465,32 @@ def test_relion_projector_projection_dense_scale_matches_embedded_means(monkeypa
     np.testing.assert_allclose(np.asarray(proj_abs2), np.abs(expected) ** 2, rtol=1e-5, atol=1e-3)
 
 
-@pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
-@pytest.mark.parametrize("override_variance", [False, True])
-def test_resolve_class_inputs_relion_projector_uses_exact_path_by_default(monkeypatch, dtype, override_variance):
-    projector_half = np.ones((1, 3, 3, 2), dtype=dtype)
-    dense_means = np.full((1, 8**3), 2.0 + 0.5j, dtype=dtype)
+def _assert_nan_stand_ins(means, mean_variance, n_classes):
+    assert means.shape == mean_variance.shape == (n_classes, 1)
+    assert means.dtype == np.complex64 and mean_variance.dtype == np.float32
+    assert np.all(np.isnan(means)) and np.all(np.isnan(mean_variance))
 
+
+@pytest.mark.parametrize("dtype", [np.complex64, np.complex128])
+def test_resolve_class_inputs_builds_the_exact_projector_and_no_dense_means(monkeypatch, dtype):
+    projector_half = np.ones((1, 3, 3, 2), dtype=dtype)
     monkeypatch.setattr(
         "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
         lambda *args, **kwargs: (projector_half, 2),
     )
-    monkeypatch.setattr(
-        "relax.vdam.dense_adapter.relion_projector_half_maps_to_dense_means",
-        lambda *args, **kwargs: dense_means,
-    )
-    variance_override = np.full(dense_means.shape, 7.0) if override_variance else None
-    expected_variance = np.abs(dense_means) ** 2 if variance_override is None else variance_override
-    original_abs = np.abs
-    computed_variances = []
-
-    def record_abs(value):
-        result = original_abs(value)
-        computed_variances.append(result)
-        return result
-
-    monkeypatch.setattr(np, "abs", record_abs)
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         rotations=np.eye(3, dtype=np.float32)[None],
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_frame=True,
-        mean_variance=variance_override,
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
 
-    assert len(computed_variances) == 1
-    assert_matches(mean_variance, expected_variance)
-    assert mean_variance.dtype == expected_variance.dtype
-    if override_variance:
-        assert mean_variance is variance_override
-    assert_matches(means, dense_means)
+    _assert_nan_stand_ins(means, mean_variance, 1)
     assert_matches(exact_half, projector_half)
+    assert exact_half.dtype == dtype
     assert exact_rmax == 2
 
     monkeypatch.setenv("RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "0")
@@ -625,17 +499,13 @@ def test_resolve_class_inputs_relion_projector_uses_exact_path_by_default(monkey
 
 
 def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
-    projector_half = np.ones((1, 3, 3, 2), dtype=np.complex64)
-    dense_means = np.full((1, 8**3), 2.0 + 0.5j, dtype=np.complex64)
-    mean_variance = np.abs(dense_means) ** 2
+    projector_half = np.ones((2, 3, 3, 2), dtype=np.complex64)
     monkeypatch.setattr(
         "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
         lambda *args, **kwargs: pytest.fail("prebuilt production projector was rebuilt"),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
+    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
     config = DenseInitialModelEstepConfig(
-        means=dense_means,
-        mean_variance=mean_variance,
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         rotations=np.eye(3, dtype=np.float32)[None],
         translations=np.zeros((1, 2), dtype=np.float32),
@@ -646,22 +516,19 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
 
     means, variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
 
-    assert means is dense_means
-    assert variance is mean_variance
+    _assert_nan_stand_ins(means, variance, 2)
     assert_matches(exact_half, projector_half)
     assert exact_rmax == 2
+
+    with pytest.raises(ValueError, match="relion_projector_r_max is required"):
+        _resolve_class_inputs(state, replace(config, relion_projector_r_max=None))
 
 
 def test_resolve_class_inputs_can_dump_exact_projector_operand(monkeypatch, tmp_path):
     projector_half = np.arange(54, dtype=np.float32).reshape(1, 3, 3, 6)[..., :2].astype(np.complex64)
-    dense_means = np.zeros((1, 8**3), dtype=np.complex64)
     monkeypatch.setattr(
         "relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps",
         lambda *args, **kwargs: (projector_half, 2),
-    )
-    monkeypatch.setattr(
-        "relax.vdam.dense_adapter.relion_projector_half_maps_to_dense_means",
-        lambda *args, **kwargs: dense_means,
     )
     monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", str(tmp_path))
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)

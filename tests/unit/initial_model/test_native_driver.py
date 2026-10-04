@@ -1798,14 +1798,12 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     build_calls = []
     estimate_calls = []
     event_order = []
-    prepared_means = np.zeros((1, 8**3), dtype=np.complex64)
-    prepared_variance = np.zeros((1, 8**3), dtype=np.float32)
     prepared_half = np.zeros((1, 3, 3, 2), dtype=np.complex64)
 
     def fake_prepare_projector(state, *, padding_factor):
         event_order.append("prepare_projector")
         assert padding_factor == 2
-        return prepared_means, prepared_variance, prepared_half, 2
+        return prepared_half, 2
 
     def fake_estimate_sampling_accuracy(
         sampling_state,
@@ -1858,8 +1856,6 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         event_order.append("run_estep")
         assert config.engine_kwargs["healpix_order"] == 2
         assert config.translations.shape == (2, 2)
-        assert config.means is prepared_means
-        assert config.mean_variance is prepared_variance
         assert config.relion_projector_half_by_class is prepared_half
         assert config.relion_projector_r_max == 2
         return SimpleNamespace(

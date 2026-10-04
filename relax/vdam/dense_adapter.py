@@ -60,9 +60,8 @@ class _IterationProjectorContext:
     def refresh(self, state, *, padding_factor, interpolator):
         # Clear even if construction fails, so stale data cannot survive a retry.
         self.prepared = self.reference = self.geometry = None
-        # The E-step builds dense means only for a route that reads them (_resolve_class_inputs).
         inputs, power = prepare_relion_projector_class_inputs_and_power(
-            state, padding_factor=padding_factor, interpolator=interpolator, dense_means=False,
+            state, padding_factor=padding_factor, interpolator=interpolator,
         )
         self.prepared = inputs
         self.reference = state.Iref
@@ -325,73 +324,12 @@ def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEste
     return engine_kwargs
 
 
-def _relion_projector_to_dense_volume(projector_data: np.ndarray, ori_size: int) -> np.ndarray:
-    """Embed cropped RELION ``Projector::data`` half-complex slab into dense full-centered Fourier cube.
-
-    Out-of-range coordinates are clipped (any-size input accepted; high frequencies truncated).
-    """
-    import recovar.core.fourier_transform_utils as ftu
-
-    ppref = np.asarray(projector_data, dtype=np.complex128)
-    if ppref.ndim != 3:
-        raise ValueError(f"projector_data must be 3D, got {ppref.shape}")
-    n = int(ori_size)
-    center = n // 2
-    half = np.zeros((n, n, center + 1), dtype=np.complex128)
-    slab = ppref[::-1, :, :]
-    source_slices, target_slices = [], []
-    for slab_size in slab.shape[:2]:
-        offset = center - slab_size // 2
-        start, stop = max(0, offset), min(n, offset + slab_size)
-        source_slices.append(slice(start - offset, stop - offset))
-        target_slices.append(slice(start, stop))
-    x_slice = (slice(0, min(slab.shape[2], center + 1)),)
-    half[tuple(target_slices) + x_slice] = slab[tuple(source_slices) + x_slice]
-    return np.asarray(ftu.half_volume_to_full_volume(half, (n, n, n)), dtype=np.complex128)
-
-
-def relion_projector_half_maps_to_dense_means(projector_half_maps: np.ndarray, ori_size: int) -> np.ndarray:
-    """Embed RELION ``Projector::data`` maps into dense recovar scoring volumes."""
-
-    n = int(ori_size)
-    means = []
-    for projector_data in np.asarray(projector_half_maps):
-        dense = _relion_projector_to_dense_volume(np.asarray(projector_data), n)
-        # RELAX_DENSE_MEANS_SCALE diag override (see project_k2_c2_cc_root_cause_2026_05_03).
-        tok = (os.environ.get("RELAX_DENSE_MEANS_SCALE") or "-N2").strip()
-        scale = {"-N2": -(n**2), "N2": float(n**2)}.get(tok)
-        if scale is None:
-            scale = float(tok)
-        means.append(dense.reshape(-1) * scale)
-    return np.asarray(means, dtype=np.complex64)
-
-
-# (attr_name_on_result, dtype) for fields harvested per halfset and concatenated.
-
-
-def reference_to_dense_means(references: np.ndarray) -> np.ndarray:
-    """Convert recovar-frame InitialModel references to unnormalised centered FFTs for dense scoring."""
-    import jax.numpy as jnp
-    from recovar.core import fourier_transform_utils as ftu
-    from recovar.reconstruction.relion_functions import griddingCorrect
-
-    refs = np.asarray(references)
-    if refs.ndim != 4:
-        raise ValueError(f"references must have shape (K, N, N, N), got {refs.shape}")
-    n = int(refs.shape[-1])
-    means = []
-    for ref in refs:
-        corrected, _ = griddingCorrect(jnp.asarray(ref), n, padding_factor=1, order=1)
-        means.append(np.asarray(ftu.get_dft3(corrected).reshape(-1)))
-    return np.asarray(means, dtype=np.complex64)
-
-
 def prepare_relion_projector_class_inputs(
     state: InitialModelState,
     *,
     padding_factor: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    """Build InitialModel's production RELION projector once per iteration."""
+) -> tuple[np.ndarray, int]:
+    """Build InitialModel's production RELION projector once per iteration: ``(half maps by class, r_max)``."""
     projector_half_by_class, projector_r_max = relion_projector_setup.reference_to_relion_projector_half_maps(
         state.Iref,
         current_size=state.current_size if state.current_size > 0 else state.ori_size,
@@ -407,8 +345,7 @@ def prepare_relion_projector_class_inputs_and_power(
     *,
     padding_factor: int,
     interpolator: int = 1,
-    dense_means: bool = True,
-) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, int], np.ndarray]:
+) -> tuple[tuple[np.ndarray, int], np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT."""
     half_maps, power, r_max = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
@@ -416,8 +353,7 @@ def prepare_relion_projector_class_inputs_and_power(
         padding_factor=padding_factor,
         interpolator=interpolator,
     )
-    inputs = _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max, dense_means=dense_means)
-    return inputs, power
+    return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max), power
 
 
 def _finish_relion_projector_class_inputs(
@@ -425,9 +361,7 @@ def _finish_relion_projector_class_inputs(
     padding_factor: int,
     projector_half_by_class: np.ndarray,
     projector_r_max: int,
-    *,
-    dense_means: bool = True,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, int]:
     projector_dump_dir = os.environ.get(_RELION_PROJECTOR_DUMP_DIR_ENV, "").strip()
     if projector_dump_dir:
         os.makedirs(projector_dump_dir, exist_ok=True)
@@ -441,14 +375,7 @@ def _finish_relion_projector_class_inputs(
             padding_factor=np.int64(padding_factor),
             iteration=np.int64(state.iter),
         )
-    if not dense_means:
-        return None, None, projector_half_by_class, int(projector_r_max)
-    means = relion_projector_half_maps_to_dense_means(
-        projector_half_by_class,
-        int(state.ori_size),
-    )
-    mean_variance = np.abs(np.asarray(means)) ** 2
-    return means, mean_variance, projector_half_by_class, int(projector_r_max)
+    return projector_half_by_class, int(projector_r_max)
 
 
 def refuse_retired_projector_switch() -> None:
@@ -464,19 +391,13 @@ def refuse_retired_projector_switch() -> None:
 def _resolve_class_inputs(
     state: InitialModelState,
     config: DenseInitialModelEstepConfig,
-    *,
-    dense_means: bool = True,
-) -> tuple[Any, Any, np.ndarray | None, int | None]:
-    """Class means, their power, and the exact RELION projector for one E-step.
+) -> tuple[Any, Any, np.ndarray, int]:
+    """The exact RELION projector for one E-step, with NaN stand-ins for the dense class means.
 
-    ``dense_means=False`` is for the resident adaptive route with a RELION
-    projector: it reads only K and the dtype of the dense N^3 means (a NaN
-    stand-in left 12-iteration K=1 and K=2 maps unchanged, job 14512033), so a
-    NaN (K, 1) stand-in replaces them and any read shows up as NaN.
+    The resident adaptive route scores with the projector and reads only K and the dtype of the dense
+    N^3 means and their power (a NaN stand-in left 12-iteration K=1 and K=2 maps unchanged, job
+    14512033), so ``(K, 1)`` NaN arrays replace them and any read shows up as NaN.
     """
-    mean_variance = config.mean_variance
-    relion_projector_half_by_class = None
-    relion_projector_r_max = None
     if config.relion_projector_half_by_class is not None:
         if config.relion_projector_r_max is None:
             raise ValueError(
@@ -484,32 +405,19 @@ def _resolve_class_inputs(
             )
         relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
         relion_projector_r_max = int(config.relion_projector_r_max)
-        if config.means is not None:
-            means = config.means
-        elif not dense_means:
-            means = np.full((int(state.K), 1), np.nan, dtype=np.complex64)
-            if mean_variance is None:
-                mean_variance = np.full((int(state.K), 1), np.nan, dtype=np.float32)
-        else:
-            means = relion_projector_half_maps_to_dense_means(relion_projector_half_by_class, int(state.ori_size))
-    elif config.means is not None:
-        means = config.means
     elif config.relion_projector_frame:
-        means, prepared_variance, projector_half_by_class, projector_r_max = (
-            prepare_relion_projector_class_inputs(
-                state,
-                padding_factor=config.padding_factor,
-            )
-        )
-        if mean_variance is None:
-            mean_variance = prepared_variance
         refuse_retired_projector_switch()
-        relion_projector_half_by_class = projector_half_by_class
-        relion_projector_r_max = projector_r_max
+        relion_projector_half_by_class, relion_projector_r_max = prepare_relion_projector_class_inputs(
+            state,
+            padding_factor=config.padding_factor,
+        )
     else:
-        means = reference_to_dense_means(state.Iref)
-    if mean_variance is None:
-        mean_variance = np.abs(np.asarray(means)) ** 2
+        raise ValueError(
+            "the InitialModel E-step scores with RELION's projector: set relion_projector_frame or pass "
+            "relion_projector_half_by_class (dense class means were removed with the dense E-step)"
+        )
+    means = np.full((int(state.K), 1), np.nan, dtype=np.complex64)
+    mean_variance = np.full((int(state.K), 1), np.nan, dtype=np.float32)
     return means, mean_variance, relion_projector_half_by_class, relion_projector_r_max
 
 
@@ -549,9 +457,7 @@ def run_dense_initial_model_estep(
         )
     else:
         selected_halfset_ids = None
-    means, mean_variance, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(
-        state, config, dense_means=False
-    )
+    means, mean_variance, relion_projector_half_by_class, relion_projector_r_max = _resolve_class_inputs(state, config)
     result = run_adaptive_initial_model_estep(
         experiment_dataset,
         state,

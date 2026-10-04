@@ -42,7 +42,7 @@ def test_shared_device_projector_matches_both_native_calls(
     )
     assert not builds  # VDAM prepares the projector on the device only.
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
-        assert_matches(dumped["projector_half"], inputs[2])
+        assert_matches(dumped["projector_half"], inputs[0])
         assert int(dumped["current_size"]) == current_size
         assert int(dumped["padding_factor"]) == padding
     expected_half = []
@@ -56,11 +56,11 @@ def test_shared_device_projector_matches_both_native_calls(
         expected_power.append(bind.vdam_projector_power_spectrum(
             native, 16, padding, 1, current_size, True, 2
         ))
-        assert inputs[3] == radius
+        assert inputs[1] == radius
     # The slab is RELION's float texture: the double native slab rounded once
     # to complex64. The spectrum keeps the native FP64 projector contract.
-    assert inputs[2].dtype == np.complex64
-    assert np.all(relative_metrics(np.asarray(expected_half), inputs[2]) <= 4 * np.finfo(np.float32).eps)
+    assert inputs[0].dtype == np.complex64
+    assert np.all(relative_metrics(np.asarray(expected_half), inputs[0]) <= 4 * np.finfo(np.float32).eps)
     assert power.dtype == np.float64
     assert np.all(relative_metrics(np.asarray(expected_power), power) < 1e-12)
     old_inputs = adapter.prepare_relion_projector_class_inputs(state, padding_factor=padding)
@@ -76,9 +76,9 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     )
     calls = []
 
-    def prepare(current, *, padding_factor, interpolator, dense_means=True):
+    def prepare(current, *, padding_factor, interpolator):
         calls.append((current.iter, current.Iref.copy()))
-        return (None, None, current.Iref.copy(), 4), np.full((1, 5), current.iter)
+        return (current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power", prepare)
     ctx = adapter._IterationProjectorContext()
@@ -89,7 +89,7 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
         assert_matches(state.tau2_class, before)
         assert_matches(refreshed.tau2_class, np.full((1, 5), iteration))
         inputs = ctx.take(refreshed, padding_factor=1)
-        assert_matches(inputs[2], state.Iref)
+        assert_matches(inputs[0], state.Iref)
         assert ctx.take(refreshed, padding_factor=1) is None
         assert ctx.reference is None
     assert len(calls) == 2
@@ -103,7 +103,7 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
         n_directions=3, pseudo_halfsets=True,
     )
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power",
-                        lambda *a, **k: ((None, None, None, 4), np.ones((1, 5))))
+                        lambda *a, **k: ((None, 4), np.ones((1, 5))))
     ctx = adapter._IterationProjectorContext()
     current = ctx.refresh(state, padding_factor=1, interpolator=1)
     kwargs = {"padding_factor": 1}

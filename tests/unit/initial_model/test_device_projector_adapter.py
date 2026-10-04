@@ -126,15 +126,14 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
     candidate2 = adapter._resolve_class_inputs(state, config)
     monkeypatch.setenv(adapter._RELION_PROJECTOR_DUMP_DIR_ENV, str(tmp_path))
     candidate = adapter._resolve_class_inputs(state, config)
-    assert candidate[3] == natives[0][3] == 4
+    assert candidate[3] == natives[0][1] == 4
     assert candidate[2].dtype == np.complex64
-    for field in (0, 1, 2):
-        _assert_existing_consumer_policy(natives[0][field], candidate[field], candidate2[field], natives[1][field])
+    _assert_existing_consumer_policy(natives[0][0], candidate[2], candidate2[2], natives[1][0])
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], candidate[2])
         assert int(dumped["current_size"]) == 8
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(state, padding_factor=1)
-    assert_matches(inputs[2], candidate[2])
+    assert_matches(inputs[0], candidate[2])
     assert power.shape == (1, 5)
 
 

@@ -30,8 +30,6 @@ _PARTICLE_RESULT_FIELDS: tuple[tuple[str, type], ...] = (
 class DenseInitialModelEstepConfig:
     """Configuration for one InitialModel dense K-class E-step."""
 
-    means: Any | None = None
-    mean_variance: Any | None = None
     noise_variance: Any
     rotations: Any
     translations: Any

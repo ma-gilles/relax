@@ -204,8 +204,8 @@ def _native_expectation_step(
                 halfset_ids=halfset_ids,
                 previous_offsets_px=previous_translations[ids],
                 noise_variance=current_noise_variance,
-                relion_projector_half_by_class=prepared_projector_inputs[2],
-                relion_projector_r_max=int(prepared_projector_inputs[3]),
+                relion_projector_half_by_class=prepared_projector_inputs[0],
+                relion_projector_r_max=int(prepared_projector_inputs[1]),
                 class_rotation_log_prior=native_sampling._class_rotation_log_prior_for_sampling(
                     state, sampling_state, int(sampling_plan.healpix_order)
                 ),
@@ -308,13 +308,9 @@ def _native_expectation_step(
                 config, engine_kwargs={**config.engine_kwargs, "optics_group_ids": np.asarray(optics_group_ids, dtype=np.int32)}
             )
         if prepared_projector_inputs is not None:
-            prepared_means, prepared_variance, prepared_half, prepared_r_max = (
-                prepared_projector_inputs
-            )
+            prepared_half, prepared_r_max = prepared_projector_inputs
             config = replace(
                 config,
-                means=prepared_means,
-                mean_variance=prepared_variance,
                 relion_projector_half_by_class=prepared_half,
                 relion_projector_r_max=prepared_r_max,
             )
