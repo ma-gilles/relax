@@ -1087,12 +1087,12 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
         assert inputs["rotation_grid"].healpix_order == 2
         assert inputs["rotation_grid"].rotation_eulers.shape[0] == inputs["rotation_grid"].rotations.shape[0]
         assert inputs["reconstruction_settings"].volume_shape == half_datasets[0].volume_shape
-        assert inputs["scoring_dtype"] == np.float32
+        assert {"scoring_dtype", "logger", "n_classes"}.isdisjoint(inputs)
         if replace_noise:
             assert initial_model_refs[0]() is None
             assert_matches(inputs["noise_model"].variance_per_half[0], replayed_noise)
             assert_matches(inputs["noise_model"].variance_per_half[1], replayed_noise)
-            assert_matches(inputs["current_sigma_offset_angstrom_per_half"], [3.0, 4.0])
+            assert_matches(inputs["sigma_offset"].per_half_angstrom, [3.0, 4.0])
         else:
             assert inputs["noise_model"] is initial_model_refs[0]()
         return marker

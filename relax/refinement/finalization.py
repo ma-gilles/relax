@@ -5,6 +5,7 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 """
 
 
+import logging
 import os
 import time
 
@@ -19,6 +20,7 @@ from relax.dense.score_outputs import (
     _resolve_mstep_full_half_axis,
 )
 from relax.dense.scoring_policy import (
+    _dense_global_scoring_dtype,
     _local_adaptive_pass2_denominator_support_mode,
     _local_adaptive_pass2_full_parent_enabled,
     _local_adaptive_pass2_rotation_only_enabled,
@@ -67,6 +69,9 @@ from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_ha
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import _relion_metadata_translations
 from relax.relion.relion_worker_scale import _finalize_relion_follower_scale_replay_telemetry
+
+# The numbered controller's log: the final pass logs under its name.
+logger = logging.getLogger("relax.refinement.iteration_loop")
 
 _FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
 
@@ -119,31 +124,33 @@ def run_final_all_data(
     final_use_local,
     tomo_halves,
     native_sampling_boundary,
-    n_classes,
     rotation_grid: sampling.RotationGrid,
     random_perturbation,
     perturb_rng,
     perturb_replay_relion_dir,
-    current_sigma_offset_angstrom,
-    current_sigma_offset_angstrom_per_half,
-    class_weights,
+    sigma_offset,
+    class_mixture,
     class_assignments,
-    class_log_priors,
     previous_data_vs_prior_for_scheduling,
     iteration,
     collect_local_search_profile,
     source_faithful_spectrum_norm,
     relion_translation_angle_scale,
-    scoring_dtype,
-    logger,
 ) -> dict:
     """Score the converged halves at full size and reconstruct the final maps.
 
     Replay and final-pass admission are resolved by the numbered controller.
     The returned mapping contains this phase's results; the caller publishes
     setup and numbered-iteration metadata after execution.
+    ``sigma_offset`` is the run's ``SigmaOffset`` (shared and per-half translation prior widths) and
+    ``class_mixture`` its ``ClassMixture`` (class weights and their log priors; one class for K=1). The
+    class count is ``options.k_class.n_classes``; arrays are in the global scoring dtype.
     See ``docs/math/relion_refinement_algorithm.md``, section 7.
     """
+    scoring_dtype = _dense_global_scoring_dtype()
+    n_classes = int(options.k_class.n_classes)
+    class_weights = class_mixture.weights
+    class_log_priors = class_mixture.log_priors
     parity = options.parity
     adaptive = options.adaptive
     batching = options.batching
@@ -400,8 +407,8 @@ def run_final_all_data(
         )
         final_outs.translation_search_bases[half.index] = translation_search_base
         final_sigma_offset_k = _sigma_offset_for_half(
-            current_sigma_offset_angstrom,
-            current_sigma_offset_angstrom_per_half,
+            sigma_offset.shared_angstrom,
+            sigma_offset.per_half_angstrom,
             half.index,
         )
         if tomo_halves:
