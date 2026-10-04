@@ -374,6 +374,60 @@ def prepare_norm_scale_update(
     )
 
 
+def numbered_norm_scale_update(
+    per_half,
+    halves,
+    *,
+    firstiter_cc: bool,
+    do_norm_correction: bool,
+    do_scale_correction: bool,
+    dtype,
+    iteration: int,
+    current_size: int,
+) -> NormScaleCorrectionUpdateResult | None:
+    """A numbered expectation's norm and scale corrections, or None when a half lacks the statistics.
+
+    Every half must carry noise statistics, and every non-empty half its norm-correction sum. A half
+    without physical group ids is one group. The caller installs the returned corrections.
+    Reads ``per_half.noise_stats`` (the iteration's ``PerHalfOutputs``); from each of ``halves`` its
+    ``dataset.n_units`` and ``group_ids``, and what :func:`prepare_norm_scale_update` reads.
+    """
+    noise_stats_per_half = per_half.noise_stats
+    if noise_stats_per_half is None or not all(
+        stats_k is not None
+        and (getattr(stats_k, "wsum_norm_correction", None) is not None or int(half.dataset.n_units) == 0)
+        for half, stats_k in zip(halves, noise_stats_per_half)
+    ):
+        return None
+    group_ids_per_half = [
+        np.zeros(int(half.dataset.n_units), dtype=np.int64) if half.group_ids is None else half.group_ids
+        for half in halves
+    ]
+    return prepare_norm_scale_update(
+        noise_stats_per_half,
+        halves,
+        group_ids_per_half=group_ids_per_half,
+        firstiter_cc=firstiter_cc,
+        do_norm_correction=do_norm_correction,
+        do_scale_correction=do_scale_correction,
+        dtype=dtype,
+        iteration=iteration,
+        current_size=current_size,
+    )
+
+
+def norm_scale_report(
+    update: NormScaleCorrectionUpdateResult, group_scale_corrections_per_half,
+) -> NormScaleCorrectionReport:
+    """The checkpoint and capture report of ``update``, with the group scales the caller installed."""
+    return NormScaleCorrectionReport(
+        group_scale_corrections_per_half=group_scale_corrections_per_half,
+        norm_corrections_per_half=update.norm_corrections_per_half,
+        avg_norm_correction_per_half=update.avg_norm_correction_per_half,
+        zero_norm_residual_counts=update.zero_norm_residual_counts,
+    )
+
+
 def _format_relion_correction_range(values):
     arr = np.asarray(values, dtype=np.float64).reshape(-1)
     if arr.size == 0:

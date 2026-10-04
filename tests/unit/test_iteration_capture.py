@@ -12,6 +12,7 @@ from helpers.float_compare import assert_matches
 from relax.diagnostics import iteration as captures
 from relax.diagnostics import parity_dump
 from relax.refinement import iteration_loop
+from relax.relion import relion_normalization
 from relax.relion.relion_normalization import NormScaleCorrectionReport, NormScaleCorrectionUpdateResult
 
 pytestmark = pytest.mark.unit
@@ -46,7 +47,7 @@ def test_missing_report_fields_are_independent_and_remain_absent():
 
 
 @pytest.mark.parametrize('mode', ['missing', 'native', 'follower', 'follower_missing'])
-def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_separate(mode):
+def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_separate(monkeypatch, mode):
     follower = mode.startswith('follower')
     missing = mode.endswith('missing')
     halves = [SimpleNamespace(dataset=SimpleNamespace(n_units=n), group_ids=None,
@@ -87,6 +88,7 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
         assert update is result
         events.append('log')
 
+    monkeypatch.setattr(relion_normalization, 'prepare_norm_scale_update', prepare)
     namespace = dict(
         NormScaleCorrectionReport=NormScaleCorrectionReport, np=np,
         per_half=SimpleNamespace(noise_stats=None if missing else [SimpleNamespace(wsum_norm_correction=object()),
@@ -94,7 +96,9 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
         experiment_datasets=[half.dataset for half in halves], halves=halves,
         follower_setup=setup, first_iteration=SimpleNamespace(relion_firstiter_cc=False), tomo_halves=False,
         scoring_dtype=np.float32, iteration=2, current_size=12, logger=logging.getLogger(__name__),
-        prepare_norm_scale_update=prepare, _update_relion_follower_corrections=update_followers,
+        numbered_norm_scale_update=relion_normalization.numbered_norm_scale_update,
+        norm_scale_report=relion_normalization.norm_scale_report,
+        _update_relion_follower_corrections=update_followers,
         log_norm_scale_update=log_update,
     )
     if mode == 'follower_missing':

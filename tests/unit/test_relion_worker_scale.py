@@ -17,6 +17,7 @@ from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.relion.relion_normalization import (
     log_norm_scale_update,
+    numbered_norm_scale_update,
     prepare_norm_scale_update,
     update_relion_norm_scale_corrections,
 )
@@ -1084,16 +1085,17 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries():
 
 def test_relion_norm_scale_updates_are_not_disabled_for_k_class():
     source = inspect.getsource(refine_single_volume)
-    update_start = source.index("can_update_norm_scale = (")
+    update_start = source.index("norm_scale_update = numbered_norm_scale_update(")
     update_source = source[update_start : source.index("history.record_noise_and_tau2(", update_start)]
+    update_source += inspect.getsource(numbered_norm_scale_update)
     update_source += inspect.getsource(prepare_norm_scale_update)
     update_source += inspect.getsource(log_norm_scale_update).replace("update.", "norm_scale_update.")
 
     assert "not k_class_enabled" not in update_source
     assert "prepare_norm_scale_update(" in update_source
     assert "update_relion_norm_scale_corrections(" in update_source
-    assert "experiment_datasets[_half_idx].n_units" in update_source
-    assert "np.zeros(int(experiment_datasets[_half_idx].n_units), dtype=np.int64)" in update_source
+    assert "int(half.dataset.n_units) == 0" in update_source
+    assert "np.zeros(int(half.dataset.n_units), dtype=np.int64)" in update_source
     assert "log_norm_scale_update(norm_scale_update, log=logger)" in update_source
     assert "_format_relion_correction_range(norm_scale_update.image_corrections_per_half[0])" in update_source
     assert "_format_relion_correction_range(norm_scale_update.image_corrections_per_half[1])" in update_source

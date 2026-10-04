@@ -210,7 +210,8 @@ from relax.relion.geometry import (
 from relax.relion.relion_normalization import (
     NormScaleCorrectionReport,
     log_norm_scale_update,
-    prepare_norm_scale_update,
+    norm_scale_report,
+    numbered_norm_scale_update,
 )
 from relax.relion.relion_worker_scale import (
     _dispatch_relion_follower_scale_for_final_all_data,
@@ -2325,40 +2326,17 @@ def refine_single_volume(
             _parity_dump.mark_stage(iteration, "noise_update")
 
         correction_report = NormScaleCorrectionReport()
-        can_update_norm_scale = (
-            per_half.noise_stats is not None
-            and all(
-                stats_k is not None
-                and (
-                    getattr(stats_k, "wsum_norm_correction", None) is not None
-                    or int(experiment_datasets[_half_idx].n_units) == 0
-                )
-                for _half_idx, stats_k in enumerate(per_half.noise_stats)
-            )
+        norm_scale_update = numbered_norm_scale_update(
+            per_half, halves, firstiter_cc=first_iteration.relion_firstiter_cc, do_norm_correction=not tomo_halves,
+            do_scale_correction=follower_setup.follower_scale_state is None, dtype=scoring_dtype,
+            iteration=iteration, current_size=current_size,
         )
-        if follower_setup.follower_scale_state is not None and not can_update_norm_scale:
+        if follower_setup.follower_scale_state is not None and norm_scale_update is None:
             raise RuntimeError(
                 "Strict RELION follower-scale topology requires per-half norm/scale "
                 "statistics at every numbered M-step"
             )
-        if can_update_norm_scale:
-            group_ids_per_half = [
-                np.zeros(int(experiment_datasets[_half_idx].n_units), dtype=np.int64)
-                if group_ids_k is None
-                else group_ids_k
-                for _half_idx, group_ids_k in enumerate([particle_half.group_ids for particle_half in halves])
-            ]
-            norm_scale_update = prepare_norm_scale_update(
-                per_half.noise_stats,
-                halves,
-                group_ids_per_half=group_ids_per_half,
-                firstiter_cc=first_iteration.relion_firstiter_cc,
-                do_norm_correction=not tomo_halves,
-                do_scale_correction=follower_setup.follower_scale_state is None,
-                dtype=scoring_dtype,
-                iteration=iteration,
-                current_size=current_size,
-            )
+        if norm_scale_update is not None:
             if follower_setup.follower_scale_state is None:
                 for half, images, scales in zip(
                     halves,
@@ -2368,9 +2346,10 @@ def refine_single_volume(
                 ):
                     half.image_corrections = images
                     half.scale_corrections = scales
-                correction_report.group_scale_corrections_per_half = norm_scale_update.group_scale_corrections_per_half
+                group_scale_corrections = norm_scale_update.group_scale_corrections_per_half
             else:
-                correction_report.group_scale_corrections_per_half = _update_relion_follower_corrections(
+                # Class3D follower-scale emulation: the follower state owns the scales and installs them.
+                group_scale_corrections = _update_relion_follower_corrections(
                     follower_setup,
                     noise_stats_per_half=per_half.noise_stats,
                     norm_scale_update=norm_scale_update,
@@ -2379,9 +2358,7 @@ def refine_single_volume(
                     dtype=scoring_dtype,
                     logger=logger,
                 )
-            correction_report.norm_corrections_per_half = norm_scale_update.norm_corrections_per_half
-            correction_report.avg_norm_correction_per_half = norm_scale_update.avg_norm_correction_per_half
-            correction_report.zero_norm_residual_counts = norm_scale_update.zero_norm_residual_counts
+            correction_report = norm_scale_report(norm_scale_update, group_scale_corrections)
             log_norm_scale_update(norm_scale_update, log=logger)
         if follower_setup.follower_scale_state is not None:
             history.relion_scale_follower_scales_numbered_post_mstep_trajectory.append(
