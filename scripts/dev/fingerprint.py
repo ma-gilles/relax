@@ -370,7 +370,7 @@ MUTATIONS = (
     ("significance_not_combined", "significance.combine()", "pass",
      "the halves' significant-sample counts are never combined", True),
     ("final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)", "direction_priors[_half_idx] = DirectionPrior(_prior_k, None)",
-     "the final-pass replay installs a prior without its HEALPix order", True),
+     "the Class3D final-pass replay installs a prior without its HEALPix order", True),
     ("k1_mstep_join_radius", "low_resolution_angstrom=parity.low_resol_join_halves_angstrom,\npixel_resolutions=pixel_resolutions,", "low_resolution_angstrom=0.5 * parity.low_resol_join_halves_angstrom,\npixel_resolutions=pixel_resolutions,",
      "the K=1 M-step joins the half accumulators out to twice the requested resolution (the previous "
      "resolution caps the join radius in these cases)", False),
@@ -397,6 +397,14 @@ MUTATIONS = (
      "a K1 checkpoint loses the curve that drives image-size growth", True),
     ("class_checkpoint_weights_dropped", "class_weights=host_array(class_weights, np.float64),", "class_weights=None,",
      "a Class3D checkpoint loses the class weights", True),
+    ("final_replay_reads_k1_layout", "if n_classes > 1:\nreturn apply_class_final_replay_state(", "if False:\nreturn apply_class_final_replay_state(",
+     "the final-pass replay treats every run as K1", True),
+    ("k1_final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior, _prior_order)", "direction_priors[_half_idx] = DirectionPrior(_prior, None)",
+     "the K1 final-pass replay installs a prior without its HEALPix order", True),
+    ("k1_final_replay_prior_not_remapped", "if _prior_order != healpix_order:", "if False:",
+     "the K1 final-pass replay keeps a prior at its source order", True),
+    ("final_replay_fields_log_dropped", '",".join(fields) if fields else "<none>",', '"<none>",',
+     "the final-pass replay log names no installed field", True),
 )
 
 

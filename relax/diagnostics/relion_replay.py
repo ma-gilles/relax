@@ -27,6 +27,7 @@ from relax.helpers.orientation_priors import (
     normalize_class_direction_prior,
     normalize_class_direction_prior_per_half,
     normalize_direction_prior_per_half,
+    remap_direction_prior_to_healpix_order,
     remap_half_direction_prior_to_healpix_order,
 )
 from relax.refinement.half_inputs import (
@@ -764,31 +765,22 @@ def _replay_control_model_iteration(init_relion_iteration: int, loop_iteration: 
     return int(init_relion_iteration) + int(loop_iteration) + 1
 
 
-def apply_final_replay_state(
+def _install_final_replay_particle_state(
     final_replay_override,
     halves,
-    direction_priors,
     *,
     sigma_offset: SigmaOffset,
     noise_model: NoiseModel,
-    n_classes: int,
-    healpix_order: int,
     image_shape,
-    symmetry: str,
     dtype,
-    override_index: int,
-    log: logging.Logger,
 ):
-    """Install the last numbered RELION state before the final all-data pass; ``(sigma_offset, noise_model)``.
+    """Install the final-pass replay fields no mode reads; ``(sigma_offset, noise_model, installed field names)``.
 
-    Each field ``final_replay_override`` supplies replaces the run's own: the translation prior width, the
-    previous poses and corrections of ``halves`` and the entries of ``direction_priors`` (both written in
-    place, a prior remapped to ``healpix_order``), and the noise model. An absent field keeps the
-    argument's value.
+    The translation prior width, the previous poses and corrections of ``halves`` (written in place) and the
+    noise model. An absent field keeps the argument's value.
     """
     from relax.diagnostics.state_swap_runtime import _copy_half_pair
 
-    k_class_enabled = n_classes > 1
     _final_replay_fields = []
     _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")
     if _final_replay_sigma_per_half is not None:
@@ -825,24 +817,118 @@ def apply_final_replay_state(
             _final_replay_noise, image_shape, dtype=dtype,
         )
         _final_replay_fields.append("noise_variance")
+    return sigma_offset, noise_model, _final_replay_fields
+
+
+def _log_final_replay_fields(log: logging.Logger, override_index: int, fields: list[str]) -> None:
+    log.info(
+        "RELION replay: final all-data replays last numbered RELION state "
+        "(previous_state_index=%d, fields=%s)",
+        override_index,
+        ",".join(fields) if fields else "<none>",
+    )
+
+
+def apply_k1_final_replay_state(
+    final_replay_override,
+    halves,
+    direction_priors,
+    *,
+    sigma_offset: SigmaOffset,
+    noise_model: NoiseModel,
+    healpix_order: int,
+    image_shape,
+    symmetry: str,
+    dtype,
+    override_index: int,
+    log: logging.Logger,
+):
+    """Install the last numbered RELION state before the K=1 final all-data pass; ``(sigma_offset, noise_model)``.
+
+    Each field ``final_replay_override`` supplies replaces the run's own: the translation prior width, the
+    previous poses and corrections of ``halves`` and the entries of ``direction_priors`` (both written in
+    place, a half's prior vector remapped to ``healpix_order``), and the noise model. An absent field keeps
+    the argument's value.
+    """
+    sigma_offset, noise_model, _final_replay_fields = _install_final_replay_particle_state(
+        final_replay_override,
+        halves,
+        sigma_offset=sigma_offset,
+        noise_model=noise_model,
+        image_shape=image_shape,
+        dtype=dtype,
+    )
     _final_replay_dir_prior = final_replay_override.get("direction_prior")
     if _final_replay_dir_prior is not None:
-        if k_class_enabled:
-            _final_replay_priors = normalize_class_direction_prior_per_half(
-                _final_replay_dir_prior,
-                n_classes,
-                dtype=dtype,
+        _final_replay_priors = normalize_direction_prior_per_half(
+            _final_replay_dir_prior, dtype=dtype
+        )
+        for _half_idx in range(2):
+            if _final_replay_priors[_half_idx] is None:
+                continue
+            _prior = np.asarray(_final_replay_priors[_half_idx], dtype=dtype)
+            _prior_order = infer_direction_prior_healpix_order(
+                _prior,
+                symmetry=symmetry, expected_order=healpix_order,
             )
-        else:
-            _final_replay_priors = normalize_direction_prior_per_half(
-                _final_replay_dir_prior, dtype=dtype
-            )
+            if _prior_order != healpix_order:
+                _prior = remap_direction_prior_to_healpix_order(
+                    _prior,
+                    _prior_order,
+                    healpix_order,
+                    symmetry=symmetry,
+                    dtype=dtype,
+                )
+                _prior_order = healpix_order
+            direction_priors[_half_idx] = DirectionPrior(_prior, _prior_order)
+        _final_replay_fields.append("direction_prior")
+    _log_final_replay_fields(log, override_index, _final_replay_fields)
+    return sigma_offset, noise_model
+
+
+def apply_class_final_replay_state(
+    final_replay_override,
+    halves,
+    direction_priors,
+    *,
+    sigma_offset: SigmaOffset,
+    noise_model: NoiseModel,
+    n_classes: int,
+    healpix_order: int,
+    image_shape,
+    symmetry: str,
+    dtype,
+    override_index: int,
+    log: logging.Logger,
+):
+    """Install the last numbered RELION state before the Class3D final all-data pass; ``(sigma_offset, noise_model)``.
+
+    Each field ``final_replay_override`` supplies replaces the run's own: the translation prior width, the
+    previous poses and corrections of ``halves`` and the entries of ``direction_priors`` (both written in
+    place, a half's class rows remapped to ``healpix_order`` and then normalised per class at ``dtype``), and
+    the noise model. An absent field keeps the argument's value.
+    """
+    sigma_offset, noise_model, _final_replay_fields = _install_final_replay_particle_state(
+        final_replay_override,
+        halves,
+        sigma_offset=sigma_offset,
+        noise_model=noise_model,
+        image_shape=image_shape,
+        dtype=dtype,
+    )
+    _final_replay_dir_prior = final_replay_override.get("direction_prior")
+    if _final_replay_dir_prior is not None:
+        _final_replay_priors = normalize_class_direction_prior_per_half(
+            _final_replay_dir_prior,
+            n_classes,
+            dtype=dtype,
+        )
         for _half_idx in range(2):
             if _final_replay_priors[_half_idx] is None:
                 continue
             _prior_k = np.asarray(_final_replay_priors[_half_idx], dtype=dtype)
             _prior_order_k = infer_direction_prior_healpix_order(
-                _prior_k[0] if k_class_enabled else _prior_k,
+                _prior_k[0],
                 symmetry=symmetry, expected_order=healpix_order,
             )
             if _prior_order_k != healpix_order:
@@ -850,22 +936,67 @@ def apply_final_replay_state(
                     _prior_k,
                     _prior_order_k,
                     healpix_order,
-                    n_classes=n_classes if k_class_enabled else None,
+                    n_classes=n_classes,
                     dtype=dtype,
                     symmetry=symmetry,
                 )
                 _prior_order_k = healpix_order
-            if k_class_enabled:
-                _prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=dtype)
+            _prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=dtype)
             direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)
         _final_replay_fields.append("direction_prior")
-    log.info(
-        "RELION replay: final all-data replays last numbered RELION state "
-        "(previous_state_index=%d, fields=%s)",
-        override_index,
-        ",".join(_final_replay_fields) if _final_replay_fields else "<none>",
-    )
+    _log_final_replay_fields(log, override_index, _final_replay_fields)
     return sigma_offset, noise_model
+
+
+def apply_final_replay_state(
+    final_replay_override,
+    halves,
+    direction_priors,
+    *,
+    sigma_offset: SigmaOffset,
+    noise_model: NoiseModel,
+    n_classes: int,
+    healpix_order: int,
+    image_shape,
+    symmetry: str,
+    dtype,
+    override_index: int,
+    log: logging.Logger,
+):
+    """Install the last numbered RELION state before the final all-data pass; ``(sigma_offset, noise_model)``.
+
+    This is the one remaining mode decision of the final replay state, to be removed when the K=1 and
+    Class3D trajectories call ``apply_k1_final_replay_state`` and ``apply_class_final_replay_state``
+    directly.
+    """
+    if n_classes > 1:
+        return apply_class_final_replay_state(
+            final_replay_override,
+            halves,
+            direction_priors,
+            sigma_offset=sigma_offset,
+            noise_model=noise_model,
+            n_classes=n_classes,
+            healpix_order=healpix_order,
+            image_shape=image_shape,
+            symmetry=symmetry,
+            dtype=dtype,
+            override_index=override_index,
+            log=log,
+        )
+    return apply_k1_final_replay_state(
+        final_replay_override,
+        halves,
+        direction_priors,
+        sigma_offset=sigma_offset,
+        noise_model=noise_model,
+        healpix_order=healpix_order,
+        image_shape=image_shape,
+        symmetry=symmetry,
+        dtype=dtype,
+        override_index=override_index,
+        log=log,
+    )
 
 
 def _apply_replay_correction_overrides(*, relion_half_inputs, replay_override) -> list[str]:

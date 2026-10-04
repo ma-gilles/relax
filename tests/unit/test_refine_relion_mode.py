@@ -1005,7 +1005,7 @@ def test_replay_explicit_paired_image_scale_state_remains_exact(with_resident_st
 
 
 def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
-    final_replay_source = inspect.getsource(relion_replay_module.apply_final_replay_state)
+    final_replay_source = inspect.getsource(relion_replay_module._install_final_replay_particle_state)
 
     assert "_apply_replay_correction_overrides(" in final_replay_source
     assert "_final_replay_img_corr" not in final_replay_source
