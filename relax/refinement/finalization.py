@@ -208,14 +208,12 @@ def run_final_all_data(
     final_sampling = prepare_final_sampling(
         state,
         image_geometry,
+        options,
         previous_rotation_grid=rotation_grid,
-        last_numbered_iteration=init_relion_iteration + len(history.current_sizes),
-        parity=parity,
+        numbered_iteration_count=len(history.current_sizes),
         active_replay_dir=perturb_replay_relion_dir,
-        require_final_state=replay.replay_iteration_overrides is not None,
         previous_perturbation=random_perturbation,
         rng=perturb_rng,
-        n_classes=n_classes,
         dtype=scoring_dtype,
     )
     final_precision = local_precision(final_sampling.settings.relion_iteration, pass_index=2)

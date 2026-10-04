@@ -22,7 +22,7 @@ from relax.helpers.convergence import (
     _native_final_perturbation_healpix_order,
 )
 from relax.helpers.resolution import ImageGeometry
-from relax.refinement.refinement_options import RelionParityOptions
+from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.relion_metadata import read_relion_sampling_metadata
 
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -93,16 +93,25 @@ def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix
 def _resolve_final_sampling_settings(
     state: RefinementState,
     image_geometry: ImageGeometry,
+    options: RefinementOptions,
     *,
     grid_order: int,
-    last_numbered_iteration: int,
-    parity: RelionParityOptions,
+    numbered_iteration_count: int,
     active_replay_dir: str | None,
-    require_final_state: bool,
     previous_perturbation: float,
     rng,
-    n_classes: int,
 ) -> FinalSamplingSettings:
+    """The final pass's sampling settings, replayed from RELION's sampling STAR or advanced natively.
+
+    Reads from ``options``: ``schedule.init_relion_iteration``; ``parity``'s final-sampling replay
+    directory, ``perturb_factor``, ``perturb_seed`` and ``perturb_replay_*`` fields;
+    ``replay.replay_iteration_overrides`` (their presence makes the final STAR mandatory) and
+    ``k_class.n_classes``.
+    """
+    parity = options.parity
+    n_classes = int(options.k_class.n_classes)
+    require_final_state = options.replay.replay_iteration_overrides is not None
+    last_numbered_iteration = options.schedule.init_relion_iteration + numbered_iteration_count
     relion_iteration = last_numbered_iteration + 1
     replay_dir = (
         parity.final_sampling_replay_relion_dir
@@ -199,22 +208,23 @@ def _resolve_final_sampling_settings(
 def prepare_final_sampling(
     state: RefinementState,
     image_geometry: ImageGeometry,
+    options: RefinementOptions,
     *,
     previous_rotation_grid: sampling.RotationGrid,
-    last_numbered_iteration: int,
-    parity: RelionParityOptions,
+    numbered_iteration_count: int,
     active_replay_dir: str | None,
-    require_final_state: bool,
     previous_perturbation: float,
     rng,
-    n_classes: int,
     dtype=np.float32,
 ) -> FinalSampling:
     """Resolve native/replayed sampling and return arrays in scoring precision.
 
     Final-pass base translations are rounded to device precision before
     perturbation, unlike the host-double bases used by numbered iterations.
+    ``numbered_iteration_count`` is the number of numbered iterations this run completed. Reads
+    ``options.k_class.n_classes`` and the fields ``_resolve_final_sampling_settings`` names.
     """
+    n_classes = int(options.k_class.n_classes)
     grid_order = _exhaustive_grid_order_for_state(state)
     symmetry = previous_rotation_grid.symmetry
     if grid_order == previous_rotation_grid.healpix_order:
@@ -226,15 +236,12 @@ def prepare_final_sampling(
     rotations = rotation_grid.rotations
     eulers = np.asarray(rotation_grid.rotation_eulers, dtype=dtype)
     settings = _resolve_final_sampling_settings(
-        state, image_geometry,
+        state, image_geometry, options,
         grid_order=grid_order,
-        last_numbered_iteration=last_numbered_iteration,
-        parity=parity,
+        numbered_iteration_count=numbered_iteration_count,
         active_replay_dir=active_replay_dir,
-        require_final_state=require_final_state,
         previous_perturbation=previous_perturbation,
         rng=rng,
-        n_classes=n_classes,
     )
     base_translations = jnp.asarray(
         sampling._relion_base_translation_grid(

@@ -9,7 +9,12 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import final_sampling
-from relax.refinement.refinement_options import RelionParityOptions
+from relax.refinement.refinement_options import (
+    RefinementOptions,
+    RefinementSchedule,
+    RelionParityOptions,
+    ReplayState,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -62,13 +67,11 @@ def preparation(monkeypatch):
         previous_rotation_grid=final_sampling.sampling.RotationGrid(
             rotations=rotations, rotation_eulers=eulers, healpix_order=3, symmetry="C1",
         ),
-        last_numbered_iteration=12,
-        parity=RelionParityOptions(),
+        options=RefinementOptions(schedule=RefinementSchedule(init_relion_iteration=10)),
+        numbered_iteration_count=2,
         active_replay_dir=None,
-        require_final_state=False,
         previous_perturbation=0.25,
         rng=object(),
-        n_classes=1,
     )
     return inputs, events, host_grid
 
@@ -77,7 +80,10 @@ def preparation(monkeypatch):
 @pytest.mark.parametrize("perturb_factor", [0.0, 0.5])
 def test_final_grids_are_ready_for_scoring_at_the_existing_rounding_boundary(preparation, dtype, perturb_factor):
     inputs, events, host_grid = preparation
-    inputs.update(dtype=dtype, parity=RelionParityOptions(perturb_factor=perturb_factor, perturb_seed=7))
+    inputs.update(
+        dtype=dtype,
+        options=replace(inputs["options"], parity=RelionParityOptions(perturb_factor=perturb_factor, perturb_seed=7)),
+    )
     result = final_sampling.prepare_final_sampling(**inputs)
     assert result.base_rotations is inputs["previous_rotation_grid"].rotations
     assert isinstance(result.base_translations, jnp.ndarray)
@@ -161,7 +167,10 @@ def test_replay_uses_its_sampling_iteration_without_advancing_native_rng(prepara
 def test_missing_final_star_preserves_zero_application_and_rng_semantics(preparation, monkeypatch, tmp_path, active_replay, factor, applied):
     inputs, events, _ = preparation
     inputs["active_replay_dir"] = str(tmp_path) if active_replay else None
-    inputs["parity"] = RelionParityOptions(final_sampling_replay_relion_dir=str(tmp_path), perturb_factor=factor)
+    inputs["options"] = replace(
+        inputs["options"],
+        parity=RelionParityOptions(final_sampling_replay_relion_dir=str(tmp_path), perturb_factor=factor),
+    )
     monkeypatch.setattr(final_sampling, "select_final_sampling_star", lambda *a, **kw: (None, None, []))
     result = final_sampling.prepare_final_sampling(**inputs)
     assert [name for name, _ in events] == (["perturb"] if applied else [])
@@ -171,7 +180,10 @@ def test_missing_final_star_preserves_zero_application_and_rng_semantics(prepara
 
 def test_strict_final_replay_requires_its_files(preparation, tmp_path):
     inputs, events, _ = preparation
-    inputs.update(active_replay_dir=str(tmp_path), require_final_state=True)
+    inputs.update(
+        active_replay_dir=str(tmp_path),
+        options=replace(inputs["options"], replay=ReplayState(replay_iteration_overrides=[{}])),
+    )
     with pytest.raises(RuntimeError, match="Strict RELION final all-data replay requires"):
         final_sampling.prepare_final_sampling(**inputs)
     assert not events
