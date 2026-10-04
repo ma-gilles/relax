@@ -195,9 +195,11 @@ def test_selected_mode_reaches_summary_and_older_receipt_defaults_auto(tmp_path,
     assert run_test_tier.cmd_run(Namespace(run_root=tmp_path, tier="long")) == 0
     assert json.loads((tmp_path / "SUMMARY.json").read_text())["coarse_engine"] == "gemm_dense"
     (tmp_path / "PLAN.json").write_text(json.dumps({"source": {"head": "abc"}}))
+    monkeypatch.setenv("RELAX_TEST_RECEIPTS", str(tmp_path / "receipts.jsonl"))
     assert write_test_receipt.main(["--run-root", str(tmp_path), "--tier", "long", "--status", "pass",
                                     "--job", "123", "--gpu-model", "A100"]) == 0
     assert json.loads((tmp_path / "RECEIPT.json").read_text())["coarse_engine"] == "auto"
+    assert json.loads((tmp_path / "receipts.jsonl").read_text())["sha"] == "abc"
 
 
 def _case(auc, shell):

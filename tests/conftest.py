@@ -350,6 +350,34 @@ def _bound_compiled_executable_maps():
     _maps_after_last_clear[0] = _memory_map_count() or 0
 
 
+# Run-control variables that name a real ledger or run root. A tier job or an agent's shell exports them
+# for its run; a test process that inherits one writes test records into that run's files, so the session
+# starts without them and a test that exercises one sets it to a temporary path itself.
+RUN_CONTROL_ENV = (
+    # The handoff ledger scripts/write_test_receipt.py appends to; the tier job exports it to every item.
+    "RELAX_TEST_RECEIPTS",
+    # Makes scripts/run_test_tier.py::run_item add a timing directory to the run it executes.
+    "RELAX_TIER_DIAGNOSE_TIMING",
+    # Where scripts/run_vdam_abinitio_merge_guard.py creates its run directory by default.
+    "VDAM_ABINITIO_GUARD_OUTPUT_ROOT",
+    "RELAX_AGENT_SCRATCH_ROOT",
+    # Scratch and runtime roots of the Slurm launchers (scripts/run_em_*_slurm.sh).
+    "EM_COMPLETION_SCRATCH_DIR",
+    "EM_COMPLETION_RUNTIME_ROOT",
+    "EM_K1_MATRIX_SCRATCH_DIR",
+    "EM_K1_MATRIX_RUNTIME_ROOT",
+    "EM_PARITY_LONG_SCRATCH_DIR",
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clear_run_control_env():
+    """Remove inherited ledger and run-root variables for the whole test session (RUN_CONTROL_ENV)."""
+    inherited = {name: os.environ.pop(name) for name in RUN_CONTROL_ENV if name in os.environ}
+    yield
+    os.environ.update(inherited)
+
+
 @pytest.fixture(autouse=True)
 def _set_deterministic_seed():
     # Keep stochastic tests deterministic by default.
