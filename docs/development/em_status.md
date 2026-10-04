@@ -522,9 +522,12 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   RELION at it10, 20, 30, 40, 60, 70 and 80 (average Pmax within 2e-3, best poses equal for 98-100% of the
   subset, map one-step difference 0.5-4e-3 of a 4-20e-2 step), so it is trajectory divergence, not a per-step
   difference (RELION's own `--continue` at it050 departs from its run: tau2_fudge 4.0, step size 0.3).
-  Inside or above at two of three seeds in each case. OPEN: et09 one-group s2 (both relax runs 1-3e-5
-  below) and et15 s2 (relax 0.98203 / 0.98205 / 0.98209 vs RELION [0.98211, 0.98212]), pending one more
-  stock RELION run at each (job 14914672). A replay audit of both seeds found no per-step defect: one
+  Inside or above at two of three seeds in each case. Seed 2 with one more stock RELION run each (job
+  14914672; all maps rescored together, `scores/s2_band`): et09 one group RELION 0.988369 / 0.988392 /
+  0.988241 / 0.988241, relax 0.988232 / 0.988206 (0.9e-5 and 3.5e-5 below the range, which is 1.5e-4 wide):
+  OPEN, a relax rerun on current main is scored next. et15 RELION 0.982124 / 0.982101 / 0.982157, relax
+  0.982034 / 0.982044 / 0.982124: the ranges overlap, relax's mean is 6.0e-5 lower. Both seed-2 rows sit
+  on the low side. A replay audit of both seeds found no per-step defect: one
   iteration from RELION's checkpoints (it010, 100, 190; RELION's sampling perturbation) has RELION's
   update scale (per-shell projection 0.993-1.001), tau2 equal at RELION's print precision, populations
   to 1e-6 and best poses for 99.6-100% of the subset; a float64 M-step changes the step by 3e-7. The
@@ -532,6 +535,25 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   to 5e-4, no sign), against final-map gaps of 2-8e-5 and seed-to-seed spreads of about 2e-3. Evidence:
   `/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_vdam_ogtomo_20261002`,
   `em_work/cryoet_vdam_20261001/{tomo_cont,audit}`.
+- Subtomogram VDAM at low SNR (etoptics bin-2 fixtures `etob2l_plain` / `etob2l_evenz`, SNR 0.005, 1000
+  particles, 8 optics groups, seed 1; 2026-10-04): inside RELION's same-seed range, no code change. relax's
+  average Pmax at iteration 200 is 0.450 (0.448 on main b44f33e) against 0.607 for the first stock RELION
+  run, because relax refines the offset step at iteration 80 (to 0.9945 A) and that run at iteration 90 (to
+  1.275 A). Two more stock RELION runs at the same seed (job 14952405) refine at iteration 80 to 0.975 A and
+  end at Pmax 0.449 and 0.449, with relax's resolution-shell sequence; the first run is the outlier. The
+  split is RELION's: `updateAngularSampling` runs every 10 iterations and proceeds only after an iteration
+  without resolution gain, and the resolution (last shell before the first SSNR below 1) hinges on shell
+  11, whose SSNR after iteration 64 is 1.0096 (RELION) and 1.0036 (relax) while shells 13-15 are already
+  above 1; same-seed RELION runs differ by 0.3-1.0 % in SSNR by iteration 60. One iteration from RELION's
+  iteration 60, 70 and 80 states (job 14952421) reproduces RELION's next resolution and its SSNR to 1e-4 at
+  shells 8-25 (per-particle Pmax difference unsigned, median below 4e-4). Same job, same node, one H100
+  each: relax 7004 s, the two RELION runs 10205 and 9900 s (the first RELION run, with the coarser step,
+  took 5010 s on another node). Final maps: masked GT FSC-AUC 0.97645 (relax) and 0.97646 (first RELION
+  run). The beam-tilt and magnification cases refine at iteration 90 in both programs. Open under the
+  range rule: at iteration 10 relax's SSNR differs from RELION's by up to 1.2 % (shells 2-10) while RELION
+  runs differ by 0.01-0.2 % there; a one-step audit from RELION's iteration 3 and 9 states is queued (job
+  14963370). Evidence: `em_work/cryoet_vdam_20261001/{relion/etob2l_plain,plain_probe,audit/etob2l_plain_s1}`,
+  summary in `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/plain_probe_summary.json`.
 - With one optics group RELION's subtomogram start-up seeds only class 1 (each group's first
   particle fills the 10-image quota, into class `position % K`), so K>1 VDAM on the etbench
   fixtures keeps classes 2..K empty in both programs (ma-gilles/relax#11). With one optics group
