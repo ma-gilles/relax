@@ -97,7 +97,7 @@ from relax.helpers.orientation_priors import (
 from relax.helpers.resolution import (
     ImageGeometry,
     _firstiter_cc_ini_high_tapered,
-    _truncate_fsc_for_current_size_growth,
+    _zero_shells_past_current_size,
     estimate_class_iteration_resolution,
     estimate_k1_iteration_resolution,
     relion_expectation_coarse_size_order,
@@ -2677,7 +2677,7 @@ def refine_single_volume(
             incr_size_after, high_fsc_after = relion_incr_size, relion_has_high_fsc_at_limit
             if not k_class_enabled:
                 incr_size_after, high_fsc_after = update_relion_growth_state_from_fsc(
-                    _truncate_fsc_for_current_size_growth(
+                    _zero_shells_past_current_size(
                         tau2_fsc_for_update,
                         current_size=current_size,
                         grid_size=grid_size,

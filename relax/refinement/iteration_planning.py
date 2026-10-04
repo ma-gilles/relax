@@ -24,8 +24,7 @@ from relax.helpers.resolution import (
     ImageGeometry,
     _bootstrap_current_size_relion,
     _firstiter_cc_scheduling_resolution_shell,
-    _truncate_data_vs_prior_for_current_size,
-    _truncate_fsc_for_current_size_growth,
+    _zero_shells_past_current_size,
     bootstrap_current_size_from_ini_high_relion,
     clamp_relion_coarse_image_size,
     class_resolution_shells,
@@ -432,7 +431,7 @@ def plan_initial_image_size(
         )
     elif schedule.init_fsc is not None:
         prev_cs = int(schedule.init_current_size)
-        fsc_prev = _truncate_fsc_for_current_size_growth(
+        fsc_prev = _zero_shells_past_current_size(
             schedule.init_fsc,
             current_size=prev_cs,
             grid_size=grid_size,
@@ -492,7 +491,7 @@ def plan_class_image_size(
         data_vs_prior,
         dtype=dtype,
     ).copy()
-    data_vs_prior_prev = _truncate_data_vs_prior_for_current_size(
+    data_vs_prior_prev = _zero_shells_past_current_size(
         data_vs_prior_prev_raw,
         current_size=previous_size,
         grid_size=grid_size,
@@ -563,7 +562,7 @@ def plan_halfmap_image_size(
         fsc_history[-1] if fsc_history else restart.fsc,
         dtype=dtype,
     ).copy()
-    fsc_prev_for_growth = _truncate_fsc_for_current_size_growth(
+    fsc_prev_for_growth = _zero_shells_past_current_size(
         growth_fsc_history[-1]
         if growth_fsc_history
         else (fsc_prev_raw if restart is None or restart.fsc_for_growth is None else restart.fsc_for_growth),
@@ -572,7 +571,7 @@ def plan_halfmap_image_size(
         dtype=dtype,
     )
 
-    data_vs_prior_iter = _truncate_data_vs_prior_for_current_size(
+    data_vs_prior_iter = _zero_shells_past_current_size(
         data_vs_prior,
         current_size=previous_size,
         grid_size=grid_size,

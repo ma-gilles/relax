@@ -239,9 +239,15 @@ def bootstrap_current_size_from_ini_high_relion(
     return _bootstrap_current_size_relion(2 * init_shell, ori_size=ori_size, incr_size=incr_size)
 
 
-def _truncate_data_vs_prior_for_current_size(data_vs_prior, *, current_size, grid_size, dtype=np.float32):
-    """Zero DVP shells beyond RELION's inclusive current-size boundary."""
-    truncated = np.asarray(data_vs_prior, dtype=dtype).copy()
+def _zero_shells_past_current_size(shell_curve, *, current_size, grid_size, dtype=np.float32):
+    """Zero the shells of an FSC or data-vs-prior curve beyond RELION's inclusive current-size boundary.
+
+    BackProjector includes radii ``R <= current_size / 2``.  The boundary
+    shell therefore remains part of RELION's full-array threshold scan;
+    only shells starting at ``current_size // 2 + 1`` are unavailable.
+    The shell axis is the last one (``(n_shells,)`` or ``(n_classes, n_shells)``).
+    """
+    truncated = np.asarray(shell_curve, dtype=dtype).copy()
     if int(current_size) < int(grid_size):
         first_unavailable_shell = min(truncated.shape[-1], int(current_size) // 2 + 1)
         truncated[..., first_unavailable_shell:] = 0.0
@@ -272,7 +278,7 @@ def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_s
     unavailable and zeroed first. See docs/math/relion_refinement_algorithm.md
     section 7 for the split-half and final all-data curves.
     """
-    dvp = _truncate_data_vs_prior_for_current_size(
+    dvp = _zero_shells_past_current_size(
         data_vs_prior,
         current_size=current_size,
         grid_size=grid_size,
@@ -281,20 +287,6 @@ def relion_current_resolution_shell(data_vs_prior, *, k_class_enabled, current_s
     if k_class_enabled:
         return max(class_resolution_shells(dvp, grid_size=grid_size))
     return resolution_from_data_vs_prior(dvp, ori_size=grid_size, allow_high_res_recovery=True)
-
-
-def _truncate_fsc_for_current_size_growth(fsc, *, current_size, grid_size, dtype=np.float32):
-    """Zero FSC shells beyond RELION's inclusive current-size boundary.
-
-    BackProjector includes radii ``R <= current_size / 2``.  The boundary
-    shell therefore remains part of RELION's full-array FSC threshold scan;
-    only shells starting at ``current_size // 2 + 1`` are unavailable.
-    """
-    truncated = np.asarray(fsc, dtype=dtype).copy()
-    if int(current_size) < int(grid_size):
-        first_unavailable_shell = min(len(truncated), int(current_size) // 2 + 1)
-        truncated[first_unavailable_shell:] = 0.0
-    return truncated
 
 
 def initialize_resolution_from_fsc(
@@ -409,7 +401,7 @@ def estimate_k1_iteration_resolution(
     ``ini_high`` scheduling override.
     See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
     """
-    data_vs_prior = _truncate_data_vs_prior_for_current_size(
+    data_vs_prior = _zero_shells_past_current_size(
         data_vs_prior,
         current_size=current_size,
         grid_size=grid_size,
@@ -447,7 +439,7 @@ def estimate_class_iteration_resolution(
     scheduling override.
     See ``docs/math/relion_refinement_algorithm.md#6-sampling-transitions-and-convergence``.
     """
-    data_vs_prior = _truncate_data_vs_prior_for_current_size(
+    data_vs_prior = _zero_shells_past_current_size(
         class_data_vs_prior,
         current_size=current_size,
         grid_size=grid_size,
