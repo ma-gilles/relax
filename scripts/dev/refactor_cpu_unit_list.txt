@@ -66,6 +66,7 @@ tests/unit/test_final_scoring_halves.py
 tests/unit/test_firstiter_cc_batch_budget.py
 tests/unit/test_follower_state_ownership.py
 tests/unit/test_frozen_refinement_boundary.py
+tests/unit/test_full_refinement_command.py
 tests/unit/test_fsc_resolution_loop.py
 tests/unit/test_global_coarse_order_boundary.py
 tests/unit/test_half_overlap_dispatch.py
@@ -153,6 +154,7 @@ tests/unit/test_run_full_refinement_results_archive.py
 tests/unit/test_run_full_refinement_sampling.py
 tests/unit/test_run_k_class_parity.py
 tests/unit/test_run_multi_iter_parity.py
+tests/unit/test_run_reports.py
 tests/unit/test_segmented_joint_pmax_preservation.py
 tests/unit/test_sigma_offset_per_half.py
 tests/unit/test_snapshot_capture.py

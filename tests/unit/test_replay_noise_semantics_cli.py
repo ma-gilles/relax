@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.diagnostics import relion_replay
 from relax.refinement import command_options
 from relax.refinement import full_refinement as run_full_refinement
 
@@ -50,7 +51,7 @@ def _slot0_noise(tmp_path, *, semantics, init_relion_iteration):
         init_relion_iteration,
         tmp_path,
     )
-    overrides = run_full_refinement.relion_replay._build_replay_iteration_overrides(
+    overrides = relion_replay._build_replay_iteration_overrides(
         tmp_path,
         half1_idx=np.asarray([0], dtype=np.int64),
         half2_idx=np.asarray([1], dtype=np.int64),

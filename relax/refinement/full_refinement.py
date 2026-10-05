@@ -34,7 +34,7 @@ from recovar import utils
 from recovar.utils.file_hash import sha256_file as _sha256_file
 
 import relax
-from relax.diagnostics import frozen_boundary_cli, initial_model_replay, relion_replay
+from relax.diagnostics import frozen_boundary_cli, initial_model_replay, replay_inputs
 from relax.diagnostics.state_swap_probe import (
     build_state_swap_probe,
     state_swap_probe_loop_index,
@@ -340,62 +340,6 @@ def _refine_sampling_kwargs(args, init_healpix_order):
         "init_translation_range": args.offset_range,
         "init_translation_step": args.offset_step,
     }
-
-
-_FINAL_REPLAY_GROUP_KEYS = {
-    "poses": {
-        "previous_best_translations",
-        "previous_best_rotations",
-        "previous_best_rotation_eulers",
-    },
-    "sampling": {
-        "translation_sigma_angstrom",
-        "translation_sigma_angstrom_per_half",
-    },
-    "corrections": {
-        "noise_variance",
-        "direction_prior",
-        "image_corrections",
-        "serialized_scale_corrections",
-    },
-    "noise": {"noise_variance"},
-    "direction_prior": {"direction_prior"},
-    # The serialized image correction is norm-factor * source-scale.  Pair it
-    # with that source scale so the replay layer preserves only the RELION
-    # norm factor on the resident scoring scale.
-    "norm_factor": {"image_corrections", "serialized_scale_corrections"},
-    # An explicit live scoring-scale oracle.  This is intentionally excluded
-    # from ``all`` because a generic leader model STAR need not represent the
-    # scale resident on every follower rank.
-    "scoring_scale": {"scoring_scale_corrections"},
-    "references": set(),
-}
-_FINAL_REPLAY_ALL_GROUPS = {"poses", "sampling", "corrections", "references"}
-
-
-def _select_final_replay_override(source_override, requested_fields):
-    """Select diagnostic final-boundary groups without touching numbered state."""
-    requested_groups = {
-        token.strip().lower()
-        for token in str(requested_fields).split(",")
-        if token.strip()
-    }
-    valid_groups = set(_FINAL_REPLAY_GROUP_KEYS) | {"all"}
-    unknown_groups = sorted(requested_groups - valid_groups)
-    if not requested_groups or unknown_groups:
-        raise ValueError(
-            "--final-replay-fields requires one or more of "
-            "poses,sampling,corrections,noise,direction_prior,norm_factor,"
-            "scoring_scale,references,all; "
-            f"unknown={unknown_groups}"
-        )
-    if "all" in requested_groups:
-        requested_groups = (requested_groups - {"all"}) | set(_FINAL_REPLAY_ALL_GROUPS)
-    selected_keys = set().union(*(_FINAL_REPLAY_GROUP_KEYS[group] for group in requested_groups))
-    selected_override = {
-        key: value for key, value in source_override.items() if key in selected_keys
-    }
-    return requested_groups, selected_override
 
 
 def _relion_optimiser_star_for_runtime(
@@ -1257,6 +1201,15 @@ def main(command=None):
     # ~22%). Per-image normCorrection / group-scale replay is part of strict
     # RELION replay and can be disabled with --no-replay_relion_normcorr for
     # diagnostics.
+    replay_target = replay_inputs.ReplayTarget(
+        half1_rows=particle_layout.half1_rows,
+        half2_rows=particle_layout.half2_rows,
+        particle_names=our_names,
+        voxel_size=ds.voxel_size,
+        grid_size=ds.grid_size,
+        volume_shape=ds.volume_shape,
+        noise_dtype=np.float64 if _double_image_preprocessing else np.float32,
+    )
     replay_iteration_overrides = None
     if args.perturb_replay_relion_dir is not None:
         if frozen_boundary is not None:
@@ -1266,30 +1219,14 @@ def main(command=None):
                 "sealed per-half scoring state suppresses process-start noise broadcast"
             )
         else:
-            replay_normcorr = _resolve_replay_normcorr(
+            replay_iteration_overrides = replay_inputs.numbered_star_replay(
                 args.perturb_replay_relion_dir,
-                args.replay_relion_normcorr,
-            )
-            replay_iteration_overrides = relion_replay._build_replay_iteration_overrides(
-                args.perturb_replay_relion_dir,
-                particle_layout.half1_rows,
-                particle_layout.half2_rows,
-                # Numbered expectation k consumes the state written before it, so
-                # iterations 1..N use run_it000..run_it{N-1}.  After convergence,
-                # RELION's unnumbered all-data expectation consumes the state just
-                # written by iteration N and therefore needs run_it{N} as the
-                # extra final-only override.
-                int(args.max_iter),
-                ds_voxel=ds.voxel_size,
-                ds_grid=ds.grid_size,
-                include_normcorr=replay_normcorr,
+                replay_target,
+                max_iter=args.max_iter,
                 init_relion_iteration=args.init_relion_iteration,
-                particle_names=our_names,
-                include_k1_mean_variance=(args.state_swap_target_relion_iteration is not None),
-                include_k1_scoring_scale=(args.state_swap_target_relion_iteration is not None),
-                strict=True,
+                include_normcorr=_resolve_replay_normcorr(args.perturb_replay_relion_dir, args.replay_relion_normcorr),
+                include_k1_state_swap=args.state_swap_target_relion_iteration is not None,
                 process_start_noise_broadcast=replay_process_start_noise_broadcast,
-                noise_dtype=np.float64 if _double_image_preprocessing else np.float32,
             )
             logger.info(
                 "Replay noise semantics: %s (slot-0 process-start broadcast=%s)",
@@ -1297,79 +1234,17 @@ def main(command=None):
                 replay_process_start_noise_broadcast,
             )
 
-    final_replay_override = None
-    final_replay_reference_maps = None
-    final_replay_source_iteration = None
-    final_sampling_replay_relion_dir = None
+    final_replay = replay_inputs.FinalReplay()
     if args.final_replay_relion_dir is not None:
-        final_replay_dir = Path(args.final_replay_relion_dir).resolve()
-        complete_iterations = relion_replay._complete_relion_numbered_state_iterations(final_replay_dir)
-        source_iteration = relion_replay._resolve_final_replay_source_iteration(
-            configured_max_iter=args.max_iter,
+        final_replay = replay_inputs.final_only_replay(
+            args.final_replay_relion_dir,
+            replay_target,
+            max_iter=args.max_iter,
             explicit_source_iteration=args.final_replay_source_iteration,
-            complete_iterations=complete_iterations,
-        )
-        final_replay_source_iteration = source_iteration
-        final_optimiser_path = final_replay_dir / "run_optimiser.star"
-        final_sampling_path = final_replay_dir / "run_sampling.star"
-        if not final_optimiser_path.is_file() or not final_sampling_path.is_file():
-            raise ValueError(
-                "diagnostic final-only substitution requires unnumbered run_optimiser.star "
-                f"and run_sampling.star in {final_replay_dir}"
-            )
-        from relax.relion.relion_metadata import read_relion_optimiser_metadata
-
-        final_optimiser_metadata = read_relion_optimiser_metadata(final_optimiser_path)
-        if not bool(final_optimiser_metadata.get("has_converged", False)):
-            raise ValueError(
-                f"diagnostic final-only oracle does not report convergence: {final_optimiser_path}"
-            )
-        final_overrides = relion_replay._build_replay_iteration_overrides(
-            final_replay_dir,
-            particle_layout.half1_rows,
-            particle_layout.half2_rows,
-            source_iteration,
-            ds_voxel=ds.voxel_size,
-            ds_grid=ds.grid_size,
-            include_normcorr=True,
+            fields=args.final_replay_fields,
             init_relion_iteration=args.init_relion_iteration,
-            particle_names=our_names,
-            strict=True,
-            noise_dtype=np.float64 if _double_image_preprocessing else np.float32,
-        )
-        source_override = final_overrides[-1]
-        if source_override is None:
-            raise ValueError("diagnostic final-only substitution did not load a last-numbered override")
-        # Expose the model-STAR scale as a scorer oracle only at this explicit
-        # final diagnostic boundary.  Numbered replay continues to treat it as
-        # serialization provenance because general MPI leader/follower layouts
-        # do not guarantee that it is every scorer's resident scale.
-        source_override = dict(source_override)
-        serialized_scale = source_override.get("serialized_scale_corrections")
-        if serialized_scale is not None:
-            source_override["scoring_scale_corrections"] = serialized_scale
-        requested_groups, final_replay_override = _select_final_replay_override(
-            source_override,
-            args.final_replay_fields,
-        )
-        if "references" in requested_groups:
-            if args.n_classes != 1:
-                raise ValueError(
-                    "diagnostic final-only reference substitution currently requires --n-classes=1"
-                )
-            final_replay_reference_maps = relion_replay._load_final_replay_reference_maps(
-                final_replay_dir,
-                source_iteration,
-                ds.volume_shape,
-            )
-        if "sampling" in requested_groups:
-            final_sampling_replay_relion_dir = str(final_replay_dir)
-        logger.info(
-            "Diagnostic final-only substitution: source_iteration=%d groups=%s fields=%s source=%s",
-            source_iteration,
-            sorted(requested_groups),
-            sorted(final_replay_override),
-            final_replay_dir,
+            n_classes=args.n_classes,
+            log=logger,
         )
 
     # ``--relion_init_dir`` is the strict cold-start contract, not merely a
@@ -1383,49 +1258,17 @@ def main(command=None):
         args.n_classes,
         args.init_relion_iteration,
     ):
-        initial_overrides = relion_replay._build_replay_iteration_overrides(
+        first_state = replay_inputs.k1_initial_state(
             args.relion_init_dir,
-            particle_layout.half1_rows,
-            particle_layout.half2_rows,
-            0,
-            ds_voxel=ds.voxel_size,
-            ds_grid=ds.grid_size,
-            include_normcorr=True,
-            init_relion_iteration=0,
-            particle_names=our_names,
-            include_initial_state=True,
-            strict=True,
-            noise_dtype=np.float64 if _double_image_preprocessing else np.float32,
+            replay_target,
+            explicit_noise=noise_variance if args.init_noise_from_npz is not None else None,
+            live_noise=relion_live_initial_noise_variance,
+            log=logger,
         )
-        if initial_overrides[0] is not None:
-            if args.init_noise_from_npz is not None:
-                initial_overrides[0] = dict(initial_overrides[0])
-                explicit_noise = (
-                    list(noise_variance)
-                    if isinstance(noise_variance, (list, tuple))
-                    else [noise_variance, noise_variance]
-                )
-                initial_overrides[0]["noise_variance"] = [
-                    np.asarray(value, dtype=np.float64).copy()
-                    for value in explicit_noise
-                ]
-                logger.info(
-                    "STRICT-PARITY: first expectation preserves explicit "
-                    "--init-noise-from-npz instead of rounded model-STAR noise",
-                )
-            elif relion_live_initial_noise_variance is not None:
-                initial_overrides[0] = dict(initial_overrides[0])
-                initial_overrides[0]["noise_variance"] = [
-                    np.asarray(relion_live_initial_noise_variance, dtype=np.float64).copy(),
-                    np.asarray(relion_live_initial_noise_variance, dtype=np.float64).copy(),
-                ]
-                logger.info(
-                    "STRICT-PARITY: first expectation consumes computed live "
-                    "binary64 K=1 startup noise instead of rounded model-STAR noise",
-                )
+        if first_state is not None:
             if replay_iteration_overrides is None:
                 replay_iteration_overrides = [None] * (args.max_iter + 1)
-            replay_iteration_overrides[0] = initial_overrides[0]
+            replay_iteration_overrides[0] = first_state
             logger.info(
                 "STRICT-PARITY: loaded complete RELION run_it000 cold-start state "
                 "for the first expectation step",
@@ -1438,26 +1281,13 @@ def main(command=None):
             )
     elif args.relion_init_dir is not None and int(args.n_classes) > 1:
         if int(args.init_relion_iteration) == 0:
-            initial_overrides = relion_replay._build_replay_iteration_overrides(
-                args.relion_init_dir,
-                particle_layout.half1_rows,
-                particle_layout.half2_rows,
-                0,
-                ds_voxel=ds.voxel_size,
-                ds_grid=ds.grid_size,
-                include_normcorr=False,
-                init_relion_iteration=0,
-                particle_names=our_names,
-                include_initial_state=True,
-                strict=True,
-            )
-            kclass_firstiter_translations = input_poses._kclass_firstiter_translation_seed(
-                initial_overrides[0],
-                n_classes=args.n_classes,
-                init_relion_iteration=args.init_relion_iteration,
-            )
-            kclass_firstiter_translation_path = (
-                Path(args.relion_init_dir).expanduser().resolve() / "run_it000_data.star"
+            kclass_firstiter_translations, kclass_firstiter_translation_path = (
+                replay_inputs.class3d_initial_translations(
+                    args.relion_init_dir,
+                    replay_target,
+                    n_classes=args.n_classes,
+                    init_relion_iteration=args.init_relion_iteration,
+                )
             )
             logger.info(
                 "STRICT-PARITY: Class3D first iteration keeps run_it000 input "
@@ -1740,7 +1570,7 @@ def main(command=None):
                 relion_model_pixel_size=relion_model_pixel_size,
                 perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                 perturb_replay_restart_state_iterations=perturb_replay_restart_state_iterations,
-                final_sampling_replay_relion_dir=final_sampling_replay_relion_dir,
+                final_sampling_replay_relion_dir=final_replay.sampling_dir,
                 image_fourier_backend=args.image_fourier_backend,
                 emulate_relion_firstiter_cc=bool(args.firstiter_cc),
                 relion_firstiter_ini_high_angstrom=(
@@ -1775,9 +1605,9 @@ def main(command=None):
                     None if frozen_boundary is None else frozen_boundary.refinement_state_fields
                 ),
                 replay_iteration_overrides=replay_iteration_overrides,
-                final_replay_override=final_replay_override,
-                final_replay_reference_maps=final_replay_reference_maps,
-                final_replay_source_iteration=final_replay_source_iteration,
+                final_replay_override=final_replay.override,
+                final_replay_reference_maps=final_replay.reference_maps,
+                final_replay_source_iteration=final_replay.source_iteration,
                 init_group_ids=list(particle_groups.group_ids_per_half),
                 init_group_count=particle_groups.n_groups,
                 relion_scale_follower_count=follower_topology.n_followers,
