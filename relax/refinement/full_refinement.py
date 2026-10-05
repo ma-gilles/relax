@@ -95,6 +95,36 @@ def _k1_relion_live_initial_noise_enabled(
     )
 
 
+def _refuse_live_initial_noise(args, *, frozen_boundary, half_sets, mask_params) -> None:
+    """Refuse the fresh-K=1 live-noise diagnostic outside a strict fresh K=1 cold start, naming every reason."""
+    invalid_reasons = []
+    if int(args.n_classes) != 1:
+        invalid_reasons.append("n_classes must equal 1")
+    if int(args.init_relion_iteration) != 0:
+        invalid_reasons.append("init_relion_iteration must equal 0")
+    if frozen_boundary is not None:
+        invalid_reasons.append("frozen boundary must be absent")
+    if args.perturb_replay_relion_dir is not None:
+        invalid_reasons.append("perturb replay must be absent")
+    if args.relion_init_dir is None:
+        invalid_reasons.append("relion_init_dir is required")
+    if half_sets.relion_particles is None or args.relion_half_sets is None:
+        invalid_reasons.append("RELION half-set data are required")
+    if mask_params is None:
+        invalid_reasons.append("RELION particle-diameter mask parameters are required")
+    if half_sets.noise_source_rows is None:
+        invalid_reasons.append("RELION initial-noise source order is required")
+    if half_sets.noise_optics_group_ids is None:
+        invalid_reasons.append("RELION initial-noise optics groups are required")
+    if half_sets.optics_pixel_sizes is None or half_sets.optics_pixel_sizes.size != 1:
+        invalid_reasons.append("exactly one RELION optics pixel size is required")
+    if invalid_reasons:
+        raise ValueError(
+            f"{_K1_RELION_LIVE_INITIAL_NOISE_ENV} is restricted to a strict fresh "
+            f"K=1 cold start: {'; '.join(invalid_reasons)}",
+        )
+
+
 def _resolve_relion_firstiter_ini_high(
     *,
     optimiser_ini_high: float | None,
@@ -868,57 +898,10 @@ def main(command=None):
     relion_live_initial_sigma2 = None
     relion_live_initial_noise_variance = None
     if use_relion_live_initial_noise:
-        invalid_reasons = []
-        if int(args.n_classes) != 1:
-            invalid_reasons.append("n_classes must equal 1")
-        if int(args.init_relion_iteration) != 0:
-            invalid_reasons.append("init_relion_iteration must equal 0")
-        if frozen_boundary is not None:
-            invalid_reasons.append("frozen boundary must be absent")
-        if args.perturb_replay_relion_dir is not None:
-            invalid_reasons.append("perturb replay must be absent")
-        if args.relion_init_dir is None:
-            invalid_reasons.append("relion_init_dir is required")
-        if relion_particles is None or args.relion_half_sets is None:
-            invalid_reasons.append("RELION half-set data are required")
-        if relion_mask_params is None:
-            invalid_reasons.append("RELION particle-diameter mask parameters are required")
-        if half_sets.noise_source_rows is None:
-            invalid_reasons.append("RELION initial-noise source order is required")
-        if half_sets.noise_optics_group_ids is None:
-            invalid_reasons.append("RELION initial-noise optics groups are required")
-        if half_sets.optics_pixel_sizes is None or half_sets.optics_pixel_sizes.size != 1:
-            invalid_reasons.append("exactly one RELION optics pixel size is required")
-        if invalid_reasons:
-            raise ValueError(
-                f"{_K1_RELION_LIVE_INITIAL_NOISE_ENV} is restricted to a strict fresh "
-                f"K=1 cold start: {'; '.join(invalid_reasons)}",
-            )
-        relion_live_initial_sigma2_per_group = startup_noise.estimate_startup_sigma2(
-            ds,
-            source_rows=half_sets.noise_source_rows,
-            optics_group_ids=half_sets.noise_optics_group_ids,
-            image_pixel_size=float(half_sets.optics_pixel_sizes[0]),
-            particle_diameter_ang=float(relion_mask_params[0]),
-            width_mask_edge_px=int(relion_mask_params[1]),
-        )
-        if relion_live_initial_sigma2_per_group.shape[0] != 1:
-            raise NotImplementedError(
-                "fresh K=1 live-noise scoring currently requires one optics group",
-            )
-        relion_live_initial_sigma2 = relion_live_initial_sigma2_per_group[0]
-        relion_live_initial_noise_variance = startup_noise.scoring_noise_from_sigma2(
-            relion_live_initial_sigma2,
-            grid_size=int(ds.grid_size),
-            # The fresh K=1 pass scores with RELION's exact (double) BPref operands.
-            output_dtype=np.float64,
-        )
-        logger.warning(
-            "STRICT-PARITY: fresh K=1 RELION live initial noise enabled: particles=%d "
-            "source_rows_head=%s sigma2_head=%s",
-            min(1000, int(np.asarray(half_sets.noise_source_rows).size)),
-            np.asarray(half_sets.noise_source_rows, dtype=np.int64)[:5].tolist(),
-            np.asarray(relion_live_initial_sigma2[:5]),
+        _refuse_live_initial_noise(args, frozen_boundary=frozen_boundary, half_sets=half_sets,
+                                   mask_params=relion_mask_params)
+        relion_live_initial_sigma2, relion_live_initial_noise_variance = startup_noise.live_initial_noise(
+            ds, half_sets, mask_params=relion_mask_params, log=logger,
         )
     if args.relion_init_dir is not None and frozen_boundary is None:
         initial_model = initial_model_replay.read_initial_model(

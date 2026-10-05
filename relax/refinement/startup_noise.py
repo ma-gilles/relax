@@ -320,6 +320,33 @@ def prepare_startup_noise(
 
 
 
+def live_initial_noise(dataset, half_sets, *, mask_params, log):
+    """The fresh K=1 noise RELION estimates live from the images (one optics group): its sigma2 and the
+    float64 scoring variance, the pass's exact BPref operands. ``half_sets`` lists the particles it reads."""
+    sigma2_per_group = estimate_startup_sigma2(
+        dataset,
+        source_rows=half_sets.noise_source_rows,
+        optics_group_ids=half_sets.noise_optics_group_ids,
+        image_pixel_size=float(half_sets.optics_pixel_sizes[0]),
+        particle_diameter_ang=float(mask_params[0]),
+        width_mask_edge_px=int(mask_params[1]),
+    )
+    if sigma2_per_group.shape[0] != 1:
+        raise NotImplementedError(
+            "fresh K=1 live-noise scoring currently requires one optics group",
+        )
+    sigma2 = sigma2_per_group[0]
+    variance = scoring_noise_from_sigma2(sigma2, grid_size=int(dataset.grid_size), output_dtype=np.float64)
+    log.warning(
+        "STRICT-PARITY: fresh K=1 RELION live initial noise enabled: particles=%d "
+        "source_rows_head=%s sigma2_head=%s",
+        min(1000, int(np.asarray(half_sets.noise_source_rows).size)),
+        np.asarray(half_sets.noise_source_rows, dtype=np.int64)[:5].tolist(),
+        np.asarray(sigma2[:5]),
+    )
+    return sigma2, variance
+
+
 def scoring_noise_from_sigma2(
     sigma2,
     *,

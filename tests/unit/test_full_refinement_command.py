@@ -123,6 +123,14 @@ def test_the_command_refuses_unsupported_combinations(monkeypatch, tmp_path, com
         controller_inputs(monkeypatch, tmp_path, command, *arguments, n_classes=2)
 
 
+def test_the_live_initial_noise_diagnostic_is_refused_outside_a_relion_seeded_cold_start(monkeypatch, tmp_path):
+    monkeypatch.setenv("RELAX_K1_RELION_LIVE_INITIAL_NOISE", "1")
+    with pytest.raises(ValueError, match="strict fresh K=1 cold start: relion_init_dir is required$"):
+        controller_inputs(monkeypatch, tmp_path, "refine")
+    with pytest.raises(ValueError, match="n_classes must equal 1; relion_init_dir is required; RELION half-set"):
+        controller_inputs(monkeypatch, tmp_path / "k2", "class3d", "--n_classes", "2", n_classes=2)
+
+
 def test_diagnostic_single_half_empties_half_two(monkeypatch, tmp_path):
     # Run files need both halves (they partition the particle table), so the probe writes none.
     inputs = controller_inputs(monkeypatch, tmp_path, "refine", "--diagnostic_single_half", "--stop_after_local_search",
