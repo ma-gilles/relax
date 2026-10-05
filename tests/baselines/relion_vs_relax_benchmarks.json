@@ -9499,26 +9499,26 @@
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
-    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults",
+    "source_sha": "880483a5b812f3c31ceb0c8ed139389df5579e8c",
+    "source_repo": "relax main 880483a5 (frozen snapshot relax_bench_refresh_20261003/cand_880483a, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults",
     "resolution_A": 4.92,
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": 4.294737,
     "masked_resolution_definition": "relion_postprocess_masked_frozen",
-    "wall_s": 2426,
-    "wall_definition": "arm-script wall of relax refine end to end, seed 1, 12 CPUs, empty per-arm JAX compilation cache (cold), job 14956576 (WALL.json)",
+    "wall_s": 2661,
+    "wall_definition": "arm-script wall of relax refine end to end, seed 1, 12 CPUs, empty per-arm JAX compilation cache (cold), job 15037267 (WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 21,
     "jobs": [
-     "14956576"
+     "15037267"
     ],
     "masked_band_auc": null
    },
    "gt": {
     "metric": "masked GT FSC-AUC, full spectrum, frozen mask (cryoet_bench_20260926/scripts/score_case.py)",
     "relion": 0.972272,
-    "relax": 0.971913,
+    "relax": 0.97228,
     "relion_band": [
      0.971495,
      0.972272
@@ -9528,17 +9528,17 @@
      "seed2"
     ],
     "relax_band": [
-     0.971913,
-     0.971913
+     0.97228,
+     0.97228
     ],
     "relax_band_runs": [
      "seed 1"
     ],
     "same_seed_gap": {
-     "1": -0.00036
+     "1": 8e-06
     },
     "same_seed_map_fsc_auc": {
-     "1": 0.999865
+     "1": 1.0
     },
     "unmasked": {
      "relion": [
@@ -9546,19 +9546,22 @@
       0.840154
      ],
      "relax": [
-      0.841345
+      0.841621
      ]
     },
     "relax_seed_provenance": {
-     "1": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d"
+     "1": "880483a5b812f3c31ceb0c8ed139389df5579e8c"
     },
     "relax_fixed_seed_runs": {
      "1": [
-      0.971913,
-      0.971917
+      0.97228
      ]
     },
-    "relax_control_d1ba3e83": {
+    "relax_f6c8299_s1": [
+     0.971913,
+     0.971917
+    ],
+    "relax_control_d1ba3e83_before_fix": {
      "1": [
       0.971915,
       0.971908
@@ -9567,7 +9570,7 @@
    },
    "cross_engine": "relax seed 1 vs same-seed RELION map FSC-AUC 0.999978 unmasked / 0.999999 masked; other-seed RELION 0.9899 masked (cross_map.py)",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.21,
+   "time_ratio_relax_over_relion": 0.23,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -9579,12 +9582,13 @@
    },
    "notes": [
     "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
-    "Refresh 2026-10-04, seed 1 (relax only, production defaults without the earlier prototype environment variables): masked GT FSC-AUC 0.971913 (was 0.972319) vs same-seed RELION 0.972272 (-3.6e-04); relax-vs-RELION masked map FSC-AUC 0.999865; reported resolution 4.92 Å, masked half-map 4.294737 Å; wall 2426 s (was 4085 s) against RELION 11484 s.",
-    "Control for the -3.6e-4 gap (job 14974173, three arms on one node, seed 1, scoring 14978034): pre-refactor d1ba3e83 twice 0.971915 and 0.971908, f6c8299b repeat 0.971917, next to the refresh run 0.971913; map agreement with the same-seed RELION map 0.999865 for all four. relax's same-seed spread here is under 1e-5, so the gap is not run-to-run spread and not the refinement refactor: the trajectory changed between bb9cae43 (earlier row, 0.972319, map agreement 0.999999) and d1ba3e83. The three environment variables of the earlier row are all production behaviour at both heads (two retired as always-on in a6085919, one defaults to on). Cause not yet attributed.",
+    "Rerun 2026-10-05 on relax main 880483a5 (team-lead: same snapshot as the three subtomogram VDAM rows), seed 1: masked GT FSC-AUC 0.972280 vs same-seed RELION 0.972272 (+8.0e-6); relax-vs-RELION masked map FSC-AUC 1.000000; reported resolution 4.92 A, masked half-map 4.294737 A; 21 iterations; wall 2661 s against RELION 11484 s (0.23x).",
+    "Cause of the 2026-10-04 miss (etw's bisect): d28c2583d made the subtomogram coarse pass read the float32 projector, which exposed the GEMM scorer's float32 rounding at the 0.999 significance cut; one particle (TS_06/154) lost its second coarse sample at iteration 1 and ended one pixel off in Z. speedw's re-score on 880483a5 cuts on RELION's direct squares where the GEMM scores do not decide it and restores RELION's decision. Before the fix: f6c8299b 0.971913/0.971917 and pre-refactor d1ba3e83 0.971915/0.971908 (map agreement 0.999865), -3.6e-4 below RELION.",
+    "Cost of the re-score (em_status at 880483a5, measured on VDAM): full et09 K=1 runs +8.3% on H100 (3 concurrent arms on one node, noisy; job 15009587, 5926 against 6420 s), +5.3% on A100 (local, concurrent); a clean same-node H100 pair is an open follow-up.",
     "Wave-2 cryo-ET benchmark case w2_09_box192: box 192 @ 2.125 A (408 A, real-space crop of the 256 grid); dose-equivalent SNR x(256/192)^2 = 0.0356. Fixture: 2000 particles in 8 tomograms, +-60/3 deg tilt series (41 tilts), 192 px at 2.125 A, effective B 100 A^2, generated by cryoet_bench_20260926/scripts/gen_case.py.",
     "relax runs standalone from the fixture's optimisation-set STAR files with the case's RELION Refine3D settings (--ini_high 40, healpix 2, auto local healpix 4, offset range 5 step 1, --no-firstiter_cc), relax seeds 1 each against the RELION run of the same --random_seed; relax seed 1 runs 21 iterations, RELION 21.",
-    "Speed: relax 4085 s on 1 H100 (cold) against RELION seed 1 11484 s on 1 H100 (0.36x), separate jobs on the same GPU model and node type (user 2026-09-29: same hardware and cold runs make a speed comparison).",
-    "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION 5.0.1 + MPI scale-sum patch (mpiscale, sm_90). Same-node A/B against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the same flags: K1 EMPIAR-10345 MPI 5041 vs 5040 s, Class3D pdb K2 non-MPI 3898 vs 3872 s, cryo-ET w2_14 Refine3D MPI 10013 vs 9971 s (em_work/relax_bench_k1plus_20260925/stock90_ab_20261001): the patch is speed-neutral (within 1%), so the wall stands."
+    "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION 5.0.1 + MPI scale-sum patch (mpiscale, sm_90). Same-node A/B against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the same flags: K1 EMPIAR-10345 MPI 5041 vs 5040 s, Class3D pdb K2 non-MPI 3898 vs 3872 s, cryo-ET w2_14 Refine3D MPI 10013 vs 9971 s (em_work/relax_bench_k1plus_20260925/stock90_ab_20261001): the patch is speed-neutral (within 1%), so the wall stands.",
+    "Speed: relax 2661 s on 1 H100 (cold, 880483a5) against RELION seed 1 11484 s on 1 H100 (0.23x), separate jobs on the same GPU model and node type; the relax arm shared its node with one other benchmark arm on the second GPU of job 15037267."
    ],
    "null_reasons": {
     "relion.masked_band_auc": "the cryo-ET benchmark scores masked GT FSC-AUC and relion_postprocess masked resolution; no scorecard-band half-map AUC",
@@ -9614,9 +9618,16 @@
      "control_runs": [
       "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/w2_09_control"
      ]
+    },
+    "rerun_20261005": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_880483a/cryoet_w2_09_box192_2000_192_tomo_autorefine_bb9cae4/s1/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_w2_09_880483a/score_relax.json",
+     "cross_map_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_w2_09_880483a/cross_map_relax.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_880483a",
+     "bisect_run": "etw relax_onengine_20260926/w209_bisect_20261004/runs/rs_branch_full (not cited for values)"
     }
    },
-   "date": "2026-10-04",
+   "date": "2026-10-05",
    "history": [
     {
      "date": "2026-09-28",
@@ -9647,13 +9658,90 @@
       "c": "both walls end to end from the job script (WALL.json), including start-up and compilation; relax with an empty JAX compilation cache, RELION has no compile cache",
       "d": "both on NVIDIA H100 80GB HBM3 della-h19-h21 cryoem nodes (RELION della-h19g1, relax della-h19g1; GPU.csv, PROVENANCE.txt)"
      }
+    },
+    {
+     "date": "2026-10-04",
+     "note": "values before the 2026-10-05 rerun on relax main 880483a5 (relax arm only, seed 1)",
+     "relax_source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
+     "relax_wall_s": 2426,
+     "relax_jobs": [
+      "14956576"
+     ],
+     "time_ratio_relax_over_relion": 0.21,
+     "gt": {
+      "metric": "masked GT FSC-AUC, full spectrum, frozen mask (cryoet_bench_20260926/scripts/score_case.py)",
+      "relion": 0.972272,
+      "relax": 0.971913,
+      "relion_band": [
+       0.971495,
+       0.972272
+      ],
+      "relion_band_runs": [
+       "seed1",
+       "seed2"
+      ],
+      "relax_band": [
+       0.971913,
+       0.971913
+      ],
+      "relax_band_runs": [
+       "seed 1"
+      ],
+      "same_seed_gap": {
+       "1": -0.00036
+      },
+      "same_seed_map_fsc_auc": {
+       "1": 0.999865
+      },
+      "unmasked": {
+       "relion": [
+        0.841616,
+        0.840154
+       ],
+       "relax": [
+        0.841345
+       ]
+      },
+      "relax_seed_provenance": {
+       "1": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d"
+      },
+      "relax_fixed_seed_runs": {
+       "1": [
+        0.971913,
+        0.971917
+       ]
+      },
+      "relax_control_d1ba3e83": {
+       "1": [
+        0.971915,
+        0.971908
+       ]
+      }
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s1 −3.6e-4 vs same-seed RELION; below same-seed RELION at 1 of 1 seeds (systematic); inside across-seed band (masked GT FSC-AUC, frozen mask); unmasked s1 -2.7e-04",
+     "time_check": {
+      "a": "RELION 1 H100, 3 MPI ranks x 4 threads (relion_refine_mpi); relax 1 H100, 12 CPUs; separate jobs (RELION 1, relax 14956576 on della-h19g4, 2026-10-04)",
+      "b": "relax production defaults at f6c8299b: no RELAX_* variable set (the earlier row ran with three prototype/parity variables that have since become defaults or been retired), no --scratch_dir (relax refine could not stage subtomogram stacks before d312985, relax#15), no diagnostic, capture, replay or dump options",
+      "c": "both walls end to end from the job script (WALL.json), including start-up and compilation; relax with an empty JAX compilation cache, RELION has no compile cache",
+      "d": "both on NVIDIA H100 80GB HBM3 della-h19-h21 cryoem nodes (RELION della-h19g1, relax della-h19g1; GPU.csv, PROVENANCE.txt)"
+     },
+     "notes": [
+      "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
+      "Refresh 2026-10-04, seed 1 (relax only, production defaults without the earlier prototype environment variables): masked GT FSC-AUC 0.971913 (was 0.972319) vs same-seed RELION 0.972272 (-3.6e-04); relax-vs-RELION masked map FSC-AUC 0.999865; reported resolution 4.92 Å, masked half-map 4.294737 Å; wall 2426 s (was 4085 s) against RELION 11484 s.",
+      "Control for the -3.6e-4 gap (job 14974173, three arms on one node, seed 1, scoring 14978034): pre-refactor d1ba3e83 twice 0.971915 and 0.971908, f6c8299b repeat 0.971917, next to the refresh run 0.971913; map agreement with the same-seed RELION map 0.999865 for all four. relax's same-seed spread here is under 1e-5, so the gap is not run-to-run spread and not the refinement refactor: the trajectory changed between bb9cae43 (earlier row, 0.972319, map agreement 0.999999) and d1ba3e83. The three environment variables of the earlier row are all production behaviour at both heads (two retired as always-on in a6085919, one defaults to on). Cause not yet attributed.",
+      "Wave-2 cryo-ET benchmark case w2_09_box192: box 192 @ 2.125 A (408 A, real-space crop of the 256 grid); dose-equivalent SNR x(256/192)^2 = 0.0356. Fixture: 2000 particles in 8 tomograms, +-60/3 deg tilt series (41 tilts), 192 px at 2.125 A, effective B 100 A^2, generated by cryoet_bench_20260926/scripts/gen_case.py.",
+      "relax runs standalone from the fixture's optimisation-set STAR files with the case's RELION Refine3D settings (--ini_high 40, healpix 2, auto local healpix 4, offset range 5 step 1, --no-firstiter_cc), relax seeds 1 each against the RELION run of the same --random_seed; relax seed 1 runs 21 iterations, RELION 21.",
+      "Speed: relax 4085 s on 1 H100 (cold) against RELION seed 1 11484 s on 1 H100 (0.36x), separate jobs on the same GPU model and node type (user 2026-09-29: same hardware and cold runs make a speed comparison).",
+      "Wall build (user rule 2026-10-01, speed against the fastest RELION): RELION 5.0.1 + MPI scale-sum patch (mpiscale, sm_90). Same-node A/B against unpatched RELION 5.0.1 f2c1a38 built for sm_90 with the same flags: K1 EMPIAR-10345 MPI 5041 vs 5040 s, Class3D pdb K2 non-MPI 3898 vs 3872 s, cryo-ET w2_14 Refine3D MPI 10013 vs 9971 s (em_work/relax_bench_k1plus_20260925/stock90_ab_20261001): the patch is speed-neutral (within 1%), so the wall stands."
+     ]
     }
    ],
-   "quality_pass": false,
-   "quality_reason": "worst s1 −3.6e-4 vs same-seed RELION; below same-seed RELION at 1 of 1 seeds (systematic); inside across-seed band (masked GT FSC-AUC, frozen mask); unmasked s1 -2.7e-04",
+   "quality_pass": true,
+   "quality_reason": "worst s1 +8.0e-6 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 1.000000) at 1 of 1 seeds, GT differences under 1e-4 are ties; inside across-seed band; unmasked s1 +5.0e-6",
    "time_check": {
-    "a": "RELION 1 H100, 3 MPI ranks x 4 threads (relion_refine_mpi); relax 1 H100, 12 CPUs; separate jobs (RELION 1, relax 14956576 on della-h19g4, 2026-10-04)",
-    "b": "relax production defaults at f6c8299b: no RELAX_* variable set (the earlier row ran with three prototype/parity variables that have since become defaults or been retired), no --scratch_dir (relax refine could not stage subtomogram stacks before d312985, relax#15), no diagnostic, capture, replay or dump options",
+    "a": "RELION 1 H100, 3 MPI ranks x 4 threads (relion_refine_mpi); relax 1 H100, 12 CPUs; separate jobs (relax 15037267 on della-h20g4, 2026-10-05, two arms on two GPUs of one node)",
+    "b": "relax production defaults at 880483a5: no RELAX_* variable set, JAX default allocator, no --scratch_dir (as the RELION arm), no diagnostic, capture, replay or dump options",
     "c": "both walls end to end from the job script (WALL.json), including start-up and compilation; relax with an empty JAX compilation cache, RELION has no compile cache",
     "d": "both on NVIDIA H100 80GB HBM3 della-h19-h21 cryoem nodes (RELION della-h19g1, relax della-h19g1; GPU.csv, PROVENANCE.txt)"
    },
