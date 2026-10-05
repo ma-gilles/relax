@@ -103,7 +103,7 @@ def test_history_records_class_zero_of_each_half_for_kclass():
 
 def test_history_records_float64_rotation_posterior_copies():
     posterior = np.asarray([1.0, 2.0, 3.0], dtype=np.float32)
-    history = RefinementHistory()
+    history = RefinementHistory(keep_rotation_posteriors=True)
     history.record_rotation_posterior([posterior, None])
     stored = history.rotation_posterior_trajectory_per_half[0]
     assert stored[1] is None

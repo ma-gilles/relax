@@ -84,6 +84,9 @@ class RefinementHistory:
     relion_scale_follower_scales_numbered_pre_score_trajectory: list = field(default_factory=list)
     relion_scale_follower_scales_numbered_post_mstep_trajectory: list = field(default_factory=list)
     relion_follower_scale_replay_applied_iterations: list = field(default_factory=list)
+    # The rotation-posterior trajectory is a diagnostic record (2.6 GB per iteration at
+    # EMPIAR-10202's fine orders): kept only for runs that write diagnostics.
+    keep_rotation_posteriors: bool = False
 
     # -- scheduling / sampling grid ------------------------------------
 
@@ -137,7 +140,10 @@ class RefinementHistory:
 
         Kept separate from ``record_direction_prior`` so a direction-prior
         mismatch can be localized to posterior aggregation versus collapse.
+        Nothing is kept unless ``keep_rotation_posteriors``.
         """
+        if not self.keep_rotation_posteriors:
+            return
         self.rotation_posterior_trajectory_per_half.append(
             [None if value is None else np.asarray(value, dtype=np.float64).copy() for value in rotation_posterior_per_half]
         )

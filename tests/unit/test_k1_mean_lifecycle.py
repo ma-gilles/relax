@@ -8,8 +8,11 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.float_compare import assert_matches
 from helpers.tiny_refinement import VOLUME_SHAPE, CallTrace, frame_holds, run_tiny_refinement
 
+from relax.dense.score_outputs import PerHalfOutputs
 from relax.reconstruction import regularization_relion
-from relax.refinement import iteration_loop, mean_helpers
+from relax.refinement import finalization, iteration_loop, mean_helpers
+from relax.refinement.iteration_snapshot import IterationSnapshot
+from relax.refinement.refinement_options import CheckpointOptions, EngineDebugOptions
 
 pytestmark = pytest.mark.unit
 
@@ -65,6 +68,54 @@ def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
         fsc = m_steps[at].result
         for tau2 in m_steps[at + 1 : at + 3]:
             assert any(value is fsc for value in (*tau2.args, *tau2.kwargs.values()))
+
+
+def test_final_pass_starts_without_the_last_iterations_pass_outputs_or_snapshot(monkeypatch):
+    """The numbered loop's pass outputs (both halves' accumulators) and its run-files snapshot are released at the
+    iteration boundary, so the final all-data pass does not carry them (41 GB of host memory at EMPIAR-10202's box 800)."""
+    import sys
+
+    trace = CallTrace(monkeypatch)
+    held = {}
+
+    def final_pass_starts(call):
+        function = iteration_loop.refine_single_volume
+        code = getattr(function, "__wrapped__", function).__code__
+        frame = sys._getframe(1)
+        while frame is not None and frame.f_code is not code:
+            frame = frame.f_back
+        assert frame is not None
+        held["types"] = {type(value) for value in frame.f_locals.values()}
+
+    trace.wrap(finalization, "run_final_all_data", before=final_pass_starts)
+    written = []
+
+    class Writer:
+        def wants_unfiltered_maps(self, *args, **kwargs):
+            return True
+
+        def due(self, relion_iteration):
+            return True
+
+        def __call__(self, snapshot):
+            written.append(type(snapshot))
+
+    run_tiny_refinement(monkeypatch, checkpoint=CheckpointOptions(writer=Writer()))
+
+    assert written and set(written) == {IterationSnapshot}
+
+    assert "types" in held
+    assert PerHalfOutputs not in held["types"]
+    assert IterationSnapshot not in held["types"]
+
+
+def test_rotation_posterior_trajectory_is_kept_only_for_diagnostic_runs(monkeypatch, tmp_path):
+    """Each iteration's float64 posterior copy (2.6 GB at EMPIAR-10202's fine orders) is a diagnostic record."""
+    default = run_tiny_refinement(monkeypatch)
+    diagnostic = run_tiny_refinement(monkeypatch, debug=EngineDebugOptions(save_intermediates_dir=str(tmp_path)))
+
+    assert default["rotation_posterior_trajectory_per_half"] == []
+    assert len(diagnostic["rotation_posterior_trajectory_per_half"]) == 2
 
 
 def test_production_runner_leaves_cold_start_host_owned_until_normalization(monkeypatch, tmp_path):

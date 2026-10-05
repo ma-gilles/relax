@@ -1039,7 +1039,7 @@ def refine_single_volume(
 
     # History tracking: one RefinementHistory instance accumulates every
     # per-iteration trajectory (see helpers/iteration_history.py).
-    history = RefinementHistory()
+    history = RefinementHistory(keep_rotation_posteriors=debug.save_intermediates_dir is not None)
     take_pass_engines()  # entries from before this run's first iteration belong to no iteration
     take_coarse_engine_calls()
     previous_assignments = [None, None]
@@ -2516,10 +2516,10 @@ def refine_single_volume(
             elapsed,
         )
 
-        # End-of-iteration memory boundary.  The next iteration immediately
-        # pads each half-map to the projection grid; keeping previous
-        # backprojector accumulators or unregularized diagnostic maps live can
-        # make high-resolution runs OOM before the batch-size estimator can act.
+        # End-of-iteration memory boundary. The next iteration pads each half-map to the projection
+        # grid; keeping the previous accumulators (also in the pass outputs), unregularized maps or the
+        # run-files snapshot live can make high-resolution runs OOM before the batch-size estimator acts
+        # (41 GB of host carried into the final pass at box 800).
         try:
             jax.block_until_ready(reference_model.maps)
         except Exception:
@@ -2527,7 +2527,7 @@ def refine_single_volume(
         Ft_y_0 = Ft_y_1 = None
         Ft_ctf_0 = Ft_ctf_1 = None
         Ft_y_combined = Ft_ctf_combined = None
-        unreg_means = previous_means = None
+        unreg_means = previous_means = per_half = snapshot = None
         tau2_update_details_per_half = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None

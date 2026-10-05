@@ -338,6 +338,13 @@ before retry. Human review of the completed example precedes broad automation.
 Earlier configuration/archive owner and main integration (`/scratch/gpfs/GILLES/mg6942/tmp/relax_main_sync_20261002T111111Z/HANDOFF.json`; mg6942 scratch outside the repository)
 remain preserved.
 
+Since 2026-10-05 a default `refinement_results.npz` no longer carries
+`rotation_posterior_per_half_iter_NNN`: the loop keeps that float64 copy of both
+halves' rotation posterior only when `--save_intermediates_dir` is set, as
+`scripts/run_multi_iter_parity.py` does except in timing-only runs. Kept for
+every iteration, it grew the host memory of an EMPIAR-10202 box-800 refinement by
+about 2.6 GB per iteration at the fine orders.
+
 ## Refactor history and scientific gates
 
 Read the concise [current qualification status](final_search_patch_status.md)
