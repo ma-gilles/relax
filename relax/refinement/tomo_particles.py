@@ -22,7 +22,13 @@ See PLAN.md "S4 design" in the cryo-ET coordination directory.
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
+
+# Phase values (images x trial shifts) above which the per-image phases are computed in blocks on host threads.
+_THREADED_PHASE_VALUES = 1 << 20
 
 
 def image_particle_counts(image_particle, n_particles: int) -> np.ndarray:
@@ -128,9 +134,32 @@ def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_
     ``image_size`` is its full image size (a scalar, or one value per image).
     """
 
-    shifts = tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections, image_particle)
-    size = np.broadcast_to(np.asarray(image_size, dtype=np.float64), (shifts.shape[0],))
-    return np.asarray(-2.0 * np.pi * shifts / size[:, None, None], dtype=np.float32)
+    image_particle = np.asarray(image_particle, dtype=np.int64)
+    image_projections = np.asarray(image_projections, dtype=np.float64)
+    n_images = int(image_particle.shape[0])
+    size = np.broadcast_to(np.asarray(image_size, dtype=np.float64), (n_images,))
+
+    def phases(rows):
+        shifts = tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections[rows], image_particle[rows])
+        return np.asarray(-2.0 * np.pi * shifts / size[rows, None, None], dtype=np.float32)
+
+    n_shifts = int(np.shape(shifts_3d)[0])
+    if n_images * n_shifts < _THREADED_PHASE_VALUES:
+        return phases(slice(0, n_images))
+    # Every image's phases are its own arithmetic, so blocks of images run on host threads (NumPy
+    # releases the GIL inside each operation) and fill one float32 array: the same values as one
+    # call, without its float64 [I, T, 2] temporaries. One fine-grid call was 1.8 s of each late
+    # et09 subtomogram VDAM iteration (39,000 tilt images; py-spy, job 14993731).
+    out = np.empty((n_images, n_shifts, 2), dtype=np.float32)
+    block = max(1, _THREADED_PHASE_VALUES // max(n_shifts, 1))
+
+    def fill(start):
+        rows = slice(start, min(start + block, n_images))
+        out[rows] = phases(rows)
+
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as pool:
+        list(pool.map(fill, range(0, n_images, block)))
+    return out
 
 
 def image_slot_ids(row_unit, unit_image_offsets, slot: int) -> np.ndarray:

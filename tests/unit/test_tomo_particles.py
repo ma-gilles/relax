@@ -94,6 +94,22 @@ def test_translation_angles_follow_relions_per_image_phase_operand():
     assert_matches(out, expected)
 
 
+def test_threaded_translation_angles_equal_the_single_call(monkeypatch):
+    """Blocks of images on host threads give the bytes of one call, for scalar and per-image sizes."""
+    rng = np.random.default_rng(11)
+    n_particles, n_images, n_shifts = 7, 53, 9
+    image_particle = np.sort(rng.integers(0, n_particles, n_images))
+    projections = rng.normal(size=(n_images, 3, 3))
+    shifts = rng.normal(scale=2.0, size=(n_shifts, 3))
+    old = rng.normal(scale=1.5, size=(n_particles, 3))
+    for size in (64, rng.choice([64, 100], size=n_images)):
+        single = tomo_particles.tilt_translation_angles(shifts, old, projections, image_particle, size)
+        monkeypatch.setattr(tomo_particles, "_THREADED_PHASE_VALUES", 4 * n_shifts)  # blocks of four images
+        threaded = tomo_particles.tilt_translation_angles(shifts, old, projections, image_particle, size)
+        monkeypatch.undo()
+        assert threaded.dtype == np.float32 and threaded.tobytes() == single.tobytes()
+
+
 def test_image_slots_visit_each_particles_images_in_order():
     offsets = np.array([0, 3, 5, 9])  # particles with 3, 2 and 4 images
     row_unit = np.array([0, 0, 1, 2, 2, 1])
