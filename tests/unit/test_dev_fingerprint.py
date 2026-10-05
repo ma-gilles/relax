@@ -148,10 +148,14 @@ def test_a_mutation_matches_through_reindentation_and_replaces_line_for_line():
 
 
 def test_the_case_and_mutation_tables_are_well_formed():
-    for name, (description, keywords) in fingerprint.CASES.items():
+    controller_cases = {name: case for name, case in fingerprint.CASES.items() if "main" not in case[1]}
+    for name, (description, keywords) in controller_cases.items():
         assert description
         assert name.startswith(f"k{keywords['n_classes']}_")
-    assert {keywords["n_classes"] for _, keywords in fingerprint.CASES.values()} == {1, 2, 4}
+    assert {keywords["n_classes"] for _, keywords in controller_cases.values()} == {1, 2, 4}
+    main_cases = {name: case[1]["main"] for name, case in fingerprint.CASES.items() if "main" in case[1]}
+    assert main_cases and all(name.startswith("main_") for name in main_cases)
+    assert {case["command"] for case in main_cases.values()} == {"refine", "class3d"}
     names = [mutation[0] for mutation in fingerprint.MUTATIONS]
     assert len(names) == len(set(names))
     for _, old, new, description, detected in fingerprint.MUTATIONS:

@@ -9,7 +9,10 @@
 
 ``run`` calls the real ``refine_single_volume`` of one source tree on small CPU cases (8-cubed volume,
 four images) and records, per case: the result mapping, every file the run wrote, every checkpoint
-snapshot, and one ordered trace of log records and selected calls. Arrays are recorded as module,
+snapshot, and one ordered trace of log records and selected calls. The ``main_*`` cases run the command
+entry (``full_refinement.main``, ``relax refine`` / ``relax class3d``) on a written 12-image, 16-pixel data
+directory with the device check stood in for, and record the operands main hands ``refine_single_volume``,
+its result and every file main writes. Arrays are recorded as module,
 dtype, shape and SHA-256 of their bytes, so a changed value, dtype, host/device placement, write or
 log line is a difference. The source tree is a worktree (``--source``, default this checkout with
 its uncommitted edits) or a ``git archive`` export of any commit (``--rev``); nothing is written into
@@ -51,6 +54,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 1
 NOT_COVERED = (
+    "in full_refinement.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
+    "STAR replays, --final-replay-relion-dir), frozen boundaries, state-swap probes, captured projectors, "
+    "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",
     "local search, local sampling and the profile-only return",
     "symmetry other than C1",
@@ -62,7 +68,9 @@ NOT_COVERED = (
 # A log template containing one of these formats a wall time: its template is kept, its text dropped.
 TIMING_WORDS = ("wall", "elapsed", "%.2fs", "%.1fs", "%.3fs", "seconds", " in %")
 # Rows whose text depends on the node (free host or device memory), not on the source.
-NODE_DEPENDENT_TEMPLATES = ("timing", "batch planner memory inputs")
+NODE_DEPENDENT_TEMPLATES = (
+    "timing", "batch planner memory inputs", "RELION EM batch sizing", "Persistent JAX compilation cache",
+)
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
 # The classes a difference is counted in; only a difference confined to "log" is accepted.
@@ -373,6 +381,46 @@ def _cases() -> dict[str, tuple[str, dict]]:
             oversampling=1, max_iter=1, converge_after=None, dump=False)
     add("k1_sealed_final", "K=1 on a sealed sampling state that converges after its iteration: the final pass "
         "reuses the sealed grid", n_classes=1, join=0.0, sealed=True, max_iter=1, converge_after=1, dump=False)
+    # The command entry (full_refinement.main) on a 12-image, 16-pixel data directory.
+    seed = ["--seed", "42"]  # a seed whose random halves are both non-empty for twelve particles
+
+    def add_main(name, description, command, arguments, **keywords):
+        add(name, description, main=dict(command=command, arguments=[*arguments, *seed], **keywords))
+
+    add_main("main_k1_refine", "relax refine: K=1 from the data directory's start-up map, two iterations",
+             "refine", ["--max_iter", "2"])
+    add_main("main_k1_os0_options", "relax refine: oversampling 0, no CC iteration, explicit sampling, resolution, "
+             "tau2 fudge and particle diameter", "refine",
+             ["--max_iter", "2", "--adaptive_oversampling", "0", "--no-firstiter_cc", "--healpix_order", "1",
+              "--offset_range", "4", "--offset_step", "2", "--init_resolution", "30", "--tau2_fudge", "2",
+              "--particle_diameter_ang", "50"])
+    add_main("main_k1_mode_relax", "relax refine --mode relax", "refine", ["--max_iter", "2", "--mode", "relax"])
+    add_main("main_k1_schedule", "relax refine with RELION's current sizes and HEALPix orders and a perturbation",
+             "refine", ["--max_iter", "2", "--relion_current_sizes", "8,12", "--relion_healpix_orders", "2,2",
+                        "--perturb_factor", "0.5", "--perturb_seed", "3"])
+    add_main("main_k1_run_files", "relax refine writing every iteration, keeping one, unfiltered half maps, no "
+             "final pass", "refine", ["--max_iter", "2", "--write-iteration-every", "1", "--keep-iterations", "1",
+                                      "--write-unfiltered-half-maps", "--skip_final_iteration"])
+    add_main("main_k1_half_sets_off", "relax refine without the input-STAR half sets", "refine",
+             ["--max_iter", "2", "--no-relion-half-sets-from-input"])
+    add_main("main_k1_overlap", "relax refine with the halves' E-steps overlapped", "refine",
+             ["--max_iter", "2", "--overlap_halves"])
+    add_main("main_k1_continue", "relax refine --continue from the run files of one iteration", "refine",
+             ["--max_iter", "2"], continue_after=1)
+    add_main("main_k2_class3d", "relax class3d: K=2 from the per-class start-up maps", "class3d",
+             ["--max_iter", "2", "--n_classes", "2"], n_classes=2)
+    add_main("main_k2_one_reference", "relax class3d: K=2 from one start-up map (random seed classes)", "class3d",
+             ["--max_iter", "2", "--n_classes", "2", "--init_volume", "<DATA>/reference_init_relion.mrc"],
+             n_classes=2)
+    add_main("main_k2_os0_cc", "relax class3d: K=2, oversampling 0, first-iteration CC", "class3d",
+             ["--max_iter", "2", "--n_classes", "2", "--adaptive_oversampling", "0", "--firstiter_cc"],
+             n_classes=2)
+    add_main("main_k2_continue", "relax class3d --continue from the run files of one iteration", "class3d",
+             ["--max_iter", "2", "--n_classes", "2"], n_classes=2, continue_after=1)
+    add_main("main_refused_command", "relax refine asked for two classes (refused)", "refine",
+             ["--max_iter", "2", "--n_classes", "2"], n_classes=2)
+    add_main("main_refused_single_half", "--diagnostic_single_half without a local-search stop (refused)", "refine",
+             ["--max_iter", "2", "--diagnostic_single_half"])
     return cases
 
 
@@ -486,6 +534,14 @@ MUTATIONS = (
      "the STAR replay returns its prior translations reversed", False),
     ("star_offset_range_doubled", '_relion_offset_range = float(_replay_meta["offset_range"]) / pixel_size_angstrom', '_relion_offset_range = 2 * float(_replay_meta["offset_range"]) / pixel_size_angstrom',
      "the STAR replay reads twice the translation range", True),
+    # The command entry (the main_* cases).
+    ("main_max_iter_not_continued", "max_iter=int(args.max_iter) - continued_iterations,", "max_iter=int(args.max_iter),",
+     "a continued run counts --max_iter from its own first iteration", True),
+    ("main_seed_classes_inverted", "if args.n_classes > 1 and args.init_volume is not None and resume_snapshot is None",
+     "if args.n_classes > 1 and args.init_volume is None and resume_snapshot is None",
+     "Class3D seeds random classes from per-class maps instead of from one reference", True),
+    ("main_tau2_fudge_ignored", "parity=RelionParityOptions(\ntau2_fudge=effective_tau2_fudge,", "parity=RelionParityOptions(\ntau2_fudge=1.0,",
+     "the controller is handed the default tau2 fudge instead of --tau2_fudge", True),
 )
 
 
@@ -497,6 +553,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     import importlib
     import logging
     import threading
+    import types
 
     sys.dont_write_bytecode = True
     sys.path[:0] = [source, os.path.join(source, "tests"), os.path.join(source, "tests", "unit")]
@@ -516,9 +573,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     assert fixtures.__file__.startswith(source), fixtures.__file__
 
     tmp_pattern = re.compile(re.escape(tmp_root) + r"(/tmp\w+)?")
+    # The command entry also records its own command line and the run's cache directories.
+    run_paths = [(re.escape(out_path), "<OUT>"), (re.escape(str(Path(tmp_root).parent)), "<WORK>"),
+                 (re.escape(source), "<SRC>")]
 
     def scrub(text):
-        return tmp_pattern.sub(TMP_TOKEN, text)
+        text = tmp_pattern.sub(TMP_TOKEN, text)
+        for pattern, token in run_paths:
+            text = re.sub(pattern, token, text)
+        return text
 
     trace: list = []
 
@@ -682,32 +745,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             self.snapshots.append(snapshot)
             self.prints.append(flatten(snapshot, scrub=scrub))
 
-    def run_case(n_classes, join, *, max_iter=4, converge_after=2, dump=True, cc=False, oversampling=0, env=None,
-                 writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
-                 iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
-                 seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
-                 consistency=None, current_sizes=None, sealed=False):
-        first_pass = None
-        if continued:
-            first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
-                                  skip_final=True, perturb=perturb)
-            snapshots = first_pass.pop("snapshots")
-            if first_pass["status"]["error"] != "None" or not snapshots:
-                return {"status": {"error": "first pass failed"}, "result": {}, "files": {}, "checkpoints": {},
-                        "trace": [], "first_pass": first_pass}
-            resume = snapshots[-1]
-        rng = np.random.default_rng(fixtures.SEED)
-        n_half = fixtures.N_IMAGES // 2
-        halves = [Dataset(n_half, rng, 0), Dataset(n_half, rng, n_half)]
-        init_volume = fixtures._hermitian_volume(fixtures.VOLUME_SHAPE, seed=42)
-        translations = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
-        patches, calls = [], {"updates": 0}
-        del trace[:]
-
-        def patch(owner, name, replacement):
-            patches.append((owner, name, getattr(owner, name)))
-            setattr(owner, name, replacement)
-
+    def install_stand_ins(patch, calls, *, converge_after, accuracy):
+        """The stand-in engine and the call spies of every case; ``converge_after`` forces convergence."""
         for owner in relax_modules_with("run_dense_k_class_em_adaptive"):
             patch(owner, "run_dense_k_class_em_adaptive", stand_in_engine)
         for owner in relax_modules_with("_host_tau2_volumes"):
@@ -754,6 +793,34 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             patch(owner, "update_refinement_state", force)
         if accuracy:
             patch(expected_accuracy.Half1AccuracyInputs, "estimate", stand_in_accuracy)
+
+    def run_case(n_classes, join, *, max_iter=4, converge_after=2, dump=True, cc=False, oversampling=0, env=None,
+                 writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
+                 iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
+                 seed=False, orders=None, overlap=False, accuracy=False, init_order=2, replay_max_iter=None,
+                 consistency=None, current_sizes=None, sealed=False):
+        first_pass = None
+        if continued:
+            first_pass = run_case(n_classes, join, max_iter=1, converge_after=None, dump=False, cc=cc, writer=True,
+                                  skip_final=True, perturb=perturb)
+            snapshots = first_pass.pop("snapshots")
+            if first_pass["status"]["error"] != "None" or not snapshots:
+                return {"status": {"error": "first pass failed"}, "result": {}, "files": {}, "checkpoints": {},
+                        "trace": [], "first_pass": first_pass}
+            resume = snapshots[-1]
+        rng = np.random.default_rng(fixtures.SEED)
+        n_half = fixtures.N_IMAGES // 2
+        halves = [Dataset(n_half, rng, 0), Dataset(n_half, rng, n_half)]
+        init_volume = fixtures._hermitian_volume(fixtures.VOLUME_SHAPE, seed=42)
+        translations = jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32)
+        patches, calls = [], {"updates": 0}
+        del trace[:]
+
+        def patch(owner, name, replacement):
+            patches.append((owner, name, getattr(owner, name)))
+            setattr(owner, name, replacement)
+
+        install_stand_ins(patch, calls, converge_after=converge_after, accuracy=accuracy)
         for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR", "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"):
             os.environ.pop(name, None)
         os.environ.update(env or {})
@@ -914,17 +981,165 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             out["first_pass"] = first_pass
         return out
 
+    def write_tiny_dataset(root, *, n_images=12, box=16, n_classes=1, seed=5):
+        """A RELION particle STAR with its stack and RELION-convention start-up maps, as a data directory."""
+        import mrcfile
+        import pandas as pd
+        import starfile
+
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        rng = np.random.default_rng(seed)
+        pixel = 4.25
+        with mrcfile.new(root / f"particles.{box}.mrcs") as stack:
+            stack.set_data(rng.standard_normal((n_images, box, box)).astype(np.float32))
+            stack.voxel_size = pixel
+        maps = ["reference_init_relion.mrc"] + [f"reference_init_class{k + 1:03d}_relion.mrc" for k in range(n_classes)]
+        for name in maps:
+            with mrcfile.new(root / name) as volume:
+                volume.set_data(rng.standard_normal((box, box, box)).astype(np.float32))
+                volume.voxel_size = pixel
+        optics = pd.DataFrame({
+            "rlnOpticsGroup": [1], "rlnOpticsGroupName": ["opticsGroup1"], "rlnAmplitudeContrast": [0.07],
+            "rlnSphericalAberration": [2.7], "rlnVoltage": [300.0], "rlnImagePixelSize": [pixel],
+            "rlnImageSize": [box], "rlnImageDimensionality": [2],
+        })
+        rows = np.arange(n_images)
+        particles = pd.DataFrame({
+            "rlnImageName": [f"{i + 1}@particles.{box}.mrcs" for i in rows],
+            "rlnMicrographName": [str(i + 1) for i in rows],
+            "rlnDefocusU": 15000.0 + 100.0 * rows, "rlnDefocusV": 15100.0 + 100.0 * rows,
+            "rlnDefocusAngle": np.full(n_images, 10.0), "rlnPhaseShift": np.zeros(n_images),
+            "rlnOpticsGroup": np.ones(n_images, dtype=int),
+            "rlnAngleRot": rng.uniform(-180.0, 180.0, n_images), "rlnAngleTilt": rng.uniform(0.0, 180.0, n_images),
+            "rlnAnglePsi": rng.uniform(-180.0, 180.0, n_images),
+            "rlnOriginXAngst": np.zeros(n_images), "rlnOriginYAngst": np.zeros(n_images),
+        })
+        star = root / "particles.star"
+        starfile.write({"optics": optics, "particles": particles}, star)
+        # The writer's creation stamp would make the file, and the hash main records of it, differ per run.
+        star.write_text("".join(line for line in star.read_text().splitlines(True) if not line.startswith("# Created")))
+        return root
+
+    def hash_output_files(base, out):
+        """Every file under ``base``: archives by array, maps by data, text with its creation stamp dropped."""
+        import mrcfile
+
+        for path in sorted(Path(base).rglob("*")):
+            if not path.is_file():
+                continue
+            rel = str(path.relative_to(base))
+            if path.suffix == ".npz":
+                with np.load(path, allow_pickle=True) as data:
+                    for key in data.files:
+                        if any(word in key for word in ("time", "wall", "seconds", "elapsed", "cumulative_s")):
+                            continue
+                        value = data[key]
+                        if value.dtype.kind == "U":  # paths of the run's directories
+                            value = np.vectorize(scrub, otypes=[str])(value) if value.size else value
+                        flatten(value, f"{rel}/{key}", out, scrub=scrub)
+            elif path.suffix in (".mrc", ".mrcs"):
+                with mrcfile.open(path, permissive=True) as volume:
+                    flatten(np.asarray(volume.data), rel, out, scrub=scrub)
+            elif path.suffix in (".star", ".txt", ".json", ".log"):
+                lines = [line for line in path.read_text().splitlines() if not line.startswith("# Created")]
+                out[rel] = "sha256:" + hashlib.sha256(scrub("\n".join(lines)).encode()).hexdigest()
+            else:
+                out[rel] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        return out
+
+    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None):
+        """``relax <command>`` (full_refinement.main) on a tiny data directory, the stand-in engine underneath.
+
+        Records the operands main hands refine_single_volume, its result, and every file main writes.
+        ``continue_after`` first runs that many iterations and then continues from their run files.
+        """
+        import jax
+
+        from relax.refinement import full_refinement
+
+        work = Path(tempfile.mkdtemp(dir=tmp_root))
+        data = write_tiny_dataset(work / "data", n_classes=n_classes)
+        environ = dict(os.environ)
+        patches, calls = [], {"updates": 0}
+        refine_inputs, refine_results = [], []
+        del trace[:]
+
+        def patch(owner, name, replacement):
+            patches.append((owner, name, getattr(owner, name)))
+            setattr(owner, name, replacement)
+
+        install_stand_ins(patch, calls, converge_after=converge_after, accuracy=False)
+        original_refine = iteration_loop.refine_single_volume
+
+        def refine_spy(*args, **kwargs):
+            refine_inputs.append(flatten([list(args), kwargs], scrub=scrub))
+            record("call", "refine_single_volume", f"inputs={len(refine_inputs[-1])}")
+            out = original_refine(*args, **kwargs)
+            refine_results.append(flatten(out, scrub=scrub))
+            return out
+
+        patch(iteration_loop, "refine_single_volume", refine_spy)
+        patch(jax, "devices", lambda *args, **kwargs: [types.SimpleNamespace(platform="gpu", id=0)])
+        handler = Capture(level=logging.DEBUG)
+        root = logging.getLogger("relax")
+        old_level = root.level
+        root.addHandler(handler)
+        root.setLevel(logging.DEBUG)
+        old_argv, old_orig_argv = sys.argv, sys.orig_argv
+        statuses = []
+        try:
+            runs = [("first", work / "first", [*arguments, "--max_iter", str(continue_after)])] if continue_after else []
+            runs.append(("run", work / "out", list(arguments)))
+            for label, output, run_arguments in runs:
+                if label == "run" and continue_after:
+                    optimiser = sorted((work / "first").glob("run_it*_optimiser.star"))[-1]
+                    run_arguments += ["--continue", str(optimiser)]
+                run_arguments = [argument.replace("<DATA>", str(data)) for argument in run_arguments]
+                sys.argv = ["relax", "--data_dir", str(data), "--output", str(output), *run_arguments]
+                sys.orig_argv = ["python", "-m", f"relax.commands.{command}", *sys.argv[1:]]  # run files record it
+                try:
+                    full_refinement.run_from_command_line(command)
+                    statuses.append("ok")
+                except SystemExit as exc:
+                    statuses.append(f"SystemExit({scrub(str(exc.code))})")
+                except Exception as exc:  # recorded: both sides must fail the same way
+                    statuses.append(f"{type(exc).__name__}({scrub(str(exc))})")
+                    break
+        finally:
+            sys.argv, sys.orig_argv = old_argv, old_orig_argv
+            root.removeHandler(handler)
+            root.setLevel(old_level)
+            for owner, name, original in reversed(patches):
+                setattr(owner, name, original)
+            os.environ.clear()
+            os.environ.update(environ)
+        files = hash_output_files(work, {})
+        result = {}
+        for index, (inputs, out) in enumerate(zip(refine_inputs, refine_results + [{}] * len(refine_inputs))):
+            result.update({f"refine{index}/inputs{key}": value for key, value in inputs.items()})
+            result.update({f"refine{index}/result{key}": value for key, value in out.items()})
+        return {
+            "status": {"runs": repr(statuses), "update_calls": repr(calls["updates"])},
+            "result": result,
+            "files": files,
+            "checkpoints": {},
+            "trace": [row for row in ordered_trace(trace) if row[0] != "log" or row[1].startswith("relax")],
+        }
+
     importlib.invalidate_caches()
     results = {}
     for name in names:
-        case = run_case(**CASES[name][1])
+        keywords = CASES[name][1]
+        case = run_main_case(**keywords["main"]) if "main" in keywords else run_case(**keywords)
         case.pop("snapshots", None)
         first_pass = case.pop("first_pass", None)
         if first_pass is not None:  # the one-iteration run a continued case resumes from is a case of its own
             results[name + "/first_pass"] = first_pass
         results[name] = case
         print(
-            f"{name}: error={case['status']['error']} final={case['status'].get('final_all_data_ran')} "
+            f"{name}: error={case['status'].get('error', case['status'].get('runs'))} "
+            f"final={case['status'].get('final_all_data_ran')} "
             f"result={len(case['result'])} files={len(case['files'])} checkpoints={len(case['checkpoints'])} "
             f"trace={len(case['trace'])}",
             flush=True,
