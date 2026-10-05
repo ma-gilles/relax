@@ -13,6 +13,8 @@ auto-refine map for real data), and for K > 1 every class is also registered on 
 of different states registers poorly; 2026-10-01). Each (class, reference class) pair is scored with its best candidate
 transform (consensus or class fit, either hand) by unmasked FSC-AUC; classes are then matched to reference classes by the
 Hungarian assignment. Arm pairs: b's consensus is registered onto a's reference-frame consensus with the same routine.
+Every cell must list its pairs: "pairs": [[a, b], ...], [] for none, or "all" for every arm pair. Pair registrations run
+serially in the parent process, so all pairs of a 14-arm cell (91) cost far more than the parallel per-arm fits.
 
 FSC: shell FSC as scripts/fsc_metrics.shell_fsc (rounded radius, shells up to n//2 - 2). FSC-AUC: normalized trapezoid over
 shells 1..end, as scripts/evaluate_kclass_gt._normalized_fsc_auc. Resolution: first shell below the threshold, box * pixel /
@@ -170,8 +172,30 @@ def _fit_task(task):
     return [((*key, hand), rec) for hand, rec in recs.items()]
 
 
+def wanted_pairs(cell):
+    """The cell's arm pairs to compare, as a set of frozensets of labels, or None for every pair ("pairs": "all").
+
+    A missing "pairs" key is an error: all pairs used to be the silent default, and each pair is a serial registration in
+    the parent process (2026-10-05: a 14-arm cell spent 2.3 h on 91 pairs nobody asked for). [] means no pairs."""
+    if "pairs" not in cell:
+        raise ValueError(
+            f'{cell["id"]}: cell has no "pairs" key; list the arm pairs to compare ([[a, b], ...]), [] for none, or'
+            f' "pairs": "all" for every arm pair ({len(cell["arms"]) * (len(cell["arms"]) - 1) // 2} serial registrations)'
+        )
+    if cell["pairs"] == "all":
+        return None
+    labels = {a["label"] for a in cell["arms"]}
+    wanted = set()
+    for p in cell["pairs"]:
+        if len(p) != 2 or p[0] == p[1] or not set(p) <= labels:
+            raise ValueError(f"{cell['id']}: pair {p} must name two different arms of the cell")
+        wanted.add(frozenset(p))
+    return wanted
+
+
 def score_cell(cell, fit_workers=1):
     t0 = time.time()
+    wanted = wanted_pairs(cell)  # validated before any registration
     K = int(cell["K"])
     ref_paths = cell["reference"]["paths"]
     refs = [read(p, cell["reference"]["frame"]) for p in ref_paths]
@@ -315,11 +339,9 @@ def score_cell(cell, fit_workers=1):
     pairs = []
     labels = [a["label"] for a in cell["arms"]]
     arm_cfg = {x["label"]: x for x in cell["arms"]}
-    # Optional cell "pairs": [[a, b], ...] restricts the cross-arm comparisons (all pairs by default).
-    wanted = {frozenset(p) for p in cell.get("pairs", [])}
     for ia in range(len(labels)):
         for ib in range(ia + 1, len(labels)):
-            if wanted and frozenset((labels[ia], labels[ib])) not in wanted:
+            if wanted is not None and frozenset((labels[ia], labels[ib])) not in wanted:
                 continue
             a, b = aligned[labels[ia]], aligned[labels[ib]]
             # Pair frame: b's raw consensus is fitted directly onto a's reference-frame consensus, so the
