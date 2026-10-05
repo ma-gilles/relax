@@ -99,7 +99,7 @@ def test_equal_fingerprints_have_no_difference():
 
     counts, lines = fingerprint.diff_fingerprints(_fingerprint(k1=case), _fingerprint(k1=case))
 
-    assert counts == {"outputs": 0, "trace": 0, "log": 0}
+    assert counts == {"outputs": 0, "added": 0, "trace": 0, "log": 0}
     assert fingerprint.accepted(counts)
     assert lines[-1].startswith("1 cases compared; 0 differences")
     assert fingerprint.differing_cases(_fingerprint(k1=case), _fingerprint(k1=case)) == []
@@ -120,7 +120,7 @@ def test_every_kind_of_difference_is_counted_and_named():
     report = "\n".join(lines)
 
     # one missing case, three result keys, and the removed and added trace row of the renamed logger
-    assert counts == {"outputs": 1 + 3, "trace": 0, "log": 2}
+    assert counts == {"outputs": 1 + 3, "added": 0, "trace": 0, "log": 2}
     assert not fingerprint.accepted(counts)
     assert "only log rows differ" not in report
     assert "CASE only_a: only in A" in report
@@ -130,6 +130,21 @@ def test_every_kind_of_difference_is_counted_and_named():
     assert "TRACE [1 cases, e.g. k1] -log | relax.a | INFO | x | x" in report
     assert not any(line.startswith("DIFF k2") for line in lines)
     assert fingerprint.differing_cases(a, b) == ["k1", "only_a"]
+
+
+def test_a_new_controller_input_is_listed_and_accepted_but_a_new_result_is_not():
+    a = _fingerprint(k1=_case({"refine0/inputs[1]/options/debug/x": "1", "/mean": "aa"}))
+    b = _fingerprint(k1=_case({"refine0/inputs[1]/options/debug/x": "1", "refine0/inputs[1]/options/debug/new": "None",
+                               "/mean": "aa"}))
+    counts, lines = fingerprint.diff_fingerprints(a, b)
+    assert counts == {"outputs": 0, "added": 1, "trace": 0, "log": 0} and fingerprint.accepted(counts)
+    assert "ADDED k1 result refine0/inputs[1]/options/debug/new: None" in lines
+    assert lines[-1] == "controller inputs added (1); accepted: new option fields"
+    # A removed or changed input, or a new leaf anywhere else, is an output difference.
+    for flat in ({"/mean": "aa"}, {"refine0/inputs[1]/options/debug/x": "2", "/mean": "aa"},
+                 {"refine0/inputs[1]/options/debug/x": "1", "/mean": "aa", "/new": "1"}):
+        counts, _ = fingerprint.diff_fingerprints(a, _fingerprint(k1=_case(flat)))
+        assert counts["outputs"] == 1 and not fingerprint.accepted(counts)
 
 
 def test_a_mutation_matches_through_reindentation_and_replaces_line_for_line():

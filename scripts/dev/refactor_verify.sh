@@ -23,7 +23,7 @@ parent=$S/fp/fp_${H:0:12}.json
 [ -f "$parent" ] || "$PY" scripts/dev/fingerprint.py run "$parent" --rev HEAD --work-dir "$S/fp" > "$S/logs/fp_run_${H:0:7}.txt" 2>&1
 "$PY" scripts/dev/fingerprint.py run "$S/fp/fp_worktree.json" --work-dir "$S/fp" > "$S/logs/fp_run_worktree.txt" 2>&1 || tail -5 "$S/logs/fp_run_worktree.txt"
 "$PY" scripts/dev/fingerprint.py diff "$parent" "$S/fp/fp_worktree.json" > "$S/logs/fp_vs_parent.txt" 2>&1; rc=$?
-echo "fingerprint worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ' "$S/logs/fp_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
+echo "fingerprint worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added' "$S/logs/fp_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
 
 if [ ! -f "$S/logs/ruff_base_${BASE:0:12}.txt" ]; then
   rm -rf "$S/ruff_base_src"; mkdir -p "$S/ruff_base_src"; git archive "$BASE" | tar -x -C "$S/ruff_base_src"

@@ -28,7 +28,7 @@ export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 XLA_PYTHON_CLI
 
 step_fp() {
   cd "$W" && PYTHONPATH=$W "$PY" scripts/dev/fingerprint.py check "${1:-origin/main}" --work-dir "$S/fp_gate_$T" > "$S/logs/fp_check_$T.txt" 2>&1; rc=$?
-  echo "fp check vs ${1:-origin/main}: rc=$rc $(grep -E 'cases compared|only log rows differ' "$S/logs/fp_check_$T.txt" | paste -sd ' ')"; return $rc
+  echo "fp check vs ${1:-origin/main}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added' "$S/logs/fp_check_$T.txt" | paste -sd ' ')"; return $rc
 }
 step_selftest() {
   cd "$W" && PYTHONPATH=$W "$PY" scripts/dev/fingerprint.py selftest --jobs 4 --work-dir "$S/fp_selftest_$T" > "$S/logs/fp_selftest_$T.txt" 2>&1; rc=$?

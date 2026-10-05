@@ -24,10 +24,13 @@ upstream changes every later array of the run. The comparison is exact because b
 arithmetic on the same CPU; it is a check for move-only commits, not a merge gate for numerical changes
 (``tests/CLAUDE.md``: no bitwise float asserts).
 
-``diff`` and ``check`` count differences in three classes: outputs (cases, status, results, files and
-checkpoints), non-log trace rows (selected calls), and log trace rows. Log order is not behaviour (code
-rule 2 in ``docs/development/refactor_rules.md``), so when only log rows differ they print "only log rows
-differ (N); accepted under rule 2" and exit 0; any other difference exits 1.
+``diff`` and ``check`` count differences in four classes: outputs (cases, status, results, files and
+checkpoints), added controller inputs, non-log trace rows (selected calls), and log trace rows. Log order is
+not behaviour (code rule 2 in ``docs/development/refactor_rules.md``), so when only log rows differ they
+print "only log rows differ (N); accepted under rule 2" and exit 0. A controller input present only in B (a
+leaf under ``refine<N>/inputs``: a new option field the command hands the controller) is listed and
+accepted: a value that changed what the controller does would change its results, which are compared. Any
+other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -74,7 +77,9 @@ NODE_DEPENDENT_TEMPLATES = (
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
 # The classes a difference is counted in; only a difference confined to "log" is accepted.
-DIFFERENCE_CLASSES = ("outputs", "trace", "log")
+DIFFERENCE_CLASSES = ("outputs", "added", "trace", "log")
+# Leaves of what full_refinement.main hands the controller (fingerprints of the main_* cases).
+CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 TMP_TOKEN = "<TMP>"
 
 
@@ -223,6 +228,11 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             flat_a, flat_b = case_a[section], case_b[section]
             totals[section] += len(flat_a)
             changed = [key for key in sorted(set(flat_a) | set(flat_b)) if flat_a.get(key) != flat_b.get(key)]
+            added = [key for key in changed if key not in flat_a and CONTROLLER_INPUT.match(key)]
+            counts["added"] += len(added)
+            for key in added[:shown_per_section]:
+                lines.append(f"ADDED {name} {section} {key}: {flat_b[key]}")
+            changed = [key for key in changed if key not in added]
             counts["outputs"] += len(changed)
             for key in changed[:shown_per_section]:
                 lines.append(
@@ -251,12 +261,14 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
         lines.append(f"TRACE [{len(names)} cases, e.g. {names[0]}] {line[:400]}")
     lines.append(
         f"{len(set(cases_a) & set(cases_b))} cases compared; {sum(counts.values())} differences "
-        f"(outputs {counts['outputs']}, trace rows {counts['trace']}, log rows {counts['log']}); leaves compared: "
+        f"(outputs {counts['outputs']}, added inputs {counts['added']}, trace rows {counts['trace']}, log rows {counts['log']}); leaves compared: "
         + ", ".join(f"{section} {totals[section]}" for section in SECTIONS)
         + f"; trace rows {totals['trace']}"
     )
     if counts["log"] and not counts["outputs"] and not counts["trace"]:
         lines.append(f"only log rows differ ({counts['log']}); accepted under rule 2")
+    if counts["added"] and not counts["outputs"] and not counts["trace"]:
+        lines.append(f"controller inputs added ({counts['added']}); accepted: new option fields")
     return counts, lines
 
 
@@ -1096,7 +1108,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         def refine_spy(*args, **kwargs):
             refine_inputs.append(flatten([list(args), kwargs], scrub=scrub))
-            record("call", "refine_single_volume", f"inputs={len(refine_inputs[-1])}")
+            record("call", "refine_single_volume", "inputs")
             out = original_refine(*args, **kwargs)
             refine_results.append(flatten(out, scrub=scrub))
             return out
