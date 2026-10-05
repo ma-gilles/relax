@@ -377,6 +377,8 @@ def _score_kclass_at_given_poses(
     optics: OpticsSpec,
     em_kwargs,
     symmetry,
+    *,
+    firstiter_cc: bool = False,
 ):
     """RELION ``--skip_align``: the K-class pass 2 at each particle's stored pose, no pass 1.
 
@@ -388,6 +390,12 @@ def _score_kclass_at_given_poses(
     ``pdf_offset`` 1). ``wsum_sigma2_offset`` still sums ``|prior - old_offset|^2`` over the whole
     offset (:8690), so the remainder moves the engine's sigma-offset center. Returns the engine
     result with the stored Euler angles as its best-pose angles, and the grids it scored.
+
+    ``firstiter_cc`` is RELION's ``--firstiter_cc`` iteration at the given poses: RELION accepts it with
+    ``--skip_align``, collapses the sample range to the particle's own pose (ml_optimiser.cpp:4989) and
+    scores it by normalized cross-correlation (exp_local_sqrtXi2, :8021) against the one reference
+    (:4389-4402), its one sample taking the whole weight; the scale and sigma skips of that iteration
+    apply as in the searched one (:6190, :6316, :6385).
     """
 
     from relax.classification.given_poses import given_pose_grids
@@ -464,11 +472,42 @@ def _score_kclass_at_given_poses(
         bpref_device_signature_active=execution.bpref_device_signature_active,
         debug_iteration=execution.debug_iteration,
         image_seed_classes=half.image_seed_classes,
+        firstiter_cc_pass2_only_best_coarse=bool(firstiter_cc),
         given_supports=grids.supports,
         given_image_translations=grids.image_translations,
         **engine_kwargs,
     )
     return result, grids
+
+
+def _given_pose_collapse(given):
+    """``(rotation parent map, translation parent map, fine translations)`` for the coarse ids of a given-pose pass.
+
+    The list of stored poses is not the sampling grid: its rotation and translation ids collapse onto the
+    grid's first sample (RELION does not read pdf_direction under --skip_align either), and the poses go
+    back as the explicit best-pose details (:func:`_keep_given_poses`).
+    """
+
+    return (
+        np.zeros_like(given.rotation_parent_map),
+        np.zeros_like(given.translation_parent_map),
+        int(given.translations.shape[0]),
+    )
+
+
+def _keep_given_poses(score_result, half, given) -> None:
+    """A given-pose pass returns each particle's pose as it came and leaves the direction prior alone."""
+
+    # RELION leaves pdf_direction as it is under --skip_align (ml_optimiser.cpp:5198, :9133): no rotation
+    # mass, so the loop keeps the direction prior.
+    score_result.classes = replace(score_result.classes, rotation_mass=None)
+    # The stored angles go back as they came, not through a matrix round trip.
+    score_result.best_pose_rotation_eulers = np.asarray(half.particles.rotation_eulers, dtype=np.float64)
+    # The engine scored the zero translation of pre-translated images: the offset is the image's own
+    # remainder, relative to the pre-shift as the search grid's translations are.
+    score_result.best_pose_translations = np.asarray(
+        given.image_translations, dtype=score_result.best_pose_translations.dtype
+    )
 
 
 def _score_adaptive_k1_dense(
@@ -777,7 +816,14 @@ def _score_half_dense_one_shape(
         # adaptive 2-pass engine with normalized-CC scoring. Pass 2 retains the
         # oversampled children of the single best coarse class/pose, matching
         # RELION's firstiter-CC binarized coarse support.
-        if variant.relion_firstiter_cc_this_iter:
+        if variant.skip_align:
+            k_class_result, given = _score_kclass_at_given_poses(
+                half, sampling, priors, batching, execution, optics, em_kwargs, symmetry,
+                firstiter_cc=variant.relion_firstiter_cc_this_iter,
+            )
+            rot_pmap_for_collapse, trans_pmap_for_collapse, n_trans_fine_for_collapse = _given_pose_collapse(given)
+            k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
+        elif variant.relion_firstiter_cc_this_iter:
             (
                 k_class_result,
                 rot_pmap_for_collapse,
@@ -805,18 +851,6 @@ def _score_half_dense_one_shape(
                 ),
                 firstiter_execution,
             )
-            k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
-        elif variant.skip_align:
-            k_class_result, given = _score_kclass_at_given_poses(
-                half, sampling, priors, batching, execution, optics, em_kwargs, symmetry
-            )
-            # The list of stored poses is not the sampling grid: its rotation and translation ids collapse onto
-            # the grid's first sample (RELION does not read pdf_direction under --skip_align either), and the
-            # poses go back as the explicit best-pose details below.
-            adaptive_os_local = 0
-            rot_pmap_for_collapse = np.zeros_like(given.rotation_parent_map)
-            trans_pmap_for_collapse = np.zeros_like(given.translation_parent_map)
-            n_trans_fine_for_collapse = int(given.translations.shape[0])
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         else:
             k_class_result, pass2_grids = _score_adaptive_kclass_dense(
@@ -854,14 +888,7 @@ def _score_half_dense_one_shape(
             pose_dtype=_dense_global_scoring_dtype(),
         )
         if variant.skip_align:
-            # RELION leaves pdf_direction as it is under --skip_align (ml_optimiser.cpp:5198, :9133): no
-            # rotation mass, so the loop keeps the direction prior.
-            score_result.classes = replace(score_result.classes, rotation_mass=None)
-            # The stored angles go back as they came, not through a matrix round trip.
-            score_result.best_pose_rotation_eulers = np.asarray(half.particles.rotation_eulers, dtype=np.float64)
-            # The engine scored the zero translation of pre-translated images: the offset is the image's own
-            # remainder, relative to the pre-shift as the search grid's translations are.
-            score_result.best_pose_translations = np.asarray(given.image_translations, dtype=score_result.best_pose_translations.dtype)
+            _keep_given_poses(score_result, half, given)
         score_result.coarse_ha = _coarse_pose_assignments(
             score_result.ha,
             rot_parent_map=rot_pmap_for_collapse,

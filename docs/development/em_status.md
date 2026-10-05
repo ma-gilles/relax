@@ -428,8 +428,10 @@ against every class at its input angles and offsets: no pass 1, one rotation and
 particle (`relax/classification/given_poses.py`). The translation is the offset's remainder after the
 rounded pre-shift, applied to the particle's prepared images as a phase (`image_translations` of the
 resident pass, `prepare_unshifted_bucket_operands`), with the one zero translation scored. The direction
-prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). Refused for now:
-`--firstiter_cc` (commit 2), `--continue`, K=1, several image shapes, subtomograms.
+prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). With `--firstiter_cc`
+(RELION's GUI default) the first iteration scores each particle by normalized cross-correlation at its
+given pose against the one reference (:4989, :8021, :4389-4402). Refused for now: `--firstiter_cc` from
+several references, `--continue`, K=1, several image shapes, subtomograms.
 
 - Gate (team-lead 2026-10-05: iterations 1-5 trajectory, RELION 5.0.1 patched non-MPI GPU, same-seed
   RELION runs bit-identical, seed rule over seeds 1-3; script `em_work/relax_onengine_20260926/skipalign_20261004/gate.py`).
@@ -438,6 +440,11 @@ prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). Re
   (all pass); per-particle agreement 1.000 at it1, 0.993-0.998 at it2-5; class-map FSC-AUC against the
   same-seed RELION maps at least 0.9997 through it5. Both programs reach accuracy 1.000 by it10-25, so only
   the early trajectory discriminates.
+- `--firstiter_cc` (seeds 1-3, two runs each, against RELION's `--firstiter_cc` runs): iterations 1-2
+  identical to RELION (agreement 1.000, class-map FSC-AUC 1.00000); seed rule on accuracy at it1-5 and 25
+  0, 0, +0.0025 +/- 0.0010, +0.0041 +/- 0.0023, +0.0095 +/- 0.0049, 0 (all pass); agreement 0.983-1.000
+  at it3-5, map FSC-AUC at least 0.9996. On the offsets fixture agreement at least 0.992 and map FSC-AUC
+  at least 0.9998 through it25.
 - Offset handling: the same images with STAR offsets drawn in (-1.6, 1.6) px (seed 20261005, rows at
   exactly 0.5 and 1.5 px; the offsets do not describe the images, so this row tests parity, not accuracy
   against ground truth). Iteration-1 class maps relax vs RELION 1.1e-4 relative L2 (9e-5 without offsets);
@@ -451,8 +458,8 @@ prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). Re
   iteration to 1.7 s and the run to 125 s on another node, same classes and maps within 2.4e-7. The
   K>1 presummed adjoint still caches the whole padded HEALPix grid (73728 rotations for 5000 particles).
   Follow-up: the compiles per current size and that cache.
-- Jobs: RELION 15037374 and 15038704; relax 15038704 (gate runs), 15054173 (CSR trial, GPU test
-  tolerance measured at 1.8e-7). Runs under `em_work/relax_onengine_20260926/skipalign_20261004`.
+- Jobs: RELION 15037374 and 15038704; relax 15038704 (gate runs), 15072169 (`--firstiter_cc` gate
+  runs), 15054173 (CSR trial, GPU test tolerance measured at 1.8e-7), 15071492 (compile census). Runs under `em_work/relax_onengine_20260926/skipalign_20261004`.
 
 ## Subtomogram InitialModel and first-iteration CC (October 1, 2026)
 

@@ -232,8 +232,9 @@ def validate_skip_align_args(args) -> None:
     reasons = []
     if int(args.n_classes) <= 1:
         reasons.append("it classifies, so it needs --n_classes > 1")
-    if args.firstiter_cc:
-        reasons.append("the cross-correlation first iteration at given poses is not implemented yet; pass --no-firstiter_cc")
+    if args.firstiter_cc and (getattr(args, "ref_star", None) or getattr(args, "init_class_volumes", None)):
+        # RELION's cross-correlation iteration starts from one reference (ml_optimiser.cpp:4389-4402).
+        reasons.append("the cross-correlation first iteration at given poses starts from one --init_volume")
     if args.continue_optimiser_star is not None:
         reasons.append("--continue is not implemented for it")
     if args.initial_pose_source == "none" or args.relion_init_dir is not None or args.init_previous_best_poses_npz is not None:
@@ -772,8 +773,8 @@ def parse_refinement_args(argv=None):
         dest="skip_align",
         action="store_true",
         help="RELION --skip_align (Class3D, GUI 'Perform image alignment: No'): classify at the angles and "
-        "offsets of the input STAR, with no pose search. Needs --n_classes > 1 and --no-firstiter_cc "
-        "(a reference on the absolute greyscale); the sampling options are not used.",
+        "offsets of the input STAR, with no pose search. Needs --n_classes > 1; --firstiter_cc needs one "
+        "--init_volume. The sampling options are not used.",
     )
     parser.add_argument(
         "--firstiter_cc",

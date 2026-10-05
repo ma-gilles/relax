@@ -58,10 +58,13 @@ def _args(**overrides):
 
 def test_skip_align_refusals_name_the_reason():
     command_options.validate_skip_align_args(_args())
+    # The cross-correlation first iteration from one reference is RELION's GUI default with --skip_align.
+    command_options.validate_skip_align_args(_args(firstiter_cc=True))
     command_options.validate_skip_align_args(_args(skip_align=False, n_classes=1, firstiter_cc=True))
     for overrides, reason in (
         (dict(n_classes=1), "needs --n_classes > 1"),
-        (dict(firstiter_cc=True), "pass --no-firstiter_cc"),
+        (dict(firstiter_cc=True, ref_star="references.star"), "starts from one --init_volume"),
+        (dict(firstiter_cc=True, init_class_volumes="a.mrc,b.mrc"), "starts from one --init_volume"),
         (dict(continue_optimiser_star="run_it003_optimiser.star"), "--continue is not implemented"),
         (dict(initial_pose_source="none"), "input STAR's"),
         (dict(relion_init_dir="/x"), "input STAR's"),

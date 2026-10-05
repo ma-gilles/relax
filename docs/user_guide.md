@@ -141,9 +141,10 @@ RELION GUI does.
 
 `--skip_align` is RELION's classification without alignment (GUI "Perform image
 alignment: No"): each particle is scored against every class at the angles and offsets
-of the input STAR, which the run writes back unchanged. Pass it with
-`--no-firstiter_cc`; the cross-correlation first iteration at given poses is not
-implemented yet, and neither are `--continue` and subtomogram particles with it.
+of the input STAR, which the run writes back unchanged. With the default
+`--firstiter_cc` and one `--init_volume`, the first iteration scores each particle
+by cross-correlation at its given pose, as RELION does. Not implemented yet with
+it: `--firstiter_cc` from several references, `--continue` and subtomogram particles.
 
 ## Subtomogram auto-refine (RELION 5 tilt series)
 

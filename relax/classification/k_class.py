@@ -877,7 +877,9 @@ def _run_dense_k_class_joint_firstiter_score_probe(
 
 
 # The image-axis inputs a firstiter-CC subset pass forwards for each winner class.
-_SUBSET_PASS_CLASS_KWARGS = ("image_corrections", "scale_corrections", "image_pre_shifts", "translation_prior_centers")
+_SUBSET_PASS_CLASS_KWARGS = (
+    "image_corrections", "scale_corrections", "image_pre_shifts", "translation_prior_centers", "image_translations",
+)
 
 _IMAGE_AXIS_ENGINE_KWARGS = (
     "image_corrections",
@@ -885,6 +887,7 @@ _IMAGE_AXIS_ENGINE_KWARGS = (
     "group_ids",
     "optics_group_ids",
     "image_pre_shifts",
+    "image_translations",
     "translation_prior_centers",
     "translation_log_prior",
     "rotation_log_prior",
@@ -1083,7 +1086,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     sig_sample_indices_by_class,
     disc_type: str,
     *,
-    coarse_result: _DenseKClassScoreProbeResult,
+    coarse_result: _DenseKClassScoreProbeResult | None,
     coarse_class_assignments: np.ndarray,
     n_rot_coarse: int,
     n_fine_trans: int,
@@ -1093,7 +1096,12 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
     return_best_pose_details: bool,
     pass2_kwargs: dict,
 ) -> KClassEMResult:
-    """Sparse RELION firstiter_cc fine pass over global-winner image subsets."""
+    """Sparse RELION firstiter_cc fine pass over global-winner image subsets.
+
+    ``coarse_result`` None is the pass at given poses (``--skip_align``): there is no coarse probe, each
+    image's one sample is its only candidate, and a class's evidence for its images is the fine pass's
+    own (the coarse and the fine sample are the same).
+    """
 
     from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
 
@@ -1186,6 +1194,11 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         else None
     )
 
+    class_log_evidence = (
+        np.full((n_classes, n_images), -np.inf, dtype=score_dtype)
+        if coarse_result is None
+        else np.asarray(coarse_result.class_log_evidence)
+    )
     results = _PerClassSubsetResults(
         n_images=n_images,
         accumulate_noise=accumulate_noise,
@@ -1201,7 +1214,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         if image_indices.size == 0:
             results.append_empty_class(
                 mean=means_array[class_index],
-                class_log_evidence=coarse_result.class_log_evidence[class_index],
+                class_log_evidence=class_log_evidence[class_index],
                 noise_variance=noise_variance,
                 class_index=class_index,
                 n_classes=n_classes,
@@ -1238,6 +1251,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             scale_corrections=class_kwargs.get("scale_corrections"),
             **scale_groups,
             image_pre_shifts=class_kwargs.get("image_pre_shifts"),
+            image_translations=class_kwargs.get("image_translations"),
             translation_prior_centers=class_kwargs.get("translation_prior_centers"),
             # Each image's noise row.
             optics_group_ids=_subset_image_axis_engine_kwargs(
@@ -1252,6 +1266,10 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             bpref_class_index=class_index,
             **common,
         )
+        if coarse_result is None:
+            class_log_evidence[class_index, image_indices] = np.asarray(
+                result.relion_stats.log_evidence_per_image, dtype=class_log_evidence.dtype
+            )
         hard_full = np.zeros(n_images, dtype=np.int32)
         hard_full[image_indices] = _sparse_pose_ids_to_fine_grid(
             result.hard_assignment, result.best_rotation_indices, n_fine_trans
@@ -1262,7 +1280,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
             Ft_ctf=result.Ft_ctf,
             hard_full=hard_full,
             stats_subset=result.relion_stats,
-            class_log_evidence=coarse_result.class_log_evidence[class_index],
+            class_log_evidence=class_log_evidence[class_index],
             noise=result.noise_stats,
             best_pose=(
                 (result.best_rotations, result.best_translations, result.best_rotation_indices)
@@ -1280,7 +1298,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         time.time() - t0,
     )
     return results.assemble(
-        coarse_result.class_log_evidence,
+        class_log_evidence,
         profile_summary={"sparse_firstiter_subset_pass2_s": np.float64(time.time() - t0)},
         host_accumulators=True,
         mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
@@ -1328,6 +1346,35 @@ def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int
         ids_per_batch=[np.concatenate(rows) if rows else np.zeros(0, np.int32)],
     )
     return DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+
+
+def _given_pose_class_supports(
+    given_supports, *, n_classes, n_images, image_seed_classes, firstiter_cc, n_coarse_rot, n_coarse_trans
+):
+    """Pass 2's per-class supports at given poses (RELION ``--skip_align``), in place of pass 1.
+
+    No pose search, so no pass 1 (ml_optimiser.cpp:8454, pdf_orientation = pdf_class): every class is
+    scored on each image's own sample, or only its seed class in a seed iteration. RELION's
+    ``--firstiter_cc`` iteration from one reference scores every particle against it alone
+    (:4389-4402), so its winner at a given pose is the seed class. Returns the supports by class, each
+    image's sample count and, for that iteration, each image's class.
+    """
+
+    if n_classes == 1 or len(given_supports) != n_images:
+        raise ValueError("given supports are one coarse sample list per image of a K-class pass")
+    if firstiter_cc and image_seed_classes is None:
+        raise NotImplementedError("the cross-correlation iteration at given poses starts from one reference")
+    supports = [np.asarray(samples, dtype=np.int32).reshape(-1) for samples in given_supports]
+    by_class = (
+        [list(supports) for _ in range(n_classes)]
+        if image_seed_classes is None
+        else seed_iteration_supports(supports, image_seed_classes, n_classes)
+    )
+    return (
+        [_given_support_csr(rows, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans) for rows in by_class],
+        np.asarray([samples.size for samples in supports], dtype=np.int32),
+        np.asarray(image_seed_classes, dtype=np.int32) if firstiter_cc else None,
+    )
 
 
 def run_dense_k_class_em_adaptive(
@@ -1664,20 +1711,13 @@ def run_dense_k_class_em_adaptive(
     coarse_actual_backend = None
     pass1_t0 = time.time()
     if given_supports is not None:
-        # RELION --skip_align (ml_optimiser.cpp:8454, pdf_orientation = pdf_class): no pose search, so no
-        # pass 1; every class is scored on each image's own sample, or only its random class in a seed iteration.
-        if n_classes == 1 or firstiter_cc_pass2_only_best_coarse or len(given_supports) != n_images:
-            raise ValueError("given supports are one coarse sample list per image of a Gaussian K-class pass")
-        supports = [np.asarray(samples, dtype=np.int32).reshape(-1) for samples in given_supports]
-        sig_sample_indices_by_class = [
-            _given_support_csr(class_supports, n_coarse_rot=n_rot_coarse, n_coarse_trans=n_trans_coarse)
-            for class_supports in (
-                [list(supports) for _ in range(n_classes)]
-                if image_seed_classes is None
-                else seed_iteration_supports(supports, image_seed_classes, n_classes)
-            )
-        ]
-        significant_counts_for_result = np.asarray([samples.size for samples in supports], dtype=np.int32)
+        coarse_result = None
+        sig_sample_indices_by_class, significant_counts_for_result, given_classes = _given_pose_class_supports(
+            given_supports, n_classes=n_classes, n_images=n_images, image_seed_classes=image_seed_classes,
+            firstiter_cc=firstiter_cc_pass2_only_best_coarse, n_coarse_rot=n_rot_coarse, n_coarse_trans=n_trans_coarse,
+        )
+        if firstiter_cc_pass2_only_best_coarse:
+            coarse_class_assignments = given_classes
     elif firstiter_cc_pass2_only_best_coarse:
         # RELION firstiter_cc branch: restrict pass-2 to children of each
         # class's per-class coarse-best pose, then gate by the global winning

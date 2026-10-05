@@ -4843,6 +4843,7 @@ def compute_pass2_stats_resident(
     dense_gemm_full_grid: bool = False,
     nyquist_column_counting: str = "relion",
     firstiter_cc_support: str = "relion",
+    image_translations=None,
 ):
     """Device-resident K=1 sparse pass 2, relax's one pass-2 engine.
 

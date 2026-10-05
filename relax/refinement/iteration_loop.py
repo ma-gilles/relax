@@ -750,6 +750,25 @@ def _with_stable_window_class_history(refine):
 
 
 @_with_stable_window_class_history
+def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coarse_cs, image_window_size):
+    """A numbered iteration's dense route: its first-iteration mode, the adaptive sizes and the class options.
+
+    ``coarse_cs`` is the adaptive pass-1 size, None off the adaptive route.
+    """
+
+    return DenseVariantPolicy(
+        firstiter_score_mode_this_iter=first_iteration.score_mode,
+        firstiter_winner_take_all_this_iter=first_iteration.winner_take_all,
+        k_class_enabled=int(k_class.n_classes) > 1,
+        relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
+        firstiter_coarse_current_size=coarse_cs,
+        firstiter_fine_current_size=image_window_size if use_adaptive else None,
+        firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
+        firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
+        skip_align=bool(k_class.skip_align),
+    )
+
+
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
     init_volume: list[jnp.ndarray] | jnp.ndarray,
@@ -1765,16 +1784,10 @@ def refine_single_volume(
         # half's work into a function changes neither what runs nor its
         # order; it makes the two callable independently, which is what the
         # overlap option uses. Serial dispatch stays the default.
-        numbered_variant = DenseVariantPolicy(
-            firstiter_score_mode_this_iter=first_iteration.score_mode,
-            firstiter_winner_take_all_this_iter=first_iteration.winner_take_all,
-            k_class_enabled=k_class_enabled,
-            relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-            firstiter_coarse_current_size=coarse_cs if use_adaptive else None,
-            firstiter_fine_current_size=sampling_plan.windows.image_window_size if use_adaptive else None,
-            firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
-            firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
-            skip_align=bool(k_class.skip_align),
+        numbered_variant = _numbered_dense_variant(
+            first_iteration, k_class, use_adaptive=use_adaptive,
+            coarse_cs=coarse_cs if use_adaptive else None,  # bound only on the adaptive route
+            image_window_size=sampling_plan.windows.image_window_size,
         )
         numbered_expectation = prepare_numbered_expectation(
             trial_grid,
