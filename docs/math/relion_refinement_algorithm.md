@@ -776,6 +776,21 @@ translation range/step, resets the change counters and activates local search
 at `auto_local_healpix_order`. Its local sigma is
 `2 * radians(new_angular_step / 2**adaptive_oversampling)`.
 
+**Local searches from the start (`--sigma_ang`, K=1).** `relion_refine --sigma_ang s` turns the
+orientational prior on from iteration 1 at any HEALPix order, with width `s` degrees on rot, tilt and
+psi; the search keeps orientations within 3 widths of each particle's centre, weighted by the Gaussian.
+[`initialize_refinement_state`](../../relax/refinement/iteration_planning.py) starts the state with that
+width and `do_local_search` on (a start at or above `auto_local_healpix_order` without `--sigma_ang`
+uses the step rule above, as RELION's iteration 0 does). Below the local-search order
+`refine_angular_sampling` keeps the prior and its width; at that order it resets the width to the step
+rule, overwriting `--sigma_ang`, as `updateAngularSampling` does. The centre is the particle's current
+angles (the input STAR's at iteration 1; 0 where the STAR has none, and
+[`prepare_initial_poses`](../../relax/relion/input_poses.py) centres a start without any pose source at
+(0, 0, 0) with a warning). The one exception is RELION's prior mode below the local-search order:
+there an angle with an `rlnAngle*Prior` is centred on that prior in every iteration, including the final
+one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical). Class3D
+(`--sigma_ang` with K>1) is not implemented yet.
+
 [`expected_accuracy.py`](../../relax/helpers/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior
 helper `calculate_expected_angular_errors` is a different route. Likewise,

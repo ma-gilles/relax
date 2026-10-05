@@ -282,6 +282,7 @@ def local_search_centre_half(half, angle_priors, state):
     (``getFourierTransformsAndCtfs``; non-helical). ``angle_priors`` is the half's ``[N, 3]`` priors in
     degrees, NaN where absent, or None. Reads from ``state``: ``do_local_search``, ``auto_sampling``,
     ``healpix_order`` and ``auto_local_healpix_order``.
+    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy`` (local searches from the start).
     """
 
     if (
