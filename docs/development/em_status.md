@@ -648,8 +648,8 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   With one image per particle the GEMM scorer reproduces RELION's cut; the subtomogram difference comes
   from adding 41 tilt images' diff2. The exact re-score is therefore a subtomogram change only. K=4
   (pdb_k4_5k_128, job 14971087): maps within 1.3e-5 over iterations 1-3, the cap of 400 does not bind.
-- VDAM on optics groups of several image shapes (single particles; multioptics_k2_10k128, K=1; on main
-  from 2026-10-05, the scores below are from the branch head 0d73d5b and are rerun on main): OPEN. CPU RELION is the reference on these rows only, because GPU RELION drops
+- VDAM on optics groups of several image shapes (single particles; multioptics_k2_10k128, K=1; branch
+  not on main; 2026-10-04): OPEN. CPU RELION is the reference on these rows only, because GPU RELION drops
   the coarse scale difference of a group on another box (ma-gilles/relax#12); CPU RELION is
   bit-reproducible, so a same-seed range has no width, and the rule the user set is the seed distribution:
   relax passes if its seed mean is not below the reference's by more than the standard error of the

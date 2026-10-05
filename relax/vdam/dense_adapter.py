@@ -21,7 +21,6 @@ from relax.helpers.orientation_priors import (
     relion_round_away_from_zero,
     relion_sigma_offset_prior_center,
 )
-from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.relion import relion_projector_setup
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 from relax.vdam import native_sampling
@@ -246,13 +245,6 @@ def _dense_estep_config(
         engine_kwargs["recon_square_window"] = bool(int(_recon_sq))
     if os.environ.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"):
         engine_kwargs["reconstruction_subtract_projected_reference"] = False
-    if isinstance(dataset, MultiShapeDataset):
-        # Each image shape rebuilds its pre-shifts and coarse pdf_offset in its own pixels.
-        engine_kwargs["multi_shape_translations"] = dict(
-            offsets_px=np.asarray(translation_offsets, dtype=np.float64),
-            coarse_prior_translations=coarse_prior_translations,
-            sigma_angstrom=sigma_angstrom,
-        )
     if translation_log_prior is not None:
         engine_kwargs["translation_log_prior"] = translation_log_prior
     if coarse_translation_log_prior is not None:

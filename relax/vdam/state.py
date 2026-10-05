@@ -144,6 +144,3 @@ class NativeOpticsState:
     defV: np.ndarray
     defAngle: np.ndarray
     phase_shift: np.ndarray
-    # Optics groups on several image shapes: each particle's pixel size and box (None on one grid).
-    image_pixel_size: np.ndarray | None = None
-    image_box: np.ndarray | None = None

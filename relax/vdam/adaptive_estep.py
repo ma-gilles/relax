@@ -39,7 +39,6 @@ from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.oversampling import adaptive_fine_rows, prepare_adaptive_pass2_grids
 from relax.helpers.preprocessing import uses_relion_cuda_image_preprocessing
 from relax.helpers.resolution import compute_coarse_image_size
-from relax.refinement import optics_shapes
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.vdam.estep_common import (
     _PARTICLE_RESULT_FIELDS,
@@ -70,7 +69,6 @@ _SPARSE_PASS2_CONTROL_KEYS = {
     "pass1_healpix_order",
     "pass1_current_size",
     "return_profile",
-    "multi_shape_translations",
 }
 
 
@@ -372,12 +370,7 @@ def run_adaptive_initial_model_estep(
     pass1_current_size = (
         current_size if oversampling_order == 0 else _resolve_sparse_pass1_current_size(state, group_kwargs, options)
     )
-    multi_shape = isinstance(group_dataset, optics_shapes.MultiShapeHalf)
-    relion_preprocessing = all(
-        uses_relion_cuda_image_preprocessing(dataset)
-        for dataset in ([c.dataset for c in group_dataset.classes] if multi_shape else [group_dataset])
-    )
-    fresh_k1 = bool(state.K == 1 and relion_preprocessing)
+    fresh_k1 = bool(state.K == 1 and uses_relion_cuda_image_preprocessing(group_dataset))
     route_kwargs = dict(
         image_batch_size=int(config.image_batch_size),
         rotation_block_size=int(config.rotation_block_size),
@@ -414,7 +407,18 @@ def run_adaptive_initial_model_estep(
         reconstruction_group_count=2 if grouped else None,
     )
     route_kwargs = {name: value for name, value in route_kwargs.items() if value is not None}
-    engine_call = dict(
+    result = run_dense_k_class_em_adaptive(
+        group_dataset,
+        means,
+        mean_variance,
+        config.noise_variance,
+        route.pass1_rotations,
+        grids.coarse_translations,
+        grids.fine_rotations,
+        grids.fine_translations,
+        grids.rotation_parent_map,
+        grids.translation_parent_map,
+        config.disc_type,
         coarse_engine=config.coarse_engine,
         class_log_priors=class_log_priors,
         accumulate_noise=True,
@@ -436,40 +440,8 @@ def run_adaptive_initial_model_estep(
         fill_fine_rows=route.fill_fine_rows,
         return_best_pose_details=True,
         coarse_translation_phase_source=grids.coarse_translation_phase_source,
+        **route_kwargs,
     )
-    shape_offsets = None
-    if multi_shape:
-        from relax.vdam.shape_class_estep import run_by_shape_class
-
-        def class_route(factor: float) -> AdaptiveRouteGrids:
-            return adaptive_route_grids(
-                healpix_order=healpix_order,
-                oversampling_order=oversampling_order,
-                random_perturbation=random_perturbation,
-                coarse_base_translations=np.asarray(coarse_base_translations, dtype=np.float64) * factor,
-                translation_step=float(translation_step) * factor,
-            )
-
-        result, shape_offsets = run_by_shape_class(
-            group_dataset, state, config, means, mean_variance, route, class_route, options, image_indices,
-            engine_call=engine_call, route_kwargs=route_kwargs,
-        )
-    else:
-        result = run_dense_k_class_em_adaptive(
-            group_dataset,
-            means,
-            mean_variance,
-            config.noise_variance,
-            route.pass1_rotations,
-            grids.coarse_translations,
-            grids.fine_rotations,
-            grids.fine_translations,
-            grids.rotation_parent_map,
-            grids.translation_parent_map,
-            config.disc_type,
-            **engine_call,
-            **route_kwargs,
-        )
     result = _direction_posterior_stats(
         result,
         n_coarse_rot=n_coarse_rot,
@@ -498,8 +470,6 @@ def run_adaptive_initial_model_estep(
     meta.pop("best_pose_rotation_ids", None)
     _add_accumulator_weight_meta(meta, accumulators, state.K)
     meta["pass2_engine"] = "adaptive"
-    if shape_offsets is not None:
-        meta["image_offsets_px"] = shape_offsets
     if grouped:
         meta["halfset_ids"] = (0, 1)
         meta["joint_halfset_particle_stream"] = True

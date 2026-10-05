@@ -16,7 +16,6 @@ import numpy as np
 from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax import sampling
-from relax.helpers import optics_scale
 from relax.helpers.convergence import (
     compute_relion_offset_changes_angstrom,
     compute_relion_orientation_changes,
@@ -463,22 +462,6 @@ def _estimate_native_sampling_accuracy(
                 # The trials' tilt images' exact CTF rows and the magnification's factor, when optics need them.
                 optics=None if experiment_dataset is None else expected_accuracy_optics(experiment_dataset, images),
             )
-        grid_kwargs = dict(current_image_size=current_image_size)
-        if optics_state is not None and optics_state.image_pixel_size is not None:
-            # A group on another grid: its own pixel size, box and remapped size against the
-            # model-size projector (ml_optimiser.cpp:9336-9353).
-            pixel = group_constant(optics_state.image_pixel_size, ids, "pixel size")
-            box = int(group_constant(optics_state.image_box, ids, "box"))
-            scale = optics_scale.scale_difference(box, pixel, int(state.ori_size), float(optics_state.pixel_size))
-            optics_kwargs["pixel_size"] = pixel
-            grid_kwargs = dict(
-                current_image_size=optics_scale.group_current_size(current_image_size, box, scale),
-                group_grid=dict(
-                    model_pixel_size=float(optics_state.pixel_size),
-                    image_full_size=box,
-                    projector_current_size=current_image_size,
-                ),
-            )
         return accuracy_estimator(
             references_relion=refs_relion,
             trial_eulers_deg=eulers[trials],
@@ -488,7 +471,7 @@ def _estimate_native_sampling_accuracy(
             sigma2_noise_relion=np.asarray(sigma2_noise_relion, dtype=np.float64),
             **optics_kwargs,
             ori_size=int(state.ori_size),
-            **grid_kwargs,
+            current_image_size=current_image_size,
             padding_factor=int(padding_factor),
             sigma2_fudge=float(sigma2_fudge),
             random_seed=int(random_seed),

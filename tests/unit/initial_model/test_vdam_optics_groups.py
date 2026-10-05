@@ -79,7 +79,7 @@ def test_particle_optics_follow_each_particles_group():
     assert q0.tolist() == [0.07, 0.1, 0.07]
     assert pixel == 4.25
     other_grid = optics.assign(_rlnImagePixelSize=[4.25, 5.44])
-    with pytest.raises(ValueError, match="one dataset per image shape"):
+    with pytest.raises(NotImplementedError, match="one image grid"):
         initial_model_io._particle_optics(main, other_grid, _Dataset())
 
 

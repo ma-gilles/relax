@@ -251,9 +251,8 @@ def _update_particle_state_from_estep_meta(
         particle_state.pose_assignments = _ensure_field(particle_state.pose_assignments, (N,), np.int32, -1)
         particle_state.pose_assignments[ids] = assignments.astype(np.int32, copy=False)
 
-    if (offsets := meta.get("tomo_offsets_px", meta.get("image_offsets_px"))) is not None:
-        # Subtomogram particles (3D) and images on several shapes (rounded in each image's own
-        # pixels): RELION's new offset, the rounded old one plus the winning shift.
+    if (offsets := meta.get("tomo_offsets_px")) is not None:
+        # Subtomogram particles: RELION's new 3D offset, the rounded old one plus the winning shift.
         particle_state.translation_offsets[ids] = np.asarray(offsets, dtype=np.float64)
 
     if (rot := meta.get("best_pose_rotations")) is not None:
