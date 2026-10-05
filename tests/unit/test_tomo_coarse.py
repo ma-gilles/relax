@@ -418,13 +418,16 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
 
 
 @pytest.mark.gpu
-def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device):
+@pytest.mark.parametrize("block_rows", [None, 2], ids=["one_block", "blocks_of_two_rows"])
+def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, monkeypatch, block_rows):
     """A particle's re-scored rotations: any subset of rows, at any position in the call, gives the full
-    direct-square pass's values for those rows, the images added in slot order."""
+    direct-square pass's values for those rows, the images added in slot order; scored in blocks of rows
+    (the kernel's int32 output count) they are bitwise the one-block values."""
 
     import jax
 
     from relax.cuda.kernels import custom_cuda_requested
+    from relax.scoring import exact_cut
 
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
@@ -447,17 +450,27 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device):
                 total = image if total is None else total + image
             full[p_] = total
         ids = np.array([[250, 3, 129, 128, 0], [7, 255, 64, 200, 127]])
-        rows = tomo_coarse.direct_rows_diff2(
-            f["full"],
-            jnp.asarray(np.take_along_axis(rotations, ids[:, None, :, None, None], axis=2)),
-            jnp.asarray(f["images"]).reshape(n_particles, n_slots, -1),
-            jnp.asarray(f["weight"]).reshape(n_particles, n_slots, -1),
-            jnp.asarray(f["initial"]).reshape(n_particles, n_slots),
-            jnp.asarray(f["angles"]).reshape(n_particles, n_slots, 200, 2),
-            layout.full_to_compact, current_size=layout.current_size, physical_image_size=f["box"],
-            model_max_r=f["max_r"], padding_factor=f["pad"],
-        )
-        assert_matches(np.asarray(rows), np.take_along_axis(full, ids[:, :, None], axis=1))
+
+        def direct_rows():
+            return np.asarray(
+                tomo_coarse.direct_rows_diff2(
+                    f["full"],
+                    jnp.asarray(np.take_along_axis(rotations, ids[:, None, :, None, None], axis=2)),
+                    jnp.asarray(f["images"]).reshape(n_particles, n_slots, -1),
+                    jnp.asarray(f["weight"]).reshape(n_particles, n_slots, -1),
+                    jnp.asarray(f["initial"]).reshape(n_particles, n_slots),
+                    jnp.asarray(f["angles"]).reshape(n_particles, n_slots, 200, 2),
+                    layout.full_to_compact, current_size=layout.current_size, physical_image_size=f["box"],
+                    model_max_r=f["max_r"], padding_factor=f["pad"],
+                )
+            )
+
+        one_block = direct_rows()
+        if block_rows is not None:
+            monkeypatch.setattr(exact_cut, "DIRECT_ROWS_BLOCK_ELEMENTS", n_particles * n_slots * 200 * block_rows)
+            rows = direct_rows()
+            np.testing.assert_array_equal(rows, one_block)
+        assert_matches(one_block, np.take_along_axis(full, ids[:, :, None], axis=1))
 
 
 @pytest.mark.gpu

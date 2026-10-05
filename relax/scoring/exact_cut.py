@@ -22,6 +22,9 @@ import jax.numpy as jnp
 # The fused coarse projector's translation capacity (one 128-thread block).
 FUSED_TRANSLATION_CAPACITY = 128
 
+# Per-image diff2 elements ([images, rows, T] float32, 1 GiB) one block of direct_rows_diff2 computes.
+DIRECT_ROWS_BLOCK_ELEMENTS = 1 << 28
+
 
 def float32_unit(values):
     """The float32 spacing above each of ``values``."""
@@ -201,26 +204,34 @@ def direct_rows_diff2(
     n_particles, n_slots, n_rows = (int(n) for n in rotations.shape[:3])
     n_images, n_trans = n_particles * n_slots, int(translation_angles.shape[2])
     angles = translation_angles.reshape(n_images, n_trans, 2)
-    blocks = [
-        em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
-            projector_full,
-            rotations.reshape(n_images, n_rows, 3, 3),
-            unshifted.reshape(n_images, -1),
-            angles[:, start : start + FUSED_TRANSLATION_CAPACITY],
-            pixel_weight.reshape(n_images, -1),
-            initial_diff2.reshape(n_images),
-            full_to_compact,
-            current_size=int(current_size),
-            physical_image_size=int(physical_image_size),
-            model_max_r=int(model_max_r),
-            padding_factor=int(padding_factor),
+    images = rotations.reshape(n_images, n_rows, 3, 3)
+    # The rows go in blocks whose per-image diff2 [images, rows, T] stays within DIRECT_ROWS_BLOCK_ELEMENTS: the
+    # kernel counts its outputs in int32, and a flat K>1 posterior can leave thousands of rows undecided.
+    block_rows = max(1, min(n_rows, DIRECT_ROWS_BLOCK_ELEMENTS // max(n_images * n_trans, 1)))
+    totals = []
+    for first in range(0, n_rows, block_rows):
+        rows = images[:, first : first + block_rows]
+        blocks = [
+            em_cuda_kernels.relion_coarse_diff2_projector_per_image_f32(
+                projector_full,
+                rows,
+                unshifted.reshape(n_images, -1),
+                angles[:, start : start + FUSED_TRANSLATION_CAPACITY],
+                pixel_weight.reshape(n_images, -1),
+                initial_diff2.reshape(n_images),
+                full_to_compact,
+                current_size=int(current_size),
+                physical_image_size=int(physical_image_size),
+                model_max_r=int(model_max_r),
+                padding_factor=int(padding_factor),
+            )
+            for start in range(0, n_trans, FUSED_TRANSLATION_CAPACITY)
+        ]
+        image_diff2 = (blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=2)).reshape(
+            n_particles, n_slots, int(rows.shape[1]), n_trans
         )
-        for start in range(0, n_trans, FUSED_TRANSLATION_CAPACITY)
-    ]
-    image_diff2 = (blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=2)).reshape(
-        n_particles, n_slots, n_rows, n_trans
-    )
-    return _add_in_slot_order(image_diff2)
+        totals.append(_add_in_slot_order(image_diff2))
+    return totals[0] if len(totals) == 1 else jnp.concatenate(totals, axis=1)
 
 
 @jax.jit
