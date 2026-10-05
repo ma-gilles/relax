@@ -1019,6 +1019,17 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
     if len(batches) != 1:
         raise RuntimeError("Expected exactly one image batch per full-row tile")
     batch_data, _rots, _trans, ctf_params, _noise, _particle_indices, indices = batches[0]
+    # With a planned tile size on the stream, the tile is padded to its :func:`tile_size_bucket` with
+    # zero images after the real ones (``n_real``), as the subtomogram reader pads, so a stage compiles
+    # one program per bucket instead of one per remainder size. Padding images carry the first
+    # image's CTF parameters through preprocessing; their operands are zeroed below.
+    n_real = int(image_indices.size)
+    padded = n_real if stream.tile_images is None else tile_size_bucket(n_real, stream.tile_images)
+    if padded != n_real:
+        extra = padded - n_real
+        batch_data = np.concatenate([batch_data, np.zeros((extra, *batch_data.shape[1:]), batch_data.dtype)])
+        ctf_params = np.concatenate([ctf_params, np.repeat(np.asarray(ctf_params)[:1], extra, axis=0)])
+        indices = np.concatenate([indices, np.repeat(np.asarray(indices)[:1], extra)])
     batch_data, ctf_params = jax.device_put((batch_data, ctf_params), stream.device)
     batch = prepare_dense_ppca_image_batch(
         stream.dataset,
@@ -1033,6 +1044,11 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
     )
     coarse_mask, table, layout = tile_support(stream, significant_rows)
     Y1, ctf2, Y1_recon, ctf2_recon = batch.Y1_score, batch.ctf2_score, batch.Y1_recon, batch.ctf2_recon
+    if padded != n_real:
+        real = jnp.arange(padded) < n_real
+        ctf2, ctf2_recon = (jnp.where(real[:, None], x, 0) for x in (ctf2, ctf2_recon))
+        # Padding images take the first image's support; the stream gives them no posterior mass.
+        coarse_mask = jnp.concatenate([coarse_mask, jnp.repeat(coarse_mask[:1], padded - n_real, axis=0)])
     shift_pad = 0
     if stream.static.cuda_kernels:
         # Zero operands at the padding pixels of the GEMM window and the padding (image,
@@ -1051,7 +1067,8 @@ def _load_tile(stream: FullRowStream, image_indices, significant_rows, *, collec
         y_norm=batch.y_norm,
     )
     layout.update(
-        n_observations=int(image_indices.size),
+        n_real=n_real,
+        n_observations=n_real,
         original_ids=stream.dataset.original_image_indices_from_local(image_indices),
     )
     return tile, batch.observation_power, layout

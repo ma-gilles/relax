@@ -1,6 +1,5 @@
 """Streamed full rotation rows versus the independent local layout and host-mask engine."""
 
-
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -37,9 +36,15 @@ TRANSLATIONS = np.asarray([[-2, 0], [0, 0], [2, 0]], np.float32)
 ROTATION_PRIOR = np.asarray([-0.5, -1.0, -1.5], np.float32)
 SIGNIFICANT = [np.asarray([0, 1, 3, 8], np.int32), None, np.asarray([0, 4, 6], np.int32)]
 LAYOUT_KWARGS = dict(
-    n_coarse_rotations=3, n_coarse_translations=3, nside_level=1,
-    translations=TRANSLATIONS, oversampling_order=1, translation_step=2.0,
-    rotation_log_prior=ROTATION_PRIOR, rotation_index_order="relion", allow_empty=False,
+    n_coarse_rotations=3,
+    n_coarse_translations=3,
+    nside_level=1,
+    translations=TRANSLATIONS,
+    oversampling_order=1,
+    translation_step=2.0,
+    rotation_log_prior=ROTATION_PRIOR,
+    rotation_index_order="relion",
+    allow_empty=False,
 )
 
 
@@ -56,13 +61,18 @@ def test_device_prior_expansion_matches_independent_local_layout():
     translation_prior = np.linspace(-0.2, -1.3, shared.translation_grid.shape[0]).astype(np.float32)
     coarse = coarse_support_mask(SIGNIFICANT, 3, 3)
     assert coarse.shape == (3, 3, 3)
-    prior = np.asarray(full_row_pose_log_prior(
-        jnp.asarray(coarse), jnp.asarray(shared.rotation_posterior_ids_flat), jnp.asarray(parent),
-        jnp.asarray(shared.rotation_log_priors_flat), jnp.asarray(translation_prior),
-    ))
+    prior = np.asarray(
+        full_row_pose_log_prior(
+            jnp.asarray(coarse),
+            jnp.asarray(shared.rotation_posterior_ids_flat),
+            jnp.asarray(parent),
+            jnp.asarray(shared.rotation_log_priors_flat),
+            jnp.asarray(translation_prior),
+        )
+    )
     assert prior.shape == (3, 24, 12) and prior.dtype == np.float32
     for image in range(3):
-        begin, end = map(int, reference.rotation_offsets[image:image + 2])
+        begin, end = map(int, reference.rotation_offsets[image : image + 2])
         # Every image keeps the full shared rotation row, in the same order.
         assert np.array_equal(reference.rotations_flat[begin:end], shared.rotations_flat)
         assert np.array_equal(reference.rotation_ids_flat[begin:end], shared.rotation_ids_flat)
@@ -70,9 +80,15 @@ def test_device_prior_expansion_matches_independent_local_layout():
         mask = reference.sample_mask_rows(begin, end)
         assert np.array_equal(np.isfinite(prior[image]), mask)
         host = _per_image_pose_prior_block(
-            batch_start=0, batch_count=1, r0=0, r1=end - begin, n_trans=12,
+            batch_start=0,
+            batch_count=1,
+            r0=0,
+            r1=end - begin,
+            n_trans=12,
             rotation_log_prior=reference.rotation_log_priors_flat[begin:end],
-            translation_log_prior=translation_prior, rotation_translation_mask=mask, class_log_prior=0.0,
+            translation_log_prior=translation_prior,
+            rotation_translation_mask=mask,
+            class_log_prior=0.0,
         )
         assert_matches(prior[image], np.asarray(host)[0])
 
@@ -114,7 +130,7 @@ class _TinyData:
     def iter_batches(self, batch_size, *, indices=None, by_image=False, **kwargs):
         indices = np.arange(self.n_images) if indices is None else np.asarray(indices, dtype=np.int64)
         for start in range(0, indices.size, int(batch_size)):
-            idx = indices[start:start + int(batch_size)]
+            idx = indices[start : start + int(batch_size)]
             params = jnp.asarray(self.CTF_params[idx])
             yield jnp.asarray(self._images[idx]), None, None, params, None, idx, idx
 
@@ -133,8 +149,11 @@ def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision=
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
     mu = _half_volume(rng)
-    W = (np.stack([_half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1) if q == 2
-         else np.stack([_half_volume(rng, 0.2) for _ in range(q)], axis=1))
+    W = (
+        np.stack([_half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1)
+        if q == 2
+        else np.stack([_half_volume(rng, 0.2) for _ in range(q)], axis=1)
+    )
     translation_prior = (-np.sum(shared.translation_grid**2, axis=-1) / 8.0).astype(np.float32)
     common = dict(
         noise_variance=np.full(IMAGE_SHAPE, 40.0, np.float32),
@@ -144,21 +163,35 @@ def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision=
         scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
     )
     stream = prepare_full_row_stream(
-        _TinyData(images), mu, W,
-        rotations=shared.rotations_flat, translations=shared.translation_grid,
-        rotation_log_prior=shared.rotation_log_priors_flat, translation_log_prior=translation_prior,
-        rotation_parent=shared.rotation_posterior_ids_flat, translation_parent=parent,
-        n_coarse_rotations=3, n_coarse_translations=3, device=device, metric_trace_only=metric_trace_only,
-        gemm_precision=gemm_precision, **common,
+        _TinyData(images),
+        mu,
+        W,
+        rotations=shared.rotations_flat,
+        translations=shared.translation_grid,
+        rotation_log_prior=shared.rotation_log_priors_flat,
+        translation_log_prior=translation_prior,
+        rotation_parent=shared.rotation_posterior_ids_flat,
+        translation_parent=parent,
+        n_coarse_rotations=3,
+        n_coarse_translations=3,
+        device=device,
+        metric_trace_only=metric_trace_only,
+        gemm_precision=gemm_precision,
+        **common,
     )
     host = dict(
-        rotations=shared.rotations_flat, translations=shared.translation_grid,
-        rotation_translation_mask=np.stack([
-            reference.sample_mask_rows(int(reference.rotation_offsets[i]), int(reference.rotation_offsets[i + 1]))
-            for i in range(3)
-        ]),
-        rotation_log_prior=shared.rotation_log_priors_flat, translation_log_prior=translation_prior,
-        image_indices=np.arange(3), **common,
+        rotations=shared.rotations_flat,
+        translations=shared.translation_grid,
+        rotation_translation_mask=np.stack(
+            [
+                reference.sample_mask_rows(int(reference.rotation_offsets[i]), int(reference.rotation_offsets[i + 1]))
+                for i in range(3)
+            ]
+        ),
+        rotation_log_prior=shared.rotation_log_priors_flat,
+        translation_log_prior=translation_prior,
+        image_indices=np.arange(3),
+        **common,
     )
     return _TinyData(images), mu, W, stream, host
 
@@ -172,8 +205,13 @@ def tile_problem():
 def test_device_resident_tile_matches_host_mask_statistics(tile_problem, factor_once):
     dataset, mu, W, stream, host = tile_problem
     expected = full_float32(accumulate_dense_ppca_statistics)(
-        dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
-        factor_once_score=factor_once, **host,
+        dataset,
+        mu,
+        W,
+        sparse_pass2=SparsePass2Config(enabled=False),
+        collect_residuals=True,
+        factor_once_score=factor_once,
+        **host,
     )
     actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
     assert actual.diagnostics["engine"] == FULL_ROW_ENGINE
@@ -198,7 +236,12 @@ def test_trace_only_stream_matches_host_mask_metric_trace(tile_problem):
     """Momentum SGD's trace-only metric is the trace of the host-mask LHS; every other statistic is unchanged."""
     dataset, mu, W, _stream, host = tile_problem
     expected = full_float32(accumulate_dense_ppca_statistics)(
-        dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **host,
+        dataset,
+        mu,
+        W,
+        sparse_pass2=SparsePass2Config(enabled=False),
+        collect_residuals=True,
+        **host,
     )
     stream = make_tile_problem(metric_trace_only=True)[3]
     actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
@@ -416,6 +459,40 @@ def test_padded_tile_matches_the_real_tile(tile_problem):
     assert_matches(np.asarray(embedded.embeddings), np.asarray(real.embeddings))
 
 
+@pytest.mark.parametrize("planned", [4, 80, 96])
+def test_single_particle_reader_pads_to_the_planned_buckets(tile_problem, planned):
+    """With a planned tile size the single-particle reader pads a short tile to its bucket (3 images
+    to 4, 5 and 6 here); the statistics do not depend on the padded size."""
+    from relax.ppca_refinement.full_row_stream import _read_tile, tile_size_bucket
+
+    _dataset, _mu, _W, stream, _host = tile_problem
+    real = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    planned_stream = stream._replace(tile_images=planned, image_batch_size=planned)
+    tile, _power, layout = _read_tile(planned_stream, np.arange(3), SIGNIFICANT, collect_observation=True)
+    assert layout["n_real"] == 3 and tile.y_norm.shape[0] == tile_size_bucket(3, planned) > 3
+    assert not np.any(np.asarray(tile.y_norm)[3:]) and not np.any(np.asarray(tile.ctf2_recon)[3:])
+    padded = accumulate_full_row_tile(planned_stream, np.arange(3), SIGNIFICANT)
+    assert padded.n_images == 3
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(padded, name)), np.asarray(getattr(real, name)))
+    assert_matches(np.float32(padded.log_likelihood), np.float32(real.log_likelihood))
+    assert_matches(np.asarray(padded.diagnostics["rotation_mass"]), np.asarray(real.diagnostics["rotation_mass"]))
+
+
+def test_a_tile_of_the_planned_size_is_not_padded(tile_problem):
+    """A tile that already has the planned size is read as before: same operands, bit for bit."""
+    from relax.ppca_refinement.full_row_stream import _read_tile
+
+    _dataset, _mu, _W, stream, _host = tile_problem
+    plain, _p, _l = _read_tile(stream, np.arange(3), SIGNIFICANT, collect_observation=False)
+    planned, _p, layout = _read_tile(
+        stream._replace(tile_images=3), np.arange(3), SIGNIFICANT, collect_observation=False
+    )
+    assert layout["n_real"] == 3
+    for name in ("Y1", "ctf2", "Y1_recon", "ctf2_recon", "y_norm", "coarse_mask", "rows"):
+        assert np.array_equal(np.asarray(getattr(planned, name)), np.asarray(getattr(plain, name)))
+
+
 def test_tile_size_buckets_cap_compiled_shapes():
     """Tiles round up to at most TILE_SIZE_BUCKETS sizes per plan, each holding the tile."""
     from relax.ppca_refinement.full_row_stream import TILE_SIZE_BUCKETS, tile_size_bucket
@@ -494,12 +571,29 @@ def test_tiles_of_different_sizes_keep_one_kept_buffer_live(tile_problem, monkey
 
 def test_full_row_stream_rejects_parents_outside_coarse_grid(tile_problem):
     dataset, mu, W, stream, host = tile_problem
-    kwargs = {key: host[key] for key in ("rotations", "translations", "rotation_log_prior", "translation_log_prior",
-                                         "noise_variance", "geometry", "schedule", "scoring")}
+    kwargs = {
+        key: host[key]
+        for key in (
+            "rotations",
+            "translations",
+            "rotation_log_prior",
+            "translation_log_prior",
+            "noise_variance",
+            "geometry",
+            "schedule",
+            "scoring",
+        )
+    }
     with pytest.raises(ValueError, match="rotation parent"):
         prepare_full_row_stream(
-            dataset, mu, W, rotation_parent=np.full(24, 3), translation_parent=np.zeros(12),
-            n_coarse_rotations=3, n_coarse_translations=3, **kwargs,
+            dataset,
+            mu,
+            W,
+            rotation_parent=np.full(24, 3),
+            translation_parent=np.zeros(12),
+            n_coarse_rotations=3,
+            n_coarse_translations=3,
+            **kwargs,
         )
 
 
@@ -519,8 +613,16 @@ def _moment_image_problem(dtype):
     Y1_recon = (rng.standard_normal((B, T, F)) + 1j * rng.standard_normal((B, T, F))).astype(cdtype)
     ctf2_recon = rng.uniform(0.1, 1.0, (B, F)).astype(dtype)
     projections = (rng.standard_normal((R, P, F)) + 1j * rng.standard_normal((R, P, F))).astype(cdtype)
-    return dict(score=score, logZ=logZ, alpha=alpha.astype(dtype), G_tri=np.asarray(pack_upper_tri(G)).astype(dtype),
-                weights=weights.astype(dtype), Y1_recon=Y1_recon, ctf2_recon=ctf2_recon, projections=projections)
+    return dict(
+        score=score,
+        logZ=logZ,
+        alpha=alpha.astype(dtype),
+        G_tri=np.asarray(pack_upper_tri(G)).astype(dtype),
+        weights=weights.astype(dtype),
+        Y1_recon=Y1_recon,
+        ctf2_recon=ctf2_recon,
+        projections=projections,
+    )
 
 
 def _compare_moment_image_residuals(dtype, rtol=None):
@@ -537,8 +639,13 @@ def _compare_moment_image_residuals(dtype, rtol=None):
         d["score"], d["alpha"], d["G_tri"], d["logZ"], d["Y1_recon"] * w, d["ctf2_recon"] * w, d["projections"]
     )
     rhs, lhs = full_float32(pose_moment_images)(
-        gamma, d["alpha"], d["G_tri"], d["Y1_recon"], d["ctf2_recon"],
-        rhs_dtype=d["Y1_recon"].dtype, lhs_dtype=d["ctf2_recon"].dtype,
+        gamma,
+        d["alpha"],
+        d["G_tri"],
+        d["Y1_recon"],
+        d["ctf2_recon"],
+        rhs_dtype=d["Y1_recon"].dtype,
+        lhs_dtype=d["ctf2_recon"].dtype,
     )
     # The moment-image form takes component-major projections, (P, R, F).
     residual, correction_over_w = full_float32(residual_statistics_from_moment_images)(
@@ -574,15 +681,25 @@ def test_device_resident_union_rows_match_per_image_host_layout(tile_problem):
     assert actual.diagnostics["scored_image_rows"] == 3 * 20  # union of 16 rows in four 5-row blocks
     parts = []
     for image in range(3):
-        begin, end = map(int, reference.rotation_offsets[image:image + 2])
-        options = {key: host[key] for key in ("translations", "translation_log_prior", "noise_variance",
-                                              "geometry", "schedule", "scoring")}
-        parts.append(full_float32(accumulate_dense_ppca_statistics)(
-            dataset, mu, W, rotations=reference.rotations_flat[begin:end],
-            rotation_translation_mask=reference.sample_mask_rows(begin, end),
-            rotation_log_prior=reference.rotation_log_priors_flat[begin:end], image_indices=np.asarray([image]),
-            sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **options,
-        ))
+        begin, end = map(int, reference.rotation_offsets[image : image + 2])
+        options = {
+            key: host[key]
+            for key in ("translations", "translation_log_prior", "noise_variance", "geometry", "schedule", "scoring")
+        }
+        parts.append(
+            full_float32(accumulate_dense_ppca_statistics)(
+                dataset,
+                mu,
+                W,
+                rotations=reference.rotations_flat[begin:end],
+                rotation_translation_mask=reference.sample_mask_rows(begin, end),
+                rotation_log_prior=reference.rotation_log_priors_flat[begin:end],
+                image_indices=np.asarray([image]),
+                sparse_pass2=SparsePass2Config(enabled=False),
+                collect_residuals=True,
+                **options,
+            )
+        )
         # Fine rows of the shared grid: children stay contiguous per coarse parent.
         rows = reference.rotation_posterior_ids_flat[begin:end] * 8 + np.arange(end - begin) % 8
         parts[-1].diagnostics["global_rows"] = rows
@@ -681,8 +798,9 @@ def _float64_tile_statistics(stream, image_indices, significant):
         T = len(stream.translations)
         kept = frs._empty_kept(capacity, n_images, T, q, jnp.float64)
         for start in stream.block_starts[: layout["n_blocks"]]:
-            kept = frs._score_block(arrays, tile, kept, start, static=wide.static,
-                                    block_size=stream.rotation_block_size)
+            kept = frs._score_block(
+                arrays, tile, kept, start, static=wide.static, block_size=stream.rotation_block_size
+            )
         posterior = frs._normalize(
             kept.score, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size
         )
@@ -698,8 +816,9 @@ def _float64_tile_statistics(stream, image_indices, significant):
         rotation_mass[layout["rows"]] = np.asarray(carry.rotation_mass)[: layout["rows"].size]
         pmax = np.exp(np.asarray(posterior.top_score - posterior.center) - np.asarray(posterior.centered_logZ))
         return {
-            "lhs_tri": np.asarray(jnp.swapaxes(
-                _enforce_augmented_x0(lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)),
+            "lhs_tri": np.asarray(
+                jnp.swapaxes(_enforce_augmented_x0(lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)
+            ),
             "residual_gradient": np.asarray(residual),
             "residual_num": residual_num,
             "embeddings": np.asarray(carry.embedding),
@@ -745,8 +864,14 @@ def test_general_rank_coarse_recompute_matches_dense_reference(q):
     actual = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
     previous = [
         full_float32(accumulate_dense_ppca_statistics)(
-            data, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True,
-            factor_once_score=factor_once, **host)
+            data,
+            mu,
+            W,
+            sparse_pass2=SparsePass2Config(enabled=False),
+            collect_residuals=True,
+            factor_once_score=factor_once,
+            **host,
+        )
         for factor_once in (False, True)
     ]
     truth.pop("diagnostics")

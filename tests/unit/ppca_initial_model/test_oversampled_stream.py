@@ -119,6 +119,27 @@ def test_fraction_one_equals_the_dense_child_grid(metric_trace_only):
     assert_matches(actual.diagnostics["rotation_mass"], _parent_mass(expected, 8), rtol=DIAGNOSTIC_RTOL)
 
 
+@pytest.mark.parametrize("planned", [4, 96])
+def test_single_particle_statistics_do_not_depend_on_the_padded_tile_size(planned):
+    """With a planned tile size the single-particle reader pads 3 images to a tile of 4 or 6; both passes give
+    the padding no samples and the statistics are those of the unpadded tile."""
+    coarse, (fine_rotations, fine_translations) = _spa_stream(n_images=3)
+    kwargs = dict(adaptive_fraction=0.9, max_significant=40, job_chunk=16)
+    plain = prepare_oversampled_stream(coarse, fine_rotations, fine_translations, **kwargs)
+    padded = prepare_oversampled_stream(
+        coarse._replace(tile_images=planned, image_batch_size=planned), fine_rotations, fine_translations, **kwargs
+    )
+    assert padded.base.tile_images == planned
+    ids = np.arange(3)
+    actual, expected = accumulate_oversampled_tile(padded, ids), accumulate_oversampled_tile(plain, ids)
+    _assert_same_statistics(actual, expected)
+    np.testing.assert_array_equal(
+        actual.diagnostics["significant_samples_per_image"], expected.diagnostics["significant_samples_per_image"]
+    )
+    embedded = oversampled_tile_embeddings(padded, ids)
+    assert_matches(np.asarray(embedded.embeddings), np.asarray(expected.embeddings), rtol=STATISTICS_RTOL)
+
+
 @pytest.mark.parametrize("fraction, cap", [(0.9, 40), (0.999, 7), (0.5, 100)])
 def test_significant_children_equal_the_dense_child_grid_on_that_support(fraction, cap):
     """Each image's children of its significant samples only: the dense child grid with that coarse support."""
