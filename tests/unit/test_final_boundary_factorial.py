@@ -7,8 +7,8 @@ from relax.diagnostics.relion_replay import (
     _complete_relion_numbered_state_iterations,
     _resolve_final_replay_source_iteration,
 )
-from relax.refinement.full_refinement import (
-    _select_final_replay_override,
+from relax.diagnostics.replay_inputs import (
+    select_final_replay_fields,
 )
 from relax.refinement.iteration_loop import refine_single_volume
 from relax.refinement.refinement_options import RelionParityOptions, ReplayState
@@ -62,13 +62,13 @@ def _source_override():
     ],
 )
 def test_final_replay_group_selection_is_disjoint(groups, expected_keys):
-    selected_groups, override = _select_final_replay_override(_source_override(), groups)
+    selected_groups, override = select_final_replay_fields(_source_override(), groups)
     assert selected_groups == {groups}
     assert set(override) == expected_keys
 
 
 def test_final_replay_all_is_union_without_unrelated_fields():
-    groups, override = _select_final_replay_override(_source_override(), "all")
+    groups, override = select_final_replay_fields(_source_override(), "all")
     assert groups == {"poses", "sampling", "corrections", "references"}
     assert "class_tau2" not in override
     assert set(override) == set(_source_override()) - {
@@ -78,7 +78,7 @@ def test_final_replay_all_is_union_without_unrelated_fields():
 
 
 def test_final_replay_all_composes_with_explicit_scoring_scale():
-    groups, override = _select_final_replay_override(
+    groups, override = select_final_replay_fields(
         _source_override(), "all,scoring_scale"
     )
     assert groups == {
@@ -93,7 +93,7 @@ def test_final_replay_all_composes_with_explicit_scoring_scale():
 
 
 def test_final_replay_orthogonal_correction_subgroups_compose():
-    groups, override = _select_final_replay_override(
+    groups, override = select_final_replay_fields(
         _source_override(), "noise,direction_prior,norm_factor,scoring_scale"
     )
     assert groups == {
@@ -114,7 +114,7 @@ def test_final_replay_orthogonal_correction_subgroups_compose():
 @pytest.mark.parametrize("value", ["", "poses,unknown"])
 def test_final_replay_group_selection_fails_closed(value):
     with pytest.raises(ValueError, match="final-replay-fields"):
-        _select_final_replay_override(_source_override(), value)
+        select_final_replay_fields(_source_override(), value)
 
 
 def test_final_only_options_reach_refinement_entry():
