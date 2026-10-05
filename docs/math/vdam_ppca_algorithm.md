@@ -2144,6 +2144,35 @@ Limit: one simulated cell of 399 particles. Seed 18 is bad in every configuratio
 (pose 10.8-13.4 degrees while nn stays at .99 or above): it is a property of that
 seed's pose basin, not of the configuration, and is open.
 
+Amendment, same day: seed 18 is a state-frame offset, and the pose metric above is
+confounded. The pose error removes one rotation for the whole population (the chordal
+mean of `A_est^T A_gt`). The fixture's states are 5nrl `path_symmetric` at 0 / 20 / 40
+degrees (subunits B and Db turn against Ab; the GT poses hold Ab fixed), and the model
+may reconstruct each state in its own frame along that hinge. Removing one rotation per
+GT state instead (the within-state median; `scripts/pose_metrics.py` in the run root,
+reported by `evaluate_arm.py` as `poses.within_state` beside the unchanged global
+metric): inside every state of all 20 arms, seed 18 included, the median is 3.7-4.5
+degrees (HEALPix 3) and 2.0-2.7 (HEALPix 4). States 0 and 2 sit on either side of state
+1 about nearly one axis: 15 / 1 / 14 degrees from the global frame in seed 18, 5-9 in
+the others. No arm is mirrored (other hand about 115 degrees). The state maps are
+registered state by state and are unaffected.
+
+| Configuration | Pose, global (HEALPix 3 / 4) | Pose, within-state (HEALPix 3 / 4) | Bad seeds, global metric | Bad seeds, within-state metric |
+| --- | --- | --- | --- | --- |
+| SGD 1.6, oversampling 0 | 7.62 / 8.03 | 3.77 / 2.36 | 2 of 5 (15, 18) | 1 of 5 (15: nn .68) |
+| SGD 1.6, oversampling 1 | 7.66 / 7.79 | 3.72 / 2.05 | 2 of 5 (15, 18) | 1 of 5 (15: nn .73) |
+| VDAM, oversampling 0 | 6.07 / 5.56 | 3.92 / 2.45 | 1 of 5 (18) | 0 of 5 |
+| VDAM, oversampling 1 | 5.97 / 5.37 | 3.84 / 2.06 | 1 of 5 (18) | 0 of 5 |
+
+Both verdicts are recorded. The rule as registered, on the global metric, failed. On
+the within-state metric it would pass: 1 bad seed, and a pose median of 3.72 against
+VDAM's 3.92. Oversampling 1 does improve poses (within-state HEALPix 4 median 2.36 to
+2.05 for SGD, 2.45 to 2.06 for VDAM), so its support is stronger than the table above
+shows. VDAM with oversampling 1 stays the recommendation, on seed reliability (0 of 5
+against SGD's seed 15, whose states do not separate) rather than on poses, which are
+tied; SGD with oversampling 1 has the higher map (.902 against .890). Re-scoring of
+earlier sections: 17.11.
+
 Script `snr008_os1/run_local_gpu3.sh` (driver `snr008_os1/et_run_hp4.py`, table
 `snr008_os1/table_local.py`). Evidence in
 `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/snr008_os1/local_a100_20261005/`
@@ -2286,7 +2315,7 @@ code as `patches/gauge_candidates_0880fee_to_8d9354f.patch`).
 | SPA cells | eleven-state GT start (100k fixture, 150 updates of 300 particles); eleven-state 20k at noise .25 / 1 / 4 (`ppca_elevenstate20k_noise*_20261003`), q = 10 |
 | Cryo-ET metrics | masked state FSC-AUC ("map"), state specificity, latent nearest-GT-centroid accuracy ("nn"), k-means accuracy, between-state R^2, pose median error |
 | SPA metrics | state FSC shells 1-15 (mean and worst state), latent R^2, pose median, GT heterogeneity power captured |
-| Bad seed | nn below .8 or pose median above 10 degrees |
+| Bad seed | nn below .8 or pose median above 10 degrees (global pose metric; at SNR .008 it counts state-frame offsets as pose errors, see 17.11) |
 | Loading-power flag | largest loading power after the last stage starts divided by its value at that update, above 10 |
 | Pairing | differences are per seed against the named control, then averaged |
 
@@ -2533,3 +2562,44 @@ geometry (k-means -.048 and R^2 -.103, 4 of 5 seeds down), which is where the dr
 largest. The drift is therefore treated as a trade-off between the loadings and the
 latents that VDAM's decay term sets, not as an accuracy defect; the item is closed with
 no option added.
+
+### 17.11 Pose medians count state-frame offsets: re-scored (October 5, 2026)
+
+The pose median of 17.1-17.10 removes one rotation for the whole population. Section
+16.12's amendment shows that the model may hold each conformation in its own frame
+(the k3conf states differ by a hinge rotation of subunits), so that metric adds each
+state's frame offset to the alignment error. Every cryo-ET arm with a saved pose pass
+was re-scored from its existing `poses.npz` with one rotation removed per GT state
+(the within-state median), on CPU, with no new training (`scripts/rescore_poses_et.py`,
+`scripts/rescore_poses_spa.py` in the run root of section 16; outputs under
+`rescore_poses_20261005/`; copies in
+`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/`). The global metric of the re-score reproduces every pose
+number quoted below to the printed precision.
+
+Size of the confound. On k3conf and contrast the per-seed largest state offset has a
+median of 2.4-5.3 degrees in most cells and the within-state median is .1-1.3 degrees
+below the global one. On SNR .008 the offsets are 6-9 degrees (up to 74-126 in some arms), and the
+within-state medians of every optimizer and variant fall to 3.6-4.4 degrees. Bad-seed
+sets change only where noted below.
+
+| Section, comparison (SNR .008 unless named) | As published (global) | Within-state | Verdict |
+| --- | --- | --- | --- |
+| 17.3 pooled bad seeds, SGD 1.6 / 1.2 / .8 / VDAM | 3 of 7 / 1 of 5 / 0 of 7 / 0 of 7 | 2 of 7 / 0 of 5 / 0 of 7 / 0 of 7 | SGD 1.6's remaining bad seeds (11-12 matrix seed 12, seed 15) are latent failures (nn .75 and .67); stands |
+| 17.6 pose, SGD 1.6 at 200 / 300, VDAM at 200 / 300 (mean over seeds 14-18) | 13.6 / 9.6 / 7.9 / 6.0 | 3.89 / 3.82 / 3.86 / 3.86 | the rule "not met" stands at 200 updates (SGD 1 bad seed against VDAM's 0); at 300 it would be met (0 against 0); the reading "SGD's poses 8-11 against VDAM's 5-8 degrees" is withdrawn: poses are tied |
+| 17.7 "cryo-ET poses at SNR .008" | SGD 8-11, VDAM 5-8 degrees | tied, 3.8-3.9 | VDAM stays the default on seed reliability; the pose part of that row no longer supports it |
+| 17.2 rates above 1.6, pose (k3conf 4.8 / contrast 3.2 / SNR .008 2.4-4.8) | 8.9 / 22.9 / 7.5-9.5 | 5.1 / 5.7 / 3.6-3.7 (lr 1.6 k3conf: 4.0) | "worse at higher rates" stands on k-means and R^2; the pose evidence for it is small (k3conf, contrast) or absent (SNR .008) |
+| 17.9 mean plus scale gauge against mean gauge | pose +10.4, bad seeds 0 to 3 | pose -.14, 0 to 0 | its SNR .008 miss disappears; still closed by its SPA misses |
+| 17.9 gated step against control | pose -1.32, bad seeds 1 to 0 | pose +.01, 0 to 0 | the pose gain was frame; the rule (at most +.3) still holds |
+| 17.10 loading shrinkage, 200 / 300 updates | pose +11.2 / +15.4, bad seeds 1 to 3 / 0 to 5 | pose +.97 / +1.92, 0 to 0 / 0 to 1 | rejection stands on k3conf (within-state pose +5.8 / +8.8, bad seeds 0 to 2 / 0 to 4) and on the latent collapse |
+| 17.10 drift, 200 against 300 updates | pose -1.90, bad seeds 1 to 0 | pose .00, 0 to 0 | "does not get worse" stands |
+
+SPA, eleven-state 20k consensus-mean start (ppcaspeed's oversampling table, section
+"Schedule" above; scorer `harness10/score_contshift_1px.py`): the global chordal-mean
+median matches the scorer's map-frame median within .4 degree, and the within-state
+median equals it within .5 degree in all 16 arms; at noise 1 states 0 and 1 have
+within-state medians of 93-120 degrees, which is a failure inside those states, not a
+frame offset. No SPA verdict moves.
+
+From October 5 `evaluate_arm.py` reports both metrics; cryo-ET pose comparisons quote
+the within-state median, and the global one for continuity.
+
