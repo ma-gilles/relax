@@ -1,13 +1,18 @@
 """Report structural metrics for production refinement Python modules and hold them under ceilings.
 
     python scripts/report_refinement_structure.py --format markdown            # the current metrics
-    python scripts/report_refinement_structure.py --check <ceilings.json>       # exit 1 above a ceiling
+    python scripts/report_refinement_structure.py --check <ceilings.json>       # warn above a ceiling, exit 1 above its slack
     python scripts/report_refinement_structure.py --lower-ceilings <ceilings.json>
 
 The checked file (``docs/development/refinement_structure_metrics.json``) records upper bounds, not
 the current values, so a commit regenerates it only to tighten it. ``--lower-ceilings`` rewrites each
 bound to the current value where that is lower (the line totals keep ``LINE_TOTAL_HEADROOM``) and
 never raises one. Raising a ceiling is a hand edit of the file, with the reason in the commit message.
+
+The ceilings are review signals with slack (owner ruling, 2026-10-05). For a ceiling ``c`` the slack is
+``max(SLACK_MINIMUM, ceil(c * SLACK_PERCENT / 100))``: 5% of the ceiling, rounded up, and at least 1.
+A total above ``c`` but at most ``c + slack`` prints a warning naming the metric; only a total above
+``c + slack`` fails ``--check``.
 """
 
 from __future__ import annotations
@@ -36,6 +41,9 @@ STRUCTURE_CEILINGS = (
 LINE_TOTAL_CEILINGS = ("physical_lines", "nonblank_noncomment_lines")
 LINE_TOTAL_HEADROOM = 0.05
 LINE_TOTAL_ROUNDING = 100
+# How far a total may pass its ceiling with a warning before the check fails; see the module docstring.
+SLACK_PERCENT = 5
+SLACK_MINIMUM = 1
 
 
 def _parameter_count(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
@@ -150,12 +158,26 @@ def ceilings_for(totals: dict) -> dict:
     return ceilings
 
 
+def slack_for(ceiling: int) -> int:
+    """How far a total may pass ``ceiling`` before the check fails."""
+    return max(SLACK_MINIMUM, -(-ceiling * SLACK_PERCENT // 100))
+
+
 def exceeded(totals: dict, ceilings: dict) -> list[str]:
-    """One line per total above its ceiling; empty when the code is within every bound."""
+    """One line per total above its ceiling plus slack; empty when the check passes."""
     return [
-        f"{name}: {totals[name]:,} exceeds the ceiling {ceiling:,}"
+        f"{name}: {totals[name]:,} exceeds the ceiling {ceiling:,} by more than its slack {slack_for(ceiling):,}"
         for name, ceiling in ceilings.items()
-        if totals[name] > ceiling
+        if totals[name] > ceiling + slack_for(ceiling)
+    ]
+
+
+def within_slack(totals: dict, ceilings: dict) -> list[str]:
+    """One warning per total above its ceiling but within its slack."""
+    return [
+        f"warning: {name}: {totals[name]:,} is above the ceiling {ceiling:,}, within its slack {slack_for(ceiling):,}"
+        for name, ceiling in ceilings.items()
+        if ceiling < totals[name] <= ceiling + slack_for(ceiling)
     ]
 
 
@@ -204,7 +226,11 @@ def lower_ceilings(path: Path, totals: dict, repo_root: Path) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--format", choices=("json", "markdown"), default="json")
-    parser.add_argument("--check", type=Path, help="Fail when a current total exceeds its ceiling in this file")
+    parser.add_argument(
+        "--check",
+        type=Path,
+        help="Warn when a current total exceeds its ceiling in this file; fail when it exceeds the ceiling plus slack",
+    )
     parser.add_argument(
         "--lower-ceilings",
         type=Path,
@@ -216,15 +242,21 @@ def main(argv: list[str] | None = None) -> int:
     metrics = collect_metrics(repo_root)
     if args.lower_ceilings is not None:
         path = args.lower_ceilings if args.lower_ceilings.is_absolute() else repo_root / args.lower_ceilings
-        over = exceeded(metrics["totals"], read_ceilings(path))
+        ceilings = read_ceilings(path)
+        over = exceeded(metrics["totals"], ceilings)
+        warnings = within_slack(metrics["totals"], ceilings)
         changes = lower_ceilings(path, metrics["totals"], repo_root)
         print("\n".join(changes) if changes else "no ceiling can be lowered", file=sys.stderr)
-        if over:
-            print("left unchanged, the code is above it:\n" + "\n".join(over), file=sys.stderr)
+        if warnings or over:
+            print("left unchanged, the code is above it:\n" + "\n".join(warnings + over), file=sys.stderr)
         return 1 if over else 0
     if args.check is not None:
         path = args.check if args.check.is_absolute() else repo_root / args.check
-        over = exceeded(metrics["totals"], read_ceilings(path))
+        ceilings = read_ceilings(path)
+        over = exceeded(metrics["totals"], ceilings)
+        warnings = within_slack(metrics["totals"], ceilings)
+        if warnings:
+            print("\n".join(warnings), file=sys.stderr)
         if over:
             print("\n".join(over), file=sys.stderr)
             return 1

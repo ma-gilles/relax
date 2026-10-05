@@ -1,5 +1,11 @@
 {
   "schema_version": 2,
+  "slack": {
+    "rule": "review signals with slack (owner ruling, 2026-10-05): a total above its ceiling c warns; above c + slack it fails",
+    "formula": "slack = max(minimum, ceil(c * percent / 100))",
+    "percent": 5,
+    "minimum": 1
+  },
   "baseline": {
     "recorded_date": "2026-09-28",
     "source_commit": "5c965cf21d12014979e22a61a8058d23d5565ff9",

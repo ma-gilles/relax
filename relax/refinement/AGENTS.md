@@ -36,8 +36,9 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
    to remove a conditional, and the final pass is not folded into the numbered iterations.
 6. Define a flag and its default once, in `command_options.py`. A changed default updates
    `tests/unit/test_relion_gui_defaults.py` and `docs/development/relion_defaults.md`, and needs the long tier.
-7. Stay under the structure ceilings in `docs/development/refinement_structure_metrics.json`. After a change
-   that shrinks the code, lower them with
+7. The structure ceilings in `docs/development/refinement_structure_metrics.json` are review signals with
+   slack (owner ruling, 2026-10-05): within the slack the check warns and the report names the growth and
+   its reason; above it the check fails. After a change that shrinks the code, lower them with
    `python scripts/report_refinement_structure.py --lower-ceilings docs/development/refinement_structure_metrics.json`.
    Raise one only by hand, with the reason in the commit message.
 
@@ -56,8 +57,9 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## Pitfalls
 
-- `refine_single_volume` is 2,031 lines and its ceiling is 2,031. One added line fails
-  `test_refinement_structure_metrics.py`: extract or delete before you add.
+- `refine_single_volume` is 2,031 lines and its ceiling is 2,031. Up to the slack (5%, here 102 lines)
+  `report_refinement_structure.py --check` warns; beyond it `test_refinement_structure_metrics.py` fails.
+  A warning is for the reviewer: extract or delete before you add, or say why the growth is needed.
 - Tests pin the controller's source text. `tests/unit/test_k1_mean_lifecycle.py` asserts that `del init_volume`
   precedes `_snapshot_and_release_previous_k1_means(reference_model.maps)`, which precedes
   `estimate_split_half_prior(` and `reconstruct_numbered_k1_halfmaps(` in the text of `refine_single_volume`.
