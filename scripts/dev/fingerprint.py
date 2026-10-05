@@ -410,6 +410,9 @@ def _cases() -> dict[str, tuple[str, dict]]:
              ["--max_iter", "2", "--overlap_halves"])
     add_main("main_k1_ledger", "relax refine writing a benchmark ledger", "refine",
              ["--max_iter", "2", "--benchmark_ledger_json", "<OUTDIR>/ledger.json"])
+    add_main("main_k1_init_noise", "relax refine starting from an earlier run's archived noise (--init_noise_from_npz)",
+             "refine", ["--max_iter", "2", "--init_noise_from_npz", "<FIRST>/refinement_results.npz"],
+             first=["--max_iter", "1", "--seed", "42"])
     add_main("main_k1_continue", "relax refine --continue from the run files of one iteration", "refine",
              ["--max_iter", "2"], continue_after=1)
     add_main("main_k2_class3d", "relax class3d: K=2 from the per-class start-up maps", "class3d",
@@ -1066,11 +1069,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 out[rel] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         return out
 
-    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None):
+    def run_main_case(command, arguments, *, n_classes=1, converge_after=None, continue_after=None, first=None):
         """``relax <command>`` (full_refinement.main) on a tiny data directory, the stand-in engine underneath.
 
         Records the operands main hands refine_single_volume, its result, and every file main writes.
-        ``continue_after`` first runs that many iterations and then continues from their run files.
+        ``continue_after`` first runs that many iterations and then continues from their run files; ``first``
+        is the arguments of an earlier run whose output directory the case's arguments name as ``<FIRST>``.
         """
         import jax
 
@@ -1112,13 +1116,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         statuses = []
         try:
             runs = [("first", work / "first", [*arguments, "--max_iter", str(continue_after)])] if continue_after else []
+            if first is not None:
+                runs.append(("first", work / "first", list(first)))
             runs.append(("run", work / "out", list(arguments)))
             for label, output, run_arguments in runs:
                 if label == "run" and continue_after:
                     optimiser = sorted((work / "first").glob("run_it*_optimiser.star"))[-1]
                     run_arguments += ["--continue", str(optimiser)]
                 run_arguments = [argument.replace("<DATA>", str(data)).replace("<OUTDIR>", str(output))
-                                 for argument in run_arguments]
+                                 .replace("<FIRST>", str(work / "first")) for argument in run_arguments]
                 sys.argv = ["relax", "--data_dir", str(data), "--output", str(output), *run_arguments]
                 sys.orig_argv = ["python", "-m", f"relax.commands.{command}", *sys.argv[1:]]  # run files record it
                 try:
