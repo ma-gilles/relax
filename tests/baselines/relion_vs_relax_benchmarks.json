@@ -11778,14 +11778,14 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "RELION 5.0.1 f2c1a38 + MPI scale-group fix (mpiscale build), srun 3 ranks x relion_refine_mpi --j 4, one H100",
+    "version": "RELION 5.0.1 f2c1a38 + MPI scale-group fix (mpiscale build), srun 3 ranks x relion_refine_mpi --j 4, one H100; wall: stock RELION 5.0.1 f2c1a38 (relion_stock_sm90_20261001 build), relion_refine_mpi 3 ranks x 4 threads, one H100 (auto-refine needs MPI; the stock MPI build has the scale-group defect, so that run is used for the wall only)",
     "resolution_A": 6.48,
     "resolution_definition": "half_fsc_0143",
     "relion_reported_resolution_A": 6.47619,
     "masked_resolution_A": 4.61,
     "masked_resolution_definition": "relion_postprocess_masked_frozen",
-    "wall_s": null,
-    "wall_definition": "speed pending (same-node cold pair on the landed code requested from etoptics)",
+    "wall_s": 2310,
+    "wall_definition": "arm-script wall of relion_refine_mpi end to end (WALL.json), same job and node as relax (15038202)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": null,
@@ -11793,7 +11793,8 @@
      "14941255",
      "14945419",
      "14945420",
-     "14949412"
+     "14949412",
+     "15038202"
     ],
     "masked_band_auc": null
    },
@@ -11804,8 +11805,8 @@
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": 4.61,
     "masked_resolution_definition": "relion_postprocess_masked_frozen",
-    "wall_s": null,
-    "wall_definition": "speed pending: the relax runs shared nodes (not speed evidence)",
+    "wall_s": 875,
+    "wall_definition": "arm-script wall of relax refine end to end on relax main 880483a5, seed 1, 12 CPUs, empty JAX compilation cache (cold), same job as RELION (15038202, WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": null,
@@ -11817,7 +11818,8 @@
      "14993147",
      "14997637",
      "14997702",
-     "15036663"
+     "15036663",
+     "15038202"
     ],
     "masked_band_auc": null
    },
@@ -11888,21 +11890,21 @@
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": null,
-   "matched": "no",
+   "time_ratio_relax_over_relion": 0.38,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": false
+    "timing_controlled": true
    },
    "notes": [
     "Feature check (etoptics, team-lead 2026-10-05): subtomogram Refine3D with beam tilt (1.6, -1.2) mrad and odd Zernike [0,0,40,0,0,-30] in every optics group, supported on relax main since 039af4b (b19cc26 runs the same code; etoptics' repeat check). Fixture eto_btilt (/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_aberrations_20261004): 1000 particles, 8 tomograms / optics groups, 41 tilts, box 128 at 2.125 A, total B 40, SNR 0.005. Refine3D auto-refine with --firstiter_cc from a 40 A reference.",
     "Masked GT FSC-AUC run ranges: seed 1 relax [0.85761, 0.85768] (4 runs: 039af4b x1, b19cc26 x1, c628737 x1, f7f1160 x1) / RELION [0.85684, 0.85716]; seed 2 relax [0.86200, 0.86203] (3 runs: 039af4b x1, c628737 x1, f7f1160 x1) / RELION [0.86201, 0.86201]; seed 3 relax [0.86383, 0.86398] (7 runs: 039af4b x3, b19cc26 x2, c628737 x1, f7f1160 x1) / RELION [0.86400, 0.86403]. Probe heads f7f1160 and c628737 carry the code that landed as 039af4b (fixture README). Negative control (seed 1, the aberration columns removed from the optics table): 0.83545.",
     "Verdict: the page rule (user 2026-09-30): a seed with repeats on both engines compares run ranges, and relax must be inside or above the across-seed RELION band and not below same-seed RELION on a majority of seeds; RELION is not bit-reproducible here (its two seed-1 runs differ). Range gaps (relax best minus RELION lowest): s1 +8.4e-4, s2 +1.9e-5, s3 -1.4e-5. At s3 relax's run range is below RELION's by 1.4e-5 (7 relax runs, 2 RELION runs); the other seeds overlap or relax lies above, so the row passes on 2 of 3 seeds.",
-    "Speed pending: same-node cold pair on the landed code against stock RELION requested from etoptics (team-lead 2026-10-05); the relax runs above shared nodes and are not speed evidence."
+    "Speed (etoptics, job 15038202, della-h20g2, 2026-10-05): same-node cold pair at seed 1, relax main 880483a5 875 s against stock RELION 5.0.1 relion_refine_mpi 3 ranks x 4 threads 2310 s (0.38x); one H100 and 12 CPUs each, no --scratch_dir on either arm. The stock MPI RELION run is used for the wall only (it has the MPI scale-group defect); the accuracy reference stays the mpiscale build. Masked GT FSC-AUC of the pair (not used for the verdict): relax 0.85766, stock RELION 0.85764. 880483a5 is later than the accuracy runs' 039af4b and adds the subtomogram coarse-pass fixes (10001a8, 880483a5)."
    ],
    "null_reasons": {
     "cross_engine": "relax-vs-RELION map agreement not computed for this row",
@@ -11910,10 +11912,7 @@
     "relion.iterations": "not recorded in the score files",
     "relax.iterations": "not recorded in the score files",
     "relion.masked_band_auc": "not computed for this row",
-    "relax.masked_band_auc": "not computed for this row",
-    "relion.wall_s": "speed pending: no same-node cold pair on the landed code yet (team-lead 2026-10-05)",
-    "relax.wall_s": "speed pending: the relax runs shared nodes; a same-node cold pair is requested from etoptics",
-    "time_ratio_relax_over_relion": "speed pending a same-node cold pair on the landed code (team-lead 2026-10-05)"
+    "relax.masked_band_auc": "not computed for this row"
    },
    "mask": {
     "dataset": "etoptics_8c9c_b40_c1",
@@ -11929,7 +11928,8 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_btilt_r3d_039af4b_s1.json",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_btilt_r3d_039af4b_s23.json",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_btilt_r3d_b19cc26_s1.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_btilt_s3_repeat_20261005.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_btilt_s3_repeat_20261005.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_btilt_wall_880483a_s1.json"
     ],
     "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_aberrations_20261004/relion_refs/eto_btilt",
     "relax_runs": [
@@ -11949,14 +11949,24 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/src_probeall/eto_btilt_r3d_s3"
     ],
     "evidence_dir": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/",
-    "source": "etoptics via team-lead, 2026-10-05"
+    "source": "etoptics via team-lead, 2026-10-05",
+    "wall_pair": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/wall_880483a/eto_btilt_r3d_s1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relion/eto_btilt/refine3d_cc_stock/seed1/wall1"
+    ]
    },
    "date": "2026-10-05",
    "history": [],
    "quality_pass": true,
    "quality_reason": "worst s3 −1.4e-5 vs same-seed RELION; run ranges compared at s1/s2/s3 (both engines repeated); inside across-seed band",
    "label": "eto_btilt",
-   "feature_reference": "beam tilt and odd Zernike in subtomogram Refine3D: RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, two runs at each of seeds 1-3"
+   "feature_reference": "beam tilt and odd Zernike in subtomogram Refine3D: RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, two runs at each of seeds 1-3",
+   "time_check": {
+    "a": "RELION 1 H100, relion_refine_mpi 3 ranks x 4 threads (stock sm90 build); relax 1 H100, one process, 12 CPUs; both in job 15038202 on della-h20g2, started together",
+    "b": "relax main 880483a5 production defaults, standalone start-up, empty JAX compilation cache; no --scratch_dir on either arm (both read the stacks in place); no diagnostic, capture, replay or dump options",
+    "c": "both walls end to end from the arm script (WALL.json), start-up and compilation included",
+    "d": "H100 80GB on both arms, same node and time"
+   }
   },
   {
    "id": "cryoet_eto_evenz_1000_128_tomo_autorefine_039af4b",
@@ -11973,14 +11983,14 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "RELION 5.0.1 f2c1a38 + MPI scale-group fix (mpiscale build), srun 3 ranks x relion_refine_mpi --j 4, one H100",
+    "version": "RELION 5.0.1 f2c1a38 + MPI scale-group fix (mpiscale build), srun 3 ranks x relion_refine_mpi --j 4, one H100; wall: stock RELION 5.0.1 f2c1a38 (relion_stock_sm90_20261001 build), relion_refine_mpi 3 ranks x 4 threads, one H100 (auto-refine needs MPI; the stock MPI build has the scale-group defect, so that run is used for the wall only)",
     "resolution_A": 6.63,
     "resolution_definition": "half_fsc_0143",
     "relion_reported_resolution_A": 6.63415,
     "masked_resolution_A": 4.533,
     "masked_resolution_definition": "relion_postprocess_masked_frozen",
-    "wall_s": null,
-    "wall_definition": "speed pending (same-node cold pair on the landed code requested from etoptics)",
+    "wall_s": 2297,
+    "wall_definition": "arm-script wall of relion_refine_mpi end to end (WALL.json), same job and node as relax (15038203)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": null,
@@ -11988,7 +11998,8 @@
      "14941257",
      "14945422",
      "14945423",
-     "14949412"
+     "14949412",
+     "15038203"
     ],
     "masked_band_auc": null
    },
@@ -11999,8 +12010,8 @@
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": 4.533,
     "masked_resolution_definition": "relion_postprocess_masked_frozen",
-    "wall_s": null,
-    "wall_definition": "speed pending: the relax runs shared nodes (not speed evidence)",
+    "wall_s": 830,
+    "wall_definition": "arm-script wall of relax refine end to end on relax main 880483a5, seed 1, 12 CPUs, empty JAX compilation cache (cold), same job as RELION (15038203, WALL.json)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": null,
@@ -12012,7 +12023,8 @@
      "14993147",
      "14997637",
      "14997702",
-     "15036573"
+     "15036573",
+     "15038203"
     ],
     "masked_band_auc": null
    },
@@ -12083,21 +12095,21 @@
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": null,
-   "matched": "no",
+   "time_ratio_relax_over_relion": 0.36,
+   "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
     "box": true,
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": false
+    "timing_controlled": true
    },
    "notes": [
     "Feature check (etoptics, team-lead 2026-10-05): subtomogram Refine3D with even Zernike [0,0,0,0,400,0,0,0,-300] in every optics group, supported on relax main since 039af4b (b19cc26 runs the same code; etoptics' repeat check). Fixture eto_evenz (/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_aberrations_20261004): 1000 particles, 8 tomograms / optics groups, 41 tilts, box 128 at 2.125 A, total B 40, SNR 0.005. Refine3D auto-refine with --firstiter_cc from a 40 A reference.",
     "Masked GT FSC-AUC run ranges: seed 1 relax [0.85582, 0.85659] (8 runs: 039af4b x3, b19cc26 x3, c628737 x1, f7f1160 x1) / RELION [0.85569, 0.85650]; seed 2 relax [0.86086, 0.86098] (3 runs: 039af4b x1, c628737 x1, f7f1160 x1) / RELION [0.86089, 0.86097]; seed 3 relax [0.86353, 0.86362] (3 runs: 039af4b x1, c628737 x1, f7f1160 x1) / RELION [0.86367, 0.86367]. Probe heads f7f1160 and c628737 carry the code that landed as 039af4b (fixture README). Negative control (seed 1, the aberration columns removed from the optics table): 0.83741.",
     "Verdict: the page rule (user 2026-09-30): a seed with repeats on both engines compares run ranges, and relax must be inside or above the across-seed RELION band and not below same-seed RELION on a majority of seeds; RELION is not bit-reproducible here (its two seed-1 runs differ). Range gaps (relax best minus RELION lowest): s1 +9.0e-4, s2 +9.7e-5, s3 -4.8e-5. At s3 relax's run range is below RELION's by 4.8e-5 (3 relax runs, 2 RELION runs); the other seeds overlap or relax lies above, so the row passes on 2 of 3 seeds.",
-    "Speed pending: same-node cold pair on the landed code against stock RELION requested from etoptics (team-lead 2026-10-05); the relax runs above shared nodes and are not speed evidence."
+    "Speed (etoptics, job 15038203, della-h21g4, 2026-10-05): same-node cold pair at seed 1, relax main 880483a5 830 s against stock RELION 5.0.1 relion_refine_mpi 3 ranks x 4 threads 2297 s (0.36x); one H100 and 12 CPUs each, no --scratch_dir on either arm. The stock MPI RELION run is used for the wall only (it has the MPI scale-group defect); the accuracy reference stays the mpiscale build. Masked GT FSC-AUC of the pair (not used for the verdict): relax 0.85653, stock RELION 0.85715. 880483a5 is later than the accuracy runs' 039af4b and adds the subtomogram coarse-pass fixes (10001a8, 880483a5)."
    ],
    "null_reasons": {
     "cross_engine": "relax-vs-RELION map agreement not computed for this row",
@@ -12105,10 +12117,7 @@
     "relion.iterations": "not recorded in the score files",
     "relax.iterations": "not recorded in the score files",
     "relion.masked_band_auc": "not computed for this row",
-    "relax.masked_band_auc": "not computed for this row",
-    "relion.wall_s": "speed pending: no same-node cold pair on the landed code yet (team-lead 2026-10-05)",
-    "relax.wall_s": "speed pending: the relax runs shared nodes; a same-node cold pair is requested from etoptics",
-    "time_ratio_relax_over_relion": "speed pending a same-node cold pair on the landed code (team-lead 2026-10-05)"
+    "relax.masked_band_auc": "not computed for this row"
    },
    "mask": {
     "dataset": "etoptics_8c9c_b40_c1",
@@ -12124,7 +12133,8 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_evenz_r3d_039af4b_s1.json",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_evenz_r3d_039af4b_s23.json",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_evenz_r3d_b19cc26_s1.json",
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_evenz_s1_repeat_20261005.json"
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_evenz_s1_repeat_20261005.json",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/eto_evenz_wall_880483a_s1.json"
     ],
     "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_aberrations_20261004/relion_refs/eto_evenz",
     "relax_runs": [
@@ -12144,14 +12154,24 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/src_probeall/eto_evenz_r3d_s3"
     ],
     "evidence_dir": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/",
-    "source": "etoptics via team-lead, 2026-10-05"
+    "source": "etoptics via team-lead, 2026-10-05",
+    "wall_pair": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/wall_880483a/eto_evenz_r3d_s1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relion/eto_evenz/refine3d_cc_stock/seed1/wall1"
+    ]
    },
    "date": "2026-10-05",
    "history": [],
    "quality_pass": true,
    "quality_reason": "worst s3 −4.8e-5 vs same-seed RELION; run ranges compared at s1/s2/s3 (both engines repeated); inside across-seed band",
    "label": "eto_evenz",
-   "feature_reference": "even Zernike in subtomogram Refine3D: RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, two runs at each of seeds 1-3"
+   "feature_reference": "even Zernike in subtomogram Refine3D: RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, two runs at each of seeds 1-3",
+   "time_check": {
+    "a": "RELION 1 H100, relion_refine_mpi 3 ranks x 4 threads (stock sm90 build); relax 1 H100, one process, 12 CPUs; both in job 15038203 on della-h21g4, started together",
+    "b": "relax main 880483a5 production defaults, standalone start-up, empty JAX compilation cache; no --scratch_dir on either arm (both read the stacks in place); no diagnostic, capture, replay or dump options",
+    "c": "both walls end to end from the arm script (WALL.json), start-up and compilation included",
+    "d": "H100 80GB on both arms, same node and time"
+   }
   },
   {
    "id": "optics_mag_k2_10k256_class3d_25it",
