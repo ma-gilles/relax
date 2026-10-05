@@ -70,8 +70,9 @@ variables such as `RELAX_TEST_RECEIPTS` (`RUN_CONTROL_ENV`); it seeds NumPy with
 - A subprocess that imports `relax` must use `conftest.repo_python_command` with `repo_subprocess_env()`
   (or `gpu_subprocess_env()` for a GPU child): the shared environment's editable install can resolve to
   another checkout, and `python scripts/x.py` does not put the repository root on `sys.path`.
-- Many existing tests read source text. `unit/test_k1_mean_lifecycle.py` asserts statement order inside
-  `refine_single_volume` with `source.index(...)`; a behaviour-preserving move fails it. Grep the name you
-  move in `tests/` first, and convert the test when its code becomes callable (rule 6).
+- Tests of the refinement controller run it on the CPU stand-in engine (`helpers/tiny_refinement.py`:
+  `run_tiny_refinement`, `CallTrace`, `frame_holds`). Some tests of `full_refinement.main` and of the engines
+  still read source text; grep the name you move in `tests/` first, and convert such a test when its code
+  becomes callable (rule 6).
 - Pinned outputs are compared only within one GPU model, and `tiers/pinned_fast_cases.json` holds H100
   entries. Pin the model (`--gpu-model h100`) on both arms of a numerical comparison.

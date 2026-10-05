@@ -32,15 +32,13 @@ counter-example from the same code before it was changed. The rules behind it ar
 
 ## Where the worked example still falls short
 
-- **Shared glue.** The body of the numbered loop is 1,272 lines; 872 of them are shared by both modes, and
-  260 of those are calls with wide argument lists, 54 installs, 29 history writes, 76 logs. The loop reads as
+- **Shared glue.** The body of the numbered loop is 1,247 lines; 847 of them are shared by both modes, and
+  256 of those are calls with wide argument lists, 52 installs, 29 history writes, 64 logs. The loop reads as
   a sequence, but a long one. 29 functions of the package still take ten or more parameters, the widest 28.
-- **Two blocks that have not moved.** The projector preparation (57 lines) is pinned by a weak-reference
-  test of release order: as a function it would release the previous half-2 projector one build earlier.
-  Releasing earlier is allowed when stated with its peak-memory effect (rule 3); the extraction needs that
-  test converted to the lifetime it actually requires. The start-up before the loop (564 lines) interleaves
-  a fresh and a continued start with timer marks, logs and three releases; log order does not block it
-  (rule 2), and each release needs its lifetime traced, not its place kept (rule 3).
+- **The start-up decides the mode once, except for the grid.** A fresh and a continued run are one
+  `if resume is None` with a block each, and each block releases the start-up arrays it was given. The
+  initial coarse grid still chooses its inputs inline (schedule or restored state), because the fresh
+  direction prior needs the built grid's order.
 - **The local-search route has no CPU check.** The fingerprint's stand-in replaces the dense engine only;
   local search, tomography, symmetry other than C1 and multi-shape optics are verified by the GPU tiers
   alone. Every change to them rests on tests that take half an hour and do not compare an ordered trace.

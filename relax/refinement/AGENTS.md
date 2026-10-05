@@ -57,17 +57,19 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## Pitfalls
 
-- `refine_single_volume` is 2,031 lines and its ceiling is 2,031. Up to the slack (5%, here 102 lines)
-  `report_refinement_structure.py --check` warns; beyond it `test_refinement_structure_metrics.py` fails.
-  A warning is for the reviewer: extract or delete before you add, or say why the growth is needed.
-- Tests pin the controller's source text. `tests/unit/test_k1_mean_lifecycle.py` asserts that `del init_volume`
-  precedes `_snapshot_and_release_previous_k1_means(reference_model.maps)`, which precedes
-  `estimate_split_half_prior(` and `reconstruct_numbered_k1_halfmaps(` in the text of `refine_single_volume`.
-  Before renaming or moving a statement, `grep -rn '<name>' tests/` and convert the pin to a behavioural test
-  in the same commit (code rule 13).
-- Buffer lifetimes follow code rule 3, not old release points. That test pins one: the previous K=1 means are
-  copied to the host and released before the prior update and the reconstruction. Releasing earlier is
-  allowed; extending a lifetime is not; state any change and its peak-memory effect.
+- `refine_single_volume` is 1,998 lines; its ceiling is in `docs/development/refinement_structure_metrics.json`.
+  Up to the slack (5%) `report_refinement_structure.py --check` warns; beyond it
+  `test_refinement_structure_metrics.py` fails. A warning is for the reviewer: extract or delete before you
+  add, or say why the growth is needed.
+- Tests of the controller run it: `tests/helpers/tiny_refinement.py` runs `refine_single_volume` on the CPU
+  stand-in engine, and its `CallTrace` records the order, operands, results and nesting of the calls a test
+  wraps (`keep_operands=False` for a lifetime test). `tests/unit/test_k1_mean_lifecycle.py` shows the
+  pattern: the previous K=1 maps are released before the prior update and the reconstruction. Some tests of
+  `full_refinement.main` still read its text (it has no CPU harness): before renaming or moving a statement
+  there, `grep -rn '<name>' tests/`.
+- Buffer lifetimes follow code rule 3, not old release points. Releasing earlier is allowed; extending a
+  lifetime is not; state any change and its peak-memory effect. A test holding a traced call's operands keeps
+  them alive: trace with `keep_operands=False` or hold weak references.
 - A flag that tells a callee how to read another argument may still have one live caller.
   `_reconstruct_volume_eager` keeps `tau_is_1d` because the final K=1 solve passes a full volume while the
   numbered operations pass shell curves. Trace every caller before removing such a flag.
