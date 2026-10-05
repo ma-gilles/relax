@@ -1138,55 +1138,9 @@ def main(command=None):
                 "run_it000 particle state",
             )
 
-    captured_projector = None
-    if args.relion_projector_capture_dir is not None:
-        if args.perturb_replay_relion_dir is None:
-            raise SystemExit(
-                "--relion-projector-capture-dir requires --perturb_replay_relion_dir"
-            )
-        if args.relion_projector_capture_iteration is None:
-            raise SystemExit(
-                "--relion-projector-capture-dir requires "
-                "--relion-projector-capture-iteration"
-            )
-        capture_dir = Path(args.relion_projector_capture_dir).expanduser().resolve()
-        capture_manifest = (
-            Path(args.relion_projector_capture_manifest).expanduser().resolve()
-            if args.relion_projector_capture_manifest is not None
-            else capture_dir
-            / f"iter{int(args.relion_projector_capture_iteration)}_VALIDATED_SHA256SUMS"
-        )
-        try:
-            captured_projector = frozen_boundary_cli.attach_projector_capture(
-                replay_iteration_overrides,
-                capture_dir=capture_dir,
-                manifest_path=capture_manifest,
-                capture_iteration=args.relion_projector_capture_iteration,
-                init_relion_iteration=args.init_relion_iteration,
-                relion_replay_dir=args.perturb_replay_relion_dir,
-                volume_shape=ds.volume_shape,
-                n_classes=args.n_classes,
-                validated_frozen_boundary_iteration=(
-                    None
-                    if frozen_boundary is None
-                    else frozen_boundary.completed_relion_iteration
-                ),
-            )
-        except (OSError, TypeError, ValueError) as exc:
-            raise SystemExit(f"Invalid captured RELION projector replay: {exc}") from exc
-    elif (
-        args.relion_projector_capture_manifest is not None
-        or args.relion_projector_capture_iteration is not None
-    ):
-        raise SystemExit(
-            "--relion-projector-capture-manifest/iteration require "
-            "--relion-projector-capture-dir"
-        )
-    if frozen_boundary is not None:
-        frozen_boundary_cli.validate_projector_only_replay_slots(
-            replay_iteration_overrides,
-            projector_slot=None if captured_projector is None else captured_projector.replay_slot,
-        )
+    captured_projector = frozen_boundary_cli.attach_cli_projector_capture(
+        args, replay_iteration_overrides, volume_shape=ds.volume_shape, frozen_boundary=frozen_boundary
+    )
 
     effective_tau2_fudge, tau2_fudge_source = _resolve_tau2_fudge(
         args.n_classes,

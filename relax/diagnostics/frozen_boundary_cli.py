@@ -892,3 +892,58 @@ def _verify_fixed_diagnostic_provenance_manifests(boundary, source_paths) -> Non
     }
     if environment_manifest != expected_environment:
         raise ValueError("sealed runtime command/build/environment manifest content mismatch")
+
+
+def attach_cli_projector_capture(args, replay_slots, *, volume_shape, frozen_boundary):
+    """Attach the captured RELION projector the command names (``--relion-projector-capture-dir``) to its
+    replay slot and return it (None without one). A frozen boundary's slots must stay projector-only."""
+    captured_projector = None
+    if args.relion_projector_capture_dir is not None:
+        if args.perturb_replay_relion_dir is None:
+            raise SystemExit(
+                "--relion-projector-capture-dir requires --perturb_replay_relion_dir"
+            )
+        if args.relion_projector_capture_iteration is None:
+            raise SystemExit(
+                "--relion-projector-capture-dir requires "
+                "--relion-projector-capture-iteration"
+            )
+        capture_dir = Path(args.relion_projector_capture_dir).expanduser().resolve()
+        capture_manifest = (
+            Path(args.relion_projector_capture_manifest).expanduser().resolve()
+            if args.relion_projector_capture_manifest is not None
+            else capture_dir
+            / f"iter{int(args.relion_projector_capture_iteration)}_VALIDATED_SHA256SUMS"
+        )
+        try:
+            captured_projector = attach_projector_capture(
+                replay_slots,
+                capture_dir=capture_dir,
+                manifest_path=capture_manifest,
+                capture_iteration=args.relion_projector_capture_iteration,
+                init_relion_iteration=args.init_relion_iteration,
+                relion_replay_dir=args.perturb_replay_relion_dir,
+                volume_shape=volume_shape,
+                n_classes=args.n_classes,
+                validated_frozen_boundary_iteration=(
+                    None
+                    if frozen_boundary is None
+                    else frozen_boundary.completed_relion_iteration
+                ),
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            raise SystemExit(f"Invalid captured RELION projector replay: {exc}") from exc
+    elif (
+        args.relion_projector_capture_manifest is not None
+        or args.relion_projector_capture_iteration is not None
+    ):
+        raise SystemExit(
+            "--relion-projector-capture-manifest/iteration require "
+            "--relion-projector-capture-dir"
+        )
+    if frozen_boundary is not None:
+        validate_projector_only_replay_slots(
+            replay_slots,
+            projector_slot=None if captured_projector is None else captured_projector.replay_slot,
+        )
+    return captured_projector

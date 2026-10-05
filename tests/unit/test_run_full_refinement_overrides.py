@@ -31,6 +31,7 @@ from relax.diagnostics.frozen_boundary_cli import (
     _validate_fixed_diagnostic_math_environment,
     _verify_fixed_diagnostic_provenance_manifests,
     _verify_frozen_boundary_source_hashes,
+    attach_cli_projector_capture,
     attach_projector_capture,
     expand_boundary_noise,
     projector_only_replay_slots,
@@ -700,6 +701,30 @@ def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
     for noise in noise_per_half:
         assert noise.shape == (64,)
         assert noise.dtype == np.dtype(np.float32)
+
+
+@pytest.mark.parametrize(
+    ("capture", "message"),
+    [
+        (dict(relion_projector_capture_dir="c"), "requires --perturb_replay_relion_dir"),
+        (dict(relion_projector_capture_dir="c", perturb_replay_relion_dir="r"), "requires --relion-projector-capture-iteration"),
+        (dict(relion_projector_capture_iteration=3), "manifest/iteration require --relion-projector-capture-dir"),
+        (dict(relion_projector_capture_manifest="m"), "manifest/iteration require --relion-projector-capture-dir"),
+    ],
+)
+def test_projector_capture_options_are_refused_without_their_companions(capture, message):
+    args = SimpleNamespace(**{
+        "relion_projector_capture_dir": None, "relion_projector_capture_manifest": None,
+        "relion_projector_capture_iteration": None, "perturb_replay_relion_dir": None, **capture,
+    })
+    with pytest.raises(SystemExit, match=message):
+        attach_cli_projector_capture(args, None, volume_shape=(8, 8, 8), frozen_boundary=None)
+
+
+def test_no_projector_capture_leaves_the_slots_alone():
+    args = SimpleNamespace(relion_projector_capture_dir=None, relion_projector_capture_manifest=None,
+                           relion_projector_capture_iteration=None)
+    assert attach_cli_projector_capture(args, None, volume_shape=(8, 8, 8), frozen_boundary=None) is None
 
 
 def test_attach_relion_projector_capture_targets_exact_replay_slot(tmp_path, monkeypatch):
