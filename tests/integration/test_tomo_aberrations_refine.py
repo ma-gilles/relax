@@ -1,10 +1,11 @@
-"""Beam tilt / odd Zernike and even Zernike subtomograms through Refine3D (GPU, end to end).
+"""Beam tilt / odd Zernike, even Zernike and anisotropic magnification subtomograms through Refine3D (GPU).
 
 A tiny RELION 5 2D-stack project is simulated with one strong aberration in its optics group and refined by
 ``relax refine`` twice: from the project as written, and from a copy whose optics table has the aberration
 column removed (what a program that ignores the feature sees). relion_refine demodulates the odd phase of
 every tilt image and puts the even terms in every tilt image's CTF; relax does the same through the per-tilt
-STAR (:mod:`relax.relion.tomo_input`, :mod:`relax.relion.optics_aberrations`). The aberrations are far
+STAR (:mod:`relax.relion.tomo_input`, :mod:`relax.relion.optics_aberrations`), and projects, backprojects and
+evaluates the CTF of every tilt image through ``inv(M3) Aproj`` for a magnification matrix. The aberrations are far
 stronger than a microscope's (rms phase 0.6-0.7 rad at shell 6 and 1.2-1.3 rad at shell 8 of the 32-pixel box,
 8.5 A Nyquist at shell 16), so that ignoring them costs correlation in the shells a 60-particle run resolves.
 
@@ -28,15 +29,22 @@ pytestmark = [pytest.mark.integration, pytest.mark.slow]
 GRID, VOXEL = 32, 4.25
 SHELLS = range(5, 13)
 ABERRATIONS = {
-    "odd": ("odd_zernike", [0, 0, 7200, 0, 0, -5400], "_rlnOddZernike"),
-    "even": ("even_zernike", [0, 300, 0, 400, 0, 0, 0, 0, 0], "_rlnEvenZernike"),
+    "odd": ("odd_zernike", [0, 0, 7200, 0, 0, -5400], ("_rlnOddZernike",)),
+    "even": ("even_zernike", [0, 300, 0, 400, 0, 0, 0, 0, 0], ("_rlnEvenZernike",)),
+    "mag": (
+        "mag_matrix",
+        [[1.06, 0.02], [0.02, 0.95]],
+        ("_rlnMagMat00", "_rlnMagMat01", "_rlnMagMat10", "_rlnMagMat11"),
+    ),
 }
 # Mean GT FSC over shells 5-12 (H100, 2026-10-04, job 14992440): odd 0.588 with the column and 0.331 without it
 # (per shell 8 / 9 / 10: 0.80 / 0.65 / 0.41 against 0.38 / -0.02 / -0.17); even 0.607 and 0.381 (0.78 / 0.66 / 0.48
 # against 0.45 / 0.16 / -0.05). With aberrations acting only near Nyquist the two differed by 0.002 and 0.015 (job
-# 14986240), which is why these are strong at shells 6-10. The bounds leave about half of each gap.
-MIN_FSC_WITH = {"odd": 0.48, "even": 0.50}
-MIN_GAIN = {"odd": 0.12, "even": 0.11}
+# 14986240), which is why these are strong at shells 6-10. Magnification [[1.06, 0.02], [0.02, 0.95]] (job 15070966,
+# relax with the rotated-radius M-step clip): 0.618 with the columns and 0.545 without (shell 9 / 10 / 11: 0.65 / 0.42 /
+# 0.20 against 0.50 / 0.30 / 0.07). The bounds leave about half of each gap.
+MIN_FSC_WITH = {"odd": 0.48, "even": 0.50, "mag": 0.58}
+MIN_GAIN = {"odd": 0.12, "even": 0.11, "mag": 0.035}
 
 
 def _volume():
@@ -49,8 +57,8 @@ def _volume():
     )
 
 
-def _without_optics_column(project: Path, label: str) -> Path:
-    """A copy of the project whose particle STAR optics table lacks ``label``."""
+def _without_optics_column(project: Path, drop: tuple) -> Path:
+    """A copy of the project whose particle STAR optics table lacks the labels ``drop``."""
 
     stripped = project.with_name(project.name + "_ignored")
     stripped.mkdir()
@@ -63,12 +71,11 @@ def _without_optics_column(project: Path, label: str) -> Path:
             in_optics, labels = line.startswith("data_optics"), []
         if in_optics and line.startswith("_rln"):
             labels.append(line.split()[0])
-            if line.split()[0] == label:
+            if line.split()[0] in drop:
                 continue
         elif in_optics and labels and line.strip() and not line.startswith(("loop_", "data_", "#")):
             values = line.split()
-            del values[labels.index(label)]
-            line = " ".join(values)
+            line = " ".join(v for v, name in zip(values, labels) if name not in drop)
         lines.append(line)
     (stripped / "particles.star").write_text("\n".join(lines) + "\n")
     return stripped
@@ -104,14 +111,14 @@ def _mean_fsc(map_ft, reference_ft) -> float:
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("kind", ["odd", "even"])
+@pytest.mark.parametrize("kind", ["odd", "even", "mag"])
 def test_aberrated_subtomograms_refine_with_their_optics(tmp_path, kind):
     import jax.numpy as jnp
     from recovar import utils
     from recovar.core import fourier_transform_utils as ftu
     from recovar.simulation import relion_tomo, simulator
 
-    key, coefficients, label = ABERRATIONS[kind]
+    key, coefficients, labels = ABERRATIONS[kind]
     with mrcfile.new(tmp_path / "vol0000.mrc", overwrite=True) as mrc:
         mrc.set_data(_volume().astype(np.float32))
         mrc.voxel_size = VOXEL
@@ -140,7 +147,7 @@ def test_aberrated_subtomograms_refine_with_their_optics(tmp_path, kind):
     )
     reference_ft = np.fft.fftn(np.asarray(mrcfile.open(reference).data, dtype=np.float64))
     with_optics = _mean_fsc(_refine(project, reference), reference_ft)
-    ignored = _mean_fsc(_refine(_without_optics_column(project, label), reference), reference_ft)
+    ignored = _mean_fsc(_refine(_without_optics_column(project, labels), reference), reference_ft)
     print(f"{kind}: mean GT FSC shells {SHELLS.start}-{SHELLS.stop - 1}: {with_optics:.3f}, column removed {ignored:.3f}")
     assert with_optics > MIN_FSC_WITH[kind], f"{kind}: mean GT FSC {with_optics:.3f}"
     assert with_optics - ignored > MIN_GAIN[kind], f"{kind}: {with_optics:.3f} against {ignored:.3f} without the column"
