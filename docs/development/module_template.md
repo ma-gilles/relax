@@ -47,10 +47,11 @@ counter-example from the same code before it was changed. The rules behind it ar
   branches on it twice, below the controller's decision. Under rule 6 it may stay if it selects a variant of
   one coherent operation; it should be two functions if K=1 and Class3D need different operands, invariants
   or state transitions there. Not yet decided.
-- Also unfinished at the boundary: `full_refinement.main` is 1,325 lines (was 1,791). The fingerprint runs it
+- Also unfinished at the boundary: `full_refinement.main` is 1,096 lines (was 1,791). The fingerprint runs it
   (19 `main_*` cases: K=1 and Class3D runs, `--continue`, schedules, start-up noise, the ledger, refused
   commands; not the frozen boundary or RELION replay, which only the GPU tiers run) and its start-up maps,
-  start-up noise, replay inputs and reports are now functions with their own tests. What remains inline is
-  the resolution of about 240 `args.` reads into the controller's options; `command_options` resolves only
-  part of them. About 20 lines of `relax/refinement/` outside the command modules read environment
-  variables, mostly diagnostic dump directories.
+  start-up noise and prior, half sets, replay inputs, follower routing, captured projectors, restart
+  provenance and reports are now functions with their own tests. What remains inline is the order of those
+  calls and the translation of about 200 `args.` reads into the controller's option records (the call alone is
+  170 lines); `command_options` resolves only part of them. About 20 lines of `relax/refinement/` outside the
+  command modules read environment variables, mostly diagnostic dump directories.
