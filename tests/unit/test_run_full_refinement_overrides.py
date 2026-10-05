@@ -2312,10 +2312,28 @@ def test_every_reference_loader_refuses_a_map_of_unknown_convention(tmp_path):
         handle.set_data(np.zeros((8, 8, 8), dtype=np.float32))
     run_full_refinement._require_relion_convention_reference(relion_named, "--ref_star")
 
-    source = inspect.getsource(run_full_refinement.main)
-    assert '_require_relion_convention_reference(init_mrc_path, "--init_volume")' in source
-    loop = source.partition("for p in class_paths:\n")[2].splitlines()[0]
-    assert "_require_relion_convention_reference(p, class_option)" in loop
-    assert source.index("_require_relion_convention_reference(p, class_option)") < source.index(
-        "vol_real = np.asarray(load_relion_volume(p))"
-    )
+
+@pytest.mark.parametrize(
+    ("command", "arguments", "option"),
+    [
+        ("refine", ["--init_volume", "<LEGACY>"], "--init_volume"),
+        ("class3d", ["--n_classes", "2", "--init_class_volumes", "<LEGACY>,<LEGACY>"], "--init_class_volumes"),
+    ],
+)
+def test_the_command_checks_each_reference_before_reading_any(monkeypatch, tmp_path, command, arguments, option):
+    """The command refuses a map of unknown convention before it reads a reference."""
+    import mrcfile
+    from helpers.tiny_main import controller_inputs
+    from recovar.utils import helpers as recovar_helpers
+
+    legacy = tmp_path / "reference_init_class001.mrc"
+    with mrcfile.new(str(legacy)) as handle:
+        handle.set_data(np.zeros((16, 16, 16), dtype=np.float32))
+
+    def refuse(path):
+        raise AssertionError(f"{path} read before its convention was checked")
+
+    monkeypatch.setattr(recovar_helpers, "load_relion_volume", refuse)
+    with pytest.raises(SystemExit, match=option):
+        controller_inputs(monkeypatch, tmp_path, command, *[a.replace("<LEGACY>", str(legacy)) for a in arguments],
+                          n_classes=2)

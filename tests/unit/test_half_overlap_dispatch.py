@@ -127,14 +127,6 @@ def test_dispatcher_waits_for_both_before_raising():
     assert finished == [1]
 
 
-def _runner_path():
-    from pathlib import Path
-
-    import relax
-
-    return Path(relax.__file__).resolve().parent.parent / "relax" / "refinement" / "full_refinement.py"
-
-
 def test_runner_registers_the_overlap_flag():
     """The typed option is worthless if the entry point cannot set it.
 
