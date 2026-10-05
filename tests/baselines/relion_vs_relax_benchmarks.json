@@ -12320,6 +12320,146 @@
    }
   },
   {
+   "id": "optics_mag_k1_10k256_autorefine_b92be02",
+   "section": "feature_checks",
+   "dataset": "optics_mag_k1_10k256 (synth_k1_50k256_snr05 particles re-imaged with anisotropic magnification, one optics group, MagMat [[1.015, 0.004], [0.004, 0.990]])",
+   "empiar_id": null,
+   "particles": 10000,
+   "box": 256,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "Refine3D auto-refine K=1 with anisotropic magnification (--firstiter_cc, ini_high 60, seed 42)",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 f2c1a38 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu on one H100",
+    "resolution_A": null,
+    "resolution_definition": "half_fsc_0143",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": 4.352,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen",
+    "wall_s": null,
+    "wall_definition": "speed pending: RELION was not timed in a pair with the fixed relax",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "14699659",
+     "14746191"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "b92be02c6f17f92edde887f4592e31061be50265",
+    "source_repo": "relax b92be02 patch (M-step backprojection on RELION's rotated-radius support for anisotropic magnification) as etoptics' commit 473f291 on base afa5028 (same patch-id as b92be02; native sources as ad433cd); production defaults",
+    "resolution_A": null,
+    "resolution_definition": "half_fsc_0143",
+    "masked_resolution_A": 4.317,
+    "masked_resolution_definition": "relion_postprocess_masked_frozen",
+    "wall_s": null,
+    "wall_definition": "speed pending: relax runs 645, 666, 679 s on H100 (jobs 15039531, 15052834, 15052835) have no same-node RELION pair",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "15039531",
+     "15052834",
+     "15052835"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "masked GT FSC-AUC over the scorecard band (relax scripts/masked_fsc.py score --gt-map, frozen mask synth_k1_50k256_snr05_c1); seed 42",
+    "relion": 0.94966,
+    "relax": 0.949118,
+    "relion_band": [
+     0.94966,
+     0.950988
+    ],
+    "relion_band_runs": [
+     "seed 42 x3"
+    ],
+    "relax_per_seed": {
+     "42": 0.949508
+    },
+    "relion_per_seed": {
+     "42": 0.94966
+    },
+    "relax_fixed_seed_runs": {
+     "42": [
+      0.949118,
+      0.949009,
+      0.949508
+     ]
+    },
+    "relion_fixed_seed_runs": {
+     "42": [
+      0.950988,
+      0.94966,
+      0.949854
+     ]
+    },
+    "relax_before_b92be02": {
+     "42": [
+      0.949697,
+      0.949877,
+      0.949576
+     ]
+    }
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": null,
+   "matched": "no",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Feature check (etoptics, team-lead 2026-10-05): SPA Refine3D with an anisotropic magnification matrix in one optics group. Fixture optics_mag_k1_10k256_20260929: the first 10,000 particles of synth_k1_50k256_snr05 re-imaged with MagMat [[1.015, 0.004], [0.004, 0.990]], box 256 at 2.125 A, total B 40. Auto-refine with --firstiter_cc from a 60 A reference, seed 42.",
+    "relax b92be02 (the M-step backprojects on RELION's rotated-radius support, |A^-1 (x, y, 0)| <= r_max, instead of the image radius): masked GT FSC-AUC 0.94912, 0.94901, 0.94951 (three H100 runs, near-identical trajectories); before the fix (afa5028) 0.94970, 0.94988, 0.94958; RELION a/b/c 0.95099, 0.94966, 0.94985.",
+    "With the fix, iterations 1-4 equal RELION (masked GT AUC 0.3839 against 0.3839; the edge-shell FSC ratio goes from 0.926 to 1.001). At iteration 5 relax picks 14.32 A where RELION picks 15.11 A, a magnification-only divergence tracked as ma-gilles/relax#24; the final-map difference is downstream of it.",
+    "Speed pending: relax ran 645-679 s on H100 (631-683 s across etoptics' runs) without a same-node RELION pair; a same-node cold pair is requested from etoptics or folded into the next benchmark freeze."
+   ],
+   "null_reasons": {
+    "relion.resolution_A": "the score files record the masked postprocess resolution only",
+    "relax.resolution_A": "the score files record the masked postprocess resolution only",
+    "relion.relion_reported_resolution_A": "not taken from the run for this feature row",
+    "relion.wall_s": "speed pending: no same-node cold pair with the fixed relax yet (team-lead 2026-10-05)",
+    "relax.wall_s": "speed pending: no same-node cold pair with RELION yet",
+    "time_ratio_relax_over_relion": "speed pending a same-node cold pair (team-lead 2026-10-05)",
+    "cross_engine": "relax-vs-RELION map agreement not computed for this row",
+    "cross_engine_masked_band_auc": "relax-vs-RELION map agreement not computed for this row",
+    "relion.iterations": "not recorded in the score files",
+    "relax.iterations": "not recorded in the score files",
+    "relion.masked_band_auc": "not computed for this row",
+    "relax.masked_band_auc": "not computed for this row"
+   },
+   "mask": {
+    "dataset": "synth_k1_50k256_snr05_c1",
+    "sha256": "853c8cfc28311aa934a4da951635e7888f70026c68872f812e2cc10efb22a3ee"
+   },
+   "evidence": {
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_mag_k1_10k256_20260929",
+    "score_dir": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/scores/spa_mag_clip_20261005",
+    "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/spa_mag_clip_20261005",
+    "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_optics_20260929/f4_mag",
+    "source": "etoptics via team-lead, 2026-10-05",
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/add_spa_mag_k1_row.py"
+   },
+   "date": "2026-10-05",
+   "history": [],
+   "quality_pass": false,
+   "quality_reason": "worst s42 −1.5e-4 vs same-seed RELION; run ranges compared at s42 (both engines repeated); s42 below across-seed RELION band 0.94966-0.950988; relax#24",
+   "label": "optics_mag_k1_10k256 (feature)",
+   "feature_reference": "anisotropic magnification (rlnMagMat) in SPA Refine3D: RELION 5.0.1 + MPI scale-sum patch (mpiscale), relion_refine_mpi 3 ranks x 4 threads, one H100, seed 42, three runs"
+  },
+  {
    "id": "optics_mag_k2_10k256_class3d_25it",
    "section": "feature_checks",
    "dataset": "optics_mag_k2_10k256 (synth_pdb_k2_50k256_snr05 particles re-imaged with anisotropic magnification, one optics group, MagMat [[1.015, 0.004], [0.004, 0.990]])",
@@ -12536,7 +12676,8 @@
     "seed 42: mean masked GT FSC-AUC relax 0.206533/0.207609/0.209553 / RELION CPU 0.211092/0.211092; class accuracy 0.8371/0.8335/0.8366 vs 0.8455/0.8455",
     "seed 53: mean masked GT FSC-AUC relax 0.211691/0.211337 / RELION CPU 0.210008; class accuracy 0.8431/0.8434 vs 0.8395",
     "seed 61: mean masked GT FSC-AUC relax 0.210088 / RELION CPU 0.205033; class accuracy 0.8411 vs 0.8342",
-    "seed 67: mean masked GT FSC-AUC relax 0.208088 / RELION CPU 0.205250; class accuracy 0.8383 vs 0.8371"
+    "seed 67: mean masked GT FSC-AUC relax 0.208088 / RELION CPU 0.205250; class accuracy 0.8383 vs 0.8371",
+    "Predates b92be02 (2026-10-05): these runs (f6c8299b and earlier) predate relax main b92be02, which changes the magnification M-step (backprojection on RELION's rotated-radius support, SPA and subtomogram alike). The row will be rerun in the next benchmark freeze at or after b92be02; the K=1 Refine3D magnification row (optics_mag_k1_10k256_autorefine_b92be02) already shows the fix."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "Class3D has no gold-standard half maps; masked half-map resolution does not apply",
