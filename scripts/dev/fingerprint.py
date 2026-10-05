@@ -545,8 +545,8 @@ MUTATIONS = (
     # The command entry (the main_* cases).
     ("main_max_iter_not_continued", "max_iter=int(args.max_iter) - (continued_iterations or 0),", "max_iter=int(args.max_iter),",
      "a continued run counts --max_iter from its own first iteration", True),
-    ("main_seed_classes_inverted", "if args.n_classes > 1 and args.init_volume is not None and resume_snapshot is None",
-     "if args.n_classes > 1 and args.init_volume is None and resume_snapshot is None",
+    ("main_seed_classes_inverted", "if args.n_classes > 1 and args.init_volume is not None and not resumed",
+     "if args.n_classes > 1 and args.init_volume is None and not resumed",
      "Class3D seeds random classes from per-class maps instead of from one reference", True),
     ("main_tau2_fudge_ignored", "parity=RelionParityOptions(\ntau2_fudge=effective_tau2_fudge,", "parity=RelionParityOptions(\ntau2_fudge=1.0,",
      "the controller is handed the default tau2 fudge instead of --tau2_fudge", True),

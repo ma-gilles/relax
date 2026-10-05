@@ -19,7 +19,9 @@ from relax.helpers.particle_io import add_particle_read_arguments
 from relax.refinement.refinement_options import (
     RELAX_MODE_CONSISTENCY,
     AdaptiveOptions,
+    EngineDebugOptions,
     HalfOverlapOptions,
+    KClassOptions,
     LocalSearchOptions,
     RefinementBatching,
     RefinementSchedule,
@@ -1591,4 +1593,49 @@ def resolve_schedule(
         particle_diameter_ang=particle_diameter_ang,
         init_relion_iteration=args.init_relion_iteration if continued_iterations is None else continued_iterations,
         skip_final_iteration=bool(args.skip_final_iteration),
+    )
+
+
+def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
+    """The class count and, for a fresh Class3D run from one reference (``--init_volume``), each particle's
+    class in RELION's first iteration, drawn in the expected-accuracy trial order ``trial_order``."""
+    from relax.relion.input_particle_table import relion_class3d_seed_classes
+
+    return KClassOptions(
+        n_classes=args.n_classes,
+        first_iteration_seed_classes=(
+            relion_class3d_seed_classes(trial_order, int(args.seed), int(args.n_classes))
+            if args.n_classes > 1 and args.init_volume is not None and not resumed
+            else None
+        ),
+    )
+
+
+def resolve_debug(args, *, state_swap_probe, frozen_boundary, expected_accuracy) -> EngineDebugOptions:
+    """The diagnostic switches: intermediates, the state-swap probe, the local-search stops, and a frozen
+    boundary's sealed state (its fixed diagnostic arm only) with the immutability check it asks for."""
+    sealed = frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
+    return EngineDebugOptions(
+        save_intermediates_dir=args.save_intermediates_dir,
+        save_intermediates_skip_unregularized=bool(args.save_intermediates_skip_unregularized),
+        state_swap_probe=state_swap_probe,
+        assert_initial_scoring_state_immutable=frozen_boundary is not None,
+        stop_after_local_search_profile=bool(args.stop_after_local_search_profile),
+        stop_after_local_search=bool(args.stop_after_local_search),
+        stop_after_local_search_score_only=bool(args.stop_after_local_search_score_only),
+        sealed_sampling_state=frozen_boundary.sampling_state if sealed else None,
+        sealed_scoring_context=(
+            {
+                "schema": frozen_boundary.schema,
+                "completed_relion_iteration": frozen_boundary.completed_relion_iteration,
+                "consumer_relion_iteration": frozen_boundary.consumer_relion_iteration,
+                "source_sha256": frozen_boundary.source_sha256,
+                "source_roles": frozen_boundary.source_roles,
+                "runtime_config": frozen_boundary.runtime_config,
+                "map_lineage": frozen_boundary.map_lineage,
+            }
+            if sealed
+            else None
+        ),
+        expected_accuracy=expected_accuracy,
     )

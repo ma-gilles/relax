@@ -54,7 +54,6 @@ from relax.refinement.result_files import (
 )
 from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files
 from relax.relion import input_particle_table, input_poses, relion_metadata
-from relax.relion.input_particle_table import relion_class3d_seed_classes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -985,9 +984,7 @@ def main(command=None):
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
         CheckpointOptions,
-        EngineDebugOptions,
         ExpectedAccuracyOptions,
-        KClassOptions,
         RefinementOptions,
         RelionParityOptions,
         ReplayState,
@@ -1276,15 +1273,8 @@ def main(command=None):
             ),
             consistency=consistency_options,
             local_search=command_options.resolve_local_search(args),
-            k_class=KClassOptions(
-                n_classes=args.n_classes,
-                first_iteration_seed_classes=(
-                    relion_class3d_seed_classes(
-                        particle_layout.accuracy_trial_order_local, int(args.seed), int(args.n_classes)
-                    )
-                    if args.n_classes > 1 and args.init_volume is not None and resume_snapshot is None
-                    else None
-                ),
+            k_class=command_options.resolve_k_class(
+                args, trial_order=particle_layout.accuracy_trial_order_local, resumed=resume_snapshot is not None
             ),
             checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
             replay=ReplayState(
@@ -1325,32 +1315,10 @@ def main(command=None):
                 ),
                 preserve_initial_direction_prior=frozen_boundary is not None,
             ),
-            debug=EngineDebugOptions(
-                save_intermediates_dir=args.save_intermediates_dir,
-                save_intermediates_skip_unregularized=bool(args.save_intermediates_skip_unregularized),
+            debug=command_options.resolve_debug(
+                args,
                 state_swap_probe=state_swap_probe,
-                assert_initial_scoring_state_immutable=frozen_boundary is not None,
-                stop_after_local_search_profile=bool(args.stop_after_local_search_profile),
-                stop_after_local_search=bool(args.stop_after_local_search),
-                stop_after_local_search_score_only=bool(args.stop_after_local_search_score_only),
-                sealed_sampling_state=(
-                    frozen_boundary.sampling_state
-                    if frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
-                    else None
-                ),
-                sealed_scoring_context=(
-                    {
-                        "schema": frozen_boundary.schema,
-                        "completed_relion_iteration": frozen_boundary.completed_relion_iteration,
-                        "consumer_relion_iteration": frozen_boundary.consumer_relion_iteration,
-                        "source_sha256": frozen_boundary.source_sha256,
-                        "source_roles": frozen_boundary.source_roles,
-                        "runtime_config": frozen_boundary.runtime_config,
-                        "map_lineage": frozen_boundary.map_lineage,
-                    }
-                    if frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
-                    else None
-                ),
+                frozen_boundary=frozen_boundary,
                 expected_accuracy=ExpectedAccuracyOptions(
                     half1_base_order_local=particle_layout.accuracy_base_order_local,
                     half1_trial_order_local=particle_layout.accuracy_trial_order_local,

@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from helpers.tiny_main import controller_inputs
 
@@ -85,3 +86,32 @@ def test_a_frozen_boundary_owns_its_schedule_fields():
     schedule = _schedule(_args("--max_iter", "3"), frozen_boundary=boundary, sigma_offset=1.5)
     assert (schedule.init_fsc, schedule.init_ave_Pmax, schedule.init_has_high_fsc_at_limit) == ("fsc", 0.5, True)
     assert (schedule.init_relion_incr_size, schedule.init_translation_sigma_angstrom) == (6, (1.0, 2.0))
+
+
+def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference():
+    trial_order = np.arange(12)
+    seeded = command_options.resolve_k_class(_args("--n_classes", "3", "--init_volume", "ref.mrc", "--seed", "5"),
+                                             trial_order=trial_order, resumed=False)
+    assert seeded.n_classes == 3 and seeded.first_iteration_seed_classes.shape == (12,)
+    assert set(seeded.first_iteration_seed_classes.tolist()) <= {0, 1, 2}
+    for arguments, resumed in ((("--n_classes", "3", "--init_volume", "ref.mrc"), True), (("--n_classes", "3"), False),
+                               (("--init_volume", "ref.mrc"), False)):
+        assert command_options.resolve_k_class(_args(*arguments), trial_order=trial_order,
+                                               resumed=resumed).first_iteration_seed_classes is None
+
+
+def test_debug_switches_come_from_their_flags_and_a_sealed_boundary():
+    args = _args("--save_intermediates_dir", "dump", "--stop_after_local_search")
+    debug = command_options.resolve_debug(args, state_swap_probe="probe", frozen_boundary=None, expected_accuracy="acc")
+    assert (debug.save_intermediates_dir, debug.stop_after_local_search, debug.state_swap_probe) == ("dump", True, "probe")
+    assert debug.expected_accuracy == "acc" and not debug.assert_initial_scoring_state_immutable
+    assert debug.sealed_sampling_state is None and debug.sealed_scoring_context is None
+    boundary = SimpleNamespace(fixed_diagnostic_arm=True, sampling_state="sampling", schema="s", completed_relion_iteration=3,
+                               consumer_relion_iteration=4, source_sha256="h", source_roles={}, runtime_config={},
+                               map_lineage=[])
+    sealed = command_options.resolve_debug(args, state_swap_probe=None, frozen_boundary=boundary, expected_accuracy="acc")
+    assert sealed.assert_initial_scoring_state_immutable and sealed.sealed_sampling_state == "sampling"
+    assert sealed.sealed_scoring_context["consumer_relion_iteration"] == 4
+    boundary.fixed_diagnostic_arm = False
+    unsealed = command_options.resolve_debug(args, state_swap_probe=None, frozen_boundary=boundary, expected_accuracy="a")
+    assert unsealed.assert_initial_scoring_state_immutable and unsealed.sealed_scoring_context is None
