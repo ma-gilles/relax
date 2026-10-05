@@ -1927,8 +1927,9 @@ series' mean rotation for that tilt (64 groups; residual angle median 1.91 deg, 
 both geometries at 31 A (masked FSC 1.000 on every shell).
 
 Runs. `q = 4`, random start, VDAM, `--oversampling 0 --stream-coarse-recompute`,
-the default stages (radius 4/8/16/32 at HEALPix 1/2/3/3, 200 updates of 200
-particles; radius 32 is 15.6 A), 3D shifts within 2 px at 1 px, particle diameter
+the default stages (radius 4/8/16/32 at HEALPix 1/2/3/3; 200 updates, of about
+200 particles up to radius 16 and of 1,847, a tenth of the data, at radius 32, the
+last over all particles; radius 32 is 15.6 A), 3D shifts within 2 px at 1 px, particle diameter
 300 A. A pilot (seed 11) stopped at update 165 on the metric check: one frequency
 row outside the stage radius had a near rank-1 metric at float32 roundoff. The
 coupled direction is now solved and checked on the update's support only (16ca4e5,
@@ -2030,13 +2031,34 @@ at shells 4-8. The SGD models were therefore registered to RELION by their
 population average. Two seeds; SGD is seed-fragile on the simulated fixture at
 this learning rate, so this is not yet a default.
 
+A third SGD seed and oversampling 1 for SGD (job 14981703), with the VDAM rules
+fixed beforehand. Seed agreement over SGD seeds 11, 12 and 13 holds: pose median
+3.99 / 3.98 / 3.96 deg (range .03), removed-set AUC .780 / .787 / .789 (range
+.008), first canonical correlation between seeds .941 / .928 / .938. The second is
+.896 / .838 / .879 (VDAM .38 / .28 / .23) and the third .47 / .45 / .31. The
+population averages agree across seeds within .005 (masked FSC .969-.974 at shell
+24, .937-.941 at shell 28); the loading-to-mean power is 1.79 / 1.62 / 2.12.
+Oversampling 1 in the last stage, from the update-160 checkpoints of seeds 11 and
+12, same evaluator as for VDAM:
+
+| SGD run | Pose median, oversampling 0 / 1 | Masked FSC `mu + W zbar`, shells 20 / 24 / 28 / 31, oversampling 0 | same, oversampling 1 |
+| --- | --- | --- | --- |
+| seed 11 | 2.60 / 2.29 deg | .988 / .972 / .939 / .842 | .996 / .992 / .981 / .900 |
+| seed 12 | 2.65 / 2.29 deg | .986 / .969 / .937 / .838 | .994 / .989 / .978 / .891 |
+
+The rule holds on both seeds. Under this evaluator SGD at oversampling 0 already
+has better poses than VDAM with oversampling 1 (2.67-2.95 deg). For SGD the
+radius 32 update is slightly slower with oversampling 1 (80.9 s against 78-79 s);
+2.7-3.0% of particles reach the 100-sample cap.
+
 Wall, one seed on an H100: reading the images 3.5-4.5 min (47 GB from 18,466 stack
 files, one thread; a parallel reader would shorten it); radius 4, 8 and 16 stages
 495, 524 and 1,104 s; radius 32 3,580 s; the final pose pass and embeddings 8 min;
 about 1 h 50 in all. On an A100 the radius 32 update takes 135 s and a seed 2 h 50.
 
 Jobs 14944779 and 14957154 (pilot), 14963424 and 14970619 (seeds), 14963878 and
-14974315 (oversampling), 14974370 (momentum SGD), 14949391 (update-160 pose pass). Evidence in
+14974315 (oversampling), 14974370 and 14981703 (momentum SGD), 14949391 (update-160
+pose pass). Evidence in
 `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/empiar10499/`.
 
 
