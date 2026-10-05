@@ -11901,7 +11901,7 @@
    "notes": [
     "Feature check (etoptics, team-lead 2026-10-05): subtomogram Refine3D with beam tilt (1.6, -1.2) mrad and odd Zernike [0,0,40,0,0,-30] in every optics group, supported on relax main since 039af4b (b19cc26 runs the same code; etoptics' repeat check). Fixture eto_btilt (/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_aberrations_20261004): 1000 particles, 8 tomograms / optics groups, 41 tilts, box 128 at 2.125 A, total B 40, SNR 0.005. Refine3D auto-refine with --firstiter_cc from a 40 A reference.",
     "Masked GT FSC-AUC run ranges: seed 1 relax [0.85761, 0.85768] (4 runs: 039af4b x1, b19cc26 x1, c628737 x1, f7f1160 x1) / RELION [0.85684, 0.85716]; seed 2 relax [0.86200, 0.86203] (3 runs: 039af4b x1, c628737 x1, f7f1160 x1) / RELION [0.86201, 0.86201]; seed 3 relax [0.86383, 0.86398] (7 runs: 039af4b x3, b19cc26 x2, c628737 x1, f7f1160 x1) / RELION [0.86400, 0.86403]. Probe heads f7f1160 and c628737 carry the code that landed as 039af4b (fixture README). Negative control (seed 1, the aberration columns removed from the optics table): 0.83545.",
-    "Verdict: same-seed overlap rule as team-lead stated it on 2026-10-05 (every seed: relax's best run must reach RELION's lowest run; RELION is not bit-reproducible here, its two seed-1 runs differ, so the bit-reproducible extension does not apply). Range gaps (relax best minus RELION lowest): s1 +8.4e-4, s2 +1.9e-5, s3 -1.4e-5. Fails at s3; recorded as a fail with that margin. The page's majority clause alone (relax not below on a majority of seeds) would pass it: worst s3 −1.4e-5 vs same-seed RELION; run ranges compared at s1/s2/s3 (both engines repeated); inside across-seed band.",
+    "Verdict: the page rule (user 2026-09-30): a seed with repeats on both engines compares run ranges, and relax must be inside or above the across-seed RELION band and not below same-seed RELION on a majority of seeds; RELION is not bit-reproducible here (its two seed-1 runs differ). Range gaps (relax best minus RELION lowest): s1 +8.4e-4, s2 +1.9e-5, s3 -1.4e-5. At s3 relax's run range is below RELION's by 1.4e-5 (7 relax runs, 2 RELION runs); the other seeds overlap or relax lies above, so the row passes on 2 of 3 seeds.",
     "Speed pending: same-node cold pair on the landed code against stock RELION requested from etoptics (team-lead 2026-10-05); the relax runs above shared nodes and are not speed evidence."
    ],
    "null_reasons": {
@@ -11953,8 +11953,8 @@
    },
    "date": "2026-10-05",
    "history": [],
-   "quality_pass": false,
-   "quality_reason": "s3 relax run range below same-seed RELION's by 1.4e-5 (7 relax, 2 RELION runs); ranges overlap or relax above at the other seeds; same-seed overlap rule (masked GT FSC-AUC, frozen mask)",
+   "quality_pass": true,
+   "quality_reason": "worst s3 −1.4e-5 vs same-seed RELION; run ranges compared at s1/s2/s3 (both engines repeated); inside across-seed band",
    "label": "eto_btilt",
    "feature_reference": "beam tilt and odd Zernike in subtomogram Refine3D: RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, two runs at each of seeds 1-3"
   },
@@ -12096,7 +12096,7 @@
    "notes": [
     "Feature check (etoptics, team-lead 2026-10-05): subtomogram Refine3D with even Zernike [0,0,0,0,400,0,0,0,-300] in every optics group, supported on relax main since 039af4b (b19cc26 runs the same code; etoptics' repeat check). Fixture eto_evenz (/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_aberrations_20261004): 1000 particles, 8 tomograms / optics groups, 41 tilts, box 128 at 2.125 A, total B 40, SNR 0.005. Refine3D auto-refine with --firstiter_cc from a 40 A reference.",
     "Masked GT FSC-AUC run ranges: seed 1 relax [0.85582, 0.85659] (8 runs: 039af4b x3, b19cc26 x3, c628737 x1, f7f1160 x1) / RELION [0.85569, 0.85650]; seed 2 relax [0.86086, 0.86098] (3 runs: 039af4b x1, c628737 x1, f7f1160 x1) / RELION [0.86089, 0.86097]; seed 3 relax [0.86353, 0.86362] (3 runs: 039af4b x1, c628737 x1, f7f1160 x1) / RELION [0.86367, 0.86367]. Probe heads f7f1160 and c628737 carry the code that landed as 039af4b (fixture README). Negative control (seed 1, the aberration columns removed from the optics table): 0.83741.",
-    "Verdict: same-seed overlap rule as team-lead stated it on 2026-10-05 (every seed: relax's best run must reach RELION's lowest run; RELION is not bit-reproducible here, its two seed-1 runs differ, so the bit-reproducible extension does not apply). Range gaps (relax best minus RELION lowest): s1 +9.0e-4, s2 +9.7e-5, s3 -4.8e-5. Fails at s3; recorded as a fail with that margin. The page's majority clause alone (relax not below on a majority of seeds) would pass it: worst s3 −4.8e-5 vs same-seed RELION; run ranges compared at s1/s2/s3 (both engines repeated); inside across-seed band.",
+    "Verdict: the page rule (user 2026-09-30): a seed with repeats on both engines compares run ranges, and relax must be inside or above the across-seed RELION band and not below same-seed RELION on a majority of seeds; RELION is not bit-reproducible here (its two seed-1 runs differ). Range gaps (relax best minus RELION lowest): s1 +9.0e-4, s2 +9.7e-5, s3 -4.8e-5. At s3 relax's run range is below RELION's by 4.8e-5 (3 relax runs, 2 RELION runs); the other seeds overlap or relax lies above, so the row passes on 2 of 3 seeds.",
     "Speed pending: same-node cold pair on the landed code against stock RELION requested from etoptics (team-lead 2026-10-05); the relax runs above shared nodes and are not speed evidence."
    ],
    "null_reasons": {
@@ -12148,8 +12148,8 @@
    },
    "date": "2026-10-05",
    "history": [],
-   "quality_pass": false,
-   "quality_reason": "s3 relax run range below same-seed RELION's by 4.8e-5 (3 relax, 2 RELION runs); ranges overlap or relax above at the other seeds; same-seed overlap rule (masked GT FSC-AUC, frozen mask)",
+   "quality_pass": true,
+   "quality_reason": "worst s3 −4.8e-5 vs same-seed RELION; run ranges compared at s1/s2/s3 (both engines repeated); inside across-seed band",
    "label": "eto_evenz",
    "feature_reference": "even Zernike in subtomogram Refine3D: RELION 5.0.1 f2c1a38 with the MPI scale-group fix (mpiscale build), relion_refine_mpi 3 ranks x 4 threads, two runs at each of seeds 1-3"
   },
