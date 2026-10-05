@@ -50,7 +50,7 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       `REFACTOR_SCRATCH=<dir> scripts/dev/refactor_verify.sh <the unit files that name the module>`.
       It prints one line per check: the fingerprint of the worktree against `HEAD` (results, files and
       checkpoints: 0 differences; trace differences confined to log rows are allowed and are reported as
-      such; the script exits nonzero on any difference, so read `logs/fp_vs_parent.txt`); `ruff`
+      such: the line then ends "only log rows differ (N); accepted under rule 2" and the check passes); `ruff`
       findings that `origin/main` lacks (none); `git diff --check`; `scripts/dev/check_mutation_anchors.py`
       (every selftest mutation still finds its anchor in the source); and `pytest` on
       `tests/unit/test_refinement_structure_metrics.py` plus the files given.
@@ -92,13 +92,14 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
 
 ## 5. When the right result is "do not build it"
 
-Stop and report instead of building when: the slice has no concrete benefit; the operation would need ten
-or more parameters, or gets under ten only through a record whose fields are related by timing alone; it
-would be a step that only renames its arguments (`dump_numbered_iteration` keeps 18 parameters because each
+Stop and report instead of building when: the slice has no concrete benefit; the operation gets a short
+signature only through a record whose fields are related by timing alone; it would be a step that only renames its arguments (`dump_numbered_iteration` keeps 18 parameters because each
 maps to one field of one record, so taking records would remove none); it would hide an install or a
 history write, or extend a buffer's lifetime; the measured cost exceeds the measured benefit (two copies of
 a sequence for one flag); or the stretch has no coverage and you cannot add it. Then do the smaller change
-that still reads better, or none. A measured "not worth it" is a result.
+that still reads better, or none. A measured "not worth it" is a result. Ten or more parameters is a
+signal to look for a missing record or a split by contract (rules 6, 8 and 10); it is not by itself a reason
+not to build.
 
 ## 6. Report and hand over
 
