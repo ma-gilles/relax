@@ -784,6 +784,10 @@ labeled diagnostic only.
 
 ## Feature gaps (moved from the README, 2026-09-29)
 
+The RELION 5 options and behaviours relax does not support yet, row by row with what each would take, are
+in [relion_feature_gaps.md](relion_feature_gaps.md) (the roadmap); this section records what is supported and
+how it was qualified.
+
 - Several optics groups: the default Refine3D (K=1) command runs them, including groups on other
   pixel sizes and boxes, with no settings (2026-09-30). The fresh K=1 pass always uses RELION's
   powerClass spectrum and exact BPref operands; the `RELAX_K1_RELION_POWERCLASS_SPECTRUM_NORM` and
