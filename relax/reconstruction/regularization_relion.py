@@ -868,11 +868,12 @@ def compute_relion_tau2_from_weights(
         and _shell_stats_on_host(large_weight_size)
     )
     if use_host_shell_stats:
-        H0 = np.asarray(Ft_ctf_0).real.astype(host_prior_dtype, copy=False)
-        H1 = np.asarray(Ft_ctf_1).real.astype(host_prior_dtype, copy=False)
-        H_comb = H0 + H1
+        # One ufunc casts each element and adds in host_prior_dtype, as converting both
+        # halves first would, without the two converted copies (2 x 16.5 GB of host
+        # memory at EMPIAR-10202's box 800, float32 weights to float64).
+        H_comb = np.add(np.asarray(Ft_ctf_0).real, np.asarray(Ft_ctf_1).real, dtype=host_prior_dtype)
         if weight_combination == "average":
-            H_comb = (H_comb * host_prior_dtype.type(0.5)).astype(host_prior_dtype, copy=False)
+            H_comb *= host_prior_dtype.type(0.5)
     else:
         H0 = jnp.asarray(Ft_ctf_0).real.astype(prior_dtype)
         H1 = jnp.asarray(Ft_ctf_1).real.astype(prior_dtype)

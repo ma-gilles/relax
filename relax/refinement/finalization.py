@@ -681,8 +681,6 @@ def run_final_all_data(
         # pre-join accumulators live only as long as the joined ones do.
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
         final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
-        final_ft_y = final_Ft_y_0 + final_Ft_y_1
-        final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
         final_mstep_full_half_axis = _resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
         _t_final_tau2 = time.time()
         final_halfmap_prior = final_reconstruction.compute_final_halfmap_prior(
@@ -721,8 +719,10 @@ def run_final_all_data(
         logger.info(
             "RELION final all-data reconstruction start: current_size=%d n_classes=%d", final_current_size, n_classes,
         )
-        # Reconstruct the merged map from the COMBINED accumulators and each half map from its own, at the
-        # full Nyquist resolution. The list is the only owner, so each slot is freed after its solve.
+        # The merged map from the COMBINED accumulators (summed only now: 24.7 GB of host at box 800), each half
+        # map from its own, at full Nyquist. The list is the only owner; each slot is freed after its solve.
+        final_ft_y = final_Ft_y_0 + final_Ft_y_1
+        final_ft_ctf = final_Ft_ctf_0 + final_Ft_ctf_1
         final_backprojections = [
             (final_ft_ctf, final_ft_y),
             (final_Ft_ctf_0, final_Ft_y_0),
