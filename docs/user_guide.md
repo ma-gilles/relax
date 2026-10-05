@@ -139,6 +139,12 @@ assigned a random class in the first iteration (in the second with `--firstiter_
 `--seed` as RELION does. The run does 25 iterations (`--max_iter`), as the
 RELION GUI does.
 
+`--skip_align` is RELION's classification without alignment (GUI "Perform image
+alignment: No"): each particle is scored against every class at the angles and offsets
+of the input STAR, which the run writes back unchanged. Pass it with
+`--no-firstiter_cc`; the cross-correlation first iteration at given poses is not
+implemented yet, and neither are `--continue` and subtomogram particles with it.
+
 ## Subtomogram auto-refine (RELION 5 tilt series)
 
 ```bash

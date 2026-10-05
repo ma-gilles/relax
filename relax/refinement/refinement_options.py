@@ -434,8 +434,12 @@ class KClassOptions:
     # RELION's Class3D from one reference (do_generate_seeds): each particle's class in the first
     # iteration, 0-based, per input particle row (input_particle_table.relion_class3d_seed_classes).
     first_iteration_seed_classes: Any | None = None
+    # RELION --skip_align: classify at each particle's stored pose, with no pose search.
+    skip_align: bool = False
 
     def __post_init__(self):
+        if int(self.n_classes) == 1 and self.skip_align:
+            raise ValueError("--skip_align classifies; K=1 has nothing to classify")
         if int(self.n_classes) == 1 and self.first_iteration_seed_classes is not None:
             raise ValueError("first_iteration_seed_classes seeds a Class3D start; K=1 has no classes to seed")
 

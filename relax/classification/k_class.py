@@ -333,6 +333,7 @@ def _run_sparse_k_class_adaptive_pass2(
         scale_correction_group_count=base_engine_kwargs.get("scale_correction_group_count"),
         scale_correction_data_vs_prior=base_engine_kwargs.get("scale_correction_data_vs_prior"),
         image_pre_shifts=base_engine_kwargs.get("image_pre_shifts"),
+        image_translations=base_engine_kwargs.get("image_translations"),
         use_float64_scoring=bool(base_engine_kwargs.get("use_float64_scoring", False)),
         translation_prior_centers=base_engine_kwargs.get("translation_prior_centers"),
         do_gridding_correction=bool(base_engine_kwargs.get("do_gridding_correction", False)),
@@ -1303,6 +1304,32 @@ def _supports_coarse_parents(supports_by_class, n_images, n_coarse_rot, n_coarse
     return np.unique(np.concatenate(parents)) if parents else None
 
 
+def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int):
+    """A class's given per-image sample lists with the compacted CSR pass 1 would have produced.
+
+    The resident pass reads the CSR for its candidate tables and to cache only the rotations the
+    supports use (``resident_pass2._significant_projection_slots``); a plain list makes it project the
+    whole grid.
+    """
+
+    from relax.sparse_pass2.resident_significance import (
+        DeviceCompactedSignificantSamples,
+        build_coarse_significance_csr,
+        host_support_rows,
+    )
+
+    rows = [np.unique(np.asarray(samples, dtype=np.int32).reshape(-1)) for samples in class_supports]
+    csr = build_coarse_significance_csr(
+        n_images=len(rows),
+        n_coarse_rot=int(n_coarse_rot),
+        n_coarse_trans=int(n_coarse_trans),
+        n_significant_per_batch=[np.asarray([row.size for row in rows], dtype=np.int32)],
+        store_excluded_per_batch=[np.zeros(len(rows), dtype=bool)],
+        ids_per_batch=[np.concatenate(rows) if rows else np.zeros(0, np.int32)],
+    )
+    return DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+
+
 def run_dense_k_class_em_adaptive(
     experiment_dataset,
     means,
@@ -1346,6 +1373,8 @@ def run_dense_k_class_em_adaptive(
     coarse_engine: str = "auto",
     image_seed_classes=None,
     fill_fine_rows=None,
+    given_supports=None,
+    given_image_translations=None,
     **engine_kwargs,
 ) -> KClassEMResult:
     """K-class adaptive 2-pass EM: coarse pass-1 significance + sparse fine pass 2.
@@ -1379,6 +1408,16 @@ def run_dense_k_class_em_adaptive(
         Per-pass Fourier window radii.  Pass-1 typically uses a smaller
         ``coarse_current_size`` per RELION's ``image_coarse_size`` semantics.
         When ``None``, both passes use the same ``current_size``.
+    given_supports : list of np.ndarray or None
+        Each image's coarse samples, given by the caller instead of found by pass 1
+        (RELION ``--skip_align``: one sample per image, its stored pose,
+        :func:`relax.classification.given_poses.given_pose_grids`). Pass 1 is skipped
+        and pass 2 scores every class on these samples, so the posterior is over the
+        classes alone.
+    given_image_translations : np.ndarray or None
+        ``[n_images, 2]`` with ``given_supports``: each image's own translation sample
+        (pixels), applied to its images by pass 2 (``image_translations`` of the resident
+        pass); the translation grids are then the one zero translation.
     coarse_healpix_order, oversampling_order : int or None
         RELION sampling metadata for sparse pass-2 diagnostics.  When omitted,
         the values are inferred from exact HEALPix grid sizes for compatibility
@@ -1624,7 +1663,22 @@ def run_dense_k_class_em_adaptive(
     exact_coarse_operand_assembly = None
     coarse_actual_backend = None
     pass1_t0 = time.time()
-    if firstiter_cc_pass2_only_best_coarse:
+    if given_supports is not None:
+        # RELION --skip_align (ml_optimiser.cpp:8454, pdf_orientation = pdf_class): no pose search, so no
+        # pass 1; every class is scored on each image's own sample, or only its random class in a seed iteration.
+        if n_classes == 1 or firstiter_cc_pass2_only_best_coarse or len(given_supports) != n_images:
+            raise ValueError("given supports are one coarse sample list per image of a Gaussian K-class pass")
+        supports = [np.asarray(samples, dtype=np.int32).reshape(-1) for samples in given_supports]
+        sig_sample_indices_by_class = [
+            _given_support_csr(class_supports, n_coarse_rot=n_rot_coarse, n_coarse_trans=n_trans_coarse)
+            for class_supports in (
+                [list(supports) for _ in range(n_classes)]
+                if image_seed_classes is None
+                else seed_iteration_supports(supports, image_seed_classes, n_classes)
+            )
+        ]
+        significant_counts_for_result = np.asarray([samples.size for samples in supports], dtype=np.int32)
+    elif firstiter_cc_pass2_only_best_coarse:
         # RELION firstiter_cc branch: restrict pass-2 to children of each
         # class's per-class coarse-best pose, then gate by the global winning
         # class. This is the production default-GUI parity path for iter 1.
@@ -1845,6 +1899,10 @@ def run_dense_k_class_em_adaptive(
     if pass2_use_float64_projections is not None:
         pass2_kwargs["use_float64_projections"] = bool(pass2_use_float64_projections)
     pass2_kwargs["relion_fine_mstep_prune"] = bool(relion_fine_mstep_prune)
+    if given_image_translations is not None:
+        if given_supports is None:
+            raise ValueError("given image translations go with the given supports")
+        pass2_kwargs["image_translations"] = np.asarray(given_image_translations, dtype=np.float64)
     # Pass 2 reads each image's coarse significant samples, not a fine-grid mask.
     pass2_kwargs.pop("rotation_translation_mask", None)
     if firstiter_cc_pass2_only_best_coarse:

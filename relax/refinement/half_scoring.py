@@ -233,6 +233,8 @@ class DenseVariantPolicy:
     firstiter_fine_current_size: int | None = None
     firstiter_log_label: str = "(non-adaptive site) "
     firstiter_updates_em_kwargs_ibs: bool = False
+    # RELION --skip_align: classify at each particle's stored pose (relax.classification.given_poses).
+    skip_align: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -364,6 +366,109 @@ def _score_adaptive_kclass_dense(
         **adaptive_em_kwargs,
     )
     return result, pass2_grids
+
+
+def _score_kclass_at_given_poses(
+    half: HalfScoringData,
+    sampling: DenseSamplingSpec,
+    priors: DensePriorSpec,
+    batching: DenseBatchPolicy,
+    execution: DenseExecutionPolicy,
+    optics: OpticsSpec,
+    em_kwargs,
+    symmetry,
+):
+    """RELION ``--skip_align``: the K-class pass 2 at each particle's stored pose, no pass 1.
+
+    Each particle's one sample is its stored orientation and what is left of its stored offset
+    after the rounded offset the image pre-shift already applies (``priors.translation_search_base``,
+    RELION's ``old_offset - ROUND(old_offset)``, ml_optimiser.cpp:4684-4720); pass 2 translates the
+    particle's images by that remainder (``given_image_translations``). The posterior is over the
+    classes alone (``pdf_orientation = pdf_class``, :8454; one translation makes the normalised
+    ``pdf_offset`` 1). ``wsum_sigma2_offset`` still sums ``|prior - old_offset|^2`` over the whole
+    offset (:8690), so the remainder moves the engine's sigma-offset center. Returns the engine
+    result with the stored Euler angles as its best-pose angles, and the grids it scored.
+    """
+
+    from relax.classification.given_poses import given_pose_grids
+
+    particles = half.particles
+    if particles.rotation_eulers is None or particles.translations is None:
+        raise ValueError("--skip_align classifies at the input poses: the particle STAR needs angles and offsets")
+    eulers = np.asarray(particles.rotation_eulers, dtype=np.float64)
+    stored = np.asarray(particles.translations, dtype=np.float64)
+    base = np.zeros_like(stored) if priors.translation_search_base is None else np.asarray(priors.translation_search_base)
+    pose_dtype = _dense_global_scoring_dtype()
+    grids = given_pose_grids(
+        np.asarray(utils.R_from_relion(eulers, degrees=True), dtype=pose_dtype),
+        # RELION's offsets are RFLOAT: the remainder stays double until pass 2 forms its phase.
+        stored - np.asarray(base, dtype=np.float64),
+        symmetry=symmetry,
+    )
+    n_classes = int(np.asarray(half.reference).shape[0])
+    plan = _plan_kclass_adaptive_grid_batch_sizes(
+        coarse_rotations=grids.rotations[:1],
+        coarse_translations=grids.translations[:1],
+        fine_rotations=grids.rotations[:1],
+        fine_translations=grids.translations[:1],
+        n_classes=n_classes,
+        image_shape=particles.dataset.image_shape,
+        coarse_current_size=sampling.cs_for_engine,
+        fine_current_size=sampling.cs_for_engine,
+        safe_batch_sizes=batching.safe_batch_sizes,
+        significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
+    )
+    engine_kwargs = dict(em_kwargs)
+    engine_kwargs["image_batch_size"] = plan.pass2_image_batch_size
+    engine_kwargs["rotation_block_size"] = plan.pass2_rotation_block_size
+    engine_kwargs["sparse_pass2"] = True
+    # No orientational or translational prior and no perturbation (ml_optimiser.cpp:2619-2626).
+    for name in ("rotation_log_prior", "class_rotation_log_prior", "translation_log_prior", "rotation_translation_mask"):
+        engine_kwargs.pop(name, None)
+    centers = engine_kwargs.get("translation_prior_centers")
+    if centers is not None:
+        # The engine's squared distance is |translation - center|^2 at the zero translation.
+        centers = np.broadcast_to(np.asarray(centers, dtype=np.float64), grids.image_translations.shape)
+        engine_kwargs["translation_prior_centers"] = (centers - grids.image_translations).astype(pose_dtype)
+    projected, grid_kwargs = engine_projection_inputs(
+        particles.dataset,
+        scale=optics.projection_scale,
+        reference_current_size=optics.reference_current_size,
+        rotations={"fine": grids.rotations},
+    )
+    engine_kwargs.update(grid_kwargs)
+    logger.info(
+        "RELION --skip_align: %d particles scored against %d classes at their stored poses (HEALPix order %d holds the list)",
+        eulers.shape[0], n_classes, grids.healpix_order,
+    )
+    result = run_dense_k_class_em_adaptive(
+        particles.dataset,
+        half.reference,
+        half.mean_variance,
+        half.noise_variance,
+        projected["fine"],
+        grids.translations,
+        projected["fine"],
+        grids.translations,
+        grids.rotation_parent_map,
+        grids.translation_parent_map,
+        execution.disc_type,
+        class_log_priors=priors.class_log_priors,
+        accumulate_noise=True,
+        coarse_current_size=sampling.cs_for_engine,
+        fine_current_size=sampling.cs_for_engine,
+        coarse_healpix_order=grids.healpix_order,
+        oversampling_order=0,
+        relion_fine_mstep_prune=True,
+        return_best_pose_details=True,
+        bpref_device_signature_active=execution.bpref_device_signature_active,
+        debug_iteration=execution.debug_iteration,
+        image_seed_classes=half.image_seed_classes,
+        given_supports=grids.supports,
+        given_image_translations=grids.image_translations,
+        **engine_kwargs,
+    )
+    return result, grids
 
 
 def _score_adaptive_k1_dense(
@@ -701,6 +806,18 @@ def _score_half_dense_one_shape(
                 firstiter_execution,
             )
             k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
+        elif variant.skip_align:
+            k_class_result, given = _score_kclass_at_given_poses(
+                half, sampling, priors, batching, execution, optics, em_kwargs, symmetry
+            )
+            # The list of stored poses is not the sampling grid: its rotation and translation ids collapse onto
+            # the grid's first sample (RELION does not read pdf_direction under --skip_align either), and the
+            # poses go back as the explicit best-pose details below.
+            adaptive_os_local = 0
+            rot_pmap_for_collapse = np.zeros_like(given.rotation_parent_map)
+            trans_pmap_for_collapse = np.zeros_like(given.translation_parent_map)
+            n_trans_fine_for_collapse = int(given.translations.shape[0])
+            k_class_mstep_full_half_axis_this_score = k_class_result.mstep_full_half_axis
         else:
             k_class_result, pass2_grids = _score_adaptive_kclass_dense(
                 half,
@@ -730,12 +847,21 @@ def _score_half_dense_one_shape(
             )
         score_result = class_em_to_half_result(
             k_class_result,
-            effective_rotations=sampling.effective_rotations,
+            effective_rotations=given.rotations if variant.skip_align else sampling.effective_rotations,
             rot_pmap_for_collapse=rot_pmap_for_collapse,
             adaptive_os_local=adaptive_os_local,
-            require_best_pose_details=execution.return_best_pose_details,
+            require_best_pose_details=execution.return_best_pose_details or variant.skip_align,
             pose_dtype=_dense_global_scoring_dtype(),
         )
+        if variant.skip_align:
+            # RELION leaves pdf_direction as it is under --skip_align (ml_optimiser.cpp:5198, :9133): no
+            # rotation mass, so the loop keeps the direction prior.
+            score_result.classes = replace(score_result.classes, rotation_mass=None)
+            # The stored angles go back as they came, not through a matrix round trip.
+            score_result.best_pose_rotation_eulers = np.asarray(half.particles.rotation_eulers, dtype=np.float64)
+            # The engine scored the zero translation of pre-translated images: the offset is the image's own
+            # remainder, relative to the pre-shift as the search grid's translations are.
+            score_result.best_pose_translations = np.asarray(given.image_translations, dtype=score_result.best_pose_translations.dtype)
         score_result.coarse_ha = _coarse_pose_assignments(
             score_result.ha,
             rot_parent_map=rot_pmap_for_collapse,

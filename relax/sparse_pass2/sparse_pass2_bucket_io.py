@@ -342,6 +342,7 @@ def prepare_unshifted_bucket_operands(
     noise_optics_groups=None,
     cc_power_weights=None,
     nyquist_column_counting="relion",
+    image_translations=None,
 ) -> UnshiftedBucketOperands:
     """Per-image half of :func:`_prepare_bucket_io`, statement for statement.
 
@@ -363,6 +364,12 @@ def prepare_unshifted_bucket_operands(
     reference is zero there (beyond the model sphere), so the noise sums, the image power
     and its high-shell tail, and the norm-correction and scale sums then count each of the
     column's Hermitian pairs once; the score image is weighted separately.
+
+    ``image_translations`` ``[n_images, 2]`` (pixels, by dataset image) is each image's own
+    translation sample, applied to its preprocessed images as the phase a fine translation
+    applies (:func:`half_translation_phase_table`), so every operand below sees the
+    translated image; the pass then runs on the one zero translation. RELION ``--skip_align``
+    scores each particle at ``old_offset - ROUND(old_offset)`` alone (ml_optimiser.cpp:4684-4720).
     """
 
     optics_group_rows = jnp.ndim(noise_variance_half) == 2 and noise_optics_groups is not None
@@ -487,6 +494,17 @@ def prepare_unshifted_bucket_operands(
         )
     else:
         processed_recon_half_raw = processed_score_half_raw
+    if image_translations is not None:
+        phases = half_translation_phase_table(
+            np.asarray(image_translations, dtype=np.float64)[np.asarray(image_indices).reshape(-1)],
+            image_shape,
+            dtype=jnp.float64,
+        ).astype(processed_score_half_raw.dtype)
+        translated_recon = processed_recon_half_raw is not processed_score_half_raw
+        processed_score_half_raw = processed_score_half_raw * phases
+        processed_recon_half_raw = (
+            processed_recon_half_raw * phases if translated_recon else processed_score_half_raw
+        )
 
     _add_sparse_group_timing(stage_timing, "prepare_image_fft", time.time() - substage_t0)
     substage_t0 = time.time()
@@ -762,6 +780,7 @@ def _prepare_bucket_io(
     noise_optics_groups=None,
     cc_power_weights=None,
     nyquist_column_counting="relion",
+    image_translations=None,
 ):
     """Run preprocessing for a batch of images (translations tiled, CTF/noise ratios).
 
@@ -797,6 +816,7 @@ def _prepare_bucket_io(
         noise_optics_groups=noise_optics_groups,
         cc_power_weights=cc_power_weights,
         nyquist_column_counting=nyquist_column_counting,
+        image_translations=image_translations,
     )
     substage_t0 = time.time()
     (

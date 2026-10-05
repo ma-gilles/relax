@@ -2534,6 +2534,7 @@ def _resident_pass2(
     dense_gemm_full_grid: bool = False,
     nyquist_column_counting: str = "relion",
     firstiter_cc_support: str = "relion",
+    image_translations=None,
 ):
     """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
 
@@ -2565,6 +2566,10 @@ def _resident_pass2(
     here: the scoring weights (``_pass2_half_weights``), the image the noise statistics read
     and the normalized-CC image power (``prepare_unshifted_bucket_operands``). Subtomogram and
     full-grid GEMM passes refuse them.
+
+    ``image_translations`` ``[n_images, 2]`` gives each image its own translation sample (RELION
+    ``--skip_align``): the images are translated as they are prepared
+    (``prepare_unshifted_bucket_operands``) and the fine grid is the one zero translation.
     """
 
     if (nyquist_column_counting != "relion" or firstiter_cc_support != "relion") and (
@@ -2885,6 +2890,17 @@ def _resident_pass2(
             "fine_translations_override and fine_translation_parent_override must be provided together",
         )
     n_fine_trans = int(fine_translations.shape[0])
+    if image_translations is not None and (
+        tilt is not None
+        or dense_gemm_full_grid
+        or np.shape(image_translations) != (n_images, 2)
+        or n_fine_trans != 1
+        or np.any(np.asarray(fine_translations) != 0)
+    ):
+        raise ValueError(
+            "image_translations are one [n_images, 2] translation per single-particle image, "
+            "scored on the one zero fine translation"
+        )
 
     translation_prior_centers_np = validate_translation_prior_centers(
         translation_prior_centers,
@@ -3934,6 +3950,8 @@ def _resident_pass2(
     )
     if nyquist_column_counting != "relion":
         bucket_io_kwargs["nyquist_column_counting"] = nyquist_column_counting
+    if image_translations is not None:
+        bucket_io_kwargs["image_translations"] = np.asarray(image_translations, dtype=np.float64)
     if firstiter_cc and firstiter_cc_support != "relion":
         # Xi2 over the pixels the normalized CC counts (the score window's weights).
         bucket_io_kwargs["cc_power_weights"] = half_weights_windowed

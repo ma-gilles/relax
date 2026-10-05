@@ -369,6 +369,7 @@ def run_final_all_data(
             firstiter_fine_current_size=final_adaptive_pass2_current_size,
             firstiter_log_label="final all-data ",
             firstiter_updates_em_kwargs_ibs=True,
+            skip_align=bool(options.k_class.skip_align),
         )
         final_dense_execution = DenseExecutionPolicy(
             disc_type=options.disc_type,

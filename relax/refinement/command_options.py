@@ -218,8 +218,28 @@ def validate_multi_shape_args(args, frozen_boundary, double_image_preprocessing)
         reasons.append("float64 image preprocessing is single-shape")
     if args.relion_softmask_reduction != "control":
         reasons.append("soft-mask reduction probes are single-shape")
+    if getattr(args, "skip_align", False):
+        reasons.append("--skip_align is single-shape")
     if reasons:
         raise SystemExit("optics groups on several image shapes: " + "; ".join(reasons))
+
+
+def validate_skip_align_args(args) -> None:
+    """Refuse what RELION's --skip_align route does not cover in relax yet, before any data is read."""
+
+    if not getattr(args, "skip_align", False):
+        return
+    reasons = []
+    if int(args.n_classes) <= 1:
+        reasons.append("it classifies, so it needs --n_classes > 1")
+    if args.firstiter_cc:
+        reasons.append("the cross-correlation first iteration at given poses is not implemented yet; pass --no-firstiter_cc")
+    if args.continue_optimiser_star is not None:
+        reasons.append("--continue is not implemented for it")
+    if args.initial_pose_source == "none" or args.relion_init_dir is not None or args.init_previous_best_poses_npz is not None:
+        reasons.append("its poses are the input STAR's (no other pose source)")
+    if reasons:
+        raise SystemExit("--skip_align: " + "; ".join(reasons))
 
 
 def validate_continue_args(args) -> int:
@@ -266,6 +286,8 @@ def validate_continue_args(args) -> int:
 def validate_tomo_args(args, frozen_boundary, double_image_preprocessing):
     """Refuse options the subtomogram (2D-stack) path does not implement yet (S4.2)."""
 
+    if getattr(args, "skip_align", False):
+        raise SystemExit("--skip_align is not implemented for subtomogram particles yet")
     if frozen_boundary is not None or args.relion_init_dir is not None or args.init_noise_from_npz is not None:
         raise SystemExit("subtomogram particles start fresh from RELION's inputs (no frozen, replayed or loaded state)")
     if double_image_preprocessing:
@@ -743,6 +765,15 @@ def parse_refinement_args(argv=None):
         help="Diagnostic oracle mode: comma-separated base HEALPix order for "
         "every numbered iteration. Suppresses autonomous angular-sampling "
         "transitions while leaving maps, posteriors, noise, and poses autonomous.",
+    )
+    parser.add_argument(
+        "--skip_align",
+        "--skip-align",
+        dest="skip_align",
+        action="store_true",
+        help="RELION --skip_align (Class3D, GUI 'Perform image alignment: No'): classify at the angles and "
+        "offsets of the input STAR, with no pose search. Needs --n_classes > 1 and --no-firstiter_cc "
+        "(a reference on the absolute greyscale); the sampling options are not used.",
     )
     parser.add_argument(
         "--firstiter_cc",
@@ -1597,12 +1628,13 @@ def resolve_schedule(
 
 
 def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
-    """The class count and, for a fresh Class3D run from one reference (``--init_volume``), each particle's
-    class in RELION's first iteration, drawn in the expected-accuracy trial order ``trial_order``."""
+    """The class count, ``--skip_align`` and, for a fresh Class3D run from one reference (``--init_volume``),
+    each particle's class in RELION's first iteration, drawn in the expected-accuracy trial order ``trial_order``."""
     from relax.relion.input_particle_table import relion_class3d_seed_classes
 
     return KClassOptions(
         n_classes=args.n_classes,
+        skip_align=bool(args.skip_align),
         first_iteration_seed_classes=(
             relion_class3d_seed_classes(trial_order, int(args.seed), int(args.n_classes))
             if args.n_classes > 1 and args.init_volume is not None and not resumed

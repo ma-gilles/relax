@@ -762,6 +762,7 @@ def prepare_resident_half_operands(
         noise_optics_groups=kwargs.get("noise_optics_groups"),
         cc_power_weights=kwargs.get("cc_power_weights"),
         nyquist_column_counting=kwargs.get("nyquist_column_counting", "relion"),
+        image_translations=kwargs.get("image_translations"),
     )
 
     score_indices = jnp.asarray(window_indices, dtype=jnp.int32)

@@ -252,8 +252,12 @@ def _load_input_star_previous_best_poses(
     }
 
 
-def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: float):
+def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: float, with_orientations: bool = False):
     """Return a fresh Class3D run's input origins in its all-data particle order.
+
+    ``with_orientations`` (RELION ``--skip_align``) also returns the input Euler angles: the run
+    classifies at the input poses instead of searching (absent angle labels read as zero, as
+    relion_refine reads them).
 
     Class3D rounds and applies the input origins before the image FFT but does
     not centre its first global search on the input orientations (see
@@ -274,9 +278,18 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
     selected = np.ascontiguousarray(translations[rows], dtype=np.float32)
     if not np.all(np.isfinite(selected)):
         raise ValueError("Class3D input origins are not finite after float32 conversion")
+    eulers = [None, None]
+    if with_orientations:
+        angles = np.zeros((n_particles, 3), dtype=np.float64)
+        for axis, column in enumerate(("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")):
+            if column in input_particles.columns:
+                angles[:, axis] = _input_numeric_columns(input_particles, (column,), field="Euler-angle")[:, 0]
+        eulers = [np.ascontiguousarray(angles[rows], dtype=np.float32), np.empty((0, 3), dtype=np.float32)]
+        if not np.all(np.isfinite(eulers[0])):
+            raise ValueError("Class3D input Euler angles are not finite")
     return {
-        "iteration": "input_star_translation_only",
-        "previous_best_rotation_eulers": [None, None],
+        "iteration": "input_star" if with_orientations else "input_star_translation_only",
+        "previous_best_rotation_eulers": eulers,
         "previous_best_translations": [selected, np.empty((0, 2), dtype=np.float32)],
         "translation_units": translation_units,
     }
@@ -440,6 +453,7 @@ def prepare_initial_poses(
     class3d_translation_path,
     local_search_at_start: bool = False,
     log: Logger,
+    skip_align: bool = False,
 ) -> InitialPoses:
     """Select and load startup poses, their corrections and source provenance.
 
@@ -521,6 +535,7 @@ def prepare_initial_poses(
                 input_particles,
                 particle_layout.half1_rows,
                 voxel_size=pixel_size_angstrom,
+                with_orientations=skip_align,
             )
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"Invalid input-STAR Class3D origin initialization: {exc}") from exc
@@ -529,11 +544,12 @@ def prepare_initial_poses(
         initial_pose_source_sha256 = _sha256_file(input_pose_path)
         log.info(
             "Fresh Class3D translation initialization: source=%s sha256=%s "
-            "translation_units=%s particles=%d (orientations intentionally unset)",
+            "translation_units=%s particles=%d (%s)",
             input_pose_path,
             initial_pose_source_sha256,
             init_previous_best_poses["translation_units"],
             init_previous_best_poses["previous_best_translations"][0].shape[0],
+            "orientations kept: --skip_align" if skip_align else "orientations intentionally unset",
         )
     elif use_input_star_pose_seed:
         input_pose_path = (Path(data_dir) / "particles.star").resolve()

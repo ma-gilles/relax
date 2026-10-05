@@ -456,6 +456,7 @@ def main(command=None):
 
     frozen_boundary, fixed_diagnostic_source_paths = frozen_boundary_cli.load_cli_boundary(args)
 
+    command_options.validate_skip_align_args(args)
     if args.continue_optimiser_star is not None:
         args.seed = command_options.validate_continue_args(args)
 
@@ -1175,6 +1176,7 @@ def main(command=None):
         local_search_at_start=resume_snapshot is None
         and int(args.init_relion_iteration) == 0
         and (args.sigma_ang is not None or (int(args.n_classes) == 1 and args.healpix_order >= args.auto_local_healpix_order)),
+        skip_align=bool(args.skip_align),
         log=logger,
     )
 

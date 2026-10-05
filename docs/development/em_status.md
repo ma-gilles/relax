@@ -421,6 +421,39 @@ are historical evidence rather than current instructions.
 [refactor-history]: /scratch/gpfs/GILLES/mg6942/tmp/relax_initial_model_replay_20261002T091611Z/source/candidate/docs/development/em_status.md
 [previous-status]: /scratch/gpfs/GILLES/mg6942/tmp/relax_initial_model_replay_20261002T091611Z/source/candidate/docs/development/em_status.md
 
+## Class3D without alignment, `--skip_align` (October 5, 2026)
+
+RELION's "Perform image alignment: No" (feature gaps row 2, single particles). Each particle is scored
+against every class at its input angles and offsets: no pass 1, one rotation and one translation per
+particle (`relax/classification/given_poses.py`). The translation is the offset's remainder after the
+rounded pre-shift, applied to the particle's prepared images as a phase (`image_translations` of the
+resident pass, `prepare_unshifted_bucket_operands`), with the one zero translation scored. The direction
+prior is kept (ml_optimiser.cpp:5198); sigma_offset is still updated (:8690). Refused for now:
+`--firstiter_cc` (commit 2), `--continue`, K=1, several image shapes, subtomograms.
+
+- Gate (team-lead 2026-10-05: iterations 1-5 trajectory, RELION 5.0.1 patched non-MPI GPU, same-seed
+  RELION runs bit-identical, seed rule over seeds 1-3; script `em_work/relax_onengine_20260926/skipalign_20261004/gate.py`).
+  data_pdb_k2_5k_128, 25 iterations, `--no-firstiter_cc`: class accuracy relax - RELION at it1-5 and 25
+  0, -0.0001 +/- 0.0004, -0.0005 +/- 0.0006, +0.0004 +/- 0.0002, +0.0013 +/- 0.0007, +0.0003 +/- 0.0003
+  (all pass); per-particle agreement 1.000 at it1, 0.993-0.998 at it2-5; class-map FSC-AUC against the
+  same-seed RELION maps at least 0.9997 through it5. Both programs reach accuracy 1.000 by it10-25, so only
+  the early trajectory discriminates.
+- Offset handling: the same images with STAR offsets drawn in (-1.6, 1.6) px (seed 20261005, rows at
+  exactly 0.5 and 1.5 px; the offsets do not describe the images, so this row tests parity, not accuracy
+  against ground truth). Iteration-1 class maps relax vs RELION 1.1e-4 relative L2 (9e-5 without offsets);
+  RELION with the offsets vs without moves them 3.4e-2. Written rlnOriginX/Y equal the input to 2.5e-7 A,
+  angles to 8e-6 deg; sigma_offset equals RELION's at every iteration (3.905331 A; 1.414214 A, the
+  min_sigma2_offset bound, on the zero-offset fixture).
+- Speed (same node, H100, seed 1): relax 149 s against RELION 74 s, 2.0x. Iterations 1-17 alternate 4 s
+  and 8-10 s: each new current_size (38, 40, 60, 74, ... 128) compiles the pass-2 programs of a new
+  stable-window class. From iteration 18 relax takes 2.4 s per iteration against RELION's 3 s average.
+  Giving the supports the compacted CSR pass 1 attaches (device candidate tables) brings the steady
+  iteration to 1.7 s and the run to 125 s on another node, same classes and maps within 2.4e-7. The
+  K>1 presummed adjoint still caches the whole padded HEALPix grid (73728 rotations for 5000 particles).
+  Follow-up: the compiles per current size and that cache.
+- Jobs: RELION 15037374 and 15038704; relax 15038704 (gate runs), 15054173 (CSR trial, GPU test
+  tolerance measured at 1.8e-7). Runs under `em_work/relax_onengine_20260926/skipalign_20261004`.
+
 ## Subtomogram InitialModel and first-iteration CC (October 1, 2026)
 
 Subtomogram particles (RELION 5 2D stacks) run RELION's VDAM InitialModel
