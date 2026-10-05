@@ -32,7 +32,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "noise1_5k_k1",
@@ -66,7 +67,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_5k_k1_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "pdb128_k2",
@@ -103,7 +105,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "pdb128_k4",
@@ -146,7 +149,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "ribo_k15",
@@ -222,7 +226,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k15_k15_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "ribo_k1",
@@ -297,7 +302,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_branchfinal_20260920/runs/derived_seed41_job14208543/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "ribo_k4",
@@ -351,7 +357,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/ribo_k4_s41_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "empiar10097",
@@ -394,7 +401,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/runs/recovar_job14238299/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "empiar10076",
@@ -453,7 +461,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k1_100k_preread_20260910/runs/candidate/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "noise1_50k_k1_it8",
@@ -487,7 +496,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/em_reconcile_mgr_20260922/qual/runs/long_k1_native_initialmodel_quality_q427a08bd8/bt/test_em_parity_long_k1_native_0/k1_native_initialmodel/run_it008_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "empiar10076_k4_it20",
@@ -550,7 +560,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_k4_real10076_nriter20_5ca9c8fff_20260909/runs/candidate/output/run_it020_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "K": 1,
@@ -601,7 +612,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_em_10097_replacement_20260828T211155EDT/outputs/10097/relion/initialmodel/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "K": 1,
@@ -643,7 +655,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/noise1_50k_k1_relion/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "K": 4,
@@ -697,7 +710,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k4_relion/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "hcn1_c1run",
@@ -748,7 +762,8 @@
      ],
      "model_star": ""
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "K": 1,
@@ -798,7 +813,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p2r_noise1_50k_relion_repeat_s29/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "pdb128_k2_band",
@@ -889,7 +905,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919/runs/pdb128_k2_recovar/output/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "pdb128_k4_band",
@@ -1020,7 +1037,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/runs/p3_pdb128_k4_s29/relax_out/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "noise1_5k_k1_regen",
@@ -1056,7 +1074,8 @@
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/cells/noise1_5k_k1/relax_s29_d9517e7/output/run_it200_model.star",
      "note": "relax main d9517e7 (recovar 8633a2a24), run 2026-09-26 after the original relax arm was lost"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "ribo_k1_regen",
@@ -1109,7 +1128,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun/k1_s29_out/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "ribo_k4_regen",
@@ -1165,7 +1185,8 @@
      ],
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdamk2_20260924/ribo_rerun/k4_s41_out/run_it200_model.star"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "empiar10076_regen",
@@ -1211,7 +1232,8 @@
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/cells/empiar10076/relax_s29_d9517e7/output/run_it200_model.star",
      "note": "relax main d9517e7 (recovar 8633a2a24), run 2026-09-26 after the original relax arm was lost"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "empiar10076_k4_it20_regen",
@@ -1278,7 +1300,8 @@
      "model_star": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/cells/empiar10076_k4_it20/relax_s29_d9517e7/output/run_it020_model.star",
      "note": "relax main d9517e7 (recovar 8633a2a24), run 2026-09-26 after the original relax arm was lost"
     }
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_hcn1",
@@ -1348,7 +1371,8 @@
      "note": "refresh 2026-09-27 same-node pair (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_hcn1/s42)"
     }
    ],
-   "arms_missing": []
+   "arms_missing": [],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_pdb_k2",
@@ -1485,7 +1509,8 @@
    "arms_missing": [
     "x_relion_s29_20260919",
     "x_relax_s29_20260919"
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_noise1_5k",
@@ -1540,7 +1565,8 @@
      "note": "refresh 2026-09-27 same-node pair (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_noise1_5k/s29)"
     }
    ],
-   "arms_missing": []
+   "arms_missing": [],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_e10076_100k",
@@ -1605,7 +1631,8 @@
      "note": "refresh 2026-09-27 same-node pair (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_100k/s29)"
     }
    ],
-   "arms_missing": []
+   "arms_missing": [],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_ribo_k4",
@@ -1686,7 +1713,8 @@
      "note": "refresh 2026-09-27 same-node pair (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k4/s41)"
     }
    ],
-   "arms_missing": []
+   "arms_missing": [],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_pdb_k4",
@@ -1871,7 +1899,8 @@
    "arms_missing": [
     "x_relion_s29_20260919",
     "x_relax_s29_20260919"
-   ]
+   ],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_e10076_10k_k4",
@@ -1963,7 +1992,8 @@
      "note": "refresh 2026-09-27 same-node pair (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29)"
     }
    ],
-   "arms_missing": []
+   "arms_missing": [],
+   "pairs": "all"
   },
   {
    "id": "rf_vdam_ribo_k1",
@@ -2035,7 +2065,8 @@
      "note": "refresh 2026-09-27 same-node pair (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_ribo_k1/s41)"
     }
    ],
-   "arms_missing": []
+   "arms_missing": [],
+   "pairs": "all"
   }
  ]
 }
