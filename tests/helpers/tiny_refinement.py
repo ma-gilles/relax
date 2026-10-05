@@ -3,10 +3,14 @@
 ``run_tiny_refinement`` runs ``refine_single_volume`` on 8-pixel mock half sets with
 ``helpers.fake_adaptive_engine`` in place of the global E-step (its pass 2 needs a GPU), through the
 numbered iterations and, for K=1, the final all-data pass. ``record_calls`` wraps a callee so a test
-can read the arguments each call received.
+can read the arguments each call received; ``CallTrace`` records the order of calls to several callees and
+which of them were running at each call, so a test can check a sequence or an owner without reading source.
 """
 
 from __future__ import annotations
+
+import threading
+from dataclasses import dataclass, field
 
 import jax.numpy as jnp
 import numpy as np
@@ -102,11 +106,95 @@ def record_calls(monkeypatch, owner, name):
     return calls
 
 
-def run_tiny_refinement(monkeypatch, *, parity=None, n_classes=1, max_iter=2, engine_calls=None, **option_groups):
+@dataclass
+class TracedCall:
+    """One call seen by a ``CallTrace``: its label, operands, result, and the traced callees then running."""
+
+    label: str
+    args: tuple
+    kwargs: dict
+    inside: tuple
+    result: object = None
+
+
+@dataclass
+class CallTrace:
+    """Ordered calls to the callees ``wrap`` replaced, across threads.
+
+    ``inside`` of each call holds the labels of the traced callees running in the same thread when it
+    started, outermost first: ``calls("b")[0].inside == ("a",)`` says ``b`` ran inside ``a``.
+    """
+
+    monkeypatch: object
+    calls_seen: list = field(default_factory=list)
+    _running: threading.local = field(default_factory=threading.local)
+
+    def wrap(self, owner, name, label=None, *, before=None, after=None):
+        """Replace ``owner.name`` by a forwarder recorded under ``label`` (default ``name``).
+
+        ``before(call)`` runs before the original (it may assert on the operands or the program state);
+        ``after(call)`` runs once ``call.result`` is set.
+        """
+
+        original = getattr(owner, name)
+        label = name if label is None else label
+
+        def traced(*args, **kwargs):
+            running = self._running.__dict__.setdefault("labels", [])
+            call = TracedCall(label, args, kwargs, tuple(running))
+            self.calls_seen.append(call)
+            if before is not None:
+                before(call)
+            running.append(label)
+            try:
+                call.result = original(*args, **kwargs)
+            finally:
+                running.pop()
+            if after is not None:
+                after(call)
+            return call.result
+
+        self.monkeypatch.setattr(owner, name, traced)
+        return self
+
+    def labels(self, *wanted):
+        """The labels in call order, restricted to ``wanted`` when given."""
+
+        return [call.label for call in self.calls_seen if not wanted or call.label in wanted]
+
+    def calls(self, label):
+        return [call for call in self.calls_seen if call.label == label]
+
+
+def frame_holds(function, value) -> bool:
+    """Whether a running call of ``function`` (unwrapped) in this thread has a local bound to ``value``.
+
+    Compares by identity, not by name, so a test of a released buffer does not pin the local's name.
+    """
+
+    import sys
+
+    code = getattr(function, "__wrapped__", function).__code__
+    frame = sys._getframe(1)
+    while frame is not None:
+        if frame.f_code is code:
+            return any(local is value for local in frame.f_locals.values())
+        frame = frame.f_back
+    raise AssertionError(f"{function.__qualname__} is not running")
+
+
+def run_tiny_refinement(
+    monkeypatch, *, parity=None, n_classes=1, max_iter=2, engine_calls=None, schedule=None, init_volume=None,
+    final_after_max_iter=True, converge_after=None, **option_groups,
+):
     """Run the controller for ``max_iter`` numbered iterations and (K=1) the final all-data pass.
 
-    ``parity`` is a mapping of ``RelionParityOptions`` fields; ``option_groups`` are further
-    ``RefinementOptions`` groups. ``engine_calls`` receives the fake engine's call records.
+    ``parity`` and ``schedule`` are mappings of ``RelionParityOptions`` and ``RefinementSchedule``
+    fields; ``option_groups`` are further ``RefinementOptions`` groups. ``engine_calls`` receives the
+    fake engine's call records. ``init_volume`` replaces the default reference (a Hermitian NumPy
+    volume). ``final_after_max_iter=False`` stops K=1 at the iteration cap without a final pass.
+    ``converge_after=n`` marks the state converged from the n-th convergence update on, so a K-class
+    run reaches its final pass.
     """
 
     import relax.sampling as sampling
@@ -138,10 +226,30 @@ def run_tiny_refinement(monkeypatch, *, parity=None, n_classes=1, max_iter=2, en
         )
 
     monkeypatch.setattr(sampling, "relion_scoring_rotation_grid", identity_rotation_grid)
+    if converge_after is not None:
+        import sys
+
+        updates = []
+        for module in [module for name, module in sorted(sys.modules.items()) if name.startswith("relax.")]:
+            original_update = getattr(module, "update_refinement_state", None)
+            if not callable(original_update):
+                continue
+
+            def converge(*args, _original=original_update, **kwargs):
+                updated = _original(*args, **kwargs)
+                updates.append(None)
+                if len(updates) >= converge_after:
+                    updated.has_converged = True
+                return updated
+
+            monkeypatch.setattr(module, "update_refinement_state", converge)
     for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
     # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence.
-    monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
+    if final_after_max_iter:
+        monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
+    else:
+        monkeypatch.delenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", raising=False)
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     if n_classes > 1:
@@ -151,13 +259,16 @@ def run_tiny_refinement(monkeypatch, *, parity=None, n_classes=1, max_iter=2, en
         )
     return iteration_loop.refine_single_volume(
         halves,
-        _hermitian_volume(VOLUME_SHAPE, seed=42),
+        _hermitian_volume(VOLUME_SHAPE, seed=42) if init_volume is None else init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
         jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
         jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32),
         options=RefinementOptions(
             disc_type="linear_interp",
-            schedule=RefinementSchedule(max_iter=max_iter, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
+            schedule=RefinementSchedule(
+                **{"max_iter": max_iter, "init_current_size": 4, "init_healpix_order": 2, "max_healpix_order": 2,
+                   **(schedule or {})}
+            ),
             batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             parity=RelionParityOptions(**(parity or {})),

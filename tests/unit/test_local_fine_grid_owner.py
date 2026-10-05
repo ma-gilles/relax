@@ -9,11 +9,6 @@ pass with ``relion_local_pass1_current_size`` only under adaptive oversampling.
 
 from __future__ import annotations
 
-import ast
-import collections
-import inspect
-import textwrap
-
 import numpy as np
 import pytest
 from helpers.float_compare import matches
@@ -22,7 +17,6 @@ import relax.refinement.iteration_loop as iteration_loop
 import relax.sampling as sampling_module
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import finalization, iteration_planning, local_sampling
-from relax.refinement.final_sampling import prepare_final_sampling
 from relax.refinement.local_sampling import prepare_final_local_sampling, prepare_numbered_local_sampling
 from relax.sampling import (
     _relion_mstep_rotations_from_eulers,
@@ -107,20 +101,6 @@ def test_reused_grid_without_mstep_rotations_rebuilds_them_from_source_angles(n_
     assert _same(got, expected) and got.shape == (n_rows, 3, 3)
 
 
-def test_controller_builds_local_search_grids_through_the_owners():
-    source = (inspect.getsource(iteration_loop.refine_single_volume)
-              + inspect.getsource(finalization.run_final_all_data)
-              + inspect.getsource(prepare_numbered_local_sampling)
-              + inspect.getsource(prepare_final_local_sampling))
-    assert source.count("_exact_local_fine_grid(") == 2
-    assert source.count("_local_search_mstep_rotations(") == 1
-    assert source.count("relion_local_pass1_current_size(") == 2
-    source += inspect.getsource(iteration_planning.plan_adaptive_image_size)
-    # The remaining coarse-size arithmetic belongs to the adaptive (non-local) pass-1 sizing of each pass.
-    assert source.count("compute_coarse_image_size(") == 2
-    assert source.count("clamp_relion_coarse_image_size(") == 2
-
-
 def _optics(image_sizes, pixel_sizes):
     return iteration_planning.RunOptics(
         image_geometry=ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=1.5), model_pixel_size=1.5,
@@ -128,10 +108,10 @@ def _optics(image_sizes, pixel_sizes):
     )
 
 
-def _numbered_local_inputs(*, reuse=False, oversampling=0):
+def _numbered_local_inputs(*, reuse=False, oversampling=0, symmetry="C1"):
     import logging
 
-    _rotation_grid_rotations = _fake_grid(ORDER)
+    _rotation_grid_rotations = _fake_grid(ORDER) if symmetry == "C1" else _fake_reduced_grid(ORDER, symmetry=symmetry)
     rotations = _rotation_grid_rotations.rotations
     eulers = _rotation_grid_rotations.rotation_eulers
     grid = sampling_module.TrialGrid(
@@ -142,7 +122,7 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0):
     )
     return dict(
         search=local_sampling.LocalSearchSettings(
-            healpix_order=ORDER, oversampling_order=oversampling, sigma_rot=0.1, sigma_psi=0.2,
+            healpix_order=ORDER, oversampling_order=oversampling, sigma_rot=0.1, sigma_psi=0.2, symmetry=symmetry,
         ),
         grid=grid, base_translations=grid.translations,
         image_window_size=32, model_support_size=24, base_healpix_order=0,
@@ -150,6 +130,70 @@ def _numbered_local_inputs(*, reuse=False, oversampling=0):
         optics=_optics(None, None),
         particle_diameter_angstrom=100.0, log=logging.getLogger(__name__),
     )
+
+
+def _final_local_inputs(*, oversampling=0, symmetry="C1"):
+    return dict(
+        search=local_sampling.LocalSearchSettings(
+            healpix_order=ORDER, oversampling_order=oversampling, sigma_rot=0.1, sigma_psi=0.2, symmetry=symmetry,
+        ),
+        image_geometry=ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=1.5),
+        translations=np.zeros((1, 2), dtype=np.float32), base_translations=np.zeros((1, 2), dtype=np.float32),
+        image_window_size=32, particle_diameter_angstrom=100.0, perturbation=0.125, rotation_dtype=np.float32,
+    )
+
+
+def _trace_local_grid_owners(monkeypatch):
+    from helpers.tiny_refinement import CallTrace
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(sampling_module, "_exact_local_fine_grid")
+    trace.wrap(sampling_module, "_local_search_mstep_rotations")
+    trace.wrap(local_sampling, "relion_local_pass1_current_size")
+    trace.wrap(local_sampling, "_precompute_exact_local_fine_grid_enabled")
+    return trace
+
+
+_LOCAL_ROUTES = {
+    # route: (preparer, inputs, the owners it calls)
+    "numbered_fine": (prepare_numbered_local_sampling, lambda **kw: _numbered_local_inputs(**kw),
+                      ["_precompute_exact_local_fine_grid_enabled", "_exact_local_fine_grid"]),
+    "numbered_parents": (prepare_numbered_local_sampling, lambda **kw: _numbered_local_inputs(oversampling=1, **kw),
+                         ["relion_local_pass1_current_size"]),
+    "numbered_reuse": (prepare_numbered_local_sampling, lambda **kw: _numbered_local_inputs(reuse=True, **kw),
+                       ["_local_search_mstep_rotations"]),
+    "final_fine": (prepare_final_local_sampling, lambda **kw: _final_local_inputs(**kw),
+                   ["_precompute_exact_local_fine_grid_enabled", "_exact_local_fine_grid"]),
+    "final_parents": (prepare_final_local_sampling, lambda **kw: _final_local_inputs(oversampling=1, **kw),
+                      ["relion_local_pass1_current_size"]),
+}
+
+
+@pytest.mark.parametrize("route", sorted(_LOCAL_ROUTES))
+def test_controller_builds_local_search_grids_through_the_owners(monkeypatch, route):
+    """Each local-search route builds its fine grid, M-step rotations or parent window through one owner."""
+    preparer, inputs, owners = _LOCAL_ROUTES[route]
+    trace = _trace_local_grid_owners(monkeypatch)
+    preparer(**inputs())
+    assert trace.labels() == owners
+
+
+def test_coarse_image_size_is_owned_by_the_adaptive_pass1_sizing(monkeypatch):
+    """The remaining coarse-size arithmetic belongs to the adaptive (non-local) pass-1 sizing of each pass:
+    the numbered iterations' plan and the Class3D final pass."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "plan_adaptive_image_size", "numbered")
+    trace.wrap(finalization, "run_final_all_data", "final")
+    for module in (iteration_planning, finalization):
+        trace.wrap(module, "compute_coarse_image_size", "compute")
+        trace.wrap(module, "clamp_relion_coarse_image_size", "clamp")
+    run_tiny_refinement(monkeypatch, n_classes=2, converge_after=2)
+    sizing = [(call.label, call.inside) for call in trace.calls_seen if call.label in ("compute", "clamp")]
+    assert sizing == 2 * [("compute", ("numbered",)), ("clamp", ("numbered",))] + [
+        ("compute", ("final",)), ("clamp", ("final",)),
+    ]
 
 
 @pytest.mark.parametrize("reuse", [False, True])
@@ -254,41 +298,37 @@ def test_point_group_reused_grid_rebuilds_mstep_rotations_from_reduced_source_an
     assert _same(got, expected) and got.shape == (N_ROT // 4, 3, 3)
 
 
-_POINT_GROUP_GRID_OWNERS = (
-    "_relion_mstep_source_eulers",
-    "_exact_local_fine_grid",
-    "_local_search_mstep_rotations",
-    "_precompute_exact_local_fine_grid_enabled",
-)
+@pytest.mark.parametrize("route", sorted(_LOCAL_ROUTES))
+def test_local_grid_owners_receive_the_point_group(monkeypatch, route):
+    """Every local-search grid owner of each route is called with the search's point group (final Q a087087cc)."""
+    monkeypatch.setattr(sampling_module, "_get_relion_rotation_grid_eulers_float64", _fake_reduced_eulers)
+    monkeypatch.setattr(sampling_module, "relion_scoring_rotation_grid", _fake_reduced_grid)
+    preparer, inputs, owners = _LOCAL_ROUTES[route]
+    arguments = inputs(symmetry="C4")
+    trace = _trace_local_grid_owners(monkeypatch)
+    preparer(**arguments)
+    assert trace.labels() == owners
+    for call in trace.calls_seen:
+        if call.label != "relion_local_pass1_current_size":
+            assert call.kwargs.get("symmetry") == "C4", call.label
 
 
-def _passes_point_group(call: ast.Call) -> bool:
-    for keyword in call.keywords:
-        if keyword.arg == "symmetry":
-            return True
-        if keyword.arg is None and "symmetry" in ast.unparse(keyword.value):
-            return True
-    return False
+def test_controller_passes_the_point_group_to_every_grid_owner(monkeypatch):
+    """The numbered trial grid and the final pass build their M-step source angles in the run's point group."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
+    from relax.refinement.refinement_options import SymmetryOptions
 
-def test_controller_passes_the_point_group_to_every_grid_owner():
-    """Every regular and final-pass grid owner call carries the refinement point group (final Q a087087cc)."""
-
-    tree = ast.parse(textwrap.dedent(inspect.getsource(iteration_loop.refine_single_volume))
-                     + textwrap.dedent(inspect.getsource(iteration_planning.iteration_trial_grid))
-                     + textwrap.dedent(inspect.getsource(prepare_numbered_local_sampling))
-                     + textwrap.dedent(inspect.getsource(prepare_final_local_sampling))
-                     + textwrap.dedent(inspect.getsource(prepare_final_sampling)))
-    found = collections.Counter()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-        if name in _POINT_GROUP_GRID_OWNERS:
-            found[name] += 1
-            assert _passes_point_group(node), f"{name} call at source line {node.lineno} drops the point group"
-    assert found == {name: (1 if name == "_local_search_mstep_rotations" else 2) for name in _POINT_GROUP_GRID_OWNERS}
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "iteration_trial_grid", "numbered")
+    trace.wrap(finalization, "prepare_final_sampling", "final")
+    trace.wrap(sampling_module, "_relion_mstep_source_eulers", "source_eulers")
+    # A point group other than C1 requires the x-half M-step, which defaults off without a GPU.
+    monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1")
+    run_tiny_refinement(monkeypatch, parity=dict(perturb_factor=0.5), symmetry=SymmetryOptions(point_group="C4"))
+    calls = trace.calls("source_eulers")
+    assert [call.inside[-1] for call in calls] == ["numbered", "numbered", "final"]
+    assert all(call.kwargs["symmetry"] == "C4" for call in calls)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])

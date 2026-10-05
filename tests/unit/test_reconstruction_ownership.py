@@ -19,7 +19,6 @@ VOLUME_SIZE = 512
 
 
 def test_mean_reconstruction_variants_share_run_level_settings():
-    from relax.refinement import iteration_loop as iteration_loop_module
     from relax.refinement import mean_helpers as mean_helpers_module
 
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_k1_halfmaps).parameters) == (
@@ -44,37 +43,61 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     ):
         assert not hasattr(mean_helpers_module, name)
 
-    source = inspect.getsource(iteration_loop_module.refine_single_volume)
-    settings = source.index("reconstruction_settings = ReconstructionSettings(")
-    loop = source.index("while (schedule.force_max_iter_after_convergence")
-    for maximization_name, operation_name, solve_name, filter_name, flatten_name in (
-        (
-            "k1_maximization", "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
-            "_apply_relion_initial_lowpass_filter", "_apply_relion_solvent_flatten_k1",
-        ),
-        (
-            "class_maximization", "reconstruct_numbered_class_maps", "_reconstruct_class_maps",
-            "_lowpass_class_stack", "_flatten_class_stack",
-        ),
-    ):
-        maximization = source.index(maximization_name + "(", loop)
-        assert settings < loop < maximization
-        assert operation_name + "(" in inspect.getsource(getattr(iteration_loop_module, maximization_name))
-        operation = inspect.getsource(getattr(mean_helpers_module, operation_name))
-        solve = operation.index(solve_name + "(")
-        premask = operation.index("_capture_premask_mean(", solve)
-        initial_filter = operation.index(filter_name + "(", premask)
-        solvent_mask = operation.index("_numbered_solvent_mask(", initial_filter)
-        flatten = operation.index(flatten_name + "(", solvent_mask)
-        assert solve < premask < initial_filter < solvent_mask < flatten
-        assert operation.count("_log_first_cc_lowpass(settings)") == 1
-        assert "flatten_radius" not in operation and "class_axis" not in operation
     assert not hasattr(mean_helpers_module, "_postprocess_numbered_maps")
-    assert "write_premask_mean(" in inspect.getsource(mean_helpers_module._capture_premask_mean)
-    mask_source = inspect.getsource(mean_helpers_module._numbered_solvent_mask)
-    assert mask_source.count("flatten_radius = ") == 1 and "_make_relion_solvent_mask(" in mask_source
-    assert inspect.getsource(mean_helpers_module).count("_make_relion_solvent_mask(") == 2
-    assert source.count("ReconstructionSettings(") == 1
+
+
+_NUMBERED_SEQUENCES = {
+    1: ("k1_maximization", "reconstruct_numbered_k1_halfmaps", "_reconstruct_k1_maps",
+        "_apply_relion_initial_lowpass_filter", "_apply_relion_solvent_flatten_k1"),
+    2: ("class_maximization", "reconstruct_numbered_class_maps", "_reconstruct_class_maps",
+        "_lowpass_class_stack", "_flatten_class_stack"),
+}
+
+
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp_path):
+    """One run-level ReconstructionSettings reaches every M-step; each mode's operation solves, then per slot
+    captures, low-pass filters (CC iteration only), masks and flattens, and reports the CC low-pass once."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.diagnostics import reconstruction as reconstruction_diagnostics
+    from relax.refinement import iteration_loop as iteration_loop_module
+    from relax.refinement import mean_helpers as mean_helpers_module
+
+    maximization, operation, solve, lowpass, flatten = _NUMBERED_SEQUENCES[n_classes]
+    monkeypatch.setenv("RELAX_PREMASK_DUMP_DIR", str(tmp_path))
+    monkeypatch.setattr(reconstruction_diagnostics, "write_premask_mean", lambda *args, **kwargs: None)
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop_module, "ReconstructionSettings", "settings")
+    trace.wrap(iteration_loop_module, maximization, "maximization")
+    trace.wrap(iteration_loop_module, operation, "operation")
+    for name, label in (
+        (solve, "solve"), ("_capture_premask_mean", "capture"), (lowpass, "lowpass"),
+        ("_numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
+        ("_log_first_cc_lowpass", "log"),
+    ):
+        trace.wrap(mean_helpers_module, name, label)
+    trace.wrap(reconstruction_diagnostics, "write_premask_mean", "dump")
+    run_tiny_refinement(
+        monkeypatch, n_classes=n_classes, final_after_max_iter=False,
+        schedule=dict(particle_diameter_ang=6.0),
+        parity=dict(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0),
+    )
+
+    (settings,) = trace.calls("settings")
+    assert [call.args[3] for call in trace.calls("maximization")] == [settings.result] * 2
+    assert all(call.inside == ("maximization",) for call in trace.calls("operation"))
+    slot = ["capture", "dump", "mask", "mask_builder", "flatten"]
+    cc_slot = ["capture", "dump", "lowpass", "mask", "mask_builder", "flatten"]
+    in_operation = [call.label for call in trace.calls_seen if "operation" in call.inside]
+    assert in_operation == ["solve", *cc_slot, *cc_slot, "log", "solve", *slot, *slot]
+    assert all(call.inside[-1] == "capture" for call in trace.calls("dump"))
+    assert [call.kwargs["half_index"] for call in trace.calls("dump")] == [0, 1, 0, 1]
+    # The particle-diameter mask: radius in pixels, with the soft edge outside it.
+    for call in trace.calls("mask_builder"):
+        assert call.inside[-1] == "mask"
+        assert call.kwargs["radius"] == 6.0 / (2.0 * settings.result.voxel_size)
+        assert call.kwargs["radius_p"] == call.kwargs["radius"] + settings.result.width_mask_edge
 
 
 def test_unregularized_reconstruction_variants_expose_dependencies():

@@ -103,25 +103,38 @@ def test_class_weight_history_snapshots_mstep_and_full_posterior():
     assert_matches(history.class_mstep_weight_trajectory, [[0.25, 0.75]])
     assert_matches(history.class_full_posterior_weight_trajectory, [[0.5, 0.5]])
 
-def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance():
+def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance(monkeypatch, tmp_path):
     """Full-chain NPZ output must expose the class-mass split used in parity debugging."""
 
+    from helpers.tiny_refinement import N_IMAGES, CallTrace, run_tiny_refinement
+
+    from relax.helpers.iteration_history import RefinementHistory
+    from relax.refinement import result_files
+
+    trace = CallTrace(monkeypatch).wrap(RefinementHistory, "record_class_weights")
+    result = run_tiny_refinement(monkeypatch, n_classes=2, final_after_max_iter=False)
+    recorded = trace.calls("record_class_weights")
+    assert len(recorded) == 2
+
+    archive = {}
+    result_files.write_refinement_archive(
+        result, out_path=tmp_path / "refinement.npz", metadata=archive,
+        half_indices=(np.arange(N_IMAGES // 2), np.arange(N_IMAGES // 2, N_IMAGES)),
+        n_images=N_IMAGES, skip_large_outputs=True,
+    )
+    for key, argument in (("class_mstep_weight_trajectory", 1), ("class_full_posterior_weight_trajectory", 2)):
+        assert archive[key].dtype == np.float64 and archive[key].shape == (2, 2)
+        assert_matches(archive[key], np.stack([call.args[argument] for call in recorded]))
+
+
+def test_production_runner_writes_the_refinement_archive():
+    # Source pin kept: full_refinement.main has no CPU harness (it refuses to start without a GPU).
     import inspect
 
-    from relax.helpers import iteration_history
-    from relax.refinement import iteration_loop
-
-    source = inspect.getsource(iteration_loop.refine_single_volume)
-    assert "history.record_class_weights(" in source
-
-    from relax.refinement import full_refinement, result_files
+    from relax.refinement import full_refinement
 
     assert "write_refinement_archive(" in inspect.getsource(full_refinement.main)
-    save_source = inspect.getsource(result_files.write_refinement_archive)
-    assert "iteration_history.add_class_history_artifacts(save_dict, result" in save_source
-    artifact_source = inspect.getsource(iteration_history.add_class_history_artifacts)
-    assert '"class_mstep_weight_trajectory"' in artifact_source
-    assert '"class_full_posterior_weight_trajectory"' in artifact_source
+
 
 def test_significance_dump_work_is_gated_before_scoring(monkeypatch, tmp_path):
     """A future-only dump request must not activate diagnostic scoring work."""

@@ -12,7 +12,7 @@ from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import iteration as debug_dumps
-from relax.refinement import finalization, half_scoring, iteration_loop
+from relax.refinement import finalization, half_scoring
 
 pytestmark = pytest.mark.unit
 
@@ -236,16 +236,30 @@ def test_clear_dump_context_marks_contribution_and_native_dumps_inactive():
     }
 
 
-def test_iteration_loop_clears_dump_context_before_every_final_exit_or_half():
-    source = inspect.getsource(iteration_loop.refine_single_volume)
-    final_decision = source.index("should_run_final_iteration =")
-    final_source = inspect.getsource(finalization.run_final_all_data)
-    final_loop = final_source.index("for half, projector in zip(", final_source.index("final_outs = PerHalfOutputs()"))
+@pytest.mark.parametrize("final_pass", [False, True])
+def test_iteration_loop_clears_dump_context_before_every_final_exit_or_half(monkeypatch, final_pass):
+    """Numbered dump identities never reach the final decision, the return path or a final half."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    assert source.rfind("clear_bpref_contribution_dump_context()", 0, final_decision) >= 0
-    assert "clear_bpref_contribution_dump_context()" in final_source[
-        final_loop : final_source.index("final_half_t0", final_loop)
-    ]
+    cleared = {"iteration": -1, "half": -1}
+
+    def context_cleared(call):
+        assert bpref_diagnostics._bpref_contribution_context == cleared
+
+    def half_leaves_a_context(call):
+        bpref_diagnostics._bpref_contribution_context.update(iteration=99, half=call.args[0].index + 1)
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(bpref_diagnostics, "set_bpref_contribution_dump_context", "numbered_half")
+    trace.wrap(finalization, "_should_run_final_all_data_iteration", "decision", before=context_cleared)
+    trace.wrap(finalization, "prepare_final_half", "final_half", before=context_cleared, after=half_leaves_a_context)
+    run_tiny_refinement(monkeypatch, final_after_max_iter=final_pass)
+
+    if not final_pass:
+        assert bpref_diagnostics._bpref_contribution_context == cleared
+    # Two numbered iterations of two halves set the context; the final halves start from a cleared one.
+    assert trace.labels("numbered_half", "decision")[:5] == 4 * ["numbered_half"] + ["decision"]
+    assert len(trace.calls("final_half")) == (2 if final_pass else 0)
 
 
 def test_active_capture_accepts_fused_kclass_route(monkeypatch):

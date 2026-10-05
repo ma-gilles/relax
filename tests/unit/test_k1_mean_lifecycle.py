@@ -1,13 +1,15 @@
 """Focused lifetime guards for K=1 references between EM iterations."""
 
-import inspect
 import weakref
 from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.em_arrays import _hermitian_volume
 from helpers.float_compare import assert_matches
+from helpers.tiny_refinement import VOLUME_SHAPE, CallTrace, frame_holds, run_tiny_refinement
 
+from relax.reconstruction import regularization_relion
 from relax.refinement import iteration_loop, mean_helpers
 
 pytestmark = pytest.mark.unit
@@ -31,27 +33,39 @@ def test_snapshot_and_release_previous_k1_means_owns_host_copies(complex_dtype):
     assert not np.array_equal(snapshots[0], first)
 
 
-def test_k1_mean_release_precedes_tau_and_reconstruction():
-    source = inspect.getsource(iteration_loop.refine_single_volume)
-    initial_alias_release = source.index("del init_volume")
-    maximization_call = source.index("k1_maximization(", initial_alias_release)
-    maximization = inspect.getsource(iteration_loop.k1_maximization)
-    release = maximization.index(
-        "previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)"
-    )
-    tau_update = maximization.index(
-        "estimate_split_half_prior(",
-        release,
-    )
-    reconstruction = maximization.index(
-        "reconstruct_numbered_k1_halfmaps(",
-        tau_update,
-    )
+def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
+    """The controller drops the start-up volume before the first M-step, and each M-step releases the
+    previous references from the reference model before the prior update and the reconstruction."""
+    trace = CallTrace(monkeypatch)
+    start_volume = _hermitian_volume(VOLUME_SHAPE, seed=42)
+    entry = {}
 
-    assert initial_alias_release < maximization_call
-    assert release < tau_update < reconstruction
-    operation = inspect.getsource(mean_helpers.estimate_split_half_prior)
-    assert operation.index("compute_relion_fsc_from_backprojector(") < operation.index("compute_relion_tau2_from_weights(")
+    def maximization_starts(call):
+        entry["model"] = call.args[0]
+        assert all(value is not None for value in call.args[0].maps)
+        assert not frame_holds(iteration_loop.refine_single_volume, start_volume)
+
+    def previous_means_released(call):
+        assert entry["model"].maps == [None, None]
+
+    trace.wrap(iteration_loop, "k1_maximization", before=maximization_starts)
+    trace.wrap(iteration_loop, "_snapshot_and_release_previous_k1_means")
+    trace.wrap(iteration_loop, "estimate_split_half_prior", before=previous_means_released)
+    trace.wrap(iteration_loop, "reconstruct_numbered_k1_halfmaps", before=previous_means_released)
+    trace.wrap(regularization_relion, "compute_relion_fsc_from_backprojector", "fsc")
+    trace.wrap(regularization_relion, "compute_relion_tau2_from_weights", "tau2")
+    run_tiny_refinement(monkeypatch, init_volume=start_volume)
+
+    m_steps = [call for call in trace.calls_seen if call.label == "k1_maximization" or "k1_maximization" in call.inside]
+    assert [call.label for call in m_steps] == 2 * [
+        "k1_maximization", "_snapshot_and_release_previous_k1_means", "estimate_split_half_prior", "fsc", "tau2",
+        "tau2", "reconstruct_numbered_k1_halfmaps",
+    ]
+    # Each half's tau2 is computed from the FSC curve of this iteration's halves.
+    for at in (3, 10):
+        fsc = m_steps[at].result
+        for tau2 in m_steps[at + 1 : at + 3]:
+            assert any(value is fsc for value in (*tau2.args, *tau2.kwargs.values()))
 
 
 def test_production_runner_leaves_cold_start_host_owned_until_normalization():

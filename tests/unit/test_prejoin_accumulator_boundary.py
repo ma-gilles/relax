@@ -1,10 +1,10 @@
 """Prejoin capture and finite auditing preserve native half identity and order."""
 
-import inspect
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.diagnostics import reconstruction as diagnostics
 from relax.refinement import iteration_loop
@@ -119,17 +119,36 @@ def test_capture_precedes_guard_failure(settings, monkeypatch):
     assert events == ['capture', 'guard']
 
 
-def test_actual_controller_audits_before_join_and_snapshot():
-    source = inspect.getsource(iteration_loop.refine_single_volume)
-    audit = source.index('reconstruction_diagnostics.audit_prejoin_accumulators(')
-    class_call = source.index('class_maximization(', audit)
-    k1_call = source.index('k1_maximization(', class_call)
-    assert audit < class_call < k1_call
-    class_source = inspect.getsource(iteration_loop.class_maximization)
-    assert class_source.index('Ft_y_combined = _combine_optional_half_accumulators(') >= 0
-    k1_source = inspect.getsource(iteration_loop.k1_maximization)
-    join = k1_source.index('join_half_accumulators_at_low_resolution(')
-    snapshot = k1_source.index('_snapshot_and_release_previous_k1_means(reference_model.maps)', join)
-    postjoin_dump = k1_source.index('reconstruction_diagnostics.write_bpref_accumulators(', snapshot)
-    split_prior = k1_source.index('estimate_split_half_prior(', postjoin_dump)
-    assert join < snapshot < postjoin_dump < split_prior
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatch, tmp_path):
+    """Each iteration audits the raw half accumulators before its M-step; Class3D combines the halves in the
+    M-step; K=1 joins them, releases the previous maps, dumps the joined accumulators, then updates the prior."""
+    monkeypatch.setenv("RELAX_BPREF_ACCUM_DUMP_DIR", str(tmp_path))
+    monkeypatch.delenv("RELAX_BPREF_BOUNDARY_DUMP_ITERATION", raising=False)
+    monkeypatch.delenv("RELAX_BPREF_PREJOIN_DUMP_DIR", raising=False)
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop.reconstruction_diagnostics, "audit_prejoin_accumulators", "audit")
+    trace.wrap(iteration_loop, "class_maximization", "class")
+    trace.wrap(iteration_loop, "_combine_optional_half_accumulators", "combine")
+    trace.wrap(iteration_loop, "k1_maximization", "k1")
+    trace.wrap(iteration_loop, "join_half_accumulators_at_low_resolution", "join")
+    trace.wrap(iteration_loop, "_snapshot_and_release_previous_k1_means", "release")
+    monkeypatch.setattr(
+        iteration_loop.reconstruction_diagnostics, "write_bpref_accumulators", lambda *args, **kwargs: None,
+    )
+    trace.wrap(iteration_loop.reconstruction_diagnostics, "write_bpref_accumulators", "dump")
+    trace.wrap(iteration_loop, "estimate_split_half_prior", "prior")
+    run_tiny_refinement(monkeypatch, n_classes=n_classes, final_after_max_iter=False)
+
+    if n_classes > 1:
+        assert trace.labels() == 2 * ["audit", "class", "combine", "combine"]
+        assert all(call.inside == ("class",) for call in trace.calls("combine"))
+        return
+    assert trace.labels() == 2 * ["audit", "k1", "join", "release", "dump", "prior"]
+    for join, dump, prior in zip(trace.calls("join"), trace.calls("dump"), trace.calls("prior"), strict=True):
+        joined_y0, joined_y1, joined_ctf0, joined_ctf1, _ = join.result
+        assert dump.kwargs["stage"] == "accum"
+        assert [dump.kwargs[name] for name in ("Ft_y_0", "Ft_y_1", "Ft_ctf_0", "Ft_ctf_1")] == [
+            joined_y0, joined_y1, joined_ctf0, joined_ctf1,
+        ]
+        assert prior.args[0][0] is joined_y0 and prior.args[1][1] is joined_ctf1

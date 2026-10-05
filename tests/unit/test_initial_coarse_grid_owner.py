@@ -153,11 +153,42 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "symmetry",
         "log",
     )
-    source = inspect.getsource(iteration_loop.refine_single_volume)
-    assert source.count("build_initial_coarse_grids(") == 1
-    assert source.count("build_sealed_initial_coarse_grids(") == 1
-    assert "InitialGridSampling(" not in source
-    assert "_sealed_sampling_base_grids(" not in source
-    assert "_translation_grid_for_class_count(" not in source
-    assert source.count("finalization.run_final_all_data(") == 1
-    assert inspect.getsource(finalization.run_final_all_data).count("prepare_final_sampling(") == 1
+    for name in ("InitialGridSampling", "_sealed_sampling_base_grids", "_translation_grid_for_class_count"):
+        assert not hasattr(iteration_loop, name)
+
+
+# A schema-v3 sealed sampling state at HEALPix order 2: three directions, two psi angles, three translations.
+TINY_SEALED = {
+    "consumer_relion_iteration": 1,
+    "directions_ipix": np.asarray([7, 19, 103], dtype=np.int64),
+    "rot_angles_deg": np.asarray([10.0, 20.0, 30.0], dtype=np.float64),
+    "tilt_angles_deg": np.asarray([40.0, 50.0, 60.0], dtype=np.float64),
+    "psi_angles_deg": np.asarray([0.0, 90.0], dtype=np.float64),
+    "translations_x_angstrom": np.asarray([-1.0, 0.0, 1.0], dtype=np.float64),
+    "translations_y_angstrom": np.asarray([0.0, 1.0, 0.0], dtype=np.float64),
+    "healpix_order_original": 2, "psi_step_deg": 90.0,
+    "offset_range_angstrom": 1.0, "offset_step_angstrom": 1.0,
+    "perturbation_factor": 0.5, "random_perturbation": 0.125,
+    "sigma_rot_deg": 0.0, "sigma_psi_deg": 0.0,
+    "coarse_size": 4, "current_size": 6,
+}
+
+
+@pytest.mark.parametrize("sealed", [False, True])
+def test_controller_builds_one_initial_grid_and_one_final_sampling(monkeypatch, sealed):
+    """A run builds its initial coarse grid once, through the variant's owner, and its final pass prepares
+    its sampling once."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.refinement.refinement_options import EngineDebugOptions
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "build_initial_coarse_grids", "initial")
+    trace.wrap(iteration_loop, "build_sealed_initial_coarse_grids", "sealed")
+    trace.wrap(finalization, "run_final_all_data", "final")
+    trace.wrap(finalization, "prepare_final_sampling", "final_sampling")
+    extra = {"debug": EngineDebugOptions(sealed_sampling_state=TINY_SEALED)} if sealed else {}
+    run_tiny_refinement(monkeypatch, max_iter=1, **extra)
+
+    assert trace.labels() == ["sealed" if sealed else "initial", "final", "final_sampling"]
+    assert trace.calls("final_sampling")[0].inside == ("final",)
