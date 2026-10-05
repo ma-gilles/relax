@@ -2,7 +2,7 @@
 """Fingerprint what the refinement controller does, to check that a refactor moved code and nothing else.
 
     pixi run fingerprint run OUT.json [--rev REV | --source DIR] [CASE ...]
-    pixi run fingerprint diff A.json B.json          # exit 1 on any difference
+    pixi run fingerprint diff A.json B.json          # exit 1 unless only log rows differ
     pixi run fingerprint check BASE_REV [HEAD_REV]   # run both (HEAD defaults to the worktree) and diff
     pixi run fingerprint cases                       # the case list, one line each
     pixi run fingerprint selftest [MUTATION ...]     # perturb the controller; every mutation must show
@@ -20,6 +20,11 @@ one stand-in whose output is seeded by a hash of every operand it receives: a ch
 upstream changes every later array of the run. The comparison is exact because both sides run the same
 arithmetic on the same CPU; it is a check for move-only commits, not a merge gate for numerical changes
 (``tests/CLAUDE.md``: no bitwise float asserts).
+
+``diff`` and ``check`` count differences in three classes: outputs (cases, status, results, files and
+checkpoints), non-log trace rows (selected calls), and log trace rows. Log order is not behaviour (code
+rule 2 in ``docs/development/refactor_rules.md``), so when only log rows differ they print "only log rows
+differ (N); accepted under rule 2" and exit 0; any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -60,6 +65,8 @@ TIMING_WORDS = ("wall", "elapsed", "%.2fs", "%.1fs", "%.3fs", "seconds", " in %"
 NODE_DEPENDENT_TEMPLATES = ("timing", "batch planner memory inputs")
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
+# The classes a difference is counted in; only a difference confined to "log" is accepted.
+DIFFERENCE_CLASSES = ("outputs", "trace", "log")
 TMP_TOKEN = "<TMP>"
 
 
@@ -176,12 +183,26 @@ def ordered_trace(rows: list) -> list:
     return [row for _, row in sorted(keyed, key=lambda item: item[0])]
 
 
-def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple[int, list[str]]:
-    """``(number of differences, report lines)`` between two fingerprints written by ``run``."""
-    lines, count = [], 0
+def _changed_rows(rows_a: list[str], rows_b: list[str]) -> list[str]:
+    """The removed (``-``) and added (``+``) rows of a line diff from ``rows_a`` to ``rows_b``."""
+    return [
+        line
+        for line in difflib.unified_diff(rows_a, rows_b, lineterm="", n=0)
+        if line[:1] in "+-" and line[:3] not in ("+++", "---")
+    ]
+
+
+def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple[dict[str, int], list[str]]:
+    """``(differences per class of DIFFERENCE_CLASSES, report lines)`` between two fingerprints written by ``run``.
+
+    ``outputs`` counts missing cases and changed status, result, file and checkpoint leaves; ``trace`` the
+    removed or added trace rows that are not log records; ``log`` those that are.
+    """
+    lines = []
+    counts = dict.fromkeys(DIFFERENCE_CLASSES, 0)
     cases_a, cases_b = a["cases"], b["cases"]
     for name in sorted(set(cases_a) ^ set(cases_b)):
-        count += 1
+        counts["outputs"] += 1
         lines.append(f"CASE {name}: only in {'A' if name in cases_a else 'B'}")
     trace_lines: dict[str, list[str]] = {}
     totals = dict.fromkeys((*SECTIONS, "trace"), 0)
@@ -191,7 +212,7 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             flat_a, flat_b = case_a[section], case_b[section]
             totals[section] += len(flat_a)
             changed = [key for key in sorted(set(flat_a) | set(flat_b)) if flat_a.get(key) != flat_b.get(key)]
-            count += len(changed)
+            counts["outputs"] += len(changed)
             for key in changed[:shown_per_section]:
                 lines.append(
                     f"DIFF {name} {section} {key}: {flat_a.get(key, '<absent>')} != {flat_b.get(key, '<absent>')}"
@@ -201,18 +222,36 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
         text_a = [" | ".join(row) for row in case_a["trace"]]
         text_b = [" | ".join(row) for row in case_b["trace"]]
         totals["trace"] += len(text_a)
-        for line in difflib.unified_diff(text_a, text_b, lineterm="", n=0):
-            if line[:1] in "+-" and line[:3] not in ("+++", "---"):
-                count += 1
-                trace_lines.setdefault(line, []).append(name)
+        changed_rows = _changed_rows(text_a, text_b)
+        for line in changed_rows:
+            trace_lines.setdefault(line, []).append(name)
+        # The non-log rows are compared on their own, so a log record that moved past a call is not counted
+        # as a changed call; when they agree, every changed row of the full trace is a log row.
+        non_log = len(
+            _changed_rows(*([row for row in text if not row.startswith("log | ")] for text in (text_a, text_b)))
+        )
+        counts["trace"] += non_log
+        counts["log"] += (
+            len(_changed_rows(*([row for row in text if row.startswith("log | ")] for text in (text_a, text_b))))
+            if non_log
+            else len(changed_rows)
+        )
     for line, names in trace_lines.items():
         lines.append(f"TRACE [{len(names)} cases, e.g. {names[0]}] {line[:400]}")
     lines.append(
-        f"{len(set(cases_a) & set(cases_b))} cases compared; {count} differences; leaves compared: "
+        f"{len(set(cases_a) & set(cases_b))} cases compared; {sum(counts.values())} differences "
+        f"(outputs {counts['outputs']}, trace rows {counts['trace']}, log rows {counts['log']}); leaves compared: "
         + ", ".join(f"{section} {totals[section]}" for section in SECTIONS)
         + f"; trace rows {totals['trace']}"
     )
-    return count, lines
+    if counts["log"] and not counts["outputs"] and not counts["trace"]:
+        lines.append(f"only log rows differ ({counts['log']}); accepted under rule 2")
+    return counts, lines
+
+
+def accepted(counts: dict[str, int]) -> bool:
+    """Whether a difference of ``counts`` passes: nothing but log rows differs."""
+    return not counts["outputs"] and not counts["trace"]
 
 
 def differing_cases(a: dict, b: dict) -> list[str]:
@@ -986,11 +1025,11 @@ def command_run(args) -> int:
 
 def command_diff(args) -> int:
     a, b = (json.loads(Path(path).read_text()) for path in (args.a, args.b))
-    count, lines = diff_fingerprints(a, b)
+    counts, lines = diff_fingerprints(a, b)
     print(f"A: {args.a} ({a['source']})\nB: {args.b} ({b['source']})")
     print("\n".join(lines))
     _print_not_covered()
-    return 1 if count else 0
+    return 0 if accepted(counts) else 1
 
 
 def command_check(args) -> int:
@@ -1109,7 +1148,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("cases", nargs="*")
     add_tree_options(run)
     run.set_defaults(function=command_run)
-    diff = commands.add_parser("diff", help="compare two fingerprint files; exit 1 on any difference")
+    diff = commands.add_parser("diff", help="compare two fingerprint files; exit 1 unless only log rows differ")
     diff.add_argument("a")
     diff.add_argument("b")
     diff.set_defaults(function=command_diff)

@@ -1,5 +1,6 @@
 """Pure logic of the controller fingerprint tool (``scripts/dev/fingerprint.py``); no refinement runs here."""
 
+import json
 from dataclasses import dataclass
 
 import numpy as np
@@ -96,9 +97,10 @@ def _case(result, trace=()):
 def test_equal_fingerprints_have_no_difference():
     case = _case({"/mean": "numpy float32 (2,) sha256:aa"}, [["log", "relax.a", "INFO", "x", "x"]])
 
-    count, lines = fingerprint.diff_fingerprints(_fingerprint(k1=case), _fingerprint(k1=case))
+    counts, lines = fingerprint.diff_fingerprints(_fingerprint(k1=case), _fingerprint(k1=case))
 
-    assert count == 0
+    assert counts == {"outputs": 0, "trace": 0, "log": 0}
+    assert fingerprint.accepted(counts)
     assert lines[-1].startswith("1 cases compared; 0 differences")
     assert fingerprint.differing_cases(_fingerprint(k1=case), _fingerprint(k1=case)) == []
 
@@ -114,11 +116,13 @@ def test_every_kind_of_difference_is_counted_and_named():
         k2=_case({"/mean": "bb"}),
     )
 
-    count, lines = fingerprint.diff_fingerprints(a, b)
+    counts, lines = fingerprint.diff_fingerprints(a, b)
     report = "\n".join(lines)
 
     # one missing case, three result keys, and the removed and added trace row of the renamed logger
-    assert count == 1 + 3 + 2
+    assert counts == {"outputs": 1 + 3, "trace": 0, "log": 2}
+    assert not fingerprint.accepted(counts)
+    assert "only log rows differ" not in report
     assert "CASE only_a: only in A" in report
     assert "DIFF k1 result /mean: aa != ab" in report
     assert "DIFF k1 result /gone: 1 != <absent>" in report
@@ -161,3 +165,37 @@ def test_scratch_inside_the_checkout_is_refused():
     with pytest.raises(SystemExit, match="inside the checkout"):
         fingerprint._work_dir(type("Args", (), {"work_dir": str(inside)})())
     assert not inside.exists()
+
+
+_LOG = ["log", "relax.a", "INFO", "x", "x"]
+_MOVED_LOG = ["log", "relax.a", "INFO", "y", "y"]
+_CALL = ["call", "engine", "seed=1"]
+
+
+def _write_pair(tmp_path, a, b):
+    paths = tmp_path / "a.json", tmp_path / "b.json"
+    for path, value in zip(paths, (a, b), strict=True):
+        path.write_text(json.dumps(value))
+    return [str(path) for path in paths]
+
+
+@pytest.mark.parametrize(
+    ("case_b", "exit_code", "accepted_line"),
+    [
+        # a log record moved past a call: only log rows differ, accepted under rule 2
+        (_case({"/mean": "aa"}, [_CALL, _LOG, _MOVED_LOG]), 0, "only log rows differ (2); accepted under rule 2"),
+        (_case({"/mean": "ab"}, [_LOG, _CALL, _MOVED_LOG]), 1, None),
+        (_case({"/mean": "aa"}, [_LOG, ["call", "engine", "seed=2"], _MOVED_LOG]), 1, None),
+    ],
+    ids=["log-only", "one-result", "one-call-row"],
+)
+def test_diff_accepts_only_a_log_only_difference(tmp_path, capsys, case_b, exit_code, accepted_line):
+    a = _fingerprint(k1=_case({"/mean": "aa"}, [_LOG, _CALL, _MOVED_LOG]))
+    paths = _write_pair(tmp_path, a, _fingerprint(k1=case_b))
+
+    assert fingerprint.main(["diff", *paths]) == exit_code
+    out = capsys.readouterr().out
+    if accepted_line:
+        assert accepted_line in out
+    else:
+        assert "only log rows differ" not in out

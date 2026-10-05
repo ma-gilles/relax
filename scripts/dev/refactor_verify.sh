@@ -1,9 +1,9 @@
 #!/bin/bash
 # Per-commit check of a move-only refactor: the worktree (with its uncommitted edits) against HEAD.
 # usage: REFACTOR_SCRATCH=<dir outside the checkout> scripts/dev/refactor_verify.sh [pytest arguments: test files, -k ...]
-# Run it from the checkout. Prints one line per check: fingerprint of the worktree against HEAD (0 differences
-# expected), ruff findings the base lacks, git diff --check, stale selftest mutation anchors, and pytest on the
-# structure test plus the arguments. REFACTOR_BASE (default origin/main) is the revision whose ruff findings are
+# Run it from the checkout. Prints one line per check: fingerprint of the worktree against HEAD (no difference
+# in outputs or non-log trace rows; a log-only difference passes under rule 2), ruff findings the base lacks,
+# git diff --check, stale selftest mutation anchors, and pytest on the structure test plus the arguments. REFACTOR_BASE (default origin/main) is the revision whose ruff findings are
 # the baseline; REFACTOR_PYTHON defaults to the checkout's pixi environment. Logs go to $REFACTOR_SCRATCH/logs.
 set -u
 S=${REFACTOR_SCRATCH:?set REFACTOR_SCRATCH to a scratch directory outside the checkout}
@@ -23,7 +23,7 @@ parent=$S/fp/fp_${H:0:12}.json
 [ -f "$parent" ] || "$PY" scripts/dev/fingerprint.py run "$parent" --rev HEAD --work-dir "$S/fp" > "$S/logs/fp_run_${H:0:7}.txt" 2>&1
 "$PY" scripts/dev/fingerprint.py run "$S/fp/fp_worktree.json" --work-dir "$S/fp" > "$S/logs/fp_run_worktree.txt" 2>&1 || tail -5 "$S/logs/fp_run_worktree.txt"
 "$PY" scripts/dev/fingerprint.py diff "$parent" "$S/fp/fp_worktree.json" > "$S/logs/fp_vs_parent.txt" 2>&1; rc=$?
-echo "fingerprint worktree vs ${H:0:7}: rc=$rc $(grep 'cases compared' "$S/logs/fp_vs_parent.txt")"; [ $rc = 0 ] || status=1
+echo "fingerprint worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ' "$S/logs/fp_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
 
 if [ ! -f "$S/logs/ruff_base_${BASE:0:12}.txt" ]; then
   rm -rf "$S/ruff_base_src"; mkdir -p "$S/ruff_base_src"; git archive "$BASE" | tar -x -C "$S/ruff_base_src"
