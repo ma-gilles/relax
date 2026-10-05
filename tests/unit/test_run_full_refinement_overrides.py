@@ -1248,7 +1248,32 @@ def test_diagnostic_single_half_is_guarded_to_local_search_stops():
     assert "--diagnostic_single_half is K=1-only" in source
     assert "particle_layout._replace(half2_rows=np.empty(0, dtype=np.int64))" in source
     assert '"diagnostic_single_half": bool(args.diagnostic_single_half)' in source
-    assert "skipping Projector::data build for empty half-%d dataset" in ITERATION_LOOP.read_text()
+
+
+def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog):
+    """--diagnostic_single_half leaves half 2 empty: its projector is not built, and the skip is logged."""
+    import logging
+    from types import SimpleNamespace
+
+    from relax.refinement import projector_preparation
+
+    built = []
+    monkeypatch.setattr(
+        projector_preparation, "prepare_scoring_projector",
+        lambda references, **kwargs: built.append(kwargs["dump_label"]) or projector_preparation.PreparedProjector(
+            data=np.ones((1, 3, 3, 2), dtype=np.complex64), r_max=1,
+        ),
+    )
+    halves = [SimpleNamespace(index=k, dataset=SimpleNamespace(n_units=n)) for k, n in enumerate((3, 0))]
+    settings = SimpleNamespace(volume_shape=(8, 8, 8), projection_padding_factor=2, gridding_kernel="radial")
+    log = logging.getLogger("test_numbered_projectors_skip")
+    with caplog.at_level(logging.INFO, logger=log.name):
+        projectors = projector_preparation.build_numbered_projectors(
+            halves, [object(), object()], settings, current_size=4, n_classes=1, reusable_half1=None,
+            real_references_by_half=None, iteration=0, log=log,
+        )
+    assert built == ["iter000_half0"] and projectors[0] is not None and projectors[1] is None
+    assert "RELION mode: skipping Projector::data build for empty half-2 dataset" in caplog.messages
 
 
 def test_init_noise_from_npz_loader_uses_latest_numbered_spectrum(tmp_path):
