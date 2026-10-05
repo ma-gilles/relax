@@ -24,6 +24,7 @@ from relax.diagnostics.vdam_mstep_replay import (
 from relax.diagnostics.vdam_tomo_continuation import tomo_checkpoint_particle_state
 from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, prepare_particle_reads
+from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
 from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
 from relax.relion.initial_model_io import (
@@ -425,6 +426,19 @@ def _should_write_iteration_artifacts(iteration: int, nr_iter: int, grad_write_i
     return (iteration % grad_write_iter) == 0 or iteration == nr_iter
 
 
+def _refuse_unsupported_multi_shape(opts: NativeInitialModelOptions, datasets) -> None:
+    """Optics groups on several image shapes run the VDAM optimizer without optics-table CTF terms."""
+
+    from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+
+    if opts.optimizer != "vdam" or opts.diagnostic_continue_optimiser is not None:
+        raise NotImplementedError("optics groups on several image shapes run only fresh VDAM InitialModel")
+    if any(dataset_needs_exact_ctf(d) for d in datasets):
+        raise NotImplementedError(
+            "optics groups on several image shapes do not yet take premultiplied or aberrated optics groups"
+        )
+
+
 def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialModelResult:
     """Run native recovar InitialModel refinement."""
 
@@ -483,19 +497,31 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         n_particles = int(dataset.n_units)
         tilt_images = tilt_image_accuracy_inputs(dataset.subset(np.arange(n_particles)))
     else:
-        dataset = image_dataset = load_dataset(
-            opts.fn_img,
-            lazy=not particle_read_policy.preread_images,
-            datadir=opts.datadir,
-            strip_prefix=opts.strip_prefix,
-        )
-        if getattr(dataset, "tilt_series_flag", False):
+        shape_class_rows = optics_shape_class_rows(opts.fn_img)
+        datasets = [
+            load_dataset(
+                opts.fn_img,
+                lazy=not particle_read_policy.preread_images,
+                datadir=opts.datadir,
+                strip_prefix=opts.strip_prefix,
+                ind=rows,
+            )
+            for rows in (shape_class_rows or [None])
+        ]
+        if any(getattr(d, "tilt_series_flag", False) for d in datasets):
             raise NotImplementedError("native InitialModel reads RELION 5 2D stacks (--ios), not tilt-series STAR files")
+        # Optics groups on several image shapes: one dataset per shape (RELION S3b).
+        dataset = image_dataset = (
+            datasets[0] if shape_class_rows is None else MultiShapeDataset(datasets, shape_class_rows)
+        )
+        if shape_class_rows is not None:
+            _refuse_unsupported_multi_shape(opts, datasets)
         n_particles = int(dataset.n_images)
-    assert_reads_from_scratch(image_dataset, particle_scratch)
+    for class_dataset in getattr(image_dataset, "datasets", (image_dataset,)):
+        assert_reads_from_scratch(class_dataset, particle_scratch)
+        dense_adapter._configure_relion_image_mask(class_dataset, opts)
     profile.record("dataset_load")
 
-    dense_adapter._configure_relion_image_mask(image_dataset, opts)
     optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
     continuation = None
     if opts.diagnostic_continue_optimiser is not None:
@@ -602,9 +628,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         projector_context=projector_context,
         tilt_images=tilt_images,
         optics_group_ids=optics_group_by_particle if int(np.unique(optics_group_by_particle).size) > 1 else None,
-        premultiplied_ctf=relion_ctf.dataset_has_premultiplied_ctf(
-            image_dataset, tuple(int(v) for v in dataset.image_shape)
-        ),
+        premultiplied_ctf=not isinstance(dataset, MultiShapeDataset)
+        and relion_ctf.dataset_has_premultiplied_ctf(image_dataset, tuple(int(v) for v in dataset.image_shape)),
     )
     profile.record("expectation_setup")
 

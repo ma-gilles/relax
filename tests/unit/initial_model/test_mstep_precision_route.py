@@ -99,6 +99,7 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
     dataset = SimpleNamespace(n_images=20, voxel_size=1.0, tilt_series_flag=False, image_shape=(8, 8))
     monkeypatch.setattr(driver, "read_star", lambda _: (pd.DataFrame(index=range(20)), None))
     monkeypatch.setattr(driver.relion_ctf, "dataset_has_premultiplied_ctf", lambda *a: False)
+    monkeypatch.setattr(driver, "optics_shape_class_rows", lambda _: None)
     monkeypatch.setattr(driver, "load_dataset", lambda *a, **k: dataset)
     monkeypatch.setattr(driver, "prepare_particle_reads", lambda *a, **k: None)
     monkeypatch.setattr(dense_adapter, "_configure_relion_image_mask", lambda *a: None)

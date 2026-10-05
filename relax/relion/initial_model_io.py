@@ -25,10 +25,10 @@ def _optics_group_indices(main_star) -> np.ndarray:
 
 
 def _particle_optics(main_star, optics_star, ds) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """Each particle's voltage, Cs and amplitude contrast (its optics group's), and the pixel size.
+    """Each particle's voltage, Cs and amplitude contrast (its optics group's), and the model pixel size.
 
-    Optics groups may differ in their CTF constants but must share the image pixel size and
-    box: groups on other grids are not supported by InitialModel.
+    Optics groups may differ in their CTF constants; groups on other pixel sizes or boxes need
+    a dataset with one class per image shape (``MultiShapeDataset``, which has ``datasets``).
     """
 
     pixel_size = float(ds.voxel_size)
@@ -44,11 +44,9 @@ def _particle_optics(main_star, optics_star, ds) -> tuple[np.ndarray, np.ndarray
         return values[0], values[1], values[2], pixel_size
 
     for name in ("_rlnImagePixelSize", "_rlnImageSize"):
-        if name in optics_star.columns and np.unique(optics_star[name].astype(float).to_numpy()).size != 1:
-            raise NotImplementedError(
-                "native InitialModel supports optics groups on one image grid; "
-                f"the optics table has several {name[4:]} values"
-            )
+        several = name in optics_star.columns and np.unique(optics_star[name].astype(float).to_numpy()).size != 1
+        if several and getattr(ds, "datasets", None) is None:
+            raise ValueError(f"optics groups with several {name[4:]} values need one dataset per image shape")
     labels = optics_star["_rlnOpticsGroup"].to_numpy() if "_rlnOpticsGroup" in optics_star.columns else [1]
     if "_rlnOpticsGroup" in main_star.columns:
         particle_labels = main_star["_rlnOpticsGroup"].to_numpy()
@@ -77,11 +75,19 @@ def _native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
     missing = [name for name in required if name not in main_star.columns]
     if missing:
         raise ValueError(f"native InitialModel needs per-particle CTF columns: {', '.join(missing)}")
+    grids = {}
+    if getattr(dataset, "datasets", None) is not None:
+        # Each particle's own grid, for the expected accuracy of groups on other grids.
+        grids = dict(image_pixel_size=np.empty(len(main_star)), image_box=np.empty(len(main_star), dtype=np.int64))
+        for class_dataset, rows in zip(dataset.datasets, dataset.rows):
+            grids["image_pixel_size"][rows] = float(class_dataset.voxel_size)
+            grids["image_box"][rows] = int(class_dataset.image_shape[0])
     return NativeOpticsState(
         voltage=voltage,
         Cs=Cs,
         Q0=Q0,
         pixel_size=float(pixel_size),
+        **grids,
         defU=np.asarray(main_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
         defV=np.asarray(main_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
         defAngle=np.asarray(main_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),

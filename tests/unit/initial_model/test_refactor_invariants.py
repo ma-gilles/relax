@@ -287,7 +287,10 @@ LOC_BUDGETS = {
     # E-step's log evidence (+10), the E-step carries the evidence and the formula (+27), the writer (+1).
     # Subtomogram optics features (2026-10-03, etoptics): the tomo optics gate, the tilt images' premultiplied
     # flag and average CTF^2 in the tomo E-step, and the expected accuracy's tilt-image dataset (+16).
-    "controller": (1958, (
+    # Optics groups on several image shapes (RELION S3b, 2026-10-05, etvdam): one dataset per image shape
+    # (MultiShapeDataset), the refusal of features not wired for several shapes, and the class datasets'
+    # scratch and mask setup: 1952 -> 1977 lines on main 24245c1a (+25; ceiling +19).
+    "controller": (1977, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset.py", "subset_schedule.py",
     )),
@@ -304,7 +307,10 @@ LOC_BUDGETS = {
     # bootstrap, the bootstrap's per-image optics and its class positions (+16): a real raise.
     # Optics features (2026-10-02): the bootstrap CTF with each group's even Zernike gamma (+46).
     # Subtomogram optics features (2026-10-03, etoptics): the tilt bootstrap's optics-table CTF rows (+8).
-    "initialization": (1141, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    # Optics groups on several image shapes (2026-10-05): each group's pixel size, start-up images soft-masked
+    # at their own pixel and resized and windowed to the model grid before the noise and the bootstrap
+    # (ml_optimiser.cpp:2905-2955): 1141 -> 1185 lines on main 24245c1a (+44).
+    "initialization": (1185, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
     # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
     # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
     # Optics features (2026-10-02): the trials' optics-table CTFs in the expected accuracy (+6).
@@ -321,13 +327,19 @@ LOC_BUDGETS = {
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),
+    # Optics groups on several image shapes (RELION S3b, 2026-10-05): the per-shape-class orchestration of the
+    # adaptive E-step (class translation grids, pre-shifts and offset prior in class pixels, merge), its own
+    # module so the E-step budget grows only by the call; exact size reviewed at landing (team-lead).
+    "shape_class_estep": (152, ("shape_class_estep.py",)),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
     "sgd_optimizer_noise": (309, (
         "../sgd_initial_model/__init__.py", "../sgd_initial_model/noise.py",
         "../sgd_initial_model/optimizer.py",
     )),
-    "reconstruction_state": (550, ("m_step.py", "mstep_single_class.py", "state.py")),
+    # Optics groups on several image shapes (2026-10-05): each particle's pixel size and box in
+    # NativeOpticsState: 549 -> 552 lines on main 24245c1a (+3; ceiling +2).
+    "reconstruction_state": (552, ("m_step.py", "mstep_single_class.py", "state.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
@@ -335,7 +347,9 @@ LOC_BUDGETS = {
     # +2: initial_model_io writes RELION's rlnNrOfSignificantSamples column (2026-10-01).
     # Several optics groups (2026-10-01): per-particle optics, one model.star noise table per group and
     # the shared start-up selection relion_startup_positions (+31).
-    "input_output": (1382, (
+    # Optics groups on several image shapes (2026-10-05): optics of a dataset on several shapes, 1379 -> 1385
+    # lines on main 24245c1a (+6; ceiling +3).
+    "input_output": (1385, (
         "output.py", "../relion/initial_model_io.py",
         "../relion/vdam_checkpoint.py", "../relion/initial_noise.py",
     )),

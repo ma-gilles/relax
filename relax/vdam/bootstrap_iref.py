@@ -178,6 +178,37 @@ def postprocess_bootstrap_iref(
     return np.asarray([relion_volume_to_recovar(vol) for vol in post_relion], dtype=np.float64)
 
 
+def _group_pixel_sizes(dataset, optics_group_by_particle) -> np.ndarray | None:
+    """Each optics group's image pixel size for a dataset on several image shapes, else None."""
+
+    if getattr(dataset, "datasets", None) is None:
+        return None
+    sizes = np.zeros(int(np.max(optics_group_by_particle)) + 1)
+    for class_dataset, rows in zip(dataset.datasets, dataset.rows):
+        sizes[np.asarray(optics_group_by_particle)[rows]] = float(class_dataset.voxel_size)
+    return sizes
+
+
+def _model_grid_startup_images(dataset, rows, pixel_sizes, opts: NativeInitialModelOptions, model_pixel_size: float):
+    """The start-up images of a dataset on several shapes, as RELION's start-up loop leaves them.
+
+    Each image is soft-masked with its own pixel size, resized to the model pixel size and
+    windowed to the model box (ml_optimiser.cpp:2905-2955); the bootstrap transforms these.
+    """
+
+    from relax.relion.initial_noise import _rescale_to_model_grid
+
+    ori_size = int(dataset.grid_size)
+    out = np.empty((len(rows), ori_size, ori_size), dtype=np.float64)
+    for i, (_row, image) in enumerate(dataset.iter_images(rows, batch_size=max(1, int(opts.image_batch_size)))):
+        image = np.asarray(image, dtype=np.float64)
+        if bool(opts.do_zero_mask):
+            radius = float(opts.particle_diameter) / (2.0 * float(pixel_sizes[i]))
+            image = bootstrap_reconstruction.soft_mask_outside_map(image, radius, float(opts.width_mask_edge_px))
+        out[i] = _rescale_to_model_grid(image, float(pixel_sizes[i]), float(model_pixel_size), ori_size)
+    return out
+
+
 def _load_raw_images(dataset, image_indices: np.ndarray, *, batch_size: int) -> np.ndarray:
     """Load raw real-space particle images through ``CryoEMDataset`` I/O."""
 
@@ -213,12 +244,16 @@ def _initial_state_from_particles(
     # The start-up loop's particles (relion_startup_positions): each optics group's first
     # quota of particles in RELION's order, for the noise spectra and for the bootstrap.
     noise_order = order[relion_startup_positions(ordered_groups, ones, int(opts.sigma2_min_particles))]
+    group_pixel_sizes = _group_pixel_sizes(dataset, optics_group_by_particle)
+    batch_size = max(1, int(opts.image_batch_size))
     Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
-        _image_sigma2_iter(
-            dataset,
-            noise_order,
-            optics_group_by_particle,
-            batch_size=max(1, int(opts.image_batch_size)),
+        (
+            _image_sigma2_iter(dataset, noise_order, optics_group_by_particle, batch_size=batch_size)
+            if group_pixel_sizes is None
+            else (
+                (int(optics_group_by_particle[row]), image)
+                for row, image in dataset.iter_images(noise_order, batch_size=batch_size)
+            )
         ),
         ori_size=ori_size,
         pixel_size=pixel_size,
@@ -227,6 +262,7 @@ def _initial_state_from_particles(
         do_zero_mask=bool(opts.do_zero_mask),
         nr_optics_groups=nr_optics_groups,
         minimum_nr_particles=int(opts.sigma2_min_particles),
+        **({} if group_pixel_sizes is None else {"group_pixel_sizes": group_pixel_sizes, "model_pixel_size": pixel_size}),
     )
     profile.record("average_unaligned")
 
@@ -234,7 +270,12 @@ def _initial_state_from_particles(
     # its class (part_id % K) in the bootstrap (ml_optimiser.cpp:3254-3270).
     bootstrap_positions = relion_startup_positions(ordered_groups, ones, int(opts.bootstrap_min_particles))
     bootstrap_order = order[bootstrap_positions]
-    images = _load_raw_images(dataset, bootstrap_order, batch_size=max(1, int(opts.image_batch_size)))
+    if group_pixel_sizes is None:
+        images = _load_raw_images(dataset, bootstrap_order, batch_size=batch_size)
+    else:
+        images = _model_grid_startup_images(
+            dataset, bootstrap_order, group_pixel_sizes[optics_group_by_particle[bootstrap_order]], opts, pixel_size
+        )
     profile.record("raw_images")
     sorted_star = main_star.iloc[bootstrap_order]
     voltage, Cs, Q0, pixel_size = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
@@ -256,14 +297,17 @@ def _initial_state_from_particles(
         nr_classes=int(opts.nr_classes),
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=float(opts.width_mask_edge_px),
-        do_zero_mask=bool(opts.do_zero_mask),
+        # Images on several shapes arrive masked and on the model grid.
+        do_zero_mask=bool(opts.do_zero_mask) and group_pixel_sizes is None,
         do_ctf_correction=bool(opts.do_ctf_correction),
         random_seed=int(opts.random_seed),
         padding_factor=int(opts.padding_factor),
         current_size=-1,
         minimum_nr_particles=int(bootstrap_positions.size),
         particle_positions=bootstrap_positions,
-        image_gamma_offsets=_bootstrap_gamma_offsets(dataset, bootstrap_order, ori_size),
+        image_gamma_offsets=None if group_pixel_sizes is not None else _bootstrap_gamma_offsets(
+            dataset, bootstrap_order, ori_size
+        ),
     )
     iref, rand_state = (None, None) if override_path else compute_bootstrap_iref(**bootstrap_kwargs)
     profile.record("bootstrap")
