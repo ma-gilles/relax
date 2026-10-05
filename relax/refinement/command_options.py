@@ -18,6 +18,11 @@ from relax.diagnostics.state_swap_probe import add_state_swap_probe_arguments
 from relax.helpers.particle_io import add_particle_read_arguments
 from relax.refinement.refinement_options import (
     RELAX_MODE_CONSISTENCY,
+    AdaptiveOptions,
+    HalfOverlapOptions,
+    LocalSearchOptions,
+    RefinementBatching,
+    RefinementSchedule,
     RelionConsistencyOptions,
     relax_mode_consistency,
 )
@@ -1497,3 +1502,93 @@ def resolve_restart_provenance(args, *, log) -> RestartProvenance:
             "--perturb-replay-restart-state-iterations"
         )
     return RestartProvenance(iterations, path, sha256)
+
+
+def resolve_adaptive_options(args, *, log) -> AdaptiveOptions:
+    """The adaptive sampling options, with RELION's per-iteration current sizes and HEALPix orders when the
+    run follows a RELION oracle (``--relion_current_sizes``, ``--relion_healpix_orders``, comma lists).
+
+    ``args.max_significants`` must already be the active cap (``resolve_relion_runtime_controls``).
+    """
+    oracle_current_sizes = None
+    if args.relion_current_sizes is not None:
+        oracle_current_sizes = [int(x) for x in args.relion_current_sizes.split(",")]
+        log.info("Oracle mode: using RELION current_sizes=%s", oracle_current_sizes)
+    oracle_healpix_orders = None
+    if args.relion_healpix_orders is not None:
+        oracle_healpix_orders = [int(x) for x in args.relion_healpix_orders.split(",")]
+        log.info("Oracle mode: using RELION healpix_orders=%s", oracle_healpix_orders)
+    return AdaptiveOptions(
+        relion_current_sizes=oracle_current_sizes,
+        relion_healpix_orders=oracle_healpix_orders,
+        adaptive_oversampling=args.adaptive_oversampling,
+        coarse_engine=args.coarse_engine,
+        max_significants=args.max_significants,
+    )
+
+
+def resolve_batching(args) -> RefinementBatching:
+    """The E-step's image and rotation block sizes."""
+    return RefinementBatching(image_batch_size=args.image_batch_size, rotation_block_size=args.rotation_block_size)
+
+
+def resolve_overlap(args) -> HalfOverlapOptions:
+    """Whether the halves' host work may overlap (``--overlap_halves``)."""
+    return HalfOverlapOptions(overlap_halves=bool(args.overlap_halves))
+
+
+def resolve_local_search(args) -> LocalSearchOptions:
+    """When local angular searches start (``--auto_local_healpix_order``, ``--sigma_ang``) and how they are
+    profiled (``--local_search_profile``)."""
+    return LocalSearchOptions(
+        auto_local_healpix_order=args.auto_local_healpix_order,
+        sigma_ang_deg=args.sigma_ang,
+        local_search_profile_mode=args.local_search_profile,
+    )
+
+
+def resolve_schedule(
+    args,
+    *,
+    initial_sampling,
+    init_current_size,
+    ini_high_angstrom,
+    init_data_vs_prior,
+    particle_diameter_ang,
+    relion_init_sigma_offset_angstrom,
+    frozen_boundary,
+    continued_iterations,
+) -> RefinementSchedule:
+    """The numbered schedule: how many iterations remain, where the first one starts and its sampling.
+
+    ``continued_iterations``: the run files' last numbered iteration with ``--continue`` (None for a fresh
+    run). A frozen boundary owns the first FSC, Pmax, high-FSC flag, RELION increment and translation sigma;
+    a RELION-seeded start (``--relion_init_dir``) the sigma offset; otherwise the flags do.
+    """
+    return RefinementSchedule(
+        # --max_iter counts from iteration 1 of the whole run, as RELION's --iter.
+        max_iter=int(args.max_iter) - (continued_iterations or 0),
+        init_current_size=init_current_size,
+        init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
+        ini_high_angstrom=ini_high_angstrom,
+        init_data_vs_prior=init_data_vs_prior,
+        init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
+        init_has_high_fsc_at_limit=None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit,
+        init_relion_incr_size=10 if frozen_boundary is None else frozen_boundary.relion_incr_size,
+        init_healpix_order=initial_sampling.coarse_order,
+        max_healpix_order=initial_sampling.max_order,
+        init_translation_range=args.offset_range,
+        init_translation_step=args.offset_step,
+        init_translation_sigma_angstrom=(
+            frozen_boundary.translation_sigma_angstrom_per_half
+            if frozen_boundary is not None
+            else (
+                relion_init_sigma_offset_angstrom
+                if relion_init_sigma_offset_angstrom is not None
+                else args.offset_sigma_angstrom
+            )
+        ),
+        particle_diameter_ang=particle_diameter_ang,
+        init_relion_iteration=args.init_relion_iteration if continued_iterations is None else continued_iterations,
+        skip_final_iteration=bool(args.skip_final_iteration),
+    )

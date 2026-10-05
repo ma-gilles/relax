@@ -311,16 +311,6 @@ def _use_fresh_auto_refine_particle_order(
     )
 
 
-def _refine_sampling_kwargs(args, init_healpix_order):
-    """Return sampling kwargs forwarded from the CLI into ``refine_single_volume``."""
-    return {
-        "init_healpix_order": init_healpix_order,
-        "auto_local_healpix_order": args.auto_local_healpix_order,
-        "init_translation_range": args.offset_range,
-        "init_translation_step": args.offset_step,
-    }
-
-
 def _relion_optimiser_star_for_runtime(
     args,
     *,
@@ -994,16 +984,11 @@ def main(command=None):
     # ---- Run refinement ----
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
-        AdaptiveOptions,
         CheckpointOptions,
         EngineDebugOptions,
         ExpectedAccuracyOptions,
-        HalfOverlapOptions,
         KClassOptions,
-        LocalSearchOptions,
-        RefinementBatching,
         RefinementOptions,
-        RefinementSchedule,
         RelionParityOptions,
         ReplayState,
         SymmetryOptions,
@@ -1020,15 +1005,7 @@ def main(command=None):
     )
     logger.info("=" * 70)
 
-    # Parse oracle current_sizes if provided
-    oracle_current_sizes = None
-    if args.relion_current_sizes is not None:
-        oracle_current_sizes = [int(x) for x in args.relion_current_sizes.split(",")]
-        logger.info("Oracle mode: using RELION current_sizes=%s", oracle_current_sizes)
-    oracle_healpix_orders = None
-    if args.relion_healpix_orders is not None:
-        oracle_healpix_orders = [int(x) for x in args.relion_healpix_orders.split(",")]
-        logger.info("Oracle mode: using RELION healpix_orders=%s", oracle_healpix_orders)
+    adaptive_options = command_options.resolve_adaptive_options(args, log=logger)
 
     # Build per-iter replay overrides from RELION's per-iter data.star +
     # model.star when --perturb_replay_relion_dir is set. The override always
@@ -1212,8 +1189,6 @@ def main(command=None):
             bool(state_swap_probe["replay_relion_references"]),
         )
 
-    sampling_kwargs = _refine_sampling_kwargs(args, initial_sampling.coarse_order)
-
     run_file_writer = None
     if int(args.write_iteration_every) > 0:
         if shape_class_rows is not None:
@@ -1227,7 +1202,7 @@ def main(command=None):
                     nr_iter=int(args.max_iter),
                     particle_diameter=float(particle_diameter_ang or 0.0),
                     adaptive_oversampling=int(args.adaptive_oversampling),
-                    auto_local_healpix_order=int(sampling_kwargs["auto_local_healpix_order"]),
+                    auto_local_healpix_order=int(args.auto_local_healpix_order),
                     max_significants=int(args.max_significants),
                     symmetry=symmetry,
                     healpix_order_original=int(initial_sampling.coarse_order),
@@ -1262,53 +1237,20 @@ def main(command=None):
         options=RefinementOptions(
             symmetry=SymmetryOptions(point_group=symmetry),
             disc_type=os.environ.get("RELAX_DISC_TYPE_OVERRIDE", "linear_interp"),
-            schedule=RefinementSchedule(
-                # --max_iter counts from iteration 1 of the whole run, as RELION's --iter.
-                max_iter=int(args.max_iter) - continued_iterations,
+            schedule=command_options.resolve_schedule(
+                args,
+                initial_sampling=initial_sampling,
                 init_current_size=init_current_size,
-                init_fsc=None if frozen_boundary is None else frozen_boundary.fsc,
                 ini_high_angstrom=_ini_high_for_lowpass,
                 init_data_vs_prior=relion_start_data_vs_prior,
-                init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
-                init_has_high_fsc_at_limit=(
-                    None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit
-                ),
-                init_relion_incr_size=(
-                    10 if frozen_boundary is None else frozen_boundary.relion_incr_size
-                ),
-                init_healpix_order=sampling_kwargs["init_healpix_order"],
-                max_healpix_order=initial_sampling.max_order,
-                init_translation_range=sampling_kwargs["init_translation_range"],
-                init_translation_step=sampling_kwargs["init_translation_step"],
-                init_translation_sigma_angstrom=(
-                    frozen_boundary.translation_sigma_angstrom_per_half
-                    if frozen_boundary is not None
-                    else (
-                        relion_init_sigma_offset_angstrom
-                        if relion_init_sigma_offset_angstrom is not None
-                        else args.offset_sigma_angstrom
-                    )
-                ),
                 particle_diameter_ang=particle_diameter_ang,
-                init_relion_iteration=(
-                    args.init_relion_iteration if resume_snapshot is None else continued_iterations
-                ),
-                skip_final_iteration=bool(args.skip_final_iteration),
+                relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
+                frozen_boundary=frozen_boundary,
+                continued_iterations=None if resume_snapshot is None else continued_iterations,
             ),
-            batching=RefinementBatching(
-                image_batch_size=args.image_batch_size,
-                rotation_block_size=args.rotation_block_size,
-            ),
-            overlap=HalfOverlapOptions(
-                overlap_halves=bool(args.overlap_halves),
-            ),
-            adaptive=AdaptiveOptions(
-                relion_current_sizes=oracle_current_sizes,
-                relion_healpix_orders=oracle_healpix_orders,
-                adaptive_oversampling=args.adaptive_oversampling,
-                coarse_engine=args.coarse_engine,
-                max_significants=args.max_significants,
-            ),
+            batching=command_options.resolve_batching(args),
+            overlap=command_options.resolve_overlap(args),
+            adaptive=adaptive_options,
             parity=RelionParityOptions(
                 tau2_fudge=effective_tau2_fudge,
                 perturb_factor=args.perturb_factor,
@@ -1333,11 +1275,7 @@ def main(command=None):
                 firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
             ),
             consistency=consistency_options,
-            local_search=LocalSearchOptions(
-                auto_local_healpix_order=sampling_kwargs["auto_local_healpix_order"],
-                sigma_ang_deg=args.sigma_ang,
-                local_search_profile_mode=args.local_search_profile,
-            ),
+            local_search=command_options.resolve_local_search(args),
             k_class=KClassOptions(
                 n_classes=args.n_classes,
                 first_iteration_seed_classes=(

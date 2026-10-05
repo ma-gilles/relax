@@ -97,6 +97,7 @@ tests/unit/test_optics_aberrations.py
 tests/unit/test_optics_group_noise.py
 tests/unit/test_optics_shapes.py
 tests/unit/test_optimiser_convergence_replay.py
+tests/unit/test_option_resolvers.py
 tests/unit/test_parity_check_perf.py
 tests/unit/test_parity_dump_timing.py
 tests/unit/test_parity_script_xla_defaults.py

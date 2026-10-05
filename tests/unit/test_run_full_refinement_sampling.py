@@ -14,7 +14,6 @@ from relax.refinement.command_options import resolve_firstiter_controls, resolve
 from relax.refinement.full_refinement import (
     _effective_perturb_seed,
     _explicit_relion_optimiser_for_seed,
-    _refine_sampling_kwargs,
     _resolve_optimizer_random_seed,
 )
 from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
@@ -175,21 +174,6 @@ def test_explicit_max_healpix_order_cannot_be_coarser_than_start():
             healpix_order=2,
             max_healpix_order=1,
         )
-
-
-def test_cli_translation_grid_parameters_seed_refinement_state():
-    args = SimpleNamespace(
-        adaptive_oversampling=1,
-        offset_range=3.0,
-        offset_step=1.0,
-        auto_local_healpix_order=4,
-    )
-
-    kwargs = _refine_sampling_kwargs(args, init_healpix_order=2)
-
-    assert kwargs["init_healpix_order"] == 2
-    assert kwargs["init_translation_range"] == 3.0
-    assert kwargs["init_translation_step"] == 1.0
 
 
 def test_cli_perturb_seed_defaults_to_relion_random_seed():
