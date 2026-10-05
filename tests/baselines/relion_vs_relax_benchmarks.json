@@ -13591,7 +13591,8 @@
     "seed 1: masked GT FSC-AUC relax 0.983792 (880483a5) / RELION 0.983874/0.983781",
     "seed 2: masked GT FSC-AUC relax 0.982029/0.982046/0.982088 (1a107f5) / RELION 0.982118/0.982108",
     "seed 3: masked GT FSC-AUC relax 0.982442 (1a107f5) / RELION 0.982342/0.982422",
-    "Speed (seed 1): relax 880483a5 16802 s against the fastest seed-1 RELION run 38768 s (job 14817602), 0.43x; both cold on one H100 in separate jobs. The relax arm shared its node with one other benchmark arm on the second GPU of the same job (15037267)."
+    "Speed (seed 1): relax 880483a5 16802 s against the fastest seed-1 RELION run 38768 s (job 14817602), 0.43x; both cold on one H100 in separate jobs. The relax arm shared its node with one other benchmark arm on the second GPU of the same job (15037267).",
+    "Supporting evidence for seed 2, not used for the verdict (team-lead 2026-10-05): etvdam ran seed 2 twice with the re-score patch (ee2f296 = the 880483a5 patch on base d4825f3): masked GT FSC-AUC 0.982055 and 0.982094 against RELION seed-2 runs 0.982101 / 0.982124 / 0.982157 in etvdam's scoring, so seed 2 stays just below with the re-score on a near-current base (by 7e-6 for the better run, 4.6e-5 for the other). The verdict stays on the row's own runs."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "InitialModel (VDAM) has no gold-standard half maps; masked half-map resolution does not apply",
@@ -13624,7 +13625,11 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_vdam/out/et15_og_880483a.json",
      "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_vdam/et15_og_880483a.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_880483a"
-    }
+    },
+    "s2_rescore_etvdam": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/mshape_qual_live/et15_ogtomo_k2/src_rescore_ee2f296/relax_s2_rep1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/mshape_qual_live/et15_ogtomo_k2/src_rescore_ee2f296/relax_s2_rep2"
+    ]
    },
    "date": "2026-10-05",
    "quality_pass": false,
