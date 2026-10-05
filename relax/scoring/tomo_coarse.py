@@ -13,14 +13,16 @@ correction (RELION neither translates nor normalises a tomo image, :429-476), th
 coarse operands, RELION's score translation, and the SPA coarse GEMM scorer (RELION's
 ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on each image's own projections,
 a block of a batch's images per call. The GEMM expansion rounds differently from RELION's
-direct square, so a near-tie at the significance cut can move, as for SPA VDAM K>1.
-:func:`tilt_image_coarse_diff2` (the fused direct-square kernel) is the reference the tests
-compare it with.
+direct square, so the rotations with a sample within the expansion's error bound of a particle's
+significance cut (or of its smallest diff2) are scored again by the fused direct-square kernel before the
+cut is taken (:mod:`relax.scoring.exact_cut`). :func:`tilt_image_coarse_diff2` (that kernel, one image) is
+the reference the tests compare the GEMM scorer with.
 See PLAN.md "S4.2 implementation ladder" in the cryo-ET coordination directory.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import partial
 
@@ -28,8 +30,20 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-# The fused coarse projector's translation capacity (one 128-thread block): the direct reference.
-_FUSED_TRANSLATION_CAPACITY = 128
+from relax.scoring.exact_cut import (
+    FUSED_TRANSLATION_CAPACITY as _FUSED_TRANSLATION_CAPACITY,
+)
+from relax.scoring.exact_cut import (
+    direct_rows_diff2,
+    first_rows,
+    float32_unit,
+    gemm_error_bound,
+    put_rows,
+    row_capacity,
+    undecided_rotations,
+)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -319,16 +333,32 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     return jax.vmap(one)(projected, shifted_all, pixel_weight, initial_diff2)
 
 
+def _images_gemm_error_bound(projected, unshifted, pixel_weight, initial_diff2):
+    """:func:`relax.scoring.exact_cut.gemm_error_bound` ``[N]`` of images with their own projections ``[N, R, P]``
+    (complex, or ``[N, R, 2 P]`` packed ``[Re | Im]``): each image's largest model energy over its rotations."""
+
+    weight = pixel_weight.astype(jnp.float32)
+    if jnp.iscomplexobj(projected):
+        squares = projected.real * projected.real + projected.imag * projected.imag
+    else:
+        n_pixels = projected.shape[-1] // 2
+        squares = projected[..., :n_pixels] * projected[..., :n_pixels] + projected[..., n_pixels:] * projected[..., n_pixels:]
+    model_energy = jnp.max(jnp.sum(squares * weight[:, None, :], axis=-1), axis=1)
+    image_energy = jnp.sum((unshifted.real * unshifted.real + unshifted.imag * unshifted.imag) * weight, axis=-1)
+    return gemm_error_bound(model_energy, image_energy, initial_diff2, int(weight.shape[-1]))
+
+
 @partial(
     jax.jit,
     static_argnames=("first", "count", "image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
 )
 def _coarse_gemm_slot_block(
-    total, projector_half, rotations, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices,
+    total, error, projector_half, rotations, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices,
     *, first, count, image_shape, current_size, model_max_r, padding_factor, texture,
 ):
     """One batch's slots ``first:first + count`` in one program: each image's projections, its GEMM diff2,
-    added in slot order.
+    added in slot order, and the images' GEMM error bounds (:func:`_images_gemm_error_bound`) added to
+    ``error`` ``[P]``.
 
     ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
     ``[P, S]`` and ``translation_angles`` ``[P, S, T, 2]`` are the whole batch's; ``total`` ``[P, T, R]`` is
@@ -360,7 +390,13 @@ def _coarse_gemm_slot_block(
         score_indices,
         image_shape=image_shape,
     )
-    return _add_image_diff2_in_slot_order(total, image_diff2.reshape(n_particles, n_slots, -1, n_rot))
+    bound = _images_gemm_error_bound(
+        projected, unshifted.reshape(n_images, -1), pixel_weight.reshape(n_images, -1), initial_diff2.reshape(n_images)
+    )
+    return (
+        _add_image_diff2_in_slot_order(total, image_diff2.reshape(n_particles, n_slots, -1, n_rot)),
+        error + jnp.sum(bound.reshape(n_particles, n_slots), axis=1),
+    )
 
 
 @jax.jit
@@ -377,6 +413,73 @@ def _significant_cells(mask, *, capacity: int):
     """Flat ids (row-major over ``mask`` ``[P, N]``) of its true cells, ascending, padded to ``capacity``."""
 
     return jnp.nonzero(mask.reshape(-1), size=capacity, fill_value=-1)[0]
+
+
+# Rotations per particle whose samples the adaptive-fraction rule sorts (exact_cut.undecided_rotations).
+_SORTED_ROTATIONS = 256
+
+# Undecided rotations per particle scored again in one go; a flush with a particle holding more takes a larger size.
+_UNDECIDED_ROTATIONS = 8
+
+
+@partial(jax.jit, static_argnames=("max_significants", "adaptive_fraction", "sorted_rotations"))
+def _near_cut_rows(
+    diff2, values, mask, cutoff_count, error, n_slots,
+    *, max_significants: int, adaptive_fraction: float, sorted_rotations: int | None = _SORTED_ROTATIONS,
+):
+    """:func:`relax.scoring.exact_cut.undecided_rotations` of particles from their summed GEMM diff2 ``[P, K * R, T]``.
+
+    The particle's bound is its images' GEMM bounds ``error`` plus one float32 unit of its largest diff2 per image
+    for the two slot-order sums and four for forming the log weights.
+    """
+
+    scored = jnp.isfinite(values).reshape(diff2.shape)
+    largest = jnp.max(jnp.where(scored, diff2, 0.0), axis=(1, 2))
+    smallest = jnp.min(jnp.where(scored, diff2, jnp.inf), axis=(1, 2))
+    margin = 2.0 * (error + (n_slots.astype(jnp.float32) + 4.0) * float32_unit(largest))
+    return undecided_rotations(
+        values,
+        mask,
+        cutoff_count,
+        margin,
+        jnp.where(scored, diff2, jnp.inf),
+        smallest,
+        n_trans=int(diff2.shape[2]),
+        max_significants=max_significants,
+        adaptive_fraction=adaptive_fraction,
+        sorted_rotations=sorted_rotations,
+    )
+
+
+@partial(jax.jit, static_argnames=("r_pad", "current_size", "physical_image_size", "model_max_r", "padding_factor"))
+def _exact_rows_diff2(
+    diff2, ids, use, row_rotations, projectors_full, unshifted, pixel_weight, initial_diff2, translation_angles,
+    full_to_compact, *, r_pad: int, current_size: int, physical_image_size: int, model_max_r: int, padding_factor: int,
+):
+    """Particles' diff2 ``[P, K * R_pad, T]`` with their undecided rotations ``ids`` ``[P, M]`` (where ``use``)
+    scored by the direct square against their class's projector, as one program.
+
+    ``row_rotations`` ``[P, S, M, 3, 3]`` are those rotations' scorer matrices for each tilt image; the other
+    operands are the particles' (``[P, S, pixels]``, ``[P, S]``, ``[P, S, T, 2]``).
+    """
+
+    for class_index, projector_full in enumerate(projectors_full):
+        own = use & (ids // r_pad == class_index)
+        exact = direct_rows_diff2(
+            projector_full,
+            row_rotations,
+            unshifted,
+            pixel_weight,
+            initial_diff2,
+            translation_angles,
+            full_to_compact,
+            current_size=current_size,
+            physical_image_size=physical_image_size,
+            model_max_r=model_max_r,
+            padding_factor=padding_factor,
+        )
+        diff2 = put_rows(diff2, ids, own, exact)
+    return diff2
 
 
 def _coarse_batches(
@@ -540,7 +643,7 @@ def particle_coarse_significance(
     tail cut. ``rotation_log_prior`` is ``[R]``, ``[P, R]`` (each particle's own, a local search) or
     ``None``, and ``translation_log_prior`` ``[P, T]``, the particle's 3D offset prior. The SPA
     posterior primitive is reused, so the two paths cannot drift apart. Returns its statistics dict
-    (``mask [P, R * T]``, ``n_significant``, ``pmax``, ``winner``, ...).
+    (``mask [P, R * T]``, ``n_significant``, ``pmax``, ``winner``, ...) and the ``log_weights`` it cut.
     """
 
     from relax.helpers.oversampling import relion_cuda_f32_coarse_log_weights
@@ -560,7 +663,7 @@ def particle_coarse_significance(
     ).reshape(n_particles, -1)
     # The log weights already carry min_diff2: no further offset.
     raw_max = jnp.zeros(n_particles, jnp.float32)
-    return _posterior_statistics(
+    statistics = _posterior_statistics(
         values,
         raw_max,
         None,
@@ -568,6 +671,7 @@ def particle_coarse_significance(
         max_significants=None if max_significants is None or int(max_significants) <= 0 else int(max_significants),
         tie_score_ulps=0,
     )
+    return {**statistics, "log_weights": values}
 
 
 def _batch_scoring_rotations(
@@ -684,6 +788,7 @@ def particle_coarse_supports(
     (acc_ml_optimiser_impl.h:2245-2345). The supports are then a list per class.
     """
 
+    from relax.helpers.projection import relion_projector_half_to_texture_full
     from relax.refinement import tomo_particles
     from relax.sampling import _relion_adaptive_pass1_rotations
 
@@ -760,6 +865,8 @@ def particle_coarse_supports(
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
     significance_batch = max(1, _SIGNIFICANCE_BATCH_BYTES // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
+    class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
+    rescored, n_scored = [], 0
     supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
     last_total = None
     pending = []
@@ -770,33 +877,100 @@ def particle_coarse_supports(
     # flush whose cells overflow it is compacted again at its exact size.
     cells_capacity = 0
 
-    def dispatch():
-        units_all = np.concatenate([u for u, _ in pending])
-        totals = jnp.concatenate([t for _, t in pending], axis=0)
-        pending.clear()
+    def rotation_prior_of(batch_units):
         if local:
-            rotation_prior = np.full((units_all.size, r_pad_all), -np.inf, dtype=np.float32)
-            for i, unit in enumerate(units_all):
+            rotation_prior = np.full((batch_units.size, r_pad_all), -np.inf, dtype=np.float32)
+            for i, unit in enumerate(batch_units):
                 rotation_prior[i, : int(rotation_counts[unit])] = np.asarray(unit_rotation_log_priors[unit], np.float32)
-        elif n_classes > 1:
+            return rotation_prior
+        if n_classes > 1:
             # The classes' rotations side by side, class-major (class k at k * R_pad), padding at -inf.
             rotation_prior = np.full((n_classes, r_pad_all), -np.inf, dtype=np.float32)
             rotation_prior[:, : coarse_eulers_deg.shape[0]] = np.asarray(rotation_log_prior, np.float32)
-            rotation_prior = rotation_prior.reshape(-1)
-        elif r_pad_all > coarse_eulers_deg.shape[0]:
+            return rotation_prior.reshape(-1)
+        if r_pad_all > coarse_eulers_deg.shape[0]:
             rotation_prior = np.full(r_pad_all, -np.inf, dtype=np.float32)
             rotation_prior[: coarse_eulers_deg.shape[0]] = (
                 0.0 if rotation_log_prior is None else np.asarray(rotation_log_prior, np.float32)
             )
-        else:
-            rotation_prior = rotation_log_prior
-        stats = particle_coarse_significance(
-            totals,
-            rotation_prior,
-            np.asarray(unit_translation_log_prior, dtype=np.float32)[units_all],
+            return rotation_prior
+        return rotation_log_prior
+
+    def significance(batch_units, diff2):
+        return particle_coarse_significance(
+            diff2,
+            rotation_prior_of(batch_units),
+            np.asarray(unit_translation_log_prior, dtype=np.float32)[batch_units],
             adaptive_fraction=adaptive_fraction,
             max_significants=max_significants,
         )
+
+    def exact_cut(units_all, diff2, stats, error, n_images, operands):
+        """The flushed particles' cut on exact scores: the rotations the GEMM rounding leaves undecided at a
+        particle's cut (max_significants or the adaptive fraction) and at its smallest diff2 are scored again by
+        the direct-square kernel, and the cut is taken on those values (:mod:`relax.scoring.exact_cut`).
+
+        One read for the flush: which rotations. Their scorer matrices are built for those rotations alone.
+        """
+
+        cut_inputs = (diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images)
+        rows, most, unresolved = _near_cut_rows(*cut_inputs, **cut_static)
+        ids, use = first_rows(rows, capacity=_UNDECIDED_ROTATIONS)
+        ids, use, most, unresolved = jax.device_get((ids, use, most, unresolved))
+        if int(unresolved) or int(most) > _UNDECIDED_ROTATIONS:
+            if int(unresolved):
+                # A particle's weight outside its sorted rotations reaches its cut: the rule on every sample.
+                rows, most, _ = _near_cut_rows(*cut_inputs, **{**cut_static, "sorted_rotations": None})
+            ids, use = jax.device_get(first_rows(rows, capacity=row_capacity(int(most), rows.shape[1], least=8)))
+        if not use.any():
+            return stats
+        for class_index, class_projector in enumerate(class_projectors):
+            if class_full[class_index] is None:
+                class_full[class_index] = relion_projector_half_to_texture_full(class_projector).astype(jnp.complex64)
+        row_rotations = np.zeros((units_all.size, slots, ids.shape[1], 3, 3), dtype=np.float32)
+        for p in np.flatnonzero(use.any(axis=1)):
+            unit = int(units_all[p])
+            images = np.arange(offsets[unit], offsets[unit + 1])
+            left, _applies = tomo_particles.relion_left_matrices(image_left[images])
+            # A padded rotation repeats the particle's last one (_batch_scoring_rotations).
+            grid_rows = np.minimum(np.where(use[p], ids[p] % r_pad_all, 0), int(rotation_counts[unit]) - 1)
+            if local:
+                grid_rows = unit_rotations[unit][grid_rows]
+            row_rotations[p, : images.size] = np.asarray(
+                _relion_adaptive_pass1_rotations(
+                    coarse_eulers_deg[grid_rows], random_perturbation, angular_sampling_deg, left_matrices=left
+                ),
+                dtype=np.float32,
+            )
+        unshifted, weight, initial, angles = (jnp.concatenate(parts, axis=0) for parts in zip(*operands))
+        diff2 = _exact_rows_diff2(
+            diff2,
+            jnp.asarray(ids),
+            jnp.asarray(use),
+            jnp.asarray(row_rotations),
+            tuple(class_full),
+            unshifted,
+            weight,
+            initial,
+            angles,
+            layout.full_to_compact,
+            r_pad=int(r_pad_all),
+            current_size=int(layout.current_size),
+            physical_image_size=int(layout.image_shape[0]),
+            model_max_r=int(model_max_r),
+            padding_factor=int(padding_factor),
+        )
+        rescored.append((int(use.sum()), int(use.any(axis=1).sum())))
+        return significance(units_all, diff2)
+
+    def dispatch():
+        units_all = np.concatenate([u for u, *_ in pending])
+        diff2 = jnp.concatenate([t for _, t, *_ in pending], axis=0)
+        error = jnp.concatenate([e for _, _, e, *_ in pending], axis=0)
+        n_images = jnp.asarray(np.concatenate([n for _, _, _, n, _ in pending]))
+        operands = [o for *_, o in pending]
+        pending.clear()
+        stats = exact_cut(units_all, diff2, significance(units_all, diff2), error, n_images, operands)
         # The significant cells are compacted on the device; only their ids come back (the dense mask is
         # K * R * T booleans per particle).
         counts = jnp.sum(stats["mask"], axis=1, dtype=jnp.int32)
@@ -841,6 +1015,10 @@ def particle_coarse_supports(
             collect(*in_flight)
             in_flight = None
 
+    cut_static = dict(
+        max_significants=0 if max_significants is None else max(int(max_significants), 0),
+        adaptive_fraction=float(adaptive_fraction),
+    )
     for units, r_pad, p_pad, slot_block in batches:
         # Operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
         # last one, padded slots and particles carry zero weight (their diff2 adds zeros and is not read).
@@ -879,12 +1057,14 @@ def particle_coarse_supports(
         batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
         batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
         batch_angles = jnp.asarray(angles)
-        class_totals = []
+        class_totals, error = [], None
         for class_index, class_projector in enumerate(class_projectors):
             total = jnp.zeros((p_pad, n_coarse_trans, r_pad), dtype=jnp.float32)
+            class_error = jnp.zeros(p_pad, dtype=jnp.float32)
             for first in range(0, slots, slot_block):
-                total = _coarse_gemm_slot_block(
+                total, class_error = _coarse_gemm_slot_block(
                     total,
+                    class_error,
                     class_projector,
                     rotations,
                     batch_unshifted,
@@ -901,14 +1081,36 @@ def particle_coarse_supports(
                     texture=class_textures[class_index],
                 )
             class_totals.append(total[: units.size].swapaxes(1, 2))
+            error = class_error if error is None else jnp.maximum(error, class_error)
             last_total = total
         # K>1: [P, K * R_pad, T], class-major along the rotation axis.
-        pending.append((units, class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)))
-        # Only operands_for keeps the block, so a new block is allocated after the old one is freed.
+        diff2 = class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)
+        n_scored += int(units.size) * n_classes * r_pad * n_coarse_trans
+        # The flush cuts these particles, and scores their undecided rotations again from these operands.
+        pending.append(
+            (
+                units,
+                diff2,
+                error[: units.size],
+                image_valid[: units.size].sum(axis=1),
+                (
+                    batch_unshifted[: units.size], batch_weight[: units.size], batch_initial[: units.size],
+                    batch_angles[: units.size],
+                ),
+            )
+        )
+        # Only operands_for and the pending particles keep operands, so a new block is allocated after the old one is freed.
         del unshifted, weight, initial, batch_unshifted, batch_weight, batch_initial
-        if sum(int(u.size) for u, _ in pending) >= significance_batch:
+        if sum(int(u.size) for u, *_ in pending) >= significance_batch:
             flush()
     flush(last=True)
+    if rescored:
+        n_rows, n_particles = (int(sum(int(v) for v in column)) for column in zip(*rescored))
+        logger.info(
+            "Coarse cut: %d of %d particles had rotations within the GEMM error bound of their cut or of their "
+            "smallest diff2; %d rotations scored again by the direct square (%.3g%% of the pass's samples)",
+            n_particles, n_units, n_rows, 100.0 * n_rows * n_coarse_trans / max(n_scored, 1),
+        )
     for texture in class_textures:
         if texture is not None:
             # The flush read every batch's significance back, so the last projection has completed.

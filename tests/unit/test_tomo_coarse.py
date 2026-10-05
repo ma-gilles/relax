@@ -277,12 +277,13 @@ def test_the_per_image_kernel_matches_the_one_image_calls(gpu_device):
             assert_matches(np.asarray(batched[b]), np.asarray(single), err_msg=f"image {b}")
 
 
-def _gemm_fixture(rng, *, n_images=3, n_rot=256, n_trans=200):
-    """A box-32 projector half, random rotations, images, weights, d0 and translation phases on the GPU."""
+def _gemm_fixture(rng, *, n_images=3, n_rot=256, n_trans=200, box=32):
+    """A projector half for ``box`` (32 by default), random rotations, images, weights, d0 and translation phases
+    on the GPU."""
 
     from relax.helpers.projection import relion_projector_half_to_texture_full
 
-    box, size, pad, max_r = 32, 32, 2, 16
+    size, pad, max_r = box, 2, box // 2
     layout = tomo_coarse.coarse_score_layout((box, box), size, half_spectrum_scoring=True, square_window=False)
     n_px = int(layout.score_indices_np.size)
     side = 2 * max_r * pad + 3
@@ -358,6 +359,105 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
                 )
             )
             assert_matches(gemm[b].T, direct, rtol=1e-5, err_msg=f"image {b}")
+            # The re-score at the cut relies on this bound of the GEMM's distance from the direct square.
+            bound = float(
+                tomo_coarse._images_gemm_error_bound(
+                    projected[b : b + 1], jnp.asarray(f["images"][b : b + 1]), jnp.asarray(f["weight"][b : b + 1]),
+                    jnp.asarray(f["initial"][b : b + 1]),
+                )[0]
+            )
+            worst = float(np.max(np.abs(gemm[b].T - direct)))
+            assert 0.0 < worst <= bound, f"image {b}"
+            # The worst case over the pixels: measured 18 float32 units of the diff2 here, the bound about 2000.
+            assert bound <= 1e-3 * float(np.max(direct))
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("box", [12, 32, 72], ids=["72_pixels", "544_pixels", "2664_pixels"])
+def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
+    """The exact cut's bound on the GEMM scorer's distance from the direct square, over more than 1e6 samples
+    at three score-window sizes: the largest observed difference stays under it."""
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        n_images, n_rot, n_trans = 3, 2816, 120
+        f = _gemm_fixture(np.random.default_rng(29 + box), n_images=n_images, n_rot=n_rot, n_trans=n_trans, box=box)
+        layout = f["layout"]
+        projected = tomo_coarse._coarse_gemm_projections(
+            f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"], texture=None
+        ).reshape(n_images, n_rot, -1)
+        gemm = np.asarray(
+            tomo_coarse._images_coarse_gemm_diff2(
+                projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
+                jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(box, box),
+            )
+        )
+        bound = np.asarray(
+            tomo_coarse._images_gemm_error_bound(
+                projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"])
+            )
+        )
+        rotations = f["rotations"].reshape(n_images, n_rot, 3, 3)
+        assert gemm.size >= 1_000_000
+        for b in range(n_images):
+            direct = np.asarray(
+                tomo_coarse.tilt_image_coarse_diff2(
+                    f["full"], rotations[b], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b], layout,
+                    model_max_r=f["max_r"], padding_factor=f["pad"],
+                )
+            )
+            worst = float(np.max(np.abs(gemm[b].T - direct)))
+            units = worst / float(np.spacing(np.float32(np.max(direct))))
+            print(f"box {box} pixels {layout.score_indices_np.size} image {b}: worst {worst:.4g} = {units:.1f} float32 units of the diff2; bound {bound[b]:.4g}")
+            assert worst <= bound[b], f"image {b}"
+
+
+@pytest.mark.gpu
+def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device):
+    """A particle's re-scored rotations: any subset of rows, at any position in the call, gives the full
+    direct-square pass's values for those rows, the images added in slot order."""
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        n_particles, n_slots, n_rot = 2, 3, 256
+        f = _gemm_fixture(np.random.default_rng(23), n_images=n_particles * n_slots, n_rot=n_rot, n_trans=200)
+        layout = f["layout"]
+        rotations = f["rotations"].reshape(n_particles, n_slots, n_rot, 3, 3)
+        full = np.zeros((n_particles, n_rot, 200), np.float32)
+        for p_ in range(n_particles):
+            total = None
+            for s_ in range(n_slots):
+                b = p_ * n_slots + s_
+                image = np.asarray(
+                    tomo_coarse.tilt_image_coarse_diff2(
+                        f["full"], rotations[p_, s_], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b],
+                        layout, model_max_r=f["max_r"], padding_factor=f["pad"],
+                    )
+                )
+                total = image if total is None else total + image
+            full[p_] = total
+        ids = np.array([[250, 3, 129, 128, 0], [7, 255, 64, 200, 127]])
+        rows = tomo_coarse.direct_rows_diff2(
+            f["full"],
+            jnp.asarray(np.take_along_axis(rotations, ids[:, None, :, None, None], axis=2)),
+            jnp.asarray(f["images"]).reshape(n_particles, n_slots, -1),
+            jnp.asarray(f["weight"]).reshape(n_particles, n_slots, -1),
+            jnp.asarray(f["initial"]).reshape(n_particles, n_slots),
+            jnp.asarray(f["angles"]).reshape(n_particles, n_slots, 200, 2),
+            layout.full_to_compact, current_size=layout.current_size, physical_image_size=f["box"],
+            model_max_r=f["max_r"], padding_factor=f["pad"],
+        )
+        assert_matches(np.asarray(rows), np.take_along_axis(full, ids[:, :, None], axis=1))
 
 
 @pytest.mark.gpu
@@ -427,15 +527,28 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     offsets = np.array([0, 2, 5, 6])
     n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
 
-    def fake_block(total, class_value, rotations, unshifted, weight, initial, angles, score_indices, *, first, count, **kwargs):
+    def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, *, first, count, **kwargs):
         block = slice(first, first + count)
         rotations, weight, initial, angles = rotations[:, block], weight[:, block], initial[:, block], angles[:, block]
         # Each image adds its initial diff2, its rotation's sum, its angle and its weight; each class shifts its
         # diff2 by its own "projector" value times the rotation index, so the classes compete.
-        per_rot = jnp.sum(rotations, axis=(3, 4)) + class_value * jnp.arange(rotations.shape[2], dtype=jnp.float32)
-        image = initial[:, :, None, None] + per_rot[:, :, :, None] + angles[:, :, None, :, 0] + jnp.sum(weight, axis=2)[:, :, None, None]
+        image = image_diff2(class_value, rotations, weight, initial, angles)
         for slot in range(image.shape[1]):
             total = total + image[:, slot].swapaxes(1, 2)  # the pass accumulates translation-major
+        return total, error
+
+    def image_diff2(class_value, rotations, weight, initial, angles):
+        # [P, S, R, T], a function of the matrices alone (a re-scored rotation is not at its grid position).
+        trace = jnp.sum(rotations, axis=(3, 4))
+        per_rot = trace + class_value * jnp.sin(jnp.float32(40.0) * trace)
+        return initial[:, :, None, None] + per_rot[:, :, :, None] + angles[:, :, None, :, 0] + jnp.sum(weight, axis=2)[:, :, None, None]
+
+    def direct(class_value, rotations, unshifted, weight, initial, angles, full_to_compact, **kwargs):
+        # The rotations the cut leaves undecided are scored again: here by the same values.
+        image = image_diff2(jnp.real(class_value), rotations, weight, initial, angles)
+        total = jnp.zeros(image.shape[:1] + image.shape[2:], jnp.float32)
+        for slot in range(image.shape[1]):
+            total = total + image[:, slot]
         return total
 
     def operands(experiment_dataset, image_start, image_stop, layout, **kwargs):
@@ -456,11 +569,16 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     def pass1_rotations(eulers, random_perturbation, angular_sampling_deg, *, left_matrices):
         # [S, R, 3, 3]: RELION's device matrices need the RELION binding; any per-image stand-in will do.
         base = np.asarray(eulers, dtype=np.float32)[:, :, None] * np.eye(3, dtype=np.float32)[None, :, :] / 180.0
-        return np.stack([base + np.float32(i) for i in range(left_matrices.shape[0])])
+        # Each image's matrices depend on its own left matrix (not on its place in the call).
+        return np.stack([base + np.float32(left[0, 0]) for left in np.asarray(left_matrices)])
 
     from relax import sampling
 
     monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", pass1_rotations)
+    from relax.helpers import projection
+
+    monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
+    monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", direct)
     monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
     monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)
@@ -476,7 +594,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         None,
         unit_image_offsets=offsets,
         image_projections=np.tile(np.eye(3), (n_images, 1, 1)),
-        image_left=np.tile(np.eye(3), (n_images, 1, 1)),
+        image_left=np.eye(3)[None] * (1.0 + np.arange(n_images))[:, None, None],
         unit_old_offsets_px=np.zeros((3, 3)),
         coarse_eulers_deg=rng.uniform(0.0, 180.0, size=(n_rot, 3)),
         random_perturbation=0.0,
@@ -494,6 +612,11 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         image_size=8,
     )
     assert len(supports) == 2 and all(len(class_supports) == 3 for class_supports in supports)
+    # A batch with an undecided rotation is cut again (same translation prior): its last cut is published.
+    last_cut = {}
+    for call in captured:
+        last_cut[call[2].tobytes()] = call
+    captured = list(last_cut.values())
     assert len(captured) == (1 if flushes == "one_flush" else 3)
     diff2 = np.concatenate([c[0] for c in captured])
     translation_prior = np.concatenate([c[2] for c in captured])
@@ -511,3 +634,169 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
             n_significant += supports[k][p].size
     assert n_significant > 3  # the cut keeps more than each particle's winner
     assert pmax.shape == (3,)
+
+
+def test_near_cut_rows_are_the_cut_and_minimum_neighbourhoods_of_capped_particles():
+    """Undecided samples: within twice the bound of the cut's log weight, or of the smallest diff2, and only for
+    a particle that max_significants cuts."""
+
+    n_rot, n_trans, cap = 6, 4, 6
+    diff2 = np.full((3, n_rot, n_trans), 1100.0, np.float32)
+    # Particle 0 and 1 share their diff2: a top five (two a hair apart at the minimum), two samples a hair apart
+    # at rank six, the rest far.
+    for p_ in (0, 1):
+        diff2[p_, 0, :] = [1000.0, 1001.0, 1002.0, 1003.0]
+        diff2[p_, 2, 1] = 1010.0
+        diff2[p_, 4, 3] = np.nextafter(np.float32(1010.0), np.float32(2000.0))
+        diff2[p_, 5, 0] = np.nextafter(np.float32(1000.0), np.float32(2000.0))  # a hair above the smallest
+    values = (diff2.min(axis=(1, 2), keepdims=True) - diff2).reshape(3, -1).astype(np.float32)
+    order = np.argsort(-values, axis=1, kind="stable")
+    mask = np.zeros(values.shape, bool)
+    np.put_along_axis(mask, order[:, :cap], True, axis=1)
+    cutoff_count = np.array([cap, cap - 1, cap], np.int32)  # particle 1 is cut by the adaptive fraction
+    error = np.full(3, 4 * np.spacing(np.float32(1100.0)), np.float32)
+    rows, most, _ = tomo_coarse._near_cut_rows(
+        jnp.asarray(diff2), jnp.asarray(values), jnp.asarray(mask), jnp.asarray(cutoff_count), jnp.asarray(error),
+        jnp.asarray([3, 3, 3]), max_significants=cap, adaptive_fraction=0.999,
+    )
+    rows = np.asarray(rows)
+    np.testing.assert_array_equal(rows[0], [True, False, True, False, True, True])  # minimum, cut pair, near-minimum
+    # Particle 1 is cut by the adaptive fraction, between samples far apart: its GEMM scores decide.
+    assert not rows[1].any()
+    assert rows[2].all()  # every sample of particle 2 ties at the cut
+    assert int(most) == n_rot
+
+    ids, use = tomo_coarse.first_rows(jnp.asarray(rows), capacity=4)
+    np.testing.assert_array_equal(np.asarray(ids)[0], [0, 2, 4, 5])
+    np.testing.assert_array_equal(np.asarray(use), [[True] * 4, [False] * 4, [True] * 4])
+    exact = jnp.asarray(np.arange(3 * 4 * n_trans, dtype=np.float32).reshape(3, 4, n_trans))
+    put = np.asarray(tomo_coarse.put_rows(jnp.asarray(diff2), ids, use, exact))
+    assert_matches(put[0][[0, 2, 4, 5]], np.asarray(exact)[0])
+    assert_matches(put[0][[1, 3]], diff2[0][[1, 3]])
+    assert_matches(put[1], diff2[1])
+
+
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes):
+    """The pass with a scorer that is off by less than its stated bound: where max_significants cuts, the
+    supports are the cut of the exact diff2, and only the undecided rotations were scored exactly."""
+
+    rng = np.random.default_rng(31)
+    offsets = np.array([0, 2, 5, 6, 9])
+    n_images, n_units, n_rot, n_trans, cap = int(offsets[-1]), 4, 200, 9, 20
+    bound = np.float32(8 * np.spacing(np.float32(2000.0)))
+
+    def exact_image_diff2(class_value, rotations, initial, angles):
+        # [P, S, R, T] float32; spread over a few units so that many samples sit near any cut.
+        # A function of the matrices alone: a re-scored rotation is not at its grid position.
+        trace = jnp.sum(rotations, axis=(3, 4))
+        per_rot = trace * jnp.float32(0.37) + class_value * jnp.sin(jnp.float32(40.0) * trace)
+        return (initial[:, :, None, None] + per_rot[:, :, :, None] + angles[:, :, None, :, 0]).astype(jnp.float32)
+
+    def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, *, first, count, **kwargs):
+        block = slice(first, first + count)
+        image = exact_image_diff2(class_value, rotations[:, block], initial[:, block], angles[:, block])
+        valid = (initial[:, block] > 0)[:, :, None, None]
+        # The "GEMM": the exact values off by up to half the stated bound per image, in a fixed pattern.
+        wobble = jnp.float32(0.5) * bound * jnp.cos(jnp.arange(image.size, dtype=jnp.float32) * 1.7).reshape(image.shape)
+        image = jnp.where(valid, image + wobble, 0.0)
+        for slot in range(image.shape[1]):
+            total = total + image[:, slot].swapaxes(1, 2)
+        return total, error + bound * jnp.sum(valid[:, :, 0, 0], axis=1)
+
+    direct_calls = []
+
+    def fake_direct(class_value, rotations, unshifted, weight, initial, angles, full_to_compact, **kwargs):
+        direct_calls.append(int(rotations.shape[2]))
+        image = jnp.where(
+            (initial > 0)[:, :, None, None], exact_image_diff2(jnp.real(class_value), rotations, initial, angles), 0.0
+        )
+        total = jnp.zeros(image.shape[:1] + image.shape[2:], jnp.float32)
+        for slot in range(image.shape[1]):
+            total = total + image[:, slot]
+        return total
+
+    def operands(experiment_dataset, image_start, image_stop, layout, **kwargs):
+        images = np.arange(int(image_start), int(image_stop))
+        return (
+            jnp.zeros((images.size, 4), jnp.complex64),
+            jnp.ones((images.size, 4), jnp.float32),
+            jnp.asarray(600.0 + 100.0 * np.modf(images * 0.6180339887)[0], jnp.float32),
+        )
+
+    def pass1_rotations(eulers, random_perturbation, angular_sampling_deg, *, left_matrices):
+        base = np.asarray(eulers, dtype=np.float32)[:, :, None] * np.eye(3, dtype=np.float32)[None, :, :] / 180.0
+        # Each image's matrices depend on its own left matrix (not on its place in the call).
+        return np.stack([base + np.float32(left[0, 0]) for left in np.asarray(left_matrices)])
+
+    captured = []
+    significance = tomo_coarse.particle_coarse_significance
+
+    def capture(diff2, rotation_prior, translation_prior, **kwargs):
+        captured.append(np.asarray(diff2))
+        return significance(diff2, rotation_prior, translation_prior, **kwargs)
+
+    from relax import sampling
+    from relax.helpers import projection
+
+    monkeypatch.setattr(sampling, "_relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
+    monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
+    monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", fake_direct)
+    monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
+    monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)
+    layout = tomo_coarse.CoarseScoreLayout(
+        (8, 8), 6, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(40)
+    )
+    eulers = rng.uniform(0.0, 180.0, size=(n_rot, 3))
+    translations = rng.uniform(-1.0, 1.0, size=(n_trans, 3))
+    class_values = tuple(jnp.float32(v) for v in (0.3, -0.2)[:n_classes])
+    kwargs = dict(
+        unit_image_offsets=offsets,
+        image_projections=np.tile(np.eye(3), (n_images, 1, 1)),
+        image_left=np.eye(3)[None] * (1.0 + np.arange(n_images))[:, None, None],
+        unit_old_offsets_px=np.zeros((n_units, 3)),
+        coarse_eulers_deg=eulers,
+        random_perturbation=0.0,
+        angular_sampling_deg=15.0,
+        coarse_translations_px=translations,
+        projector_half=class_values if n_classes > 1 else class_values[0],
+        layout=layout,
+        noise_variance_half=None,
+        rotation_log_prior=np.zeros((n_classes, n_rot), np.float32) if n_classes > 1 else None,
+        unit_translation_log_prior=np.zeros((n_units, n_trans), np.float32),
+        adaptive_fraction=0.999,
+        max_significants=cap,
+        model_max_r=3,
+        padding_factor=2,
+        image_size=8,
+    )
+    supports, _pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+    supports = [supports] if n_classes == 1 else supports
+    wobbly = captured[0]
+    assert len(captured) == 2 and captured[1].shape == wobbly.shape  # one batch: its GEMM cut, then the exact cut
+    r_pad = wobbly.shape[1] // n_classes
+    assert direct_calls and max(direct_calls) < n_rot  # a few rotations per particle, not the grid
+
+    # The exact diff2 of every sample, from the same stand-ins with every rotation "undecided".
+    monkeypatch.setattr(
+        tomo_coarse,
+        "_near_cut_rows",
+        lambda diff2, *a, **k: (jnp.ones(diff2.shape[:2], bool), jnp.int32(diff2.shape[1]), jnp.int32(0)),
+    )
+    captured.clear()
+    all_exact, _ = tomo_coarse.particle_coarse_supports(None, **kwargs)
+    all_exact = [all_exact] if n_classes == 1 else all_exact
+    exact = captured[1]
+    assert 0.0 < np.max(np.abs(exact - wobbly)) <= 3 * bound
+    n_capped = 0
+    for unit in range(n_units):
+        log_weight = (exact[unit].min() - exact[unit]).astype(np.float32).reshape(n_classes, r_pad, n_trans)[:, :n_rot]
+        kept = np.sort(np.argsort(-log_weight.reshape(-1), kind="stable")[:cap])
+        got = np.sort(np.concatenate([k * n_rot * n_trans + supports[k][unit] for k in range(n_classes)]))
+        want = np.sort(np.concatenate([k * n_rot * n_trans + all_exact[k][unit] for k in range(n_classes)]))
+        np.testing.assert_array_equal(got, want, err_msg=f"particle {unit}")
+        if got.size == cap:
+            n_capped += 1
+            np.testing.assert_array_equal(got, kept, err_msg=f"particle {unit}")
+    assert n_capped >= 2

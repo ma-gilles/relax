@@ -472,6 +472,45 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   again identical. et09_box64 K=1 seed 2 end to end on one H100 (job 14864247): 6391 s, against 18434 s for relax
   before this work and 9955 / 8858 s for stock RELION; per-iteration average Pmax tracks the earlier relax run
   (it200 0.659 vs 0.658; RELION 0.669-0.670).
+- Exact cut of the subtomogram coarse pass (2026-10-05, speedw; `relax/scoring/exact_cut.py`,
+  `tomo_coarse.particle_coarse_supports`). The GEMM scorer's expansion `d0 + 0.5 A + 0.5 C - X` rounds differently
+  from RELION's direct square; a particle's diff2 is the sum of about 40 tilt images' (thousands, float32 unit 2e-4)
+  while its samples' log weights at the significance cut are closer than that, so the rounding moved samples across
+  the cut: on etob2l_plain, iteration 2 from an identical iteration 1, the kept sets matched RELION's for 194 of 200
+  particles, and on w2_09 (box 192 Refine3D) particle TS_06/154 kept one coarse sample where RELION keeps two and
+  lost the one that wins the fine pass. Each flush now cuts twice. The first cut is on the GEMM scores; the rotations
+  holding a sample the scores do not decide are scored again by RELION's fused direct-square kernel
+  (`relion_coarse_diff2_projector_per_image_f32`, every translation of the rotation, the images added in slot
+  order) and the flush is cut again on those values. Undecided means within twice the error bound of the cut:
+  of the `max_significants` rank where that sets the cut, and of the adaptive-fraction threshold otherwise (on the
+  sorted weights, between the first sample whose running sum exceeds the tail shrunk by `exp(-margin)` and the
+  first whose sum exceeds the tail grown by `exp(margin)`); for a particle with such a sample, the rotations within
+  the bound of its smallest diff2 too, because RELION's `prior + min_diff2 - diff2` rounds `prior + min_diff2` per
+  sample at the diff2's float32 unit. The bound is the worst case of the two float32 forms,
+  `(4 P + 11) 2^-24 (d0 + 0.5 max_r A + 0.5 C + sqrt(max_r A * C))` per image for `P` score pixels
+  (`exact_cut.gemm_error_bound`), plus one unit of the largest diff2 per image for the slot-order sums; no fitted
+  constant. Observed GEMM minus direct square: at most 8, 22 and 30 float32 units of the diff2 at 84, 544 and 2664
+  pixels over 1e6 samples each (GPU test), 6 units over 14M samples of etob2l. Results: etob2l it1 -> it2 kept sets
+  199, 199, 198, 199, 199 of 200 in five local runs on earlier heads and 198, 197, 198 on the landed code
+  (RELION's exact ties are particles 683, 412 and 622; 895 and 980 sit within one float32 unit of the cut), BPref
+  relative L2 8.4e-5 / 2.5e-4 per half (GEMM 1.3e-3 / 6.5e-4;
+  RELION against RELION 1.4e-4 / 1.6e-4); w2_09 iteration 1 equal to RELION for all 2000 particles and the full
+  run's map agreement back to 0.999999 (etw, job 14993708, on the earlier head b2d719dd). Samples scored again on
+  et09_box64 K=1: 0.5-1.0% in iterations 1-3, 0.005% by iteration 10-20, 0.0035% from iteration 30 on (one or two
+  rotations per particle of 36864). Gate (i) (etob2l it1 -> it2): passes the kept-set reading, does not pass
+  etvdam's it2 map bound, and is about 4x closer to RELION than main. Kept sets 198, 197, 198 of 200 in three local
+  runs (speedw), BPref relative L2 8.2e-5 / 2.5e-4 per half. etvdam's it2 map relative L2 against 8 RELION runs:
+  kept sets 196, 195, 200, median 7.0e-4 to 1.09e-3 and max 9.9e-4 to 1.38e-3 against the 8.9e-4 bound (RELION's
+  8-run pairs: median 4.4e-4, max 1.10e-3); main's GEMM scorer median 3.85e-3, max 4.14e-3; the cap-only re-score
+  ca31baaf (one run) median 2.48e-4, max 8.23e-4. The mass-cut part of the re-score moves it2 away from RELION
+  relative to cap-only; why is open (follow-up, speedw). Cost, full et09 K=1 runs: +8.3% on H100 (3 concurrent arms
+  on one node, noisy; job 15009587, main 5926 s against 6420 s), +5.3% on A100 (local, concurrent; 10838 against
+  11413 s). Per span of iterations on the H100: +19% in 50-100, +7% in 100-150, +4.5% in 150-199. Follow-up (open):
+  a clean same-node H100 pair (main against this commit only), and a flush profile of iterations 50-100 (samples
+  re-scored per flush, time per flush, whether a tighter bound or skipping groups with no sample near the cut gets
+  the cost under 3% with gate (i) kept). Earlier placements of the second cut cost more and were dropped: per batch
+  behind the next batch's scores +13.1% (job 14978218), per batch before them +9.1% (job 14997577, where the model
+  bound `2 sqrt(2 P)` units read +7.5% and was not adopted).
 - Subtomogram Refine3D `--firstiter_cc` (RELION's default command; RELION 5.0.1 mpiscale MPI 3x4, H100;
   relax accuracy-only arms on A100). Masked GT FSC-AUC on main 22ea0b2 against RELION's same-seed range
   (stock r1/r2, eto_plain also r3/r4, plus the double-BP build where run):
@@ -1122,6 +1161,15 @@ team-lead decision). They remove about 220 sub-0.2 s compile events, about 5 s o
 run (call-site census, job 14955029; it3 maps equal to 7e-7, medium 14955020 pass before the rebase): 1% is below what
 a pair resolves and not worth a medium run. The window gathers and the exact CTF gather of the same series are on main
 as 65f16e5 and 54cbb65.
+
+Exact cut in the single-particle pass 1: tried 2026-10-04, not landed (speedw; team-lead decision). Pass 1 scores
+with the same GEMM scorer and binds `max_significants` for long (plain 10k K=1: every image at the cap of 100 until
+about iteration 30; ribosome K4: 30-84% of images in iterations 1-20), but with one image per particle the GEMM cut
+already reproduces RELION's: plain 10k K=1, iteration 2 from scratch, relax main against RELION it2 map 1.1e-6 and
+BPref 5.4e-6 / 5.0e-6 with RELION against RELION at 7.4e-7 and 3.9e-6 / 3.7e-6, 0 of 200 poses differing; the
+re-score changed nothing measurable (etvdam, jobs 14974373 and 14974374). It re-scored 0.02-0.6% of the samples and
+cost +7% on plain 10k K=1 (208 -> 223 s) and +26% on ribosome K4 100k (1552 -> 1954 s), same node, one H100 each
+(job 14974269). The subtomogram pass needs it because it sums about 40 tilt images' diff2.
 
 Pass-1 batch loop (2026-10-04, speedw; relax 0ae37fd, 54cbb65, 4efac62, 3636596): after the score program, one
 program per batch (`coarse_publication.coarse_support_posterior`) forms the K=1 RELION-order log weights, the float32
