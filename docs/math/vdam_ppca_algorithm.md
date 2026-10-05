@@ -1425,7 +1425,46 @@ scientific contract; runnable code alone does not establish recovery.
   nearly every update (47 sizes in the stage), the single-particle reader does
   not pad tiles to fixed sizes as the tilt reader does, and a new shape costs
   the oversampled programs more to compile (13-20 s against 8-10 s; 25-38 s
-  against the same on a cold compile cache). Open: pad single-particle tiles.
+  against the same on a cold compile cache).
+
+  Single-particle tile padding (October 5, 2026). The single-particle reader now
+  pads a tile with zero images to its planned size bucket
+  ([_load_tile](../../relax/ppca_refinement/full_row_stream.py), `n_real` in the
+  layout), as the tilt reader does. Padding images have zero CTF and take no
+  posterior mass, and the padded size never exceeds the planned tile, so the
+  memory plan is unchanged. Same fixtures and seed, one H100 (Slurm 15004428,
+  `jobs/slurm_sp_padding_walls_h100_cd0d432f`), each source on its own empty
+  compile cache, every arm run cold and then warm; updates 111-200, last stage
+  161-200, seconds:
+
+  | Arm | Whole run, before (cold / warm) | Whole run, padded (cold / warm) | Last stage, before (warm) | Last stage, padded (warm) | Updates compiling a new tile shape, before / padded (whole run; last stage) |
+  | --- | --- | --- | --- | --- | --- |
+  | noise 0.25 dense | 623 / 620 | 324 / 321 | 250 | 141 | 67 / 5; 18 / 0 |
+  | noise 0.25 last-stage oversampling | 989 / 767 | 342 / 311 | 397 | 136 | 73 / 7; 24 / 2 |
+  | noise 1 dense | 703 / 702 | 412 / 412 | 339 | 244 | 67 / 5; 18 / 0 |
+  | noise 1 last-stage oversampling | 1299 / 966 | 386 / 368 | 602 | 200 | 73 / 7; 24 / 2 |
+
+  The persistent cache holds 17 programs after the padded runs against 242
+  before. The eleven-state GT start already ran one full tile shape and is
+  unchanged (dense HP3 0.74 s, oversampling 1 0.53 s per update). Final
+  checkpoints differ from the unpadded ones by no more than the unpadded
+  cold-against-warm repeat does (relative L2 of the loadings, second moments and
+  noise, all six arms; `harness10/sp_padding_table.py` in the run root). One
+  difference is unexplained and not chased: the padded oversampling 1 GT start
+  differs between its cold and warm runs by 2.6e-3 in the loadings, against
+  1.4e-4 for padded against unpadded (both cold) and 1.3e-4 for the unpadded
+  repeat. With
+  padding, last-stage oversampling costs the same as dense end to end or less.
+  The allocator limited to a 16 GB card's pool and to a 40 GB card's
+  (Slurm 15004433) runs both single-particle stages with full tiles and the
+  k3conf cryo-ET cell. The k3conf cell's out-of-memory failure on a real P100
+  (Polar 413550, a 2.13 GiB block-program allocation at radius 32) was pool
+  fragmentation under `XLA_PYTHON_CLIENT_PREALLOCATE=false`, not a miscount: the
+  pool had grown to its limit in regions of 1, 4 and 8.92 GiB, and 9.65 GiB was
+  in use when the request failed. On an A100 limited to the same pool the
+  identical plans run with preallocation off and on, and the counted 12.33 GiB
+  lies 3% above the measured peak of 11.94-11.96 GiB
+  (`jobs/local_p100pool_a100_20261005`).
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials
