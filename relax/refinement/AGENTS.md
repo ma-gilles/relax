@@ -3,7 +3,8 @@
 The root guide and `relax/AGENTS.md` apply. Code rules: `docs/development/refactor_rules.md`; the owner's
 rulings and the full record: `docs/development/refactor_principles.md`.
 A refactor slice follows `docs/development/refactor_procedure.md`; `docs/development/module_template.md` uses
-this directory as its worked example and lists where it still falls short.
+this directory as its worked example; `docs/development/refinement_rules_status.md` lists what still falls short
+of the rules (update it in the commit that closes an item).
 Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## What this directory owns

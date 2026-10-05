@@ -32,6 +32,9 @@ counter-example from the same code before it was changed. The rules behind it ar
 
 ## Where the worked example still falls short
 
+The current list of open items, coverage limits and decisions is
+[refinement_rules_status.md](refinement_rules_status.md); keep it current as items close.
+
 - **Shared glue.** The body of the numbered loop is 1,247 lines; 847 of them are shared by both modes, and
   256 of those are calls with wide argument lists, 52 installs, 29 history writes, 64 logs. The loop reads as
   a sequence, but a long one. 29 functions of the package still take ten or more parameters, the widest 28.
@@ -42,11 +45,9 @@ counter-example from the same code before it was changed. The rules behind it ar
 - **The local-search route has no CPU check.** The fingerprint's stand-in replaces the dense engine only;
   local search, tomography, symmetry other than C1 and multi-shape optics are verified by the GPU tiers
   alone. Every change to them rests on tests that take half an hour and do not compare an ordered trace.
-- **Open question: is the mode in the scoring engine a variant or two contracts?**
-  `half_scoring.DenseVariantPolicy` carries `k_class_enabled`, and the dense half scoring in `half_scoring.py`
-  branches on it twice, below the controller's decision. Under rule 6 it may stay if it selects a variant of
-  one coherent operation; it should be two functions if K=1 and Class3D need different operands, invariants
-  or state transitions there. Not yet decided.
+- **The mode in the scoring engine is a variant (decided).** `half_scoring.DenseVariantPolicy` carries
+  `k_class_enabled`, and the dense half scoring branches on it twice, below the controller's decision. It
+  selects a variant of one coherent operation; revisit only if K=1 and Class3D need different operands there.
 - Also unfinished at the boundary: `full_refinement.main` is 1,096 lines (was 1,791). The fingerprint runs it
   (19 `main_*` cases: K=1 and Class3D runs, `--continue`, schedules, start-up noise, the ledger, refused
   commands; not the frozen boundary or RELION replay, which only the GPU tiers run) and its start-up maps,
