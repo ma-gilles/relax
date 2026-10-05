@@ -36,8 +36,8 @@ Priorities, in order: correctness, GPU performance, clarity.
    commit, with its trace (the entry paths checked, what was removed) in the message.
 8. Ask the owner about a choice of taste or of capability, one question at a time. Continue the work that does
    not depend on the answer.
-9. When two modes share a sequence, share the steps and write the sequence in each mode. Pass no mode flag
-   below the point where the mode is decided.
+9. Decide a mode once, at its owning boundary, and split by contract, not by flag: code rules 5 and 6 in
+   `docs/development/refactor_rules.md`.
 10. A structural change preserves casts, reduction order, JIT boundaries, required buffer lifetimes, serialized
     formats and scientific defaults. Commit correctness, performance and structure separately.
 11. Keep diffs focused: do not reformat untouched code; commit no data, binaries, run outputs or credentials.
@@ -94,7 +94,7 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 
 - Algorithm to code, step by step: `docs/math/relion_refinement_algorithm.md`.
 - Workflow entry points: `docs/development/codebase.md`. RELION defaults: `docs/development/relion_defaults.md`.
-- Refactor rules: the short list in `docs/development/refactor_rules.md`; the full record with examples in
+- Code rules: `docs/development/refactor_rules.md`; the owner's rulings and the full record with examples in
   `docs/development/refactor_principles.md`. How to run one refactor slice, with its gate scripts:
   `docs/development/refactor_procedure.md`. The shape a module should end in: `docs/development/module_template.md`.
 - Conventions shared with RECOVAR (numerical source, CUDA and FFI, documentation): RECOVAR's own guides,

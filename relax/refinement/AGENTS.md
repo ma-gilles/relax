@@ -1,7 +1,7 @@
 # relax/refinement/: Refine3D and Class3D controller
 
-The root guide and `relax/AGENTS.md` apply. Rules: the short list in
-`docs/development/refactor_rules.md`, the full record in `docs/development/refactor_principles.md`.
+The root guide and `relax/AGENTS.md` apply. Code rules: `docs/development/refactor_rules.md`; the owner's
+rulings and the full record: `docs/development/refactor_principles.md`.
 A refactor slice follows `docs/development/refactor_procedure.md`; `docs/development/module_template.md` uses
 this directory as its worked example and lists where it still falls short.
 Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
@@ -29,7 +29,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
    preceding iteration's state.
 3. An operation returns its result; the controller assigns state at the call site. Do not hide a write in a
    helper or an `apply` method.
-4. Share steps between K=1 and Class3D, not a sequence with a mode flag. `mean_helpers.py` has the pattern:
+4. Split K=1 and Class3D by contract, not by flag (code rule 6). `mean_helpers.py` has the pattern:
    `reconstruct_numbered_k1_halfmaps` and `reconstruct_numbered_class_maps` each spell out their sequence and
    call shared helpers that take no mode argument.
 5. Keep genuine scientific alternatives separate. The K=1 and Class3D prior formulas do not become one formula
@@ -48,7 +48,8 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 - The CPU tests that name the module you changed:
   `grep -rl 'refinement.<module>\|refinement import .*<module>' tests/unit | xargs pixi run python -m pytest -q`.
 - For a move-only change to the controller or its callees: `pixi run fingerprint check <base> --work-dir <scratch>`
-  must report 0 differences. `pixi run fingerprint cases` lists what runs and what it does not cover.
+  must report 0 differences in results, files and checkpoints; trace differences confined to log rows are
+  allowed and are reported as such. `pixi run fingerprint cases` lists what runs and what it does not cover.
 - Then `pixi run test-smoke`. `python scripts/run_test_tier.py plan smoke` prints the GPU files it selects for
   your diff and the ones it defers to the medium tier.
 - A change to scoring, reconstruction, noise, priors or convergence is a numerical change: `pixi run test-medium`.
@@ -60,10 +61,11 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 - Tests pin the controller's source text. `tests/unit/test_k1_mean_lifecycle.py` asserts that `del init_volume`
   precedes `_snapshot_and_release_previous_k1_means(reference_model.maps)`, which precedes
   `estimate_split_half_prior(` and `reconstruct_numbered_k1_halfmaps(` in the text of `refine_single_volume`.
-  Before renaming or moving a statement, `grep -rn '<name>' tests/` and update the pins in the same commit.
-- Release points are behaviour. That test pins one: the previous K=1 means are copied to the host and released
-  before the prior update and the reconstruction. Moving a release changes what is alive during later GPU work
-  even when no value changes; it gets its own commit that says what differs at run time.
+  Before renaming or moving a statement, `grep -rn '<name>' tests/` and convert the pin to a behavioural test
+  in the same commit (code rule 13).
+- Buffer lifetimes follow code rule 3, not old release points. That test pins one: the previous K=1 means are
+  copied to the host and released before the prior update and the reconstruction. Releasing earlier is
+  allowed; extending a lifetime is not; state any change and its peak-memory effect.
 - A flag that tells a callee how to read another argument may still have one live caller.
   `_reconstruct_volume_eager` keeps `tau_is_1d` because the final K=1 solve passes a full volume while the
   numbered operations pass shell curves. Trace every caller before removing such a flag.
