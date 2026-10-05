@@ -157,17 +157,30 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
 
 
 @pytest.mark.unit
-def test_mstep_translations_keep_every_translation_with_mass_and_pad_to_a_power_of_two():
-    posterior = np.zeros((3, 500), dtype=np.float32)
-    posterior[0, [7, 300]] = 0.5
-    posterior[2, 41] = 1.0
-    kept = resident_tilts.mstep_translations(posterior, 500)
-    assert kept.index.size == 32
-    np.testing.assert_array_equal(kept.index[kept.valid], [7, 41, 300])
-    assert not np.any(kept.valid[3:])
-    # Mass on every translation keeps the whole grid.
-    full = resident_tilts.mstep_translations(np.ones((2, 40), dtype=np.float32), 40)
-    np.testing.assert_array_equal(full.index, np.arange(40))
+def test_unit_mstep_translations_keep_each_particles_translations_with_mass():
+    """Each unit keeps the translations with mass in any of its rows, ascending, padded with its last (invalid)."""
+
+    posterior = np.zeros((4, 500), dtype=np.float32)
+    posterior[0, [300, 7]] = 0.5
+    posterior[1, 41] = 1.0  # unit 0's second row
+    posterior[3, [2, 9, 11, 13, 17]] = 0.2  # unit 2
+    row_unit = np.array([0, 0, 1, 2])  # unit 1's row has no mass; unit 3 has no rows
+    kept = resident_tilts.unit_mstep_translations(posterior, row_unit, unit_capacity=4, n_fine_trans=500)
+    assert kept.index.shape == (4, 8)  # five translations at most -> the next power of two
+    np.testing.assert_array_equal(kept.index[0, :3], [7, 41, 300])
+    np.testing.assert_array_equal(kept.index[0, 3:], 300)
+    np.testing.assert_array_equal(kept.index[2, :5], [2, 9, 11, 13, 17])
+    np.testing.assert_array_equal(kept.valid.sum(axis=1), [3, 0, 5, 0])
+    np.testing.assert_array_equal(kept.index[[1, 3]], 0)
+    # Every translation of a row with mass is kept, so the dropped ones carry exactly zero posterior.
+    for row, unit in enumerate(row_unit):
+        assert set(np.flatnonzero(posterior[row])) <= set(kept.index[unit][kept.valid[unit]])
+    # Rows in any order give the same tables.
+    shuffled = resident_tilts.unit_mstep_translations(posterior[::-1], row_unit[::-1], unit_capacity=4, n_fine_trans=500)
+    np.testing.assert_array_equal(shuffled.index, kept.index)
+    # A unit with mass on the whole grid keeps the grid.
+    full = resident_tilts.unit_mstep_translations(np.ones((2, 40), np.float32), np.array([0, 1]), unit_capacity=2, n_fine_trans=40)
+    np.testing.assert_array_equal(full.index, np.tile(np.arange(40), (2, 1)))
     assert full.valid.all()
 
 
@@ -340,7 +353,9 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
     row_unit = np.array([0, 1, 2, 2, 0])
     row_has_mass = np.array([True, True, False, True, True])
     angles = np.arange(12 * 6 * 2, dtype=np.float32).reshape(12, 6, 2)
-    kept = resident_tilts.MstepTranslations(index=np.array([1, 4]), valid=np.array([True, True]))
+    # Every unit's translations [1, 4, 0, 2, 3, 5]; the first block takes its first two.
+    unit_translations = np.tile([1, 4, 0, 2, 3, 5], (4, 1))
+    kept = resident_tilts.MstepTranslations(index=np.array([0, 1]), valid=np.array([True, True]))
     tables = resident_tilts._slot_mstep_tables(
         views,
         row_unit=row_unit,
@@ -350,6 +365,7 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
         block_rows=2,
         image_angles=angles,
         layout_image_ids=np.arange(12),
+        unit_translations=unit_translations,
         translation_blocks=(kept,),
         image_capacity=12,
     )
@@ -364,7 +380,7 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
     np.testing.assert_array_equal(np.asarray(tables.targets), np.where(views >= 0, views, 12))
     assert_matches(np.asarray(tables.angles)[1, 0, 2], angles[5][[1, 4]])
     # Several translation blocks: block b of every slot and unit holds that image's phases at the block's indices.
-    blocks = (kept, resident_tilts.MstepTranslations(index=np.array([0, 5]), valid=np.array([True, False])))
+    blocks = (kept, resident_tilts.MstepTranslations(index=np.array([2, 5]), valid=np.array([True, False])))
     several = resident_tilts._slot_mstep_tables(
         views,
         row_unit=row_unit,
@@ -374,13 +390,17 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
         block_rows=2,
         image_angles=angles,
         layout_image_ids=np.arange(12),
+        unit_translations=unit_translations,
         translation_blocks=blocks,
         image_capacity=12,
     )
     assert np.asarray(several.angles).shape == (3, 2, 4, 2, 2)
     for block, translations in enumerate(blocks):
         for slot, unit in ((0, 1), (1, 2), (2, 0)):
-            assert_matches(np.asarray(several.angles)[slot, block, unit], angles[views[slot, unit]][translations.index])
+            assert_matches(
+                np.asarray(several.angles)[slot, block, unit],
+                angles[views[slot, unit]][unit_translations[unit][translations.index]],
+            )
 
 
 @pytest.mark.unit

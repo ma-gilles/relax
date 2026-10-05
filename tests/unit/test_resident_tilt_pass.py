@@ -368,6 +368,58 @@ def test_slot_blocked_tilt_projections_are_the_one_block_pass(_resident_producti
     _assert_noise_stats_match(whole.noise_stats, blocked.noise_stats)
 
 
+@requires_resident_gpu
+def test_each_particles_own_translations_are_the_whole_grid_mstep(_resident_production_env, monkeypatch):  # noqa: F811
+    """The M-step at each particle's translations with mass (unit_mstep_translations) is the whole-grid M-step.
+
+    The translations it drops carry exactly zero posterior, so only the order of the image-power
+    reduction over translations differs: the discrete state is exact, the scores equal and the maps and
+    sums inside the repeat band. The whole grid multiplies a non-finite translated tile by a zero
+    posterior into NaN where the sparse M-step drops it, so both runs must be finite (non-finite images
+    stop the run at preprocessing, relax#16). K=2 with VDAM's pseudo-halfsets exercises every
+    accumulator slot.
+    """
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.sparse_pass2 import resident_tilts
+
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    supports = [class_supports[:n_units] for class_supports in supports]
+    vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
+    calls = []
+    sparse_tables = resident_tilts.unit_mstep_translations
+
+    def recorded(*a, **k):
+        out = sparse_tables(*a, **k)
+        calls.append(out)
+        return out
+
+    monkeypatch.setattr(resident_tilts, "unit_mstep_translations", recorded)
+    sparse = _resident(vdam, volumes, supports, priors)
+    n_fine = np.asarray(args["fine_translations_override"]).shape[0]
+    assert calls
+    print(f"particle translation tables {sorted({out.index.shape[1] for out in calls})} of {n_fine}")
+
+    def whole_grid(row_posterior, row_unit, *, unit_capacity, n_fine_trans, minimum=4):
+        index = np.tile(np.arange(int(n_fine_trans), dtype=np.int64), (int(unit_capacity), 1))
+        return resident_tilts.UnitMstepTranslations(index=index, valid=np.ones_like(index, dtype=bool))
+
+    monkeypatch.setattr(resident_tilts, "unit_mstep_translations", whole_grid)
+    dense = _resident(vdam, volumes, supports, priors)
+
+    assert_matches(dense.per_class_hard_assignments, sparse.per_class_hard_assignments)
+    for field in ("class_log_evidence_per_image", "class_best_log_score_per_image", "class_rotation_posterior_sums"):
+        assert_matches(np.asarray(getattr(dense, field)), np.asarray(getattr(sparse, field)), err_msg=field)
+    for k in range(2):
+        for run in (dense, sparse):
+            assert np.all(np.isfinite(np.asarray(run.Ft_y[k]))) and np.all(np.isfinite(np.asarray(run.Ft_ctf[k])))
+        _assert_accumulators_match(dense.Ft_y[k], dense.Ft_ctf[k], sparse.Ft_y[k], sparse.Ft_ctf[k])
+    _assert_noise_stats_match(dense.noise_stats, sparse.noise_stats)
+
+
 # ---------------------------------------------------------------------------
 # The --firstiter_cc iteration (normalized CC, winner takes all)
 # ---------------------------------------------------------------------------

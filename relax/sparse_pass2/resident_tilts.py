@@ -235,10 +235,12 @@ def run_tilt_chunk(
     - The M-step visits the slots again: each (image, row) backprojects with the particle's posterior,
       the image's matrix and phases; the noise and norm sums carry 1 / n_images, the scale sums and
       the backprojection do not (docs in PLAN.md, "S4.2 statistics semantics").
+    - The M-step visits each particle's own translations with posterior mass (:func:`unit_mstep_translations`):
+      a row's posterior and its image's phases are taken at its particle's ``k`` translations, so the
+      translated tiles cover only those (the dropped terms carry exactly zero posterior).
     - Memory: the translated Wavg tiles of one slot are ``[C_U, T_b, P_rect]`` (the slot view) and
-      ``[block rows, T_b, P_rect]`` (the per-row gather), for translation blocks of ``T_b``
-      translations with posterior mass, sized so both fit ``tile_budget_bytes``
-      (:func:`mstep_translation_blocks`).
+      ``[block rows, T_b, P_rect]`` (the per-row gather), for blocks of ``T_b`` of the particles'
+      ``k`` translations, sized so both fit ``tile_budget_bytes`` (:func:`mstep_translation_blocks`).
     - K>1 classes (RELION subtomogram Class3D): a particle's rows are class-major (the candidate
       tables' class layout), each (slot, row) projects from its class's reference, the posterior
       segment is the particle's over every class, and each accumulator slot's rows backproject into
@@ -455,16 +457,30 @@ def run_tilt_chunk(
         stage_tables if whole is not None else block_tables(0, 1, project_block(0, 1)),
         spec=spec,
     )
-    # Only the translations with posterior mass in this chunk enter the M-step: a subtomogram's 3D grid
-    # has thousands, and the Wavg rectangle is [images, T, P_rect] (gathered per row, [rows, T, P_rect]).
-    # Dropped translations carry exactly zero posterior.
+    # Only each particle's translations with posterior mass enter the M-step: a subtomogram's 3D grid
+    # has thousands, a particle a handful of significant samples, and the Wavg rectangle is
+    # [images, T, P_rect] (gathered per row, [rows, T, P_rect]). Dropped translations carry exactly
+    # zero posterior.
     block_rows = int(spec.mstep_block_rows)
     host_posterior = np.asarray(row_posterior)[:n_valid_rows]  # sliced on the host: no program per row count
     # Rows without posterior mass (RELION's non-significant samples) add exact zeros; the M-step
     # blocks visit only the rows with mass (row_has_mass), gathered to the front of each slot's order.
     row_has_mass = np.any(host_posterior > 0.0, axis=1)
+    host_row_unit = np.asarray(host["row_image_local"], dtype=np.int64)
+    unit_translations = unit_mstep_translations(
+        host_posterior, host_row_unit[:n_valid_rows], unit_capacity=unit_capacity, n_fine_trans=n_fine_trans
+    )
+    n_unit_trans = int(unit_translations.index.shape[1])
+    # The rows' posterior at their particle's translations, [C_R, k]; padded entries are zero.
+    row_unit_device = np.zeros(row_capacity, dtype=np.int64)
+    row_unit_device[:n_valid_rows] = host_row_unit[:n_valid_rows]
+    unit_posterior = jnp.where(
+        jnp.asarray(unit_translations.valid[row_unit_device]),
+        jnp.take_along_axis(row_posterior, jnp.asarray(unit_translations.index[row_unit_device], dtype=jnp.int32), axis=1),
+        jnp.zeros((), row_posterior.dtype),
+    )
     translation_blocks = mstep_translation_blocks(
-        mstep_translations(host_posterior, n_fine_trans),
+        MstepTranslations(index=np.arange(n_unit_trans, dtype=np.int64), valid=np.ones(n_unit_trans, dtype=bool)),
         bytes_per_translation=(unit_capacity + block_rows)
         * (int(rect_indices_device.shape[0]) + int(exact_positions_device.shape[0]))
         * 8,
@@ -491,21 +507,22 @@ def run_tilt_chunk(
         accumulator_slots.append(
             _slot_mstep_tables(
                 unit_slot_images,
-                row_unit=np.asarray(host["row_image_local"], dtype=np.int64),
+                row_unit=host_row_unit,
                 row_has_mass=row_has_mass & in_accumulator[:n_valid_rows],
                 n_valid_rows=n_valid_rows,
                 row_capacity=row_capacity,
                 block_rows=block_rows,
                 image_angles=np.asarray(tilt.image_angles, dtype=np.float32),
                 layout_image_ids=np.asarray(layout.image_ids),
+                unit_translations=unit_translations.index,
                 translation_blocks=translation_blocks,
                 image_capacity=image_capacity,
             )
         )
         accumulator_posteriors.append(
-            row_posterior
+            unit_posterior
             if n_accumulators == 1
-            else jnp.where(jnp.asarray(in_accumulator)[:, None], row_posterior, jnp.zeros((), row_posterior.dtype))
+            else jnp.where(jnp.asarray(in_accumulator)[:, None], unit_posterior, jnp.zeros((), unit_posterior.dtype))
         )
     Ft_y_out, Ft_ctf_out = list(Ft_y_total), list(Ft_ctf_total)
     # Each accumulator's slots are visited in slot order (block by block); an image is one slot's, so its
@@ -691,7 +708,7 @@ class SlotMstepTables(NamedTuple):
     active: jax.Array  # bool [S, C_R] in visiting order
     units: jax.Array  # int32 [S, C_R] in visiting order, 0 where the row has no image in the slot
     n_blocks: jax.Array  # int32 [S] M-step blocks covering the active rows
-    angles: jax.Array  # float32 [S, K, C_U, T_b, 2] each unit's image phases per translation block
+    angles: jax.Array  # float32 [S, K, C_U, T_b, 2] each unit's image phases at its translations, per block
 
 
 def _slot_mstep_tables(
@@ -704,6 +721,7 @@ def _slot_mstep_tables(
     block_rows: int,
     image_angles,
     layout_image_ids,
+    unit_translations,
     translation_blocks,
     image_capacity: int,
 ) -> SlotMstepTables:
@@ -735,9 +753,11 @@ def _slot_mstep_tables(
     valid = unit_slot_images >= 0
     safe = np.where(valid, unit_slot_images, np.max(unit_slot_images, axis=1, keepdims=True)).clip(min=0)
     image_of_unit = np.where(valid, np.asarray(layout_image_ids)[np.maximum(unit_slot_images, 0)], 0)
-    # Gathered once: taken inside the comprehension, every translation block repeated the whole
-    # [S, C_U, T, 2] gather (5 s of each late et09 subtomogram VDAM iteration, py-spy 14993731).
-    unit_angles = np.asarray(image_angles)[image_of_unit]
+    # Gathered once, at each unit's own translations: taken inside the comprehension, every translation
+    # block repeated the whole [S, C_U, T, 2] gather (5 s of each late et09 subtomogram VDAM iteration,
+    # py-spy 14993731).
+    unit_translations = np.asarray(unit_translations, dtype=np.int64)
+    unit_angles = np.asarray(image_angles)[image_of_unit[:, :, None], unit_translations[None, :, :]]
     angles = np.stack([unit_angles[:, :, kept.index] for kept in translation_blocks], axis=1)
     return SlotMstepTables(
         slot=jnp.arange(n_slots, dtype=jnp.int32),
@@ -773,9 +793,10 @@ def _tilt_mstep_program(
     Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
     operands, indexed by unit), block by block over its active rows, then adds the image power of each
     translation block once (as the SPA chunk does, ``_add_chunk_wavg_image_power``) and puts its
-    per-image partials on those images' chunk rows. ``kept_index``/``kept_valid`` are the translation blocks'
-    ``[K, T]`` fine-translation ids and validity: translations outside a block (and padding) carry zero
-    posterior there.
+    per-image partials on those images' chunk rows. ``row_posterior`` ``[C_R, k]`` is each row's posterior at
+    its unit's ``k`` translations (:func:`unit_mstep_translations`), and ``slots.angles`` the units' phases
+    there; ``kept_index``/``kept_valid`` are the translation blocks' ``[K, T_b]`` positions in those ``k``
+    and validity: positions outside a block (and padding) carry zero posterior there.
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -875,23 +896,44 @@ class MstepTranslations(NamedTuple):
     valid: np.ndarray  # bool [T_cap]
 
 
-def mstep_translations(row_posterior, n_fine_trans: int, *, minimum: int = 32) -> MstepTranslations:
-    """The fine translations with posterior mass in any of a chunk's rows, padded to a power of two.
+class UnitMstepTranslations(NamedTuple):
+    """Each unit's (particle's) translations the M-step visits: ``index`` into the fine grid, ``valid`` false on padding."""
 
-    The capacity is the next power of two of their count (at least ``minimum``, at most the grid), so
-    chunks share programs; padding repeats the last kept translation with ``valid`` false.
+    index: np.ndarray  # int64 [C_U, k] ascending, padded with the unit's last
+    valid: np.ndarray  # bool [C_U, k]
+
+
+def unit_mstep_translations(
+    row_posterior, row_unit, *, unit_capacity: int, n_fine_trans: int, minimum: int = 4
+) -> UnitMstepTranslations:
+    """Each unit's fine translations with posterior mass in any of its rows, ascending, padded to one power of two.
+
+    ``k`` is the next power of two of the largest unit's count (at least ``minimum``, at most the grid),
+    so chunks share programs; a unit's padding repeats its last translation with ``valid`` false (a unit
+    without rows takes translation 0). Visiting a row's translations in ascending order without the
+    others drops only terms whose posterior is exactly zero.
     """
 
     n_fine_trans = int(n_fine_trans)
-    used = np.flatnonzero(np.any(np.asarray(row_posterior) > 0.0, axis=0))
-    if used.size == 0:
-        used = np.zeros(1, dtype=np.int64)
-    capacity = max(int(minimum), 1 << int(used.size - 1).bit_length())
-    if capacity >= n_fine_trans:
-        return MstepTranslations(index=np.arange(n_fine_trans, dtype=np.int64), valid=np.ones(n_fine_trans, dtype=bool))
-    index = np.concatenate([used, np.full(capacity - used.size, used[-1])]).astype(np.int64)
-    valid = np.arange(capacity) < used.size
-    return MstepTranslations(index=index, valid=valid)
+    row_unit = np.asarray(row_unit, dtype=np.int64)
+    mass = np.asarray(row_posterior) > 0.0
+    unit_mass = np.zeros((int(unit_capacity), n_fine_trans), dtype=bool)
+    if row_unit.size:
+        order = np.argsort(row_unit, kind="stable")
+        sorted_units = row_unit[order]
+        starts = np.flatnonzero(np.r_[True, sorted_units[1:] != sorted_units[:-1]])
+        unit_mass[sorted_units[starts]] = np.logical_or.reduceat(mass[order], starts, axis=0)
+    counts = unit_mass.sum(axis=1)
+    largest = int(counts.max(initial=0))
+    k = max(int(minimum), 1 << max(largest - 1, 0).bit_length())
+    if k >= n_fine_trans:
+        k = n_fine_trans
+    # Translations with mass first, each set ascending (a stable sort of "no mass").
+    index = np.argsort(~unit_mass, axis=1, kind="stable")[:, :k].astype(np.int64)
+    valid = np.arange(k)[None, :] < counts[:, None]
+    last = np.take_along_axis(index, np.maximum(counts - 1, 0)[:, None], axis=1)
+    index = np.where(valid, index, np.where(counts[:, None] > 0, last, 0))
+    return UnitMstepTranslations(index=index, valid=valid)
 
 
 # The flat-row translate-and-sum keeps a block's angle, posterior and active-translation tables in
