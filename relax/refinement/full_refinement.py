@@ -30,7 +30,6 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 import jax
 import jax.numpy as jnp
 import numpy as np
-from recovar import utils
 from recovar.utils.file_hash import sha256_file as _sha256_file
 
 import relax
@@ -231,54 +230,6 @@ def _validate_replay_saved_healpix_order(
             f"order {saved_order} in {sampling_star}; a replay after RELION iteration "
             f"{int(init_relion_iteration)} sizes pass-1 images from that order"
         )
-
-
-def _relion_start_tau2_and_data_vs_prior(
-    reference_real,
-    initial_noise_radial,
-    *,
-    grid_size: int,
-    volume_shape,
-    tau2_fudge: float,
-    nr_particles: int,
-    pdf_class: float = 1.0,
-    shell_pair_counting: str = "relion",
-):
-    """RELION's start-up tau2 (RECOVAR units) and data_vs_prior (RELION units) of one class.
-
-    ``MlModel::initialiseDataVersusPrior`` (ml_model.cpp:1557) on the start-up
-    reference after ``initialLowPassFilterReferences``, with the initial noise
-    (averaged over optics groups when it has one row per group) and the particle count: each
-    auto-refine half model counts its own particles (K=1); a Class3D model counts all of them,
-    with the class's start-up ``pdf_class`` (1/K). ``reference_real`` is in RECOVAR's frame and
-    ``initial_noise_radial`` is RELION sigma2 times ``grid_size**4``.
-    """
-
-    from recovar.utils.helpers import recovar_volume_to_relion
-
-    from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
-
-    n4 = float(grid_size) ** 4
-    sigma2 = np.asarray(initial_noise_radial, dtype=np.float64)
-    if sigma2.ndim == 2:
-        # The unweighted mean over optics groups that have noise (ml_model.cpp:1560-1573).
-        sigma2 = np.mean(sigma2[np.sum(sigma2, axis=1) > 0.0], axis=0)
-    sigma2 = sigma2.reshape(-1) / n4
-    n_shells = int(grid_size) // 2 + 1
-    if sigma2.size < n_shells:
-        raise ValueError(f"initial noise spectrum has {sigma2.size} shells, need {n_shells}")
-    tau2, data_vs_prior = relion_initial_tau2_and_data_vs_prior(
-        recovar_volume_to_relion(np.asarray(reference_real, dtype=np.float64)),
-        tau2_fudge=float(tau2_fudge),
-        avg_sigma2_noise=sigma2[:n_shells],
-        nr_particles=int(nr_particles),
-        pdf_class=float(pdf_class),
-        shell_pair_counting=shell_pair_counting,
-    )
-    mean_variance = jnp.asarray(
-        utils.make_radial_image(tau2 * n4, volume_shape, extend_last_frequency=True)
-    ).reshape(-1)
-    return mean_variance, data_vs_prior
 
 
 def _replay_complete_initial_particle_state(n_classes, init_relion_iteration):
@@ -924,17 +875,7 @@ def main(command=None):
     # Compute initial signal prior from init volume (weak prior). For K>1
     # use class-1 as the representative volume; the engine derives per-class
     # tau2 trajectories from the per-class FSCs once the loop starts.
-    from recovar.reconstruction.regularization import average_over_shells
-
-    init_PS_source = jnp.asarray(references.prior_source)
-    init_PS = average_over_shells(jnp.abs(init_PS_source) ** 2, ds.volume_shape)
-    del init_PS_source
-    from recovar import utils
-
-    init_prior = utils.make_radial_image(init_PS, ds.volume_shape, extend_last_frequency=True)
-    # Scale by a factor to provide regularization without being too strong
-    mean_variance = jnp.asarray(init_prior * 0.5 + jnp.max(init_prior) * 1e-4)
-    del init_prior
+    mean_variance = startup_references.bootstrap_prior(references.prior_source, ds.volume_shape)
 
     # ---- STRICT-PARITY: --relion_init_dir override of bootstrapped iter-0 state ----
     # When set, replace the image-bootstrap sigma2_noise + power-spectrum-bootstrap
@@ -1041,7 +982,7 @@ def main(command=None):
         and int(args.init_relion_iteration) == 0
     )
     if references.reference_real is not None and fresh_relion_start:
-        mean_variance, relion_start_data_vs_prior = _relion_start_tau2_and_data_vs_prior(
+        mean_variance, relion_start_data_vs_prior = startup_references.relion_start_tau2_and_data_vs_prior(
             references.reference_real,
             initial_noise_radial,
             grid_size=int(ds.grid_size),
@@ -1055,26 +996,16 @@ def main(command=None):
             int(np.sum(relion_start_data_vs_prior > 3.0)),
         )
     elif references.class_references_real is not None and fresh_relion_start and resume_snapshot is None:
-        # Class3D: each class's start-up data_vs_prior over all particles at pdf_class 1/K. The first
-        # iteration's scale-correction sums take only the shells where it exceeds 3 (ml_optimiser.cpp:10473);
-        # without it every shell entered them (subtomogram Class3D it001 group scales 5.6e-4 off RELION).
-        # The class tau2 volumes are still the loop's own (only the scale gate reads this curve).
-        n_classes = len(references.class_references_real)
-        relion_start_data_vs_prior = np.stack(
-            [
-                _relion_start_tau2_and_data_vs_prior(
-                    reference,
-                    initial_noise_radial,
-                    grid_size=int(ds.grid_size),
-                    volume_shape=ds.volume_shape,
-                    tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
-                    nr_particles=int(ds.n_units),
-                    pdf_class=1.0 / n_classes,
-                    shell_pair_counting=consistency_options.shell_pair_counting,
-                )[1]
-                for reference in references.class_references_real
-            ],
-            axis=0,
+        # Without it every shell entered the first scale-correction sums (subtomogram Class3D it001 group
+        # scales 5.6e-4 off RELION).
+        relion_start_data_vs_prior = startup_references.class_start_data_vs_prior(
+            references.class_references_real,
+            initial_noise_radial,
+            grid_size=int(ds.grid_size),
+            volume_shape=ds.volume_shape,
+            tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
+            nr_particles=int(ds.n_units),
+            shell_pair_counting=consistency_options.shell_pair_counting,
         )
         logger.info(
             "RELION start-up data_vs_prior per class (initialiseDataVersusPrior): %s shells with data_vs_prior > 3",

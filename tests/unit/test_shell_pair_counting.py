@@ -17,7 +17,7 @@ from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
 from relax.helpers import half_volume_mstep
 from relax.reconstruction import regularization_relion as rr
-from relax.refinement import final_reconstruction, full_refinement, mean_helpers
+from relax.refinement import final_reconstruction, mean_helpers, startup_references
 from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.relion import reference_initialization
 from relax.relion import relion_projector_setup as setup
@@ -513,7 +513,7 @@ def test_start_up_tau2_and_data_vs_prior_take_the_counting(monkeypatch):
     assert np.max(np.abs(once[0] - relion[0])) > 1e-3 * np.max(relion[0])
     # The command's start-up helper forwards the option.
     recorded = record_calls(monkeypatch, reference_initialization, "relion_initial_tau2_and_data_vs_prior")
-    full_refinement._relion_start_tau2_and_data_vs_prior(
+    startup_references.relion_start_tau2_and_data_vs_prior(
         volume, sigma2 * 8.0**4, grid_size=8, volume_shape=(8, 8, 8), tau2_fudge=1.0, nr_particles=10,
         shell_pair_counting="once",
     )

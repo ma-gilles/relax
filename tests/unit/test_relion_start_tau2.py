@@ -6,7 +6,7 @@ import starfile
 from helpers.em_fixtures import fixture_file
 from helpers.float_compare import assert_matches
 
-from relax.refinement import full_refinement as run_full_refinement
+from relax.refinement import startup_references
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 
 pytestmark = pytest.mark.unit
@@ -74,7 +74,7 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     sigma2 = np.asarray(model["model_optics_group_1"]["rlnSigma2Noise"], dtype=np.float64)
     n_half_particles = int(np.sum(model["model_groups"]["rlnGroupNrParticles"]))
 
-    mean_variance, dvp = run_full_refinement._relion_start_tau2_and_data_vs_prior(
+    mean_variance, dvp = startup_references.relion_start_tau2_and_data_vs_prior(
         reference,
         sigma2 * float(n) ** 4,
         grid_size=n,
@@ -116,7 +116,7 @@ def test_class3d_start_data_vs_prior_matches_relion_run_it000_model_per_class():
         reference = initial_low_pass_filter_references(
             reference[None], ori_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
         )[0]
-        _, dvp = run_full_refinement._relion_start_tau2_and_data_vs_prior(
+        _, dvp = startup_references.relion_start_tau2_and_data_vs_prior(
             reference,
             sigma2 * float(n) ** 4,
             grid_size=n,
