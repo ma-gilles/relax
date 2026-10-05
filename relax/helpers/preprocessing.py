@@ -297,20 +297,21 @@ def prepare_reconstruction_batch(
 
 
 def relion_half_translation_lattice(image_shape):
-    """Packed half-spectrum frequencies with RELION's row labels.
+    """Packed half-spectrum frequencies with RELION's row and column labels.
 
     ``get_k_coordinate_of_each_pixel_half`` labels the packed Nyquist row
-    ``ky = -N/2``, which is RECOVAR's own centered convention and is what the
-    non-EM callers of that core helper expect. RELION labels the same physical
-    row of a half image it is not cropping ``+N/2``
-    (``fftw.h:99-109``: ``ip = (i < XSIZE) ? i : i - YSIZE`` with ``XSIZE`` the
-    half width), and its scoring and translate kernels all derive that label,
-    so an EM translation phase built on the centered label is the conjugate of
-    RELION's on that row for any shift that is not a whole pixel.
+    ``ky = -N/2`` and the packed Nyquist column ``kx = -N/2``, which is RECOVAR's
+    own centered convention and is what the non-EM callers of that core helper
+    expect. RELION labels the same physical row of a half image it is not
+    cropping ``+N/2`` (``fftw.h:99-109``: ``ip = (i < XSIZE) ? i : i - YSIZE``
+    with ``XSIZE`` the half width) and its column ``x = j`` up to ``+N/2``, and
+    its scoring and translate kernels all derive those labels, so an EM
+    translation phase built on the centered labels is the conjugate of RELION's
+    on that row and column for any shift that is not a whole pixel.
 
-    The table is always built on the uncropped packed half, so RELION's label
-    is the right one for it; a cropped window simply never selects that row
-    (``windowFourierTransform`` keeps ``ip = -(cs/2-1)..+cs/2``,
+    The table is always built on the uncropped packed half, so RELION's labels
+    are the right ones for it; a cropped window simply never selects that row
+    or column (``windowFourierTransform`` keeps ``ip = -(cs/2-1)..+cs/2``,
     ``fftw.h:849-855``). This wrapper is EM-local by design: the core helper
     keeps its own convention for its other callers.
     """
@@ -322,9 +323,10 @@ def relion_half_translation_lattice(image_shape):
     )
     image_size = int(image_shape[0])
     if image_size % 2 == 0:
-        ky = jnp.rint(lattice[:, 1] * image_size).astype(jnp.int32)
-        nyquist = ky == -(image_size // 2)
-        lattice = lattice.at[:, 1].set(jnp.where(nyquist, -lattice[:, 1], lattice[:, 1]))
+        for axis in (1, 0):
+            k = jnp.rint(lattice[:, axis] * image_size).astype(jnp.int32)
+            nyquist = k == -(image_size // 2)
+            lattice = lattice.at[:, axis].set(jnp.where(nyquist, -lattice[:, axis], lattice[:, axis]))
     return lattice
 
 

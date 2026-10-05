@@ -1,4 +1,4 @@
-"""The memoised scaled half lattice must carry RELION's row labels.
+"""The memoised scaled half lattice must carry RELION's row and column labels.
 
 The lattice was byte-identical to ``get_k_coordinate_of_each_pixel_half``
 until P4-B (2026-09-20). That core helper labels the packed Nyquist row
@@ -7,7 +7,9 @@ row of an uncropped half image ``+N/2`` (``fftw.h:99-109``), and the EM
 translate and scoring kernels all use RELION's label. A phase built on the
 centered label is therefore the conjugate of RELION's on that row for any
 shift that is not a whole pixel. The EM lattice now applies RELION's label and
-the core helper keeps its own for its non-EM callers.
+the core helper keeps its own for its non-EM callers. The packed Nyquist column
+is the same case: RELION's column label is the half-width index ``x = 0..N/2``
+(``translatePixel``), the core helper's ``-N/2`` (fixed 2026-10-05).
 """
 
 import numpy as np
@@ -57,25 +59,31 @@ def test_phase_table_unchanged_by_memoisation():
     assert_matches(np.asarray(got), np.asarray(want))
 
 
-def test_only_the_packed_nyquist_row_differs_from_the_core_lattice():
-    """Every other row keeps the core helper's label, at several box sizes."""
+def test_only_the_packed_nyquist_row_and_column_differ_from_the_core_lattice():
+    """Every other row and column keeps the core helper's label, at several box sizes."""
 
     for size in (8, 16, 32, 64, 256):
         shape = (size, size)
         core = _core_lattice(shape)
         relion = np.asarray(relion_half_translation_lattice(shape))
         ky = np.rint(core[:, 1] * size).astype(int)
-        nyquist = ky == -(size // 2)
-        assert nyquist.any(), size
-        assert_matches(relion[~nyquist], core[~nyquist])
-        assert_matches(relion[nyquist, 1], -core[nyquist, 1])
-        assert_matches(relion[nyquist, 0], core[nyquist, 0])
-        # RELION's labels for an uncropped half image run -N/2+1 .. +N/2.
+        kx = np.rint(core[:, 0] * size).astype(int)
+        row = ky == -(size // 2)
+        column = kx == -(size // 2)
+        assert row.any() and column.any(), size
+        assert_matches(relion[~row & ~column], core[~row & ~column])
+        assert_matches(relion[row, 1], -core[row, 1])
+        assert_matches(relion[~row, 1], core[~row, 1])
+        assert_matches(relion[column, 0], -core[column, 0])
+        assert_matches(relion[~column, 0], core[~column, 0])
+        # RELION's row labels for an uncropped half image run -N/2+1 .. +N/2, its columns 0 .. +N/2.
         labels = np.rint(relion[:, 1] * size).astype(int)
         assert labels.min() == -(size // 2) + 1 and labels.max() == size // 2
+        columns = np.rint(relion[:, 0] * size).astype(int)
+        assert columns.min() == 0 and columns.max() == size // 2
 
 
-def test_a_cropped_window_never_selects_the_relabelled_row():
+def test_a_cropped_window_never_selects_the_relabelled_row_or_column():
     """The label only matters where RELION keeps that row: the uncropped box.
 
     ``windowFourierTransform`` keeps ``ip = -(cs/2-1)..+cs/2``
@@ -92,7 +100,8 @@ def test_a_cropped_window_never_selects_the_relabelled_row():
     size = 64
     coords = make_frequency_coords_half_np((size, size))
     ky = np.rint(coords[:, 1]).astype(int)
-    nyquist = ky == -(size // 2)
+    kx = np.rint(coords[:, 0]).astype(int)
+    nyquist = (ky == -(size // 2)) | (np.abs(kx) == size // 2)
     assert nyquist.any()
     for current_size in (16, 32, 48, 62):
         window, _ = make_fourier_window_indices_np((size, size), current_size)

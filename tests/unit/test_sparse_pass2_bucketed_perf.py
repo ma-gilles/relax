@@ -1891,7 +1891,7 @@ def test_sparse_pass2_device_memory_probe_honors_visible_device():
     assert _nvidia_smi_visible_device_memory_bytes(smi_output, None) == 40960 * 1024**2
 
 
-def test_half_translation_phase_table_matches_generic_off_relion_nyquist_row():
+def test_half_translation_phase_table_matches_generic_off_relion_nyquist_row_and_column():
     rng = np.random.default_rng(13)
     image_shape = (16, 16)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -1920,7 +1920,9 @@ def test_half_translation_phase_table_matches_generic_off_relion_nyquist_row():
         ftu.get_k_coordinate_of_each_pixel_half(image_shape, voxel_size=1, scaled=True)
     )
     ky = np.rint(core_lattice[:, 1] * image_shape[0]).astype(np.int64)
-    non_nyquist = ky != -(image_shape[0] // 2)
+    kx = np.rint(core_lattice[:, 0] * image_shape[0]).astype(np.int64)
+    # The generic translate keeps the core helper's -N/2 labels; RELION's are +N/2 on both.
+    non_nyquist = (ky != -(image_shape[0] // 2)) & (kx != -(image_shape[0] // 2))
     assert_matches(
         np.asarray(phase_table)[:, non_nyquist], np.asarray(generic)[:, non_nyquist]
     )
