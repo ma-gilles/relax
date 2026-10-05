@@ -16,8 +16,10 @@ set -euo pipefail
 : "${POLAR_RUN_ROOT:?submit with scripts/polar/submit.py}"
 : "${POLAR_NATIVE_ROOT:?pass the natives directory built for this GPU architecture}"
 : "${POLAR_CELLS:?pass the cells to run}"
+# Cells run JAX's default allocator mode, as a user does (one preallocated pool; relax#20).
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV LD_PRELOAD LD_LIBRARY_PATH XLA_PYTHON_CLIENT_MEM_FRACTION
-export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 XLA_PYTHON_CLIENT_PREALLOCATE=false
+unset XLA_PYTHON_CLIENT_PREALLOCATE
+export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
 export PATH="$POLAR_ENV_ROOT/bin:$PATH"
 export PYTHONPATH="$POLAR_SOURCE_ROOT"
 export RECOVAR_JAX_CACHE_DIR="$POLAR_RUN_ROOT/jax-cache" JAX_COMPILATION_CACHE_DIR="$POLAR_RUN_ROOT/jax-cache"

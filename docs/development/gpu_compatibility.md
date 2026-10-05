@@ -49,6 +49,11 @@ allocation outside the pool, without the emulation's ballast. It is not the live
 follows the card (about 13 to 15 GB on 16 GB cards, 58 to 66 GB on 80 GB cards) and is not a minimum
 requirement.
 
+The matrix cells and the benchmark arms run JAX's default allocator mode, one preallocated pool, which
+is what `relax` gives a user; until 2026-10-04 they ran with `XLA_PYTHON_CLIENT_PREALLOCATE=false`. The
+test tiers keep `false` (several processes on one GPU). With preallocation the reserved peak is the pool
+limit from the first second, so `live_peak_mib` is the figure to read.
+
 ## Matrix
 
 Fixtures: SPA 5k/128 (`k1_5k128`, `k2_5k128`, `k4_5k128`); box 256 (`k1_50k256`, `k4_50k256`); tomography
@@ -136,10 +141,16 @@ Open:
    multi-day workloads). Their cells stay queued and fill in when the nodes free up. Meanwhile the P100 (16 GB,
    an older architecture than V100), the A100 80 GB (sm_80) and the 16 to 40 GB emulation cover them.
 2. PPCA tomo runs out of memory on a real A100 40 GB at main 23c3ebd (Polar 413542, both optimizers, after
-   167 s and 119 s): at radius 32 the planner keeps the full tile of 150 and counts 30.78 GiB of a 31.68 GiB
-   budget, and the tile reader (`load_tilt_tile`) then fails to allocate 8.48 GiB. The 16 GB cards pass
-   because their tile is cut to 33, and the 80 GB cards have room to spare, so the count of the reader at a
-   full tile is short only where the budget is nearly used. With ppcaspeed.
+   167 s and 119 s): at radius 32 the tile reader (`load_tilt_tile`) fails to allocate 8.48 GiB with 9.2 GiB
+   in use of a 36.4 GiB pool. The byte count is right; with preallocation off the pool had grown in small
+   regions and had no contiguous block (ppcaspeed, reproduced on an H100 limited to that pool). Fixed on
+   main c6c35155: each new tile plan allocates and releases one block of its counted bytes, so the pool
+   grows by one region of that size. Real-card reruns at 0b71d11d are running.
+3. `relax refine` at box 800 with `XLA_PYTHON_CLIENT_PREALLOCATE=false` runs out of memory at iteration 13
+   (relax#20): an 18.54 GiB probe buffer, counted by the plan (23.08 GiB of a 29.67 GiB budget), finds no
+   block in a 60.9 GiB pool that thirteen iterations grew in regions of at most 16 GiB. JAX's default mode
+   is the supported one above the reserve threshold; the error carries a note naming the setting. The whole
+   run in the default mode is the gate (Slurm 15003773).
 
 ## Policy audit of the 2026-10-03 landings
 

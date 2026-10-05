@@ -38,6 +38,13 @@ least 16 GB of memory. It has been run end to end on P100 16 GB (6.0), A100
 workflow per card. Batch sizes and caches are sized from the card's free memory,
 so smaller cards run the same commands, more slowly.
 
+Leave `XLA_PYTHON_CLIENT_PREALLOCATE` unset. relax runs with JAX's default, one
+preallocated memory pool, and that is the supported mode. `=false` lets another
+process share the GPU, but the pool then grows in separate regions and an array
+must fit inside one of them: a long refinement of a large box (above about 550
+pixels on an 80 GB card, 320 on 40 GB) can stop with `RESOURCE_EXHAUSTED` while
+memory is free. The error then carries a note naming the setting.
+
 The default build compiles the kernels for compute capability 7.0 to 9.0 (and
 later cards through PTX). For a Pascal card (P100, GTX 10-series), add its
 architecture, with a CUDA 12 toolkit (CUDA 13 cannot build for cards older than

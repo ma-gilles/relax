@@ -6,6 +6,7 @@ cd "$ROOT"
 
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
 export PYTHONNOUSERSITE=1
+# Tests share a GPU between the pytest process and the relax subprocesses it starts; see CONTRIBUTING.md.
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 
 backend="${EM_FAST_GUARD_BACKEND:-cpu}"

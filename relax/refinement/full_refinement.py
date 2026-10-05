@@ -45,7 +45,7 @@ from relax.diagnostics.state_swap_probe import (
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
-from relax.helpers import iteration_history
+from relax.helpers import iteration_history, xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.refinement import command_options, particle_loading, startup_noise
@@ -501,6 +501,7 @@ def _require_relion_convention_reference(path, option: str) -> None:
         raise SystemExit(str(exc)) from None
 
 
+@xla_memory_reserve.explains_pool_region_failure
 def main(command=None):
     """Run a refinement from ``sys.argv``; ``command`` (``refine``/``class3d``) checks ``--n_classes``."""
 
@@ -572,7 +573,6 @@ def main(command=None):
     if relax._XLA_RESERVE_LOG_LINE is not None:
         logger.info("%s", relax._XLA_RESERVE_LOG_LINE)
     # An entry point that started the backend without that reserve is refused here, not in the final pass.
-    from relax.helpers import xla_memory_reserve
     from relax.relion.geometry import PROJECTION_PADDING_FACTOR
 
     xla_memory_reserve.require_projector_texture_reserve(

@@ -17,9 +17,18 @@ Start every Python process from a clean environment, and choose the backend befo
 
 ```bash
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
-export PYTHONNOUSERSITE=1 XLA_PYTHON_CLIENT_PREALLOCATE=false
+export PYTHONNOUSERSITE=1
 export CUDA_VISIBLE_DEVICES='' JAX_PLATFORMS=cpu      # CPU; for a GPU: the assigned device and JAX_PLATFORMS=cuda,cpu
 ```
+
+`XLA_PYTHON_CLIENT_PREALLOCATE` is left unset for anything that is measured or compared with a user's run
+(benchmark arms, the GPU matrix, end-to-end refinements): `relax` does not set it, so users run JAX's
+default, one preallocated memory pool. Set `XLA_PYTHON_CLIENT_PREALLOCATE=false` only where several
+processes must share one GPU: the test tiers and unit tests do (`scripts/run_test_tier.py`,
+`scripts/run_em_fast_guard.sh`), because a pytest process that holds the GPU backend also starts `relax`
+commands as subprocesses on the same card. Without preallocation the pool grows in separate regions and a
+long large-box refinement can fail on one contiguous allocation (relax#20), so it is not a setting for
+benchmarks.
 
 Never reuse a process that already initialized the wrong backend. Give each run its own
 `JAX_COMPILATION_CACHE_DIR` and `RECOVAR_JAX_CACHE_DIR`, and record whether they began empty.

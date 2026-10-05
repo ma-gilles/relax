@@ -12,11 +12,14 @@
 #MATRIX_OUT=<out root>,MATRIX_CELLS='cell cell@16 ...' scripts/gpu_matrix/della_cells.sbatch
 # MATRIX_SRC is a frozen checkout sharing a pixi environment; it is put first on PYTHONPATH.
 # MATRIX_LIVE_MEMORY=0 turns off the in-process live-memory sampler: do so for any run whose wall is quoted.
+# Cells run JAX's default allocator mode, as a user does (one preallocated pool); MATRIX_PREALLOCATE=false
+# turns preallocation off for a cell that studies that mode (relax#20).
 
 set -uo pipefail
 : "${MATRIX_SRC:?}" "${MATRIX_NATIVES:?}" "${MATRIX_OUT:?}" "${MATRIX_CELLS:?}"
-unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV LD_PRELOAD LD_LIBRARY_PATH XLA_PYTHON_CLIENT_MEM_FRACTION
-export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 XLA_PYTHON_CLIENT_PREALLOCATE="${MATRIX_PREALLOCATE:-false}"
+unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV LD_PRELOAD LD_LIBRARY_PATH XLA_PYTHON_CLIENT_MEM_FRACTION XLA_PYTHON_CLIENT_PREALLOCATE
+export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+[ -z "${MATRIX_PREALLOCATE:-}" ] || export XLA_PYTHON_CLIENT_PREALLOCATE="$MATRIX_PREALLOCATE"
 export PYTHONPATH="$MATRIX_SRC"
 # One compile cache per worker (MATRIX_CACHE_DIR), not per run: per-run caches cost ~10k files each.
 MATRIX_CACHE_DIR="${MATRIX_CACHE_DIR:-$MATRIX_OUT}"

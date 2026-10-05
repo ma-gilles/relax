@@ -798,6 +798,8 @@ def _env_lines(run_root: Path, natives: Path) -> str:
     exports = {
         "PYTHONNOUSERSITE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
+        # Off for tests only: a pytest process holding the GPU backend starts relax commands as subprocesses on
+        # the same card. Benchmarks and the GPU matrix run JAX's default, as users do (CONTRIBUTING.md, relax#20).
         "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
         "XLA_PYTHON_CLIENT_MEM_FRACTION": ".90",
         "RECOVAR_JAX_CACHE_DIR": f"{run_root}/jax",

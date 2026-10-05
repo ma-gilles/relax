@@ -34,6 +34,7 @@ in job 14963923, relax#17).
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import subprocess
 
@@ -264,6 +265,36 @@ def require_projector_texture_reserve(
         "relax.helpers.xla_memory_reserve.reserve_for_refinement(arguments, padding_factor) before the first "
         f"import of jax, recovar or relax (it sets {MEM_FRACTION_ENV}={fraction:.4f} for this run)."
     )
+
+
+PREALLOCATE_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"
+
+
+def explains_pool_region_failure(run):
+    """Decorate a refinement entry: an allocator failure under ``XLA_PYTHON_CLIENT_PREALLOCATE=false`` says why.
+
+    Without preallocation XLA's pool grows in separate regions (1, 2, 4, 8, 16 GiB ...) and an array
+    must fit inside one of them, so after many iterations of small requests a large buffer can fail
+    while its bytes are free (EMPIAR-10202, box 800: 18.54 GiB at iteration 13 in a 60.9 GiB pool whose
+    largest region was 16 GiB, relax#20). JAX's default, one preallocated region, is the supported
+    mode for long large-box runs; the note names the setting and leaves the error unchanged.
+    """
+
+    @functools.wraps(run)
+    def explained(*args, **kwargs):
+        try:
+            return run(*args, **kwargs)
+        except Exception as error:
+            if "RESOURCE_EXHAUSTED" in str(error) and os.environ.get(PREALLOCATE_ENV, "").lower() in ("false", "0"):
+                error.add_note(
+                    f"{PREALLOCATE_ENV}=false is set: XLA's memory pool grew in separate regions and an array "
+                    "must fit inside one, so this allocation can fail while the pool has the bytes free. "
+                    f"Unset {PREALLOCATE_ENV} (JAX then preallocates the pool as one region) and rerun; "
+                    "turn preallocation off only to share a GPU, and not for long large-box refinements."
+                )
+            raise
+
+    return explained
 
 
 def format_reserve_record(record: dict) -> str:

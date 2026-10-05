@@ -32,7 +32,7 @@ roots:
 
 ```bash
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
-export PYTHONNOUSERSITE=1 XLA_PYTHON_CLIENT_PREALLOCATE=false
+export PYTHONNOUSERSITE=1   # XLA_PYTHON_CLIENT_PREALLOCATE stays unset except in test jobs (CONTRIBUTING.md)
 # RUN_ROOT: this run's own directory, under a root the global instruction file lists as writable.
 export TMPDIR=${RUN_ROOT}/runtime/${SLURM_JOB_ID}/tmp
 export PIXI_HOME=${RUN_ROOT}/runtime/${SLURM_JOB_ID}/pixi_home

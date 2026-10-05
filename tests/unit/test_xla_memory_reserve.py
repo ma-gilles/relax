@@ -121,6 +121,26 @@ def test_start_up_check_refuses_a_backend_started_without_the_reserve(monkeypatc
         reserve.require_projector_texture_reserve(800, 2)
 
 
+def test_an_allocator_failure_without_preallocation_names_the_setting(monkeypatch):
+    @reserve.explains_pool_region_failure
+    def run(message):
+        raise RuntimeError(message)
+
+    oom = "RESOURCE_EXHAUSTED: Out of memory while trying to allocate 18.54GiB."
+    monkeypatch.setenv(reserve.PREALLOCATE_ENV, "false")
+    with pytest.raises(RuntimeError, match="18.54GiB") as err:
+        run(oom)
+    assert any("grew in separate regions" in note and "Unset XLA_PYTHON_CLIENT_PREALLOCATE" in note for note in err.value.__notes__)
+    # Another error, or the default mode, is passed through untouched.
+    with pytest.raises(RuntimeError) as err:
+        run("something else")
+    assert not hasattr(err.value, "__notes__")
+    monkeypatch.delenv(reserve.PREALLOCATE_ENV)
+    with pytest.raises(RuntimeError) as err:
+        run(oom)
+    assert not hasattr(err.value, "__notes__")
+
+
 def test_reference_maps_follow_the_drivers_flags(tmp_path, monkeypatch):
     data_dir = tmp_path / "inputs"
     data_dir.mkdir()
