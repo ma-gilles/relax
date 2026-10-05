@@ -363,6 +363,24 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
     np.testing.assert_array_equal(np.asarray(tables.n_blocks), [2, 2, 1])
     np.testing.assert_array_equal(np.asarray(tables.targets), np.where(views >= 0, views, 12))
     assert_matches(np.asarray(tables.angles)[1, 0, 2], angles[5][[1, 4]])
+    # Several translation blocks: block b of every slot and unit holds that image's phases at the block's indices.
+    blocks = (kept, resident_tilts.MstepTranslations(index=np.array([0, 5]), valid=np.array([True, False])))
+    several = resident_tilts._slot_mstep_tables(
+        views,
+        row_unit=row_unit,
+        row_has_mass=row_has_mass,
+        n_valid_rows=5,
+        row_capacity=8,
+        block_rows=2,
+        image_angles=angles,
+        layout_image_ids=np.arange(12),
+        translation_blocks=blocks,
+        image_capacity=12,
+    )
+    assert np.asarray(several.angles).shape == (3, 2, 4, 2, 2)
+    for block, translations in enumerate(blocks):
+        for slot, unit in ((0, 1), (1, 2), (2, 0)):
+            assert_matches(np.asarray(several.angles)[slot, block, unit], angles[views[slot, unit]][translations.index])
 
 
 @pytest.mark.unit

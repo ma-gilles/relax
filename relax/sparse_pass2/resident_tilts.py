@@ -737,9 +737,10 @@ def _slot_mstep_tables(
     valid = unit_slot_images >= 0
     safe = np.where(valid, unit_slot_images, np.max(unit_slot_images, axis=1, keepdims=True)).clip(min=0)
     image_of_unit = np.where(valid, np.asarray(layout_image_ids)[np.maximum(unit_slot_images, 0)], 0)
-    angles = np.stack(
-        [np.asarray(image_angles)[image_of_unit][:, :, kept.index] for kept in translation_blocks], axis=1
-    )
+    # Gathered once: taken inside the comprehension, every translation block repeated the whole
+    # [S, C_U, T, 2] gather (5 s of each late et09 subtomogram VDAM iteration, py-spy 14993731).
+    unit_angles = np.asarray(image_angles)[image_of_unit]
+    angles = np.stack([unit_angles[:, :, kept.index] for kept in translation_blocks], axis=1)
     return SlotMstepTables(
         slot=jnp.arange(n_slots, dtype=jnp.int32),
         safe_images=jnp.asarray(safe, dtype=jnp.int32),
