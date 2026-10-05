@@ -48,7 +48,7 @@ The current list of open items, coverage limits and decisions is
 - **The mode in the scoring engine is a variant (decided).** `half_scoring.DenseVariantPolicy` carries
   `k_class_enabled`, and the dense half scoring branches on it twice, below the controller's decision. It
   selects a variant of one coherent operation; revisit only if K=1 and Class3D need different operands there.
-- Also unfinished at the boundary: `full_refinement.main` is 1,096 lines (was 1,791). The fingerprint runs it
+- Also unfinished at the boundary: `full_refinement.main` is 1,020 lines (was 1,791). The fingerprint runs it
   (19 `main_*` cases: K=1 and Class3D runs, `--continue`, schedules, start-up noise, the ledger, refused
   commands; not the frozen boundary or RELION replay, which only the GPU tiers run) and its start-up maps,
   start-up noise and prior, half sets, replay inputs, follower routing, captured projectors, restart

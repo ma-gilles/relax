@@ -11,7 +11,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 | Module | Owns |
 | --- | --- |
-| `full_refinement.py` | `relax refine` and `relax class3d`: `run_from_command_line`, `main` (one 1,096-line function) |
+| `full_refinement.py` | `relax refine` and `relax class3d`: `run_from_command_line`, `main` (one 1,020-line function) |
 | `command_options.py`, `refinement_options.py` | the flags, the RELION GUI job defaults, input-mode admission; the grouped options `refine_single_volume(options=...)` accepts |
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
 | `iteration_planning.py`, `convergence.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
@@ -72,6 +72,9 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
   (a frozen boundary, a follower topology) stands in for the one callee that provides it.
 - RELION replay inputs the command reads (numbered STAR replay, final-only replay, K=1 initial state, Class3D
   initial translations) live in `relax/diagnostics/replay_inputs.py`, not in the command.
+- A diagnostic environment variable of the controller is a field of `DiagnosticEnvironment`
+  (`refinement_options`), read once when the options are built (`options.debug.environment`); do not add an
+  `os.environ` read below the command.
 - Buffer lifetimes follow code rule 3, not old release points. Releasing earlier is allowed; extending a
   lifetime is not; state any change and its peak-memory effect. A test holding a traced call's operands keeps
   them alive: trace with `keep_operands=False` or hold weak references.

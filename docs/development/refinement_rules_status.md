@@ -3,24 +3,32 @@
 The agent-facing record of the open items of the refinement package against
 [refactor_rules.md](refactor_rules.md) and [module_template.md](module_template.md). Close an item by
 deleting it here in the commit that closes it; record a decision in the "Decided" section. Numbers are of
-main 7d8a1a1 (2026-10-05).
+the branch after main 7d8a1a1 (2026-10-05).
 
 ## Open, in the order they are worked
 
-1. **The command translates flags into options inline (rules 5, 7).** `full_refinement.main` is 1,103
-   lines. Every concern it had is a call with its own tests (start-up maps, prior, noise, half sets, replay
-   inputs, follower routing, captured projector, restart provenance, reports). What remains inline is the
-   order of those calls and about 200 `args.` reads turned into the controller's option records; the
-   `RefinementOptions(...)` call alone is 170 lines. Plan: one resolver per option group in
-   `command_options` (schedule, parity, replay, local search, k_class, ...) with a test of its fields, so
-   `main` passes records, not flags.
-2. **Environment reads below the boundary (rule 5).** 17 reads in `relax/refinement/` outside the command
-   modules: dump directories (`RELAX_KCLASS_DUMP_DIR`, `RELAX_BPREF_ACCUM_DUMP_DIR`,
-   `RELAX_RELION_TAU2_DEBUG_DUMP_DIR`, `RELAX_PREMASK_DUMP_DIR`, `RELAX_RELION_PROJECTOR_DUMP_DIR`,
-   `RELAX_RELION_PROJECTOR_CACHE_DIR`), precision diagnostics (`RELAX_USE_FLOAT64_SCORING`,
-   `RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS`), host FFT workers (`RELAX_RELION_HOST_IRFFT`,
-   `RELAX_RELION_HOST_FFT_WORKERS`, `SLURM_CPUS_PER_TASK`), the x-half batch guard and the native softmask
-   switch. Each becomes a field of `EngineDebugOptions` or of the precision policy, read once at the command.
+1. **The command still assembles three option records from start-up results (rules 5, 7).** The
+   schedule, adaptive, batching, overlap, local-search, k_class and debug records are resolved in
+   `command_options` (`resolve_*`, field tests in `tests/unit/test_option_resolvers.py`). The parity, replay
+   and checkpoint records stay in `full_refinement.main`: their fields are start-up results (half sets,
+   references, noise, poses, replay inputs, follower topology, the frozen boundary), not flags, so a
+   resolver would be a function of ten or more of them. `main` is 1,020 lines.
+2. **Environment reads below the boundary (rule 5).** The controller's diagnostic switches and dump
+   directories are one `DiagnosticEnvironment` (`EngineDebugOptions.environment`), read when the options are
+   built; add a new diagnostic variable there. Still read where used, each with its reason:
+   - `projector_preparation.prepare_scoring_projector`: `RELAX_RELION_PROJECTOR_CACHE_DIR` and
+     `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/helpers/expected_accuracy.py` calls it too, outside this
+     package.
+   - `mean_helpers`: `RELAX_RELION_HOST_IRFFT`, `RELAX_RELION_HOST_FFT_WORKERS` and `SLURM_CPUS_PER_TASK`,
+     execution-resource knobs of the host inverse FFT inside `_reconstruct_volume_eager` (18 parameters,
+     several callers); threading them means a host-FFT policy record in `ReconstructionSettings`.
+   - `local_search_iteration`: the x-half batch guard; `half_scoring`: hides the local engine's dump
+     variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
+     variables belong to the engine packages, which read them.
+   - `expectation_batches`: `RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS` (owned by
+     `relax.helpers.dtype_policy`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
+     `relax.dense.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
+     and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
 3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,998 lines, 847 of them
    shared by both modes. Remaining work is to find contract splits or shared steps by the rules, not by line
    count. 29 functions take ten or more parameters; the widest are `run_final_all_data` (28),
