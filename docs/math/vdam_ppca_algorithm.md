@@ -1090,6 +1090,36 @@ scientific contract; runnable code alone does not establish recovery.
   .91), and the last-50-update log-likelihoods match to four significant figures.
   Per update on H100, tf32 is 1.89x faster for 10076 VDAM (4.81 to 2.54 s) and
   1.56-1.75x for the eleven-state arms; on A100 2.37x for 10076 VDAM (11.4 to 4.81 s).
+- The LHS metric GEMM keeps the metric positive semidefinite under TF32 (October 5,
+  2026). One TF32 pass rounds each packed entry of an image's moment matrix
+  `sum_t gamma E[[1, z][1, z]^T]` on its own; when the latent posterior is narrow
+  against a large mean latent that matrix is nearly rank one, and the rounding leaves
+  it indefinite by about `2^-12` of its largest eigenvalue. Summed into a voxel, this
+  stopped VDAM on the coupled-direction check past update 2000 on the realistic
+  fixture of `em_work/ppca_sgd_vs_vdam_20261003/improve_20261004` (smallest/largest
+  eigenvalue -1e-5 to -4e-5 against the bound 3.8e-6), inside the update's support
+  too. Rounding the other operand, the non-negative `CTF^2 / sigma^2`, scales all of a
+  pixel's moment channels by one non-negative number and keeps the sum
+  semidefinite. So under tf32
+  [_metric_dot](../../relax/ppca_refinement/full_row_stream.py) passes the moments
+  through the TF32 GEMM as a TF32 value (the 13 low mantissa bits cleared) plus the
+  exact float32 remainder, about `2^-22` relative error in the moments; the
+  oversampled stream's contraction-free LHS product runs in float32. Restarts from
+  the realistic fixture's VDAM update-2000 checkpoints to update 2500 at shift step 1
+  (H100 jobs 15057382, 15057726; `em_work/ppca_metric_fix_20261005`):
+
+  | Arm | Seed 11 | Seed 12 | Seed 13 | Updates with an indefinite row (in / out of support) |
+  | --- | --- | --- | --- | --- |
+  | tf32 before | stops at 2290 | 2500 | stops at 2248 | 1 / 112, 0 / 129, 0 / 73 |
+  | tf32 with `_metric_dot` | 2500 | 2500 | 2500 | 0 / 0 each |
+  | fp32 | | 2500 | | 0 / 0 |
+
+  With the split, the smallest/largest eigenvalue ratio on the support stays at or
+  above 1.1e-4 in every update, as in fp32. On the first restarted update (same state
+  and batch) the metric moves by 1.4e-4 relative, and its distance to the fp32
+  metric falls from 2.5e-4 to 2.0e-4 (the scores still take TF32). The q=2 update
+  time does not change (0.39 s on H100); at q=10 the LHS GEMM has 66 moment rows and
+  an update takes 6% longer (1.64 to 1.74 s, three same-node pairs, job 15057978).
 - A per-shell separable VDAM metric was tried and rejected (October 2, 2026). It
   would cut the streamed scatter at `P = 11` from 88 to 23 channels: backproject
   only the metric trace `t(v)` (the momentum-SGD channel) and take the PxP

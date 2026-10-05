@@ -122,6 +122,29 @@ def _gemm(static):
     return jax.lax.DotAlgorithmPreset.TF32_TF32_F32 if static.gemm_precision == "tf32" else _HIGHEST
 
 
+def _metric_dot(sums, ctf2, static):
+    """The LHS metric GEMM ``sums @ ctf2``: packed moment rows ``sums`` (per row an image's PSD
+    ``sum gamma E[[1, z][1, z]^T]``) against the non-negative ``ctf2``.
+
+    TF32 rounds each packed moment entry on its own, which leaves a nearly singular moment matrix
+    indefinite by about 2^-11 of its largest entry; summed over images, such rows reached the
+    coupled-direction check (VDAM past update 2000 on a realistic fixture). Rounding ``ctf2``
+    scales all of a pixel's moment channels by one non-negative number and keeps the sum PSD.
+    So under tf32 the moments are split into a TF32 value and the exact float32 remainder,
+    and both go through the TF32 GEMM: the moments then carry about 2^-22 relative error and
+    the GEMM takes two TF32 passes. It contracts over images only (the RHS and score GEMMs also
+    over translations), so the second pass is small.
+    """
+    if static.gemm_precision != "tf32":
+        return jnp.dot(sums, ctf2, precision=_gemm(static))
+    # Clearing the 13 low mantissa bits leaves a TF32 value (exact in the GEMM) and an exact remainder.
+    high = jax.lax.bitcast_convert_type(
+        jax.lax.bitcast_convert_type(sums, jnp.uint32) & jnp.uint32(0xFFFFE000), jnp.float32
+    )
+    split = jnp.dot(jnp.concatenate([high, sums - high]), ctf2, precision=_gemm(static))
+    return split[: sums.shape[0]] + split[sums.shape[0] :]
+
+
 # Window pixels per GEMM row multiple on GPU streams: unaligned fp32 operands (2F = 3002 at
 # 10076) select cuBLAS's align1 kernels, about 4% slower on A100 (jobs/local_*/gemm_align).
 _GEMM_ALIGN = 4
@@ -625,9 +648,7 @@ def _moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_
     rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=_gemm(static)).reshape(
         P, R, 2 * F
     )
-    lhs_images = jnp.dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, precision=_gemm(static)).reshape(
-        n_moments, R, F
-    )
+    lhs_images = _metric_dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, static).reshape(n_moments, R, F)
     return _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
 
 

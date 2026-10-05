@@ -513,7 +513,9 @@ def _moment_rows(
     sums = _second_moment_sums(gamma[:, None, :], latent[:, :, None, :], covariance[:, None, :])
     recon = _shifted(tile.Y1_recon[rows.image], phases, shifts, K)  # (N, T_c, K 2F)
     rhs_parts = jnp.einsum("pnt,ntk->pnk", weights, recon, precision=_gemm(static)).reshape(P, N * K, 2 * F)
-    lhs_images = jnp.einsum("mn,nk->mnk", sums[:, :, 0], tile.ctf2_recon[rows.image], precision=_gemm(static)).reshape(
+    # No contraction: full float32 products cost nothing here, and TF32 would round each moment
+    # entry on its own and leave the metric indefinite (full_row_stream._metric_dot).
+    lhs_images = jnp.einsum("mn,nk->mnk", sums[:, :, 0], tile.ctf2_recon[rows.image], precision=_HIGHEST).reshape(
         sums.shape[0], N * K, F
     )
     rotations = _frame_rotations(tile, arrays.rotations[rows.row])
