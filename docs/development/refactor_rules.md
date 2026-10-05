@@ -1,71 +1,86 @@
-# Refactor rules: the short list
+# Code rules
 
-Nineteen rules from the work of 2026-10-04 on `relax/refinement/iteration_loop.py`, for agents who refactor
-other modules. Each rule names the case that taught it. "The loop" is `refine_single_volume`; numbers are
-measured unless marked as estimates. The longer record of principles and lessons, with its history, is
-`docs/development/refactor_principles.md`; where the two differ, the owner's rulings recorded there decide.
+For agents changing any module of this repository. One principle governs the rest: **preserve scientific
+contracts and required execution behaviour; do not preserve incidental source structure because a test
+happens to observe it.** Order of priority: correctness, then GPU performance, then clarity. The owner's
+rulings and their history are in `refactor_principles.md`, which decides where the two differ; how to run a
+change is `refactor_procedure.md`; the target shape of a module is `module_template.md`.
 
-## What to build
+## Behaviour
 
-1. **Share steps, not sequences.** When two modes run the same sequence, give them shared operations and
-   let each mode write its own order. Case: `mean_helpers.py` has `reconstruct_numbered_k1_halfmaps` and
-   `reconstruct_numbered_class_maps`; each spells out its sequence over helpers that take no mode.
-2. **No mode flag below the point where the mode is decided.** A callee that needs the mode is two callees.
-   Case: `update_k1_iteration_convergence` and `update_class_iteration_convergence` take different operands
-   (the native boundary; the class assignments), so a flag would also have carried dead arguments.
-3. **Do not split two modes into two functions to satisfy rule 2.** Measure first. Case: splitting the loop
-   into a K=1 and a Class3D trajectory was built and measured: about 1,500 lines written twice, 1,317 added.
-   It was not landed. The 11 one-line dispatchers that remain are the cheaper cost.
-4. **One representation per operand.** If the same value travels under several names, keep one. Case: the
-   loop bound 16 names to the lists of `PerHalfOutputs` (six never read). It now reads `per_half.<field>`.
-5. **Types are fixed at construction.** Do not convert a scalar's type on the way into a record and then
-   use the record where the original was used. Case: `ImageGeometry.pixel_size_angstrom` is `float(...)` of
-   the dataset's pixel size; the loop keeps the dataset's own scalar for host arithmetic, and the two were
-   not interchanged.
-6. **A record is one concept: built once, typed, fixed fields, read-only to the steps.** Good cases:
-   `RunOptics` (the run's image and optics geometry), `ExpectationSampling` (the windows and the local
-   sampling: where and how finely one iteration scores), `ExpectationStatistics`.
-7. **Refuse a bundle related only by timing.** Case: the first `ExpectationSampling` also held the
-   direction-prior order and a sealed capture's rotation ids because they were computed in the same stretch.
-   They went back to the loop. Also refused: a per-iteration "context" (iteration, current size, replay
-   directory), which is the loop's locals under one name, two of them rebound mid-iteration.
-8. **An owner object may be taken whole only when the docstring names the fields read.** Counter-examples,
-   where the signature said more before: `_should_use_adaptive_search(state, options, ...)` reads one field
-   of each; `plan_adaptive_image_size(..., options, ...)` reads two unrelated option groups;
-   `refresh_coarse_grids` now derives a rule from the replay directory and an option, out of the loop's
-   sight. Declined for this reason: passing `state` to three planners for `ave_Pmax` alone.
-9. **Do not build a step that only renames arguments.** Case: `dump_numbered_iteration` has 18 arguments;
-   each maps to one field of one record, so taking records would remove none.
+1. **Structure changes do not change numbers.** A refactor keeps defaults, scheduling, dtypes and scalar
+   promotion, casts, operation and reduction order, random-state progression, coordinate conventions,
+   saved formats and restart semantics; the default path stays bit-identical and reproduces RELION.
+   Production EM is float32. Numerical, execution and structural changes go in separate commits, each with
+   its own evidence. Do not fix an apparent mathematical inconsistency inside a refactor.
+2. **Preserve supported interfaces, not internals.** Public functions, CLI behaviour, output schemas, saved
+   formats, restart contracts and required diagnostics are contracts. Private functions, local names and the
+   order of ordinary log messages are not: move them and migrate their callers and tests. Keep a
+   compatibility wrapper only for a real compatibility obligation.
+3. **Required lifetimes, not old scopes.** Trace each large host or device buffer through records, views,
+   closures, callbacks and asynchronous consumers. Do not extend a lifetime by accident, and do not shorten
+   one a consumer needs; releasing an unused buffer earlier is allowed. Preserve donation, aliasing, stream
+   and FFI requirements. State any intentional lifetime change and its peak-memory effect.
+4. **JAX compilation is an execution contract.** A Python function boundary is not a jit boundary: do not
+   add jit regions, transfers, synchronisation or large intermediates to match the source decomposition.
+   Keep Python side effects out of traced code, keep compiled-function identity stable, and choose static
+   versus traced fields of any record that crosses a transformation on purpose (static fields are compile
+   keys). Host-device syncs inside a loop are deliberate.
 
-## What must stay visible
+## Structure
 
-10. **Installs, history writes and release points stay in the controller.** A step returns; the controller
-    assigns. Case: `class_maximization` appended to a history list passed in; it now returns the curve and
-    the loop writes `history.data_vs_prior_trajectory`.
-11. **Release points do not move, even to release earlier.** Case: extracting the projector preparation
-    would release the previous half-2 projector one build earlier, because a loop variable kept it alive.
-    A weak-reference test pins it; the extraction was not done.
-12. **Log order is not behaviour.** A refactor may move, merge or reorder log records. The fingerprint
-    compares the ordered trace, so a log-only change shows there as trace differences: read them, confirm
-    that only log rows moved and that results, files and checkpoints show 0 differences, and say so in the
-    commit message. (Owner, 2026-10-05.)
-13. **A rule moved into a callee needs a test there.** Case: `plan_expectation_windows` now decides that
-    shape classes are not remapped at run level; it got a unit test in the same commit.
+5. **Decide once, at the owning boundary.** Arguments, modes, environment variables and defaults become
+   option records where they enter, with their precedence preserved and each default defined once. Below
+   that point nothing reads `args`, `os.environ` or a mode string.
+6. **Split by contract, not by flag.** If two variants need different operands, invariants or state
+   transitions, they are two functions, chosen by one decision; a function whose arguments are half unused
+   in each mode is two contracts. A parameter that selects a legitimate variant of one coherent operation
+   (a layout, a precision, a JAX static specialisation) may stay. Share an implementation where the contract
+   is shared; measure before duplicating a sequence to remove a flag.
+7. **One authoritative owner per fact.** No two independently maintained copies of the same value. Aliases
+   that mark a different lifetime or moment, and derived representations (host/device, coordinate frames),
+   are fine. Keep arrays with the metadata needed to interpret them.
+8. **Configuration, state and results are different things.** Configuration is immutable once resolved
+   (a frozen dataclass is not deep immutability: say what may not be mutated). State has one explicit owner.
+   Results are returned as named types, not dicts. A record holds values that belong to one concept with a
+   stated lifetime (run, iteration, batch), not values that happen to be computed together.
+9. **Visible scientific transitions.** In a controller, persistent updates of run state, history and output
+   files are statements of the controller; operations return results and do not modify their arguments
+   unless they declare it (in-place buffers are allowed when stated). Diagnostics observe and never steer: a
+   value the algorithm uses never travels in a log or diagnostics structure.
+10. **Signatures show the dependency.** Pass the smallest coherent input: a record when it is the concept the
+    function works on, fields when it reads a few of a large object. Document what is not obvious: shapes,
+    dtypes, units, frames, absent states, mutation.
+11. **Layers point down:** command, controller, operations, engines (and RECOVAR). Engines take arrays and
+    policies and know nothing of options, state or history. Workflows do not import each other's internals;
+    an authoritative formula has one home.
 
-## How to verify and land
+## Checks
 
-14. **Every landing needs fingerprint cases that leave the defaults.** Case: no case set a consistency
-    option, so removing a name read only under `noise_shell_count == "summed"` showed 0 differences; lint
-    caught it. Two cases with non-default options now catch it (both fail with `NameError`).
-15. **Search all of `tests/` and `scripts/` for every moved or removed name before a GPU tier.** The CPU
-    unit list does not run GPU unit files. Case: a GPU-only test monkeypatched
-    `iteration_loop.plan_expectation_windows` after the step had moved it; the medium tier failed on it.
-16. **A function-local name is also an interface when tests execute slices of the function.** 22 test files
-    read or execute text of the loop; renaming a local broke their fabricated namespaces. `grep` the name.
-17. **Ceilings only go down.** Lower them as the last commit of a slice. The one exception is a requested
-    feature, with the new value and the reason in its commit. Case: the consistency options raised the span
-    by ten lines on purpose; the refactor slices after it lowered it again (2,193 to 2,036).
-18. **One idea per commit, each fingerprint-clean against its parent,** then the stack against
-    `origin/main`. After a rebase re-run lint: a clean rebase can still leave a dangling name (rule 14).
-19. **Say what the checks do not cover.** Case: local search has no fingerprint case (the local route does
-    not reach the stand-in engine); every report on a step that touched it said so and relied on the tiers.
+12. **Check at the edge, then trust; never fall back silently.** Validate external inputs, restored state and
+    newly computed invariants where they become available. An unsupported combination refuses with a
+    message naming it. A supported fallback is explicit and tested; a silent substitution, skip or
+    success-shaped result is a defect.
+13. **Test behaviour with independent evidence.** Focused numerical tests with independently justified
+    expectations, and integration through real callers, covering affected modes, non-default settings,
+    boundaries and failure paths. No new test reads or executes source text; convert an existing one when the
+    code it pins changes, keeping its assertions. Never weaken a tolerance, assertion or reference to make a
+    change pass.
+14. **Evidence matches risk, and says what it does not cover.** The fingerprint harness covers controller
+    moves on a stand-in engine, not engine numbers, GPU order, memory or lifetimes. Use real-engine checks
+    for numerical paths and device measurements for execution changes. Every report separates what was read,
+    executed, numerically compared and performance-measured, and lists what was not.
+
+## Changes from v1 (refactor_rules.md, main 2297cf4)
+
+- v1 1–3 (share steps; no mode flag below the decision; do not split to satisfy it) → rule 6, now a contract
+  rule: an absolute ban on mode parameters was wrong (JAX static specialisations, layout selectors, and the
+  owner's retained `tau_is_1d` are legitimate).
+- v1 4 → rule 7 (one owner, not one name: meaningful aliases stay). v1 5 → rule 1. v1 6–7 → rule 8 with
+  lifetimes. v1 8 → rule 10. v1 9 → procedure. v1 10 → rule 9.
+- v1 11 (release points never move) → rule 3. v1 contradicted the owner's ruling of 2 October.
+- v1 12 (log order) → rule 2, per the owner's ruling of 5 October.
+- v1 13 → rule 13. v1 16 (source-reading tests make locals an interface) dropped: those tests are converted.
+- v1 14, 15, 18 → procedure. v1 17 (ceilings only go down) → procedure, as review signals with slack
+  (owner, 2026-10-05). v1 19 → rule 14.
+- New: rules 1 (as a rule), 2, 4, 5, 8, 11, 12, 14.

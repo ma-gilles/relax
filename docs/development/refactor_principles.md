@@ -36,6 +36,15 @@ ownership, asynchronous execution requirements, numerical operations and deliber
 metadata precision. Record and qualify memory/performance effects on the final
 frozen float32 candidate; do not introduce unused retention fields.
 
+Owner ruling on October 5, 2026: the structure ceilings in
+`docs/development/refinement_structure_metrics.json` are review signals with
+slack, not exact hard failures. `scripts/report_refinement_structure.py --check`
+fails only when a metric exceeds its ceiling by more than the slack its
+docstring states; within the slack it warns, and the reviewer judges whether
+the growth is justified. Ceilings are still lowered after a change that shrinks
+the code and are never raised to make a refactor pass. The code rules
+(`refactor_rules.md`, v3) were adopted the same day.
+
 Keep work synced with integration main. Preserve the user's uncommitted comments
 and other work when updating; inspect incoming overlap and follow the existing
 validation rules. Never update a source snapshot being used by a running job.
