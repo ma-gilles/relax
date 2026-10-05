@@ -3095,10 +3095,18 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
 def test_numbered_projector_reuse_preserves_previous_projector_release(
     half_datasets, init_volume, rotations, translations, monkeypatch,
 ):
-    """The list resets before scoring builds; the last projector survives its replacement RHS."""
+    """The projectors a consumer needs stay alive, and the previous iteration's are gone before a new build.
+
+    Half 1's scoring projector is the expected-accuracy estimate's projector of the same references (built
+    first and reused, not rebuilt); each half is scored with the projector built for it in this iteration.
+    The previous iteration's projectors are released before this iteration's first scoring build (since the
+    build moved into ``build_numbered_projectors`` the previous half-2 slab no longer survives into the
+    half-1 build: one slab less at that peak).
+    """
     import weakref
 
     old_projectors = []
+    built = {}
     events = []
     original_prepare = projector_preparation.prepare_scoring_projector
 
@@ -3116,21 +3124,20 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
         if kwargs["dump_label"].startswith("iter000"):
             result = original_prepare(*args, **kwargs)
             old_projectors.append(weakref.ref(result))
+            built[kwargs["dump_label"]] = result
             return result
         if kwargs.get("reusable") is None and kwargs["dump_label"].endswith("half0"):
-            assert all(reference() is not None for reference in old_projectors)
-            events.append("accuracy_before_list_reset")
+            events.append("accuracy_projector_built_first")
             return original_prepare(*args, **kwargs)
         if kwargs.get("reusable") is not None:
-            assert old_projectors[0]() is None
-            assert old_projectors[1]() is not None
+            built.clear()
+            assert all(reference() is None for reference in old_projectors)
             result = original_prepare(*args, **kwargs)
             assert result is kwargs["reusable"].projector
-            assert old_projectors[1]() is not None
-            events.append("last_projector_alive_during_replacement")
+            events.append("half1_reuses_the_accuracy_projector")
             return result
         assert all(reference() is None for reference in old_projectors)
-        events.append("previous_projectors_released_before_half1_build")
+        events.append("previous_projectors_released_before_half2_build")
         raise LifetimeChecked
 
     def accuracy(self, **kwargs):
@@ -3143,6 +3150,8 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
         )
 
     def score(data, phase, **kwargs):
+        if built:
+            assert data.projector is built[f"iter000_half{data.particles.index}"]
         grid = phase.grid
         dataset = data.particles.dataset
         shape = kwargs["padded_volume_shape"]
@@ -3177,7 +3186,6 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
     monkeypatch.delenv("RELAX_RELION_PROJECTOR_CACHE_DIR", raising=False)
     monkeypatch.delenv("RELAX_RELION_PROJECTOR_DUMP_DIR", raising=False)
     monkeypatch.setattr(setup, "reference_to_relion_projector_half_maps_and_power", transform)
-    monkeypatch.setattr(iteration_loop_module, "prepare_scoring_projector", prepare)
     monkeypatch.setattr(projector_preparation, "prepare_scoring_projector", prepare)
     monkeypatch.setattr(expected_accuracy_module.Half1AccuracyInputs, "estimate", accuracy)
     monkeypatch.setattr(iteration_loop_module, "score_numbered_half", score)
@@ -3208,8 +3216,8 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
         )
     assert len(old_projectors) == 2
     assert events == [
-        "accuracy_before_list_reset", "last_projector_alive_during_replacement",
-        "previous_projectors_released_before_half1_build",
+        "accuracy_projector_built_first", "half1_reuses_the_accuracy_projector",
+        "previous_projectors_released_before_half2_build",
     ]
 
 
@@ -3232,7 +3240,7 @@ def test_numbered_projector_preparation_skips_empty_half(
         assert data.projector.r_max == 2
         raise PreparationChecked
 
-    monkeypatch.setattr(iteration_loop_module, "prepare_scoring_projector", prepare)
+    monkeypatch.setattr(projector_preparation, "prepare_scoring_projector", prepare)
     monkeypatch.setattr(iteration_loop_module, "score_numbered_half", score)
     with pytest.raises(PreparationChecked):
         refine_single_volume(
@@ -7472,8 +7480,6 @@ class TestRelionModeSmokeTest:
         preserve_order,
     ):
         """K=1 adaptive counts remain diagnostic when exact accuracy is unavailable."""
-        import relax.refinement.iteration_loop as refine_mod
-
         monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
         counts_by_half = [
             np.array([4, 5], dtype=np.int32),
@@ -7489,7 +7495,7 @@ class TestRelionModeSmokeTest:
             lambda _order, dtype=None, *, symmetry='C1': sampling_module.RotationGrid(rotations=rotations_many, rotation_eulers=np.zeros((len(rotations_many), 3), dtype=np.float32), healpix_order=_order, symmetry=symmetry),
         )
         monkeypatch.setattr(
-            refine_mod,
+            projector_preparation,
             "prepare_scoring_projector",
             lambda *_args, **_kwargs: projector_preparation.PreparedProjector(
                 data=np.zeros((1, 3, 3, 2), dtype=np.complex64), r_max=1,

@@ -354,7 +354,7 @@ def test_class_reconstructions_refuse_separable():
 def test_refinement_hands_every_k1_site_the_kernel(monkeypatch, kernel):
     """Two numbered iterations and the final all-data pass of the real controller."""
     reconstructions = record_calls(monkeypatch, mean_helpers, "_reconstruct_volume_eager")
-    numbered_projectors = record_calls(monkeypatch, iteration_loop, "prepare_scoring_projector")
+    numbered_projectors = record_calls(monkeypatch, projector_preparation, "prepare_scoring_projector")
     final_projectors = record_calls(monkeypatch, finalization, "prepare_scoring_projector")
     accuracy_kernels = []
 

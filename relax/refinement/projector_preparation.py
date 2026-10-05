@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import time
 from dataclasses import dataclass
 
 import jax.numpy as jnp
@@ -299,6 +300,62 @@ def _validate_captured_relion_projector_for_iteration(
             replay_state.projector_half_by_half, replay_state.projector_r_max_by_half, strict=True
         )
     ]
+
+
+def build_numbered_projectors(
+    halves,
+    references_by_half,
+    settings,
+    *,
+    current_size: int | None,
+    n_classes: int,
+    reusable_half1: ProjectorReuse | None,
+    real_references_by_half,
+    iteration: int,
+    log: logging.Logger,
+) -> list[PreparedProjector | None]:
+    """Build each half's ``Projector::data`` for one numbered iteration's scoring; ``[half 1, half 2]``.
+
+    A half without images gets ``None``. Half 1 returns ``reusable_half1``'s projector when it was built
+    from the same references at ``current_size`` (the expected-accuracy estimate's projector). Each half
+    projects ``references_by_half[half.index]``, from ``real_references_by_half[half.index]`` when given
+    (the start-up handoff of the first iteration). Reads from ``settings`` (the run's
+    ``ReconstructionSettings``): ``volume_shape``, ``projection_padding_factor`` and ``gridding_kernel``.
+    """
+    started_at = time.time()
+    projectors = [None, None]
+    for half in halves:
+        if half.dataset.n_units == 0:
+            log.info(
+                "RELION mode: skipping Projector::data build for empty half-%d dataset",
+                half.index + 1,
+            )
+            continue
+        projectors[half.index] = prepare_scoring_projector(
+            references_by_half[half.index],
+            volume_shape=settings.volume_shape,
+            current_size=current_size,
+            padding_factor=settings.projection_padding_factor,
+            n_classes=n_classes,
+            reusable=reusable_half1 if half.index == 0 else None,
+            real_references=None if real_references_by_half is None else real_references_by_half[half.index],
+            dump_label=f"iter{iteration:03d}_half{half.index}",
+            gridding_kernel=settings.gridding_kernel,
+        )
+    require_projectors_for_gridding_kernel(projectors, settings.gridding_kernel)
+    log.info(
+        # The slab dtype decides whether pass-2 projection runs on
+        # the native texture projector or the vmapped JAX fallback
+        # (_relion_projector_texture_enabled requires complex64),
+        # so record it rather than leaving the path implicit.
+        "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
+        "dtype=%s in %.2fs",
+        current_size,
+        None if projectors[0] is None else projectors[0].r_max,
+        None if projectors[0] is None else projectors[0].data.dtype,
+        time.time() - started_at,
+    )
+    return projectors
 
 
 def require_projectors_for_gridding_kernel(projectors, gridding_kernel: str) -> None:

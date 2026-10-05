@@ -428,7 +428,7 @@ MUTATIONS = (
      "the perturbed trial grid shifts translations by twice the step", True),
     ("pass1_angular_sampling", "sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),", "sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=1),",
      "the pass-1 coarse rotations are perturbed by the oversampled step", True),
-    ("projector_not_reused", "reusable=shared_projector_half1 if half.index == 0 else None,", "reusable=None,",
+    ("projector_not_reused", "reusable=reusable_half1 if half.index == 0 else None,", "reusable=None,",
      "half 1's scoring projector is rebuilt instead of reusing the accuracy projector", True),
     ("significance_not_combined", "significance.combine()", "pass",
      "the halves' significant-sample counts are never combined", True),

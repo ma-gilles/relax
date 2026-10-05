@@ -160,9 +160,9 @@ def test_projector_build_log_reports_the_slab_dtype(monkeypatch, caplog):
 
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement import iteration_loop
+    from relax.refinement import projector_preparation
 
-    trace = CallTrace(monkeypatch).wrap(iteration_loop, "prepare_scoring_projector", "build")
+    trace = CallTrace(monkeypatch).wrap(projector_preparation, "prepare_scoring_projector", "build")
     with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):
         run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False)
     built = [record for record in caplog.records if "built exact Projector::data for scoring" in record.getMessage()]

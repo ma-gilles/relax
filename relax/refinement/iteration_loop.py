@@ -187,9 +187,8 @@ from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.particle_loading import configure_half_image_preprocessing
 from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
+    build_numbered_projectors,
     prepare_initial_real_references,
-    prepare_scoring_projector,
-    require_projectors_for_gridding_kernel,
 )
 from relax.refinement.refinement_options import (
     RefinementOptions,
@@ -1708,11 +1707,11 @@ def refine_single_volume(
                 (f"{float(particle_diameter_ang):.1f} A" if particle_diameter_ang is not None else "box_size"),
             )
 
+        # The previous iteration's slabs are released before this iteration's are built.
         projectors = [None, None]
         captured_projector_state = replay_result.relion_projector_state
         # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
         # coarse operands on every route, as RELION builds Projector::data every iteration.
-        projector_t0 = time.time()
         if captured_projector_state is not None:
             projectors = _validate_captured_relion_projector_for_iteration(
                 captured_projector_state,
@@ -1729,41 +1728,16 @@ def refine_single_volume(
                 captured_projector_state.source_manifest_sha256,
             )
         else:
-            for half in halves:
-                if half.dataset.n_units == 0:
-                    logger.info(
-                        "RELION mode: skipping Projector::data build for empty half-%d dataset",
-                        half.index + 1,
-                    )
-                    continue
-                projector = prepare_scoring_projector(
-                    reference_model.maps[half.index],
-                    volume_shape=volume_shape,
-                    current_size=sampling_plan.windows.model_window_size,
-                    padding_factor=PROJECTION_PADDING_FACTOR,
-                    n_classes=n_classes,
-                    reusable=shared_projector_half1 if half.index == 0 else None,
-                    real_references=(
-                        initial_real_references_by_half[half.index]
-                        if iteration == 0
-                        else None
-                    ),
-                    dump_label=f"iter{iteration:03d}_half{half.index}",
-                    gridding_kernel=consistency.gridding_kernel,
-                )
-                projectors[half.index] = projector
-            require_projectors_for_gridding_kernel(projectors, consistency.gridding_kernel)
-            logger.info(
-                # The slab dtype decides whether pass-2 projection runs on
-                # the native texture projector or the vmapped JAX fallback
-                # (_relion_projector_texture_enabled requires complex64),
-                # so record it rather than leaving the path implicit.
-                "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
-                "dtype=%s in %.2fs",
-                sampling_plan.windows.model_window_size,
-                None if projectors[0] is None else projectors[0].r_max,
-                None if projectors[0] is None else projectors[0].data.dtype,
-                time.time() - projector_t0,
+            projectors = build_numbered_projectors(
+                halves,
+                reference_model.maps,
+                reconstruction_settings,
+                current_size=sampling_plan.windows.model_window_size,
+                n_classes=n_classes,
+                reusable_half1=shared_projector_half1,
+                real_references_by_half=initial_real_references_by_half if iteration == 0 else None,
+                iteration=iteration,
+                log=logger,
             )
 
         # Freeze the exact iteration-start curve used by RELION's scale XA/AA
