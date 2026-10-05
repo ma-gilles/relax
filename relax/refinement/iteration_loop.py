@@ -995,11 +995,6 @@ def refine_single_volume(
         log=logger,
     )
 
-    # State: two half-set references.  For K-class refinement each half stores
-    # an explicit leading class axis; single-class callers keep the historical
-    # flat per-half reference layout.
-    initial_maps = _normalize_initial_means(init_volume, n_classes)
-    del init_volume
     initial_real_references_by_half = prepare_initial_real_references(
         replay.init_reference_real,
         volume_shape=volume_shape,
@@ -1011,22 +1006,9 @@ def refine_single_volume(
         init_noise_variance,
         n_halves=2,
     )
-    initial_noise_variance = _mean_noise_variance(initial_noise_variance_per_half)
     optics_group_ids_per_half = _optics_group_ids_per_half(
         parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )
-    # A continued run takes its start-up model state from the snapshot, below.
-    if resume is None:
-        reference_model = initialize_reference_model(
-            initial_maps,
-            jnp.asarray(init_mean_variance),
-            use_per_half_mean_variance=parity.use_per_half_mean_variance,
-            k_class_enabled=k_class_enabled,
-            log=logger,
-        )
-    # The reference owner alone retains the start-up tau2, so the first M-step
-    # replacement releases it from the device.
-    del initial_maps, init_mean_variance
     _mark_setup_phase("initial_arrays")
 
     # History tracking: one RefinementHistory instance accumulates every
@@ -1035,9 +1017,6 @@ def refine_single_volume(
     take_pass_engines()  # entries from before this run's first iteration belong to no iteration
     take_coarse_engine_calls()
     previous_assignments = [None, None]
-    class_assignments = [None, None]
-    previous_class_assignments = [None, None]
-    previous_best_rotations = [None, None]
     halves = initialize_halfsets(
         experiment_datasets,
         optics_group_ids=optics_group_ids_per_half,
@@ -1048,61 +1027,12 @@ def refine_single_volume(
         group_ids=replay.init_group_ids,
         group_count=replay.init_group_count,
     )
-    # RELION measures the first iteration's orientation changes from the input angles, as its offset
-    # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
-    # trackers of the hidden-variable stall counter.
-    if resume is None:
-        previous_best_rotations = [
-            None
-            if half.rotation_eulers is None
-            else np.zeros((0, 3, 3), dtype=scoring_dtype)
-            if len(half.rotation_eulers) == 0
-            else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=scoring_dtype)
-            for half in halves
-        ]
-    previous_data_vs_prior_for_scheduling = (
-        None
-        if schedule.init_data_vs_prior is None
-        else np.asarray(schedule.init_data_vs_prior, dtype=scoring_dtype)
-    )
     tau2_update_details = None
     tau2_update_details_per_half = None
-
-    # C1 (RELION-parity): per-iter sigma2_offset update from data. Initialized
-    # from `init_translation_sigma_angstrom`; updated from RELION's
-    # posterior-weighted offset moment when the E-step path propagates it.
-    # RELION stores and updates this quantity in Angstrom², and its default
-    # lower bound is min_sigma2_offset=2 Å² (ml_optimiser.cpp).
-    sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom))
     expected_accuracy_trial_local_indices = None
     expected_accuracy_trial_particle_ids = None
-    relion_incr_size = int(schedule.init_relion_incr_size)
-    if relion_incr_size <= 0:
+    if int(schedule.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
-    relion_has_high_fsc_at_limit = bool(schedule.init_has_high_fsc_at_limit) if schedule.init_has_high_fsc_at_limit is not None else False
-
-    # --- Direction prior from snapshot ---
-    if resume is None or resume.direction_prior is None:
-        direction_priors = initial_direction_priors_from_snapshot(
-            replay.init_direction_prior,
-            n_classes=n_classes,
-            dtype=scoring_dtype,
-            log=logger,
-            symmetry=symmetry, expected_order=coarse_grids.rotation_grid.healpix_order,
-        )
-    _mark_setup_phase("direction_prior")
-
-    # Extract per-shell radial profiles from the input pixel-array noise
-    # variances for diagnostic logging ("noise update per shell: old=... new=...").
-    if resume is None:
-        noise_model = initialize_noise_model(
-            initial_noise_variance_per_half,
-            average_variance=initial_noise_variance,
-            image_shape=image_geometry.image_shape,
-            dtype=scoring_dtype,
-        )
-    del initial_noise_variance_per_half, initial_noise_variance
-    _mark_setup_phase("noise_radial_init")
 
     # RELION randomises each half once at the first iteration and then uses
     # the first 100 half-1 particles for calculateExpectedAngularErrors.
@@ -1138,66 +1068,50 @@ def refine_single_volume(
         k_class_enabled=k_class_enabled,
     )
 
-    # --- Continue from the run files of an earlier run (RELION --continue) ---
-    # The snapshot replaces every value the next numbered iteration reads, so the
-    # first loop iteration runs as iteration init_relion_iteration + 1 of the
-    # uninterrupted run (see relax/refinement/iteration_snapshot.py).
-    if resume is not None:
-        reference_model = reference_model_from_snapshot(
-            resume, volume_shape, k_class_enabled=k_class_enabled, dtype=scoring_dtype,
+    if resume is None:
+        # --- A fresh run starts from the caller's references, noise and replayed particle state ---
+        # Each half stores its references in the loop's layout: an explicit leading
+        # class axis for K classes, one flat reference for K=1.
+        reference_model = initialize_reference_model(
+            _normalize_initial_means(init_volume, n_classes),
+            jnp.asarray(init_mean_variance),
+            use_per_half_mean_variance=parity.use_per_half_mean_variance,
+            k_class_enabled=k_class_enabled,
+            log=logger,
         )
-        noise_model = noise_model_from_shells(resume.noise_shells, image_geometry.image_shape)
-        for half, eulers, translations, images, scales in zip(
-            halves, resume.rotation_eulers, resume.translations,
-            resume.image_corrections, resume.scale_corrections, strict=True,
-        ):
-            half.rotation_eulers = eulers
-            half.translations = translations
-            half.image_corrections = images
-            half.scale_corrections = scales
-        # An empty half (Class3D's second accumulator) keeps an empty stack, as the loop does.
-        previous_best_rotations = [
+        # Per-shell radial profiles of the input pixel-array noise variances, for the
+        # diagnostic log ("noise update per shell: old=... new=...").
+        noise_model = initialize_noise_model(
+            initial_noise_variance_per_half,
+            average_variance=_mean_noise_variance(initial_noise_variance_per_half),
+            image_shape=image_geometry.image_shape,
+            dtype=scoring_dtype,
+        )
+        # The models alone retain the start-up references, tau2 and noise, so the first
+        # updates release them from the device.
+        del init_volume, init_mean_variance, initial_noise_variance_per_half
+        class_assignments = [None, None]
+        previous_class_assignments = [None, None]
+        previous_data_vs_prior_for_scheduling = (
             None
-            if eulers is None
-            else np.zeros((0, 3, 3), dtype=scoring_dtype)
-            if len(eulers) == 0
-            else np.asarray(utils.R_from_relion(np.asarray(eulers), degrees=True), dtype=scoring_dtype)
-            for eulers in resume.rotation_eulers
-        ]
-        if k_class_enabled:
-            class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
-            previous_class_assignments = [None if c is None else c.copy() for c in class_assignments]
-            class_mixture = class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64))
-        previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=scoring_dtype)
-        sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
-        relion_incr_size = int(resume.incr_size)
-        relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
-        random_perturbation = float(resume.random_perturbation)
-        if resume.direction_prior is not None:
-            # The saved order resolves a prior length that is ambiguous under symmetry.
-            saved_orders = [int(resume.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
-            saved_orders = [None if order < 0 else order for order in saved_orders]
-            direction_priors = initial_direction_priors_from_snapshot(
-                resume.direction_prior,
-                n_classes=n_classes,
-                dtype=scoring_dtype,
-                log=logger,
-                symmetry=symmetry, expected_order=saved_orders[0],
-            )
-            direction_priors = [
-                DirectionPrior(prior.values, order)
-                for prior, order in zip(direction_priors, saved_orders, strict=True)
-            ]
-        logger.info(
-            "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
-            "local_search=%s resolution=%.3f A",
-            int(resume.relion_iteration),
-            int(resume.current_size),
-            int(state.healpix_order),
-            bool(state.do_local_search),
-            float(state.current_resolution),
+            if schedule.init_data_vs_prior is None
+            else np.asarray(schedule.init_data_vs_prior, dtype=scoring_dtype)
         )
-    else:
+        # C1 (RELION-parity): per-iter sigma2_offset update from data. Initialized
+        # from `init_translation_sigma_angstrom`; updated from RELION's
+        # posterior-weighted offset moment when the E-step path propagates it.
+        # RELION stores and updates this quantity in Angstrom², and its default
+        # lower bound is min_sigma2_offset=2 Å² (ml_optimiser.cpp).
+        sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom))
+        relion_incr_size = int(schedule.init_relion_incr_size)
+        relion_has_high_fsc_at_limit = bool(schedule.init_has_high_fsc_at_limit) if schedule.init_has_high_fsc_at_limit is not None else False
+        direction_priors = initial_direction_priors_from_snapshot(
+            replay.init_direction_prior,
+            n_classes=n_classes,
+            dtype=scoring_dtype,
+            log=logger,
+            symmetry=symmetry, expected_order=coarse_grids.rotation_grid.healpix_order,
+        )
         # --- RELION SamplingPerturbation state (healpix_sampling.cpp:167-174) ---
         # RELION applies a random rigid rotation of the entire SO(3) trial grid at
         # each iteration: A -> A @ R_perturb with R_perturb = R_from_relion([m,m,m])
@@ -1219,15 +1133,93 @@ def refine_single_volume(
             )
         else:
             random_perturbation = 0.0
-    perturb_rng = None if parity.perturb_seed is not None else np.random.default_rng()
-    # RELION's per-class MlModel::acc_rot/acc_trans for model.star: zero until the
-    # first expected-accuracy estimate (ml_model.cpp:68), then the latest estimate.
-    if resume is not None and resume.acc_rot_per_class is not None:
-        model_acc_rot_per_class = np.array(resume.acc_rot_per_class, dtype=np.float64)
-        model_acc_trans_per_class = np.array(resume.acc_trans_per_class_angstrom, dtype=np.float64)
-    else:
+        # RELION's per-class MlModel::acc_rot/acc_trans for model.star: zero until the
+        # first expected-accuracy estimate (ml_model.cpp:68), then the latest estimate.
         model_acc_rot_per_class = np.zeros(n_classes, dtype=np.float64)
         model_acc_trans_per_class = np.zeros(n_classes, dtype=np.float64)
+    else:
+        # --- A continued run starts from the run files of an earlier run (RELION --continue) ---
+        # The snapshot replaces every value the next numbered iteration reads, so the
+        # first loop iteration runs as iteration init_relion_iteration + 1 of the
+        # uninterrupted run (see relax/refinement/iteration_snapshot.py). It reads none of
+        # the start-up arrays: they are released before the snapshot's model is built.
+        del init_volume, init_mean_variance, initial_noise_variance_per_half
+        reference_model = reference_model_from_snapshot(
+            resume, volume_shape, k_class_enabled=k_class_enabled, dtype=scoring_dtype,
+        )
+        noise_model = noise_model_from_shells(resume.noise_shells, image_geometry.image_shape)
+        for half, eulers, translations, images, scales in zip(
+            halves, resume.rotation_eulers, resume.translations,
+            resume.image_corrections, resume.scale_corrections, strict=True,
+        ):
+            half.rotation_eulers = eulers
+            half.translations = translations
+            half.image_corrections = images
+            half.scale_corrections = scales
+        class_assignments = [None, None]
+        previous_class_assignments = [None, None]
+        if k_class_enabled:
+            class_assignments = [None if c is None else np.asarray(c) for c in resume.class_assignments]
+            previous_class_assignments = [None if c is None else c.copy() for c in class_assignments]
+            class_mixture = class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64))
+        previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=scoring_dtype)
+        sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
+        relion_incr_size = int(resume.incr_size)
+        relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
+        if resume.direction_prior is None:
+            direction_priors = initial_direction_priors_from_snapshot(
+                replay.init_direction_prior,
+                n_classes=n_classes,
+                dtype=scoring_dtype,
+                log=logger,
+                symmetry=symmetry, expected_order=coarse_grids.rotation_grid.healpix_order,
+            )
+        else:
+            # The saved order resolves a prior length that is ambiguous under symmetry.
+            saved_orders = [int(resume.extra.get(f"direction_prior_order_half{h + 1}", -1)) for h in range(2)]
+            saved_orders = [None if order < 0 else order for order in saved_orders]
+            direction_priors = initial_direction_priors_from_snapshot(
+                resume.direction_prior,
+                n_classes=n_classes,
+                dtype=scoring_dtype,
+                log=logger,
+                symmetry=symmetry, expected_order=saved_orders[0],
+            )
+            direction_priors = [
+                DirectionPrior(prior.values, order)
+                for prior, order in zip(direction_priors, saved_orders, strict=True)
+            ]
+        random_perturbation = float(resume.random_perturbation)
+        if resume.acc_rot_per_class is not None:
+            model_acc_rot_per_class = np.array(resume.acc_rot_per_class, dtype=np.float64)
+            model_acc_trans_per_class = np.array(resume.acc_trans_per_class_angstrom, dtype=np.float64)
+        else:
+            model_acc_rot_per_class = np.zeros(n_classes, dtype=np.float64)
+            model_acc_trans_per_class = np.zeros(n_classes, dtype=np.float64)
+        logger.info(
+            "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
+            "local_search=%s resolution=%.3f A",
+            int(resume.relion_iteration),
+            int(resume.current_size),
+            int(state.healpix_order),
+            bool(state.do_local_search),
+            float(state.current_resolution),
+        )
+    # Both start-up states end here; the archive keeps the two phase names it has always had.
+    _mark_setup_phase("direction_prior")
+    _mark_setup_phase("noise_radial_init")
+    # RELION measures the first iteration's orientation changes from the input angles, as its offset
+    # changes from the input offsets (updateOverallChangesInHiddenVariables); they seed the smallest-change
+    # trackers of the hidden-variable stall counter. An empty half keeps an empty stack, as the loop does.
+    previous_best_rotations = [
+        None
+        if half.rotation_eulers is None
+        else np.zeros((0, 3, 3), dtype=scoring_dtype)
+        if len(half.rotation_eulers) == 0
+        else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=scoring_dtype)
+        for half in halves
+    ]
+    perturb_rng = None if parity.perturb_seed is not None else np.random.default_rng()
     iteration = 0
     _mark_setup_phase("before_iterations")
     logger.info(
