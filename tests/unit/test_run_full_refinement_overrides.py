@@ -10,8 +10,6 @@ relative to RELION (cf. iteration_loop.py:4667-4703).
 
 from __future__ import annotations
 
-import ast
-import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,26 +80,6 @@ FIXTURE = fixture_root("k1_5k128_relion_os0")
 def verified_k1_relion_os0():
     """Fail, not skip, when the RELION 5k run is missing or differs from the manifest."""
     return fixture_dir("k1_5k128_relion_os0")
-RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
-
-
-
-
-def _sole_call_keywords(tree: ast.Module, func_name: str) -> dict[str, ast.expr]:
-    """Keyword args of the single top-level call to ``func_name`` in ``tree``.
-
-    refine_single_volume() takes one ``options=RefinementOptions(...)``;
-    most CLI-forwarding knobs now live as keywords on the nested
-    RefinementSchedule/RelionParityOptions/EngineDebugOptions/etc.
-    constructor calls instead of directly on refine_single_volume.
-    """
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == func_name
-    ]
-    assert len(calls) == 1, f"expected exactly one {func_name}(...) call, found {len(calls)}"
-    return {keyword.arg: keyword.value for keyword in calls[0].keywords}
 
 
 def test_complete_initial_particle_state_is_autorefine_only():
@@ -669,32 +647,45 @@ def test_frozen_boundary_source_hashes_bind_live_stars(tmp_path):
         )
 
 
-def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop():
-    tree = ast.parse(RUN_FULL_REFINEMENT.read_text())
-    # init_current_size / init_relion_incr_size are forwarded via the
-    # RefinementSchedule group of refine_single_volume's options= bundle.
-    keywords = _sole_call_keywords(tree, "RefinementSchedule")
-    assert isinstance(keywords["init_current_size"], ast.Name)
-    assert keywords["init_current_size"].id == "init_current_size"
-    relion_incr = keywords["init_relion_incr_size"]
-    assert isinstance(relion_incr, ast.IfExp)
-    assert isinstance(relion_incr.orelse, ast.Attribute)
-    assert relion_incr.orelse.attr == "relion_incr_size"
+class _StandInBoundary:
+    """The fields of a frozen boundary the command reads before the controller; the rest are None."""
 
-    assignments = {
-        target.id: value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        for target in node.targets
-        if isinstance(target, ast.Name)
-        for value in [node.value]
-    }
-    current_size = assignments["init_current_size"]
-    assert isinstance(current_size, ast.IfExp)
-    boundary_current_size = current_size.body
-    assert isinstance(boundary_current_size, ast.Call)
-    assert isinstance(boundary_current_size.args[0], ast.Attribute)
-    assert boundary_current_size.args[0].attr == "current_size"
+    fixed_diagnostic_arm = False
+    current_size = 12
+    relion_incr_size = 7
+    volume_shape = (16, 16, 16)
+    source_dir = "<boundary>"
+    completed_relion_iteration = 3
+
+    def __init__(self):
+        self.means = [np.ones(16**3, np.complex64), np.ones(16**3, np.complex64)]
+        self.mean_variance = np.ones(16**3)
+        self.noise_radial_per_half = [np.ones(9), np.ones(9)]
+        self.fsc = np.ones(9)
+        self.ave_pmax = 0.25
+        self.previous_best_rotation_eulers = [np.zeros((6, 3)), np.zeros((6, 3))]
+        self.previous_best_translations = [np.zeros((6, 2)), np.zeros((6, 2))]
+
+    def __getattr__(self, name):
+        return None
+
+
+def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeypatch, tmp_path):
+    """A frozen boundary owns the first current size, the RELION increment, the FSC and the Pmax; a fresh
+    start takes the size from --ini_high and RELION's increment of 10."""
+    from helpers.tiny_main import controller_inputs
+
+    from relax.diagnostics import frozen_boundary_cli
+
+    fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")["options"].schedule
+    assert (fresh.init_relion_incr_size, fresh.init_fsc, fresh.init_ave_Pmax) == (10, None, None)
+    boundary = _StandInBoundary()
+    monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args: (boundary, None))
+    monkeypatch.setattr(frozen_boundary_cli, "validate_particle_half_inputs", lambda *a, **k: None)
+    monkeypatch.setattr(frozen_boundary_cli, "validate_projector_only_replay_slots", lambda *a, **k: None)
+    schedule = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")["options"].schedule
+    assert (schedule.init_current_size, schedule.init_relion_incr_size) == (12, 7) != (fresh.init_current_size, 10)
+    assert schedule.init_fsc is boundary.fsc and schedule.init_ave_Pmax == 0.25
 
 
 def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
@@ -1068,32 +1059,49 @@ def test_refinement_results_persist_numbered_follower_scale_boundaries():
         assert archive[key].dtype == np.float64 and archive[key].shape == (2, 2, 3)
 
 
-def test_runner_threads_fail_closed_sparse_follower_scale_replay():
-    from relax.relion.relion_worker_scale import prepare_follower_topology
+class _Stop(Exception):
+    pass
 
-    source = RUN_FULL_REFINEMENT.read_text()
-    options_source = RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
-    topology_source = inspect.getsource(prepare_follower_topology)
 
-    assert '"--relion-follower-scale-replay"' in options_source
-    assert "prepare_follower_topology(" in source
-    assert "load_relion_follower_scale_replay(" in topology_source
-    assert "validate_relion_follower_scale_replay(" in topology_source
-    assert "schedule_oracle_id=schedule.oracle_id" in topology_source
-    assert "load_verified_dispatch_schedule(" in source
-    assert "verify_relion_dispatch_schedule_oracle(" in options_source
-    assert "numbered_iterations=range(" in topology_source
-    assert "first_numbered_iteration=int(init_relion_iteration) + 1" in topology_source
-    assert "relion_follower_scale_replay=follower_topology.replay" in source
-    assert "follower_replay=follower_topology.replay" in source
-    assert "write_refinement_archive(" in source
-    output_source = RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
-    assert 'save_dict["relion_follower_scale_replay_iterations"]' in output_source
-    assert 'save_dict["relion_follower_scale_replay_source"]' in output_source
-    assert 'save_dict["relion_follower_scale_replay_oracle_id"]' in output_source
-    assert 'save_dict["relion_dispatch_oracle_id"]' in output_source
-    assert '("relion_follower_scale_replay_requested_iterations", np.int64)' in output_source
-    assert '("relion_follower_scale_replay_applied_iterations", np.int64)' in output_source
+def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tmp_path):
+    """The admitted follower replay reaches the controller and, with the dispatch capture, the archive.
+    (Loading and validating the replay: test_relion_worker_scale; its archive keys:
+    test_refinement_archive_metadata.)"""
+    from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
+
+    from relax.refinement import command_options, full_refinement, iteration_loop
+    from relax.relion import relion_worker_scale
+
+    # The controller's replay telemetry is archived as integers.
+    saved = _archive_metadata({
+        "relion_follower_scale_replay_requested_iterations": [1, 2],
+        "relion_follower_scale_replay_applied_iterations": [1],
+    })
+    assert saved["relion_follower_scale_replay_requested_iterations"].dtype == np.int64
+    assert saved["relion_follower_scale_replay_applied_iterations"].tolist() == [1]
+    replay, schedule = object(), object()
+    monkeypatch.setattr(command_options, "load_verified_dispatch_schedule",
+                        lambda *a, **k: command_options.VerifiedDispatchSchedule(schedule, [tmp_path]))
+    monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology",
+                        lambda *a, **k: relion_worker_scale.PreparedFollowerTopology(
+                            n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))
+    controller = {}
+    monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or {})
+    archive = {}
+
+    def build_archive_metadata(result, **kw):
+        archive.update(kw)
+        raise _Stop
+
+    monkeypatch.setattr(full_refinement, "build_archive_metadata", build_archive_metadata)
+    _stand_in_device(monkeypatch)
+    with pytest.raises(_Stop):
+        _run_main(monkeypatch, "refine", write_tiny_data_dir(tmp_path / "data"), tmp_path / "out", [])
+    assert controller["options"].replay.relion_follower_scale_replay is replay
+    assert archive["follower_replay"] is replay and archive["relion_dispatch_schedule"] is schedule
+    assert command_options.parse_refinement_args(
+        ["--data_dir", "d", "--output", "o", "--relion-follower-scale-replay", "r.npz"]
+    ).relion_follower_scale_replay == "r.npz"
 
 
 @pytest.mark.parametrize("score_only", [False, True])
