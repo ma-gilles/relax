@@ -411,6 +411,11 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         dataset.volume_shape, state.reconstruction_padding_factor, current_size=recon_current,
     )
     bp_size = int(np.prod(half_volume_accumulator_shape(bp_shape)))
+    from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic
+
+    if dataset_magnification_is_anisotropic(dataset):
+        # Its reconstruction window keeps the exact image radius, which drops pixels RELION keeps.
+        raise NotImplementedError("the dense GEMM engine does not take anisotropic magnification")
     bp_radius = mstep_adjoint_max_r(recon_current, state.reconstruction_image_radius, state.reconstruction_padding_factor)
     b, q, u, qs = _memory_tiles(
         state, n_score=n_score, n_recon=n_recon, n_rect=n_rect,

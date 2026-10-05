@@ -90,7 +90,7 @@ from relax.helpers.projection import (
 )
 from relax.helpers.scale_groups import prepare_scale_correction_groups
 from relax.helpers.types import LocalEMResult, make_noise_stats, make_relion_stats
-from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.relion_projector_setup import (
     cast_relion_projector_for_execution,
     prepare_local_projector_slab,
@@ -474,6 +474,8 @@ def compute_local_search_resident(
     overall_t0 = time.time()
     image_shape = experiment_dataset.image_shape
     volume_shape = experiment_dataset.volume_shape
+    # Anisotropic magnification: the M-step clips on RELION's rotated radius (adjoint.ReferenceSphereClip).
+    anisotropic_magnification = dataset_magnification_is_anisotropic(experiment_dataset)
 
     if current_size is None:
         # The resident drivers score RELION's window at every size, the box included
@@ -499,7 +501,7 @@ def compute_local_search_resident(
             # RELION's window at every size, including the box (a shape class reaches its
             # box before the reference does): the resident driver never scores a full half.
             window_at_box=True,
-            reference_sphere_clip=reconstruction_image_radius is not None,
+            reference_sphere_clip=reconstruction_image_radius is not None or anisotropic_magnification,
         )
     except NotImplementedError as exc:
         # Reported before any device work, like require_resident_local_configuration.
@@ -1092,7 +1094,8 @@ def compute_local_search_resident(
                 current_size=current_size,
                 mstep_current_size=volume_current_size,
                 mstep_max_r=mstep_adjoint_max_r(
-                    volume_current_size, reconstruction_image_radius, reconstruction_padding_factor
+                    volume_current_size, reconstruction_image_radius, reconstruction_padding_factor,
+                    anisotropic_magnification=anisotropic_magnification,
                 ),
                 recon_volume_shape=recon_volume_shape,
                 max_adjoint_block_bytes=max_adjoint_block_bytes,

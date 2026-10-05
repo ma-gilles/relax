@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 
+from relax.helpers.adjoint import ReferenceSphereClip
 from relax.helpers.adjoint import adjoint_slice_volume_half as _adjoint_slice_volume_half
 from relax.helpers.adjoint import adjoint_slice_volume_windowed as _adjoint_slice_volume_windowed
 from relax.sparse_pass2.sparse_pass2_budget import (
@@ -58,6 +59,8 @@ def _accumulate_adjoint_block_chunked(
 
     if runtime_max_r is not None and not use_windowed_adjoint:
         raise NotImplementedError("a runtime adjoint radius needs the windowed (indexed) adjoint")
+    if isinstance(max_r, ReferenceSphereClip) and max_r.reference_radius is not None and not use_windowed_adjoint:
+        raise NotImplementedError("the rotated-radius clip of anisotropic magnification needs the windowed adjoint")
     if flat_block is None:
         return volume
     n_rows = int(flat_block.shape[0])

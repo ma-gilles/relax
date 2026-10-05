@@ -369,6 +369,26 @@ def dataset_needs_exact_ctf(experiment_dataset) -> bool:
     return dataset_projection_magnification(experiment_dataset) is not None
 
 
+def dataset_magnification_is_anisotropic(experiment_dataset) -> bool:
+    """Whether any optics group of the dataset has an anisotropic ``rlnMagMat``.
+
+    The M-step adjoint then clips on RELION's rotated radius
+    (:func:`relax.helpers.adjoint.magnification_is_anisotropic`, ``ReferenceSphereClip``).
+    A dataset without a RELION source STAR or without magnification columns has none.
+    """
+
+    from relax.helpers.adjoint import magnification_is_anisotropic
+
+    try:
+        _, cache = _source_tables(experiment_dataset, tuple(int(s) for s in experiment_dataset.image_shape))
+    except ValueError:
+        return False
+    labels = {str(label).lstrip("_") for row in cache["optics"].values() for label in row.keys()}
+    if not any(label.startswith("rlnMagMat") for label in labels):
+        return False
+    return magnification_is_anisotropic(optics_group_mag_matrix(row) for row in cache["optics"].values())
+
+
 def projection_rotations(rotations, scale: float, magnification=None):
     """Projection matrices for the images' optics (RELION applyAnisoMag, applyScaleDifference).
 

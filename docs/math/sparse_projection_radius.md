@@ -81,3 +81,36 @@ through `compute_relion_projector_projections_block(relion_kernel=...)`, and the
 coarse scorer body `relax/cuda/relion_coarse_diff2_projector_body.inc`. The regression is
 `tests/unit/test_relion_kernel_rows.py`, which uses an independent scalar model of the
 RELION kernels.
+
+## Backprojection support under anisotropic magnification
+
+RELION backprojects an image pixel \(k=(x,y)\) of matrix \(A\) when two conditions hold. Its
+weight is nonzero, which bounds the image radius by the rounded support
+\(\mathrm{ROUND}(|k|)\le \mathrm{cs}/2\): `Minvsigma2` is zero beyond it
+(ml_optimiser.cpp:6894-6901), and the weight carries it. Its rotated radius is inside the model
+sphere, \(|A^{-1}(x,y,0)^T|\le r_{\max}\) (acc/cuda/cuda_kernels/BP.cuh:322,
+`BackProjector::backproject2Dto3D`). recovar's adjoint kernel clips the image radius
+\(|k|\le \text{max\_r}\) and repeats the cut on the rotated radius.
+
+The image clip alone is RELION's rule when \(A^{-1}\) restricted to the image plane is a
+multiple of an isometry. That covers one grid, optics groups on another pixel size or box
+(\(A=R/s\), image radius \(r_{\max}s\), `ReferenceSphereClip` with no reference radius) and
+unmagnified tilt images (\(A=A_{\mathrm{proj}}R\)). With an anisotropic magnification
+\(A=M_3^{-1}A_{\mathrm{proj}}R\) (`ObservationModel::applyAnisoMag`), the rotated radius is
+\(|Mk|\). It ranges over \([\sigma_{\min}(M),\sigma_{\max}(M)]\,|k|\), so no image radius
+reproduces the rule. In a band around \(r_{\max}\), pixels outside the image radius are
+inside the sphere and pixels inside it are outside. The band holds the outer shell of every
+M-step; its FSC moved by 0.7% at iteration 1 of the subtomogram fixture `eto_mag`.
+
+When any optics group's `rlnMagMat` has unequal singular values
+(`magnification_is_anisotropic`, decided once from the optics table), the adjoint keeps the
+rounded image support (\(\text{max\_r}=r_{\max}+1/2\)). It masks each row's pixels by
+\(|A^{-1}k|\le r_{\max}\) before the kernel, and the recon window keeps the rounded support
+(`recon_exact_radius=False`). The forward projector already clips on the rotated radius with
+RELION's integer-truncated \(r^2\) (relax/cuda/relion_scoring.cuh:464).
+
+Implementation: [`ReferenceSphereClip`, `mstep_adjoint_max_r` and `rotated_radius_mask`](../../relax/helpers/adjoint.py),
+selected by `dataset_magnification_is_anisotropic` in the resident and local engines. Regression:
+`tests/unit/test_mstep_rotated_radius_clip.py`. Its CPU half checks relax's support against the rule
+above for a symmetric and an asymmetric `rlnMagMat`. Its GPU half checks relax's adjoint against
+RELION's BackProjector through the binding.

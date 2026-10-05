@@ -119,7 +119,7 @@ from relax.local.local_backprojection import (
     compute_local_weighted_sums,
 )
 from relax.relion import relion_ctf
-from relax.relion.optics_aberrations import dataset_needs_exact_ctf
+from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.sparse_pass2.compile_ahead import (
     CompileAheadPool,
@@ -2663,6 +2663,8 @@ def _resident_pass2(
         # RELION's average CTF^2 of premultiplied images divides by Npix_per_shell, which keeps RELION's count.
         raise NotImplementedError("nyquist_column_counting is not implemented for CTF-premultiplied images")
     volume_shape = experiment_dataset.volume_shape
+    # Anisotropic magnification: the M-step clips on RELION's rotated radius (adjoint.ReferenceSphereClip).
+    anisotropic_magnification = dataset_magnification_is_anisotropic(experiment_dataset)
 
     if current_size is None:
         # The resident drivers score RELION's window at every size, the box included
@@ -2688,7 +2690,7 @@ def _resident_pass2(
             # RELION's window at every size, including the box (a shape class reaches its
             # box before the reference does): the resident driver never scores a full half.
             window_at_box=True,
-            reference_sphere_clip=reconstruction_image_radius is not None,
+            reference_sphere_clip=reconstruction_image_radius is not None or anisotropic_magnification,
         )
     except NotImplementedError as exc:
         # A window the resident scorer does not implement is a configuration gap,
@@ -2796,7 +2798,10 @@ def _resident_pass2(
     )
     recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
-    mstep_max_r = mstep_adjoint_max_r(volume_current_size, reconstruction_image_radius, reconstruction_padding_factor)
+    mstep_max_r = mstep_adjoint_max_r(
+        volume_current_size, reconstruction_image_radius, reconstruction_padding_factor,
+        anisotropic_magnification=anisotropic_magnification,
+    )
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         experiment_dataset.dtype,
         use_relion_x_half_mstep=True,
@@ -3201,6 +3206,7 @@ def _resident_pass2(
             program_volume_current_size,
             _reference_image_radius_at(reconstruction_image_radius, volume_current_size, program_volume_current_size),
             reconstruction_padding_factor,
+            anisotropic_magnification=anisotropic_magnification,
         )
     program_recon_volume_size = int(np.prod(half_volume_accumulator_shape(program_recon_volume_shape)))
     # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
