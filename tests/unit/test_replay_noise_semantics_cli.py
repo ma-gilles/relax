@@ -29,10 +29,15 @@ def _write_iteration(tmp_path, iteration, half1_noise, half2_noise):
     )
     starfile.write({"particles": particles}, tmp_path / f"run_it{iteration:03d}_data.star")
     for half, noise in ((1, half1_noise), (2, half2_noise)):
+        # One spectrum, or one row per optics group (subtomograms: one group per tilt).
+        groups = np.atleast_2d(np.asarray(noise, dtype=np.float64))
         starfile.write(
             {
                 "model_general": pd.DataFrame({"rlnNormCorrectionAverage": [1.0], "rlnSigmaOffsetsAngst": [2.0]}),
-                "model_optics_group_1": pd.DataFrame({"rlnSigma2Noise": np.asarray(noise, dtype=np.float64)}),
+                **{
+                    f"model_optics_group_{g + 1}": pd.DataFrame({"rlnSigma2Noise": row})
+                    for g, row in enumerate(groups)
+                },
                 "model_groups": pd.DataFrame({"rlnGroupScaleCorrection": [1.0]}),
             },
             tmp_path / f"run_it{iteration:03d}_half{half}_model.star",
@@ -74,6 +79,23 @@ def test_uninterrupted_replay_keeps_half_specific_slot0_noise(tmp_path):
     assert float(np.min(uninterrupted_h1)) == pytest.approx(1.0 * 8**4)
     assert float(np.min(uninterrupted_h2)) == pytest.approx(6.0 * 8**4)
     assert_matches(uninterrupted_h1, continuation_h1)
+
+
+def test_replay_keeps_one_noise_row_per_optics_group(tmp_path):
+    n_groups, n_shells = 8, 5
+    half1 = np.arange(1, n_groups + 1, dtype=np.float64)[:, None] * np.ones(n_shells)
+    _write_iteration(tmp_path, 10, half1, 100.0 + half1)
+
+    uninterrupted_h1, uninterrupted_h2 = _slot0_noise(tmp_path, semantics="uninterrupted", init_relion_iteration=10)
+    assert uninterrupted_h1.shape == (n_groups, 8 * 8)
+    assert uninterrupted_h2.shape == (n_groups, 8 * 8)
+    # A constant spectrum per group expands to a constant pixel row, scaled by ds_grid**4 as for one group.
+    assert_matches(uninterrupted_h1, np.repeat(half1[:, :1] * 8**4, 8 * 8, axis=1).astype(uninterrupted_h1.dtype))
+    assert_matches(uninterrupted_h2, np.repeat((100.0 + half1[:, :1]) * 8**4, 8 * 8, axis=1).astype(uninterrupted_h2.dtype))
+
+    continuation_h1, continuation_h2 = _slot0_noise(tmp_path, semantics="continuation", init_relion_iteration=10)
+    assert_matches(continuation_h2, continuation_h1)
+    assert_matches(continuation_h1, uninterrupted_h1)
 
 
 @pytest.mark.parametrize(

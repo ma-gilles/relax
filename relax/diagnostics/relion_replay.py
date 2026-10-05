@@ -45,7 +45,7 @@ from relax.refinement.noise_updates import (
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion import relion_metadata
 from relax.relion.initial_noise import (
-    read_relion_single_optics_sigma2_noise,
+    read_relion_sigma2_noise_by_group,
     relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.relion.relion_metadata import (
@@ -2331,17 +2331,27 @@ def _build_replay_iteration_overrides(
         raise TypeError(f"noise_dtype must be float32 or float64, got {noise_dtype}")
 
     def _read_model_noise_variance(model, *, image_shape):
-        radial = read_relion_single_optics_sigma2_noise(
+        """One half's pixel noise: flat for one optics group, ``[G, P]`` rows for G > 1.
+
+        RELION keeps ``sigma2_noise`` per optics group (subtomograms: one group
+        per tilt); ``[G, P]`` is the noise model's per-group layout (helpers/optics_noise.py).
+        """
+        radial_by_group = read_relion_sigma2_noise_by_group(
             model,
             context="replay model",
         )
-        if radial is None:
+        if radial_by_group is None:
             return None
-        radial = radial * float(ds_grid) ** 4
-        return np.asarray(
-            utils.make_radial_image(jnp.asarray(radial), image_shape, extend_last_frequency=True),
-            dtype=noise_dtype,
-        ).reshape(-1)
+        rows = [
+            np.asarray(
+                utils.make_radial_image(
+                    jnp.asarray(radial * float(ds_grid) ** 4), image_shape, extend_last_frequency=True,
+                ),
+                dtype=noise_dtype,
+            ).reshape(-1)
+            for radial in radial_by_group
+        ]
+        return rows[0] if len(rows) == 1 else np.stack(rows)
 
     def _read_model_class_tau2(model):
         if not isinstance(model, dict):
