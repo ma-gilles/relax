@@ -2616,16 +2616,14 @@ def refine_single_volume(
             "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
             FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
         )
-    final_replay_forced = debug.environment.final_all_data_replay_last_numbered_state
     final_replay_disabled = debug.environment.final_all_data_disable_replay_last_numbered_state
     final_replay_has_overrides = replay.replay_iteration_overrides is not None and len(replay.replay_iteration_overrides) > 0
     final_replay_has_numbered_overrides = _has_numbered_replay_iteration_overrides(
         replay.replay_iteration_overrides
     )
-    diagnostic_final_replay_override = final_replay_override
     final_join_means = replay_policy._prepare_final_replay_references(
         replay=replay,
-        diagnostic_override=diagnostic_final_replay_override,
+        diagnostic_override=final_replay_override,
         numbered_iteration_count=len(history.current_sizes),
         means=reference_model.maps,
         final_join_means=final_join_means,
@@ -2633,16 +2631,16 @@ def refine_single_volume(
         logger=logger,
     )
     final_replay_last_numbered_state = (
-        diagnostic_final_replay_override is not None
+        final_replay_override is not None
         or (
             not final_replay_disabled
-            and (final_replay_forced or final_replay_has_numbered_overrides)
+            and (debug.environment.final_all_data_replay_last_numbered_state or final_replay_has_numbered_overrides)
         )
     )
     if final_replay_last_numbered_state:
         final_replay_override_index, final_replay_override = replay_policy._select_final_replay_override(
             requested_index=len(history.current_sizes),
-            diagnostic_override=diagnostic_final_replay_override,
+            diagnostic_override=final_replay_override,
             replay_overrides=replay.replay_iteration_overrides,
             has_overrides=final_replay_has_overrides,
             logger=logger,
