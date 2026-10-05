@@ -2101,6 +2101,55 @@ pose pass). Evidence in
 `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/empiar10499/`.
 
 
+### 16.12 Oversampling 1 on the SNR .008 cell: VDAM with oversampling 1 is the cryo-ET configuration (October 5, 2026)
+
+Does oversampling 1 in the last stage (dense pose grids in the earlier stages,
+RELION's two passes in the last; relax 0e0a8c3, which contains the change) remove
+momentum SGD's pose weakness on the SNR .008 cell of section 17.3? Fixture
+`cryoet_ppca_k3conf_snr0.008_box64_20261003` (399 subtomograms, box 64, q = 2),
+seeds 14-18, 200 updates, momentum SGD at learning rate 1.6 and VDAM, each with
+oversampling 0 and 1: 20 arms on one A100, one after another.
+
+Rule, written into the job script on October 4 before any arm ran
+(`jobs/snr008_os1.sbatch`): SGD with oversampling 1 has at most 1 bad seed of 5
+(nearest-GT-centroid accuracy below .8 or pose median above 10 degrees, section
+17.3's definition, on the driver's HEALPix 3 pose pass) and a pose median, median
+over the seeds, no worse than VDAM's at oversampling 0. That first submission
+(job 15005021) stopped at start-up on a driver error (the oversampling override was
+passed twice) before any training; the rerun used the same rule, recipe and seeds.
+
+Median over seeds 14-18; map is the mean state masked FSC-AUC, nn the
+nearest-GT-centroid accuracy, pose the median pose error on the HEALPix 3 pass
+(HEALPix 4 pass in brackets); training wall on the A100.
+
+| Configuration | Map | nn | Pose (deg) | Bad seeds | Training (s) |
+| --- | --- | --- | --- | --- | --- |
+| SGD 1.6, oversampling 0 | .872 | .975 | 7.62 (8.03) | 2 of 5 (15, 18) | 418 |
+| SGD 1.6, oversampling 1 | .902 | .997 | 7.66 (7.79) | 2 of 5 (15, 18) | 356 |
+| VDAM, oversampling 0 | .850 | .962 | 6.07 (5.56) | 1 of 5 (18) | 428 |
+| VDAM, oversampling 1 | .890 | .992 | 5.97 (5.37) | 1 of 5 (18) | 367 |
+
+| Question | Reading |
+| --- | --- |
+| Does the SGD rule hold? | No, on both parts: 2 bad seeds, and a pose median of 7.66 against VDAM's 6.07. SGD seed 15 loses states and poses with or without oversampling (pose 36 degrees, nn .73). |
+| What does oversampling 1 change? | The map rises on every paired seed (SGD +.025 to +.035, VDAM +.040 to +.046); nn is equal or higher except VDAM seed 16 (.942 to .940); each seed's pose median moves by at most 0.1 degree, so no bad seed is rescued. Training is 14-15% shorter. |
+| Is the run comparable with section 17.3? | Yes: the oversampling 0 pose medians reproduce ppcaopt's H100 rows (SGD 6.9 / 38.0 / 7.6 / 4.8 / 10.8, VDAM 6.1 / 5.1 / 9.1 / 5.9 / 13.4 degrees, seeds 14-18) to within 0.05 degree on the A100. |
+
+Recommendation: VDAM with oversampling 1 for cryo-ET PPCA. Oversampling 1 wins the
+map and the latent for both optimizers at lower cost, as it did on EMPIAR-10499
+(section 16.11), and VDAM keeps fewer bad seeds and better poses than SGD; its map
+is .012 below SGD's with oversampling 1.
+
+Limit: one simulated cell of 399 particles. Seed 18 is bad in every configuration
+(pose 10.8-13.4 degrees while nn stays at .99 or above): it is a property of that
+seed's pose basin, not of the configuration, and is open.
+
+Script `snr008_os1/run_local_gpu3.sh` (driver `snr008_os1/et_run_hp4.py`, table
+`snr008_os1/table_local.py`). Evidence in
+`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/snr008_os1/local_a100_20261005/`
+(`table.json`, per-arm `eval.json`).
+
+
 ## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)
 
 Started from the ground-truth model, momentum SGD holds it and VDAM does not: on
