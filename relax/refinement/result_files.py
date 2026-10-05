@@ -8,15 +8,21 @@ docs/math/relion_refinement_algorithm.md, section 9.
 import json
 import logging
 import os
+import platform
 import time
 import zipfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+import jax
 import jax.numpy as jnp
+import jaxlib
 import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 
-from relax.diagnostics.parity_provenance import git_worktree_provenance
+from relax.diagnostics import parity_dump
+from relax.diagnostics.parity_provenance import git_head_or_none, git_worktree_provenance
 from relax.helpers import iteration_history
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 
@@ -637,3 +643,223 @@ def write_final_maps(
                         voxel_size=pixel_size_angstrom,
                     )
                 logger.info("Saved %d per-class merged final volumes", n_classes)
+
+
+@dataclass(frozen=True)
+class RunReport:
+    """What a run's benchmark ledger and profile-only summary state beside its result.
+
+    The command builds it once the controller has returned; the reports only read it.
+    """
+
+    data_dir: str
+    output_dir: str
+    timing_dir: Path | None
+    total_time_s: float
+    n_images: int
+    image_shape: tuple
+    volume_shape: tuple
+    voxel_size: float
+    healpix_order: int
+    auto_local_healpix_order: int
+    sigma_ang: float | None
+    adaptive_oversampling: int
+    max_significants: int
+    max_significants_resolution: dict
+    perturb_replay_restart_state_iterations: tuple
+    perturb_replay_restart_provenance_path: Path | None
+    perturb_replay_restart_provenance_sha256: str | None
+    captured_projector: object | None
+    # Sampling and seed, which the benchmark ledger records.
+    max_iter: int
+    random_seed: int
+    random_seed_source: str
+    n_rotations: int
+    n_translations: int
+    initial_sampling: "InitialSampling"
+    frozen_boundary: object | None
+    # The profile-only summary's provenance.
+    symmetry_provenance: dict
+    initial_pose_source: "PoseProvenance"
+    diagnostic_single_half: bool
+    state_swap_probe: dict | None
+
+
+def _report_fields(result, report: RunReport) -> dict:
+    """The fields the ledger and the profile-only summary share: environment, inputs, sampling and provenance."""
+    timing_rows = parity_dump._collect_timing_rows(report.timing_dir)
+    captured = report.captured_projector
+    return {
+        "git_commit": git_head_or_none(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "numpy_version": np.__version__,
+        "jax_version": getattr(jax, "__version__", None),
+        "jaxlib_version": getattr(jaxlib, "__version__", None),
+        "jax_devices": [str(device) for device in jax.devices()],
+        "data_dir": report.data_dir,
+        "output_dir": report.output_dir,
+        "timing_dir": str(report.timing_dir.resolve()) if report.timing_dir is not None else None,
+        "total_time_s": float(report.total_time_s),
+        "wall_times_trajectory": [float(x) for x in result.get("wall_times", [])],
+        "current_sizes": [int(x) for x in result.get("current_sizes", [])],
+        "n_images": int(report.n_images),
+        "image_shape": [int(x) for x in report.image_shape],
+        "volume_shape": [int(x) for x in report.volume_shape],
+        "voxel_size": float(report.voxel_size),
+        "healpix_order": int(report.healpix_order),
+        "auto_local_healpix_order": int(report.auto_local_healpix_order),
+        "sigma_ang": None if report.sigma_ang is None else float(report.sigma_ang),
+        "adaptive_oversampling": int(report.adaptive_oversampling),
+        "max_significants": int(report.max_significants),
+        "max_significants_resolution": report.max_significants_resolution,
+        "timing_rows": timing_rows,
+        "timing_summary": parity_dump._summarize_timing_rows(timing_rows),
+        "perturb_replay_restart_state_iterations": list(report.perturb_replay_restart_state_iterations),
+        "perturb_replay_restart_provenance_path": (
+            str(report.perturb_replay_restart_provenance_path)
+            if report.perturb_replay_restart_provenance_path is not None
+            else None
+        ),
+        "perturb_replay_restart_provenance_sha256": report.perturb_replay_restart_provenance_sha256,
+        "relion_projector_replay_slot": None if captured is None else captured.replay_slot,
+        "relion_projector_source_manifest_sha256": None if captured is None else captured.source_manifest_sha256,
+        "relion_projector_capture_dir": None if captured is None else str(captured.source_dir),
+        "relion_projector_capture_manifest": None if captured is None else str(captured.source_manifest),
+    }
+
+
+def _write_json(path, payload) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+
+
+def write_profile_only_summary(result, report: RunReport, *, benchmark_ledger_json) -> Path:
+    """Write ``local_search_profile_only.json`` (and the ledger copy) for a run that stopped after its local
+    search profile, and print its summary; returns the summary path."""
+    local_profile_rows = profile_rows_for_json(result.get("local_profile_history", []))
+    profile_summary = {
+        **_report_fields(result, report),
+        "symmetry": report.symmetry_provenance,
+        "initial_pose_source_requested": report.initial_pose_source.requested_source,
+        "initial_pose_source_resolved": report.initial_pose_source.resolved_source,
+        "initial_pose_source_sha256": report.initial_pose_source.sha256,
+        "profile_only": True,
+        "stop_after_local_search_score_only": bool(result.get("stop_after_local_search_score_only", False)),
+        "diagnostic_single_half": bool(report.diagnostic_single_half),
+        "setup_phase_seconds": {
+            str(key): float(value) for key, value in result.get("setup_phase_seconds", {}).items()
+        },
+        "local_profile_rows": local_profile_rows,
+        "global_profile_rows": profile_rows_for_json(result.get("global_profile_history", [])),
+        "state_swap_probe": report.state_swap_probe,
+        "state_swap_probe_applied_relion_iterations": [
+            int(iteration) for iteration in result.get("state_swap_probe_applied_relion_iterations", [])
+        ],
+    }
+    profile_path = Path(report.output_dir) / "local_search_profile_only.json"
+    _write_json(profile_path, profile_summary)
+    logger.info("Profile-only summary saved to %s", profile_path)
+    if benchmark_ledger_json:
+        _write_json(benchmark_ledger_json, profile_summary)
+        logger.info("Benchmark ledger saved to %s", benchmark_ledger_json)
+    print("\n" + "=" * 70)
+    print("LOCAL SEARCH PROFILE ONLY")
+    print("=" * 70)
+    print(f"Profiles: {len(local_profile_rows)}")
+    print(f"Total wall time: {report.total_time_s:.1f}s")
+    if result.get("current_sizes"):
+        print(f"Current size: {result['current_sizes'][-1]}")
+    print(f"Summary JSON: {profile_path}")
+    print("=" * 70)
+    return profile_path
+
+
+def write_benchmark_ledger(path, result, report: RunReport, archive_report: ArchiveReport) -> None:
+    """Write a completed run's benchmark ledger: the shared report fields, the run's trajectories, its sampling
+    and the profiles and provenance its archive reported."""
+    initial_sampling, frozen_boundary = report.initial_sampling, report.frozen_boundary
+    ledger = {
+        **_report_fields(result, report),
+        "git_provenance": archive_report.git_provenance,
+        "max_iter": int(report.max_iter),
+        "random_seed": int(report.random_seed),
+        "random_seed_source": str(report.random_seed_source),
+        "n_iterations_emitted": int(len(result.get("current_sizes", []))),
+        "n_wall_times": int(len(result.get("wall_times", []))),
+        "pixel_resolutions": [float(x) for x in result.get("pixel_resolutions", [])],
+        "ave_Pmax_trajectory": [float(x) for x in result.get("ave_Pmax_trajectory", [])],
+        "n_rotations": int(report.n_rotations),
+        "n_translations": int(report.n_translations),
+        "coarse_healpix_order": int(initial_sampling.coarse_order),
+        "finest_healpix_order": int(initial_sampling.fine_order),
+        "max_healpix_order": None if initial_sampling.max_order is None else int(initial_sampling.max_order),
+        "max_healpix_order_source": str(initial_sampling.max_order_source),
+        "setup_phase_seconds": archive_report.setup_phase_seconds,
+        "local_profile_rows": archive_report.local_profile_rows,
+        "global_profile_rows": archive_report.global_profile_rows,
+        "frozen_boundary_dir": None if frozen_boundary is None else str(frozen_boundary.source_dir),
+        "frozen_boundary_manifest_sha256": (
+            None if frozen_boundary is None else frozen_boundary.source_manifest_sha256
+        ),
+        "frozen_boundary_sha256": None if frozen_boundary is None else frozen_boundary.boundary_sha256,
+        "frozen_boundary_completed_relion_iteration": (
+            None if frozen_boundary is None else frozen_boundary.completed_relion_iteration
+        ),
+    }
+    _write_json(path, ledger)
+    logger.info("Benchmark ledger saved to %s", path)
+
+
+def _shell_resolution_angstrom(shell_index, grid_size, voxel_size):
+    """The resolution of a Fourier shell in Angstrom (infinite for shell 0, the shell index without a pixel size)."""
+    if voxel_size <= 0:
+        return float(shell_index)
+    shell_index = float(shell_index)
+    if shell_index <= 0:
+        return float("inf")
+    return float(grid_size) * float(voxel_size) / shell_index
+
+
+def print_refinement_summary(result, *, total_time_s: float, box_size: int, pixel_size: float) -> None:
+    """Print the per-iteration table and the final size and resolution of a completed run."""
+    print("\n" + "=" * 70)
+    print("REFINEMENT SUMMARY")
+    print("=" * 70)
+    print(f"{'Iter':>4s}  {'CurSize':>8s}  {'PixRes':>8s}  {'ResA':>8s}  {'Time(s)':>8s}", end="")
+    if any(c is not None for c in result["significant_counts"]):
+        print(f"  {'MedSig':>8s}", end="")
+    print()
+    print("-" * 70)
+
+    for i in range(len(result["current_sizes"])):
+        cs = result["current_sizes"][i]
+        pr = result["pixel_resolutions"][i]
+        res_a = _shell_resolution_angstrom(pr, box_size, pixel_size)
+        wt = result["wall_times"][i]
+        line = f"{i + 1:4d}  {cs:8d}  {pr:8.1f}  {res_a:8.2f}  {wt:8.1f}"
+        if result["significant_counts"][i] is not None:
+            med_sig = int(np.median(np.asarray(result["significant_counts"][i])))
+            line += f"  {med_sig:8d}"
+        print(line)
+
+    print("-" * 70)
+    print(f"Total wall time: {total_time_s:.1f}s")
+    # A continuation from a converged state runs only the final all-data pass,
+    # which records no per-iteration row.
+    if result["current_sizes"]:
+        print(f"Final current_size: {result['current_sizes'][-1]}")
+        print(f"Final pixel resolution: {result['pixel_resolutions'][-1]:.1f}")
+    # RELION reports the final all-data iteration's current resolution (updateCurrentResolution after it,
+    # ml_optimiser_mpi.cpp:4329); without that pass, the last numbered iteration's.
+    final_state = result.get("convergence_state")
+    if result.get("final_all_data_ran") and final_state is not None:
+        print(f"Final resolution: {float(final_state.current_resolution):.2f} A (final all-data iteration)")
+    elif result["current_sizes"]:
+        print(
+            "Final resolution: "
+            f"{_shell_resolution_angstrom(result['pixel_resolutions'][-1], box_size, pixel_size):.2f} A"
+        )
+    print("=" * 70)

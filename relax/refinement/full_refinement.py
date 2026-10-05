@@ -12,10 +12,8 @@ per-iteration arrays and RELION-style run files under ``--output``.
 # so the imports below them are not at the top of the file.
 # ruff: noqa: E402
 import importlib
-import json
 import logging
 import os
-import platform
 import sys
 import time
 from collections.abc import MutableMapping
@@ -31,15 +29,13 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
 import jax
 import jax.numpy as jnp
-import jaxlib
 import numpy as np
 from recovar import utils
 from recovar.core import fourier_transform_utils as ftu
 from recovar.utils.file_hash import sha256_file as _sha256_file
 
 import relax
-from relax.diagnostics import frozen_boundary_cli, initial_model_replay, parity_dump, relion_replay
-from relax.diagnostics.parity_provenance import git_head_or_none
+from relax.diagnostics import frozen_boundary_cli, initial_model_replay, relion_replay
 from relax.diagnostics.state_swap_probe import (
     build_state_swap_probe,
     state_swap_probe_loop_index,
@@ -52,9 +48,12 @@ from relax.refinement import command_options, particle_loading, startup_noise
 from relax.refinement.noise_updates import noise_pixel_rows
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
+    RunReport,
     build_archive_metadata,
-    profile_rows_for_json,
+    print_refinement_summary,
+    write_benchmark_ledger,
     write_final_maps,
+    write_profile_only_summary,
     write_refinement_archive,
 )
 from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files
@@ -154,15 +153,6 @@ def _assert_expected_repo_imports() -> None:
             "RECOVAR import provenance failure: expected every concrete EM module under "
             f"{expected_root}, found " + ", ".join(failures)
         )
-
-
-def _shell_index_to_resolution_angstrom(shell_index, grid_size, voxel_size):
-    if voxel_size <= 0:
-        return float(shell_index)
-    shell_index = float(shell_index)
-    if shell_index <= 0:
-        return float("inf")
-    return float(grid_size) * float(voxel_size) / shell_index
 
 
 def _resolve_tau2_fudge(n_classes, cli_tau2_fudge, relion_init_tau2_fudge):
@@ -2020,106 +2010,39 @@ def main(command=None):
     logger.info("Refinement complete in %.1fs (%d iterations)", total_time, args.max_iter)
     logger.info("=" * 70)
 
+    report = RunReport(
+        data_dir=str(Path(args.data_dir).resolve()),
+        output_dir=str(Path(args.output).resolve()),
+        timing_dir=timing_dir_path,
+        total_time_s=total_time,
+        n_images=n_images,
+        image_shape=tuple(ds.image_shape),
+        volume_shape=tuple(ds.volume_shape),
+        voxel_size=ds.voxel_size,
+        healpix_order=args.healpix_order,
+        auto_local_healpix_order=args.auto_local_healpix_order,
+        sigma_ang=args.sigma_ang,
+        adaptive_oversampling=args.adaptive_oversampling,
+        max_significants=args.max_significants,
+        max_significants_resolution=runtime_controls.max_significants_resolution,
+        perturb_replay_restart_state_iterations=perturb_replay_restart_state_iterations,
+        perturb_replay_restart_provenance_path=perturb_replay_restart_provenance_path,
+        perturb_replay_restart_provenance_sha256=perturb_replay_restart_provenance_sha256,
+        captured_projector=captured_projector,
+        max_iter=args.max_iter,
+        random_seed=args.seed,
+        random_seed_source=optimizer_seed_source,
+        n_rotations=n_rotations,
+        n_translations=translations.shape[0],
+        initial_sampling=initial_sampling,
+        frozen_boundary=frozen_boundary,
+        symmetry_provenance=symmetry_provenance,
+        initial_pose_source=initial_poses.provenance,
+        diagnostic_single_half=args.diagnostic_single_half,
+        state_swap_probe=state_swap_probe,
+    )
     if result.get("profile_only"):
-        local_profile_rows = profile_rows_for_json(result.get("local_profile_history", []))
-        global_profile_rows = profile_rows_for_json(result.get("global_profile_history", []))
-        setup_phase_seconds = {
-            str(key): float(value) for key, value in result.get("setup_phase_seconds", {}).items()
-        }
-        timing_rows = parity_dump._collect_timing_rows(timing_dir_path)
-        timing_summary = parity_dump._summarize_timing_rows(timing_rows)
-        profile_summary = {
-            "symmetry": symmetry_provenance,
-            "initial_pose_source_requested": initial_poses.provenance.requested_source,
-            "initial_pose_source_resolved": initial_poses.provenance.resolved_source,
-            "initial_pose_source_sha256": initial_poses.provenance.sha256,
-            "profile_only": True,
-            "stop_after_local_search_score_only": bool(result.get("stop_after_local_search_score_only", False)),
-            "git_commit": git_head_or_none(),
-            "python_version": platform.python_version(),
-            "platform": platform.platform(),
-            "numpy_version": np.__version__,
-            "jax_version": getattr(jax, "__version__", None),
-            "jaxlib_version": getattr(jaxlib, "__version__", None),
-            "jax_devices": [str(device) for device in jax.devices()],
-            "data_dir": str(Path(args.data_dir).resolve()),
-            "output_dir": str(Path(args.output).resolve()),
-            "timing_dir": str(timing_dir_path.resolve()) if timing_dir_path is not None else None,
-            "total_time_s": float(total_time),
-            "current_sizes": [int(x) for x in result.get("current_sizes", [])],
-            "wall_times_trajectory": [float(x) for x in result.get("wall_times", [])],
-            "n_images": int(n_images),
-            "image_shape": [int(x) for x in ds.image_shape],
-            "volume_shape": [int(x) for x in ds.volume_shape],
-            "voxel_size": float(ds.voxel_size),
-            "healpix_order": int(args.healpix_order),
-            "auto_local_healpix_order": int(args.auto_local_healpix_order),
-            "sigma_ang": None if args.sigma_ang is None else float(args.sigma_ang),
-            "adaptive_oversampling": int(args.adaptive_oversampling),
-            "max_significants": int(args.max_significants),
-            "max_significants_resolution": runtime_controls.max_significants_resolution,
-            "diagnostic_single_half": bool(args.diagnostic_single_half),
-            "setup_phase_seconds": setup_phase_seconds,
-            "local_profile_rows": local_profile_rows,
-            "global_profile_rows": global_profile_rows,
-            "timing_rows": timing_rows,
-            "timing_summary": timing_summary,
-            "perturb_replay_restart_state_iterations": list(
-                perturb_replay_restart_state_iterations
-            ),
-            "perturb_replay_restart_provenance_path": (
-                str(perturb_replay_restart_provenance_path)
-                if perturb_replay_restart_provenance_path is not None
-                else None
-            ),
-            "perturb_replay_restart_provenance_sha256": (
-                perturb_replay_restart_provenance_sha256
-            ),
-            "relion_projector_replay_slot": (
-                None if captured_projector is None else captured_projector.replay_slot
-            ),
-            "relion_projector_source_manifest_sha256": (
-                None if captured_projector is None else captured_projector.source_manifest_sha256
-            ),
-            "relion_projector_capture_dir": (
-                None
-                if captured_projector is None
-                else str(captured_projector.source_dir)
-            ),
-            "relion_projector_capture_manifest": (
-                None
-                if captured_projector is None
-                else str(captured_projector.source_manifest)
-            ),
-            "state_swap_probe": state_swap_probe,
-            "state_swap_probe_applied_relion_iterations": [
-                int(iteration)
-                for iteration in result.get(
-                    "state_swap_probe_applied_relion_iterations",
-                    [],
-                )
-            ],
-        }
-        profile_path = Path(args.output) / "local_search_profile_only.json"
-        profile_path.parent.mkdir(parents=True, exist_ok=True)
-        with profile_path.open("w", encoding="utf-8") as f:
-            json.dump(profile_summary, f, indent=2, sort_keys=True)
-        logger.info("Profile-only summary saved to %s", profile_path)
-        if args.benchmark_ledger_json:
-            ledger_path = Path(args.benchmark_ledger_json)
-            ledger_path.parent.mkdir(parents=True, exist_ok=True)
-            with ledger_path.open("w", encoding="utf-8") as f:
-                json.dump(profile_summary, f, indent=2, sort_keys=True)
-            logger.info("Benchmark ledger saved to %s", ledger_path)
-        print("\n" + "=" * 70)
-        print("LOCAL SEARCH PROFILE ONLY")
-        print("=" * 70)
-        print(f"Profiles: {len(local_profile_rows)}")
-        print(f"Total wall time: {total_time:.1f}s")
-        if result.get("current_sizes"):
-            print(f"Current size: {result['current_sizes'][-1]}")
-        print(f"Summary JSON: {profile_path}")
-        print("=" * 70)
+        write_profile_only_summary(result, report, benchmark_ledger_json=args.benchmark_ledger_json)
         return
 
     # ---- Save results ----
@@ -2160,97 +2083,8 @@ def main(command=None):
         skip_large_outputs=args.skip_large_outputs,
     )
 
-    timing_rows = parity_dump._collect_timing_rows(timing_dir_path)
-    timing_summary = parity_dump._summarize_timing_rows(timing_rows)
     if args.benchmark_ledger_json:
-        ledger_path = Path(args.benchmark_ledger_json)
-        ledger_path.parent.mkdir(parents=True, exist_ok=True)
-        ledger = {
-            "git_commit": git_head_or_none(),
-            "git_provenance": archive_report.git_provenance,
-            "python_version": platform.python_version(),
-            "platform": platform.platform(),
-            "numpy_version": np.__version__,
-            "jax_version": getattr(jax, "__version__", None),
-            "jaxlib_version": getattr(jaxlib, "__version__", None),
-            "jax_devices": [str(device) for device in jax.devices()],
-            "data_dir": str(Path(args.data_dir).resolve()),
-            "output_dir": str(Path(args.output).resolve()),
-            "timing_dir": str(timing_dir_path.resolve()) if timing_dir_path is not None else None,
-            "max_iter": int(args.max_iter),
-            "random_seed": int(args.seed),
-            "random_seed_source": str(optimizer_seed_source),
-            "n_iterations_emitted": int(len(result.get("current_sizes", []))),
-            "n_wall_times": int(len(result.get("wall_times", []))),
-            "total_time_s": float(total_time),
-            "wall_times_trajectory": [float(x) for x in result.get("wall_times", [])],
-            "current_sizes": [int(x) for x in result.get("current_sizes", [])],
-            "pixel_resolutions": [float(x) for x in result.get("pixel_resolutions", [])],
-            "ave_Pmax_trajectory": [float(x) for x in result.get("ave_Pmax_trajectory", [])],
-            "n_images": int(n_images),
-            "image_shape": [int(x) for x in ds.image_shape],
-            "volume_shape": [int(x) for x in ds.volume_shape],
-            "voxel_size": float(ds.voxel_size),
-            "n_rotations": int(n_rotations),
-            "n_translations": int(translations.shape[0]),
-            "healpix_order": int(args.healpix_order),
-            "coarse_healpix_order": int(initial_sampling.coarse_order),
-            "finest_healpix_order": int(initial_sampling.fine_order),
-            "max_healpix_order": None if initial_sampling.max_order is None else int(initial_sampling.max_order),
-            "max_healpix_order_source": str(initial_sampling.max_order_source),
-            "auto_local_healpix_order": int(args.auto_local_healpix_order),
-            "sigma_ang": None if args.sigma_ang is None else float(args.sigma_ang),
-            "adaptive_oversampling": int(args.adaptive_oversampling),
-            "max_significants": int(args.max_significants),
-            "max_significants_resolution": runtime_controls.max_significants_resolution,
-            "setup_phase_seconds": archive_report.setup_phase_seconds,
-            "local_profile_rows": archive_report.local_profile_rows,
-            "global_profile_rows": archive_report.global_profile_rows,
-            "timing_rows": timing_rows,
-            "timing_summary": timing_summary,
-            "perturb_replay_restart_state_iterations": list(
-                perturb_replay_restart_state_iterations
-            ),
-            "perturb_replay_restart_provenance_path": (
-                str(perturb_replay_restart_provenance_path)
-                if perturb_replay_restart_provenance_path is not None
-                else None
-            ),
-            "perturb_replay_restart_provenance_sha256": (
-                perturb_replay_restart_provenance_sha256
-            ),
-            "relion_projector_replay_slot": (
-                None if captured_projector is None else captured_projector.replay_slot
-            ),
-            "relion_projector_source_manifest_sha256": (
-                None if captured_projector is None else captured_projector.source_manifest_sha256
-            ),
-            "relion_projector_capture_dir": (
-                None
-                if captured_projector is None
-                else str(captured_projector.source_dir)
-            ),
-            "relion_projector_capture_manifest": (
-                None
-                if captured_projector is None
-                else str(captured_projector.source_manifest)
-            ),
-            "frozen_boundary_dir": (
-                None if frozen_boundary is None else str(frozen_boundary.source_dir)
-            ),
-            "frozen_boundary_manifest_sha256": (
-                None if frozen_boundary is None else frozen_boundary.source_manifest_sha256
-            ),
-            "frozen_boundary_sha256": (
-                None if frozen_boundary is None else frozen_boundary.boundary_sha256
-            ),
-            "frozen_boundary_completed_relion_iteration": (
-                None if frozen_boundary is None else frozen_boundary.completed_relion_iteration
-            ),
-        }
-        with ledger_path.open("w", encoding="utf-8") as f:
-            json.dump(ledger, f, indent=2, sort_keys=True)
-        logger.info("Benchmark ledger saved to %s", ledger_path)
+        write_benchmark_ledger(args.benchmark_ledger_json, result, report, archive_report)
 
     write_final_maps(
         result,
@@ -2261,45 +2095,7 @@ def main(command=None):
         skip_large_outputs=args.skip_large_outputs,
     )
 
-    # ---- Print summary ----
-    print("\n" + "=" * 70)
-    print("REFINEMENT SUMMARY")
-    print("=" * 70)
-    print(f"{'Iter':>4s}  {'CurSize':>8s}  {'PixRes':>8s}  {'ResA':>8s}  {'Time(s)':>8s}", end="")
-    if any(c is not None for c in result["significant_counts"]):
-        print(f"  {'MedSig':>8s}", end="")
-    print()
-    print("-" * 70)
-
-    for i in range(len(result["current_sizes"])):
-        cs = result["current_sizes"][i]
-        pr = result["pixel_resolutions"][i]
-        res_a = _shell_index_to_resolution_angstrom(pr, ds.image_shape[0], ds.voxel_size)
-        wt = result["wall_times"][i]
-        line = f"{i + 1:4d}  {cs:8d}  {pr:8.1f}  {res_a:8.2f}  {wt:8.1f}"
-        if result["significant_counts"][i] is not None:
-            med_sig = int(np.median(np.asarray(result["significant_counts"][i])))
-            line += f"  {med_sig:8d}"
-        print(line)
-
-    print("-" * 70)
-    print(f"Total wall time: {total_time:.1f}s")
-    # A continuation from a converged state runs only the final all-data pass,
-    # which records no per-iteration row.
-    if result["current_sizes"]:
-        print(f"Final current_size: {result['current_sizes'][-1]}")
-        print(f"Final pixel resolution: {result['pixel_resolutions'][-1]:.1f}")
-    # RELION reports the final all-data iteration's current resolution (updateCurrentResolution after it,
-    # ml_optimiser_mpi.cpp:4329); without that pass, the last numbered iteration's.
-    final_state = result.get("convergence_state")
-    if result.get("final_all_data_ran") and final_state is not None:
-        print(f"Final resolution: {float(final_state.current_resolution):.2f} A (final all-data iteration)")
-    elif result["current_sizes"]:
-        print(
-            "Final resolution: "
-            f"{_shell_index_to_resolution_angstrom(result['pixel_resolutions'][-1], ds.image_shape[0], ds.voxel_size):.2f} A"
-        )
-    print("=" * 70)
+    print_refinement_summary(result, total_time_s=total_time, box_size=ds.image_shape[0], pixel_size=ds.voxel_size)
 
 
 def run_from_command_line(command):
