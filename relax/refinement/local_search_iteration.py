@@ -17,7 +17,11 @@ import numpy as np
 
 from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
 from relax.helpers.types import NoiseStats, RelionStats
-from relax.local.local_layout import _local_search_engine_rotation_block_size, build_local_hypothesis_layout
+from relax.local.local_layout import (
+    _local_search_engine_rotation_block_size,
+    build_local_hypothesis_layout,
+    expand_local_layout_classes,
+)
 from relax.relion.optics_aberrations import (
     dataset_projection_magnification,
     projection_rotations,
@@ -53,6 +57,9 @@ class _LocalSearchIterationResult:
     best_pose_rotations: object | None = None
     best_pose_translations: object | None = None
     best_pose_eulers_deg: np.ndarray | None = None
+    # Class3D fine pass: the engine's class-segmented output (``ResidentKClassPass2Output``); the
+    # K=1 fields above are then None.
+    class_pass: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,6 +99,8 @@ class LocalSearchGridSpec:
     rotation_grid_mstep_rotations: object | None = None
     generate_relion_mstep_rotations: bool = False
     symmetry: str = "C1"
+    # Class3D: each image's rows are scored against every class (expand_local_layout_classes).
+    n_classes: int = 1
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -254,11 +263,11 @@ def _run_local_search_iteration(
         metadata_build_time = 0.0
         selector_time = 0.0
 
-    # Local searches are K=1 only: Class3D keeps global searches, as RELION switches
-    # to local searches from the HEALPix order only under auto-refine
-    # (ml_optimiser.cpp:2541-2565, 3936-3938).
-    local_n_classes = 1
-    local_kernel_classes = 1
+    # Class3D local searches (--sigma_ang) score each image's rows against every class.
+    if int(grid.n_classes) > 1 and int(getattr(local_layout, "n_classes", 1)) == 1:
+        local_layout = expand_local_layout_classes(local_layout, int(grid.n_classes))
+    local_n_classes = int(getattr(local_layout, "n_classes", 1))
+    local_kernel_classes = local_n_classes
     local_rotation_count = (
         int(np.max(np.asarray(local_layout.rotation_counts, dtype=np.int64)))
         if int(np.asarray(local_layout.rotation_counts).size)
@@ -436,6 +445,23 @@ def _run_local_search_iteration(
         nyquist_column_counting=kernel.nyquist_column_counting,
     )
     record_pass_engine("local_probe" if support.score_only else "local", "resident")
+    if local_n_classes > 1 and not support.score_only:
+        if kernel.projection_scale != 1.0 or magnification is not None:
+            engine_outputs = engine_outputs._replace(
+                per_class_best_pose_rotations=tuple(
+                    reported_rotations(rotations, kernel.projection_scale, magnification)
+                    for rotations in engine_outputs.per_class_best_pose_rotations
+                )
+            )
+        return _LocalSearchIterationResult(
+            Ft_y=None,
+            Ft_ctf=None,
+            hard_assignment=None,
+            relion_stats=engine_outputs.stats,
+            noise_stats=engine_outputs.noise_stats,
+            profile_summary=engine_outputs.profile if diagnostics.return_profile else None,
+            class_pass=engine_outputs,
+        )
     result = _LocalSearchIterationResult(
         Ft_y=engine_outputs.Ft_y,
         Ft_ctf=engine_outputs.Ft_ctf,

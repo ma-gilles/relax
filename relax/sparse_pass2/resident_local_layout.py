@@ -106,6 +106,10 @@ class ResidentLocalTables:
     source_eulers: np.ndarray | None  # float64 [n_rows, 3] or None
     translation_grid: np.ndarray  # [n_trans, n_dims]
     translation_log_prior: np.ndarray  # [n_images, n_trans]
+    # Class3D (K>1): each row's class; rows are image-major, then class-major, and
+    # ``row_posterior_id`` is ``class * (n_posterior_bins // n_classes) + bin``. None for K=1.
+    row_class: np.ndarray | None = None  # int32 [n_rows]
+    n_classes: int = 1
 
     def __post_init__(self):
         if self.row_offsets.shape != (self.n_images + 1,):
@@ -190,6 +194,18 @@ def tables_from_local_layout(layout, *, rotation_dtype=np.float32) -> ResidentLo
             )
     if n_rows and int(row_posterior_id.min(initial=0)) < 0:
         raise ValueError("rotation posterior ids must be non-negative")
+    n_classes = int(getattr(layout, "n_classes", 1))
+    row_class = None
+    if n_classes > 1:
+        # One histogram per class over the layout's whole grid, class-major.
+        row_class = np.asarray(layout.row_class_flat, dtype=np.int32).reshape(-1)
+        if row_class.shape != (n_rows,) or (n_rows and (row_class.min() < 0 or row_class.max() >= n_classes)):
+            raise ValueError("row_class_flat must give each row a class in [0, n_classes)")
+        n_class_bins = int(layout.n_global_rotations)
+        if n_rows and int(row_posterior_id.max(initial=-1)) >= n_class_bins:
+            raise ValueError("a class-expanded layout's posterior ids must lie in its global grid")
+        row_posterior_id = row_class.astype(np.int64) * n_class_bins + row_posterior_id
+        n_posterior_bins = n_classes * n_class_bins
     row_posterior_id = row_posterior_id.astype(np.int32, copy=False)
 
     translation_grid = np.asarray(layout.translation_grid)
@@ -242,6 +258,8 @@ def tables_from_local_layout(layout, *, rotation_dtype=np.float32) -> ResidentLo
         source_eulers=source_eulers,
         translation_grid=translation_grid,
         translation_log_prior=translation_log_prior,
+        row_class=row_class,
+        n_classes=n_classes,
     )
 
 
@@ -360,6 +378,7 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
         np.eye(3, dtype=tables.mstep_rotations.dtype), (row_capacity, 3, 3)
     ).copy()
     image_ids = np.full(image_capacity, -1, dtype=np.int32)
+    row_class = None if tables.row_class is None else np.zeros(row_capacity, dtype=np.int32)
 
     row_mask_bits = None
     if tables.row_mask_bits is not None:
@@ -374,6 +393,8 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
         mstep_rotations[:n_valid_rows] = tables.mstep_rotations[rs:re]
         if row_mask_bits is not None:
             row_mask_bits[:n_valid_rows] = tables.row_mask_bits[rs:re]
+        if row_class is not None:
+            row_class[:n_valid_rows] = tables.row_class[rs:re]
 
     if n_valid_images:
         image_ids[:n_valid_images] = np.arange(
@@ -391,4 +412,5 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
         "n_valid_rows": np.int32(n_valid_rows),
         "n_valid_images": np.int32(n_valid_images),
         "image_ids": image_ids,
+        "row_class": row_class,
     }

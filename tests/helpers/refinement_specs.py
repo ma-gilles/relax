@@ -66,6 +66,7 @@ def local_iteration_owners(*args, **values):
             rotation_grid_mstep_rotations=values.pop("rotation_grid_mstep_rotations", None),
             generate_relion_mstep_rotations=values.pop("generate_relion_mstep_rotations", False),
             symmetry=values.pop("symmetry", "C1"),
+            n_classes=values.pop("n_classes", 1),
         ),
         local_search_iteration.LocalSearchBatchPolicy(
             image_batch_size=values.pop("image_batch_size"),

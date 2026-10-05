@@ -1224,6 +1224,8 @@ def project_resident_live_rows(
     projection_padding_factor: int = 1,
     relion_projector_capacity_texture=None,
     window_union=None,
+    place_rows=None,
+    outputs=None,
     **projection_kwargs,
 ):
     """:func:`project_resident_rows` for a padded chunk: only the valid rows are projected.
@@ -1245,6 +1247,12 @@ def project_resident_live_rows(
     the score window alone (the pass-1 parent probe, which has no M-step);
     ``recon_proj`` and ``recon_abs2`` are then ``None``.
 
+    Class3D local chunks project each class's rows with that class's reference:
+    ``rotations`` are then one class's rows gathered to the front, ``place_rows``
+    (int32, ascending, ``rotations``' length) the chunk rows they belong to, with
+    entries past the chunk's capacity for padding (dropped), and ``outputs`` the
+    ``(score_proj, recon_proj, recon_abs2)`` the earlier classes filled (donated).
+
     Returns ``(score_proj, recon_proj, recon_abs2, n_projected_rows)``.
     """
 
@@ -1256,11 +1264,14 @@ def project_resident_live_rows(
     projection_kwargs = dict(projection_kwargs)
     projection_kwargs["return_abs2"] = False
 
-    score_proj = jnp.zeros((row_capacity, int(score_indices.shape[0])), dtype=output_complex_dtype)
-    recon_proj = recon_abs2 = None
-    if recon_indices is not None:
-        recon_proj = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_complex_dtype)
-        recon_abs2 = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_abs2_dtype)
+    if outputs is not None:
+        score_proj, recon_proj, recon_abs2 = outputs
+    else:
+        score_proj = jnp.zeros((row_capacity, int(score_indices.shape[0])), dtype=output_complex_dtype)
+        recon_proj = recon_abs2 = None
+        if recon_indices is not None:
+            recon_proj = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_complex_dtype)
+            recon_abs2 = jnp.zeros((row_capacity, int(recon_indices.shape[0])), dtype=output_abs2_dtype)
     pixel_indices = None
     if window_union_applies(
         window_union, relion_projector=relion_projector_half is not None, projection_kwargs=projection_kwargs
@@ -1286,7 +1297,11 @@ def project_resident_live_rows(
         )
         if pixel_indices is not None:
             proj_block = with_zero_column(proj_block)
-        rows = jnp.arange(start, start + int(proj_block.shape[0]), dtype=jnp.int32)
+        rows = (
+            jnp.arange(start, start + int(proj_block.shape[0]), dtype=jnp.int32)
+            if place_rows is None
+            else jnp.asarray(place_rows[start : start + int(proj_block.shape[0])], dtype=jnp.int32)
+        )
         if recon_indices is None:
             score_proj = _place_score_window_block(
                 score_proj, proj_block, score_indices, rows, output_complex_dtype=output_complex_dtype

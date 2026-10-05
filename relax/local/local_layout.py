@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import functools
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import NamedTuple
 
 import numpy as np
@@ -293,6 +293,10 @@ class LocalHypothesisLayout:
     mstep_rotations_flat: np.ndarray | None = None
     source_eulers_flat: np.ndarray | None = None
     symmetry: str = "C1"
+    # Class3D (K>1) local searches: every image's rows repeated once per class, class-major within the
+    # image (:func:`expand_local_layout_classes`); ``row_class_flat`` is each row's class. None: K=1.
+    row_class_flat: np.ndarray | None = None
+    n_classes: int = 1
 
     def sample_mask_rows(self, start=0, stop=None) -> np.ndarray | None:
         """Expand only the requested rotation rows to the kernel's boolean mask."""
@@ -329,20 +333,6 @@ class LocalBucketSpec:
     local_sample_mask: np.ndarray | None = None
     local_mstep_rotations: np.ndarray | None = None
     local_source_eulers: np.ndarray | None = None
-    # Class-segmented rows (one engine for K=1 and K>1). Row axis is class-major:
-    # class ``k`` owns rows ``[k*seg, (k+1)*seg)`` with ``seg`` the segment width, so
-    # ``bucket_rotation_count == n_classes * class_segment_rotation_count``. For K=1
-    # the segment is the whole row axis and every array is identical to the
-    # single-class bucketer's output. ``class_actual_rotation_counts`` is ``[B, K]``.
-    n_classes: int = 1
-    class_segment_rotation_count: int | None = None
-    class_actual_rotation_counts: np.ndarray | None = None
-
-    @property
-    def segment_rotation_count(self) -> int:
-        if self.class_segment_rotation_count is None:
-            return int(self.bucket_rotation_count)
-        return int(self.class_segment_rotation_count)
 
 
 def _local_mstep_rotations(bucket: LocalBucketSpec) -> np.ndarray:
@@ -1174,6 +1164,54 @@ def build_local_hypothesis_layout(
     )
 
 
+def expand_local_layout_classes(layout: LocalHypothesisLayout, n_classes: int) -> LocalHypothesisLayout:
+    """The layout with every image's rows repeated for each of ``n_classes`` classes, class-major per image.
+
+    RELION's Class3D local search centres one search per particle on its previous best angles and scores
+    every class at the same orientations (ml_optimiser.cpp, getFourierTransformsAndCtfs and
+    getAllSquaredDifferences loop over classes inside one particle). A row's prior, rotation, mask and ids
+    are its K=1 row's; ``row_class_flat`` says which class's reference it is scored against.
+    """
+
+    n_classes = int(n_classes)
+    if n_classes < 2:
+        raise ValueError(f"a class expansion needs at least two classes, got {n_classes}")
+    if layout.n_classes != 1:
+        raise ValueError("the layout is already expanded over classes")
+    offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
+    counts = np.diff(offsets)
+    n_images = int(counts.shape[0])
+    # Source row of every expanded row: image i's rows once per class, in class order.
+    image_of = np.repeat(np.arange(n_images, dtype=np.int64), counts * n_classes)
+    within = np.arange(int(counts.sum()) * n_classes, dtype=np.int64) - np.repeat(
+        offsets[:-1] * n_classes, counts * n_classes
+    )
+    image_counts = counts[image_of]
+    source = offsets[:-1][image_of] + within % np.maximum(image_counts, 1)
+    row_class = (within // np.maximum(image_counts, 1)).astype(np.int32)
+
+    def take(values):
+        return None if values is None else np.asarray(values)[source]
+
+    new_counts = (counts * n_classes).astype(np.asarray(layout.rotation_counts).dtype)
+    new_offsets = np.zeros(n_images + 1, dtype=np.int64)
+    new_offsets[1:] = np.cumsum(new_counts, dtype=np.int64)
+    return replace(
+        layout,
+        rotation_offsets=new_offsets,
+        rotation_ids_flat=take(layout.rotation_ids_flat),
+        rotations_flat=take(layout.rotations_flat),
+        rotation_log_priors_flat=take(layout.rotation_log_priors_flat),
+        rotation_counts=new_counts,
+        rotation_posterior_ids_flat=take(layout.rotation_posterior_ids_flat),
+        sample_mask_bits=take(layout.sample_mask_bits),
+        mstep_rotations_flat=take(layout.mstep_rotations_flat),
+        source_eulers_flat=take(layout.source_eulers_flat),
+        row_class_flat=row_class,
+        n_classes=n_classes,
+    )
+
+
 def build_local_adaptive_pass2_hypothesis_layout(
     parent_layout: LocalHypothesisLayout,
     significant_sample_indices,
@@ -1191,6 +1229,10 @@ def build_local_adaptive_pass2_hypothesis_layout(
     parents, then only scores fine translation children for coarse
     ``(orientation, translation)`` pairs that survived pass 1. ``parent_layout``
     carries the image-specific local Gaussian priors from that coarse pass.
+
+    A class-expanded parent layout (``n_classes > 1``) has significant samples
+    ``(class * n_global_rotations + rotation) * n_trans + t``, so each class keeps
+    its own surviving parents; the children carry their parent's class.
     """
 
     oversampling_order = int(oversampling_order)
@@ -1221,9 +1263,14 @@ def build_local_adaptive_pass2_hypothesis_layout(
     fine_translation_parent = np.asarray(fine_translation_parent, dtype=np.int32)
     n_fine_trans = int(fine_translations.shape[0])
 
-    n_parent_global = int(parent_layout.n_global_rotations)
+    n_classes = int(parent_layout.n_classes)
+    n_real_global = int(parent_layout.n_global_rotations)
+    # Class-expanded layouts number a (class, rotation) parent class * n_global + rotation.
+    n_parent_global = n_classes * n_real_global
     parent_offsets = np.asarray(parent_layout.rotation_offsets, dtype=np.int64)
     parent_ids_flat = np.asarray(parent_layout.rotation_ids_flat, dtype=np.int64)
+    if n_classes > 1:
+        parent_ids_flat = np.asarray(parent_layout.row_class_flat, dtype=np.int64) * n_real_global + parent_ids_flat
     parent_log_prior_flat = np.asarray(parent_layout.rotation_log_priors_flat, dtype=dtype)
     parent_counts = np.diff(parent_offsets)
     if n_images and np.any(parent_counts == 0):
@@ -1276,6 +1323,8 @@ def build_local_adaptive_pass2_hypothesis_layout(
             f"Image {image_idx} has significant rotations outside its local parent support: {missing[:8].tolist()}"
         )
     unit_log_prior = parent_log_prior_flat[parent_order[position]]
+    unit_class = (unit_rot // n_real_global).astype(np.int32)
+    unit_rot = unit_rot % n_real_global
 
     # Every image's oversampled children in one call: each parent's children
     # depend on that parent only, so the rows are the per-image calls' rows.
@@ -1340,6 +1389,8 @@ def build_local_adaptive_pass2_hypothesis_layout(
         sample_mask_bits=sample_mask_bits,
         mstep_rotations_flat=mstep_rotations_flat,
         symmetry=symmetry,
+        row_class_flat=None if n_classes == 1 else unit_class[parent_map],
+        n_classes=n_classes,
     )
 
 

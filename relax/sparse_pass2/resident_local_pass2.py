@@ -93,6 +93,7 @@ from relax.helpers.types import LocalEMResult, make_noise_stats, make_relion_sta
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
 from relax.relion.relion_projector_setup import (
     cast_relion_projector_for_execution,
+    prepare_local_class_projector_slabs,
     prepare_local_projector_slab,
 )
 from relax.sparse_pass2 import resident_pass2 as rp
@@ -192,6 +193,14 @@ __all__ = [
     "compute_local_search_resident",
     "require_resident_local_configuration",
 ]
+
+
+class _ClassProjector(NamedTuple):
+    """One class's reference for a Class3D local pass: the volume, its slab (or its shape) and texture."""
+
+    mean: object
+    slab: object
+    texture: object
 
 
 def _require(condition: bool, message: str) -> None:
@@ -573,6 +582,9 @@ def compute_local_search_resident(
     fine_translations = np.asarray(
         tables.translation_grid, dtype=precision_policy.score_real_dtype
     )
+    # Class3D local search (K>1): the layout's rows repeat per class; each class's rows are
+    # projected with its own reference and backprojected into its own BPref.
+    n_classes = int(tables.n_classes)
 
     # ---- window, weights and lookups --------------------------------------
     window_setup = _sparse_pass2_window_setup(
@@ -660,8 +672,18 @@ def compute_local_search_resident(
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
+    # Class3D masks each class's scale sums by its own data_vs_prior_class
+    # (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]``, or one curve for every class.
+    scale_dvp_by_class = [scale_correction_data_vs_prior] * n_classes
+    if n_classes > 1 and scale_correction_data_vs_prior is not None and np.ndim(scale_correction_data_vs_prior) == 2:
+        if int(np.shape(scale_correction_data_vs_prior)[0]) != n_classes:
+            raise ValueError(
+                f"scale_correction_data_vs_prior must be one curve or ({n_classes}, n_shells), "
+                f"got {np.shape(scale_correction_data_vs_prior)}"
+            )
+        scale_dvp_by_class = [np.asarray(scale_correction_data_vs_prior)[k] for k in range(n_classes)]
     scale_correction_pixel_mask = _relion_scale_correction_pixel_mask(
-        scale_correction_data_vs_prior,
+        scale_dvp_by_class[0],
         shell_indices_noise,
         n_shells=n_shells,
     )
@@ -676,6 +698,14 @@ def compute_local_search_resident(
     scale_pixel_mask_rect_np[relion_wavg_rectangle.exact_positions] = np.asarray(
         scale_correction_pixel_mask, dtype=bool
     )
+    class_scale_masks_rect = None
+    if n_classes > 1:
+        class_masks_np = np.zeros((n_classes, n_rect), dtype=bool)
+        for k, dvp in enumerate(scale_dvp_by_class):
+            class_masks_np[k, relion_wavg_rectangle.exact_positions] = np.asarray(
+                _relion_scale_correction_pixel_mask(dvp, shell_indices_noise, n_shells=n_shells), dtype=bool
+            )
+        class_scale_masks_rect = jnp.asarray(class_masks_np)
     group_ids_np, n_scale_groups = prepare_scale_correction_groups(
         group_ids, scale_correction_group_count, n_images=n_images
     )
@@ -712,9 +742,16 @@ def compute_local_search_resident(
     relion_projector_half = cast_relion_projector_for_execution(
         relion_projector_half, use_float64_projections=use_float64_projections
     )
-    relion_projector_half = prepare_local_projector_slab(
-        relion_projector_half, path_label="device-resident local projector path"
-    )
+    class_slabs = None
+    if n_classes == 1:
+        relion_projector_half = prepare_local_projector_slab(
+            relion_projector_half, path_label="device-resident local projector path"
+        )
+    else:
+        class_slabs = prepare_local_class_projector_slabs(
+            relion_projector_half, n_classes, path_label="device-resident local projector path"
+        )
+        relion_projector_half = class_slabs[0]
     logger.info(
         "Resident local pass-2 projector: slab dtype=%s shape=%s r_max=%s "
         "(the exact local engine's execution precision)",
@@ -763,13 +800,35 @@ def compute_local_search_resident(
         projection_padding_factor=projection_padding_factor,
         projection_kwargs=projection_kwargs,
     )
+    class_textures = [capacity_texture]
     try:
+        if class_slabs is not None:
+            class_textures += [
+                _open_capacity_texture(
+                    slab,
+                    relion_projector_r_max=relion_projector_r_max,
+                    projection_padding_factor=projection_padding_factor,
+                    projection_kwargs=projection_kwargs,
+                )
+                for slab in class_slabs[1:]
+            ]
         if capacity_texture is not None:
             # The staged texture serves every projection of the pass, which reads
             # only the slab's geometry from here on, so the device slab is released
             # (15.35 GiB at EMPIAR-10202's full box, where it left no free block for
             # the x-half accumulators: bigbox 14575557).
             relion_projector_half = jax.ShapeDtypeStruct(relion_projector_half.shape, relion_projector_half.dtype)
+        class_projectors = None
+        if class_slabs is not None:
+            class_projectors = tuple(
+                _ClassProjector(
+                    mean=mean[k],
+                    slab=slab if texture is None else jax.ShapeDtypeStruct(slab.shape, slab.dtype),
+                    texture=texture,
+                )
+                for k, (slab, texture) in enumerate(zip(class_slabs, class_textures, strict=True))
+            )
+            del class_slabs
         # ---- per-image resident operands --------------------------------------
         bucket_io_kwargs = dict(
             noise_variance_half=noise_variance_half,
@@ -823,6 +882,7 @@ def compute_local_search_resident(
                 relion_projector_half=relion_projector_half,
                 relion_projector_r_max=relion_projector_r_max,
                 relion_projector_capacity_texture=capacity_texture,
+                class_projectors=class_projectors,
                 precision_policy=precision_policy,
                 n_fine_trans=n_fine_trans,
                 adaptive_fraction=float(adaptive_fraction),
@@ -850,13 +910,18 @@ def compute_local_search_resident(
         # memory for its chunk budget, which then counts them (up to 23 GiB at
         # EMPIAR-10202's full box).
         rp.ensure_pass_headroom(
-            rp.resident_accumulator_bytes(recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype),
+            n_classes * rp.resident_accumulator_bytes(recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype),
             min_row_capacity=min(parse_env_capacity_ladder(_ROW_CAPACITY_LADDER_ENV, _DEFAULT_ROW_CAPACITY_LADDER)),
             n_score_pixels=n_windowed,
             n_recon_pixels=n_recon_windowed,
         )
-        Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
-        Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
+        if n_classes == 1:
+            Ft_y_total = jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype)
+            Ft_ctf_total = jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype)
+        else:
+            # One BPref per class (ml_optimiser.cpp, BPref[iclass]).
+            Ft_y_total = [jnp.zeros(recon_volume_size, dtype=recon_y_accum_dtype) for _ in range(n_classes)]
+            Ft_ctf_total = [jnp.zeros(recon_volume_size, dtype=recon_ctf_accum_dtype) for _ in range(n_classes)]
 
         # The operand family decides what a chunk holds, so it is chosen before the
         # plan; the per-chunk fallback in _start_resident_local_chunk stays as a guard.
@@ -875,7 +940,7 @@ def compute_local_search_resident(
         )
         # The accumulators already exist, so the budget reading counts them; the
         # plan records them so that its pass_bytes is the pass's total need.
-        accumulator_bytes = rp.resident_accumulator_bytes(
+        accumulator_bytes = n_classes * rp.resident_accumulator_bytes(
             recon_volume_size, recon_y_accum_dtype, recon_ctf_accum_dtype
         )
         chunk_budget_bytes = rp.resident_chunk_budget_bytes()
@@ -990,8 +1055,13 @@ def compute_local_search_resident(
         # layout's whole rotation histogram: at MS2 box 512's final pass (I2,
         # HEALPix 9) that histogram is 9.60 GiB of float64 on the device, which
         # ran it out of memory (bench 14684161). It is expanded on the host.
-        posterior_bin_ids, row_posterior_bin = np.unique(tables.row_posterior_id, return_inverse=True)
-        row_posterior_bin = row_posterior_bin.astype(np.int32, copy=False)
+        if n_classes == 1:
+            posterior_bin_ids, row_posterior_bin = np.unique(tables.row_posterior_id, return_inverse=True)
+            row_posterior_bin = row_posterior_bin.astype(np.int32, copy=False)
+        else:
+            # The class axis needs the whole class-major histogram ([K, n_bins] at finalize).
+            posterior_bin_ids = np.arange(tables.n_posterior_bins, dtype=np.int64)
+            row_posterior_bin = np.asarray(tables.row_posterior_id, dtype=np.int32)
         stats_config = resolve_statistics_config(
             n_shells=n_shells,
             n_fine_trans=n_fine_trans,
@@ -1006,6 +1076,7 @@ def compute_local_search_resident(
             accumulate_scale=scale_groups_available,
             source_faithful_spectrum_norm=resolved_spectrum_norm,
             n_optics_groups=n_optics_groups,
+            n_classes=n_classes,
             float32_bucketed_image_sums=False,
         )
         stats = make_resident_statistics(
@@ -1115,6 +1186,8 @@ def compute_local_search_resident(
                 significant_counts=significant_counts,
                 operand_route=operand_route,
                 relion_projector_capacity_texture=capacity_texture,
+                class_projectors=class_projectors,
+                class_scale_masks_rect=class_scale_masks_rect,
             )
             if pending is not None:
                 Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
@@ -1126,10 +1199,26 @@ def compute_local_search_resident(
             Ft_y_total, Ft_ctf_total, stats = pending(Ft_y_total, Ft_ctf_total, stats)
         loop_s = time.time() - loop_t0
     finally:
-        if capacity_texture is not None:
-            capacity_texture.close()
+        for texture in class_textures:
+            if texture is not None:
+                texture.close()
 
     # ---- finalize ----------------------------------------------------------
+    if n_classes > 1:
+        return _finalize_class_local_pass(
+            Ft_y_total,
+            Ft_ctf_total,
+            stats,
+            stats_config=stats_config,
+            tables=tables,
+            n_images=n_images,
+            n_fine_trans=n_fine_trans,
+            recon_volume_shape=recon_volume_shape,
+            symmetry_label=symmetry_label,
+            n_chunks=len(chunks),
+            loop_s=loop_s,
+            overall_t0=overall_t0,
+        )
     # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
     # Hermitian enforcement, then applyPointGroupSymmetry on BPref.
     Ft_y_total, Ft_ctf_total = finalize_half_volume_bpref(
@@ -1221,6 +1310,104 @@ def compute_local_search_resident(
         profile=profile,
         significant_counts=significant_counts,
         best_pose_eulers_deg=best_pose_eulers_deg,
+    )
+
+
+def _finalize_class_local_pass(
+    Ft_y_total,
+    Ft_ctf_total,
+    stats,
+    *,
+    stats_config,
+    tables,
+    n_images,
+    n_fine_trans,
+    recon_volume_shape,
+    symmetry_label,
+    n_chunks,
+    loop_s,
+    overall_t0,
+):
+    """A Class3D local pass's per-class BPrefs, statistics and winners, as ``ResidentKClassPass2Output``.
+
+    The joint statistics (normalizer, Pmax, noise and scale sums) are over classes and poses; each
+    class's evidence, winner and pruned M-step mass come from its sub-segments, and its BPref is
+    symmetrised on its own, as the global K-class pass does (``compute_k_class_pass2_stats_resident``).
+    Winners are rows of the layout's flat order, decoded through the tables as for K=1.
+    """
+
+    n_classes = int(tables.n_classes)
+    Ft_y_public, Ft_ctf_public = [], []
+    for k in range(n_classes):
+        y, ctf = finalize_half_volume_bpref(
+            Ft_y_total[k],
+            Ft_ctf_total[k],
+            recon_volume_shape,
+            logger=logger,
+            label=f"Resident local pass-2 class {k + 1}",
+            symmetry_label=symmetry_label,
+            relion_x_half=True,
+        )
+        y, ctf = relion_x_half_accumulators_to_public_layout(y, ctf, recon_volume_shape)
+        Ft_y_public.append(y)
+        Ft_ctf_public.append(ctf)
+
+    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
+    if np.any(np.asarray(finalized.best_fine_rotation_indices) < 0):
+        raise RuntimeError("Resident local pass 2: an image has no winning candidate row")
+    per_class = finalized.classes
+    class_row = np.asarray(per_class.best_fine_rotation_indices, dtype=np.int64)
+    class_translation = np.asarray(per_class.best_translation_indices, dtype=np.int64)
+    has_pose = class_row >= 0
+    safe_row = np.where(has_pose, class_row, 0)
+    safe_translation = np.where(has_pose, class_translation, 0)
+    rotation_ids = tables.row_rotation_id[safe_row].astype(np.int64)
+    rotation_posterior_sums = np.asarray(finalized.rotation_posterior_sums, dtype=np.float64)
+    noise_stats = make_noise_stats(
+        wsum_sigma2_noise=finalized.wsum_sigma2_noise,
+        wsum_img_power=finalized.wsum_img_power,
+        wsum_sigma2_offset=finalized.wsum_sigma2_offset,
+        sumw=finalized.sumw,
+        wsum_norm_correction=finalized.wsum_norm_correction,
+        wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
+        wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
+    )
+    rotations = np.asarray(tables.rotations)
+    translations = np.asarray(tables.translation_grid)
+    logger.info(
+        "Resident local pass-2 done: %d images, %d classes, %d chunks, %.2fs chunk loop, %.2fs total",
+        n_images,
+        n_classes,
+        n_chunks,
+        loop_s,
+        time.time() - overall_t0,
+    )
+    return rp.ResidentKClassPass2Output(
+        Ft_y=tuple(Ft_y_public),
+        Ft_ctf=tuple(Ft_ctf_public),
+        class_log_evidence_per_image=per_class.log_evidence,
+        class_best_log_score_per_image=per_class.best_log_score,
+        per_class_hard_assignments=np.where(
+            has_pose, rotation_ids * np.int64(n_fine_trans) + safe_translation, -1
+        ).astype(np.int64),
+        stats=make_relion_stats(
+            log_evidence_per_image=finalized.log_evidence_per_image,
+            best_log_score_per_image=finalized.best_log_score_per_image,
+            max_posterior_per_image=finalized.max_posterior_per_image,
+            rotation_posterior_sums=np.sum(rotation_posterior_sums, axis=0),
+        ),
+        class_rotation_posterior_sums=rotation_posterior_sums,
+        class_reconstruction_posterior_sums=per_class.posterior_sums,
+        noise_stats=noise_stats,
+        per_class_best_pose_rotations=tuple(rotations[safe_row[k]] for k in range(n_classes)),
+        per_class_best_pose_translations=tuple(translations[safe_translation[k]] for k in range(n_classes)),
+        per_class_best_pose_rotation_ids=tuple(rotation_ids[k] for k in range(n_classes)),
+        per_class_best_pose_eulers_deg=(
+            None
+            if tables.source_eulers is None
+            else tuple(np.asarray(tables.source_eulers)[safe_row[k]] for k in range(n_classes))
+        ),
+        profile={"resident_local_chunks": np.int32(n_chunks), "resident_local_loop_time_s": np.float64(loop_s)},
     )
 
 
@@ -1384,6 +1571,7 @@ def _run_resident_parent_probe(
     overall_t0,
     max_significants=-1,
     window_union=None,
+    class_projectors=None,
 ) -> LocalEMResult:
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
 
@@ -1400,6 +1588,10 @@ def _run_resident_parent_probe(
     while the host reads the previous one. RELION GPU sorts and sums the pass-1
     weights in float as well (acc_ml_optimiser_impl.h findSignificantPoints);
     a cutoff tie may resolve differently from the exact engine's float64 sort.
+
+    A Class3D layout (``class_projectors``) projects each class's rows with its
+    own reference; the significance is joint over the image's classes and poses,
+    and a sample's posterior id carries its class (``class * n_bins + bin``).
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -1492,25 +1684,41 @@ def _run_resident_parent_probe(
         )
         # Host rotations: the coarse kernel's wrapped-row check reads each
         # block's first rotation, which on a device array waits for the queue.
-        score_proj, _, _, _ = project_resident_live_rows(
-            mean,
-            np.asarray(host_chunk["rotations"], dtype=np.dtype(precision_policy.score_real_dtype)),
-            image_shape,
-            volume_shape,
-            disc_type,
-            n_valid_rows=int(chunk.n_valid_rows),
+        projection_options = dict(
             score_indices=window_indices,
             recon_indices=None,
             max_projected_rotations=int(projection_block_rows),
             output_complex_dtype=precision_policy.score_complex_dtype,
             output_abs2_dtype=precision_policy.score_real_dtype,
-            relion_projector_half=relion_projector_half,
             relion_projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
-            relion_projector_capacity_texture=relion_projector_capacity_texture,
             window_union=window_union,
             **projection_kwargs,
         )
+        if class_projectors is None:
+            score_proj, _, _, _ = project_resident_live_rows(
+                mean,
+                np.asarray(host_chunk["rotations"], dtype=np.dtype(precision_policy.score_real_dtype)),
+                image_shape,
+                volume_shape,
+                disc_type,
+                n_valid_rows=int(chunk.n_valid_rows),
+                relion_projector_half=relion_projector_half,
+                relion_projector_capacity_texture=relion_projector_capacity_texture,
+                **projection_options,
+            )
+        else:
+            (score_proj, _, _), _ = _project_class_rows(
+                host_chunk,
+                class_projectors,
+                image_shape=image_shape,
+                volume_shape=volume_shape,
+                disc_type=disc_type,
+                n_valid_rows=int(chunk.n_valid_rows),
+                rotation_dtype=precision_policy.score_real_dtype,
+                projection_options=projection_options,
+                host_rotations=True,
+            )
         n_valid_images_device = jnp.asarray(host_chunk["n_valid_images"], dtype=jnp.int32)
         chunk_image_ids = jnp.where(
             jnp.arange(image_capacity, dtype=jnp.int32) < n_valid_images_device,
@@ -1743,6 +1951,110 @@ def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np
     return dense
 
 
+class _ClassRows(NamedTuple):
+    """The two fields of a chunk's rows :func:`resident_pass2._class_sub_segment_posterior` reads."""
+
+    classes: object  # resident_pass2._ChunkClassLayout
+    n_valid_images: object  # int32 device scalar
+
+
+def _sum_class_mstep_terms(
+    class_terms, class_scale_masks_rect, *, class_layout, class_posterior, row_start, row_capacity, n_fine_trans
+):
+    """A Class3D chunk's M-step terms summed over classes, and the class fields of its statistics.
+
+    ``class_terms`` are each class's ``(wavg triplet, noise shells, A2, XA)`` from its own M-step. The
+    noise residual and the norm terms add over classes; each class's Wavg XA/AA enter the scale sums
+    only under its own ``data_vs_prior_class > 3`` mask (acc_ml_optimiser_impl.h:4893-4912), so they are
+    folded here and cleared from the triplet, as ``resident_pass2._fold_class_scale_sums`` does for
+    the global pass. A class's winner is a row of the layout's flat order, ``row * T + t``.
+    """
+
+    zero = jnp.float32(0.0)
+    triplet = noise_shells = a2 = xa = scale_xa = scale_aa = None
+    for k, (triplet_k, noise_k, a2_k, xa_k) in enumerate(class_terms):
+        mask = jnp.asarray(class_scale_masks_rect[k], dtype=bool).reshape(1, -1)
+        xa_scale = jnp.sum(jnp.where(mask, triplet_k[:, :, 0], zero).astype(jnp.float64), axis=1)
+        aa_scale = jnp.sum(jnp.where(mask, triplet_k[:, :, 1], zero).astype(jnp.float64), axis=1)
+        diff2 = triplet_k.at[:, :, :2].set(zero)
+        if triplet is None:
+            triplet, noise_shells, a2, xa, scale_xa, scale_aa = diff2, noise_k, a2_k, xa_k, xa_scale, aa_scale
+        else:
+            triplet, noise_shells = triplet + diff2, noise_shells + noise_k
+            a2, xa = a2 + a2_k, xa + xa_k
+            scale_xa, scale_aa = scale_xa + xa_scale, scale_aa + aa_scale
+    t = jnp.int64(int(n_fine_trans))
+    class_best_row = jnp.clip(
+        class_layout.segment_row_start + class_posterior.best_cell_index // t, 0, jnp.int64(max(row_capacity - 1, 0))
+    )
+    class_fields = dict(
+        row_class=class_layout.row_class,
+        per_class_log_z=class_posterior.log_z,
+        per_class_best_log_score=class_posterior.best_log_score,
+        per_class_best_cell=jnp.where(
+            jnp.isfinite(class_posterior.best_log_score),
+            (jnp.int64(int(row_start)) + class_best_row) * t + class_posterior.best_cell_index % t,
+            jnp.int64(-1),
+        ),
+        scale_xa_per_image=scale_xa,
+        scale_aa_per_image=scale_aa,
+    )
+    return triplet, noise_shells, a2, xa, class_fields
+
+
+def _project_class_rows(
+    host_chunk,
+    class_projectors,
+    *,
+    image_shape,
+    volume_shape,
+    disc_type,
+    n_valid_rows: int,
+    rotation_dtype,
+    projection_options: dict,
+    host_rotations: bool = False,
+):
+    """Project a Class3D chunk's rows, each class's with its own reference, into the chunk's row order.
+
+    Rows stay image-major then class-major, as the joint posterior needs, so a class's rows are not
+    contiguous: each class's rotations are gathered to the front of a capacity-sized array and its
+    projections written back at their rows (``place_rows`` of :func:`project_resident_live_rows`).
+    ``host_rotations`` hands the projector host rotations, as the pass-1 probe does.
+    Returns ``((score_proj, recon_proj, recon_abs2), n_projected_rows)``.
+    """
+
+    row_capacity = int(np.shape(host_chunk["rotations"])[0])
+    row_class = np.asarray(host_chunk["row_class"])[: int(n_valid_rows)]
+    outputs = None
+    n_projected = 0
+    for k, projector in enumerate(class_projectors):
+        rows = np.flatnonzero(row_class == k).astype(np.int32)
+        if rows.size == 0:
+            continue
+        rotations = np.broadcast_to(np.eye(3, dtype=np.dtype(rotation_dtype)), (row_capacity, 3, 3)).copy()
+        rotations[: rows.size] = np.asarray(host_chunk["rotations"])[rows]
+        place = np.arange(row_capacity, 2 * row_capacity, dtype=np.int32)
+        place[: rows.size] = rows
+        score_proj, recon_proj, recon_abs2, n_class_projected = project_resident_live_rows(
+            projector.mean,
+            rotations if host_rotations else jnp.asarray(rotations, dtype=rotation_dtype),
+            image_shape,
+            volume_shape,
+            disc_type,
+            n_valid_rows=int(rows.size),
+            relion_projector_half=projector.slab,
+            relion_projector_capacity_texture=projector.texture,
+            place_rows=place,
+            outputs=outputs,
+            **projection_options,
+        )
+        outputs = (score_proj, recon_proj, recon_abs2)
+        n_projected += int(n_class_projected)
+    if outputs is None:
+        raise RuntimeError("a Class3D local chunk has no valid row")
+    return outputs, n_projected
+
+
 def _start_resident_local_chunk(
     chunk,
     *,
@@ -1799,6 +2111,8 @@ def _start_resident_local_chunk(
     significant_counts,
     operand_route,
     relion_projector_capacity_texture=None,
+    class_projectors=None,
+    class_scale_masks_rect=None,
 ):
     """Enqueue one local capacity chunk's front stages; return its ``finish``.
 
@@ -1920,25 +2234,40 @@ def _start_resident_local_chunk(
     # --- stages 1-2: project this chunk's own rows -------------------------
     # Only the valid rows: the padding past them (about 70% of a chunk at the
     # 10097 local iterations) is never scored or reconstructed.
-    score_proj, recon_proj, recon_abs2, n_projected_rows = project_resident_live_rows(
-        mean,
-        jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
-        image_shape,
-        volume_shape,
-        disc_type,
-        n_valid_rows=n_valid_rows,
+    projection_options = dict(
         score_indices=window_indices,
         recon_indices=recon_window_indices,
         max_projected_rotations=int(projection_block_rows),
         output_complex_dtype=precision_policy.score_complex_dtype,
         output_abs2_dtype=precision_policy.score_real_dtype,
-        relion_projector_half=relion_projector_half,
         relion_projector_r_max=relion_projector_r_max,
         projection_padding_factor=projection_padding_factor,
-        relion_projector_capacity_texture=relion_projector_capacity_texture,
         window_union=window_union,
         **projection_kwargs,
     )
+    if class_projectors is None:
+        score_proj, recon_proj, recon_abs2, n_projected_rows = project_resident_live_rows(
+            mean,
+            jnp.asarray(host_chunk["rotations"], dtype=precision_policy.score_real_dtype),
+            image_shape,
+            volume_shape,
+            disc_type,
+            n_valid_rows=n_valid_rows,
+            relion_projector_half=relion_projector_half,
+            relion_projector_capacity_texture=relion_projector_capacity_texture,
+            **projection_options,
+        )
+    else:
+        (score_proj, recon_proj, recon_abs2), n_projected_rows = _project_class_rows(
+            host_chunk,
+            class_projectors,
+            image_shape=image_shape,
+            volume_shape=volume_shape,
+            disc_type=disc_type,
+            n_valid_rows=n_valid_rows,
+            rotation_dtype=precision_policy.score_real_dtype,
+            projection_options=projection_options,
+        )
 
     mark("project", score_proj, recon_proj, recon_abs2)
 
@@ -2020,9 +2349,40 @@ def _start_resident_local_chunk(
     # no positive cell adds exact zeros to every M-step accumulator, and the
     # block walk stops after the live rows. At the 10097 full-box final pass
     # about a third of the scored rows carry no weight.
-    mstep_rows, n_live_rows = _live_rows_first(
-        row_posterior, row_is_valid, row_image_local, kernel_row_image_ids
-    )
+    class_layout = class_posterior = None
+    if class_projectors is None:
+        mstep_rows, n_live_rows = _live_rows_first(
+            row_posterior, row_is_valid, row_image_local, kernel_row_image_ids
+        )
+    else:
+        # Class3D: the image's joint posterior above, each (image, class) sub-segment's
+        # evidence and winner here, and each class's live rows for its own BPref.
+        n_classes = len(class_projectors)
+        class_layout = rp._chunk_class_layout(
+            host_chunk, chunk, n_classes=n_classes, n_fine_trans=int(n_fine_trans), place=rp._PLACE_ON_DEVICE
+        )
+        class_posterior = rp._class_sub_segment_posterior(
+            scores_flat.reshape(row_capacity, int(n_fine_trans)),
+            _ClassRows(classes=class_layout, n_valid_images=n_valid_images_device),
+            row_is_valid,
+            n_segments=image_capacity * n_classes,
+            n_classes=n_classes,
+            cuda_backproject=cuda_backproject,
+        )
+        # A class's M-step reads only its own rows' weights: the block walk's last block runs past the
+        # live rows, so the other classes' rows there must carry zero posterior, not theirs.
+        class_mstep_rows = []
+        for k in range(n_classes):
+            in_class = class_layout.row_class == k
+            class_mstep_rows.append(
+                _live_rows_first(
+                    jnp.where(in_class[:, None], row_posterior, jnp.float32(0.0)),
+                    row_is_valid & in_class,
+                    row_image_local,
+                    kernel_row_image_ids,
+                )
+            )
+        mstep_rows, n_live_rows = class_mstep_rows[0]
 
     def finish(Ft_y_total, Ft_ctf_total, stats):
         """The chunk's M-step and statistics, added into the running accumulators."""
@@ -2035,54 +2395,75 @@ def _start_resident_local_chunk(
         # gather them per block, three eager dispatches each time; on the full
         # EMPIAR-10097 run that path took 2964 s against 2868 s (job 14550046).
         block_row_program = parse_env_flag(_BLOCK_ROW_PROGRAM_ENV, default=True)
-        if block_row_program:
-            block_projections = None
-            chunk_projections = (recon_proj, recon_abs2, mstep_rotations)
+
+        def run_mstep(rows, n_live, Ft_y, Ft_ctf):
+            if block_row_program:
+                block_projections = None
+                chunk_projections = (recon_proj, recon_abs2, mstep_rotations)
+            else:
+                chunk_projections = None
+
+                def block_projections(start, stop):
+                    block_rows = rows.row_ids[start:stop]
+                    return recon_proj[block_rows], recon_abs2[block_rows], mstep_rotations[block_rows]
+
+            return rp.run_resident_mstep_blocks(
+                block_projections,
+                chunk_projections=chunk_projections,
+                row_capacity=row_capacity,
+                n_valid_rows=n_live,
+                mstep_block_rows=int(mstep_block_rows),
+                image_capacity=image_capacity,
+                row_image_local=rows.row_image_local,
+                kernel_row_image_ids=rows.kernel_row_image_ids,
+                row_posterior=rows.row_posterior,
+                row_ids=rows.row_ids,
+                recon=recon,
+                recon_pixel_indices=recon_window_indices,
+                translation_angles=translation_angles,
+                n_rect=int(n_rect),
+                n_shells=int(stats_config.n_shells),
+                n_recon_windowed=int(n_recon_windowed),
+                noise_variance_for_noise=noise_variance_for_noise,
+                shell_indices_noise=shell_indices_noise,
+                exact_positions_device=exact_positions_device,
+                Ft_y_total=Ft_y,
+                Ft_ctf_total=Ft_ctf,
+                image_shape=image_shape,
+                recon_volume_shape=recon_volume_shape,
+                mstep_current_size=mstep_current_size,
+                mstep_max_r=mstep_max_r,
+                relion_x_half_recon_indices=relion_x_half_recon_indices,
+                max_adjoint_block_bytes=max_adjoint_block_bytes,
+                cuda_backproject=cuda_backproject,
+                n_optics_groups=int(stats_config.n_optics_groups),
+            )
+
+        class_fields = {}
+        if class_projectors is None:
+            (
+                Ft_y_total,
+                Ft_ctf_total,
+                wavg_triplet_pixels,
+                block_noise_shells,
+                a2_per_image,
+                xa_per_image,
+            ) = run_mstep(mstep_rows, n_live_rows_host, Ft_y_total, Ft_ctf_total)
         else:
-            chunk_projections = None
-
-            def block_projections(start, stop):
-                rows = mstep_rows.row_ids[start:stop]
-                return recon_proj[rows], recon_abs2[rows], mstep_rotations[rows]
-
-        (
-            Ft_y_total,
-            Ft_ctf_total,
-            wavg_triplet_pixels,
-            block_noise_shells,
-            a2_per_image,
-            xa_per_image,
-        ) = rp.run_resident_mstep_blocks(
-            block_projections,
-            chunk_projections=chunk_projections,
-            row_capacity=row_capacity,
-            n_valid_rows=n_live_rows_host,
-            mstep_block_rows=int(mstep_block_rows),
-            image_capacity=image_capacity,
-            row_image_local=mstep_rows.row_image_local,
-            kernel_row_image_ids=mstep_rows.kernel_row_image_ids,
-            row_posterior=mstep_rows.row_posterior,
-            row_ids=mstep_rows.row_ids,
-            recon=recon,
-            recon_pixel_indices=recon_window_indices,
-            translation_angles=translation_angles,
-            n_rect=int(n_rect),
-            n_shells=int(stats_config.n_shells),
-            n_recon_windowed=int(n_recon_windowed),
-            noise_variance_for_noise=noise_variance_for_noise,
-            shell_indices_noise=shell_indices_noise,
-            exact_positions_device=exact_positions_device,
-            Ft_y_total=Ft_y_total,
-            Ft_ctf_total=Ft_ctf_total,
-            image_shape=image_shape,
-            recon_volume_shape=recon_volume_shape,
-            mstep_current_size=mstep_current_size,
-            mstep_max_r=mstep_max_r,
-            relion_x_half_recon_indices=relion_x_half_recon_indices,
-            max_adjoint_block_bytes=max_adjoint_block_bytes,
-            cuda_backproject=cuda_backproject,
-            n_optics_groups=int(stats_config.n_optics_groups),
-        )
+            Ft_y_total, Ft_ctf_total = list(Ft_y_total), list(Ft_ctf_total)
+            class_terms = []
+            for k, (rows_k, n_live_k) in enumerate(class_mstep_rows):
+                Ft_y_total[k], Ft_ctf_total[k], *terms = run_mstep(rows_k, int(n_live_k), Ft_y_total[k], Ft_ctf_total[k])
+                class_terms.append(terms)
+            wavg_triplet_pixels, block_noise_shells, a2_per_image, xa_per_image, class_fields = _sum_class_mstep_terms(
+                class_terms,
+                class_scale_masks_rect,
+                class_layout=class_layout,
+                class_posterior=class_posterior,
+                row_start=int(chunk.row_start),
+                row_capacity=row_capacity,
+                n_fine_trans=int(n_fine_trans),
+            )
 
         mark("mstep", Ft_y_total, Ft_ctf_total, wavg_triplet_pixels, block_noise_shells)
 
@@ -2152,6 +2533,7 @@ def _start_resident_local_chunk(
             best_cell_index=jnp.asarray(best_cell_index, dtype=jnp.int64),
             best_fine_rot=best_global_row,
             optics_groups=recon.get("optics_groups"),
+            **class_fields,
         )
         stats = rp._accumulate_chunk_image_terms(
             stats, chunk_operands, chunk_tables, config=stats_config

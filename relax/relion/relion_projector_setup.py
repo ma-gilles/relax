@@ -482,3 +482,17 @@ def prepare_local_projector_slab(projector_half, *, path_label="local RELION pro
             f"{path_label} expected Projector::data shape (z, y, x_half), got {slab.shape}",
         )
     return slab
+
+
+def prepare_local_class_projector_slabs(projector_half, n_classes: int, *, path_label="local RELION projector path"):
+    """One (z, y, x_half) slab per class of a ``[K, z, y, x_half]`` projector (Class3D local search).
+
+    Shape normalization only, as :func:`prepare_local_projector_slab`; a host array is sliced before its
+    upload, so each class's slab reaches the device on its own.
+    """
+    n_classes = int(n_classes)
+    if np.ndim(projector_half) != 4 or int(np.shape(projector_half)[0]) != n_classes:
+        raise ValueError(
+            f"{path_label} expected {n_classes} class slabs (K, z, y, x_half), got {np.shape(projector_half)}",
+        )
+    return [prepare_local_projector_slab(projector_half[k], path_label=path_label) for k in range(n_classes)]

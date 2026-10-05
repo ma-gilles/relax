@@ -867,3 +867,45 @@ def test_rotation_posterior_is_accumulated_over_the_used_bins():
     compact = np.zeros(bins.size)
     np.add.at(compact, row_bins, mass)
     np.testing.assert_allclose(rlp._expand_posterior_bins(compact, bins, n_bins), dense, rtol=1e-12, atol=0)
+
+
+@requires_resident_gpu
+@pytest.mark.parametrize("zero_oversampling", [True, False], ids=["all-weights", "pruned"])
+def test_two_identical_classes_split_the_single_class_pass(monkeypatch, _resident_local_env, zero_oversampling):
+    """Two copies of one reference, no class prior: each class carries half of the K=1 pass.
+
+    RELION's Class3D local search scores every class at the particle's local orientations and
+    normalizes over classes and poses jointly, with no pdf_class in the weights; with identical
+    classes the joint evidence is the K=1 evidence plus log 2, each class's evidence and winner are
+    the K=1 ones, and the two BPrefs and the noise sums add up to the K=1 pass.
+    """
+
+    case = _case()
+    single = _run(case, monkeypatch=monkeypatch, zero_oversampling=zero_oversampling)
+    doubled = dict(
+        case,
+        volume=jnp.stack([case["volume"], case["volume"]]),
+        projector_half=jnp.stack([case["projector_half"], case["projector_half"]]),
+    )
+    joint = _run(doubled, monkeypatch=monkeypatch, zero_oversampling=zero_oversampling, n_classes=2).class_pass
+
+    def rel_l2(a, b):
+        a, b = np.asarray(a, dtype=np.complex128), np.asarray(b, dtype=np.complex128)
+        return float(np.linalg.norm(a - b) / np.linalg.norm(b))
+
+    k1_evidence = np.asarray(single.relion_stats.log_evidence_per_image, dtype=np.float64)
+    assert np.max(np.abs(np.asarray(joint.stats.log_evidence_per_image) - (k1_evidence + np.log(2.0)))) < 1e-4
+    for k in range(2):
+        assert np.max(np.abs(np.asarray(joint.class_log_evidence_per_image[k]) - k1_evidence)) < 1e-4
+        assert_matches(np.asarray(joint.per_class_hard_assignments[k]), np.asarray(single.hard_assignment))
+    if zero_oversampling:
+        # Every weight is kept, so each class's BPref is exactly half of the K=1 one up to float32 order.
+        assert rel_l2(np.asarray(joint.Ft_y[0]) + np.asarray(joint.Ft_y[1]), single.Ft_y) < 1e-5
+        assert rel_l2(np.asarray(joint.Ft_ctf[0]) + np.asarray(joint.Ft_ctf[1]), single.Ft_ctf) < 1e-5
+        assert rel_l2(joint.noise_stats.wsum_sigma2_noise, single.noise_stats.wsum_sigma2_noise) < 1e-5
+        mass = np.asarray(joint.class_reconstruction_posterior_sums)
+        assert np.max(np.abs(mass - N_IMAGES / 2.0)) < 1e-4
+    else:
+        # The pruned support is joint over the duplicated rows, so a cutoff tie may keep one copy of a
+        # pair; the totals still agree to the pruned mass.
+        assert rel_l2(np.asarray(joint.Ft_y[0]) + np.asarray(joint.Ft_y[1]), single.Ft_y) < 1e-2
