@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import ast
 import json
 import logging
 import shutil
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -259,41 +257,41 @@ def test_runtime_controls_preserve_legacy_saved_cap_and_missing_gradient_failure
         )
 
 
-def test_actual_command_keeps_admission_topology_and_option_installation_visible(dispatch_inputs):
+def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topology(dispatch_inputs, monkeypatch):
     args, particles, oracle = dispatch_inputs
     args.relion_scale_followers = None
     args.relion_follower_scale_replay = None
     args.seed = 9
     args.init_relion_iteration = 0
     args.max_iter = 1
-    source = Path(command_options.__file__).with_name("full_refinement.py")
-    main = next(node for node in ast.parse(source.read_text()).body if isinstance(node, ast.FunctionDef) and node.name == "main")
-    first = next(i for i, node in enumerate(main.body) if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "strict_relion_scale_context" for t in node.targets))
-    last = next(i for i, node in enumerate(main.body) if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "follower_topology" for t in node.targets))
     calls = []
+    topology = object()
 
     def prepare(followers, schedule, groups, **kwargs):
         calls.append((followers, schedule, groups, kwargs))
-        return object()
+        return topology
 
+    monkeypatch.setattr(relion_worker_scale, "prepare_follower_topology", prepare)
     groups = object()
-    scope = dict(args=args, command_options=command_options, prepare_follower_topology=prepare,
-                 group_particle_source=SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"),
-                 particle_groups=groups, logger=LOG)
-    exec(compile(ast.Module(body=main.body[first:last + 1], type_ignores=[]), str(source), "exec"), scope)
+    routing = command_options.admit_follower_routing(
+        args, SimpleNamespace(particles=particles, path=oracle / "run_it000_data.star"), groups, log=LOG
+    )
     _, schedule, routed_groups, kwargs = calls[0]
-    assert schedule is scope["dispatch"].schedule is scope["relion_dispatch_schedule"]
+    assert schedule is routing.schedule and schedule is not None and routing.topology is topology
     assert routed_groups is groups
     assert kwargs["oracle_dir"] == oracle.resolve()
     assert kwargs["strict_replay"] is True
     assert kwargs["random_seed"] == 9
     assert kwargs["max_iter"] == 1
-    args.max_significants = None
-    args.firstiter_cc = False
-    scope["optimiser_star"] = oracle / "run_optimiser.star"
-    first = next(i for i, node in enumerate(main.body) if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "runtime_controls" for t in node.targets))
-    last = next(i for i, node in enumerate(main.body) if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "relion_firstiter_ini_high_angstrom" for t in node.targets))
-    exec(compile(ast.Module(body=main.body[first:last + 1], type_ignores=[]), str(source), "exec"), scope)
-    assert args.max_significants == -1
-    assert scope["expected_accuracy_do_ctf_correction"] is None
-    assert scope["relion_firstiter_ini_high_angstrom"] is None
+    assert kwargs["group_source"] == oracle / "run_it000_data.star"
+
+
+def test_runtime_controls_of_a_saved_optimiser_without_caps_leave_the_cap_off(dispatch_inputs):
+    _, _, oracle = dispatch_inputs
+    controls = command_options.resolve_relion_runtime_controls(
+        oracle / "run_optimiser.star", max_significants=None, target_iteration=1,
+        firstiter_cc=False, n_classes=4, log=LOG,
+    )
+    assert controls.max_significants_resolution["active_max_significants"] == -1
+    assert controls.do_ctf_correction is None
+    assert controls.firstiter_ini_high_angstrom is None

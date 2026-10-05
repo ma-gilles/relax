@@ -56,7 +56,6 @@ from relax.refinement.result_files import (
 from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files
 from relax.relion import input_particle_table, input_poses, relion_metadata
 from relax.relion.input_particle_table import relion_class3d_seed_classes
-from relax.relion.relion_worker_scale import prepare_follower_topology
 
 logging.basicConfig(
     level=logging.INFO,
@@ -619,29 +618,11 @@ def main(command=None):
     )
     group_particle_source = prepared_particle_groups.source
     particle_groups = prepared_particle_groups.layout
-    strict_relion_scale_context = bool(
-        args.n_classes > 1
-        and (args.perturb_replay_relion_dir is not None or args.relion_init_dir is not None)
+    follower_routing = command_options.admit_follower_routing(
+        args, group_particle_source, particle_groups, log=logger
     )
-    dispatch = command_options.load_verified_dispatch_schedule(
-        args,
-        group_particle_source.particles,
-        strict_replay=strict_relion_scale_context,
-    )
-    relion_dispatch_schedule = dispatch.schedule
-    follower_topology = prepare_follower_topology(
-        args.relion_scale_followers,
-        relion_dispatch_schedule,
-        particle_groups,
-        strict_replay=strict_relion_scale_context,
-        replay_path=args.relion_follower_scale_replay,
-        oracle_dir=dispatch.oracle_dirs[0] if relion_dispatch_schedule is not None else None,
-        random_seed=args.seed,
-        init_relion_iteration=args.init_relion_iteration,
-        max_iter=args.max_iter,
-        group_source=group_particle_source.path,
-        logger=logger,
-    )
+    relion_dispatch_schedule = follower_routing.schedule
+    follower_topology = follower_routing.topology
 
     optimiser_star = _relion_optimiser_star_for_runtime(
         args,

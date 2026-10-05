@@ -1241,6 +1241,42 @@ def load_verified_dispatch_schedule(args, particles, *, strict_replay: bool) -> 
     return VerifiedDispatchSchedule(relion_dispatch_schedule, oracle_dirs)
 
 
+class FollowerRouting(NamedTuple):
+    """Which follower scores which particles: the admitted dispatch capture (or None) and the topology."""
+
+    schedule: "RelionDispatchSchedule | None"
+    topology: object
+
+
+def admit_follower_routing(args, group_source, particle_groups, *, log) -> FollowerRouting:
+    """Admit the followers' dispatch capture against its oracle and build their topology.
+
+    A capture is strict K>1 replay state only: it is admitted when the run replays or starts from a RELION
+    directory, and the topology then follows it. ``group_source`` is the particle table the groups came from.
+    """
+    from relax.relion.relion_worker_scale import prepare_follower_topology
+
+    strict_replay = bool(
+        args.n_classes > 1
+        and (args.perturb_replay_relion_dir is not None or args.relion_init_dir is not None)
+    )
+    dispatch = load_verified_dispatch_schedule(args, group_source.particles, strict_replay=strict_replay)
+    topology = prepare_follower_topology(
+        args.relion_scale_followers,
+        dispatch.schedule,
+        particle_groups,
+        strict_replay=strict_replay,
+        replay_path=args.relion_follower_scale_replay,
+        oracle_dir=dispatch.oracle_dirs[0] if dispatch.schedule is not None else None,
+        random_seed=args.seed,
+        init_relion_iteration=args.init_relion_iteration,
+        max_iter=args.max_iter,
+        group_source=group_source.path,
+        logger=log,
+    )
+    return FollowerRouting(schedule=dispatch.schedule, topology=topology)
+
+
 class RelionRuntimeControls(NamedTuple):
     """Resolved CLI/optimiser controls and significant-support provenance."""
 
