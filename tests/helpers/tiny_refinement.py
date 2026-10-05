@@ -385,3 +385,23 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     except _Reached:
         stages["pass2"] = recorded[-1]
     return stages
+
+
+def unconverged_accuracy(n_classes: int = 1):
+    """An ``ExpectedAccuracy`` at RELION's 999 sentinel, for stubs that must not converge on accuracy.
+
+    A failed estimate raises, so a stub returns this instead of raising.
+    """
+    import numpy as np
+
+    from relax.helpers.expected_accuracy import ExpectedAccuracy
+
+    return ExpectedAccuracy(
+        acc_rot=999.0,
+        acc_trans_angstrom=999.0,
+        acc_rot_per_class=np.full(n_classes, 999.0),
+        acc_trans_per_class_angstrom=np.full(n_classes, 999.0),
+        class_counts=np.zeros(n_classes, dtype=np.int64),
+        trial_local_indices=np.zeros(0, dtype=np.int64),
+        trial_particle_ids=np.zeros(0, dtype=np.int64),
+    )

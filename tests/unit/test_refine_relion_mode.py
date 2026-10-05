@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 from helpers.pass1_programs import clear_pass1_programs
+from helpers.tiny_refinement import unconverged_accuracy
 
 from relax.helpers import oversampling as oversampling_grids
 from relax.helpers.orientation_priors import (
@@ -8338,6 +8339,11 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
             np.ones(12 * (2 ** int(healpix_order)) ** 2, dtype=np.float64)
             / (12 * (2 ** int(healpix_order)) ** 2)
         ),
+    )
+
+    # The mock datasets carry no particle IDs for the accuracy trials.
+    monkeypatch.setattr(
+        expected_accuracy_module.Half1AccuracyInputs, "estimate", lambda self, **kwargs: unconverged_accuracy()
     )
 
     prev_eulers_h1 = np.zeros((half_datasets[0].n_units, 3), dtype=np.float32)

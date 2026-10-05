@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.tiny_refinement import record_calls, run_tiny_refinement
+from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
 from relax.helpers import expected_accuracy
 from relax.refinement import (
@@ -360,7 +360,7 @@ def test_refinement_hands_every_k1_site_the_kernel(monkeypatch, kernel):
 
     def estimate(self, **_kwargs):
         accuracy_kernels.append(self.gridding_kernel)
-        raise RuntimeError("accuracy stub")  # the controller records the failure and continues
+        return unconverged_accuracy()
 
     monkeypatch.setattr(expected_accuracy.Half1AccuracyInputs, "estimate", estimate)
 
