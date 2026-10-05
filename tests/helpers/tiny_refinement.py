@@ -236,7 +236,7 @@ def follower_scale_replay(n_iterations, n_followers=2):
 
 def run_tiny_refinement(
     monkeypatch, *, parity=None, n_classes=1, max_iter=2, engine_calls=None, schedule=None, init_volume=None,
-    final_after_max_iter=True, converge_after=None, **option_groups,
+    final_after_max_iter=True, converge_after=None, engine_noise_fields=None, **option_groups,
 ):
     """Run the controller for ``max_iter`` numbered iterations and (K=1) the final all-data pass.
 
@@ -245,7 +245,8 @@ def run_tiny_refinement(
     fake engine's call records. ``init_volume`` replaces the default reference (a Hermitian NumPy
     volume). ``final_after_max_iter=False`` stops K=1 at the iteration cap without a final pass.
     ``converge_after=n`` marks the state converged from the n-th convergence update on, so a K-class
-    run reaches its final pass.
+    run reaches its final pass. ``engine_noise_fields(n_images)`` adds ``NoiseStats`` fields to the
+    stand-in engine's statistics.
     """
 
     import relax.sampling as sampling
@@ -265,7 +266,7 @@ def run_tiny_refinement(
         side = round(size ** (1.0 / 3.0))
         return _hermitian_volume((side, side, side), seed=1000 + len(calls) * 7 + k)
 
-    install_fake_adaptive_engine(monkeypatch, calls, Ft_y=random_half_map)
+    install_fake_adaptive_engine(monkeypatch, calls, Ft_y=random_half_map, noise_fields=engine_noise_fields)
 
     def identity_rotation_grid(order, dtype=None, *, symmetry="C1"):
         n_rotations = iteration_loop.rotation_grid_size(order, symmetry=symmetry)

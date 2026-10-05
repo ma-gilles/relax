@@ -1,4 +1,3 @@
-import inspect
 import json
 import logging
 import shutil
@@ -12,13 +11,8 @@ from helpers.float_compare import assert_matches
 
 from relax.diagnostics.relion_replay import _apply_replay_correction_overrides
 from relax.helpers.types import NoiseStats
-from relax.refinement.finalization import run_final_all_data
 from relax.refinement.half_inputs import initialize_halfsets
-from relax.refinement.iteration_loop import refine_single_volume
 from relax.relion.relion_normalization import (
-    log_norm_scale_update,
-    numbered_norm_scale_update,
-    prepare_norm_scale_update,
     update_relion_norm_scale_corrections,
 )
 from relax.relion.relion_worker_scale import (
@@ -27,12 +21,9 @@ from relax.relion.relion_worker_scale import (
     RelionDispatchSchedule,
     RelionFollowerScaleReplay,
     RelionFollowerScaleSetup,
-    _dispatch_relion_follower_scale_for_final_all_data,
-    _dispatch_relion_follower_scale_for_numbered_iteration,
     _finalize_relion_follower_scale_replay_telemetry,
     _remap_relion_follower_runtime_inputs,
     _require_relion_follower_owners,
-    _update_relion_follower_corrections,
     _validate_coupled_relion_restart_state,
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
@@ -1040,84 +1031,164 @@ def test_final_dispatch_remaps_scoring_scale_norm_ratio_and_xa_aa_group_ids():
     assert stats_group_ids[1].size == 0
 
 
-def test_final_dispatch_remap_is_wired_before_final_scoring():
-    source = inspect.getsource(refine_single_volume)
-    dispatch_call = source.index("_dispatch_relion_follower_scale_for_final_all_data(")
-    final_scoring_start = source.index("if final_use_local:", dispatch_call)
-    assert dispatch_call < final_scoring_start
-
-    dispatch_source = inspect.getsource(_dispatch_relion_follower_scale_for_final_all_data)
-    assert "_require_relion_follower_owners(" in dispatch_source
-    assert 'stage="final all-data"' in dispatch_source
-    assert "_remap_relion_follower_runtime_inputs(" in dispatch_source
-
-
-def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries():
-    source = inspect.getsource(refine_single_volume)
-    dispatch_call = source.index("_dispatch_relion_follower_scale_for_numbered_iteration(")
-    replay_apply = source.index("replay_result = apply_iter_replay_overrides(")
-    scale_update = source.index("_update_relion_follower_corrections(")
-    post_mstep_append = source.index("history.relion_scale_follower_scales_numbered_post_mstep_trajectory.append(")
-    convergence_update = source.index("# --- Update convergence state ---")
-
-    assert dispatch_call < replay_apply
-    assert scale_update < post_mstep_append < convergence_update
-    update_source = inspect.getsource(_update_relion_follower_corrections)
-    assert "relion_follower_scale_state = update_relion_follower_scales(" in update_source
-    assert "follower_setup.follower_scale_state = relion_follower_scale_state" in update_source
-    assert ".copy()" in source[post_mstep_append:convergence_update]
-    # Both surviving result-dict sites source the follower-scale trajectory
-    # keys (including the two "numbered_*_trajectory" ones) from one shared
-    # RelionFollowerScaleSetup.to_result_dict() call.
-    assert source.count("follower_setup.to_result_dict(history)") == 1
-    assert "finalization.run_final_all_data(" in source
-    final_source = inspect.getsource(run_final_all_data)
-    assert final_source.count("follower_setup.to_result_dict(history)") == 1
-
-    dispatch_source = inspect.getsource(_dispatch_relion_follower_scale_for_numbered_iteration)
-    pre_score_append = dispatch_source.index("history.record_follower_scale_pre_score(")
-    assert ".copy()" in dispatch_source[pre_score_append:]
-
-    to_result_dict_source = inspect.getsource(RelionFollowerScaleSetup.to_result_dict)
-    assert '"relion_scale_follower_scales_numbered_pre_score_trajectory"' in to_result_dict_source
-    assert '"relion_scale_follower_scales_numbered_post_mstep_trajectory"' in to_result_dict_source
-
-
-def test_relion_norm_scale_updates_are_not_disabled_for_k_class():
-    source = inspect.getsource(refine_single_volume)
-    update_start = source.index("norm_scale_update = numbered_norm_scale_update(")
-    update_source = source[update_start : source.index("history.record_noise_and_tau2(", update_start)]
-    update_source += inspect.getsource(numbered_norm_scale_update)
-    update_source += inspect.getsource(prepare_norm_scale_update)
-    update_source += inspect.getsource(log_norm_scale_update).replace("update.", "norm_scale_update.")
-
-    assert "not k_class_enabled" not in update_source
-    assert "prepare_norm_scale_update(" in update_source
-    assert "update_relion_norm_scale_corrections(" in update_source
-    assert "int(half.dataset.n_units) == 0" in update_source
-    assert "np.zeros(int(half.dataset.n_units), dtype=np.int64)" in update_source
-    assert "log_norm_scale_update(norm_scale_update, log=logger)" in update_source
-    assert "_format_relion_correction_range(norm_scale_update.image_corrections_per_half[0])" in update_source
-    assert "_format_relion_correction_range(norm_scale_update.image_corrections_per_half[1])" in update_source
-    assert "np.min(np.asarray(norm_scale_update.image_corrections_per_half" not in update_source
-
-
-def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry():
-    source = inspect.getsource(_dispatch_relion_follower_scale_for_numbered_iteration)
-    replay_lookup = source.index(
-        "if numbered_relion_iteration in setup.follower_scale_replay_by_iteration:"
-    )
-    state_replace = source.index(
-        "setup.follower_scale_state = type(setup.follower_scale_state)(",
-        replay_lookup,
-    )
-    owner_remap = source.index("_remap_relion_follower_runtime_inputs(", state_replace)
-    pre_score_telemetry = source.index(
-        "history.record_follower_scale_pre_score(",
-        owner_remap,
+def _follower_statistics(n_images):
+    """Norm residuals and follower-by-group scale sums for the stand-in engine (two followers, two groups)."""
+    return dict(
+        wsum_norm_correction=np.ones(n_images),
+        wsum_scale_correction_xa=np.ones((2, 2)),
+        wsum_scale_correction_aa=np.full((2, 2), 2.0),
     )
 
-    assert replay_lookup < state_replace < owner_remap < pre_score_telemetry
+
+def _follower_run(monkeypatch, *, final, follower_replay=None):
+    """A two-iteration Class3D run under the strict follower-scale emulation; ``final`` converges it so the
+    final all-data pass runs (RELION iteration 3)."""
+    from dataclasses import replace
+
+    from helpers.tiny_refinement import follower_scale_replay, run_tiny_refinement
+
+    replay = replace(follower_scale_replay(3), relion_follower_scale_replay=follower_replay)
+    return run_tiny_refinement(
+        monkeypatch, n_classes=2, final_after_max_iter=False, converge_after=2 if final else None,
+        replay=replay, engine_noise_fields=_follower_statistics,
+    )
+
+
+def _follower_scale_replay(iteration=2):
+    return RelionFollowerScaleReplay(
+        relion_iterations=np.asarray([iteration], dtype=np.int64),
+        follower_scales=np.full((1, 2, 2), 1.5, dtype=np.float64),
+        **_REPLAY_KWARGS,
+        source="tiny follower replay",
+    )
+
+
+def test_final_dispatch_remap_is_wired_before_final_scoring(monkeypatch):
+    from helpers.tiny_refinement import CallTrace
+
+    from relax.refinement import finalization, iteration_loop
+    from relax.relion import relion_worker_scale
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_final_all_data", "dispatch")
+    trace.wrap(relion_worker_scale, "_require_relion_follower_owners", "owners")
+    trace.wrap(relion_worker_scale, "_remap_relion_follower_runtime_inputs", "remap")
+    trace.wrap(finalization, "run_final_all_data", "final")
+    _follower_run(monkeypatch, final=True)
+    final_calls = [call for call in trace.calls_seen if call.label in ("dispatch", "final") or "dispatch" in call.inside]
+    assert [call.label for call in final_calls] == ["dispatch", "owners", "remap", "final"]
+    assert final_calls[1].kwargs["stage"] == "final all-data" and final_calls[1].kwargs["relion_iteration"] == 3
+
+
+@pytest.mark.parametrize("final", [False, True])
+def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypatch, final):
+    """Pre-score telemetry is recorded at dispatch, before the replay overrides and scoring; the M-step
+    installs the updated state on the setup, then the post-M-step scales are recorded before convergence.
+    Both are copies; the result reports both trajectories through one to_result_dict call."""
+    from helpers.tiny_refinement import CallTrace
+
+    from relax.refinement import iteration_loop
+    from relax.relion import relion_worker_scale
+
+    seen = {}
+
+    def dispatched(call):
+        seen["setup"], seen["history"] = call.args[0], call.args[1]
+        scales = seen["setup"].follower_scale_state.scales
+        assert not np.shares_memory(seen["history"].relion_scale_follower_scales_numbered_pre_score_trajectory[-1], scales)
+
+    def post_mstep_count(expected):
+        def check(call):
+            trajectory = seen["history"].relion_scale_follower_scales_numbered_post_mstep_trajectory
+            assert len(trajectory) == expected(call)
+        return check
+
+    def installed(call):
+        (update,) = [c for c in trace.calls("update_scales") if c.inside == ("update",)][-1:]
+        assert seen["setup"].follower_scale_state is update.result
+
+    def recorded(call):
+        trajectory = seen["history"].relion_scale_follower_scales_numbered_post_mstep_trajectory
+        scales = seen["setup"].follower_scale_state.scales
+        np.testing.assert_array_equal(trajectory[-1], scales)
+        assert not np.shares_memory(trajectory[-1], scales)
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch", after=dispatched)
+    trace.wrap(iteration_loop, "apply_iter_replay_overrides", "replay")
+    trace.wrap(iteration_loop, "_update_relion_follower_corrections", "update",
+               before=post_mstep_count(lambda call: len(trace.calls("update")) - 1), after=installed)
+    trace.wrap(relion_worker_scale, "update_relion_follower_scales", "update_scales")
+    trace.wrap(iteration_loop, "update_iteration_convergence", "convergence",
+               before=post_mstep_count(lambda call: len(trace.calls("convergence"))))
+    trace.wrap(iteration_loop, "update_iteration_convergence", "convergence_recorded", before=recorded)
+    trace.wrap(RelionFollowerScaleSetup, "to_result_dict", "result")
+    result = _follower_run(monkeypatch, final=final)
+    numbered = ["dispatch", "replay", "update", "convergence"]
+    assert trace.labels(*numbered, "result") == numbered * 2 + ["result"]
+    for key in ("relion_scale_follower_scales_numbered_pre_score_trajectory",
+                "relion_scale_follower_scales_numbered_post_mstep_trajectory"):
+        assert result[key].shape == (2, 2, 2) and result[key].dtype == np.float64
+
+
+def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, caplog):
+    """Class3D without the follower emulation runs RELION's norm and scale updates and logs their ranges."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.refinement import iteration_loop
+    from relax.relion import relion_normalization
+    from relax.relion.relion_normalization import _format_relion_correction_range
+
+    def statistics(n_images):
+        return dict(wsum_norm_correction=np.ones(n_images), wsum_scale_correction_xa=np.ones(1),
+                    wsum_scale_correction_aa=np.full(1, 2.0))
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "numbered_norm_scale_update", "numbered")
+    trace.wrap(relion_normalization, "prepare_norm_scale_update", "prepare")
+    trace.wrap(relion_normalization, "update_relion_norm_scale_corrections", "update")
+    trace.wrap(iteration_loop, "log_norm_scale_update", "log")
+    with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):
+        run_tiny_refinement(monkeypatch, n_classes=2, final_after_max_iter=False, engine_noise_fields=statistics)
+    assert trace.labels() == ["numbered", "prepare", "update", "log"] * 2
+    for numbered in trace.calls("numbered"):
+        assert numbered.kwargs["do_scale_correction"] is True and numbered.result is not None
+    messages = [record.getMessage() for record in caplog.records if "RELION norm correction update" in record.getMessage()]
+    for message, numbered in zip(messages, trace.calls("numbered"), strict=True):
+        update = numbered.result
+        for half in range(2):
+            assert _format_relion_correction_range(update.image_corrections_per_half[half]) in message
+            assert _format_relion_correction_range(update.scale_corrections_per_half[half]) in message
+
+
+def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(monkeypatch):
+    from helpers.tiny_refinement import CallTrace
+
+    from relax.helpers.iteration_history import RefinementHistory
+    from relax.refinement import iteration_loop
+    from relax.relion import relion_worker_scale
+
+    replay = _follower_scale_replay(2)
+    seen = {}
+
+    def dispatch_starts(call):
+        seen["setup"] = call.args[0]
+
+    def remapped_state(call):
+        seen.setdefault("remapped", []).append(np.array(call.kwargs["state"].scales, copy=True))
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
+               before=dispatch_starts)
+    trace.wrap(relion_worker_scale, "_require_relion_follower_owners", "owners")
+    trace.wrap(relion_worker_scale, "_remap_relion_follower_runtime_inputs", "remap", before=remapped_state)
+    trace.wrap(RefinementHistory, "record_follower_scale_pre_score", "telemetry")
+    _follower_run(monkeypatch, final=False, follower_replay=replay)
+    in_dispatch = [call.label for call in trace.calls_seen if call.inside == ("dispatch",)]
+    # Iteration 1 has nothing to remap; iteration 2 replays the state, remaps, then records it.
+    assert in_dispatch == ["owners", "telemetry", "owners", "remap", "telemetry"]
+    np.testing.assert_array_equal(seen["remapped"][0], replay.follower_scales[0])
+    np.testing.assert_array_equal(trace.calls("telemetry")[1].args[1], replay.follower_scales[0])
 
 
 def test_strict_restart_requires_coupled_perturbation_and_model_scale_state():
@@ -1142,20 +1213,32 @@ def test_strict_restart_requires_coupled_perturbation_and_model_scale_state():
         )
 
 
-def test_sparse_follower_scale_replay_accounting_guards_every_result_return():
-    numbered_source = inspect.getsource(refine_single_volume)
-    assert "finalization.run_final_all_data(" in numbered_source
-    source = numbered_source + inspect.getsource(run_final_all_data)
+@pytest.mark.parametrize("final", [False, True])
+def test_sparse_follower_scale_replay_accounting_guards_every_result_return(monkeypatch, final):
+    """Each return path (no final pass, final all-data) validates the replay accounting once, against the
+    iterations the controller applied, and reports what that validation returned.
 
-    # One call immediately before each of the three result-return paths
-    # (local diagnostic, no-final, and final-all-data). Validation belongs to
-    # the replay owner, with applied iterations supplied by the controller.
-    assert source.count("_finalize_relion_follower_scale_replay_telemetry(") == 3
-    assert source.count(
-        "applied_iterations=history.relion_follower_scale_replay_applied_iterations"
-    ) == 3
-    assert source.count('"relion_follower_scale_replay_requested_iterations"') == 3
-    assert source.count('"relion_follower_scale_replay_applied_iterations"') == 3
+    The local-search diagnostic return has no CPU run.
+    """
+    from helpers.tiny_refinement import CallTrace
+
+    from relax.refinement import finalization, iteration_loop
+
+    replay = _follower_scale_replay(2)
+    seen = {}
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
+               before=lambda call: seen.setdefault("history", call.args[1]))
+    for module in (iteration_loop, finalization):
+        trace.wrap(module, "_finalize_relion_follower_scale_replay_telemetry", "accounting")
+    result = _follower_run(monkeypatch, final=final, follower_replay=replay)
+    (accounting,) = trace.calls("accounting")
+    assert accounting.args[0] is replay
+    assert accounting.kwargs["applied_iterations"] is seen["history"].relion_follower_scale_replay_applied_iterations
+    requested, applied = accounting.result
+    assert result["relion_follower_scale_replay_requested_iterations"] is requested
+    assert result["relion_follower_scale_replay_applied_iterations"] is applied
+    np.testing.assert_array_equal(applied, [2])
 
 
 def test_disabled_follower_replay_completion_does_not_consume_history_or_log():

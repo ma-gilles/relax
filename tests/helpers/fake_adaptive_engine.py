@@ -39,12 +39,14 @@ def adaptive_result(
     significant_counts=None,
     pose_assignments=None,
     best_pose_translations=None,
+    noise_fields=None,
 ):
     """A ``KClassEMResult`` for ``means`` (``[K, V]``) over the dataset's images.
 
     Defaults: zero ``Ft_y``, unit ``Ft_ctf``, every image in class 0 at fine pose 0 with
     posterior 1, identity best rotation with zero best translation, unit noise sums and one
     significant sample per image. Arguments override one field; ``Ft_y``/``Ft_ctf`` are ``[K, V]`` arrays or callables of ``(k, size)``.
+    ``noise_fields(n_images)`` returns further ``NoiseStats`` fields (norm and scale-correction sums).
     """
 
     n_classes = int(np.asarray(means).shape[0]) if np.ndim(means) >= 2 else 1
@@ -81,6 +83,7 @@ def adaptive_result(
             wsum_img_power=jnp.ones(n_shells, dtype=jnp.float32),
             wsum_sigma2_offset=sigma2_offset,
             sumw=float(sumw),
+            **({} if noise_fields is None else noise_fields(n_images)),
         )
 
     poses = (
