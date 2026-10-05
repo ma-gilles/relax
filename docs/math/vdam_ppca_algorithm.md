@@ -2392,3 +2392,56 @@ Gated step against the control, cell by cell (VDAM).
 Reading: the mean gauge improves the model mean in every cell and never hurts
 separation, but a correction driven by a noisy batch estimate degrades a model that is
 already at ground truth; the offset of 17.8 therefore stays a documented property.
+
+### 17.10 Scale-preserving loading shrinkage: tested, rejected; the scale drift costs no accuracy (October 5, 2026)
+
+VDAM's update `theta + step (gate x direction - (1 - gate) theta)` has the fixed point
+`theta_M / (1 + 1/rho)` per coefficient, so the decay term `-(1 - gate) theta` shrinks
+the loadings and the latents absorb the lost scale (17.6). Candidate (VDAM only, one
+scalar per update, relax commit 238616c on 0880fee, not merged): after the standard update,
+rescale the loadings so that their information-weighted norm `sum_f h_f |W_f|^2` (with `h`
+the batch metric's mean-mean diagonal) equals its value without the decay term. Jobs
+15004947 (H100), 15004948 (A100), evals 15004949; table `jobs/matrix2/sp_report.txt`
+in the run root of section 17.
+
+Candidate against the same-snapshot VDAM control, paired by seed (cryo-ET: seeds 14-18;
+bad seed = nn below .8 or median pose above 10 degrees).
+
+| Cell | map | nn | bad seeds | pose | loading-to-mean power | posterior-mean latent sd |
+| --- | --- | --- | --- | --- | --- | --- |
+| k3conf, 200 updates | -.031 | -.132 | 0 to 3 | +10.4 | .34 to 188 | 1.91 to .08 |
+| k3conf, 300 updates | -.056 | -.202 | 0 to 4 | +9.5 | .18 to 939 | 2.67 to .04 |
+| contrast, 200 updates | +.019 | +.134 | 3 to 0 | -0.5 | .28 to 195 | 1.99 to .08 |
+| SNR .008, 200 updates | -.013 | -.031 | 1 to 3 | +11.2 | .28 to 201 | 1.97 to .09 |
+| SNR .008, 300 updates | -.016 | -.053 | 0 to 5 | +15.4 | .04 to 194 | 4.19 to .10 |
+
+| SPA cell | state FSC | worst state | R^2 | GT power |
+| --- | --- | --- | --- | --- |
+| Consensus-mean start, noise .25, seeds 11-12 | +.0005 | +.001 | -.046 | +.002 |
+| Consensus-mean start, noise 1, seeds 11-12 | -.0015 | +.001 | -.056 | -.008 |
+| GT start, seeds 101-103 | +.012 | +.040 (3 of 3 up) | -.054 | +.004 |
+
+Why it fails: the scalar is 1.04-1.05 on every update and never settles, so the drift
+is reversed without bound (loadings grow, latent sd collapses to .04-.10, model-mean FSC
+against the GT average on shells 1-8 falls by .07-.20 in every cryo-ET cell). The decay
+term is the only part of the update that bounds `|W|`; cancelling its effect on scale
+leaves the `W`/`z` trade-off free in the other direction.
+
+Does the drift itself cost accuracy? VDAM controls at the end of the 200-update schedule
+against the end of the 300-update schedule (stage starts 1 / 91 / 166 / 241), same seeds
+14-18, paired (`analysis/drift_harm.py`, `jobs/matrix2/drift_harm.txt`; the two schedules
+differ in stage lengths as well as in count, and the 200 arms come from the gauge-control
+jobs 14974448 and 14981363, the 300 arms from 14973963, 14973966 and 14981363).
+
+| Cell | latent sd | map | nn | pose | bad seeds | k-means accuracy | R^2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| k3conf | 1.91 to 2.67 | +.011 (5 of 5 up) | -.001 | -.23 | 0 to 0 | +.021 | +.051 |
+| contrast | 1.99 to 2.73 | +.023 (5 of 5 up) | +.134 | -.70 | 3 to 1 | +.009 | +.108 |
+| SNR .008 | 1.97 to 4.19 | -.005 (2 of 5 up) | -.007 | -1.90 | 1 to 0 | -.048 | -.103 |
+
+Reading: on the gated metrics (map, nn, pose, bad seeds) accuracy does not get worse
+while the latent sd grows from 2 to 3-4; the one change that falls is SNR .008's latent
+geometry (k-means -.048 and R^2 -.103, 4 of 5 seeds down), which is where the drift is
+largest. The drift is therefore treated as a trade-off between the loadings and the
+latents that VDAM's decay term sets, not as an accuracy defect; the item is closed with
+no option added.
