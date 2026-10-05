@@ -1222,7 +1222,8 @@ scientific contract; runnable code alone does not establish recovery.
   and the controller's statistics do not depend on the tile size beyond float32
   reduction order (`test_controller_statistics_do_not_depend_on_the_tile_size`).
 - Adaptive oversampling, order 1 (October 3, 2026; `--oversampling 1`, opt-in;
-  oversampling 0 stays the default). This is RELION's two-pass
+  oversampling 0 stays the default; since October 4 it applies to the last
+  stage's updates only, see "Schedule" at the end of this item). This is RELION's two-pass
   scheme with per-image work, and replaces the tile-union design rejected above
   ([oversampled_stream](../../relax/ppca_refinement/oversampled_stream.py)).
   Pass 1 is the dense stream at the stage's order N over every rotation and
@@ -1377,6 +1378,54 @@ scientific contract; runnable code alone does not establish recovery.
   those where it wins (evidence, same tree: `jobs/local_maxsig_curve_a100_277749fe`,
   `jobs/local_os1_science_maxsig400_a100_277749fe`,
   `jobs/local_budget_cap_a100_a23f3234`, `jobs/local_budget_cap_a100_1f7f8747`).
+  Schedule (October 4, 2026). `--oversampling 1` runs the earlier stages dense and
+  adaptive oversampling in the last stage only
+  ([oversampled_update](../../relax/ppca_initial_model/iteration_loop.py): updates
+  from the last stage's first one). Early models give flat posteriors, where the
+  cap of 100 drops mass (cryo-ET k3conf kept mass of capped images at radius 4 /
+  8 / 16: 0.55 / 0.84 / 0.95) and the dense pass is cheap. Tested from a
+  consensus-mean start on the 20,000-particle continuous-shift fixtures (updates
+  111-200, seeds 11 and 12, HP3 1 px evaluator; state FSC / latent R^2 / pose
+  median in degrees, per seed):
+
+  | Noise | Dense throughout | Oversampling 1 throughout | Dense, then oversampling 1 in the last stage |
+  | --- | --- | --- | --- |
+  | 0.25 | 0.923, 0.926 / 0.263, 0.278 / 4.09, 4.08 | 0.953, 0.954 / 0.373, 0.364 / 3.83, 3.89 | 0.954, 0.954 / 0.451, 0.436 / 3.90, 3.89 |
+  | 1 | 0.822, 0.823 / 0.087, 0.085 / 5.49, 5.51 | 0.865, 0.865 / 0.267, 0.257 / 4.64, 4.61 | 0.868, 0.867 / 0.246, 0.258 / 4.58, 4.64 |
+
+  A third arm, built and not shipped, chose per stage from the first update's
+  capped mass (dense when more than 5% of a tile's images were capped and their
+  mean kept mass was below 0.9). It chose oversampling at both stages here and
+  matched "throughout", so its dense decisions have no scored comparison
+  (`jobs/local_schedule_consensus_a100_f68b866a`).
+
+  Cost, one H100 with nothing else on the device, arms back to back, second run
+  of each arm (Slurm 14992520, `jobs/slurm_laststage_walls_h100_6b9ab85b`). Seed
+  11, last stage = updates 161-199 at 2,000 images per update; seconds per update:
+
+  | Arm | Whole run (s) | Last stage, mean | Last stage, tile shape compiled before (median, 16 updates) | Last stage, new tile shape (median, 23 updates) | Samples per image (mean / median) | Images capped below 0.99 |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | noise 0.25 dense | 681 | 6.3 | 2.7 | 8.1 | | |
+  | noise 0.25 last-stage oversampling | 795 | 9.3 | 2.1 | 13.4 | 2.0 / 1 | 0% |
+  | noise 1 dense | 771 | 8.0 | 4.6 | 10.3 | | |
+  | noise 1 last-stage oversampling | 971 | 13.6 | 3.5 | 20.0 | 54.5 / 26 | 34% |
+
+  On the eleven-state continuous-shift GT start (60 updates of 300 images, one
+  tile shape) dense HP3 takes 0.76 s per update and oversampling 1 0.56 s (59
+  samples per image, 35% capped below 0.99). On EMPIAR-10499 at radius 32 (H100,
+  1,847 particles per update, ppcaet) VDAM takes 83.3 s dense (one run, Slurm
+  14957154) and 75.0-77.4 s with oversampling 1 (four runs, 14963878 and
+  14974315; 5.6-6.0 samples per image, 0.45-0.8% capped below 0.99); momentum SGD
+  78.3-83.8 s dense and 80.9 s with oversampling 1 (7.1-7.3 samples, 1.8-2.1%).
+
+  Once a tile shape is compiled, oversampling 1 is the cheaper update in every
+  row but SGD on 10499, where it is level. The single-particle runs are slower end
+  to end because 23 of the 39 last-stage updates compile a new tile shape, in
+  both arms: the half-set split leaves a remainder tile of a different size
+  nearly every update (47 sizes in the stage), the single-particle reader does
+  not pad tiles to fixed sizes as the tilt reader does, and a new shape costs
+  the oversampled programs more to compile (13-20 s against 8-10 s; 25-38 s
+  against the same on a cold compile cache). Open: pad single-particle tiles.
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials
