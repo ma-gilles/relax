@@ -242,8 +242,18 @@ def _coarse_gemm_projections(
     )
 
 
-def _coarse_capacity_texture(projector_half, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int):
-    """The half's persistent projector texture when the half-storage kernel serves it, else ``None``."""
+# Each class's projector texture, kept from pass to pass and refilled with the pass's projector: the compiled
+# coarse programs capture the texture's native handle, so a new texture per pass compiled every slot-block
+# program again (1,061 compiles, 220 s of a 200-iteration et09_box64 subtomogram run). Class index -> (texture,
+# a concrete result of its last use, which a refill or close must wait for).
+_CLASS_TEXTURES: dict = {}
+
+
+def _coarse_capacity_texture(
+    projector_half, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int, class_index: int
+):
+    """The class's persistent projector texture, refilled with ``projector_half``, when the half-storage kernel
+    serves it, else ``None``."""
 
     from relax.helpers.projection import relion_capacity_texture_serves
 
@@ -258,7 +268,23 @@ def _coarse_capacity_texture(projector_half, layout: CoarseScoreLayout, *, model
         return None
     from relax.cuda.kernels import RelionCapacityHalfTextureF32
 
-    return RelionCapacityHalfTextureF32(projector_half, int(model_max_r), padding_factor=int(padding_factor))
+    texture, completion = _CLASS_TEXTURES.pop(int(class_index), (None, None))
+    if (
+        texture is not None
+        and not texture.closed
+        and texture.shape == tuple(int(n) for n in projector_half.shape)
+        and texture.padding_factor == int(padding_factor)
+        and texture.device in projector_half.devices()
+    ):
+        texture.refresh_after(projector_half, completion, logical_r_max=int(model_max_r))
+    else:
+        if texture is not None:
+            texture.close_after(completion)
+        texture = RelionCapacityHalfTextureF32(
+            projector_half, int(model_max_r), padding_factor=int(padding_factor), reusable_staging=True
+        )
+    _CLASS_TEXTURES[int(class_index)] = (texture, jnp.zeros((), jnp.float32))
+    return texture
 
 
 def _score_window_projections(
@@ -350,11 +376,11 @@ def _images_gemm_error_bound(projected, unshifted, pixel_weight, initial_diff2):
 
 @partial(
     jax.jit,
-    static_argnames=("first", "count", "image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
+    static_argnames=("count", "image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
 )
 def _coarse_gemm_slot_block(
     total, error, projector_half, rotations, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices,
-    *, first, count, image_shape, current_size, model_max_r, padding_factor, texture,
+    first, *, count, image_shape, current_size, model_max_r, padding_factor, texture,
 ):
     """One batch's slots ``first:first + count`` in one program: each image's projections, its GEMM diff2,
     added in slot order, and the images' GEMM error bounds (:func:`_images_gemm_error_bound`) added to
@@ -366,9 +392,11 @@ def _coarse_gemm_slot_block(
     batch rather than once per image.
     """
 
-    block = slice(int(first), int(first) + int(count))
-    rotations, unshifted, pixel_weight = rotations[:, block], unshifted[:, block], pixel_weight[:, block]
-    initial_diff2, translation_angles = initial_diff2[:, block], translation_angles[:, block]
+    def block(x):  # slots first:first + count; ``first`` is traced, so one program serves every block of a batch
+        return jax.lax.dynamic_slice_in_dim(x, first, int(count), axis=1)
+
+    rotations, unshifted, pixel_weight = block(rotations), block(unshifted), block(pixel_weight)
+    initial_diff2, translation_angles = block(initial_diff2), block(translation_angles)
     n_particles, n_slots, n_rot = (int(n) for n in rotations.shape[:3])
     n_images = n_particles * n_slots
     projected = _score_window_projections(
@@ -843,8 +871,10 @@ def particle_coarse_supports(
     rotation_counts = [coarse_eulers_deg.shape[0] if rows is None else rows.size for rows in unit_rotations]
     # Each class's projector texture, staged once for the pass (the SPA coarse path's capacity texture).
     class_textures = [
-        _coarse_capacity_texture(class_projector, layout, model_max_r=int(model_max_r), padding_factor=int(padding_factor))
-        for class_projector in class_projectors
+        _coarse_capacity_texture(
+            class_projector, layout, model_max_r=int(model_max_r), padding_factor=int(padding_factor), class_index=k
+        )
+        for k, class_projector in enumerate(class_projectors)
     ]
     batches = _coarse_batches(
         rotation_counts,
@@ -1019,6 +1049,9 @@ def particle_coarse_supports(
         max_significants=0 if max_significants is None else max(int(max_significants), 0),
         adaptive_fraction=float(adaptive_fraction),
     )
+    # The slot-block program's traced slot offsets, on the device once per pass: a host scalar argument is a
+    # host-to-device copy on every call, and a late pass makes tens of thousands of calls.
+    slot_offsets = [jax.device_put(np.int32(first)) for first in range(slots)]
     for units, r_pad, p_pad, slot_block in batches:
         # Operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
         # last one, padded slots and particles carry zero weight (their diff2 adds zeros and is not read).
@@ -1072,7 +1105,7 @@ def particle_coarse_supports(
                     batch_initial,
                     batch_angles,
                     score_indices,
-                    first=int(first),
+                    slot_offsets[first],
                     count=int(min(slot_block, slots - first)),
                     image_shape=tuple(layout.image_shape),
                     current_size=int(layout.current_size),
@@ -1111,10 +1144,11 @@ def particle_coarse_supports(
             "smallest diff2; %d rotations scored again by the direct square (%.3g%% of the pass's samples)",
             n_particles, n_units, n_rows, 100.0 * n_rows * n_coarse_trans / max(n_scored, 1),
         )
-    for texture in class_textures:
-        if texture is not None:
-            # The flush read every batch's significance back, so the last projection has completed.
-            texture.close_after(last_total)
+    for k, texture in enumerate(class_textures):
+        if texture is not None and last_total is not None:
+            # The flush read every batch's significance back, so the last projection has completed; the
+            # texture stays for the next pass (_coarse_capacity_texture), which refills it after this result.
+            _CLASS_TEXTURES[k] = (texture, last_total)
     class_supports = [[supports[k][u] for u in range(n_units)] for k in range(n_classes)]
     return class_supports[0] if n_classes == 1 else class_supports, np.asarray(
         [pmax_by_unit[u] for u in range(n_units)], dtype=np.float64

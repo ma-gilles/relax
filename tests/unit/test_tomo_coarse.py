@@ -333,7 +333,9 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
         f = _gemm_fixture(np.random.default_rng(17))
         layout = f["layout"]
         texture = (
-            tomo_coarse._coarse_capacity_texture(f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"])
+            tomo_coarse._coarse_capacity_texture(
+                f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"], class_index=0
+            )
             if persistent_texture else None
         )
         assert (texture is not None) == persistent_texture
@@ -487,7 +489,9 @@ def test_packed_rows_are_the_complex_projections_split(gpu_device):
     with jax.default_device(gpu_device):
         f = _gemm_fixture(np.random.default_rng(23), n_images=1, n_rot=300)
         layout, rotations = f["layout"], jnp.asarray(f["rotations"])
-        texture = tomo_coarse._coarse_capacity_texture(f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"])
+        texture = tomo_coarse._coarse_capacity_texture(
+            f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"], class_index=0
+        )
         assert texture is not None
         packed = np.asarray(
             tomo_coarse._coarse_gemm_projections(
@@ -501,6 +505,36 @@ def test_packed_rows_are_the_complex_projections_split(gpu_device):
     assert packed.shape == (complex_rows.shape[0], 2 * complex_rows.shape[1])
     assert np.count_nonzero(complex_rows) > complex_rows.size // 2
     assert_matches(packed, np.concatenate([complex_rows.real, complex_rows.imag], axis=-1))
+
+
+@pytest.mark.gpu
+def test_the_class_texture_is_refilled_for_the_next_pass(gpu_device):
+    """A pass's class texture is the previous pass's owner refilled with the new projector (the compiled coarse
+    programs capture its handle), and it projects what a texture staged fresh from that projector projects."""
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        f = _gemm_fixture(np.random.default_rng(29), n_images=1, n_rot=200)
+        layout, rotations = f["layout"], jnp.asarray(f["rotations"])
+        kwargs = dict(model_max_r=f["max_r"], padding_factor=f["pad"])
+        first = tomo_coarse._coarse_capacity_texture(f["half"], layout, class_index=0, **kwargs)
+        used = tomo_coarse._coarse_gemm_projections(f["half"], rotations, layout, texture=first, **kwargs)
+        tomo_coarse._CLASS_TEXTURES[0] = (first, used)  # the pass's end (particle_coarse_supports)
+        changed = jnp.asarray(f["half"] * (0.5 + 0.25j))
+        second = tomo_coarse._coarse_capacity_texture(changed, layout, class_index=0, **kwargs)
+        assert second is first
+        refilled = np.asarray(tomo_coarse._coarse_gemm_projections(changed, rotations, layout, texture=second, **kwargs))
+        tomo_coarse._CLASS_TEXTURES.pop(0)[0].close_after(jnp.asarray(refilled))
+        fresh = tomo_coarse._coarse_capacity_texture(changed, layout, class_index=1, **kwargs)
+        expected = np.asarray(tomo_coarse._coarse_gemm_projections(changed, rotations, layout, texture=fresh, **kwargs))
+        tomo_coarse._CLASS_TEXTURES.pop(1)[0].close_after(jnp.asarray(expected))
+    assert fresh is not first
+    np.testing.assert_array_equal(refilled, expected)
 
 
 def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():
@@ -540,8 +574,8 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
     offsets = np.array([0, 2, 5, 6])
     n_images, n_rot, n_trans = int(offsets[-1]), 5, 7
 
-    def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, *, first, count, **kwargs):
-        block = slice(first, first + count)
+    def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, first, *, count, **kwargs):
+        block = slice(int(first), int(first) + count)
         rotations, weight, initial, angles = rotations[:, block], weight[:, block], initial[:, block], angles[:, block]
         # Each image adds its initial diff2, its rotation's sum, its angle and its weight; each class shifts its
         # diff2 by its own "projector" value times the rotation index, so the classes compete.
@@ -706,8 +740,8 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         per_rot = trace * jnp.float32(0.37) + class_value * jnp.sin(jnp.float32(40.0) * trace)
         return (initial[:, :, None, None] + per_rot[:, :, :, None] + angles[:, :, None, :, 0]).astype(jnp.float32)
 
-    def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, *, first, count, **kwargs):
-        block = slice(first, first + count)
+    def fake_block(total, error, class_value, rotations, unshifted, weight, initial, angles, score_indices, first, *, count, **kwargs):
+        block = slice(int(first), int(first) + count)
         image = exact_image_diff2(class_value, rotations[:, block], initial[:, block], angles[:, block])
         valid = (initial[:, block] > 0)[:, :, None, None]
         # The "GEMM": the exact values off by up to half the stated bound per image, in a fixed pattern.
