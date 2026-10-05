@@ -18,8 +18,8 @@ directory from `REFACTOR_SCRATCH` (a directory outside the checkout, under a sha
 - [ ] Inventory before removal. For every name you will move, rename or delete: all callers, and
       `grep -rn '<name>' tests/ scripts/ docs/` (monkeypatch strings, `inspect.getsource` pins, captured
       keyword arguments, function-local names that tests execute as text).
-- [ ] List the installs, history writes, release points (`del`, `x = None`) and log records in the stretch.
-      They stay in the controller, in their order (rules 10 to 12). If the slice needs one to move, it is a
+- [ ] List the installs, history writes and release points (`del`, `x = None`) in the stretch. They stay
+      in the controller, in their order (rules 10 and 11). Log records may move (rule 12). If the slice needs one to move, it is a
       different slice with its own commit and its own approval.
 
 ## 2. Coverage before the first edit
@@ -76,7 +76,7 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
 
 Stop and report instead of building when: the operation would need ten or more parameters, or gets under ten
 only through a record whose fields are related by timing alone; it would only rename its arguments; it would
-hide or move an install, a history write, a release or a log record; the measured cost exceeds the measured
+hide or move an install, a history write or a release; the measured cost exceeds the measured
 gain (two copies of a sequence for one flag); or the stretch has no coverage and you cannot add it. Then do
 the smaller change that still reads better, or none. A measured "not worth it" is a result.
 

@@ -45,8 +45,10 @@ measured unless marked as estimates. The longer record of principles and lessons
 11. **Release points do not move, even to release earlier.** Case: extracting the projector preparation
     would release the previous half-2 projector one build earlier, because a loop variable kept it alive.
     A weak-reference test pins it; the extraction was not done.
-12. **Log order is behaviour.** The fingerprint compares the ordered trace. Case: moving the direction
-    priors or the pass-1 size plan into the sampling step would have reordered their log records.
+12. **Log order is not behaviour.** A refactor may move, merge or reorder log records. The fingerprint
+    compares the ordered trace, so a log-only change shows there as trace differences: read them, confirm
+    that only log rows moved and that results, files and checkpoints show 0 differences, and say so in the
+    commit message. (Owner, 2026-10-05.)
 13. **A rule moved into a callee needs a test there.** Case: `plan_expectation_windows` now decides that
     shape classes are not remapped at run level; it got a unit test in the same commit.
 
