@@ -699,7 +699,7 @@ def _score_flat_rows(
 
 
 def score_tilt_image_rows(
-    project_slot,  # callable: (slot int32 [], image int32 [C_R] of each row) -> complex64 [C_R, N] its projections
+    slot_projections,  # complex64 [S * C_R, N] each (slot, row)'s projection at slot * C_R + row
     slot_image_ids,  # int32 [S, C_R] chunk-local image of each row per image slot, -1 past its particle's images
     row_unit_local,  # int32 [C_R] chunk-local particle of each row, sorted
     row_log_prior,  # real [C_R]
@@ -720,7 +720,7 @@ def score_tilt_image_rows(
 
     The posterior segment is the particle (docs/development/resident_segments.md). Every
     hypothesis row is scored against each of its particle's images, visited in slot order,
-    with that image's projection ``Aproj_i R`` (``project_slot``) and its own phases, and the
+    with that image's projection ``Aproj_i R`` (``slot_projections``) and its own phases, and the
     image's diff2 is added to the row's float32 running sum: RELION initialises the weights
     to zero and every image's kernel adds its ``diff2 + initial`` (acc_ml_optimiser_impl.h:1437-1438
     and the ``img_id`` loop from :1490; diff2.cuh:323-328). The minimum, weights and
@@ -730,7 +730,7 @@ def score_tilt_image_rows(
     """
 
     raw_sum = tilt_image_rows_raw_diff2(
-        project_slot,
+        slot_projections,
         slot_image_ids,
         chunk_image,
         chunk_corr,
@@ -753,8 +753,9 @@ def score_tilt_image_rows(
     )
 
 
+@jax.jit
 def tilt_image_rows_raw_diff2(
-    project_slot,  # callable: (slot int32 [], image int32 [C_R]) -> complex64 [C_R, N], slot local to slot_image_ids
+    slot_projections,  # complex64 [S_b * C_R, N] the visited slots' projections, slot-major (slot local to slot_image_ids)
     slot_image_ids,  # int32 [S_b, C_R] the visited slots' chunk-local images of each row
     chunk_image,
     chunk_corr,
@@ -768,15 +769,21 @@ def tilt_image_rows_raw_diff2(
     logical_current_size,
     running=None,  # float32 [C_R, T] the earlier slots' sum, or None (zeros)
 ):
-    """The rows' float32 diff2 summed over the visited slots, in slot order, added to ``running``."""
+    """The rows' float32 diff2 summed over the visited slots, in slot order, added to ``running``.
+
+    One program per shape: every chunk and slot block of a pass reuses it (an eager scan over a
+    per-call closure compiled again on every call).
+    """
 
     slot_image_ids = jnp.asarray(slot_image_ids, dtype=jnp.int32)
+    row_capacity = int(slot_image_ids.shape[1])
+    chunk_live = _translation_chunk_live(candidate_mask, row_is_valid)
 
     def add_slot(running, slot_and_images):
         slot, image_ids = slot_and_images
         kernel_ids = jnp.where(row_is_valid & (image_ids >= 0), image_ids, jnp.int32(-1))
         raw = _flat_rows_kernel_diff2(
-            project_slot(slot, jnp.where(image_ids >= 0, image_ids, jnp.int32(0))),
+            jax.lax.dynamic_slice_in_dim(slot_projections, slot * row_capacity, row_capacity, axis=0),
             kernel_ids,
             chunk_image,
             chunk_corr,
@@ -789,10 +796,8 @@ def tilt_image_rows_raw_diff2(
         )
         return jnp.where((kernel_ids >= 0)[:, None], running + raw, running), None
 
-    chunk_live = _translation_chunk_live(candidate_mask, row_is_valid)
-
     if running is None:
-        running = jnp.zeros((slot_image_ids.shape[1], int(image_translation_angles.shape[1])), dtype=jnp.float32)
+        running = jnp.zeros((row_capacity, int(image_translation_angles.shape[1])), dtype=jnp.float32)
     slots = jnp.arange(slot_image_ids.shape[0], dtype=jnp.int32)
     raw_sum, _ = jax.lax.scan(add_slot, running, (slots, slot_image_ids))
     return raw_sum

@@ -402,9 +402,7 @@ def run_tilt_chunk(
         for start, stop in slot_blocks:
             block_score_cache = score_cache if whole is not None else project_block(start, stop)[0]
             raw_sum = tilt_image_rows_raw_diff2(
-                lambda slot, _ids, cache=block_score_cache: jax.lax.dynamic_slice_in_dim(
-                    cache, slot * row_capacity, row_capacity, axis=0
-                ),
+                block_score_cache,
                 slot_image_ids[start:stop],
                 operands.score_input,
                 operands.corr_img_score,
@@ -461,7 +459,7 @@ def run_tilt_chunk(
     # has thousands, and the Wavg rectangle is [images, T, P_rect] (gathered per row, [rows, T, P_rect]).
     # Dropped translations carry exactly zero posterior.
     block_rows = int(spec.mstep_block_rows)
-    host_posterior = np.asarray(row_posterior[:n_valid_rows])
+    host_posterior = np.asarray(row_posterior)[:n_valid_rows]  # sliced on the host: no program per row count
     # Rows without posterior mass (RELION's non-significant samples) add exact zeros; the M-step
     # blocks visit only the rows with mass (row_has_mass), gathered to the front of each slot's order.
     row_has_mass = np.any(host_posterior > 0.0, axis=1)

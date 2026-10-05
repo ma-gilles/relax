@@ -28,7 +28,7 @@ def _fake_kernel(reference, row_image_ids, image, angles, weight, full_to_compac
     return jnp.where((row_image_ids >= 0)[:, None], out, jnp.inf).astype(jnp.float32)
 
 
-def test_rows_sum_their_particles_images_in_order(monkeypatch):
+def test_rows_sum_their_particles_images_in_order(monkeypatch, request):
     monkeypatch.setattr(em_cuda_kernels, "relion_fine_diff2_fused_translate_runtime_flat_rows_f32", _fake_kernel)
     rng = np.random.default_rng(7)
     unit_offsets = np.array([0, 3, 5, 9])  # three particles with 3, 2 and 4 tilt images
@@ -50,8 +50,12 @@ def test_rows_sum_their_particles_images_in_order(monkeypatch):
     def project_slot(slot, image_ids):  # each image sees the row's reference through its own matrix
         return jnp.asarray(base) + image_ids.astype(jnp.complex64)[:, None]
 
+    # The jitted scan traces the stand-in kernel: no program traced with the other kernel survives the test.
+    resident_scoring.tilt_image_rows_raw_diff2.clear_cache()
+    request.addfinalizer(resident_scoring.tilt_image_rows_raw_diff2.clear_cache)
+    slot_projections = jnp.concatenate([project_slot(s, jnp.asarray(np.maximum(ids, 0))) for s, ids in enumerate(slots)])
     out = resident_scoring.score_tilt_image_rows(
-        project_slot,
+        slot_projections,
         slots,
         row_unit,
         row_log_prior,
