@@ -2108,3 +2108,216 @@ nothing was non-finite. The update-199 stop above is the same class. The 32-eps 
 is unchanged on the support. Tests: `tests/unit/ppca_initial_model/test_coupled_direction.py`
 (that row outside the support passes, inside it still stops the update) and
 `test_metric_is_positive_semidefinite_on_every_row` in `test_tomo_ppca.py`.
+
+### 17.1 Momentum SGD against VDAM: scope, sources and definitions (October 3-4, 2026)
+
+Decision: VDAM stays the default for cryo-ET (200 updates) and for SPA; momentum SGD
+stays opt-in with `sgd_learning_rate` 0.4 unchanged. No candidate below is on main
+except where a commit is named. Evidence (outputs, arm lists, tables, analysis scripts):
+`em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_vdamdrift_20261003`, under
+`jobs/matrix` (learning-rate matrix) and `jobs/matrix2` (everything after it;
+`NOTES.txt`, `pooled_cells.txt`, `parta_table.txt`, `long_gauge_report.txt`,
+`gauge2_report.txt`, `gauge3_report.txt`, `mean_latent.txt`, and the candidates'
+code as `patches/gauge_candidates_0880fee_to_8d9354f.patch`).
+
+| Item | Value |
+| --- | --- |
+| Source | relax 0880fee for training; candidates are wip commits on it. The longer-schedule and gauge runs include the support-only solve (cherry-pick of main 16ca4e5); two VDAM control arms of job 14970637 stopped on the earlier metric check and were rerun with it (job 14973904) |
+| Cryo-ET cells | k3conf (`cryoet_ppca_k3conf_box64_20261002`), contrast sd .3 (`..._contrast30_box64_20261003`), SNR .008 and SNR .0005 (`..._snr{0.008,0.0005}_box64_20261003`); 399 subtomograms, q = 2, random start, default stages |
+| SPA cells | eleven-state GT start (100k fixture, 150 updates of 300 particles); eleven-state 20k at noise .25 / 1 / 4 (`ppca_elevenstate20k_noise*_20261003`), q = 10 |
+| Cryo-ET metrics | masked state FSC-AUC ("map"), state specificity, latent nearest-GT-centroid accuracy ("nn"), k-means accuracy, between-state R^2, pose median error |
+| SPA metrics | state FSC shells 1-15 (mean and worst state), latent R^2, pose median, GT heterogeneity power captured |
+| Bad seed | nn below .8 or pose median above 10 degrees |
+| Loading-power flag | largest loading power after the last stage starts divided by its value at that update, above 10 |
+| Pairing | differences are per seed against the named control, then averaged |
+
+Every rule below was fixed before its results. One seed is not a conclusion; seed
+counts are in each table.
+
+### 17.2 Learning-rate matrix (jobs 14947237, 14947238, 14947401; 114 arms, none failed)
+
+Cryo-ET, seed means: map / specificity / nn / k-means / R^2 / pose (degrees).
+
+| Cell | lr .8 | lr 1.6 | lr 2.4 | lr 3.2 | lr 4.8 | VDAM |
+| --- | --- | --- | --- | --- | --- | --- |
+| k3conf random, seeds 11-13 | .768 / .106 / .850 / .819 / .69 / 4.4 | .771 / .142 / .967 / .962 / .77 / 4.5 | .765 / .131 / .940 / .940 / .67 / 4.9 | .755 / .125 / .931 / .808 / .58 / 5.2 | .734 / .084 / .891 / .708 / .56 / 8.9 | .720 / .126 / .910 / .905 / .64 / 4.9 |
+| contrast random, seeds 11-12 | .785 / .113 / .907 / .817 / .55 / 4.8 | .775 / .109 / .911 / .766 / .55 / 5.0 | .768 / .105 / .881 / .640 / .48 / 5.7 | .746 / .090 / .743 / .623 / .33 / 22.9 | .754 / .099 / .858 / .576 / .40 / 5.6 | .729 / .113 / .861 / .593 / .48 / 5.3 |
+| SNR .008 random, seeds 11-12 | .869 / .109 / .995 / .994 / .95 / 5.3 | .845 / .102 / .877 / .882 / .83 / 7.4 | .880 / .128 / .982 / .982 / .90 / 7.6 | .882 / .130 / .982 / .980 / .89 / 7.5 | .879 / .093 / .976 / .975 / .88 / 9.5 | .830 / .141 / .985 / .860 / .77 / 6.0 |
+| k3conf GT start, one seed | .881 / .302 / .992 / .992 / .89 / 3.7 | .817 / .244 / .990 / .990 / .87 / 3.6 | .794 / .225 / .990 / .990 / .87 / 3.6 | .785 / .220 / .990 / .990 / .86 / 3.6 | .787 / .224 / .985 / .982 / .84 / 3.6 | .750 / .211 / .977 / .977 / .82 / 3.6 |
+| SNR .0005 random, seeds 11-12 | void | void | void | void | void | void |
+
+SPA eleven-state GT start, seeds 101-103: state FSC / worst state / R^2 / pose.
+
+| lr .8 | lr 1.6 | lr 2.4 | lr 3.2 | lr 4.8 | VDAM |
+| --- | --- | --- | --- | --- | --- |
+| .973 / .924 / .40 / 3.8 | .960 / .886 / .40 / 3.9 | .948 / .853 / .40 / 3.9 | .935 / .820 / .40 / 4.0 | .905 / .748 / .38 / 4.1 | .956 / .872 / .56 / 3.8 |
+
+| Row | Reading |
+| --- | --- |
+| Rates above 1.6 | Worse on the GT holds, contrast and k3conf (k-means, R^2, pose); no evidence for going higher. |
+| GT starts | The lower rate holds ground truth better, monotonically; VDAM has the higher latent R^2 on SPA (.56 against .40). |
+| SNR .0005 (void) | Unsolvable at this budget: every arm at chance (map .12-.14, pose 118-130 degrees, nn .34-.40). |
+| SPA 20k random start, noise .25 / 1 / 4 (void) | No optimizer converges from a fully random eleven-state start in 200 updates: state FSC .19-.29, pose 108-133 degrees in 35 of 36 arms; one VDAM seed at noise .25 reaches 53 degrees (state FSC .40). |
+| Loading-power flag | Fires on all 11 VDAM cryo-ET random-start arms (13-63) and on no SGD arm (at most 4.8); it is the overshoot at the radius 16 to 31 jump described above, with nothing non-finite. |
+
+### 17.3 Seed study and pooled counts (jobs 14963637-39, 14970636-37, 14973904)
+
+Seeds 11-13 were easy: on seeds 14-18, with the same code and configuration, every
+SGD rate separates states worse on k3conf and contrast. Pooled over seeds 11-18,
+200 updates: map / nn mean (minimum) / pose median, and bad seeds.
+
+| Cell | SGD .8 | SGD 1.2 (seeds 14-18) | SGD 1.6 | VDAM |
+| --- | --- | --- | --- | --- |
+| k3conf | .761 / .732 (.42) / 4.3; 5 of 8 | .758 / .734 (.59) / 4.3; 3 of 5 | .764 / .919 (.72) / 4.5; 1 of 8 | .719 / .896 (.86) / 5.4; 0 of 8 |
+| contrast | .772 / .739 (.50) / 4.8; 5 of 7 | .751 / .734 (.53) / 5.1; 3 of 5 | .768 / .803 (.54) / 4.8; 3 of 7 | .717 / .784 (.62) / 5.6; 4 of 7 |
+| SNR .008 | .865 / .989 (.98) / 5.4; 0 of 7 | .866 / .988 (.98) / 5.8; 1 of 5 | .863 / .909 (.67) / 7.6; 3 of 7 | .843 / .967 (.92) / 6.5; 0 of 7 |
+
+| Comparison, paired by seed | Reading |
+| --- | --- |
+| lr .8 against 1.6 | nn lower by .187 on k3conf (1.6 better on 7 of 8 seeds) and .064 on contrast; nn higher by .080 on SNR .008, where 1.6 loses states or poses on 2-3 of 7 seeds. No constant rate is stable in all three cells. |
+| VDAM against SGD 1.6 | VDAM's map is lower by .045 (k3conf, 8 of 8 seeds), .052 (contrast, 7 of 7) and .019 (SNR .008); its bad seeds are no more frequent except on contrast (4 against 3) and are milder (nn .62-.79 against .54-.80, no pose loss). |
+
+### 17.4 Rate decaying over the last stage: tested, not adopted
+
+Candidate: `sgd_learning_rate` 1.6 decaying geometrically to .4 over updates 161-200
+(seeds 14-18, three cells, and the k3conf GT start).
+
+| Pre-stated rule | Result |
+| --- | --- |
+| k3conf nn at least .96 with no slow seed | No: .72-.98, one slow seed (the constant rate does the same on these seeds). |
+| k3conf GT-start map at least .86 | .8598 (lr 1.6 .817, lr .8 .881). |
+| SNR .008 pose at most 6 degrees | No: 7.6, identical to lr 1.6 seed by seed. |
+
+Paired against constant 1.6: map +.009 on k3conf (5 of 5 seeds), +.004 on contrast,
+-.004 on SNR .008; nn unchanged. Reading: separation and poses are decided before
+update 161, so a last-stage decay only polishes the map.
+
+### 17.5 When separation appears (k3conf, lr .8 and 1.6, seeds 11-18)
+
+Pose and latent pass at saved checkpoints (64 passes, evaluations 14970977-84);
+means over the eight seeds, chance nn = .33.
+
+| | update 60 | 110 | 130 | 140 | 160 | 200 |
+| --- | --- | --- | --- | --- | --- | --- |
+| lr .8: nn | .37 | .36 | | | .60 | .73 |
+| lr .8: pose median | 122 | 104 | | | 4.4 | 4.3 |
+| lr 1.6: nn | .36 | .37 | .52 | .62 | .84 | .92 |
+| lr 1.6: pose median | 122 | 28 | 4.5 | 4.5 | 4.5 | 4.5 |
+
+| Finding | Number |
+| --- | --- |
+| No separation and, at lr .8, no poses in the radius-4 and radius-8 stages | nn .33-.40, R^2 at most .02 through update 110 |
+| nn at update 160 predicts the final nn | rank correlation .95; one threshold separates the 6 bad arms from the 10 good ones |
+| nn at updates 60 and 110 does not | rank correlation .45 and -.14 |
+| Best logged predictor | loading-to-mean power at updates 135-160 (rank correlation .58-.59 on k3conf, .49-.51 on contrast) |
+
+Reading: a bad seed is a slow seed. It locks its poses late, has less of the
+radius-16 stage left to grow its loadings, and is still improving at update 200.
+
+### 17.6 Longer schedule (300 updates, stage starts 1 / 91 / 166 / 241; seeds 14-18)
+
+Jobs 14973963, 14973966, 14981363. Rule: SGD has at most 1 bad seed of 5 per cell and
+no more than VDAM. Bad seeds / map / nn (minimum) / pose median, mean over seeds.
+
+| Cell | SGD 1.6, 200 | SGD 1.6, 300 | VDAM, 200 | VDAM, 300 | Rule |
+| --- | --- | --- | --- | --- | --- |
+| k3conf | 1 / .760 / .890 (.72) / 4.7 | 0 / .761 / .941 (.87) / 5.7 | 0 / .718 / .888 (.86) / 5.8 | 0 / .727 / .895 (.87) / 5.5 | met |
+| contrast | 3 / .766 / .760 (.54) / 4.8 | 0 / .770 / .888 (.85) / 5.0 | 4 / .712 / .753 (.62) / 6.2 | 1 / .728 / .839 (.78) / 5.7 | met |
+| SNR .008 | 2 / .869 / .922 (.67) / 13.6 | 3 / .869 / .974 (.97) / 9.6 | 1 / .848 / .965 (.94) / 7.9 | 0 / .843 / .958 (.92) / 6.0 | not met |
+
+| Question | Reading |
+| --- | --- |
+| Does a longer schedule fix SGD's slow seeds? | Yes at the default SNR (every seed bad at 200 updates is good at 300); at SNR .008 states are found on every seed but the pose median sits at 8-11 degrees against VDAM's 5-8. |
+| Does it make VDAM as sharp as SGD? | No: its map gains .009 (k3conf) and .016 (contrast), about a fifth of the gap, and the loading-power ratio barely moves (58 to 47, 35 to 35). |
+| What else changes for VDAM? | Its scale drifts: loading-to-mean power .45 to .18 (k3conf), .29 to .13 (contrast), .28 to .04 (SNR .008), with the posterior-mean latent sd rising from 1.7-2.0 to 2.7-4.2 (prior 1). |
+
+### 17.7 SGD against VDAM: summary and recommendation
+
+| Case | SGD lr 1.6 | VDAM |
+| --- | --- | --- |
+| Cryo-ET map, every solvable cell, 200 or 300 updates | higher by .02-.05 on nearly every seed | |
+| Cryo-ET seed reliability, 200 updates | 1 of 8, 3 of 7, 3 of 7 bad seeds, some severe | 0 of 8, 4 of 7, 0 of 7, all mild |
+| Cryo-ET poses at SNR .008 | 8-11 degrees at 300 updates, loss on 2 of 7 seeds at 200 | 5-8 degrees |
+| SPA, GT start | state FSC .960, R^2 .40 | state FSC .956, R^2 .56 |
+| SPA, consensus-mean start (job 14963640), state FSC at noise .25 / 1 | .873 / .830 (rising with the rate, still rising at 1.6) | .963 / .895 |
+| SPA, fully random start | no convergence at any rate | the only arm that starts to converge |
+| Real data | section 16.11 (EMPIAR-10499, SGD lr 1.6 against VDAM on the same seeds) | |
+
+Recommendation: VDAM is the default for both modalities. SGD has the better maps
+when it works but is not robust across seeds at 200 updates or in poses at high SNR,
+and no single rate serves the default-SNR and high-SNR cells. The consensus-mean start
+(mean = average of the GT states, random loadings, entered at update 111) converges at
+noise .25 and 1 for both optimizers and at noise 4 for neither (poses 118-123 degrees).
+
+### 17.8 The mean posterior latent is not zero: report mu + W zbar
+
+For each particle the posterior latent mean is `W^H A^H C^-1 (y - A mu)`, with `C` the
+marginal covariance, so the sum of the posterior means over particles equals `W^H g`
+with `g` the gradient of the marginal log-likelihood with respect to the mean. It is
+zero only at a stationary mean. Neither optimizer reaches one: momentum SGD moves the
+mean a small fraction of a Newton step per update, and VDAM's update `theta + step
+(gate x direction - (1 - gate) theta)` holds the mean away from its stationary point
+wherever the gate is below one.
+
+Norm of the mean posterior latent (prior sd 1), and the power of `W zbar` relative to
+the model mean's power over all shells (seeds 11-18, 200 updates;
+`analysis/mean_latent.py`).
+
+| Cell | SGD lr .8 | SGD lr 1.6 | VDAM |
+| --- | --- | --- | --- |
+| k3conf | 1.21; .75 | .56; .18 | 1.12; .37 |
+| contrast | 1.06; .66 | .47; .14 | 2.14; .80 |
+| SNR .008 | .99; .52 | .46; .11 | .55; .06 |
+
+| Property | Value |
+| --- | --- |
+| Size against its sampling error | 5-15 standard errors in almost every run; the direction differs by seed |
+| VDAM on the SPA consensus-mean start | .73 (noise .25) and .53 (noise 1); .14 at the GT start |
+| Tracks bad seeds? | No consistent sign (correlation with final nn between -.92 and +.68 across cells) |
+| Effect on the model mean, k3conf seeds 14-18, masked FSC against the GT average, shells 1-8 | SGD 1.6: .934 for `mu`, .990 for `mu + W zbar`; VDAM: .954 and .986 |
+
+Consequence: the population-average map of a trained model is `mu + W zbar`, with
+`zbar` the mean posterior latent, not `mu` alone; registration and average-map scores
+use it (`analysis/mean_vs_gt.py`; the same on real data in section 16.11).
+
+### 17.9 Gauge steps: three candidates, none adopted
+
+The transformation `mu -> mu + W c`, `z -> z - c` leaves the data term unchanged and
+`c = zbar` maximises the prior term; likewise `W -> W S^(1/2)`, `z -> S^(-1/2) z` for
+the latent scale. Rule 1 (mean gauge against a same-snapshot control, paired by seed,
+every point in every cell): cryo-ET map change at least -.005, nn change at least -.02
+with no more bad seeds, pose change at most +.3 degrees, model-mean FSC against the GT
+average on shells 1-8 at least -.002, final mean-latent norm below .2; SPA state FSC at
+least -.005, worst state at least -.01, R^2 at least -.02, pose at most +.3 degrees, GT
+power at least -.02, mean-latent norm below .2.
+
+| Candidate | Cells run | Outcome | Misses |
+| --- | --- | --- | --- |
+| Full step every update, momentum SGD lr 1.6 (job 14974448) | k3conf | closed | map -.022, nn -.120 (bad seeds 1 to 2), pose +4.9 degrees |
+| Full step every update, VDAM (14974448, 14981363, 14981364) | all six | not adopted | SNR .008 map -.010; SPA GT-start worst state -.015 |
+| Mean plus scale gauge, VDAM, against the mean gauge alone (14981363, 14981364) | five | closed in this form | SNR .008 pose +10.4 degrees and bad seeds 0 to 3; SPA consensus noise .25 state FSC -.015, GT power -.083; noise 1 state FSC -.007; GT start GT power -.030 |
+| Step scaled by the noise-subtracted gain `(1 - v / |c|^2)_+`, `v` the sampling variance of the batch mean latent, VDAM (14992588, 14992589) | all six | closed (one miss) | SPA GT-start worst state -.0115 against the limit -.010, 3 of 3 seeds |
+
+Gated step against the control, cell by cell (VDAM).
+
+| Cell | map or state FSC | worst state | nn or R^2; bad seeds | pose | mean FSC shells 1-8, or GT power | final mean latent |
+| --- | --- | --- | --- | --- | --- | --- |
+| k3conf, seeds 14-18 | +.004 | | +.012; 0 to 0 | -.66 | +.036 (.954 to .990) | .12 |
+| contrast, seeds 14-18 | +.025 | | +.148; 3 to 0 | -1.37 | +.053 (.937 to .990) | .16 |
+| SNR .008, seeds 14-18 | +.000 | | .000; 1 to 0 | -1.32 | +.039 (.949 to .988) | .15 |
+| SPA consensus, noise .25, seeds 11-12 | +.005 | +.003 | -.001 | +.00 | +.011 | .04 |
+| SPA consensus, noise 1, seeds 11-12 | +.004 | +.007 | +.002 | -.04 | +.007 | .07 |
+| SPA GT start, seeds 101-103 | -.0014 | -.0115 | -.0015 | -.01 | +.0003 | .06 |
+
+| Observation | Number |
+| --- | --- |
+| Why the full step hurts at the SPA GT start | the batch mean latent's noise is about .18 against an offset drift of about .005 per update (300-particle batches, q = 10) |
+| Why the gated step still misses there | its gain averages .14-.20, so part of that noise is still applied |
+| Mean map with the gated step, cryo-ET shells 17-31 against the GT average | k3conf .39 to .54, contrast .16 to .56, SNR .008 .53 to .62 |
+| Scale gauge, cryo-ET random starts | posterior-mean latent sd 2.0-2.2 to 1.01-1.02; loading-power ratio 30 to 8.5 (contrast), 10 to 4.6 (SNR .008); contrast bad seeds 3 to 0 |
+| Scale gauge, SPA GT start | state FSC +.014, worst state +.063, R^2 +.081, but GT power -.030 |
+| Scale criterion on SPA | "posterior-mean latent sd within .8-1.2" was mis-specified: the SPA controls sit at .70-.89 because the posterior covariance carries the rest |
+
+Reading: the mean gauge improves the model mean in every cell and never hurts
+separation, but a correction driven by a noisy batch estimate degrades a model that is
+already at ground truth; the offset of 17.8 therefore stays a documented property.
