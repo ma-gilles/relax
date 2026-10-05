@@ -31,6 +31,7 @@ def _settings(first_cc, flatten_solvent):
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1,
         particle_diameter_angstrom=np.float32(3.7) if flatten_solvent else None,
         first_iteration_lowpass_angstrom=20 if first_cc or flatten_solvent else None,
+        premask_dump_dir="captured-by-test",
     )
 
 
@@ -70,7 +71,6 @@ class _Recorder:
             assert half_index == len(self.masks) - 1
             return value
 
-        monkeypatch.setenv("RELAX_PREMASK_DUMP_DIR", "captured-by-test")
         monkeypatch.setattr(mean_helpers, "_finish_host_staged_reconstruction", lambda value, *_args: value)
         monkeypatch.setattr(reconstruction_diagnostics, "write_premask_mean", capture)
         monkeypatch.setattr(mean_helpers, "_apply_relion_initial_lowpass_filter", lowpass)

@@ -150,18 +150,17 @@ def test_actual_end_boundary_drops_phase_before_cache_policy(monkeypatch):
 
     held = []
     checked = []
-    read_flag = iteration_loop.parse_env_true_flag
 
-    def flag(name):
-        if name == 'RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS':
-            gc.collect()
-            assert all(reference() is None for reference in held)
-            checked.append(len(held))
-        return read_flag(name)
+    def clear_caches():
+        gc.collect()
+        assert all(reference() is None for reference in held)
+        checked.append(len(held))
 
     trace = CallTrace(monkeypatch)
     for name in ('DenseVariantPolicy', 'prepare_numbered_expectation'):
         trace.wrap(iteration_loop, name, after=lambda call: held.append(weakref.ref(call.result)), keep_operands=False)
-    monkeypatch.setattr(iteration_loop, 'parse_env_true_flag', flag)
+    # The cache policy clears JAX's caches between iterations (RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS).
+    monkeypatch.setenv('RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS', '1')
+    monkeypatch.setattr(iteration_loop.jax, 'clear_caches', clear_caches)
     run_tiny_refinement(monkeypatch, final_after_max_iter=False)
     assert checked == [2, 4]

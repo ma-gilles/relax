@@ -475,77 +475,30 @@ def test_significance_offset_free_capture_preserves_margin_lost_after_large_comm
     assert_matches(best_absolute, second_absolute)
 
 
-def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch):
+def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch, caplog):
+    from relax.refinement.refinement_options import DiagnosticEnvironment
+
     env_name = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
     monkeypatch.delenv(env_name, raising=False)
-    assert (
-        finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger,
-            has_converged=False,
-            iteration=5,
-            max_iter=5,
-            force_max_iter_after_convergence=False,
-        )
-        is False
-    )
-
+    assert DiagnosticEnvironment.from_environ().final_all_data_after_max_iter is False
     monkeypatch.setenv(env_name, "1")
-    assert (
-        finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger,
-            has_converged=False,
-            iteration=5,
-            max_iter=5,
-            force_max_iter_after_convergence=False,
-            k_class_enabled=False,
-        )
-        is True
-    )
-    assert (
-        finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger,
-            has_converged=False,
-            iteration=5,
-            max_iter=5,
-            force_max_iter_after_convergence=False,
-            k_class_enabled=True,
-        )
-        is False
-    )
-    assert (
-        finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger,
-            has_converged=True,
-            iteration=5,
-            max_iter=5,
-            force_max_iter_after_convergence=False,
-            k_class_enabled=True,
-        )
-        is True
-    )
+    assert DiagnosticEnvironment.from_environ().final_all_data_after_max_iter is True
+    monkeypatch.setenv(env_name, "maybe")
+    assert DiagnosticEnvironment.from_environ().final_all_data_after_max_iter is False
+    assert "Ignoring invalid RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" in caplog.text
 
-    assert (
-        finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger,
-            has_converged=False,
-            iteration=4,
-            max_iter=5,
-            force_max_iter_after_convergence=False,
+    def should_run(*, has_converged=False, iteration=5, after_max_iter=False, force=False, **kwargs):
+        return finalization._should_run_final_all_data_iteration(
+            logger=iteration_loop_module.logger, has_converged=has_converged, iteration=iteration, max_iter=5,
+            force_max_iter_after_convergence=force, after_max_iter=after_max_iter, **kwargs,
         )
-        is False
-    )
-    assert (
-        finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger,
-            has_converged=False,
-            iteration=5,
-            max_iter=5,
-            force_max_iter_after_convergence=True,
-        )
-        is False
-    )
 
-
+    assert should_run() is False
+    assert should_run(after_max_iter=True, k_class_enabled=False) is True
+    assert should_run(after_max_iter=True, k_class_enabled=True) is False
+    assert should_run(has_converged=True, k_class_enabled=True) is True
+    assert should_run(iteration=4, after_max_iter=True) is False
+    assert should_run(after_max_iter=True, force=True) is False
 
 
 def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monkeypatch):

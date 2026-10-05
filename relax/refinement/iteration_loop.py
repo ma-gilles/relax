@@ -72,7 +72,6 @@ from relax.helpers.convergence import (
     concatenate_assignments_or_none,
     expectation_statistics,
 )
-from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.expected_accuracy import (
     RELION_DEFAULT_SIGMA2_FUDGE,
     Half1AccuracyInputs,
@@ -191,6 +190,9 @@ from relax.refinement.projector_preparation import (
     prepare_initial_real_references,
 )
 from relax.refinement.refinement_options import (
+    FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
+    FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
+    FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
     RefinementOptions,
     require_consistency_route,
     with_validated_sampling_schedule,
@@ -229,9 +231,6 @@ from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 logger = logging.getLogger(__name__)
 
 
-_FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV = "RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE"
-_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
-_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
 
 
 def _fresh_k1_spectrum_norm_default(
@@ -553,6 +552,7 @@ def k1_maximization(
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
     bpref_boundary_iteration_matches,
+    bpref_accum_dump_dir,
 ) -> K1Maximization:
     """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
 
@@ -586,10 +586,9 @@ def k1_maximization(
     # Optional dump of post-join Ft_y, Ft_ctf for shell-by-shell parity
     # comparison against RELION's RELAX_MSTEP_DUMP_DIR. Activated by
     # RELAX_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
-    _bpref_accum_dir = os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR")
-    if _bpref_accum_dir and bpref_boundary_iteration_matches:
+    if bpref_accum_dump_dir and bpref_boundary_iteration_matches:
         reconstruction_diagnostics.write_bpref_accumulators(
-            _bpref_accum_dir,
+            bpref_accum_dump_dir,
             stage="accum",
             iteration=iteration,
             current_size=current_size,
@@ -909,6 +908,8 @@ def refine_single_volume(
         first_iteration_lowpass_angstrom=parity.relion_firstiter_ini_high_angstrom,
         gridding_kernel=consistency.gridding_kernel,
         shell_pair_counting=consistency.shell_pair_counting,
+        premask_dump_dir=debug.environment.premask_dump_dir,
+        kclass_dump_dir=debug.environment.kclass_dump_dir,
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,
@@ -1377,11 +1378,10 @@ def refine_single_volume(
                     dtype=scoring_dtype,
                     log=logger,
                 )
-                _kclass_dump_dir = os.environ.get("RELAX_KCLASS_DUMP_DIR")
-                if _kclass_dump_dir:
+                if debug.environment.kclass_dump_dir:
                     reconstruction_diagnostics.write_class_image_size(
                         image_size_plan,
-                        output_dir=_kclass_dump_dir,
+                        output_dir=debug.environment.kclass_dump_dir,
                         previous_size=prev_cs,
                         grid_size=grid_size,
                         iteration=iteration,
@@ -2005,6 +2005,7 @@ def refine_single_volume(
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
                 bpref_boundary_iteration_matches=_bpref_boundary_iteration_matches,
+                bpref_accum_dump_dir=debug.environment.bpref_accum_dump_dir,
             )
         _parity_dump.mark_stage(iteration, "recon")
 
@@ -2203,11 +2204,10 @@ def refine_single_volume(
                 int(resolution_estimate.scheduling_shell),
                 int(resolution_estimate.observed_shell),
             )
-        _tau2_debug_dump_dir = os.environ.get("RELAX_RELION_TAU2_DEBUG_DUMP_DIR")
-        if _tau2_debug_dump_dir:
+        if debug.environment.tau2_debug_dump_dir:
             reconstruction_diagnostics.write_tau2_update(
                 _replay_meta=_replay_meta,
-                output_dir=_tau2_debug_dump_dir,
+                output_dir=debug.environment.tau2_debug_dump_dir,
                 voxel_size=source_pixel_size_angstrom,
                 current_size=current_size,
                 dvp_iter=resolution_estimate.data_vs_prior,
@@ -2512,7 +2512,7 @@ def refine_single_volume(
         tau2_update_details_per_half = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None
-        if parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"):
+        if debug.environment.clear_jax_caches_between_iterations:
             jax.clear_caches()
 
         if state.has_converged and not schedule.force_max_iter_after_convergence:
@@ -2545,6 +2545,7 @@ def refine_single_volume(
         iteration=iteration,
         max_iter=schedule.max_iter,
         force_max_iter_after_convergence=schedule.force_max_iter_after_convergence,
+        after_max_iter=debug.environment.final_all_data_after_max_iter,
         k_class_enabled=k_class_enabled,
     )
     if schedule.skip_final_iteration or not should_run_final_iteration:
@@ -2591,7 +2592,7 @@ def refine_single_volume(
         logger.info(
             "Diagnostic %s=1: running RELION final all-data iteration after max_iter exhaustion "
             "(iteration=%d, max_iter=%d)",
-            finalization._FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
+            FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
             iteration,
             schedule.max_iter,
         )
@@ -2608,15 +2609,15 @@ def refine_single_volume(
     # that half's own reference map, then join the weighted sums into one final
     # reconstruction.
     final_join_means = [reference_model.maps[0], reference_model.maps[1]]
-    if not k_class_enabled and parse_env_true_flag(_FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV):
+    if not k_class_enabled and debug.environment.final_all_data_use_merged_reference:
         final_merged_reference, _ = _merged_mean_from_halves(reference_model.maps)
         final_join_means = [final_merged_reference, final_merged_reference]
         logger.info(
             "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
-            _FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
+            FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
         )
-    final_replay_forced = parse_env_true_flag(_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV)
-    final_replay_disabled = parse_env_true_flag(_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV)
+    final_replay_forced = debug.environment.final_all_data_replay_last_numbered_state
+    final_replay_disabled = debug.environment.final_all_data_disable_replay_last_numbered_state
     final_replay_has_overrides = replay.replay_iteration_overrides is not None and len(replay.replay_iteration_overrides) > 0
     final_replay_has_numbered_overrides = _has_numbered_replay_iteration_overrides(
         replay.replay_iteration_overrides
@@ -2664,7 +2665,7 @@ def refine_single_volume(
     elif not k_class_enabled and final_replay_disabled and final_replay_has_overrides:
         logger.info(
             "Diagnostic %s=1: final all-data skips automatic last-numbered RELION state replay",
-            _FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
+            FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
         )
     if follower_setup.follower_scale_state is not None:
         _dispatch_relion_follower_scale_for_final_all_data(

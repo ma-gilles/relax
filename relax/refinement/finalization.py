@@ -29,7 +29,6 @@ from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics.iteration import write_final_half_manifest
 from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
-from relax.helpers.env_flags import parse_env_flag_or_false
 from relax.helpers.expected_accuracy import _expected_accuracy_class_ids
 from relax.helpers.orientation_priors import relion_local_search_sigmas, relion_translation_search_base
 from relax.helpers.resolution import (
@@ -60,6 +59,7 @@ from relax.refinement.half_scoring import (
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
+from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
 from relax.refinement.result_files import (
     _model_result_fields,
     final_pass_result_fields,
@@ -73,7 +73,6 @@ from relax.relion.relion_worker_scale import _finalize_relion_follower_scale_rep
 # The numbered controller's log: the final pass logs under its name.
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
-_FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
 
 
 def _should_run_final_all_data_iteration(
@@ -83,16 +82,21 @@ def _should_run_final_all_data_iteration(
     iteration: int,
     max_iter: int,
     force_max_iter_after_convergence: bool,
+    after_max_iter: bool,
     k_class_enabled: bool = False,
 ) -> bool:
-    """Return whether to run RELION's final all-data reconstruction pass."""
+    """Return whether to run RELION's final all-data reconstruction pass.
+
+    ``after_max_iter`` (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``): K=1 runs it after the last numbered
+    iteration without convergence.
+    """
 
     if force_max_iter_after_convergence:
         return False
     if bool(has_converged):
         return True
     if not (
-        parse_env_flag_or_false(_FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, logger=logger)
+        after_max_iter
         and int(iteration) >= int(max_iter)
     ):
         return False
@@ -100,7 +104,7 @@ def _should_run_final_all_data_iteration(
         logger.warning(
             "Ignoring %s=1 for K-class after max_iter exhaustion; final all-data "
             "is only valid for K-class after convergence",
-            _FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
+            FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
         )
         return False
     return True

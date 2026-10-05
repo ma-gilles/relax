@@ -655,7 +655,7 @@ def estimate_class_priors(
         mean_signal_variance_shells_per_class.append(class_prior.shells)
         data_vs_prior_per_class.append(class_prior.data_vs_prior)
         tau2_update_details_per_class.append(class_prior.details)
-        _kclass_dump_dir = os.environ.get("RELAX_KCLASS_DUMP_DIR")
+        _kclass_dump_dir = settings.kclass_dump_dir
         if _kclass_dump_dir:
             reconstruction_diagnostics.write_class_mstep(
                 class_prior,
@@ -1216,6 +1216,9 @@ class ReconstructionSettings:
     # pairs: "relion" counts those of the stored half's zero plane twice, "once" every pair once.
     # The 1/1000 weight floor inside the reconstruction (RECOVAR) keeps RELION's counting.
     shell_pair_counting: str = "relion"
+    # Diagnostic dumps (EngineDebugOptions.environment): the pre-mask maps and the Class3D M-step.
+    premask_dump_dir: str | None = None
+    kclass_dump_dir: str | None = None
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.
@@ -1432,7 +1435,7 @@ def _reconstruct_class_maps(
 
 def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index, iteration, current_size, n_classes):
     """Write one solved slot before filtering and masking when ``RELAX_PREMASK_DUMP_DIR`` is set."""
-    _premask_dump = os.environ.get("RELAX_PREMASK_DUMP_DIR")
+    _premask_dump = settings.premask_dump_dir
     if _premask_dump:
         from relax.diagnostics.reconstruction import write_premask_mean
 

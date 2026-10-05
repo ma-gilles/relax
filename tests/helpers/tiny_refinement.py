@@ -10,7 +10,7 @@ which of them were running at each call, so a test can check a sequence or an ow
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import jax.numpy as jnp
 import numpy as np
@@ -253,6 +253,8 @@ def run_tiny_refinement(
     from relax.refinement import iteration_loop
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
+        DiagnosticEnvironment,
+        EngineDebugOptions,
         KClassOptions,
         RefinementBatching,
         RefinementOptions,
@@ -297,11 +299,13 @@ def run_tiny_refinement(
             monkeypatch.setattr(module, "update_refinement_state", converge)
     for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
-    # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence.
-    if final_after_max_iter:
-        monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
-    else:
-        monkeypatch.delenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", raising=False)
+    # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence
+    # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); the rest of the diagnostic environment is read as the command does.
+    debug = option_groups.get("debug", EngineDebugOptions())
+    option_groups["debug"] = replace(
+        debug,
+        environment=replace(DiagnosticEnvironment.from_environ(), final_all_data_after_max_iter=final_after_max_iter),
+    )
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     option_groups.setdefault("adaptive", AdaptiveOptions(adaptive_oversampling=1))

@@ -9,12 +9,14 @@ See ``docs/math/relion_refinement_algorithm.md`` for the execution map.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
+from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
 from relax.symmetry import canonicalize_rotational_symmetry
 
 
@@ -354,6 +356,55 @@ class ExpectedAccuracyOptions:
     do_ctf_correction: bool | None = None
 
 
+FINAL_ALL_DATA_AFTER_MAX_ITER_ENV = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
+FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV = "RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE"
+FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
+FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
+
+
+@dataclass(frozen=True)
+class DiagnosticEnvironment:
+    """The refinement's diagnostic environment variables, read once, when the run's options are built.
+
+    Dump directories (None when unset; an empty value writes nothing): the joined K=1 accumulators
+    (``RELAX_BPREF_ACCUM_DUMP_DIR``), the Class3D M-step and image size (``RELAX_KCLASS_DUMP_DIR``), the
+    tau2 update (``RELAX_RELION_TAU2_DEBUG_DUMP_DIR``) and the pre-mask maps (``RELAX_PREMASK_DUMP_DIR``).
+    Switches: clear JAX's caches after every numbered iteration; run the K=1 final all-data pass after the
+    last numbered iteration without convergence; score both halves of that pass against the merged map;
+    force or forbid replaying the last numbered state in it.
+    """
+
+    bpref_accum_dump_dir: str | None = None
+    kclass_dump_dir: str | None = None
+    tau2_debug_dump_dir: str | None = None
+    premask_dump_dir: str | None = None
+    clear_jax_caches_between_iterations: bool = False
+    final_all_data_after_max_iter: bool = False
+    final_all_data_use_merged_reference: bool = False
+    final_all_data_replay_last_numbered_state: bool = False
+    final_all_data_disable_replay_last_numbered_state: bool = False
+
+    @classmethod
+    def from_environ(cls) -> DiagnosticEnvironment:
+        return cls(
+            bpref_accum_dump_dir=os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR"),
+            kclass_dump_dir=os.environ.get("RELAX_KCLASS_DUMP_DIR"),
+            tau2_debug_dump_dir=os.environ.get("RELAX_RELION_TAU2_DEBUG_DUMP_DIR"),
+            premask_dump_dir=os.environ.get("RELAX_PREMASK_DUMP_DIR"),
+            clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
+            final_all_data_after_max_iter=parse_env_flag_or_false(
+                FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, logger=logging.getLogger(__name__)
+            ),
+            final_all_data_use_merged_reference=parse_env_true_flag(FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV),
+            final_all_data_replay_last_numbered_state=parse_env_true_flag(
+                FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV
+            ),
+            final_all_data_disable_replay_last_numbered_state=parse_env_true_flag(
+                FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV
+            ),
+        )
+
+
 @dataclass(frozen=True)
 class EngineDebugOptions:
     """Adjoint ablation, intermediate-dump, and test-harness controls."""
@@ -370,6 +421,8 @@ class EngineDebugOptions:
     sealed_sampling_state: Any | None = None
     sealed_scoring_context: Any | None = None
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
+    # Read from the environment when the options are built; nothing below reads it again.
+    environment: DiagnosticEnvironment = field(default_factory=DiagnosticEnvironment.from_environ)
 
 
 @dataclass(frozen=True)
@@ -566,6 +619,7 @@ __all__ = [
     "require_consistency_route",
     "LocalSearchOptions",
     "ExpectedAccuracyOptions",
+    "DiagnosticEnvironment",
     "EngineDebugOptions",
     "KClassOptions",
     "SymmetryOptions",
