@@ -61,6 +61,15 @@ _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION = 0.040
 _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION = 0.006
 
 
+# The expected-accuracy projector slab (float64 real and imaginary planes) stays on
+# the device whole up to this fraction of device memory and is streamed in z-plane
+# chunks of this size above it. At EMPIAR-10202's full box the slab is 30.7 GiB,
+# which the pool of a 26-iteration run could not place (gpuport 15003773, final
+# all-data pass). A full-size box-256 slab (1.1 GB at padding 2) stays whole on a
+# 16 GB device; box 512 (8.7 GB) and up stream on 80 GB devices.
+_AUTO_ACCURACY_SLAB_DEVICE_FRACTION = 0.100
+
+
 _DEFAULT_ADJOINT_BLOCK_MAX_BYTES = 512 * 1024**2
 
 
@@ -441,6 +450,16 @@ def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None = None) ->
     if device_memory_bytes is None:
         return _DEFAULT_ADJOINT_BLOCK_MAX_BYTES
     return max(1, int(float(device_memory_bytes) * _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION))
+
+
+def accuracy_slab_chunk_bytes(device_memory_bytes: int | None = None) -> int | None:
+    """Device bytes of one expected-accuracy slab chunk, or None for no bound (no accelerator)."""
+
+    if device_memory_bytes is None:
+        device_memory_bytes = _device_memory_limit_bytes()
+    if device_memory_bytes is None:
+        return None
+    return max(1, int(float(device_memory_bytes) * _AUTO_ACCURACY_SLAB_DEVICE_FRACTION))
 
 
 def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:

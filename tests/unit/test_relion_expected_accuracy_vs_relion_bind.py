@@ -121,7 +121,13 @@ def test_current_sizes_of_one_window_class_share_the_device_programs(padding):
     from relax.helpers import relion_expected_accuracy as accuracy
 
     case = _case(np.random.default_rng(3))
-    programs = (accuracy._project, accuracy._shift, accuracy._trial_snr)
+    programs = (
+        accuracy._sample_coordinates,
+        accuracy._interpolate_planes,
+        accuracy._finish_projection,
+        accuracy._shift,
+        accuracy._trial_snr,
+    )
     counts = []
     for current_size in (24, 22, 20, 18):
         oracle = _oracle(case, size=32, current_size=current_size, padding=padding, do_ctf=False)
@@ -129,6 +135,46 @@ def test_current_sizes_of_one_window_class_share_the_device_programs(padding):
         _assert_same(ours, oracle)
         counts.append(tuple(program._cache_size() for program in programs))
     assert len(set(counts)) == 1, counts
+
+
+def _slab_bytes(size, current_size, padding):
+    side = 2 * (padding * (current_size // 2) + 1) + 1
+    return 2 * 8 * side * side * (side // 2 + 1), 2 * 8 * side * (side // 2 + 1)
+
+
+@pytest.mark.parametrize("planes_short", [0, 1, 7])
+def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short):
+    """At the budget the slab is resident; a plane over it streams in chunks, still exact."""
+    from relax.helpers import relion_expected_accuracy as accuracy
+
+    size, current_size, padding = 32, 32, 2
+    slab_bytes, plane_bytes = _slab_bytes(size, current_size, padding)
+    budget = slab_bytes - planes_short * plane_bytes
+    monkeypatch.setattr(accuracy, "accuracy_slab_chunk_bytes", lambda: budget)
+    placed = []
+    device = accuracy._Projector.device
+
+    def recording(self, chunk_bytes):
+        slab = device(self, chunk_bytes)
+        placed.append(slab)
+        return slab
+
+    monkeypatch.setattr(accuracy._Projector, "device", recording)
+    case = _case(np.random.default_rng(17))
+    oracle = _oracle(case, size=size, current_size=current_size, padding=padding, do_ctf=False)
+    ours = _ours(case, size=size, current_size=current_size, padding=padding, ctf_images=None)
+    _assert_same(ours, oracle)
+    assert placed and all(slab.streamed == (planes_short > 0) for slab in placed)
+    if planes_short:
+        assert all(len(slab.chunks) >= 2 for slab in placed)
+
+
+def test_slab_budget_streams_the_full_box_10202_slab_and_keeps_box_256_whole():
+    from relax.sparse_pass2.sparse_pass2_budget import accuracy_slab_chunk_bytes
+
+    h100, p100 = int(79.65 * 1024**3), int(14.30 * 1024**3)
+    assert _slab_bytes(800, 800, 2)[0] > accuracy_slab_chunk_bytes(h100)
+    assert _slab_bytes(256, 256, 2)[0] <= accuracy_slab_chunk_bytes(p100)
 
 
 def test_with_ctf_matches():

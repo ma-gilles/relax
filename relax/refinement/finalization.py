@@ -187,33 +187,26 @@ def run_final_all_data(
                 k_class_enabled=k_class_enabled,
                 n_units=expected_accuracy_inputs.dataset.n_units,
             )
-            try:
-                final_expected_accuracy = expected_accuracy_inputs.estimate(
-                    reference_fourier=final_join_means[0],
-                    best_eulers_deg=final_eulers_half1,
-                    class_ids=final_accuracy_class_ids,
-                    class_weights=class_weights,
-                    sigma2_noise_native=noise_model.radial_per_half[0],
-                    current_image_size=final_current_size,
-                )
-                state.acc_rot = final_expected_accuracy.acc_rot
-                state.acc_trans = final_expected_accuracy.acc_trans_angstrom
-                state = update_angular_sampling(state)
-                final_expected_accuracy_status = "ok"
-                logger.info(
-                    "RELION final all-data expected accuracy: acc_rot=%.3f deg, "
-                    "acc_trans=%.4f A",
-                    state.acc_rot,
-                    state.acc_trans,
-                )
-            except Exception as exc:
-                final_expected_accuracy_status = f"error:{type(exc).__name__}:{exc}"
-                state.acc_rot = float("inf")
-                state.acc_trans = float("inf")
-                logger.warning(
-                    "RELION final all-data expected-accuracy estimation failed: %s",
-                    exc,
-                )
+            # A failure raises: the slab is sized to the device by its budget
+            # (accuracy_slab_chunk_bytes), and an infinite accuracy would hide it.
+            final_expected_accuracy = expected_accuracy_inputs.estimate(
+                reference_fourier=final_join_means[0],
+                best_eulers_deg=final_eulers_half1,
+                class_ids=final_accuracy_class_ids,
+                class_weights=class_weights,
+                sigma2_noise_native=noise_model.radial_per_half[0],
+                current_image_size=final_current_size,
+            )
+            state.acc_rot = final_expected_accuracy.acc_rot
+            state.acc_trans = final_expected_accuracy.acc_trans_angstrom
+            state = update_angular_sampling(state)
+            final_expected_accuracy_status = "ok"
+            logger.info(
+                "RELION final all-data expected accuracy: acc_rot=%.3f deg, "
+                "acc_trans=%.4f A",
+                state.acc_rot,
+                state.acc_trans,
+            )
     final_sampling = prepare_final_sampling(
         state,
         image_geometry,

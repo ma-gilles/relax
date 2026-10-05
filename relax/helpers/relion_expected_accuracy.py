@@ -20,9 +20,13 @@ its images and pixels in the device's reduction order rather than RELION's seria
 order (float64 rounding, far below the ``pvalue`` step).
 The device arrays take the stable Fourier-window class of the current size
 (:func:`_capacity_size`): the images are laid out in the class's FFTW half grid and
-the projector slab is zero-padded to the class radius, so the three device programs
+the projector slab is zero-padded to the class radius, so the device programs
 compile once per class instead of once per current size (13 sizes in a 200-iteration
 VDAM run). The pixels outside the current size hold zeros and are not valid SNR terms.
+A slab larger than the device budget
+(:func:`relax.sparse_pass2.sparse_pass2_budget.accuracy_slab_chunk_bytes`) is
+streamed in z-plane chunks; each sample takes each of its two z planes from the
+chunk holding it, so the values do not depend on the chunking.
 ``relax.relion_bind`` is the unit-test oracle
 (``tests/unit/test_relion_expected_accuracy_vs_relion_bind.py``).
 """
@@ -38,6 +42,7 @@ import numpy as np
 
 from relax.helpers import relion_random
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.sparse_pass2.sparse_pass2_budget import accuracy_slab_chunk_bytes
 
 PVALUE = 4.60517
 _PI = 3.14159265358979323846
@@ -142,22 +147,25 @@ class _Projector:
     ``capacity_image_size`` and ``capacity_r_max`` give the device shapes: the images take the
     capacity's FFTW half layout and the slab is zero-padded to the capacity radius. The
     visited pixels and the radius test stay those of ``image_size`` and ``r_max``.
+    The float64 real and imaginary planes stay on the host; :meth:`device` places them.
     """
 
     def __init__(
         self, data, r_max: int, padding_factor: int, image_size: int,
         *, capacity_image_size: int | None = None, capacity_r_max: int | None = None,
     ):
-        self.data = np.ascontiguousarray(data, dtype=np.complex128)
+        data = np.asarray(data)
         self.padding_factor = float(padding_factor)
         self.r_max_ref_2 = float(int(r_max * self.padding_factor) ** 2)
         if capacity_r_max is not None:
             # Projector::data of a larger r_max is this slab inside more zeros.
-            grow = 2 * (int(capacity_r_max * self.padding_factor) + 1) + 1 - self.data.shape[0]
+            grow = 2 * (int(capacity_r_max * self.padding_factor) + 1) + 1 - data.shape[0]
             if grow > 0 and grow % 2 == 0:
-                self.data = np.pad(self.data, ((grow // 2,) * 2, (grow // 2,) * 2, (0, grow // 2)))
-        self.real = np.ascontiguousarray(self.data.real)
-        self.imag = np.ascontiguousarray(self.data.imag)
+                data = np.pad(data, ((grow // 2,) * 2, (grow // 2,) * 2, (0, grow // 2)))
+        self.data_shape = tuple(int(v) for v in data.shape)
+        self.real = np.ascontiguousarray(data.real, dtype=np.float64)
+        self.imag = np.ascontiguousarray(data.imag, dtype=np.float64)
+        del data
         size = int(image_size)
         capacity = size if capacity_image_size is None else int(capacity_image_size)
         half = capacity // 2 + 1
@@ -176,27 +184,73 @@ class _Projector:
 
         return _inverse3(np.asarray(matrices, dtype=np.float64)) * self.padding_factor
 
-    def device(self):
-        """The slab's real and imaginary planes and the visited pixels, on the JAX device."""
+    def device(self, chunk_bytes: int | None):
+        """The slab placed for :func:`_project_on_device`, at most ``chunk_bytes`` of planes at a time.
 
-        return (
-            jnp.asarray(self.real.reshape(-1)),
-            jnp.asarray(self.imag.reshape(-1)),
-            jnp.asarray(self.pixel_x),
-            jnp.asarray(self.pixel_y),
-            jnp.asarray(self.pixel_flat),
-        )
+        A slab within ``chunk_bytes`` (or any slab when it is None) is one resident
+        chunk. A larger one is cut into equal z-plane chunks (the last zero-padded,
+        so one program serves them all) that each projection uploads in turn.
+        """
+
+        nz, ny, nx = self.data_shape
+        plane_bytes = 2 * 8 * ny * nx
+        planes = nz if chunk_bytes is None else max(1, min(nz, int(chunk_bytes) // plane_bytes))
+        pixels = tuple(jnp.asarray(v) for v in (self.pixel_x, self.pixel_y, self.pixel_flat))
+        if planes == nz:
+            whole = (jnp.asarray(self.real.reshape(-1)), jnp.asarray(self.imag.reshape(-1)))
+            return _DeviceSlab(pixels, planes, ((0, whole),))
+        chunks = []
+        for z_lo in range(0, nz, planes):
+            real, imag = self.real[z_lo : z_lo + planes], self.imag[z_lo : z_lo + planes]
+            if real.shape[0] < planes:
+                pad = ((0, planes - real.shape[0]), (0, 0), (0, 0))
+                real, imag = np.pad(real, pad), np.pad(imag, pad)
+            chunks.append((z_lo, (real.reshape(-1), imag.reshape(-1))))
+        return _DeviceSlab(pixels, planes, tuple(chunks))
 
 
-@partial(jax.jit, static_argnames=("data_shape", "n_full"))
-def _project(real, imag, pixel_x, pixel_y, pixel_flat, a_inv, *, data_shape, n_full, r_max_ref_2):
+@dataclass(frozen=True)
+class _DeviceSlab:
+    """Visited pixels on the device and the slab's z-plane chunks (``(z_lo, (real, imag))``).
+
+    One chunk holds the whole slab and is already on the device; several chunks are
+    host arrays uploaded by each projection.
+    """
+
+    pixels: tuple
+    planes: int
+    chunks: tuple
+
+    @property
+    def streamed(self) -> bool:
+        return len(self.chunks) > 1
+
+
+def _project_on_device(slab: _DeviceSlab, a_inv, *, data_shape, n_full, r_max_ref_2):
     """``get2DFourierTransform(F, A)`` for ``[M, 3, 3]`` ``a_inv``; ``[M, H * W]`` real and imag.
 
     ``Projector::project`` (projector.cpp:630-790) at the pixels it visits: the
     rotated coordinate, the radius test, the Hermitian flip for ``xp < 0`` and
-    RELION's nested ``LIN_INTERP`` (projector.cpp:733-740). ``pixel_flat`` equal to
-    ``n_full`` marks a spare pixel, which is dropped.
+    RELION's nested ``LIN_INTERP`` (projector.cpp:733-740). The two z planes of
+    every sample are interpolated in x and y by the chunk that holds each plane,
+    then in z, so a streamed slab gives the resident slab's values bit for bit.
     """
+
+    pixel_x, pixel_y, pixel_flat = slab.pixels
+    a_inv = jnp.asarray(a_inv)
+    sample = _sample_coordinates(pixel_x, pixel_y, a_inv, data_shape=data_shape, r_max_ref_2=r_max_ref_2)
+    planes = jnp.zeros((4,) + sample[0].shape, dtype=jnp.float64)
+    for z_lo, (real, imag) in slab.chunks:
+        planes = _interpolate_planes(
+            jnp.asarray(real), jnp.asarray(imag), np.int64(z_lo), planes, *sample,
+            plane_shape=(slab.planes,) + tuple(data_shape[1:]),
+        )
+    return _finish_projection(planes, sample[0], sample[1], sample[4], pixel_flat, n_full=n_full)
+
+
+@partial(jax.jit, static_argnames=("data_shape",))
+def _sample_coordinates(pixel_x, pixel_y, a_inv, *, data_shape, r_max_ref_2):
+    """Each sample's radius/bounds test, Hermitian flip, z plane, in-plane offset and fractions."""
 
     x, y = pixel_x[None, :], pixel_y[None, :]
     xp = a_inv[:, 0, 0, None] * x + a_inv[:, 0, 1, None] * y
@@ -216,26 +270,43 @@ def _project(real, imag, pixel_x, pixel_y, pixel_flat, a_inv, *, data_shape, n_f
     y0 = y0.astype(jnp.int64) + ny // 2
     z0 = z0.astype(jnp.int64) + nz // 2
     inside &= (x0 >= 0) & (x0 + 1 < nx) & (y0 >= 0) & (y0 + 1 < ny) & (z0 >= 0) & (z0 + 1 < nz)
-    base = jnp.where(inside, (z0 * ny + y0) * nx + x0, 0)
+    in_plane = jnp.where(inside, y0 * nx + x0, 0)
+    return inside, negative, z0, in_plane, fz, fx, fy
+
+
+@partial(jax.jit, static_argnames=("plane_shape",), donate_argnums=(3,))
+def _interpolate_planes(real, imag, z_lo, planes, inside, negative, z0, in_plane, fz, fx, fy, *, plane_shape):
+    """``planes`` (real z0, real z0+1, imag z0, imag z0+1) with the samples whose plane is in this chunk."""
+
+    n_planes, ny, nx = plane_shape
     step_y, step_z = nx, ny * nx
 
-    def interpolate(values):
-        d000, d001 = values[base], values[base + 1]
-        d010, d011 = values[base + step_y], values[base + step_y + 1]
-        d100, d101 = values[base + step_z], values[base + step_z + 1]
-        d110, d111 = values[base + step_z + step_y], values[base + step_z + step_y + 1]
-        dx00 = d000 + (d001 - d000) * fx
-        dx01 = d100 + (d101 - d100) * fx
-        dx10 = d010 + (d011 - d010) * fx
-        dx11 = d110 + (d111 - d110) * fx
-        dxy0 = dx00 + (dx10 - dx00) * fy
-        dxy1 = dx01 + (dx11 - dx01) * fy
-        return dxy0 + (dxy1 - dxy0) * fz
+    def bilinear(values, base):
+        d00, d01 = values[base], values[base + 1]
+        d10, d11 = values[base + step_y], values[base + step_y + 1]
+        dx0 = d00 + (d01 - d00) * fx
+        dx1 = d10 + (d11 - d10) * fx
+        return dx0 + (dx1 - dx0) * fy
 
-    out_real = jnp.where(inside, interpolate(real), 0.0)
-    out_imag = interpolate(imag)
+    out = []
+    for values in (real, imag):
+        for dz in (0, 1):
+            local = z0 + dz - z_lo
+            take = inside & (local >= 0) & (local < n_planes)
+            base = jnp.where(take, local * step_z + in_plane, 0)
+            out.append((take, bilinear(values, base)))
+    return jnp.stack([jnp.where(take, value, planes[i]) for i, (take, value) in enumerate(out)])
+
+
+@partial(jax.jit, static_argnames=("n_full",))
+def _finish_projection(planes, inside, negative, fz, pixel_flat, *, n_full):
+    """The z interpolation of the two planes, the flip of the imaginary part and the pixel layout."""
+
+    real0, real1, imag0, imag1 = planes
+    out_real = jnp.where(inside, real0 + (real1 - real0) * fz, 0.0)
+    out_imag = imag0 + (imag1 - imag0) * fz
     out_imag = jnp.where(inside, jnp.where(negative, -out_imag, out_imag), 0.0)
-    zeros = jnp.zeros((a_inv.shape[0], n_full + 1), dtype=jnp.float64)
+    zeros = jnp.zeros((inside.shape[0], n_full + 1), dtype=jnp.float64)
     return zeros.at[:, pixel_flat].set(out_real)[:, :n_full], zeros.at[:, pixel_flat].set(out_imag)[:, :n_full]
 
 
@@ -342,10 +413,9 @@ def _chunk_errors(projector, device, matrices, *, rows, counts, eulers, draws, c
 
     n_trials = counts.size
     image_trial = jnp.asarray(np.repeat(np.arange(n_trials), counts))
-    real, imag, pixel_x, pixel_y, pixel_flat = device
     project = partial(
-        _project, real, imag, pixel_x, pixel_y, pixel_flat,
-        data_shape=tuple(int(v) for v in projector.data.shape),
+        _project_on_device, device,
+        data_shape=projector.data_shape,
         n_full=int(projector.shape[0] * projector.shape[1]),
         r_max_ref_2=np.float64(projector.r_max_ref_2),
     )
@@ -493,7 +563,7 @@ def expected_angular_errors(
             projector_data[k], int(projector_r_max), int(padding_factor), int(current_image_size),
             capacity_image_size=capacity, capacity_r_max=capacity_r_max,
         )
-        device = projector.device()
+        device = projector.device(accuracy_slab_chunk_bytes())
         errors = [np.empty(n_trials), np.empty(n_trials)]
         for chunk in chunks:
             rows = np.concatenate([np.arange(trial_image_offsets[t], trial_image_offsets[t + 1]) for t in chunk])

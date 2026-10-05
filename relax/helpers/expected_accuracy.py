@@ -393,16 +393,19 @@ def _projector_data(
     from relax.relion.relion_projector_setup import setup_relion_projector_on_host
 
     ori_size = int(references_relion.shape[-1])
-    return np.asarray(
-        [
-            setup_relion_projector_on_host(
-                reference, int(current_size) // 2, ori_size=ori_size, padding_factor=int(padding_factor),
-                gridding_kernel=gridding_kernel,
-            )[0]
-            for reference in references_relion
-        ],
-        dtype=np.complex128,
-    )
+    # Each class is written into one array: a list of slabs and its stacked copy
+    # would hold every slab twice (2 x 33 GB of host memory at EMPIAR-10202's full box).
+    data = None
+    for k, reference in enumerate(references_relion):
+        slab = setup_relion_projector_on_host(
+            reference, int(current_size) // 2, ori_size=ori_size, padding_factor=int(padding_factor),
+            gridding_kernel=gridding_kernel,
+        )[0]
+        if data is None:
+            data = np.empty((len(references_relion),) + slab.shape, dtype=np.complex128)
+        data[k] = slab
+        del slab
+    return data
 
 
 def _window_fftw_half(rows, size: int) -> np.ndarray:
