@@ -2037,8 +2037,35 @@ differs by a smooth field at shells 0-4 (beyond 125 A), mostly outside the parti
 (correlation .99 inside 30 px of the box centre, .72 at 40-50 px, where two RELION
 reconstructions agree at .99). It is not the padding (RELION at padding 1 and 2
 agree), the per-series noise weighting, the regrouped geometry, the pose source or
-the image loading, and the fitted loadings explain it no better than chance. The
-cause is not identified (fixture `HANDOFF.txt`).
+the image loading, and the fitted loadings explain it no better than chance.
+
+Identified (October 5, 2026): two terms, neither a defect of the tilt-stream
+statistics. Same 200 random particles, Warp's poses, CPU, `relion_reconstruct` used
+only as a debugging oracle (`empiar10499/residual_terms_20261005/` in the run root of
+this section; per-shell power ratio normalised to shells 1-3, shell k is 500/k A).
+
+| Comparison | Power ratio, shells 5 / 10 / 15 | Unmasked FSC, shells 1 / 2 | Low-pass (shells 1-4) correlation at 40-50 / 50-64 px |
+| --- | --- | --- | --- |
+| PPCA (RELION 5 dose damping) against RELION (SPA star, Warp's `rlnCtfBfactor`) | 1.14 / 1.54 / 2.35 | .955 / .968 | .73 / .65 |
+| PPCA against RELION, no dose damping in either | 1.04 / 1.04 / 1.07 | .955 / .968 | .73 / .65 |
+| RELION, Warp's B against no B | .99 / .95 / .88 | 1.000 / 1.000 | 1.00 / 1.00 |
+| PPCA mean, 2 / 4 / 8 sweeps of the same statistics, against RELION (no damping) | 1.12 / 1.20 / 1.28; 1.20 / 1.53 / 1.74; 1.29 / 1.96 / 2.38 | .968 / .978; .979 / .985; .977 / .981 | .84 / .75; .93 / .85; .97 / .89 |
+| RELION, padding 1 or nearest neighbour against padding 2 (no damping) | | .978-1.000 | .99-1.00 / .97-1.00 |
+
+1. The high-shell amplitude difference is the oracle's damping. The SPA STAR carries
+Warp's per-tilt `rlnCtfBfactor` (-6.52 - 4 x dose), and RELION's CTF envelope is
+`exp(-B k^2 / 4)` (`src/ctf.h`), so these negative values amplify the high-dose tilts
+instead of damping them. relax damps by dose as `relion_refine` does for tomo images
+(`relion_tomo_damping`). With damping removed from both, the power ratio is .92-1.07
+to shell 15.
+2. The low-frequency field outside the particle is the diagnostic itself. The
+fixed-pose mean is one diagonal step `m0 + g / a` from almost zero. Near the origin the
+projection normal matrix is far from diagonal, so one step does not reach the
+least-squares map. Repeating the step with the same statistics moves the low shells
+toward RELION's map (correlation at 50-64 px .65 to .89 in 8 sweeps; DC power ratio
+2.7 to 1.1). Unregularised, the higher shells then gain noise power (unmasked FSC
+falls, masked stays at .996-.997). Training updates the mean every step, so its maps
+do not carry this one-step error. The pose-error reading above stands.
 
 Oversampling 1 in the last stage. Each run's update-160 checkpoint continued
 through radius 32 with `--oversampling 1` (277749f; oversampling 0 gives the same
