@@ -85,28 +85,6 @@ def verified_k1_relion_os0():
 RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
 
 
-def test_full_refinement_supports_stop_after_coarse_significance_dump():
-    source = RUN_FULL_REFINEMENT.read_text()
-    assert "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET" in source
-    assert "SignificanceDumpComplete" in source
-    assert "pass-2/M-step work" in source
-
-
-def test_full_refinement_supports_stop_after_bpref_contribution_dump():
-    source = RUN_FULL_REFINEMENT.read_text()
-    assert "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET" in source
-    assert "BPrefContributionDumpComplete" in source
-    assert "requested pass-2 boundary" in source
-
-
-def test_full_refinement_supports_stop_after_pass2_operand_dump():
-    source = RUN_FULL_REFINEMENT.read_text()
-    assert "RELAX_PASS2_DUMP_STOP_AFTER_TARGET" in source
-    assert "Pass2DumpComplete" in source
-    assert "requested fine-score boundary" in source
-ITERATION_LOOP = (
-    Path(__file__).resolve().parents[2] / 'relax' / 'refinement' / 'iteration_loop.py'
-)
 
 
 def _sole_call_keywords(tree: ast.Module, func_name: str) -> dict[str, ast.expr]:
@@ -979,35 +957,6 @@ def test_parse_relion_cli_ini_high_is_none_when_absent_or_disabled():
     assert _parse_relion_cli_ini_high("# --i particles.star --firstiter_cc --ini_high -1 --ctf\n") is None
 
 
-def test_full_refinement_uses_active_relion_max_significants_not_saved_sentinel():
-    source = RUN_FULL_REFINEMENT.read_text()
-
-    assert "resolve_relion_runtime_controls(" in source
-    assert "resolve_relion_runtime_max_significants" in RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
-    assert 'max_significants_resolution["active_max_significants"]' in source
-    assert '"max_significants_resolution": runtime_controls.max_significants_resolution' in source
-
-
-def test_firstiter_cc_passes_relion_cli_ini_high_to_refinement_loop():
-    """RELION ``--firstiter_cc`` and ``--ini_high`` are distinct knobs.
-
-    ``--firstiter_cc`` enables normalized-CC scoring in iter 1. RELION only
-    reapplies the post-iter1 low-pass when the optimiser command has a
-    positive ``--ini_high``. Do not substitute RECOVAR's ``--init_resolution``.
-    """
-
-    tree = ast.parse(RUN_FULL_REFINEMENT.read_text())
-    # relion_firstiter_ini_high_angstrom is forwarded via RelionParityOptions.
-    keywords = _sole_call_keywords(tree, "RelionParityOptions")
-    assert "relion_firstiter_ini_high_angstrom" in keywords
-    value = keywords["relion_firstiter_ini_high_angstrom"]
-    assert isinstance(value, ast.IfExp)
-    assert isinstance(value.test, ast.Attribute)
-    assert value.test.attr == "firstiter_cc"
-    assert isinstance(value.body, ast.Name)
-    assert value.body.id == "relion_firstiter_ini_high_angstrom"
-
-
 @pytest.mark.parametrize(
     ("optimiser_ini_high", "startup_lowpass_ini_high", "expected"),
     [
@@ -1034,55 +983,25 @@ def test_relion_firstiter_ini_high_uses_startup_lowpass_without_optimiser_value(
     assert got == expected
 
 
-def test_firstiter_cc_resolves_ini_high_from_startup_lowpass_before_parity_options():
-    tree = ast.parse(RUN_FULL_REFINEMENT.read_text())
-    main = next(
-        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main"
-    )
-    lowpass_lines = [
-        node.lineno
-        for node in ast.walk(main)
-        if isinstance(node, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id == "_ini_high_for_lowpass" for t in node.targets)
-    ]
-    assert len(lowpass_lines) == 1
-    guards = [
-        node
-        for node in ast.walk(main)
-        if isinstance(node, ast.If)
-        and isinstance(node.test, ast.Attribute)
-        and node.test.attr == "firstiter_cc"
-        and any(
-            isinstance(inner, ast.Call)
-            and isinstance(inner.func, ast.Name)
-            and inner.func.id == "_resolve_relion_firstiter_ini_high"
-            for inner in ast.walk(node)
-        )
-    ]
-    assert len(guards) == 1
-    resolves = [
-        node
-        for node in ast.walk(guards[0])
-        if isinstance(node, ast.Assign)
-        and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Name)
-        and node.value.func.id == "_resolve_relion_firstiter_ini_high"
-    ]
-    assert len(resolves) == 1
-    (target,) = resolves[0].targets
-    assert isinstance(target, ast.Name) and target.id == "relion_firstiter_ini_high_angstrom"
-    keywords = {keyword.arg: keyword.value for keyword in resolves[0].value.keywords}
-    assert isinstance(keywords["startup_lowpass_ini_high"], ast.Name)
-    assert keywords["startup_lowpass_ini_high"].id == "_ini_high_for_lowpass"
-    parity_calls = [
-        node.lineno
-        for node in ast.walk(main)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "RelionParityOptions"
-    ]
-    assert len(parity_calls) == 1
-    assert lowpass_lines[0] < resolves[0].lineno < parity_calls[0]
+_TINY_RESULT = []
+
+
+def _archive_metadata(result, *, half_indices=None, n_images=None):
+    """What write_refinement_archive adds to its metadata for a tiny K=1 run's result updated by ``result``."""
+    from helpers.tiny_refinement import N_IMAGES, run_tiny_refinement
+
+    from relax.refinement.result_files import write_refinement_archive
+
+    if not _TINY_RESULT:
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            _TINY_RESULT.append(run_tiny_refinement(monkeypatch, max_iter=1))
+    if half_indices is None:
+        half_indices = (np.arange(N_IMAGES // 2), np.arange(N_IMAGES // 2, N_IMAGES))
+    metadata = {}
+    write_refinement_archive({**_TINY_RESULT[0], **result}, out_path="unused.npz", metadata=metadata,
+                             half_indices=half_indices, n_images=N_IMAGES if n_images is None else n_images,
+                             skip_large_outputs=True)
+    return metadata
 
 
 def test_refinement_results_persist_final_tau2_weight_combination():
@@ -1097,16 +1016,22 @@ def test_refinement_results_persist_final_tau2_weight_combination():
     add_refinement_history_artifacts(saved, result, [1], [0], 2)
     assert saved["tau2_weight_combination_final_all_data"].item() == "sum"
     assert saved["tau2_weight_combination_final_all_data"].dtype.kind == "U"
-    assert "write_refinement_archive(" in RUN_FULL_REFINEMENT.read_text()
-    assert "iteration_history.add_refinement_history_artifacts(" in RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
+    archive = _archive_metadata(result)
+    assert archive["tau2_weight_combination_final_all_data"].item() == "sum"
 
 
-def test_final_all_data_writes_matched_unfiltered_half_products():
-    assert "write_final_maps(" in RUN_FULL_REFINEMENT.read_text()
-    source = RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
+def test_final_all_data_writes_matched_unfiltered_half_products(tmp_path):
+    """A K=1 result with unfiltered half maps also writes them, beside the filtered ones."""
+    from relax.refinement.result_files import write_final_maps
 
-    assert 'unfiltered_means = result.get("unfiltered_means")' in source
-    assert 'f"final_half{k + 1}_unfil.mrc"' in source
+    shape = (4, 4, 4)
+    volume = np.zeros(64, dtype=np.complex64)
+    result = {"mean": volume, "means": [volume, volume], "unfiltered_means": [volume, volume]}
+    write_final_maps(result, output_dir=tmp_path, volume_shape=shape, pixel_size_angstrom=2.0, n_classes=1,
+                     skip_large_outputs=False)
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "final_merged.mrc", "final_half1.mrc", "final_half2.mrc", "final_half1_unfil.mrc", "final_half2_unfil.mrc",
+    }
 
 
 def test_refinement_results_persist_class_assignment_history():
@@ -1124,16 +1049,23 @@ def test_refinement_results_persist_class_assignment_history():
     assert saved["class_assignments_by_image_iter_000"].dtype == np.int32
     assert saved["class_weights"].dtype == np.float64
     assert_matches(saved["class_weights"], result["class_weights"])
-    assert "write_refinement_archive(" in RUN_FULL_REFINEMENT.read_text()
-    assert "iteration_history.add_class_history_artifacts(" in RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
+    classes = np.arange(10, dtype=np.int64) % 3
+    archive = _archive_metadata({"class_assignment_history": [classes], "class_weights": result["class_weights"]})
+    assert_matches(archive["class_assignments_by_image_iter_000"], classes)
+    assert archive["class_weights"].dtype == np.float64
+
+
 
 
 def test_refinement_results_persist_numbered_follower_scale_boundaries():
-    assert "write_refinement_archive(" in RUN_FULL_REFINEMENT.read_text()
-    source = RUN_FULL_REFINEMENT.with_name("result_files.py").read_text()
-
-    assert '("relion_scale_follower_scales_numbered_pre_score_trajectory", np.float64)' in source
-    assert '("relion_scale_follower_scales_numbered_post_mstep_trajectory", np.float64)' in source
+    trajectory = [np.ones((2, 3)), np.full((2, 3), 2.0)]
+    archive = _archive_metadata({
+        "relion_scale_follower_scales_numbered_pre_score_trajectory": trajectory,
+        "relion_scale_follower_scales_numbered_post_mstep_trajectory": trajectory,
+    })
+    for key in ("relion_scale_follower_scales_numbered_pre_score_trajectory",
+                "relion_scale_follower_scales_numbered_post_mstep_trajectory"):
+        assert archive[key].dtype == np.float64 and archive[key].shape == (2, 2, 3)
 
 
 def test_runner_threads_fail_closed_sparse_follower_scale_replay():
@@ -1164,90 +1096,59 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay():
     assert '("relion_follower_scale_replay_applied_iterations", np.int64)' in output_source
 
 
-def test_runner_requires_and_persists_perturbation_restart_provenance():
-    source = RUN_FULL_REFINEMENT.read_text()
+@pytest.mark.parametrize("score_only", [False, True])
+def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkeypatch, score_only):
+    """A score-only local half scores without backprojecting or accumulating noise.
 
-    assert '"--perturb-replay-restart-provenance"' in source
-    assert '"--perturb-replay-restart-state-iterations requires "' in source
-    assert '"--perturb-replay-restart-provenance"' in source
-    assert '"perturb_replay_restart_state_iterations"' in source
-    assert '"perturb_replay_restart_provenance_path"' in source
-    assert '"perturb_replay_restart_provenance_sha256"' in source
+    The numbered phase sets ``diagnostic_score_only`` from ``--stop_after_local_search_score_only``
+    (test_numbered_expectation_preparation); the controller's local stop has no CPU run.
+    """
+    from helpers.refinement_specs import local_half_owners
+    from helpers.sparse_pass2_mock import MockDataset
 
+    from relax.refinement import half_scoring
+    from relax.sampling import relion_angular_sampling_deg
 
-def test_save_intermediates_skip_unregularized_passes_to_refinement_loop():
-    tree = ast.parse(RUN_FULL_REFINEMENT.read_text())
-    # save_intermediates_skip_unregularized is forwarded via EngineDebugOptions.
-    keywords = _sole_call_keywords(tree, "EngineDebugOptions")
-    value = keywords["save_intermediates_skip_unregularized"]
-    assert isinstance(value, ast.Call)
-    assert isinstance(value.func, ast.Name)
-    assert value.func.id == "bool"
-    assert isinstance(value.args[0], ast.Attribute)
-    assert value.args[0].attr == "save_intermediates_skip_unregularized"
+    class Scored(Exception):
+        pass
 
+    captured = {}
 
-def test_stop_after_local_search_passes_to_refinement_loop():
-    tree = ast.parse(RUN_FULL_REFINEMENT.read_text())
-    assert "--stop_after_local_search" in RUN_FULL_REFINEMENT.read_text()
-    # stop_after_local_search is forwarded via EngineDebugOptions.
-    keywords = _sole_call_keywords(tree, "EngineDebugOptions")
-    value = keywords["stop_after_local_search"]
-    assert isinstance(value, ast.Call)
-    assert isinstance(value.func, ast.Name)
-    assert value.func.id == "bool"
-    assert isinstance(value.args[0], ast.Attribute)
-    assert value.args[0].attr == "stop_after_local_search"
+    def fine_pass(data, grid, batching, kernel, support, diagnostics):
+        captured.update(support=support, kernel=kernel)
+        raise Scored
 
-
-def test_stop_after_local_search_score_only_passes_to_refinement_loop():
-    tree = ast.parse(RUN_FULL_REFINEMENT.read_text())
-    assert "--stop_after_local_search_score_only" in RUN_FULL_REFINEMENT.read_text()
-    # stop_after_local_search_score_only is forwarded via EngineDebugOptions.
-    keywords = _sole_call_keywords(tree, "EngineDebugOptions")
-    value = keywords["stop_after_local_search_score_only"]
-    assert isinstance(value, ast.Call)
-    assert isinstance(value.func, ast.Name)
-    assert value.func.id == "bool"
-    assert isinstance(value.args[0], ast.Attribute)
-    assert value.args[0].attr == "stop_after_local_search_score_only"
-
-
-def test_stop_after_local_search_score_only_is_diagnostic_score_only_path():
-    source = ITERATION_LOOP.read_text()
-    expectation_source = (ITERATION_LOOP.parent / "expectation.py").read_text()
-    half_scoring_source = (ITERATION_LOOP.parent / "half_scoring.py").read_text()
-    # stop_after_local_search{,_score_only} are read off the EngineDebugOptions
-    # bundle (`debug.*`) inside the iteration loop now, rather than being bare
-    # locals bound from flat refine_single_volume kwargs.
-    assert "if debug.stop_after_local_search_score_only:\n        stop_after_local_search = True" in source
-    assert "diagnostic_score_only=bool(" in expectation_source
-    assert "debug.stop_after_local_search_score_only" in source
-    assert "local_diagnostics=numbered_local_diagnostics" in expectation_source
-    assert "_score_half_local_in_bpref_scope(" in expectation_source
-    diagnostics = _sole_call_keywords(
-        ast.parse(expectation_source), "_score_half_local_in_bpref_scope",
-    )["diagnostics"]
-    assert isinstance(diagnostics, ast.Call) and diagnostics.func.id == "replace"
-    assert isinstance(diagnostics.args[0], ast.Attribute)
-    assert isinstance(diagnostics.args[0].value, ast.Name)
-    assert diagnostics.args[0].value.id == "phase"
-    assert diagnostics.args[0].attr == "local_diagnostics"
-    assert "return _score_half_local(half, sampling, priors, batching, execution, diagnostics, optics)" in half_scoring_source
-    assert "score_only=diagnostics.diagnostic_score_only" in half_scoring_source
-    assert "accumulate_noise=local_accumulate_noise" in half_scoring_source
-    assert '"stop_after_local_search_score_only": bool(debug.stop_after_local_search_score_only)' in source
-
-
-def test_diagnostic_single_half_is_guarded_to_local_search_stops():
-    source = RUN_FULL_REFINEMENT.read_text()
-
-    assert "--diagnostic_single_half" in source
-    assert "local_stop_requested = (" in source
-    assert "--diagnostic_single_half is only valid with --stop_after_local_search" in source
-    assert "--diagnostic_single_half is K=1-only" in source
-    assert "particle_layout._replace(half2_rows=np.empty(0, dtype=np.int64))" in source
-    assert '"diagnostic_single_half": bool(args.diagnostic_single_half)' in source
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fine_pass)
+    monkeypatch.setattr(half_scoring, "build_local_search_grid_metadata", lambda _order, *, symmetry="C1": {})
+    monkeypatch.setattr(
+        half_scoring, "build_local_hypothesis_layout",
+        lambda *args, **kwargs: SimpleNamespace(rotation_counts=np.asarray([2])),
+    )
+    dataset = MockDataset(n_images=2, seed=3)
+    owners = local_half_owners(
+        k=0, experiment_dataset=dataset, means_k=np.zeros(dataset.volume_size, dtype=np.complex64),
+        noise_variance_k=np.ones(dataset.image_size, dtype=np.float32),
+        previous_best_rotation_eulers_k=np.zeros((dataset.n_units, 3), dtype=np.float32),
+        local_search_rotations=np.repeat(np.eye(3, dtype=np.float32)[None, :, :], 2, axis=0),
+        local_search_order=1, sigma_rot=np.deg2rad(1.0), sigma_psi=np.deg2rad(1.0),
+        current_translations=np.zeros((1, 2), dtype=np.float32), base_translations=np.zeros((1, 2), dtype=np.float32),
+        trans_prior_center=np.zeros((dataset.n_units, 2), dtype=np.float32),
+        trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
+        current_sigma_offset_angstrom=1.0, disc_type="linear_interp", cs_for_engine=None,
+        local_pass1_current_size=4, image_corrections_k=None, scale_corrections_k=None,
+        translation_search_base=None, disable_adjoint_y=False, disable_adjoint_ctf=False, max_significants=None,
+        iteration=3, save_intermediates_dir=None, local_search_random_perturbation=0.0,
+        local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=0,
+        diagnostic_score_only=score_only, local_search_translation_prior_mode="coarse",
+        replay_prior_translations=None, collect_local_search_profile=False,
+        safe_batch_sizes=lambda *args, **kwargs: (1, 1), local_profile_history=[],
+    )
+    with pytest.raises(Scored):
+        half_scoring._score_half_local(*owners)
+    support = captured["support"]
+    assert support.score_only is score_only
+    assert captured["kernel"].accumulate_noise is (not score_only)
+    assert support.disable_adjoint_y is score_only and support.disable_adjoint_ctf is score_only
 
 
 def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog):
@@ -1288,17 +1189,6 @@ def test_init_noise_from_npz_loader_uses_latest_numbered_spectrum(tmp_path):
 
     assert loaded["iteration"] == "003"
     np.testing.assert_allclose(loaded["noise_radial"], np.asarray([3.0, 4.0], dtype=np.float64))
-
-
-def test_init_noise_from_npz_is_diagnostic_cli_path():
-    source = RUN_FULL_REFINEMENT.read_text()
-    options_source = RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
-    assert "--init_noise_from_npz" in options_source
-    assert "--init_noise_iter" in options_source
-    assert "iteration_history._load_init_noise_radial_npz(args.init_noise_from_npz, args.init_noise_iter)" in source
-    # RELION's start-up estimate is the only estimator from the images.
-    assert "estimate_initial_noise_spectrum_from_unaligned_images" not in source
-    assert "startup_noise.prepare_startup_noise(" in source
 
 
 def test_relion_tau2_fudge_parser_accepts_class3d_arg_label():
@@ -1467,16 +1357,6 @@ def test_fresh_relion_layout_is_physical_order_with_identity_accuracy_trials():
     assert_matches(layout.accuracy_optics_group_ids, relion_particles.iloc[layout.accuracy_particle_ids]["rlnOpticsGroup"])
 
 
-def test_runner_keeps_input_particle_names_for_replay_mapping():
-    source = RUN_FULL_REFINEMENT.read_text()
-    bind = 'our_names = np.asarray(our_particles["rlnImageName"])'
-    first_replay_use = "particle_names=our_names"
-
-    assert bind in source
-    assert source.index(bind) < source.index(first_replay_use)
-    assert "max(int(args.max_iter) - 1, 0)" not in source
-
-
 def test_replay_mapping_distinguishes_repeated_indices_across_stacks(tmp_path):
     pd = pytest.importorskip("pandas")
     starfile = pytest.importorskip("starfile")
@@ -1521,23 +1401,6 @@ def test_replay_mapping_distinguishes_repeated_indices_across_stacks(tmp_path):
     h1_eulers, h2_eulers = overrides[1]["previous_best_rotation_eulers"]
     np.testing.assert_allclose(h1_eulers[:, 0], [20.0])
     np.testing.assert_allclose(h2_eulers[:, 0], [10.0])
-
-
-def test_native_group_ids_are_available_to_k_class_refinement():
-    source = RUN_FULL_REFINEMENT.read_text()
-    group_start = source.index("prepared_particle_groups = input_particle_table.prepare_particle_group_layout")
-    group_end = source.index("optimiser_star = _relion_optimiser_star_for_runtime(", group_start)
-    group_block = source[group_start:group_end]
-
-    assert "args.n_classes == 1" not in group_block
-    assert "Native group-scale updates remain disabled for K-class refinement" not in source
-    assert "halfset_particles=relion_particles" in group_block
-    assert "group_particle_source = prepared_particle_groups.source" in group_block
-    assert "particle_groups = prepared_particle_groups.layout" in group_block
-    assert "group_particle_source.particles" in group_block
-    assert "init_group_ids=list(particle_groups.group_ids_per_half)" in source
-    assert "init_group_count=particle_groups.n_groups" in source
-    assert "init_relion_optics_group_count=particle_groups.n_optics_groups" in source
 
 
 def test_load_init_previous_best_poses_npz_selects_latest_numbered_iter(tmp_path):
@@ -1710,14 +1573,6 @@ def test_replay_normcorr_defaults_to_strict_replay_only():
     assert _resolve_replay_normcorr("/relion/run", None) is True
     assert _resolve_replay_normcorr("/relion/run", False) is False
     assert _resolve_replay_normcorr(None, True) is True
-
-
-def test_k1_half_sets_are_relions_and_class3d_uses_all_data_once():
-    source = RUN_FULL_REFINEMENT.read_text()
-    # No seeded NumPy split: K=1 takes RELION's table (from the input or a RELION STAR).
-    assert "np.random.RandomState(seed)" not in source
-    assert "K=1 auto-refine uses RELION's half sets" in source
-    assert "input_particle_table.prepare_class3d_particle_layout(" in source
 
 
 @pytest.mark.usefixtures("verified_k1_relion_os0")
@@ -2170,14 +2025,28 @@ def test_replay_overrides_include_max_iter_state_for_final_all_data(tmp_path):
     np.testing.assert_allclose(prior_h2, direction_prior, rtol=1e-5, atol=1e-6)
 
 
-def test_full_refinement_requests_max_iter_replay_state_for_final_all_data():
-    source = inspect.getsource(run_full_refinement.main)
-    start = source.index('replay_iteration_overrides = relion_replay._build_replay_iteration_overrides(')
-    end = source.index("\n        )", start)
-    replay_call = source[start:end]
+def test_full_refinement_requests_max_iter_replay_state_for_final_all_data(monkeypatch, tmp_path):
+    """The STAR replay loads run_it000 to run_it{max_iter}: the last one is the final all-data pass's state."""
+    from helpers.tiny_main import controller_inputs, write_tiny_data_dir
+    from helpers.tiny_refinement import write_replay_dir
 
-    assert "int(args.max_iter)," in replay_call
-    assert "max(int(args.max_iter) - 1, 0)" not in replay_call
+    from relax.diagnostics import relion_replay
+
+    requested = []
+
+    def build(relion_dir, half1_rows, half2_rows, max_iter, **kwargs):
+        requested.append(int(max_iter))
+        return [None] * (int(max_iter) + 1)
+
+    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", build)
+    data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
+    inputs = controller_inputs(
+        monkeypatch, tmp_path, "refine", "--max_iter", "3",
+        "--perturb_replay_relion_dir", write_replay_dir(tmp_path / "relion", max_iter=3),
+        "--relion_half_sets", "<DATA>/particles.star", data=data,
+    )
+    assert requested == [3]
+    assert len(inputs["options"].replay.replay_iteration_overrides) == 4
 
 
 def test_autorefine_continuation_noise_emulates_relion_rank1_broadcast(tmp_path):

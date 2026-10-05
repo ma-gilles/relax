@@ -179,15 +179,18 @@ def ordered_trace(rows: list) -> list:
 
     The controller's own thread is the spine. Rows of worker threads (the overlapped halves) are grouped
     per thread, in thread-name order, at the point where the controller waited for them: which worker
-    logged first is a race, what each worker did in order is not.
+    logged first is a race, what each worker did in order is not. Rows of any other thread (the run-file
+    writer, which the command runs in the background) go after the spine, per thread.
     """
     keyed, main_rows = [], 0
     for sequence, (thread_name, row) in enumerate(rows):
         if thread_name == "MainThread":
             keyed.append(((main_rows, "", sequence), row))
             main_rows += 1
-        else:
+        elif thread_name.startswith("em-half-"):
             keyed.append(((main_rows - 1, thread_name, sequence), row))
+        else:
+            keyed.append(((float("inf"), thread_name, sequence), row))
     return [row for _, row in sorted(keyed, key=lambda item: item[0])]
 
 
