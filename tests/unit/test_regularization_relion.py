@@ -780,3 +780,63 @@ def test_hermitian_full_accumulators_take_the_streamed_fsc_with_equal_result(sha
         assert_matches(
             regularization_relion._packed_half_of_hermitian_full(full, accumulator_shape), half.reshape(-1)
         )
+
+
+def test_host_tau2_weight_sum_is_bitwise_the_converted_sum(monkeypatch):
+    """The host route adds the float32 halves in float64 in one ufunc, as converting both first did."""
+    shape = (8, 8, 8)
+    padding_factor = 2
+    full_shape = tuple(s * padding_factor for s in shape)
+    rng = np.random.default_rng(13)
+    weight0 = (0.25 + rng.random(np.prod(full_shape))).astype(np.float32)
+    weight1 = (0.25 + rng.random(np.prod(full_shape))).astype(np.float32)
+    fsc = np.linspace(0.95, 0.25, shape[0] // 2 + 1)
+    monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda n_voxels: True)
+    seen = []
+    shell_stats = regularization_relion._compute_relion_weight_shell_stats
+
+    def recording(weight, *args, **kwargs):
+        seen.append(np.array(weight, copy=True))
+        return shell_stats(weight, *args, **kwargs)
+
+    monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", recording)
+    kwargs = dict(padding_factor=padding_factor, r_max=3, output_dtype=np.float64)
+    for combination, expected in (
+        ("sum", weight0.astype(np.float64) + weight1.astype(np.float64)),
+        ("average", (weight0.astype(np.float64) + weight1.astype(np.float64)) * np.float64(0.5)),
+    ):
+        seen.clear()
+        regularization_relion.compute_relion_tau2_from_weights(
+            weight0, weight1, fsc, shape, weight_combination=combination, **kwargs
+        )
+        assert seen[0].dtype == np.float64
+        np.testing.assert_array_equal(seen[0], expected)
+
+
+def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
+    """The final pass sums the merged accumulators after the prior, so the prior must not touch them."""
+    from relax.refinement import final_reconstruction
+    from relax.refinement.mean_helpers import ReconstructionSettings
+
+    shape = (8, 8, 8)
+    padded = tuple(2 * s for s in shape)
+    half = fourier_transform_utils.volume_shape_to_half_volume_shape(padded)
+    rng = np.random.default_rng(14)
+    numerators = [
+        (rng.standard_normal(np.prod(half)) + 1j * rng.standard_normal(np.prod(half))).astype(np.complex64)
+        for _ in range(2)
+    ]
+    denominators = [(0.25 + rng.random(np.prod(half))).astype(np.float32) for _ in range(2)]
+    before = [array.copy() for array in numerators + denominators]
+    monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda n_voxels: True)
+    settings = ReconstructionSettings(
+        grid_size=8, voxel_size=2.0, volume_shape=shape, padding_factor=2, projection_padding_factor=2,
+        minres_map=5, width_mask_edge=2, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
+        first_iteration_lowpass_angstrom=None,
+    )
+    final_reconstruction.compute_final_halfmap_prior(
+        numerators, denominators, settings=settings, current_size=8, accumulator_shape=padded,
+        full_half_axis=-1, scoring_dtype=np.float64,
+    )
+    for array, copy in zip(numerators + denominators, before, strict=True):
+        np.testing.assert_array_equal(array, copy)
