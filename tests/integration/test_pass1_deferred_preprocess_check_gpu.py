@@ -82,8 +82,10 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
 
 
 @pytest.mark.gpu
-def test_pass1_non_finite_image_fails_before_pass2(monkeypatch):
-    """A NaN image raises from the real pass-1 batch loop, named by batch, before pass 2 accumulates anything."""
+@pytest.mark.parametrize("inside_mask", [False, True], ids=["mask_exterior", "inside_mask"])
+def test_pass1_non_finite_image_fails_before_pass2(monkeypatch, inside_mask):
+    """A NaN image raises from the real pass-1 batch loop, named by batch and image, before pass 2 accumulates
+    anything; the pixel may lie inside the particle mask (relax#16)."""
     assert jax.default_backend() == "gpu"
     from relax.cuda import kernels as em_cuda_kernels
 
@@ -91,17 +93,22 @@ def test_pass1_non_finite_image_fails_before_pass2(monkeypatch):
     result = run()
     assert pass2_calls == [1]
     assert np.all(np.isfinite(np.asarray(result.stats.log_evidence_per_image)))
+    # Pass 2's unmasked preparation queues its counts for the iteration loop's drain after the E-step;
+    # this test calls the E-step directly, so it drains them as the loop does.
+    assert em_cuda_kernels.drain_relion_preprocess_checks() > 0
 
     def poison(dataset):
-        # The kernel's check reads the soft-mask background, so the bad pixel sits in a corner.
-        dataset._images[7, 0, 0] = np.nan  # image 7 is in the third batch of three
+        # A corner lies in the soft-mask background; the centre is inside the mask, which the background sums
+        # never read.
+        pixel = dataset._images.shape[-1] // 2 if inside_mask else 0
+        dataset._images[7, pixel, pixel] = np.nan  # image 7 is in the third batch of three
 
     run, pass2_calls, dataset = _run_adaptive_k2(monkeypatch, poison)
     with pytest.raises(RuntimeError) as failure:
         run()
     message = str(failure.value)
     assert "deferred check, pass 1" in message and "1 image(s)" in message
-    assert "batch 2 (images 6-8 of the pass, dataset images 6-8): 1 image(s)" in message
+    assert "batch 2 (images 6-8 of the pass, dataset images 6-8): 1 image(s), first dataset image 7 " in message
     assert message.count("batch ") == 1
     assert pass2_calls == []
     # Nothing is left for a later pass to report.

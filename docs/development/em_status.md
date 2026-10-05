@@ -1188,6 +1188,21 @@ batch publishes at once. Outputs are unchanged: fixed-state replays (plain 10k K
 node, both arms concurrent, 257 s -> 221 s with the first three commits (job 14957274; no RELION arm in that job).
 K15 is GPU-bound in pass 1 and moves by about 2%.
 
+Non-finite pixels inside the particle mask (2026-10-04, etw; relax#16): the preprocess kernel counted an image as
+invalid only from its soft-mask background sums, which read the pixels outside the mask, so a NaN inside it entered
+the E-step and each workflow stopped later from a different sum, naming no image (refine after a whole iteration).
+The kernel now also counts every image with a non-finite pixel anywhere (`relion_count_nonfinite_images_kernel`,
+with or without a mask) and returns the smallest batch position of an invalid image beside the count. An eager call
+reads that count itself and names the image: at once outside a deferred block ("dataset image N (position p of the
+batch)", from the batch `prepare_batch_preprocess_operands` noted, which covers pass 2 and the subtomogram coarse
+pass), at the end of the loop inside one (pass 1, with its batch label). A call inside a compiled program keeps the
+kernel's own fail-closed check. The start-up noise estimate names a non-finite image too (single particles and
+several shapes by dataset image, VDAM by read order, subtomograms by particle and tilt image). GPU tests: the kernel
+cases in `tests/unit/test_cuda_relion_preprocess.py`, the pass-1 loop with the pixel inside the mask, and one case
+per workflow (`tests/integration/test_non_finite_image_stops_before_output_gpu.py`: refine, Class3D, VDAM and
+subtomogram refine stop on a NaN at an image centre, name the image and write no map). The native sources changed:
+natives built before this commit do not match.
+
 Late plain 10k K=1 iterations after these changes (py-spy, 60 s, relax 3636596): pass 2 41% of the main thread, pass 1
 30%, the VDAM M-step 12%, the expected-accuracy estimate 7%. Open: pass 2 waits 11 s of the 60 s for the
 iteration's images to be read a second time (pass 1 already read them); the expected-accuracy estimate rebuilds a

@@ -123,7 +123,12 @@ class TomoDataset:
         unit_groups = np.asarray(unit_groups, dtype=np.int64).reshape(-1)
         group_of = dict(zip(units.tolist(), unit_groups.tolist()))
         for unit in self.startup_units(units, unit_groups=unit_groups, minimum_nr_particles=minimum_nr_particles):
-            for image in self.unit_images(unit):
+            for tilt, image in enumerate(self.unit_images(unit)):
+                if not np.all(np.isfinite(image)):
+                    raise RuntimeError(
+                        f"start-up noise estimate: particle {self.particle_names[int(unit)]} (row {int(unit)}) has a "
+                        f"non-finite pixel in its tilt image {tilt}"
+                    )
                 yield group_of[int(unit)], image
 
     def startup_units(self, units, *, unit_groups, minimum_nr_particles: int = 10) -> np.ndarray:

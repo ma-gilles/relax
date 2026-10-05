@@ -4030,7 +4030,8 @@ def _relion_preprocess_real_f32_impl(
         raise ValueError("native lane and native atomic reductions are mutually exclusive")
 
     out_type = jax.ShapeDtypeStruct(images.shape, jnp.float32)
-    count_type = jax.ShapeDtypeStruct((1,), jnp.int32)
+    # [number of invalid images, smallest batch position of one] (relion_preprocess.cuh).
+    count_type = jax.ShapeDtypeStruct((2,), jnp.int32)
     workspace_type = jax.ShapeDtypeStruct(
         (
             _relion_preprocess_workspace_bytes(
@@ -4098,9 +4099,15 @@ def relion_preprocess_real_f32(
     The soft-mask launch is batched: the background sums stay on the device
     and the fill kernel forms the same float32 quotient there, so the masked
     images are bit-identical to the former per-image launch.  Default failure
-    semantics are unchanged: a mask with no exterior texel, or a non-finite
-    image, fails closed with ``CUDA: invalid argument`` after one per-call
-    read-back of the per-image sums.
+    semantics are unchanged: a mask with no exterior texel fails closed with
+    ``CUDA: invalid argument``, and an invalid image (a non-finite pixel
+    anywhere, inside the particle mask included, or a non-positive or
+    non-finite soft-mask background) raises after one per-call read-back of
+    the device's invalid-image count, naming the image
+    (:func:`note_relion_preprocess_batch`). The count is taken on the
+    preprocessed images, so a non-finite pixel that the integer shift moves
+    out of the frame is not an invalid image. A call without a mask reads
+    nothing back: its count is queued and read when the queue drains.
 
     ``deferred_finite_check`` (default: on inside a
     :func:`deferred_relion_preprocess_checks` block, else from
@@ -4117,7 +4124,8 @@ def relion_preprocess_real_f32(
         deferred_finite_check = bool(_RELION_PREPROCESS_DEFERRED_SCOPES) or relion_preprocess_deferred_check_requested()
     # A Python queue cannot retain status tracers from the local big JIT.
     # Keep the native fail-closed check inside that compiled execution.
-    if type(jax.core.trace_ctx.trace).__name__ != "EvalTrace":
+    eager = type(jax.core.trace_ctx.trace).__name__ == "EvalTrace"
+    if not eager:
         deferred_finite_check = False
     normalized_shifted, masked, invalid_count = _relion_preprocess_real_f32_jit(
         images,
@@ -4128,11 +4136,56 @@ def relion_preprocess_real_f32(
         apply_mask,
         native_lane_reduction,
         native_atomic_reduction,
-        not deferred_finite_check,
+        not eager,
     )
-    if deferred_finite_check and apply_mask:
-        _queue_relion_preprocess_check(invalid_count)
+    batch_images = _take_noted_batch(int(images.shape[0])) if eager else None
+    if deferred_finite_check or (eager and not apply_mask):
+        # Without a mask the call never waited on the device: its count joins the queue the E-step drains.
+        _queue_relion_preprocess_check(invalid_count, batch_images)
+    elif eager:
+        # The same per-call read-back the kernel's own check made, with the image named.
+        count, first = (int(v) for v in np.asarray(_count_and_first(invalid_count)))
+        if count:
+            raise RuntimeError(
+                f"RELION CUDA preprocessing: {_INVALID_IMAGE.format(count=count)}; "
+                f"first: {_invalid_image_name(first, batch_images)}"
+            )
     return normalized_shifted, masked
+
+
+_INVALID_IMAGE = "{count} image(s) had a non-finite pixel or a non-positive or non-finite soft-mask background"
+# The dataset images of the batch being preprocessed (helpers.preprocessing.prepare_batch_preprocess_operands).
+_RELION_PREPROCESS_BATCH_IMAGES: np.ndarray | None = None
+
+
+def note_relion_preprocess_batch(image_indices) -> None:
+    """Name the dataset images of the next ``relion_preprocess_real_f32`` calls for their failure messages."""
+
+    global _RELION_PREPROCESS_BATCH_IMAGES
+    _RELION_PREPROCESS_BATCH_IMAGES = None if image_indices is None else np.asarray(image_indices).reshape(-1)
+
+
+def _take_noted_batch(batch_size: int) -> np.ndarray | None:
+    """The noted dataset images when they are this call's batch (one note serves one call), else None."""
+
+    global _RELION_PREPROCESS_BATCH_IMAGES
+    images, _RELION_PREPROCESS_BATCH_IMAGES = _RELION_PREPROCESS_BATCH_IMAGES, None
+    return images if images is not None and images.size == batch_size else None
+
+
+def _invalid_image_name(position: int, images: np.ndarray | None) -> str:
+    """``position`` of a preprocess call's batch, with its dataset image when the batch was noted."""
+
+    if images is None or not 0 <= position < images.size:
+        return f"position {position} of the batch"
+    return f"dataset image {int(images[position])} (position {position} of the batch)"
+
+
+def _count_and_first(invalid_count: jax.Array) -> jax.Array:
+    """``[count, first position]`` of one call; a bare count has no position (-1)."""
+
+    flat = invalid_count.reshape(-1)
+    return flat[:2] if flat.shape[0] >= 2 else jnp.concatenate([flat, jnp.full((1,), -1, flat.dtype)])
 
 
 # Tests bypass the JIT through ``__wrapped__`` to exercise the eager guards.
@@ -4171,13 +4224,13 @@ class DeferredPreprocessChecks:
     def __init__(self, where: str):
         self.where = str(where)
         self.label = "unlabelled batch"
-        self.pending: list[tuple[str, jax.Array]] = []
+        self.pending: list[tuple[str, np.ndarray | None, jax.Array]] = []
 
     def at(self, label: str) -> None:
         self.label = str(label)
 
-    def queue(self, invalid_count: jax.Array) -> None:
-        self.pending.append((self.label, invalid_count))
+    def queue(self, invalid_count: jax.Array, batch_images: np.ndarray | None = None) -> None:
+        self.pending.append((self.label, batch_images, _count_and_first(invalid_count)))
         if len(self.pending) >= _RELION_PREPROCESS_PENDING_LIMIT:
             self.raise_if_invalid()
 
@@ -4187,12 +4240,16 @@ class DeferredPreprocessChecks:
         pending, self.pending = self.pending, []
         if not pending:
             return 0
-        counts = np.asarray(jnp.stack([jnp.sum(count) for _, count in pending])).astype(np.int64)
-        if int(counts.sum()):
-            batches = "; ".join(f"{label}: {int(count)} image(s)" for (label, _), count in zip(pending, counts) if count)
+        counts = np.asarray(jnp.stack([count for _, _, count in pending])).astype(np.int64)
+        if int(counts[:, 0].sum()):
+            batches = "; ".join(
+                f"{label}: {int(count)} image(s), first {_invalid_image_name(int(first), images)}"
+                for (label, images, _), (count, first) in zip(pending, counts)
+                if count
+            )
             raise RuntimeError(
-                f"RELION CUDA preprocessing (deferred check, {self.where}): {int(counts.sum())} image(s) had a "
-                f"non-positive or non-finite soft-mask background, in {batches}"
+                f"RELION CUDA preprocessing (deferred check, {self.where}): "
+                f"{_INVALID_IMAGE.format(count=int(counts[:, 0].sum()))}, in {batches}"
             )
         return len(pending)
 
@@ -4223,15 +4280,15 @@ def deferred_relion_preprocess_checks(where: str):
     checks.raise_if_invalid()
 
 
-def _queue_relion_preprocess_check(invalid_count: jax.Array) -> None:
+def _queue_relion_preprocess_check(invalid_count: jax.Array, batch_images: np.ndarray | None = None) -> None:
     """Queue one device invalid-image count: on the innermost open scope, else on the process queue
     (``RELAX_RELION_PREPROCESS_DEFERRED_CHECK``), which drains when full."""
 
     if _RELION_PREPROCESS_DEFERRED_SCOPES:
-        _RELION_PREPROCESS_DEFERRED_SCOPES[-1].queue(invalid_count)
+        _RELION_PREPROCESS_DEFERRED_SCOPES[-1].queue(invalid_count, batch_images)
         return
     with _RELION_PREPROCESS_PENDING_LOCK:
-        _RELION_PREPROCESS_PENDING_CHECKS.append(invalid_count)
+        _RELION_PREPROCESS_PENDING_CHECKS.append(_count_and_first(invalid_count))
         full = len(_RELION_PREPROCESS_PENDING_CHECKS) >= _RELION_PREPROCESS_PENDING_LIMIT
     if full:
         drain_relion_preprocess_checks()
@@ -4258,15 +4315,32 @@ def drain_relion_preprocess_checks() -> int:
         _RELION_PREPROCESS_PENDING_CHECKS.clear()
     if not pending:
         return 0
-    counts = np.asarray(jnp.concatenate(pending)).astype(np.int64)
+    counts = np.asarray(jnp.stack(pending)).astype(np.int64)[:, 0]
     invalid_images = int(counts.sum())
     if invalid_images:
         raise RuntimeError(
-            "RELION CUDA preprocessing (deferred check): "
-            f"{invalid_images} image(s) in {int((counts > 0).sum())} batch(es) had a "
-            "non-positive or non-finite soft-mask background"
+            f"RELION CUDA preprocessing (deferred check): {_INVALID_IMAGE.format(count=invalid_images)}, "
+            f"in {int((counts > 0).sum())} batch(es)"
         )
     return len(pending)
+
+
+@contextmanager
+def expectation_relion_preprocess_checks():
+    """The process queue's checks belong to one expectation: read when it ends, dropped when it raises.
+
+    Leaving the block normally drains the queue (:func:`drain_relion_preprocess_checks`). An exception
+    propagates unchanged and the queued checks are dropped with it, so a later run or test in the same
+    process never reads a failed expectation's counts.
+    """
+
+    try:
+        yield
+    except BaseException:
+        with _RELION_PREPROCESS_PENDING_LOCK:
+            _RELION_PREPROCESS_PENDING_CHECKS.clear()
+        raise
+    drain_relion_preprocess_checks()
 
 
 _TARGET_PROJECT_RELION_HALF_RUNTIME = "cuda_project_relion_half_runtime"

@@ -68,10 +68,22 @@ def test_deferred_check_scope_defers_inside_and_checks_on_normal_exit(monkeypatc
         call()
         assert len(outer.pending) == 2
     call()
-    # check_now: synchronous outside the scope, deferred inside.
-    assert seen == [True, False, False, False, True]
+    # The kernel's own check is for compiled programs: an eager call reads the count itself, at once
+    # outside a scope (so it can name the image) and at the scope's end inside one.
+    assert seen == [False] * 5
     assert outer.pending == [] and inner.pending == []
     assert em_cuda_kernels._RELION_PREPROCESS_DEFERRED_SCOPES == []
+    assert em_cuda_kernels.pending_relion_preprocess_checks() == 0
+
+
+def test_eager_call_outside_a_scope_raises_at_once_and_names_the_noted_image(monkeypatch):
+    from relax.cuda import kernels as em_cuda_kernels
+
+    _, call = _fake_preprocess(monkeypatch, [0, 1])
+    call()
+    em_cuda_kernels.note_relion_preprocess_batch([31])
+    with pytest.raises(RuntimeError, match=r"1 image\(s\) had a non-finite pixel"):
+        call()
     assert em_cuda_kernels.pending_relion_preprocess_checks() == 0
 
 

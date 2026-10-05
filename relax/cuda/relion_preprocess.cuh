@@ -259,23 +259,65 @@ __global__ void relion_cosine_fill_f32_kernel(
     }
 }
 
+// invalid_count is two int32: [0] the number of invalid images of the call, [1] the smallest
+// position of one in the batch (kRelionNoInvalidImage when there is none).
+constexpr int32_t kRelionNoInvalidImage = 0x7fffffff;
+
 __global__ void relion_softmask_count_invalid_backgrounds_kernel(
     const float* background_sums,
     int64_t batch_size,
     int32_t* invalid_count)
 {
     // Single block: count images whose background weight is non-positive or
-    // whose sums are non-finite.  Consumed by the deferred host check.
+    // whose sums are non-finite (none without a mask: background_sums == nullptr).
+    // Consumed by the deferred host check.
     int local = 0;
-    for (int64_t image = threadIdx.x; image < batch_size; image += blockDim.x) {
-        float weight_sum = background_sums[2 * image];
-        float weighted_bg = background_sums[2 * image + 1];
-        if (!(weight_sum > 0.0f) || !isfinite(weight_sum) || !isfinite(weighted_bg)) ++local;
+    int first = kRelionNoInvalidImage;
+    if (background_sums != nullptr) {
+        for (int64_t image = threadIdx.x; image < batch_size; image += blockDim.x) {
+            float weight_sum = background_sums[2 * image];
+            float weighted_bg = background_sums[2 * image + 1];
+            if (!(weight_sum > 0.0f) || !isfinite(weight_sum) || !isfinite(weighted_bg)) {
+                ++local;
+                first = min(first, static_cast<int>(image));
+            }
+        }
     }
     using BlockReduce = cub::BlockReduce<int, kRelionPreprocessBlockSize>;
     __shared__ typename BlockReduce::TempStorage reduce_storage;
     int total = BlockReduce(reduce_storage).Sum(local);
-    if (threadIdx.x == 0) invalid_count[0] = total;
+    __syncthreads();
+    int total_first = BlockReduce(reduce_storage).Reduce(first, cub::Min());
+    if (threadIdx.x == 0) {
+        invalid_count[0] = total;
+        invalid_count[1] = total_first;
+    }
+}
+
+__global__ void relion_count_nonfinite_images_kernel(
+    const float* images,
+    int64_t image_size,
+    const float* background_sums,
+    int32_t* invalid_count)
+{
+    // One block per image (blockIdx.x): an image with a non-finite pixel anywhere, inside the
+    // particle mask included, is invalid (relax#16: the background sums read only the pixels
+    // outside the mask). An image the background count already holds is not counted twice.
+    const float* image = images + static_cast<int64_t>(blockIdx.x) * image_size;
+    int local = 0;
+    for (int64_t texel = threadIdx.x; texel < image_size; texel += blockDim.x)
+        if (!isfinite(__ldg(&image[texel]))) local = 1;
+    using BlockReduce = cub::BlockReduce<int, kRelionPreprocessBlockSize>;
+    __shared__ typename BlockReduce::TempStorage reduce_storage;
+    int total = BlockReduce(reduce_storage).Sum(local);
+    if (threadIdx.x != 0 || total == 0) return;
+    if (background_sums != nullptr) {
+        float weight_sum = background_sums[2 * blockIdx.x];
+        float weighted_bg = background_sums[2 * blockIdx.x + 1];
+        if (!(weight_sum > 0.0f) || !isfinite(weight_sum) || !isfinite(weighted_bg)) return;
+    }
+    atomicAdd(&invalid_count[0], 1);
+    atomicMin(&invalid_count[1], static_cast<int>(blockIdx.x));
 }
 
 // Scratch layout for launch_relion_preprocess_real_f32 (floats, then CUB temp bytes).
@@ -361,7 +403,35 @@ cudaError_t launch_relion_preprocess_real_f32(
     if (err != cudaSuccess) return err;
     err = cudaMemcpyAsync(masked, normalized_shifted, image_bytes, cudaMemcpyDeviceToDevice, stream);
     if (err != cudaSuccess) return err;
-    if (!apply_mask) return cudaMemsetAsync(invalid_count, 0, sizeof(int32_t), stream);
+    // The invalid-image count is always produced on the device so the deferred check
+    // (host_check == false) can read it later without a per-call synchronization.
+    auto count_invalid = [&](const float* background_sums) -> cudaError_t {
+        relion_softmask_count_invalid_backgrounds_kernel<<<1, kRelionPreprocessBlockSize, 0, stream>>>(
+            background_sums, batch_size, invalid_count);
+        cudaError_t status = cudaGetLastError();
+        if (status != cudaSuccess) return status;
+        // The scan reads the preprocessed images (normalized and shifted): a non-finite pixel that the
+        // integer shift moved out of the frame never enters the scores and is not counted.
+        if (batch_size > 0) {
+            relion_count_nonfinite_images_kernel<<<
+                static_cast<unsigned int>(batch_size), kRelionPreprocessBlockSize, 0, stream>>>(
+                masked, pixels_per_image, background_sums, invalid_count);
+            status = cudaGetLastError();
+        }
+        // Without a mask the call never read anything back; its count is for the caller's queue.
+        if (status != cudaSuccess || !host_check || background_sums == nullptr) return status;
+        // Default failure semantics: an invalid image (a non-finite pixel, or a non-positive or
+        // non-finite soft-mask background) aborts the call, after one read-back per call.
+        // Deferring it moves the same check to the caller's drain point; NaN stays in the
+        // affected image in the meantime.
+        int32_t host_count[2] = {0, 0};
+        status = cudaMemcpyAsync(host_count, invalid_count, sizeof(host_count), cudaMemcpyDeviceToHost, stream);
+        if (status != cudaSuccess) return status;
+        status = cudaStreamSynchronize(stream);
+        if (status != cudaSuccess) return status;
+        return host_count[0] != 0 ? cudaErrorInvalidValue : cudaSuccess;
+    };
+    if (!apply_mask) return count_invalid(nullptr);
 
     // The soft-mask background weight is a pure function of the geometry:
     // the farthest texel from the centre is (0, 0).  RELION's mask has no
@@ -447,32 +517,5 @@ cudaError_t launch_relion_preprocess_real_f32(
     err = cudaGetLastError();
     if (err != cudaSuccess) return err;
 
-    // The invalid-image count is always produced on the device so the
-    // deferred check (host_check == false) can read it later without a
-    // per-call synchronization.
-    relion_softmask_count_invalid_backgrounds_kernel<<<1, kRelionPreprocessBlockSize, 0, stream>>>(
-        reduce_values, batch_size, invalid_count);
-    err = cudaGetLastError();
-    if (err != cudaSuccess || !host_check) return err;
-
-    // Default failure semantics are those of the per-image launcher: a
-    // non-positive or non-finite background weight, or a non-finite weighted
-    // background, aborts the call.  One read-back per call replaces one per
-    // image.  Deferring it (RELAX_RELION_PREPROCESS_DEFERRED_CHECK) moves
-    // the same check to the caller's drain point; NaN fills the affected
-    // exterior in the meantime.
-    std::vector<float> host_sums(static_cast<size_t>(2 * batch_size));
-    err = cudaMemcpyAsync(
-        host_sums.data(), reduce_values, host_sums.size() * sizeof(float),
-        cudaMemcpyDeviceToHost, stream);
-    if (err != cudaSuccess) return err;
-    err = cudaStreamSynchronize(stream);
-    if (err != cudaSuccess) return err;
-    for (int64_t image = 0; image < batch_size; ++image) {
-        float weight_sum = host_sums[2 * image];
-        float weighted_bg = host_sums[2 * image + 1];
-        if (!(weight_sum > 0.0f) || !std::isfinite(weight_sum) || !std::isfinite(weighted_bg))
-            return cudaErrorInvalidValue;
-    }
-    return cudaSuccess;
+    return count_invalid(reduce_values);
 }

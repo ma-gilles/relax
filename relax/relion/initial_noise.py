@@ -180,10 +180,12 @@ def compute_avg_unaligned_and_sigma2(
     per_group_done = np.zeros(nr_optics_groups, dtype=np.int64)
     total_target = minimum_nr_particles * nr_optics_groups
 
-    total_done = 0
-    for opt_grp, img in image_iter:
+    for position, (opt_grp, img) in enumerate(image_iter):
         if per_group_done[opt_grp] >= minimum_nr_particles:
             continue
+        if not np.all(np.isfinite(img)):
+            where = f"image {position} in its read order (optics group {int(opt_grp)})"
+            raise RuntimeError(f"start-up noise estimate: {where} has a non-finite pixel")
         img = img.astype(np.float64, copy=False)
         if group_pixel_sizes is not None:
             my_pixel_size = float(group_pixel_sizes[opt_grp])
@@ -199,9 +201,7 @@ def compute_avg_unaligned_and_sigma2(
         sum_sigma2[opt_grp] += power_spectrum(img, n_shells)
         sumw[opt_grp] += 1.0
         per_group_done[opt_grp] += 1
-        total_done += 1
-
-        if total_done >= total_target:
+        if per_group_done.sum() >= total_target:
             break
 
     total_sum = sumw.sum()

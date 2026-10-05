@@ -423,6 +423,10 @@ def prepare_batch_preprocess_operands(
     )
     relion_preprocess_kwargs = None
     if relion_cuda_preprocess:
+        from relax.cuda.kernels import note_relion_preprocess_batch
+
+        # An invalid image of this batch is reported by its dataset index (relax#16).
+        note_relion_preprocess_batch(image_indices_np)
         normalization_factors = (
             batch_corr_np / batch_scale_np
             if batch_corr_np is not None

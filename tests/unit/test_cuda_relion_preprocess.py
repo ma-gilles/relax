@@ -244,24 +244,99 @@ def test_relion_cuda_softmask_batch_matches_single_image_bitwise(gpu_device, nat
                 assert_matches(batched_value[row], np.asarray(single_value)[0])
 
 
-def test_relion_cuda_softmask_non_finite_image_fails_closed(gpu_device):
-    """A non-finite image still aborts the batched call, as the per-image launcher did."""
+def test_relion_cuda_non_finite_image_without_a_mask_is_queued_not_read(gpu_device):
+    """Without a mask the call reads nothing back (it never did): the count is queued and raises at the drain."""
 
+    from relax.cuda import kernels as em_cuda_kernels
     from relax.cuda.kernels import relion_preprocess_real_f32
 
+    em_cuda_kernels.drain_relion_preprocess_checks()
     rng = np.random.default_rng(3)
     images = rng.standard_normal((3, 32, 32)).astype(np.float32)
-    images[1, 5, 7] = np.nan
-    with jax.default_device(gpu_device), pytest.raises(jax.errors.JaxRuntimeError, match="CUDA: invalid argument"):
-        _normalized_shifted, masked = relion_preprocess_real_f32(
+    images[1, 16, 16] = np.nan
+    with jax.default_device(gpu_device):
+        relion_preprocess_real_f32(
             jnp.asarray(images),
             jnp.ones(3, dtype=jnp.float32),
             jnp.zeros((3, 2), dtype=jnp.int32),
             radius=10.0,
             cosine_width=3.0,
-            apply_mask=True,
+            apply_mask=False,
         )
-        masked.block_until_ready()
+        assert em_cuda_kernels.pending_relion_preprocess_checks() == 1
+        with pytest.raises(RuntimeError, match=r"deferred check.*1 image\(s\) had a non-finite pixel"):
+            em_cuda_kernels.drain_relion_preprocess_checks()
+    assert em_cuda_kernels.pending_relion_preprocess_checks() == 0
+
+
+@pytest.mark.parametrize("pixel", [(5, 7), (16, 16)], ids=["mask_exterior", "inside_mask"])
+def test_relion_cuda_non_finite_image_fails_closed_and_is_named(gpu_device, pixel, apply_mask=True):
+    """A non-finite pixel anywhere in an image aborts the call and names the image (relax#16).
+
+    The soft-mask background sums read only the pixels outside the mask, so a NaN inside it used to pass.
+    """
+
+    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda.kernels import relion_preprocess_real_f32
+
+    rng = np.random.default_rng(3)
+    images = rng.standard_normal((3, 32, 32)).astype(np.float32)
+    images[1][pixel] = np.nan
+
+    def call():
+        return relion_preprocess_real_f32(
+            jnp.asarray(images),
+            jnp.ones(3, dtype=jnp.float32),
+            jnp.zeros((3, 2), dtype=jnp.int32),
+            radius=10.0,
+            cosine_width=3.0,
+            apply_mask=apply_mask,
+        )
+
+    with jax.default_device(gpu_device):
+        em_cuda_kernels.note_relion_preprocess_batch(None)
+        with pytest.raises(RuntimeError, match=r"1 image\(s\) had a non-finite pixel.*first: position 1 of the batch"):
+            call()
+        # A batch noted by the caller names the dataset image; the note serves one call.
+        em_cuda_kernels.note_relion_preprocess_batch(np.asarray([40, 41, 42]))
+        with pytest.raises(RuntimeError, match=r"first: dataset image 41 \(position 1 of the batch\)"):
+            call()
+        with pytest.raises(RuntimeError, match="first: position 1 of the batch"):
+            call()
+        # A note of another size is not this call's batch.
+        em_cuda_kernels.note_relion_preprocess_batch(np.asarray([40, 41]))
+        with pytest.raises(RuntimeError, match="first: position 1 of the batch"):
+            call()
+        # Inside a compiled program the kernel's own check fails the call.
+        with pytest.raises(jax.errors.JaxRuntimeError, match="CUDA: invalid argument"):
+            jax.jit(lambda: call()[1])().block_until_ready()
+
+
+def test_relion_cuda_deferred_check_names_an_image_with_a_pixel_inside_the_mask(gpu_device):
+    from relax.cuda import kernels as em_cuda_kernels
+    from relax.cuda.kernels import relion_preprocess_real_f32
+
+    rng = np.random.default_rng(5)
+    images = rng.standard_normal((4, 32, 32)).astype(np.float32)
+    images[2, 16, 16] = np.inf
+    images[3, 15, 17] = np.nan
+    with jax.default_device(gpu_device), pytest.raises(RuntimeError) as failure:
+        with em_cuda_kernels.deferred_relion_preprocess_checks("test pass") as checks:
+            for batch in range(2):
+                checks.at(f"batch {batch}")
+                em_cuda_kernels.note_relion_preprocess_batch(np.arange(4) + 10 * batch)
+                relion_preprocess_real_f32(
+                    jnp.asarray(images if batch else images[[0, 1, 0, 1]]),
+                    jnp.ones(4, dtype=jnp.float32),
+                    jnp.zeros((4, 2), dtype=jnp.int32),
+                    radius=10.0,
+                    cosine_width=3.0,
+                    apply_mask=True,
+                )
+    message = str(failure.value)
+    assert "deferred check, test pass" in message and "2 image(s) had a non-finite pixel" in message
+    assert "batch 1: 2 image(s), first dataset image 12 (position 2 of the batch)" in message
+    assert "batch 0" not in message
 
 
 def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gpu_device):
@@ -330,7 +405,7 @@ def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
                 apply_mask=True,
                 deferred_finite_check=True,
             )
-        # apply_mask=False queues nothing: there is no background to validate.
+        # apply_mask=False queues its count too: a non-finite pixel is invalid without a mask.
         relion_preprocess_real_f32(
             jnp.asarray(rng.standard_normal((2, 32, 32)).astype(np.float32)),
             jnp.ones(2, dtype=jnp.float32),
@@ -340,8 +415,8 @@ def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
             apply_mask=False,
             deferred_finite_check=True,
         )
-    assert em_cuda_kernels.pending_relion_preprocess_checks() == 3
-    assert em_cuda_kernels.drain_relion_preprocess_checks() == 3
+    assert em_cuda_kernels.pending_relion_preprocess_checks() == 4
+    assert em_cuda_kernels.drain_relion_preprocess_checks() == 4
     assert em_cuda_kernels.drain_relion_preprocess_checks() == 0
 
 

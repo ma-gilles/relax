@@ -162,6 +162,11 @@ def estimate_startup_sigma2(
 
     tomo = isinstance(dataset, TomoDataset)
 
+    def refuse_non_finite(row, image):
+        # The estimate would end in a non-positive spectrum that names no image (relax#16).
+        if not np.all(np.isfinite(image)):
+            raise RuntimeError(f"start-up noise estimate: dataset image {int(row)} has a non-finite pixel")
+
     def image_iter():
         if tomo:
             # RELION's per-image count against minimum_nr_particles_sigma2_noise (10 for subtomograms,
@@ -171,6 +176,7 @@ def estimate_startup_sigma2(
             return
         if isinstance(dataset, MultiShapeDataset):
             for row, image in dataset.iter_images(source_rows, batch_size=min(256, source_rows.size)):
+                refuse_non_finite(row, image)
                 yield optics_by_source_row[row], image
             return
         for batch_images, _particle_indices, local_indices in dataset.image_source.iter_batches(
@@ -186,6 +192,7 @@ def estimate_startup_sigma2(
                 row = int(source_row)
                 if row not in optics_by_source_row:
                     raise ValueError(f"image source returned an unexpected source row: {row}")
+                refuse_non_finite(row, image)
                 yield optics_by_source_row[row], image
 
     _average_image, sigma2_per_group = compute_avg_unaligned_and_sigma2(

@@ -6458,8 +6458,8 @@ ffi::Error RelionPreprocessRealF32ImplWithReduction(
     int reduction_mode)
 {
     if (invalid_count_out->element_type() != ffi::DataType::S32 ||
-        invalid_count_out->dimensions().size() != 1 || invalid_count_out->dimensions()[0] != 1)
-        return ffi::Error::InvalidArgument("RelionPreprocessRealF32: invalid_count must be S32 with shape (1,)");
+        invalid_count_out->dimensions().size() != 1 || invalid_count_out->dimensions()[0] != 2)
+        return ffi::Error::InvalidArgument("RelionPreprocessRealF32: invalid_count must be S32 with shape (2,)");
     if (host_check != 0 && host_check != 1)
         return ffi::Error::InvalidArgument("RelionPreprocessRealF32: host_check must be 0 or 1");
     if (images.element_type() != ffi::DataType::F32 ||
