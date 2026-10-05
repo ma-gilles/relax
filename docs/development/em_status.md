@@ -654,17 +654,29 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   bit-reproducible, so a same-seed range has no width, and the rule the user set is the seed distribution:
   relax passes if its seed mean is not below the reference's by more than the standard error of the
   difference on the same seeds. Masked GT FSC-AUC: relax 0.64479 and GPU RELION 0.64484 over 12 seeds
-  (paired difference -0.00005 +/- 0.00057); CPU RELION 0.65381, 0.64695, 0.64833 on seeds 1-3, relax
-  0.0047 below (standard error 0.0016) and GPU RELION 0.0048 below (0.0006), so the row does not pass yet
-  (three more CPU seeds running). At iteration 1, from the same start, relax with CPU RELION's translation
+  (paired difference -0.00005 +/- 0.00057); CPU RELION 0.65387, 0.64695, 0.64833, 0.64955, 0.64244,
+  0.65417 on seeds 1-6 (seed 2 run twice, identical), relax 0.0044 below (standard error 0.0015) and GPU
+  RELION 0.0052 below (0.0011), so the row does not pass under that rule. The reference choice (CPU or GPU
+  RELION) is open until the user decides. The CPU advantage comes from the trajectory, not from the
+  update: one RELION iteration continued from the same iteration-150 state (seed 1, from the CPU and from
+  the GPU checkpoint) takes the same step on the CPU and on the GPU (difference 5-6 % of the step, step
+  correlation 0.998, amplitude ratio 1.00 in every shell, poses 0.1 %, offsets 1 % in the second group
+  from #12/#13), while the CPU and GPU states at iteration 150 differ. On seed 1 the masked score of CPU
+  RELION and relax is equal to iteration 140 (0.6506 and 0.6505); the gap opens on the plateau after it.
+  The lower rlnAveragePmax of CPU RELION in model.star is bookkeeping (0.816 against 0.837 from the same
+  state while the particles' Pmax differ by 0.002). Such continuations must pass the step size: RELION
+  --continue leaves is_3d_model uninitialised and may take 0.3 instead of 0.5 (ma-gilles/relax#23).
+  At iteration 1, from the same start, relax with CPU RELION's translation
   defect emulated (ma-gilles/relax#13, diagnostic) reproduces CPU RELION (map 4.6e-4, 1 % of the other
   group's poses) and relax as written differs by that defect (4.1e-3; GPU RELION 7.8e-3); end to end the
   emulation scores 0.0008 +/- 0.0003 below relax over 10 seeds, so the defect is not what CPU RELION
   gains from. K=2 on this fixture collapses to one class in both programs and is a plumbing check only.
-  Scores: `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/scores/{mshape_0d73d5b,mshape_seeds}`.
-  SPA VDAM with K>1 uses the same scorer. Fix in progress: keep the GEMM scorer and re-score the samples
-  near the cut with RELION's arithmetic when the cap binds. et09 one-group seed 2 on main b44f33e scores
-  0.988222 and 0.988187 against RELION's 0.988241-0.988392, so that row is open on current code too. The
+  Scores: `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/{scores/mshape_0d73d5b,scores/mshape_seeds,mshape_cpu_extra,mshape_late,mshape_cont150_step}`.
+  SPA VDAM with K>1 uses the same scorer. The exact re-score at both cuts landed as 880483a5. Seed 2 with
+  its patch on base d4825f3 (ee2f296; jobs 15009958, 15009959; two runs each): et09 one-group 0.988372 and
+  0.988242 inside RELION's 0.988241-0.988392 (main b44f33e had 0.988222 and 0.988187); et15 optics-group
+  K=2 0.982055 and 0.982094 just below RELION's 0.982101-0.982157 (ranges overlap through an earlier relax
+  run at 0.982124). Evidence: `em_evidence/.../cryoet_vdam_20261001/{et09,et15}_s2_ee2f296`. The
   diagnostic continuation is not valid from a checkpoint whose next iteration updates the sampling (9,
   19, ...): it does not carry the previous offset step into RELION's subtomogram rule (3.0 A against 4.25 A
   at iteration 10); the forward run is right. Evidence: `em_work/cryoet_vdam_20261001/{relion/etob2l_plain,plain_probe,audit/etob2l_plain_s1}`,
