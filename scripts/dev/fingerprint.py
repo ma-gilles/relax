@@ -408,6 +408,8 @@ def _cases() -> dict[str, tuple[str, dict]]:
              ["--max_iter", "2", "--no-relion-half-sets-from-input"])
     add_main("main_k1_overlap", "relax refine with the halves' E-steps overlapped", "refine",
              ["--max_iter", "2", "--overlap_halves"])
+    add_main("main_k1_ledger", "relax refine writing a benchmark ledger", "refine",
+             ["--max_iter", "2", "--benchmark_ledger_json", "<OUTDIR>/ledger.json"])
     add_main("main_k1_continue", "relax refine --continue from the run files of one iteration", "refine",
              ["--max_iter", "2"], continue_after=1)
     add_main("main_k2_class3d", "relax class3d: K=2 from the per-class start-up maps", "class3d",
@@ -1044,7 +1046,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             elif path.suffix in (".mrc", ".mrcs"):
                 with mrcfile.open(path, permissive=True) as volume:
                     flatten(np.asarray(volume.data), rel, out, scrub=scrub)
-            elif path.suffix in (".star", ".txt", ".json", ".log"):
+            elif path.suffix == ".json":
+                # A ledger: its wall times and the checkout's git state differ per run and per source tree.
+                ledger = json.loads(path.read_text())
+                if isinstance(ledger, dict):
+                    ledger = {key: value for key, value in ledger.items()
+                              if not any(word in key for word in ("time", "wall", "git", "seconds", "timing"))}
+                flatten(ledger, rel, out, scrub=scrub)
+            elif path.suffix in (".star", ".txt", ".log"):
                 lines = [line for line in path.read_text().splitlines() if not line.startswith("# Created")]
                 out[rel] = "sha256:" + hashlib.sha256(scrub("\n".join(lines)).encode()).hexdigest()
             else:
@@ -1090,6 +1099,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         root.addHandler(handler)
         root.setLevel(logging.DEBUG)
         old_argv, old_orig_argv = sys.argv, sys.orig_argv
+        import contextlib
+        import io
+
+        printed = io.StringIO()
         statuses = []
         try:
             runs = [("first", work / "first", [*arguments, "--max_iter", str(continue_after)])] if continue_after else []
@@ -1098,11 +1111,13 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 if label == "run" and continue_after:
                     optimiser = sorted((work / "first").glob("run_it*_optimiser.star"))[-1]
                     run_arguments += ["--continue", str(optimiser)]
-                run_arguments = [argument.replace("<DATA>", str(data)) for argument in run_arguments]
+                run_arguments = [argument.replace("<DATA>", str(data)).replace("<OUTDIR>", str(output))
+                                 for argument in run_arguments]
                 sys.argv = ["relax", "--data_dir", str(data), "--output", str(output), *run_arguments]
                 sys.orig_argv = ["python", "-m", f"relax.commands.{command}", *sys.argv[1:]]  # run files record it
                 try:
-                    full_refinement.run_from_command_line(command)
+                    with contextlib.redirect_stdout(printed):
+                        full_refinement.run_from_command_line(command)
                     statuses.append("ok")
                 except SystemExit as exc:
                     statuses.append(f"SystemExit({scrub(str(exc.code))})")
@@ -1118,6 +1133,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             os.environ.clear()
             os.environ.update(environ)
         files = hash_output_files(work, {})
+        # What main prints (its summary table): wall times blanked, kept as log rows.
+        for line in printed.getvalue().splitlines():
+            trace.append(("MainThread", ["log", "relax.stdout", "PRINT", "", scrub(re.sub(r"\d+\.\d+s?", "#", line))]))
         result = {}
         for index, (inputs, out) in enumerate(zip(refine_inputs, refine_results + [{}] * len(refine_inputs))):
             result.update({f"refine{index}/inputs{key}": value for key, value in inputs.items()})
