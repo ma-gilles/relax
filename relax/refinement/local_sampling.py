@@ -1,7 +1,7 @@
 """Prepare local-search grids and pass sizes for refinement."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -271,3 +271,26 @@ def plan_expectation_sampling(
     else:
         local_sampling = None
     return ExpectationSampling(windows, local_sampling)
+
+
+def local_search_centre_half(half, angle_priors, state):
+    """The half whose ``rotation_eulers`` centre this iteration's local angular searches.
+
+    relion_refine centres a local search on the particle's current angles, except while an orientational
+    prior from ``--sigma_ang`` is on below ``--auto_local_healpix_order`` in auto-refine: there each angle
+    with an ``rlnAngle*Prior`` is centred on that prior, every iteration, and the others on the current angle
+    (``getFourierTransformsAndCtfs``; non-helical). ``angle_priors`` is the half's ``[N, 3]`` priors in
+    degrees, NaN where absent, or None. Reads from ``state``: ``do_local_search``, ``auto_sampling``,
+    ``healpix_order`` and ``auto_local_healpix_order``.
+    """
+
+    if (
+        angle_priors is None
+        or half.rotation_eulers is None
+        or not (state.do_local_search and state.auto_sampling)
+        or state.healpix_order >= state.auto_local_healpix_order
+    ):
+        return half
+    current = np.asarray(half.rotation_eulers)
+    centres = np.where(np.isnan(angle_priors), current, angle_priors).astype(current.dtype)
+    return replace(half, rotation_eulers=centres)

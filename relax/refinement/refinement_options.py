@@ -322,10 +322,14 @@ class LocalSearchOptions:
     """Local angular-search controls."""
 
     auto_local_healpix_order: int = LOCAL_SEARCH_HEALPIX_ORDER
+    # RELION --sigma_ang in degrees: local angular searches from iteration 1 (None: global until the order above).
+    sigma_ang_deg: float | None = None
     local_search_profile_mode: Literal["auto", "on", "off"] = "auto"
     local_search_translation_prior_mode: str = "coarse"
 
     def __post_init__(self):
+        if self.sigma_ang_deg is not None and not self.sigma_ang_deg > 0:
+            raise ValueError(f"sigma_ang_deg must be positive, got {self.sigma_ang_deg}")
         if self.local_search_profile_mode not in {
             "auto",
             "on",
@@ -413,6 +417,8 @@ class ReplayState:
     init_direction_prior: Any | None = None
     init_previous_best_translations: Any | None = None
     init_previous_best_rotation_eulers: Any | None = None
+    # Per half, [N, 3] degrees: the input STAR's rlnAngle{Rot,Tilt,Psi}Prior, NaN where absent (None: no column).
+    init_angle_priors: Any | None = None
     preserve_initial_direction_prior: bool = False
     replay_iteration_overrides: Any | None = None
     final_replay_override: Any | None = None

@@ -519,6 +519,7 @@ def main(command=None):
         apply_k1_refine3d_env_defaults()
     command_options.resolve_job_defaults(args)
     command_options.resolve_standalone_k1_start(args)
+    command_options.validate_sigma_ang(args)
     if (
         args.state_swap_target_relion_iteration is not None
         or args.state_swap_variant is not None
@@ -1770,6 +1771,9 @@ def main(command=None):
         ),
         class3d_translations=kclass_firstiter_translations,
         class3d_translation_path=kclass_firstiter_translation_path,
+        local_search_at_start=resume_snapshot is None
+        and int(args.init_relion_iteration) == 0
+        and (args.sigma_ang is not None or (int(args.n_classes) == 1 and args.healpix_order >= args.auto_local_healpix_order)),
         log=logger,
     )
 
@@ -1914,6 +1918,7 @@ def main(command=None):
             consistency=consistency_options,
             local_search=LocalSearchOptions(
                 auto_local_healpix_order=sampling_kwargs["auto_local_healpix_order"],
+                sigma_ang_deg=args.sigma_ang,
                 local_search_profile_mode=args.local_search_profile,
             ),
             k_class=KClassOptions(
@@ -1953,6 +1958,7 @@ def main(command=None):
                     if initial_poses.poses is None
                     else initial_poses.poses["previous_best_rotation_eulers"]
                 ),
+                init_angle_priors=None if initial_poses.poses is None else initial_poses.poses.get("angle_priors"),
                 init_image_corrections=(
                     initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections
                 ),
@@ -2048,6 +2054,7 @@ def main(command=None):
             "voxel_size": float(ds.voxel_size),
             "healpix_order": int(args.healpix_order),
             "auto_local_healpix_order": int(args.auto_local_healpix_order),
+            "sigma_ang": None if args.sigma_ang is None else float(args.sigma_ang),
             "adaptive_oversampling": int(args.adaptive_oversampling),
             "max_significants": int(args.max_significants),
             "max_significants_resolution": runtime_controls.max_significants_resolution,
@@ -2192,6 +2199,7 @@ def main(command=None):
             "max_healpix_order": None if initial_sampling.max_order is None else int(initial_sampling.max_order),
             "max_healpix_order_source": str(initial_sampling.max_order_source),
             "auto_local_healpix_order": int(args.auto_local_healpix_order),
+            "sigma_ang": None if args.sigma_ang is None else float(args.sigma_ang),
             "adaptive_oversampling": int(args.adaptive_oversampling),
             "max_significants": int(args.max_significants),
             "max_significants_resolution": runtime_controls.max_significants_resolution,

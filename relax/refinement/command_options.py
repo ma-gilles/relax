@@ -149,6 +149,16 @@ def resolve_job_defaults(args) -> None:
         args.apply_initial_lowpass = args.frozen_boundary_dir is None
 
 
+def validate_sigma_ang(args) -> None:
+    """Admit RELION's --sigma_ang: a positive width, and K=1 until the Class3D local route exists."""
+    if args.sigma_ang is None:
+        return
+    if not args.sigma_ang > 0:
+        raise SystemExit(f"--sigma_ang must be positive, got {args.sigma_ang}")
+    if int(args.n_classes) != 1:
+        raise SystemExit("--sigma_ang is not supported for Class3D (K>1) yet")
+
+
 def resolve_standalone_k1_start(args) -> None:
     """Default a fresh K=1 start with no RELION output to RELION's particle table from the input.
 
@@ -324,6 +334,16 @@ def parse_refinement_args(argv=None):
         "global to local angular searches. RELION's binary default is 4; "
         "set to 3 when comparing against runs launched with "
         "--auto_local_healpix_order 3.",
+    )
+    parser.add_argument(
+        "--sigma_ang",
+        type=float,
+        default=None,
+        help="RELION --sigma_ang: standard deviation in degrees of the Gaussian prior on all three Euler "
+        "angles, which makes every iteration a local angular search of +/-3 sigma around each particle's "
+        "angles (the input STAR's at iteration 1, 0 where absent). The GUI's 'Local angular search range' R "
+        "is --sigma_ang R/3. Auto-refine replaces it by twice the angular step when the sampling is next "
+        "refined at or above --auto_local_healpix_order. Default: none (global searches until that order).",
     )
     parser.add_argument(
         "--offset_range", type=float, default=5.0,

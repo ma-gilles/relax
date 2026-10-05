@@ -1210,15 +1210,19 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
     new_trans_range, new_trans_step = _relion_next_translation_sampling_pixels(state)
 
     # Determine local search activation
-    do_local = state.auto_sampling and new_order >= state.auto_local_healpix_order
+    reaches_local_order = state.auto_sampling and new_order >= state.auto_local_healpix_order
 
     # Compute sigma for local search: sigma2 = 2 * 2 * angular_step^2
-    # (RELION convention, angular_step in degrees, sigma in radians for storage)
-    if do_local:
+    # (RELION convention, angular_step in degrees, sigma in radians for storage).
+    # Below the local-search order an orientational prior from --sigma_ang stays on with its width:
+    # updateAngularSampling only switches the prior on, and resets its width, at that order.
+    if reaches_local_order:
+        do_local = True
         step_rad = np.deg2rad(new_angular_step / (2**state.adaptive_oversampling))
         sigma_rad = np.sqrt(2.0 * 2.0) * step_rad
     else:
-        sigma_rad = 0.0
+        do_local = state.do_local_search
+        sigma_rad = state.sigma_rot if do_local else 0.0
 
     logger.info(
         "Refining angular sampling: order %d -> %d (%.2f -> %.2f deg), "

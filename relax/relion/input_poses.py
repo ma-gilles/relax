@@ -209,6 +209,17 @@ def _load_input_star_previous_best_poses(
     else:
         norm_corrections = np.ones(n_particles, dtype=np.float64)
 
+    # rlnAngle*Prior centre --sigma_ang searches below the local-search order (local_search_centre_half);
+    # relion_refine marks an absent prior 999 (ml_optimiser.cpp, getFourierTransformsAndCtfs).
+    prior_columns = ("rlnAngleRotPrior", "rlnAngleTiltPrior", "rlnAnglePsiPrior")
+    angle_priors = None
+    if any(column in input_particles.columns for column in prior_columns):
+        angle_priors = np.full((n_particles, 3), np.nan, dtype=np.float64)
+        for axis, column in enumerate(prior_columns):
+            if column in input_particles.columns:
+                values = _input_numeric_columns(input_particles, (column,), field="angle-prior")[:, 0]
+                angle_priors[:, axis] = np.where(np.abs(values - 999.0) < 0.01, np.nan, values)
+
     eulers_per_half = [
         np.ascontiguousarray(eulers[indices], dtype=np.float32)
         for indices in half_indices
@@ -237,6 +248,7 @@ def _load_input_star_previous_best_poses(
             np.ascontiguousarray(norm_corrections[indices], dtype=np.float64)
             for indices in half_indices
         ],
+        "angle_priors": None if angle_priors is None else [angle_priors[indices] for indices in half_indices],
     }
 
 
@@ -396,6 +408,18 @@ def _kclass_firstiter_translation_seed(
     return selected
 
 
+def _zero_local_search_centres(input_particles, particle_layout: "ParticleLayout", pixel_size_angstrom: float) -> dict:
+    """Previous-best poses of (0, 0, 0) and zero origins in each half's order, as many origin axes as the input."""
+    origins, _ = _input_star_origins_pixels(input_particles, voxel_size=pixel_size_angstrom)
+    halves = (particle_layout.half1_rows, particle_layout.half2_rows)
+    return {
+        "iteration": "000_zero_angles",
+        "previous_best_rotation_eulers": [np.zeros((len(rows), 3), dtype=np.float64) for rows in halves],
+        "previous_best_translations": [np.zeros((len(rows), origins.shape[1]), dtype=np.float64) for rows in halves],
+        "translation_units": "pixel",
+    }
+
+
 def prepare_initial_poses(
     input_particles,
     *,
@@ -414,9 +438,15 @@ def prepare_initial_poses(
     has_replay_pose_source: bool,
     class3d_translations,
     class3d_translation_path,
+    local_search_at_start: bool = False,
     log: Logger,
 ) -> InitialPoses:
     """Select and load startup poses, their corrections and source provenance.
+
+    ``local_search_at_start``: iteration 1 is a local angular search (``--sigma_ang``, or a K=1 start at
+    or above ``--auto_local_healpix_order``). relion_refine then centres each search on the input angles,
+    which are 0 where the STAR has none; a start without any pose source is centred at (0, 0, 0) and zero
+    origins the same way, with a warning.
 
     See ``docs/math/relion_refinement_algorithm.md#startup-particle-state-and-norm-corrections``.
     """
@@ -535,6 +565,22 @@ def prepare_initial_poses(
             ],
             "unit" if initial_image_corrections is None else "from input rlnNormCorrection",
         )
+
+    if local_search_at_start:
+        absent = [c for c in ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi") if c not in input_particles.columns]
+        if init_previous_best_poses is None:
+            init_previous_best_poses = _zero_local_search_centres(input_particles, particle_layout, pixel_size_angstrom)
+            resolved_initial_pose_source = "zero_angles"
+            log.warning(
+                "Local angular searches from iteration 1 without a pose source: every search is centred at "
+                "Euler angles (0, 0, 0) with zero origins, as relion_refine centres particles without input angles"
+            )
+        elif resolved_initial_pose_source == "input_star" and absent:
+            log.warning(
+                "Local angular searches from iteration 1: the input STAR lacks %s, so those angles are 0 "
+                "for every particle and the searches are centred there, as in relion_refine",
+                ", ".join(absent),
+            )
 
     return InitialPoses(
         poses=init_previous_best_poses,

@@ -57,7 +57,7 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
-from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
+from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.result_files import (
@@ -383,6 +383,7 @@ def run_final_all_data(
         )
     final_outs = PerHalfOutputs()
     for half, projector in zip(halves, final_projectors, strict=True):
+        half = local_search_centre_half(half, (options.replay.init_angle_priors or (None, None))[half.index], state)
         bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_t0 = time.time()
         logger.info(

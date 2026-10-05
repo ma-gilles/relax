@@ -147,7 +147,7 @@ from relax.refinement.iteration_planning import (
 from relax.refinement.iteration_snapshot import (
     SnapshotCapture,
 )
-from relax.refinement.local_sampling import plan_expectation_sampling
+from relax.refinement.local_sampling import local_search_centre_half, plan_expectation_sampling
 from relax.refinement.mean_helpers import (
     ReconstructionSettings,
     _class_weights_from_posterior,
@@ -1790,7 +1790,7 @@ def refine_single_volume(
             numbered_tomo_sampling = None
 
         def _run_half_estep(k):
-            particle_half = halves[k]
+            particle_half = local_search_centre_half(halves[k], (replay.init_angle_priors or (None, None))[k], state)
             score_result = score_numbered_half(
                 HalfScoringData(
                     particles=particle_half,

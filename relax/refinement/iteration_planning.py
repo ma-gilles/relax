@@ -257,6 +257,10 @@ def initialize_refinement_state(
     init_relion_iteration = schedule.init_relion_iteration
     n_classes = int(options.k_class.n_classes)
     grid_size = image_geometry.box_size
+    # RELION --sigma_ang turns the orientational prior on from iteration 1 at any HEALPix order, with that
+    # width for rot, tilt and psi (ml_optimiser.cpp parseInitial); without it a local start uses 2 x step.
+    sigma_ang_deg = options.local_search.sigma_ang_deg
+    sigma_ang = 0.0 if sigma_ang_deg is None else float(np.deg2rad(sigma_ang_deg))
     state = RefinementState(
         iteration=0,
         healpix_order=schedule.init_healpix_order,
@@ -271,6 +275,9 @@ def initialize_refinement_state(
         voxel_size_angstrom=image_geometry.pixel_size_angstrom,
         particle_diameter_angstrom=float(schedule.particle_diameter_ang or 0.0),
         subtomogram=subtomogram,
+        do_local_search=sigma_ang_deg is not None,
+        sigma_rot=sigma_ang,
+        sigma_psi=sigma_ang,
     )
     # RELION's convergence counters are not initialized against an infinite
     # previous resolution.  They resume from the previous optimiser/model STAR
