@@ -12,7 +12,9 @@ Per arm: the population-weighted class mean is registered to the reference mean 
 auto-refine map for real data), and for K > 1 every class is also registered on its own to the reference mean (a consensus
 of different states registers poorly; 2026-10-01). Each (class, reference class) pair is scored with its best candidate
 transform (consensus or class fit, either hand) by unmasked FSC-AUC; classes are then matched to reference classes by the
-Hungarian assignment. Arm pairs: b's consensus is registered onto a's reference-frame consensus with the same routine.
+Hungarian assignment. Arm pairs: b's consensus is registered onto a's reference-frame consensus with the same routine; for
+K > 1 each b class is also registered on its own onto the a class its reference-frame map matches (a de novo class can sit
+in its own frame, 2026-10-05), and each class pair uses the better of the two transforms.
 Every cell must list its pairs: "pairs": [[a, b], ...], [] for none, or "all" for every arm pair. Pair registrations run
 serially in the parent process, so all pairs of a 14-arm cell (91) cost far more than the parallel per-arm fits.
 
@@ -193,6 +195,31 @@ def wanted_pairs(cell):
     return wanted
 
 
+def _pair_class_matches(sh, a_fts, cons_b_vols, raw_b, via_ref_aucs, fit_class):
+    """Per-class candidates for a K > 1 arm pair and their Hungarian match: [(i, j, auc, source, b volume)].
+
+    Each b class has the pair's consensus transform as a candidate and, because a de novo class can sit in its own frame
+    (2026-10-05: et15 ogtomo class 2 scored 0.093 under the consensus transform and 0.9996 in the reference frame), also its
+    own rigid fit onto the a class that the reference-frame maps match it to (the same reason the arm-vs-reference path fits
+    every class, class_to_mean). fit_class(moving, target) returns [(source, fitted volume)]. Classes are matched on the best
+    unmasked FSC-AUC of each (i, j)."""
+    K = len(a_fts)
+    best = {}
+    for i in range(K):
+        for j in range(K):
+            v = cons_b_vols[j]
+            best[(i, j)] = (auc(sh.fsc(a_fts[i], sh.ft(v))), "consensus", v)
+    guide_rows, guide_cols = linear_sum_assignment(-np.asarray(via_ref_aucs))
+    for i, j in zip(guide_rows, guide_cols):
+        for src, v in fit_class(raw_b[j], i):
+            a_ij = auc(sh.fsc(a_fts[i], sh.ft(v)))
+            if a_ij > best[(i, j)][0]:
+                best[(i, j)] = (a_ij, src, v)
+    aucs = np.array([[best[(i, j)][0] for j in range(K)] for i in range(K)])
+    rows, cols = linear_sum_assignment(-aucs)
+    return [(int(i), int(j), *best[(i, j)]) for i, j in zip(rows, cols)]
+
+
 def score_cell(cell, fit_workers=1):
     t0 = time.time()
     wanted = wanted_pairs(cell)  # validated before any registration
@@ -361,18 +388,34 @@ def score_cell(cell, fit_workers=1):
             )
             al, fit_rec = _Fitted(recs[hand]), {"hand": hand, **recs[hand]}
             b_vols = [al(v) for v in raw_b]
-            b_fts = [sh.ft(v) for v in b_vols]
-            curves = [[sh.fsc(a["fts"][i], b_fts[j]) for j in range(K)] for i in range(K)]
-            aucs = np.array([[auc(c) for c in row] for row in curves])
-            rows, cols = linear_sum_assignment(-aucs)
+            class_fits = {}
+            if K == 1:
+                curves = [[sh.fsc(a["fts"][0], sh.ft(b_vols[0]))]]
+                matches = [(0, 0, auc(curves[0][0]), "consensus", b_vols[0])]
+            else:
+                via_aucs = [[auc(sh.fsc(a["fts"][i], b["fts"][j])) for j in range(K)] for i in range(K)]
+
+                def fit_class(moving, i, a=a, class_fits=class_fits):
+                    out = []
+                    for h, rec in _register_both_hands(moving, a["vols"][i], required=False).items():
+                        class_fits[f"class_to_a{i + 1}:{h}"] = rec
+                        out.append((f"class_fit_{h}", _Fitted(rec)(moving)))
+                    return out
+
+                matches = _pair_class_matches(sh, a["fts"], b_vols, raw_b, via_aucs, fit_class)
+            rows = [m[0] for m in matches]
+            cols = [m[1] for m in matches]
+            b_matched = {j: v for _, j, _, _, v in matches}
             w = np.array([(a["pops"][i] + b["pops"][j]) / 2 for i, j in zip(rows, cols)])
-            matched = [float(aucs[i, j]) for i, j in zip(rows, cols)]
+            matched = [float(m[2]) for m in matches]
             via_ref = [auc(sh.fsc(a["fts"][i], b["fts"][j])) for i, j in zip(rows, cols)]
             entry = {
                 "a": labels[ia],
                 "b": labels[ib],
                 "pair_fit": fit_rec,
                 "matching": [[int(i + 1), int(j + 1)] for i, j in zip(rows, cols)],
+                "per_class_transform": [m[3] for m in matches],
+                "class_fits": class_fits,
                 "per_class_fsc_auc": matched,
                 "mean_fsc_auc": float(np.mean(matched)),
                 "weighted_fsc_auc": float(np.sum(w * matched) / w.sum()),
@@ -383,7 +426,7 @@ def score_cell(cell, fit_workers=1):
                 entry["res_05_A"] = res(curves[0][0], 0.5, n, px)
                 entry["res_0143_A"] = res(curves[0][0], 0.143, n, px)
             if mask is not None:
-                m = [auc(sh.fsc(a["fts_m"][i], sh.ft(b_vols[j] * mask))) for i, j in zip(rows, cols)]
+                m = [auc(sh.fsc(a["fts_m"][i], sh.ft(b_matched[j] * mask))) for i, j in zip(rows, cols)]
                 entry["per_class_masked_fsc_auc"] = m
                 entry["mean_masked_fsc_auc"] = float(np.mean(m))
                 entry["weighted_masked_fsc_auc"] = float(np.sum(w * m) / w.sum())
@@ -397,7 +440,7 @@ def score_cell(cell, fit_workers=1):
         "reference": {**cell["reference"], "sha256": [sha256(p) for p in ref_paths]},
         "mask": cell.get("mask"),
         "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
-        "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+        "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; for K>1 each b class is also fitted on its own onto the a class its reference-frame map matches, and each matched class uses the better transform (2026-10-05); diagnostic_via_reference_frame uses the per-class reference-frame maps.",
         "arms": arms,
         "pairs": pairs,
         "seconds": round(time.time() - t0, 1),
