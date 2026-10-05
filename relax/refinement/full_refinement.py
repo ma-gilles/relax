@@ -30,7 +30,6 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 import jax
 import jax.numpy as jnp
 import numpy as np
-from recovar.utils.file_hash import sha256_file as _sha256_file
 
 import relax
 from relax.diagnostics import frozen_boundary_cli, initial_model_replay, replay_inputs
@@ -1161,51 +1160,10 @@ def main(command=None):
             effective_tau2_fudge=effective_tau2_fudge,
             effective_perturb_seed=effective_perturb_seed,
         )
-    perturb_replay_restart_state_iterations = tuple(
-        sorted(
-            {
-                int(token.strip())
-                for token in args.perturb_replay_restart_state_iterations.split(",")
-                if token.strip()
-            }
-        )
-    )
-    if any(value < 0 for value in perturb_replay_restart_state_iterations):
-        raise SystemExit("--perturb-replay-restart-state-iterations values must be non-negative")
-    if perturb_replay_restart_state_iterations and args.perturb_replay_relion_dir is None:
-        raise SystemExit(
-            "--perturb-replay-restart-state-iterations requires --perturb_replay_relion_dir"
-        )
-    perturb_replay_restart_provenance_path = None
-    perturb_replay_restart_provenance_sha256 = None
-    if perturb_replay_restart_state_iterations:
-        if args.perturb_replay_restart_provenance is None:
-            raise SystemExit(
-                "--perturb-replay-restart-state-iterations requires "
-                "--perturb-replay-restart-provenance"
-            )
-        perturb_replay_restart_provenance_path = Path(
-            args.perturb_replay_restart_provenance
-        ).expanduser().resolve()
-        if not perturb_replay_restart_provenance_path.is_file():
-            raise SystemExit(
-                "--perturb-replay-restart-provenance is not a file: "
-                f"{perturb_replay_restart_provenance_path}"
-            )
-        perturb_replay_restart_provenance_sha256 = _sha256_file(
-            perturb_replay_restart_provenance_path
-        )
-        logger.info(
-            "SamplingPerturbation restart provenance: iterations=%s path=%s sha256=%s",
-            list(perturb_replay_restart_state_iterations),
-            perturb_replay_restart_provenance_path,
-            perturb_replay_restart_provenance_sha256,
-        )
-    elif args.perturb_replay_restart_provenance is not None:
-        raise SystemExit(
-            "--perturb-replay-restart-provenance requires "
-            "--perturb-replay-restart-state-iterations"
-        )
+    restart_provenance = command_options.resolve_restart_provenance(args, log=logger)
+    perturb_replay_restart_state_iterations = restart_provenance.iterations
+    perturb_replay_restart_provenance_path = restart_provenance.path
+    perturb_replay_restart_provenance_sha256 = restart_provenance.sha256
     logger.info(
         "SamplingPerturbation seed: %s%s",
         "unseeded" if effective_perturb_seed is None else str(effective_perturb_seed),

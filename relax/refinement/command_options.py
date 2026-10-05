@@ -1436,3 +1436,64 @@ def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[st
         "--ref_star" if args.ref_star is not None else "--init_class_volumes" if args.init_class_volumes else "data_dir"
     )
     return class_paths, class_option
+
+
+class RestartProvenance(NamedTuple):
+    """The numbered iterations whose sampling-perturbation state a replay restarts from (sorted, unique),
+    with the provenance file that justifies them and its SHA-256; empty and None without a restart."""
+
+    iterations: tuple[int, ...]
+    path: Path | None
+    sha256: str | None
+
+
+def resolve_restart_provenance(args, *, log) -> RestartProvenance:
+    """Admit --perturb-replay-restart-state-iterations with its replay directory and provenance file."""
+    from recovar.utils.file_hash import sha256_file
+
+    iterations = tuple(
+        sorted(
+            {
+                int(token.strip())
+                for token in args.perturb_replay_restart_state_iterations.split(",")
+                if token.strip()
+            }
+        )
+    )
+    if any(value < 0 for value in iterations):
+        raise SystemExit("--perturb-replay-restart-state-iterations values must be non-negative")
+    if iterations and args.perturb_replay_relion_dir is None:
+        raise SystemExit(
+            "--perturb-replay-restart-state-iterations requires --perturb_replay_relion_dir"
+        )
+    path = None
+    sha256 = None
+    if iterations:
+        if args.perturb_replay_restart_provenance is None:
+            raise SystemExit(
+                "--perturb-replay-restart-state-iterations requires "
+                "--perturb-replay-restart-provenance"
+            )
+        path = Path(
+            args.perturb_replay_restart_provenance
+        ).expanduser().resolve()
+        if not path.is_file():
+            raise SystemExit(
+                "--perturb-replay-restart-provenance is not a file: "
+                f"{path}"
+            )
+        sha256 = sha256_file(
+            path
+        )
+        log.info(
+            "SamplingPerturbation restart provenance: iterations=%s path=%s sha256=%s",
+            list(iterations),
+            path,
+            sha256,
+        )
+    elif args.perturb_replay_restart_provenance is not None:
+        raise SystemExit(
+            "--perturb-replay-restart-provenance requires "
+            "--perturb-replay-restart-state-iterations"
+        )
+    return RestartProvenance(iterations, path, sha256)

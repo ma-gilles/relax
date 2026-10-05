@@ -295,3 +295,34 @@ def test_runtime_controls_of_a_saved_optimiser_without_caps_leave_the_cap_off(di
     assert controls.max_significants_resolution["active_max_significants"] == -1
     assert controls.do_ctf_correction is None
     assert controls.firstiter_ini_high_angstrom is None
+
+
+@pytest.mark.parametrize(
+    ("iterations", "replay_dir", "provenance", "message"),
+    [
+        ("2,-1", "r", None, "must be non-negative"),
+        ("2", None, None, "requires --perturb_replay_relion_dir"),
+        ("2", "r", None, "requires --perturb-replay-restart-provenance"),
+        ("2", "r", "missing.json", "is not a file"),
+        ("", None, "p.json", "requires --perturb-replay-restart-state-iterations"),
+    ],
+)
+def test_restart_provenance_is_refused_without_its_companions(tmp_path, iterations, replay_dir, provenance, message):
+    args = SimpleNamespace(perturb_replay_restart_state_iterations=iterations, perturb_replay_relion_dir=replay_dir,
+                           perturb_replay_restart_provenance=None if provenance is None else tmp_path / provenance)
+    with pytest.raises(SystemExit, match=message):
+        command_options.resolve_restart_provenance(args, log=LOG)
+
+
+def test_restart_provenance_sorts_the_iterations_and_hashes_the_file(tmp_path):
+    provenance = tmp_path / "provenance.json"
+    provenance.write_text("{}")
+    args = SimpleNamespace(perturb_replay_restart_state_iterations="5, 3,5,", perturb_replay_relion_dir="r",
+                           perturb_replay_restart_provenance=provenance)
+    restart = command_options.resolve_restart_provenance(args, log=LOG)
+    assert restart.iterations == (3, 5) and restart.path == provenance.resolve()
+    assert restart.sha256 == "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    assert command_options.resolve_restart_provenance(
+        SimpleNamespace(perturb_replay_restart_state_iterations="", perturb_replay_relion_dir=None,
+                        perturb_replay_restart_provenance=None), log=LOG,
+    ) == ((), None, None)

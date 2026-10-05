@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
+from recovar.utils.file_hash import sha256_file
 
 from relax.diagnostics import frozen_boundary_cli
 from relax.diagnostics.frozen_boundary import (
@@ -629,8 +630,8 @@ def test_frozen_boundary_source_hashes_bind_live_stars(tmp_path):
     source_star.write_text("source\n", encoding="utf-8")
     half_star.write_text("halves\n", encoding="utf-8")
     boundary = SimpleNamespace(
-        source_star_sha256=run_full_refinement._sha256_file(source_star),
-        relion_half_star_sha256=run_full_refinement._sha256_file(half_star),
+        source_star_sha256=sha256_file(source_star),
+        relion_half_star_sha256=sha256_file(half_star),
     )
 
     _verify_frozen_boundary_source_hashes(
