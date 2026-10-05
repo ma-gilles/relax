@@ -93,7 +93,9 @@ class ControllerReached(Exception):
 def _stand_in_device(monkeypatch):
     import jax
 
-    monkeypatch.setattr(jax, "devices", lambda *args, **kwargs: [SimpleNamespace(platform="gpu", id=0)])
+    # memory_stats: on a GPU node the XLA reserve check asks the device for its pool limit; none is reported.
+    device = SimpleNamespace(platform="gpu", id=0, memory_stats=dict)
+    monkeypatch.setattr(jax, "devices", lambda *args, **kwargs: [device])
 
 
 def _run_main(monkeypatch, command, data, output, arguments, seed=SEED):
