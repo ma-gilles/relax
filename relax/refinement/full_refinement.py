@@ -917,10 +917,6 @@ def main(command=None):
             )
         init_vol_ft = np.stack(frozen_boundary.means, axis=0)
         merged_init_ft = np.mean(init_vol_ft.astype(np.complex128), axis=0).astype(_init_volume_complex_dtype)
-        init_vol_real = np.asarray(
-            ftu.get_idft3(jnp.asarray(merged_init_ft).reshape(ds.volume_shape)).real,
-            dtype=_init_volume_dtype,
-        )
         logger.info(
             "Initial per-half Fourier volumes loaded from frozen boundary %s",
             frozen_boundary.source_dir,
@@ -1044,9 +1040,6 @@ def main(command=None):
                 per_class_real_for_projector,
                 axis=0,
             )
-        # For downstream init_PS estimation, use class-1 as the representative
-        # (K-class noise/prior bootstrap currently uses a single spectrum).
-        init_vol_real = np.asarray(load_relion_volume(class_paths[0])).astype(_init_volume_dtype)
 
     # ---- Set up rotation and translation grids ----
     from relax.sampling import get_translation_grid, rotation_grid_size
