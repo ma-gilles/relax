@@ -40,7 +40,9 @@ def _sigma_offset_from_moment(
     offset_dims: int = 2,
 ) -> float:
     min_sigma2_angstrom2 = 2.0
-    if wsum > 0.0 and sumw > 0.0:
+    # Any posterior mass carries a moment, zero when every offset sits on its prior centre; RELION then
+    # takes the min_sigma2_offset bound (ml_optimiser.cpp:5233-5235).
+    if sumw > 0.0:
         return float(np.sqrt(max(wsum / (float(offset_dims) * sumw), min_sigma2_angstrom2)))
     if np.isfinite(state_fallback_offsets_angstrom) and state_fallback_offsets_angstrom > 0.0:
         return max(float(state_fallback_offsets_angstrom), float(np.sqrt(min_sigma2_angstrom2)))

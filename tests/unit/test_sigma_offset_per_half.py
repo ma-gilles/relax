@@ -71,3 +71,14 @@ def test_sigma_offset_half_pair_normalizes_scalar_and_pair():
     assert _as_sigma_offset_half_pair([1.5, 2.5]) == [1.5, 2.5]
     with pytest.raises(ValueError, match="exactly two"):
         _as_sigma_offset_half_pair([1.0, 2.0, 3.0])
+
+
+def test_a_zero_offset_moment_takes_relions_lower_bound():
+    # Every particle on its prior centre (offsets all zero): RELION's sigma2_offset is 0, raised to
+    # min_sigma2_offset = 2 A^2, not kept at its previous value.
+    result = update_k1_sigma_offset_from_posterior(
+        noise_stats_per_half=[_noise_stats(0.0, 2.0), _noise_stats(0.0, 3.0)],
+        current_sigma_offset_angstrom_per_half=[10.0, 10.0],
+        state_fallback_offsets_angstrom=3.0,
+    )
+    assert result.current_sigma_offset_angstrom_per_half == pytest.approx([np.sqrt(2.0), np.sqrt(2.0)])
