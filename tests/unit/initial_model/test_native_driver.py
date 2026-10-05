@@ -886,9 +886,66 @@ def test_native_driver_prepares_particle_reads_before_loading(monkeypatch, prere
         (
             "load",
             ("particles.star",),
-            {"lazy": not preread_images, "datadir": "particles", "strip_prefix": "old/", "ind": None},
+            {
+                "lazy": not preread_images,
+                "datadir": "particles",
+                "strip_prefix": "old/",
+                "ind": None,
+                "absent_angles_zero": True,
+            },
         ),
     ]
+
+
+def test_native_driver_loads_angle_free_legacy_star_without_inventing_source_poses(monkeypatch, tmp_path):
+    _write_test_mrc(tmp_path / "particles.mrcs", np.zeros((2, 8, 8), dtype=np.float32))
+    particles = tmp_path / "particles.star"
+    particles.write_text(
+        """data_
+
+loop_
+_rlnImageName #1
+_rlnDefocusU #2
+_rlnDefocusV #3
+_rlnDefocusAngle #4
+_rlnVoltage #5
+_rlnSphericalAberration #6
+_rlnAmplitudeContrast #7
+_rlnMagnification #8
+_rlnDetectorPixelSize #9
+1@particles.mrcs 10000 11000 0 300 2.7 0.07 40000 5
+2@particles.mrcs 12000 13000 10 300 2.7 0.07 40000 5
+"""
+    )
+    original_star = particles.read_bytes()
+    captured = {}
+
+    class ParticleStateLoaded(RuntimeError):
+        pass
+
+    def stop_after_particle_state(main_star, dataset, **kwargs):
+        captured["dataset"] = dataset
+        captured["state"] = initial_model_io._particle_state_from_star(main_star, dataset, **kwargs)
+        raise ParticleStateLoaded
+
+    monkeypatch.setattr(driver, "_particle_state_from_star", stop_after_particle_state)
+    opts = native_options.NativeInitialModelOptions(
+        fn_img=str(particles), datadir=str(tmp_path), particle_diameter=6.0, random_seed=41,
+    )
+    with pytest.raises(ParticleStateLoaded):
+        driver.run_native_initial_model(opts)
+
+    dataset = captured["dataset"]
+    assert dataset.n_images == 2 and dataset.grid_size == 8
+    assert_matches(dataset.voxel_size, 1.25)
+    assert_matches(dataset.rotation_matrices, np.repeat(np.eye(3)[None], 2, axis=0))
+    assert_matches(dataset.translations, np.zeros((2, 2)))
+    state = captured["state"]
+    assert state.best_pose_rotations is None
+    assert state.best_pose_eulers_deg is None
+    assert state.best_pose_eulers_valid is None
+    assert state.visited.tolist() == [False, False]
+    assert particles.read_bytes() == original_star
 
 
 def test_native_driver_rejects_tilt_series(monkeypatch):

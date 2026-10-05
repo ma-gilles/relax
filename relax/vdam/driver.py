@@ -492,6 +492,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
                 datadir=opts.datadir,
                 strip_prefix=opts.strip_prefix,
                 ind=rows,
+                absent_angles_zero=True,
             )
             for rows in (shape_class_rows or [None])
         ]
