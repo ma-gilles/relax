@@ -77,11 +77,8 @@ def test_a_total_within_the_slack_warns_and_does_not_fail():
     assert report_refinement_structure.within_slack(beyond, ceilings) == []
 
 
-def test_line_totals_get_headroom_and_structure_totals_none():
-    assert report_refinement_structure.ceilings_for(TOTALS) == dict(
-        TOTALS, physical_lines=10_500, nonblank_noncomment_lines=8_400
-    )
-    assert report_refinement_structure.ceilings_for(dict(TOTALS, physical_lines=10_001))["physical_lines"] == 10_600
+def test_the_tightest_ceilings_are_the_totals_and_the_slack_is_the_only_headroom():
+    assert report_refinement_structure.ceilings_for(dict(TOTALS, function_count=999)) == TOTALS
 
 
 def test_lowering_tightens_and_never_raises():
@@ -90,7 +87,7 @@ def test_lowering_tightens_and_never_raises():
     grown = dict(TOTALS, maximum_parameter_count=40, nonblank_noncomment_lines=20_000)
 
     assert report_refinement_structure.lowered(ceilings, cleaned) == dict(
-        ceilings, maximum_function_line_span=400, physical_lines=9_500
+        ceilings, maximum_function_line_span=400, physical_lines=9_000
     )
     assert report_refinement_structure.lowered(ceilings, grown) == ceilings
 

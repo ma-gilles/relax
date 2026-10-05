@@ -6,8 +6,8 @@
 
 The checked file (``docs/development/refinement_structure_metrics.json``) records upper bounds, not
 the current values, so a commit regenerates it only to tighten it. ``--lower-ceilings`` rewrites each
-bound to the current value where that is lower (the line totals keep ``LINE_TOTAL_HEADROOM``) and
-never raises one. Raising a ceiling is a hand edit of the file, with the reason in the commit message.
+bound to the current value where that is lower and never raises one; the slack below is the only
+headroom. Raising a ceiling is a hand edit of the file, with the reason in the commit message.
 
 The ceilings are review signals with slack (owner ruling, 2026-10-05). For a ceiling ``c`` the slack is
 ``max(SLACK_MINIMUM, ceil(c * SLACK_PERCENT / 100))``: 5% of the ceiling, rounded up, and at least 1.
@@ -29,18 +29,15 @@ LARGE_ARGUMENT_THRESHOLD = 10
 VERY_LARGE_ARGUMENT_THRESHOLD = 20
 EXCLUDED_FILENAMES = {"__init__.py"}
 CEILING_SCHEMA_VERSION = 2
-# Totals that may not grow. File and function counts are not bounded: splitting a module raises them.
-STRUCTURE_CEILINGS = (
+# Totals under a ceiling. File and function counts are not bounded: splitting a module raises them.
+CEILINGS = (
     "maximum_function_line_span",
     "maximum_parameter_count",
     "large_argument_function_count",
     "very_large_argument_function_count",
+    "physical_lines",
+    "nonblank_noncomment_lines",
 )
-# The line totals grow with ordinary feature work, so their ceilings sit this fraction above the value
-# they were recorded from, rounded up to LINE_TOTAL_ROUNDING lines.
-LINE_TOTAL_CEILINGS = ("physical_lines", "nonblank_noncomment_lines")
-LINE_TOTAL_HEADROOM = 0.05
-LINE_TOTAL_ROUNDING = 100
 # How far a total may pass its ceiling with a warning before the check fails; see the module docstring.
 SLACK_PERCENT = 5
 SLACK_MINIMUM = 1
@@ -150,12 +147,8 @@ def _format_markdown(metrics: dict) -> str:
 
 
 def ceilings_for(totals: dict) -> dict:
-    """The tightest ceilings the current ``totals`` allow."""
-    ceilings = {name: totals[name] for name in STRUCTURE_CEILINGS}
-    for name in LINE_TOTAL_CEILINGS:
-        with_headroom = totals[name] * (1 + LINE_TOTAL_HEADROOM)
-        ceilings[name] = -int(-with_headroom // LINE_TOTAL_ROUNDING) * LINE_TOTAL_ROUNDING
-    return ceilings
+    """The tightest ceilings the current ``totals`` allow: the totals themselves."""
+    return {name: totals[name] for name in CEILINGS}
 
 
 def slack_for(ceiling: int) -> int:
@@ -192,7 +185,7 @@ def read_ceilings(path: Path) -> dict:
     ceilings = payload.get("ceilings", {}).get("totals")
     if payload.get("schema_version") != CEILING_SCHEMA_VERSION or not isinstance(ceilings, dict):
         raise ValueError(f"unsupported refinement structure ceilings: {path}")
-    unknown = sorted(set(ceilings) - {*STRUCTURE_CEILINGS, *LINE_TOTAL_CEILINGS})
+    unknown = sorted(set(ceilings) - set(CEILINGS))
     if unknown:
         raise ValueError(f"unknown ceilings in {path}: {', '.join(unknown)}")
     return ceilings
