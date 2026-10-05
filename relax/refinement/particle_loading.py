@@ -121,6 +121,116 @@ def prepare_relion_halfset_inputs(
     )
 
 
+@dataclass(frozen=True)
+class HalfSets:
+    """The particles' split into halves, with what the start-up reads from the table it came from.
+
+    ``layout``: the half rows and the expected-accuracy trial order. ``relion_particles``,
+    ``optics_image_sizes`` and ``optics_pixel_sizes``: the RELION half-set table and its optics (None for a
+    Class3D split of the input STAR). ``noise_source_rows``, ``noise_optics_group_ids`` and
+    ``noise_optics_pixel_sizes``: the particles RELION's start-up noise estimate reads, in its order (None when
+    the run loads its noise). ``accuracy_ctf_params``: half 1's CTFs for the expected accuracy (None for
+    tomography and for Class3D).
+    """
+
+    layout: ParticleLayout
+    relion_particles: object = None
+    optics_image_sizes: np.ndarray | None = None
+    optics_pixel_sizes: np.ndarray | None = None
+    noise_source_rows: np.ndarray | None = None
+    noise_optics_group_ids: np.ndarray | None = None
+    noise_optics_pixel_sizes: np.ndarray | None = None
+    accuracy_ctf_params: np.ndarray | None = None
+
+
+def split_half_sets(
+    particle_star,
+    dataset,
+    *,
+    halfset_path,
+    n_classes: int,
+    seed: int,
+    init_relion_iteration: int,
+    fresh_auto_refine_order: bool,
+    noise_order_needed: bool,
+    tomographic: bool,
+) -> HalfSets:
+    """Split the input particles into halves: RELION's half sets from ``halfset_path`` (K=1, required), or
+    Class3D's split of the input STAR.
+
+    ``fresh_auto_refine_order`` shuffles the halves in RELION's fresh AutoRefine order (seed + 1).
+    ``noise_order_needed``: the run estimates its start-up noise from the images, so the particles that
+    estimate reads are listed.
+    """
+    from relax.relion import input_particle_table
+
+    particles = particle_star["particles"] if isinstance(particle_star, dict) else particle_star
+    if halfset_path is not None:
+        logger.info("Loading RELION half-set assignments from %s", halfset_path)
+        source = input_particle_table.read_relion_halfset_source(halfset_path, n_classes=n_classes, log=logger)
+        relion_particles = source.tables["particles"]
+        inputs = prepare_relion_halfset_inputs(
+            particles,
+            relion_particles,
+            source_path=halfset_path,
+            random_seed=seed if fresh_auto_refine_order else None,
+            prepare_noise_order=n_classes == 1 and noise_order_needed,
+            tomographic=tomographic,
+            image_grid_size=None if tomographic else dataset.grid_size,
+            log=logger,
+        )
+        if fresh_auto_refine_order:
+            logger.info(
+                "Applied RELION fresh paired AutoRefine particle order (mt19937) with effective seed %d; "
+                "BPref will preserve this physical order",
+                int(seed) + 1,
+            )
+        if n_classes == 1:
+            return HalfSets(
+                layout=inputs.layout,
+                relion_particles=relion_particles,
+                optics_image_sizes=source.optics_image_sizes,
+                optics_pixel_sizes=source.optics_pixel_sizes,
+                noise_source_rows=inputs.noise_source_rows,
+                noise_optics_group_ids=inputs.noise_optics_group_ids,
+                noise_optics_pixel_sizes=source.optics_pixel_sizes,
+                accuracy_ctf_params=inputs.accuracy_ctf_params,
+            )
+        layout = inputs.layout
+    elif n_classes == 1:
+        raise SystemExit(
+            "K=1 auto-refine uses RELION's half sets: a fresh start rebuilds them from the "
+            "input STAR (--relion-half-sets-from-input, the default); a RELION-seeded, "
+            "replayed or frozen start needs --relion_half_sets"
+        )
+    else:
+        relion_particles = source = inputs = None
+        layout = input_particle_table.prepare_class3d_particle_layout(
+            particles,
+            n_particles=dataset.n_units,
+            random_seed=seed,
+            init_relion_iteration=init_relion_iteration,
+        )
+    noise_rows = noise_groups = noise_pixel_sizes = None
+    if noise_order_needed:
+        from relax.refinement import startup_noise
+
+        noise_rows, noise_groups = startup_noise.class3d_noise_order(particles)
+        if not isinstance(particle_star, dict) or "optics" not in particle_star:
+            raise SystemExit("Class3D RELION start-up noise needs an optics table in the particle STAR")
+        noise_pixel_sizes = np.asarray(particle_star["optics"]["rlnImagePixelSize"], dtype=np.float64)
+    return HalfSets(
+        layout=layout,
+        relion_particles=relion_particles,
+        optics_image_sizes=None if source is None else source.optics_image_sizes,
+        optics_pixel_sizes=None if source is None else source.optics_pixel_sizes,
+        noise_source_rows=noise_rows,
+        noise_optics_group_ids=noise_groups,
+        noise_optics_pixel_sizes=noise_pixel_sizes,
+        accuracy_ctf_params=None if inputs is None else inputs.accuracy_ctf_params,
+    )
+
+
 def _apply_relion_image_mask(ds, args, *, sealed_optimiser_star=None):
     """Override the dataset scoring mask with RELION's particle-diameter mask."""
     explicit_particle_diameter = getattr(args, "particle_diameter_ang", None)

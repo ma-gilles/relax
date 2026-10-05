@@ -567,20 +567,12 @@ def main(command=None):
     # RELION data STAR rows can be permuted relative to this table, so callers
     # must map by rlnImageName rather than assuming row positions coincide.
     our_names = np.asarray(our_particles["rlnImageName"])
-    relion_optics_image_sizes = None
-    relion_optics_pixel_sizes = None
-    relion_model_pixel_size = None
-    expected_accuracy_half1_ctf_params = None
     use_relion_live_initial_noise = _k1_relion_live_initial_noise_enabled()
     # A run that loads no noise state starts from RELION's estimate from the images.
     relion_startup_noise_needed = (
         frozen_boundary is None and args.init_noise_from_npz is None and args.relion_init_dir is None
     )
-    relion_fresh_initial_noise_source_rows = None
-    relion_fresh_initial_noise_optics_group_ids = None
-    class3d_noise_optics_pixel_sizes = None
-    relion_particles = None
-    use_fresh_auto_refine_order = False
+    relion_model_pixel_size = None
 
     if args.relion_half_sets_from_input:
         args.relion_half_sets = str(
@@ -597,69 +589,22 @@ def main(command=None):
             args.relion_half_sets,
         )
 
-    if args.relion_half_sets is not None:
-        # Use RELION's half-set split from rlnRandomSubset
-        logger.info("Loading RELION half-set assignments from %s", args.relion_half_sets)
-        halfset_source = input_particle_table.read_relion_halfset_source(
-            args.relion_half_sets,
-            n_classes=args.n_classes,
-            log=logger,
-        )
-        relion_particles = halfset_source.tables["particles"]
-        relion_optics_image_sizes = halfset_source.optics_image_sizes
-        relion_optics_pixel_sizes = halfset_source.optics_pixel_sizes
-        use_fresh_auto_refine_order = _use_fresh_auto_refine_particle_order(
-            args,
-            frozen_boundary,
-        )
-        halfset_inputs = particle_loading.prepare_relion_halfset_inputs(
-            our_particles,
-            relion_particles,
-            source_path=args.relion_half_sets,
-            random_seed=args.seed if use_fresh_auto_refine_order else None,
-            prepare_noise_order=(
-                args.n_classes == 1
-                and (relion_startup_noise_needed or use_relion_live_initial_noise)
-            ),
-            tomographic=tomo_run,
-            image_grid_size=None if tomo_run else ds.grid_size,
-            log=logger,
-        )
-        particle_layout = halfset_inputs.layout
-        relion_fresh_initial_noise_source_rows = halfset_inputs.noise_source_rows
-        relion_fresh_initial_noise_optics_group_ids = halfset_inputs.noise_optics_group_ids
-        expected_accuracy_half1_ctf_params = halfset_inputs.accuracy_ctf_params
-        del halfset_inputs
-        if use_fresh_auto_refine_order:
-            logger.info(
-                "Applied RELION fresh paired AutoRefine particle order (mt19937) with effective seed %d; "
-                "BPref will preserve this physical order",
-                int(args.seed) + 1,
-            )
-    elif args.n_classes == 1:
-        raise SystemExit(
-            "K=1 auto-refine uses RELION's half sets: a fresh start rebuilds them from the "
-            "input STAR (--relion-half-sets-from-input, the default); a RELION-seeded, "
-            "replayed or frozen start needs --relion_half_sets"
-        )
-    else:
-        particle_layout = input_particle_table.prepare_class3d_particle_layout(
-            our_particles,
-            n_particles=n_images,
-            random_seed=args.seed,
-            init_relion_iteration=args.init_relion_iteration,
-        )
-    if args.n_classes > 1 and relion_startup_noise_needed:
-        (
-            relion_fresh_initial_noise_source_rows,
-            relion_fresh_initial_noise_optics_group_ids,
-        ) = startup_noise.class3d_noise_order(our_particles)
-        if not isinstance(our_star, dict) or "optics" not in our_star:
-            raise SystemExit("Class3D RELION start-up noise needs an optics table in the particle STAR")
-        class3d_noise_optics_pixel_sizes = np.asarray(
-            our_star["optics"]["rlnImagePixelSize"],
-            dtype=np.float64,
-        )
+    use_fresh_auto_refine_order = args.relion_half_sets is not None and _use_fresh_auto_refine_particle_order(
+        args, frozen_boundary
+    )
+    half_sets = particle_loading.split_half_sets(
+        our_star,
+        ds,
+        halfset_path=args.relion_half_sets,
+        n_classes=int(args.n_classes),
+        seed=int(args.seed),
+        init_relion_iteration=args.init_relion_iteration,
+        fresh_auto_refine_order=use_fresh_auto_refine_order,
+        noise_order_needed=relion_startup_noise_needed or (args.n_classes == 1 and use_relion_live_initial_noise),
+        tomographic=tomo_run,
+    )
+    particle_layout = half_sets.layout
+    relion_particles = half_sets.relion_particles
 
     local_stop_requested = (
         bool(args.stop_after_local_search_profile)
@@ -952,12 +897,10 @@ def main(command=None):
             )
         initial_noise = startup_noise.prepare_startup_noise(
             ds,
-            source_rows=relion_fresh_initial_noise_source_rows,
-            optics_group_ids=relion_fresh_initial_noise_optics_group_ids,
+            source_rows=half_sets.noise_source_rows,
+            optics_group_ids=half_sets.noise_optics_group_ids,
             mask_params=relion_mask_params,
-            optics_pixel_sizes=(
-                relion_optics_pixel_sizes if args.n_classes == 1 else class3d_noise_optics_pixel_sizes
-            ),
+            optics_pixel_sizes=half_sets.noise_optics_pixel_sizes,
             output_dtype=np.float64 if _double_image_preprocessing else np.float32,
             pair_counting=consistency_options.initial_noise_pair_counting,
         )
@@ -1018,11 +961,11 @@ def main(command=None):
             invalid_reasons.append("RELION half-set data are required")
         if relion_mask_params is None:
             invalid_reasons.append("RELION particle-diameter mask parameters are required")
-        if relion_fresh_initial_noise_source_rows is None:
+        if half_sets.noise_source_rows is None:
             invalid_reasons.append("RELION initial-noise source order is required")
-        if relion_fresh_initial_noise_optics_group_ids is None:
+        if half_sets.noise_optics_group_ids is None:
             invalid_reasons.append("RELION initial-noise optics groups are required")
-        if relion_optics_pixel_sizes is None or relion_optics_pixel_sizes.size != 1:
+        if half_sets.optics_pixel_sizes is None or half_sets.optics_pixel_sizes.size != 1:
             invalid_reasons.append("exactly one RELION optics pixel size is required")
         if invalid_reasons:
             raise ValueError(
@@ -1031,9 +974,9 @@ def main(command=None):
             )
         relion_live_initial_sigma2_per_group = startup_noise.estimate_startup_sigma2(
             ds,
-            source_rows=relion_fresh_initial_noise_source_rows,
-            optics_group_ids=relion_fresh_initial_noise_optics_group_ids,
-            image_pixel_size=float(relion_optics_pixel_sizes[0]),
+            source_rows=half_sets.noise_source_rows,
+            optics_group_ids=half_sets.noise_optics_group_ids,
+            image_pixel_size=float(half_sets.optics_pixel_sizes[0]),
             particle_diameter_ang=float(relion_mask_params[0]),
             width_mask_edge_px=int(relion_mask_params[1]),
         )
@@ -1051,8 +994,8 @@ def main(command=None):
         logger.warning(
             "STRICT-PARITY: fresh K=1 RELION live initial noise enabled: particles=%d "
             "source_rows_head=%s sigma2_head=%s",
-            min(1000, int(np.asarray(relion_fresh_initial_noise_source_rows).size)),
-            np.asarray(relion_fresh_initial_noise_source_rows, dtype=np.int64)[:5].tolist(),
+            min(1000, int(np.asarray(half_sets.noise_source_rows).size)),
+            np.asarray(half_sets.noise_source_rows, dtype=np.int64)[:5].tolist(),
             np.asarray(relion_live_initial_sigma2[:5]),
         )
     if args.relion_init_dir is not None and frozen_boundary is None:
@@ -1564,8 +1507,8 @@ def main(command=None):
                 perturb_factor=args.perturb_factor,
                 perturb_seed=effective_perturb_seed,
                 optimizer_random_seed=args.seed,
-                relion_optics_image_sizes=relion_optics_image_sizes,
-                relion_optics_pixel_sizes=relion_optics_pixel_sizes,
+                relion_optics_image_sizes=half_sets.optics_image_sizes,
+                relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
                 optics_group_ids_per_half=optics_group_ids_per_half,
                 relion_model_pixel_size=relion_model_pixel_size,
                 perturb_replay_relion_dir=args.perturb_replay_relion_dir,
@@ -1668,7 +1611,7 @@ def main(command=None):
                     half1_trial_order_local=particle_layout.accuracy_trial_order_local,
                     half1_optics_group_ids=particle_layout.accuracy_optics_group_ids,
                     half1_particle_ids=particle_layout.accuracy_particle_ids,
-                    half1_ctf_params=expected_accuracy_half1_ctf_params,
+                    half1_ctf_params=half_sets.accuracy_ctf_params,
                     do_ctf_correction=expected_accuracy_do_ctf_correction,
                 ),
             ),
