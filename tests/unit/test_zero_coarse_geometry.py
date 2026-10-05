@@ -1,408 +1,267 @@
-"""Execute production routing expressions without a full refinement fixture."""
+"""Routing of the dense and local scorers' operands, on the CPU stand-in engine.
 
-import ast
-from pathlib import Path
+The numbered dense scoring passes its owner records down unchanged; RELION's coarse device geometry is
+generated (and reaches the engine) only on the routes that use it; the diagnostic and local-adaptive
+overrides are resolved before half scoring. See docs/math/zero_coarse_geometry.md.
+"""
+
+import inspect
+from dataclasses import replace
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+from relax.dense import scoring_policy
+from relax.refinement import expectation, finalization, half_scoring, iteration_loop
+from relax.refinement.refinement_options import AdaptiveOptions
 
 pytestmark = pytest.mark.unit
-OWNERS = Path(__file__).resolve().parents[2] / "relax"
+
+_DENSE_RECORDS = [
+    "HalfScoringData", "DenseSamplingSpec", "DensePriorSpec", "DenseBatchPolicy", "DenseVariantPolicy",
+    "DenseExecutionPolicy", "OpticsSpec",
+]
 
 
-def tree(name):
-    # d2e7e27ed moved half_scoring.py from relax/dense to relax/refinement.
-    return ast.parse((OWNERS / "refinement" / name).read_text())
+def _parameters(function):
+    return [name for name, parameter in inspect.signature(function).parameters.items()
+            if parameter.kind is parameter.POSITIONAL_OR_KEYWORD]
 
 
-def evaluate(node, **scope):
-    return eval(compile(ast.Expression(node), "<production-route>", "eval"), scope)
+def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan(monkeypatch):
+    for name in ("DenseHalfScoringPlan", "_run_dense_half_scoring", "DenseHalfScoringOutputs",
+                 "_dense_half_scoring_outputs"):
+        assert not hasattr(iteration_loop, name) and not hasattr(expectation, name)
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "score_numbered_half", "half")
+    trace.wrap(expectation, "_score_half_dense_in_bpref_scope", "dense")
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False)
+    assert trace.labels() == ["half", "dense"] * 4
+    for call in trace.calls("dense"):
+        assert call.inside == ("half",)
+        assert [type(argument).__name__ for argument in call.args] == _DENSE_RECORDS and not call.kwargs
 
 
-def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan():
-    loop = tree("iteration_loop.py")
-    assert all(
-        not isinstance(node, (ast.ClassDef, ast.FunctionDef))
-        or node.name
-        not in {
-            "DenseHalfScoringPlan",
-            "_run_dense_half_scoring",
-            "DenseHalfScoringOutputs",
-            "_dense_half_scoring_outputs",
-        }
-        for node in ast.walk(loop)
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_adaptive_dense_route_keeps_owner_inputs_visible(monkeypatch, n_classes):
+    """The dispatcher hands its mode's adaptive scorer its own seven records and the point group."""
+    scorer = {1: "_score_adaptive_k1_dense", 2: "_score_adaptive_kclass_dense"}[n_classes]
+    records = ["half", "sampling", "priors", "batching", "variant", "execution", "optics"]
+    assert _parameters(half_scoring._score_half_dense_one_shape)[:7] == records
+    if n_classes == 1:
+        assert _parameters(half_scoring._score_adaptive_k1_dense) == [*records, "base_em_kwargs"]
+        assert [name for name, parameter in inspect.signature(half_scoring._score_adaptive_k1_dense).parameters.items()
+                if parameter.kind is parameter.KEYWORD_ONLY] == ["symmetry"]
+    else:
+        assert _parameters(half_scoring._score_adaptive_kclass_dense) == [*records, "em_kwargs", "symmetry"]
+    trace = CallTrace(monkeypatch)
+    trace.wrap(half_scoring, "_score_half_dense_one_shape", "dispatch")
+    trace.wrap(half_scoring, scorer, "scorer")
+    run_tiny_refinement(monkeypatch, n_classes=n_classes, final_after_max_iter=False)
+    assert trace.labels() == ["dispatch", "scorer"] * 4
+    for dispatch, call in zip(trace.calls("dispatch"), trace.calls("scorer"), strict=True):
+        assert all(mine is theirs for mine, theirs in zip(call.args[:7], dispatch.args[:7], strict=True))
+        symmetry = call.kwargs["symmetry"] if n_classes == 1 else call.args[8]
+        assert symmetry == "C1"
+
+
+def _device_rotations_stand_in(monkeypatch):
+    """RELION's device-built coarse rotations are CUDA-only (None on a CPU); stand in a distinct host copy."""
+
+    def coarse_rotations(rotation_grid, *args, **kwargs):
+        return np.array(rotation_grid.rotations, copy=True)
+
+    monkeypatch.setattr(iteration_loop, "coarse_pass1_rotations", coarse_rotations)
+
+
+# (oversampling, classes, first-iteration CC, first-iteration hard reconstruction, float64 scoring) ->
+# whether iterations 1 and 2 generate RELION's coarse device rotations.
+_GATE_CASES = {
+    "os0_k1": ((0, 1, False, False, False), [True, True]),
+    "os0_kclass": ((0, 2, False, False, False), [False, False]),
+    "os0_k1_cc": ((0, 1, True, False, False), [False, True]),
+    "os0_k1_hard": ((0, 1, False, True, False), [False, True]),
+    "os0_k1_float64": ((0, 1, False, False, True), [False, False]),
+    "os1_k1": ((1, 1, False, False, False), [True, True]),
+    "os1_kclass_cc_float64": ((1, 2, True, False, True), [True, True]),
+}
+
+
+def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, hard, float64):
+    parity = {}
+    if cc:
+        parity.update(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0)
+    if hard:
+        parity.update(first_iteration_reconstruction_mode="hard")
+    if float64:
+        monkeypatch.setattr(
+            scoring_policy, "DENSE_PRECISION", replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
+        )
+    trace.wrap(iteration_loop, "iteration_trial_grid", "iteration")
+    trace.wrap(iteration_loop, "coarse_pass1_rotations", "coarse_rotations")
+    run_tiny_refinement(
+        monkeypatch, n_classes=n_classes, final_after_max_iter=False, parity=parity,
+        adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
     )
-    expectation = tree("expectation.py")
-    assert any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-               and node.func.id == "score_numbered_half" for node in ast.walk(loop))
-    direct_calls = [
-        node
-        for node in ast.walk(expectation)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_score_half_dense_in_bpref_scope"
-        and node.args
-    ]
-    assert len(direct_calls) == 1
-    assert [argument.id for argument in direct_calls[0].args] == [
-        "dense_half",
-        "dense_sampling",
-        "dense_priors",
-        "dense_batching",
-        "dense_variant",
-        "dense_execution",
-        "dense_optics",
-    ]
 
 
-def test_adaptive_kclass_dense_route_keeps_owner_inputs_visible():
-    scorer = tree("half_scoring.py")
-    helper = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_adaptive_kclass_dense"
-    )
-    assert [argument.arg for argument in helper.args.args] == [
-        "half",
-        "sampling",
-        "priors",
-        "batching",
-        "variant",
-        "execution",
-        "optics",
-        "em_kwargs",
-        "symmetry",
-    ]
-    dispatcher = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_half_dense_one_shape"
-    )
-    calls = [
-        node
-        for node in ast.walk(dispatcher)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_score_adaptive_kclass_dense"
-    ]
-    assert len(calls) == 1
-    assert [argument.id for argument in calls[0].args] == [
-        "half",
-        "sampling",
-        "priors",
-        "batching",
-        "variant",
-        "execution",
-        "optics",
-        "em_kwargs",
-        "symmetry",
-    ]
-
-
-def test_adaptive_k1_dense_route_keeps_owner_inputs_visible():
-    scorer = tree("half_scoring.py")
-    helper = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_adaptive_k1_dense"
-    )
-    expected_inputs = [
-        "half",
-        "sampling",
-        "priors",
-        "batching",
-        "variant",
-        "execution",
-        "optics",
-        "base_em_kwargs",
-    ]
-    assert [argument.arg for argument in helper.args.args] == expected_inputs
-    assert [argument.arg for argument in helper.args.kwonlyargs] == ["symmetry"]
-    dispatcher = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_half_dense_one_shape"
-    )
-    calls = [
-        node
-        for node in ast.walk(dispatcher)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_score_adaptive_k1_dense"
-    ]
-    assert len(calls) == 1
-    assert [argument.id for argument in calls[0].args] == [
-        *expected_inputs[:-1],
-        "em_kwargs",
-    ]
-    assert len(calls[0].keywords) == 1
-    assert calls[0].keywords[0].arg == "symmetry"
-    assert calls[0].keywords[0].value.id == "symmetry"
+@pytest.mark.parametrize("case", sorted(_GATE_CASES))
+def test_device_matrix_generation_gate(monkeypatch, case):
+    """The local route never generates them; it has no CPU run (the GPU tiers cover it)."""
+    inputs, expected = _GATE_CASES[case]
+    trace = CallTrace(monkeypatch)
+    _gate_run(monkeypatch, trace, *inputs)
+    labels = trace.labels()
+    generated = [labels[index + 1:index + 2] == ["coarse_rotations"] for index, label in enumerate(labels)
+                 if label == "iteration"]
+    assert generated == expected
 
 
 @pytest.mark.parametrize(
-    "os,local,k,mode,hard,double,expected",
-    [
-        (0, False, 1, "gaussian", False, False, True),
-        (0, True, 1, "gaussian", False, False, False),
-        (0, False, 4, "gaussian", False, False, False),
-        (0, False, 1, "normalized_cc", False, False, False),
-        (0, False, 1, "gaussian", True, False, False),
-        (0, False, 1, "gaussian", False, True, False),
-        (1, False, 1, "gaussian", False, False, True),
-        (1, False, 4, "normalized_cc", True, True, True),
-        (1, True, 4, "gaussian", False, False, False),
-    ],
+    "oversampling,xhalf,score_mode,expected",
+    [(0, True, "gaussian", [True] * 4), (0, False, "gaussian", [False] * 4), (1, True, "gaussian", [False] * 4),
+     (0, True, "normalized_cc", [False, False, True, True])],
 )
-def test_device_matrix_generation_gate(os, local, k, mode, hard, double, expected):
-    gates = [
-        n
-        for n in ast.walk(tree("iteration_loop.py"))
-        if isinstance(n, ast.If)
-        and any(
-            isinstance(s, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == "adaptive_pass1_rotations" for t in s.targets)
-            and isinstance(s.value, ast.Call)
-            and isinstance(s.value.func, ast.Name)
-            and s.value.func.id == "coarse_pass1_rotations"
-            for s in n.body
-        )
-    ]
-    assert len(gates) == 1
-    got = evaluate(
-        gates[0].test,
-        use_local=local,
-        state=SimpleNamespace(adaptive_oversampling=os),
-        n_classes=k,
-        first_iteration=SimpleNamespace(score_mode=mode, winner_take_all=hard),
-        scoring_policy=SimpleNamespace(DENSE_PRECISION=SimpleNamespace(use_float64_scoring=double)),
+def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, score_mode, expected):
+    """K=1 scores pass 1 on the generated coarse device rotations only at oversampling 0 with the x-half
+    M-step and Gaussian scoring; the fine operand is always the pass-2 grid's."""
+    monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1" if xhalf else "0")
+    _device_rotations_stand_in(monkeypatch)
+    trace = CallTrace(monkeypatch)
+    trace.wrap(half_scoring, "_score_adaptive_k1_dense", "scorer")
+    trace.wrap(half_scoring, "prepare_adaptive_pass2_grids", "grids")
+    trace.wrap(half_scoring, "engine_projection_inputs", "projection")
+    run_tiny_refinement(
+        monkeypatch, final_after_max_iter=False, parity=dict(first_iteration_score_mode=score_mode),
+        adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
     )
-    assert bool(got) is expected
+    scorers, grids, projections = trace.calls("scorer"), trace.calls("grids"), trace.calls("projection")
+    assert len(scorers) == len(grids) == len(projections) == 4
+    native = []
+    for scorer, grid, projection in zip(scorers, grids, projections, strict=True):
+        rotations = projection.kwargs["rotations"]
+        assert rotations["fine"] is grid.result.fine_rotations
+        override = scorer.args[1].coarse_scoring_rotations
+        native.append(override is not None and rotations["coarse"] is override)
+        assert native[-1] or rotations["coarse"] is grid.result.coarse_rotations
+    assert native == expected
 
 
-@pytest.mark.parametrize(
-    "os,xhalf,mode,double,override,expected",
-    [
-        (0, True, "gaussian", False, True, True),
-        (0, True, "gaussian", False, False, False),
-        (1, True, "gaussian", False, True, False),
-        (0, False, "gaussian", False, True, False),
-        (0, True, "normalized_cc", False, True, False),
-        (0, True, "gaussian", True, True, False),
-    ],
-)
-def test_only_coarse_engine_operand_changes(os, xhalf, mode, double, override, expected):
-    k1_route = next(
-        node
-        for node in tree("half_scoring.py").body
-        if isinstance(node, ast.FunctionDef) and node.name == "_score_adaptive_k1_dense"
-    )
-    calls = [
-        n.value
-        for n in ast.walk(k1_route)
-        if isinstance(n, ast.Assign)
-        and any(isinstance(t, ast.Name) and t.id == "k1_adaptive_result" for t in n.targets)
-        and isinstance(n.value, ast.Call)
-        and isinstance(n.value.func, ast.Name)
-        and n.value.func.id == "run_dense_k_class_em_adaptive"
-    ]
-    assert len(calls) == 1
-    # The engine takes the projection matrices of the shared geometry helper ...
-    assert ast.unparse(calls[0].args[4]) == "projected['coarse']"
-    assert ast.unparse(calls[0].args[6]) == "projected['fine']"
-    geometry = [
-        n.value
-        for n in ast.walk(k1_route)
-        if isinstance(n, ast.Assign)
-        and isinstance(n.value, ast.Call)
-        and isinstance(n.value.func, ast.Name)
-        and n.value.func.id == "engine_projection_inputs"
-    ]
-    assert len(geometry) == 1
-    rotations = next(keyword.value for keyword in geometry[0].keywords if keyword.arg == "rotations")
-    operands = {ast.literal_eval(key): value for key, value in zip(rotations.keys, rotations.values)}
-    coarse, fine, native = object(), object(), object()
-    scope = dict(
-        pass2_grids=SimpleNamespace(coarse_rotations=coarse, fine_rotations=fine),
-        sampling=SimpleNamespace(coarse_scoring_rotations=native if override else None),
-        adaptive_os=os,
-        relion_x_half_mstep=xhalf,
-        variant=SimpleNamespace(firstiter_score_mode_this_iter=mode),
-        execution=SimpleNamespace(diagnostic_float64_pass2=double),
-    )
-    # ... and only the coarse operand's selection depends on the route.
-    assert evaluate(operands["coarse"], **scope) is (native if expected else coarse)
-    assert evaluate(operands["fine"], **scope) is fine
-
-
-def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration():
-    scorer_source = tree("half_scoring.py")
-    assert not any(
-        isinstance(node, ast.Name) and node.id == "_diagnostic_float64_pass2_matches"
-        for node in ast.walk(scorer_source)
-    )
-
-    execution_policies = [
-        node
-        for owner in ["expectation.py", "finalization.py"]
-        for node in ast.walk(tree(owner))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "DenseExecutionPolicy"
-    ]
-    assert len(execution_policies) == 2
-    for policy in execution_policies:
-        diagnostic = next(
-            keyword.value
-            for keyword in policy.keywords
-            if keyword.arg == "diagnostic_float64_pass2"
-        )
-        assert isinstance(diagnostic, ast.Call)
-        assert isinstance(diagnostic.func, ast.Name)
-        assert diagnostic.func.id == "_diagnostic_float64_pass2_matches"
+def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration(monkeypatch):
+    """The numbered and final execution policies carry the diagnostic switch their owner resolved."""
+    assert not hasattr(half_scoring, "_diagnostic_float64_pass2_matches")
+    trace = CallTrace(monkeypatch)
+    for module in (expectation, finalization):
+        monkeypatch.setattr(module, "_diagnostic_float64_pass2_matches", lambda *args, **kwargs: True)
+        trace.wrap(module, "_diagnostic_float64_pass2_matches", "resolved")
+        trace.wrap(module, "DenseExecutionPolicy", "policy")
+    run_tiny_refinement(monkeypatch)
+    assert trace.labels() == ["resolved", "policy"] * 5
+    assert all(call.kwargs["diagnostic_float64_pass2"] is True for call in trace.calls("policy"))
 
 
 def test_local_adaptive_overrides_are_resolved_before_half_scoring():
-    scorer_source = tree("half_scoring.py")
-    controller_helpers = {
-        "_local_adaptive_pass2_full_parent_enabled",
-        "_local_adaptive_pass2_rotation_only_enabled",
-        "_local_adaptive_pass2_denominator_support_mode",
-    }
-    assert not any(
-        isinstance(node, ast.Name) and node.id in controller_helpers
-        for node in ast.walk(scorer_source)
-    )
+    """Half scoring reads the local-adaptive overrides from its diagnostics record only.
 
-    diagnostic_policies = [
-        node
-        for owner in ["expectation.py", "finalization.py"]
-        for node in ast.walk(tree(owner))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "LocalDiagnosticPolicy"
+    The numbered phase resolves them into ``LocalDiagnosticPolicy`` (test_numbered_expectation_preparation);
+    the final local pass has no CPU run.
+    """
+    for name in ("_local_adaptive_pass2_full_parent_enabled", "_local_adaptive_pass2_rotation_only_enabled",
+                 "_local_adaptive_pass2_denominator_support_mode"):
+        assert not hasattr(half_scoring, name)
+
+
+class _Stop(Exception):
+    pass
+
+
+def _local_one_shape(monkeypatch, *, parent_probe):
+    """Run the local adaptive scorer of one half up to its pass-2 support; returns the trace."""
+    from helpers.refinement_specs import local_half_owners
+    from helpers.sparse_pass2_mock import MockDataset
+
+    from relax.sampling import relion_angular_sampling_deg
+
+    dataset = MockDataset(n_images=2, seed=3)
+    layout = SimpleNamespace(rotation_counts=np.asarray([2]))
+    trace = CallTrace(monkeypatch)
+    monkeypatch.setattr(half_scoring, "_build_local_adaptive_parent_layout", lambda *args: (layout, 0))
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", parent_probe)
+
+    def stop(*args):
+        raise _Stop
+
+    monkeypatch.setattr(half_scoring, "_prepare_local_adaptive_pass2_support", stop)
+    trace.wrap(half_scoring, "_score_half_local_one_shape", "scorer")
+    trace.wrap(half_scoring, "_build_local_adaptive_parent_layout", "parent_layout")
+    trace.wrap(half_scoring, "_prepare_local_adaptive_pass2_support", "support")
+    owners = local_half_owners(
+        k=0, experiment_dataset=dataset, means_k=np.zeros(dataset.volume_size, dtype=np.complex64),
+        noise_variance_k=np.ones(dataset.image_size, dtype=np.float32),
+        previous_best_rotation_eulers_k=np.zeros((dataset.n_units, 3), dtype=np.float32),
+        local_search_rotations=np.repeat(np.eye(3, dtype=np.float32)[None, :, :], 2, axis=0),
+        local_search_order=1, sigma_rot=np.deg2rad(1.0), sigma_psi=np.deg2rad(1.0),
+        current_translations=np.zeros((1, 2), dtype=np.float32), base_translations=np.zeros((1, 2), dtype=np.float32),
+        trans_prior_center=np.zeros((dataset.n_units, 2), dtype=np.float32),
+        trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
+        current_sigma_offset_angstrom=1.0, disc_type="linear_interp", cs_for_engine=None,
+        local_pass1_current_size=4, image_corrections_k=None, scale_corrections_k=None,
+        translation_search_base=None, disable_adjoint_y=False, disable_adjoint_ctf=False, max_significants=None,
+        iteration=3, save_intermediates_dir=None, local_search_random_perturbation=0.0,
+        local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=1,
+        diagnostic_score_only=False, local_search_translation_prior_mode="coarse", replay_prior_translations=None,
+        collect_local_search_profile=False, safe_batch_sizes=lambda *args, **kwargs: (1, 1),
+        local_profile_history=[],
+    )
+    with pytest.raises(_Stop):
+        half_scoring._score_half_local(*owners)
+    return trace, layout
+
+
+def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
+    assert _parameters(half_scoring._build_local_adaptive_parent_layout) == [
+        "half", "sampling", "priors", "translation_prior_reference_translations", "layout_dtype",
     ]
-    assert len(diagnostic_policies) == 2
-    resolved_fields = {
-        "adaptive_pass2_full_parent",
-        "adaptive_pass2_rotation_only",
-        "adaptive_pass2_denominator_mode",
-    }
-    for policy in diagnostic_policies:
-        assert resolved_fields <= {keyword.arg for keyword in policy.keywords}
+
+    def parent_probe(*args):
+        raise _Stop
+
+    trace, _ = _local_one_shape(monkeypatch, parent_probe=parent_probe)
+    (scorer,), (layout,) = trace.calls("scorer"), trace.calls("parent_layout")
+    assert layout.inside == ("scorer",)
+    assert all(mine is theirs for mine, theirs in zip(layout.args[:3], scorer.args[:3], strict=True))
 
 
-def test_local_adaptive_support_helper_exposes_six_story_inputs():
-    scorer = tree("half_scoring.py")
-    helper = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_prepare_local_adaptive_pass2_support"
-    )
-    expected_inputs = [
-        "parent_layout",
-        "significant_sample_indices",
-        "sampling",
-        "diagnostics",
-        "parent_order",
+def test_local_adaptive_support_helper_exposes_six_story_inputs(monkeypatch):
+    assert _parameters(half_scoring._prepare_local_adaptive_pass2_support) == [
+        "parent_layout", "significant_sample_indices", "sampling", "diagnostics", "parent_order",
         "fine_layout_dtype",
     ]
-    assert [argument.arg for argument in helper.args.args] == expected_inputs
+    samples = object()
 
-    local_scorer = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_half_local_one_shape"
+    def parent_probe(*args):
+        return SimpleNamespace(profile_summary={"reconstruction_sample_indices_by_image": samples})
+
+    trace, layout = _local_one_shape(monkeypatch, parent_probe=parent_probe)
+    (scorer,), (support,) = trace.calls("scorer"), trace.calls("support")
+    assert support.args[0] is layout and support.args[1] is samples
+    assert support.args[2] is scorer.args[1] and support.args[4] == 0
+    assert support.args[3] is scorer.args[5]
+
+
+@pytest.mark.parametrize("oversampling", [0, 1])
+def test_loop_transports_geometry_separately_from_effective_rotations(monkeypatch, oversampling):
+    """The dense sampling carries the generated coarse device rotations only at oversampling 0."""
+    _device_rotations_stand_in(monkeypatch)
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "coarse_pass1_rotations", "coarse_rotations")
+    trace.wrap(expectation, "DenseSamplingSpec", "sampling")
+    run_tiny_refinement(
+        monkeypatch, final_after_max_iter=False, adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
     )
-    calls = [
-        node
-        for node in ast.walk(local_scorer)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_prepare_local_adaptive_pass2_support"
-    ]
-    assert len(calls) == 1
-    assert [argument.id for argument in calls[0].args] == [
-        "parent_layout",
-        "significant_sample_indices",
-        "sampling",
-        "diagnostics",
-        "parent_order",
-        "fine_local_layout_dtype",
-    ]
-
-
-def test_local_adaptive_parent_layout_exposes_five_story_inputs():
-    scorer = tree("half_scoring.py")
-    helper = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_build_local_adaptive_parent_layout"
-    )
-    expected_inputs = [
-        "half",
-        "sampling",
-        "priors",
-        "translation_prior_reference_translations",
-        "layout_dtype",
-    ]
-    assert [argument.arg for argument in helper.args.args] == expected_inputs
-
-    local_scorer = next(
-        node
-        for node in scorer.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "_score_half_local_one_shape"
-    )
-    calls = [
-        node
-        for node in ast.walk(local_scorer)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_build_local_adaptive_parent_layout"
-    ]
-    assert len(calls) == 1
-    assert [argument.id for argument in calls[0].args] == [
-        "half",
-        "sampling",
-        "priors",
-        "translation_prior_reference_translations",
-        "parent_local_layout_dtype",
-    ]
-
-
-def test_loop_transports_geometry_separately_from_effective_rotations():
-    calls = [
-        n
-        for n in ast.walk(tree("expectation.py"))
-        if isinstance(n, ast.Call)
-        and isinstance(n.func, ast.Name)
-        and n.func.id == "DenseSamplingSpec"
-        and any(keyword.arg == "coarse_scoring_rotations" for keyword in n.keywords)
-    ]
-    assert len(calls) == 1
-    keywords = {k.arg: k.value for k in calls[0].keywords}
-    marker = object()
-    assert (
-        evaluate(
-            keywords["coarse_scoring_rotations"],
-            adaptive_pass1_rotations=marker,
-            oversampling_order=0,
-        )
-        is marker
-    )
-    assert (
-        evaluate(
-            keywords["coarse_scoring_rotations"],
-            adaptive_pass1_rotations=marker,
-            oversampling_order=1,
-        )
-        is None
-    )
+    generated, samplings = trace.calls("coarse_rotations"), trace.calls("sampling")
+    assert len(generated) == len(samplings) == 2
+    for rotations, sampling in zip(generated, samplings, strict=True):
+        assert sampling.kwargs["coarse_scoring_rotations"] is (rotations.result if oversampling == 0 else None)

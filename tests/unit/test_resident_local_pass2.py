@@ -175,6 +175,7 @@ def _run(
     projector_dtype=None,
     resident_operands: bool | None = None,
     zero_oversampling: bool = False,
+    **owners,
 ):
     """``production_shapes`` mirrors what the refinement loop actually passes:
     a projector with a singleton class axis, per-image contrast and scale
@@ -240,6 +241,7 @@ def _run(
         return_best_pose_details=True,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         pass2_layout=layout,
+        **owners,
     ))
 
 
@@ -249,49 +251,55 @@ def _resident_local_env(monkeypatch):
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
 
 
-def test_dispatch_routes_the_fine_pass_and_the_parent_probe():
-    """The wiring: the fine pass and the pass-1 parent probe both run on the resident
-    driver, which is the one local engine (local searches are K=1 only)."""
+class _Dispatched(Exception):
+    pass
 
+
+def _dispatched_arguments(monkeypatch, **run):
+    """The arguments the production dispatch hands the resident driver, bound to its signature."""
     import inspect
 
-    source = inspect.getsource(local_search_iteration._run_local_search_iteration)
-    assert "if support.score_only:" not in source
-    assert "run_local_em_exact" not in source
-    # the zero-oversampling route (every scored sample) is routed too
-    assert "and reconstruct_significant_only" not in source
-    # at every current size, RELION's final all-data full box included
-    assert "int(current_size) < int(experiment_dataset.image_shape[0])" not in source
-    assert "compute_local_search_resident" in source
-    assert "class_log_priors" not in source
+    signature = inspect.signature(rlp.compute_local_search_resident)
+    bound = []
+
+    def resident(*args, **kwargs):
+        bound.append((signature.bind(*args, **kwargs), set(kwargs)))
+        raise _Dispatched
+
+    monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", resident)
+    with pytest.raises(_Dispatched):
+        _run(_case(), monkeypatch=monkeypatch, **run)
+    (arguments, keywords), = bound
+    return arguments.arguments, keywords
 
 
-def test_dispatch_call_keywords_are_resident_parameters():
+@pytest.mark.parametrize("route", ["fine", "zero_oversampling", "full_box", "parent_probe"])
+def test_dispatch_routes_the_fine_pass_and_the_parent_probe(monkeypatch, route):
+    """The wiring: the fine pass and the pass-1 parent probe both run on the resident
+    driver, which is the one local engine (local searches are K=1 only): the score-only probe, the
+    zero-oversampling route (every scored sample) and RELION's final all-data full box included."""
+    run = {
+        "fine": {},
+        "zero_oversampling": {"zero_oversampling": True},
+        "full_box": {"current_size": IMAGE_SHAPE[0]},
+        "parent_probe": {"score_only": True, "disable_adjoint_y": True, "disable_adjoint_ctf": True},
+    }[route]
+    arguments, _ = _dispatched_arguments(monkeypatch, **run)
+    assert arguments.get("class_log_priors") is None
+    assert arguments["score_only"] is (route == "parent_probe")
+
+
+def test_dispatch_call_keywords_are_resident_parameters(monkeypatch):
     """Every keyword the dispatcher passes must be a resident-driver parameter.
 
     A refactor narrowed the resident signature while the dispatcher kept
     passing ``do_gridding_correction``; the resulting TypeError only surfaced
     on GPU. The resident driver requires the RELION PPref projector, for which
-    the exact local engine applies no gridding correction either.
+    the exact local engine applies no gridding correction either. Binding the
+    call to the driver's signature fails on any unknown keyword.
     """
-
-    import ast
-    import inspect
-
-    tree = ast.parse(inspect.getsource(local_search_iteration))
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "compute_local_search_resident"
-    ]
-    assert len(calls) == 1
-    passed = {keyword.arg for keyword in calls[0].keywords}
-    assert None not in passed
-    parameters = set(inspect.signature(rlp.compute_local_search_resident).parameters)
-    assert passed - parameters == set()
-    assert {"max_significants", "stats_use_reconstruction_probs"} <= passed
+    _, keywords = _dispatched_arguments(monkeypatch)
+    assert {"max_significants", "stats_use_reconstruction_probs"} <= keywords
 
 
 @pytest.mark.parametrize(

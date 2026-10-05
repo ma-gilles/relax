@@ -57,14 +57,37 @@ def test_snapshot_capture_has_a_staged_run_lifecycle():
     ):
         assert not hasattr(iteration_snapshot_module, name)
 
-    source = inspect.getsource(iteration_loop_module.refine_single_volume)
-    capture = source.index("snapshot_capture = SnapshotCapture(")
-    loop = source.index("while (schedule.force_max_iter_after_convergence")
-    begin = source.index("snapshot = snapshot_capture.begin(", loop)
-    finish = source.index("snapshot = snapshot_capture.finish(", begin)
-    publish = source.index("checkpoint_writer(snapshot)", finish)
-    assert source.count("SnapshotCapture(") == 1
-    assert capture < loop < begin < finish < publish
+
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_controller_publishes_each_checkpoint_from_one_run_capture(monkeypatch, n_classes):
+    """One SnapshotCapture per run; each due iteration begins, finishes and publishes its snapshot."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.refinement.refinement_options import CheckpointOptions
+
+    class Writer:
+        def due(self, relion_iteration):
+            return True
+
+        def wants_unfiltered_maps(self, relion_iteration, *, n_classes):
+            return False
+
+        def __call__(self, snapshot):
+            published.append(snapshot)
+
+    published = []
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop_module, "SnapshotCapture", "capture")
+    trace.wrap(SnapshotCapture, "begin")
+    trace.wrap(SnapshotCapture, "finish")
+    run_tiny_refinement(
+        monkeypatch, n_classes=n_classes, final_after_max_iter=False, checkpoint=CheckpointOptions(writer=Writer()),
+    )
+    assert trace.labels("capture", "begin", "finish") == ["capture"] + 2 * ["begin", "finish"]
+    (capture,) = trace.calls("capture")
+    assert all(call.args[0] is capture.result for call in trace.calls_seen if call.label != "capture")
+    assert published == [call.result for call in trace.calls("finish")]
+    assert [call.args[1] for call in trace.calls("finish")] == [call.result for call in trace.calls("begin")]
 
 
 def test_staged_snapshot_capture_copies_complete_k1_state():

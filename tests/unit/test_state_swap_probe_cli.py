@@ -224,6 +224,8 @@ def test_state_swap_application_telemetry_fails_closed(applied):
 
 
 def test_full_runner_propagates_and_serializes_state_swap_probe():
+    # Source pin kept: full_refinement.main has no CPU harness (it refuses to start without a GPU), and the
+    # archive fields are written inline by result_files.build_archive_metadata, which main alone calls.
     tree = ast.parse((REPO_ROOT / "relax/refinement/full_refinement.py").read_text())
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
     called_names = {
@@ -283,38 +285,58 @@ def test_full_runner_propagates_and_serializes_state_swap_probe():
         assert f'"{field}"' in source
 
 
-def test_relion_references_are_applied_before_state_restoration():
-    tree = ast.parse(
-        (REPO_ROOT / "relax/refinement/iteration_loop.py").read_text()
+def _direction_prior_pair(seed, order=2):
+    rng = np.random.default_rng(seed)
+    pair = []
+    for _ in range(2):
+        values = rng.random(12 * 4**order) + 0.05
+        pair.append(values / values.sum())
+    return pair
+
+
+def _state_swap_run(monkeypatch, trace):
+    """A K=1 run whose second iteration is the state-swap target, restoring the run's own direction prior."""
+    from helpers.tiny_refinement import run_tiny_refinement
+
+    from relax.refinement.refinement_options import EngineDebugOptions, ReplayState
+
+    run_tiny_refinement(
+        monkeypatch, max_iter=3, final_after_max_iter=False, parity=dict(low_resol_join_halves_angstrom=0.0),
+        debug=EngineDebugOptions(state_swap_probe={"iteration": 1, "variant": "recovar_direction_prior"}),
+        replay=ReplayState(replay_iteration_overrides=[
+            None if index == 0 else {"direction_prior": _direction_prior_pair(200 + index)} for index in range(3)
+        ]),
     )
-    loop_function = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "refine_single_volume"
-    )
-    call_lines = {
-        node.func.id: node.lineno
-        for node in ast.walk(loop_function)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        and node.func.id in {
-            "_maybe_debug_replay_relion_references",
-            "_apply_state_swap_probe",
-        }
-    }
-
-    assert call_lines["_maybe_debug_replay_relion_references"] < call_lines[
-        "_apply_state_swap_probe"
-    ]
+    return trace
 
 
-def test_state_swap_snapshot_is_bounded_to_target_iteration():
-    source = (REPO_ROOT / "relax/refinement/iteration_loop.py").read_text()
-    snapshot_block = source.split("recovar_state_swap_snapshot = None", 1)[1].split(
-        "replay_result = apply_iter_replay_overrides", 1
-    )[0]
+def test_relion_references_are_applied_before_state_restoration(monkeypatch):
+    from helpers.tiny_refinement import CallTrace
 
-    assert "if state_swap_target_this_iteration:" in snapshot_block
-    assert "if state_swap_probe is not None:" not in snapshot_block
+    from relax.refinement import iteration_loop
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "_maybe_debug_replay_relion_references", "references")
+    trace.wrap(iteration_loop, "_apply_state_swap_probe", "swap")
+    _state_swap_run(monkeypatch, trace)
+    assert trace.labels() == ["references", "swap"] * 3
+
+
+def test_state_swap_snapshot_is_bounded_to_target_iteration(monkeypatch):
+    """Only the target iteration snapshots the run's own state, before its replay overrides."""
+    from helpers.tiny_refinement import CallTrace
+
+    from relax.refinement import iteration_loop
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, "apply_iter_replay_overrides", "replay")
+    trace.wrap(iteration_loop, "_snapshot_state_swap_inputs", "snapshot")
+    trace.wrap(iteration_loop, "_apply_state_swap_probe", "swap")
+    _state_swap_run(monkeypatch, trace)
+    assert trace.labels() == ["replay", "swap", "snapshot", "replay", "swap", "replay", "swap"]
+    snapshot = trace.calls("snapshot")[0].result
+    assert trace.calls("swap")[1].kwargs["recovar_snapshot"] is snapshot
+    assert all(call.kwargs["recovar_snapshot"] is None for index, call in enumerate(trace.calls("swap")) if index != 1)
 
 
 def test_sigma_offset_state_swap_preserves_asymmetric_half_values():

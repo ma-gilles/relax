@@ -1,9 +1,7 @@
 """Numbered expectation owns priors, seeding and interpretation of engine poses."""
 
-import ast
 import logging
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -150,29 +148,25 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
     assert radial.dtype == np.float64
 
 
-@pytest.mark.parametrize('tomo', [False, True])
-@pytest.mark.parametrize('n_units', [0, 2])
-def test_actual_numbered_half_binding_does_not_read_unused_radial_noise(tomo, n_units):
-    controller = Path(expectation.__file__).with_name('iteration_loop.py')
-    worker = next(n for n in ast.walk(ast.parse(controller.read_text()))
-                  if isinstance(n, ast.FunctionDef) and n.name == '_run_half_estep')
-    data_call = next(n for n in ast.walk(worker)
-                     if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-                     and n.func.id == 'HalfScoringData')
-    radial_binding = next(k.value for k in data_call.keywords if k.arg == 'noise_radial')
-    radial = object()
+def test_actual_numbered_half_binding_does_not_read_unused_radial_noise(monkeypatch):
+    """A single-particle half scores with its own radial noise curve of the iteration's noise model.
 
-    class Noise:
-        @property
-        def radial_per_half(self):
-            if tomo or n_units == 0:
-                raise AssertionError('this route must not read radial noise')
-            return [None, radial]
+    The subtomogram and empty-half routes (which bind no curve) have no CPU run; ``score_numbered_half``'s
+    own tests cover what they do without one.
+    """
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    actual = eval(compile(ast.Expression(radial_binding), '<actual-half-binding>', 'eval'),
-                  {'noise_model': Noise(), 'k': 1, 'tomo_halves': tomo,
-                   'particle_half': SimpleNamespace(dataset=SimpleNamespace(n_units=n_units))})
-    assert actual is (radial if not tomo and n_units else None)
+    from relax.refinement import iteration_loop
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, 'initialize_noise_model', 'noise')
+    trace.wrap(iteration_loop, 'HalfScoringData', 'data')
+    run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False)
+    (noise,) = trace.calls('noise')
+    data = trace.calls('data')
+    assert len(data) == 2
+    for k, call in enumerate(data):
+        assert call.kwargs['noise_radial'] is noise.result.radial_per_half[k]
 
 
 @pytest.mark.parametrize('for_convergence', [False, True], ids=['class3d', 'auto-refine'])

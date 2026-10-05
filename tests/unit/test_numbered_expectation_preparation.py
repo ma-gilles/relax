@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import ast
 import gc
 import weakref
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
 from test_numbered_expectation import numbered_inputs
 
 from relax.refinement import expectation
@@ -109,65 +106,62 @@ def test_local_phase_borrows_sampling_and_only_reads_adaptive_policy_for_parent_
     assert diagnostics.adaptive_pass2_denominator_mode == ('rotation' if order else None)
 
 
-@pytest.mark.parametrize('local, adaptive', [(False, False), (False, True), (True, False)])
-def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadata(local, adaptive):
-    grid, windows, inputs = preparation_inputs(local=local, adaptive=adaptive)
-    controller = Path(expectation.__file__).with_name('iteration_loop.py')
-    loop = next(n for n in ast.walk(ast.parse(controller.read_text())) if isinstance(n, ast.While))
-    assignment = next(n for n in loop.body if isinstance(n, ast.Assign)
-                      and any(isinstance(t, ast.Name) and t.id == 'numbered_expectation' for t in n.targets))
+@pytest.mark.parametrize('adaptive', [False, True])
+def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadata(monkeypatch, adaptive):
+    """Each iteration's phase scores this iteration's trial grid with this iteration's variant; only an adaptive
+    pass reads the coarse plan's angular step."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    class Coarse:
-        @property
-        def angular_step_deg(self):
-            if not adaptive:
-                raise AssertionError('inactive coarse plan must not be read')
-            return inputs['coarse_angular_step_deg']
+    from relax.refinement import iteration_loop
+    from relax.refinement.refinement_options import AdaptiveOptions
 
-    scope = dict(
-        prepare_numbered_expectation=expectation.prepare_numbered_expectation,
-        trial_grid=grid,
-        sampling_plan=SimpleNamespace(windows=windows, local=inputs['local_sampling']),
-        numbered_variant=inputs['variant'], use_adaptive=adaptive,
-        coarse_grids=SimpleNamespace(
-            rotation_grid=SimpleNamespace(healpix_order=2), base_translations=inputs['base_translations'],
-            translations=grid.translations,
-        ),
-        state=SimpleNamespace(adaptive_oversampling=inputs['oversampling_order'], translation_step=inputs['translation_step']),
-        random_perturbation=inputs['random_perturbation'], adaptive_pass1_rotations=inputs['adaptive_pass1_rotations'],
-        coarse_rotation_ids_for_scoring=inputs['coarse_rotation_ids'], coarse_image_plan=Coarse(),
-        options=inputs['options'], iteration=5, numbered_relion_iteration=17,
-        collect_local_search_profile=True, history=SimpleNamespace(local_profile_history=inputs['local_profile_history']),
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, 'iteration_trial_grid', 'grid')
+    trace.wrap(iteration_loop, 'plan_adaptive_image_size', 'coarse_plan')
+    trace.wrap(iteration_loop, 'DenseVariantPolicy', 'variant')
+    trace.wrap(iteration_loop, 'prepare_numbered_expectation', 'phase')
+    run_tiny_refinement(
+        monkeypatch, final_after_max_iter=False, adaptive=AdaptiveOptions(adaptive_oversampling=int(adaptive)),
     )
-    exec(compile(ast.Module(body=[assignment], type_ignores=[]), str(controller), 'exec'), scope)
-    phase = scope['numbered_expectation']
-    assert phase.grid.rotations is grid.rotations
-    assert phase.grid.rotation_eulers is grid.rotation_eulers
-    assert phase.grid.mstep_rotations is grid.mstep_rotations
-    assert phase.grid.translations is grid.translations
-    if local:
-        assert phase.sampling is inputs['local_sampling']
+    grids, variants, phases = trace.calls('grid'), trace.calls('variant'), trace.calls('phase')
+    assert len(grids) == len(variants) == len(phases) == 2
+    for grid, variant, phase in zip(grids, variants, phases, strict=True):
+        assert phase.args[0] is grid.result
+        assert phase.result.grid.rotations is grid.result.rotations
+        assert phase.result.grid.rotation_eulers is grid.result.rotation_eulers
+        assert phase.result.grid.mstep_rotations is grid.result.mstep_rotations
+        assert phase.result.grid.translations is grid.result.translations
+        assert phase.result.variant is variant.result
+    if adaptive:
+        plans = trace.calls('coarse_plan')
+        assert [phase.result.sampling.coarse_angular_step_deg for phase in phases] == [
+            plan.result.angular_step_deg for plan in plans
+        ]
     else:
-        assert phase.sampling.coarse_angular_step_deg is (inputs['coarse_angular_step_deg'] if adaptive else None)
-    assert phase.variant is inputs['variant']
+        assert all(phase.kwargs['coarse_angular_step_deg'] is None for phase in phases)
+        assert all(phase.result.sampling.coarse_angular_step_deg is None for phase in phases)
 
 
-def test_actual_end_boundary_drops_phase_before_cache_policy():
-    grid, windows, inputs = preparation_inputs()
-    phase = expectation.prepare_numbered_expectation(grid, windows, **inputs)
-    held = weakref.ref(phase)
-    scope = dict(numbered_expectation=phase, numbered_tomo_sampling=object(), numbered_variant=inputs['variant'])
-    del phase
-    controller = Path(expectation.__file__).with_name('iteration_loop.py')
-    loop = next(n for n in ast.walk(ast.parse(controller.read_text())) if isinstance(n, ast.While))
-    release = next(n for n in loop.body if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
-                   and n.value.value is None and any(isinstance(t, ast.Name) and t.id == 'numbered_expectation' for t in n.targets))
-    exec(compile(ast.Module(body=[release], type_ignores=[]), str(controller), 'exec'), scope)
-    gc.collect()
-    assert held() is None
-    assert scope['numbered_expectation'] is None
-    assert scope['numbered_tomo_sampling'] is None
-    assert scope['numbered_variant'] is None
-    # Borrowed operands still live through their existing scientific owners.
-    assert grid.rotations.shape == (4, 3, 3)
-    assert_matches(grid.rotation_eulers, np.arange(12, dtype=np.float64).reshape(4, 3))
+def test_actual_end_boundary_drops_phase_before_cache_policy(monkeypatch):
+    """The iteration's phase and variant are released before the between-iterations cache policy runs."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.refinement import iteration_loop
+
+    held = []
+    checked = []
+    read_flag = iteration_loop.parse_env_true_flag
+
+    def flag(name):
+        if name == 'RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS':
+            gc.collect()
+            assert all(reference() is None for reference in held)
+            checked.append(len(held))
+        return read_flag(name)
+
+    trace = CallTrace(monkeypatch)
+    for name in ('DenseVariantPolicy', 'prepare_numbered_expectation'):
+        trace.wrap(iteration_loop, name, after=lambda call: held.append(weakref.ref(call.result)), keep_operands=False)
+    monkeypatch.setattr(iteration_loop, 'parse_env_true_flag', flag)
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False)
+    assert checked == [2, 4]

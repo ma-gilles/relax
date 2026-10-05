@@ -15,8 +15,6 @@ and check that the finalized weights are C4-invariant.
 
 from __future__ import annotations
 
-import ast
-import inspect
 from pathlib import Path
 
 import numpy as np
@@ -33,9 +31,7 @@ from test_resident_significance import (
     _supports,
 )
 
-from relax.refinement import local_search_iteration
 from relax.scoring.sparse_bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.sparse_pass2 import resident_local_pass2 as rlp
 from relax.sparse_pass2.resident_candidates import build_resident_candidate_tables
 from relax.sparse_pass2.resident_significance import build_resident_candidate_tables_from_csr
 
@@ -162,22 +158,13 @@ def test_c4_tables_from_csr_match_the_host_path_on_the_generated_grid(execution_
     _assert_tables_equal(got, expected)
 
 
-def test_resident_local_call_carries_the_point_group():
+def test_resident_local_call_carries_the_point_group(monkeypatch):
     """The resident local pass 2 receives the run's point group from its caller."""
+    from test_resident_local_pass2 import _dispatched_arguments
 
-    tree = ast.parse(inspect.getsource(local_search_iteration))
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "compute_local_search_resident"
-    ]
-    assert len(calls) == 1
-    keywords = {keyword.arg: keyword.value for keyword in calls[0].keywords}
-    assert isinstance(keywords.get("symmetry_label"), ast.Attribute)
-    assert ast.unparse(keywords["symmetry_label"]) == "grid.symmetry"
-    assert "symmetry_label" in inspect.signature(rlp.compute_local_search_resident).parameters
+    arguments, keywords = _dispatched_arguments(monkeypatch, symmetry="C4")
+    assert "symmetry_label" in keywords
+    assert arguments["symmetry_label"] == "C4"
 
 
 @requires_relion_bind

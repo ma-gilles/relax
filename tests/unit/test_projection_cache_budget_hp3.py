@@ -154,14 +154,21 @@ def test_pass2_projector_cast_unblocks_the_texture_projector(monkeypatch):
     )
 
 
-def test_projector_build_log_reports_the_slab_dtype():
+def test_projector_build_log_reports_the_slab_dtype(monkeypatch, caplog):
     """The slab dtype decides texture versus JAX-fallback projection; log it."""
-    from pathlib import Path
+    import logging
 
-    source = Path("relax/refinement/iteration_loop.py").read_text()
-    anchor = 'built exact Projector::data for scoring at current_size=%s r_max=%s '
-    assert anchor in source
-    start = source.index(anchor)
-    call = source[start : start + 600]
-    assert '"dtype=%s in %.2fs"' in call
-    assert 'None if projectors[0] is None else projectors[0].data.dtype' in call
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.refinement import iteration_loop
+
+    trace = CallTrace(monkeypatch).wrap(iteration_loop, "prepare_scoring_projector", "build")
+    with caplog.at_level(logging.INFO, logger="relax.refinement.iteration_loop"):
+        run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False)
+    built = [record for record in caplog.records if "built exact Projector::data for scoring" in record.getMessage()]
+    assert len(built) == 1
+    slab = trace.calls("build")[0].result
+    assert built[0].getMessage().startswith(
+        f"RELION mode: built exact Projector::data for scoring at current_size={built[0].args[0]} "
+        f"r_max={slab.r_max} dtype={slab.data.dtype} in "
+    )

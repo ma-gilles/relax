@@ -1,7 +1,5 @@
 """Completed-iteration correction reporting and parity capture boundaries."""
 
-import ast
-import inspect
 import logging
 from types import SimpleNamespace
 
@@ -12,27 +10,9 @@ from helpers.float_compare import assert_matches
 from relax.diagnostics import iteration as captures
 from relax.diagnostics import parity_dump
 from relax.refinement import iteration_loop
-from relax.relion import relion_normalization
 from relax.relion.relion_normalization import NormScaleCorrectionReport, NormScaleCorrectionUpdateResult
 
 pytestmark = pytest.mark.unit
-
-
-def _controller():
-    return next(n for n in ast.parse(inspect.getsource(iteration_loop)).body
-                if isinstance(n, ast.FunctionDef) and n.name == 'refine_single_volume')
-
-
-def _correction_block():
-    loop = next(n for n in ast.walk(_controller()) if isinstance(n, (ast.For, ast.While))
-                and any(isinstance(s, ast.Assign) and isinstance(s.targets[0], ast.Name)
-                        and s.targets[0].id == 'correction_report' for s in n.body))
-    start = next(i for i, n in enumerate(loop.body) if isinstance(n, ast.Assign)
-                 and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'correction_report')
-    stop = next(i for i in range(start + 1, len(loop.body))
-                if isinstance(loop.body[i], ast.If)
-                and ast.unparse(loop.body[i].test) == 'follower_setup.follower_scale_state is not None')
-    return compile(ast.Module(body=loop.body[start:stop], type_ignores=[]), '<actual-corrections>', 'exec')
 
 
 def test_missing_report_fields_are_independent_and_remain_absent():
@@ -46,80 +26,99 @@ def test_missing_report_fields_are_independent_and_remain_absent():
     assert another.norm_corrections_per_half == [None, None]
 
 
+class _Writer:
+    def __init__(self):
+        self.snapshots = []
+
+    def due(self, relion_iteration):
+        return True
+
+    def wants_unfiltered_maps(self, relion_iteration, *, n_classes):
+        return False
+
+    def __call__(self, snapshot):
+        self.snapshots.append(snapshot)
+
+
 @pytest.mark.parametrize('mode', ['missing', 'native', 'follower', 'follower_missing'])
 def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_separate(monkeypatch, mode):
+    """The controller installs each numbered update's corrections on the halves (the follower state installs
+    them under the follower emulation) and reports them separately; a half without statistics changes nothing,
+    and the follower emulation refuses to go on without them."""
+    from helpers.tiny_refinement import CallTrace, follower_scale_replay, run_tiny_refinement
+
+    from relax.refinement.refinement_options import CheckpointOptions
+
     follower = mode.startswith('follower')
     missing = mode.endswith('missing')
-    halves = [SimpleNamespace(dataset=SimpleNamespace(n_units=n), group_ids=None,
-                              image_corrections=None, scale_corrections=None) for n in (2, 0)]
-    result = NormScaleCorrectionUpdateResult(
-        norm_corrections_per_half=[np.array([2., 3.], dtype=np.float32), np.zeros(0, dtype=np.float32)],
-        avg_norm_correction_per_half=[2.5, 1.],
-        group_scale_corrections_per_half=[np.array([1.], dtype=np.float32), np.zeros(1, dtype=np.float32)],
-        image_corrections_per_half=[np.array([4., 5.], dtype=np.float32), np.zeros(0, dtype=np.float32)],
-        scale_corrections_per_half=[np.array([6., 7.], dtype=np.float32), np.zeros(0, dtype=np.float32)],
-        zero_norm_residual_counts=[0, 0],
-    )
-    follower_images = [np.array([8., 9.], dtype=np.float32), np.zeros(0, dtype=np.float32)]
-    follower_scales = [np.array([10., 11.], dtype=np.float32), np.zeros(0, dtype=np.float32)]
-    serialized_scales = [np.array([12., 13.], dtype=np.float64), None]
-    setup = SimpleNamespace(follower_scale_state=object() if follower else None)
-    events = []
+    updates, follower_arrays = [], []
 
-    def prepare(stats, particles, **inputs):
-        assert particles is halves
+    def numbered(per_half, halves, **inputs):
         assert inputs['do_scale_correction'] is (not follower)
         assert inputs['do_norm_correction'] is True
-        assert inputs['dtype'] is np.float32
-        assert inputs['group_ids_per_half'][0].dtype == np.int64
-        np.testing.assert_array_equal(inputs['group_ids_per_half'][0], [0, 0])
-        assert inputs['group_ids_per_half'][1].size == 0
-        events.append('prepare')
-        return result
+        assert inputs['dtype'] == np.float32
+        if missing:
+            return None
+        sizes = [int(half.dataset.n_units) for half in halves]
+        value = float(len(updates) + 2)
+        update = NormScaleCorrectionUpdateResult(
+            norm_corrections_per_half=[np.full(n, value, dtype=np.float32) for n in sizes],
+            avg_norm_correction_per_half=[value, value + 0.5],
+            group_scale_corrections_per_half=[np.full(2, value, dtype=np.float32)] * 2,
+            image_corrections_per_half=[np.full(n, value + 1.0, dtype=np.float32) for n in sizes],
+            scale_corrections_per_half=[np.full(n, 1.0 / value, dtype=np.float32) for n in sizes],
+            zero_norm_residual_counts=[0, 0],
+        )
+        updates.append((update, halves))
+        return update
 
     def update_followers(follower_setup, **inputs):
-        assert follower_setup is setup and inputs['norm_scale_update'] is result
-        for half, images, scales in zip(halves, follower_images, follower_scales, strict=True):
-            half.image_corrections, half.scale_corrections = images, scales
-        events.append('followers')
-        return serialized_scales
+        assert follower_setup.follower_scale_state is not None
+        assert inputs['norm_scale_update'] is updates[-1][0]
+        images = [np.full(half.dataset.n_units, 8.0, dtype=np.float32) for half in inputs['relion_half_inputs']]
+        scales = [np.full(half.dataset.n_units, 0.5, dtype=np.float32) for half in inputs['relion_half_inputs']]
+        for half, image, scale in zip(inputs['relion_half_inputs'], images, scales, strict=True):
+            half.image_corrections, half.scale_corrections = image, scale
+        serialized = [np.array([12., 13.], dtype=np.float64), None]
+        follower_arrays.append((images, scales, serialized))
+        return serialized
 
-    def log_update(update, **inputs):
-        assert update is result
-        events.append('log')
+    def installed(call):
+        update, halves = updates[-1]
+        images, scales = (follower_arrays[-1][:2] if follower else
+                          (update.image_corrections_per_half, update.scale_corrections_per_half))
+        for k, half in enumerate(halves):
+            assert half.image_corrections is images[k] and half.scale_corrections is scales[k]
 
-    monkeypatch.setattr(relion_normalization, 'prepare_norm_scale_update', prepare)
-    namespace = dict(
-        NormScaleCorrectionReport=NormScaleCorrectionReport, np=np,
-        per_half=SimpleNamespace(noise_stats=None if missing else [SimpleNamespace(wsum_norm_correction=object()),
-                                                  SimpleNamespace(wsum_norm_correction=None)]),
-        experiment_datasets=[half.dataset for half in halves], halves=halves,
-        follower_setup=setup, first_iteration=SimpleNamespace(relion_firstiter_cc=False), tomo_halves=False,
-        scoring_dtype=np.float32, iteration=2, current_size=12, logger=logging.getLogger(__name__),
-        numbered_norm_scale_update=relion_normalization.numbered_norm_scale_update,
-        norm_scale_report=relion_normalization.norm_scale_report,
-        _update_relion_follower_corrections=update_followers,
-        log_norm_scale_update=log_update,
-    )
+    monkeypatch.setattr(iteration_loop, 'numbered_norm_scale_update', numbered)
+    monkeypatch.setattr(iteration_loop, '_update_relion_follower_corrections', update_followers)
+    trace = CallTrace(monkeypatch)
+    trace.wrap(iteration_loop, 'norm_scale_report', 'report')
+    trace.wrap(iteration_loop, 'log_norm_scale_update', 'log', before=installed)
+    writer = _Writer()
+    run = dict(final_after_max_iter=False, checkpoint=CheckpointOptions(writer=writer))
+    if follower:
+        run.update(n_classes=2, replay=follower_scale_replay(2))
     if mode == 'follower_missing':
         with pytest.raises(RuntimeError, match='requires per-half norm/scale statistics'):
-            exec(_correction_block(), namespace)
-        assert events == []
+            run_tiny_refinement(monkeypatch, **run)
+        assert trace.labels() == []
         return
-    exec(_correction_block(), namespace)
-    report = namespace['correction_report']
+    run_tiny_refinement(monkeypatch, **run)
     if missing:
-        assert events == []
-        assert all(part == [None, None] for part in vars(report).values())
+        assert trace.labels() == []
+        # The run files then hold RELION's default average norm correction, the squared box size.
+        assert [snapshot.avg_norm_correction for snapshot in writer.snapshots] == [(64.0, 64.0)] * 2
         return
-    assert events == (['prepare', 'followers', 'log'] if follower else ['prepare', 'log'])
-    assert report.group_scale_corrections_per_half is (serialized_scales if follower else result.group_scale_corrections_per_half)
-    assert report.norm_corrections_per_half is result.norm_corrections_per_half
-    assert report.avg_norm_correction_per_half is result.avg_norm_correction_per_half
-    assert report.zero_norm_residual_counts is result.zero_norm_residual_counts
-    for k, half in enumerate(halves):
-        assert half.image_corrections is (follower_images[k] if follower else result.image_corrections_per_half[k])
-        assert half.scale_corrections is (follower_scales[k] if follower else result.scale_corrections_per_half[k])
+    assert trace.labels() == ['report', 'log'] * 2
+    for at, (report, (update, _)) in enumerate(zip(trace.calls('report'), updates, strict=True)):
+        assert report.args[0] is update
+        expected_group_scales = follower_arrays[at][2] if follower else update.group_scale_corrections_per_half
+        assert report.args[1] is expected_group_scales
+        assert report.result.norm_corrections_per_half is update.norm_corrections_per_half
+        assert report.result.avg_norm_correction_per_half is update.avg_norm_correction_per_half
+        assert report.result.zero_norm_residual_counts is update.zero_norm_residual_counts
+        assert writer.snapshots[at].avg_norm_correction == tuple(update.avg_norm_correction_per_half)
 
 
 def _capture_inputs():
@@ -226,23 +225,20 @@ def test_capture_conversion_failure_retains_warning_and_iteration_context(caplog
 
 
 @pytest.mark.parametrize('timing', [False, True])
-def test_actual_inactive_capture_gate_does_not_read_full_payload(timing):
-    block = next(n for n in ast.walk(_controller()) if isinstance(n, ast.If)
-                 and ast.unparse(n.test) == '_parity_dump.is_active()'
-                 and any(isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
-                         and call.func.id == 'dump_numbered_iteration' for call in ast.walk(n)))
+def test_actual_inactive_capture_gate_does_not_read_full_payload(monkeypatch, timing):
+    """Without a parity dump the loop never builds the full capture; a timing dump gets one row per iteration."""
+    from helpers.tiny_refinement import run_tiny_refinement
+
     events = []
 
     def reject_full(*args, **kwargs):
         raise AssertionError('full capture must remain gated')
 
-    namespace = dict(
-        _parity_dump=SimpleNamespace(is_active=lambda: False, timing_is_active=lambda: timing,
-                                    dump_timing_iteration=lambda **values: events.append(values)),
-        dump_numbered_iteration=reject_full, iteration=2, init_relion_iteration=7,
-        t0=1., logger=logging.getLogger(__name__),
+    monkeypatch.setattr(parity_dump, 'is_active', lambda: False)
+    monkeypatch.setattr(parity_dump, 'timing_is_active', lambda: timing)
+    monkeypatch.setattr(parity_dump, 'dump_timing_iteration', lambda **values: events.append(values))
+    monkeypatch.setattr(iteration_loop, 'dump_numbered_iteration', reject_full)
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False)
+    assert [(event['iteration'], event['init_relion_iteration']) for event in events] == (
+        [(0, 0), (1, 0)] if timing else []
     )
-    exec(compile(ast.Module(body=[block], type_ignores=[]), '<actual-capture-gate>', 'exec'), namespace)
-    assert len(events) == int(timing)
-    if timing:
-        assert events[0]['iteration'] == 2 and events[0]['init_relion_iteration'] == 7

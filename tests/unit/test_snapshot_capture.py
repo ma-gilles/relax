@@ -1,9 +1,6 @@
 """Checkpoint ownership, layout selection and controller capture lifetime."""
 
-import ast
-import inspect
 import weakref
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -11,10 +8,9 @@ from helpers.float_compare import assert_matches
 
 from relax.helpers.convergence import RefinementState
 from relax.helpers.orientation_priors import DirectionPrior
-from relax.refinement import iteration_loop, iteration_snapshot
-from relax.refinement.half_inputs import SigmaOffset, initialize_halfsets
+from relax.refinement import iteration_snapshot
+from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.iteration_snapshot import IterationSnapshot, SnapshotCapture
-from relax.refinement.mean_helpers import class_mixture_from_weights
 
 pytestmark = pytest.mark.unit
 
@@ -125,51 +121,56 @@ def test_class_capture_copies_the_class_stack_and_particle_frame(dtype, offset_d
     _assert_capture_owns_its_copies(result, inputs)
 
 
-def _controller_capture_block():
-    tree = ast.parse(inspect.getsource(iteration_loop))
-    controller = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'refine_single_volume')
-    block = next(n for n in ast.walk(controller) if isinstance(n, ast.If) and ast.unparse(n.test).startswith('checkpoint_writer is not None'))
-    return compile(ast.Module(body=[block], type_ignores=[]), '<actual-controller-checkpoint>', 'exec')
+class _Writer:
+    """A checkpoint writer that keeps only weak references to what it is handed."""
 
+    def __init__(self, due=True):
+        self._due = due
+        self.published = []
 
-def test_actual_controller_releases_previous_captured_maps_before_copying_new_maps(monkeypatch):
-    inputs = _class_inputs(4, np.float32, 2, True)
-    capture = SnapshotCapture(n_classes=4, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
-    old = _begin(capture)
-    old.values['means'] = [np.ones(8, dtype=np.complex64)]
-    old_map = weakref.ref(old.values['means'][0])
-    namespace = dict(
-        checkpoint_writer=lambda snapshot: None, numbered_relion_iteration=2,
-        k_class_enabled=True, relion_incr_size=8, relion_has_high_fsc_at_limit=True,
-        snapshot_capture=capture, state=RefinementState(iteration=1),
-        sigma_offset=SigmaOffset(2.5, (2.0, 3.0)), current_size=12,
-        random_perturbation=0.125, model_acc_rot_per_class=np.ones(4), model_acc_trans_per_class=np.ones(4),
-        reference_model=SimpleNamespace(maps=inputs['means']), unreg_means=None,
-        mean_signal_variance_shells=inputs['tau2_shells'], previous_data_vs_prior_for_scheduling=inputs['data_vs_prior'],
-        noise_model=SimpleNamespace(radial_per_half=inputs['noise_shells']), fsc=None,
-        class_mixture=class_mixture_from_weights(inputs['class_weights']), direction_priors=inputs['direction_priors'], halves=inputs['half_inputs'],
-        class_assignments=inputs['class_assignments'], per_half=SimpleNamespace(max_posterior=inputs['max_posterior']),
-        significance=SimpleNamespace(per_half=inputs['significant_counts']),
-        correction_report=SimpleNamespace(avg_norm_correction_per_half=inputs['avg_norm_correction']),
-        snapshot=old,
-    )
-    del old
-    def writer(snapshot):
+    def due(self, relion_iteration):
+        return self._due
+
+    def wants_unfiltered_maps(self, relion_iteration, *, n_classes):
+        return False
+
+    def __call__(self, snapshot):
         assert isinstance(snapshot, IterationSnapshot)
-    writer.due = lambda iteration: True
-    namespace['checkpoint_writer'] = writer
+        self.published.append(weakref.ref(snapshot.means[0]))
+
+
+@pytest.mark.parametrize('n_classes', [1, 4])
+def test_actual_controller_releases_previous_captured_maps_before_copying_new_maps(monkeypatch, n_classes):
+    """The previous checkpoint's host maps are gone before the next checkpoint copies its maps."""
+    from helpers.tiny_refinement import run_tiny_refinement
+
+    from relax.refinement.refinement_options import CheckpointOptions
+
+    writer = _Writer()
     original = iteration_snapshot.host_array
     observed = []
+
     def copy_array(value, dtype=None):
-        assert old_map() is None
-        observed.append(value)
+        assert all(reference() is None for reference in writer.published)
+        observed.append(len(writer.published))
         return original(value, dtype=dtype)
+
     monkeypatch.setattr(iteration_snapshot, 'host_array', copy_array)
-    exec(_controller_capture_block(), namespace)
-    assert observed
-    assert isinstance(namespace['snapshot'], IterationSnapshot)
+    run_tiny_refinement(
+        monkeypatch, n_classes=n_classes, final_after_max_iter=False, checkpoint=CheckpointOptions(writer=writer),
+    )
+    assert len(writer.published) == 2
+    # Both checkpoints copied arrays, the second one after the first was published and released.
+    assert 0 in observed and 1 in observed
 
 
-@pytest.mark.parametrize('writer', [None, SimpleNamespace(due=lambda iteration: False)])
-def test_actual_controller_does_not_read_capture_operands_when_not_due(writer):
-    exec(_controller_capture_block(), dict(checkpoint_writer=writer, numbered_relion_iteration=2))
+@pytest.mark.parametrize('writer', [None, _Writer(due=False)])
+def test_actual_controller_does_not_read_capture_operands_when_not_due(monkeypatch, writer):
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    from relax.refinement.refinement_options import CheckpointOptions
+
+    trace = CallTrace(monkeypatch).wrap(SnapshotCapture, 'begin').wrap(SnapshotCapture, 'finish')
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False, checkpoint=CheckpointOptions(writer=writer))
+    assert trace.labels() == []
+    assert writer is None or writer.published == []

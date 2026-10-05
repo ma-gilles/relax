@@ -548,19 +548,25 @@ def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch):
 
 
 
-def test_kclass_final_reconstruction_does_not_predivide_class_accumulators():
-    source = inspect.getsource(finalization.run_final_all_data)
-    final_start = source.index("RELION final all-data reconstruction start")
-    final_source = source[final_start:]
-    assert "final_reconstruction.reconstruct_final_class_maps(" in final_source
-    reconstruction = inspect.getsource(
-        finalization.final_reconstruction.reconstruct_final_class_maps
-    )
-    assert "class_means = jnp.stack(" in reconstruction
-    assert "denominator[class_idx]," in reconstruction
-    assert "numerator[class_idx]," in reconstruction
-    assert "denominator[class_idx] /" not in reconstruction
-    assert "numerator[class_idx] /" not in reconstruction
+def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monkeypatch):
+    """The Class3D final pass solves each class from its own raw numerator and denominator, then stacks."""
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(finalization.final_reconstruction, "reconstruct_final_class_maps", "final_classes")
+    trace.wrap(mean_helpers_module, "_reconstruct_volume_eager", "solve")
+    run_tiny_refinement(monkeypatch, n_classes=2, converge_after=2)
+
+    (final,) = trace.calls("final_classes")
+    numerator, denominator = final.args[0], final.args[1]
+    solves = [call for call in trace.calls("solve") if call.inside == ("final_classes",)]
+    assert len(solves) == 2
+    for class_idx, solve in enumerate(solves):
+        assert_matches(np.asarray(solve.args[0]), np.asarray(denominator[class_idx]))
+        assert_matches(np.asarray(solve.args[1]), np.asarray(numerator[class_idx]))
+    stacked = np.stack([np.asarray(solve.result).reshape(-1) for solve in solves])
+    for half in final.result.halves:
+        assert_matches(np.asarray(half), stacked)
 
 
 @pytest.mark.parametrize(
@@ -582,23 +588,43 @@ def test_past_perturb_replay_max_iter_matches_one_indexed_cutoff(
     )
 
 
-def testrefine_single_volume_clears_perturb_replay_dir_past_cutoff_source():
+def testrefine_single_volume_clears_perturb_replay_dir_past_cutoff_source(monkeypatch, tmp_path):
     """Regression for the bug where --replay-override-max-iter only gated the
     explicit ``replay_iteration_overrides`` dict, leaving
     ``refine_single_volume``'s independent per-iteration
     sampling/model/optimiser STAR reads (including the "Replay override:
     optimiser control <- ..." log line) active for every iteration
-    regardless of the cutoff. Asserts the loop body reassigns
-    ``perturb_replay_relion_dir`` itself (the same local variable every
-    downstream per-iteration STAR read in this function consults) via
-    ``_past_perturb_replay_max_iter``, rather than only gating
-    ``iter_replay_override``.
+    regardless of the cutoff. Once an iteration is past the cutoff the run
+    reads nothing more from the replay directory: it is moved away there,
+    and every later native-sampling decision is made without it.
     """
-    source = inspect.getsource(iteration_loop_module.refine_single_volume)
-    assert "perturb_replay_relion_dir = None" in source
-    assert "_past_perturb_replay_max_iter(" in source
-    assert "replay_saved_healpix_order = None" in source
-    assert source.count("_native_sampling_boundary_for_iteration(") >= 2
+    import shutil
+
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement, write_replay_dir
+
+    replay_dir = write_replay_dir(tmp_path / "relion", max_iter=3)
+
+    def move_replay_dir_away(call):
+        if call.result and Path(replay_dir).exists():
+            shutil.move(replay_dir, tmp_path / "moved")
+
+    trace = CallTrace(monkeypatch)
+    trace.wrap(relion_replay_module, "_past_perturb_replay_max_iter", "cutoff", after=move_replay_dir_away)
+    trace.wrap(relion_replay_module, "_native_sampling_boundary_for_iteration", "boundary")
+    trace.wrap(iteration_loop_module, "relion_expectation_coarse_size_order", "coarse_order")
+    run_tiny_refinement(
+        monkeypatch, max_iter=3, final_after_max_iter=False, converge_after=None,
+        parity=dict(perturb_replay_relion_dir=replay_dir, perturb_replay_max_iter=1, low_resol_join_halves_angstrom=0.0),
+    )
+    # The loop asks while it still has a directory: iteration 1 is in range, iteration 2 is past it.
+    assert [call.result for call in trace.calls("cutoff") if call.inside == ()] == [False, True]
+    assert not Path(replay_dir).exists()
+    boundaries = trace.calls("boundary")
+    # The start-up decision and the first iteration's read the directory; the two past the cutoff do not.
+    assert [call.kwargs["replay_dir"] for call in boundaries] == [replay_dir, replay_dir, None, None]
+    # Nor does the coarse size keep the replayed sampling order.
+    saved_orders = [call.kwargs["replay_saved_healpix_order"] for call in trace.calls("coarse_order")]
+    assert saved_orders[0] is not None and saved_orders[1:] == [None, None]
 
 
 @pytest.mark.parametrize(
@@ -1008,11 +1034,33 @@ def test_replay_explicit_paired_image_scale_state_remains_exact(with_resident_st
 
 
 def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
-    final_replay_source = inspect.getsource(relion_replay_module._install_final_replay_particle_state)
+    def halves():
+        return initialize_halfsets(
+            (None, None),
+            previous_best_translations=None,
+            previous_best_rotation_eulers=None,
+            image_corrections=[np.asarray([9.0, 9.0]), np.asarray([], dtype=np.float32)],
+            scale_corrections=[np.asarray([8.0, 10.0]), np.asarray([], dtype=np.float32)],
+        )
 
-    assert "_apply_replay_correction_overrides(" in final_replay_source
-    assert "_final_replay_img_corr" not in final_replay_source
-    assert "_final_replay_scale_corr" not in final_replay_source
+    override = {
+        "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
+        "serialized_scale_corrections": [np.asarray([4.0, 5.0]), np.asarray([], dtype=np.float32)],
+    }
+    shared, final = halves(), halves()
+    shared_fields = relion_replay_module._apply_replay_correction_overrides(
+        relion_half_inputs=shared, replay_override=override,
+    )
+    sigma_offset, noise_model = object(), object()
+    kept_sigma, kept_noise, final_fields = relion_replay_module._install_final_replay_particle_state(
+        override, final, sigma_offset=sigma_offset, noise_model=noise_model, image_shape=IMAGE_SHAPE, dtype=np.float32,
+    )
+    # The final pass installs the corrections through the numbered iterations' contract, and nothing else.
+    assert final_fields == shared_fields
+    assert kept_sigma is sigma_offset and kept_noise is noise_model
+    for final_half, shared_half in zip(final, shared, strict=True):
+        assert_matches(final_half.image_corrections, shared_half.image_corrections)
+        assert_matches(final_half.scale_corrections, shared_half.scale_corrections)
 
     relion_half_inputs = initialize_halfsets(
         (None, None),
@@ -3803,16 +3851,66 @@ def test_run_local_search_iteration_plumbs_score_only_to_the_resident_probe(monk
     assert outputs.profile_summary["score_only"] is True
 
 
-def test_local_adaptive_parent_support_probe_is_score_only():
-    source = Path(half_scoring.__file__).read_text()
-    start = source.index("parent_outputs = _run_local_search_iteration(")
-    end = source.index("parent_profile = parent_outputs.profile_summary", start)
-    parent_call = source[start:end]
+def test_local_adaptive_parent_support_probe_is_score_only(monkeypatch, rng):
+    """The local adaptive pass 1 scores the parents only: no backprojection, sample indices returned."""
+    dataset = MockDataset(2, rng)
+    captured = {}
 
-    assert "disable_adjoint_y=True" in parent_call
-    assert "disable_adjoint_ctf=True" in parent_call
-    assert "return_reconstruction_sample_indices=True" in parent_call
-    assert "score_only=True" in parent_call
+    class StopAfterParentProbe(Exception):
+        pass
+
+    def parent_probe(data, grid, batching, kernel, support, diagnostics):
+        captured.update(support=support, diagnostics=diagnostics)
+        raise StopAfterParentProbe
+
+    monkeypatch.setattr(
+        half_scoring, "_build_local_adaptive_parent_layout",
+        lambda *args: (SimpleNamespace(rotation_counts=np.asarray([2])), 0),
+    )
+    monkeypatch.setattr(half_scoring, "_run_local_search_iteration", parent_probe)
+    with pytest.raises(StopAfterParentProbe):
+        half_scoring._score_half_local(*local_half_owners(
+            k=0,
+            experiment_dataset=dataset,
+            means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
+            noise_variance_k=jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
+            previous_best_rotation_eulers_k=np.zeros((dataset.n_units, 3), dtype=np.float32),
+            local_search_rotations=np.repeat(np.eye(3, dtype=np.float32)[None, :, :], 2, axis=0),
+            local_search_order=1,
+            sigma_rot=np.deg2rad(1.0),
+            sigma_psi=np.deg2rad(1.0),
+            current_translations=np.zeros((1, 2), dtype=np.float32),
+            base_translations=np.zeros((1, 2), dtype=np.float32),
+            trans_prior_center=np.zeros((dataset.n_units, 2), dtype=np.float32),
+            trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
+            current_sigma_offset_angstrom=1.0,
+            disc_type="linear_interp",
+            cs_for_engine=None,
+            local_pass1_current_size=4,
+            image_corrections_k=None,
+            scale_corrections_k=None,
+            translation_search_base=None,
+            disable_adjoint_y=False,
+            disable_adjoint_ctf=False,
+            max_significants=None,
+            iteration=3,
+            save_intermediates_dir=None,
+            local_search_random_perturbation=0.0,
+            local_search_angular_sampling_deg=relion_angular_sampling_deg(1),
+            local_parent_oversampling_order=1,
+            diagnostic_score_only=False,
+            local_search_translation_prior_mode="coarse",
+            replay_prior_translations=None,
+            collect_local_search_profile=False,
+            safe_batch_sizes=lambda *args, **kwargs: (1, 1),
+            local_profile_history=[],
+        ))
+
+    support = captured["support"]
+    assert support.disable_adjoint_y is True and support.disable_adjoint_ctf is True
+    assert support.return_reconstruction_sample_indices is True
+    assert support.score_only is True
+    assert captured["diagnostics"].debug_pass_label == "pass1_parent"
 
 
 def test_k1_mstep_preserves_retained_pose_support_mass():

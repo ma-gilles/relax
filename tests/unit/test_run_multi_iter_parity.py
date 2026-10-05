@@ -934,18 +934,20 @@ def test_iteration_overrides_use_the_replay_scale_keys():
     assert '"scale_corrections": [scale_corr_h1_iter' not in source
 
 
-def test_final_only_replay_reports_empty_numbered_assignments():
+def test_final_only_replay_reports_empty_numbered_assignments(monkeypatch):
     """A final-only replay runs no numbered iteration; the result still carries
     per-half assignments (None), which full_refinement indexes. 14381025
     finished the forced final at 10097 it22 and then stopped on an unbound
     hard_assignments."""
 
-    from relax.refinement import iteration_loop
+    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    source = inspect.getsource(iteration_loop.refine_single_volume)
-    init = source.index("hard_assignments = [None, None]")
-    loop = source.index("while (schedule.force_max_iter_after_convergence")
-    assert init < loop
+    from relax.refinement import finalization
+
+    trace = CallTrace(monkeypatch).wrap(finalization, "run_final_all_data", "final")
+    result = run_tiny_refinement(monkeypatch, max_iter=0)
+    assert trace.labels() == ["final"]
+    assert result["hard_assignments"] == [None, None]
 
 
 def test_normalization_overrides_are_a_no_op_for_multi_stack_datasets():

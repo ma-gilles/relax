@@ -129,11 +129,12 @@ class CallTrace:
     calls_seen: list = field(default_factory=list)
     _running: threading.local = field(default_factory=threading.local)
 
-    def wrap(self, owner, name, label=None, *, before=None, after=None):
+    def wrap(self, owner, name, label=None, *, before=None, after=None, keep_operands=True):
         """Replace ``owner.name`` by a forwarder recorded under ``label`` (default ``name``).
 
         ``before(call)`` runs before the original (it may assert on the operands or the program state);
-        ``after(call)`` runs once ``call.result`` is set.
+        ``after(call)`` runs once ``call.result`` is set. ``keep_operands=False`` drops the operands and
+        the result from the record once ``after`` has run, for a test of their lifetime.
         """
 
         original = getattr(owner, name)
@@ -152,7 +153,10 @@ class CallTrace:
                 running.pop()
             if after is not None:
                 after(call)
-            return call.result
+            result = call.result
+            if not keep_operands:
+                call.args, call.kwargs, call.result = (), {}, None
+            return result
 
         self.monkeypatch.setattr(owner, name, traced)
         return self
@@ -181,6 +185,53 @@ def frame_holds(function, value) -> bool:
             return any(local is value for local in frame.f_locals.values())
         frame = frame.f_back
     raise AssertionError(f"{function.__qualname__} is not running")
+
+
+def write_replay_dir(root, *, max_iter, n_classes=1, prior_order=2):
+    """RELION run files for STAR replay under ``root``: ``run_itNNN_sampling.star`` for iterations 0 to
+    ``max_iter + 1`` and, after each numbered iteration, the model STAR with a direction prior at
+    ``prior_order`` (per half for K=1). Returns ``root`` as a string."""
+
+    from pathlib import Path
+
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    for it in range(0, max_iter + 2):
+        (root / f"run_it{it:03d}_sampling.star").write_text(
+            "data_sampling_general\n\n_rlnHealpixOrder 2\n_rlnPsiStep 15.0\n_rlnOffsetRange 10.0\n"
+            "_rlnOffsetStep 2.0\n_rlnSamplingPerturbInstance 0.25\n_rlnSamplingPerturbFactor 0.5\n"
+        )
+    n_pix = 12 * 4**prior_order
+    for it in range(1, max_iter + 1):
+        for half in [None] if n_classes > 1 else [1, 2]:
+            values = np.random.default_rng(400 + it + (half or 0)).random((n_classes, n_pix)) + 0.05
+            values /= values.sum(axis=1, keepdims=True)
+            text = "data_model_general\n\n_rlnCurrentImageSize 4\n_rlnCurrentResolution 0.1\n\n"
+            for c in range(n_classes):
+                text += f"data_model_pdf_orient_class_{c + 1}\n\nloop_\n_rlnOrientationDistribution #1\n"
+                text += "".join(f"{float(v)!r}\n" for v in values[c]) + "\n"
+            name = f"run_it{it:03d}_model.star" if half is None else f"run_it{it:03d}_half{half}_model.star"
+            (root / name).write_text(text)
+    return str(root)
+
+
+def follower_scale_replay(n_iterations, n_followers=2):
+    """``ReplayState`` for Class3D's strict RELION follower-scale emulation on the tiny half sets: two physical
+    groups, one optics group, and a captured dispatch schedule for RELION iterations 1 to ``n_iterations``."""
+
+    from relax.refinement.refinement_options import ReplayState
+    from relax.relion.relion_worker_scale import RELION_SCALE_REDUCTION_MODES
+
+    n_half = N_IMAGES // 2
+    owners = [np.arange(n_half) % n_followers, (np.arange(n_half) + 1) % n_followers]
+    return ReplayState(
+        init_group_ids=[np.arange(n_half) % 2, (np.arange(n_half) + 1) % 2],
+        init_group_count=2,
+        relion_scale_follower_count=n_followers,
+        relion_scale_follower_owners_by_iteration={it: owners for it in range(1, n_iterations + 1)},
+        init_relion_optics_group_count=1,
+        relion_scale_reduction_mode=RELION_SCALE_REDUCTION_MODES[0],
+    )
 
 
 def run_tiny_refinement(
@@ -252,6 +303,8 @@ def run_tiny_refinement(
         monkeypatch.delenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", raising=False)
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
+    option_groups.setdefault("adaptive", AdaptiveOptions(adaptive_oversampling=1))
+    option_groups.setdefault("batching", RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS))
     if n_classes > 1:
         option_groups.setdefault(
             "k_class",
@@ -269,8 +322,6 @@ def run_tiny_refinement(
                 **{"max_iter": max_iter, "init_current_size": 4, "init_healpix_order": 2, "max_healpix_order": 2,
                    **(schedule or {})}
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-            adaptive=AdaptiveOptions(adaptive_oversampling=1),
             parity=RelionParityOptions(**(parity or {})),
             **option_groups,
         ),
