@@ -25,6 +25,46 @@ class StartupNoise(NamedTuple):
     pixel_variance: np.ndarray
 
 
+def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:
+    """A frozen boundary's noise: each half's scoring pixel variance (a list), their mean radial curve."""
+    from relax.diagnostics import frozen_boundary_cli
+
+    return StartupNoise(
+        radial=np.mean(np.stack(frozen_boundary.noise_radial_per_half, axis=0), axis=0),
+        pixel_variance=frozen_boundary_cli.expand_boundary_noise(frozen_boundary.noise_radial_per_half, image_shape),
+    )
+
+
+def archived_noise(path, iteration, image_shape, *, log) -> StartupNoise:
+    """The radial noise an earlier run's archive recorded at ``iteration`` (``--init_noise_from_npz``)."""
+    from recovar.reconstruction import noise as recon_noise
+
+    from relax.helpers import iteration_history
+
+    init_noise = iteration_history._load_init_noise_radial_npz(path, iteration)
+    radial = init_noise["noise_radial"]
+    log.info(
+        "Diagnostic init: loaded sigma2_noise from %s iter=%s: min=%.3e median=%.3e max=%.3e",
+        path,
+        init_noise["iteration"],
+        float(np.min(np.asarray(radial))),
+        float(np.median(np.asarray(radial))),
+        float(np.max(np.asarray(radial))),
+    )
+    return StartupNoise(radial=radial, pixel_variance=recon_noise.make_radial_noise(radial, image_shape))
+
+
+def continued_noise(noise_shells, image_shape) -> StartupNoise:
+    """A continued run's noise: half 1's pixel rows (the loop installs each half's own spectrum) and the halves'
+    mean radial curve."""
+    from relax.refinement.noise_updates import noise_pixel_rows
+
+    return StartupNoise(
+        radial=np.mean(np.stack(noise_shells, axis=0), axis=0),
+        pixel_variance=np.asarray(noise_pixel_rows(noise_shells[0], image_shape)),
+    )
+
+
 def auto_refine_noise_order(our_particles, relion_particles):
     """Map RELION's pre-randomisation ``sorted_idx`` to RECOVAR rows.
 

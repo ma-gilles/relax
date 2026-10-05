@@ -40,11 +40,10 @@ from relax.diagnostics.state_swap_probe import (
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
-from relax.helpers import iteration_history, xla_memory_reserve
+from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
-from relax.refinement.noise_updates import noise_pixel_rows
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
     RunReport,
@@ -149,6 +148,16 @@ def _assert_expected_repo_imports() -> None:
             "RECOVAR import provenance failure: expected every concrete EM module under "
             f"{expected_root}, found " + ", ".join(failures)
         )
+
+
+def _per_image_optics_groups(particles, layout) -> tuple[list, np.ndarray]:
+    """Each half's dense optics-group row per image, for noise held as one spectrum per optics group, and the
+    number of particles in each group."""
+    from relax.helpers.optics_noise import dense_optics_groups
+
+    image_optics_groups, _ = dense_optics_groups(particles["rlnOpticsGroup"])
+    per_half = [image_optics_groups[layout.half1_rows], image_optics_groups[layout.half2_rows]]
+    return per_half, np.bincount(image_optics_groups)
 
 
 def _resolve_tau2_fudge(n_classes, cli_tau2_fudge, relion_init_tau2_fudge):
@@ -972,47 +981,25 @@ def main(command=None):
     # instead of a flat unit spectrum, so iteration 1 starts on a comparable
     # likelihood scale.
 
-    from recovar.reconstruction import noise as recon_noise
-
     optics_group_ids_per_half = None
     if frozen_boundary is not None:
-        noise_variance = frozen_boundary_cli.expand_boundary_noise(
-            frozen_boundary.noise_radial_per_half,
-            ds.image_shape,
-        )
-        initial_noise_radial = np.mean(
-            np.stack(frozen_boundary.noise_radial_per_half, axis=0),
-            axis=0,
-        )
+        initial_noise = startup_noise.frozen_boundary_noise(frozen_boundary, ds.image_shape)
         logger.info(
             "Initial noise/tau2 state is owned by frozen boundary %s",
             frozen_boundary.source_dir,
         )
     elif args.init_noise_from_npz is not None:
-        init_noise = iteration_history._load_init_noise_radial_npz(args.init_noise_from_npz, args.init_noise_iter)
-        initial_noise_radial = init_noise["noise_radial"]
-        noise_variance = recon_noise.make_radial_noise(initial_noise_radial, ds.image_shape)
-        logger.info(
-            "Diagnostic init: loaded sigma2_noise from %s iter=%s: min=%.3e median=%.3e max=%.3e",
-            args.init_noise_from_npz,
-            init_noise["iteration"],
-            float(np.min(np.asarray(initial_noise_radial))),
-            float(np.median(np.asarray(initial_noise_radial))),
-            float(np.max(np.asarray(initial_noise_radial))),
+        initial_noise = startup_noise.archived_noise(
+            args.init_noise_from_npz, args.init_noise_iter, ds.image_shape, log=logger,
         )
     elif args.relion_init_dir is not None:
         # The RELION-seeded debug start loads RELION's iteration-0 model noise below.
-        initial_noise_radial = None
-        noise_variance = None
+        initial_noise = None
     elif resume_snapshot is not None:
         # The run files own the noise; the loop installs each half's own spectrum.
-        initial_noise_radial = np.mean(np.stack(resume_snapshot.noise_shells, axis=0), axis=0)
-        noise_variance = np.asarray(noise_pixel_rows(resume_snapshot.noise_shells[0], ds.image_shape))
-        if noise_variance.ndim == 2:
-            from relax.helpers.optics_noise import dense_optics_groups
-
-            image_optics_groups, _ = dense_optics_groups(our_particles["rlnOpticsGroup"])
-            optics_group_ids_per_half = [image_optics_groups[particle_layout.half1_rows], image_optics_groups[particle_layout.half2_rows]]
+        initial_noise = startup_noise.continued_noise(resume_snapshot.noise_shells, ds.image_shape)
+        if initial_noise.pixel_variance.ndim == 2:
+            optics_group_ids_per_half, _ = _per_image_optics_groups(our_particles, particle_layout)
     else:
         if args.n_classes == 1 and args.relion_half_sets is None:
             raise ValueError(
@@ -1030,25 +1017,22 @@ def main(command=None):
             output_dtype=np.float64 if _double_image_preprocessing else np.float32,
             pair_counting=consistency_options.initial_noise_pair_counting,
         )
-        initial_noise_radial = initial_noise.radial
-        noise_variance = initial_noise.pixel_variance
-        del initial_noise
         logger.info(
             "RELION start-up noise from the images: %d shells, scoring dtype=%s",
-            initial_noise_radial.size,
-            noise_variance.dtype,
+            initial_noise.radial.size,
+            initial_noise.pixel_variance.dtype,
         )
-        if noise_variance.ndim == 2:
+        if initial_noise.pixel_variance.ndim == 2:
             # One spectrum per optics group; every image scores with its own group's.
-            from relax.helpers.optics_noise import dense_optics_groups
-
-            image_optics_groups, _ = dense_optics_groups(our_particles["rlnOpticsGroup"])
-            optics_group_ids_per_half = [image_optics_groups[particle_layout.half1_rows], image_optics_groups[particle_layout.half2_rows]]
+            optics_group_ids_per_half, group_sizes = _per_image_optics_groups(our_particles, particle_layout)
             logger.info(
                 "Per-optics-group noise: %d groups, images per group %s",
-                noise_variance.shape[0],
-                np.bincount(image_optics_groups).tolist(),
+                initial_noise.pixel_variance.shape[0],
+                group_sizes.tolist(),
             )
+    initial_noise_radial = None if initial_noise is None else initial_noise.radial
+    noise_variance = None if initial_noise is None else initial_noise.pixel_variance
+    del initial_noise
 
     # Compute initial signal prior from init volume (weak prior). For K>1
     # use class-1 as the representative volume; the engine derives per-class
