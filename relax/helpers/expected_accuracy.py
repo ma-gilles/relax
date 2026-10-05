@@ -143,7 +143,7 @@ def estimate_iteration_accuracy(
     ``reference``, ``best_eulers_deg``, ``class_assignments`` and ``sigma2_noise_native`` are half 1's.
     With ``build_shared_projector`` the estimate projects through a ``ProjectorReuse`` of ``reference``
     built here and returned, which the scoring projector setup then reuses: RELION computes each class's
-    projector once per iteration. A failed estimate is reported, not raised.
+    projector once per iteration. A failed estimate raises.
     """
     shared_projector_half1 = None
     exact_acc_rot_this_iter = None
@@ -192,58 +192,50 @@ def estimate_iteration_accuracy(
                         gridding_kernel=inputs.gridding_kernel,
                     ),
                 )
-            try:
-                accuracy = inputs.estimate(
-                    projector_data=None if shared_projector_half1 is None else shared_projector_half1.projector.data,
-                    reference_fourier=reference,
-                    best_eulers_deg=best_eulers_deg,
-                    class_ids=accuracy_class_ids,
-                    class_weights=class_weights,
-                    sigma2_noise_native=sigma2_noise_native,
-                    current_image_size=current_size,
-                )
-                exact_acc_rot_this_iter = float(accuracy.acc_rot)
-                exact_acc_trans_this_iter = float(accuracy.acc_trans_angstrom)
-                exact_acc_rot_per_class_this_iter = np.asarray(
-                    accuracy.acc_rot_per_class,
-                    dtype=np.float64,
-                ).copy()
-                exact_acc_trans_per_class_this_iter = np.asarray(
-                    accuracy.acc_trans_per_class_angstrom,
-                    dtype=np.float64,
-                ).copy()
-                exact_accuracy_class_counts_this_iter = np.asarray(
-                    accuracy.class_counts,
-                    dtype=np.int64,
-                ).copy()
-                expected_accuracy_trial_local_indices = np.asarray(
-                    accuracy.trial_local_indices,
-                    dtype=np.int64,
-                ).copy()
-                expected_accuracy_trial_particle_ids = np.asarray(
-                    accuracy.trial_particle_ids,
-                    dtype=np.int64,
-                ).copy()
-                exact_accuracy_status_this_iter = "ok"
-                published = True
-                sampling_accuracy = (exact_acc_rot_this_iter, exact_acc_trans_this_iter)
-                log.info(
-                    "RELION exact expected accuracy: acc_rot=%.3f deg, acc_trans=%.4f A "
-                    "(trials=%d, first_particle_ids=%s)",
-                    exact_acc_rot_this_iter,
-                    exact_acc_trans_this_iter,
-                    int(accuracy.trial_local_indices.size),
-                    accuracy.trial_particle_ids[:5].tolist(),
-                )
-            except Exception as exc:
-                exact_accuracy_status_this_iter = f"error:{type(exc).__name__}:{exc}"
-                sampling_accuracy = (float("inf"), float("inf"))
-                log.warning(
-                    "RELION exact expected-accuracy estimation failed at iteration %d; "
-                    "convergence remains fail-closed: %s",
-                    iteration + 1,
-                    exc,
-                )
+            # A failure raises: an infinite accuracy would hide it behind a changed
+            # convergence decision (the slab is sized by accuracy_slab_chunk_bytes).
+            accuracy = inputs.estimate(
+                projector_data=None if shared_projector_half1 is None else shared_projector_half1.projector.data,
+                reference_fourier=reference,
+                best_eulers_deg=best_eulers_deg,
+                class_ids=accuracy_class_ids,
+                class_weights=class_weights,
+                sigma2_noise_native=sigma2_noise_native,
+                current_image_size=current_size,
+            )
+            exact_acc_rot_this_iter = float(accuracy.acc_rot)
+            exact_acc_trans_this_iter = float(accuracy.acc_trans_angstrom)
+            exact_acc_rot_per_class_this_iter = np.asarray(
+                accuracy.acc_rot_per_class,
+                dtype=np.float64,
+            ).copy()
+            exact_acc_trans_per_class_this_iter = np.asarray(
+                accuracy.acc_trans_per_class_angstrom,
+                dtype=np.float64,
+            ).copy()
+            exact_accuracy_class_counts_this_iter = np.asarray(
+                accuracy.class_counts,
+                dtype=np.int64,
+            ).copy()
+            expected_accuracy_trial_local_indices = np.asarray(
+                accuracy.trial_local_indices,
+                dtype=np.int64,
+            ).copy()
+            expected_accuracy_trial_particle_ids = np.asarray(
+                accuracy.trial_particle_ids,
+                dtype=np.int64,
+            ).copy()
+            exact_accuracy_status_this_iter = "ok"
+            published = True
+            sampling_accuracy = (exact_acc_rot_this_iter, exact_acc_trans_this_iter)
+            log.info(
+                "RELION exact expected accuracy: acc_rot=%.3f deg, acc_trans=%.4f A "
+                "(trials=%d, first_particle_ids=%s)",
+                exact_acc_rot_this_iter,
+                exact_acc_trans_this_iter,
+                int(accuracy.trial_local_indices.size),
+                accuracy.trial_particle_ids[:5].tolist(),
+            )
     return (
         IterationAccuracy(
             status=exact_accuracy_status_this_iter,
