@@ -31,7 +31,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar import utils
-from recovar.core import fourier_transform_utils as ftu
 from recovar.utils.file_hash import sha256_file as _sha256_file
 
 import relax
@@ -44,7 +43,7 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import iteration_history, xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.refinement import command_options, particle_loading, startup_noise
+from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.noise_updates import noise_pixel_rows
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
@@ -58,9 +57,6 @@ from relax.refinement.result_files import (
 )
 from relax.refinement.run_files import RunFileWriter, RunSettings, read_run_files
 from relax.relion import input_particle_table, input_poses, relion_metadata
-from relax.relion.geometry import (
-    REFERENCE_FILTER_EDGE_SHELLS,
-)
 from relax.relion.input_particle_table import relion_class3d_seed_classes
 from relax.relion.relion_worker_scale import prepare_follower_topology
 
@@ -816,16 +812,6 @@ def main(command=None):
     relion_firstiter_ini_high_angstrom = runtime_controls.firstiter_ini_high_angstrom
 
     # ---- Load initial volume ----
-    # References are RELION-convention maps, the same files relion_refine reads with --ref;
-    # load_relion_volume puts them in the internal frame (relax.helpers.map_io), and get_dft3
-    # gives the centered Fourier volume.
-    # NEVER use raw `mrcfile.open` + `np.fft.fftn(np.fft.ifftshift(...))` here:
-    # that produces a Fourier volume with the right values but at WRONG array
-    # indices (DC at corner instead of center), so `slice_volume` reads
-    # Nyquist as if it were DC and projections are off by ~2400x in amplitude
-    # at low frequencies.
-    from recovar.utils.helpers import load_relion_volume
-
     # RELION's Image<RFLOAT>::read() widens a reference MRC (on-disk float32)
     # to RFLOAT (double, in our ACC_DOUBLE_PRECISION oracle build) as part of
     # the read itself (src/ml_model.cpp:MlModel::readImages -> Iref.push_back
@@ -849,24 +835,8 @@ def main(command=None):
     _init_volume_dtype = np.float64 if _init_volume_use_float64 else np.float32
     _init_volume_complex_dtype = np.complex128 if _init_volume_use_float64 else np.complex64
 
-    # RELION's ``initialLowPassFilterReferences`` (ml_optimiser.cpp:3556) low-
-    # pass-filters mymodel.Iref in place at startup, gated only on
-    # ``ini_high > 0`` (not on ``--firstiter_cc``). With ``--apply-initial-
-    # lowpass``, mirror that behavior: apply LP at ``--init_resolution`` to
-    # the reference before iter-1 expectation. The Fourier mask edge is
-
-    def _apply_ini_high_lowpass_real(volume_real, volume_shape, voxel_size, ini_high):
-        from relax.relion.reference_initialization import initial_low_pass_filter_references
-
-        filtered = initial_low_pass_filter_references(
-            np.asarray(volume_real, dtype=np.float64)[None, ...],
-            ori_size=int(volume_shape[0]),
-            pixel_size=float(voxel_size),
-            ini_high_ang=float(ini_high),
-            filter_edgewidth=float(REFERENCE_FILTER_EDGE_SHELLS),
-        )[0]
-        return np.asarray(filtered, dtype=np.float64)
-
+    # RELION's ``initialLowPassFilterReferences`` (ml_optimiser.cpp:3556) low-pass filters mymodel.Iref at
+    # start-up, gated only on ``ini_high > 0``; ``--apply-initial-lowpass`` mirrors it at --init_resolution.
     _apply_ini_lowpass = bool(getattr(args, "apply_initial_lowpass", False))
     _ini_high_for_lowpass = (
         float(args.init_resolution)
@@ -905,18 +875,15 @@ def main(command=None):
             "RELION initial projector: direct real-reference handoff enabled "
             "(K=1 firstiter_cc default or explicit environment override)",
         )
-    init_reference_real_for_projector = None
-    relion_start_reference_real = None
-    relion_start_class_references_real = None
-
     if frozen_boundary is not None:
         if frozen_boundary.volume_shape != tuple(int(value) for value in ds.volume_shape):
             raise SystemExit(
                 "Frozen-boundary volume_shape does not match the active dataset: "
                 f"boundary={frozen_boundary.volume_shape}, dataset={tuple(ds.volume_shape)}"
             )
-        init_vol_ft = np.stack(frozen_boundary.means, axis=0)
-        merged_init_ft = np.mean(init_vol_ft.astype(np.complex128), axis=0).astype(_init_volume_complex_dtype)
+        references = startup_references.frozen_boundary_references(
+            frozen_boundary, complex_dtype=_init_volume_complex_dtype,
+        )
         logger.info(
             "Initial per-half Fourier volumes loaded from frozen boundary %s",
             frozen_boundary.source_dir,
@@ -924,122 +891,30 @@ def main(command=None):
     elif args.n_classes == 1:
         init_mrc_path = args.init_volume or os.path.join(args.data_dir, "reference_init_relion.mrc")
         _require_relion_convention_reference(init_mrc_path, "--init_volume")
-        init_vol_real = load_relion_volume(init_mrc_path).astype(_init_volume_dtype)
-        relion_model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(init_mrc_path)
-        if not np.isfinite(relion_model_pixel_size) or relion_model_pixel_size <= 0.0:
-            raise SystemExit(
-                f"Initial RELION reference has invalid voxel size {relion_model_pixel_size}: "
-                f"{init_mrc_path}"
-            )
-        assert init_vol_real.shape == ds.volume_shape, (
-            f"Volume shape mismatch: {init_vol_real.shape} vs {ds.volume_shape}"
-        )
-        if _ini_high_for_lowpass is not None:
-            # RELION filters ``mymodel.Iref`` in model coordinates.  The
-            # particle STAR optics pixel size can be a rounded serialization
-            # (for example 1.416667 versus the MRC header ratio
-            # 544.0 / 384 = 1.4166666666666667 A/px),
-            # which is enough to flip marginal firstiter-CC winners.
-            filtered_real = _apply_ini_high_lowpass_real(
-                init_vol_real,
-                ds.volume_shape,
-                relion_model_pixel_size,
-                _ini_high_for_lowpass,
-            )
-            if _use_initial_projector_real:
-                init_reference_real_for_projector = filtered_real
-            relion_start_reference_real = filtered_real
-            init_vol_real = filtered_real.astype(_init_volume_dtype, copy=False)
-            logger.info(
-                "Applied RELION initialLowPassFilterReferences to init reference: ini_high=%.2f A, fmask_edge=%d shells",
-                _ini_high_for_lowpass, REFERENCE_FILTER_EDGE_SHELLS,
-            )
-        else:
-            relion_start_reference_real = np.asarray(init_vol_real, dtype=np.float64)
-            if _use_initial_projector_real:
-                init_reference_real_for_projector = relion_start_reference_real
-        init_vol_ft = (
-            np.array(ftu.get_dft3(jnp.asarray(init_vol_real)))
-            .astype(_init_volume_complex_dtype)
-            .reshape(-1)
-        )
-        logger.info(
-            "Initial volume loaded from %s: shape=%s model_pixel_size=%.9g A/px",
+        references = startup_references.load_k1_reference(
             init_mrc_path,
-            init_vol_real.shape,
-            relion_model_pixel_size,
+            volume_shape=ds.volume_shape,
+            ini_high=_ini_high_for_lowpass,
+            real_for_projector=_use_initial_projector_real,
+            real_dtype=_init_volume_dtype,
+            complex_dtype=_init_volume_complex_dtype,
+            log=logger,
         )
+        relion_model_pixel_size = references.model_pixel_size
     else:
-        if args.init_volume is not None:
-            # relion_refine --K K with one --ref map: every class starts from it and the first iteration scores
-            # each particle against one random class (do_generate_seeds, ml_model.cpp:1007-1010); with
-            # --firstiter_cc that is the second iteration, after a CC iteration against class 1 alone.
-            if args.ref_star is not None or args.init_class_volumes:
-                raise SystemExit("--init_volume is Class3D's one reference; --ref_star and --init_class_volumes list K")
-            class_paths = [args.init_volume] * int(args.n_classes)
-        elif args.ref_star is not None:
-            if args.init_class_volumes:
-                raise SystemExit("--ref_star and --init_class_volumes are exclusive")
-            class_paths, star_distribution = relion_metadata.read_relion_reference_star(args.ref_star)
-            class_paths = [str(p) for p in class_paths]
-            if star_distribution is not None and not np.allclose(
-                star_distribution, 1.0 / len(class_paths), rtol=0.0, atol=1e-6
-            ):
-                logger.warning(
-                    "--ref_star rlnClassDistribution %s is not read; relion_refine starts "
-                    "a fresh Class3D run from 1/K",
-                    star_distribution.tolist(),
-                )
-        elif args.init_class_volumes:
-            class_paths = [p.strip() for p in args.init_class_volumes.split(",")]
-        else:
-            class_paths = [
-                os.path.join(args.data_dir, f"reference_init_class{k + 1:03d}_relion.mrc")
-                for k in range(args.n_classes)
-            ]
-        if len(class_paths) != args.n_classes:
-            raise SystemExit(f"--init_class_volumes count {len(class_paths)} != --n_classes {args.n_classes}")
-        class_option = (
-            "--ref_star" if args.ref_star is not None else "--init_class_volumes" if args.init_class_volumes else "data_dir"
-        )
+        class_paths, class_option = command_options.resolve_class_reference_paths(args, log=logger)
         for p in class_paths:
             _require_relion_convention_reference(p, class_option)
-        per_class_ft = []
-        per_class_real_for_projector = []
-        relion_start_class_references_real = []
-        for k, p in enumerate(class_paths):
-            vol_real = np.asarray(load_relion_volume(p)).astype(_init_volume_dtype)
-            assert vol_real.shape == ds.volume_shape, (
-                f"Class {k + 1} volume shape mismatch at {p}: {vol_real.shape} vs {ds.volume_shape}"
-            )
-            if _ini_high_for_lowpass is not None:
-                filtered_real = _apply_ini_high_lowpass_real(
-                    vol_real, ds.volume_shape, ds.voxel_size, _ini_high_for_lowpass,
-                )
-                if _use_initial_projector_real:
-                    per_class_real_for_projector.append(filtered_real)
-                relion_start_class_references_real.append(np.asarray(filtered_real, dtype=np.float64))
-                vol_real = filtered_real.astype(_init_volume_dtype, copy=False)
-            else:
-                relion_start_class_references_real.append(np.asarray(vol_real, dtype=np.float64))
-                if _use_initial_projector_real:
-                    per_class_real_for_projector.append(np.asarray(vol_real, dtype=np.float64))
-            vol_ft = np.array(ftu.get_dft3(jnp.asarray(vol_real))).astype(_init_volume_complex_dtype).reshape(-1)
-            per_class_ft.append(vol_ft)
-            logger.info("Class %d initial volume loaded from %s", k + 1, p)
-        if _ini_high_for_lowpass is not None:
-            logger.info(
-                "Applied RELION initialLowPassFilterReferences to %d init references: ini_high=%.2f A, fmask_edge=%d shells",
-                args.n_classes, _ini_high_for_lowpass, REFERENCE_FILTER_EDGE_SHELLS,
-            )
-        # Stack to (K, V); refine_single_volume._normalize_initial_means handles the
-        # per-half broadcast.
-        init_vol_ft = np.stack(per_class_ft, axis=0)
-        if _use_initial_projector_real:
-            init_reference_real_for_projector = np.stack(
-                per_class_real_for_projector,
-                axis=0,
-            )
+        references = startup_references.load_class_references(
+            class_paths,
+            volume_shape=ds.volume_shape,
+            voxel_size=ds.voxel_size,
+            ini_high=_ini_high_for_lowpass,
+            real_for_projector=_use_initial_projector_real,
+            real_dtype=_init_volume_dtype,
+            complex_dtype=_init_volume_complex_dtype,
+            log=logger,
+        )
 
     # ---- Set up rotation and translation grids ----
     from relax.sampling import get_translation_grid, rotation_grid_size
@@ -1180,12 +1055,7 @@ def main(command=None):
     # tau2 trajectories from the per-class FSCs once the loop starts.
     from recovar.reconstruction.regularization import average_over_shells
 
-    if frozen_boundary is not None:
-        init_PS_source = jnp.asarray(merged_init_ft)
-    elif args.n_classes > 1:
-        init_PS_source = jnp.asarray(per_class_ft[0])
-    else:
-        init_PS_source = jnp.asarray(init_vol_ft)
+    init_PS_source = jnp.asarray(references.prior_source)
     init_PS = average_over_shells(jnp.abs(init_PS_source) ** 2, ds.volume_shape)
     del init_PS_source
     from recovar import utils
@@ -1299,9 +1169,9 @@ def main(command=None):
         and args.relion_init_dir is None
         and int(args.init_relion_iteration) == 0
     )
-    if relion_start_reference_real is not None and fresh_relion_start:
+    if references.reference_real is not None and fresh_relion_start:
         mean_variance, relion_start_data_vs_prior = _relion_start_tau2_and_data_vs_prior(
-            relion_start_reference_real,
+            references.reference_real,
             initial_noise_radial,
             grid_size=int(ds.grid_size),
             volume_shape=ds.volume_shape,
@@ -1313,12 +1183,12 @@ def main(command=None):
             "RELION start-up tau2/data_vs_prior (initialiseDataVersusPrior): %d shells with data_vs_prior > 3",
             int(np.sum(relion_start_data_vs_prior > 3.0)),
         )
-    elif relion_start_class_references_real is not None and fresh_relion_start and resume_snapshot is None:
+    elif references.class_references_real is not None and fresh_relion_start and resume_snapshot is None:
         # Class3D: each class's start-up data_vs_prior over all particles at pdf_class 1/K. The first
         # iteration's scale-correction sums take only the shells where it exceeds 3 (ml_optimiser.cpp:10473);
         # without it every shell entered them (subtomogram Class3D it001 group scales 5.6e-4 off RELION).
         # The class tau2 volumes are still the loop's own (only the scale gate reads this curve).
-        n_classes = len(relion_start_class_references_real)
+        n_classes = len(references.class_references_real)
         relion_start_data_vs_prior = np.stack(
             [
                 _relion_start_tau2_and_data_vs_prior(
@@ -1331,7 +1201,7 @@ def main(command=None):
                     pdf_class=1.0 / n_classes,
                     shell_pair_counting=consistency_options.shell_pair_counting,
                 )[1]
-                for reference in relion_start_class_references_real
+                for reference in references.class_references_real
             ],
             axis=0,
         )
@@ -1819,7 +1689,7 @@ def main(command=None):
     del mean_variance
     result = refine_single_volume(
         experiment_datasets=experiment_datasets,
-        init_volume=init_vol_ft,
+        init_volume=references.fourier,
         init_noise_variance=(
             noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
         ),
@@ -1916,7 +1786,7 @@ def main(command=None):
             ),
             checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
             replay=ReplayState(
-                init_reference_real=None if resume_snapshot is not None else init_reference_real_for_projector,
+                init_reference_real=None if resume_snapshot is not None else references.real_for_projector,
                 init_refinement_state_fields=(
                     None if frozen_boundary is None else frozen_boundary.refinement_state_fields
                 ),

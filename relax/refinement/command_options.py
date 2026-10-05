@@ -1358,3 +1358,45 @@ def resolve_relion_runtime_controls(
         relion_firstiter_ini_high_angstrom,
         max_significants_resolution,
     )
+
+
+def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[str], str]:
+    """Class3D's start-up maps and the option that named them: one --init_volume for every class, the
+    --ref_star list, --init_class_volumes, or the data directory's reference_init_class00K_relion.mrc."""
+    import numpy as np
+
+    from relax.relion import relion_metadata
+
+    if args.init_volume is not None:
+        # relion_refine --K K with one --ref map: every class starts from it and the first iteration scores
+        # each particle against one random class (do_generate_seeds, ml_model.cpp:1007-1010); with
+        # --firstiter_cc that is the second iteration, after a CC iteration against class 1 alone.
+        if args.ref_star is not None or args.init_class_volumes:
+            raise SystemExit("--init_volume is Class3D's one reference; --ref_star and --init_class_volumes list K")
+        class_paths = [args.init_volume] * int(args.n_classes)
+    elif args.ref_star is not None:
+        if args.init_class_volumes:
+            raise SystemExit("--ref_star and --init_class_volumes are exclusive")
+        class_paths, star_distribution = relion_metadata.read_relion_reference_star(args.ref_star)
+        class_paths = [str(p) for p in class_paths]
+        if star_distribution is not None and not np.allclose(
+            star_distribution, 1.0 / len(class_paths), rtol=0.0, atol=1e-6
+        ):
+            log.warning(
+                "--ref_star rlnClassDistribution %s is not read; relion_refine starts "
+                "a fresh Class3D run from 1/K",
+                star_distribution.tolist(),
+            )
+    elif args.init_class_volumes:
+        class_paths = [p.strip() for p in args.init_class_volumes.split(",")]
+    else:
+        class_paths = [
+            os.path.join(args.data_dir, f"reference_init_class{k + 1:03d}_relion.mrc")
+            for k in range(args.n_classes)
+        ]
+    if len(class_paths) != args.n_classes:
+        raise SystemExit(f"--init_class_volumes count {len(class_paths)} != --n_classes {args.n_classes}")
+    class_option = (
+        "--ref_star" if args.ref_star is not None else "--init_class_volumes" if args.init_class_volumes else "data_dir"
+    )
+    return class_paths, class_option
