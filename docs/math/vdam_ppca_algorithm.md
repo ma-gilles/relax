@@ -1399,6 +1399,20 @@ scientific contract; runnable code alone does not establish recovery.
   matched "throughout", so its dense decisions have no scored comparison
   (`jobs/local_schedule_consensus_a100_f68b866a`).
 
+  Per-state signal (note added October 5, 2026; re-score in section 17.11). At a fixed
+  noise level the eleven states carry different power: relative to state 5, states 0-10
+  hold .30 / .40 / .50 / .56 / .79 / 1.0 / .88 / .91 / 1.09 / 1.33 / 1.73, and states 0-1
+  are also the least like the GT average (correlation .56 / .60, against .74-.88). At
+  noise 1 their per-particle SNR is 2.5-6 times below the other states and they cannot be
+  aligned: within-state pose medians of 93-120 degrees in every arm (dense and every
+  oversampling arm, both seeds), against 4.0-5.4 at noise .25. This is a property of the
+  fixture, not a defect. The GT maps have no pseudo-symmetry (self-correlation under
+  90 and 180 degree turns at most .02), the wrong poses are spread over all angles and
+  axes, and the latent places these particles at the low-mass end (states 0-3) whether
+  or not their pose is right. Oversampling does matter at the margin: state 2 (power .50)
+  fails dense (52-54 degrees) and aligns with oversampling 1 in every variant (5.9-7.2
+  degrees). Analysis: `spa_state01_20261005/state01.py` in the run root of section 16.
+
   Cost, one H100 with nothing else on the device, arms back to back, second run
   of each arm (Slurm 14992520, `jobs/slurm_laststage_walls_h100_6b9ab85b`). Seed
   11, last stage = updates 161-199 at 2,000 images per update; seconds per update:
