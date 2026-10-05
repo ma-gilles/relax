@@ -2,6 +2,11 @@
  "note": "Extra source-glob -> GPU test file mappings for the smoke tier. scripts/run_test_tier.py already selects changed GPU tests and GPU tests that import a changed relax or scripts module (relax/cuda/* and relax/relion_bind/* select tests importing relax.cuda / relax.relion_bind). Add a mapping here when a GPU test depends on a path without importing it.",
  "map": {
   "relax/cuda/*.cu*": ["tests/unit/test_relion_bind/test_m7_ifft_crop.py"],
-  "relax/refinement/full_refinement.py": ["tests/unit/test_refine_relion_mode.py"]
+  "relax/refinement/full_refinement.py": ["tests/unit/test_refine_relion_mode.py"],
+  "relax/vdam/*.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/refinement/optics_shapes.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/sparse_pass2/resident_pass2.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/sparse_pass2/dispatch.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/helpers/fourier_window.py": ["tests/integration/test_vdam_multishape_smoke.py"]
  }
 }

@@ -679,6 +679,34 @@ def _to_reference_units(value, shape_class: ShapeClass, ref_box: int, power: int
     return value * ((float(shape_class.box_size) / float(ref_box)) ** power)
 
 
+def _common_centered_cubes(values):
+    """The classes' flattened odd BPref cubes cut to the smallest one, around their common centre.
+
+    A pass on the model grid may keep its BPref at a stable-window physical cube while a class
+    at its own box returns the logical cube (VDAM's ``keep_physical_bpref``). Both are centred on
+    the same Fourier origin, so the smaller cube's voxels are the centre of the larger one: the
+    cut selects the elements ``crop_public_full_volume`` would, with no arithmetic.
+    """
+    sizes = {int(np.shape(value)[-1]) for value in values if value is not None and np.ndim(value)}
+    if len(sizes) < 2:
+        return values
+    edges = {size: round(size ** (1.0 / 3.0)) for size in sizes}
+    if any(edge**3 != size or edge % 2 == 0 for size, edge in edges.items()):
+        raise ValueError(f"shape classes returned BPref accumulators that are not odd cubes: sizes {sorted(sizes)}")
+    edge = min(edges.values())
+    out = []
+    for value in values:
+        if value is None or not np.ndim(value) or edges[int(np.shape(value)[-1])] == edge:
+            out.append(value)
+            continue
+        big = edges[int(np.shape(value)[-1])]
+        start = (big - edge) // 2
+        cube = np.reshape(value, np.shape(value)[:-1] + (big, big, big))
+        cut = cube[..., start : start + edge, start : start + edge, start : start + edge]
+        out.append(np.reshape(cut, np.shape(value)[:-1] + (edge**3,)))
+    return out
+
+
 def _sum(values):
     values = [value for value in values if value is not None]
     if not values:
@@ -856,7 +884,9 @@ def merge_k_class_engine_results(results, classes, n_half, ref_box):
 
     def accumulators(name, power):
         return _sum(
-            [_to_reference_units(np.asarray(getattr(r, name)), c, ref_box, power) for r, c in zip(results, classes)]
+            _common_centered_cubes(
+                [_to_reference_units(np.asarray(getattr(r, name)), c, ref_box, power) for r, c in zip(results, classes)]
+            )
         )
 
     noise = [r.noise_stats for r in results]

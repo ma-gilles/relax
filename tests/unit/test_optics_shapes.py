@@ -798,3 +798,24 @@ def test_merge_k_class_engine_results_places_images_and_adds_sums():
     assert merged.aggregate_noise_stats.wsum_sigma2_noise.shape == (2, 17)
     np.testing.assert_allclose(merged.noise_stats[0].sumw, [2.0, 2.0])
     np.testing.assert_array_equal(merged.significant_counts, images + 1)
+
+
+def test_bpref_cubes_on_different_windows_merge_on_the_smaller_centred_cube():
+    # A model-grid class may return its BPref on a stable physical cube (7^3) while a class at its own
+    # box returns the logical cube (5^3); the merge sums the logical voxels, as crop_public_full_volume
+    # would select them, and leaves equal cubes alone.
+    from relax.helpers.half_volume_mstep import crop_public_full_volume
+
+    rng = np.random.default_rng(0)
+    physical = rng.standard_normal((1, 2, 7**3))
+    logical = rng.standard_normal((1, 2, 5**3))
+    cut = optics_shapes._common_centered_cubes([physical, logical])
+    expected = np.stack(
+        [np.asarray(crop_public_full_volume(physical[0, h], (7, 7, 7), (5, 5, 5))) for h in range(2)]
+    )[None]
+    np.testing.assert_array_equal(cut[0], expected)
+    assert cut[1] is logical
+    same = [physical, physical.copy()]
+    assert optics_shapes._common_centered_cubes(same) is same
+    with pytest.raises(ValueError, match="not odd cubes"):
+        optics_shapes._common_centered_cubes([physical, np.zeros((1, 2, 8**3))])

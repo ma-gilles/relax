@@ -863,6 +863,7 @@ def test_native_driver_prepares_particle_reads_before_loading(monkeypatch, prere
 
     monkeypatch.setattr(driver, "read_star", lambda path: (pd.DataFrame(index=[0]), None))
     monkeypatch.setattr(driver, "prepare_particle_reads", fake_prepare)
+    monkeypatch.setattr(driver, "optics_shape_class_rows", lambda path: None)
     monkeypatch.setattr(driver, "load_dataset", fake_load_dataset)
     opts = native_options.NativeInitialModelOptions(
         fn_img="particles.star",
@@ -885,7 +886,7 @@ def test_native_driver_prepares_particle_reads_before_loading(monkeypatch, prere
         (
             "load",
             ("particles.star",),
-            {"lazy": not preread_images, "datadir": "particles", "strip_prefix": "old/"},
+            {"lazy": not preread_images, "datadir": "particles", "strip_prefix": "old/", "ind": None},
         ),
     ]
 
@@ -894,6 +895,7 @@ def test_native_driver_rejects_tilt_series(monkeypatch):
     dataset = SimpleNamespace(tilt_series_flag=True)
     monkeypatch.setattr(driver, "read_star", lambda path: (pd.DataFrame(index=[0]), None))
     monkeypatch.setattr(driver, "prepare_particle_reads", lambda *args, **kwargs: None)
+    monkeypatch.setattr(driver, "optics_shape_class_rows", lambda path: None)
     monkeypatch.setattr(driver, "load_dataset", lambda *args, **kwargs: dataset)
 
     with pytest.raises(NotImplementedError, match="not tilt-series"):

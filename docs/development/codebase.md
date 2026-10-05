@@ -334,6 +334,16 @@ VDAM had copied from its input STAR, raises controller to 1,942 (+10: dLL from t
 evidence), E-step to 2,148 (+27: the evidence through the E-step meta and
 `estep_meta_updates.relion_log_likelihood_contributions`) and input/output to 1,382 (+1: the writer).
 
+Optics groups on several image shapes in InitialModel (October 5, 2026; RELION S3b), measured against
+main 7d7f3c92: controller 1,952 -> 1,977 lines (+25; budget 1,958 -> 1,977: one dataset per image shape,
+the refusal of features not wired for several shapes), initialization 1,141 -> 1,185 (+44; budget 1,185:
+start-up images masked at their own pixel size and resized and windowed to the model grid), reconstruction
+and state 549 -> 552 (+3; budget 552: per-particle pixel size and box), input/output 1,379 -> 1,385 (+6;
+budget 1,385), E-step 1,884 -> 1,923 and sampling 991 -> 1,008 (within their budgets), and a new
+`shape_class_estep` budget of 152 for
+[`vdam/shape_class_estep.py`](../../relax/vdam/shape_class_estep.py), the per-shape-class orchestration
+of the adaptive E-step, so the E-step budget does not grow.
+
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
 initialization and wiring, 89 in the loop for optimizer selection, fixed
