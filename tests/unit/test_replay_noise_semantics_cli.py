@@ -111,10 +111,28 @@ def test_uninterrupted_replay_requires_a_mid_trajectory_replay(init_relion_itera
         )
 
 
-def test_cli_passes_selected_noise_semantics_to_replay_overrides():
-    import inspect
+@pytest.mark.parametrize("semantics", ["continuation", "uninterrupted"])
+def test_cli_passes_selected_noise_semantics_to_replay_overrides(monkeypatch, tmp_path, semantics):
+    """The STAR replay builds its overrides with the process-start noise broadcast the semantics select."""
+    from helpers.tiny_main import controller_inputs, write_tiny_data_dir
+    from helpers.tiny_refinement import write_replay_dir
 
-    source = inspect.getsource(run_full_refinement.main)
-    start = source.index("replay_iteration_overrides = relion_replay._build_replay_iteration_overrides(")
-    end = source.index("\n            )", start)
-    assert "process_start_noise_broadcast=replay_process_start_noise_broadcast" in source[start:end]
+    from relax.diagnostics import relion_replay
+
+    broadcasts = []
+
+    def build(relion_dir, half1_rows, half2_rows, max_iter, **kwargs):
+        broadcasts.append(kwargs["process_start_noise_broadcast"])
+        return [None] * (int(max_iter) + 1)
+
+    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", build)
+    data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
+    init_iteration = 0 if semantics == "continuation" else 1
+    replay_dir = write_replay_dir(tmp_path / "relion", max_iter=3)
+    expected = run_full_refinement._replay_process_start_noise_broadcast(semantics, init_iteration, replay_dir)
+    controller_inputs(
+        monkeypatch, tmp_path, "refine", "--max_iter", "2", "--replay-noise-semantics", semantics,
+        "--init_relion_iteration", str(init_iteration), "--perturb_replay_relion_dir", replay_dir,
+        "--relion_half_sets", "<DATA>/particles.star", data=data,
+    )
+    assert broadcasts == [expected]

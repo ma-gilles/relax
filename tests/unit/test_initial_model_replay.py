@@ -1,10 +1,6 @@
 """Iteration-zero replay frames, source precedence and controller ownership."""
 
-import ast
 import logging
-import weakref
-from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -155,77 +151,84 @@ def test_missing_model_noise_still_refuses_with_an_override(tmp_path, override):
         )
 
 
-def _controller_replay_code():
-    source = Path(__file__).resolve().parents[2] / "relax/refinement/full_refinement.py"
-    tree = ast.parse(source.read_text())
-    main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
-    block = next(
-        node for node in main.body
-        if isinstance(node, ast.If) and ast.unparse(node.test) == "args.relion_init_dir is not None and frozen_boundary is None"
+def _relion_init_run(monkeypatch, tmp_path, n_classes, trace=None, **stand_ins):
+    """Main up to the controller with --relion_init_dir: the half-set STAR is the input STAR, and the run_it000
+    reads are stood in for (a model with a 256-pixel noise image and a 4096-voxel prior)."""
+    from helpers.tiny_main import controller_inputs, write_tiny_data_dir
+
+    from relax.diagnostics import relion_replay
+
+    data = write_tiny_data_dir(tmp_path / "data", n_classes=n_classes,
+                               extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
+    (tmp_path / "model").mkdir()
+    (tmp_path / "model" / "run_it000_data.star").write_text((data / "particles.star").read_text())
+    def overrides(relion_dir, half1_rows, half2_rows, max_iter, **kwargs):
+        # run_it000's input origins, which a fresh Class3D start keeps.
+        first = {"previous_best_translations": [np.zeros((len(half1_rows), 2)), np.zeros((len(half2_rows), 2))]}
+        return [first] + [None] * int(max_iter)
+
+    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", overrides)
+    defaults = dict(
+        read_initial_model=lambda directory, *, n_classes: "model",
+        prepare_noise=lambda model, **kwargs: replay.NoiseReplay(np.full(256, 2.0, np.float32), [np.ones(9)], 16**4),
+        log_noise_source=lambda noise, *, log: None,
+        prepare_prior=lambda model, **kwargs: np.full(4096 if n_classes == 1 else (n_classes, 4096), 3.0),
+        read_controls=lambda model, *, log: replay.InitialModelControls(1.75, 0.42),
     )
-    return compile(ast.Module(body=[block], type_ignores=[]), str(source), "exec")
+    for name, function in {**defaults, **stand_ins}.items():
+        monkeypatch.setattr(replay, name, function)
+        if trace is not None:
+            trace.wrap(replay, name)
+    # A non-MPI RELION oracle for Class3D: single-process group scales, no dispatch schedule.
+    command = ["refine"] if n_classes == 1 else ["class3d", "--n_classes", str(n_classes), "--relion-scale-followers", "0"]
+    return controller_inputs(monkeypatch, tmp_path, command[0], *command[1:], "--relion_init_dir", tmp_path / "model",
+                             "--relion_half_sets", "<DATA>/particles.star", n_classes=n_classes, data=data)
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("n_classes", [1, 4])
-def test_controller_installs_arrays_before_reporting_and_drops_temporary_owner(n_classes):
-    code = _controller_replay_code()
-    namespace = dict(
-        args=SimpleNamespace(relion_init_dir="model", n_classes=n_classes),
-        frozen_boundary=None,
-        ds=SimpleNamespace(grid_size=8, image_shape=(8, 8), volume_shape=(8, 8, 8)),
-        initial_noise_radial=None,
-        relion_live_initial_sigma2=None,
-        noise_variance=np.empty(64),
-        mean_variance=np.empty(512),
-    )
-    old_noise = weakref.ref(namespace["noise_variance"])
-    old_prior = weakref.ref(namespace["mean_variance"])
-    events = []
+def test_controller_installs_arrays_before_reporting_and_drops_temporary_owner(monkeypatch, tmp_path, n_classes):
+    """--relion_init_dir: RELION's iteration-0 noise, then prior, then controls; each replaced start-up array
+    is released when its replacement is installed, and the replayed values reach the controller."""
+    from helpers.tiny_main import main_frame_arrays
+    from helpers.tiny_refinement import CallTrace
 
-    def read(directory, *, n_classes):
-        events.append("read")
-        return "model"
-
-    def noise(model, **kwargs):
-        assert old_noise() is not None
-        events.append("noise")
-        return replay.NoiseReplay(np.zeros(64), [np.ones(5)], 8**4)
-
-    def report(noise, *, log):
-        assert namespace["noise_variance"] is noise.variance
-        assert old_noise() is None
-        events.append("noise reported")
+    held = {}
 
     def prior(model, **kwargs):
-        assert "replayed_noise" not in namespace
-        assert old_prior() is not None
-        events.append("prior")
-        return np.zeros(512)
+        held["before_prior"] = main_frame_arrays()
+        held["prior"] = np.full(4096 if n_classes == 1 else (n_classes, 4096), 3.0)
+        return held["prior"]
 
     def controls(model, *, log):
-        assert old_prior() is None
-        events.append("controls")
+        # The start-up prior main bootstrapped from the reference's power: one real value per voxel. Reading
+        # main's locals again refreshes the frame's snapshot of them, which held the replaced prior.
+        main_frame_arrays()
+        alive = [reference() for reference in held["before_prior"] if reference() is not None]
+        assert not [value for value in alive if value is not held["prior"] and np.ndim(value) == 1
+                    and np.size(value) == 4096 and not np.iscomplexobj(value)]
         return replay.InitialModelControls(1.75, 0.42)
 
-    class Log:
-        def info(self, *args):
-            assert old_prior() is None
-            events.append("prior reported")
-
-    namespace.update(
-        initial_model_replay=SimpleNamespace(read_initial_model=read, prepare_noise=noise, log_noise_source=report, prepare_prior=prior, read_controls=controls),
-        logger=Log(),
-    )
-    exec(code, namespace)
-    assert events == ["read", "noise", "noise reported", "prior", "prior reported", "controls"]
-    assert_matches(namespace["relion_init_tau2_fudge"], 1.75)
-    assert_matches(namespace["relion_init_sigma_offset_angstrom"], 0.42)
+    trace = CallTrace(monkeypatch)
+    inputs = _relion_init_run(monkeypatch, tmp_path, n_classes, trace=trace, prepare_prior=prior, read_controls=controls)
+    assert trace.labels() == ["read_initial_model", "prepare_noise", "log_noise_source", "prepare_prior", "read_controls"]
+    assert_matches(np.asarray(inputs["init_mean_variance"]), np.asarray(trace.calls("prepare_prior")[0].result))
+    assert_matches(np.asarray(inputs["init_noise_variance"]), np.full(256, 2.0, np.float32))
+    assert_matches(inputs["options"].parity.tau2_fudge, 1.75)
+    assert_matches(inputs["options"].schedule.init_translation_sigma_angstrom, 0.42)
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("directory,frozen", [(None, None), ("model", object())])
-def test_controller_does_not_read_replay_inputs_outside_its_gate(directory, frozen):
-    namespace = dict(args=SimpleNamespace(relion_init_dir=directory), frozen_boundary=frozen)
-    exec(_controller_replay_code(), namespace)
-    assert "initial_model" not in namespace
+def test_controller_does_not_read_replay_inputs_outside_its_gate(monkeypatch, tmp_path):
+    from helpers.tiny_main import controller_inputs
+    from helpers.tiny_refinement import CallTrace
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("run_it000 read without --relion_init_dir")
+
+    trace = CallTrace(monkeypatch)
+    for name in ("read_initial_model", "prepare_noise", "prepare_prior", "read_controls"):
+        monkeypatch.setattr(replay, name, refuse)
+        trace.wrap(replay, name)
+    controller_inputs(monkeypatch, tmp_path, "refine")
+    assert trace.labels() == []

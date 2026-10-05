@@ -1,7 +1,5 @@
 """CLI and ordering contract for the resident-state swap diagnostic."""
 
-import ast
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -26,7 +24,6 @@ from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
 
 pytestmark = pytest.mark.unit
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _parse_state_swap_args(*tokens):
@@ -223,66 +220,44 @@ def test_state_swap_application_telemetry_fails_closed(applied):
         validate_state_swap_probe_application(probe, applied)
 
 
-def test_full_runner_propagates_and_serializes_state_swap_probe():
-    # Source pin kept: full_refinement.main has no CPU harness (it refuses to start without a GPU), and the
-    # archive fields are written inline by result_files.build_archive_metadata, which main alone calls.
-    tree = ast.parse((REPO_ROOT / "relax/refinement/full_refinement.py").read_text())
-    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    called_names = {
-        node.func.id
-        for node in calls
-        if isinstance(node.func, ast.Name)
-    }
-    refinement_calls = [
-        node
-        for node in calls
-        if isinstance(node.func, ast.Name) and node.func.id == "refine_single_volume"
-    ]
-    # state_swap_probe is forwarded via the EngineDebugOptions group of
-    # refine_single_volume's options= bundle (commit cd6661f2), not as a
-    # top-level refine_single_volume keyword.
-    debug_option_calls = [
-        node
-        for node in calls
-        if isinstance(node.func, ast.Name) and node.func.id == "EngineDebugOptions"
-    ]
+def test_full_runner_propagates_and_serializes_state_swap_probe(monkeypatch, tmp_path):
+    """The command builds the probe from the replayed state and hands it to the controller."""
+    from helpers.tiny_main import controller_inputs, write_tiny_data_dir
+    from helpers.tiny_refinement import CallTrace, write_replay_dir
 
-    assert {
-        "state_swap_probe_loop_index",
-        "build_state_swap_probe",
-        "validate_state_swap_probe_application",
-    } <= called_names
-    assert len(refinement_calls) == 1
-    assert len(debug_option_calls) == 1
-    state_swap_keywords = [
-        keyword for keyword in debug_option_calls[0].keywords if keyword.arg == "state_swap_probe"
-    ]
-    assert len(state_swap_keywords) == 1
-    assert isinstance(state_swap_keywords[0].value, ast.Name)
-    assert state_swap_keywords[0].value.id == "state_swap_probe"
+    from relax.diagnostics import relion_replay
+    from relax.diagnostics.state_swap_probe import REQUIRED_STATE_SWAP_REPLAY_KEYS
+    from relax.refinement import full_refinement
 
-    archive_calls = [
-        node for node in calls
-        if isinstance(node.func, ast.Name) and node.func.id == "build_archive_metadata"
-    ]
-    assert len(archive_calls) == 1
-    archive_probe = next(keyword.value for keyword in archive_calls[0].keywords
-                         if keyword.arg == "state_swap_probe")
-    assert isinstance(archive_probe, ast.Name) and archive_probe.id == "state_swap_probe"
+    def overrides(relion_dir, half1_rows, half2_rows, max_iter, **kwargs):
+        complete = dict.fromkeys(REQUIRED_STATE_SWAP_REPLAY_KEYS, object())
+        return [complete for _ in range(int(max_iter) + 1)]
 
-    # The command parser is exercised by every CLI case above. Archive fields
-    # belong to the result writer, which receives the same probe as the engine.
-    source = (REPO_ROOT / "relax/refinement/result_files.py").read_text()
-    for field in (
-        "state_swap_probe_target_relion_iteration",
-        "state_swap_probe_loop_index",
-        "state_swap_probe_variant",
-        "state_swap_probe_replay_relion_references",
-        "state_swap_probe_applied_relion_iterations",
-        "state_swap_probe_replay_override_keys",
-        "state_swap_probe_required_replay_override_keys",
-    ):
-        assert f'"{field}"' in source
+    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", overrides)
+    trace = CallTrace(monkeypatch).wrap(full_refinement, "build_state_swap_probe", "probe")
+    data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
+    inputs = controller_inputs(
+        monkeypatch, tmp_path / "swap", "refine", "--max_iter", "3",
+        "--perturb_replay_relion_dir", write_replay_dir(tmp_path / "relion", max_iter=3),
+        "--relion_half_sets", "<DATA>/particles.star", "--state-swap-target-relion-iteration", "2",
+        "--state-swap-variant", "recovar_direction_prior", "--state-swap-replay-relion-references", data=data,
+    )
+    (probe,) = trace.calls("probe")
+    assert inputs["options"].debug.state_swap_probe is probe.result
+    assert (probe.result["target_relion_iteration"], probe.result["iteration"]) == (2, 1)
+
+
+def test_archive_carries_empty_state_swap_probe_fields(monkeypatch, tmp_path):
+    from helpers.tiny_main import run_tiny_main
+
+    output = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1")
+    with np.load(output / "refinement_results.npz", allow_pickle=True) as archive:
+        assert int(archive["state_swap_probe_target_relion_iteration"]) == -1
+        assert int(archive["state_swap_probe_loop_index"]) == -1
+        assert str(archive["state_swap_probe_variant"]) == ""
+        for field in ("state_swap_probe_replay_relion_references", "state_swap_probe_applied_relion_iterations",
+                      "state_swap_probe_replay_override_keys", "state_swap_probe_required_replay_override_keys"):
+            assert field in archive.files
 
 
 def _direction_prior_pair(seed, order=2):

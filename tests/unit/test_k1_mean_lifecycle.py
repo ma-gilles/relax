@@ -1,7 +1,6 @@
 """Focused lifetime guards for K=1 references between EM iterations."""
 
 import weakref
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -68,15 +67,13 @@ def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
             assert any(value is fsc for value in (*tau2.args, *tau2.kwargs.values()))
 
 
-def test_production_runner_leaves_cold_start_host_owned_until_normalization():
-    repo_root = Path(iteration_loop.__file__).resolve().parents[2]
-    runner_source = (repo_root / "relax" / "refinement" / "full_refinement.py").read_text()
-    call_start = runner_source.index("result = refine_single_volume(")
-    call_stop = runner_source.index("options=RefinementOptions(", call_start)
-    production_call = runner_source[call_start:call_stop]
+def test_production_runner_leaves_cold_start_host_owned_until_normalization(monkeypatch, tmp_path):
+    """The command hands the controller the start-up reference as a host array; the controller normalizes it."""
+    from helpers.tiny_main import controller_inputs
 
-    assert "init_volume=init_vol_ft," in production_call
-    assert "init_volume=jnp.asarray(init_vol_ft)" not in production_call
+    inputs = controller_inputs(monkeypatch, tmp_path, "refine")
+    assert type(inputs["init_volume"]) is np.ndarray
+    assert type(inputs["init_mean_variance"]) is np.ndarray
 
 
 def test_normalize_initial_means_reuses_immutable_shared_reference():

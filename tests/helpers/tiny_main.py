@@ -62,6 +62,26 @@ def write_tiny_data_dir(root, *, n_images=12, box=16, n_classes=1, seed=5, extra
     return root
 
 
+def main_frame_arrays():
+    """Weak references to the arrays the running ``full_refinement.main`` holds in its locals, by identity.
+
+    Reading a frame's locals leaves a snapshot on the frame (Python 3.11) that holds them until they are read
+    again: call it once more before checking that a replaced array is gone.
+    """
+
+    import weakref
+
+    from relax.refinement import full_refinement
+
+    code = getattr(full_refinement.main, "__wrapped__", full_refinement.main).__code__
+    frame = sys._getframe(1)
+    while frame is not None and frame.f_code is not code:
+        frame = frame.f_back
+    if frame is None:
+        raise AssertionError("full_refinement.main is not running")
+    return [weakref.ref(value) for value in frame.f_locals.values() if hasattr(value, "shape") and hasattr(value, "dtype")]
+
+
 class ControllerReached(Exception):
     """Raised by the stand-in controller of ``controller_inputs``."""
 
@@ -76,10 +96,11 @@ def _stand_in_device(monkeypatch):
     monkeypatch.setattr(jax, "devices", lambda *args, **kwargs: [SimpleNamespace(platform="gpu", id=0)])
 
 
-def _run_main(monkeypatch, command, data, output, arguments):
+def _run_main(monkeypatch, command, data, output, arguments, seed=SEED):
     from relax.refinement import full_refinement
 
-    argv = ["relax", "--data_dir", str(data), "--output", str(output), "--seed", SEED, *map(str, arguments)]
+    seeded = [] if seed is None else ["--seed", str(seed)]
+    argv = ["relax", "--data_dir", str(data), "--output", str(output), *seeded, *map(str, arguments)]
     monkeypatch.setattr(sys, "argv", argv)
     monkeypatch.setattr(sys, "orig_argv", ["python", "-m", f"relax.commands.{command}", *argv[1:]])
     environ = dict(os.environ)
@@ -90,11 +111,11 @@ def _run_main(monkeypatch, command, data, output, arguments):
         os.environ.update(environ)
 
 
-def controller_inputs(monkeypatch, tmp_path, command, *arguments, n_classes=1, data=None):
+def controller_inputs(monkeypatch, tmp_path, command, *arguments, n_classes=1, data=None, seed=SEED):
     """The keyword arguments ``full_refinement.main`` hands ``refine_single_volume`` for ``arguments``.
 
     ``data`` is a data directory (default: a new ``write_tiny_data_dir``); ``arguments`` may name files in
-    it as ``<DATA>/name``.
+    it as ``<DATA>/name``. ``seed=None`` passes no ``--seed``.
     """
 
     from relax.refinement import iteration_loop
@@ -108,7 +129,7 @@ def controller_inputs(monkeypatch, tmp_path, command, *arguments, n_classes=1, d
     monkeypatch.setattr(iteration_loop, "refine_single_volume", stand_in)
     arguments = [str(argument).replace("<DATA>", str(data)) for argument in arguments]
     try:
-        _run_main(monkeypatch, command, data, tmp_path / "out", arguments)
+        _run_main(monkeypatch, command, data, tmp_path / "out", arguments, seed=seed)
     except ControllerReached as reached:
         return reached.kwargs
     raise AssertionError("full_refinement.main returned without calling refine_single_volume")

@@ -98,9 +98,15 @@ def test_initial_model_seed_default_is_relions():
     assert make_parser().parse_args(["--i", "particles.star"]).random_seed == -1
 
 
-def test_seed_used_is_recorded_in_results_and_ledger():
-    source = driver.Path(driver.__file__).read_text()
-    archive_source = driver.Path(driver.__file__).with_name("result_files.py").read_text()
-    assert "build_archive_metadata(" in source
-    assert '"random_seed": np.int64(args.seed),' in archive_source
-    assert '"random_seed": int(args.seed),\n            "random_seed_source": str(optimizer_seed_source),' in source
+def test_seed_used_is_recorded_in_results_and_ledger(monkeypatch, tmp_path):
+    import json
+
+    import numpy as np
+    from helpers.tiny_main import run_tiny_main
+
+    ledger = tmp_path / "ledger.json"
+    output = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", "--benchmark_ledger_json", ledger)
+    with np.load(output / "refinement_results.npz", allow_pickle=True) as archive:
+        assert archive["random_seed"].dtype == np.int64 and int(archive["random_seed"]) == 42
+    recorded = json.loads(ledger.read_text())
+    assert (recorded["random_seed"], recorded["random_seed_source"]) == (42, "explicit CLI")

@@ -1,6 +1,5 @@
 """CLI-level sampling contract tests for ``relax/refinement/full_refinement.py``."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -23,8 +22,6 @@ from relax.sampling import (
     advance_relion_perturbation_from_seed,
     relion_sampling_perturbation_for_iteration,
 )
-
-RUN_FULL_REFINEMENT = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
 
 
 def test_k1_firstiter_cc_defaults_to_relion_reference_and_tree_controls():
@@ -244,14 +241,22 @@ def test_seed_source_ignores_incidental_data_dir_relion_discovery(tmp_path):
     assert _explicit_relion_optimiser_for_seed(args) is None
 
 
-def test_optimizer_seed_is_resolved_before_halfset_splitting():
-    source = RUN_FULL_REFINEMENT.read_text()
-    options_source = RUN_FULL_REFINEMENT.with_name("command_options.py").read_text()
+def test_optimizer_seed_is_resolved_before_halfset_splitting(monkeypatch, tmp_path):
+    """Without --seed the run takes RELION's default (the time), and the K=1 random halves of the input STAR
+    are drawn with that resolved seed."""
+    from helpers.tiny_main import controller_inputs
 
-    assert "default=None" in options_source[options_source.index('parser.add_argument(\n        "--seed"') :]
-    assert source.index("args.seed, optimizer_seed_source = _resolve_optimizer_random_seed") < source.index(
-        "args.relion_half_sets = str(\n            _write_relion_start_particle_table("
-    )
+    from relax.refinement import command_options
+    from relax.relion.input_particle_table import glibc_rand_sequence
+
+    assert command_options.parse_refinement_args(["--data_dir", "d", "--output", "o"]).seed is None
+    import relax.refinement.full_refinement as driver
+
+    monkeypatch.setattr(driver.time, "time", lambda: 18.25)
+    inputs = controller_inputs(monkeypatch, tmp_path, "refine", seed=None)
+    assert inputs["options"].parity.optimizer_random_seed == 18
+    halves = glibc_rand_sequence(18, 12) % 2 + 1
+    assert [half.n_units for half in inputs["experiment_datasets"]] == [int(np.sum(halves == 1)), int(np.sum(halves == 2))]
 
 
 def test_relion_seeded_sampling_perturbation_sequence_matches_reference_star():

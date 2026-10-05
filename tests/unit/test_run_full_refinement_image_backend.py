@@ -2,82 +2,63 @@
 
 from __future__ import annotations
 
-import ast
-from pathlib import Path
+import os
 
-COMMAND_OPTIONS = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "command_options.py"
-PARTICLE_LOADING = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "particle_loading.py"
-RUNNER = Path(__file__).resolve().parents[2] / "relax" / "refinement" / "full_refinement.py"
+import pytest
+from helpers.tiny_main import controller_inputs, write_tiny_data_dir
 
+from relax.refinement import command_options, particle_loading
 
-def _runner_tree() -> ast.Module:
-    return ast.parse(RUNNER.read_text())
+BACKENDS = ("auto", "host_numpy", "jax_gpu", "relion_cuda")
 
 
-def _image_backend_argument() -> ast.Call:
-    for node in ast.walk(ast.parse(COMMAND_OPTIONS.read_text())):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-            continue
-        if node.func.attr != "add_argument" or not node.args:
-            continue
-        if isinstance(node.args[0], ast.Constant) and node.args[0].value == "--image-fourier-backend":
-            return node
-    raise AssertionError("missing --image-fourier-backend parser option")
+def _parse(*arguments):
+    return command_options.parse_refinement_args(["--data_dir", "data", "--output", "out", *arguments])
 
 
 def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
     # auto resolves to relion_cuda for K=1 and for Class3D on the resident pass 2, host_numpy for
     # Class3D on the compact engine (command_options.resolve_job_defaults).
-    argument = _image_backend_argument()
-    keywords = {keyword.arg: keyword.value for keyword in argument.keywords}
+    assert _parse().image_fourier_backend == "auto"
+    assert [_parse("--image-fourier-backend", backend).image_fourier_backend for backend in BACKENDS] == list(BACKENDS)
+    with pytest.raises(SystemExit):
+        _parse("--image-fourier-backend", "fftw")
 
-    assert ast.literal_eval(keywords["default"]) == "auto"
-    assert ast.literal_eval(keywords["choices"]) == ("auto", "host_numpy", "jax_gpu", "relion_cuda")
 
-
-def test_image_fourier_backend_cli_is_forwarded_to_refinement():
-    # image_fourier_backend is forwarded via the RelionParityOptions group
-    # inside refine_single_volume's options= bundle (commit cd6661f2), not as
-    # a top-level refine_single_volume keyword.
-    parity_calls = [
-        node
-        for node in ast.walk(_runner_tree())
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "RelionParityOptions"
-    ]
-    assert len(parity_calls) == 1
-
-    keywords = {keyword.arg: keyword.value for keyword in parity_calls[0].keywords}
-    forwarded = keywords["image_fourier_backend"]
-    assert isinstance(forwarded, ast.Attribute)
-    assert isinstance(forwarded.value, ast.Name)
-    assert (forwarded.value.id, forwarded.attr) == ("args", "image_fourier_backend")
+@pytest.mark.parametrize("backend", ["host_numpy", "relion_cuda"])
+def test_image_fourier_backend_cli_is_forwarded_to_refinement(monkeypatch, tmp_path, backend):
+    inputs = controller_inputs(monkeypatch, tmp_path, "refine", "--image-fourier-backend", backend)
+    assert inputs["options"].parity.image_fourier_backend == backend
 
 
 def test_relion_softmask_reduction_cli_has_sealed_diagnostic_choices():
-    arguments = [
-        node
-        for node in ast.walk(ast.parse(COMMAND_OPTIONS.read_text()))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "add_argument"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-        and node.args[0].value == "--relion-softmask-reduction"
-    ]
-    assert len(arguments) == 1
-    keywords = {keyword.arg: keyword.value for keyword in arguments[0].keywords}
-    assert ast.literal_eval(keywords["default"]) == "control"
-    assert ast.literal_eval(keywords["choices"]) == (
-        "control",
-        "native_lane",
-        "native_atomic",
+    assert _parse().relion_softmask_reduction == "control"
+    for mode in ("control", "native_lane", "native_atomic"):
+        assert _parse("--relion-softmask-reduction", mode).relion_softmask_reduction == mode
+    with pytest.raises(SystemExit):
+        _parse("--relion-softmask-reduction", "lane")
+
+
+@pytest.mark.parametrize("mode", ["native_lane", "native_atomic"])
+def test_relion_softmask_reduction_routes_both_native_diagnostic_modes(monkeypatch, tmp_path, mode):
+    """native_lane switches the particle backend's reduction; native_atomic sets RECOVAR's switch; either needs
+    the RELION CUDA image backend."""
+    from recovar.data_io import image_backends
+
+    lanes = []
+    monkeypatch.setattr(image_backends.ParticleImageDataset, "set_relion_native_lane_reduction",
+                        lambda self, enabled: lanes.append(enabled))
+    monkeypatch.delenv("RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION", raising=False)
+    data = write_tiny_data_dir(tmp_path / "data")
+    arguments = ["--data_dir", str(data), "--output", str(tmp_path / "out"), "--relion-softmask-reduction", mode]
+    os.makedirs(tmp_path / "out")
+    with pytest.raises(ValueError, match="requires --image-fourier-backend relion_cuda"):
+        particle_loading.load_particle_inputs(
+            command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"])
+        )
+    particle_loading.load_particle_inputs(
+        command_options.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"])
     )
-
-
-def test_relion_softmask_reduction_routes_both_native_diagnostic_modes():
-    source = PARTICLE_LOADING.read_text()
-    assert 'backend.set_relion_native_lane_reduction(True)' in source
-    assert 'os.environ["RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION"] = "1"' in source
-    assert 'args.image_fourier_backend != "relion_cuda"' in source
+    assert lanes == ([True] if mode == "native_lane" else [])
+    atomic = os.environ.pop("RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION", None)
+    assert atomic == ("1" if mode == "native_atomic" else None)

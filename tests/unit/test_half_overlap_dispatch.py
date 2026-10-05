@@ -169,11 +169,13 @@ def test_overlap_option_threads_into_refinement_options():
     assert RefinementOptions().overlap.overlap_halves is False
 
 
-def test_runner_wires_the_flag_into_the_option_group():
+@pytest.mark.parametrize("flag", [False, True])
+def test_runner_wires_the_flag_into_the_option_group(monkeypatch, tmp_path, flag):
     """The parser flag must be handed to HalfOverlapOptions, not just parsed."""
-    source = _runner_path().read_text()
-    assert "overlap=HalfOverlapOptions(" in source
-    assert "overlap_halves=bool(args.overlap_halves)" in source
+    from helpers.tiny_main import controller_inputs
+
+    inputs = controller_inputs(monkeypatch, tmp_path, "refine", *(["--overlap_halves"] if flag else []))
+    assert inputs["options"].overlap.overlap_halves is flag
 
 
 def test_device_share_defaults_to_the_whole_device():

@@ -1,8 +1,6 @@
 """RELION's start-up noise estimate is the only initial-noise estimator of a refinement."""
 
 import argparse
-import ast
-import logging
 import sys
 from types import SimpleNamespace
 
@@ -146,52 +144,51 @@ def test_class3d_noise_layout_is_the_micrograph_sorted_input_order():
     assert_matches(optics, [2, 1, 1, 1])
 
 
-@pytest.mark.parametrize("source", ["fresh", "replay", "missing_half_sets", "loaded", "frozen", "model"])
-def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch):
-    tree = ast.parse(driver.Path(driver.__file__).read_text())
-    call_name = "startup_noise.prepare_startup_noise"
-    block = next(n for n in ast.walk(tree)
-                 if isinstance(n, ast.If) and ast.unparse(n.test) == "frozen_boundary is not None"
-                 and any(isinstance(c, ast.Call) and ast.unparse(c.func) == call_name for c in ast.walk(n)))
-    calls = []
-    spectrum = np.arange(1, 6, dtype=np.float64)
-    pixels = np.ones(64, dtype=np.float32)
+@pytest.mark.parametrize("source", ["fresh", "replay", "loaded", "model"])
+def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch, tmp_path):
+    """The command estimates the start-up noise from the images only when nothing else supplies it (a fresh
+    or a STAR-replayed start); an archive's spectrum or RELION's iteration-0 model replaces the estimate.
 
-    def prepare(dataset, **kwargs):
-        calls.append(kwargs)
-        assert kwargs["output_dtype"] == np.float32
-        assert kwargs["pair_counting"] == "once"  # the command's consistency option reaches the estimate
-        return startup_noise.StartupNoise(radial=spectrum, pixel_variance=pixels)
+    A frozen boundary has no CPU run; K=1 without half sets is refused before the noise is chosen.
+    """
+    from helpers.tiny_main import controller_inputs, run_tiny_main, write_tiny_data_dir
+    from helpers.tiny_refinement import CallTrace, write_replay_dir
 
-    monkeypatch.setattr(startup_noise, "prepare_startup_noise", prepare)
-    args = _args(relion_half_sets=None if source == "missing_half_sets" else "particles.star",
-                 init_noise_from_npz="noise.npz" if source == "loaded" else None,
-                 relion_init_dir="run" if source == "model" else None,
-                 perturb_replay_relion_dir="replay" if source == "replay" else None)
-    frozen = SimpleNamespace(noise_radial_per_half=[spectrum, spectrum], source_dir="frozen") if source == "frozen" else None
-    namespace = dict(vars(driver))
-    namespace.update(args=args, frozen_boundary=frozen, resume_snapshot=None,
-        ds=SimpleNamespace(grid_size=8, image_shape=(8, 8)),
-        relion_fresh_initial_noise_source_rows=np.arange(3),
-        relion_fresh_initial_noise_optics_group_ids=np.ones(3),
-        relion_mask_params=(12., 3), relion_optics_pixel_sizes=np.array([1.25]),
-        class3d_noise_optics_pixel_sizes=None, _double_image_preprocessing=False,
-        consistency_options=SimpleNamespace(initial_noise_pair_counting="once"),
-        logger=logging.getLogger(__name__),
-        frozen_boundary_cli=SimpleNamespace(expand_boundary_noise=lambda noise, shape: pixels),
-        iteration_history=SimpleNamespace(_load_init_noise_radial_npz=lambda path, iteration:
-                                        {"noise_radial": spectrum, "iteration": "000"}),
-        recon_noise=SimpleNamespace(make_radial_noise=lambda noise, shape: pixels))
-    args.init_noise_iter = "last"
-    program = compile(ast.fix_missing_locations(ast.Module(body=[block], type_ignores=[])), driver.__file__, "exec")
-    if source == "missing_half_sets":
-        with pytest.raises(ValueError, match="start-up noise"):
-            exec(program, namespace)
-    else:
-        exec(program, namespace)
-        if source == "model":
-            assert namespace["initial_noise_radial"] is None and namespace["noise_variance"] is None
-        else:
-            assert_matches(namespace["initial_noise_radial"], spectrum)
-            assert_matches(namespace["noise_variance"], pixels)
-    assert len(calls) == int(source in {"fresh", "replay"})
+    from relax.diagnostics import initial_model_replay, relion_replay
+
+    # The consistency option is refused with RELION-seeded or replayed state: only a fresh start sets it.
+    pair_counting = "once" if source == "fresh" else "relion"
+    arguments = ["--initial_noise_pair_counting", pair_counting]
+    data = None
+    if source == "loaded":
+        archive = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", output="first")
+        arguments += ["--init_noise_from_npz", archive / "refinement_results.npz"]
+    if source in {"replay", "model"}:
+        data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
+        arguments += ["--relion_half_sets", "<DATA>/particles.star"]
+        monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides",
+                            lambda *args, **kwargs: [None] * (int(args[3]) + 1))
+    if source == "replay":
+        arguments += ["--perturb_replay_relion_dir", write_replay_dir(tmp_path / "relion", max_iter=2)]
+    replayed_noise = np.full(256, 2.0, np.float32)
+    if source == "model":
+        (tmp_path / "model").mkdir()
+        arguments += ["--relion_init_dir", tmp_path / "model"]
+        for name, function in dict(
+            read_initial_model=lambda directory, *, n_classes: "model",
+            prepare_noise=lambda model, **kwargs: initial_model_replay.NoiseReplay(replayed_noise, [np.ones(9)], 16**4),
+            log_noise_source=lambda noise, *, log: None,
+            prepare_prior=lambda model, **kwargs: np.full(4096, 3.0),
+            read_controls=lambda model, *, log: initial_model_replay.InitialModelControls(1.0, 10.0),
+        ).items():
+            monkeypatch.setattr(initial_model_replay, name, function)
+    trace = CallTrace(monkeypatch).wrap(startup_noise, "prepare_startup_noise", "estimate")
+    inputs = controller_inputs(monkeypatch, tmp_path / "run", "refine", *arguments, data=data)
+    estimates = trace.calls("estimate")
+    assert len(estimates) == int(source in {"fresh", "replay"})
+    if estimates:
+        assert estimates[0].kwargs["output_dtype"] == np.float32
+        assert estimates[0].kwargs["pair_counting"] == pair_counting  # the command's option reaches the estimate
+        assert_matches(np.asarray(inputs["init_noise_variance"]), np.asarray(estimates[0].result.pixel_variance))
+    elif source == "model":
+        assert_matches(np.asarray(inputs["init_noise_variance"]), replayed_noise)

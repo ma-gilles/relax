@@ -127,13 +127,14 @@ def test_kclass_weight_trajectories_record_mstep_and_full_posterior_provenance(m
         assert_matches(archive[key], np.stack([call.args[argument] for call in recorded]))
 
 
-def test_production_runner_writes_the_refinement_archive():
-    # Source pin kept: full_refinement.main has no CPU harness (it refuses to start without a GPU).
-    import inspect
+def test_production_runner_writes_the_refinement_archive(monkeypatch, tmp_path):
+    """relax class3d writes both class-weight trajectories into its archive."""
+    from helpers.tiny_main import run_tiny_main
 
-    from relax.refinement import full_refinement
-
-    assert "write_refinement_archive(" in inspect.getsource(full_refinement.main)
+    output = run_tiny_main(monkeypatch, tmp_path, "class3d", "--max_iter", "1", "--n_classes", "2", n_classes=2)
+    with np.load(output / "refinement_results.npz", allow_pickle=True) as archive:
+        for key in ("class_mstep_weight_trajectory", "class_full_posterior_weight_trajectory"):
+            assert archive[key].shape == (1, 2) and archive[key].dtype == np.float64
 
 
 def test_significance_dump_work_is_gated_before_scoring(monkeypatch, tmp_path):
