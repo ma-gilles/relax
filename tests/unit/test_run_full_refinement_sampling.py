@@ -10,10 +10,10 @@ from relax.helpers.iteration_history import (
     _pose_history_by_image,
     add_significant_count_artifacts,
 )
+from relax.refinement import command_options
 from relax.refinement.command_options import resolve_firstiter_controls, resolve_initial_sampling
 from relax.refinement.full_refinement import (
     _effective_perturb_seed,
-    _explicit_relion_optimiser_for_seed,
     _resolve_optimizer_random_seed,
 )
 from relax.refinement.result_files import _rotation_posterior_arrays, profile_rows_for_json
@@ -222,7 +222,9 @@ def test_seed_source_ignores_incidental_data_dir_relion_discovery(tmp_path):
         relion_half_sets=None,
     )
 
-    assert _explicit_relion_optimiser_for_seed(args) is None
+    discovered = command_options.relion_optimiser_star(args)
+    assert discovered == (relion_dir / "run_optimiser.star").resolve()
+    assert command_options.optimiser_seed_source(args, discovered, sealed=False) is None
 
 
 def test_optimizer_seed_is_resolved_before_halfset_splitting(monkeypatch, tmp_path):

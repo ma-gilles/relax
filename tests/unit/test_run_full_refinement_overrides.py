@@ -48,10 +48,10 @@ from relax.helpers.iteration_history import (
     _load_init_previous_best_poses_npz,
 )
 from relax.helpers.orientation_priors import DirectionPrior
+from relax.refinement import command_options
 from relax.refinement import full_refinement as run_full_refinement
 from relax.refinement.full_refinement import (
     _k1_relion_live_initial_noise_enabled,
-    _relion_optimiser_star_for_runtime,
     _replay_complete_initial_particle_state,
     _resolve_replay_normcorr,
     _resolve_tau2_fudge,
@@ -570,11 +570,8 @@ def test_fixed_arm_rejects_explicit_optimiser_and_internal_resolver_uses_sealed_
         _validate_fixed_diagnostic_arm_cli(args)
 
     boundary = SimpleNamespace(fixed_diagnostic_arm=True)
-    assert _relion_optimiser_star_for_runtime(
-        args,
-        frozen_boundary=boundary,
-        fixed_diagnostic_source_paths={"completed_optimiser": sealed},
-    ) == sealed.resolve()
+    assert boundary.fixed_diagnostic_arm
+    assert command_options.relion_optimiser_star(args, sealed_optimiser=sealed) == sealed.resolve()
 
 
 def test_fixed_arm_rejects_mask_cli_values_that_differ_from_sealed_optimiser(tmp_path):

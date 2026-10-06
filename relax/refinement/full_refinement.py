@@ -311,21 +311,6 @@ def _use_fresh_auto_refine_particle_order(
     )
 
 
-def _relion_optimiser_star_for_runtime(
-    args,
-    *,
-    frozen_boundary=None,
-    fixed_diagnostic_source_paths=None,
-):
-    """Use only the sealed completed optimiser for the fixed schema-v3 arm."""
-
-    if frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm:
-        if fixed_diagnostic_source_paths is None:
-            raise ValueError("fixed diagnostic arm lacks sealed source paths")
-        return Path(fixed_diagnostic_source_paths["completed_optimiser"]).resolve()
-    return command_options.find_relion_optimiser_star(args)
-
-
 def _resolve_optimizer_random_seed(explicit_seed, relion_optimiser_star):
     """Resolve the optimiser seed without silently diverging from RELION.
 
@@ -346,20 +331,6 @@ def _resolve_optimizer_random_seed(explicit_seed, relion_optimiser_star):
             return int(relion_seed), f"RELION optimiser {Path(relion_optimiser_star).resolve()}"
 
     return int(time.time()), "RELION default -1: the time"
-
-
-def _explicit_relion_optimiser_for_seed(args):
-    """Return a seed source only when the user explicitly selected RELION state.
-
-    ``command_options.find_relion_optimiser_star`` also performs convenient incidental
-    discovery under ``data_dir``.  That discovery is useful for masks and
-    support caps, but must not unexpectedly change a standalone run's RNG.
-    """
-    explicit_relion_state = any(
-        getattr(args, name, None)
-        for name in ("relion_optimiser", "relion_init_dir", "perturb_replay_relion_dir")
-    )
-    return command_options.find_relion_optimiser_star(args) if explicit_relion_state else None
 
 
 def _effective_perturb_seed(args):
@@ -461,16 +432,18 @@ def main(command=None):
     if args.continue_optimiser_star is not None:
         args.seed = command_options.validate_continue_args(args)
 
-    seed_optimiser_star = (
-        _relion_optimiser_star_for_runtime(
-            args,
-            frozen_boundary=frozen_boundary,
-            fixed_diagnostic_source_paths=fixed_diagnostic_source_paths,
-        )
-        if frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
-        else _explicit_relion_optimiser_for_seed(args)
+    # The one RELION optimiser STAR the run reads: a sealed boundary's completed optimiser, or the one the
+    # arguments locate (see command_options.relion_optimiser_star).
+    fixed_diagnostic_arm = frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
+    if fixed_diagnostic_arm and fixed_diagnostic_source_paths is None:
+        raise ValueError("fixed diagnostic arm lacks sealed source paths")
+    optimiser_star = command_options.relion_optimiser_star(
+        args,
+        sealed_optimiser=fixed_diagnostic_source_paths["completed_optimiser"] if fixed_diagnostic_arm else None,
     )
-    args.seed, optimizer_seed_source = _resolve_optimizer_random_seed(args.seed, seed_optimiser_star)
+    args.seed, optimizer_seed_source = _resolve_optimizer_random_seed(
+        args.seed, command_options.optimiser_seed_source(args, optimiser_star, sealed=fixed_diagnostic_arm)
+    )
     logger.info("Optimiser random seed: %d (%s)", args.seed, optimizer_seed_source)
 
     if args.timing_dir:
@@ -645,11 +618,6 @@ def main(command=None):
     relion_dispatch_schedule = follower_routing.schedule
     follower_topology = follower_routing.topology
 
-    optimiser_star = _relion_optimiser_star_for_runtime(
-        args,
-        frozen_boundary=frozen_boundary,
-        fixed_diagnostic_source_paths=fixed_diagnostic_source_paths,
-    )
     runtime_controls = command_options.resolve_relion_runtime_controls(
         optimiser_star,
         max_significants=args.max_significants,

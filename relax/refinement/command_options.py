@@ -1164,6 +1164,30 @@ def resolve_consistency_options(
     return options
 
 
+def relion_optimiser_star(args, *, sealed_optimiser=None):
+    """The one RELION optimiser STAR a run reads, or None.
+
+    Its mask, ``ini_high``, ``max_significants`` and CTF flag come from it, and (``optimiser_seed_source``)
+    possibly the random seed. A sealed boundary's fixed arm reads only its completed optimiser
+    (``sealed_optimiser``); any other run reads the one ``find_relion_optimiser_star`` locates.
+    """
+    if sealed_optimiser is not None:
+        return Path(sealed_optimiser).resolve()
+    return find_relion_optimiser_star(args)
+
+
+def optimiser_seed_source(args, optimiser_star, *, sealed: bool):
+    """The optimiser STAR whose ``_rlnRandomSeed`` a run without ``--seed`` inherits, or None.
+
+    The sealed optimiser, or the run's optimiser when the user named RELION state (``--relion_optimiser``,
+    ``--relion_init_dir``, ``--perturb_replay_relion_dir``). An optimiser found only by searching under
+    ``--data_dir`` supplies the mask and the support caps but must not change a standalone run's random
+    numbers.
+    """
+    named = any(getattr(args, name, None) for name in ("relion_optimiser", "relion_init_dir", "perturb_replay_relion_dir"))
+    return optimiser_star if sealed or named else None
+
+
 def find_relion_optimiser_star(args):
     """Locate a RELION run_optimiser.star to source mask + max_significants from.
 
