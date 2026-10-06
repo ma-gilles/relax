@@ -11,8 +11,34 @@ import numpy as np
 
 def metric_trace(lhs_tri, p):
     """Per-frequency trace ``sum_k LHS_kk`` of packed upper ``(n_frequency, tri(p))`` metrics."""
+    return jnp.sum(metric_diagonal(lhs_tri, p), axis=-1)
+
+
+def metric_diagonal(lhs_tri, p):
+    """Per-frequency diagonal ``LHS_kk``, ``(n_frequency, p)``, of packed upper ``(n_frequency, tri(p))`` metrics."""
     tri_i, tri_j = np.triu_indices(p)
-    return jnp.sum(jnp.asarray(lhs_tri)[:, np.flatnonzero(tri_i == tri_j)], axis=-1)
+    return jnp.asarray(lhs_tri)[:, np.flatnonzero(tri_i == tri_j)]
+
+
+def gated_gradient(theta, gradient, diagonal, gate):
+    """The ascent direction ``gate G - (1 - gate) diag(H) theta`` of the gated momentum step.
+
+    ``gradient`` ``G`` is the direct residual gradient and ``diagonal`` the metric diagonal
+    ``(n_frequency, 1+q)`` (:func:`metric_diagonal`) at ``theta``; ``gate`` ``(n_frequency, 1+q)`` in
+    [0, 1] is the half-set shell gate (:meth:`relax.ppca_initial_model.update.ShellGates.per_frequency`).
+    For a diagonal metric the direction vanishes at ``gate`` times the unregularised solution: a
+    ridge penalty proportional to the data precision, whose strength the half-sets' disagreement sets.
+    Gate 1 is the plain gradient.
+    """
+    theta = jnp.asarray(theta)
+    gradient = jnp.asarray(gradient)
+    diagonal = jnp.asarray(diagonal)
+    gate = jnp.asarray(gate)
+    if gradient.shape != theta.shape or diagonal.shape != theta.shape or gate.shape != theta.shape:
+        raise ValueError("PPCA model, gradient, metric diagonal and gate must have the same [frequency, channel] shape")
+    if diagonal.dtype != jnp.float32 or gate.dtype != jnp.float32:
+        raise TypeError("Production PPCA metric diagonal and gate must be float32")
+    return gate * gradient - (1 - gate) * diagonal * theta
 
 
 def momentum_step(theta, previous, gradient, trace, active, *, learning_rate, floor):

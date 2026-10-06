@@ -346,7 +346,7 @@ def _tiny_momentum_run(monkeypatch):
         ]
 
     monkeypatch.setattr(iteration_loop, "expectation_groups", groups)
-    monkeypatch.setattr(iteration_loop, "_curvature_trace", lambda stats, p: sum(s.metric_trace for s in stats))
+    monkeypatch.setattr(iteration_loop, "_curvature_trace", lambda stats, p, **_: sum(s.metric_trace for s in stats))
     dataset = SimpleNamespace(n_images=40, grid_size=4, volume_shape=shape, voxel_size=1.0)
     fp32 = Config(
         iterations=3,
