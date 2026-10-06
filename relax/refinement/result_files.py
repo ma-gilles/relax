@@ -27,7 +27,7 @@ from relax.helpers import iteration_history
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 
 if TYPE_CHECKING:
-    from relax.refinement.refinement_options import InitialSampling
+    from relax.refinement.refinement_options import InitialSampling, RestartProvenance
     from relax.relion.input_poses import PoseProvenance
 
 
@@ -245,9 +245,7 @@ def build_archive_metadata(
     optimizer_seed_source,
     particle_diameter_ang,
     particle_layout,
-    perturb_replay_restart_provenance_path,
-    perturb_replay_restart_provenance_sha256,
-    perturb_replay_restart_state_iterations,
+    restart: "RestartProvenance",
     relion_dispatch_schedule,
     captured_projector,
     state_swap_probe,
@@ -313,16 +311,16 @@ def build_archive_metadata(
         "half1_indices": particle_layout.half1_rows,
         "half2_indices": particle_layout.half2_rows,
         "perturb_replay_restart_state_iterations": np.asarray(
-            perturb_replay_restart_state_iterations,
+            restart.iterations,
             dtype=np.int64,
         ),
         "perturb_replay_restart_provenance_path": np.asarray(
             ""
-            if perturb_replay_restart_provenance_path is None
-            else str(perturb_replay_restart_provenance_path)
+            if restart.path is None
+            else str(restart.path)
         ),
         "perturb_replay_restart_provenance_sha256": np.asarray(
-            perturb_replay_restart_provenance_sha256 or ""
+            restart.sha256 or ""
         ),
         "relion_projector_replay_slot": np.int64(
             -1 if captured_projector is None else captured_projector.replay_slot
@@ -666,9 +664,7 @@ class RunReport:
     adaptive_oversampling: int
     max_significants: int
     max_significants_resolution: dict
-    perturb_replay_restart_state_iterations: tuple
-    perturb_replay_restart_provenance_path: Path | None
-    perturb_replay_restart_provenance_sha256: str | None
+    restart: "RestartProvenance"
     captured_projector: object | None
     # Sampling and seed, which the benchmark ledger records.
     max_iter: int
@@ -715,13 +711,13 @@ def _report_fields(result, report: RunReport) -> dict:
         "max_significants_resolution": report.max_significants_resolution,
         "timing_rows": timing_rows,
         "timing_summary": parity_dump._summarize_timing_rows(timing_rows),
-        "perturb_replay_restart_state_iterations": list(report.perturb_replay_restart_state_iterations),
+        "perturb_replay_restart_state_iterations": list(report.restart.iterations),
         "perturb_replay_restart_provenance_path": (
-            str(report.perturb_replay_restart_provenance_path)
-            if report.perturb_replay_restart_provenance_path is not None
+            str(report.restart.path)
+            if report.restart.path is not None
             else None
         ),
-        "perturb_replay_restart_provenance_sha256": report.perturb_replay_restart_provenance_sha256,
+        "perturb_replay_restart_provenance_sha256": report.restart.sha256,
         "relion_projector_replay_slot": None if captured is None else captured.replay_slot,
         "relion_projector_source_manifest_sha256": None if captured is None else captured.source_manifest_sha256,
         "relion_projector_capture_dir": None if captured is None else str(captured.source_dir),

@@ -8,6 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement.command_options import resolve_initial_sampling
+from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
 from relax.relion.input_poses import PoseProvenance
 
@@ -56,9 +57,10 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
         n_translations=9,
         optimizer_seed_source="explicit CLI",
         particle_diameter_ang=24.0 if diagnostics else None,
-        perturb_replay_restart_provenance_path=Path("restart.json") if diagnostics else None,
-        perturb_replay_restart_provenance_sha256="restart-hash" if diagnostics else None,
-        perturb_replay_restart_state_iterations=(2,) if diagnostics else (),
+        restart=(
+            RestartProvenance((2,), Path("restart.json"), "restart-hash") if diagnostics
+            else RestartProvenance((), None, None)
+        ),
         relion_dispatch_schedule=SimpleNamespace(
             oracle_id="dispatch-oracle", oracle_manifest_sha256="dispatch-manifest",
             particle_order_sha256="particle-order",

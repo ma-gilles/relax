@@ -27,6 +27,7 @@ from relax.refinement.refinement_options import (
     RefinementBatching,
     RefinementSchedule,
     RelionConsistencyOptions,
+    RestartProvenance,
     relax_mode_consistency,
 )
 from relax.relion import input_poses
@@ -1467,15 +1468,6 @@ def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[st
         "--ref_star" if args.ref_star is not None else "--init_class_volumes" if args.init_class_volumes else "data_dir"
     )
     return class_paths, class_option
-
-
-class RestartProvenance(NamedTuple):
-    """The numbered iterations whose sampling-perturbation state a replay restarts from (sorted, unique),
-    with the provenance file that justifies them and its SHA-256; empty and None without a restart."""
-
-    iterations: tuple[int, ...]
-    path: Path | None
-    sha256: str | None
 
 
 def resolve_restart_provenance(args, *, log) -> RestartProvenance:

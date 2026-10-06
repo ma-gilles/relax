@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from relax.refinement import result_files
+from relax.refinement.refinement_options import RestartProvenance
 
 pytestmark = pytest.mark.unit
 
@@ -28,9 +29,8 @@ def _report(tmp_path, captured=None):
         data_dir=str(tmp_path / "data"), output_dir=str(tmp_path / "out"), timing_dir=None, total_time_s=12.5,
         n_images=6, image_shape=(8, 8), volume_shape=(8, 8, 8), voxel_size=1.5, healpix_order=2,
         auto_local_healpix_order=4, sigma_ang=None, adaptive_oversampling=1, max_significants=-1,
-        max_significants_resolution={"active_max_significants": -1}, perturb_replay_restart_state_iterations=(3,),
-        perturb_replay_restart_provenance_path=tmp_path / "provenance.json",
-        perturb_replay_restart_provenance_sha256="ab" * 32, captured_projector=captured, max_iter=3, random_seed=42,
+        max_significants_resolution={"active_max_significants": -1}, restart=RestartProvenance((3,), tmp_path / "provenance.json", "ab" * 32),
+        captured_projector=captured, max_iter=3, random_seed=42,
         random_seed_source="explicit CLI", n_rotations=96, n_translations=21,
         initial_sampling=SimpleNamespace(coarse_order=1, fine_order=2, max_order=None, max_order_source="none"),
         frozen_boundary=None, symmetry_provenance={"label": "C1"},

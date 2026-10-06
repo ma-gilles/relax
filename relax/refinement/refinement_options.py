@@ -13,6 +13,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
@@ -353,6 +354,15 @@ class InitialSampling(NamedTuple):
     max_order_source: str
 
 
+class RestartProvenance(NamedTuple):
+    """The numbered iterations whose sampling-perturbation state a replay restarts from (sorted, unique),
+    with the provenance file that justifies them and its SHA-256; empty and None without a restart."""
+
+    iterations: tuple[int, ...]
+    path: Path | None
+    sha256: str | None
+
+
 @dataclass(frozen=True)
 class ExpectedAccuracyOptions:
     """Half1 oracle inputs for RELION's expected-accuracy calculation."""
@@ -634,6 +644,7 @@ __all__ = [
     "ExpectedAccuracyOptions",
     "DiagnosticEnvironment",
     "InitialSampling",
+    "RestartProvenance",
     "EngineDebugOptions",
     "KClassOptions",
     "SymmetryOptions",

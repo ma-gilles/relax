@@ -1146,9 +1146,6 @@ def main(command=None):
             effective_perturb_seed=effective_perturb_seed,
         )
     restart_provenance = command_options.resolve_restart_provenance(args, log=logger)
-    perturb_replay_restart_state_iterations = restart_provenance.iterations
-    perturb_replay_restart_provenance_path = restart_provenance.path
-    perturb_replay_restart_provenance_sha256 = restart_provenance.sha256
     logger.info(
         "SamplingPerturbation seed: %s%s",
         "unseeded" if effective_perturb_seed is None else str(effective_perturb_seed),
@@ -1271,7 +1268,7 @@ def main(command=None):
                 optics_group_ids_per_half=optics_group_ids_per_half,
                 relion_model_pixel_size=relion_model_pixel_size,
                 perturb_replay_relion_dir=args.perturb_replay_relion_dir,
-                perturb_replay_restart_state_iterations=perturb_replay_restart_state_iterations,
+                perturb_replay_restart_state_iterations=restart_provenance.iterations,
                 final_sampling_replay_relion_dir=final_replay.sampling_dir,
                 image_fourier_backend=args.image_fourier_backend,
                 emulate_relion_firstiter_cc=bool(args.firstiter_cc),
@@ -1371,9 +1368,7 @@ def main(command=None):
         adaptive_oversampling=args.adaptive_oversampling,
         max_significants=args.max_significants,
         max_significants_resolution=runtime_controls.max_significants_resolution,
-        perturb_replay_restart_state_iterations=perturb_replay_restart_state_iterations,
-        perturb_replay_restart_provenance_path=perturb_replay_restart_provenance_path,
-        perturb_replay_restart_provenance_sha256=perturb_replay_restart_provenance_sha256,
+        restart=restart_provenance,
         captured_projector=captured_projector,
         max_iter=args.max_iter,
         random_seed=args.seed,
@@ -1408,9 +1403,7 @@ def main(command=None):
         optimizer_seed_source=optimizer_seed_source,
         particle_diameter_ang=particle_diameter_ang,
         particle_layout=particle_layout,
-        perturb_replay_restart_provenance_path=perturb_replay_restart_provenance_path,
-        perturb_replay_restart_provenance_sha256=perturb_replay_restart_provenance_sha256,
-        perturb_replay_restart_state_iterations=perturb_replay_restart_state_iterations,
+        restart=restart_provenance,
         relion_dispatch_schedule=relion_dispatch_schedule,
         captured_projector=captured_projector,
         state_swap_probe=state_swap_probe,
