@@ -26,7 +26,6 @@ from relax.dense.scoring_policy import (
     local_precision,
 )
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics.iteration import write_final_half_manifest
 from relax.helpers.convergence import healpix_angular_step, update_angular_sampling
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.expected_accuracy import _expected_accuracy_class_ids
@@ -58,6 +57,7 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
+from relax.refinement.ports import FinalHalfScored, RunObserver
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
@@ -136,6 +136,7 @@ def run_final_all_data(
     iteration,
     collect_local_search_profile,
     relion_translation_angle_scale,
+    observer: RunObserver,
 ) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
 
@@ -322,7 +323,7 @@ def run_final_all_data(
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,
             debug_iteration=final_sampling.settings.relion_iteration,
-            save_intermediates_dir=debug.save_intermediates_dir,
+            observer=observer,
             collect_local_search_profile=collect_local_search_profile,
             diagnostic_score_only=False,
             local_profile_history=history.local_profile_history,
@@ -407,6 +408,7 @@ def run_final_all_data(
             half.index,
         )
         if tomo_halves:
+            final_inputs = None  # the half preparation below is single-particle only
             # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
             # previous poses), with the merged reference for both halves.
             if not final_use_local:
@@ -532,14 +534,12 @@ def run_final_all_data(
             half.index + 1,
             time.time() - final_half_t0,
         )
-        # --- Manifest dump for final all-data iteration (Phase 0.1) ---
-        if debug.save_intermediates_dir is not None:
-            write_final_half_manifest(
-                debug.save_intermediates_dir, half, final_sampling, final_inputs,
-                translation_search_base=translation_search_base, reference=final_join_means[half.index],
-                reference_model=reference_model, noise_variance=noise_model.variance_per_half[half.index],
-                current_size=final_current_size, precision=final_precision, use_local=final_use_local, log=logger,
-            )
+        observer.final_half_scored(FinalHalfScored(
+            half, final_sampling, final_inputs,
+            translation_search_base=translation_search_base, reference=final_join_means[half.index],
+            reference_model=reference_model, noise_variance=noise_model.variance_per_half[half.index],
+            current_size=final_current_size, precision=final_precision, use_local=final_use_local,
+        ))
 
     final_mstep_accumulator_shape = _resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,

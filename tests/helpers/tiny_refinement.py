@@ -236,7 +236,7 @@ def follower_scale_replay(n_iterations, n_followers=2):
 
 def run_tiny_refinement(
     monkeypatch, *, parity=None, n_classes=1, max_iter=2, engine_calls=None, schedule=None, init_volume=None,
-    final_after_max_iter=True, converge_after=None, engine_noise_fields=None, **option_groups,
+    final_after_max_iter=True, converge_after=None, engine_noise_fields=None, observer=None, **option_groups,
 ):
     """Run the controller for ``max_iter`` numbered iterations and (K=1) the final all-data pass.
 
@@ -246,7 +246,7 @@ def run_tiny_refinement(
     volume). ``final_after_max_iter=False`` stops K=1 at the iteration cap without a final pass.
     ``converge_after=n`` marks the state converged from the n-th convergence update on, so a K-class
     run reaches its final pass. ``engine_noise_fields(n_images)`` adds ``NoiseStats`` fields to the
-    stand-in engine's statistics.
+    stand-in engine's statistics. ``observer`` is the run's ``RunObserver`` (None: none).
     """
 
     import relax.sampling as sampling
@@ -330,6 +330,7 @@ def run_tiny_refinement(
             parity=RelionParityOptions(**(parity or {})),
             **option_groups,
         ),
+        observer=observer,
     )
 
 

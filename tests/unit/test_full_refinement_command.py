@@ -95,7 +95,6 @@ def test_firstiter_cc_passes_relion_cli_ini_high_to_refinement_loop(monkeypatch,
 @pytest.mark.parametrize(
     ("option", "field"),
     [
-        ("--save_intermediates_skip_unregularized", "save_intermediates_skip_unregularized"),
         ("--stop_after_local_search", "stop_after_local_search"),
         ("--stop_after_local_search_score_only", "stop_after_local_search_score_only"),
         ("--stop_after_local_search_profile", "stop_after_local_search_profile"),
@@ -104,6 +103,19 @@ def test_firstiter_cc_passes_relion_cli_ini_high_to_refinement_loop(monkeypatch,
 def test_diagnostic_switches_pass_to_refinement_loop(monkeypatch, tmp_path, option, field):
     assert getattr(controller_inputs(monkeypatch, tmp_path, "refine")["options"].debug, field) is False
     assert getattr(controller_inputs(monkeypatch, tmp_path / "on", "refine", option)["options"].debug, field) is True
+
+
+def test_the_intermediates_dump_reaches_the_refinement_loop_as_its_observer(monkeypatch, tmp_path):
+    from relax.diagnostics.observers import IntermediatesObserver
+
+    assert controller_inputs(monkeypatch, tmp_path, "refine")["observer"] is None
+    for extra, skip in (((), False), (("--save_intermediates_skip_unregularized",), True)):
+        dump = tmp_path / f"dump_{skip}"
+        observer = controller_inputs(
+            monkeypatch, tmp_path / f"on_{skip}", "refine", "--save_intermediates_dir", str(dump), *extra,
+        )["observer"]
+        assert isinstance(observer, IntermediatesObserver)
+        assert observer.directory == str(dump) and observer.skip_unregularized is skip
 
 
 @pytest.mark.parametrize(

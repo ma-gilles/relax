@@ -11,7 +11,6 @@ See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 
 
 import logging
-import os
 import time
 from dataclasses import replace
 from functools import partial, wraps
@@ -44,10 +43,7 @@ from relax.diagnostics.frozen_boundary import (
 )
 from relax.diagnostics.iteration import (
     _maybe_dump_noise_update_debug,
-    _save_iteration_intermediates,
-    _save_iteration_particle_states,
     _significance_dump_half_indices,
-    _source_image_indices,
     dump_numbered_iteration,
 )
 from relax.diagnostics.relion_replay import (
@@ -185,6 +181,7 @@ from relax.refinement.noise_updates import (
     update_posterior_noise_variance,
 )
 from relax.refinement.optics_shapes import MultiShapeHalf
+from relax.refinement.ports import ReconstructedIteration, RunObserver
 from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
     build_numbered_projectors,
@@ -790,6 +787,7 @@ def refine_single_volume(
     init_mean_variance: jnp.ndarray,
     translations: jnp.ndarray | None,
     options: RefinementOptions | None = None,
+    observer: RunObserver | None = None,
 ) -> RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
@@ -810,6 +808,8 @@ def refine_single_volume(
     options : `RefinementOptions` struct that bundles the schedule / adaptive / parity
         / local-search / K-class / replay / debug / batching kwarg groups.
         Defaults to ``RefinementOptions()`` when omitted.
+    observer : the run's ``RunObserver`` (``relax.refinement.ports``): dumps and captures that watch the run
+        and never change it. Defaults to one that does nothing.
 
     Returns
     -------
@@ -822,6 +822,8 @@ def refine_single_volume(
     """
     if options is None:
         options = RefinementOptions()
+    if observer is None:
+        observer = RunObserver()
 
     options = with_validated_sampling_schedule(options)
 
@@ -1022,11 +1024,10 @@ def refine_single_volume(
     # Keep RELION's host-RFLOAT base grid separate so each perturbation starts
     # from the unrounded coordinates.  In double mode the score/pose grid is
     # also RFLOAT; explicit CUDA-f32 helpers cast only at their ABI boundary.
-    if debug.save_intermediates_dir is not None:
-        os.makedirs(debug.save_intermediates_dir, exist_ok=True)
-
     collect_local_search_profile = (
-        debug.save_intermediates_dir is not None if local_search.local_search_profile_mode == "auto" else local_search.local_search_profile_mode == "on"
+        observer.collects_local_search_profiles
+        if local_search.local_search_profile_mode == "auto"
+        else local_search.local_search_profile_mode == "on"
     )
     if debug.stop_after_local_search_profile:
         collect_local_search_profile = True
@@ -1062,7 +1063,7 @@ def refine_single_volume(
 
     # History tracking: one RefinementHistory instance accumulates every
     # per-iteration trajectory (see helpers/iteration_history.py).
-    history = RefinementHistory(keep_rotation_posteriors=debug.save_intermediates_dir is not None)
+    history = RefinementHistory(keep_rotation_posteriors=observer.keeps_rotation_posteriors)
     take_pass_engines()  # entries from before this run's first iteration belong to no iteration
     take_coarse_engine_calls()
     previous_assignments = [None, None]
@@ -1812,6 +1813,7 @@ def refine_single_volume(
             numbered_relion_iteration=numbered_relion_iteration,
             collect_local_search_profile=collect_local_search_profile,
             local_profile_history=history.local_profile_history,
+            observer=observer,
         )
         if tomo_halves:
             numbered_tomo_sampling = numbered_iteration_tomo_sampling(
@@ -1859,6 +1861,7 @@ def refine_single_volume(
                 relion_translation_angle_scale=relion_translation_angle_scale,
                 iteration=iteration,
                 numbered_relion_iteration=numbered_relion_iteration,
+                observer=observer,
             )
             per_half.translation_search_bases[k] = score_result.translation_search_base
             per_half.pose_rotations[k] = score_result.pose_rotations
@@ -2108,7 +2111,7 @@ def refine_single_volume(
         # Reconstructing unreg here is only needed for saved intermediates /
         # parity dumps.
         need_unreg_means = (
-            (debug.save_intermediates_dir is not None and not debug.save_intermediates_skip_unregularized)
+            observer.wants_unfiltered_maps(numbered_relion_iteration)
             or _parity_dump.is_active()
             or (
                 options.checkpoint.writer is not None
@@ -2162,16 +2165,12 @@ def refine_single_volume(
             history.record_fsc(fsc, tau2_fsc_for_update)
             _parity_dump.mark_stage(iteration, "fsc")
 
-        # --- Save intermediate volumes if requested ---
-        if debug.save_intermediates_dir is not None:
-            _save_iteration_intermediates(
-                debug.save_intermediates_dir,
-                (Ft_y_0, Ft_y_1),
-                (Ft_ctf_0, Ft_ctf_1),
-                reference_model, noise_model, per_half, trial_grid, sampling_plan, options,
-                iteration=iteration, unreg_means=unreg_means, fsc=fsc, cs=current_size, state=state,
-                volume_shape=volume_shape, voxel_size=source_pixel_size_angstrom,
-            )
+        observer.maps_reconstructed(ReconstructedIteration(
+            iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), reference_model=reference_model,
+            noise_model=noise_model, per_half=per_half, trial_grid=trial_grid, sampling_plan=sampling_plan,
+            options=options, unfiltered_maps=unreg_means, fsc=fsc, current_size=current_size, state=state,
+            volume_shape=volume_shape, voxel_size=source_pixel_size_angstrom,
+        ))
 
         # --- This expectation's particle statistics: joined assignments, posterior maxima, optimizer Pmax ---
         statistics = expectation_statistics(
@@ -2256,11 +2255,10 @@ def refine_single_volume(
             [np.asarray(poses.eulers_deg).copy() for poses in pose_update.current],
             [np.asarray(poses.translations_pixels).copy() for poses in pose_update.current],
         )
-        if debug.save_intermediates_dir is not None:
-            _save_iteration_particle_states(
-                debug.save_intermediates_dir, pose_update.current, per_half, significance, iteration=iteration,
-                original_image_indices_per_half=[_source_image_indices(ds) for ds in experiment_datasets],
-            )
+        observer.poses_updated(
+            iteration, poses=pose_update.current, per_half=per_half, significance=significance,
+            datasets=experiment_datasets,
+        )
 
         pose_comparison = prepare_pose_comparison(
             pose_update,
@@ -2718,6 +2716,7 @@ def refine_single_volume(
         iteration=iteration,
         collect_local_search_profile=collect_local_search_profile,
         relion_translation_angle_scale=relion_translation_angle_scale,
+        observer=observer,
     )
     return replace(
         final_result, numbered=numbered, replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),

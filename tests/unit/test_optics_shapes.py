@@ -414,7 +414,6 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         disable_adjoint_y=False,
         disable_adjoint_ctf=False,
         iteration=0,
-        save_intermediates_dir=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
         local_profile_history=[],

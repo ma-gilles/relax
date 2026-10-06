@@ -1704,8 +1704,6 @@ def resolve_debug(args, *, state_swap_probe, frozen_boundary, expected_accuracy)
     boundary's sealed state (its fixed diagnostic arm only) with the immutability check it asks for."""
     sealed = frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
     return EngineDebugOptions(
-        save_intermediates_dir=args.save_intermediates_dir,
-        save_intermediates_skip_unregularized=bool(args.save_intermediates_skip_unregularized),
         state_swap_probe=state_swap_probe,
         assert_initial_scoring_state_immutable=frozen_boundary is not None,
         stop_after_local_search_profile=bool(args.stop_after_local_search_profile),

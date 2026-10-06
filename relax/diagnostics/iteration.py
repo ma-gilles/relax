@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from relax.helpers.convergence import RefinementState
     from relax.refinement.half_inputs import HalfSet, ParticlePoses
     from relax.refinement.mean_helpers import ReconstructionSettings
+    from relax.refinement.ports import DenseHalfScored
     from relax.relion.relion_normalization import NormScaleCorrectionReport
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,56 @@ def _bpref_device_signature_active_for_numbered_half(
 def _replay_manifest_array(value, dtype=None):
     """Replay manifests use a float64 empty sentinel regardless of field dtype."""
     return np.array([]) if value is None else np.asarray(value, dtype=dtype)
+
+
+def write_numbered_half_manifest(save_dir, scored: DenseHalfScored) -> None:
+    """Write ``manifest_iter<i>_half<k>.npz``: the operands one half of a numbered single-pass dense iteration
+    was scored with, for a deterministic replay.
+
+    Reads ``scored.grid`` (the iteration's trial grid), ``sampling.coarse_scoring_rotations`` and
+    ``random_perturbation``, the half's direction and translation log priors, ``particles`` (corrections),
+    ``half`` (reference, prior and noise) and the engine's per-image maximum posterior.
+    """
+    from relax.dense import scoring_policy
+
+    (iteration, half_index, grid, sampling, direction_priors, translation_log_prior, particles,
+     translation_search_base, previous_translations, half, image_window_size, perturb_factor, result) = scored
+    _manifest_path = os.path.join(save_dir, f"manifest_iter{iteration}_half{half_index}.npz")
+    _manifest = {
+        "effective_rotations": np.asarray(grid.rotations),
+        "coarse_scoring_rotations": _replay_manifest_array(
+            sampling.coarse_scoring_rotations,
+        ),
+        "current_translations": np.asarray(grid.translations),
+        "rotation_log_prior": _replay_manifest_array(direction_priors.rotation_log_prior, dtype=np.float64),
+        "translation_log_prior": _replay_manifest_array(translation_log_prior, dtype=np.float64),
+        "image_corrections": _replay_manifest_array(
+            particles.image_corrections, dtype=np.float64,
+        ),
+        "scale_corrections": _replay_manifest_array(
+            particles.scale_corrections, dtype=np.float64,
+        ),
+        "image_pre_shifts": _replay_manifest_array(translation_search_base, dtype=np.float32),
+        "absolute_previous_translations": _replay_manifest_array(
+            previous_translations, dtype=np.float32,
+        ),
+        "mean_vol_ft": np.asarray(half.reference),
+        "mean_variance": np.asarray(half.mean_variance),
+        "noise_variance": np.asarray(half.noise_variance),
+        "current_size": np.int32(image_window_size) if image_window_size is not None else np.int32(-1),
+        "half_spectrum_scoring": np.bool_(True),
+        "use_float64_scoring": np.bool_(scoring_policy.DENSE_PRECISION.use_float64_scoring),
+        "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
+        "reconstruction_padding_factor": np.int32(RECONSTRUCTION_PADDING_FACTOR),
+        "score_with_masked_images": np.bool_(True),
+        "perturbation_instance": np.float64(sampling.random_perturbation),
+        "perturbation_factor": np.float64(perturb_factor),
+        "iteration": np.int32(iteration),
+        "half_index": np.int32(half_index),
+        "ave_Pmax": np.float64(float(np.mean(result.em_stats.max_posterior_per_image))),
+    }
+    np.savez(_manifest_path, **_manifest)
+    logger.info("Manifest dumped: %s", _manifest_path)
 
 
 def write_final_half_manifest(

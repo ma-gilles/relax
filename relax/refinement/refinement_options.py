@@ -436,8 +436,6 @@ class EngineDebugOptions:
 
     disable_adjoint_y: bool = False
     disable_adjoint_ctf: bool = False
-    save_intermediates_dir: str | None = None
-    save_intermediates_skip_unregularized: bool = False
     state_swap_probe: str | None = None
     assert_initial_scoring_state_immutable: bool = False
     stop_after_local_search_profile: bool = False

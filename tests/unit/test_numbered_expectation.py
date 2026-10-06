@@ -21,6 +21,7 @@ from relax.refinement.half_scoring import (
     LocalDiagnosticPolicy,
 )
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
+from relax.refinement.ports import RunObserver
 from relax.refinement.refinement_options import RefinementBatching, RefinementOptions, RefinementSchedule
 from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid
@@ -77,12 +78,12 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         padded_volume_shape=(8, 8, 8),
         use_adaptive=adaptive, multi_shape_halves=False, variant=variant,
         options=RefinementOptions(schedule=RefinementSchedule(particle_diameter_ang=3.)),
-        local_diagnostics=LocalDiagnosticPolicy(iteration=0, debug_iteration=1, save_intermediates_dir=None,
+        local_diagnostics=LocalDiagnosticPolicy(iteration=0, debug_iteration=1,
                                                 collect_local_search_profile=False, diagnostic_score_only=False,
                                                 local_profile_history=[]) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
         scoring_dtype=np.float32, relion_translation_angle_scale=1.,
-        iteration=0, numbered_relion_iteration=1,
+        iteration=0, numbered_relion_iteration=1, observer=RunObserver(),
     )
     phase = expectation.NumberedExpectation(
         grid=grid, sampling=kwargs.pop('sampling'), variant=kwargs.pop('variant'),

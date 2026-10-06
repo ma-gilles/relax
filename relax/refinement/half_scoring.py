@@ -9,7 +9,7 @@ by the ownership boundary.
 
 import logging
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import jax.numpy as jnp
 import numpy as np
@@ -74,6 +74,7 @@ from relax.refinement.optics_shapes import (
     reconstruction_image_radius,
     reference_grid_kwargs,
 )
+from relax.refinement.ports import RunObserver
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
@@ -1253,10 +1254,9 @@ class LocalExecutionPolicy:
 
 @dataclass(frozen=True, kw_only=True)
 class LocalDiagnosticPolicy:
-    """Profiling, debug capture and score-only controls."""
+    """Profiling, debug capture and score-only controls; ``observer`` receives each collected profile."""
 
     iteration: int
-    save_intermediates_dir: object
     collect_local_search_profile: bool
     diagnostic_score_only: bool
     local_profile_history: object
@@ -1265,6 +1265,7 @@ class LocalDiagnosticPolicy:
     adaptive_pass2_full_parent: bool = False
     adaptive_pass2_rotation_only: bool = False
     adaptive_pass2_denominator_mode: str | None = None
+    observer: RunObserver = field(default_factory=RunObserver)
 
 
 def _score_half_dense_in_bpref_scope(
@@ -2029,14 +2030,7 @@ def _score_half_local_one_shape(
         profile_row["local_adaptive_pass2_full_parent"] = np.bool_(local_adaptive_pass2_parent_mode == "full_parent")
         profile_row["diagnostic_score_only"] = np.bool_(diagnostics.diagnostic_score_only)
         diagnostics.local_profile_history.append(profile_row)
-        if diagnostics.save_intermediates_dir is not None:
-            np.savez_compressed(
-                os.path.join(
-                    diagnostics.save_intermediates_dir,
-                    f"it{diagnostics.iteration:03d}_half{half.particles.index + 1}_local_profile.npz",
-                ),
-                **local_profile_k,
-            )
+        diagnostics.observer.local_search_profile(diagnostics.iteration, half.particles.index, local_profile_k)
     # Must match the current-size BPref grid allocated by the local engine above; downstream
     # join/reconstruct calls infer layout from this shape.
     mstep_accumulator_shape = (

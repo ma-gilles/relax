@@ -9,7 +9,6 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from relax.dense import scoring_policy
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs, _record_score_profile, empty_half_result
 from relax.dense.scoring_policy import (
     _k1_relion_x_half_mstep_enabled,
@@ -19,7 +18,7 @@ from relax.dense.scoring_policy import (
 )
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.diagnostics.iteration import _bpref_device_signature_active_for_numbered_half, _replay_manifest_array
+from relax.diagnostics.iteration import _bpref_device_signature_active_for_numbered_half
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.orientation_priors import (
     DirectionPrior,
@@ -52,10 +51,10 @@ from relax.refinement.half_scoring import (
 from relax.refinement.iteration_planning import ExpectationWindows
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.optics_shapes import OpticsSpec
+from relax.refinement.ports import DenseHalfScored, RunObserver
 from relax.refinement.refinement_options import RefinementOptions
 from relax.refinement.tomo_half import TomoSampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
-from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.sampling import TrialGrid, rotation_grid_size
 
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -397,6 +396,7 @@ def prepare_numbered_expectation(
     numbered_relion_iteration: int,
     collect_local_search_profile: bool,
     local_profile_history: list,
+    observer: RunObserver,
 ) -> NumberedExpectation:
     """Bind the numbered grid to dense/local support and local diagnostic policy.
 
@@ -419,7 +419,7 @@ def prepare_numbered_expectation(
         numbered_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration,
             debug_iteration=numbered_relion_iteration,
-            save_intermediates_dir=options.debug.save_intermediates_dir,
+            observer=observer,
             collect_local_search_profile=collect_local_search_profile,
             diagnostic_score_only=bool(options.debug.stop_after_local_search_score_only),
             local_profile_history=local_profile_history,
@@ -491,6 +491,7 @@ def score_numbered_half(
     relion_translation_angle_scale: float,
     iteration: int,
     numbered_relion_iteration: int,
+    observer: RunObserver,
 ) -> HalfScoreResult:
     """Build half-specific priors/batches and accumulate an empty, SPA or tomography half.
 
@@ -767,47 +768,14 @@ def score_numbered_half(
             dense_result.coarse_ha = dense_result.ha
         score_result = dense_result
 
-        # --- Manifest dump for deterministic replay (Phase 0.1) ---
-        if not phase.use_adaptive and options.debug.save_intermediates_dir is not None:
-            _manifest_path = os.path.join(
-                options.debug.save_intermediates_dir,
-                f"manifest_iter{iteration}_half{k}.npz",
-            )
-            _manifest = {
-                "effective_rotations": np.asarray(phase.grid.rotations),
-                "coarse_scoring_rotations": _replay_manifest_array(
-                    dense_sampling.coarse_scoring_rotations,
-                ),
-                "current_translations": np.asarray(phase.grid.translations),
-                "rotation_log_prior": _replay_manifest_array(direction_priors.rotation_log_prior, dtype=np.float64),
-                "translation_log_prior": _replay_manifest_array(translation_log_prior, dtype=np.float64),
-                "image_corrections": _replay_manifest_array(
-                    particle_half.image_corrections, dtype=np.float64,
-                ),
-                "scale_corrections": _replay_manifest_array(
-                    particle_half.scale_corrections, dtype=np.float64,
-                ),
-                "image_pre_shifts": _replay_manifest_array(translation_search_base, dtype=np.float32),
-                "absolute_previous_translations": _replay_manifest_array(
-                    previous_translations_k, dtype=np.float32,
-                ),
-                "mean_vol_ft": np.asarray(half.reference),
-                "mean_variance": np.asarray(half.mean_variance),
-                "noise_variance": np.asarray(half.noise_variance),
-                "current_size": np.int32(image_window_size) if image_window_size is not None else np.int32(-1),
-                "half_spectrum_scoring": np.bool_(True),
-                "use_float64_scoring": np.bool_(scoring_policy.DENSE_PRECISION.use_float64_scoring),
-                "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
-                "reconstruction_padding_factor": np.int32(RECONSTRUCTION_PADDING_FACTOR),
-                "score_with_masked_images": np.bool_(True),
-                "perturbation_instance": np.float64(sampling.random_perturbation),
-                "perturbation_factor": np.float64(options.parity.perturb_factor),
-                "iteration": np.int32(iteration),
-                "half_index": np.int32(k),
-                "ave_Pmax": np.float64(float(np.mean(dense_result.em_stats.max_posterior_per_image))),
-            }
-            np.savez(_manifest_path, **_manifest)
-            logger.info("Manifest dumped: %s", _manifest_path)
+        if not phase.use_adaptive:
+            observer.dense_half_scored(DenseHalfScored(
+                iteration, k, grid=phase.grid, sampling=dense_sampling, direction_priors=direction_priors,
+                translation_log_prior=translation_log_prior, particles=particle_half,
+                translation_search_base=translation_search_base, previous_translations=previous_translations_k,
+                half=half, image_window_size=image_window_size, perturb_factor=options.parity.perturb_factor,
+                result=dense_result,
+            ))
 
     score_result.translation_search_base = translation_search_base
     return score_result

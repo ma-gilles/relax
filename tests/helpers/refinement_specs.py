@@ -201,7 +201,6 @@ def local_half_owners(**values):
         half_scoring.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
             debug_iteration=values.pop("debug_iteration", None),
-            save_intermediates_dir=values.pop("save_intermediates_dir"),
             collect_local_search_profile=values.pop("collect_local_search_profile"),
             diagnostic_score_only=values.pop("diagnostic_score_only"),
             local_profile_history=values.pop("local_profile_history"),

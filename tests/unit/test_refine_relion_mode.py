@@ -8,6 +8,7 @@ Verifies:
 """
 
 import inspect
+import os
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,6 +58,7 @@ from relax.classification.k_class_results import (
     _sum_noise_stats,
 )
 from relax.dense import score_outputs, scoring_policy
+from relax.diagnostics.observers import IntermediatesObserver
 from relax.diagnostics.relion_replay import _replay_control_model_iteration
 from relax.helpers import dtype_policy as dtype_policy_module
 from relax.helpers import resolution as resolution_helpers
@@ -2070,7 +2072,6 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
             disable_adjoint_ctf=False,
             max_significants=None,
             iteration=3,
-            save_intermediates_dir=None,
             local_search_random_perturbation=0.0,
             local_search_angular_sampling_deg=relion_angular_sampling_deg(1),
             local_parent_oversampling_order=1,
@@ -2138,7 +2139,6 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
             disable_adjoint_ctf=False,
             max_significants=-1,
             iteration=3,
-            save_intermediates_dir=None,
             local_search_random_perturbation=0.0,
             local_search_angular_sampling_deg=relion_angular_sampling_deg(0),
             local_parent_oversampling_order=0,
@@ -3858,7 +3858,6 @@ def test_local_adaptive_parent_support_probe_is_score_only(monkeypatch, rng):
             disable_adjoint_ctf=False,
             max_significants=None,
             iteration=3,
-            save_intermediates_dir=None,
             local_search_random_perturbation=0.0,
             local_search_angular_sampling_deg=relion_angular_sampling_deg(1),
             local_parent_oversampling_order=1,
@@ -6863,8 +6862,8 @@ class TestRelionModeSmokeTest:
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
                 parity=RelionParityOptions(use_per_half_mean_variance=per_half),
-                debug=EngineDebugOptions(save_intermediates_dir=str(tmp_path)),
             ),
+            observer=IntermediatesObserver(tmp_path),
         )
 
         assert called["tau2"] >= 1
@@ -7095,8 +7094,8 @@ class TestRelionModeSmokeTest:
                 ),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
-                debug=EngineDebugOptions(save_intermediates_dir=str(out_dir)),
             ),
+            observer=IntermediatesObserver(out_dir),
         )
 
         assert len(result.history.current_sizes) == 1
@@ -7200,12 +7199,9 @@ class TestRelionModeSmokeTest:
                 ),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
-                debug=EngineDebugOptions(
-                    save_intermediates_dir=str(out_dir),
-                    save_intermediates_skip_unregularized=True,
-                ),
                 k_class=k_class,
             ),
+            observer=IntermediatesObserver(out_dir, skip_unregularized=True),
         )
 
         for half, dataset in enumerate(half_datasets, start=1):
@@ -7249,11 +7245,8 @@ class TestRelionModeSmokeTest:
                 ),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
-                debug=EngineDebugOptions(
-                    save_intermediates_dir=str(out_dir),
-                    save_intermediates_skip_unregularized=True,
-                ),
             ),
+            observer=IntermediatesObserver(out_dir, skip_unregularized=True),
         )
 
         assert len(result.history.current_sizes) == 1
@@ -8666,7 +8659,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
             "offset_step": replay_offset_step,
         },
     )
-    monkeypatch.setattr(refine_mod.os.path, "exists", lambda _path: False)
+    monkeypatch.setattr(os.path, "exists", lambda _path: False)
 
     prev_eulers_h1 = np.zeros((half_datasets[0].n_units, 3), dtype=np.float32)
     prev_eulers_h2 = np.zeros((half_datasets[1].n_units, 3), dtype=np.float32)

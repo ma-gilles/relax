@@ -9,10 +9,11 @@ from helpers.float_compare import assert_matches
 from helpers.tiny_refinement import VOLUME_SHAPE, CallTrace, frame_holds, run_tiny_refinement
 
 from relax.dense.score_outputs import PerHalfOutputs
+from relax.diagnostics.observers import IntermediatesObserver
 from relax.reconstruction import regularization_relion
 from relax.refinement import finalization, iteration_loop, mean_helpers
 from relax.refinement.iteration_snapshot import IterationSnapshot
-from relax.refinement.refinement_options import CheckpointOptions, EngineDebugOptions
+from relax.refinement.refinement_options import CheckpointOptions
 
 pytestmark = pytest.mark.unit
 
@@ -112,7 +113,7 @@ def test_final_pass_starts_without_the_last_iterations_pass_outputs_or_snapshot(
 def test_rotation_posterior_trajectory_is_kept_only_for_diagnostic_runs(monkeypatch, tmp_path):
     """Each iteration's float64 posterior copy (2.6 GB at EMPIAR-10202's fine orders) is a diagnostic record."""
     default = run_tiny_refinement(monkeypatch)
-    diagnostic = run_tiny_refinement(monkeypatch, debug=EngineDebugOptions(save_intermediates_dir=str(tmp_path)))
+    diagnostic = run_tiny_refinement(monkeypatch, observer=IntermediatesObserver(tmp_path))
 
     assert default.history.rotation_posterior_trajectory_per_half == []
     assert len(diagnostic.history.rotation_posterior_trajectory_per_half) == 2

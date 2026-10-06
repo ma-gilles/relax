@@ -1455,6 +1455,7 @@ def main():
     from recovar.reconstruction import regularization
     from recovar.utils import helpers
 
+    from relax.diagnostics.observers import IntermediatesObserver
     from relax.helpers.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -2509,7 +2510,6 @@ def main():
                 final_replay_override=explicit_final_replay_override,
             ),
             debug=EngineDebugOptions(
-                save_intermediates_dir=save_intermediates_dir,
                 disable_adjoint_y=args.disable_adjoint_y,
                 disable_adjoint_ctf=args.disable_adjoint_ctf,
             ),
@@ -2519,6 +2519,7 @@ def main():
             ),
             symmetry=SymmetryOptions(point_group=point_group),
         ),
+        observer=None if save_intermediates_dir is None else IntermediatesObserver(save_intermediates_dir),
     )
     elapsed = time.time() - t0
     history = result.history

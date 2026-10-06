@@ -112,6 +112,7 @@ tests/unit/test_reconstruction_diagnostics.py
 tests/unit/test_reconstruction_ownership.py
 tests/unit/test_refinement_archive_metadata.py
 tests/unit/test_refinement_initial_state.py
+tests/unit/test_refinement_port_imports.py
 tests/unit/test_refinement_structure_metrics.py
 tests/unit/test_refine_relion_mode.py
 tests/unit/test_regularization_relion.py

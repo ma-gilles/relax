@@ -33,7 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import relax
-from relax.diagnostics import frozen_boundary_cli, initial_model_replay, replay_inputs
+from relax.diagnostics import frozen_boundary_cli, initial_model_replay, observers, replay_inputs
 from relax.diagnostics.state_swap_probe import (
     build_state_swap_probe,
     state_swap_probe_loop_index,
@@ -1313,6 +1313,7 @@ def main(command=None):
                 ),
             ),
         ),
+        observer=observers.command_observer(args),
     )
 
     if run_file_writer is not None:

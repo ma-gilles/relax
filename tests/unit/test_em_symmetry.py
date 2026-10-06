@@ -1028,7 +1028,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         disable_adjoint_ctf=False,
         max_significants=-1,
         iteration=0,
-        save_intermediates_dir=None,
         local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=None,
         local_parent_oversampling_order=0,

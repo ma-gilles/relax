@@ -27,7 +27,7 @@ def preparation_inputs(*, local=False, adaptive=False):
         adaptive_pass1_rotations=None, coarse_rotation_ids=np.arange(4, dtype=np.int64),
         coarse_angular_step_deg=np.float64(15.0), options=scoring['options'],
         iteration=5, numbered_relion_iteration=17,
-        collect_local_search_profile=True, local_profile_history=[],
+        collect_local_search_profile=True, local_profile_history=[], observer=scoring['observer'],
     )
     return phase.grid, ExpectationWindows(model_size=4, image_size=2, image_box_size=4), inputs
 
@@ -88,8 +88,7 @@ def test_local_phase_borrows_sampling_and_only_reads_adaptive_policy_for_parent_
     monkeypatch.setattr(expectation, '_local_adaptive_pass2_rotation_only_enabled', lambda: events.append('rotation') or True)
     monkeypatch.setattr(expectation, '_local_adaptive_pass2_denominator_support_mode', lambda: events.append('denominator') or 'rotation')
     # Dense-only options and geometry may be absent on the local path.
-    inputs['options'] = SimpleNamespace(debug=SimpleNamespace(save_intermediates_dir='capture',
-                                                             stop_after_local_search_score_only=True))
+    inputs['options'] = SimpleNamespace(debug=SimpleNamespace(stop_after_local_search_score_only=True))
     phase = expectation.prepare_numbered_expectation(grid, object(), **inputs)
     assert events == (['full', 'rotation', 'denominator'] if order else [])
     assert phase.sampling is inputs['local_sampling']
@@ -98,7 +97,7 @@ def test_local_phase_borrows_sampling_and_only_reads_adaptive_policy_for_parent_
     assert diagnostics.local_profile_history is inputs['local_profile_history']
     assert diagnostics.iteration == 5
     assert diagnostics.debug_iteration == 17
-    assert diagnostics.save_intermediates_dir == 'capture'
+    assert diagnostics.observer is inputs['observer']
     assert diagnostics.collect_local_search_profile is True
     assert diagnostics.diagnostic_score_only is True
     assert diagnostics.adaptive_pass2_full_parent is bool(order)
