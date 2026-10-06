@@ -100,7 +100,10 @@ Not yet through the ports, each still read where it was:
 - The untiered comparison features, waiting for the owner's decision (no GPU tier runs them): the sealed
   sampling state of a frozen boundary (installed by the controller before the source), the state-swap probe
   and its RELION references, the frozen scoring-state assertion, the captured projector (a slot field the
-  source passes through), the follower dispatch schedule.
+  source passes through).
+- The follower dispatch schedule (`--relion-dispatch-schedule`, `--relion-scale-followers`). The audit listed it
+  as untiered, but medium's three K4 fast cases pass it (a strict K>1 replay requires it); see the tier list
+  below.
 - The engine telemetry, the profile histories and the setup timers: they are archive keys of the default
   run (`RefinementHistory`, `NumberedMetadata.setup_phase_seconds`).
 - The significance and pass-2 single-half selectors (`RELAX_SIGNIFICANCE_DUMP_TARGET_HALF`,
@@ -168,16 +171,49 @@ raises since 48330782). A `fingerprint.py check` of a later head against such a 
 every other case was identical, and every commit was 0-diff against its parent (the case-by-case check:
 `/scratch/gpfs/CRYOEM/gilleslab/em_work/parity_ports_20261006/verify/logs/fpcheck_main.txt`).
 
+## Which tier tests reach relax/refinement (2026-10-06)
+
+The GPU items of `scripts/run_test_tier.py` that run the refinement controller (`refine_single_volume`, and
+`run_final_all_data` where noted), with the paths each reaches. Fast cases are in
+`tests/integration/test_em_parity_fast.py`; none sets an observer (intermediates or parity dump).
+
+| Tier | Item | K | Start | Search | Final pass | Other paths |
+|---|---|---|---|---|---|---|
+| smoke | `k1_local_replay` | 1 | RELION it006 state through `scripts/run_multi_iter_parity.py` (`RelionReplaySource`) | local search, hp4 | no | the local-search regime |
+| smoke | `k1_adaptive_replay` | 1 | RELION it003 os1 state, same script | global, adaptive os1 | no | |
+| medium | `k1_replay` | 1 | RELION it003 state, same script | global, os0 | no | |
+| medium | `k1_coldstart[standalone]`, `k1_os1_coldstart_standalone`, `k1_gui60_coldstart_standalone` | 1 | native cold start, 3 iterations | global hp3 os0; hp3 os1; hp2 os1 (60 A start) | no | |
+| medium | `k1_coldstart[relion_seeded_debug]` | 1 | RELION half sets (`--relion_half_sets`) | global hp3 | no | |
+| medium | `k1_perturbreplay` | 1 | `--perturb_replay_relion_dir` (numbered STAR replay), 3 iterations | global hp3 os0 | no | |
+| medium | `k1_multioptics_coldstart`, `k1_multioptics_firstiter_cc` | 1 | native, `--init_volume` | global | no | two optics groups of different pixel size and box |
+| medium | `kclass_coldstart` | 4 | `--perturb_replay_relion_dir`, 3 iterations | global hp2 os1 | no | Class3D; `--relion-dispatch-schedule` |
+| medium | `kclass_nonadaptive_replay`, `kclass_strict_oversample_coldstart` | 4 | `--relion_init_dir` + `--perturb_replay_relion_dir` | global hp1 os0; hp1 os1 | no | Class3D; `--relion-dispatch-schedule` |
+| medium | `e2e_k1_5k_standalone` (`tests/integration/test_em_tier_e2e.py`) | 1 | native cold start, to convergence (up to 25 iterations) | global, then local search | yes, asserted | the only tier item that runs the final pass of a converged run |
+| medium | GPU sweep: `test_tomo_aberrations_refine.py`, `test_tomo_premultiplied_final_pass.py`, `test_class3d_multishape_smoke.py`, `test_non_finite_image_stops_before_output_gpu.py` | 1 / K | native | `--auto_local_healpix_order 2` (tomo) | tomo aberrations: yes (`RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER=1`) | tomography; several-shape Class3D; the non-finite refusal |
+
+Not refinement: `kclass_replay` (smoke and medium) calls `relax.classification.k_class` directly; `vdam_k1_50k`
+runs `relax.commands.initial_model` (relax/vdam); the guard and `cpu_merge_units` are CPU. The GPU unit sweep
+also runs the refinement unit files marked GPU (`test_cuda_relion_translation.py`, `test_relion_functions.py`,
+`test_resident_operand_avals.py`, `test_resident_tilt_scoring.py`, one test of `test_refine_relion_mode.py`).
+Smoke additionally runs the GPU unit files a change touches, within its budget.
+
+So smoke reaches the K=1 replay and local search only. A slice that touches cold start, Class3D, the
+numbered STAR replay, `--relion_init_dir`, the dispatch schedule, multi-optics, tomography or the final pass
+needs medium. No tier runs the frozen boundary, the state-swap probe, the captured projector or the
+final-only replay.
+
 ## Known coverage limits (recorded, not being built)
 
 - **RELION run directories have no CPU fixture.** The fingerprint's `main_*` cases do not reach the frozen
   boundary, the RELION replays (`--relion_init_dir`, `--perturb_replay_relion_dir`, the final-only replay),
   the state-swap probe or captured projectors: the tiny data cannot produce a RELION run directory. CPU
   tests stand in for the one callee that supplies such a fact (a stand-in boundary or follower topology).
-  The GPU tiers run only two of these paths end to end: the numbered STAR replay
-  (`--perturb_replay_relion_dir`: fast parity, long `realdata_hp3_replay`) and `--relion_init_dir` (long
-  `k1_relion_seeded_debug`). The frozen boundary, the state-swap probe, captured projectors, the final-only
-  replay and the follower dispatch schedule are passed by no tier: from the command they have CPU admission
+  The GPU tiers run three of these paths end to end: the numbered STAR replay
+  (`--perturb_replay_relion_dir`: medium `k1_perturbreplay` and the K4 fast cases, long `realdata_hp3_replay`),
+  `--relion_init_dir` (medium `kclass_nonadaptive_replay` and `kclass_strict_oversample_coldstart`, long
+  `k1_relion_seeded_debug`) and the follower dispatch schedule (the same K4 medium cases; a strict K>1 replay
+  requires it). The frozen boundary, the state-swap probe, captured projectors and the final-only replay are
+  passed by no tier: from the command they have CPU admission
   tests only; at the controller boundary the fingerprint's cases exercise the state-swap probe, the frozen
   scoring-state assertion, the sealed sampling state and per-iteration and final-only replay priors
   (parity audit, 2026-10-06). Cost of closing it: a tiny run-directory fixture
