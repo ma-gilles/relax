@@ -13,6 +13,7 @@ Run: ``pixi run python -m pytest tests/unit/initial_model/test_refactor_invarian
 from __future__ import annotations
 
 import inspect
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -48,6 +49,7 @@ from relax.vdam.schedules import (
     compute_tau2_fudge,
     default_subset_sizes_for_3d_initial_model,
 )
+from scripts import report_refinement_structure
 
 pytestmark = pytest.mark.unit
 
@@ -399,10 +401,15 @@ def test_responsibility_loc_budget(responsibility):
     ceiling, names = LOC_BUDGETS[responsibility]
     total = sum(len((PACKAGE_DIR / name).read_bytes().splitlines()) for name in names)
     total += shared.get(responsibility, 0)
-    assert total <= ceiling, (
-        f"VDAM {responsibility}: {total} lines > reviewed budget {ceiling}. "
+    # The budgets are review signals with slack (owner ruling, 2026-10-05): a total within the slack warns,
+    # only a total above it fails. The slack is the one refinement's ceilings use.
+    exceeded = report_refinement_structure.exceeded({responsibility: total}, {responsibility: ceiling})
+    assert exceeded == [], (
+        f"VDAM {exceeded[0] if exceeded else ''}. "
         "Remove redundant code or document and review the added responsibility."
     )
+    for warning in report_refinement_structure.within_slack({responsibility: total}, {responsibility: ceiling}):
+        warnings.warn(f"VDAM line budget {warning}; name the reason for the growth in the report", stacklevel=1)
 
 
 # ---------------------------------------------------------------------------

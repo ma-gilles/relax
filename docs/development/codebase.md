@@ -400,7 +400,10 @@ assigns every VDAM Python module to exactly one responsibility, requires all
 listed files to exist, and counts shared extractions with the previous spacing,
 import and alias allowances. A move must migrate its accounting; a new module
 must receive an explicit owner. Each responsibility must fit independently, so
-spare diagnostic budget cannot conceal growth in the E-step. Review justified
+spare diagnostic budget cannot conceal growth in the E-step. The budgets are
+review signals with slack (owner ruling, 2026-10-05), as refinement's ceilings:
+a total above its budget by at most `max(1, ceil(budget * 5 / 100))` lines warns,
+and only a total beyond that fails. Review justified
 new functionality before revising any budget. Preserve separate numerical paths
 when merging them would complicate control flow or change arithmetic.
 
