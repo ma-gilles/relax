@@ -97,6 +97,7 @@ class StreamStatic(NamedTuple):
     relion_texture_interp: bool
     basis_size: int
     metric_trace_only: bool  # backproject sum_p LHS_pp instead of every packed LHS channel
+    exact_metric_trace: bool  # also backproject the LHS trace with squared weights (ExactTracePPCAStats)
     # GPU streams run relax's fused CUDA stages (windowed projection, latent epilogue, posterior
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
@@ -173,7 +174,8 @@ class _MomentCarry(NamedTuple):
     """
 
     # (groups, half, 32) voxel-major moment volumes: the metric channels (packed LHS, or its
-    # trace under metric_trace_only), then the real and imaginary parts of each residual channel.
+    # trace under metric_trace_only), the exact-diagonal trace under exact_metric_trace, then the
+    # real and imaginary parts of each residual channel.
     moments: jax.Array
     moments_compensation: jax.Array
     residual_power: jax.Array
@@ -590,6 +592,7 @@ def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotation
             volume_shape=static.volume_shape,
             max_r=static.backprojection_max_r,
             metric_trace=static.metric_trace_only,
+            exact_trace=static.exact_metric_trace,
         )
         correction = correction[: score_window_pixels(arrays, static).shape[0]]  # padding pixels carry none
     else:
@@ -666,17 +669,22 @@ def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_s
     return weights, sums, carry
 
 
+def _metric_channels(static):
+    """Metric channels of the moment volumes: the packed LHS or its trace, and the exact-diagonal trace."""
+    return (1 if static.metric_trace_only else tri_size(static.basis_size)) + int(static.exact_metric_trace)
+
+
 def moment_groups(static):
     """Groups of 32 voxel-major channels: the metric channels and the residual's real/imaginary parts."""
     P = static.basis_size
-    metric = 1 if static.metric_trace_only else tri_size(P)
+    metric = _metric_channels(static)
     return -(-(metric + 2 * P) // 32)
 
 
 def unpack_moments(moments, static):
     """Metric ``(channels, half)`` and residual gradient ``(half, P)`` of ``(groups, half, 32)`` moment volumes."""
     P = static.basis_size
-    metric = 1 if static.metric_trace_only else tri_size(P)
+    metric = _metric_channels(static)
     flat = jnp.transpose(moments, (1, 0, 2)).reshape(moments.shape[1], -1)
     residual = flat[:, metric : metric + 2 * P].reshape(-1, P, 2)
     return flat[:, :metric].T, jax.lax.complex(residual[..., 0], residual[..., 1])
