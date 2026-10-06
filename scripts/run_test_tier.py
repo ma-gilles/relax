@@ -79,6 +79,7 @@ def local_gpus() -> tuple[str, ...]:
 COARSE_ENGINES = ("auto", "gemm_hybrid", "gemm_dense")
 FAST = "tests/integration/test_em_parity_fast.py"
 LONG = "tests/long_test/test_em_parity_long.py"
+LONG_MSHAPE = "tests/long_test/test_vdam_multishape_long.py"
 E2E = "tests/integration/test_em_tier_e2e.py"
 PARITY_FLAGS = ["--run-slow", "--run-integration", "--run-gpu"]
 FAST_CASES = {  # item name: pytest node id
@@ -153,6 +154,8 @@ LONG_ARM_SECONDS = {  # H100 walls of long tier 14410744 (relax 93ce1aa, one nod
     "long_realdata_hp3_resident": 640,
     # Class3D K4 5k/128 at HEALPix 4, 2 iterations (relax 7381f84, Slurm 14410096): 1860 s on H100.
     "long_class3d_hp4": 2000,
+    # Several-shape VDAM K1 10k/128, 200 iterations plus GT scoring (relax 8b5d4aa, Slurm 15111391): 610 s on H100.
+    "long_vdam_multishape_200it": 750,
 }
 FIXTURE_SETS = {
     "smoke": ["k1_5k128_data", "k1_5k128_relion_os0", "k1_5k128_relion_os1", "k2_5k128_data", "k2_5k128_relion_os0"],
@@ -189,6 +192,8 @@ FIXTURE_SETS = {
         "empiar_10097_particle_stack",
         "k4_5k128_data",
         "k4_5k128_class3d_hp4_relion",
+        "multioptics_k2_10k128_data",
+        "multioptics_k2_10k128_gt",
     ],
 }
 
@@ -462,6 +467,9 @@ def long_plan(src: Path, py: str, run_root: Path | None) -> list[Item]:
                LONG_ARM_SECONDS[f"long_realdata_hp3_{arm}"]) for arm in ("default", "resident")],
         Item("long_class3d_hp4", _pytest(py, *long_flags, f"{LONG}::test_em_parity_long_class3d_hp4_global"), True,
              LONG_ARM_SECONDS["long_class3d_hp4"]),
+        Item("long_vdam_multishape_200it",
+             _pytest(py, *long_flags, f"{LONG_MSHAPE}::test_vdam_multishape_200_iterations"), True,
+             LONG_ARM_SECONDS["long_vdam_multishape_200it"]),
         Item("completion_k1", ["bash", str(jobs / "em_completion_k1_100k256.sh")], True,
              LONG_ARM_SECONDS["completion_k1"]),
         Item("completion_k4", ["bash", str(jobs / "em_completion_k4_100k256.sh")], True,

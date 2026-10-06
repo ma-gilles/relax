@@ -212,6 +212,42 @@
     "pre_fix_control": "relax before 7381f84 (local searches at HEALPix 4): per-class FSC-AUC 0.957-0.996",
     "source": "vdamk2 floor_proposal.json, em_work/relax_vdamk2_20260924/class3d_hp4_oracle"
    }
+  },
+  "vdam_multishape_200it": {
+   "approved": false,
+   "fsc_auc_floor": 0.6346,
+   "tier": "long (item long_vdam_multishape_200it); weighted masked FSC-AUC of the it200 map against reference_gt_class001_relion.mrc, mask multioptics_k2_c1, scripts/score_initialmodel_maps.py",
+   "rule": "regression and crash guard, not the RELION band (row multioptics_k2_10k128_initialmodel_vdam_k1 is OPEN against CPU RELION): min - 3 sd over relax seeds 1-6 at 845c636 plus GPU RELION mpiscale seeds 1-6 r1; the relax-only set gives 0.6394, the lower floor is used",
+   "measured": {
+    "relax_845c636": [
+     0.64283,
+     0.64278,
+     0.64567,
+     0.64481,
+     0.64405,
+     0.64451
+    ],
+    "relion_gpu": [
+     0.64921,
+     0.64134,
+     0.64453,
+     0.64199,
+     0.64143,
+     0.6459
+    ],
+    "combined_min_sd": [
+     0.64134,
+     0.00224
+    ],
+    "relax_only_min_sd": [
+     0.64278,
+     0.00114
+    ],
+    "relax_jobs": "15089781 (845c636, H100)",
+    "relion_jobs": "14868221 (seeds 1-3), 14971808 (seeds 4-6), H100",
+    "scoring": "15100451, scores/mshape_845c636 (em_work/cryoet_vdam_20261001)"
+   },
+   "proposed": "etvdam with benchw, 2026-10-06 (robustness cell 4); enforced once a user approval sets approved true"
   }
  },
  "pinned_tolerance": {

@@ -4519,6 +4519,38 @@
    },
    "root": "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/relion_pdb_k4_os0_ref"
   },
+  "multioptics_k2_10k128_data": {
+   "description": "10k particles of the K2 two-optics simulation (4.25 A/128 px and 4.86 A/112 px): particles.star, stacks, simulation_info",
+   "files": {
+    "Particles/opticsGroup1.mrcs": [327681024, "261390e7763b212c245d2abe0be77d6a535d97a62a5b74b008881a24e1781727"],
+    "Particles/opticsGroup2.mrcs": [250881024, "9fd39964df0181e20e9d62d13eb41a6053e0bd5e54b5ded87cad33544c77cad6"],
+    "particles.star": [1880771, "dd1a94e4d951d27265a34a4382fa4065093f1460e1a61c343a19f0d77d1cc01d"],
+    "simulation_info.pkl": [1762140, "4415fb2fd8da60aba3c19645f97581a464a9ba5562f8407ba98dc3ad06574b9b"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/README.md",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/gen.py",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/PROVENANCE.txt"
+    ]
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/project"
+  },
+  "multioptics_k2_10k128_gt": {
+   "description": "Ground-truth class maps of multioptics_k2_10k128_data (relax and RELION file frames)",
+   "files": {
+    "reference_gt_class001.mrc": [8389632, "6f21f37972c7e6238cebab144c54e1d025fc7c72f43b4541644e0ba3b8c0e097"],
+    "reference_gt_class001_relion.mrc": [8389632, "8426343456ee1187c50918ee0d44f8365263325d90628db82e3db2e4a765969c"],
+    "reference_gt_class002.mrc": [8389632, "b93af40322844f747446cb97ffd2f212ac00392fd9f3223c37ede39cf7c1ae8e"],
+    "reference_gt_class002_relion.mrc": [8389632, "91682199f5c76dadb9469030417d3a2e8a7429e3f67295f571bb696f3d6c9e43"]
+   },
+   "provenance": {
+    "generation_records": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/README.md"
+    ]
+   },
+   "root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/project"
+  },
   "multioptics_s3b_600_data": {
    "description": "600 particles of the S3b two-optics simulation (4.25 A/128 px and 5.44 A/112 px), greyscale-matched reference and GT",
    "files": {
