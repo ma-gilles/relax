@@ -1066,7 +1066,7 @@ def compute_local_search_resident(
             n_shells=n_shells,
             n_fine_trans=n_fine_trans,
             n_images=n_images,
-            n_coarse_rot=int(posterior_bin_ids.size),
+            n_coarse_rot=_posterior_bin_capacity(posterior_bin_ids.size, n_classes=n_classes),
             n_scale_groups=n_scale_groups,
             current_size=current_size,
             include_unweighted_high_shell=include_unweighted_norm_high_shell,
@@ -1943,11 +1943,29 @@ def _open_capacity_texture(
     )
 
 
-def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np.ndarray:
-    """The rotation posterior over the layout's whole histogram, from its used bins (host float64)."""
+# The K=1 rotation posterior's used-bin count changes with every local pass, and the
+# statistics programs are shaped by it: padded to a multiple of this, a refinement's
+# passes share a few shapes instead of compiling the image-term program per half.
+_POSTERIOR_BIN_QUANTUM = 4096
 
+
+def _posterior_bin_capacity(n_used_bins: int, *, n_classes: int) -> int:
+    """The accumulator length of ``n_used_bins`` used posterior bins (K>1 keeps the whole histogram)."""
+
+    if n_classes != 1:
+        return int(n_used_bins)
+    return max(1, -(-int(n_used_bins) // _POSTERIOR_BIN_QUANTUM)) * _POSTERIOR_BIN_QUANTUM
+
+
+def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np.ndarray:
+    """The rotation posterior over the layout's whole histogram, from its used bins (host float64).
+
+    ``sums`` may be padded past the used bins (:func:`_posterior_bin_capacity`); the padding holds no mass.
+    """
+
+    used = np.asarray(posterior_bin_ids, dtype=np.int64)
     dense = np.zeros(int(n_posterior_bins), dtype=np.float64)
-    dense[np.asarray(posterior_bin_ids, dtype=np.int64)] = np.asarray(jax.device_get(sums), dtype=np.float64)
+    dense[used] = np.asarray(jax.device_get(sums), dtype=np.float64)[: used.size]
     return dense
 
 

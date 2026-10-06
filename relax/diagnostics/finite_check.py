@@ -87,23 +87,68 @@ def finite_check_warn_only() -> bool:
     return _flag(FINITE_CHECK_WARN_ENV)
 
 
+def _array_all_finite(array):
+    import jax.numpy as jnp
+
+    if jnp.iscomplexobj(array):
+        return jnp.isfinite(array.real).all() & jnp.isfinite(array.imag).all()
+    return jnp.isfinite(array).all()
+
+
 @lru_cache(maxsize=None)
 def _device_all_finite_program():
     import jax
-    import jax.numpy as jnp
-
-    def all_finite(array):
-        if jnp.iscomplexobj(array):
-            return jnp.isfinite(array.real).all() & jnp.isfinite(array.imag).all()
-        return jnp.isfinite(array).all()
 
     # One program per shape: eager, the check was up to five single-primitive
     # programs compiled again at every new reconstruction size.
-    return jax.jit(all_finite)
+    return jax.jit(_array_all_finite)
 
 
 def _device_all_finite(array):
     return _device_all_finite_program()(array)
+
+
+@lru_cache(maxsize=None)
+def _device_each_finite_program():
+    import jax
+    import jax.numpy as jnp
+
+    def each_finite(arrays):
+        return jnp.stack([_array_all_finite(array) for array in arrays])
+
+    # One program for all of an iteration's accumulators: a program per array
+    # recompiled each of them at every new reconstruction size.
+    return jax.jit(each_finite)
+
+
+def _non_finite_names(arrays: dict) -> list:
+    """The names in ``arrays`` whose value holds a non-finite entry, in order.
+
+    The floating device arrays are reduced in one program and read back as one
+    boolean vector; a value ``jnp.asarray`` cannot take goes through
+    :func:`_all_finite`'s host route.
+    """
+
+    import jax.numpy as jnp
+
+    names, device = [], []
+    offenders = set()
+    for name, value in arrays.items():
+        if value is None:
+            continue
+        try:
+            array = jnp.asarray(value)
+        except Exception:  # pragma: no cover - host arrays and exotic dtypes
+            if not _all_finite(value):
+                offenders.add(name)
+            continue
+        if array.dtype.kind in "fgc":
+            names.append(name)
+            device.append(array)
+    if device:
+        finite = np.asarray(_device_each_finite_program()(tuple(device)))
+        offenders.update(name for name, ok in zip(names, finite) if not ok)
+    return [name for name in arrays if name in offenders]
 
 
 def _all_finite(value) -> bool:
@@ -536,11 +581,7 @@ def check_half_accumulators(accumulators: dict, *, context: str = ""):
     mode = half_accumulator_guard_mode()
     if mode == "off":
         return None
-    offenders = [
-        name
-        for name, value in accumulators.items()
-        if value is not None and not _all_finite(value)
-    ]
+    offenders = _non_finite_names(accumulators)
     if not offenders:
         return None
     lines = [f"non-finite BPref accumulator before reconstruction: {context}"]

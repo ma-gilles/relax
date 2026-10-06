@@ -852,6 +852,58 @@ def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _r
     assert np.linalg.norm(a - b) <= np.sqrt(N_IMAGES) * np.finfo(np.float32).eps * np.linalg.norm(a)
 
 
+@requires_resident_gpu
+def test_padded_posterior_bins_serve_two_bin_counts_with_one_program(monkeypatch, _resident_local_env):
+    """K=1 posterior bins padded to the quantum: halves whose used-bin counts differ share the
+    image-term program, the padding holds no mass, and the results are the unpadded ones."""
+
+    cases = [_case(seed=20260919), _case(seed=20261006)]
+
+    def runs(quantum):
+        monkeypatch.setattr(rlp, "_POSTERIOR_BIN_QUANTUM", quantum)
+        programs = []
+        results = []
+        for case in cases:
+            results.append(_run(case, monkeypatch=monkeypatch))
+            programs.append(rp._accumulate_chunk_image_terms._cache_size())
+        return results, programs
+
+    unpadded, unpadded_programs = runs(1)
+    # The two layouts use different numbers of posterior bins: unpadded, each compiles its own program.
+    assert unpadded_programs[1] == unpadded_programs[0] + 1
+    padded, padded_programs = runs(4096)
+    # Padded, the second half reuses the first one's program.
+    assert padded_programs[1] == padded_programs[0]
+
+    def rel_l2(a, b):
+        a = np.asarray(a, dtype=np.complex128)
+        b = np.asarray(b, dtype=np.complex128)
+        return float(np.linalg.norm(a - b) / np.linalg.norm(a))
+
+    for got, want in zip(padded, unpadded):
+        assert_matches(np.asarray(got.hard_assignment), np.asarray(want.hard_assignment))
+        assert_matches(
+            np.asarray(got.relion_stats.rotation_posterior_sums),
+            np.asarray(want.relion_stats.rotation_posterior_sums),
+            rtol=1e-6,
+        )
+        # The repeat band of test_resident_local_repeats_itself (float32 BPref atomics).
+        assert rel_l2(got.Ft_y, want.Ft_y) < 1e-6
+
+
+def test_expanded_posterior_bins_ignore_the_padding():
+    """The padded tail of the device sums is never read into the dense histogram."""
+
+    bins = np.array([3, 7, 11])
+    sums = np.array([1.0, 2.0, 3.0, 99.0, 99.0])
+    dense = rlp._expand_posterior_bins(sums, bins, 12)
+    assert_matches(dense[bins], sums[:3])
+    assert not np.delete(dense, bins).any()
+    assert rlp._posterior_bin_capacity(5785, n_classes=1) == 8192
+    assert rlp._posterior_bin_capacity(4096, n_classes=1) == 4096
+    assert rlp._posterior_bin_capacity(5785, n_classes=2) == 5785
+
+
 def test_rotation_posterior_is_accumulated_over_the_used_bins():
     """MS2 box 512's final pass (bench 14684161): a dense device histogram of the layout's
     rotations was 9.60 GiB. The pass accumulates over the bins its rows use and expands

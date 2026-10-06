@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -342,13 +344,22 @@ def half_translation_phase_table(translations, image_shape, dtype=jnp.float32):
     packed Nyquist row carries RELION's label rather than RECOVAR's centered
     one.
     """
-    lattice_half = relion_half_translation_lattice(image_shape)
     real_dtype = jnp.float64 if jnp.dtype(dtype) == jnp.dtype(jnp.float64) else jnp.float32
+    return _half_translation_phase_table(
+        jnp.asarray(translations), tuple(int(v) for v in image_shape), np.dtype(real_dtype).name
+    )
+
+
+@partial(jax.jit, static_argnames=("image_shape", "real_dtype"))
+def _half_translation_phase_table(translations, image_shape, real_dtype):
+    # One program per (translations, image shape): eager, the lattice and the
+    # phases were about twenty single-primitive programs per new image size.
+    real_dtype = jnp.dtype(real_dtype)
     complex_dtype = jnp.complex128 if real_dtype == jnp.float64 else jnp.complex64
     phase_arg = jnp.einsum(
         "td,pd->tp",
-        jnp.asarray(translations, dtype=real_dtype),
-        jnp.asarray(lattice_half, dtype=real_dtype),
+        translations.astype(real_dtype),
+        relion_half_translation_lattice(image_shape).astype(real_dtype),
         precision=jax.lax.Precision.HIGHEST,
     )
     return jnp.exp(jnp.asarray(-2j * jnp.pi, dtype=complex_dtype) * phase_arg)

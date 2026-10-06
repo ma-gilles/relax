@@ -361,8 +361,6 @@ def _compute_sparse_pass2_windowed_projections_block(
             pixel_indices=pixel_indices,
             **projection_kwargs,
         )
-        if pixel_indices is not None:
-            proj_chunk = with_zero_column(proj_chunk)
         if score_proj is not None:
             complex_dtype = score_proj.dtype
             abs2_dtype = None if recon_abs2 is None else recon_abs2.dtype
@@ -378,7 +376,12 @@ def _compute_sparse_pass2_windowed_projections_block(
         rows = jnp.asarray(output_row_ids[start:stop])
         if recon_indices is None:
             score_proj = _place_score_window_block(
-                score_proj, proj_chunk, score_indices, rows, output_complex_dtype=complex_dtype
+                score_proj,
+                proj_chunk,
+                score_indices,
+                rows,
+                output_complex_dtype=complex_dtype,
+                zero_column=pixel_indices is not None,
             )
         else:
             score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
@@ -391,6 +394,7 @@ def _compute_sparse_pass2_windowed_projections_block(
                 rows,
                 output_complex_dtype=complex_dtype,
                 output_abs2_dtype=abs2_dtype,
+                zero_column=pixel_indices is not None,
             )
         del proj_chunk
     return score_proj, recon_proj, recon_abs2
@@ -543,8 +547,7 @@ def window_union_applies(window_union, *, relion_projector: bool, projection_kwa
     )
 
 
-@jax.jit
-def with_zero_column(proj_block):
+def _with_zero_column(proj_block):
     """``proj_block`` with one zero column appended, the value of every out-of-crop window pixel."""
 
     return jnp.pad(proj_block, ((0, 0), (0, 1)))
@@ -556,14 +559,20 @@ def _place_rows(values, block, rows):
     return values.at[rows].set(block, mode="drop", indices_are_sorted=True, unique_indices=True)
 
 
-@partial(jax.jit, static_argnames=("output_complex_dtype",), donate_argnums=(0,))
-def _place_score_window_block(score_proj, proj_block, score_indices, rows, *, output_complex_dtype):
-    """Write one projector block's score window into ``score_proj`` (donated) at ``rows``."""
+@partial(jax.jit, static_argnames=("output_complex_dtype", "zero_column"), donate_argnums=(0,))
+def _place_score_window_block(score_proj, proj_block, score_indices, rows, *, output_complex_dtype, zero_column):
+    """Write one projector block's score window into ``score_proj`` (donated) at ``rows``.
 
+    ``zero_column``: ``proj_block`` holds the window union's pixels, and index
+    ``n_union`` of ``score_indices`` reads the zero of an out-of-crop pixel.
+    """
+
+    if zero_column:
+        proj_block = _with_zero_column(proj_block)
     return _place_rows(score_proj, proj_block[:, score_indices].astype(output_complex_dtype), rows)
 
 
-@partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype"), donate_argnums=(0, 1, 2))
+@partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype", "zero_column"), donate_argnums=(0, 1, 2))
 def _place_windowed_projection_block(
     score_proj,  # [C_R, N_score], donated
     recon_proj,  # [C_R, N_recon], donated
@@ -575,8 +584,15 @@ def _place_windowed_projection_block(
     *,
     output_complex_dtype,
     output_abs2_dtype,
+    zero_column,
 ):
-    """Window one projector block and write it, with ``|recon|^2``, into ``rows``."""
+    """Window one projector block and write it, with ``|recon|^2``, into ``rows``.
+
+    ``zero_column`` as for :func:`_place_score_window_block`.
+    """
+
+    if zero_column:
+        proj_block = _with_zero_column(proj_block)
 
     score_block = proj_block[:, score_indices].astype(output_complex_dtype)
     recon_block = proj_block[:, recon_indices].astype(output_complex_dtype)

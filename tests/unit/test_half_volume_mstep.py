@@ -264,6 +264,32 @@ def test_enforce_relion_x0_hermitian_uses_centered_odd_grid_partner():
     assert np.max(np.abs(unshifted_plane - expected_plane)) > 1e-3
 
 
+def test_device_pair_programs_match_the_single_accumulator_route(monkeypatch):
+    """The y/ctf pair programs give each accumulator's single-array result."""
+
+    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
+    monkeypatch.setenv("RELAX_RELION_X_HALF_FULL_HOST", "0")
+    monkeypatch.setattr(half_volume_mstep, "_large_relion_x_half_host_x0_enabled", lambda full_voxels: False)
+    volume_shape = (9, 9, 9)
+    half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
+    Ft_y = jnp.asarray(_random_complex(half_shape, seed=93)).reshape(-1)
+    Ft_ctf = jnp.asarray(np.abs(_random_complex(half_shape, seed=94))).reshape(-1)
+
+    got_y, got_ctf = half_volume_mstep.enforce_half_volume_x0(
+        Ft_y, Ft_ctf, volume_shape, logger=logging.getLogger(__name__), label="unit"
+    )
+    for got, single in ((got_y, Ft_y), (got_ctf, Ft_ctf)):
+        expected = half_volume_mstep.enforce_relion_half_volume_x0_hermitian(single, volume_shape)
+        assert got.dtype == expected.dtype
+        assert_matches(got, expected)
+
+    full_y, full_ctf = half_volume_mstep.relion_x_half_accumulators_to_public_layout(got_y, got_ctf, volume_shape)
+    for got, single in ((full_y, got_y), (full_ctf, got_ctf)):
+        expected = half_volume_mstep.relion_x_half_volume_to_public_layout(single, volume_shape)
+        assert got.dtype == expected.dtype
+        assert_matches(got, expected)
+
+
 def test_enforce_half_volume_x0_can_force_host_path(monkeypatch):
     volume_shape = (6, 6, 6)
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
@@ -282,7 +308,7 @@ def test_enforce_half_volume_x0_can_force_host_path(monkeypatch):
     def fail_device_enforcement(*args, **kwargs):
         raise AssertionError("device x0 enforcement should not run for large-grid host path")
 
-    monkeypatch.setattr(half_volume_mstep, "enforce_relion_half_volume_x0_hermitian", fail_device_enforcement)
+    monkeypatch.setattr(half_volume_mstep, "_enforce_relion_half_volume_x0_hermitian_pair_jit", fail_device_enforcement)
 
     got_y, got_ctf = half_volume_mstep.enforce_half_volume_x0(
         jnp.asarray(Ft_y).reshape(-1),
@@ -1326,7 +1352,7 @@ def test_enforce_half_volume_x0_uses_host_path_for_large_grids(monkeypatch):
     def fail_device_enforcement(*args, **kwargs):
         raise AssertionError("device x0 enforcement should not run for large-grid host path")
 
-    monkeypatch.setattr(half_volume_mstep, "enforce_relion_half_volume_x0_hermitian", fail_device_enforcement)
+    monkeypatch.setattr(half_volume_mstep, "_enforce_relion_half_volume_x0_hermitian_pair_jit", fail_device_enforcement)
 
     got_y, got_ctf = half_volume_mstep.enforce_half_volume_x0(
         jnp.asarray(Ft_y).reshape(-1),

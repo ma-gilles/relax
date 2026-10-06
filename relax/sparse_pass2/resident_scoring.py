@@ -66,7 +66,6 @@ from relax.sparse_pass2.sparse_pass2_projection_blocks import (
     _place_score_window_block,
     _place_windowed_projection_block,
     window_union_applies,
-    with_zero_column,
 )
 from relax.sparse_pass2.sparse_pass2_scoring import (
     _relion_cuda_fine_normalized_cc_score,
@@ -1295,8 +1294,6 @@ def project_resident_live_rows(
             pixel_indices=pixel_indices,
             **projection_kwargs,
         )
-        if pixel_indices is not None:
-            proj_block = with_zero_column(proj_block)
         rows = (
             jnp.arange(start, start + int(proj_block.shape[0]), dtype=jnp.int32)
             if place_rows is None
@@ -1304,7 +1301,12 @@ def project_resident_live_rows(
         )
         if recon_indices is None:
             score_proj = _place_score_window_block(
-                score_proj, proj_block, score_indices, rows, output_complex_dtype=output_complex_dtype
+                score_proj,
+                proj_block,
+                score_indices,
+                rows,
+                output_complex_dtype=output_complex_dtype,
+                zero_column=pixel_indices is not None,
             )
         else:
             score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
@@ -1317,6 +1319,7 @@ def project_resident_live_rows(
                 rows,
                 output_complex_dtype=output_complex_dtype,
                 output_abs2_dtype=output_abs2_dtype,
+                zero_column=pixel_indices is not None,
             )
         del proj_block
     return score_proj, recon_proj, recon_abs2, n_projected

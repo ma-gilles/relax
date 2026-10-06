@@ -151,9 +151,8 @@ def enforce_half_volume_x0(
             enforce_relion_half_volume_x0_hermitian_host(Ft_y, recon_volume_shape),
             enforce_relion_half_volume_x0_hermitian_host(Ft_ctf, recon_volume_shape),
         )
-    return (
-        enforce_relion_half_volume_x0_hermitian(Ft_y, recon_volume_shape),
-        enforce_relion_half_volume_x0_hermitian(Ft_ctf, recon_volume_shape),
+    return _enforce_relion_half_volume_x0_hermitian_pair_jit(
+        Ft_y, Ft_ctf, tuple(int(value) for value in recon_volume_shape)
     )
 
 
@@ -316,6 +315,14 @@ def _relion_x_half_volume_to_full_device(volume_flat, recon_volume_shape):
     return relion_full.transpose(2, 1, 0).reshape(-1)
 
 
+@partial(jax.jit, static_argnames=("recon_volume_shape",))
+def _relion_x_half_volume_pair_to_full_device(Ft_y, Ft_ctf, recon_volume_shape):
+    return (
+        _relion_x_half_volume_to_full_device(Ft_y, recon_volume_shape),
+        _relion_x_half_volume_to_full_device(Ft_ctf, recon_volume_shape),
+    )
+
+
 def relion_x_half_volume_to_full(volume_flat, recon_volume_shape, *, force_host: bool = False):
     """Expand a RELION-layout ``(z, y, xhalf)`` accumulator to RECOVAR full layout.
 
@@ -371,10 +378,18 @@ def relion_x_half_accumulators_to_public_layout(
 ):
     """Convert RELION ``(z, y, xhalf)`` accumulators for downstream consumers."""
 
-    return (
-        relion_x_half_volume_to_public_layout(Ft_y, recon_volume_shape, force_host=force_host),
-        relion_x_half_volume_to_public_layout(Ft_ctf, recon_volume_shape, force_host=force_host),
-    )
+    full_voxels = int(np.prod(recon_volume_shape))
+    if (
+        force_host
+        or _large_relion_x_half_to_native_half_enabled(full_voxels)
+        or _large_relion_x_half_full_host_enabled(full_voxels)
+    ):
+        return (
+            relion_x_half_volume_to_public_layout(Ft_y, recon_volume_shape, force_host=force_host),
+            relion_x_half_volume_to_public_layout(Ft_ctf, recon_volume_shape, force_host=force_host),
+        )
+    # Both accumulators in one program: two per shape compiled at every new size.
+    return _relion_x_half_volume_pair_to_full_device(Ft_y, Ft_ctf, tuple(int(v) for v in recon_volume_shape))
 
 
 def crop_relion_x_half_accumulator(
@@ -564,6 +579,15 @@ def _enforce_relion_half_volume_x0_hermitian_jit(volume_flat, full_volume_shape)
     self_partner = (p0[:, None] == i0[:, None]) & (p1[None, :] == i1[None, :])
     plane = jnp.where(self_partner, plane, summed)
     return vol.at[:, :, 0].set(plane).reshape(-1)
+
+
+@partial(jax.jit, static_argnames=("full_volume_shape",))
+def _enforce_relion_half_volume_x0_hermitian_pair_jit(Ft_y, Ft_ctf, full_volume_shape):
+    # Both accumulators in one program: two per shape compiled at every new size.
+    return (
+        _enforce_relion_half_volume_x0_hermitian_jit(Ft_y, full_volume_shape),
+        _enforce_relion_half_volume_x0_hermitian_jit(Ft_ctf, full_volume_shape),
+    )
 
 
 def enforce_relion_half_volume_x0_hermitian_host(volume_flat, full_volume_shape):

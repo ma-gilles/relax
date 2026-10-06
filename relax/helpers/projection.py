@@ -1291,15 +1291,24 @@ def compute_norm_residual_per_image(
 def relion_scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells=None):
     """Return RELION's ``data_vs_prior > 3`` scale-statistic pixel mask."""
 
-    indices = jnp.asarray(shell_indices, dtype=jnp.int32).reshape(-1)
+    indices = jnp.asarray(shell_indices)
     if n_shells is None:
         n_shells = int(np.asarray(data_vs_prior).size) if data_vs_prior is not None else int(np.max(indices))
-    valid_shell = (indices >= 0) & (indices < int(n_shells))
+    dvp = None if data_vs_prior is None else jnp.asarray(data_vs_prior)
+    if dvp is not None and dvp.size == 0:
+        return jnp.zeros((int(indices.size),), dtype=bool)
+    return _scale_correction_pixel_mask(dvp, indices, n_shells=int(n_shells))
+
+
+@partial(jax.jit, static_argnames=("n_shells",))
+def _scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells):
+    # One program per pixel count: eager, the mask was about ten single-primitive
+    # programs compiled again at every new current size.
+    indices = shell_indices.astype(jnp.int32).reshape(-1)
+    valid_shell = (indices >= 0) & (indices < n_shells)
     if data_vs_prior is None:
         return valid_shell
-    dvp = jnp.asarray(data_vs_prior).reshape(-1)
-    if dvp.size == 0:
-        return jnp.zeros_like(indices, dtype=bool)
+    dvp = data_vs_prior.reshape(-1)
     safe_indices = jnp.clip(indices, 0, dvp.size - 1)
     return valid_shell & (indices < dvp.size) & (dvp[safe_indices] > 3.0)
 

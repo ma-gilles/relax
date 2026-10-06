@@ -504,32 +504,64 @@ def _require_supported(condition: bool, message: str) -> None:
         )
 
 
-@partial(jax.jit, static_argnames=("buffer_rows",))
-def _start_buffers(batch: dict, *, buffer_rows: int) -> dict:
-    """The capacity buffers of every operand, zero, with the first preparation batch at row 0.
+@partial(
+    jax.jit,
+    static_argnames=(
+        "mask_dc",
+        "score_real_dtype",
+        "score_complex_dtype",
+        "acc_real_dtype",
+        "native_fft_size",
+        "buffer_rows",
+    ),
+    donate_argnums=(0,),
+)
+def _window_batch_into_buffers(
+    buffers: dict | None,
+    window_inputs: "_BatchWindowInputs",
+    extra_arrays: dict,
+    start,
+    *,
+    mask_dc: bool,
+    score_real_dtype,
+    score_complex_dtype,
+    acc_real_dtype,
+    native_fft_size: int | None,
+    buffer_rows: int,
+) -> dict:
+    """One preparation batch windowed and written into every operand's capacity buffer at row ``start``.
 
-    One program for all the operands of a (capacity, batch size) pair; allocating and placing
-    each operand by itself was two programs per operand and capacity (about 70 small compiles
-    in a 200-iteration VDAM run, census 14974371).
+    The window gather and cast (:func:`_batch_window_operands`), the native-unit
+    division of the score operand when ``native_fft_size`` is given, and the
+    placement are one program per (capacity, batch size) pair; they were four.
+    ``buffers is None`` on the first batch: the buffers start at zero.
+    ``start`` is a traced scalar, so one program serves every later batch.
     """
 
-    return {
-        name: jax.lax.dynamic_update_slice_in_dim(
-            jnp.zeros((buffer_rows,) + value.shape[1:], dtype=value.dtype), value, 0, axis=0
-        )
-        for name, value in batch.items()
-    }
+    batch = _batch_window_operands(
+        window_inputs,
+        mask_dc=mask_dc,
+        score_real_dtype=score_real_dtype,
+        score_complex_dtype=score_complex_dtype,
+        acc_real_dtype=acc_real_dtype,
+    )
+    if native_fft_size is not None:
+        batch["score_input"] = _relion_native_fine_units(batch["score_input"], native_fft_size)
+    batch.update(extra_arrays)
+    return _place_batch(buffers, batch, start, buffer_rows=buffer_rows)
 
 
-@partial(jax.jit, donate_argnums=(0,))
-def _place_batches(buffers: dict, batch: dict, start) -> dict:
-    """Write one preparation batch of every operand into its capacity buffer at runtime row ``start``.
+def _place_batch(buffers: dict | None, batch: dict, start, *, buffer_rows: int) -> dict:
+    """Every operand of ``batch`` written into its capacity buffer at row ``start``; pure data movement.
 
-    Pure data movement. ``start`` is a traced scalar, so one program serves every batch of a
-    (capacity, batch size) pair; a concatenation of the batches was keyed on their count, which
-    follows the subset size.
+    ``buffers is None`` starts ``buffer_rows``-row buffers at zero. Traced inside
+    :func:`_window_batch_into_buffers`.
     """
 
+    if buffers is None:
+        buffers = {
+            name: jnp.zeros((buffer_rows,) + value.shape[1:], dtype=value.dtype) for name, value in batch.items()
+        }
     return {
         name: jax.lax.dynamic_update_slice_in_dim(buffers[name], value, start, axis=0)
         for name, value in batch.items()
@@ -876,49 +908,38 @@ def prepare_resident_half_operands(
                     zero_dc=half_spectrum_scoring,
                 )
 
-            batch_arrays = _batch_window_operands(
-                _BatchWindowInputs(
-                    ctf2_over_nv_half=score_corr_img_half,
-                    sparse_score_input_half=unshifted.sparse_score_input_half,
-                    processed_score_half_for_noise=unshifted.processed_score_half_for_noise,
-                    recon_input_half=(
-                        unshifted.recon_bpref_input_half
-                        if relion_exact_bpref_operands
-                        else unshifted.recon_weighted_half
-                    ),
-                    weighted_ctf_half=(
-                        unshifted.bpref_weighted_ctf_half if relion_exact_bpref_operands else None
-                    ),
-                    score_weighted_half=unshifted.score_weighted_half,
-                    ctf2_over_nv_recon_half=unshifted.ctf2_over_nv_recon_half,
-                    ctf_half_rfloat=unshifted.ctf_half_rfloat,
-                    bpref_ctf2_over_nv_recon_half=(
-                        None if unshifted.ctf_premultiplied is None else unshifted.bpref_ctf2_over_nv_half
-                    ),
-                    dc_mask=dc_mask,
-                    score_indices=score_indices,
-                    recon_indices=recon_indices,
-                    rect_indices=rect_indices,
+            window_inputs = _BatchWindowInputs(
+                ctf2_over_nv_half=score_corr_img_half,
+                sparse_score_input_half=unshifted.sparse_score_input_half,
+                processed_score_half_for_noise=unshifted.processed_score_half_for_noise,
+                recon_input_half=(
+                    unshifted.recon_bpref_input_half
+                    if relion_exact_bpref_operands
+                    else unshifted.recon_weighted_half
                 ),
-                mask_dc=bool(half_spectrum_scoring and not unshifted.use_normalized_cc),
-                score_real_dtype=jnp.dtype(score_real_dtype),
-                score_complex_dtype=jnp.dtype(score_complex_dtype),
-                acc_real_dtype=jnp.dtype(unshifted.acc_real_dtype),
+                weighted_ctf_half=(
+                    unshifted.bpref_weighted_ctf_half if relion_exact_bpref_operands else None
+                ),
+                score_weighted_half=unshifted.score_weighted_half,
+                ctf2_over_nv_recon_half=unshifted.ctf2_over_nv_recon_half,
+                ctf_half_rfloat=unshifted.ctf_half_rfloat,
+                bpref_ctf2_over_nv_recon_half=(
+                    None if unshifted.ctf_premultiplied is None else unshifted.bpref_ctf2_over_nv_half
+                ),
+                dc_mask=dc_mask,
+                score_indices=score_indices,
+                recon_indices=recon_indices,
+                rect_indices=rect_indices,
             )
-            if relion_native_fine_units:
-                # The kernel translates this unshifted image in-kernel, so the pass
-                # scores translate(image / N**2); the compact engine divides the
-                # already translated image. Each is one correctly rounded division,
-                # so the two agree to rounding, not bit for bit.
-                batch_arrays["score_input"] = _relion_native_fine_units(
-                    batch_arrays["score_input"], native_fft_size
-                )
+            # The per-image terms that do not read the window; they join the
+            # batch's operands in the placement program below.
+            extra_arrays = {}
             if score_mode == "normalized_cc":
-                batch_arrays["cc_half_batch_norm"] = (
+                extra_arrays["cc_half_batch_norm"] = (
                     0.5 * jnp.reshape(unshifted.batch_norm, (batch_size,)).real
                 ).astype(jnp.float32)
 
-            batch_arrays["image_power_shells"] = image_power_shells(
+            extra_arrays["image_power_shells"] = image_power_shells(
                 unshifted.processed_score_half_for_noise,
                 noise_shell_indices_half,
                 shell_count=int(n_noise_shells),
@@ -933,21 +954,38 @@ def prepare_resident_half_operands(
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             )
             if highres_xi2_half is not None:
-                batch_arrays["highres_xi2_half"] = highres_xi2_half
+                extra_arrays["highres_xi2_half"] = highres_xi2_half
             if relion_norm_high_shell is not None:
-                batch_arrays["relion_norm_high_shell"] = relion_norm_high_shell
+                extra_arrays["relion_norm_high_shell"] = relion_norm_high_shell
 
+            window_names = {
+                "recon_weight": window_inputs.weighted_ctf_half is not None,
+                "direct_ctf_rfloat_recon": window_inputs.ctf_half_rfloat is not None,
+                "bpref_ctf2_over_nv_recon": window_inputs.bpref_ctf2_over_nv_recon_half is not None,
+            }
             for name, flag in optional_available.items():
-                present = name in batch_arrays
+                present = window_names.get(name, False) or name in extra_arrays
                 if flag is None:
                     optional_available[name] = present
                 elif flag != present:
                     raise ValueError(f"{name} availability changed between image batches")
 
-            if not buffers:
-                buffers = _start_buffers(batch_arrays, buffer_rows=int(buffer_rows))
-            else:
-                buffers = _place_batches(buffers, batch_arrays, np.int32(start))
+            buffers = _window_batch_into_buffers(
+                buffers or None,
+                window_inputs,
+                extra_arrays,
+                np.int32(start),
+                mask_dc=bool(half_spectrum_scoring and not unshifted.use_normalized_cc),
+                score_real_dtype=jnp.dtype(score_real_dtype),
+                score_complex_dtype=jnp.dtype(score_complex_dtype),
+                acc_real_dtype=jnp.dtype(unshifted.acc_real_dtype),
+                # The kernel translates this unshifted image in-kernel, so the pass
+                # scores translate(image / N**2); the compact engine divides the
+                # already translated image. Each is one correctly rounded division,
+                # so the two agree to rounding, not bit for bit.
+                native_fft_size=native_fft_size if relion_native_fine_units else None,
+                buffer_rows=int(buffer_rows),
+            )
             fetched_order.append(fetched_indices)
 
     fetched_all = np.concatenate(fetched_order)

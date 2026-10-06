@@ -769,23 +769,30 @@ def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
 
     row_bytes = flat_block.shape[1] * np.dtype(np.float32).itemsize
     assert _adjoint_block_chunk_rows(flat_block, max_block_bytes=4 * row_bytes + 1) == 4
-    actual = _accumulate_adjoint_block_chunked(
-        flat_block,
-        rotations,
-        volume,
-        use_windowed_adjoint=False,
-        image_shape=(8, 8),
-        volume_shape=(8, 8, 8),
-        disc_type="linear_interp",
-        half_image=True,
-        half_volume=False,
-        max_r=None,
-        relion_x_half=False,
-        max_block_bytes=4 * row_bytes + 1,
-        log_label="test",
-    )
+    # The chunks run in one program per chunk shape, which traces the fake: start and end without
+    # a program compiled around another adjoint.
+    sparse_pass2_adjoint._adjoint_rows.clear_cache()
+    try:
+        actual = _accumulate_adjoint_block_chunked(
+            flat_block,
+            rotations,
+            volume,
+            use_windowed_adjoint=False,
+            image_shape=(8, 8),
+            volume_shape=(8, 8, 8),
+            disc_type="linear_interp",
+            half_image=True,
+            half_volume=False,
+            max_r=None,
+            relion_x_half=False,
+            max_block_bytes=4 * row_bytes + 1,
+            log_label="test",
+        )
+    finally:
+        sparse_pass2_adjoint._adjoint_rows.clear_cache()
 
-    assert calls == [4, 4, 2]
+    # Rows 0-3 and 4-7 share the four-row program; rows 8-9 trace the second.
+    assert calls == [4, 2]
     np.testing.assert_allclose(np.asarray(actual), np.asarray(volume + jnp.sum(flat_block)))
 
 

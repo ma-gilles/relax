@@ -128,7 +128,7 @@ def test_the_dense_batch_preparation_consumes_the_relabelled_table():
 
     source = inspect.getsource(preprocessing._dense_batch_half_inputs)
     assert "half_translation_phase_table(" in source
-    table_source = inspect.getsource(preprocessing.half_translation_phase_table)
+    table_source = inspect.getsource(preprocessing._half_translation_phase_table)
     assert "relion_half_translation_lattice(image_shape)" in table_source
     assert "get_k_coordinate_of_each_pixel_half" not in table_source
 

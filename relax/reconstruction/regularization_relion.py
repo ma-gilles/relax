@@ -509,6 +509,12 @@ def _padded_shell_sums_device(
     return shell_sum, shell_count
 
 
+@jax.jit
+def _real_float64(weight):
+    # One program per weight shape: eager, the real part and the cast were two.
+    return weight.real.astype(jnp.float64)
+
+
 def _compute_relion_weight_shell_stats(
     weight,
     volume_shape,
@@ -577,7 +583,7 @@ def _compute_relion_weight_shell_stats(
     force_host_shell_stats = (
         padding_factor > 1 and weight_size in {full_size, half_size} and _shell_stats_on_host(weight_size)
     )
-    weight_arr = np.asarray(weight).real if force_host_shell_stats else jnp.asarray(weight).real.astype(jnp.float64)
+    weight_arr = np.asarray(weight).real if force_host_shell_stats else _real_float64(jnp.asarray(weight))
     native_layout = False
     if weight_size == full_size:
         is_half_layout = False
@@ -1567,7 +1573,12 @@ def compute_data_vs_prior(
     if current_size is not None:
         shell_limit = min(int(current_size) // 2, int(data_vs_prior.shape[0]) - 1)
         if shell_limit + 1 < int(data_vs_prior.shape[0]):
-            data_vs_prior = data_vs_prior.at[shell_limit + 1 :].set(0)
+            # A traced limit: the slice update compiled again at every new current size.
+            data_vs_prior = jnp.where(
+                jnp.arange(int(data_vs_prior.shape[0])) <= jnp.int32(shell_limit),
+                data_vs_prior,
+                jnp.zeros((), data_vs_prior.dtype),
+            )
     return data_vs_prior
 
 

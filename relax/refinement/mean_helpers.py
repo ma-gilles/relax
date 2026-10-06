@@ -736,6 +736,42 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
     return box, physical_shape
 
 
+def _stable_unregularized_class(vol_shape, padding_factor, accumulator_volume_shape, tau, current_size):
+    """The full-box accumulator shape an unregularized reconstruction runs in, or None.
+
+    Without a prior and without ``current_size`` (the unregularized half maps
+    and class means), the accumulator's own size sets the Wiener mask radius
+    and the floor's clamp shell. Zero-padded to the full-box cube with that
+    size passed as recovar's traced ``logical_accumulator_size``, every
+    iteration's accumulator runs in one program instead of one per size; the
+    padded voxels lie outside the logical support.
+    """
+
+    from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
+    from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
+
+    if tau is not None or current_size is not None or accumulator_volume_shape is None:
+        return None
+    if not _resident_stable_windows_requested():
+        return None
+    logical_shape = tuple(int(v) for v in accumulator_volume_shape)
+    physical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=int(vol_shape[0])))
+    size = logical_shape[0]
+    if len(set(logical_shape)) != 1 or size % 2 == 0 or size >= physical_shape[0]:
+        return None
+    return physical_shape
+
+
+@functools.partial(jax.jit, static_argnames=("logical_shape", "physical_shape"))
+def _pad_accumulators_to_class(Ft_ctf, Ft_y, logical_shape, physical_shape):
+    """Both accumulators zero-padded to the class cube, in one program (eager: four per new size)."""
+
+    return (
+        _pad_accumulator_to_class(Ft_ctf, logical_shape, physical_shape),
+        _pad_accumulator_to_class(Ft_y, logical_shape, physical_shape),
+    )
+
+
 def _pad_accumulator_to_class(values, logical_shape, physical_shape):
     """Zero-pad a centered full or packed-half (x, y, z>=0) accumulator to a larger odd cube."""
 
@@ -799,6 +835,9 @@ def _reconstruct_volume_eager(
     stable_class = _stable_reconstruction_class(
         current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d
     )
+    unregularized_class = _stable_unregularized_class(
+        vol_shape, padding_factor, accumulator_volume_shape, tau, current_size
+    )
     postprocess_args = (Ft_ctf, Ft_y, vol_shape, padding_factor)
     postprocess_kwargs = dict(
         tau=tau,
@@ -838,8 +877,12 @@ def _reconstruct_volume_eager(
         if stable_class is not None:
             physical_size, physical_shape = stable_class
             postprocess_args = (
-                _pad_accumulator_to_class(Ft_ctf, accumulator_volume_shape, physical_shape),
-                _pad_accumulator_to_class(Ft_y, accumulator_volume_shape, physical_shape),
+                *_pad_accumulators_to_class(
+                    Ft_ctf,
+                    Ft_y,
+                    tuple(int(v) for v in accumulator_volume_shape),
+                    tuple(int(v) for v in physical_shape),
+                ),
                 vol_shape,
                 padding_factor,
             )
@@ -848,6 +891,18 @@ def _reconstruct_volume_eager(
                 current_size=int(physical_size),
                 accumulator_volume_shape=physical_shape,
                 logical_current_size=jnp.int32(int(current_size)),
+            )
+        elif unregularized_class is not None:
+            logical_shape = tuple(int(v) for v in accumulator_volume_shape)
+            postprocess_args = (
+                *_pad_accumulators_to_class(Ft_ctf, Ft_y, logical_shape, unregularized_class),
+                vol_shape,
+                padding_factor,
+            )
+            postprocess_kwargs = dict(
+                postprocess_kwargs,
+                accumulator_volume_shape=unregularized_class,
+                logical_accumulator_size=jnp.int32(logical_shape[0]),
             )
         result = relion_functions.post_process_from_filter_v2(
             *postprocess_args,

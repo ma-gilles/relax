@@ -6,6 +6,10 @@ The chunked adjoint-block accumulation over hypothesis rows that the resident M-
 from __future__ import annotations
 
 import logging
+from functools import partial
+
+import jax
+import jax.numpy as jnp
 
 from relax.helpers.adjoint import ReferenceSphereClip
 from relax.helpers.adjoint import adjoint_slice_volume_half as _adjoint_slice_volume_half
@@ -110,33 +114,89 @@ def _accumulate_adjoint_block_chunked(
         )
 
     for start in range(0, n_rows, max_rows):
-        stop = min(start + max_rows, n_rows)
-        if use_windowed_adjoint:
-            volume = _adjoint_slice_volume_windowed(
-                flat_block[start:stop],
-                window_indices,
-                flat_rotations[start:stop],
-                volume,
-                image_shape,
-                volume_shape,
-                disc_type,
-                half_image,
-                half_volume,
-                max_r,
-                relion_x_half,
-                runtime_max_r,
-            )
-        else:
-            volume = _adjoint_slice_volume_half(
-                flat_block[start:stop],
-                flat_rotations[start:stop],
-                volume,
-                image_shape,
-                volume_shape,
-                disc_type,
-                half_image,
-                half_volume,
-            )
+        volume = _adjoint_rows(
+            flat_block,
+            flat_rotations,
+            jnp.int32(start),
+            volume,
+            window_indices,
+            runtime_max_r,
+            rows=min(start + max_rows, n_rows) - start,
+            use_windowed_adjoint=use_windowed_adjoint,
+            image_shape=image_shape,
+            volume_shape=volume_shape,
+            disc_type=disc_type,
+            half_image=half_image,
+            half_volume=half_volume,
+            max_r=max_r,
+            relion_x_half=relion_x_half,
+        )
     return volume
 
 
+@partial(
+    jax.jit,
+    static_argnames=(
+        "rows",
+        "use_windowed_adjoint",
+        "image_shape",
+        "volume_shape",
+        "disc_type",
+        "half_image",
+        "half_volume",
+        "max_r",
+        "relion_x_half",
+    ),
+)
+def _adjoint_rows(
+    flat_block,
+    flat_rotations,
+    start,
+    volume,
+    window_indices,
+    runtime_max_r,
+    *,
+    rows,
+    use_windowed_adjoint,
+    image_shape,
+    volume_shape,
+    disc_type,
+    half_image,
+    half_volume,
+    max_r,
+    relion_x_half,
+):
+    """One chunk of rows ``start : start + rows`` adjoint-sliced into ``volume``.
+
+    The row slices are inside the program: taken eagerly, each was a program per
+    chunk shape, compiled again at every new current size. ``start + rows`` never
+    passes the end, so the slice is never clamped.
+    """
+
+    block = jax.lax.dynamic_slice_in_dim(flat_block, start, rows, axis=0)
+    rotations = jax.lax.dynamic_slice_in_dim(flat_rotations, start, rows, axis=0)
+    if use_windowed_adjoint:
+        return _adjoint_slice_volume_windowed(
+            block,
+            window_indices,
+            rotations,
+            volume,
+            image_shape,
+            volume_shape,
+            disc_type,
+            half_image,
+            half_volume,
+            max_r,
+            relion_x_half,
+            runtime_max_r,
+        )
+    return _adjoint_slice_volume_half(
+        block,
+        rotations,
+        volume,
+        image_shape,
+        volume_shape,
+        disc_type,
+        half_image,
+        half_volume,
+    )

@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
+import jax
 import jax.numpy as jnp
 
 from relax.sparse_pass2 import resident_operands as ro
@@ -349,11 +351,14 @@ def test_batch_window_operands_issue_no_eager_dispatch():
 # ------------------------------------------- place batches and reorder ----
 
 
+_PLACE_BATCH = jax.jit(ro._place_batch, static_argnames=("buffer_rows",))
+
+
 def _place_all(parts, rows):
-    buffers = ro._start_buffers({"x": parts[0]}, buffer_rows=rows)
+    buffers = _PLACE_BATCH(None, {"x": parts[0]}, np.int32(0), buffer_rows=rows)
     start = parts[0].shape[0]
     for part in parts[1:]:
-        buffers = ro._place_batches(buffers, {"x": part}, np.int32(start))
+        buffers = _PLACE_BATCH(buffers, {"x": part}, np.int32(start), buffer_rows=rows)
         start += part.shape[0]
     return buffers["x"]
 
@@ -368,41 +373,64 @@ def test_placed_batches_reordered_match_the_concatenation():
     placed = ro._reorder_rows(_place_all(parts, capacity), jnp.asarray(np.r_[reorder, 10, 11]))
     reference = jnp.concatenate(list(parts), axis=0)[jnp.asarray(reorder)]
     assert placed.shape == (capacity, 3)
-    assert _same(placed[:10], reference)
+    assert_matches(placed[:10], reference, strict=True)
 
 
-def test_batch_placement_and_reorder_issue_no_eager_dispatch():
-    rng = np.random.default_rng(8)
-    parts = tuple(jnp.asarray(rng.standard_normal((3, 2)), dtype=jnp.float32) for _ in range(4))
-    reorder = jnp.asarray(rng.permutation(12), dtype=jnp.int64)
-    ro._reorder_rows(_place_all(parts, 12), reorder)
-    with _DispatchCounter() as folded:
-        ro._reorder_rows(_place_all(parts, 12), reorder)
-    assert folded.count == 0, folded.by_primitive
+_WINDOW_KWARGS = dict(
+    mask_dc=True,
+    score_real_dtype=jnp.dtype(jnp.float32),
+    score_complex_dtype=jnp.dtype(jnp.complex64),
+    acc_real_dtype=jnp.dtype(jnp.float32),
+)
 
 
-def test_every_operand_of_a_batch_is_placed_by_one_program():
-    """Operands of different widths and dtypes share the start and the place programs."""
+def _window_into_buffers(batches, *, native_fft_size=None, rows=12):
+    buffers = None
+    for index, (arrays, extra) in enumerate(batches):
+        buffers = ro._window_batch_into_buffers(
+            buffers,
+            arrays,
+            extra,
+            np.int32(4 * index),
+            **_WINDOW_KWARGS,
+            native_fft_size=native_fft_size,
+            buffer_rows=rows,
+        )
+    return buffers
+
+
+@pytest.mark.parametrize("native_fft_size", [None, 121])
+def test_a_batch_is_windowed_and_placed_by_one_program(native_fft_size):
+    """Every operand of every batch, extra per-image terms included: one program for the first batch, one after."""
+
+    from relax.sparse_pass2.sparse_pass2_scoring import _relion_native_fine_units
 
     rng = np.random.default_rng(9)
-
-    def batch():
-        return {
-            "wide": jnp.asarray(rng.standard_normal((3, 5)), dtype=jnp.float32),
-            "narrow": jnp.asarray(rng.standard_normal((3, 2)) + 1j, dtype=jnp.complex64),
-            "flat": jnp.asarray(rng.standard_normal(3), dtype=jnp.float64),
-        }
-
-    batches = [batch() for _ in range(3)]
-    start_programs, place_programs = ro._start_buffers._cache_size(), ro._place_batches._cache_size()
-    buffers = ro._start_buffers(batches[0], buffer_rows=12)
-    for index, part in enumerate(batches[1:], start=1):
-        buffers = ro._place_batches(buffers, part, np.int32(3 * index))
-    assert ro._start_buffers._cache_size() == start_programs + 1
-    assert ro._place_batches._cache_size() == place_programs + 1
-    for name in batches[0]:
-        reference = np.concatenate([np.asarray(part[name]) for part in batches], axis=0)
+    batches = [
+        (_window_case(seed=10 + index), {"image_power_shells": jnp.asarray(rng.standard_normal((4, 6)))})
+        for index in range(3)
+    ]
+    programs = ro._window_batch_into_buffers._cache_size()
+    buffers = _window_into_buffers(batches, native_fft_size=native_fft_size)
+    assert ro._window_batch_into_buffers._cache_size() == programs + 2
+    expected = []
+    for arrays, extra in batches:
+        part = dict(ro._batch_window_operands(arrays, **_WINDOW_KWARGS), **extra)
+        if native_fft_size is not None:
+            part["score_input"] = _relion_native_fine_units(part["score_input"], native_fft_size)
+        expected.append(part)
+    assert set(buffers) == set(expected[0])
+    for name in buffers:
+        reference = np.concatenate([np.asarray(part[name]) for part in expected], axis=0)
         placed = np.asarray(buffers[name])
         assert placed.dtype == reference.dtype and placed.shape[0] == 12
-        assert placed[:9].tobytes() == reference.tobytes()
-        assert not placed[9:].any()
+        assert_matches(placed, reference, err_msg=name)
+
+
+def test_batch_windowing_placement_and_reorder_issue_no_eager_dispatch():
+    batches = [(_window_case(seed=20 + index), {}) for index in range(3)]
+    reorder = jnp.asarray(np.random.default_rng(8).permutation(12), dtype=jnp.int64)
+    ro._reorder_rows(_window_into_buffers(batches)["score_input"], reorder)
+    with _DispatchCounter() as folded:
+        ro._reorder_rows(_window_into_buffers(batches)["score_input"], reorder)
+    assert folded.count == 0, folded.by_primitive

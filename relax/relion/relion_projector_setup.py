@@ -219,6 +219,68 @@ def _build_projector_window(
     chunk_bytes = _CHUNK_BYTES if chunk_bytes is None else int(chunk_bytes)
 
     cz = max(1, chunk_bytes // (16 * m * m))
+    cy = max(1, chunk_bytes // (16 * m * n_x))
+    out_size = size if output_radius is None else 2 * (pf * int(output_radius) + 1) + 1
+    off = (size - out_size) // 2
+    if not to_host and out_size != size:
+        raise ValueError("a device slab keeps its window; crop on the host path only")
+    if cz >= n and cy >= size:
+        # One chunk on both axes (boxes up to padded 512): the three stages are one
+        # program, which compiles once per window instead of three times.
+        stages = [
+            (0,)
+            + _window_in_one_program(
+                reference, yz_index, r_max, ori_size=n, padding_factor=pf, size=size, n_x=n_x, pair_once=pair_once
+            )
+        ]
+    else:
+        stages = _window_in_chunks(
+            reference, yz_index, r_max, ori_size=n, padding_factor=pf, size=size, n_x=n_x,
+            cz=cz, cy=cy, to_host=to_host, pair_once=pair_once,
+        )
+    blocks, slab, sums, counts = [], None, None, None
+    for y0, block, block_sums, block_counts in stages:
+        if to_host:
+            if slab is None:
+                slab = np.empty((out_size, out_size, out_size // 2 + 1), dtype=block.dtype)
+            lo, hi = max(y0, off), min(y0 + block.shape[1], off + out_size)
+            if lo < hi:
+                slab[:, lo - off : hi - off] = np.asarray(jax.device_get(block))[
+                    off : off + out_size, lo - y0 : hi - y0, : out_size // 2 + 1
+                ]
+        else:
+            blocks.append(block)
+        sums = block_sums if sums is None else sums + block_sums
+        counts = block_counts if counts is None else counts + block_counts
+    del stages, block
+    if to_host:
+        projector = slab
+    else:
+        projector = blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=1)
+    if pair_once:
+        # A shell that holds only self-mated coefficients (the origin) has a count of 1/2.
+        spectrum = jnp.where(counts > 0, sums / jnp.where(counts > 0, counts, 1), jnp.zeros((), dtype=sums.dtype))
+    else:
+        spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=sums.dtype))
+    return (projector, np.asarray(jax.device_get(spectrum))) if to_host else (projector, spectrum)
+
+
+@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "size", "n_x", "pair_once"))
+def _window_in_one_program(reference, yz_index, r_max, *, ori_size, padding_factor, size, n_x, pair_once):
+    """The window of a reference that fits one chunk on both axes: ``(block, sums, counts)``."""
+
+    fft_size = padding_factor * ori_size
+    xy = _transform_xy(reference, yz_index, fft_size=fft_size, n_x=n_x)
+    block = _transform_z(xy, yz_index, fft_size=fft_size)
+    return _mask_and_shell_power(
+        block, r_max, ori_size=ori_size, padding_factor=padding_factor, size=size, y_start=0, pair_once=pair_once
+    )
+
+
+def _window_in_chunks(reference, yz_index, r_max, *, ori_size, padding_factor, size, n_x, cz, cy, to_host, pair_once):
+    """The window in z-slabs, then y-slabs: yields ``(y_start, block, sums, counts)`` per y-slab."""
+
+    n, m = int(ori_size), int(padding_factor) * int(ori_size)
     if to_host and cz < n:
         # Eager chunks are written into one preallocated array in place, so the
         # xy stage never holds its chunks and their concatenation together (2 x
@@ -233,40 +295,12 @@ def _build_projector_window(
     else:
         xy = [_transform_xy(reference[z0 : z0 + cz], yz_index, fft_size=m, n_x=n_x) for z0 in range(0, n, cz)]
         xy = xy[0] if len(xy) == 1 else jnp.concatenate(xy, axis=0)
-    cy = max(1, chunk_bytes // (16 * m * n_x))
-    out_size = size if output_radius is None else 2 * (pf * int(output_radius) + 1) + 1
-    off = (size - out_size) // 2
-    if not to_host and out_size != size:
-        raise ValueError("a device slab keeps its window; crop on the host path only")
-    blocks, slab, sums, counts = [], None, None, None
     for y0 in range(0, size, cy):
         block = _transform_z(xy[:, y0 : y0 + cy], yz_index, fft_size=m)
-        block, block_sums, block_counts = _mask_and_shell_power(
-            block, r_max, ori_size=n, padding_factor=pf, size=size, y_start=y0, pair_once=pair_once
+        yield (y0,) + _mask_and_shell_power(
+            block, r_max, ori_size=n, padding_factor=padding_factor, size=size, y_start=y0, pair_once=pair_once
         )
-        if to_host:
-            if slab is None:
-                slab = np.empty((out_size, out_size, out_size // 2 + 1), dtype=block.dtype)
-            lo, hi = max(y0, off), min(y0 + block.shape[1], off + out_size)
-            if lo < hi:
-                slab[:, lo - off : hi - off] = np.asarray(jax.device_get(block))[
-                    off : off + out_size, lo - y0 : hi - y0, : out_size // 2 + 1
-                ]
-        else:
-            blocks.append(block)
-        sums = block_sums if sums is None else sums + block_sums
-        counts = block_counts if counts is None else counts + block_counts
-    del xy
-    if to_host:
-        projector = slab
-    else:
-        projector = blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=1)
-    if pair_once:
-        # A shell that holds only self-mated coefficients (the origin) has a count of 1/2.
-        spectrum = jnp.where(counts > 0, sums / jnp.where(counts > 0, counts, 1), jnp.zeros((), dtype=sums.dtype))
-    else:
-        spectrum = jnp.where(counts >= 1, sums / jnp.maximum(counts, 1), jnp.zeros((), dtype=sums.dtype))
-    return (projector, np.asarray(jax.device_get(spectrum))) if to_host else (projector, spectrum)
+        del block
 
 
 def _wrap_pad(values, axis: int, fft_size: int):
