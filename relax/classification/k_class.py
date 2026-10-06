@@ -1807,6 +1807,8 @@ def run_dense_k_class_em_adaptive(
         # per-class child lists above remain convenient for pass-2 routing.
         significant_counts_for_result = np.ones(n_images, dtype=np.int32)
     else:
+        from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
+
         sig_kwargs = dict(
             adaptive_fraction=adaptive_fraction,
             max_significants=max_significants,
@@ -1837,6 +1839,9 @@ def run_dense_k_class_em_adaptive(
             pad_final_image_batch=bool(significance_pad_final_image_batch),
             firstiter_cc_support=engine_kwargs.get("firstiter_cc_support", "relion"),
             nyquist_column_counting=engine_kwargs.get("nyquist_column_counting", "relion"),
+            # Pass 1 takes the same quantized physical windows as pass 2, so a new current size
+            # reuses its class's programs instead of compiling new ones.
+            stable_fourier_window_shapes=_resident_stable_windows_requested(),
         )
         if reuse_zero_oversampling_coarse_state:
             sig_kwargs["return_relion_f32_normalization"] = True

@@ -163,7 +163,7 @@ def test_adaptive_engine_refuses_the_removed_dense_pass2():
         )
 
 
-def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatch):
+def _adaptive_run_with_fake_coarse(monkeypatch):
     from relax.scoring import significance as significance_module
 
     class TinyDataset:
@@ -228,6 +228,11 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
         pass2_use_float64_scoring=True,
         pass2_use_float64_projections=True,
     )
+    return significance_calls, sparse_calls, result
+
+
+def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatch):
+    significance_calls, sparse_calls, result = _adaptive_run_with_fake_coarse(monkeypatch)
 
     assert len(sparse_calls) == 1
     assert significance_calls[0]["use_float64_scoring"] is False
@@ -236,6 +241,21 @@ def test_adaptive_exact_fine_gaussian_retains_sparse_on_broad_support(monkeypatc
     assert_matches(np.asarray(result.significant_counts), np.array([5], dtype=np.int32))
     assert_matches(np.asarray(result.Ft_y), np.array([[1, 2, 3, 4]], dtype=np.complex64))
     assert_matches(np.asarray(result.Ft_ctf), np.array([[5, 6, 7, 8]], dtype=np.float32))
+
+
+@pytest.mark.parametrize("flag, expected", [(None, True), ("0", False)])
+def test_adaptive_coarse_pass_follows_the_stable_window_policy(monkeypatch, flag, expected):
+    # Pass 1 takes pass 2's quantized physical windows (on by default) so a new current
+    # size reuses its class's programs; RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0 turns both off.
+    from relax.sparse_pass2 import resident_pass2
+
+    if flag is None:
+        monkeypatch.delenv(resident_pass2._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
+    else:
+        monkeypatch.setenv(resident_pass2._RESIDENT_STABLE_WINDOWS_ENV, flag)
+    significance_calls, _sparse_calls, _result = _adaptive_run_with_fake_coarse(monkeypatch)
+
+    assert significance_calls[0]["stable_fourier_window_shapes"] is expected
 
 
 def test_k_class_result_publishes_the_winning_class_fine_pose():

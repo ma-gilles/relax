@@ -1253,13 +1253,22 @@ Late plain 10k K=1 iterations after these changes (py-spy, 60 s, relax 3636596):
 iteration's images to be read a second time (pass 1 already read them); the expected-accuracy estimate rebuilds a
 host float64 projector from the references at every iteration.
 `significance._compute_k_class_significance_batched` can score on a quantized physical window (runtime current size,
-zero-weight capacity rows; `stable_fourier_window_shapes`, default off). Turned on as the one path, a K1 noise1 5k
+zero-weight capacity rows; `stable_fourier_window_shapes`). It was off by default until 2026-10-07. Turned on as the one path, a K1 noise1 5k
 standalone refine (oversampling 1, healpix 3, 12 iterations, cold cache, A100, JAX_LOG_COMPILES) compiled 2350
 programs in both arms, wall 895 vs 911 s: the coarse current size stays 38 (physical 40) through the run, so pass 1
 compiles once per signature (_coarse_pass1_blocks x4, exact operands x4, powerclass x10, window operands x10: about
 10 s of 330 s compile). etw's multishape census agrees (VDAM K1 pass 1 x16 / 6.8 s of about 170 s; Class3D not in the
 top 25). The compile cost sits in eager JAX primitives on new shapes (1362 compiles, 121 s: broadcast_in_dim x378,
 add, convert_element_type, gather, ...) and the pass-2/M-step programs.
+Since 2026-10-07 the adaptive K-class pass 1 (Refine3D, Class3D, VDAM) takes stable windows whenever pass 2 does
+(`_resident_stable_windows_requested`, `RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS=0` turns both off). On several-shape
+VDAM K1 (multioptics_k2_10k128, 200 iterations, seed 1, cold H100, same node, job 15129720) the run went 488 -> 404 s
+(compiles 3817 -> 1651 against 1c57fb7; _coarse_pass1_blocks 84 -> 22), seeds 1-6 410 s mean against GPU RELION's
+584 s (0.70x); masked GT FSC-AUC seeds 1-6 0.64462 against GPU RELION 0.64407 (paired +0.00055 +/- 0.00102); at
+iteration 2 the run differs from the previous code by a map relL2 of 1.9e-7 with no pose changes, below two GPU RELION
+repeats (5.4e-7, job 15132562). Same-node SPA pairs (job 15129721): K1 noise1 50k refine 802 vs 809 s, map gate 4 of 4,
+masked GT 0.679335 against same-seed RELION 0.679354; K4 pdb 50k Class3D 345 vs 344 s, masked GT 0.240796 (RELION
+same seed 0.240796, band 0.239769-0.24114), class accuracy 0.87506 (band 0.87462-0.87824).
 
 Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer, every
 class and rotation block of an image batch is scored, given its priors and reduced (class and global
