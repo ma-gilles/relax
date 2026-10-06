@@ -20,12 +20,15 @@ directory from `REFACTOR_SCRATCH` (a directory outside the checkout, under a sha
       `grep -rn '<name>' tests/ scripts/ docs/` (monkeypatch strings, `inspect.getsource` pins, captured
       keyword arguments, function-local names that tests execute as text). A test that reads or executes
       source text is converted to a behavioural test when the code it pins changes, keeping its assertions
-      (rule 13).
+      (rule 13). Before each commit, run every test file that names the module (`grep -rl`), not only the
+      verify list: a moved private name breaks the file that imports it, wherever it is.
 - [ ] List the installs, history writes and release points (`del`, `x = None`) in the stretch. Installs
       and history writes stay statements of the controller (rule 9); if the slice needs one to leave it, it
       is a different slice. For each release, trace the lifetime it serves (rule 3): releasing an unused
       buffer earlier is allowed and stated with its peak-memory effect; extending a lifetime is not. Log
-      records may move (rule 2).
+      records may move (rule 2). Before grouping values into a record, trace each array's release point: a
+      record keeps every field alive until the record is dropped. If a field is released earlier today, do
+      not group it.
 
 ## 2. Coverage before the first edit
 
@@ -36,11 +39,15 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
 - [ ] Controller: `pixi run fingerprint cases`: does a case execute the stretch, in every mode and with the
       non-default options it reads (rule 13)? If not, add cases first, as their own commit, with a mutation
       in the selftest that proves the new case sees the stretch.
+- [ ] Build the harness before the first move, and include the command entry: tests that read or execute
+      source text block every move until the code they pin can be run.
 - [ ] If a controller has no fingerprint at all, build the harness before the refactor. It needs: a stand-in
       for whatever cannot run on a CPU (the GPU engine), whose output is seeded by a hash of every operand
       it receives; small CPU cases (seconds each) that reach every branch you will touch; an ordered trace of
       log records and selected calls; hashes of every result, file and checkpoint; and a selftest of
       deliberate mutations that must each show. `scripts/dev/fingerprint.py` is the model.
+- [ ] Run every new test helper once on a GPU node (a medium tier, or one GPU job): a stand-in that passes
+      on a CPU can fail where JAX sees a device.
 - [ ] Write down what is still not covered. That list goes into the report (rule 14).
 
 ## 3. Work: one idea per commit
@@ -54,8 +61,13 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       findings that `origin/main` lacks (none); `git diff --check`; `scripts/dev/check_mutation_anchors.py`
       (every selftest mutation still finds its anchor in the source); and `pytest` on
       `tests/unit/test_refinement_structure_metrics.py` plus the files given.
+- [ ] An environment variable read below the boundary becomes a field of an options record whose default
+      factory reads it (`refinement_options.DiagnosticEnvironment`): the read happens once, when the
+      options are built, and tests that set the variable before building the options keep working.
+- [ ] A new option field shows in the fingerprint as "added inputs" (a controller input only the new side
+      has); it is accepted and listed. Results, files, checkpoints and trace must still be identical.
 - [ ] The commit message says what moved, what did not, the benefit, the supporting numbers, and any
-      log-only trace differences.
+      log-only trace differences or added inputs.
 
 ## 4. Gate at the end of the slice
 
@@ -86,7 +98,8 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       `python scripts/report_refinement_structure.py --lower-ceilings docs/development/refinement_structure_metrics.json`,
       and the span quoted in the module's `AGENTS.md`. The ceilings are review signals with slack (owner
       ruling, 2026-10-05): `--check` warns when a metric is above its ceiling but within the slack, and
-      fails above the slack. Name a warning in the report with the reason for the growth. Never raise a
+      fails above the slack. Name every warning in the report with the reason for the growth (upstream
+      features and new records use up the slack). Never raise a
       ceiling to make a refactor pass; a requested feature may raise one by hand, with the value and the
       reason in its commit.
 

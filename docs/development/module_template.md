@@ -30,6 +30,15 @@ counter-example from the same code before it was changed. The rules behind it ar
    device tests for a kernel, precedence, rejection and round-trip tests for a parser), and which routes do
    only the GPU tiers reach?
 
+## What the worked example taught (apply to the next module)
+
+- Harness first, command entry included; then convert every test that reads source.
+- One verify per commit, but search and run every test file that names what moved.
+- Run new test helpers once on a GPU node.
+- Environment variables enter through an options record with a default factory, read once.
+- Group values into records only after tracing each array's release point.
+- A ceiling warning needs a stated reason; lower the ceilings after each slice.
+
 ## Where the worked example still falls short
 
 The current list of open items, coverage limits and decisions is
