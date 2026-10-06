@@ -11,6 +11,7 @@ per-iteration arrays and RELION-style run files under ``--output``.
 # The EM environment markers below are set before the jax, recovar and relax imports,
 # so the imports below them are not at the top of the file.
 # ruff: noqa: E402
+import dataclasses
 import importlib
 import logging
 import os
@@ -963,6 +964,15 @@ def main(command=None):
             "RELION start-up data_vs_prior per class (initialiseDataVersusPrior): %s shells with data_vs_prior > 3",
             np.sum(relion_start_data_vs_prior > 3.0, axis=1).tolist(),
         )
+    # The start-up real maps are read for the last time above; only a fresh run hands the loop
+    # its projector reference (through the replay options). Released here, they no longer stay
+    # alive through the whole refinement (float64, 4.1 GB at EMPIAR-10202's box 800).
+    references = dataclasses.replace(
+        references,
+        reference_real=None,
+        class_references_real=None,
+        real_for_projector=None if resume_snapshot is not None else references.real_for_projector,
+    )
 
     if frozen_boundary is not None:
         mean_variance = jnp.asarray(
@@ -1219,8 +1229,9 @@ def main(command=None):
 
     # The start-up tau2 is a box-scale volume (float64 at start-up: 4.1 GB at box 800).
     # Hand it over as a host array and drop the device copy, so this frame does not
-    # hold it on the device for the whole refinement; the loop stages its own copy
-    # and releases it after the first tau2 update (census, bigbox 14468686).
+    # hold it on the device for the whole refinement (census, bigbox 14468686). The
+    # host array and init_vol_ft stay alive until the refinement returns: this frame
+    # names them and CPython keeps a call's arguments referenced for its duration.
     initial_mean_variance_host = np.asarray(jax.device_get(mean_variance))
     del mean_variance
     result = refine_single_volume(
