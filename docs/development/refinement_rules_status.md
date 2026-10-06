@@ -29,10 +29,22 @@ the branch after main 7d8a1a1 (2026-10-05).
      `relax.helpers.dtype_policy`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
      `relax.dense.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
-3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,998 lines, 847 of them
-   shared by both modes. Remaining work is to find contract splits or shared steps by the rules, not by line
-   count. 29 functions take ten or more parameters; the widest are `run_final_all_data` (28),
-   `score_tomo_half` (26) and `build_archive_metadata` (25).
+3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,992 lines. Its mode
+   decisions, read by the rules (2026-10-05): 24 tests of `k_class_enabled`. None makes a step take a
+   mode flag; each either selects one of two contract functions (image size: `plan_class_image_size` or
+   `plan_halfmap_image_size`; M-step: `class_maximization` or `k1_maximization`; direction priors,
+   unregularized maps, resolution, the final pass), runs a step only one mode has (class weights from the
+   posterior, the K=1 FSC record and growth latch), refuses an unsupported route (Class3D local search, the
+   frozen-state check), or picks which mode's value a record or log carries. That is the shape the owner
+   accepted on 2026-10-04 (the loop is not split; the steps are mode-free). What remains is glue: values
+   computed in one place and read in several, kept as loose locals. Grouping them into typed records (rule
+   8), one group per commit, judged by readability: done `PublishedAccuracy` (four locals: the latest
+   expected-accuracy trials and per-class accuracies). Candidates, by the number of reads they would
+   replace: the M-step results kept as records instead of unpacked into seven locals (`ClassMaximization`,
+   `K1Maximization`); Class3D's class state (assignments, previous assignments, mixture); RELION's growth
+   latch (`incr_size`, `has_high_fsc_at_limit`, which the planners and the run files take apart). 29
+   functions take ten or more parameters; the widest are `run_final_all_data` (28), `score_tomo_half` (26)
+   and `build_archive_metadata` (25).
 
 ## Known coverage limits (recorded, not being built)
 
