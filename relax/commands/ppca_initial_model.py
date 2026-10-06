@@ -100,10 +100,81 @@ def add_args(parser):
         help="pass 2 skips pose rows on which every image of a tile has less posterior mass (default 1e-10, "
         "applied when at most half the rows remain; 0: none skipped)",
     )
-    parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
+    parser.add_argument(
+        "--sgd-learning-rate",
+        type=float,
+        help="Momentum SGD step factor (default 0.4; 0.8 with --sgd-variant gated)",
+    )
+    parser.add_argument(
+        "--sgd-variant",
+        choices=tuple(SGD_VARIANTS),
+        default="plain",
+        help="Momentum SGD variant: plain (default) or gated, which sets --sgd-gate halfset, --sgd-step-scale "
+        "exact_diagonal, --noise-anneal 8,750 and a step factor of 0.8 (ppca_optimizer_axes.md, 'Gated momentum "
+        "SGD'); a component given explicitly overrides the variant's",
+    )
+    parser.add_argument(
+        "--sgd-gate",
+        choices=("none", "halfset"),
+        help="Momentum SGD step gate: none, or VDAM's half-set shell gate (the run also keeps VDAM's half-set moments)",
+    )
+    parser.add_argument(
+        "--sgd-step-scale",
+        choices=("trace", "exact_diagonal"),
+        help="Momentum SGD curvature scale: the band maximum of the backprojected metric trace (trace), or of the "
+        "exact projection-Hessian diagonal (exact_diagonal, GPU streams)",
+    )
+    parser.add_argument(
+        "--noise-anneal",
+        help="F,N: the E-step of update t uses the noise estimate times 1 + (F - 1) max(0, 1 - t/N); 1,0 is off",
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
+
+
+# Momentum SGD variants: the Config values each sets (plain: the Config defaults). Gated is the measured
+# recommendation of docs/development/ppca_optimizer_axes.md ("Gated momentum SGD").
+SGD_VARIANTS = {
+    "plain": {},
+    "gated": {
+        "sgd_learning_rate": 0.8,
+        "sgd_halfset_gate": True,
+        "sgd_step_scale": "exact_diagonal",
+        "noise_anneal_factor": 8.0,
+        "noise_anneal_updates": 750,
+    },
+}
+
+
+def parse_noise_anneal(value):
+    """``"F,N"`` to ``(noise_anneal_factor, noise_anneal_updates)``."""
+    parts = value.split(",")
+    if len(parts) != 2:
+        raise ValueError(f"--noise-anneal takes F,N (a factor and an update count), not {value!r}")
+    return float(parts[0]), int(parts[1])
+
+
+def resolve_sgd_options(args):
+    """The Config fields of the momentum SGD variant and its components, and of noise annealing.
+
+    Precedence: a component given explicitly, then the ``--sgd-variant`` preset, then the Config default.
+    The variant and the gate and step-scale components are momentum SGD options; with VDAM they refuse.
+    """
+    options = dict(SGD_VARIANTS[args.sgd_variant])
+    if args.sgd_learning_rate is not None:
+        options["sgd_learning_rate"] = args.sgd_learning_rate
+    if args.sgd_gate is not None:
+        options["sgd_halfset_gate"] = args.sgd_gate == "halfset"
+    if args.sgd_step_scale is not None:
+        options["sgd_step_scale"] = args.sgd_step_scale
+    if args.noise_anneal is not None:
+        options["noise_anneal_factor"], options["noise_anneal_updates"] = parse_noise_anneal(args.noise_anneal)
+    if args.optimizer != "momentum_sgd" and (
+        args.sgd_variant != "plain" or args.sgd_gate is not None or args.sgd_step_scale is not None
+    ):
+        raise ValueError("--sgd-variant, --sgd-gate and --sgd-step-scale need --optimizer momentum_sgd")
+    return options
 
 
 # Largest share of the job's memory that "auto" lets one host copy of the particle stack take.
@@ -337,7 +408,7 @@ def main(args=None):
         checkpoint_interval=args.checkpoint_interval,
         skip_final_embeddings=args.skip_final_embeddings,
         optimizer=args.optimizer,
-        sgd_learning_rate=args.sgd_learning_rate,
+        **resolve_sgd_options(args),
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
