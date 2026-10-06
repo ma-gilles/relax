@@ -43,7 +43,9 @@ preallocated memory pool, and that is the supported mode. `=false` lets another
 process share the GPU, but the pool then grows in separate regions and an array
 must fit inside one of them: a long refinement of a large box (above about 550
 pixels on an 80 GB card, 320 on 40 GB) can stop with `RESOURCE_EXHAUSTED` while
-memory is free. The error then carries a note naming the setting.
+memory is free. An out-of-memory error carries a note with the pool's limit, its peak
+use and the request, which says whether the pool was fragmented, and names the setting
+when it is off.
 
 The default build compiles the kernels for compute capability 7.0 to 9.0 (and
 later cards through PTX). For a Pascal card (P100, GTX 10-series), add its

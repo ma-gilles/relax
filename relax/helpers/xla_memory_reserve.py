@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import functools
 import os
+import re
 import subprocess
 
 MEM_FRACTION_ENV = "XLA_PYTHON_CLIENT_MEM_FRACTION"
@@ -270,14 +271,73 @@ def require_projector_texture_reserve(
 PREALLOCATE_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"
 
 
+_GIB = float(1 << 30)
+_UNIT_BYTES = {"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
+
+
+def _requested_bytes(message: str) -> int | None:
+    """The size XLA's out-of-memory message says it tried to allocate (``... allocate 7.65GiB``)."""
+
+    match = re.search(r"allocate ([0-9.]+)\s*(B|KiB|MiB|GiB|TiB)", message)
+    return None if match is None else int(float(match.group(1)) * _UNIT_BYTES[match.group(2)])
+
+
+def _pool_statistics() -> dict | None:
+    """The GPU pool's ``bytes_limit`` and ``peak_bytes_in_use``; ``None`` on CPU or when not reported."""
+
+    try:
+        import jax
+
+        if jax.default_backend() != "gpu":
+            return None
+        stats = jax.devices()[0].memory_stats() or {}
+    except Exception:
+        return None
+    if not stats.get("bytes_limit"):
+        return None
+    return {"limit": int(stats["bytes_limit"]), "peak": int(stats.get("peak_bytes_in_use", 0))}
+
+
+def _pool_failure_note(message: str, preallocate_off: bool, stats: dict | None) -> str:
+    """Why an allocation failed: the pool's limit, its high-water mark and the request, then the likely cause."""
+
+    request = _requested_bytes(message)
+    if stats is None or request is None:
+        state = "the pool's state was not reported"
+        fragmented = False
+    else:
+        state = (
+            f"request {request / _GIB:.2f} GiB, pool limit {stats['limit'] / _GIB:.2f} GiB, "
+            f"run peak in use {stats['peak'] / _GIB:.2f} GiB"
+        )
+        # In use at the failure is at most the run's peak: below the limit by the request, the bytes were free.
+        fragmented = stats["peak"] + request <= stats["limit"]
+    if preallocate_off:
+        cause = (
+            f"{PREALLOCATE_ENV}=false is set: XLA's memory pool grew in separate regions and an array "
+            "must fit inside one, so this allocation can fail while the pool has the bytes free. "
+            f"Unset {PREALLOCATE_ENV} (JAX then preallocates the pool as one region) and rerun; "
+            "turn preallocation off only to share a GPU, and not for long large-box refinements."
+        )
+    elif fragmented:
+        cause = (
+            "The pool had the bytes free but no contiguous block that large: it is fragmented (relax#20). "
+            "Report the run; a smaller GPU memory plan does not help."
+        )
+    else:
+        cause = "The pool may be full: the request does not fit beside the run's peak in use."
+    return f"GPU pool at the failure: {state}. {cause}"
+
+
 def explains_pool_region_failure(run):
-    """Decorate a refinement entry: an allocator failure under ``XLA_PYTHON_CLIENT_PREALLOCATE=false`` says why.
+    """Decorate a refinement entry: an allocator failure says what the pool held and the likely cause.
 
     Without preallocation XLA's pool grows in separate regions (1, 2, 4, 8, 16 GiB ...) and an array
     must fit inside one of them, so after many iterations of small requests a large buffer can fail
     while its bytes are free (EMPIAR-10202, box 800: 18.54 GiB at iteration 13 in a 60.9 GiB pool whose
-    largest region was 16 GiB, relax#20). JAX's default, one preallocated region, is the supported
-    mode for long large-box runs; the note names the setting and leaves the error unchanged.
+    largest region was 16 GiB, relax#20). With JAX's default, one preallocated region, a long run can
+    still fragment that region (EMPIAR-10202, 7.65 GiB at iteration 23, gpuport 15073680). The note
+    gives the pool's limit, its peak in use and the request; the error itself is unchanged.
     """
 
     @functools.wraps(run)
@@ -285,13 +345,9 @@ def explains_pool_region_failure(run):
         try:
             return run(*args, **kwargs)
         except Exception as error:
-            if "RESOURCE_EXHAUSTED" in str(error) and os.environ.get(PREALLOCATE_ENV, "").lower() in ("false", "0"):
-                error.add_note(
-                    f"{PREALLOCATE_ENV}=false is set: XLA's memory pool grew in separate regions and an array "
-                    "must fit inside one, so this allocation can fail while the pool has the bytes free. "
-                    f"Unset {PREALLOCATE_ENV} (JAX then preallocates the pool as one region) and rerun; "
-                    "turn preallocation off only to share a GPU, and not for long large-box refinements."
-                )
+            if "RESOURCE_EXHAUSTED" in str(error):
+                preallocate_off = os.environ.get(PREALLOCATE_ENV, "").lower() in ("false", "0")
+                error.add_note(_pool_failure_note(str(error), preallocate_off, _pool_statistics()))
             raise
 
     return explained

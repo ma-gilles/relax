@@ -126,19 +126,58 @@ def test_an_allocator_failure_without_preallocation_names_the_setting(monkeypatc
     def run(message):
         raise RuntimeError(message)
 
+    gib = 1 << 30
+    monkeypatch.setattr(reserve, "_pool_statistics", lambda: {"limit": int(60.93 * gib), "peak": int(48.0 * gib)})
     oom = "RESOURCE_EXHAUSTED: Out of memory while trying to allocate 18.54GiB."
     monkeypatch.setenv(reserve.PREALLOCATE_ENV, "false")
     with pytest.raises(RuntimeError, match="18.54GiB") as err:
         run(oom)
     assert any("grew in separate regions" in note and "Unset XLA_PYTHON_CLIENT_PREALLOCATE" in note for note in err.value.__notes__)
-    # Another error, or the default mode, is passed through untouched.
+    assert any("request 18.54 GiB, pool limit 60.93 GiB, run peak in use 48.00 GiB" in note for note in err.value.__notes__)
+    # Another error is passed through untouched.
     with pytest.raises(RuntimeError) as err:
         run("something else")
     assert not hasattr(err.value, "__notes__")
-    monkeypatch.delenv(reserve.PREALLOCATE_ENV)
-    with pytest.raises(RuntimeError) as err:
-        run(oom)
-    assert not hasattr(err.value, "__notes__")
+
+
+def test_an_allocator_failure_in_the_default_mode_says_whether_the_pool_was_fragmented(monkeypatch):
+    """EMPIAR-10202 iteration 23 (gpuport 15073680): 7.65 GiB failed in a preallocated 61.3 GiB pool."""
+
+    @reserve.explains_pool_region_failure
+    def run():
+        raise ValueError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 7.65GiB.")
+
+    gib = 1 << 30
+    monkeypatch.delenv(reserve.PREALLOCATE_ENV, raising=False)
+    monkeypatch.setattr(reserve, "_pool_statistics", lambda: {"limit": int(61.3 * gib), "peak": int(52.0 * gib)})
+    with pytest.raises(ValueError) as err:
+        run()
+    (note,) = err.value.__notes__
+    assert "request 7.65 GiB" in note and "fragmented" in note and "separate regions" not in note
+    # Beside a peak that leaves no room for the request, the pool may simply be full.
+    monkeypatch.setattr(reserve, "_pool_statistics", lambda: {"limit": int(61.3 * gib), "peak": int(58.0 * gib)})
+    with pytest.raises(ValueError) as err:
+        run()
+    assert "may be full" in err.value.__notes__[0]
+    # Without pool statistics (CPU, or not reported) the note says so.
+    monkeypatch.setattr(reserve, "_pool_statistics", lambda: None)
+    with pytest.raises(ValueError) as err:
+        run()
+    assert "not reported" in err.value.__notes__[0]
+
+
+def test_the_refinement_entry_carries_the_pool_note(monkeypatch):
+    """A RESOURCE_EXHAUSTED raised inside ``relax refine``'s entry (``full_refinement.main``) leaves it with the note."""
+    from relax.refinement import full_refinement
+
+    def exhausted(*args, **kwargs):
+        raise ValueError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 7.65GiB.")
+
+    monkeypatch.setattr(reserve, "_pool_statistics", lambda: None)
+    monkeypatch.setattr(full_refinement, "activate_recovar_compilation_cache", exhausted)
+    with pytest.raises(ValueError) as err:
+        full_refinement.main("refine")
+    assert "GPU pool at the failure" in err.value.__notes__[0]
 
 
 def test_reference_maps_follow_the_drivers_flags(tmp_path, monkeypatch):
