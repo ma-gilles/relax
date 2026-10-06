@@ -22,7 +22,6 @@ import numpy as np
 from recovar.core import fourier_transform_utils, mask
 
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.diagnostics import reconstruction as reconstruction_diagnostics
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
 )
@@ -32,6 +31,7 @@ from relax.helpers.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.reconstruction import regularization_relion
+from relax.refinement.ports import ClassPriorEstimated, RunObserver
 from relax.refinement.tomo_half import TomoHalf
 from relax.relion import relion_ctf
 from relax.relion.reference_initialization import initial_low_pass_filter_references
@@ -567,6 +567,7 @@ def estimate_class_priors(
     scoring_dtype,
     started_at,
     log,
+    observer: RunObserver | None = None,
 ) -> ClassPriorAggregation:
     """Prepare and aggregate numbered Class3D priors from the previous Iref.
 
@@ -587,6 +588,7 @@ def estimate_class_priors(
     kclass_tau2_frame_scale = float(settings.grid_size) ** 4
     # The prior shells an input source supplies (``ports.ClassTau2``), or None: the previous references'.
     kclass_tau2_source = class_tau2.source
+    observer = RunObserver() if observer is None else observer
     if iteration == 0:
         mean_variance_arr = jnp.asarray(prior_tau2)
         expected_shape = (n_classes, int(np.prod(settings.volume_shape)))
@@ -642,24 +644,12 @@ def estimate_class_priors(
         mean_signal_variance_shells_per_class.append(class_prior.shells)
         data_vs_prior_per_class.append(class_prior.data_vs_prior)
         tau2_update_details_per_class.append(class_prior.details)
-        _kclass_dump_dir = settings.kclass_dump_dir
-        if _kclass_dump_dir:
-            reconstruction_diagnostics.write_class_mstep(
-                class_prior,
-                numerators=combined_numerators,
-                denominators=combined_denominators,
-                half_denominators=half_denominators,
-                references=previous_half_maps,
-                settings=settings,
-                output_dir=_kclass_dump_dir,
-                class_index=class_idx,
-                current_size=current_size,
-                iteration=iteration,
-                source=kclass_tau2_source,
-                accumulator_shape=accumulator_shape,
-                full_half_axis=full_half_axis,
-                frame_scale=kclass_tau2_frame_scale,
-            )
+        observer.class_prior_estimated(ClassPriorEstimated(
+            iteration, class_idx, class_prior, numerators=combined_numerators, denominators=combined_denominators,
+            half_denominators=half_denominators, references=previous_half_maps, settings=settings,
+            current_size=current_size, source=kclass_tau2_source, accumulator_shape=accumulator_shape,
+            full_half_axis=full_half_axis, frame_scale=kclass_tau2_frame_scale,
+        ))
         log.info(
             "Class3D tau2 update done: iter=%d class=%d/%d elapsed=%.1fs",
             iteration + 1,
@@ -1250,9 +1240,6 @@ class ReconstructionSettings:
     # pairs: "relion" counts those of the stored half's zero plane twice, "once" every pair once.
     # The 1/1000 weight floor inside the reconstruction (RECOVAR) keeps RELION's counting.
     shell_pair_counting: str = "relion"
-    # Diagnostic dumps (EngineDebugOptions.environment): the pre-mask maps and the Class3D M-step.
-    premask_dump_dir: str | None = None
-    kclass_dump_dir: str | None = None
     # RELION --solvent_mask: the user reference mask on the model grid in the internal (z, y, x)
     # frame (relax.reconstruction.solvent_mask.read_solvent_mask, transposed); it replaces the
     # particle-diameter sphere of the solvent flatten. None keeps the sphere.
@@ -1536,25 +1523,6 @@ def _reconstruct_class_maps(
     return shared_classes
 
 
-def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index, iteration, current_size, n_classes):
-    """Write one solved slot before filtering and masking when ``RELAX_PREMASK_DUMP_DIR`` is set."""
-    _premask_dump = settings.premask_dump_dir
-    if _premask_dump:
-        from relax.diagnostics.reconstruction import write_premask_mean
-
-        write_premask_mean(
-            mean,
-            output_dir=_premask_dump,
-            half_index=half_index,
-            iteration=iteration,
-            current_size=current_size,
-            grid_size=settings.grid_size,
-            voxel_size=settings.voxel_size,
-            volume_shape=settings.volume_shape,
-            n_classes=n_classes,
-        )
-
-
 def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
     """Return whether new references are solvent-flattened: a user mask or a particle diameter is set."""
     if settings.solvent_mask is not None:
@@ -1628,6 +1596,7 @@ def reconstruct_numbered_k1_halfmaps(
     accumulator_volume_shape,
     relion_firstiter_cc_this_iter,
     retained_first_numerator=None,
+    observer: RunObserver | None = None,
 ) -> list:
     """Solve two independent numbered K1 maps, then postprocess each half.
 
@@ -1638,6 +1607,7 @@ def reconstruct_numbered_k1_halfmaps(
     turn. The flatten host-stages box-scale results and consumes its mask.
     Return ready maps for installation.
     """
+    observer = RunObserver() if observer is None else observer
     means = _reconstruct_k1_maps(
         numerators_by_half,
         denominators_by_half,
@@ -1648,14 +1618,7 @@ def reconstruct_numbered_k1_halfmaps(
         retained_first_numerator=retained_first_numerator,
     )
     for k in range(2):
-        _capture_premask_mean(
-            means[k],
-            settings,
-            half_index=k,
-            iteration=iteration,
-            current_size=current_size,
-            n_classes=1,
-        )
+        observer.map_solved(iteration, k, means[k], settings=settings, current_size=current_size, n_classes=1)
         # RELION filters Iref inside maximizationOtherParameters, then calls
         # solventFlatten from the outer iteration loop.  These operations do
         # not commute: masking in real space after the Fourier low-pass adds a
@@ -1694,6 +1657,7 @@ def reconstruct_numbered_class_maps(
     current_size,
     accumulator_volume_shape,
     relion_firstiter_cc_this_iter,
+    observer: RunObserver | None = None,
 ) -> list:
     """Solve one numbered Class3D reference stack from combined partitions.
 
@@ -1705,6 +1669,7 @@ def reconstruct_numbered_class_maps(
     every class is flattened on the device with one mask; the entries alias
     the shared stack when neither filtering nor flattening applies.
     """
+    observer = RunObserver() if observer is None else observer
     shared_classes = _reconstruct_class_maps(
         combined_numerators,
         combined_denominators,
@@ -1718,14 +1683,7 @@ def reconstruct_numbered_class_maps(
     means = [shared_classes, shared_classes]
     del shared_classes
     for k in range(2):
-        _capture_premask_mean(
-            means[k],
-            settings,
-            half_index=k,
-            iteration=iteration,
-            current_size=current_size,
-            n_classes=n_classes,
-        )
+        observer.map_solved(iteration, k, means[k], settings=settings, current_size=current_size, n_classes=n_classes)
         # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
         if relion_firstiter_cc_this_iter:
             means[k] = _lowpass_class_stack(means[k], settings, n_classes)

@@ -378,22 +378,17 @@ class FinalPassOptions:
 
 @dataclass(frozen=True)
 class DiagnosticEnvironment:
-    """The refinement's diagnostic environment variables, read once, when the run's options are built.
+    """The refinement's execution switches from the environment, read once, when the run's options are built.
 
-    Dump directories (None when unset; an empty value writes nothing): the Class3D M-step and image size
-    (``RELAX_KCLASS_DUMP_DIR``) and the pre-mask maps (``RELAX_PREMASK_DUMP_DIR``).
-    Switch: clear JAX's caches after every numbered iteration.
+    ``clear_jax_caches_between_iterations``: clear JAX's caches after every numbered iteration. (The dumps of
+    the run are observers, ``relax.diagnostics.observers``; code rule 15.)
     """
 
-    kclass_dump_dir: str | None = None
-    premask_dump_dir: str | None = None
     clear_jax_caches_between_iterations: bool = False
 
     @classmethod
     def from_environ(cls) -> DiagnosticEnvironment:
         return cls(
-            kclass_dump_dir=os.environ.get("RELAX_KCLASS_DUMP_DIR"),
-            premask_dump_dir=os.environ.get("RELAX_PREMASK_DUMP_DIR"),
             clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
         )
 

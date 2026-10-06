@@ -24,18 +24,18 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_k1_halfmaps).parameters) == (
         "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "iteration",
         "current_size", "accumulator_volume_shape",
-        "relion_firstiter_cc_this_iter", "retained_first_numerator",
+        "relion_firstiter_cc_this_iter", "retained_first_numerator", "observer",
     )
     assert tuple(inspect.signature(mean_helpers_module.reconstruct_numbered_class_maps).parameters) == (
         "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
         "iteration", "current_size", "accumulator_volume_shape",
-        "relion_firstiter_cc_this_iter",
+        "relion_firstiter_cc_this_iter", "observer",
     )
     assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
         "grid_size", "voxel_size", "volume_shape", "padding_factor",
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
-        "gridding_kernel", "shell_pair_counting", "premask_dump_dir", "kclass_dump_dir",
+        "gridding_kernel", "shell_pair_counting",
         "solvent_mask", "solvent_correct_fsc", "solvent_fsc_seed",
     )
     for name in (
@@ -61,26 +61,26 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     captures, low-pass filters (CC iteration only), masks and flattens, and reports the CC low-pass once."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.diagnostics import reconstruction as reconstruction_diagnostics
+    from relax.diagnostics import observers
     from relax.refinement import iteration_loop as iteration_loop_module
     from relax.refinement import mean_helpers as mean_helpers_module
 
     maximization, operation, solve, lowpass, flatten = _NUMBERED_SEQUENCES[n_classes]
-    monkeypatch.setenv("RELAX_PREMASK_DUMP_DIR", str(tmp_path))
-    monkeypatch.setattr(reconstruction_diagnostics, "write_premask_mean", lambda *args, **kwargs: None)
+    monkeypatch.setattr(observers, "write_premask_mean", lambda *args, **kwargs: None)
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop_module, "ReconstructionSettings", "settings")
     trace.wrap(iteration_loop_module, maximization, "maximization")
     trace.wrap(iteration_loop_module, operation, "operation")
     for name, label in (
-        (solve, "solve"), ("_capture_premask_mean", "capture"), (lowpass, "lowpass"),
+        (solve, "solve"), (lowpass, "lowpass"),
         ("_numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),
         ("_log_first_cc_lowpass", "log"),
     ):
         trace.wrap(mean_helpers_module, name, label)
-    trace.wrap(reconstruction_diagnostics, "write_premask_mean", "dump")
+    trace.wrap(observers.PremaskObserver, "map_solved", "capture")
+    trace.wrap(observers, "write_premask_mean", "dump")
     run_tiny_refinement(
-        monkeypatch, n_classes=n_classes, final_after_max_iter=False,
+        monkeypatch, n_classes=n_classes, final_after_max_iter=False, observer=observers.PremaskObserver(tmp_path),
         schedule=dict(particle_diameter_ang=6.0),
         parity=dict(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0),
     )

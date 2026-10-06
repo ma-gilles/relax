@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import reconstruction as reconstruction_diagnostics
 from relax.refinement import mean_helpers
+from relax.refinement.ports import RunObserver
 
 pytestmark = pytest.mark.unit
 
@@ -31,7 +31,6 @@ def _settings(first_cc, flatten_solvent):
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1,
         particle_diameter_angstrom=np.float32(3.7) if flatten_solvent else None,
         first_iteration_lowpass_angstrom=20 if first_cc or flatten_solvent else None,
-        premask_dump_dir="captured-by-test",
     )
 
 
@@ -72,7 +71,11 @@ class _Recorder:
             return value
 
         monkeypatch.setattr(mean_helpers, "_finish_host_staged_reconstruction", lambda value, *_args: value)
-        monkeypatch.setattr(reconstruction_diagnostics, "write_premask_mean", capture)
+        class Observer(RunObserver):
+            def map_solved(self, iteration, half_index, mean, *, settings, current_size, n_classes):
+                capture(mean, half_index=half_index, n_classes=n_classes)
+
+        self.observer = Observer()
         monkeypatch.setattr(mean_helpers, "_apply_relion_initial_lowpass_filter", lowpass)
         monkeypatch.setattr(mean_helpers, "_make_relion_solvent_mask", mask)
         monkeypatch.setattr(mean_helpers, "_apply_relion_solvent_flatten_k1", flatten)
@@ -134,7 +137,7 @@ def test_numbered_k1_halfmaps_preserve_operands_and_operation_order(monkeypatch,
     monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
     result = mean_helpers.reconstruct_numbered_k1_halfmaps(
         numerators, denominators, priors, settings, retained_first_numerator=retained,
-        relion_firstiter_cc_this_iter=first_cc, **COMMON,
+        relion_firstiter_cc_this_iter=first_cc, observer=record.observer, **COMMON,
     )
     slot_events = ["capture"] + ["filter"] * first_cc + ["mask", "flatten"] * flatten_solvent
     assert record.events == ["solve"] * 2 + slot_events * 2
@@ -162,7 +165,7 @@ def test_numbered_class_maps_preserve_operands_and_operation_order(monkeypatch, 
     monkeypatch.setattr(mean_helpers, "_reconstruct_volume_eager", solve)
     result = mean_helpers.reconstruct_numbered_class_maps(
         numerators, denominators, priors, settings, n_classes=n_classes,
-        relion_firstiter_cc_this_iter=first_cc, **COMMON,
+        relion_firstiter_cc_this_iter=first_cc, observer=record.observer, **COMMON,
     )
     slot_events = (["capture"] + ["filter"] * n_classes * first_cc
                    + (["mask"] + ["ifft", "fft"] * n_classes) * flatten_solvent)

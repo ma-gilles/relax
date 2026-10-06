@@ -85,3 +85,14 @@ def test_a_group_hands_each_hook_to_every_observer_in_order():
     group.stage_finished(0, "e_step")
     assert first.events == second.events == [("start", 0), ("e_step", 0)]
     assert not group.wants_unfiltered_maps(1) and not group.keeps_rotation_posteriors
+
+
+def test_the_environment_dump_observers_come_from_their_variables(monkeypatch, tmp_path):
+    for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR", "RELAX_BPREF_PREJOIN_DUMP_DIR",
+                 "RELAX_BPREF_ACCUM_DUMP_DIR", "RELAX_NOISE_DEBUG_DUMP_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("RELAX_KCLASS_DUMP_DIR", str(tmp_path / "kclass"))
+    monkeypatch.setenv("RELAX_PREMASK_DUMP_DIR", str(tmp_path / "premask"))
+    found = observers.observers_from_environment()
+    assert [type(o) for o in found] == [observers.ClassDumpObserver, observers.PremaskObserver]
+    assert [o.directory for o in found] == [str(tmp_path / "kclass"), str(tmp_path / "premask")]

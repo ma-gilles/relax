@@ -87,6 +87,25 @@ class FinalHalfScored(NamedTuple):
     use_local: bool
 
 
+class ClassPriorEstimated(NamedTuple):
+    """One class's prior of a Class3D M-step (``prior``, its ``ClassPrior``), with the accumulators and references it
+    came from, the source label of its shells (``ClassTau2.source``) and the frame scale it was computed in."""
+
+    iteration: int
+    class_index: int
+    prior: Any
+    numerators: Any
+    denominators: Any
+    half_denominators: Any
+    references: Any
+    settings: Any
+    current_size: int
+    source: str
+    accumulator_shape: Any
+    full_half_axis: Any
+    frame_scale: float
+
+
 class FinishedIteration(NamedTuple):
     """A numbered iteration at its end, after the convergence update and the run files: its state, maps,
     poses, corrections and statistics. ``iteration_start`` is its ``time.time()`` at the top of the loop."""
@@ -252,6 +271,18 @@ class RunObserver:
         noise_from_res_per_half, noise_from_res,
     ) -> None:
         """A numbered iteration's noise spectra are estimated (the new ones beside the previous model's)."""
+
+    def class_image_size_planned(
+        self, iteration: int, plan, *, previous_size: int, grid_size: int, has_high_fsc_at_limit: bool,
+        incr_size: int, state,
+    ) -> None:
+        """A Class3D iteration's image size is planned (``plan``, its ``ClassImageSize``)."""
+
+    def class_prior_estimated(self, estimated: ClassPriorEstimated) -> None:
+        """One class's prior of a Class3D M-step is estimated."""
+
+    def map_solved(self, iteration: int, half_index: int, mean, *, settings, current_size: int, n_classes: int) -> None:
+        """A half's numbered map (or class stack) is solved, before its low-pass and solvent mask."""
 
     def maps_reconstructed(self, maps: ReconstructedIteration) -> None:
         """A numbered iteration's maps and FSC are made."""

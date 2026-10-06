@@ -34,7 +34,6 @@ from relax.dense.scoring_policy import (
     _dense_global_scoring_dtype,
 )
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics import reconstruction as reconstruction_diagnostics
 from relax.diagnostics import relion_replay as replay_policy
 from relax.diagnostics.frozen_boundary import (
     _assert_frozen_scoring_state_unchanged,
@@ -388,6 +387,7 @@ def class_maximization(
     scoring_dtype,
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
+    observer: RunObserver,
 ) -> ClassMaximization:
     """RELION's Class3D M-step: one prior and one Wiener solve per class from the combined halves.
 
@@ -431,6 +431,7 @@ def class_maximization(
         scoring_dtype=scoring_dtype,
         started_at=_t_unreg_first,
         log=logger,
+        observer=observer,
     )
     mean_signal_variance = class_priors.variance
     mean_signal_variance_shells = class_priors.shells
@@ -466,6 +467,7 @@ def class_maximization(
         current_size=current_size,
         accumulator_volume_shape=mstep_accumulator_shape,
         relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
+        observer=observer,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
@@ -648,6 +650,7 @@ def k1_maximization(
         accumulator_volume_shape=mstep_accumulator_shape,
         relion_firstiter_cc_this_iter=relion_firstiter_cc_this_iter,
         retained_first_numerator=retained_Ft_y_0_device,
+        observer=observer,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
@@ -939,8 +942,6 @@ def refine_single_volume(
         first_iteration_lowpass_angstrom=parity.relion_firstiter_ini_high_angstrom,
         gridding_kernel=consistency.gridding_kernel,
         shell_pair_counting=consistency.shell_pair_counting,
-        premask_dump_dir=debug.environment.premask_dump_dir,
-        kclass_dump_dir=debug.environment.kclass_dump_dir,
         solvent_mask=_internal_solvent_mask(parity.solvent_mask_path, grid_size, image_geometry.pixel_size_angstrom),
         solvent_correct_fsc=parity.solvent_correct_fsc,
         solvent_fsc_seed=int(
@@ -1396,17 +1397,10 @@ def refine_single_volume(
                     dtype=scoring_dtype,
                     log=logger,
                 )
-                if debug.environment.kclass_dump_dir:
-                    reconstruction_diagnostics.write_class_image_size(
-                        image_size_plan,
-                        output_dir=debug.environment.kclass_dump_dir,
-                        previous_size=prev_cs,
-                        grid_size=grid_size,
-                        iteration=iteration,
-                        has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
-                        incr_size=relion_incr_size,
-                        state=state,
-                    )
+                observer.class_image_size_planned(
+                    iteration, image_size_plan, previous_size=prev_cs, grid_size=grid_size,
+                    has_high_fsc_at_limit=relion_has_high_fsc_at_limit, incr_size=relion_incr_size, state=state,
+                )
             else:
                 image_size_plan = plan_halfmap_image_size(
                     history.fsc_history,
@@ -1966,6 +1960,7 @@ def refine_single_volume(
                 scoring_dtype=scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
+                observer=observer,
             )
             history.data_vs_prior_trajectory.append(data_vs_prior_iter)
             previous_data_vs_prior_for_scheduling = data_vs_prior_iter

@@ -8921,10 +8921,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
 ):
     """Class3D M-step tau2 comes from current Iref power, not previous model.star."""
 
-    if capture_dump:
-        monkeypatch.setenv("RELAX_KCLASS_DUMP_DIR", str(tmp_path))
-    else:
-        monkeypatch.delenv("RELAX_KCLASS_DUMP_DIR", raising=False)
+    from relax.diagnostics.observers import ClassDumpObserver
+
     floor_calls = []
     shell_stats = regularization_relion._compute_relion_weight_shell_stats
 
@@ -9048,6 +9046,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             ),
         ),
         relion_replay=RelionReplay(replay_iteration_overrides=[{"class_tau2": class_tau2}]),
+        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
     )
 
     assert len(result.history.tau2_radial_trajectory) == 1
@@ -9076,6 +9075,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
         ),
+        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
     )
     assert len(init_result.history.tau2_radial_trajectory) == 1
     np.testing.assert_allclose(init_result.history.tau2_radial_trajectory[0], iref_tau2, rtol=0.0, atol=1e-5)
@@ -9108,6 +9108,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         relion_replay=RelionReplay(
             replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}],
         ),
+        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
     )
 
     assert len(replay_result.history.tau2_radial_trajectory) == 1
@@ -9139,6 +9140,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         relion_replay=RelionReplay(
             replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}],
         ),
+        observer=ClassDumpObserver(tmp_path) if capture_dump else None,
     )
 
     assert len(same_iter_replay_result.history.tau2_radial_trajectory) == 1

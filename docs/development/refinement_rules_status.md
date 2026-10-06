@@ -25,7 +25,7 @@ reason; the sections after this one hold the detail.
 | 12 edges | Met: every command admission refuses with a message, each tested; the end-of-iteration sync no longer swallows device errors. |
 | 13 tests | Met: no test reads controller or command source. Exception: four engine-core lint tests. |
 | 14 evidence | Met: each landing listed what the fingerprint and the tiers do not cover (coverage limits below). |
-| 15 ports | Partly met (2026-10-06, section below): the observers and the tiered replays go through the ports; the untiered comparison features, two reconstruction dumps and the run's telemetry do not yet. |
+| 15 ports | Partly met (2026-10-06, section below): the observers and the tiered replays go through the ports; the untiered comparison features and the run's telemetry do not yet. |
 
 ### Accepted, recorded exceptions
 
@@ -87,7 +87,8 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
 - `RunObserver` (`relax/diagnostics/observers.py`): the intermediates (`--save_intermediates_dir`), the parity
   capture and its stage timings (`RELAX_PARITY_DUMP_DIR`, `RELAX_PARITY_TIMING_DIR`, `--timing_dir`), the BPref
   accumulator captures (`RELAX_BPREF_PREJOIN_DUMP_DIR`, `RELAX_BPREF_ACCUM_DUMP_DIR`), the noise-update terms
-  (`RELAX_NOISE_DEBUG_DUMP_DIR`).
+  (`RELAX_NOISE_DEBUG_DUMP_DIR`), the Class3D image-size and M-step dumps (`RELAX_KCLASS_DUMP_DIR`) and the
+  pre-mask maps (`RELAX_PREMASK_DUMP_DIR`).
 - `InputSource` (`relax/parity/relion_replay_source.py`, `RelionReplay`): the numbered STAR replay
   (`--perturb_replay_relion_dir`), `--relion_init_dir`'s run_it000 slot and every other override slot, the
   cutoff, perturbation, optimiser and restart counters, the Class3D prior replay, the final pass's replayed
@@ -100,8 +101,6 @@ Not yet through the ports, each still read where it was:
   sampling state of a frozen boundary (installed by the controller before the source), the state-swap probe
   and its RELION references, the frozen scoring-state assertion, the captured projector (a slot field the
   source passes through), the follower dispatch schedule.
-- `DiagnosticEnvironment.kclass_dump_dir` and `premask_dump_dir`: written inside the reconstruction
-  operations through `ReconstructionSettings`; porting them threads the observer through `mean_helpers`.
 - The engine telemetry, the profile histories and the setup timers: they are archive keys of the default
   run (`RefinementHistory`, `NumberedMetadata.setup_phase_seconds`).
 - The significance and pass-2 single-half selectors (`RELAX_SIGNIFICANCE_DUMP_TARGET_HALF`,

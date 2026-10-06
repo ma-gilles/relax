@@ -26,7 +26,12 @@ from relax.diagnostics.iteration import (
     write_final_half_manifest,
     write_numbered_half_manifest,
 )
-from relax.diagnostics.reconstruction import write_bpref_accumulators
+from relax.diagnostics.reconstruction import (
+    write_bpref_accumulators,
+    write_class_image_size,
+    write_class_mstep,
+    write_premask_mean,
+)
 from relax.refinement.ports import RunObserver
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR
 
@@ -172,6 +177,46 @@ class NoiseUpdateObserver(RunObserver):
         _maybe_dump_noise_update_debug(iteration=iteration, **terms)
 
 
+class ClassDumpObserver(RunObserver):
+    """Writes each Class3D iteration's image-size plan and each class's prior under ``directory``
+    (``RELAX_KCLASS_DUMP_DIR``; ``recovar_kclass_current_size_itNNN.npz``, ``recovar_kclass_mstep_itNNN_cKK.npz``)."""
+
+    def __init__(self, directory):
+        self.directory = str(directory)
+
+    def class_image_size_planned(self, iteration, plan, *, previous_size, grid_size, has_high_fsc_at_limit,
+                                 incr_size, state):
+        write_class_image_size(
+            plan, output_dir=self.directory, previous_size=previous_size, grid_size=grid_size, iteration=iteration,
+            has_high_fsc_at_limit=has_high_fsc_at_limit, incr_size=incr_size, state=state,
+        )
+
+    def class_prior_estimated(self, estimated):
+        write_class_mstep(
+            estimated.prior, numerators=estimated.numerators, denominators=estimated.denominators,
+            half_denominators=estimated.half_denominators, references=estimated.references,
+            settings=estimated.settings, output_dir=self.directory, class_index=estimated.class_index,
+            current_size=estimated.current_size, iteration=estimated.iteration, source=estimated.source,
+            accumulator_shape=estimated.accumulator_shape, full_half_axis=estimated.full_half_axis,
+            frame_scale=estimated.frame_scale,
+        )
+
+
+class PremaskObserver(RunObserver):
+    """Writes each half's solved numbered map before its low-pass and solvent mask under ``directory``
+    (``RELAX_PREMASK_DUMP_DIR``)."""
+
+    def __init__(self, directory):
+        self.directory = str(directory)
+
+    def map_solved(self, iteration, half_index, mean, *, settings, current_size, n_classes):
+        write_premask_mean(
+            mean, output_dir=self.directory, half_index=half_index, iteration=iteration, current_size=current_size,
+            grid_size=settings.grid_size, voxel_size=settings.voxel_size, volume_shape=settings.volume_shape,
+            n_classes=n_classes,
+        )
+
+
 class ObserverGroup(RunObserver):
     """Hands every hook to each of ``observers`` in order; a collection request holds if any asks for it."""
 
@@ -211,6 +256,18 @@ class ObserverGroup(RunObserver):
         for o in self.observers:
             o.noise_updated(iteration, **values)
 
+    def class_image_size_planned(self, iteration, plan, **values):
+        for o in self.observers:
+            o.class_image_size_planned(iteration, plan, **values)
+
+    def class_prior_estimated(self, estimated):
+        for o in self.observers:
+            o.class_prior_estimated(estimated)
+
+    def map_solved(self, iteration, half_index, mean, **values):
+        for o in self.observers:
+            o.map_solved(iteration, half_index, mean, **values)
+
     def poses_updated(self, iteration, **values):
         for o in self.observers:
             o.poses_updated(iteration, **values)
@@ -230,7 +287,8 @@ class ObserverGroup(RunObserver):
 
 def observers_from_environment() -> list[RunObserver]:
     """The observers the environment asks for: the parity capture or its timings, the BPref accumulator
-    captures, the noise-update terms. A malformed ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
+    captures, the noise-update terms, the Class3D M-step and image-size dumps, the pre-mask maps. A malformed
+    ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
 
     found = []
     if parity_dump.timing_is_active():
@@ -240,6 +298,10 @@ def observers_from_environment() -> list[RunObserver]:
         found.append(accumulators)
     if os.environ.get("RELAX_NOISE_DEBUG_DUMP_DIR"):
         found.append(NoiseUpdateObserver())
+    if os.environ.get("RELAX_KCLASS_DUMP_DIR"):
+        found.append(ClassDumpObserver(os.environ["RELAX_KCLASS_DUMP_DIR"]))
+    if os.environ.get("RELAX_PREMASK_DUMP_DIR"):
+        found.append(PremaskObserver(os.environ["RELAX_PREMASK_DUMP_DIR"]))
     return found
 
 
