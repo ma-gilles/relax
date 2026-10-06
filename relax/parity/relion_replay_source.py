@@ -13,24 +13,34 @@ While the replay's settings are still fields of the run's options, the source re
 from __future__ import annotations
 
 import logging
+import os
 
 import jax.numpy as jnp
 import numpy as np
 
+from relax import sampling
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.relion_replay import (
     _class_tau2_replay,
+    _has_numbered_replay_iteration_overrides,
     _past_perturb_replay_max_iter,
     _perturbation_restart_state_iteration,
+    _prepare_final_replay_references,
     _resolve_replay_random_perturbation,
     _restore_convergence_state_from_replay_restart,
+    _select_final_replay_override,
+    apply_final_replay_state,
     apply_iter_replay_overrides,
     apply_optimiser_convergence_replay,
     read_optimiser_accuracy_replay,
+    select_final_sampling_star,
 )
+from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.mean_helpers import class_mixture_from_weights
-from relax.refinement.ports import ClassTau2, InputSource, NumberedState
+from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState
+from relax.refinement.refinement_options import FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV
+from relax.relion.relion_metadata import read_relion_sampling_metadata
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -42,14 +52,14 @@ class RelionReplaySource(InputSource):
     def __init__(self, options):
         self.options = options
         self._cutoff_announced = False
+        # The STAR directory of the last iteration asked about: the one the final pass replays from.
+        self._live_directory = options.parity.perturb_replay_relion_dir
 
     @classmethod
     def from_options(cls, options) -> InputSource:
-        """The source the run's options ask for: this replay when they name override slots or a STAR replay
-        directory, else the native source."""
-        if options.replay.replay_iteration_overrides is None and options.parity.perturb_replay_relion_dir is None:
-            return InputSource()
-        return cls(options)
+        """The source the run's options ask for: this replay when they name override slots, a STAR replay
+        directory or a final-pass replay, else the native source."""
+        return cls(options) if replays(options) else InputSource()
 
     def _slot(self, iteration: int):
         slots = self.options.replay.replay_iteration_overrides
@@ -64,7 +74,7 @@ class RelionReplaySource(InputSource):
     def relion_run_directory(self, iteration):
         """The STAR replay's directory up to ``perturb_replay_max_iter`` (announced once when it ends), else None."""
         parity = self.options.parity
-        directory = self._star_directory(iteration)
+        directory = self._live_directory = self._star_directory(iteration)
         if directory is None and parity.perturb_replay_relion_dir is not None and not self._cutoff_announced:
             self._cutoff_announced = True
             logger.info(
@@ -74,6 +84,138 @@ class RelionReplaySource(InputSource):
                 parity.perturb_replay_max_iter,
             )
         return directory
+
+    def final_state(self, inputs, *, means, numbered_iteration_count, halves, direction_priors, healpix_order,
+                    image_geometry):
+        """The final pass's RELION state: a final-only replay's references and state, else the last numbered
+        slot's (when the replay has numbered slots, or RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE asks and
+        RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE does not forbid it). Installs the particle state
+        in the ``halves`` and the priors in ``direction_priors`` in place, as apply_final_replay_state does."""
+        options, replay = self.options, self.options.replay
+        environment = options.debug.environment
+        n_classes = int(options.k_class.n_classes)
+        k_class_enabled = n_classes > 1
+        final_replay_override = replay.final_replay_override
+        sigma_offset, noise_model = inputs.sigma_offset, inputs.noise_model
+        disabled = environment.final_all_data_disable_replay_last_numbered_state
+        has_overrides = replay.replay_iteration_overrides is not None and len(replay.replay_iteration_overrides) > 0
+        join_means = _prepare_final_replay_references(
+            replay=replay,
+            diagnostic_override=final_replay_override,
+            numbered_iteration_count=numbered_iteration_count,
+            means=means,
+            final_join_means=inputs.join_means,
+            k_class_enabled=k_class_enabled,
+            logger=logger,
+        )
+        replay_last_numbered_state = final_replay_override is not None or (
+            not disabled
+            and (
+                environment.final_all_data_replay_last_numbered_state
+                or _has_numbered_replay_iteration_overrides(replay.replay_iteration_overrides)
+            )
+        )
+        if replay_last_numbered_state:
+            override_index, override = _select_final_replay_override(
+                requested_index=numbered_iteration_count,
+                diagnostic_override=final_replay_override,
+                replay_overrides=replay.replay_iteration_overrides,
+                has_overrides=has_overrides,
+                logger=logger,
+            )
+            if override is not None:
+                sigma_offset, noise_model = apply_final_replay_state(
+                    override,
+                    halves,
+                    direction_priors,
+                    sigma_offset=sigma_offset,
+                    noise_model=noise_model,
+                    n_classes=n_classes,
+                    healpix_order=healpix_order,
+                    image_shape=image_geometry.image_shape,
+                    symmetry=options.symmetry.point_group,
+                    dtype=_dense_global_scoring_dtype(),
+                    override_index=override_index,
+                    log=logger,
+                )
+        elif not k_class_enabled and disabled and has_overrides:
+            logger.info(
+                "Diagnostic %s=1: final all-data skips automatic last-numbered RELION state replay",
+                FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
+            )
+        return FinalState(join_means, sigma_offset, noise_model)
+
+    def final_sampling_settings(self, state, image_geometry, *, grid_order, relion_iteration, native):
+        """RELION's final (or last numbered) sampling STAR of the final-pass replay directory, else of the live
+        STAR replay; with neither, the run's own. A replay without the STAR leaves the final grid unperturbed."""
+        options, parity = self.options, self.options.parity
+        n_classes = int(options.k_class.n_classes)
+        last_numbered_iteration = relion_iteration - 1
+        active_replay_dir = self._live_directory
+        replay_dir = (
+            parity.final_sampling_replay_relion_dir
+            if parity.final_sampling_replay_relion_dir is not None
+            else active_replay_dir
+        )
+        if replay_dir is None:
+            return native()
+        star, source, candidates = select_final_sampling_star(
+            replay_dir, parity.perturb_replay_relion_prefix,
+            final_iteration=relion_iteration,
+            previous_iteration=last_numbered_iteration,
+            require_final_state=options.replay.replay_iteration_overrides is not None,
+        )
+        if star is not None:
+            metadata = read_relion_sampling_metadata(star)
+            replay_iteration = last_numbered_iteration if source == "last-numbered" else relion_iteration
+            perturbation, perturbation_source = _resolve_replay_random_perturbation(
+                star_value=metadata["random_perturbation"],
+                perturbation_factor=metadata["perturbation_factor"],
+                relion_iteration=replay_iteration,
+                replay_dir=str(replay_dir),
+                replay_prefix=parity.perturb_replay_relion_prefix,
+                explicit_seed=parity.perturb_seed,
+                precision_mode=parity.perturb_replay_precision,
+                restart_state_iteration=_perturbation_restart_state_iteration(
+                    parity.perturb_replay_restart_state_iterations, replay_iteration,
+                ),
+            )
+            pixel_size = image_geometry.pixel_size_angstrom
+            settings = FinalSamplingSettings(
+                relion_iteration=relion_iteration,
+                grid_order=grid_order,
+                perturbation_order=metadata["healpix_order"],
+                translation_range=metadata["offset_range"] / pixel_size,
+                translation_step=metadata["offset_step"] / pixel_size,
+                pixel_size_angstrom=pixel_size,
+                perturbation_factor=metadata["perturbation_factor"],
+                perturbation=perturbation,
+                sampling_star=star,
+                sampling_star_source=source,
+            )
+            _log_replayed_translation_grid_change(
+                settings, replay_dir=replay_dir,
+                replay_prefix=parity.perturb_replay_relion_prefix, n_classes=n_classes,
+            )
+            logger.info(
+                "Perturbation replay: final all-data relion_iter=%d rp=%+.12g pf=%.3f "
+                "relion_hp_order=%d offset_range=%.3f px offset_step=%.3f px source=%s/%s",
+                replay_iteration, settings.random_perturbation, settings.perturbation_factor,
+                settings.perturbation_order, settings.translation_range, settings.translation_step,
+                source, perturbation_source,
+            )
+            return settings
+        logger.info(
+            "Perturbation replay: final all-data sampling STAR missing for relion_iter=%d (%s); "
+            "leaving final trial grid unperturbed",
+            relion_iteration, ", ".join(path for path, _source in candidates),
+        )
+        # A final-only replay directory historically applies a zero perturbation
+        # when native perturbation is enabled, without advancing its RNG.
+        return native_final_sampling_settings(
+            state, image_geometry, options, grid_order=grid_order, relion_iteration=relion_iteration,
+            perturbation=0.0 if active_replay_dir is None and parity.perturb_factor > 0 else None,
+        )
 
     def class_tau2(self, iteration, n_classes):
         """The slot's captured Class3D prior, used when RELAX_KCLASS_REPLAY_TAU2 asks for it (validated always)."""
@@ -208,4 +350,49 @@ class RelionReplaySource(InputSource):
             prior_translations=inputs.prior_translations if sampling_sealed else result.prior_translations,
             sampling_meta=inputs.sampling_meta if sampling_sealed else result.replay_meta,
             projector_state=result.relion_projector_state,
+        )
+
+
+def replays(options) -> bool:
+    """Whether ``options`` name RELION state to replay: override slots, a STAR replay directory, a final-pass
+    replay (its override, reference maps or sampling directory) or the last numbered state's replay in the
+    final pass (RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE)."""
+    replay, parity = options.replay, options.parity
+    return any(
+        value is not None
+        for value in (
+            replay.replay_iteration_overrides, parity.perturb_replay_relion_dir, replay.final_replay_override,
+            replay.final_replay_reference_maps, parity.final_sampling_replay_relion_dir,
+        )
+    ) or options.debug.environment.final_all_data_replay_last_numbered_state
+
+
+def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix, n_classes):
+    if settings.sampling_star_source != "final":
+        return
+    numbered_path = os.path.join(
+        replay_dir, f"{replay_prefix}_it{settings.relion_iteration - 1:03d}_sampling.star",
+    )
+    if not os.path.exists(numbered_path):
+        return
+    numbered = read_relion_sampling_metadata(numbered_path)
+    numbered_range = numbered["offset_range"] / settings.pixel_size_angstrom
+    numbered_step = numbered["offset_step"] / settings.pixel_size_angstrom
+    numbered_grid = sampling._relion_base_translation_grid(
+        numbered_range, numbered_step,
+        n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
+    ).astype(np.float32)
+    final_grid = sampling._relion_base_translation_grid(
+        settings.translation_range, settings.translation_step,
+        n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
+    ).astype(np.float32)
+    if numbered_grid.shape != final_grid.shape or not np.allclose(
+        numbered_grid, final_grid, rtol=0.0, atol=1e-6,
+    ):
+        logger.info(
+            "RELION final all-data sampling grid differs from last numbered sampling: "
+            "numbered n=%d range=%.9g step=%.9g hp=%d; final n=%d range=%.9g step=%.9g hp=%d",
+            numbered_grid.shape[0], numbered_range, numbered_step, numbered["healpix_order"],
+            final_grid.shape[0], settings.translation_range, settings.translation_step,
+            settings.perturbation_order,
         )

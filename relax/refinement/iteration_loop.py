@@ -45,10 +45,8 @@ from relax.diagnostics.iteration import (
 )
 from relax.diagnostics.reconstruction import check_half_accumulators_before_join
 from relax.diagnostics.relion_replay import (
-    _has_numbered_replay_iteration_overrides,
     _maybe_debug_replay_relion_references,
     _validate_bpref_particle_order_scope,
-    apply_final_replay_state,
     sealed_rotation_ids_for_scoring,
 )
 from relax.diagnostics.state_swap_runtime import (
@@ -180,6 +178,7 @@ from relax.refinement.noise_updates import (
 from relax.refinement.optics_shapes import MultiShapeHalf
 from relax.refinement.ports import (
     ClassTau2,
+    FinalState,
     FinishedIteration,
     InputSource,
     NumberedState,
@@ -193,7 +192,6 @@ from relax.refinement.projector_preparation import (
 )
 from relax.refinement.refinement_options import (
     FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
-    FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
     FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
     RefinementOptions,
     require_consistency_route,
@@ -836,7 +834,6 @@ def refine_single_volume(
     particle_diameter_ang = schedule.particle_diameter_ang
     tau2_fudge = parity.tau2_fudge
     init_relion_iteration = schedule.init_relion_iteration
-    final_replay_override = replay.final_replay_override
     n_classes = k_class.n_classes
     sealed_sampling_state = debug.sealed_sampling_state
 
@@ -892,12 +889,16 @@ def refine_single_volume(
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
     consistency = require_consistency_route(options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves)
-    if type(source) is InputSource and (
-        options.replay.replay_iteration_overrides is not None or options.parity.perturb_replay_relion_dir is not None
-    ):
+    if type(source) is InputSource and any(
+        value is not None
+        for value in (
+            replay.replay_iteration_overrides, parity.perturb_replay_relion_dir, replay.final_replay_override,
+            replay.final_replay_reference_maps, parity.final_sampling_replay_relion_dir,
+        )
+    ) or (type(source) is InputSource and debug.environment.final_all_data_replay_last_numbered_state):
         # Until the replay settings leave the options (code rule 15), they need the source that reads them.
         raise ValueError(
-            "the options name replay slots or a RELION replay directory but the run has the native input source; "
+            "the options name RELION state to replay but the run has the native input source; "
             "pass source=relax.parity.relion_replay_source.RelionReplaySource.from_options(options)"
         )
     relion_translation_angle_scale = (
@@ -2552,55 +2553,11 @@ def refine_single_volume(
             "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
             FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
         )
-    final_replay_disabled = debug.environment.final_all_data_disable_replay_last_numbered_state
-    final_replay_has_overrides = replay.replay_iteration_overrides is not None and len(replay.replay_iteration_overrides) > 0
-    final_replay_has_numbered_overrides = _has_numbered_replay_iteration_overrides(
-        replay.replay_iteration_overrides
+    final_join_means, sigma_offset, noise_model = source.final_state(
+        FinalState(final_join_means, sigma_offset, noise_model),
+        means=reference_model.maps, numbered_iteration_count=len(history.current_sizes), halves=halves,
+        direction_priors=direction_priors, healpix_order=state.healpix_order, image_geometry=image_geometry,
     )
-    final_join_means = replay_policy._prepare_final_replay_references(
-        replay=replay,
-        diagnostic_override=final_replay_override,
-        numbered_iteration_count=len(history.current_sizes),
-        means=reference_model.maps,
-        final_join_means=final_join_means,
-        k_class_enabled=k_class_enabled,
-        logger=logger,
-    )
-    final_replay_last_numbered_state = (
-        final_replay_override is not None
-        or (
-            not final_replay_disabled
-            and (debug.environment.final_all_data_replay_last_numbered_state or final_replay_has_numbered_overrides)
-        )
-    )
-    if final_replay_last_numbered_state:
-        final_replay_override_index, final_replay_override = replay_policy._select_final_replay_override(
-            requested_index=len(history.current_sizes),
-            diagnostic_override=final_replay_override,
-            replay_overrides=replay.replay_iteration_overrides,
-            has_overrides=final_replay_has_overrides,
-            logger=logger,
-        )
-        if final_replay_override is not None:
-            sigma_offset, noise_model = apply_final_replay_state(
-                final_replay_override,
-                halves,
-                direction_priors,
-                sigma_offset=sigma_offset,
-                noise_model=noise_model,
-                n_classes=n_classes,
-                healpix_order=state.healpix_order,
-                image_shape=image_geometry.image_shape,
-                symmetry=symmetry,
-                dtype=scoring_dtype,
-                override_index=final_replay_override_index,
-                log=logger,
-            )
-    elif not k_class_enabled and final_replay_disabled and final_replay_has_overrides:
-        logger.info(
-            "Diagnostic %s=1: final all-data skips automatic last-numbered RELION state replay",
-            FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
-        )
     if follower_setup.follower_scale_state is not None:
         _dispatch_relion_follower_scale_for_final_all_data(
             follower_setup,
@@ -2642,7 +2599,7 @@ def refine_single_volume(
         rotation_grid=coarse_grids.rotation_grid,
         random_perturbation=random_perturbation,
         perturb_rng=perturb_rng,
-        perturb_replay_relion_dir=star_directory,
+        source=source,
         sigma_offset=sigma_offset,
         class_mixture=class_mixture,
         class_assignments=class_assignments,

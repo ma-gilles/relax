@@ -1100,7 +1100,7 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
         return marker
 
     monkeypatch.setattr(finalization, "run_final_all_data", capture)
-    result = refine_single_volume(
+    result = _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -5772,7 +5772,7 @@ class TestRelionModeSmokeTest:
     ):
         """K=4 refinement runs exactly one final all-data iteration."""
         original_update = convergence_policy.update_refinement_state
-        original_prepare_final_references = iteration_loop_module.replay_policy._prepare_final_replay_references
+        original_run_final_all_data = iteration_loop_module.finalization.run_final_all_data
         final_all_data_pass_count = 0
 
         def force_convergence_after_first_iter(*args, **kwargs):
@@ -5783,7 +5783,7 @@ class TestRelionModeSmokeTest:
         def record_final_all_data_pass(*args, **kwargs):
             nonlocal final_all_data_pass_count
             final_all_data_pass_count += 1
-            return original_prepare_final_references(*args, **kwargs)
+            return original_run_final_all_data(*args, **kwargs)
 
         monkeypatch.setattr(
             convergence_policy,
@@ -5791,8 +5791,8 @@ class TestRelionModeSmokeTest:
             force_convergence_after_first_iter,
         )
         monkeypatch.setattr(
-            iteration_loop_module.replay_policy,
-            "_prepare_final_replay_references",
+            iteration_loop_module.finalization,
+            "run_final_all_data",
             record_final_all_data_pass,
         )
 
@@ -5836,17 +5836,17 @@ class TestRelionModeSmokeTest:
     ):
         """K-class max-iteration exhaustion never enables final all-data."""
         final_all_data_pass_count = 0
-        original_prepare_final_references = iteration_loop_module.replay_policy._prepare_final_replay_references
+        original_run_final_all_data = iteration_loop_module.finalization.run_final_all_data
 
         def record_final_all_data_pass(*args, **kwargs):
             nonlocal final_all_data_pass_count
             final_all_data_pass_count += 1
-            return original_prepare_final_references(*args, **kwargs)
+            return original_run_final_all_data(*args, **kwargs)
 
         monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
         monkeypatch.setattr(
-            iteration_loop_module.replay_policy,
-            "_prepare_final_replay_references",
+            iteration_loop_module.finalization,
+            "run_final_all_data",
             record_final_all_data_pass,
         )
 

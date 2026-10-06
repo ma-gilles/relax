@@ -57,7 +57,7 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
-from relax.refinement.ports import FinalHalfScored, RunObserver
+from relax.refinement.ports import FinalHalfScored, InputSource, RunObserver
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
@@ -128,7 +128,7 @@ def run_final_all_data(
     rotation_grid: sampling.RotationGrid,
     random_perturbation,
     perturb_rng,
-    perturb_replay_relion_dir,
+    source: InputSource,
     sigma_offset,
     class_mixture,
     class_assignments,
@@ -211,7 +211,7 @@ def run_final_all_data(
         options,
         previous_rotation_grid=rotation_grid,
         numbered_iteration_count=len(history.current_sizes),
-        active_replay_dir=perturb_replay_relion_dir,
+        source=source,
         previous_perturbation=random_perturbation,
         rng=perturb_rng,
         dtype=scoring_dtype,

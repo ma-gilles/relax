@@ -139,6 +139,15 @@ class ClassTau2(NamedTuple):
     source: str
 
 
+class FinalState(NamedTuple):
+    """The inputs of the final all-data pass a source may replace: the references each half is scored
+    against (``join_means``), the ``SigmaOffset`` and the noise model."""
+
+    join_means: list
+    sigma_offset: Any
+    noise_model: Any
+
+
 class InputSource:
     """The native source: every input is the one the run computed."""
 
@@ -161,6 +170,19 @@ class InputSource:
 
     def random_perturbation(self, iteration: int, sampling_meta, native) -> float:
         """This iteration's sampling perturbation; ``native()`` computes the run's own (and advances its RNG)."""
+        return native()
+
+    def final_state(
+        self, inputs: FinalState, *, means, numbered_iteration_count: int, halves, direction_priors, healpix_order: int,
+        image_geometry,
+    ) -> FinalState:
+        """The state the final all-data pass scores with. ``means`` are the run's half maps; a replaying source
+        may also update the ``halves`` and the ``direction_priors`` list in place, and says so."""
+        return inputs
+
+    def final_sampling_settings(self, state, image_geometry, *, grid_order: int, relion_iteration: int, native):
+        """The final all-data pass's sampling settings (a ``FinalSamplingSettings``); ``native()`` resolves the
+        run's own (and advances its RNG)."""
         return native()
 
     def class_tau2(self, iteration: int, n_classes: int) -> ClassTau2:

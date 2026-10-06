@@ -4,26 +4,20 @@ See docs/math/relion_refinement_algorithm.md, section 7.
 """
 
 import logging
-import os
 from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
 
 from relax import sampling
-from relax.diagnostics.relion_replay import (
-    _perturbation_restart_state_iteration,
-    _resolve_replay_random_perturbation,
-    select_final_sampling_star,
-)
 from relax.helpers.convergence import (
     RefinementState,
     _exhaustive_grid_order_for_state,
     _native_final_perturbation_healpix_order,
 )
 from relax.helpers.resolution import ImageGeometry
+from relax.refinement.ports import InputSource
 from relax.refinement.refinement_options import RefinementOptions
-from relax.relion.relion_metadata import read_relion_sampling_metadata
 
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
@@ -59,140 +53,45 @@ class FinalSampling:
     grid: sampling.TrialGrid
 
 
-def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix, n_classes):
-    if settings.sampling_star_source != "final":
-        return
-    numbered_path = os.path.join(
-        replay_dir, f"{replay_prefix}_it{settings.relion_iteration - 1:03d}_sampling.star",
+def advance_final_perturbation(previous_perturbation: float, options: RefinementOptions, *, relion_iteration: int, rng):
+    """The final pass's own perturbation: the native advance where the run perturbs, else None (none applied).
+
+    Reads ``parity.perturb_factor`` and ``perturb_seed``.
+    """
+    parity = options.parity
+    if not parity.perturb_factor > 0:
+        return None
+    perturbation, seed = sampling._advance_relion_perturbation(
+        previous_perturbation,
+        perturb_factor=parity.perturb_factor,
+        perturb_seed=parity.perturb_seed,
+        relion_iteration=relion_iteration,
+        rng=rng,
     )
-    if not os.path.exists(numbered_path):
-        return
-    numbered = read_relion_sampling_metadata(numbered_path)
-    numbered_range = numbered["offset_range"] / settings.pixel_size_angstrom
-    numbered_step = numbered["offset_step"] / settings.pixel_size_angstrom
-    numbered_grid = sampling._relion_base_translation_grid(
-        numbered_range, numbered_step,
-        n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
-    ).astype(np.float32)
-    final_grid = sampling._relion_base_translation_grid(
-        settings.translation_range, settings.translation_step,
-        n_classes=n_classes, voxel_size=settings.pixel_size_angstrom,
-    ).astype(np.float32)
-    if numbered_grid.shape != final_grid.shape or not np.allclose(
-        numbered_grid, final_grid, rtol=0.0, atol=1e-6,
-    ):
+    if seed is not None:
         logger.info(
-            "RELION final all-data sampling grid differs from last numbered sampling: "
-            "numbered n=%d range=%.9g step=%.9g hp=%d; final n=%d range=%.9g step=%.9g hp=%d",
-            numbered_grid.shape[0], numbered_range, numbered_step, numbered["healpix_order"],
-            final_grid.shape[0], settings.translation_range, settings.translation_step,
-            settings.perturbation_order,
+            "Perturbation advance: final all-data relion_iter=%d seed=%d rp=%+.5f",
+            relion_iteration, seed, perturbation,
         )
+    else:
+        logger.info(
+            "Perturbation advance: final all-data relion_iter=%d rp=%+.5f",
+            relion_iteration, perturbation,
+        )
+    return perturbation
 
 
-def _resolve_final_sampling_settings(
+def native_final_sampling_settings(
     state: RefinementState,
     image_geometry: ImageGeometry,
     options: RefinementOptions,
     *,
     grid_order: int,
-    numbered_iteration_count: int,
-    active_replay_dir: str | None,
-    previous_perturbation: float,
-    rng,
+    relion_iteration: int,
+    perturbation: float | None,
 ) -> FinalSamplingSettings:
-    """The final pass's sampling settings, replayed from RELION's sampling STAR or advanced natively.
-
-    Reads from ``options``: ``schedule.init_relion_iteration``; ``parity``'s final-sampling replay
-    directory, ``perturb_factor``, ``perturb_seed`` and ``perturb_replay_*`` fields;
-    ``replay.replay_iteration_overrides`` (their presence makes the final STAR mandatory) and
-    ``k_class.n_classes``.
-    """
-    parity = options.parity
-    n_classes = int(options.k_class.n_classes)
-    require_final_state = options.replay.replay_iteration_overrides is not None
-    last_numbered_iteration = options.schedule.init_relion_iteration + numbered_iteration_count
-    relion_iteration = last_numbered_iteration + 1
-    replay_dir = (
-        parity.final_sampling_replay_relion_dir
-        if parity.final_sampling_replay_relion_dir is not None
-        else active_replay_dir
-    )
-    if replay_dir is not None:
-        star, source, candidates = select_final_sampling_star(
-            replay_dir, parity.perturb_replay_relion_prefix,
-            final_iteration=relion_iteration,
-            previous_iteration=last_numbered_iteration,
-            require_final_state=require_final_state,
-        )
-        if star is not None:
-            metadata = read_relion_sampling_metadata(star)
-            replay_iteration = last_numbered_iteration if source == "last-numbered" else relion_iteration
-            perturbation, perturbation_source = _resolve_replay_random_perturbation(
-                star_value=metadata["random_perturbation"],
-                perturbation_factor=metadata["perturbation_factor"],
-                relion_iteration=replay_iteration,
-                replay_dir=str(replay_dir),
-                replay_prefix=parity.perturb_replay_relion_prefix,
-                explicit_seed=parity.perturb_seed,
-                precision_mode=parity.perturb_replay_precision,
-                restart_state_iteration=_perturbation_restart_state_iteration(
-                    parity.perturb_replay_restart_state_iterations, replay_iteration,
-                ),
-            )
-            pixel_size = image_geometry.pixel_size_angstrom
-            settings = FinalSamplingSettings(
-                relion_iteration=relion_iteration,
-                grid_order=grid_order,
-                perturbation_order=metadata["healpix_order"],
-                translation_range=metadata["offset_range"] / pixel_size,
-                translation_step=metadata["offset_step"] / pixel_size,
-                pixel_size_angstrom=pixel_size,
-                perturbation_factor=metadata["perturbation_factor"],
-                perturbation=perturbation,
-                sampling_star=star,
-                sampling_star_source=source,
-            )
-            _log_replayed_translation_grid_change(
-                settings, replay_dir=replay_dir,
-                replay_prefix=parity.perturb_replay_relion_prefix, n_classes=n_classes,
-            )
-            logger.info(
-                "Perturbation replay: final all-data relion_iter=%d rp=%+.12g pf=%.3f "
-                "relion_hp_order=%d offset_range=%.3f px offset_step=%.3f px source=%s/%s",
-                replay_iteration, settings.random_perturbation, settings.perturbation_factor,
-                settings.perturbation_order, settings.translation_range, settings.translation_step,
-                source, perturbation_source,
-            )
-            return settings
-        logger.info(
-            "Perturbation replay: final all-data sampling STAR missing for relion_iter=%d (%s); "
-            "leaving final trial grid unperturbed",
-            relion_iteration, ", ".join(path for path, _source in candidates),
-        )
-        # A final-only replay directory historically applies a zero perturbation
-        # when native perturbation is enabled, without advancing its RNG.
-        perturbation = 0.0 if active_replay_dir is None and parity.perturb_factor > 0 else None
-    elif parity.perturb_factor > 0:
-        perturbation, seed = sampling._advance_relion_perturbation(
-            previous_perturbation,
-            perturb_factor=parity.perturb_factor,
-            perturb_seed=parity.perturb_seed,
-            relion_iteration=relion_iteration,
-            rng=rng,
-        )
-        if seed is not None:
-            logger.info(
-                "Perturbation advance: final all-data relion_iter=%d seed=%d rp=%+.5f",
-                relion_iteration, seed, perturbation,
-            )
-        else:
-            logger.info(
-                "Perturbation advance: final all-data relion_iter=%d rp=%+.5f",
-                relion_iteration, perturbation,
-            )
-    else:
-        perturbation = None
+    """The final pass's sampling from the run's own state: ``state``'s translation range and step, the
+    perturbation order of its last sampling, and ``perturbation`` (None: none applied)."""
     return FinalSamplingSettings(
         relion_iteration=relion_iteration,
         grid_order=grid_order,
@@ -200,7 +99,7 @@ def _resolve_final_sampling_settings(
         translation_range=state.translation_range,
         translation_step=state.translation_step,
         pixel_size_angstrom=image_geometry.pixel_size_angstrom,
-        perturbation_factor=parity.perturb_factor,
+        perturbation_factor=options.parity.perturb_factor,
         perturbation=perturbation,
     )
 
@@ -212,17 +111,19 @@ def prepare_final_sampling(
     *,
     previous_rotation_grid: sampling.RotationGrid,
     numbered_iteration_count: int,
-    active_replay_dir: str | None,
+    source: InputSource,
     previous_perturbation: float,
     rng,
     dtype=np.float32,
 ) -> FinalSampling:
-    """Resolve native/replayed sampling and return arrays in scoring precision.
+    """Resolve the final pass's sampling (the input source's, or the run's own) and return arrays in scoring
+    precision.
 
     Final-pass base translations are rounded to device precision before
     perturbation, unlike the host-double bases used by numbered iterations.
     ``numbered_iteration_count`` is the number of numbered iterations this run completed. Reads
-    ``options.k_class.n_classes`` and the fields ``_resolve_final_sampling_settings`` names.
+    ``options.k_class.n_classes``, ``schedule.init_relion_iteration`` and the fields
+    ``native_final_sampling_settings`` and ``advance_final_perturbation`` name.
     """
     n_classes = int(options.k_class.n_classes)
     grid_order = _exhaustive_grid_order_for_state(state)
@@ -235,13 +136,15 @@ def prepare_final_sampling(
         )
     rotations = rotation_grid.rotations
     eulers = np.asarray(rotation_grid.rotation_eulers, dtype=dtype)
-    settings = _resolve_final_sampling_settings(
-        state, image_geometry, options,
-        grid_order=grid_order,
-        numbered_iteration_count=numbered_iteration_count,
-        active_replay_dir=active_replay_dir,
-        previous_perturbation=previous_perturbation,
-        rng=rng,
+    relion_iteration = options.schedule.init_relion_iteration + numbered_iteration_count + 1
+    settings = source.final_sampling_settings(
+        state, image_geometry, grid_order=grid_order, relion_iteration=relion_iteration,
+        native=lambda: native_final_sampling_settings(
+            state, image_geometry, options, grid_order=grid_order, relion_iteration=relion_iteration,
+            perturbation=advance_final_perturbation(
+                previous_perturbation, options, relion_iteration=relion_iteration, rng=rng,
+            ),
+        ),
     )
     base_translations = jnp.asarray(
         sampling._relion_base_translation_grid(
