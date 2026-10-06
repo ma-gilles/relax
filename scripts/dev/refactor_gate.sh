@@ -2,28 +2,30 @@
 #SBATCH --partition=cpu,cryoem
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time=01:30:00
+#SBATCH --time=02:00:00
 # CPU gate of a refactor slice, on a frozen worktree of the head (git worktree add --detach <dir> <sha>).
 # usage: REFACTOR_SCRATCH=<dir> [REFACTOR_WORKTREE=<frozen worktree>] scripts/dev/refactor_gate.sh <step>
 #   fp [BASE]                 fingerprint check of the worktree against BASE (default origin/main)
 #   selftest                  every fingerprint mutation must be detected
 #   guard                     the fast guard and the agent-guide check
-#   tests <label> <rev>       the CPU unit list on a snapshot of <rev>; writes logs/fail_<label>.txt
+#   tests <label> <rev>       the CPU unit list and the module's test directories on a snapshot of <rev>;
+#                             writes logs/fail_<label>.txt
 #   compare <label> <label>   the two failure lists must be identical
-#   all [BASE]                every step above in turn, with the labels base and head (about one hour)
+#   all [BASE]                every step above in turn, with the labels base and head (about one hour; more with a module's test directories)
 # Each step prints one summary line and exits nonzero on failure ("tests" does not: its tests may fail on
 # both sides; "compare" decides). Run it from the worktree, or as a Slurm job from there
 # (sbatch --account=<account> --export=ALL scripts/dev/refactor_gate.sh all). REFACTOR_WORKTREE defaults to
 # the checkout of the current directory, REFACTOR_PYTHON to its pixi environment, REFACTOR_TAG (a suffix
-# for log names, so two gates can share one scratch directory) to the short head, REFACTOR_FINGERPRINT (the
-# module's harness for fp and selftest) to scripts/dev/fingerprint.py. Logs: $REFACTOR_SCRATCH/logs.
+# for log names, so two gates can share one scratch directory) to the short head. REFACTOR_MODULE (default
+# refinement) selects the module's harness and test directories: scripts/dev/refactor_module.sh.
+# Logs: $REFACTOR_SCRATCH/logs.
 set -u
 S=${REFACTOR_SCRATCH:?set REFACTOR_SCRATCH to a scratch directory outside the checkout}
 W=${REFACTOR_WORKTREE:-$(git rev-parse --show-toplevel)} || exit 2
 PY=${REFACTOR_PYTHON:-$W/.pixi/envs/default/bin/python}
 T=${REFACTOR_TAG:-$(git -C "$W" rev-parse --short HEAD)}
-FP=${REFACTOR_FINGERPRINT:-scripts/dev/fingerprint.py}
-FPN=$(basename "$FP" .py)
+# shellcheck source=scripts/dev/refactor_module.sh
+. "$W/scripts/dev/refactor_module.sh"
 mkdir -p "$S/logs"
 unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV RELAX_TEST_RECEIPTS
 export CUDA_VISIBLE_DEVICES= JAX_PLATFORMS=cpu PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
@@ -49,12 +51,15 @@ step_tests() {
   rm -rf "$src"; mkdir -p "$src"; git -C "$W" archive "$rev" | tar -x -C "$src" || return 2
   [ -e "$W/.pixi" ] && ln -s "$(readlink -f "$W/.pixi")" "$src/.pixi"
   cd "$src" || return 2
-  local files; files=$(grep -v '^#' "$W/scripts/dev/refactor_cpu_unit_list.txt" | while read -r f; do [ -f "$f" ] && echo "$f"; done)
+  local files dirs=""; for d in $MODULE_TESTS; do [ -d "$d" ] && dirs="$dirs $d"; done
+  # shellcheck disable=SC2086
+  files=$( { grep -v '^#' "$W/scripts/dev/refactor_cpu_unit_list.txt"; [ -z "$dirs" ] || find $dirs -name 'test_*.py'; } \
+    | while read -r f; do [ -f "$f" ] && echo "$f"; done | sort -u)
   # shellcheck disable=SC2086
   PYTHONPATH=$src JAX_COMPILATION_CACHE_DIR=$S/jax_cache_tests_$label RECOVAR_JAX_CACHE_DIR=$S/recovar_jax_cache_tests_$label \
     "$PY" -m pytest $files -p no:cacheprovider --basetemp="$S/pytest_tmp_$label" -rfEs -v > "$S/logs/tests_$label.log" 2>&1; rc=$?
   grep -E "^(FAILED|ERROR) " "$S/logs/tests_$label.log" | sed 's/ - .*//' | sort > "$S/logs/fail_$label.txt"
-  echo "tests $label ($rev): rc=$rc $(tail -1 "$S/logs/tests_$label.log") -> $S/logs/fail_$label.txt"
+  echo "tests $label ($rev, $(echo "$files" | wc -l) files, module $REFACTOR_MODULE): rc=$rc $(tail -1 "$S/logs/tests_$label.log") -> $S/logs/fail_$label.txt"
   [ $rc -le 1 ]
 }
 step_compare() {
@@ -73,5 +78,5 @@ all) status=0; base=${2:-origin/main}
   step_fp "$base" || status=1; step_selftest || status=1; step_guard || status=1
   step_tests base "$base" || status=1; step_tests head HEAD || status=1; step_compare base head || status=1
   exit $status;;
-*) sed -n '6,18p' "$0"; exit 2;;
+*) sed -n '6,21p' "$0"; exit 2;;
 esac

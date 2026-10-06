@@ -7,7 +7,11 @@
 
 ``submit`` freezes the checkout (HEAD plus any uncommitted diff) into
 ``<run-root>/src``, verifies the tier's fixture sets against the manifest, builds the
-native libraries once (``scripts/build_test_natives.sh``) and starts the tier:
+native libraries once (``scripts/build_test_natives.sh``) and starts the tier.
+
+``submit`` builds the natives on the host it runs on (nvcc -j8 for A100 and H100, about 4 minutes): run it
+from a short CPU Slurm job (``sbatch`` works from inside one) or an interactive compute node, not from a
+login node. ``--exclude <nodes>`` keeps the tier job off named nodes (a degraded GPU node).
 
 * smoke runs as a one-GPU cryoem job when it would start within ``--queue-wait-minutes``,
   otherwise on one idle local GPU 1-3 (never GPU 0), selected by UUID after an nvidia-smi
@@ -845,8 +849,8 @@ QUEUES = {
 }
 
 
-def write_sbatch(run_root: Path, tier: str, natives: Path, queue: str, gpu_model: str) -> Path:
-    """One shared-node job per tier with one worker process per GPU (TIER_JOB sizes it)."""
+def write_sbatch(run_root: Path, tier: str, natives: Path, queue: str, gpu_model: str, exclude: str = "") -> Path:
+    """One shared-node job per tier with one worker process per GPU (TIER_JOB sizes it), off the nodes in ``exclude``."""
     src = run_root / "src"
     py = src / ".pixi" / "envs" / "default" / "bin" / "python"
     job = TIER_JOB[tier]
@@ -857,6 +861,8 @@ def write_sbatch(run_root: Path, tier: str, natives: Path, queue: str, gpu_model
         lines = [line for line in lines if "--constraint" not in line] + [
             f"#SBATCH --constraint={gpu_model}" + (",gpu80" if queue == "general" else "")
         ]
+    if exclude:
+        lines.append(f"#SBATCH --exclude={exclude}")
     directives = "\n".join(lines)
     script = run_root / f"{tier}_{queue}.sbatch"
     script.write_text(f"""#!/bin/bash
@@ -997,7 +1003,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
     if args.gpu_model == "h100" and args.queue != "cryoem":
         raise SystemExit("H100 nodes are in the cryoem partition only")
     queue = args.queue
-    start = expected_start(write_sbatch(run_root, tier, natives, queue, args.gpu_model))
+    start = expected_start(write_sbatch(run_root, tier, natives, queue, args.gpu_model, args.exclude))
     print(f"expected start on {queue}: {start}", flush=True)
     busy = start is None or (start - dt.datetime.now()).total_seconds() > args.queue_wait_minutes * 60
     if tier == "smoke" and args.where != "slurm" and (args.where == "local" or busy):
@@ -1045,6 +1051,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--queue", choices=["cryoem", "general"], default="cryoem",
                    help="cryoem (all GPU jobs); general only when the user explicitly allows another partition")
+    p.add_argument("--exclude", default="", help="Slurm node list the tier job must not use (sbatch --exclude)")
     p.add_argument("--dry-run", action="store_true", help="write the plan, build and submit nothing")
     p.add_argument("--coarse-engine", choices=COARSE_ENGINES, default="auto",
                    help="forward an optional coarse-engine choice through the public CLIs in tier cases")

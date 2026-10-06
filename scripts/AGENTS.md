@@ -7,8 +7,8 @@ The root guide applies. Slurm requests in a script follow the owner's global ins
 | Files | Role |
 | --- | --- |
 | `run_test_tier.py`, `write_test_receipt.py`, `build_test_natives.sh`, `native_sources.py`, `em_tier_fsc.py`, `em_tier_pinned.py`, `em_tier_bands.py`, `em_tier_noise_envelope.py`, `run_em_fast_guard.sh` | the test tiers: every qualification passes through these |
-| `dev/doctor.py`, `check_agent_guides.py`, `report_refinement_structure.py` | read-only checks of the checkout |
-| `dev/fingerprint.py`, `dev/refactor_verify.sh`, `dev/refactor_gate.sh`, `dev/check_mutation_anchors.py`, `dev/loop_kinds.py` | the move-only refactor check and its gate: `docs/development/refactor_procedure.md` |
+| `dev/doctor.py`, `check_agent_guides.py`, `report_refinement_structure.py`, `dev/ceilings.py` | read-only checks of the checkout; `dev/ceilings.py` is the slack every structure ceiling applies |
+| `dev/fingerprint.py`, `dev/vdam_fingerprint.py`, `dev/refactor_verify.sh`, `dev/refactor_gate.sh`, `dev/refactor_module.sh`, `dev/check_mutation_anchors.py`, `dev/loop_kinds.py` | the move-only refactor check and its gate: `docs/development/refactor_procedure.md` |
 | `render_benchmark_table.py`, `summarize_*_scorecard.py`, `summarize_em_k1_realdata_science_equivalence.py`, `masked_fsc.py`, `report_em_parity_progress.py`, `extract_em_parity_tables.py` | renderers of the tracked ledgers and scorecards |
 | `build_em_fixture_manifest.py` | writes `tests/fixtures/em_fixture_manifest.json`; the owner's instruction only |
 | `run_em_*_slurm.sh`, `run_em_*_slurm.py`, `run_vdam_*.sbatch`, `gpu_matrix/`, `polar/` | Slurm launchers |

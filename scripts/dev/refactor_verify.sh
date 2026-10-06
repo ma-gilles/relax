@@ -3,17 +3,19 @@
 # usage: REFACTOR_SCRATCH=<dir outside the checkout> scripts/dev/refactor_verify.sh [pytest arguments: test files, -k ...]
 # Run it from the checkout. Prints one line per check: fingerprint of the worktree against HEAD (no difference
 # in outputs or non-log trace rows; a log-only difference passes under rule 2), ruff findings the base lacks,
-# git diff --check, stale selftest mutation anchors, and pytest on the structure test plus the arguments. REFACTOR_BASE (default origin/main) is the revision whose ruff findings are
-# the baseline; REFACTOR_PYTHON defaults to the checkout's pixi environment. REFACTOR_FINGERPRINT is the module's
-# harness (default scripts/dev/fingerprint.py, the refinement controller; scripts/dev/vdam_fingerprint.py for
-# relax/vdam). Logs go to $REFACTOR_SCRATCH/logs.
+# git diff --check, stale selftest mutation anchors, and pytest on the module's structure tests plus the
+# arguments. REFACTOR_MODULE (default refinement) selects the harness and the structure tests:
+# scripts/dev/refactor_module.sh. REFACTOR_BASE (default origin/main) is the revision whose ruff findings are
+# the baseline; REFACTOR_PYTHON defaults to the checkout's pixi environment. Logs go to $REFACTOR_SCRATCH/logs.
+# Where it runs: a Slurm CPU job, or the login node only with OMP_NUM_THREADS<=4, the module's unit files as
+# arguments, and a load (uptime) under 20; the full lists run in the gate (refactor_gate.sh).
 set -u
 S=${REFACTOR_SCRATCH:?set REFACTOR_SCRATCH to a scratch directory outside the checkout}
 W=$(git rev-parse --show-toplevel) || exit 2
 PY=${REFACTOR_PYTHON:-$W/.pixi/envs/default/bin/python}
 BASE=$(git -C "$W" rev-parse "${REFACTOR_BASE:-origin/main}") || exit 2
-FP=${REFACTOR_FINGERPRINT:-scripts/dev/fingerprint.py}
-FPN=$(basename "$FP" .py)
+# shellcheck source=scripts/dev/refactor_module.sh
+. "$W/scripts/dev/refactor_module.sh"
 mkdir -p "$S/logs" "$S/fp"
 cd "$W" || exit 2
 unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV RELAX_TEST_RECEIPTS
@@ -39,6 +41,7 @@ echo "ruff findings ${BASE:0:7} lacks: $(printf '%s' "$new" | grep -c .)"; [ -z 
 
 if git diff --check; then echo "git diff --check: clean"; else status=1; fi
 "$PY" scripts/dev/check_mutation_anchors.py | tail -1; [ "${PIPESTATUS[0]}" = 0 ] || status=1
-"$PY" -m pytest tests/unit/test_refinement_structure_metrics.py "$@" -q -p no:cacheprovider --basetemp="$S/pytest_tmp_verify" > "$S/logs/verify_pytest.txt" 2>&1; rc=$?
+# shellcheck disable=SC2086
+"$PY" -m pytest $STRUCTURE_TESTS "$@" -q -p no:cacheprovider --basetemp="$S/pytest_tmp_verify" > "$S/logs/verify_pytest.txt" 2>&1; rc=$?
 echo "pytest: rc=$rc $(tail -1 "$S/logs/verify_pytest.txt")"; [ $rc = 0 ] || { grep -E "^(FAILED|ERROR) " "$S/logs/verify_pytest.txt"; status=1; }
 exit $status

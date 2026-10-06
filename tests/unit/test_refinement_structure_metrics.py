@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from scripts import report_refinement_structure
+from scripts.dev import ceilings as slack
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CEILINGS = REPO_ROOT / "docs" / "development" / "refinement_structure_metrics.json"
@@ -22,7 +23,7 @@ def test_refinement_structure_stays_within_recorded_ceilings():
     ceilings = report_refinement_structure.read_ceilings(CEILINGS)
 
     assert set(ceilings) == set(TOTALS)
-    assert report_refinement_structure.exceeded(totals, ceilings) == [], (
+    assert slack.exceeded(totals, ceilings) == [], (
         "relax/refinement grew past a recorded ceiling and its slack: shrink it, or raise the ceiling by hand in "
         f"{CEILINGS.relative_to(REPO_ROOT)} with the reason in the commit message"
     )
@@ -39,26 +40,40 @@ def test_refinement_structure_scope_counts_every_refinement_python_module():
     assert {row["path"] for row in metrics["files"]} == expected_paths
 
 
+def test_another_package_is_measured_by_its_directory(capsys):
+    metrics = report_refinement_structure.collect_metrics(REPO_ROOT, "relax/vdam")
+    assert metrics["scope"]["root"] == "relax/vdam"
+    assert {row["path"] for row in metrics["files"]} == {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "relax" / "vdam").glob("*.py")
+        if path.name not in report_refinement_structure.EXCLUDED_FILENAMES
+    }
+    assert report_refinement_structure.main(["--package", "relax/vdam", "--format", "markdown"]) == 0
+    assert "| Largest function span |" in capsys.readouterr().out
+    with pytest.raises(ValueError, match="no package directory"):
+        report_refinement_structure.collect_metrics(REPO_ROOT, "relax/no_such_package")
+
+
 def test_the_metrics_file_records_the_slack_the_script_applies():
-    slack = json.loads(CEILINGS.read_text())["slack"]
-    assert (slack["percent"], slack["minimum"]) == (
-        report_refinement_structure.SLACK_PERCENT,
-        report_refinement_structure.SLACK_MINIMUM,
+    recorded = json.loads(CEILINGS.read_text())["slack"]
+    assert (recorded["percent"], recorded["minimum"]) == (
+        slack.SLACK_PERCENT,
+        slack.SLACK_MINIMUM,
     )
 
 
 def test_slack_is_five_percent_rounded_up_and_at_least_one():
-    slack_for = report_refinement_structure.slack_for
+    slack_for = slack.slack_for
     assert [slack_for(c) for c in (0, 1, 3, 20, 21, 29, 900, 2031)] == [1, 1, 1, 1, 2, 2, 45, 102]
 
 
 def test_only_a_total_above_its_ceiling_plus_slack_is_reported():
     ceilings = dict(TOTALS)
-    assert report_refinement_structure.exceeded(TOTALS, ceilings) == []
+    assert slack.exceeded(TOTALS, ceilings) == []
     smaller = {name: value - 1 for name, value in TOTALS.items()}
-    assert report_refinement_structure.exceeded(smaller, ceilings) == []
+    assert slack.exceeded(smaller, ceilings) == []
     grown = dict(TOTALS, maximum_function_line_span=946, very_large_argument_function_count=5, function_count=999)
-    assert report_refinement_structure.exceeded(grown, ceilings) == [
+    assert slack.exceeded(grown, ceilings) == [
         "maximum_function_line_span: 946 exceeds the ceiling 900 by more than its slack 45",
         "very_large_argument_function_count: 5 exceeds the ceiling 3 by more than its slack 1",
     ]
@@ -66,15 +81,15 @@ def test_only_a_total_above_its_ceiling_plus_slack_is_reported():
 
 def test_a_total_within_the_slack_warns_and_does_not_fail():
     ceilings = dict(TOTALS)
-    assert report_refinement_structure.within_slack(TOTALS, ceilings) == []
+    assert slack.within_slack(TOTALS, ceilings) == []
     band = dict(TOTALS, maximum_function_line_span=945, very_large_argument_function_count=4)
-    assert report_refinement_structure.exceeded(band, ceilings) == []
-    assert report_refinement_structure.within_slack(band, ceilings) == [
+    assert slack.exceeded(band, ceilings) == []
+    assert slack.within_slack(band, ceilings) == [
         "warning: maximum_function_line_span: 945 is above the ceiling 900, within its slack 45",
         "warning: very_large_argument_function_count: 4 is above the ceiling 3, within its slack 1",
     ]
     beyond = dict(TOTALS, maximum_function_line_span=946)
-    assert report_refinement_structure.within_slack(beyond, ceilings) == []
+    assert slack.within_slack(beyond, ceilings) == []
 
 
 def test_the_tightest_ceilings_are_the_totals_and_the_slack_is_the_only_headroom():

@@ -3,7 +3,7 @@
 The agent-facing record of the open items of the refinement package against
 [refactor_rules.md](refactor_rules.md) and [module_template.md](module_template.md). Close an item by
 deleting it here in the commit that closes it; record a decision in the "Decided" section. Numbers are of
-main on 2026-10-06.
+main on 2026-10-06. Gate and verify: `REFACTOR_MODULE=refinement` (`scripts/dev/refactor_module.sh`).
 
 ## Verdict (close-out, 2026-10-06)
 

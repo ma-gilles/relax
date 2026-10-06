@@ -349,7 +349,9 @@ def test_tier_jobs_follow_the_slurm_sizing_rule(tmp_path):
             assert f"--gres=gpu:{job['gpus']}" in text and "--exclusive" not in text
             assert f"--cpus-per-task={8 * job['gpus']}" in text
     text = run_test_tier.write_sbatch(tmp_path, "medium", tmp_path, "general", "a100").read_text()
-    assert "--constraint=a100,gpu80" in text and "--partition" not in text
+    assert "--constraint=a100,gpu80" in text and "--partition" not in text and "--exclude" not in text
+    text = run_test_tier.write_sbatch(tmp_path, "medium", tmp_path, "cryoem", "h100", "della-h19g4").read_text()
+    assert "#SBATCH --exclude=della-h19g4" in text and "--constraint=h100" in text
 
 
 def test_noise_envelope_takes_the_largest_same_code_difference(tmp_path, monkeypatch, capsys):
