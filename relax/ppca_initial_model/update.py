@@ -67,15 +67,43 @@ def coupled_direction(lhs_tri, residual_gradient, support, *, floor):
     }
 
 
+@dataclass(frozen=True)
+class ShellGates:
+    """VDAM's half-set shell gate (algorithm section 8.1), per shell and channel group.
+
+    ``gates``, ``signal`` and ``disagreement`` are ``(n_shells, 2)`` float32 (mean, loadings);
+    ``counts`` ``(n_shells,)`` the active frequencies per shell.
+    """
+
+    gates: object
+    signal: object
+    disagreement: object
+    counts: object
+
+    def per_frequency(self, shells, q):
+        """The gate of every frequency and channel, ``(n_frequency, 1+q)``."""
+        gate = self.gates[jnp.asarray(shells, jnp.int32)]
+        return jnp.concatenate([gate[:, :1], jnp.broadcast_to(gate[:, 1:], (gate.shape[0], q))], axis=-1)
+
+    def diagnostics(self):
+        return {
+            "gates": np.asarray(self.gates),
+            "signal": np.asarray(self.signal),
+            "disagreement": np.asarray(self.disagreement),
+            "zero_disagreement_shell_channels": int(
+                np.sum((np.asarray(self.disagreement) == 0) & (np.asarray(self.counts)[:, None] > 0))
+            ),
+        }
+
+
 @full_float32
-def stochastic_update(theta, moments, directions, coverage, shells, *, step, fudge, image_size):
-    """Simultaneous old-model update; one scalar adaptation/gate for all PCs.
+def advance_moments(moments, directions, coverage, *, image_size):
+    """The half-set moments after one update's directions ``(2, frequency, 1+q)``.
 
     New coverage initializes each half's first moment directly. Frequencies
-    outside coverage retain their moments. Caller handles solvent/Hermitian
-    projection separately. Exactly zero disagreement gives rho=0 by contract.
+    outside coverage retain their moments.
     """
-    theta, directions = jnp.asarray(theta), jnp.asarray(directions)
+    directions = jnp.asarray(directions)
     coverage = jnp.asarray(coverage, bool)
     first = jnp.where(moments.initialized[..., None], 0.9 * moments.first + 0.1 * directions, directions)
     first = jnp.where(coverage[..., None], first, moments.first)
@@ -91,9 +119,17 @@ def stochastic_update(theta, moments, directions, coverage, shells, *, step, fud
     eps_power = np.float32(1e-12 * int(image_size) ** 4)
     ratio = channel_power(difference) / (channel_power(average) + eps_power)
     second = jnp.where(active[:, None], 0.999 * moments.second + 0.001 * ratio, moments.second)
-    mean_first = (first[0] + first[1]) * 0.5
-    divisor = jnp.sqrt(second) + 1e-12
-    adapted = jnp.concatenate([mean_first[:, :1] / divisor[:, :1], mean_first[:, 1:] / divisor[:, 1:]], axis=-1)
+    return Moments(first, second, initialized)
+
+
+@full_float32
+def shell_gates(theta, first, active, shells, *, fudge):
+    """``rho/(1+rho)`` per shell, ``rho = 2 fudge <|theta|> / <|first_0 - first_1|>`` over the active frequencies.
+
+    Exactly zero disagreement gives rho=0 by contract. One scalar for all PCs: the loading
+    amplitude is the latent-basis-invariant norm over the PCs divided by sqrt(q).
+    """
+    theta = jnp.asarray(theta)
     q = theta.shape[-1] - 1
 
     def amplitudes(value):
@@ -117,19 +153,24 @@ def stochastic_update(theta, moments, directions, coverage, shells, *, step, fud
     disagreement = shell_average(amplitudes(first[0] - first[1]))
     safe_disagreement = jnp.where(disagreement > 0, disagreement, 1)
     rho = jnp.where(disagreement > 0, 2 * fudge * signal / safe_disagreement, 0)
-    gates = rho / (1 + rho)
-    gate = gates[shells]
-    gate = jnp.concatenate([gate[:, :1], jnp.broadcast_to(gate[:, 1:], (theta.shape[0], q))], axis=-1)
+    return ShellGates(rho / (1 + rho), signal, disagreement, counts)
+
+
+@full_float32
+def stochastic_update(theta, moments, directions, coverage, shells, *, step, fudge, image_size):
+    """Simultaneous old-model update; one scalar adaptation/gate for all PCs.
+
+    :func:`advance_moments`, then :func:`shell_gates` on the new first moments.
+    Caller handles solvent/Hermitian projection separately.
+    """
+    theta = jnp.asarray(theta)
+    moments = advance_moments(moments, directions, coverage, image_size=image_size)
+    first, second = moments.first, moments.second
+    active = jnp.any(jnp.asarray(coverage, bool), axis=0)
+    mean_first = (first[0] + first[1]) * 0.5
+    divisor = jnp.sqrt(second) + 1e-12
+    adapted = jnp.concatenate([mean_first[:, :1] / divisor[:, :1], mean_first[:, 1:] / divisor[:, 1:]], axis=-1)
+    gates = shell_gates(theta, first, active, shells, fudge=fudge)
+    gate = gates.per_frequency(shells, theta.shape[-1] - 1)
     updated = jnp.where(active[:, None], theta + step * (gate * adapted - (1 - gate) * theta), theta)
-    return (
-        updated,
-        Moments(first, second, initialized),
-        {
-            "gates": np.asarray(gates),
-            "signal": np.asarray(signal),
-            "disagreement": np.asarray(disagreement),
-            "zero_disagreement_shell_channels": int(
-                np.sum((np.asarray(disagreement) == 0) & (np.asarray(counts)[:, None] > 0))
-            ),
-        },
-    )
+    return updated, moments, gates.diagnostics()
