@@ -87,7 +87,7 @@ def test_complete_grid_local_slots_match_actual_resident_table(relion_order):
     inverse = _full_grid_local_rotation_slots(state)
     csr = CoarseSignificanceCSR(
         n_images=2, n_coarse_rot=n_coarse, n_coarse_trans=n_trans,
-        offsets=np.zeros(3, np.int32), ids=np.zeros(0, np.int32),
+        offsets=np.zeros(3, np.int64), ids=np.zeros(0, np.int32),
         store_excluded=np.ones(2, bool), n_significant=np.full(2, n_coarse * n_trans, np.int32),
     )
     table = build_resident_candidate_tables_from_csr(

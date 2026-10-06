@@ -36,6 +36,39 @@ from relax.sparse_pass2.resident_significance import (
 
 pytestmark = pytest.mark.unit
 
+
+def test_csr_global_offsets_above_int32_rebase_to_a_small_image_block():
+    """A virtual unread prefix exercises a real >2**31 boundary without 8 GB of RAM."""
+
+    counts = np.full(131073, 16384, dtype=np.int32)
+    counts[-1] = 1
+    offsets = np.concatenate(([0], np.cumsum(counts, dtype=np.int64)))
+    # Only the final one-cell image is read. Its cell 0 is a valid support;
+    # the prefix is virtual storage for testing host addressing, not scoring.
+    ids = np.broadcast_to(np.zeros(1, dtype=np.int32), (int(offsets[-1]),))
+    csr = CoarseSignificanceCSR(
+        n_images=counts.size, n_coarse_rot=32768, n_coarse_trans=1,
+        offsets=offsets, ids=ids,
+        store_excluded=np.zeros(counts.size, dtype=bool), n_significant=counts,
+    )
+    tail = csr.image_block(counts.size - 1, counts.size)
+    np.testing.assert_array_equal(tail.offsets, [0, 1])
+    np.testing.assert_array_equal(tail.image_ids(0), [0])
+    assert tail.offsets.dtype == np.int64
+    assert tail.ids.dtype == np.int32
+    assert np.shares_memory(tail.ids, ids)
+
+    assembled = build_coarse_significance_csr(
+        n_images=counts.size, n_coarse_rot=32768, n_coarse_trans=1,
+        n_significant_per_batch=[counts],
+        store_excluded_per_batch=[np.zeros(counts.size, dtype=bool)],
+        ids_per_batch=[ids],
+    )
+    np.testing.assert_array_equal(assembled.offsets, offsets)
+    assert int(assembled.offsets[-1]) == 2**31 + 1
+    assert np.shares_memory(assembled.ids, ids)
+
+
 # Override fixture: a fine rotation grid given explicitly, as the adaptive
 # K-class route supplies it (k_class.py passes fine_rotations_override and
 # fine_rotation_parent_override into pass 2). RELION's parent execution order

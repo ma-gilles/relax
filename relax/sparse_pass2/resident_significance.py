@@ -183,14 +183,16 @@ class CoarseSignificanceCSR:
 
     ``ids`` holds every image's significant coarse cell ids
     (``rot * n_coarse_trans + trans``), ascending within each image; image
-    ``i`` owns ``ids[offsets[i]:offsets[i + 1]]``.  Both arrays are int32.
+    ``i`` owns ``ids[offsets[i]:offsets[i + 1]]``. Host-global offsets are
+    int64: all images together can exceed 2**31 cells. Image-local ids and
+    the device compaction buffers remain int32.
     The mask they were compacted from never leaves the device.
     """
 
     n_images: int
     n_coarse_rot: int
     n_coarse_trans: int
-    offsets: np.ndarray  # int32 [n_images + 1]
+    offsets: np.ndarray  # int64 [n_images + 1]
     ids: np.ndarray  # int32 [offsets[-1]]
     store_excluded: np.ndarray  # bool [n_images]
     n_significant: np.ndarray  # int32 [n_images]
@@ -198,8 +200,8 @@ class CoarseSignificanceCSR:
     def __post_init__(self):
         if self.offsets.shape != (self.n_images + 1,):
             raise ValueError("CSR offsets must have shape (n_images + 1,)")
-        if self.offsets.dtype != np.int32 or self.ids.dtype != np.int32:
-            raise ValueError("CSR offsets and ids must both be int32")
+        if self.offsets.dtype != np.int64 or self.ids.dtype != np.int32:
+            raise ValueError("CSR offsets must be int64 and ids must be int32")
         if int(self.offsets[0]) != 0 or int(self.offsets[-1]) != int(self.ids.shape[0]):
             raise ValueError("CSR offsets must start at 0 and end at the id count")
         if self.store_excluded.shape != (self.n_images,) or self.store_excluded.dtype != np.bool_:
@@ -239,7 +241,7 @@ class CoarseSignificanceCSR:
             n_images=stop - start,
             n_coarse_rot=self.n_coarse_rot,
             n_coarse_trans=self.n_coarse_trans,
-            offsets=(offsets - np.int32(base)).astype(np.int32),
+            offsets=offsets - base,
             ids=self.ids[base : int(offsets[-1])],
             store_excluded=self.store_excluded[start:stop],
             n_significant=self.n_significant[start:stop],
@@ -421,11 +423,14 @@ def build_coarse_significance_csr(
         if store_excluded_per_batch
         else np.zeros(0, dtype=bool)
     )
-    ids = (
-        np.concatenate([np.asarray(i, dtype=np.int32) for i in ids_per_batch])
-        if ids_per_batch
-        else np.zeros(0, dtype=np.int32)
-    )
+    if len(ids_per_batch) == 1:
+        ids = np.asarray(ids_per_batch[0], dtype=np.int32)
+    else:
+        ids = (
+            np.concatenate([np.asarray(i, dtype=np.int32) for i in ids_per_batch])
+            if ids_per_batch
+            else np.zeros(0, dtype=np.int32)
+        )
     if n_significant.shape != (n_images,) or store_excluded.shape != (n_images,):
         raise ValueError(
             f"compacted counts cover {n_significant.shape[0]} images, expected {n_images}",
@@ -434,12 +439,8 @@ def build_coarse_significance_csr(
     counts = np.where(
         store_excluded, n_samples - n_significant.astype(np.int64), n_significant,
     ).astype(np.int64)
-    running = np.cumsum(counts)
-    if running.size and int(running[-1]) > np.iinfo(np.int32).max:
-        raise OverflowError("the half's compacted significance support overflows int32")
-    offsets = np.zeros(n_images + 1, dtype=np.int32)
-    if running.size:
-        offsets[1:] = running.astype(np.int32)
+    offsets = np.zeros(n_images + 1, dtype=np.int64)
+    offsets[1:] = np.cumsum(counts, dtype=np.int64)
     if int(offsets[-1]) != int(ids.shape[0]):
         raise ValueError("compacted counts and ids disagree on the total support")
     return CoarseSignificanceCSR(
