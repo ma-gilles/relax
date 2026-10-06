@@ -13301,7 +13301,7 @@
    },
    "notes": [
     "Benchmark freeze 2026-10-06 (relax main 1c57fb73, contains b92be02, the magnification M-step clip): every seed rerun; mean masked GT FSC-AUC against stock CPU RELION, five seeds paired, +0.00034 ± 0.00192; fixed minus pre-fix runs per seed -0.00040 ± 0.00056 (no significant change). The first seed-42 run (0.205895) looked like a dip, but seed 42 is relax's low seed before and after the fix.",
-    "Reference: CPU RELION; GPU RELION arm pending (user 2026-10-06: GPU RELION is the reference that matters). GPU RELION exists only at seed 42: mean masked GT FSC-AUC 0.213430 (mpiscale build), 0.215135 (second run), 0.214919 (stock sm_90 build), about 0.003 above CPU RELION's 0.211092 and 0.008 above relax's seed-42 runs (0.205895-0.206600). GPU RELION seeds 29/53/61/67 are in the next benchmark freeze; the verdict will be redone against them.",
+    "Reference: CPU RELION. Stock GPU RELION (and RELION's CPU-acc path) skips the magnification and the scale difference in Class3D pass 1 (relax#12), so it is not a meaningful reference for this row; a RELION build with that bug fixed awaits the user's decision (team-lead 2026-10-06). For information, stock-family GPU RELION at seed 42: 0.213430 (mpiscale), 0.215135, 0.214919 (stock sm_90), against CPU RELION 0.211092 and relax 0.205895-0.206600.",
     "seed 29: mean masked GT FSC-AUC relax 0.207720 (1c57fb73) / RELION CPU 0.211077; class accuracy 0.8380 vs 0.8359",
     "seed 42: mean masked GT FSC-AUC relax 0.205895/0.206545/0.206600 (1c57fb73) / RELION CPU 0.211092/0.211092; class accuracy 0.8347/0.8326/0.8302 vs 0.8455/0.8455",
     "seed 53: mean masked GT FSC-AUC relax 0.213095 (1c57fb73) / RELION CPU 0.210008; class accuracy 0.8475 vs 0.8395",
@@ -13353,7 +13353,7 @@
    },
    "date": "2026-10-06",
    "quality_pass": true,
-   "quality_reason": "worst s42 −0.0045 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside or above across-seed band; against CPU RELION (GPU RELION arm pending)",
+   "quality_reason": "worst s42 −0.0045 vs same-seed RELION; run ranges compared at s42 (both engines repeated); inside or above across-seed band; against CPU RELION (stock GPU RELION has relax#12)",
    "feature_reference": "anisotropic magnification in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips applyScaleDifference, relax#12) for accuracy, 5 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (dedicated cold pair, seed 42)",
    "time_check": {
     "a": "relax: job 15111112, one H100 + 12 CPUs, 2026-10-06; RELION: the row's stock GPU RELION wall from its earlier separate job (same GPU model, not the same node)",
@@ -13744,7 +13744,7 @@
     "timing_controlled": true
    },
    "notes": [
-    "Reference: CPU RELION; GPU RELION arm pending (user 2026-10-06: GPU RELION is the reference that matters). GPU RELION exists only at seed 1 (stock sm_90 build, the row's speed arm, job 14868236): mean masked GT FSC-AUC 0.389240, class accuracy 0.6136, against CPU RELION 0.461239 / 0.7105 and relax 0.466423 / 0.7137 at the same seed; the GPU path drops the scale difference of the group on the other box (relax#12). GPU RELION seeds 2-3 are in the next benchmark freeze; the verdict will be redone against them.",
+    "Reference: CPU RELION. Stock GPU RELION (and RELION's CPU-acc path) skips the scale difference of the group on the other box in Class3D pass 1 (relax#12), so it is not a meaningful reference for this row; a RELION build with that bug fixed awaits the user's decision (team-lead 2026-10-06). For information, stock GPU RELION at seed 1 (the row's speed arm, job 14868236): 0.389240, class accuracy 0.6136, against CPU RELION 0.461239 / 0.7105 and relax 0.466423 / 0.7137.",
     "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
     "Refresh 2026-10-04, seed 1 (the only seed rerun): mean masked GT FSC-AUC relax 0.466423 and class accuracy 0.7137, both identical to the earlier a7683d50 run; wall 484 s (was 1243 s, 1.74x) against stock GPU RELION 714 s: 0.68x. The gain is the resident stable windows for images on another grid (acb14b2c, etw). The 'Speed' and 'Walls of the other seeds' notes below describe the a7683d50 runs.",
     "Same-seed spread (bindw, relax main 7a060fa, job 14973509; scored with the row's scorer, job 14974613): three repeats of the seed-1 command give mean masked GT FSC-AUC 0.466423, 0.466265, 0.466423 and class accuracy 0.7137, 0.7140, 0.7137. Runs of the same code are identical after iteration 1 and then follow one of at least three trajectories (tie flips from iteration 2; final maps about 2.5e-2 apart, 99.5% of class assignments equal). In the row's metric that spread is 1.6e-4, against a margin of +5.2e-3 over stock CPU RELION at this seed. The refreshed f6c8299b run and the earlier a7683d50 run are on the same trajectory as two of the three repeats. RELION's GPU path splits early as well: two same-seed runs of five iterations (etw, job 14978654, mpiscale build non-MPI) are identical at iteration 1 and differ from iteration 2 (class maps about 1e-3 apart at iteration 5); the row's reference, CPU RELION, is bit-reproducible.",
@@ -13796,7 +13796,7 @@
    },
    "date": "2026-10-04",
    "quality_pass": true,
-   "quality_reason": "mean masked GT FSC-AUC vs stock RELION CPU: worst s3 +2.9e-4 vs same-seed RELION; inside or above across-seed band; against CPU RELION (GPU RELION arm pending)",
+   "quality_reason": "mean masked GT FSC-AUC vs stock RELION CPU: worst s3 +2.9e-4 vs same-seed RELION; inside or above across-seed band; against CPU RELION (stock GPU RELION has relax#12)",
    "feature_reference": "several image shapes (two optics groups, 128 px / 112 px) in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips the scale difference, relax#12) for accuracy, 3 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (cold pairs in one 2-GPU job, seed 1 quoted)",
    "time_check": {
     "a": "relax: Slurm job 14956563 (della-h20g3), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14868236. Not the same job or node: the refresh reran relax only.",
