@@ -394,8 +394,8 @@ class DiagnosticEnvironment:
     """The refinement's diagnostic environment variables, read once, when the run's options are built.
 
     Dump directories (None when unset; an empty value writes nothing): the joined K=1 accumulators
-    (``RELAX_BPREF_ACCUM_DUMP_DIR``), the Class3D M-step and image size (``RELAX_KCLASS_DUMP_DIR``), the
-    tau2 update (``RELAX_RELION_TAU2_DEBUG_DUMP_DIR``) and the pre-mask maps (``RELAX_PREMASK_DUMP_DIR``).
+    (``RELAX_BPREF_ACCUM_DUMP_DIR``), the Class3D M-step and image size (``RELAX_KCLASS_DUMP_DIR``) and the
+    pre-mask maps (``RELAX_PREMASK_DUMP_DIR``).
     Switches: clear JAX's caches after every numbered iteration; run the K=1 final all-data pass after the
     last numbered iteration without convergence; score both halves of that pass against the merged map;
     force or forbid replaying the last numbered state in it.
@@ -403,7 +403,6 @@ class DiagnosticEnvironment:
 
     bpref_accum_dump_dir: str | None = None
     kclass_dump_dir: str | None = None
-    tau2_debug_dump_dir: str | None = None
     premask_dump_dir: str | None = None
     clear_jax_caches_between_iterations: bool = False
     final_all_data_after_max_iter: bool = False
@@ -416,7 +415,6 @@ class DiagnosticEnvironment:
         return cls(
             bpref_accum_dump_dir=os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR"),
             kclass_dump_dir=os.environ.get("RELAX_KCLASS_DUMP_DIR"),
-            tau2_debug_dump_dir=os.environ.get("RELAX_RELION_TAU2_DEBUG_DUMP_DIR"),
             premask_dump_dir=os.environ.get("RELAX_PREMASK_DUMP_DIR"),
             clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
             final_all_data_after_max_iter=parse_env_flag_or_false(

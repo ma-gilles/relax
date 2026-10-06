@@ -2234,25 +2234,6 @@ def refine_single_volume(
                 int(resolution_estimate.scheduling_shell),
                 int(resolution_estimate.observed_shell),
             )
-        if debug.environment.tau2_debug_dump_dir:
-            reconstruction_diagnostics.write_tau2_update(
-                _replay_meta=_replay_meta,
-                output_dir=debug.environment.tau2_debug_dump_dir,
-                voxel_size=source_pixel_size_angstrom,
-                current_size=current_size,
-                dvp_iter=resolution_estimate.data_vs_prior,
-                fsc=fsc,
-                grid_size=grid_size,
-                iteration=iteration,
-                mstep_accumulator_shape=mstep_accumulator_shape,
-                perturb_replay_relion_dir=perturb_replay_relion_dir,
-                perturb_replay_relion_prefix=perturb_replay_relion_prefix,
-                pixel_res=resolution_estimate.scheduling_shell,
-                sealed_sampling_state=sealed_sampling_state,
-                tau2_update_details=tau2_update_details,
-                tau2_update_details_per_half=tau2_update_details_per_half,
-                logger=logger,
-            )
         history.pixel_resolutions.append(resolution_estimate.scheduling_shell)
 
         # --- Update poses and noise ---

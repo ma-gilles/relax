@@ -163,19 +163,3 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         assert saved["tau2_shells"].dtype == np.float64
         assert saved["tau2_fudge"].dtype == np.float64
         assert_matches(saved["tau2_fudge"], values["tau2_fudge"])
-
-
-@pytest.mark.parametrize("include_fsc", [False, True])
-def test_tau2_optional_fields_and_replay_path(capture_inputs, include_fsc):
-    capture_inputs["fsc"] = np.array([0.8, 0.4]) if include_fsc else None
-    capture_inputs["perturb_replay_relion_dir"] = capture_inputs["output_dir"]
-    invoke(dumps.write_tau2_update, capture_inputs)
-    with np.load(capture_inputs["output_dir"] / "recovar_tau2_debug_it003.npz") as saved:
-        assert ("current_iter_fsc" in saved) == include_fsc
-        assert "tau2_fsc_shells" not in saved
-        assert "half1_ssnr_shells" not in saved
-        assert saved["half2_ssnr_shells"].dtype == np.float64
-        assert saved["voxel_size"].item() == 1.6375
-        assert not saved["relion_model_exists"].item()
-        assert saved["relion_model_path"].item().endswith("run_it003_half1_model.star")
-        assert saved["replay_meta_source"].item() == "test"

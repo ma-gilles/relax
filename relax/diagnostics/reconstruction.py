@@ -15,7 +15,6 @@ import numpy as np
 from recovar.core import fourier_transform_utils
 
 from relax.diagnostics import finite_check
-from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.reconstruction import regularization_relion
 
 if TYPE_CHECKING:
@@ -256,84 +255,6 @@ def write_class_mstep(
         ),
         data_vs_prior=np.asarray(prior.data_vs_prior, dtype=np.float64),
     )
-
-
-def write_tau2_update(
-    *,
-    _replay_meta,
-    output_dir,
-    voxel_size,
-    current_size,
-    dvp_iter,
-    fsc,
-    grid_size,
-    iteration,
-    mstep_accumulator_shape,
-    perturb_replay_relion_dir,
-    perturb_replay_relion_prefix,
-    pixel_res,
-    sealed_sampling_state,
-    tau2_update_details,
-    tau2_update_details_per_half,
-    logger,
-):
-    """Write the existing tau2 update NPZ schema."""
-    import pathlib
-
-    _tau2_dump = {
-        "iteration": np.int32(iteration + 1),
-        "relion_iteration": np.int32(iteration + 1),
-        "current_size": np.int32(current_size),
-        "grid_size": np.int32(grid_size),
-        "voxel_size": np.float64(voxel_size),
-        "pixel_res": np.float64(pixel_res),
-        "res_angstrom": np.float64(
-            shell_index_to_resolution_angstrom(pixel_res, grid_size, voxel_size) if pixel_res > 0.0 else np.inf
-        ),
-        "dvp_iter": np.asarray(dvp_iter, dtype=np.float64),
-        "mstep_accumulator_shape": np.asarray(mstep_accumulator_shape, dtype=np.int32),
-    }
-    if tau2_update_details is not None:
-        for _key in (
-            "fsc_shells",
-            "ssnr_shells",
-            "prior_shells",
-            "sigma2_shells",
-            "avg_weight_shells",
-            "shell_sum",
-            "shell_count",
-        ):
-            if _key in tau2_update_details and tau2_update_details[_key] is not None:
-                _tau2_dump[f"tau2_{_key}"] = np.asarray(tau2_update_details[_key], dtype=np.float64)
-    if tau2_update_details_per_half is not None:
-        for _half_idx, _detail in enumerate(tau2_update_details_per_half):
-            if _detail is None:
-                continue
-            for _key in ("fsc_shells", "ssnr_shells", "prior_shells", "sigma2_shells"):
-                if _key in _detail and _detail[_key] is not None:
-                    _tau2_dump[f"half{_half_idx + 1}_{_key}"] = np.asarray(
-                        _detail[_key],
-                        dtype=np.float64,
-                    )
-    if fsc is not None:
-        _tau2_dump["current_iter_fsc"] = np.asarray(fsc, dtype=np.float64)
-    if perturb_replay_relion_dir is not None and sealed_sampling_state is None:
-        _model_path = os.path.join(
-            str(perturb_replay_relion_dir),
-            f"{perturb_replay_relion_prefix}_it{iteration + 1:03d}_half1_model.star",
-        )
-        _tau2_dump["relion_model_path"] = np.asarray(_model_path)
-        _tau2_dump["relion_model_exists"] = np.bool_(os.path.exists(_model_path))
-    if _replay_meta is not None:
-        for _key, _value in _replay_meta.items():
-            try:
-                _tau2_dump[f"replay_meta_{_key}"] = np.asarray(_value)
-            except Exception:
-                _tau2_dump[f"replay_meta_{_key}"] = np.asarray(str(_value))
-    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-    _tau2_dump_path = pathlib.Path(output_dir) / f"recovar_tau2_debug_it{iteration + 1:03d}.npz"
-    np.savez(_tau2_dump_path, **_tau2_dump)
-    logger.info("RELION tau2 debug dump written: %s", _tau2_dump_path)
 
 
 def write_premask_mean(
