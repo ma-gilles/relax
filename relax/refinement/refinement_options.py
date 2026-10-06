@@ -337,6 +337,17 @@ class LocalSearchOptions:
     sigma_ang_deg: float | None = None
     local_search_profile_mode: Literal["auto", "on", "off"] = "auto"
     local_search_translation_prior_mode: str = "coarse"
+    # A probe run of the first local-search iteration: it returns after that iteration's expectation, with no
+    # reconstruction (RefinementResult.profile_stop). ``..._profile`` also collects the search's profile;
+    # ``..._score_only`` scores without accumulating. They change what the run does, so they are run options,
+    # not diagnostics (code rule 9).
+    stop_after_local_search_profile: bool = False
+    stop_after_local_search: bool = False
+    stop_after_local_search_score_only: bool = False
+
+    @property
+    def stops_after_local_search(self) -> bool:
+        return self.stop_after_local_search or self.stop_after_local_search_profile or self.stop_after_local_search_score_only
 
     def __post_init__(self):
         if self.sigma_ang_deg is not None and not self.sigma_ang_deg > 0:
@@ -435,9 +446,6 @@ class EngineDebugOptions:
     disable_adjoint_ctf: bool = False
     state_swap_probe: str | None = None
     assert_initial_scoring_state_immutable: bool = False
-    stop_after_local_search_profile: bool = False
-    stop_after_local_search: bool = False
-    stop_after_local_search_score_only: bool = False
     sealed_sampling_state: Any | None = None
     sealed_scoring_context: Any | None = None
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)

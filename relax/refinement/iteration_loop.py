@@ -830,7 +830,6 @@ def refine_single_volume(
     init_relion_iteration = schedule.init_relion_iteration
     final_replay_override = replay.final_replay_override
     n_classes = k_class.n_classes
-    stop_after_local_search = debug.stop_after_local_search
     sealed_sampling_state = debug.sealed_sampling_state
 
     if options.parity.perturb_replay_restart_state_iterations:
@@ -1012,10 +1011,8 @@ def refine_single_volume(
         if local_search.local_search_profile_mode == "auto"
         else local_search.local_search_profile_mode == "on"
     )
-    if debug.stop_after_local_search_profile:
+    if local_search.stop_after_local_search_profile:
         collect_local_search_profile = True
-    if debug.stop_after_local_search_score_only:
-        stop_after_local_search = True
     _mark_setup_phase("sampling_grid")
 
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
@@ -1883,13 +1880,13 @@ def refine_single_volume(
         Ft_y_0, Ft_y_1 = per_half.Ft_y
         Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
-        if (debug.stop_after_local_search_profile or stop_after_local_search) and use_local:
+        if local_search.stops_after_local_search and use_local:
             elapsed = time.time() - t0
             logger.info(
                 "Stopping after local-search diagnostic at iteration %d: profiles=%d score_only=%s wall=%.1fs",
                 iteration + 1,
                 len(history.local_profile_history),
-                bool(debug.stop_after_local_search_score_only),
+                bool(local_search.stop_after_local_search_score_only),
                 elapsed,
             )
             # Local search is K=1 (Class3D was rejected above), so there are no class products.
@@ -1908,7 +1905,7 @@ def refine_single_volume(
                 ),
                 history=history,
                 profile_stop=ProfileStop(
-                    score_only=bool(debug.stop_after_local_search_score_only),
+                    score_only=bool(local_search.stop_after_local_search_score_only),
                     wall_seconds=elapsed,
                     significant_count=significance.recorded,
                 ),

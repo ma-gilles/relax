@@ -88,7 +88,7 @@ def test_local_phase_borrows_sampling_and_only_reads_adaptive_policy_for_parent_
     monkeypatch.setattr(expectation, '_local_adaptive_pass2_rotation_only_enabled', lambda: events.append('rotation') or True)
     monkeypatch.setattr(expectation, '_local_adaptive_pass2_denominator_support_mode', lambda: events.append('denominator') or 'rotation')
     # Dense-only options and geometry may be absent on the local path.
-    inputs['options'] = SimpleNamespace(debug=SimpleNamespace(stop_after_local_search_score_only=True))
+    inputs['options'] = SimpleNamespace(local_search=SimpleNamespace(stop_after_local_search_score_only=True))
     phase = expectation.prepare_numbered_expectation(grid, object(), **inputs)
     assert events == (['full', 'rotation', 'denominator'] if order else [])
     assert phase.sampling is inputs['local_sampling']

@@ -103,7 +103,8 @@ def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference()
 def test_debug_switches_come_from_their_flags_and_a_sealed_boundary():
     args = _args("--save_intermediates_dir", "dump", "--stop_after_local_search")
     debug = command_options.resolve_debug(args, state_swap_probe="probe", frozen_boundary=None, expected_accuracy="acc")
-    assert (debug.stop_after_local_search, debug.state_swap_probe) == (True, "probe")
+    assert debug.state_swap_probe == "probe"
+    assert command_options.resolve_local_search(args).stops_after_local_search
     assert debug.expected_accuracy == "acc" and not debug.assert_initial_scoring_state_immutable
     assert debug.sealed_sampling_state is None and debug.sealed_scoring_context is None
     boundary = SimpleNamespace(fixed_diagnostic_arm=True, sampling_state="sampling", schema="s", completed_relion_iteration=3,

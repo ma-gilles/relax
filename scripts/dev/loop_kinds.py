@@ -25,7 +25,7 @@ K1_ADMISSION = (
     "state_swap_target_this_iteration",
     "frozen_initial_scoring_state is not None",
     "replay_mean_variance is not None",
-    "stop_after_local_search",
+    "stops_after_local_search",
 )
 CLASS_ADMISSION = (
     "follower_setup.follower_scale_state is not None",

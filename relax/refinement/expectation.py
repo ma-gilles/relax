@@ -423,7 +423,7 @@ def prepare_numbered_expectation(
             debug_iteration=numbered_relion_iteration,
             observer=observer,
             collect_local_search_profile=collect_local_search_profile,
-            diagnostic_score_only=bool(options.debug.stop_after_local_search_score_only),
+            diagnostic_score_only=bool(options.local_search.stop_after_local_search_score_only),
             local_profile_history=local_profile_history,
             adaptive_pass2_full_parent=local_adaptive_full_parent,
             adaptive_pass2_rotation_only=local_adaptive_rotation_only,

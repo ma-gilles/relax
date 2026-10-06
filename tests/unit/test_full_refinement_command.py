@@ -100,9 +100,9 @@ def test_firstiter_cc_passes_relion_cli_ini_high_to_refinement_loop(monkeypatch,
         ("--stop_after_local_search_profile", "stop_after_local_search_profile"),
     ],
 )
-def test_diagnostic_switches_pass_to_refinement_loop(monkeypatch, tmp_path, option, field):
-    assert getattr(controller_inputs(monkeypatch, tmp_path, "refine")["options"].debug, field) is False
-    assert getattr(controller_inputs(monkeypatch, tmp_path / "on", "refine", option)["options"].debug, field) is True
+def test_local_search_probe_switches_pass_to_refinement_loop(monkeypatch, tmp_path, option, field):
+    assert getattr(controller_inputs(monkeypatch, tmp_path, "refine")["options"].local_search, field) is False
+    assert getattr(controller_inputs(monkeypatch, tmp_path / "on", "refine", option)["options"].local_search, field) is True
 
 
 def test_the_intermediates_dump_reaches_the_refinement_loop_as_its_observer(monkeypatch, tmp_path):
