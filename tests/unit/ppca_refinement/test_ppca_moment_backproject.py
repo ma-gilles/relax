@@ -201,7 +201,7 @@ def test_exact_trace_channel_scatters_squared_weights(metric_trace, custom_cuda_
     those of the same call without it."""
     import recovar.cuda_backproject as cuda_backproject
 
-    from relax.cuda.kernels import ppca_moment_scatter_f32
+    from relax.cuda.ppca import ppca_moment_scatter_f32
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
     monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
