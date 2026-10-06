@@ -178,7 +178,14 @@ from relax.refinement.noise_updates import (
     update_posterior_noise_variance,
 )
 from relax.refinement.optics_shapes import MultiShapeHalf
-from relax.refinement.ports import FinishedIteration, InputSource, NumberedState, ReconstructedIteration, RunObserver
+from relax.refinement.ports import (
+    ClassTau2,
+    FinishedIteration,
+    InputSource,
+    NumberedState,
+    ReconstructedIteration,
+    RunObserver,
+)
 from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
     build_numbered_projectors,
@@ -379,7 +386,7 @@ def class_maximization(
     mstep_accumulator_shape,
     mstep_full_half_axis,
     projector_power_spectrum,
-    iter_replay_override,
+    class_tau2: ClassTau2,
     scoring_dtype,
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
@@ -390,8 +397,9 @@ def class_maximization(
     spectrum, replace ``reference_model``'s tau2, release its maps and replace them with the
     reconstruction; after a first-iteration CC pass, taper the reported curves. The caller records the
     returned data-vs-prior curve in the history and installs it as the next iteration's scheduling curve.
-    Reads ``reference_model.maps`` and ``tau2``; from ``options``: ``k_class.n_classes``, ``replay`` (the
-    diagnostic tau2 replay) and ``parity.relion_firstiter_ini_high_angstrom``.
+    ``class_tau2`` is the prior an input source supplies (None shells: the previous references').
+    Reads ``reference_model.maps`` and ``tau2``; from ``options``: ``k_class.n_classes`` and
+    ``parity.relion_firstiter_ini_high_angstrom``.
     """
     parity = options.parity
     n_classes = int(options.k_class.n_classes)
@@ -421,8 +429,7 @@ def class_maximization(
         accumulator_shape=mstep_accumulator_shape,
         full_half_axis=mstep_full_half_axis,
         projector_power_spectrum=projector_power_spectrum,
-        iter_replay_override=iter_replay_override,
-        replay=options.replay,
+        class_tau2=class_tau2,
         scoring_dtype=scoring_dtype,
         started_at=_t_unreg_first,
         log=logger,
@@ -1353,9 +1360,6 @@ def refine_single_volume(
             break
         t0 = time.time()
         observer.iteration_started(iteration)
-        iter_replay_override = None
-        if replay.replay_iteration_overrides is not None and iteration < len(replay.replay_iteration_overrides):
-            iter_replay_override = replay.replay_iteration_overrides[iteration]
         first_iteration = first_iteration_policy(options, iteration=iteration)
         numbered_relion_iteration = replay_policy._numbered_relion_iteration(init_relion_iteration, iteration)
 
@@ -1964,7 +1968,7 @@ def refine_single_volume(
                     if not has_previous_iteration or projectors[0] is None
                     else projectors[0].power_spectrum
                 ),
-                iter_replay_override=iter_replay_override,
+                class_tau2=source.class_tau2(iteration, n_classes),
                 scoring_dtype=scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,

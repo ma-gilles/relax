@@ -19,6 +19,7 @@ import numpy as np
 
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.relion_replay import (
+    _class_tau2_replay,
     _past_perturb_replay_max_iter,
     _perturbation_restart_state_iteration,
     _resolve_replay_random_perturbation,
@@ -29,7 +30,7 @@ from relax.diagnostics.relion_replay import (
 )
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.mean_helpers import class_mixture_from_weights
-from relax.refinement.ports import InputSource, NumberedState
+from relax.refinement.ports import ClassTau2, InputSource, NumberedState
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -73,6 +74,14 @@ class RelionReplaySource(InputSource):
                 parity.perturb_replay_max_iter,
             )
         return directory
+
+    def class_tau2(self, iteration, n_classes):
+        """The slot's captured Class3D prior, used when RELAX_KCLASS_REPLAY_TAU2 asks for it (validated always)."""
+        shells, enabled, label = _class_tau2_replay(
+            iteration=iteration, n_classes=n_classes, iter_replay_override=self._slot(iteration),
+            replay=self.options.replay, logger=logger,
+        )
+        return ClassTau2(shells if enabled else None, label)
 
     def restore_convergence_state(self, state):
         """A replay restart (init_relion_iteration > 0, no sealed sampling state) resumes RELION's convergence

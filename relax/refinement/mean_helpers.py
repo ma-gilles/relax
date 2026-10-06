@@ -23,7 +23,6 @@ from recovar.core import fourier_transform_utils, mask
 
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics import reconstruction as reconstruction_diagnostics
-from relax.diagnostics import relion_replay as replay_policy
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
 )
@@ -564,8 +563,7 @@ def estimate_class_priors(
     accumulator_shape,
     full_half_axis,
     projector_power_spectrum,
-    iter_replay_override,
-    replay,
+    class_tau2,
     scoring_dtype,
     started_at,
     log,
@@ -587,13 +585,8 @@ def estimate_class_priors(
     # before the Wiener solve. The same frame conversion is documented
     # in docs/math/ab_initio_initial_model_algorithm.md.
     kclass_tau2_frame_scale = float(settings.grid_size) ** 4
-    replay_class_tau2, replay_tau2_enabled, kclass_tau2_source = replay_policy._class_tau2_replay(
-        iteration=iteration,
-        n_classes=n_classes,
-        iter_replay_override=iter_replay_override,
-        replay=replay,
-        logger=log,
-    )
+    # The prior shells an input source supplies (``ports.ClassTau2``), or None: the previous references'.
+    kclass_tau2_source = class_tau2.source
     if iteration == 0:
         mean_variance_arr = jnp.asarray(prior_tau2)
         expected_shape = (n_classes, int(np.prod(settings.volume_shape)))
@@ -642,7 +635,7 @@ def estimate_class_priors(
             full_half_axis=full_half_axis,
             frame_scale=kclass_tau2_frame_scale,
             projector_power_spectrum=projector_power_spectrum,
-            replay_tau2_shells=replay_class_tau2 if replay_tau2_enabled else None,
+            replay_tau2_shells=class_tau2.shells,
             average_ctf2=average_ctf2,
         )
         mean_signal_variance_per_class.append(class_prior.variance)

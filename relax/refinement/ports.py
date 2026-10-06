@@ -131,6 +131,14 @@ class NumberedState(NamedTuple):
     projector_state: Any
 
 
+class ClassTau2(NamedTuple):
+    """A Class3D iteration's prior shells taken from elsewhere (``shells``, ``(K, n_shells)``; None: the M-step
+    computes its own from the previous references) and the label its log and dumps give their source."""
+
+    shells: Any
+    source: str
+
+
 class InputSource:
     """The native source: every input is the one the run computed."""
 
@@ -154,6 +162,10 @@ class InputSource:
     def random_perturbation(self, iteration: int, sampling_meta, native) -> float:
         """This iteration's sampling perturbation; ``native()`` computes the run's own (and advances its RNG)."""
         return native()
+
+    def class_tau2(self, iteration: int, n_classes: int) -> ClassTau2:
+        """The Class3D M-step's prior shells of this iteration (the native source: its own)."""
+        return ClassTau2(None, "previous Iref power spectra")
 
     def restore_convergence_state(self, state) -> bool:
         """Restore ``state``'s convergence counters from a replayed run's restart iteration, in place; return
