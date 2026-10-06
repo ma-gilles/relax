@@ -480,15 +480,15 @@ def test_significance_offset_free_capture_preserves_margin_lost_after_large_comm
 
 
 def test_final_all_data_after_max_iter_env_defaults_to_disabled(monkeypatch, caplog):
-    from relax.refinement.refinement_options import DiagnosticEnvironment
+    from relax.refinement.refinement_options import FinalPassOptions
 
     env_name = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
     monkeypatch.delenv(env_name, raising=False)
-    assert DiagnosticEnvironment.from_environ().final_all_data_after_max_iter is False
+    assert FinalPassOptions.from_environ().after_max_iter is False
     monkeypatch.setenv(env_name, "1")
-    assert DiagnosticEnvironment.from_environ().final_all_data_after_max_iter is True
+    assert FinalPassOptions.from_environ().after_max_iter is True
     monkeypatch.setenv(env_name, "maybe")
-    assert DiagnosticEnvironment.from_environ().final_all_data_after_max_iter is False
+    assert FinalPassOptions.from_environ().after_max_iter is False
     assert "Ignoring invalid RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" in caplog.text
 
     def should_run(*, has_converged=False, iteration=5, after_max_iter=False, force=False, **kwargs):

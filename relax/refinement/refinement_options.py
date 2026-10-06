@@ -401,21 +401,39 @@ FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DI
 
 
 @dataclass(frozen=True)
+class FinalPassOptions:
+    """Two departures of the final all-data pass from RELION, set by environment variable and read once, when
+    the run's options are built. They change what the run does, so they are run options (code rule 9).
+
+    ``after_max_iter`` (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``): K=1 runs the final pass after the last
+    numbered iteration even without convergence. ``merged_reference``
+    (``RELAX_FINAL_ALL_DATA_USE_MERGED_REFERENCE``): its K=1 E-step scores both halves against the merged map.
+    """
+
+    after_max_iter: bool = False
+    merged_reference: bool = False
+
+    @classmethod
+    def from_environ(cls) -> FinalPassOptions:
+        return cls(
+            after_max_iter=parse_env_flag_or_false(FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, logger=logging.getLogger(__name__)),
+            merged_reference=parse_env_true_flag(FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV),
+        )
+
+
+@dataclass(frozen=True)
 class DiagnosticEnvironment:
     """The refinement's diagnostic environment variables, read once, when the run's options are built.
 
     Dump directories (None when unset; an empty value writes nothing): the Class3D M-step and image size
     (``RELAX_KCLASS_DUMP_DIR``) and the pre-mask maps (``RELAX_PREMASK_DUMP_DIR``).
-    Switches: clear JAX's caches after every numbered iteration; run the K=1 final all-data pass after the
-    last numbered iteration without convergence; score both halves of that pass against the merged map;
-    force or forbid replaying the last numbered state in it.
+    Switches: clear JAX's caches after every numbered iteration; force or forbid replaying the last numbered
+    state in the final all-data pass.
     """
 
     kclass_dump_dir: str | None = None
     premask_dump_dir: str | None = None
     clear_jax_caches_between_iterations: bool = False
-    final_all_data_after_max_iter: bool = False
-    final_all_data_use_merged_reference: bool = False
     final_all_data_replay_last_numbered_state: bool = False
     final_all_data_disable_replay_last_numbered_state: bool = False
 
@@ -425,10 +443,6 @@ class DiagnosticEnvironment:
             kclass_dump_dir=os.environ.get("RELAX_KCLASS_DUMP_DIR"),
             premask_dump_dir=os.environ.get("RELAX_PREMASK_DUMP_DIR"),
             clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
-            final_all_data_after_max_iter=parse_env_flag_or_false(
-                FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, logger=logging.getLogger(__name__)
-            ),
-            final_all_data_use_merged_reference=parse_env_true_flag(FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV),
             final_all_data_replay_last_numbered_state=parse_env_true_flag(
                 FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV
             ),
@@ -578,6 +592,8 @@ class RefinementOptions:
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
     checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)
     consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
+    # Read from the environment when the options are built; nothing below reads it again.
+    final_pass: FinalPassOptions = field(default_factory=FinalPassOptions.from_environ)
 
 
 def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max_healpix_order):
@@ -652,6 +668,7 @@ __all__ = [
     "LocalSearchOptions",
     "ExpectedAccuracyOptions",
     "DiagnosticEnvironment",
+    "FinalPassOptions",
     "InitialSampling",
     "RestartProvenance",
     "EngineDebugOptions",

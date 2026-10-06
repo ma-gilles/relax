@@ -2511,7 +2511,7 @@ def refine_single_volume(
         iteration=iteration,
         max_iter=schedule.max_iter,
         force_max_iter_after_convergence=schedule.force_max_iter_after_convergence,
-        after_max_iter=debug.environment.final_all_data_after_max_iter,
+        after_max_iter=options.final_pass.after_max_iter,
         k_class_enabled=k_class_enabled,
     )
     if schedule.skip_final_iteration or not should_run_final_iteration:
@@ -2563,7 +2563,7 @@ def refine_single_volume(
     # that half's own reference map, then join the weighted sums into one final
     # reconstruction.
     final_join_means = [reference_model.maps[0], reference_model.maps[1]]
-    if not k_class_enabled and debug.environment.final_all_data_use_merged_reference:
+    if not k_class_enabled and options.final_pass.merged_reference:
         final_merged_reference, _ = _merged_mean_from_halves(reference_model.maps)
         final_join_means = [final_merged_reference, final_merged_reference]
         logger.info(
