@@ -58,6 +58,9 @@ from scripts.native_sources import check_imports  # noqa: E402
 TIERS_DIR = REPO_ROOT / "tests" / "tiers"
 RUN_BASE = Path("/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers")
 BUDGET_S = {"smoke": 5 * 60, "medium": 2 * 3600, "long": 8 * 3600}
+# The pinned outputs exist on the H100 only (tests/tiers/pinned_fast_cases.json), so medium asks for one:
+# on another model its pinned comparison is "not_configured" and does not gate.
+DEFAULT_GPU_MODEL = {"medium": "h100"}
 LOCAL_GPUS = ("1", "2", "3")  # physical GPU 0 of the development machine stays free
 LOCAL_GPUS_ENV = "RELAX_LOCAL_GPUS"  # a session's own subset, e.g. "1,3" (GPU 0 is never allowed)
 
@@ -715,7 +718,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     }
     (run_root / "SUMMARY.json").write_text(json.dumps(summary, indent=1) + "\n")
     write_receipt(run_root, spec, summary["status"], wall, model)
-    print(f"tier {spec['tier']}: {summary['status']} in {wall / 60:.1f} min; failed: {failed}", flush=True)
+    pinned_note = pinned.get("status", "not run") + ("" if pinned.get("enforced") else ", not enforced")
+    print(
+        f"tier {spec['tier']}: {summary['status']} in {wall / 60:.1f} min; failed: {failed}; pinned: {pinned_note}",
+        flush=True,
+    )
     return 0 if not failed else 1
 
 
@@ -977,6 +984,8 @@ def cmd_submit(args: argparse.Namespace) -> int:
         print(f"dry run: plan at {run_root}/PLAN.json")
         return 0
     natives = build_natives(run_root, src)
+    if args.gpu_model is None:
+        args.gpu_model = DEFAULT_GPU_MODEL.get(tier, "any") if args.queue == "cryoem" else "any"
     if args.gpu_model == "h100" and args.queue != "cryoem":
         raise SystemExit("H100 nodes are in the cryoem partition only")
     queue = args.queue
@@ -1021,8 +1030,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--gpu-model",
         choices=["any", "a100", "h100"],
-        default="any",
-        help="pin the GPU model (Slurm constraint); required when the run is compared numerically with a control",
+        default=None,
+        help="pin the GPU model (Slurm constraint); required when the run is compared numerically with a control. "
+        "Default: h100 for medium (its pinned outputs exist on the H100 only), any otherwise; pass any to accept "
+        "a medium run without the pinned comparison",
     )
     p.add_argument("--queue", choices=["cryoem", "general"], default="cryoem",
                    help="cryoem (all GPU jobs); general only when the user explicitly allows another partition")

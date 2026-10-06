@@ -203,6 +203,25 @@ def test_selected_mode_reaches_summary_and_older_receipt_defaults_auto(tmp_path,
     assert json.loads((tmp_path / "receipts.jsonl").read_text())["sha"] == "abc"
 
 
+def test_tier_last_line_names_the_pinned_status_and_medium_asks_for_the_h100(tmp_path, monkeypatch, capsys):
+    # A medium run on a GPU model without pinned outputs passes ungated; its last line must say so.
+    (tmp_path / "src").mkdir()
+    (tmp_path / "PLAN.json").write_text(json.dumps({"tier": "medium", "source": {"head": "abc"}, "items": []}))
+    monkeypatch.setattr(run_test_tier, "check_native_sources", lambda *_args: None)
+    monkeypatch.setattr(run_test_tier, "check_imports", lambda *_args: ({}, None))
+    monkeypatch.setattr(run_test_tier, "gpu_models", lambda *_args: {"test-gpu": "A100"})
+    monkeypatch.setattr(run_test_tier, "execute", lambda *_args: [])
+    monkeypatch.setattr(run_test_tier, "write_receipt", lambda *_args: None)
+    monkeypatch.setattr(run_test_tier, "score_fsc", lambda *_args: {"status": "reported"})
+    monkeypatch.setattr(
+        run_test_tier, "compare_pinned", lambda *_args: {"status": "not_configured", "enforced": False}
+    )
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "test-gpu")
+    assert run_test_tier.cmd_run(Namespace(run_root=tmp_path, tier="medium")) == 0
+    assert "pinned: not_configured, not enforced" in capsys.readouterr().out.strip().splitlines()[-1]
+    assert run_test_tier.DEFAULT_GPU_MODEL == {"medium": "h100"}
+
+
 def _case(auc, shell):
     return {"summary": {"min_fsc_auc": auc, "mean_fsc_auc": auc, "min_shell_fsc_in_band": shell}}
 

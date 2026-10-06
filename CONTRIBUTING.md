@@ -78,7 +78,8 @@ Run the smallest meaningful check first. Use focused tests between edits, then t
 
 Options of `python scripts/run_test_tier.py submit <tier>`: `--run-root <dir>`, `--base <ref>` (default
 `origin/main`; selects smoke's GPU files), `--where auto|slurm|local` (smoke), `--queue-wait-minutes`,
-`--gpu-model any|a100|h100`, `--dry-run`, `--coarse-engine`. `plan <tier>` prints the items without running.
+`--gpu-model any|a100|h100` (default `h100` for medium on the cryoem queue, `any` otherwise), `--dry-run`,
+`--coarse-engine`. `plan <tier>` prints the items without running.
 
 Every tier command freezes the checkout (HEAD and any uncommitted diff) into its run root, verifies the
 fixture sets, builds the natives once and ends with `RECEIPT.json` (`scripts/write_test_receipt.py`: SHA,
@@ -94,7 +95,10 @@ for both the unfiltered half-map average and the merged map stays within 0.002 o
 ground-truth FSC-AUC and reaches cross FSC-AUC 0.990 against every RELION run. The values are in
 `tests/tiers/fsc_thresholds.json` (floor = 1 - 2 x max(RELAX deficit, RELION repeat deficit)); scoring is
 `scripts/em_tier_fsc.py`. Each run also compares its `fsc.json` with the pinned outputs
-(`tests/tiers/pinned_fast_cases.json`, `scripts/em_tier_pinned.py`). Map correlation is a diagnostic only.
+(`tests/tiers/pinned_fast_cases.json`, `scripts/em_tier_pinned.py`); the tier's last line names the pinned
+status, and a run on a GPU model with no pinned entry reads `pinned: not_configured, not enforced`. Medium
+therefore asks for the H100, where the pins are; `--gpu-model any` accepts a medium run without them.
+Map correlation is a diagnostic only.
 
 **GPU model.** Pinned outputs are kept per GPU model and a run is compared only with the entry of its own
 model. Anything that compares a control with a candidate numerically pins the same model on both
