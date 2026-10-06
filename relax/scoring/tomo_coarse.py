@@ -895,6 +895,9 @@ def particle_coarse_supports(
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
     significance_batch = max(1, _SIGNIFICANCE_BATCH_BYTES // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
+    # A flush holds whole batches, the first that reach significance_batch particles, and never more than the pass.
+    p_pad_all = batches[0][2] if batches else 1
+    flush_size = min(-(-significance_batch // p_pad_all) * p_pad_all, n_units)
     class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
     rescored, n_scored = [], 0
     supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
@@ -935,7 +938,7 @@ def particle_coarse_supports(
             max_significants=max_significants,
         )
 
-    def exact_cut(units_all, diff2, stats, error, n_images, operands):
+    def exact_cut(units_all, diff2, stats, error, n_images, operands, *, n_real):
         """The flushed particles' cut on exact scores: the rotations the GEMM rounding leaves undecided at a
         particle's cut (max_significants or the adaptive fraction) and at its smallest diff2 are scored again by
         the direct-square kernel, and the cut is taken on those values (:mod:`relax.scoring.exact_cut`).
@@ -990,7 +993,7 @@ def particle_coarse_supports(
             model_max_r=int(model_max_r),
             padding_factor=int(padding_factor),
         )
-        rescored.append((int(use.sum()), int(use.any(axis=1).sum())))
+        rescored.append((int(use[:n_real].sum()), int(use[:n_real].any(axis=1).sum())))
         return significance(units_all, diff2)
 
     def dispatch():
@@ -1000,15 +1003,27 @@ def particle_coarse_supports(
         n_images = jnp.asarray(np.concatenate([n for _, _, _, n, _ in pending]))
         operands = [o for *_, o in pending]
         pending.clear()
-        stats = exact_cut(units_all, diff2, significance(units_all, diff2), error, n_images, operands)
+        # Every flush of the pass has the same number of particles, so its programs compile once per pass shape: a
+        # shorter (last) flush repeats its first particle, whose copies are cut alike and not read back.
+        n_real = int(units_all.size)
+        padding = flush_size - n_real
+        if padding > 0:
+            first = np.zeros(padding, dtype=np.int64)
+            units_all = np.concatenate([units_all, units_all[first]])
+            diff2 = jnp.concatenate([diff2, jnp.repeat(diff2[:1], padding, axis=0)], axis=0)
+            error = jnp.concatenate([error, jnp.repeat(error[:1], padding, axis=0)], axis=0)
+            n_images = jnp.concatenate([n_images, jnp.repeat(n_images[:1], padding, axis=0)], axis=0)
+            operands.append(tuple(jnp.repeat(value[:1], padding, axis=0) for value in operands[0]))
+        stats = exact_cut(units_all, diff2, significance(units_all, diff2), error, n_images, operands, n_real=n_real)
         # The significant cells are compacted on the device; only their ids come back (the dense mask is
-        # K * R * T booleans per particle).
-        counts = jnp.sum(stats["mask"], axis=1, dtype=jnp.int32)
-        flat = _significant_cells(stats["mask"], capacity=cells_capacity) if cells_capacity else None
+        # K * R * T booleans per particle). The copies' cells are dropped.
+        mask = stats["mask"] & (jnp.arange(units_all.size) < n_real)[:, None]
+        counts = jnp.sum(mask, axis=1, dtype=jnp.int32)
+        flat = _significant_cells(mask, capacity=cells_capacity) if cells_capacity else None
         for value in (counts, flat, stats["pmax"]):
             if value is not None:
                 value.copy_to_host_async()
-        return units_all, stats["mask"], counts, flat, stats["pmax"]
+        return units_all[:n_real], mask, counts, flat, stats["pmax"]
 
     def collect(units_all, mask, counts, flat, pmax):
         nonlocal cells_capacity

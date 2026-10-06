@@ -723,10 +723,14 @@ def test_near_cut_rows_are_the_cut_and_minimum_neighbourhoods_of_capped_particle
     assert_matches(put[1], diff2[1])
 
 
+@pytest.mark.parametrize("flushes", ["one_flush", "flushes_of_three"])
 @pytest.mark.parametrize("n_classes", [1, 2])
-def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes):
+def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes, flushes):
     """The pass with a scorer that is off by less than its stated bound: where max_significants cuts, the
-    supports are the cut of the exact diff2, and only the undecided rotations were scored exactly."""
+    supports are the cut of the exact diff2, and only the undecided rotations were scored exactly.
+
+    ``flushes_of_three``: one particle per batch and three per flush, so the last flush holds one particle and is
+    padded to three; every flush's programs see three particles and the supports are the one-flush pass's."""
 
     rng = np.random.default_rng(31)
     offsets = np.array([0, 2, 5, 6, 9])
@@ -819,6 +823,23 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         image_size=8,
     )
     supports, _pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+    if flushes == "flushes_of_three":
+        # One particle per batch (the stand-in GEMM's rounding pattern follows the batch layout, so both passes
+        # below share it): flushes of two particles need no padding; flushes of three end with one padded to three.
+        batches = tomo_coarse._coarse_batches
+        monkeypatch.setattr(tomo_coarse, "_coarse_batches", lambda *a, **k: batches(*a, **{**k, "budget_bytes": 1}))
+        monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 2 * n_classes * 256 * n_trans * 4)
+        unpadded, unpadded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 3 * n_classes * 256 * n_trans * 4)
+        captured.clear()
+        padded, padded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        # Two flushes (3 particles, then 1 padded to 3), each cut on GEMM scores and then on exact ones.
+        assert [c.shape[0] for c in captured] == [3, 3, 3, 3]
+        for k, (got, want) in enumerate(zip(*(([x] if n_classes == 1 else x) for x in (padded, unpadded)))):
+            for unit in range(n_units):
+                np.testing.assert_array_equal(got[unit], want[unit], err_msg=f"class {k} particle {unit}")
+        np.testing.assert_array_equal(padded_pmax, unpadded_pmax)
+        return
     supports = [supports] if n_classes == 1 else supports
     wobbly = captured[0]
     assert len(captured) == 2 and captured[1].shape == wobbly.shape  # one batch: its GEMM cut, then the exact cut
