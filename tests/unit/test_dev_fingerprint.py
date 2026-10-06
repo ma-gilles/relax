@@ -155,6 +155,14 @@ def test_a_controller_input_retired_at_its_off_value_is_listed_and_accepted_but_
     assert counts == {"outputs": 0, "added": 0, "retired": 2, "trace": 0, "log": 0} and fingerprint.accepted(counts)
     assert "RETIRED k1 result refine0/inputs[1]/options/debug/off: None" in lines
     assert lines[-1] == "controller inputs retired (2); accepted: option fields removed at their off value"
+    # The keyword mapping's length changes with its members, and is accepted with them.
+    with_length = dict(a["cases"]["k1"]["result"], **{"refine0/inputs[1]#": "dict[3]"})
+    counts, _ = fingerprint.diff_fingerprints(
+        _fingerprint(k1=_case(with_length)),
+        _fingerprint(k1=_case({"refine0/inputs[1]#": "dict[2]", "refine0/inputs[1]/options/debug/x": "1",
+                               "refine0/inputs[1]/observer": "None", "/mean": "aa"})),
+    )
+    assert counts == {"outputs": 0, "added": 1, "retired": 2, "trace": 0, "log": 0}
     # A removed input that was on, or a removed result leaf, is an output difference.
     for flat in ({"/mean": "aa"}, {"refine0/inputs[1]/options/debug/x": "1"}):
         counts, _ = fingerprint.diff_fingerprints(

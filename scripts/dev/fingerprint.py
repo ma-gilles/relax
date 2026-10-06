@@ -31,8 +31,9 @@ log rows differ they print "only log rows differ (N); accepted under rule 2" and
 present only in B (a leaf under ``refine<N>/inputs``: a new option field the command hands the controller) is
 listed and accepted: a value that changed what the controller does would change its results, which are
 compared. So is one present only in A whose value there was ``None`` or ``False`` (an option field that was
-off in the case and is retired, its behaviour now chosen through a port: code rule 15); a removed input that
-was on, or a changed one, is an output difference. Any other difference exits 1.
+off in the case and is retired, its behaviour now chosen through a port: code rule 15), and the length of the
+container that holds only such added or retired members; a removed input that was on, or a changed one, is an
+output difference. Any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -253,7 +254,15 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             counts["retired"] += len(retired)
             for key in retired[:shown_per_section]:
                 lines.append(f"RETIRED {name} {section} {key}: {flat_a[key]}")
-            changed = [key for key in changed if key not in added and key not in retired]
+            # A controller-input container whose length changed only through added or retired members.
+            moved = set(added) | set(retired)
+            resized = [
+                key for key in changed
+                if key.endswith("#") and CONTROLLER_INPUT.match(key) and key in flat_a and key in flat_b
+                and any(member.startswith(key[:-1]) for member in moved)
+                and all(member in moved for member in changed if member.startswith(key[:-1]) and member != key)
+            ]
+            changed = [key for key in changed if key not in moved and key not in resized]
             counts["outputs"] += len(changed)
             for key in changed[:shown_per_section]:
                 lines.append(
@@ -944,8 +953,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             debug_fields["state_swap_probe"] = {"iteration": 1, "variant": swap}
         if frozen:
             debug_fields["assert_initial_scoring_state_immutable"] = True
-        if dump:
+        observer = {}
+        if dump and "save_intermediates_dir" in {f.name for f in dataclasses.fields(refinement_options.EngineDebugOptions)}:
+            # A source older than the observer port (code rule 15): the intermediates are a debug option.
             debug_fields["save_intermediates_dir"] = dump_dir
+        elif dump:
+            from relax.diagnostics.observers import IntermediatesObserver
+
+            observer["observer"] = IntermediatesObserver(dump_dir)
         if sealed:
             # A schema-v3 sealed sampling state: three order-2 directions, two psi angles, three translations.
             debug_fields["sealed_sampling_state"] = {
@@ -989,6 +1004,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                     parity=refinement_options.RelionParityOptions(**parity),
                     **extra,
                 ),
+                **observer,
             )
         except Exception as exc:  # recorded: both sides must fail the same way
             error = (type(exc).__name__, scrub(str(exc)))
