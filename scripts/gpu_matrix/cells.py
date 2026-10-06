@@ -23,6 +23,8 @@ FIXTURES = {
         "et15_k2conf_box64_ogtomo/project"
     ),
     "ppca_et_k3": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_ppca_k3conf_box64_20261002/project",
+    "w2_09_box192": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_09_box192/project",
+    "ms2_448": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ms2_icos_448_b40_20260930",
 }
 
 _REFINE_K1 = [
@@ -359,6 +361,58 @@ CELLS["refine_k1_50k256_it3"] = dict(CELLS["refine_k1_50k256"])
 CELLS["refine_k1_50k256_it3"]["args"] = [
     "3" if previous == "--max_iter" else value
     for previous, value in zip([None, *CELLS["refine_k1_50k256"]["args"]], CELLS["refine_k1_50k256"]["args"])
+]
+
+# Robustness v1 (relax_bench_k1plus_20260925/robustness_gaps_v1.md, cells 1, 2 and 8): the benchmark page's relax
+# commands at full schedule, so each card's run is judged against the page row's RELION band and the H100 run of
+# the same commit. Only the benchmark-only options (--benchmark_ledger_json, --scratch_dir) are left out.
+CELLS["refine_k1_50k256_full"] = {  # noise1_k1_50k256_autorefine_resident_ef6234c
+    "module": "relax.commands.refine",
+    "args": [
+        *("--data_dir", "{fx:k1_50k256}", "--output", "{out}", "--max_iter", "999", "--healpix_order", "3"),
+        *("--offset_range", "3.0", "--offset_step", "1.0", "--adaptive_oversampling", "1", "--tau2_fudge", "1.0"),
+        *("--perturb_factor", "0.5", "--particle_diameter_ang", "200", "--firstiter_cc", "--apply-initial-lowpass"),
+        *("--init_resolution", "30.0", "--seed", "1775735620"),
+    ],
+    "box": 256,
+}
+CELLS["class3d_k4_50k256_it15"] = {  # pdb_k4_50k_class3d_15it_resident_bench
+    "module": "relax.commands.class3d",
+    "args": [
+        *("--data_dir", "{fx:k4_50k256}", "--output", "{out}", "--n_classes", "4", "--max_iter", "15"),
+        *("--healpix_order", "1", "--offset_range", "6", "--offset_step", "2", "--init_resolution", "30.0"),
+        *("--tau2_fudge", "4.0", "--ref_star", "{fx:k4_50k256}/reference_init_classes_relion.star"),
+        *("--particle_diameter_ang", "200", "--seed", "1775735620", "--firstiter_cc", "--apply-initial-lowpass"),
+    ],
+    "box": 256,
+}
+CELLS["refine_ms2_448_s1"] = {  # synth_ms2_icos_448_b40_autorefine, seed 1
+    "module": "relax.commands.refine",
+    "args": [
+        *("--data_dir", "{fx:ms2_448}", "--output", "{out}"),
+        *("--init_volume", "{fx:ms2_448}/reference_init_lp20_relion.mrc", "--relion-half-sets-from-input"),
+        *("--n_classes", "1", "--sym", "I2", "--healpix_order", "3", "--auto_local_healpix_order", "4"),
+        *("--offset_range", "5", "--offset_step", "2", "--offset_sigma_angstrom", "10", "--adaptive_oversampling", "1"),
+        *("--max_significants", "-1", "--tau2_fudge", "1", "--perturb_factor", ".5", "--seed", "1"),
+        *("--perturb_seed", "1", "--init_resolution", "20", "--firstiter_cc", "--apply-initial-lowpass"),
+        *("--particle_diameter_ang", "320", "--width_mask_edge_px", "5", "--preread_images", "--max_iter", "50"),
+    ],
+    "box": 448,
+}
+CELLS["tomo_refine_w2_09_box192"] = {  # cryoet_w2_09_box192_2000_192_tomo_autorefine_bb9cae4, seed 1
+    "module": "relax.commands.refine",
+    "args": [
+        *("--data_dir", "{fx:w2_09_box192}", "--output", "{out}"),
+        *("--init_volume", "{fx:w2_09_box192}/reference_init_relion.mrc", "--init_resolution", "40"),
+        *("--particle_diameter_ang", "240", "--sym", "C1", "--healpix_order", "2", "--auto_local_healpix_order", "4"),
+        *("--offset_range", "5", "--offset_step", "1", "--seed", "1", "--no-firstiter_cc"),
+    ],
+    "box": 192,
+}
+CELLS["tomo_class3d_et13_it25"] = dict(CELLS["tomo_class3d_et13_it3"])  # cryoet_et13_k2conf_..._tomo_class3d, seed 1
+CELLS["tomo_class3d_et13_it25"]["args"] = [
+    "25" if previous == "--max_iter" else value
+    for previous, value in zip([None, *CELLS["tomo_class3d_et13_it3"]["args"]], CELLS["tomo_class3d_et13_it3"]["args"])
 ]
 
 
