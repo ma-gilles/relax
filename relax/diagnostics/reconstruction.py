@@ -1,8 +1,8 @@
 """Reconstruction diagnostic serialization; scheduling stays in the controller.
 
-Prejoin admission and finite auditing run before cross-half mixing. Writers
-preserve historical NPZ field names, casts and optional-field behavior; model
-and history updates remain with the controller.
+The finite guard of the half accumulators runs before cross-half mixing (the captures of the accumulators
+are ``relax.diagnostics.observers.BpRefAccumulatorObserver``). Writers preserve historical NPZ field names,
+casts and optional-field behavior; model and history updates remain with the controller.
 """
 
 from __future__ import annotations
@@ -22,47 +22,13 @@ if TYPE_CHECKING:
     from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
 
 
-def audit_prejoin_accumulators(
-    numerators,
-    denominators,
-    settings: ReconstructionSettings,
-    *,
-    iteration,
-    current_size,
-    accumulator_shape,
-    k_class_enabled,
-    init_relion_iteration,
-    pixel_size_angstrom,
-    log,
-) -> bool:
-    """Capture and audit native half accumulators before any cross-half join.
+def check_half_accumulators_before_join(numerators, denominators, *, iteration, init_relion_iteration, log) -> None:
+    """The finite guard of the native half accumulators, before any cross-half join.
 
-    Return whether this numbered iteration matches the accumulator capture
-    target, for the controller's subsequent post-join capture. The guard runs
-    for K1 and Class3D, including iterations outside the capture target.
+    ``RELAX_EM_BPREF_FINITE_GUARD`` (``finite_check.half_accumulator_guard_mode``) selects off, warn or raise;
+    the mode is logged at the first iteration. Run before the join, so a report names the half that is
+    actually damaged rather than the one the join copied it into.
     """
-    prejoin_dir = os.environ.get("RELAX_BPREF_PREJOIN_DUMP_DIR")
-    target_iteration = os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_ITERATION")
-    iteration_matches = (
-        not target_iteration or iteration + 1 == int(target_iteration)
-    )
-    if prejoin_dir and not k_class_enabled and iteration_matches:
-        write_bpref_accumulators(
-            prejoin_dir,
-            stage="prejoin",
-            iteration=iteration,
-            current_size=current_size,
-            padding_factor=settings.padding_factor,
-            grid_size=settings.grid_size,
-            voxel_size=pixel_size_angstrom,
-            volume_shape=settings.volume_shape,
-            accumulator_shape=accumulator_shape,
-            Ft_y_0=numerators[0],
-            Ft_y_1=numerators[1],
-            Ft_ctf_0=denominators[0],
-            Ft_ctf_1=denominators[1],
-        )
-
     guard_mode = finite_check.half_accumulator_guard_mode()
     if iteration == 0:
         log.info(
@@ -71,8 +37,6 @@ def audit_prejoin_accumulators(
             guard_mode,
         )
     if guard_mode != "off":
-        # Before the join, so a report names the half that is actually
-        # damaged rather than the one the join copied it into.
         finite_check.check_half_accumulators(
             {
                 "Ft_y_0": numerators[0],
@@ -85,7 +49,6 @@ def audit_prejoin_accumulators(
                 relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
             ),
         )
-    return iteration_matches
 
 
 def write_bpref_accumulators(

@@ -18,6 +18,7 @@ import numpy as np
 
 from relax.diagnostics import parity_dump
 from relax.diagnostics.iteration import (
+    _maybe_dump_noise_update_debug,
     _save_iteration_intermediates,
     _save_iteration_particle_states,
     _source_image_indices,
@@ -25,7 +26,9 @@ from relax.diagnostics.iteration import (
     write_final_half_manifest,
     write_numbered_half_manifest,
 )
+from relax.diagnostics.reconstruction import write_bpref_accumulators
 from relax.refinement.ports import RunObserver
+from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +121,57 @@ class ParityDumpObserver(RunObserver):
                 logger.warning("parity_dump.dump_timing_iteration failed at iter %d: %s", finished.iteration, exc)
 
 
+class BpRefAccumulatorObserver(RunObserver):
+    """Writes a K=1 iteration's half accumulators before the join (``prejoin_dir``) and after it
+    (``accum_dir``), each ``recovar_bpref_<stage>_itNNN.npz``; ``target_iteration`` (1-based) limits both to one
+    iteration. From the environment: ``RELAX_BPREF_PREJOIN_DUMP_DIR``, ``RELAX_BPREF_ACCUM_DUMP_DIR``,
+    ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION``."""
+
+    def __init__(self, *, prejoin_dir=None, accum_dir=None, target_iteration=None):
+        self.prejoin_dir, self.accum_dir = prejoin_dir or None, accum_dir or None
+        self.target_iteration = None if target_iteration is None else int(target_iteration)
+
+    @classmethod
+    def from_environment(cls):
+        target = os.environ.get("RELAX_BPREF_BOUNDARY_DUMP_ITERATION")
+        return cls(
+            prejoin_dir=os.environ.get("RELAX_BPREF_PREJOIN_DUMP_DIR"),
+            accum_dir=os.environ.get("RELAX_BPREF_ACCUM_DUMP_DIR"),
+            target_iteration=int(target) if target else None,
+        )
+
+    def _write(self, directory, stage, iteration, numerators, denominators, settings, current_size,
+               accumulator_shape, pixel_size_angstrom):
+        if not directory or (self.target_iteration is not None and iteration + 1 != self.target_iteration):
+            return
+        write_bpref_accumulators(
+            directory, stage=stage, iteration=iteration, current_size=current_size,
+            padding_factor=settings.padding_factor if stage == "prejoin" else RECONSTRUCTION_PADDING_FACTOR,
+            grid_size=settings.grid_size, voxel_size=pixel_size_angstrom, volume_shape=settings.volume_shape,
+            accumulator_shape=accumulator_shape, Ft_y_0=numerators[0], Ft_y_1=numerators[1],
+            Ft_ctf_0=denominators[0], Ft_ctf_1=denominators[1],
+        )
+
+    def half_accumulators_ready(self, iteration, *, numerators, denominators, settings, current_size,
+                                accumulator_shape, k_class_enabled, pixel_size_angstrom):
+        if not k_class_enabled:
+            self._write(self.prejoin_dir, "prejoin", iteration, numerators, denominators, settings, current_size,
+                        accumulator_shape, pixel_size_angstrom)
+
+    def k1_accumulators_joined(self, iteration, *, numerators, denominators, settings, current_size,
+                               accumulator_shape, pixel_size_angstrom):
+        self._write(self.accum_dir, "accum", iteration, numerators, denominators, settings, current_size,
+                    accumulator_shape, pixel_size_angstrom)
+
+
+class NoiseUpdateObserver(RunObserver):
+    """Writes the raw terms of each noise update (``RELAX_NOISE_DEBUG_DUMP_DIR``, optionally limited to the
+    iterations of ``RELAX_NOISE_DEBUG_DUMP_ITERATION``), read from the environment at each update."""
+
+    def noise_updated(self, iteration, **terms):
+        _maybe_dump_noise_update_debug(iteration=iteration, **terms)
+
+
 class ObserverGroup(RunObserver):
     """Hands every hook to each of ``observers`` in order; a collection request holds if any asks for it."""
 
@@ -145,6 +199,18 @@ class ObserverGroup(RunObserver):
         for o in self.observers:
             o.maps_reconstructed(maps)
 
+    def half_accumulators_ready(self, iteration, **values):
+        for o in self.observers:
+            o.half_accumulators_ready(iteration, **values)
+
+    def k1_accumulators_joined(self, iteration, **values):
+        for o in self.observers:
+            o.k1_accumulators_joined(iteration, **values)
+
+    def noise_updated(self, iteration, **values):
+        for o in self.observers:
+            o.noise_updated(iteration, **values)
+
     def poses_updated(self, iteration, **values):
         for o in self.observers:
             o.poses_updated(iteration, **values)
@@ -163,9 +229,18 @@ class ObserverGroup(RunObserver):
 
 
 def observers_from_environment() -> list[RunObserver]:
-    """The observers the environment asks for: the parity capture or its timings."""
+    """The observers the environment asks for: the parity capture or its timings, the BPref accumulator
+    captures, the noise-update terms. A malformed ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
 
-    return [ParityDumpObserver()] if parity_dump.timing_is_active() else []
+    found = []
+    if parity_dump.timing_is_active():
+        found.append(ParityDumpObserver())
+    accumulators = BpRefAccumulatorObserver.from_environment()
+    if accumulators.prejoin_dir or accumulators.accum_dir:
+        found.append(accumulators)
+    if os.environ.get("RELAX_NOISE_DEBUG_DUMP_DIR"):
+        found.append(NoiseUpdateObserver())
+    return found
 
 
 def combine(observers) -> RunObserver | None:

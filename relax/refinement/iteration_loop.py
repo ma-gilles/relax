@@ -41,9 +41,9 @@ from relax.diagnostics.frozen_boundary import (
     _frozen_scoring_state_arrays,
 )
 from relax.diagnostics.iteration import (
-    _maybe_dump_noise_update_debug,
     _significance_dump_half_indices,
 )
+from relax.diagnostics.reconstruction import check_half_accumulators_before_join
 from relax.diagnostics.relion_replay import (
     _has_numbered_replay_iteration_overrides,
     _maybe_debug_replay_relion_references,
@@ -560,15 +560,14 @@ def k1_maximization(
     scoring_dtype,
     relion_firstiter_cc_this_iter: bool,
     source_pixel_size_angstrom,
-    bpref_boundary_iteration_matches,
-    bpref_accum_dump_dir,
+    observer: RunObserver,
 ) -> K1Maximization:
     """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
 
     In order: join the half accumulators at low resolution when requested, copy the previous references
     to host and release them, estimate the split-half prior from this iteration's FSC, replace
     ``reference_model``'s tau2 and maps; after a first-iteration CC pass, taper the reported tau2; then
-    park the tau2 volumes on the host.
+    park the tau2 volumes on the host. ``observer`` sees the joined accumulators before the prior reads them.
     """
     Ft_y_0, Ft_y_1 = Ft_y_per_half
     Ft_ctf_0, Ft_ctf_1 = Ft_ctf_per_half
@@ -592,25 +591,11 @@ def k1_maximization(
         )
     previous_means = _snapshot_and_release_previous_k1_means(reference_model.maps)
     _t_unreg_first = time.time()
-    # Optional dump of post-join Ft_y, Ft_ctf for shell-by-shell parity
-    # comparison against RELION's RELAX_MSTEP_DUMP_DIR. Activated by
-    # RELAX_BPREF_ACCUM_DUMP_DIR. One npz per iteration.
-    if bpref_accum_dump_dir and bpref_boundary_iteration_matches:
-        reconstruction_diagnostics.write_bpref_accumulators(
-            bpref_accum_dump_dir,
-            stage="accum",
-            iteration=iteration,
-            current_size=current_size,
-            padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-            grid_size=reconstruction_settings.grid_size,
-            voxel_size=source_pixel_size_angstrom,
-            volume_shape=reconstruction_settings.volume_shape,
-            accumulator_shape=mstep_accumulator_shape,
-            Ft_y_0=Ft_y_0,
-            Ft_y_1=Ft_y_1,
-            Ft_ctf_0=Ft_ctf_0,
-            Ft_ctf_1=Ft_ctf_1,
-        )
+    observer.k1_accumulators_joined(
+        iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), settings=reconstruction_settings,
+        current_size=current_size, accumulator_shape=mstep_accumulator_shape,
+        pixel_size_angstrom=source_pixel_size_angstrom,
+    )
     split_prior = estimate_split_half_prior(
         (Ft_y_0, Ft_y_1),
         (Ft_ctf_0, Ft_ctf_1),
@@ -1957,17 +1942,16 @@ def refine_single_volume(
             default_axis=-1,
         )
 
-        _bpref_boundary_iteration_matches = reconstruction_diagnostics.audit_prejoin_accumulators(
-            (Ft_y_0, Ft_y_1),
-            (Ft_ctf_0, Ft_ctf_1),
-            reconstruction_settings,
-            iteration=iteration,
-            current_size=current_size,
-            accumulator_shape=mstep_accumulator_shape,
-            k_class_enabled=k_class_enabled,
-            init_relion_iteration=init_relion_iteration,
-            pixel_size_angstrom=source_pixel_size_angstrom,
-            log=logger,
+        # The raw half accumulators, before any join: the observer sees them, then the finite guard checks them
+        # (a report names the half that is actually damaged, not the one a join copied it into).
+        observer.half_accumulators_ready(
+            iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1),
+            settings=reconstruction_settings, current_size=current_size, accumulator_shape=mstep_accumulator_shape,
+            k_class_enabled=k_class_enabled, pixel_size_angstrom=source_pixel_size_angstrom,
+        )
+        check_half_accumulators_before_join(
+            (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), iteration=iteration,
+            init_relion_iteration=init_relion_iteration, log=logger,
         )
 
         # --- RELION-exact M-step ordering ---
@@ -2036,8 +2020,7 @@ def refine_single_volume(
                 scoring_dtype=scoring_dtype,
                 relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
-                bpref_boundary_iteration_matches=_bpref_boundary_iteration_matches,
-                bpref_accum_dump_dir=debug.environment.bpref_accum_dump_dir,
+                observer=observer,
             )
         observer.stage_finished(iteration, "recon")
 
@@ -2276,11 +2259,6 @@ def refine_single_volume(
         # K-class (shared) / K=1 (per-half) / firstiter_cc-skip variants;
         # returns updated radial sigma2_noise + the unrolled
         # ``noise_variance`` representation consumed by the engine.
-        noise_debug_dump = partial(
-            _maybe_dump_noise_update_debug,
-            iteration=iteration,
-            current_size=current_size,
-        )
         noise_update = update_posterior_noise_variance(
             per_half.noise_stats,
             noise_model,
@@ -2288,7 +2266,7 @@ def refine_single_volume(
             k_class_enabled=k_class_enabled,
             firstiter_cc=first_iteration.relion_firstiter_cc,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
-            dump_debug=noise_debug_dump,
+            dump_debug=partial(observer.noise_updated, iteration, current_size=current_size),
             summed_current_size=sampling_plan.windows.image_window_size if consistency.noise_shell_count == "summed" else None,
             nyquist_column_counting=consistency.nyquist_column_counting,
         )

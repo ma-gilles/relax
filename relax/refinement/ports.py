@@ -129,6 +129,24 @@ class RunObserver:
     def iteration_finished(self, finished: FinishedIteration) -> None:
         """A numbered iteration is complete, before its timing log and end-of-iteration releases."""
 
+    def half_accumulators_ready(
+        self, iteration: int, *, numerators, denominators, settings, current_size: int, accumulator_shape,
+        k_class_enabled: bool, pixel_size_angstrom,
+    ) -> None:
+        """A numbered iteration's two half accumulators are complete, before any check or cross-half join."""
+
+    def k1_accumulators_joined(
+        self, iteration: int, *, numerators, denominators, settings, current_size: int, accumulator_shape,
+        pixel_size_angstrom,
+    ) -> None:
+        """A K=1 iteration's half accumulators after the low-resolution join, before its prior reads them."""
+
+    def noise_updated(
+        self, iteration: int, *, current_size: int, image_shape, noise_stats_per_half, previous_noise_radial_per_half,
+        noise_from_res_per_half, noise_from_res,
+    ) -> None:
+        """A numbered iteration's noise spectra are estimated (the new ones beside the previous model's)."""
+
     def maps_reconstructed(self, maps: ReconstructedIteration) -> None:
         """A numbered iteration's maps and FSC are made."""
 
