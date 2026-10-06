@@ -1,47 +1,42 @@
-# What in relax/refinement still falls short of the rules
+# relax/refinement against the rules: verdict, exceptions and what remains
 
 The agent-facing record of the open items of the refinement package against
 [refactor_rules.md](refactor_rules.md) and [module_template.md](module_template.md). Close an item by
 deleting it here in the commit that closes it; record a decision in the "Decided" section. Numbers are of
-the branch after main 7d8a1a1 (2026-10-05).
+main on 2026-10-06.
 
-## Verdict (close-out, 2026-10-05, main after 00eac89)
+## Verdict (close-out, 2026-10-06)
 
-`relax/refinement` meets the rules the refactor worked through, with the recorded exceptions below; it does
-not yet meet rules 8 and 10, and rules 4, 9 and 11 were not audited in full.
+**`relax/refinement` meets the code rules, with the recorded exceptions below.** Each exception names its
+reason; the sections after this one hold the detail.
 
 | Rule | Status |
 | --- | --- |
-| 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. |
-| 3 lifetimes | Met for what moved: the controller tests check the required lifetimes (`frame_holds`, `keep_operands=False`). The M-step results stay unpacked into locals because records would move the accumulators' release points. |
-| 4 JAX | Not audited: no slice changed a jit boundary. |
-| 5 decide once | Met for flags and the controller's diagnostics (option resolvers in `command_options`, `DiagnosticEnvironment`); exceptions below. |
+| 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. Archive keys are unchanged (`RefinementResult.archive_fields`). |
+| 3 lifetimes | Met: the controller tests check required lifetimes (`frame_holds`, `keep_operands=False`). Exception: the M-step results stay unpacked into locals, because records would move the accumulators' release points. `RefinementResult` keeps the run's `RefinementHistory` (host curves, kilobytes). |
+| 4 JAX | Met (audit below). Exceptions: the donating normalisation executable, the box-scale host staging and the end-of-iteration sync. |
+| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, `DiagnosticEnvironment`). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2). |
 | 6 contracts | Met: the controller's 24 mode tests select contract functions, mode-only steps or refusals (owner, 2026-10-04 and 2026-10-05); the final scoring loop and `DenseVariantPolicy.k_class_enabled` are variants. |
-| 7 one owner | Met for the start-up facts the command held three times; no known duplicate. |
-| 8 config/state/results | Partly: option records are frozen; `refine_single_volume` and `run_final_all_data` still return dicts. |
-| 9 transitions | Not audited in full: the operations this work extracted return results; `apply_iter_replay_overrides` and the halves' installs mutate in place and say so. |
-| 10 signatures | Not met: 29 functions take ten or more parameters (ceiling-tracked). |
-| 11 layers | Not audited beyond the command: the command no longer reaches into replay readers or reports. |
-| 12 edges | Met for the command: every admission refuses with a message, each tested. |
-| 13 tests | Met: no test reads controller or command source; four engine-core lint tests are an exception. |
-| 14 evidence | Met: each landing listed what the fingerprint and the tiers do not cover (below). |
+| 7 one owner | Met; no known duplicate. Exception: the pixel size is kept as the input scalar and as `ReconstructionSettings.voxel_size` (a float) on purpose (rule 1). |
+| 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization_relion` as a dict (`return_details=True`); that module owns the type. |
+| 9 transitions | Met (audit below). Exceptions: the local-search profile sink and the opt-in pass-2 diagnostic variants. |
+| 10 signatures | Met: two groupings; every remaining function with ten or more parameters is accepted with its reason (table below). |
+| 11 layers | Met (audit below). Exceptions: `tomo_particles` (shared by engines and other workflows) and 62 private-name imports from `relax.helpers`, `relax.diagnostics` and `relax.relion`, until those modules are refactored. |
+| 12 edges | Met: every command admission refuses with a message, each tested; the end-of-iteration sync no longer swallows device errors. |
+| 13 tests | Met: no test reads controller or command source. Exception: four engine-core lint tests. |
+| 14 evidence | Met: each landing listed what the fingerprint and the tiers do not cover (coverage limits below). |
 
 ### Accepted, recorded exceptions
 
-- The command still builds the parity, replay and checkpoint option records from start-up results
-  (item 1 below): they are results, not flags.
+- The command builds the parity, replay and checkpoint option records from start-up results: they are
+  results, not flags.
 - Environment reads that stay where they are used (item 2 below), each with its reason.
-- `refine_single_volume` stays one function of 1,992 lines (owner, 2026-10-04); it holds no step with a
+- `refine_single_volume` stays one function of 1,992 lines (owner, 2026-10-04). It holds no step with a
   mode flag.
-- The coverage limits below (RELION run-directory fixture, local-search harness), costed and not built.
+- The prior's per-shell outputs stay a dict until `relax.reconstruction` is refactored.
+- The coverage limits below (RELION run-directory fixture, local-search harness): costed, not built.
 
-### Still open (not exceptions)
-
-- Results as named types (rule 8): the prior's `details` dict. The controller's and the final pass's results
-  are `RefinementResult` (`refinement_result.py`); `archive_fields()` is their saved mapping.
-- Width (rule 10): the 29 wide functions; first `run_final_all_data` (28), `build_archive_metadata` (25).
-
-## Open, in the order they are worked
+## Detail: the command, the environment and the controller loop
 
 1. **The command still assembles three option records from start-up results (rules 5, 7).** The
    schedule, adaptive, batching, overlap, local-search, k_class and debug records are resolved in
