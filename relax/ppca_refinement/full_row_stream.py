@@ -96,6 +96,20 @@ class TracePPCAStats(AugmentedPPCAStats):
     metric_trace: jax.Array | None = None
 
 
+@dataclasses.dataclass(frozen=True)
+class ExactTracePPCAStats(AugmentedPPCAStats):
+    """Streamed statistics that also carry the trace of the exact metric diagonal.
+
+    ``exact_metric_trace`` ``(n_frequency,)`` is ``sum_p w_p^2 tr LHS_p``: the per-pose LHS trace
+    images backprojected with squared linear-interpolation weights, the trace of the diagonal of the
+    projection Hessian ``P^T LHS P``, where the packed metric holds ``sum_p w_p LHS_p``. ``lhs_tri``
+    is the packed metric, or ``None`` for a trace-only stream, which then sets ``metric_trace``.
+    """
+
+    metric_trace: jax.Array | None = None
+    exact_metric_trace: jax.Array | None = None
+
+
 logger = logging.getLogger(__name__)
 _HIGHEST = jax.lax.Precision.HIGHEST
 GEMM_PRECISIONS = ("auto", "fp32", "tf32")
@@ -165,6 +179,7 @@ class _StreamStatic(NamedTuple):
     use_recon_window: bool
     basis_size: int
     metric_trace_only: bool  # backproject sum_p LHS_pp instead of every packed LHS channel
+    exact_metric_trace: bool  # also backproject the LHS trace with squared weights (ExactTracePPCAStats)
     # GPU streams run relax's fused CUDA stages (windowed projection, latent epilogue, posterior
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
@@ -242,7 +257,8 @@ class _MomentCarry(NamedTuple):
     """
 
     # (groups, half, 32) voxel-major moment volumes: the metric channels (packed LHS, or its
-    # trace under metric_trace_only), then the real and imaginary parts of each residual channel.
+    # trace under metric_trace_only), the exact-diagonal trace under exact_metric_trace, then the
+    # real and imaginary parts of each residual channel.
     moments: jax.Array
     moments_compensation: jax.Array
     residual_power: jax.Array
@@ -685,6 +701,7 @@ def _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotatio
             volume_shape=static.volume_shape,
             max_r=static.backprojection_max_r,
             metric_trace=static.metric_trace_only,
+            exact_trace=static.exact_metric_trace,
         )
         correction = correction[: _window(arrays, static).shape[0]]  # padding pixels carry none
     else:
@@ -761,17 +778,22 @@ def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_s
     return weights, sums, carry
 
 
+def _metric_channels(static):
+    """Metric channels of the moment volumes: the packed LHS or its trace, and the exact-diagonal trace."""
+    return (1 if static.metric_trace_only else tri_size(static.basis_size)) + int(static.exact_metric_trace)
+
+
 def _moment_groups(static):
     """Groups of 32 voxel-major channels: the metric channels and the residual's real/imaginary parts."""
     P = static.basis_size
-    metric = 1 if static.metric_trace_only else tri_size(P)
+    metric = _metric_channels(static)
     return -(-(metric + 2 * P) // 32)
 
 
 def _unpack_moments(moments, static):
     """Metric ``(channels, half)`` and residual gradient ``(half, P)`` of ``(groups, half, 32)`` moment volumes."""
     P = static.basis_size
-    metric = 1 if static.metric_trace_only else tri_size(P)
+    metric = _metric_channels(static)
     flat = jnp.transpose(moments, (1, 0, 2)).reshape(moments.shape[1], -1)
     residual = flat[:, metric : metric + 2 * P].reshape(-1, P, 2)
     return flat[:, :metric].T, jax.lax.complex(residual[..., 0], residual[..., 1])
@@ -829,6 +851,7 @@ def prepare_full_row_stream(
     scoring: ScoringConfig,
     disc_type: str = "linear_interp",
     metric_trace_only: bool = False,
+    exact_metric_trace: bool = False,
     gemm_precision: str = "auto",
     device=None,
     tile_loader=None,
@@ -844,7 +867,9 @@ def prepare_full_row_stream(
     volume shapes and the original ids of its images.
 
     With ``metric_trace_only`` the tiles return :class:`TracePPCAStats`: the
-    LHS metric is backprojected only as its per-frequency trace.
+    LHS metric is backprojected only as its per-frequency trace. With ``exact_metric_trace`` they
+    return :class:`ExactTracePPCAStats`, which add the trace of the exact metric diagonal (GPU
+    streams only: the CUDA moment scatter computes it).
     ``gemm_precision`` (:data:`GEMM_PRECISIONS`) sets the four stream GEMMs: ``"tf32"`` one
     TF32 tensor-core pass with float32 accumulation (GPUs of compute capability 8.0 or later),
     ``"fp32"`` exact float32 products, ``"auto"`` (the default) tf32 where available, else fp32
@@ -871,6 +896,7 @@ def prepare_full_row_stream(
             scoring=scoring,
             disc_type=disc_type,
             metric_trace_only=metric_trace_only,
+            exact_metric_trace=exact_metric_trace,
             gemm_precision=gemm_precision,
             device=device,
             tile_loader=tile_loader,
@@ -896,6 +922,7 @@ def _prepare_full_row_stream(
     scoring,
     disc_type,
     metric_trace_only,
+    exact_metric_trace,
     gemm_precision,
     device,
     tile_loader,
@@ -974,11 +1001,14 @@ def _prepare_full_row_stream(
         use_recon_window=bool(resolved.use_window),
         basis_size=int(resolved.q) + 1,
         metric_trace_only=bool(metric_trace_only),
+        exact_metric_trace=bool(exact_metric_trace),
         cuda_kernels=cuda_kernels,
         gemm_precision=str(gemm_precision),
     )
     if static.cuda_kernels and (decide_order(static.disc_type) != 1 or static.relion_texture_interp):
         raise ValueError("The CUDA stream kernels support linear interpolation without RELION texture lookup only")
+    if static.exact_metric_trace and not static.cuda_kernels:
+        raise ValueError("The exact metric-diagonal trace needs a GPU stream (the CUDA moment scatter computes it)")
     return FullRowStream(
         dataset=experiment_dataset,
         arrays=arrays,
@@ -1367,6 +1397,7 @@ def _plan_shape_key(stream: FullRowStream) -> tuple:
         int(stream.arrays.augmented.shape[1]),
         static.basis_size,
         static.metric_trace_only,
+        static.exact_metric_trace,
         _tile_frames(stream),
         stream.tile_loader,
     )
@@ -1788,6 +1819,11 @@ def _finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry,
         original_image_ids=original_ids,
         diagnostics=diagnostics,
     )
+    if static.exact_metric_trace:
+        metric, exact = lhs_tri[:-1], lhs_tri[-1]
+        if static.metric_trace_only:
+            return ExactTracePPCAStats(lhs_tri=None, metric_trace=metric[0], exact_metric_trace=exact, **fields)
+        return ExactTracePPCAStats(lhs_tri=jnp.swapaxes(metric, 0, 1), exact_metric_trace=exact, **fields)
     if static.metric_trace_only:
         return TracePPCAStats(lhs_tri=None, metric_trace=lhs_tri[0], **fields)
     return AugmentedPPCAStats(lhs_tri=jnp.swapaxes(lhs_tri, 0, 1), **fields)
