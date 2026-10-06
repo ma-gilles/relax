@@ -53,6 +53,23 @@ or edit/rebuild that shared resource without coordinating with its users.
 Record the actual source, patch and binary identity; a directory name does not
 identify the oracle. See [EM rules](../../relax/AGENTS.md).
 
+## Host time on large-memory runs
+
+A box-800 refinement (EMPIAR-10202) holds 200 to 430 GB of host memory, and its host phases (inverse FFTs,
+reconstruction, FSC and tau2) are then sensitive to the node's memory state. Della's GPU nodes run transparent
+huge pages `always` with defrag `madvise`, and automatic NUMA balancing migrates pages between the two sockets
+(about 500 GB each). With memory-heavy co-tenants on the node, one numbered iteration's host phases ran 2 to 15
+times slower: system time doubled with 2.4x the minor page faults (job 15104150 against four earlier runs), and
+three 250 GB arms sharing one node took 517 s for one FSC-to-tau2 step that takes 35 s alone (15128182). User
+time stayed the same. On a node with that memory free, an unbound run, `numactl --interleave=all` and
+`numactl --cpunodebind/--preferred` on the GPU's socket measured the same (1192 to 1286 s for one iteration,
+FSC to tau2 35 to 39 s; job 15144557), so no memory-policy wrapper is recommended. For timing comparisons of
+large-memory runs, do not run several of them on one node at once, and expect node-to-node variance in host time.
+
+Read large particle stacks from node-local storage: on the shared network file system a 50k/256 refinement without
+`--scratch_dir` (or `--preread_images`) spent 533 and 685 s in its first two iterations, against 863 s for the whole
+run with `--scratch_dir` (job 15117971).
+
 ## RECOVAR Paper Dataset Runbook
 
 When the user says "rerun all RECOVAR paper datasets" or asks for a

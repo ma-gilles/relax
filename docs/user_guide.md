@@ -41,6 +41,8 @@ so smaller cards run the same commands, more slowly.
 Host memory grows with the box: a box-800 refinement (EMPIAR-10202, 30,515 particles) peaks at
 about 434 GB of host memory, in the final reconstruction's padded inverse FFT; RELION 5 used about
 449 to 475 GB over its MPI ranks for the same run. Request at least 480 GB for a box of 800.
+With large particle stacks on a network file system, pass `--scratch_dir` (node-local disk) or
+`--preread_images`: reading the images over the network can dominate the first iterations.
 
 Leave `XLA_PYTHON_CLIENT_PREALLOCATE` unset. relax runs with JAX's default, one
 preallocated memory pool, and that is the supported mode. `=false` lets another
