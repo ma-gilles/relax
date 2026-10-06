@@ -24,10 +24,17 @@ from recovar.reconstruction.noise import make_radial_noise
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
-from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
+from relax.ppca_initial_model.sgd_update import gated_gradient, metric_diagonal, metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
-from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
+from relax.ppca_initial_model.update import (
+    advance_moments,
+    coupled_direction,
+    empty_moments,
+    metric_floor,
+    shell_gates,
+    stochastic_update,
+)
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
@@ -36,6 +43,7 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_kernels import SHIFT_ALIGN, resolve_gemm_precision
 from relax.ppca_refinement.full_row_stream import (
+    ExactTracePPCAStats,
     TracePPCAStats,
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
@@ -124,7 +132,7 @@ class _ModelLog:
 
 
 # The statistics over the half volume, one array per tile: a group's sum is kept running (TileSums).
-VOLUME_FIELDS = ("rhs", "lhs_tri", "residual_gradient", "metric_trace")
+VOLUME_FIELDS = ("rhs", "lhs_tri", "residual_gradient", "metric_trace", "exact_metric_trace")
 
 
 class TileSums:
@@ -167,14 +175,18 @@ def _merge_statistics(parts, totals=None):
     """One group's statistics from its tiles' (``parts``, in tile order). ``totals`` holds the volume sums
     (:class:`TileSums`) when the parts no longer carry their volumes."""
     trace_only = all(isinstance(s, TracePPCAStats) for s in parts)
+    exact = all(isinstance(s, ExactTracePPCAStats) for s in parts)
 
     def volume(name):
-        return totals.get(name) if totals is not None else sum(getattr(s, name) for s in parts)
+        if totals is not None:
+            return totals.get(name)
+        values = [getattr(s, name, None) for s in parts]
+        return None if any(value is None for value in values) else sum(values)
 
     fields = dict(
         # The streamed engine produces no RHS volume (only lhs_tri and the residual gradient are read).
-        rhs=None if (totals is None and any(s.rhs is None for s in parts)) else volume("rhs"),
-        lhs_tri=None if trace_only else volume("lhs_tri"),
+        rhs=volume("rhs"),
+        lhs_tri=volume("lhs_tri"),
         residual_gradient=volume("residual_gradient"),
         residual_num=sum(s.residual_num for s in parts),
         residual_den=sum(s.residual_den for s in parts),
@@ -192,6 +204,10 @@ def _merge_statistics(parts, totals=None):
     )
     if trace_only:
         return TracePPCAStats(metric_trace=volume("metric_trace"), **fields)
+    if exact:
+        return ExactTracePPCAStats(
+            metric_trace=volume("metric_trace"), exact_metric_trace=volume("exact_metric_trace"), **fields
+        )
     return AugmentedPPCAStats(**fields)
 
 
@@ -245,8 +261,13 @@ def _oversampling_record(stats, config, iteration):
     return record
 
 
-def _curvature_trace(stats, p):
-    """Momentum SGD's per-frequency metric trace summed over the halves."""
+def _curvature_trace(stats, p, *, exact):
+    """Momentum SGD's per-frequency metric trace summed over the halves; with ``exact`` the trace of the
+    exact metric diagonal (``Config.sgd_step_scale`` ``"exact_diagonal"``)."""
+    if exact:
+        if not all(isinstance(s, ExactTracePPCAStats) for s in stats):
+            raise ValueError("The exact-diagonal step scale needs statistics with the exact metric trace")
+        return sum(s.exact_metric_trace for s in stats)
     if all(isinstance(s, TracePPCAStats) for s in stats):
         return sum(s.metric_trace for s in stats)
     return metric_trace(sum(s.lhs_tri for s in stats), p)
@@ -278,28 +299,54 @@ def _streams_groups(config):
     return config.stream_coarse_recompute
 
 
-def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+def expectation(
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+):
     """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``.
 
     ``diameter_ang`` sizes adaptive oversampling's pass-1 window (RELION's coarse image size); None takes the box.
+    ``noise_inflation`` multiplies the noise estimate in this E-step (``Config.noise_inflation``).
     """
     if _streams_groups(config):
         return _expectation(
-            dataset, state, config, [ids], iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+            dataset,
+            state,
+            config,
+            [ids],
+            iteration,
+            embeddings_only=embeddings_only,
+            diameter_ang=diameter_ang,
+            noise_inflation=noise_inflation,
         )[0]
-    return _expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only)
+    return _expectation(
+        dataset, state, config, ids, iteration, embeddings_only=embeddings_only, noise_inflation=noise_inflation
+    )
 
 
-def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False, diameter_ang=None):
+def expectation_groups(
+    dataset, state, config, groups, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+):
     """:func:`expectation` of each id group (the pseudo-halves), one result per group.
 
     The streamed coarse-recompute path prepares the model once for all groups
     and pipelines their image tiles; every other path runs group by group.
     """
     if not _streams_groups(config):
-        return [expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only) for ids in groups]
+        return [
+            expectation(
+                dataset, state, config, ids, iteration, embeddings_only=embeddings_only, noise_inflation=noise_inflation
+            )
+            for ids in groups
+        ]
     return _expectation(
-        dataset, state, config, groups, iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+        dataset,
+        state,
+        config,
+        groups,
+        iteration,
+        embeddings_only=embeddings_only,
+        diameter_ang=diameter_ang,
+        noise_inflation=noise_inflation,
     )
 
 
@@ -316,7 +363,9 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
 
 
 @full_float32
-def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+def _expectation(
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+):
     radius, hp = config.stage(iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = min(radius, dataset.grid_size // 2 - 1)
@@ -345,6 +394,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
     nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
+    if noise_inflation != 1.0:
+        nvs = [np.float32(noise_inflation) * nv for nv in nvs]
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
@@ -370,8 +421,10 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     geometry=stream_geometry,
                     schedule=schedule,
                     scoring=scoring,
-                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
-                    metric_trace_only=config.optimizer == "momentum_sgd",
+                    # Plain momentum SGD reads only the metric trace (sgd_update.momentum_step); the
+                    # half-set gate needs the packed metric (one direction per half, as VDAM).
+                    metric_trace_only=config.optimizer == "momentum_sgd" and not config.sgd_halfset_gate,
+                    exact_metric_trace=config.sgd_step_scale == "exact_diagonal",
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
@@ -574,7 +627,7 @@ def run(
         order = rng.permutation(dataset.n_images)
         state = State(
             theta,
-            empty_moments(theta) if config.optimizer == "vdam" else None,
+            empty_moments(theta) if config.keeps_halfset_moments() else None,
             noise,
             0,
             order,
@@ -608,29 +661,18 @@ def run(
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
-        stats = expectation_groups(dataset, state, config, halves, iteration, diameter_ang=diameter_ang)
+        noise_inflation = config.noise_inflation(iteration)
+        stats = expectation_groups(
+            dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation
+        )
         radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
-        if config.optimizer == "momentum_sgd":
-            _, proposed_momentum, diagnostics = momentum_step(
-                state.theta,
-                state.sgd_momentum,
-                sum(result.residual_gradient for result in stats),
-                _curvature_trace(stats, config.q + 1),
-                radii <= radius,
-                learning_rate=config.sgd_learning_rate,
-                floor=metric_floor(dataset.grid_size),
-            )
-            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
-            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
-            moments = None
-            metric_info = []
-            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
-        else:
+        # The update's own support: the rows bandlimit_and_mask keeps below.
+        support = radii <= radius
+        metric_info = []
+        if config.keeps_halfset_moments():
+            # One coupled direction per half (VDAM's, and the gate's disagreement for gated momentum SGD).
             directions = []
-            metric_info = []
             coverage = []
-            # The update's own support: the rows bandlimit_and_mask keeps below.
-            support = radii <= radius
             diagonal = np.flatnonzero(np.equal(*np.triu_indices(config.q + 1)))  # packed diagonal entries
             for half, result in enumerate(stats):
                 try:
@@ -651,6 +693,38 @@ def run(
                 metric_info.append(info)
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
+        if config.optimizer == "momentum_sgd":
+            gradient = sum(result.residual_gradient for result in stats)
+            moments = None
+            if config.sgd_halfset_gate:
+                # VDAM's moments and shell gate on this update's half directions; the gate shrinks the step.
+                moments = advance_moments(
+                    state.moments, jnp.stack(directions), jnp.stack(coverage), image_size=dataset.grid_size
+                )
+                gates = shell_gates(
+                    state.theta, moments.first, jnp.any(jnp.stack(coverage), axis=0), shells, fudge=fudge
+                )
+                gradient = gated_gradient(
+                    state.theta,
+                    gradient,
+                    metric_diagonal(sum(result.lhs_tri for result in stats), config.q + 1),
+                    gates.per_frequency(shells, config.q),
+                )
+            _, proposed_momentum, diagnostics = momentum_step(
+                state.theta,
+                state.sgd_momentum,
+                gradient,
+                _curvature_trace(stats, config.q + 1, exact=config.sgd_step_scale == "exact_diagonal"),
+                support,
+                learning_rate=config.sgd_learning_rate,
+                floor=metric_floor(dataset.grid_size),
+            )
+            if config.sgd_halfset_gate:
+                diagnostics.update(gates.diagnostics())
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
+            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
+        else:
             theta, moments, diagnostics = stochastic_update(
                 state.theta,
                 state.moments,
@@ -786,8 +860,13 @@ def run(
                 optimizer="momentum_sgd",
                 sgd_learning_rate=config.sgd_learning_rate,
                 vdam_scheduled_step_unused=step,
-                vdam_scheduled_fudge_unused=fudge,
+                # The half-set gate uses VDAM's fudge schedule.
+                **({"gate_fudge": fudge} if config.sgd_halfset_gate else {"vdam_scheduled_fudge_unused": fudge}),
             )
+            if config.sgd_halfset_gate or config.sgd_step_scale != "trace":
+                diagnostics.update(sgd_halfset_gate=config.sgd_halfset_gate, sgd_step_scale=config.sgd_step_scale)
+        if config.noise_anneal_updates:
+            diagnostics["noise_inflation"] = noise_inflation
         if not log_direction_prior:
             # The full angular prior is checkpointed in State. Large stochastic
             # sweeps can omit its per-update JSON duplicate without changing it.
