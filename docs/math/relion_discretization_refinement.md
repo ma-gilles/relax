@@ -321,6 +321,12 @@ There is one more nuance here: the scoring/precalculation path may use
 `image_current_size`. With `strict_highres_exp > 0`, both scoring passes stay on
 `image_coarse_size`.
 
+relax implements this for Class3D: `plan_expectation_windows` in
+`relax/refinement/iteration_planning.py` gives the capped E-step window
+(`score_window_size`), and the resident pass 2 takes the weighted-sum size
+separately (`wsum_current_size` in `relax/sparse_pass2/resident_pass2.py`) for
+the noise shells, the Wavg rectangle, the powerClass terms and the norm cutoff.
+
 RELION also evaluates the translation prior only on the coarse translation
 lattice and then reuses that coarse `pdf_offset` value for all oversampled
 translation children. That is an intentional RELION approximation, so a more
