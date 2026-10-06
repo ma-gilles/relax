@@ -473,7 +473,7 @@ def test_odd_demodulation_of_aberrated_tilts_undoes_the_simulated_phase(aberrate
     phase = relion_tomo.zernike_phase(
         odd, relion_tomo.odd_index_to_mn, freqs @ np.asarray(ABERRATED_OPTICS["mag_matrix"]).T
     )
-    np.testing.assert_allclose(got[group == 1], 1.0, rtol=0, atol=0)
+    assert_matches(got[group == 1], np.ones_like(got[group == 1]))
     expected = np.broadcast_to(np.exp(-1j * phase)[inside], got[group == 2][:, inside].shape)
     np.testing.assert_allclose(got[group == 2][:, inside], expected, rtol=0, atol=1e-9)
 
@@ -490,6 +490,6 @@ def test_uncached_fftw_ctf_rows_are_the_exact_rows(aberrated_project, monkeypatc
     indices = np.arange(len(rows))[::-1]
     cached = relion_ctf._relion_exact_ctf_half_from_source_star_host(dataset, indices, (GRID, GRID))
     squared = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID))
-    np.testing.assert_array_equal(-np.fft.fftshift(squared, axes=1).reshape(len(rows), -1), cached)
+    assert_matches(-np.fft.fftshift(squared, axes=1).reshape(len(rows), -1), cached)
     plain = relion_ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID), square_premultiplied=False)
-    np.testing.assert_array_equal(plain * plain, squared)
+    assert_matches(plain * plain, squared)
