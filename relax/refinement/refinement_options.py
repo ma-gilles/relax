@@ -86,6 +86,9 @@ class RelionParityOptions:
     relion_model_pixel_size: float | None = None
     perturb_replay_relion_dir: str | None = None
     perturb_replay_relion_prefix: str = "run"
+    # RELION --solvent_mask (path) and --solvent_correct_fsc (relax.reconstruction.solvent_mask).
+    solvent_mask_path: str | None = None
+    solvent_correct_fsc: bool = False
     # Diagnostic-only cutoff (number of physical recovar iterations): after
     # this many iterations, `refine_single_volume` stops reading
     # RELION's per-iteration sampling/model/optimiser STAR files entirely and

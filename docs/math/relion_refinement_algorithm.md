@@ -725,6 +725,37 @@ the current resolution is the `--ini_high` shell, which RELION sets before the
 first iteration (`initialize_resolution_from_ini_high`); at the GUI default of
 60 Å it, not the 40 Å threshold, bounds the first join.
 
+### Reference mask
+
+`--solvent_mask` replaces the particle-diameter sphere of the solvent flatten. After each M-step
+the new references, but not the start-up reference, are multiplied by the mask
+\(m\in[0,1]\), with no soft edge added (RELION `solventFlatten`). As with the sphere, this does not
+happen at convergence. The mask is brought onto the model grid first: resampled when its pixel size
+differs by more than 0.001 Å, windowed about the centre to the box, clipped to \([0,1]\) (RELION
+`checkMask`). Map files hold RELION's axis order, so the internal-frame mask is its transpose.
+
+`--solvent_correct_fsc` (K=1 split halves; MPI `relion_refine` applies it, the non-MPI program
+ignores it) changes which half-set FSC feeds tau2, data-vs-prior, the current resolution, the
+auto-sampling steps and the reported FSC. After the low-resolution join and before the flatten,
+both halves are reconstructed without regularisation, giving \(u_1,u_2\) with
+\(F_u=\mathrm{FSC}(u_1,u_2)\) and \(F_m=\mathrm{FSC}(m u_1, m u_2)\). Shells use
+\(\mathrm{ROUND}(|k|)<N/2+1\). Let \(s^\ast\) be the first shell \(i>0\) with \(F_u(i)<0.8\).
+Both maps' Fourier phases at \(|k|\ge s^\ast\) are replaced by uniform random phases, giving
+\(F_r=\mathrm{FSC}(m\tilde u_1,m\tilde u_2)\), and
+
+\[
+F(i)=\begin{cases}F_m(i) & i<s^\ast+2\\ 0 & F_r(i)>F_m(i)\\ \dfrac{F_m(i)-F_r(i)}{1-F_r(i)} & \text{otherwise,}\end{cases}
+\]
+
+which is zero beyond the current size; without such an \(s^\ast\), \(F=F_u\). The random phases are
+relax's own (seeded by the optimiser seed and the iteration), so the corrected shells agree with RELION
+statistically, not bit for bit.
+
+Implementation: [`read_solvent_mask` and `solvent_corrected_fsc`](../../relax/reconstruction/solvent_mask.py);
+the flatten in `_numbered_solvent_mask` and the FSC in `_solvent_corrected_fsc` in
+[`mean_helpers.py`](../../relax/refinement/mean_helpers.py), on the unregularised maps of
+`reconstruct_unregularized_k1_halfmaps` (the maps written as `run_itNNN_half*_unfil.mrc`). Tests: `tests/unit/test_solvent_mask.py`.
+
 ## 6. Sampling transitions and convergence
 
 ### Iteration convergence policy

@@ -13,7 +13,7 @@ import logging
 import math
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import jax
@@ -61,27 +61,19 @@ def shared_tau2_per_half(tau2) -> list:
     return [tau2, tau2]
 
 
-def initialize_reference_model(
-    half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, log
-):
+def initialize_reference_model(half_maps, initial_mean_variance, *, use_per_half_mean_variance, k_class_enabled, log):
     """Attach shared/per-half tau2 to the already normalized references."""
     if use_per_half_mean_variance:
         if k_class_enabled:
             raise ValueError("per-half scoring tau2 is supported only for K=1")
         if initial_mean_variance.ndim != 2 or initial_mean_variance.shape[0] != 2:
-            raise ValueError(
-                "per-half scoring tau2 requires init_mean_variance with leading half axis 2"
-            )
+            raise ValueError("per-half scoring tau2 requires init_mean_variance with leading half axis 2")
         mean_variance_per_half = [
             jnp.asarray(initial_mean_variance[0]),
             jnp.asarray(initial_mean_variance[1]),
         ]
         mean_variance = jnp.asarray(
-            0.5
-            * (
-                mean_variance_per_half[0].astype(jnp.float64)
-                + mean_variance_per_half[1].astype(jnp.float64)
-            ),
+            0.5 * (mean_variance_per_half[0].astype(jnp.float64) + mean_variance_per_half[1].astype(jnp.float64)),
             dtype=_dense_global_scoring_dtype(),
         )
         log.info("Initialized exact per-half K=1 tau2 priors")
@@ -130,6 +122,7 @@ def _host_tau2_volumes(mean_variance, mean_variance_per_half, mean_signal_varian
         [to_host(value) for value in mean_variance_per_half],
         to_host(mean_signal_variance),
     )
+
 
 def _updated_mean_variance_per_half(
     shared_mean_variance,
@@ -195,9 +188,7 @@ def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, ini
 
 def _snapshot_and_release_previous_k1_means(means):
     """Copy both K1 references to host before releasing their active buffers."""
-    previous_means = [
-        np.asarray(mean).copy() if mean is not None else None for mean in means
-    ]
+    previous_means = [np.asarray(mean).copy() if mean is not None else None for mean in means]
     # Dropping the list's references frees the device buffers; there is no
     # cycle for a collection to break (every explicit gc.collect() of the 5k
     # K=1 run found nothing and freed no device memory, job 14503450).
@@ -252,8 +243,6 @@ def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, prev
         return np.asarray(previous_weights, dtype=np.float64)
     weights = np.maximum(counts / total, 1e-12)
     return weights / float(np.sum(weights))
-
-
 
 
 def _previous_resolution_angstrom_for_half_join(
@@ -321,11 +310,7 @@ def join_half_accumulators_at_low_resolution(
         current_resolution_angstrom=previous_resolution_angstrom,
         padding_factor=padding_factor,
         **({"preserve_inputs": False} if not preserve_inputs else {}),
-        **(
-            {"return_retained_first_numerator": True}
-            if return_retained_first_numerator
-            else {}
-        ),
+        **({"return_retained_first_numerator": True} if return_retained_first_numerator else {}),
     )
 
 
@@ -503,7 +488,8 @@ def estimate_class_prior(
         relion_shells = shells / jnp.asarray(frame_scale, dtype=shells.dtype)
     else:
         variance, relion_shells, shells = _class_tau2_from_iref_power_spectrum(
-            references[class_index], settings.volume_shape,
+            references[class_index],
+            settings.volume_shape,
             padding_factor=settings.padding_factor,
             current_size=current_size,
             frame_scale=frame_scale,
@@ -516,7 +502,8 @@ def estimate_class_prior(
             shell_pair_counting=settings.shell_pair_counting,
         )
     weight_shells = regularization_relion._compute_relion_weight_shell_stats(
-        denominators[class_index], settings.volume_shape,
+        denominators[class_index],
+        settings.volume_shape,
         padding_factor=settings.padding_factor,
         r_max=current_size // 2,
         shell_rounding="round",
@@ -525,7 +512,10 @@ def estimate_class_prior(
         shell_pair_counting=settings.shell_pair_counting,
     )
     data_vs_prior, details = _class_tau2_update_details(
-        denominators[class_index], shells, weight_shells, settings,
+        denominators[class_index],
+        shells,
+        weight_shells,
+        settings,
         current_size=current_size,
         full_half_axis=full_half_axis,
         accumulator_volume_shape=accumulator_shape,
@@ -533,8 +523,12 @@ def estimate_class_prior(
         shell_pair_counting=settings.shell_pair_counting,
     )
     return ClassPriorEstimate(
-        variance=variance, shells=shells, relion_shells=relion_shells,
-        data_vs_prior=data_vs_prior, details=details, weight_shells=weight_shells,
+        variance=variance,
+        shells=shells,
+        relion_shells=relion_shells,
+        data_vs_prior=data_vs_prior,
+        details=details,
+        weight_shells=weight_shells,
     )
 
 
@@ -729,10 +723,14 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
     logical = int(current_size)
     if logical <= 0 or logical > box:
         return None
-    logical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=logical))
+    logical_shape = tuple(
+        int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=logical)
+    )
     if logical_shape != tuple(int(v) for v in accumulator_volume_shape):
         return None
-    physical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=box))
+    physical_shape = tuple(
+        int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=box)
+    )
     return box, physical_shape
 
 
@@ -870,8 +868,7 @@ def _reconstruct_volume_eager(
     )
     if retained_device_numerator is not None and not host_stage_large_ifft:
         raise ValueError(
-            "A retained device numerator is only valid for the large host-staged "
-            "RELION reconstruction path"
+            "A retained device numerator is only valid for the large host-staged RELION reconstruction path"
         )
     if not host_stage_large_ifft:
         if stable_class is not None:
@@ -950,8 +947,7 @@ def _reconstruct_volume_eager(
         * np.dtype(np.complex64).itemsize
     )
     logger.info(
-        "RELION split pre-IFFT host boundary: accumulator_shape=%s "
-        "reconstruction_shape=%s packed_half_bytes=%d",
+        "RELION split pre-IFFT host boundary: accumulator_shape=%s reconstruction_shape=%s packed_half_bytes=%d",
         accumulator_shape,
         reconstruction_shape,
         packed_half_bytes,
@@ -967,42 +963,35 @@ def _reconstruct_volume_eager(
         stage_a_filter.block_until_ready()
         if np.dtype(stage_a_filter.dtype) != np.dtype(np.float32):
             raise TypeError(
-                "Large RELION Stage A requires a float32 filter for exact "
-                f"donation, got {stage_a_filter.dtype}"
+                f"Large RELION Stage A requires a float32 filter for exact donation, got {stage_a_filter.dtype}"
             )
         logger.info(
-            "RELION Stage A staging host filter for donating regularization: "
-            "shape=%s dtype=%s",
+            "RELION Stage A staging host filter for donating regularization: shape=%s dtype=%s",
             tuple(stage_a_filter.shape),
             stage_a_filter.dtype,
         )
-        regularized_filter_device = (
-            relion_functions_relion._regularize_large_relion_half_filter_donate_ctf(
-                stage_a_filter,
-                tau,
-                vol_shape,
-                padding_factor,
-                tau2_fudge,
-                minres_map,
-                current_size,
-                accumulator_shape,
-                tau_is_1d,
-                relion_filter_scale,
-            )
+        regularized_filter_device = relion_functions_relion._regularize_large_relion_half_filter_donate_ctf(
+            stage_a_filter,
+            tau,
+            vol_shape,
+            padding_factor,
+            tau2_fudge,
+            minres_map,
+            current_size,
+            accumulator_shape,
+            tau_is_1d,
+            relion_filter_scale,
         )
         regularized_filter_device.block_until_ready()
         filter_input_donated = _device_array_is_deleted(stage_a_filter)
         if filter_input_donated is not True:
             _delete_device_array(regularized_filter_device)
             _delete_device_array(stage_a_filter)
-            raise RuntimeError(
-                "Large RELION Stage-A regularization did not donate its float32 filter input"
-            )
+            raise RuntimeError("Large RELION Stage-A regularization did not donate its float32 filter input")
         if np.dtype(regularized_filter_device.dtype) != np.dtype(np.float32):
             _delete_device_array(regularized_filter_device)
             raise TypeError(
-                "Large RELION Stage-A regularization must return float32, got "
-                f"{regularized_filter_device.dtype}"
+                f"Large RELION Stage-A regularization must return float32, got {regularized_filter_device.dtype}"
             )
         logger.info(
             "RELION Stage A regularization complete: filter_input_donated=%s",
@@ -1109,8 +1098,7 @@ def _reconstruct_volume_eager(
             del wiener_half_device
             gc.collect()
             logger.info(
-                "RELION pre-window Wiener half padded on the host: accumulator_shape=%s "
-                "reconstruction_shape=%s",
+                "RELION pre-window Wiener half padded on the host: accumulator_shape=%s reconstruction_shape=%s",
                 accumulator_shape,
                 reconstruction_shape,
             )
@@ -1205,8 +1193,6 @@ def _reconstruct_volume_eager(
     return result
 
 
-
-
 def _apply_relion_initial_lowpass_filter(
     volume_ft_flat, volume_shape, voxel_size, ini_high_angstrom, filter_edgewidth=5
 ):
@@ -1274,12 +1260,27 @@ class ReconstructionSettings:
     # Diagnostic dumps (EngineDebugOptions.environment): the pre-mask maps and the Class3D M-step.
     premask_dump_dir: str | None = None
     kclass_dump_dir: str | None = None
+    # RELION --solvent_mask: the user reference mask on the model grid in the internal (z, y, x)
+    # frame (relax.reconstruction.solvent_mask.read_solvent_mask, transposed); it replaces the
+    # particle-diameter sphere of the solvent flatten. None keeps the sphere.
+    solvent_mask: object = field(default=None, compare=False, repr=False)
+    # RELION --solvent_correct_fsc (MPI relion_refine): the K=1 half-set FSC is the masked,
+    # phase-randomisation corrected FSC of the unregularised half maps; needs solvent_mask.
+    solvent_correct_fsc: bool = False
+    # Seed of the corrected FSC's random phases, drawn per iteration.
+    solvent_fsc_seed: int = 0
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.
         object.__setattr__(self, "voxel_size", float(self.voxel_size))
         if self.particle_diameter_angstrom is not None:
             object.__setattr__(self, "particle_diameter_angstrom", float(self.particle_diameter_angstrom))
+        if self.solvent_correct_fsc and self.solvent_mask is None:
+            raise ValueError("--solvent_correct_fsc needs --solvent_mask (RELION corrects only with a user mask)")
+        if self.solvent_mask is not None and tuple(np.shape(self.solvent_mask)) != tuple(self.volume_shape):
+            raise ValueError(
+                f"solvent mask shape {np.shape(self.solvent_mask)} is not the model's {tuple(self.volume_shape)}"
+            )
 
 
 def _require_radial_gridding_for_classes(settings: ReconstructionSettings) -> None:
@@ -1341,6 +1342,17 @@ def estimate_split_half_prior(
         iteration + 1,
         time.time() - started_at,
     )
+    if settings.solvent_correct_fsc:
+        current_iter_fsc = _solvent_corrected_fsc(
+            numerators,
+            denominators,
+            settings,
+            current_size=current_size,
+            accumulator_shape=accumulator_shape,
+            iteration=iteration,
+            like=current_iter_fsc,
+            log=log,
+        )
 
     # RELION calls BackProjector::updateSSNRarrays independently for each
     # half-map BPref.  The gold-standard FSC is shared, but sigma2/tau2
@@ -1365,9 +1377,7 @@ def estimate_split_half_prior(
         )
         mean_signal_variance_per_half.append(mean_signal_variance_k)
         tau2_update_details_per_half.append(tau2_update_details_k)
-    mean_signal_variance_shells_per_half = [
-        details["prior_shells"] for details in tau2_update_details_per_half
-    ]
+    mean_signal_variance_shells_per_half = [details["prior_shells"] for details in tau2_update_details_per_half]
     mean_signal_variance = 0.5 * (mean_signal_variance_per_half[0] + mean_signal_variance_per_half[1])
     return SplitHalfPrior(
         variance=mean_signal_variance,
@@ -1377,6 +1387,55 @@ def estimate_split_half_prior(
         fsc_for_update=current_iter_fsc,
         details_per_half=tau2_update_details_per_half,
     )
+
+
+def _solvent_corrected_fsc(
+    numerators, denominators, settings, *, current_size, accumulator_shape, iteration, like, log
+):
+    """RELION's --solvent_correct_fsc curve in place of the backprojector FSC ``like``.
+
+    The unregularised half maps are those relax writes as run_itNNN_half*_unfil.mrc
+    (``reconstruct_unregularized_k1_halfmaps``), made from this iteration's accumulators after the
+    low-resolution join, as RELION reconstructs its BPref copies (ml_optimiser_mpi.cpp:3221-3300).
+    """
+
+    from relax.reconstruction.solvent_mask import solvent_corrected_fsc
+
+    started = time.time()
+    unregularised = reconstruct_unregularized_k1_halfmaps(
+        numerators,
+        denominators,
+        settings,
+        accumulator_volume_shape=accumulator_shape,
+    )
+    # RELION's getFSC sums the FFTW half spectrum halved along the map file's x axis, and the
+    # half-spectrum sum depends on which axis is halved; the maps and the mask return to the file's
+    # axis order (the transpose of the internal frame; relax.helpers.map_io).
+    half1, half2 = (
+        np.transpose(
+            np.real(np.asarray(fourier_transform_utils.get_idft3(jnp.asarray(m).reshape(settings.volume_shape)))),
+            (2, 1, 0),
+        )
+        for m in unregularised
+    )
+    fsc, details = solvent_corrected_fsc(
+        half1,
+        half2,
+        np.transpose(np.asarray(settings.solvent_mask, dtype=np.float64), (2, 1, 0)),
+        current_size=current_size,
+        rng=np.random.default_rng((int(settings.solvent_fsc_seed), int(iteration))),
+    )
+    like = np.asarray(like)
+    if fsc.shape != like.shape:
+        raise ValueError(f"the corrected FSC has {fsc.shape[0]} shells, the backprojector FSC {like.shape[0]}")
+    log.info(
+        "iter-%d solvent-corrected FSC: randomize phases beyond shell %d (%.2f A): %.1fs",
+        iteration + 1,
+        details["randomize_at"],
+        settings.grid_size * settings.voxel_size / max(details["randomize_at"], 1),
+        time.time() - started,
+    )
+    return jnp.asarray(fsc, dtype=like.dtype)
 
 
 def _reconstruct_k1_maps(
@@ -1394,9 +1453,7 @@ def _reconstruct_k1_maps(
     cs_int = int(current_size) if current_size is not None else None
     reconstructed_means = []
     retained_device_numerator = retained_first_numerator
-    for k, (Ft_y_half, Ft_ctf_half, tau_half) in enumerate(
-        zip(numerators_by_half, denominators_by_half, tau_by_half)
-    ):
+    for k, (Ft_y_half, Ft_ctf_half, tau_half) in enumerate(zip(numerators_by_half, denominators_by_half, tau_by_half)):
         # This RELION build uses double RFLOAT in BackProjector::reconstruct.
         # Keep the stored/controller tau2 state compact, but promote the
         # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
@@ -1423,9 +1480,7 @@ def _reconstruct_k1_maps(
                 else {}
             ),
         ).reshape(-1)
-        reconstructed_means.append(
-            _finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
-        )
+        reconstructed_means.append(_finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half))
         if k == 0 and retained_device_numerator is not None:
             retained_device_numerator = None
             gc.collect()
@@ -1495,19 +1550,33 @@ def _capture_premask_mean(mean, settings: ReconstructionSettings, *, half_index,
         from relax.diagnostics.reconstruction import write_premask_mean
 
         write_premask_mean(
-            mean, output_dir=_premask_dump, half_index=half_index, iteration=iteration,
-            current_size=current_size, grid_size=settings.grid_size, voxel_size=settings.voxel_size,
-            volume_shape=settings.volume_shape, n_classes=n_classes,
+            mean,
+            output_dir=_premask_dump,
+            half_index=half_index,
+            iteration=iteration,
+            current_size=current_size,
+            grid_size=settings.grid_size,
+            voxel_size=settings.voxel_size,
+            volume_shape=settings.volume_shape,
+            n_classes=n_classes,
         )
 
 
 def _solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
-    """Return whether a particle diameter is set, so new references are solvent-flattened."""
+    """Return whether new references are solvent-flattened: a user mask or a particle diameter is set."""
+    if settings.solvent_mask is not None:
+        return True
     return settings.particle_diameter_angstrom is not None and settings.particle_diameter_angstrom > 0
 
 
 def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
-    """Build the soft spherical solvent mask of the particle diameter in ``dtype``."""
+    """The solvent mask in ``dtype``: the user mask, else the soft sphere of the particle diameter.
+
+    RELION's solventFlatten multiplies each reference by the user mask as read (no soft edge
+    added), or by the cosine-edged sphere when there is none (ml_optimiser.cpp:5506-5590).
+    """
+    if settings.solvent_mask is not None:
+        return jnp.asarray(settings.solvent_mask, dtype=dtype)
     flatten_radius = settings.particle_diameter_angstrom / (2.0 * settings.voxel_size)
     return _make_relion_solvent_mask(
         settings.volume_shape,
@@ -1577,13 +1646,22 @@ def reconstruct_numbered_k1_halfmaps(
     Return ready maps for installation.
     """
     means = _reconstruct_k1_maps(
-        numerators_by_half, denominators_by_half, tau_by_half, settings,
-        current_size=current_size, accumulator_volume_shape=accumulator_volume_shape,
+        numerators_by_half,
+        denominators_by_half,
+        tau_by_half,
+        settings,
+        current_size=current_size,
+        accumulator_volume_shape=accumulator_volume_shape,
         retained_first_numerator=retained_first_numerator,
     )
     for k in range(2):
         _capture_premask_mean(
-            means[k], settings, half_index=k, iteration=iteration, current_size=current_size, n_classes=1,
+            means[k],
+            settings,
+            half_index=k,
+            iteration=iteration,
+            current_size=current_size,
+            n_classes=1,
         )
         # RELION filters Iref inside maximizationOtherParameters, then calls
         # solventFlatten from the outer iteration loop.  These operations do
@@ -1600,7 +1678,10 @@ def reconstruct_numbered_k1_halfmaps(
         if _solvent_flatten_requested(settings):
             solvent_mask = _numbered_solvent_mask(settings, dtype=means[k].real.dtype)
             means[k] = _apply_relion_solvent_flatten_k1(
-                means[k], solvent_mask, settings.volume_shape, half_index=k,
+                means[k],
+                solvent_mask,
+                settings.volume_shape,
+                half_index=k,
             )
             if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
                 solvent_mask = None
@@ -1632,15 +1713,25 @@ def reconstruct_numbered_class_maps(
     the shared stack when neither filtering nor flattening applies.
     """
     shared_classes = _reconstruct_class_maps(
-        combined_numerators, combined_denominators, tau_by_class, settings,
-        n_classes=n_classes, iteration=iteration, current_size=current_size,
+        combined_numerators,
+        combined_denominators,
+        tau_by_class,
+        settings,
+        n_classes=n_classes,
+        iteration=iteration,
+        current_size=current_size,
         accumulator_volume_shape=accumulator_volume_shape,
     )
     means = [shared_classes, shared_classes]
     del shared_classes
     for k in range(2):
         _capture_premask_mean(
-            means[k], settings, half_index=k, iteration=iteration, current_size=current_size, n_classes=n_classes,
+            means[k],
+            settings,
+            half_index=k,
+            iteration=iteration,
+            current_size=current_size,
+            n_classes=n_classes,
         )
         # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
         if relion_firstiter_cc_this_iter:
@@ -1697,18 +1788,14 @@ def taper_first_cc_k1_prior(
         dtype=scoring_dtype,
     )
     for half_idx in range(2):
-        variance_per_half[half_idx] = (
-            variance_per_half[half_idx] * tau2_taper_volume
-        )
+        variance_per_half[half_idx] = variance_per_half[half_idx] * tau2_taper_volume
         for field in ("prior_shells", "ssnr_shells"):
             field_values = details_per_half[half_idx][field]
             details_per_half[half_idx][field] = field_values * jnp.asarray(
                 tau2_taper,
                 dtype=field_values.dtype,
             )
-    variance = 0.5 * (
-        variance_per_half[0] + variance_per_half[1]
-    )
+    variance = 0.5 * (variance_per_half[0] + variance_per_half[1])
     return K1ReportingPrior(variance, variance_per_half, details_per_half)
 
 
@@ -1733,6 +1820,7 @@ def taper_first_cc_class_prior(
     operation then adapts the shell stack and aggregate detail arrays in their
     existing order, in place, preserving the detail mapping's identity.
     """
+
     def taper_shells(values):
         return _firstiter_cc_ini_high_tapered(
             values,
@@ -2035,16 +2123,13 @@ def _pack_compact_full_accumulators_for_large_relion_ifft(
         return Ft_ctf, Ft_y
 
     def _is_full(array):
-        return tuple(array.shape) == accumulator_shape or (
-            array.ndim == 1 and int(array.size) == accumulator_voxels
-        )
+        return tuple(array.shape) == accumulator_shape or (array.ndim == 1 and int(array.size) == accumulator_voxels)
 
     if not _is_full(Ft_ctf) or not _is_full(Ft_y):
         return Ft_ctf, Ft_y
 
     logger.info(
-        "RELION giant-iFFT compact full-to-half repack: accumulator_shape=%s "
-        "reconstruction_shape=%s",
+        "RELION giant-iFFT compact full-to-half repack: accumulator_shape=%s reconstruction_shape=%s",
         accumulator_shape,
         reconstruction_shape,
     )
@@ -2159,6 +2244,7 @@ def _finish_host_staged_reconstruction(result, *accumulators):
 
 _LARGE_RELION_SOLVENT_MASK_COORDINATE_BYTES_LIMIT = 2 * 1024**3
 
+
 def _relion_solvent_mask_unfused_coordinate_bytes(volume_shape) -> int:
     """Estimate the promoted coordinate stack used by ``raised_cosine_mask``."""
 
@@ -2169,8 +2255,7 @@ def _large_relion_solvent_mask_uses_compiled_builder(volume_shape) -> bool:
     """Return whether the unfused solvent-mask coordinate stack is too large."""
 
     return (
-        _relion_solvent_mask_unfused_coordinate_bytes(volume_shape)
-        > _LARGE_RELION_SOLVENT_MASK_COORDINATE_BYTES_LIMIT
+        _relion_solvent_mask_unfused_coordinate_bytes(volume_shape) > _LARGE_RELION_SOLVENT_MASK_COORDINATE_BYTES_LIMIT
     )
 
 
@@ -2208,13 +2293,13 @@ def _make_relion_solvent_mask(volume_shape, *, radius, radius_p, offset, dtype=N
 
     estimated_bytes = _relion_solvent_mask_unfused_coordinate_bytes(volume_shape)
     logger.info(
-        "RELION box-scale solvent mask fused construction: shape=%s "
-        "estimated_unfused_coordinate_bytes=%d",
+        "RELION box-scale solvent mask fused construction: shape=%s estimated_unfused_coordinate_bytes=%d",
         volume_shape,
         estimated_bytes,
     )
     solvent_mask = _compiled_relion_solvent_mask(
-        volume_shape, **({"dtype": dtype} if dtype is not None else {}),
+        volume_shape,
+        **({"dtype": dtype} if dtype is not None else {}),
     )(
         radius,
         radius_p,

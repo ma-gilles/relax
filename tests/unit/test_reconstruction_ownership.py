@@ -36,6 +36,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
         "gridding_kernel", "shell_pair_counting", "premask_dump_dir", "kclass_dump_dir",
+        "solvent_mask", "solvent_correct_fsc", "solvent_fsc_seed",
     )
     for name in (
         "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",

@@ -774,6 +774,20 @@ def parse_refinement_args(argv=None):
         "(pipeline_jobs.cpp:4191).",
     )
     parser.add_argument(
+        "--solvent_mask",
+        default=None,
+        help="RELION --solvent_mask: a reference mask (MRC, values 0-1) that replaces the particle-diameter "
+        "sphere in the solvent flatten after each M-step. Resampled and windowed onto the model grid as RELION "
+        "does; the start-up reference is not masked.",
+    )
+    parser.add_argument(
+        "--solvent_correct_fsc",
+        action="store_true",
+        help="RELION --solvent_correct_fsc: the half-set FSC behind tau2, the resolution and its report is "
+        "the phase-randomisation corrected FSC of the masked unregularised half maps (needs --solvent_mask). "
+        "MPI relion_refine applies it; the non-MPI program ignores the flag.",
+    )
+    parser.add_argument(
         "--width_mask_edge_px",
         type=float,
         default=5.0,

@@ -4,6 +4,7 @@ The controller applies resolution and class-weight updates between these steps.
 See ``docs/math/relion_refinement_algorithm.md`` for the reconstruction order.
 """
 
+import logging
 from dataclasses import dataclass
 
 import jax.numpy as jnp
@@ -12,6 +13,11 @@ import numpy as np
 from relax.reconstruction import regularization_relion
 from relax.refinement import mean_helpers
 from relax.refinement.mean_helpers import ReconstructionSettings
+
+logger = logging.getLogger(__name__)
+
+# The random-phase stream of the joined (final) iteration's corrected FSC: numbered iterations use 0, 1, ...
+FINAL_ITERATION_SEED_INDEX = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -90,6 +96,19 @@ def compute_final_halfmap_prior(
         full_is_hermitian=True,
         shell_pair_counting=settings.shell_pair_counting,
     )
+    if settings.solvent_correct_fsc:
+        # RELION corrects the joined iteration's FSC too (ml_optimiser_mpi.cpp:4028, iter -1); its
+        # final resolution is then "already with masking".
+        fsc = mean_helpers._solvent_corrected_fsc(
+            numerators,
+            denominators,
+            settings,
+            current_size=current_size,
+            accumulator_shape=accumulator_shape,
+            iteration=FINAL_ITERATION_SEED_INDEX,
+            like=fsc,
+            log=logger,
+        )
     variance, _, details = regularization_relion.compute_relion_tau2_from_weights(
         denominators[0],
         denominators[1],

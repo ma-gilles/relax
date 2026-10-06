@@ -774,6 +774,20 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
     )
 
 
+def _internal_solvent_mask(path, grid_size, pixel_size_angstrom):
+    """RELION --solvent_mask on the model grid in relax's internal (z, y, x) frame, or None.
+
+    Map files hold RELION's axis order, the transpose of the internal frame (relax.helpers.map_io);
+    a mask has no sign to undo.
+    """
+    if path is None:
+        return None
+    from relax.reconstruction.solvent_mask import read_solvent_mask
+
+    mask = read_solvent_mask(path, box=int(grid_size), pixel_size=float(pixel_size_angstrom))
+    return np.ascontiguousarray(np.transpose(mask, (2, 1, 0)))
+
+
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
     init_volume: list[jnp.ndarray] | jnp.ndarray,
@@ -946,6 +960,11 @@ def refine_single_volume(
         shell_pair_counting=consistency.shell_pair_counting,
         premask_dump_dir=debug.environment.premask_dump_dir,
         kclass_dump_dir=debug.environment.kclass_dump_dir,
+        solvent_mask=_internal_solvent_mask(parity.solvent_mask_path, grid_size, image_geometry.pixel_size_angstrom),
+        solvent_correct_fsc=parity.solvent_correct_fsc,
+        solvent_fsc_seed=int(
+            (parity.perturb_seed if parity.optimizer_random_seed is None else parity.optimizer_random_seed) or 0
+        ),
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,

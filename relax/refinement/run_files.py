@@ -208,6 +208,7 @@ class RunSettings:
     # RELION --strict_highres_exp in Angstrom; -1 when off, as relion_refine records it.
     strict_highres_exp: float = -1.0
     do_solvent_fsc: bool = False
+    solvent_mask_name: str = "None"
     max_significants: int = -1
     symmetry: str = "C1"
     healpix_order_original: int = 2
@@ -754,7 +755,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
         ("rlnDoZeroMask", True),
         ("rlnDoSolventFlattening", False),
         ("rlnDoSolventFscCorrection", bool(settings.do_solvent_fsc)),
-        ("rlnSolventMaskName", "None"),
+        ("rlnSolventMaskName", str(settings.solvent_mask_name)),
         ("rlnSolventMask2Name", "None"),
         ("rlnBodyStarFile", "None"),
         ("rlnTauSpectrumName", "None"),

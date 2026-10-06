@@ -1217,13 +1217,16 @@ def main(command=None):
                     offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
                     offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
                     perturbation_factor=float(args.perturb_factor),
+                    do_solvent_fsc=bool(args.solvent_correct_fsc),
+                    solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
                     command_line=" ".join(sys.orig_argv),
                     mode=args.mode,
                 ),
                 input_star=os.path.join(args.data_dir, "particles.star"),
                 half_rows=[particle_layout.half1_rows, particle_layout.half2_rows],
                 write_every=int(args.write_iteration_every),
-                write_unfiltered_maps=bool(args.write_unfiltered_half_maps),
+                # RELION writes run_itNNN_half{1,2}_class001_unfil.mrc when it corrects the FSC.
+                write_unfiltered_maps=bool(args.write_unfiltered_half_maps or args.solvent_correct_fsc),
                 keep_iterations=int(args.keep_iterations),
             )
     continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
@@ -1270,6 +1273,8 @@ def main(command=None):
                 optics_group_ids_per_half=optics_group_ids_per_half,
                 relion_model_pixel_size=relion_model_pixel_size,
                 perturb_replay_relion_dir=args.perturb_replay_relion_dir,
+                solvent_mask_path=args.solvent_mask,
+                solvent_correct_fsc=bool(args.solvent_correct_fsc),
                 perturb_replay_restart_state_iterations=restart_provenance.iterations,
                 final_sampling_replay_relion_dir=final_replay.sampling_dir,
                 image_fourier_backend=args.image_fourier_backend,
