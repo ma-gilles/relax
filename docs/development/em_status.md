@@ -655,16 +655,18 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   With one image per particle the GEMM scorer reproduces RELION's cut; the subtomogram difference comes
   from adding 41 tilt images' diff2. The exact re-score is therefore a subtomogram change only. K=4
   (pdb_k4_5k_128, job 14971087): maps within 1.3e-5 over iterations 1-3, the cap of 400 does not bind.
-- VDAM on optics groups of several image shapes (single particles; multioptics_k2_10k128, K=1; on main
-  from 2026-10-05, the scores below are from the branch head 0d73d5b and are rerun on main): OPEN. CPU RELION is the reference on these rows only, because GPU RELION drops
-  the coarse scale difference of a group on another box (ma-gilles/relax#12); CPU RELION is
-  bit-reproducible, so a same-seed range has no width, and the rule the user set is the seed distribution:
-  relax passes if its seed mean is not below the reference's by more than the standard error of the
-  difference on the same seeds. Masked GT FSC-AUC: relax 0.64479 and GPU RELION 0.64484 over 12 seeds
-  (paired difference -0.00005 +/- 0.00057); CPU RELION 0.65387, 0.64695, 0.64833, 0.64955, 0.64244,
-  0.65417 on seeds 1-6 (seed 2 run twice, identical), relax 0.0044 below (standard error 0.0015) and GPU
-  RELION 0.0052 below (0.0011), so the row does not pass under that rule. The reference choice (CPU or GPU
-  RELION) is open until the user decides. The CPU advantage comes from the trajectory, not from the
+- VDAM on optics groups of several image shapes (single particles; multioptics_k2_10k128, K=1; on main as
+  845c6363 since 2026-10-06, re-landed with the merge cut after the revert of af9e5870): OPEN, shown against
+  both references until the user picks one. GPU RELION drops the coarse scale difference of a group on
+  another box (ma-gilles/relax#12) and CPU RELION shifts trial translations with the model box (#13); CPU
+  RELION is bit-reproducible, so a same-seed range has no width, and the rule the user set is the seed
+  distribution: relax passes if its seed mean is not below the reference's by more than the standard
+  error of the difference on the same seeds. Weighted masked GT FSC-AUC, seeds 1-6, relax 845c6363
+  (job 15089781, scored 15100451): relax 0.64411, CPU RELION 0.64922, GPU RELION 0.64407; paired
+  relax - CPU -0.00511 +/- 0.00190 (does not pass), relax - GPU +0.00004 +/- 0.00142 (passes), GPU - CPU
+  -0.00515 +/- 0.00108. Earlier, on the branch head 0d73d5b, relax and GPU RELION agreed over 12 seeds
+  (0.64479 and 0.64484, -0.00005 +/- 0.00057). The reference choice (CPU or GPU RELION) is open until the
+  user decides. The CPU advantage comes from the trajectory, not from the
   update: one RELION iteration continued from the same iteration-150 state (seed 1, from the CPU and from
   the GPU checkpoint) takes the same step on the CPU and on the GPU (difference 5-6 % of the step, step
   correlation 0.998, amplitude ratio 1.00 in every shell, poses 0.1 %, offsets 1 % in the second group
@@ -678,7 +680,7 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   group's poses) and relax as written differs by that defect (4.1e-3; GPU RELION 7.8e-3); end to end the
   emulation scores 0.0008 +/- 0.0003 below relax over 10 seeds, so the defect is not what CPU RELION
   gains from. K=2 on this fixture collapses to one class in both programs and is a plumbing check only.
-  Scores: `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/{scores/mshape_0d73d5b,scores/mshape_seeds,mshape_cpu_extra,mshape_late,mshape_cont150_step}`.
+  Scores: `em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/{mshape_845c636,scores/mshape_0d73d5b,scores/mshape_seeds,mshape_cpu_extra,mshape_late,mshape_cont150_step}`.
   SPA VDAM with K>1 uses the same scorer. The exact re-score at both cuts landed as 880483a5. Seed 2 with
   its patch on base d4825f3 (ee2f296; jobs 15009958, 15009959; two runs each): et09 one-group 0.988372 and
   0.988242 inside RELION's 0.988241-0.988392 (main b44f33e had 0.988222 and 0.988187); et15 optics-group
