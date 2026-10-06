@@ -13366,6 +13366,220 @@
    ]
   },
   {
+   "id": "pdb_k2_5k128_class3d_skip_align_cec7234",
+   "section": "feature_checks",
+   "dataset": "data_pdb_k2_5k_128 (simulated, K=2, poses and zero offsets in the STAR) and its offsets variant (feature)",
+   "label": "pdb_k2_5k128 --skip_align (feature)",
+   "empiar_id": null,
+   "particles": 5000,
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "symmetry": "C1",
+   "classes": 2,
+   "workflow": "Class3D K=2 without alignment (--skip_align: each particle scored at its input pose), 25 iterations, seeds 1-3, with and without --firstiter_cc",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 patched build (MPI scale-sum fix), relion_refine --j 12 --gpu non-MPI, one H100",
+    "resolution_A": null,
+    "resolution_definition": "engine_current_resolution",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": null,
+    "wall_definition": "speed pending: a same-node pair at the landed sha in the next benchmark freeze",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 25,
+    "jobs": [
+     "15037374",
+     "15038704"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "cec7234275b7952d3d3ea6d34552e0eb1393e310",
+    "source_repo": "relax main cec72342 (--skip_align) + 44e2f3c8 (--firstiter_cc at given poses) + 1910bc92 (docs); the gate runs used etw's branch heads 2ee15bd (without fcc) and d4d3e2f (with fcc) before landing",
+    "resolution_A": null,
+    "resolution_definition": "engine_current_resolution",
+    "masked_resolution_A": null,
+    "wall_s": null,
+    "wall_definition": "speed pending: the gate runs' 149 s (same node as RELION's 74 s, 2.0x) predates the CSR supports; the landed code took 125 s on another node",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": 25,
+    "jobs": [
+     "15038704",
+     "15072169"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "class accuracy against the simulation's image_assignment (Hungarian-matched), seed rule over seeds 1-3 (RELION bit-reproducible: paired mean ± standard error), iterations 1-5 and 25",
+    "relion": 1.0,
+    "relax": 1.0,
+    "relion_band": [
+     0.999,
+     1.0
+    ],
+    "seed_rule_nofcc": {
+     "1": [
+      0.5091,
+      0.5091,
+      0.0,
+      0.0
+     ],
+     "2": [
+      0.553,
+      0.5531,
+      -0.0001,
+      0.0004
+     ],
+     "3": [
+      0.6798,
+      0.6803,
+      -0.0005,
+      0.0006
+     ],
+     "4": [
+      0.783,
+      0.7826,
+      0.0004,
+      0.0002
+     ],
+     "5": [
+      0.8478,
+      0.8465,
+      0.0013,
+      0.0007
+     ],
+     "25": [
+      0.9999,
+      0.9997,
+      0.0003,
+      0.0003
+     ]
+    },
+    "seed_rule_fcc": {
+     "1": [
+      0.5028,
+      0.5028,
+      0.0,
+      0.0
+     ],
+     "2": [
+      0.5091,
+      0.5091,
+      0.0,
+      0.0
+     ],
+     "3": [
+      0.6139,
+      0.6113,
+      0.0025,
+      0.001
+     ],
+     "4": [
+      0.7127,
+      0.7086,
+      0.0041,
+      0.0023
+     ],
+     "5": [
+      0.7611,
+      0.7516,
+      0.0095,
+      0.0049
+     ],
+     "25": [
+      1.0,
+      1.0,
+      0.0,
+      0.0
+     ]
+    },
+    "it25_per_seed_nofcc": {
+     "1": {
+      "relax": 1.0,
+      "relion": 1.0,
+      "agreement": 1.0,
+      "class_map_fsc_auc": 1.0
+     },
+     "2": {
+      "relax": 0.9998,
+      "relion": 0.999,
+      "agreement": 0.9992,
+      "class_map_fsc_auc": 0.99721
+     },
+     "3": {
+      "relax": 1.0,
+      "relion": 1.0,
+      "agreement": 1.0,
+      "class_map_fsc_auc": 1.0
+     }
+    }
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": null,
+   "matched": "no",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Feature check (etw, team-lead 2026-10-06): Class3D without alignment (RELION --skip_align; feature gaps row 2, single particles), landed as cec72342, --firstiter_cc at given poses as 44e2f3c8, docs 1910bc92. Each particle is scored against every class at its input angles and offsets (one rotation and one translation per particle); the direction prior is kept and sigma_offset is still updated. Refused for now: --firstiter_cc from several references, --continue, K=1, several image shapes, subtomograms.",
+    "Without --firstiter_cc (seeds 1-3, relax 2ee15bd vs RELION, gate on the iteration 1-5 trajectory): class accuracy relax - RELION it1 +0.0000 ± 0.0000; it2 -0.0001 ± 0.0004; it3 -0.0005 ± 0.0006; it4 +0.0004 ± 0.0002; it5 +0.0013 ± 0.0007; it25 +0.0003 ± 0.0003 (all pass); per-particle agreement 1.000 at it1, 0.993-0.998 at it2-5; class-map FSC-AUC against the same-seed RELION maps at least 0.9997 through it5. Both programs reach accuracy 1.000 by it10-25, so only the early trajectory discriminates.",
+    "With --firstiter_cc (relax d4d3e2f): iterations 1-2 identical to RELION (agreement 1.000, class-map FSC-AUC 1.00000); class accuracy relax - RELION it1 +0.0000 ± 0.0000; it2 +0.0000 ± 0.0000; it3 +0.0025 ± 0.0010; it4 +0.0041 ± 0.0023; it5 +0.0095 ± 0.0049; it25 +0.0000 ± 0.0000 (all pass); map FSC-AUC at least 0.9996 through it5.",
+    "Offsets fixture (parity only; the STAR offsets do not describe the images): iteration-1 class maps relax vs RELION 1.1e-4 relative L2 against a 3.4e-2 effect of the offsets; written offsets equal the input to 2.5e-7 A; sigma_offset equals RELION's at every iteration.",
+    "Speed pending: the gate pair (same node, H100, seed 1) was relax 149 s against RELION 74 s (2.0x), before the CSR supports; the landed code took 125 s on another node (job 15054173). A fresh same-node pair at the landed sha is planned for the next benchmark freeze (team-lead 2026-10-06). Source: relax docs/development/em_status.md, 'Class3D without alignment'."
+   ],
+   "null_reasons": {
+    "relion.resolution_A": "the gate scores class accuracy and map agreement; resolution not recorded",
+    "relax.resolution_A": "the gate scores class accuracy and map agreement; resolution not recorded",
+    "relion.relion_reported_resolution_A": "not recorded by the gate",
+    "relion.masked_resolution_A": "not recorded by the gate",
+    "relax.masked_resolution_A": "not recorded by the gate",
+    "relion.wall_s": "speed pending a same-node pair at the landed sha (next freeze)",
+    "relax.wall_s": "speed pending a same-node pair at the landed sha (next freeze)",
+    "time_ratio_relax_over_relion": "speed pending a same-node pair at the landed sha (next freeze)",
+    "relion.masked_band_auc": "not computed for this row",
+    "relax.masked_band_auc": "not computed for this row",
+    "cross_engine": "map agreement is in the notes (class-map FSC-AUC per iteration)",
+    "cross_engine_masked_band_auc": "not computed for this row",
+    "mask": "class accuracy needs no mask"
+   },
+   "mask": null,
+   "evidence": {
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/skipalign_pdb_k2_5k_128_20261005",
+    "gate": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/gate.py",
+    "gate_tables": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/gate_orig_2ee15bd.txt",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/gate_orig_fcc_d4d3e2f.txt",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/gate_off_2ee15bd.txt",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/gate_off_fcc_d4d3e2f.txt"
+    ],
+    "relax_runs": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/runs_2ee15bd/relax_orig_nofcc_s1_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/runs_2ee15bd/relax_orig_nofcc_s2_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/runs_2ee15bd/relax_orig_nofcc_s3_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/runs_d4d3e2f/relax_orig_fcc_s1_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/runs_d4d3e2f/relax_orig_fcc_s2_r1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_onengine_20260926/skipalign_20261004/runs_d4d3e2f/relax_orig_fcc_s3_r1"
+    ],
+    "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/skipalign_pdb_k2_5k_128_20261005/relion_refs",
+    "source": "etw via team-lead, 2026-10-06"
+   },
+   "date": "2026-10-06",
+   "quality_pass": true,
+   "quality_reason": "seed rule on class accuracy passes at it1-5 and 25 (without fcc: worst it3 -0.0005 ± 0.0006; with fcc: it1-2 identical); class-map FSC-AUC vs same-seed RELION ≥ 0.9996 through it5",
+   "feature_reference": "RELION's 'Perform image alignment: No' (--skip_align) in Class3D: RELION 5.0.1 patched build, non-MPI relion_refine --j 12, one H100, seeds 1-3 (same-seed repeats bit-identical)",
+   "history": []
+  },
+  {
    "id": "multioptics_k2_10k128_initialmodel_vdam_k1_845c636",
    "section": "feature_checks",
    "dataset": "multioptics_k2_10k128 (two optics groups with different image shapes; synthetic, 10k particles, box 128)",
