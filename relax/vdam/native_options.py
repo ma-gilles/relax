@@ -5,6 +5,7 @@ Sampling and continuation read these records without importing the driver.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Literal
@@ -19,6 +20,8 @@ from relax.vdam.schedules import (
     GUI_DEFAULT_NR_CLASSES,
     GUI_DEFAULT_NR_ITER,
     GUI_DEFAULT_TAU2_FUDGE,
+    compute_phase_lengths,
+    compute_tau2_fudge,
 )
 
 
@@ -180,6 +183,22 @@ class NativeInitialModelOptions(InitialModelDefaults):
                 "diagnostic_continue_optimiser requires diagnostic_stop_after_iteration; "
                 "unbounded continuation is intentionally unsupported"
             )
+        if self.optimizer == "vdam" and self.diagnostic_continue_optimiser is None:
+            # RELION's tau2-fudge sigmoid has length grad_inbetween_iter // 4; when that is 0 (4 or 5 iterations at
+            # the default fractions) the fudge at iteration grad_ini_iter is 0/0 = NaN (relax.vdam.schedules keeps
+            # it for RELION parity). The VDAM M-step's SSNR and its FSC estimate read it, so the resolution update
+            # of that iteration reads NaN. A diagnostic continuation replays RELION's own schedule and is exempt.
+            phases = compute_phase_lengths(self.nr_iter, self.grad_ini_frac, self.grad_fin_frac)
+            unusable = [
+                it for it in range(1, self.nr_iter + 1)
+                if not math.isfinite(compute_tau2_fudge(it, phases, True, 3, tau2_fudge_arg=self.tau2_fudge))
+            ]
+            if unusable:
+                raise ValueError(
+                    f"VDAM's tau2-fudge schedule for {self.nr_iter} iterations is not finite at iteration(s) "
+                    f"{unusable} (RELION's sigmoid length grad_inbetween_iter // 4 is 0); choose another --nr-iter "
+                    "or --optimizer momentum_sgd"
+                )
         if self.fn_tomograms is not None and (self.optimizer != "vdam" or not self.do_run_C1):
             raise NotImplementedError("subtomogram InitialModel runs RELION's VDAM in C1")
         if self.padding_factor not in (1, 2):

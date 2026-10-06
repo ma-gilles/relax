@@ -1977,6 +1977,27 @@ def test_float64_scoring_switch_is_refused_with_the_options(monkeypatch):
         native_options.NativeInitialModelOptions(fn_img="x")
 
 
+@pytest.mark.parametrize("nr_iter", [4, 5])
+def test_vdam_refuses_iteration_counts_with_a_nan_tau2_fudge(nr_iter):
+    # RELION's tau2-fudge sigmoid length grad_inbetween_iter // 4 is 0 for 4 and 5 iterations, so the fudge at
+    # iteration grad_ini_iter = 1 is 0/0. Unrefused, iteration 1's M-step wrote a NaN SSNR in every shell and the
+    # resolution update read it (2026-10-06, vdam_fingerprint's stand-in engine: run_it001_model.star).
+    with pytest.raises(ValueError, match=r"tau2-fudge schedule for \d iterations is not finite at iteration\(s\) \[1\]"):
+        native_options.NativeInitialModelOptions(fn_img="x", nr_iter=nr_iter).validate_run()
+    # Momentum SGD does not read the fudge; it is refused here only for its own missing settings.
+    with pytest.raises(ValueError, match="oversampling 0"):
+        native_options.NativeInitialModelOptions(fn_img="x", nr_iter=nr_iter, optimizer="momentum_sgd").validate_run()
+
+
+def test_every_accepted_vdam_iteration_count_schedules_a_finite_tau2_fudge():
+    from relax.vdam.schedules import compute_phase_lengths, compute_tau2_fudge
+
+    for nr_iter in (1, 2, 3, 6, 7, 8, 25, 200):
+        native_options.NativeInitialModelOptions(fn_img="x", nr_iter=nr_iter).validate_run()
+        phases = compute_phase_lengths(nr_iter)
+        assert all(np.isfinite(compute_tau2_fudge(it, phases, True, 3)) for it in range(1, nr_iter + 1))
+
+
 def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_path):
     from relax.helpers import relion_expected_accuracy
 
