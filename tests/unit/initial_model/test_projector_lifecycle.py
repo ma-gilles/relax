@@ -148,7 +148,7 @@ def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, r
         grad_ini_subset_size=10, grad_fin_subset_size=10, tau2_fudge_arg=4.0,
         grad_em_iters=0, random_seed=29,
         expectation_step=estep, refresh_tau2_from_projector=refresh_enabled,
-        projector_refresh_fn=refresh, mstep_compute_dtype=mstep_compute_dtype,
+        projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype),
     )
     expected = ["refresh", "estep"] * 2 if refresh_enabled else ["estep"] * 2
     assert [event[1] for event in events] == expected

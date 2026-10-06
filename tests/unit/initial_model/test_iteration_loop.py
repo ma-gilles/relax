@@ -18,6 +18,7 @@ from relax.ppca_initial_model.vdam_controls import VdamPilotControls
 from relax.vdam.estep_meta_updates import update_noise_from_estep_meta, update_probabilities_from_estep_meta
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import (
+    VdamUpdate,
     _ave_pmax_from_meta,
     refresh_tau2_from_projector_power,
     run_vdam_iterations,
@@ -30,7 +31,7 @@ from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
 
 # The loop tests run real M-steps on float64 states: the float64 diagnostic precision.
-run_vdam_iterations = partial(run_vdam_iterations, mstep_compute_dtype="float64")
+run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64"))
 
 pytestmark = pytest.mark.unit
 
@@ -457,6 +458,7 @@ class TestRunVdamIterations:
             expectation_step=estep,
             refresh_tau2_from_projector=False,
             projector_padding_factor=2,
+            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64"),
         )
 
         assert seen["padding_factor"] == 2

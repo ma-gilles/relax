@@ -143,7 +143,7 @@ MUTATIONS = (
     ("stochastic_batch", "batch_size = min(int(pilot_controls.stochastic_batch_size), int(nr_particles))",
      "batch_size = min(int(pilot_controls.stochastic_batch_size), int(nr_particles)) - 1",
      "the stochastic batch is one particle short", True),
-    ("sgd_learning_rate", "learning_rate=sgd_learning_rate,", "learning_rate=2 * sgd_learning_rate,",
+    ("sgd_learning_rate", "return sgd_m_step(current, accumulators, learning_rate=self.learning_rate,", "return sgd_m_step(current, accumulators, learning_rate=2 * self.learning_rate,",
      "momentum SGD steps with twice the learning rate", True),
     ("retained_fraction", "meta[\"class_retained_mass_fraction_by_class\"] = (retained_class_sums / retained_mass).tolist()",
      "meta[\"class_retained_mass_fraction_by_class\"] = (retained_class_sums / (2 * retained_mass)).tolist()",

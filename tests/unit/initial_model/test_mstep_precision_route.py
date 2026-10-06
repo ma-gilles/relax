@@ -121,7 +121,7 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
 
     def at_loop(current, **kwargs):
         assert len(observed) == 1 and observed[0] == (0, current)
-        assert kwargs.get("mstep_compute_dtype", "float64") == dtype
+        assert kwargs["update"].mstep_compute_dtype == dtype
         expected = np.float32 if dtype == "float32" else np.float64
         assert current.Iref.dtype == expected
         assert current.tau2_class is state.tau2_class
@@ -277,7 +277,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
             {"max_posterior_per_image": np.ones(len(ids))},
         ),
         refresh_tau2_from_projector=False,
-        mstep_compute_dtype="float32",
+        update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32"),
     )
     assert calls == [1, 2]
 

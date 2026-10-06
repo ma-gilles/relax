@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Callable, Literal, Sequence
 
 import numpy as np
@@ -197,6 +197,53 @@ def _ave_pmax_from_meta(meta: dict) -> float | None:
     return None
 
 
+@dataclass(frozen=True)
+class VdamUpdate:
+    """RELION's VDAM model update: the gradient M-step, the noise blend and the data_vs_prior resolution."""
+
+    padding_factor: int
+    mstep_compute_dtype: Literal["float32", "float64"]
+
+    def maximize(self, current: InitialModelState, accumulators, meta: dict) -> InitialModelState:
+        return vdam_m_step(
+            current,
+            accumulators=accumulators,
+            grad_current_stepsize=current.grad_current_stepsize,
+            tau2_fudge_factor=current.tau2_fudge_factor,
+            padding_factor=self.padding_factor,
+            mstep_compute_dtype=self.mstep_compute_dtype,
+            average_ctf2=meta.get("premultiplied_average_ctf2"),
+        )
+
+    def update_noise(self, current: InitialModelState, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
+        return update_noise_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
+
+    def update_resolution(self, current: InitialModelState) -> InitialModelState:
+        return update_current_resolution_from_data_vs_prior(current)
+
+
+@dataclass(frozen=True)
+class MomentumSgdUpdate:
+    """The opt-in momentum-SGD update; its resolution is the caller's Fourier radius schedule."""
+
+    learning_rate: float
+    padding_factor: int
+
+    def maximize(self, current: InitialModelState, accumulators, meta: dict) -> InitialModelState:
+        from relax.sgd_initial_model.optimizer import sgd_m_step
+
+        return sgd_m_step(current, accumulators, learning_rate=self.learning_rate, padding_factor=self.padding_factor, meta=meta)
+
+    def update_noise(self, current: InitialModelState, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
+        from relax.sgd_initial_model.noise import update_sgd_noise
+
+        del do_grad, mu  # its own noise estimate, without VDAM's momentum
+        return update_sgd_noise(current, meta)
+
+    def update_resolution(self, current: InitialModelState) -> InitialModelState:
+        return current
+
+
 def run_vdam_iterations(
     state: InitialModelState,
     *,
@@ -209,6 +256,7 @@ def run_vdam_iterations(
     grad_em_iters: int,
     random_seed: int,
     expectation_step: ExpectationStepFn,
+    update: VdamUpdate | MomentumSgdUpdate,
     iter_artifact_sink: IterArtifactSink = lambda *args, **kw: None,
     post_mstep_update: PostMstepUpdateFn | None = None,
     particle_order: Sequence[int] | None = None,
@@ -220,18 +268,19 @@ def run_vdam_iterations(
     refresh_tau2_from_projector: bool = True,
     projector_refresh_fn: Callable[..., InitialModelState] | None = None,
     projector_padding_factor: int = 1,
-    mstep_compute_dtype: Literal["float32", "float64"] = "float32",
     projector_interpolator: int = 1,
     start_iteration: int = 0,
     diagnostic_stop_after_iteration: int | None = None,
-    optimizer: Literal["vdam", "momentum_sgd"] = "vdam",
-    sgd_learning_rate: float = 1.0,
     fourier_radius_schedule: tuple[int, ...] | None = None,
     stochastic_all_iterations: bool = False,
     uniform_class_direction_prior: bool = False,
     environment: VdamEnvironment = VdamEnvironment(),
 ) -> InitialModelState:
-    """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``."""
+    """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``.
+
+    ``update`` is the optimizer's model update (:class:`VdamUpdate` or :class:`MomentumSgdUpdate`), chosen
+    once by the caller.
+    """
     phase_lengths = _resolve_phase_lengths(
         int(state.nr_iter),
         float(grad_ini_frac),
@@ -245,8 +294,6 @@ def run_vdam_iterations(
         raise ValueError(
             f"state.iter must equal start_iteration ({int(state.iter)} != {start_iteration})"
         )
-    if optimizer not in {"vdam", "momentum_sgd"}:
-        raise ValueError(f"unknown InitialModel optimizer {optimizer!r}")
     if fourier_radius_schedule is not None and len(fourier_radius_schedule) != int(state.nr_iter):
         raise ValueError("fourier_radius_schedule must have one radius per iteration")
     if stochastic_all_iterations and (
@@ -352,27 +399,7 @@ def run_vdam_iterations(
                 if key in passes:
                     iteration_profile[f"expectation_{key}"] = float(passes[key])
 
-        # M-step
-        if optimizer == "vdam":
-            current = vdam_m_step(
-                current,
-                accumulators=accumulators,
-                grad_current_stepsize=current.grad_current_stepsize,
-                tau2_fudge_factor=current.tau2_fudge_factor,
-                padding_factor=projector_padding_factor,
-                mstep_compute_dtype=mstep_compute_dtype,
-                average_ctf2=meta.get("premultiplied_average_ctf2"),
-            )
-        else:
-            from relax.sgd_initial_model.optimizer import sgd_m_step
-
-            current = sgd_m_step(
-                current,
-                accumulators,
-                learning_rate=sgd_learning_rate,
-                padding_factor=projector_padding_factor,
-                meta=meta,
-            )
+        current = update.maximize(current, accumulators, meta)
         if profile_iterations:
             _record_stage("mstep")
         current = update_probabilities_from_estep_meta(
@@ -401,20 +428,14 @@ def run_vdam_iterations(
             meta["effective_pdf_class_prior_by_class"] = np.asarray(current.pdf_class, dtype=np.float64).tolist()
             meta["effective_joint_direction_prior_per_class_direction"] = 1.0 / float(current.K * n_directions)
             meta["effective_joint_direction_count"] = n_directions
-        if optimizer == "vdam":
-            current = update_noise_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
-        else:
-            from relax.sgd_initial_model.noise import update_sgd_noise
-
-            current = update_sgd_noise(current, meta)
+        current = update.update_noise(current, meta, do_grad=do_grad, mu=mu)
         ave_pmax = _ave_pmax_from_meta(meta)
         if ave_pmax is not None:
             current = replace(current, ave_Pmax=float(ave_pmax))
         if post_mstep_update is not None and (stochastic_all_iterations or not current.has_converged):
             current = post_mstep_update(current, it, meta)
 
-        if optimizer == "vdam":
-            current = update_current_resolution_from_data_vs_prior(current)
+        current = update.update_resolution(current)
         if profile_iterations:
             _record_stage("state_update")
         meta = dict(meta)

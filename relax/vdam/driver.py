@@ -45,7 +45,7 @@ from relax.vdam.dense_adapter import (
     prepare_relion_projector_class_inputs,
     run_dense_initial_model_estep,
 )
-from relax.vdam.iteration_loop import run_vdam_iterations
+from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.mstep_single_class import _prepare_mstep_state_precision
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -713,12 +713,14 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             grad_stepsize=float(opts.stepsize),
             mu=float(opts.mu),
             projector_padding_factor=int(opts.padding_factor),
-            mstep_compute_dtype=opts.mstep_compute_dtype,
+            update=(
+                VdamUpdate(padding_factor=int(opts.padding_factor), mstep_compute_dtype=opts.mstep_compute_dtype)
+                if opts.optimizer == "vdam"
+                else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))
+            ),
             projector_refresh_fn=None if projector_context is None else projector_context.refresh,
             start_iteration=int(state.iter),
             diagnostic_stop_after_iteration=opts.diagnostic_stop_after_iteration,
-            optimizer=opts.optimizer,
-            sgd_learning_rate=float(opts.sgd_learning_rate),
             fourier_radius_schedule=opts.fourier_radius_schedule,
             stochastic_all_iterations=bool(opts.stochastic_all_iterations),
             uniform_class_direction_prior=bool(opts.uniform_class_direction_prior),

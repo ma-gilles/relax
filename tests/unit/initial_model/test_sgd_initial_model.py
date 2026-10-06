@@ -26,7 +26,7 @@ from relax.sgd_initial_model.optimizer import _bandlimit_real_map, _class_step, 
 from relax.vdam.dense_adapter import _noise_variance_from_sigma2
 from relax.vdam.estep_meta_updates import update_probabilities_from_estep_meta
 from relax.vdam.init import initialise_denovo_state
-from relax.vdam.iteration_loop import run_vdam_iterations
+from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import _build_sampling_plan
 from relax.vdam.state import InitialModelState, VdamAccumulator
@@ -371,7 +371,11 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             iter_artifact_sink=sink,
             post_mstep_update=lambda state, iteration, meta: replace(state, has_converged=True),
             refresh_tau2_from_projector=False,
-            optimizer=optimizer,
+            update=(
+                VdamUpdate(padding_factor=1, mstep_compute_dtype="float32")
+                if optimizer == "vdam"
+                else MomentumSgdUpdate(learning_rate=1.0, padding_factor=1)
+            ),
             fourier_radius_schedule=(3, 4, 4),
             stochastic_all_iterations=True,
             uniform_class_direction_prior=True,
