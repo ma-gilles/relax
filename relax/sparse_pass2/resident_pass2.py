@@ -5208,29 +5208,44 @@ def _stream_projection_budget_bytes(
     return max(0, budget)
 
 
+def _fitting_row_capacities(row_ladder, row_bytes: float, budget_bytes: float, what: str):
+    """The ladder's row capacities whose ``capacity * row_bytes`` fits ``budget_bytes``.
+
+    When no class fits, the smallest is halved down to :data:`_MIN_PLANNED_ROW_CAPACITY`, as the chunk
+    memory plan does, and the largest that fits is the one class (a 16 GB V100's box-192 subtomogram final
+    pass needed 4.43 GiB at 8192 rows against 3.78 GiB, relax#32). Below that floor the pass is refused,
+    before any device work, with what to change. Ladders with a fitting class are unchanged.
+    """
+
+    kept = tuple(int(c) for c in row_ladder if float(c) * float(row_bytes) <= float(budget_bytes))
+    if kept:
+        return kept
+    capacity = min(int(c) for c in row_ladder)
+    while capacity > _MIN_PLANNED_ROW_CAPACITY and float(capacity) * float(row_bytes) > float(budget_bytes):
+        capacity //= 2
+    if float(capacity) * float(row_bytes) <= float(budget_bytes):
+        return (capacity,)
+    # A configuration refusal, raised before any device work: there is no other pass-2 engine.
+    raise ResidentConfigurationUnsupported(
+        f"the device-resident sparse pass 2 does not fit this pass: even {capacity} rows need "
+        f"{capacity * row_bytes / float(1024 ** 3):.2f} GiB of {what} against a "
+        f"{budget_bytes / float(1024 ** 3):.2f} GiB budget. Run on a GPU with more memory, or on particles "
+        "extracted at a smaller box."
+    )
+
+
 def _stream_row_capacity_ladder(row_ladder, *, bytes_per_rotation, max_projection_bytes):
     """Row capacities whose chunk-local projection cache fits the cache budget.
 
     A streamed chunk projects at most one rotation per row, so capacity times
     the per-rotation bytes bounds its cache; the budget is the one the
     per-iteration cache failed, which keeps the pass's peak where it would
-    have been had that cache fitted.
+    have been had that cache fitted. See :func:`_fitting_row_capacities`.
     """
 
-    kept = tuple(
-        int(c)
-        for c in row_ladder
-        if _STREAM_PEAK_COPIES * float(c) * float(bytes_per_rotation) <= float(max_projection_bytes)
+    return _fitting_row_capacities(
+        row_ladder, _STREAM_PEAK_COPIES * float(bytes_per_rotation), max_projection_bytes, "streamed projections"
     )
-    if not kept:
-        # A configuration refusal, raised before any device work.
-        raise ResidentConfigurationUnsupported(
-            "the device-resident sparse pass 2 does not fit this pass: even the smallest row capacity "
-            f"{min(int(c) for c in row_ladder)} needs "
-            f"{_STREAM_PEAK_COPIES * min(int(c) for c in row_ladder) * bytes_per_rotation / float(1024 ** 3):.2f} GiB of "
-            f"streamed projections against a {max_projection_bytes / float(1024 ** 3):.2f} GiB budget"
-        )
-    return kept
 
 
 def _cached_row_capacity_ladder(row_ladder, *, bytes_per_row, max_gather_bytes):
@@ -5242,19 +5257,10 @@ def _cached_row_capacity_ladder(row_ladder, *, bytes_per_row, max_gather_bytes):
     orientation inside its diff2 kernel and never holds such a block; bounding the
     chunk by measured free memory keeps the gather within the device. The budget
     is :func:`_stream_projection_budget_bytes` with the device as its cap, read
-    after the cache is built. A refusal is an error, as in :func:`_stream_row_capacity_ladder`.
+    after the cache is built. See :func:`_fitting_row_capacities`.
     """
 
-    kept = tuple(int(c) for c in row_ladder if float(c) * float(bytes_per_row) <= float(max_gather_bytes))
-    if not kept:
-        smallest = min(int(c) for c in row_ladder)
-        raise ResidentConfigurationUnsupported(
-            "The device-resident sparse pass 2 does not implement this configuration: even the "
-            f"smallest row capacity {smallest} gathers "
-            f"{smallest * bytes_per_row / float(1024 ** 3):.2f} GiB of cached projections against a "
-            f"{max_gather_bytes / float(1024 ** 3):.2f} GiB budget."
-        )
-    return kept
+    return _fitting_row_capacities(row_ladder, bytes_per_row, max_gather_bytes, "cached projections")
 
 
 class _ProjectionSlots(NamedTuple):

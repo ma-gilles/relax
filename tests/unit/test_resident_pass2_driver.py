@@ -1388,11 +1388,34 @@ def test_streamed_row_ladder_keeps_capacities_whose_cache_fits():
     assert rp._stream_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_rotation=300e3, max_projection_bytes=20 * 1024**3
     ) == (8192, 32768)
-    # A configuration refusal: an error, since there is no other pass-2 engine.
-    with pytest.raises(ResidentConfigurationUnsupported, match="smallest row capacity"):
+    # A configuration refusal (there is no other pass-2 engine) only once even the planned floor does not fit,
+    # and it says what to change.
+    with pytest.raises(ResidentConfigurationUnsupported, match="GPU with more memory"):
         rp._stream_row_capacity_ladder(
-            (8192,), bytes_per_rotation=10e6, max_projection_bytes=20 * 1024**3
+            (8192,), bytes_per_rotation=1e9, max_projection_bytes=20 * 1024**3
         )
+
+
+def test_streamed_row_ladder_halves_below_its_smallest_class_when_none_fits():
+    """relax#32: a 16 GB V100's box-192 subtomogram final pass needed 4.43 GiB of streamed projections at 8192
+    rows against a 3.78 GiB budget and was refused; the smallest class now halves, as the chunk plan does."""
+
+    gib = 1024**3
+    per_rotation = 4.43 * gib / (rp._STREAM_PEAK_COPIES * 8192)
+    ladder = (8192, 32768, 131072, 524288)
+    assert rp._stream_row_capacity_ladder(
+        ladder, bytes_per_rotation=per_rotation, max_projection_bytes=int(3.78 * gib)
+    ) == (4096,)
+    # Where a default class fits (every 80 GB run), the ladder is unchanged.
+    assert rp._stream_row_capacity_ladder(
+        ladder, bytes_per_rotation=per_rotation, max_projection_bytes=int(30 * gib)
+    ) == (8192, 32768)
+    # The floor is the chunk plan's.
+    assert rp._stream_row_capacity_ladder(
+        ladder,
+        bytes_per_rotation=1.0 / rp._STREAM_PEAK_COPIES,
+        max_projection_bytes=rp._MIN_PLANNED_ROW_CAPACITY,
+    ) == (rp._MIN_PLANNED_ROW_CAPACITY,)
 
 
 def test_cached_row_ladder_bounds_the_gathered_chunk():
@@ -1409,9 +1432,11 @@ def test_cached_row_ladder_bounds_the_gathered_chunk():
     assert rp._cached_row_capacity_ladder(
         (8192, 32768, 131072), bytes_per_row=6000 * 8, max_gather_bytes=30 * gib
     ) == (8192, 32768, 131072)
+    # Below the smallest class the capacity halves until the gathered block fits.
+    assert rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1 * gib) == (2048,)
     # A named configuration refusal (there is no other pass-2 engine), not a crash.
-    with pytest.raises(rp.ResidentConfigurationUnsupported, match="smallest row capacity"):
-        rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1 * gib)
+    with pytest.raises(rp.ResidentConfigurationUnsupported, match="GPU with more memory"):
+        rp._cached_row_capacity_ladder((8192,), bytes_per_row=row_bytes, max_gather_bytes=1024**2)
 
 
 def test_stream_slot_count_quantises_and_caps():
