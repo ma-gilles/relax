@@ -40,6 +40,7 @@ FX = "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures"
 MASKS = {
     "k2_5k128": (f"{FX}/data_pdb_k2_5k_128/masks/pdb_k2_5k128_c1/pdb_k2_5k128_c1_mask.mrc", "pdb_k2_5k128_c1"),
     "k4_5k128": (f"{FX}/data_pdb_k4_5k_128/masks/pdb_k4_5k128_c1/pdb_k4_5k128_c1_mask.mrc", "pdb_k4_5k128_c1"),
+    "k4_50k256": (f"{FX}/data_pdb_k4_50k_256/masks/pdb_k4_50k256_c1/pdb_k4_50k256_c1_mask.mrc", "pdb_k4_50k256_c1"),
     "k1_5k128": (
         f"{FX}/data_noise1_5k_normalized/masks/noise1_k1_5k128_c1/noise1_k1_5k128_c1_mask.mrc",
         "noise1_k1_5k128_c1",
@@ -99,7 +100,7 @@ def score_refine(arms: dict[str, Path], ref: str, gt: np.ndarray) -> dict:
     return out
 
 
-def score_class3d(arms: dict[str, Path], fixture: str, k: int, work: Path) -> dict:
+def score_class3d(arms: dict[str, Path], fixture: str, k: int, work: Path, n_iter: int = 25) -> dict:
     mask, key = MASKS[fixture]
     runs = [
         {"label": label, "engine": "relax", "seed": 29, "path": str(d)}
@@ -113,10 +114,10 @@ def score_class3d(arms: dict[str, Path], fixture: str, k: int, work: Path) -> di
         "mask_key": key,
         "mask_sha256": _sha256(mask),
         "n_classes": k,
-        "n_iter": 25,
+        "n_iter": n_iter,
         "runs": runs,
     }
-    cfg, out = work / f"class3d_{fixture}_cfg.json", work / f"class3d_{fixture}_score.json"
+    cfg, out = work / f"class3d_{fixture}_it{n_iter}_cfg.json", work / f"class3d_{fixture}_it{n_iter}_score.json"
     cfg.write_text(json.dumps(config, indent=1))
     subprocess.run([sys.executable, CLASS3D_SCORER, str(cfg), str(out)], check=True)
     return json.loads(out.read_text())
@@ -257,9 +258,21 @@ def main() -> int:
     if wanted("tomo_refine_s1"):
         gt = _relion_map(Path(FIXTURES["et_s1"]) / "reference_gt_relion.mrc")
         scores["tomo_refine_s1"] = score_refine(arms_of("tomo_refine_s1"), args.reference, gt)
-    for cell, fixture, k in (("class3d_k2_5k128", "k2_5k128", 2), ("class3d_k4_5k128", "k4_5k128", 4)):
+    # Robustness v1 cells at the benchmark page's full schedules: unmasked GT FSC-AUC as the other refine cells.
+    for cell, fixture, gt_name in (
+        ("refine_k1_50k256_full", "k1_50k256", "reference_gt_relion.mrc"),
+        ("refine_ms2_448_s1", "ms2_448", "reference_gt_relion.mrc"),
+        ("tomo_refine_w2_09_box192", "w2_09_box192", "reference_gt_relion.mrc"),
+    ):
         if wanted(cell):
-            scores[cell] = score_class3d(arms_of(cell), fixture, k, args.work)
+            scores[cell] = score_refine(arms_of(cell), args.reference, _relion_map(Path(FIXTURES[fixture]) / gt_name))
+    for cell, fixture, k, n_iter in (
+        ("class3d_k2_5k128", "k2_5k128", 2, 25),
+        ("class3d_k4_5k128", "k4_5k128", 4, 25),
+        ("class3d_k4_50k256_it15", "k4_50k256", 4, 15),
+    ):
+        if wanted(cell):
+            scores[cell] = score_class3d(arms_of(cell), fixture, k, args.work, n_iter=n_iter)
     vdam = (
         # (frame, GT paths) as the benchmark configs (docs/benchmarks/initialmodel_scores) name them.
         ("vdam_k1_5k128", "k1_5k128", 1, 200, ("relion", [f"{FIXTURES['k1_5k128']}/reference_gt_relion.mrc"])),
@@ -288,9 +301,10 @@ def main() -> int:
     for cell, fixture, k, it, gt in vdam:
         if wanted(cell):
             scores[cell] = score_vdam(arms_of(cell), args.reference, cell, fixture, k, it, gt, args.work)
-    if wanted("tomo_class3d_et13_it3"):
-        gt = [f"{FIXTURES['et13_k2']}/reference_gt_class{c:03d}_relion.mrc" for c in (1, 2)]
-        scores["tomo_class3d_et13_it3"] = score_tomo_class3d(arms_of("tomo_class3d_et13_it3"), args.reference, gt)
+    for cell in ("tomo_class3d_et13_it3", "tomo_class3d_et13_it25"):
+        if wanted(cell):
+            gt = [f"{FIXTURES['et13_k2']}/reference_gt_class{c:03d}_relion.mrc" for c in (1, 2)]
+            scores[cell] = score_tomo_class3d(arms_of(cell), args.reference, gt)
     for cell in ("ppca_tomo_vdam_it24", "ppca_tomo_sgd_it24"):
         if wanted(cell):
             scores[cell] = score_ppca(arms_of(cell), args.reference)
