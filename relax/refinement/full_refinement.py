@@ -970,6 +970,7 @@ def main(command=None):
         RefinementOptions,
         RelionParityOptions,
         ReplayState,
+        SolventOptions,
         SymmetryOptions,
     )
 
@@ -1232,8 +1233,6 @@ def main(command=None):
             relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
             optics_group_ids_per_half=optics_group_ids_per_half,
             relion_model_pixel_size=relion_model_pixel_size,
-            solvent_mask_path=args.solvent_mask,
-            solvent_correct_fsc=bool(args.solvent_correct_fsc),
             image_fourier_backend=args.image_fourier_backend,
             emulate_relion_firstiter_cc=bool(args.firstiter_cc),
             relion_firstiter_ini_high_angstrom=(
@@ -1246,6 +1245,7 @@ def main(command=None):
             firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
         ),
         consistency=consistency_options,
+        solvent=SolventOptions(mask_path=args.solvent_mask, correct_fsc=bool(args.solvent_correct_fsc)),
         local_search=command_options.resolve_local_search(args),
         k_class=command_options.resolve_k_class(
             args, trial_order=particle_layout.accuracy_trial_order_local, resumed=resume_snapshot is not None

@@ -71,6 +71,16 @@ class AdaptiveOptions:
 
 
 @dataclass(frozen=True)
+class SolventOptions:
+    """RELION's --solvent_mask and --solvent_correct_fsc (relax.reconstruction.solvent_mask)."""
+
+    # The user reference mask; None flattens with the particle-diameter sphere.
+    mask_path: str | None = None
+    # The K=1 half-set FSC is the masked, phase-randomisation corrected FSC; needs mask_path.
+    correct_fsc: bool = False
+
+
+@dataclass(frozen=True)
 class RelionParityOptions:
     """Knobs that pin RELION numerical behavior."""
 
@@ -84,9 +94,6 @@ class RelionParityOptions:
     # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
     optics_group_ids_per_half: Any | None = None
     relion_model_pixel_size: float | None = None
-    # RELION --solvent_mask (path) and --solvent_correct_fsc (relax.reconstruction.solvent_mask).
-    solvent_mask_path: str | None = None
-    solvent_correct_fsc: bool = False
     emulate_relion_firstiter_cc: bool = False
     relion_firstiter_ini_high_angstrom: float | None = None
     first_iteration_score_mode: str = "gaussian"
@@ -515,6 +522,7 @@ class RefinementOptions:
     consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
     # Read from the environment when the options are built; nothing below reads it again.
     final_pass: FinalPassOptions = field(default_factory=FinalPassOptions.from_environ)
+    solvent: SolventOptions = field(default_factory=SolventOptions)
 
 
 def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max_healpix_order):
@@ -585,6 +593,7 @@ __all__ = [
     "AdaptiveOptions",
     "RelionParityOptions",
     "RelionConsistencyOptions",
+    "SolventOptions",
     "require_consistency_route",
     "LocalSearchOptions",
     "ExpectedAccuracyOptions",

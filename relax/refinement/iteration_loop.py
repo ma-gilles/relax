@@ -928,8 +928,8 @@ def refine_single_volume(
         first_iteration_lowpass_angstrom=parity.relion_firstiter_ini_high_angstrom,
         gridding_kernel=consistency.gridding_kernel,
         shell_pair_counting=consistency.shell_pair_counting,
-        solvent_mask=_internal_solvent_mask(parity.solvent_mask_path, grid_size, image_geometry.pixel_size_angstrom),
-        solvent_correct_fsc=parity.solvent_correct_fsc,
+        solvent_mask=_internal_solvent_mask(options.solvent.mask_path, grid_size, image_geometry.pixel_size_angstrom),
+        solvent_correct_fsc=options.solvent.correct_fsc,
         solvent_fsc_seed=int(
             (parity.perturb_seed if parity.optimizer_random_seed is None else parity.optimizer_random_seed) or 0
         ),
