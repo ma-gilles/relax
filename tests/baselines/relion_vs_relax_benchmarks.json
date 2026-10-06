@@ -13762,7 +13762,7 @@
     "seed 2: masked GT FSC-AUC relax 0.982029/0.982046/0.982088 (1a107f5) / RELION 0.982118/0.982108",
     "seed 3: masked GT FSC-AUC relax 0.982442 (1a107f5) / RELION 0.982342/0.982422",
     "Speed (seed 1): relax 880483a5 16802 s against the fastest seed-1 RELION run 38768 s (job 14817602), 0.43x; both cold on one H100 in separate jobs. The relax arm shared its node with one other benchmark arm on the second GPU of the same job (15037267).",
-    "Supporting evidence for seed 2, not used for the verdict (team-lead 2026-10-05): etvdam ran seed 2 twice with the re-score patch (ee2f296 = the 880483a5 patch on base d4825f3; job 15036649). In etvdam's score file (evidence.s2_rescore_etvdam_score_json), population-weighted masked GT FSC-AUC (this row's metric) relax 0.982050 / 0.982089 against RELION seed-2 runs 0.982097 / 0.982119 / 0.982153 (plain class means 0.982055 / 0.982094 against 0.982101 / 0.982124 / 0.982157), so seed 2 stays just below with the re-score on a near-current base (best run 8e-6 below RELION's lowest). The verdict stays on the row's own runs.",
+    "Supporting evidence for seed 2, not used for the verdict (team-lead 2026-10-05): etvdam ran seed 2 twice with the re-score patch (ee2f296 = the 880483a5 patch on base d4825f3; job 15036649). Rescored together with the row's seed-2 runs on one scorer (relax 5744444f, job 15072654; all fits converged): population-weighted masked GT FSC-AUC ee2f296 0.982050 / 0.982157, the row's 1a107f5 runs 0.982029 / 0.982046 / 0.982088, RELION seed 2 r1-r3 0.982118 / 0.982108 / 0.982126. With the re-score patch the seed-2 relax range [0.982050, 0.982157] reaches RELION's [0.982108, 0.982126]; the row's own 1a107f5 runs stay below (best 2.0e-5 under RELION's lowest), and the verdict stays on those. etvdam's original b44f33e-scorer file (evidence.s2_rescore_etvdam_score_json) gave 0.982050 / 0.982089: the fine-registration budget of 5744444f moves single maps by up to about 7e-5 here.",
     "Map agreement with RELION seed 1 via the reference frame 0.9996 (both classes; the single-transform pair fit cannot align class 2, whose de novo frame differs from class 1's) (etvdam, 2026-10-05; score file diagnostic_via_reference_frame_mean_fsc_auc 0.99964). Both programs populate class 2 (0.505/0.495)."
    ],
    "null_reasons": {
@@ -13801,7 +13801,8 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/mshape_qual_live/et15_ogtomo_k2/src_rescore_ee2f296/relax_s2_rep1",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/mshape_qual_live/et15_ogtomo_k2/src_rescore_ee2f296/relax_s2_rep2"
     ],
-    "s2_rescore_etvdam_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/et15_s2_ee2f296/et15_ogtomo_k2_s2_ee2f296.json"
+    "s2_rescore_etvdam_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/et15_s2_ee2f296/et15_ogtomo_k2_s2_ee2f296.json",
+    "s2_rescore_one_scorer": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/tomo_vdam/et15_s2"
    },
    "date": "2026-10-05",
    "quality_pass": false,
