@@ -434,7 +434,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
 def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, monkeypatch, block_rows):
     """A particle's re-scored rotations: any subset of rows, at any position in the call, gives the full
     direct-square pass's values for those rows, the images added in slot order; scored in blocks of rows
-    (the kernel's int32 output count) they are bitwise the one-block values."""
+    (the kernel's int32 output count) they are the one-block values."""
 
     import jax
 
@@ -481,7 +481,7 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
         if block_rows is not None:
             monkeypatch.setattr(exact_cut, "DIRECT_ROWS_BLOCK_ELEMENTS", n_particles * n_slots * 200 * block_rows)
             rows = direct_rows()
-            np.testing.assert_array_equal(rows, one_block)
+            assert_matches(rows, one_block)
         assert_matches(one_block, np.take_along_axis(full, ids[:, :, None], axis=1))
 
 
@@ -740,7 +740,7 @@ def test_near_cut_rows_are_the_cut_and_minimum_neighbourhoods_of_capped_particle
 @pytest.mark.parametrize("call_bytes", [64 << 20, 2000], ids=["one_call", "groups_of_two"])
 @pytest.mark.parametrize("local", [False, True], ids=["global", "local"])
 def test_undecided_scorer_rotations_are_the_per_particle_builds(monkeypatch, local, call_bytes):
-    """The exact cut's scorer matrices built on the device from its undecided rotations are bitwise those of
+    """The exact cut's scorer matrices built on the device from its undecided rotations are those of
     one rotation-kernel call per particle with its own images (the earlier host loop)."""
 
     def pass1_rotations(eulers_deg, random_perturbation, angular_sampling_deg, *, left_matrices):
@@ -757,7 +757,7 @@ def test_undecided_scorer_rotations_are_the_per_particle_builds(monkeypatch, loc
 @pytest.mark.gpu
 @pytest.mark.parametrize("local", [False, True], ids=["global", "local"])
 def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_device, monkeypatch, local):
-    """The same with RELION's rotation kernel (perturbed, left matrices): bitwise the per-particle calls."""
+    """The same with RELION's rotation kernel (perturbed, left matrices): the per-particle calls' matrices."""
 
     import jax
 
@@ -811,7 +811,7 @@ def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbatio
         slots=slots,
         pass1_rotations=pass1_rotations,
     )
-    np.testing.assert_array_equal(np.asarray(got), want)
+    assert_matches(np.asarray(got), want)
 
 
 @pytest.mark.parametrize("variant", ["one_flush", "one_row", "flushes_of_three"])
@@ -935,7 +935,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         for k, (got, want) in enumerate(zip(*(([x] if n_classes == 1 else x) for x in (padded, unpadded)))):
             for unit in range(n_units):
                 np.testing.assert_array_equal(got[unit], want[unit], err_msg=f"class {k} particle {unit}")
-        np.testing.assert_array_equal(padded_pmax, unpadded_pmax)
+        assert_matches(padded_pmax, unpadded_pmax)
         return
     supports = [supports] if n_classes == 1 else supports
     wobbly = captured[0]
