@@ -382,17 +382,12 @@ def run_vdam_iterations(
             uniform_class_direction_prior=uniform_class_direction_prior,
         )
         full_class_sums = meta.get("class_posterior_sums_full")
-        if full_class_sums is None:
-            full_class_sums = meta.get("class_posterior_sums")
-            fraction_source = "retained_fallback"
-        else:
-            fraction_source = "full"
         if full_class_sums is not None:
             full_class_sums = np.asarray(full_class_sums, dtype=np.float64)
             class_mass = float(np.sum(full_class_sums))
             if full_class_sums.shape == (current.K,) and np.isfinite(class_mass) and class_mass > 0.0:
                 meta["class_posterior_fraction_by_class"] = (full_class_sums / class_mass).tolist()
-                meta["class_posterior_fraction_source"] = fraction_source
+                meta["class_posterior_fraction_source"] = "full"
         retained_class_sums = meta.get("class_posterior_sums")
         if retained_class_sums is not None:
             retained_class_sums = np.asarray(retained_class_sums, dtype=np.float64)
