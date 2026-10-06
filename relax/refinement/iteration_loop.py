@@ -521,6 +521,31 @@ def class_maximization(
     )
 
 
+class PublishedAccuracy(NamedTuple):
+    """The latest completed expected-accuracy estimate, as the run reports it.
+
+    Its trials (half-1 local rows and particle ids; None before the first estimate) and RELION's per-class
+    ``MlModel::acc_rot``/``acc_trans`` for model.star (zero until the first estimate, ml_model.cpp:68).
+    """
+
+    trial_local_indices: np.ndarray | None
+    trial_particle_ids: np.ndarray | None
+    acc_rot_per_class: np.ndarray
+    acc_trans_per_class_angstrom: np.ndarray
+
+    @classmethod
+    def before_first_estimate(cls, n_classes, acc_rot_per_class=None, acc_trans_per_class_angstrom=None):
+        """No estimate yet in this run: no trials; the continued run's per-class values, else zeros."""
+        if acc_rot_per_class is None:
+            return cls(None, None, np.zeros(n_classes, dtype=np.float64), np.zeros(n_classes, dtype=np.float64))
+        return cls(
+            None,
+            None,
+            np.array(acc_rot_per_class, dtype=np.float64),
+            np.array(acc_trans_per_class_angstrom, dtype=np.float64),
+        )
+
+
 class K1Maximization(NamedTuple):
     """What a K=1 M-step leaves for the rest of its iteration (the model is written in place)."""
 
@@ -1030,8 +1055,6 @@ def refine_single_volume(
     )
     tau2_update_details = None
     tau2_update_details_per_half = None
-    expected_accuracy_trial_local_indices = None
-    expected_accuracy_trial_particle_ids = None
     if int(schedule.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
 
@@ -1134,10 +1157,7 @@ def refine_single_volume(
             )
         else:
             random_perturbation = 0.0
-        # RELION's per-class MlModel::acc_rot/acc_trans for model.star: zero until the
-        # first expected-accuracy estimate (ml_model.cpp:68), then the latest estimate.
-        model_acc_rot_per_class = np.zeros(n_classes, dtype=np.float64)
-        model_acc_trans_per_class = np.zeros(n_classes, dtype=np.float64)
+        published_accuracy = PublishedAccuracy.before_first_estimate(n_classes)
     else:
         # --- A continued run starts from the run files of an earlier run (RELION --continue) ---
         # The snapshot replaces every value the next numbered iteration reads, so the
@@ -1191,12 +1211,9 @@ def refine_single_volume(
                 for prior, order in zip(direction_priors, saved_orders, strict=True)
             ]
         random_perturbation = float(resume.random_perturbation)
-        if resume.acc_rot_per_class is not None:
-            model_acc_rot_per_class = np.array(resume.acc_rot_per_class, dtype=np.float64)
-            model_acc_trans_per_class = np.array(resume.acc_trans_per_class_angstrom, dtype=np.float64)
-        else:
-            model_acc_rot_per_class = np.zeros(n_classes, dtype=np.float64)
-            model_acc_trans_per_class = np.zeros(n_classes, dtype=np.float64)
+        published_accuracy = PublishedAccuracy.before_first_estimate(
+            n_classes, resume.acc_rot_per_class, resume.acc_trans_per_class_angstrom
+        )
         logger.info(
             "Continuing after numbered iteration %d: current_size=%d healpix_order=%d "
             "local_search=%s resolution=%.3f A",
@@ -1556,10 +1573,12 @@ def refine_single_volume(
             # The estimate, or infinity when it was due and could not be made (convergence stays fail-closed).
             state.acc_rot, state.acc_trans = iteration_accuracy.sampling_accuracy
         if iteration_accuracy.published:
-            expected_accuracy_trial_local_indices = iteration_accuracy.trial_local_indices
-            expected_accuracy_trial_particle_ids = iteration_accuracy.trial_particle_ids
-            model_acc_rot_per_class = iteration_accuracy.acc_rot_per_class.copy()
-            model_acc_trans_per_class = iteration_accuracy.acc_trans_per_class_angstrom.copy()
+            published_accuracy = PublishedAccuracy(
+                iteration_accuracy.trial_local_indices,
+                iteration_accuracy.trial_particle_ids,
+                iteration_accuracy.acc_rot_per_class.copy(),
+                iteration_accuracy.acc_trans_per_class_angstrom.copy(),
+            )
 
         # Accuracy and the preceding iteration's stall counters select this
         # expectation's grid; completed-iteration updates remain after M-step.
@@ -1887,7 +1906,7 @@ def refine_single_volume(
                 "convergence_state": state,
                 **_numbered_result_metadata(
                     hard_assignments, frozen_initial_scoring_state_sha256,
-                    expected_accuracy_trial_local_indices, expected_accuracy_trial_particle_ids,
+                    published_accuracy.trial_local_indices, published_accuracy.trial_particle_ids,
                     setup_phase_seconds,
                 ),
                 "final_all_data_ran": False,
@@ -2417,8 +2436,8 @@ def refine_single_volume(
                 incr_size=incr_size_after,
                 has_high_fsc_at_limit=high_fsc_after,
                 random_perturbation=random_perturbation,
-                acc_rot_per_class=model_acc_rot_per_class,
-                acc_trans_per_class_angstrom=model_acc_trans_per_class,
+                acc_rot_per_class=published_accuracy.acc_rot_per_class,
+                acc_trans_per_class_angstrom=published_accuracy.acc_trans_per_class_angstrom,
             )
             snapshot = snapshot_capture.finish(
                 snapshot,
@@ -2582,7 +2601,7 @@ def refine_single_volume(
             "convergence_state": state,
             **_numbered_result_metadata(
                 hard_assignments, frozen_initial_scoring_state_sha256,
-                expected_accuracy_trial_local_indices, expected_accuracy_trial_particle_ids,
+                published_accuracy.trial_local_indices, published_accuracy.trial_particle_ids,
                 setup_phase_seconds,
             ),
             "final_all_data_ran": False,
@@ -2719,7 +2738,7 @@ def refine_single_volume(
     # Setup and numbered-iteration metadata retain their existing caller ownership.
     final_result.update(_numbered_result_metadata(
         hard_assignments, frozen_initial_scoring_state_sha256,
-        expected_accuracy_trial_local_indices, expected_accuracy_trial_particle_ids,
+        published_accuracy.trial_local_indices, published_accuracy.trial_particle_ids,
         setup_phase_seconds,
     ))
     return final_result
