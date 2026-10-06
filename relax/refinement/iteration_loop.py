@@ -837,11 +837,6 @@ def refine_single_volume(
     n_classes = k_class.n_classes
     sealed_sampling_state = debug.sealed_sampling_state
 
-    if options.parity.perturb_replay_restart_state_iterations:
-        logger.info(
-            "Perturbation replay restart provenance: saved-state iterations=%s",
-            list(options.parity.perturb_replay_restart_state_iterations),
-        )
 
     setup_t0 = time.time()
     setup_phase_seconds = {}
@@ -888,19 +883,10 @@ def refine_single_volume(
     # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
-    consistency = require_consistency_route(options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves)
-    if type(source) is InputSource and any(
-        value is not None
-        for value in (
-            replay.replay_iteration_overrides, parity.perturb_replay_relion_dir, replay.final_replay_override,
-            replay.final_replay_reference_maps, parity.final_sampling_replay_relion_dir,
-        )
-    ) or (type(source) is InputSource and debug.environment.final_all_data_replay_last_numbered_state):
-        # Until the replay settings leave the options (code rule 15), they need the source that reads them.
-        raise ValueError(
-            "the options name RELION state to replay but the run has the native input source; "
-            "pass source=relax.parity.relion_replay_source.RelionReplaySource.from_options(options)"
-        )
+    consistency = require_consistency_route(
+        options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,
+        replays_relion_state=source.replays_relion_state(),
+    )
     relion_translation_angle_scale = (
         # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
@@ -923,8 +909,10 @@ def refine_single_volume(
         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
         n_classes=n_classes,
         init_relion_iteration=init_relion_iteration,
-        perturb_replay_relion_dir=parity.perturb_replay_relion_dir,
-        replay_iteration_overrides=replay.replay_iteration_overrides,
+        perturb_replay_relion_dir=None if source.relion_replay is None else source.relion_replay.perturb_replay_relion_dir,
+        replay_iteration_overrides=(
+            None if source.relion_replay is None else source.relion_replay.replay_iteration_overrides
+        ),
         sealed_sampling_state=sealed_sampling_state,
         sealed_scoring_context=debug.sealed_scoring_context,
         allow_replayed_bpref_particle_order=parity.allow_replayed_bpref_particle_order,
@@ -1112,6 +1100,10 @@ def refine_single_volume(
         relion_half_inputs=halves,
         experiment_datasets=experiment_datasets,
         k_class_enabled=k_class_enabled,
+        # The STAR replay's restart iterations (a strict Class3D replay restarts its follower scales with them).
+        restart_state_iterations=(
+            () if source.relion_replay is None else source.relion_replay.perturb_replay_restart_state_iterations
+        ),
     )
 
     if resume is None:
@@ -1498,6 +1490,7 @@ def refine_single_volume(
 
         reference_model.maps = _maybe_debug_replay_relion_references(
             reference_model, options, iteration=iteration, replay_dir=star_directory,
+            replay_prefix=None if source.relion_replay is None else source.relion_replay.perturb_replay_relion_prefix,
             volume_shape=volume_shape,
         )
 

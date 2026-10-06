@@ -10,8 +10,8 @@ from relax.diagnostics.relion_replay import (
 from relax.diagnostics.replay_inputs import (
     select_final_replay_fields,
 )
+from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement.iteration_loop import refine_single_volume
-from relax.refinement.refinement_options import RelionParityOptions, ReplayState
 
 
 def _source_override():
@@ -118,15 +118,12 @@ def test_final_replay_group_selection_fails_closed(value):
 
 
 def test_final_only_options_reach_refinement_entry():
-    assert "options" in inspect.signature(refine_single_volume).parameters
+    """A final-only replay reaches the controller through its input source (code rule 15)."""
+    assert "source" in inspect.signature(refine_single_volume).parameters
 
-    replay_fields = {field.name for field in dataclasses.fields(ReplayState)}
-    assert "final_replay_override" in replay_fields
-    assert "final_replay_reference_maps" in replay_fields
-    assert "final_replay_source_iteration" in replay_fields
-
-    parity_fields = {field.name for field in dataclasses.fields(RelionParityOptions)}
-    assert "final_sampling_replay_relion_dir" in parity_fields
+    replay_fields = {field.name for field in dataclasses.fields(RelionReplay)}
+    assert {"final_replay_override", "final_replay_reference_maps", "final_replay_source_iteration",
+            "final_sampling_replay_relion_dir"} <= replay_fields
 
 
 def test_max_iter_999_binds_latest_finite_complete_oracle(tmp_path):

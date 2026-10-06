@@ -42,7 +42,6 @@ from relax.refinement.noise_updates import (
     NoiseModel,
     noise_model_from_pixels,
 )
-from relax.refinement.refinement_options import RefinementOptions
 from relax.relion import relion_metadata
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
@@ -471,11 +470,11 @@ def _load_relion_replay_reference(
     return reference
 
 
-def replay_k1_relion_references(reference_model, options, *, iteration: int, replay_dir, volume_shape):
+def replay_k1_relion_references(reference_model, options, *, iteration: int, replay_dir, replay_prefix, volume_shape):
     """The two K=1 scoring references: RELION's half maps at a state-swap probe's target, else the model's own.
 
-    ``replay_dir`` is the replay directory still live at this iteration. Reads ``reference_model.maps``;
-    from ``options``: ``debug.state_swap_probe``, ``parity.perturb_replay_relion_prefix`` and
+    ``replay_dir`` is the replay directory still live at this iteration and ``replay_prefix`` its file prefix.
+    Reads ``reference_model.maps``; from ``options``: ``debug.state_swap_probe`` and
     ``schedule.init_relion_iteration``.
     """
 
@@ -485,7 +484,7 @@ def replay_k1_relion_references(reference_model, options, *, iteration: int, rep
     return [
         _load_relion_replay_reference(
             relion_dir,
-            prefix=options.parity.perturb_replay_relion_prefix,
+            prefix=replay_prefix,
             relion_iter=int(options.schedule.init_relion_iteration) + int(iteration),
             iteration_number=int(iteration) + 1,
             half_idx=half_idx,
@@ -496,12 +495,12 @@ def replay_k1_relion_references(reference_model, options, *, iteration: int, rep
     ]
 
 
-def replay_class_relion_references(reference_model, options, *, iteration: int, replay_dir, volume_shape):
+def replay_class_relion_references(reference_model, options, *, iteration: int, replay_dir, replay_prefix, volume_shape):
     """Each half's class stack of scoring references: RELION's class maps at a state-swap probe's target.
 
     Elsewhere the model's own maps. ``replay_dir`` is the replay directory still live at this iteration.
     Reads ``reference_model.maps``; from ``options``: ``debug.state_swap_probe``,
-    ``parity.perturb_replay_relion_prefix``, ``schedule.init_relion_iteration`` and ``k_class.n_classes``.
+    ``schedule.init_relion_iteration`` and ``k_class.n_classes`` (``replay_prefix``: the replay's file prefix).
     """
 
     relion_dir = _state_swap_reference_dir(options, replay_dir, iteration=iteration)
@@ -512,7 +511,7 @@ def replay_class_relion_references(reference_model, options, *, iteration: int, 
             [
                 _load_relion_replay_reference(
                     relion_dir,
-                    prefix=options.parity.perturb_replay_relion_prefix,
+                    prefix=replay_prefix,
                     relion_iter=int(options.schedule.init_relion_iteration) + int(iteration),
                     iteration_number=int(iteration) + 1,
                     half_idx=half_idx,
@@ -527,7 +526,7 @@ def replay_class_relion_references(reference_model, options, *, iteration: int, 
     ]
 
 
-def _maybe_debug_replay_relion_references(reference_model, options, *, iteration: int, replay_dir, volume_shape):
+def _maybe_debug_replay_relion_references(reference_model, options, *, iteration: int, replay_dir, replay_prefix, volume_shape):
     """Replace scoring references with RELION maps for a state-swap probe.
 
     This is the one remaining mode decision of the reference replay (read from
@@ -538,10 +537,12 @@ def _maybe_debug_replay_relion_references(reference_model, options, *, iteration
 
     if int(options.k_class.n_classes) == 1:
         return replay_k1_relion_references(
-            reference_model, options, iteration=iteration, replay_dir=replay_dir, volume_shape=volume_shape,
+            reference_model, options, iteration=iteration, replay_dir=replay_dir, replay_prefix=replay_prefix,
+            volume_shape=volume_shape,
         )
     return replay_class_relion_references(
-        reference_model, options, iteration=iteration, replay_dir=replay_dir, volume_shape=volume_shape,
+        reference_model, options, iteration=iteration, replay_dir=replay_dir, replay_prefix=replay_prefix,
+        volume_shape=volume_shape,
     )
 
 
@@ -1152,7 +1153,7 @@ def _sealed_sampling_rotation_ids(sealed_sampling_state):
     ).astype(np.int64, copy=False)
 
 
-def _restore_convergence_state_from_replay_restart(state, options: RefinementOptions) -> None:
+def _restore_convergence_state_from_replay_restart(state, replay, init_relion_iteration) -> None:
     """Restore convergence counters from a RELION optimiser/model STAR at a
     perturbation-replay restart iteration.
 
@@ -1163,15 +1164,14 @@ def _restore_convergence_state_from_replay_restart(state, options: RefinementOpt
     which handles the same ``perturb_replay_relion_dir`` source per mid-loop
     iteration.
     """
-    parity, schedule = options.parity, options.schedule
-    init_relion_iteration = int(schedule.init_relion_iteration)
+    init_relion_iteration = int(init_relion_iteration)
     init_opt_star = os.path.join(
-        parity.perturb_replay_relion_dir,
-        f"{parity.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_optimiser.star",
+        replay.perturb_replay_relion_dir,
+        f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_optimiser.star",
     )
     init_model_star = os.path.join(
-        parity.perturb_replay_relion_dir,
-        f"{parity.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_half1_model.star",
+        replay.perturb_replay_relion_dir,
+        f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_half1_model.star",
     )
     if os.path.exists(init_model_star):
         model_meta = read_relion_model_metadata(init_model_star)

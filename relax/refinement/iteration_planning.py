@@ -359,6 +359,10 @@ def initialize_refinement_state(
             n_classes=n_classes,
             grid_size=grid_size,
             options=options,
+            replays_relion_trajectory=source.relion_replay is not None and (
+                source.relion_replay.perturb_replay_relion_dir is not None
+                or source.relion_replay.replay_iteration_overrides is not None
+            ),
         )
         state = resume.refinement_state(state)
     return state

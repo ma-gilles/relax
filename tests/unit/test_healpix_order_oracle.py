@@ -71,7 +71,7 @@ def test_sampling_validation_preserves_payloads_and_input_options(orders):
         adaptive=AdaptiveOptions(relion_current_sizes=current_sizes, relion_healpix_orders=orders),
         parity=RelionParityOptions(
             tau2_fudge=4.0,
-            perturb_replay_relion_prefix="custom",
+            perturb_factor=0.25,
             emulate_relion_firstiter_cc=True,
             image_fourier_backend="jax_gpu",
         ),

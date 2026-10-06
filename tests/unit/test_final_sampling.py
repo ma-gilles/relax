@@ -15,7 +15,6 @@ from relax.refinement.refinement_options import (
     RefinementOptions,
     RefinementSchedule,
     RelionParityOptions,
-    ReplayState,
 )
 
 pytestmark = pytest.mark.unit
@@ -78,13 +77,13 @@ def preparation(monkeypatch):
     return inputs, events, host_grid
 
 
-def _replay_source(inputs, *, star_directory):
-    """The final pass's input source for ``inputs``' options when the numbered STAR replay's directory, still
-    live at the end of the numbered iterations, is ``star_directory`` (None: the replay ended or never ran)."""
-    inputs["options"] = replace(
-        inputs["options"], parity=replace(inputs["options"].parity, perturb_replay_relion_dir=star_directory),
+def _replay_source(inputs, *, star_directory, **replay):
+    """The final pass's input source when the numbered STAR replay's directory, still live at the end of the
+    numbered iterations, is ``star_directory`` (None: the replay ended or never ran); ``replay`` are further
+    ``RelionReplay`` fields."""
+    inputs["source"] = relion_replay_source.RelionReplaySource(
+        relion_replay_source.RelionReplay(perturb_replay_relion_dir=star_directory, **replay), inputs["options"],
     )
-    inputs["source"] = relion_replay_source.RelionReplaySource(inputs["options"])
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -177,11 +176,11 @@ def test_replay_uses_its_sampling_iteration_without_advancing_native_rng(prepara
 @pytest.mark.parametrize("active_replay, factor, applied", [(True, 0.5, False), (False, 0.5, True), (False, 0.0, False)])
 def test_missing_final_star_preserves_zero_application_and_rng_semantics(preparation, monkeypatch, tmp_path, active_replay, factor, applied):
     inputs, events, _ = preparation
-    inputs["options"] = replace(
-        inputs["options"],
-        parity=RelionParityOptions(final_sampling_replay_relion_dir=str(tmp_path), perturb_factor=factor),
+    inputs["options"] = replace(inputs["options"], parity=RelionParityOptions(perturb_factor=factor))
+    _replay_source(
+        inputs, star_directory=str(tmp_path) if active_replay else None,
+        final_sampling_replay_relion_dir=str(tmp_path),
     )
-    _replay_source(inputs, star_directory=str(tmp_path) if active_replay else None)
     monkeypatch.setattr(relion_replay_source, "select_final_sampling_star", lambda *a, **kw: (None, None, []))
     result = final_sampling.prepare_final_sampling(**inputs)
     assert [name for name, _ in events] == (["perturb"] if applied else [])
@@ -191,8 +190,7 @@ def test_missing_final_star_preserves_zero_application_and_rng_semantics(prepara
 
 def test_strict_final_replay_requires_its_files(preparation, tmp_path):
     inputs, events, _ = preparation
-    inputs.update(options=replace(inputs["options"], replay=ReplayState(replay_iteration_overrides=[{}])))
-    _replay_source(inputs, star_directory=str(tmp_path))
+    _replay_source(inputs, star_directory=str(tmp_path), replay_iteration_overrides=[{}])
     with pytest.raises(RuntimeError, match="Strict RELION final all-data replay requires"):
         final_sampling.prepare_final_sampling(**inputs)
     assert not events

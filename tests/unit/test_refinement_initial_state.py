@@ -10,6 +10,7 @@ from helpers.float_compare import assert_matches
 
 from relax.helpers.convergence import RefinementState
 from relax.helpers.resolution import ImageGeometry
+from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.iteration_snapshot import IterationSnapshot, refinement_state_fields
 from relax.refinement.refinement_options import (
@@ -29,13 +30,13 @@ def _geometry(pixel_size=2.25):
     return ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=pixel_size)
 
 
-def _initialize(options, *, subtomogram=False, pixel_size=2.25, dtype=np.float32):
-    """The start-up state with the input source the command chooses for ``options``."""
+def _initialize(options, *, subtomogram=False, pixel_size=2.25, dtype=np.float32, relion_replay=None):
+    """The start-up state with the input source the command builds for ``relion_replay`` (None: native)."""
     from relax.parity.relion_replay_source import RelionReplaySource
 
     return initialize_refinement_state(
         options, _geometry(pixel_size), subtomogram=subtomogram, dtype=dtype,
-        source=RelionReplaySource.from_options(options),
+        source=RelionReplaySource.for_run(relion_replay, options),
     )
 
 
@@ -109,9 +110,9 @@ def test_replay_restart_uses_recorded_resolution_accuracy_and_stalls_before_fres
     )
     options = RefinementOptions(
         schedule=RefinementSchedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
-        parity=RelionParityOptions(perturb_replay_relion_dir=str(tmp_path), relion_firstiter_ini_high_angstrom=30.0),
+        parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=30.0),
     )
-    state = _initialize(options)
+    state = _initialize(options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
     assert_matches(state.current_resolution, 8.0)
     assert_matches(state.previous_resolution, 8.0)
     assert_matches(state.acc_rot, 0.75)
@@ -126,12 +127,11 @@ def test_sealed_state_suppresses_restart_read_and_frozen_fields_override_resolut
     (tmp_path / 'run_it002_half1_model.star').write_text('data_model_general\n')
     options = RefinementOptions(
         schedule=RefinementSchedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
-        parity=RelionParityOptions(perturb_replay_relion_dir=str(tmp_path)),
         debug=EngineDebugOptions(sealed_sampling_state={}),
         replay=ReplayState(init_refinement_state_fields=dict(current_resolution=12.0,
                                                             previous_resolution=12.0, nr_iter_wo_resol_gain=2)),
     )
-    state = _initialize(options)
+    state = _initialize(options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
     assert state.healpix_order == options.schedule.init_healpix_order
     assert state.nr_iter_wo_resol_gain == 2
     assert_matches(state.current_resolution, 12.0)

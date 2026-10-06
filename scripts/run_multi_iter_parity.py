@@ -1457,7 +1457,7 @@ def main():
 
     from relax.diagnostics import observers
     from relax.helpers.map_io import write_map_from_ft
-    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
     from relax.refinement.refinement_options import (
@@ -2475,9 +2475,6 @@ def main():
             relion_optics_pixel_sizes=relion_optics_pixel_sizes,
             relion_model_pixel_size=relion_model_pixel_size,
             perturb_seed=optimizer_random_seed,
-            perturb_replay_relion_dir=str(relion_dir),
-            perturb_replay_relion_prefix=run_prefix,
-            perturb_replay_max_iter=args.replay_override_max_iter,
             emulate_relion_firstiter_cc=do_firstiter_cc,
             relion_firstiter_ini_high_angstrom=relion_ini_high if args.iter == 0 else None,
             first_iteration_score_mode=args.first_iteration_score_mode,
@@ -2501,8 +2498,6 @@ def main():
             init_previous_best_translations=[trans_h1, trans_h2],
             init_previous_best_rotation_eulers=[euler_h1, euler_h2],
             init_direction_prior=direction_prior,
-            replay_iteration_overrides=replay_iteration_overrides,
-            final_replay_override=explicit_final_replay_override,
         ),
         debug=EngineDebugOptions(
             disable_adjoint_y=args.disable_adjoint_y,
@@ -2525,7 +2520,16 @@ def main():
             ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
             + observers.observers_from_environment()
         ),
-        source=RelionReplaySource.from_options(run_options),
+        source=RelionReplaySource.for_run(
+            RelionReplay(
+                perturb_replay_relion_dir=str(relion_dir),
+                perturb_replay_relion_prefix=run_prefix,
+                perturb_replay_max_iter=args.replay_override_max_iter,
+                replay_iteration_overrides=replay_iteration_overrides,
+                final_replay_override=explicit_final_replay_override,
+            ),
+            run_options,
+        ),
     )
     del run_options
     elapsed = time.time() - t0

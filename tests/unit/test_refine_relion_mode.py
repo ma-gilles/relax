@@ -97,6 +97,7 @@ from relax.local.local_layout import (
     build_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
 )
+from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
 from relax.refinement import finalization, half_scoring, local_sampling, local_search_iteration
 from relax.refinement import mean_helpers as mean_helpers_module
@@ -600,12 +601,10 @@ def testrefine_single_volume_clears_perturb_replay_dir_past_cutoff_source(monkey
 def test_replay_source_supplies_the_star_directory_up_to_the_cutoff(iteration, replay_dir, cutoff, expected_directory):
     """The controller samples natively where the source supplies no STAR directory and no sealed sampling state
     set the iteration (the sealed state is the controller's own test)."""
-    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 
-    options = RefinementOptions(
-        parity=RelionParityOptions(perturb_replay_max_iter=cutoff, perturb_replay_relion_dir=replay_dir),
-    )
-    assert RelionReplaySource(options).relion_run_directory(iteration) == expected_directory
+    replay = RelionReplay(perturb_replay_max_iter=cutoff, perturb_replay_relion_dir=replay_dir)
+    assert RelionReplaySource(replay, RefinementOptions()).relion_run_directory(iteration) == expected_directory
 
 
 def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_rounding(monkeypatch, tmp_path):
@@ -1108,11 +1107,11 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=0, init_current_size=16, init_healpix_order=2),
-            replay=ReplayState(final_replay_override={
-                "noise_variance": replayed_noise,
-                "translation_sigma_angstrom_per_half": [3.0, 4.0],
-            }) if replace_noise else ReplayState(),
         ),
+        relion_replay=RelionReplay(final_replay_override={
+            "noise_variance": replayed_noise,
+            "translation_sigma_angstrom_per_half": [3.0, 4.0],
+        }) if replace_noise else None,
     )
     # The final pass's result, with the set-up and numbered metadata added by the controller.
     assert result.maps is marker.maps and result.history is marker.history
@@ -1169,8 +1168,8 @@ def test_final_all_data_runs_with_cold_start_only_override(
             schedule=RefinementSchedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
             batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
-            replay=ReplayState(replay_iteration_overrides=[{}, None]),
         ),
+        relion_replay=RelionReplay(replay_iteration_overrides=[{}, None]),
     )
 
     assert result.convergence_state.has_converged is True
@@ -4413,12 +4412,14 @@ def fake_global_estep(monkeypatch):
 
 
 
-def _refine_replaying(*args, options, **kwargs):
-    """``refine_single_volume`` with the input source the command chooses for ``options`` (its replay slots or
-    RELION replay directory)."""
+def _refine_replaying(*args, options, relion_replay=None, **kwargs):
+    """``refine_single_volume`` with the input source the command builds for ``relion_replay`` (a
+    ``RelionReplay``; None: the native source)."""
     from relax.parity.relion_replay_source import RelionReplaySource
 
-    return refine_single_volume(*args, options=options, source=RelionReplaySource.from_options(options), **kwargs)
+    return refine_single_volume(
+        *args, options=options, source=RelionReplaySource.for_run(relion_replay, options), **kwargs,
+    )
 
 @pytest.fixture(autouse=True)
 def _clear_parity_dump_env(monkeypatch):
@@ -5488,12 +5489,12 @@ class TestRelionModeSmokeTest:
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
                 batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
-                replay=ReplayState(
-                    replay_iteration_overrides=[
-                        None,
-                        {"noise_variance": [replay_noise_h1, replay_noise_h2]},
-                    ]
-                ),
+            ),
+            relion_replay=RelionReplay(
+                replay_iteration_overrides=[
+                    None,
+                    {"noise_variance": [replay_noise_h1, replay_noise_h2]},
+                ]
             ),
         )
 
@@ -8690,9 +8691,10 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
                 init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()],
             ),
-            parity=RelionParityOptions(perturb_factor=0.5, perturb_seed=0, perturb_replay_relion_dir=str(tmp_path)),
+            parity=RelionParityOptions(perturb_factor=0.5, perturb_seed=0),
             local_search=LocalSearchOptions(local_search_translation_prior_mode="coarse"),
         ),
+        relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)),
     )
 
     assert recorded_translation_reference_grids
@@ -8806,14 +8808,14 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
         ),
     )
 
-    replay = (
-        ReplayState(replay_iteration_overrides=[{
+    relion_replay, replay = (
+        (RelionReplay(replay_iteration_overrides=[{
             "local_search": True,
             "healpix_order": 4,
             "previous_best_rotation_eulers": [prev_h1, prev_h2],
-        }])
+        }]), ReplayState())
         if replay_source == "iteration_override"
-        else ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2])
+        else (None, ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]))
     )
 
     _refine_replaying(
@@ -8835,6 +8837,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             replay=replay,
         ),
+        relion_replay=relion_replay,
     )
 
     assert local_calls
@@ -9043,8 +9046,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 n_classes=n_classes,
                 init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
-            replay=ReplayState(replay_iteration_overrides=[{"class_tau2": class_tau2}]),
         ),
+        relion_replay=RelionReplay(replay_iteration_overrides=[{"class_tau2": class_tau2}]),
     )
 
     assert len(result.history.tau2_radial_trajectory) == 1
@@ -9101,7 +9104,9 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 n_classes=n_classes,
                 init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
-            replay=ReplayState(replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}]),
+        ),
+        relion_replay=RelionReplay(
+            replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}],
         ),
     )
 
@@ -9130,7 +9135,9 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 n_classes=n_classes,
                 init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
-            replay=ReplayState(replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}]),
+        ),
+        relion_replay=RelionReplay(
+            replay_iteration_overrides=[{"class_tau2": class_tau2}, {"class_tau2": same_iter_tau2}],
         ),
     )
 

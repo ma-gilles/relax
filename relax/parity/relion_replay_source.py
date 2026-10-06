@@ -6,14 +6,16 @@ STAR replay is live (``--perturb_replay_relion_dir`` up to ``perturb_replay_max_
 controls and direction priors of its numbered STAR files. ``relax.diagnostics.relion_replay`` reads and
 installs them.
 
-While the replay's settings are still fields of the run's options, the source reads them there
-(``from_options``); they are not copied.
+The command resolves what to replay into a ``RelionReplay`` and builds the source
+(``RelionReplaySource.for_run``); the run's options hold none of it.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -35,53 +37,133 @@ from relax.diagnostics.relion_replay import (
     read_optimiser_accuracy_replay,
     select_final_sampling_star,
 )
+from relax.helpers.env_flags import parse_env_true_flag
 from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.mean_helpers import class_mixture_from_weights
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState
-from relax.refinement.refinement_options import FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV
+from relax.refinement.refinement_options import (
+    FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
+    FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV,
+)
 from relax.relion.relion_metadata import read_relion_sampling_metadata
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
 
-class RelionReplaySource(InputSource):
-    """Replays a RELION run's per-iteration state into the numbered iterations of ``options``' run."""
+@dataclass(frozen=True)
+class RelionReplay:
+    """What a run replays from a RELION run, as the command resolved it.
 
-    def __init__(self, options):
+    ``perturb_replay_relion_dir`` (``--perturb_replay_relion_dir``): the run whose numbered sampling, model and
+    optimiser STAR files set each iteration's sampling, priors and convergence controls, with their file
+    ``perturb_replay_relion_prefix``, up to ``perturb_replay_max_iter`` iterations (None: all; 0: none after the
+    start-up state; ``--replay-override-max-iter`` of scripts/run_multi_iter_parity.py), its perturbation
+    precision and the iterations whose saved RNG state a restart resumes from.
+    ``replay_iteration_overrides``: one slot (a dict, or None) per numbered iteration, the state installed in
+    it (the numbered STAR replay's, ``--relion_init_dir``'s run_it000 state, captured projectors).
+    ``final_replay_*`` and ``final_sampling_replay_relion_dir``: a final-only replay
+    (``--final-replay-relion-dir``). The last two switches force (``RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE``)
+    or forbid (``RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE``) replaying the last numbered state in
+    the final pass; their defaults read the environment when the record is built.
+    """
+
+    perturb_replay_relion_dir: str | None = None
+    perturb_replay_relion_prefix: str = "run"
+    perturb_replay_max_iter: int | None = None
+    perturb_replay_precision: Literal["auto", "seed_exact", "star"] = "auto"
+    perturb_replay_restart_state_iterations: tuple[int, ...] = ()
+    replay_iteration_overrides: Any | None = None
+    final_replay_override: Any | None = None
+    final_replay_reference_maps: Any | None = None
+    final_replay_source_iteration: int | None = None
+    final_sampling_replay_relion_dir: str | None = None
+    final_all_data_replay_last_numbered_state: bool = field(
+        default_factory=lambda: parse_env_true_flag(FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV)
+    )
+    final_all_data_disable_replay_last_numbered_state: bool = field(
+        default_factory=lambda: parse_env_true_flag(FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV)
+    )
+
+    def __post_init__(self):
+        if self.perturb_replay_max_iter is not None and self.perturb_replay_max_iter < 0:
+            raise ValueError(f"perturb_replay_max_iter must be non-negative, got {self.perturb_replay_max_iter!r}")
+        iterations = tuple(sorted({int(value) for value in self.perturb_replay_restart_state_iterations}))
+        if any(value < 0 for value in iterations):
+            raise ValueError("perturbation replay restart-state iterations must be non-negative")
+        if iterations and self.perturb_replay_relion_dir is None:
+            raise ValueError("perturbation replay restart-state iterations require perturb_replay_relion_dir")
+        object.__setattr__(self, "perturb_replay_restart_state_iterations", iterations)
+
+    @property
+    def replays(self) -> bool:
+        """Whether there is anything to replay: override slots, a STAR replay directory, a final-pass replay
+        (its override, reference maps or sampling directory) or the forced last-numbered-state replay."""
+        return any(
+            value is not None
+            for value in (
+                self.replay_iteration_overrides, self.perturb_replay_relion_dir, self.final_replay_override,
+                self.final_replay_reference_maps, self.final_sampling_replay_relion_dir,
+            )
+        ) or self.final_all_data_replay_last_numbered_state
+
+
+class RelionReplaySource(InputSource):
+    """Replays ``replay`` (a RELION run's state) into the numbered iterations and the final pass of a run with
+    ``options``."""
+
+    def __init__(self, replay: RelionReplay, options):
+        self.replay = replay
         self.options = options
         self._cutoff_announced = False
         # The STAR directory of the last iteration asked about: the one the final pass replays from.
-        self._live_directory = options.parity.perturb_replay_relion_dir
+        self._live_directory = replay.perturb_replay_relion_dir
+        if replay.perturb_replay_restart_state_iterations:
+            logger.info(
+                "Perturbation replay restart provenance: saved-state iterations=%s",
+                list(replay.perturb_replay_restart_state_iterations),
+            )
 
     @classmethod
-    def from_options(cls, options) -> InputSource:
-        """The source the run's options ask for: this replay when they name override slots, a STAR replay
-        directory or a final-pass replay, else the native source."""
-        return cls(options) if replays(options) else InputSource()
+    def for_run(cls, replay: RelionReplay | None, options) -> InputSource:
+        """The source of a run with ``options`` that replays ``replay``: the native source when there is
+        nothing to replay."""
+        return cls(replay, options) if replay is not None and replay.replays else InputSource()
+
+    @property
+    def relion_replay(self) -> RelionReplay:
+        return self.replay
+
+    def replays_relion_state(self):
+        replay = self.replay
+        return any(
+            value is not None
+            for value in (
+                replay.perturb_replay_relion_dir, replay.replay_iteration_overrides, replay.final_replay_override,
+                replay.final_replay_reference_maps,
+            )
+        )
 
     def _slot(self, iteration: int):
-        slots = self.options.replay.replay_iteration_overrides
+        slots = self.replay.replay_iteration_overrides
         return slots[iteration] if slots is not None and iteration < len(slots) else None
 
     def _star_directory(self, iteration: int):
-        parity = self.options.parity
-        if parity.perturb_replay_relion_dir is None or _past_perturb_replay_max_iter(iteration, parity.perturb_replay_max_iter):
+        if self.replay.perturb_replay_relion_dir is None or _past_perturb_replay_max_iter(iteration, self.replay.perturb_replay_max_iter):
             return None
-        return parity.perturb_replay_relion_dir
+        return self.replay.perturb_replay_relion_dir
 
     def relion_run_directory(self, iteration):
         """The STAR replay's directory up to ``perturb_replay_max_iter`` (announced once when it ends), else None."""
-        parity = self.options.parity
         directory = self._live_directory = self._star_directory(iteration)
-        if directory is None and parity.perturb_replay_relion_dir is not None and not self._cutoff_announced:
+        if directory is None and self.replay.perturb_replay_relion_dir is not None and not self._cutoff_announced:
             self._cutoff_announced = True
             logger.info(
                 "Replay override: disabling RELION per-iteration STAR replay from "
                 "iteration %d onward (--replay-override-max-iter %d)",
                 iteration + 1,
-                parity.perturb_replay_max_iter,
+                self.replay.perturb_replay_max_iter,
             )
         return directory
 
@@ -91,14 +173,13 @@ class RelionReplaySource(InputSource):
         slot's (when the replay has numbered slots, or RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE asks and
         RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE does not forbid it). Installs the particle state
         in the ``halves`` and the priors in ``direction_priors`` in place, as apply_final_replay_state does."""
-        options, replay = self.options, self.options.replay
-        environment = options.debug.environment
+        options, replay = self.options, self.replay
         n_classes = int(options.k_class.n_classes)
         k_class_enabled = n_classes > 1
-        final_replay_override = replay.final_replay_override
+        final_replay_override = self.replay.final_replay_override
         sigma_offset, noise_model = inputs.sigma_offset, inputs.noise_model
-        disabled = environment.final_all_data_disable_replay_last_numbered_state
-        has_overrides = replay.replay_iteration_overrides is not None and len(replay.replay_iteration_overrides) > 0
+        disabled = self.replay.final_all_data_disable_replay_last_numbered_state
+        has_overrides = self.replay.replay_iteration_overrides is not None and len(self.replay.replay_iteration_overrides) > 0
         join_means = _prepare_final_replay_references(
             replay=replay,
             diagnostic_override=final_replay_override,
@@ -111,15 +192,15 @@ class RelionReplaySource(InputSource):
         replay_last_numbered_state = final_replay_override is not None or (
             not disabled
             and (
-                environment.final_all_data_replay_last_numbered_state
-                or _has_numbered_replay_iteration_overrides(replay.replay_iteration_overrides)
+                self.replay.final_all_data_replay_last_numbered_state
+                or _has_numbered_replay_iteration_overrides(self.replay.replay_iteration_overrides)
             )
         )
         if replay_last_numbered_state:
             override_index, override = _select_final_replay_override(
                 requested_index=numbered_iteration_count,
                 diagnostic_override=final_replay_override,
-                replay_overrides=replay.replay_iteration_overrides,
+                replay_overrides=self.replay.replay_iteration_overrides,
                 has_overrides=has_overrides,
                 logger=logger,
             )
@@ -153,17 +234,17 @@ class RelionReplaySource(InputSource):
         last_numbered_iteration = relion_iteration - 1
         active_replay_dir = self._live_directory
         replay_dir = (
-            parity.final_sampling_replay_relion_dir
-            if parity.final_sampling_replay_relion_dir is not None
+            self.replay.final_sampling_replay_relion_dir
+            if self.replay.final_sampling_replay_relion_dir is not None
             else active_replay_dir
         )
         if replay_dir is None:
             return native()
         star, source, candidates = select_final_sampling_star(
-            replay_dir, parity.perturb_replay_relion_prefix,
+            replay_dir, self.replay.perturb_replay_relion_prefix,
             final_iteration=relion_iteration,
             previous_iteration=last_numbered_iteration,
-            require_final_state=options.replay.replay_iteration_overrides is not None,
+            require_final_state=self.replay.replay_iteration_overrides is not None,
         )
         if star is not None:
             metadata = read_relion_sampling_metadata(star)
@@ -173,11 +254,11 @@ class RelionReplaySource(InputSource):
                 perturbation_factor=metadata["perturbation_factor"],
                 relion_iteration=replay_iteration,
                 replay_dir=str(replay_dir),
-                replay_prefix=parity.perturb_replay_relion_prefix,
+                replay_prefix=self.replay.perturb_replay_relion_prefix,
                 explicit_seed=parity.perturb_seed,
-                precision_mode=parity.perturb_replay_precision,
+                precision_mode=self.replay.perturb_replay_precision,
                 restart_state_iteration=_perturbation_restart_state_iteration(
-                    parity.perturb_replay_restart_state_iterations, replay_iteration,
+                    self.replay.perturb_replay_restart_state_iterations, replay_iteration,
                 ),
             )
             pixel_size = image_geometry.pixel_size_angstrom
@@ -195,7 +276,7 @@ class RelionReplaySource(InputSource):
             )
             _log_replayed_translation_grid_change(
                 settings, replay_dir=replay_dir,
-                replay_prefix=parity.perturb_replay_relion_prefix, n_classes=n_classes,
+                replay_prefix=self.replay.perturb_replay_relion_prefix, n_classes=n_classes,
             )
             logger.info(
                 "Perturbation replay: final all-data relion_iter=%d rp=%+.12g pf=%.3f "
@@ -221,7 +302,7 @@ class RelionReplaySource(InputSource):
         """The slot's captured Class3D prior, used when RELAX_KCLASS_REPLAY_TAU2 asks for it (validated always)."""
         shells, enabled, label = _class_tau2_replay(
             iteration=iteration, n_classes=n_classes, iter_replay_override=self._slot(iteration),
-            replay=self.options.replay, logger=logger,
+            replay=self.replay, logger=logger,
         )
         return ClassTau2(shells if enabled else None, label)
 
@@ -231,18 +312,18 @@ class RelionReplaySource(InputSource):
         options = self.options
         if (
             options.debug.sealed_sampling_state is not None
-            or options.parity.perturb_replay_relion_dir is None
+            or self.replay.perturb_replay_relion_dir is None
             or int(options.schedule.init_relion_iteration) <= 0
         ):
             return False
-        _restore_convergence_state_from_replay_restart(state, options)
+        _restore_convergence_state_from_replay_restart(state, self.replay, options.schedule.init_relion_iteration)
         return True
 
     def convergence_accuracy(self, iteration, accuracy):
         """RELION's numbered optimiser accuracies, while the STAR replay is live and no sealed state is."""
         return read_optimiser_accuracy_replay(
             replay_dir=self._star_directory(iteration),
-            replay_prefix=self.options.parity.perturb_replay_relion_prefix,
+            replay_prefix=self.replay.perturb_replay_relion_prefix,
             init_relion_iteration=self.options.schedule.init_relion_iteration,
             iteration=iteration,
             sealed_sampling_state=self.options.debug.sealed_sampling_state,
@@ -262,7 +343,7 @@ class RelionReplaySource(InputSource):
                 optimiser_star=accuracy.optimiser_star,
                 optimiser_iteration=accuracy.optimiser_iteration,
                 replay_dir=self._star_directory(iteration),
-                replay_prefix=self.options.parity.perturb_replay_relion_prefix,
+                replay_prefix=self.replay.perturb_replay_relion_prefix,
                 logger=logger,
             )
 
@@ -274,16 +355,16 @@ class RelionReplaySource(InputSource):
         parity = self.options.parity
         relion_iteration = self.options.schedule.init_relion_iteration + iteration + 1
         restart_iteration = _perturbation_restart_state_iteration(
-            parity.perturb_replay_restart_state_iterations, relion_iteration,
+            self.replay.perturb_replay_restart_state_iterations, relion_iteration,
         )
         perturbation, source = _resolve_replay_random_perturbation(
             star_value=float(sampling_meta["random_perturbation"]),
             perturbation_factor=float(sampling_meta["perturbation_factor"]),
             relion_iteration=relion_iteration,
             replay_dir=str(self._star_directory(iteration)),
-            replay_prefix=parity.perturb_replay_relion_prefix,
+            replay_prefix=self.replay.perturb_replay_relion_prefix,
             explicit_seed=parity.perturb_seed,
-            precision_mode=str(parity.perturb_replay_precision),
+            precision_mode=str(self.replay.perturb_replay_precision),
             restart_state_iteration=restart_iteration,
         )
         logger.info(
@@ -305,7 +386,7 @@ class RelionReplaySource(InputSource):
         result = apply_iter_replay_overrides(
             iter_replay_override=slot,
             perturb_replay_relion_dir=None if sampling_sealed else self._star_directory(iteration),
-            perturb_replay_relion_prefix=options.parity.perturb_replay_relion_prefix,
+            perturb_replay_relion_prefix=self.replay.perturb_replay_relion_prefix,
             init_relion_iteration=options.schedule.init_relion_iteration,
             iteration=iteration,
             state=state,
@@ -353,18 +434,6 @@ class RelionReplaySource(InputSource):
         )
 
 
-def replays(options) -> bool:
-    """Whether ``options`` name RELION state to replay: override slots, a STAR replay directory, a final-pass
-    replay (its override, reference maps or sampling directory) or the last numbered state's replay in the
-    final pass (RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE)."""
-    replay, parity = options.replay, options.parity
-    return any(
-        value is not None
-        for value in (
-            replay.replay_iteration_overrides, parity.perturb_replay_relion_dir, replay.final_replay_override,
-            replay.final_replay_reference_maps, parity.final_sampling_replay_relion_dir,
-        )
-    ) or options.debug.environment.final_all_data_replay_last_numbered_state
 
 
 def _log_replayed_translation_grid_change(settings, *, replay_dir, replay_prefix, n_classes):

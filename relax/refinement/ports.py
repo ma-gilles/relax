@@ -151,6 +151,15 @@ class FinalState(NamedTuple):
 class InputSource:
     """The native source: every input is the one the run computed."""
 
+    # What a replaying source replays (``relax.parity.relion_replay_source.RelionReplay``), for the admission
+    # checks that refuse combinations with it; None for the native source.
+    relion_replay = None
+
+    def replays_relion_state(self) -> bool:
+        """Whether the run's state comes from a RELION run (replayed slots, STAR files or final-pass state),
+        which options computed with relax's own rules cannot be combined with."""
+        return False
+
     def numbered_state(
         self, iteration: int, inputs: NumberedState, *, state, halves, direction_priors, image_geometry,
         sampling_sealed: bool,

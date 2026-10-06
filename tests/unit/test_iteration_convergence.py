@@ -8,7 +8,7 @@ from helpers.float_compare import assert_matches
 
 from relax.helpers.convergence import ExpectationStatistics, RefinementState
 from relax.helpers.resolution import ImageGeometry
-from relax.parity.relion_replay_source import RelionReplaySource
+from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement.convergence import update_class_iteration_convergence, update_k1_iteration_convergence
 from relax.refinement.half_inputs import PoseComparison
 from relax.refinement.refinement_options import (
@@ -17,7 +17,6 @@ from relax.refinement.refinement_options import (
     KClassOptions,
     RefinementOptions,
     RefinementSchedule,
-    RelionParityOptions,
     SymmetryOptions,
 )
 
@@ -32,7 +31,7 @@ def _operands(options, state, dtype, pixel_size, overrides):
     kwargs = dict(
         image_geometry=ImageGeometry(image_shape=(16, 16), pixel_size_angstrom=pixel_size),
         iteration=0,
-        source=RelionReplaySource.from_options(options),
+        source=RelionReplaySource.for_run(overrides.pop('relion_replay', None), options),
         scheduling_resolution_shell=4,
         translations=np.asarray([[0, 0], [1, 0]], dtype=dtype),
         current_assignments=np.asarray([0, 2, 4], dtype=np.int32),
@@ -186,10 +185,9 @@ def test_numbered_replay_accuracy_precedes_state_update_and_controls_follow_it(t
     )
     options = RefinementOptions(
         schedule=RefinementSchedule(init_relion_iteration=3),
-        parity=RelionParityOptions(perturb_replay_relion_dir=str(tmp_path)),
         debug=EngineDebugOptions(sealed_sampling_state={} if sealed else None),
     )
-    result = _update_k1(options=options)
+    result = _update_k1(options=options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
     if sealed:
         assert result.accuracy.metadata is None
         assert_matches(result.state.acc_rot, 1.0)
@@ -216,10 +214,7 @@ def test_expired_replay_does_not_read_the_configured_startup_directory(tmp_path)
         'data_optimiser_general\n\n_rlnOverallAccuracyRotations 0.125\n_rlnHasConverged 1\n'
     )
     # The replay ended before this iteration (--replay-override-max-iter 0).
-    options = RefinementOptions(
-        parity=RelionParityOptions(perturb_replay_relion_dir=str(tmp_path), perturb_replay_max_iter=0),
-    )
-    result = _update_k1(options=options)
+    result = _update_k1(relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path), perturb_replay_max_iter=0))
     assert result.accuracy.metadata is None
     assert_matches(result.state.acc_rot, 1.0)
     assert result.state.has_converged is False

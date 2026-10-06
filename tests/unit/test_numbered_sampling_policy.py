@@ -109,11 +109,11 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
 def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
     """A sealed sampling state's perturbation (the run's own resolution) and a RELION STAR's (the replay
     source's) are read, not drawn: the native RNG does not move."""
-    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 
     rng = np.random.default_rng(23)
     reference_rng = np.random.default_rng(23)
-    options = _options(RelionParityOptions(perturb_factor=0.5, perturb_replay_relion_dir=str(tmp_path)), 10)
+    options = _options(RelionParityOptions(perturb_factor=0.5), 10)
     meta = {"sealed_v3": sealed, "random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3}
 
     def native():
@@ -121,7 +121,9 @@ def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
             0.125, options, iteration=0, sealed_sampling_meta=meta, rng=rng, log=LOG,
         )
 
-    result = RelionReplaySource(options).random_perturbation(0, meta, native)
+    result = RelionReplaySource(RelionReplay(perturb_replay_relion_dir=str(tmp_path)), options).random_perturbation(
+        0, meta, native,
+    )
     assert_matches(result, 0.25)
     assert_matches(rng.random(), reference_rng.random())
 
@@ -136,15 +138,15 @@ def test_a_star_sampling_record_refuses_the_native_resolution():
 
 
 def test_replay_restart_uses_physical_iteration(tmp_path):
-    from relax.parity.relion_replay_source import RelionReplaySource
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 
     (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
-    options = _options(RelionParityOptions(
-        perturb_factor=0.5, perturb_replay_precision="seed_exact",
-        perturb_replay_restart_state_iterations=(11,),
+    options = _options(RelionParityOptions(perturb_factor=0.5), 11)
+    replay = RelionReplay(
+        perturb_replay_precision="seed_exact", perturb_replay_restart_state_iterations=(11,),
         perturb_replay_relion_dir=str(tmp_path),
-    ), 11)
-    result = RelionReplaySource(options).random_perturbation(
+    )
+    result = RelionReplaySource(replay, options).random_perturbation(
         0, {"random_perturbation": -0.06873, "perturbation_factor": 0.5, "healpix_order": 3},
         native=lambda: pytest.fail("native perturbation"),
     )

@@ -84,24 +84,9 @@ class RelionParityOptions:
     # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
     optics_group_ids_per_half: Any | None = None
     relion_model_pixel_size: float | None = None
-    perturb_replay_relion_dir: str | None = None
-    perturb_replay_relion_prefix: str = "run"
     # RELION --solvent_mask (path) and --solvent_correct_fsc (relax.reconstruction.solvent_mask).
     solvent_mask_path: str | None = None
     solvent_correct_fsc: bool = False
-    # Diagnostic-only cutoff (number of physical recovar iterations): after
-    # this many iterations, `refine_single_volume` stops reading
-    # RELION's per-iteration sampling/model/optimiser STAR files entirely and
-    # resumes native sampling/convergence from recovar's carried state. Zero
-    # disables numbered replay immediately after the initial snapshot. `None`
-    # (default) reads RELION's STAR files every iteration, matching prior
-    # behavior. See scripts/run_multi_iter_parity.py's
-    # --replay-override-max-iter, which sets this alongside
-    # replay.replay_iteration_overrides.
-    perturb_replay_max_iter: int | None = None
-    perturb_replay_precision: Literal["auto", "seed_exact", "star"] = "auto"
-    perturb_replay_restart_state_iterations: tuple[int, ...] = ()
-    final_sampling_replay_relion_dir: str | None = None
     emulate_relion_firstiter_cc: bool = False
     relion_firstiter_ini_high_angstrom: float | None = None
     first_iteration_score_mode: str = "gaussian"
@@ -130,33 +115,6 @@ class RelionParityOptions:
         margin = self.firstiter_cc_tree_rescore_max_margin
         if margin is not None and not (math.isfinite(float(margin)) and float(margin) >= 0.0):
             raise ValueError(f"firstiter_cc_tree_rescore_max_margin must be a finite non-negative float, got {margin!r}")
-
-        if self.perturb_replay_max_iter is not None and self.perturb_replay_max_iter < 0:
-            raise ValueError(
-                "perturb_replay_max_iter must be non-negative, got "
-                f"{self.perturb_replay_max_iter!r}"
-            )
-
-        iterations = tuple(
-            sorted({int(value) for value in self.perturb_replay_restart_state_iterations})
-        )
-
-        if any(value < 0 for value in iterations):
-            raise ValueError(
-                "perturbation replay restart-state iterations must be non-negative"
-            )
-
-        if iterations and self.perturb_replay_relion_dir is None:
-            raise ValueError(
-                "perturbation replay restart-state iterations require "
-                "perturb_replay_relion_dir"
-            )
-
-        object.__setattr__(
-            self,
-            "perturb_replay_restart_state_iterations",
-            iterations,
-        )
 
 
 _CONSISTENCY_CHOICES = {
@@ -268,7 +226,7 @@ def relax_mode_consistency(
 
 
 def require_consistency_route(
-    options: RefinementOptions, *, subtomograms: bool, several_image_shapes: bool
+    options: RefinementOptions, *, subtomograms: bool, several_image_shapes: bool, replays_relion_state: bool = False,
 ) -> RelionConsistencyOptions:
     """The run's consistency options, refused on the routes that keep RELION's rules.
 
@@ -284,10 +242,7 @@ def require_consistency_route(
         return consistency
     replay, debug = options.replay, options.debug
     relion_state = (
-        options.parity.perturb_replay_relion_dir is not None
-        or replay.replay_iteration_overrides is not None
-        or replay.final_replay_override is not None
-        or replay.final_replay_reference_maps is not None
+        replays_relion_state
         or replay.init_refinement_state_fields is not None
         or debug.sealed_sampling_state is not None
         or debug.state_swap_probe is not None
@@ -427,15 +382,12 @@ class DiagnosticEnvironment:
 
     Dump directories (None when unset; an empty value writes nothing): the Class3D M-step and image size
     (``RELAX_KCLASS_DUMP_DIR``) and the pre-mask maps (``RELAX_PREMASK_DUMP_DIR``).
-    Switches: clear JAX's caches after every numbered iteration; force or forbid replaying the last numbered
-    state in the final all-data pass.
+    Switch: clear JAX's caches after every numbered iteration.
     """
 
     kclass_dump_dir: str | None = None
     premask_dump_dir: str | None = None
     clear_jax_caches_between_iterations: bool = False
-    final_all_data_replay_last_numbered_state: bool = False
-    final_all_data_disable_replay_last_numbered_state: bool = False
 
     @classmethod
     def from_environ(cls) -> DiagnosticEnvironment:
@@ -443,12 +395,6 @@ class DiagnosticEnvironment:
             kclass_dump_dir=os.environ.get("RELAX_KCLASS_DUMP_DIR"),
             premask_dump_dir=os.environ.get("RELAX_PREMASK_DUMP_DIR"),
             clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
-            final_all_data_replay_last_numbered_state=parse_env_true_flag(
-                FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV
-            ),
-            final_all_data_disable_replay_last_numbered_state=parse_env_true_flag(
-                FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV
-            ),
         )
 
 
@@ -502,11 +448,11 @@ class SymmetryOptions:
 
 @dataclass(frozen=True)
 class ReplayState:
-    """Per-iteration RELION-replay seed state.
+    """The run's initial particle state (poses, corrections, groups, priors, the start-up reference) and the
+    follower-scale and frozen-boundary seed state.
 
-    Mirrors what ``refine_single_volume`` takes as ``init_*`` and
-    ``replay_iteration_overrides`` so a downstream replay harness can build
-    one struct instead of passing many kwargs.
+    What a run replays from RELION per iteration is not here: it is the replay input source's
+    (``relax.parity.relion_replay_source.RelionReplay``, code rule 15).
     """
 
     init_image_corrections: Any | None = None
@@ -519,10 +465,6 @@ class ReplayState:
     # Per half, [N, 3] degrees: the input STAR's rlnAngle{Rot,Tilt,Psi}Prior, NaN where absent (None: no column).
     init_angle_priors: Any | None = None
     preserve_initial_direction_prior: bool = False
-    replay_iteration_overrides: Any | None = None
-    final_replay_override: Any | None = None
-    final_replay_reference_maps: Any | None = None
-    final_replay_source_iteration: int | None = None
     init_reference_real: Any | None = None
     init_refinement_state_fields: Any | None = None
     init_relion_optics_group_count: Any | None = None

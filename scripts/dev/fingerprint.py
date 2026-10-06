@@ -966,7 +966,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 init_scale_corrections=[np.ones(n_half, dtype=np.float32) for _ in range(2)],
             )
         if replay_fields:
-            extra["replay"] = refinement_options.ReplayState(**replay_fields)
+            # The replay slots and the final-only replay are a ReplayState's on a source older than the replay
+            # input source's settings (RelionReplay); run_case moves them there below otherwise.
+            replay_state_fields = {f.name for f in dataclasses.fields(refinement_options.ReplayState)}
+            extra["replay"] = refinement_options.ReplayState(
+                **{name: value for name, value in replay_fields.items() if name in replay_state_fields}
+            )
         if star_prior is not None:
             parity["perturb_replay_relion_dir"] = write_relion_dir(n_classes, star_prior, max_iter, star_optimiser)
             parity["perturb_replay_precision"] = "star"
@@ -1009,6 +1014,21 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             parity.update(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0)
         error, result = None, {}
         try:
+            source = {}
+            replay_module = (
+                importlib.import_module("relax.parity.relion_replay_source")
+                if importlib.util.find_spec("relax.parity") is not None else None
+            )
+            if replay_module is not None and hasattr(replay_module, "RelionReplay"):
+                # A source with the input-source port (code rule 15): what the case replays enters through it.
+                replay_settings = {
+                    name: group.pop(name)
+                    for group, names in (
+                        (parity, ("perturb_replay_relion_dir", "perturb_replay_precision", "perturb_replay_max_iter")),
+                        (replay_fields, ("replay_iteration_overrides", "final_replay_override")),
+                    )
+                    for name in names if name in group
+                }
             options = refinement_options.RefinementOptions(
                 disc_type="linear_interp",
                 schedule=refinement_options.RefinementSchedule(
@@ -1022,12 +1042,13 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 parity=refinement_options.RelionParityOptions(**parity),
                 **extra,
             )
-            source = {}
-            if importlib.util.find_spec("relax.parity") is not None:
-                # A source with the input-source port (code rule 15): the replay enters through it.
-                from relax.parity.relion_replay_source import RelionReplaySource
-
-                source["source"] = RelionReplaySource.from_options(options)
+            if replay_module is not None and hasattr(replay_module, "RelionReplay"):
+                source["source"] = replay_module.RelionReplaySource.for_run(
+                    replay_module.RelionReplay(**replay_settings), options,
+                )
+            elif replay_module is not None:
+                # A source whose replay source still read the replay settings from the options.
+                source["source"] = replay_module.RelionReplaySource.from_options(options)
             result = iteration_loop.refine_single_volume(
                 halves,
                 init_volume,

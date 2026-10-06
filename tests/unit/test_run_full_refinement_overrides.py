@@ -2083,7 +2083,7 @@ def test_full_refinement_requests_max_iter_replay_state_for_final_all_data(monke
         "--relion_half_sets", "<DATA>/particles.star", data=data,
     )
     assert requested == [3]
-    assert len(inputs["options"].replay.replay_iteration_overrides) == 4
+    assert len(inputs["source"].relion_replay.replay_iteration_overrides) == 4
 
 
 def test_autorefine_continuation_noise_emulates_relion_rank1_broadcast(tmp_path):

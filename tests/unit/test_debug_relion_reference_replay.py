@@ -25,7 +25,7 @@ def test_references_stay_the_models_own_off_the_probe_target(tmp_path):
         RefinementOptions(debug=EngineDebugOptions(state_swap_probe={"iteration": 4})),
     ):
         assert replay_k1_relion_references(
-            model, options, iteration=4, replay_dir=tmp_path, volume_shape=(4, 4, 4),
+            model, options, iteration=4, replay_dir=tmp_path, replay_prefix="run", volume_shape=(4, 4, 4),
         ) is original
 
 
@@ -51,7 +51,7 @@ def test_state_swap_force_loads_shared_kclass_maps(tmp_path):
     ]
     replayed = replay_class_relion_references(
         SimpleNamespace(maps=original), _probe_options(2, n_classes=4),
-        iteration=2, replay_dir=tmp_path, volume_shape=shape,
+        iteration=2, replay_dir=tmp_path, replay_prefix="run", volume_shape=shape,
     )
 
     assert replayed is not original
@@ -79,7 +79,7 @@ def test_state_swap_force_replays_target_references_without_environment(tmp_path
     ]
 
     replayed = replay_k1_relion_references(
-        SimpleNamespace(maps=original), _probe_options(4), iteration=4, replay_dir=tmp_path, volume_shape=shape,
+        SimpleNamespace(maps=original), _probe_options(4), iteration=4, replay_dir=tmp_path, replay_prefix="run", volume_shape=shape,
     )
 
     np.testing.assert_allclose(_real_from_ft(replayed[0], shape), half1, rtol=0, atol=5e-6)

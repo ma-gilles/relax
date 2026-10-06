@@ -273,12 +273,13 @@ def _state_swap_run(monkeypatch, trace):
     """A K=1 run whose second iteration is the state-swap target, restoring the run's own direction prior."""
     from helpers.tiny_refinement import run_tiny_refinement
 
-    from relax.refinement.refinement_options import EngineDebugOptions, ReplayState
+    from relax.parity.relion_replay_source import RelionReplay
+    from relax.refinement.refinement_options import EngineDebugOptions
 
     run_tiny_refinement(
         monkeypatch, max_iter=3, final_after_max_iter=False, parity=dict(low_resol_join_halves_angstrom=0.0),
         debug=EngineDebugOptions(state_swap_probe={"iteration": 1, "variant": "recovar_direction_prior"}),
-        replay=ReplayState(replay_iteration_overrides=[
+        relion_replay=RelionReplay(replay_iteration_overrides=[
             None if index == 0 else {"direction_prior": _direction_prior_pair(200 + index)} for index in range(3)
         ]),
     )

@@ -42,7 +42,7 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.parity.relion_replay_source import RelionReplaySource
+from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
@@ -1232,11 +1232,8 @@ def main(command=None):
             relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
             optics_group_ids_per_half=optics_group_ids_per_half,
             relion_model_pixel_size=relion_model_pixel_size,
-            perturb_replay_relion_dir=args.perturb_replay_relion_dir,
             solvent_mask_path=args.solvent_mask,
             solvent_correct_fsc=bool(args.solvent_correct_fsc),
-            perturb_replay_restart_state_iterations=restart_provenance.iterations,
-            final_sampling_replay_relion_dir=final_replay.sampling_dir,
             image_fourier_backend=args.image_fourier_backend,
             emulate_relion_firstiter_cc=bool(args.firstiter_cc),
             relion_firstiter_ini_high_angstrom=(
@@ -1259,10 +1256,6 @@ def main(command=None):
             init_refinement_state_fields=(
                 None if frozen_boundary is None else frozen_boundary.refinement_state_fields
             ),
-            replay_iteration_overrides=replay_iteration_overrides,
-            final_replay_override=final_replay.override,
-            final_replay_reference_maps=final_replay.reference_maps,
-            final_replay_source_iteration=final_replay.source_iteration,
             init_group_ids=list(particle_groups.group_ids_per_half),
             init_group_count=particle_groups.n_groups,
             relion_scale_follower_count=follower_topology.n_followers,
@@ -1316,7 +1309,18 @@ def main(command=None):
         translations=translations_jnp,
         options=run_options,
         observer=observers.command_observer(args),
-        source=RelionReplaySource.from_options(run_options),
+        source=RelionReplaySource.for_run(
+            RelionReplay(
+                perturb_replay_relion_dir=args.perturb_replay_relion_dir,
+                perturb_replay_restart_state_iterations=restart_provenance.iterations,
+                replay_iteration_overrides=replay_iteration_overrides,
+                final_replay_override=final_replay.override,
+                final_replay_reference_maps=final_replay.reference_maps,
+                final_replay_source_iteration=final_replay.source_iteration,
+                final_sampling_replay_relion_dir=final_replay.sampling_dir,
+            ),
+            run_options,
+        ),
     )
     # The options (with their replay slots and start-up arrays) live no longer than the refinement, as before.
     del run_options
