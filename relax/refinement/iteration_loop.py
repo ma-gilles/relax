@@ -2534,10 +2534,7 @@ def refine_single_volume(
         # grid; keeping the previous accumulators (also in the pass outputs), unregularized maps or the
         # run-files snapshot live can make high-resolution runs OOM before the batch-size estimator acts
         # (41 GB of host carried into the final pass at box 800).
-        try:
-            jax.block_until_ready(reference_model.maps)
-        except Exception:
-            pass
+        jax.block_until_ready(reference_model.maps)
         Ft_y_0 = Ft_y_1 = None
         Ft_ctf_0 = Ft_ctf_1 = None
         Ft_y_combined = Ft_ctf_combined = None
