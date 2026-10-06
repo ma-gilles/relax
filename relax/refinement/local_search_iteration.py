@@ -144,6 +144,8 @@ class LocalSearchKernelPolicy:
     # RelionConsistencyOptions.nyquist_column_counting: how the per-image sums count the Hermitian
     # pairs of the full-size Nyquist column.
     nyquist_column_counting: str = "relion"
+    # --strict_highres_exp: the fine pass's weighted-sum image size (None: current_size).
+    wsum_current_size: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -409,6 +411,7 @@ def _run_local_search_iteration(
         kernel.disc_type,
         current_size=kernel.current_size,
         reconstruction_current_size=kernel.reconstruction_current_size,
+        wsum_current_size=kernel.wsum_current_size,
         accumulate_noise=kernel.accumulate_noise,
         projection_padding_factor=kernel.projection_padding_factor,
         reconstruction_padding_factor=kernel.reconstruction_padding_factor,

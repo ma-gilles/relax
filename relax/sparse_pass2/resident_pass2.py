@@ -2461,6 +2461,7 @@ def _resident_pass2(
     oversampling_order,
     current_size,
     reconstruction_current_size=None,
+    wsum_current_size=None,
     translation_step,
     rotation_log_prior,
     score_with_masked_images,
@@ -2570,6 +2571,13 @@ def _resident_pass2(
     ``image_translations`` ``[n_images, 2]`` gives each image its own translation sample (RELION
     ``--skip_align``): the images are translated as they are prepared
     (``prepare_unshifted_bucket_operands``) and the fine grid is the one zero translation.
+
+    ``wsum_current_size`` is the image current size of the weighted sums (RELION's
+    ``image_current_size`` in ``storeWeightedSums``, ml_optimiser.cpp:6803-6806) when the E-step
+    scores below it (``--strict_highres_exp``): the noise shells, the Wavg rectangle and its
+    scale mask, the powerClass terms (``highres_Xi2`` and the norm's high shell, both summed
+    above ``image_current_size``, ml_optimiser.cpp:6381-6404) and the norm cutoff use it, while
+    ``current_size`` stays the scoring window. None (the default) is ``current_size``.
     """
 
     if (nyquist_column_counting != "relion" or firstiter_cc_support != "relion") and (
@@ -2675,6 +2683,9 @@ def _resident_pass2(
         # The resident drivers score RELION's window at every size, the box included
         # (window_at_box below), so the full box is an explicit current size here.
         current_size = int(experiment_dataset.image_shape[0])
+    wsum_current_size = current_size if wsum_current_size is None else int(wsum_current_size)
+    if wsum_current_size != current_size and (tilt is not None or dense_gemm_full_grid):
+        raise NotImplementedError("a weighted-sum size above the scoring size (--strict_highres_exp) is SPA resident only")
     try:
         (
             mstep_current_size,
@@ -2813,10 +2824,11 @@ def _resident_pass2(
     )
     logger.info(
         "Resident pass-2 RELION x-half current-size BPref accumulator shape: "
-        "volume_shape=%s score_current_size=%s model_current_size=%s padding_factor=%s "
+        "volume_shape=%s score_current_size=%s wsum_current_size=%s model_current_size=%s padding_factor=%s "
         "recon_volume_shape=%s half_accum_shape=%s voxels=%d",
         tuple(volume_shape),
         current_size,
+        wsum_current_size,
         mstep_current_size,
         reconstruction_padding_factor,
         tuple(recon_volume_shape),
@@ -3027,7 +3039,7 @@ def _resident_pass2(
     # ---- window / weights / lookups (unchanged) ---------------------------
     # Tilt passes keep RELION's logical window sizes: their scoring and M-step (resident_tilts) do not
     # take a stable window's logical bounds.
-    stable_window_plan = None if tilt is not None else _resident_stable_window_plan(
+    stable_window_plan = None if tilt is not None or wsum_current_size != current_size else _resident_stable_window_plan(
         image_shape,
         current_size=current_size,
         mstep_current_size=mstep_current_size,
@@ -3160,21 +3172,32 @@ def _resident_pass2(
     )
 
     n_shells = image_shape[0] // 2 + 1
+    # The crop mask sees RELION's logical window, not the physical class; with a weighted-sum size
+    # above the scoring size it is that size's crop rectangle (the Wavg rectangle's).
+    noise_crop_indices = (
+        window_indices
+        if stable_window_plan is None
+        else window_indices_np[: int(stable_window_plan.logical_score_pixels)]
+    )
+    if wsum_current_size != current_size:
+        noise_crop_indices = _make_relion_wavg_rectangle(
+            image_shape,
+            wsum_current_size,
+            recon_window_indices,
+            reconstruction_current_size=mstep_current_size,
+        ).centered_indices
     shell_indices_half = mask_relion_noise_shell_indices_to_current_window(
         make_relion_noise_shell_indices_half(image_shape),
         image_shape,
-        current_size,
-        # The crop mask sees RELION's logical window, not the physical class.
-        window_indices
-        if stable_window_plan is None
-        else window_indices_np[: int(stable_window_plan.logical_score_pixels)],
+        wsum_current_size,
+        noise_crop_indices,
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
     if stable_window_plan is None:
         relion_wavg_rectangle = _make_relion_wavg_rectangle(
             image_shape,
-            current_size,
+            wsum_current_size,
             recon_window_indices,
             reconstruction_current_size=mstep_current_size,
         )
@@ -4018,7 +4041,8 @@ def _resident_pass2(
         n_images=n_units,
         n_coarse_rot=n_classes * n_coarse_rot,
         n_scale_groups=n_scale_groups,
-        current_size=program_current_size,
+        # The norm's unweighted cutoff is the weighted sums' size (no stable windows when it differs).
+        current_size=program_current_size if wsum_current_size == current_size else wsum_current_size,
         include_unweighted_high_shell=include_unweighted_norm_high_shell,
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
@@ -4043,6 +4067,7 @@ def _resident_pass2(
         recon_pixels=logical_recon_pixels,
         rect_pixels=logical_rect_pixels,
         place=_PLACE_ON_DEVICE,
+        wsum_current_size=None if wsum_current_size == current_size else wsum_current_size,
         # The capacity cube's adjoint clips at RELION's radius: its compact
         # trilinear bound and 3-D radius check read it (recovar backproject_indexed).
         mstep_max_r=None if stable_window_plan is None else _runtime_mstep_radius(mstep_max_r),
@@ -4070,7 +4095,8 @@ def _resident_pass2(
         noise_shell_indices_half=shell_indices_half,
         n_noise_shells=int(n_shells),
         image_shape=image_shape,
-        current_size=current_size,
+        # The operands' powerClass terms sum above the weighted sums' size (ml_optimiser.cpp:6381-6404).
+        current_size=wsum_current_size,
         n_fine_trans=int(n_fine_trans),
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         accumulate_noise=accumulate_noise,
@@ -4156,7 +4182,7 @@ def _resident_pass2(
                             ),
                             use_exact_relion_gaussian=use_exact_relion_gaussian,
                             accumulate_noise=accumulate_noise,
-                            current_size=current_size,
+                            current_size=wsum_current_size,
                         )
                         warm_predicted = resident_half_operand_avals(
                             n_images=int(n_images),
@@ -4476,6 +4502,7 @@ def _resident_pass2(
             verify_operands=verify_operands and chunk is chunks[0],
             image_shape=image_shape,
             current_size=current_size,
+            wsum_current_size=None if wsum_current_size == current_size else wsum_current_size,
             # The physical class with stable windows; None keeps RELION's size.
             program_current_size=None if stable_window_plan is None else program_current_size,
             mstep_current_size=program_volume_current_size,
@@ -4773,6 +4800,7 @@ def compute_pass2_stats_resident(
     oversampling_order,
     current_size,
     reconstruction_current_size=None,
+    wsum_current_size=None,
     translation_step,
     rotation_log_prior,
     score_with_masked_images,
@@ -7024,14 +7052,19 @@ class _WindowLogicalSizes(NamedTuple):
     rect_pixels: jax.Array  # int32 [], the logical prefix of the Wavg rectangle
     # float32 [], RELION's M-step adjoint radius; None keeps the spec's.
     mstep_max_r: jax.Array | None = None
+    # int32 [], the weighted sums' image size (the norm cutoff); None is current_size.
+    wsum_current_size: jax.Array | None = None
 
 
-def _window_logical_sizes(*, current_size, recon_pixels, rect_pixels, place, mstep_max_r=None) -> _WindowLogicalSizes:
+def _window_logical_sizes(
+    *, current_size, recon_pixels, rect_pixels, place, mstep_max_r=None, wsum_current_size=None
+) -> _WindowLogicalSizes:
     return _WindowLogicalSizes(
         current_size=place.scalar(int(current_size), jnp.int32),
         recon_pixels=place.scalar(int(recon_pixels), jnp.int32),
         rect_pixels=place.scalar(int(rect_pixels), jnp.int32),
         mstep_max_r=None if mstep_max_r is None else place.scalar(float(mstep_max_r), jnp.float32),
+        wsum_current_size=None if wsum_current_size is None else place.scalar(int(wsum_current_size), jnp.int32),
     )
 
 
@@ -8093,7 +8126,14 @@ def _resident_chunk_statistics(
         wavg_scale_pixel_mask=tables.wavg_scale_pixel_mask,
         translation_sqdist_ang=operands.translation_sqdist_ang,
         norm_shell_cutoff=(
-            None if tables.window_logical is None else tables.window_logical.current_size // 2
+            None
+            if tables.window_logical is None
+            else (
+                tables.window_logical.current_size
+                if tables.window_logical.wsum_current_size is None
+                else tables.window_logical.wsum_current_size
+            )
+            // 2
         ),
     )
     best_row_local = posterior.best_cell_index // jnp.int64(int(spec.n_fine_trans))
@@ -8418,6 +8458,7 @@ def _run_resident_chunk(
     image_shape,
     current_size,
     mstep_current_size,
+    wsum_current_size=None,
     chunk_unshifted_operands=False,
     precision_policy=None,
     mstep_max_r,
@@ -8478,6 +8519,8 @@ def _run_resident_chunk(
     accumulator arguments are then unused.
     """
 
+    # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
+    operand_current_size = current_size if wsum_current_size is None else wsum_current_size
     row_capacity = int(chunk.row_capacity)
     image_capacity = int(chunk.image_capacity)
     n_valid_rows = int(chunk.n_valid_rows)
@@ -8531,7 +8574,7 @@ def _run_resident_chunk(
             noise_shell_indices_half=image_tables.shell_indices_half,
             n_noise_shells=int(stats_config.n_shells),
             image_shape=image_shape,
-            current_size=current_size,
+            current_size=operand_current_size,
             n_fine_trans=int(n_fine_trans),
             use_exact_relion_gaussian=use_exact_relion_gaussian,
             accumulate_noise=accumulate_noise,
@@ -8557,7 +8600,7 @@ def _run_resident_chunk(
             n_fine_trans=int(n_fine_trans),
             n_recon_windowed=int(n_recon_windowed),
             image_shape=image_shape,
-            current_size=current_size,
+            current_size=operand_current_size,
             use_exact_relion_gaussian=use_exact_relion_gaussian,
             accumulate_noise=accumulate_noise,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
@@ -8602,7 +8645,7 @@ def _run_resident_chunk(
                     n_fine_trans=int(n_fine_trans),
                     n_recon_windowed=int(n_recon_windowed),
                     image_shape=image_shape,
-                    current_size=current_size,
+                    current_size=operand_current_size,
                     use_exact_relion_gaussian=use_exact_relion_gaussian,
                     accumulate_noise=accumulate_noise,
                     source_faithful_spectrum_norm=source_faithful_spectrum_norm,

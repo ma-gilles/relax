@@ -59,10 +59,15 @@ class AdaptiveOptions:
     coarse_engine: Literal["auto", "gemm_hybrid", "gemm_dense"] = "auto"
     relion_current_sizes: tuple[int, ...] | None = None
     relion_healpix_orders: tuple[int, ...] | None = None
+    # RELION --strict_highres_exp in Angstrom: both E-step passes score at the size of this resolution
+    # (capped at the current size); the M-step keeps the current size. None: off.
+    strict_highres_exp_angstrom: float | None = None
 
     def __post_init__(self):
         if self.coarse_engine not in {"auto", "gemm_hybrid", "gemm_dense"}:
             raise ValueError(f"unknown coarse engine {self.coarse_engine!r}")
+        if self.strict_highres_exp_angstrom is not None and not self.strict_highres_exp_angstrom > 0:
+            raise ValueError(f"strict_highres_exp_angstrom must be positive, got {self.strict_highres_exp_angstrom}")
 
 
 @dataclass(frozen=True)

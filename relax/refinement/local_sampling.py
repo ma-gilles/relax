@@ -47,6 +47,8 @@ class LocalSampling:
     model_support_size: int | None = None
     coarse_angular_step_deg: float | None = None
     rotation_eulers: object | None = None
+    # --strict_highres_exp: the fine pass's weighted-sum image size, above image_window_size; None when equal.
+    wsum_current_size: int | None = None
 
 
 def prepare_numbered_local_sampling(
@@ -62,6 +64,8 @@ def prepare_numbered_local_sampling(
     perturbation: float,
     particle_diameter_angstrom: float | None,
     log,
+    strict_pass1: bool = False,
+    wsum_current_size: int | None = None,
 ) -> LocalSampling:
     """Resolve a numbered local grid and its pre-update pass-1 window.
 
@@ -100,7 +104,8 @@ def prepare_numbered_local_sampling(
                 )
                 parent_order = search.healpix_order - int(search.oversampling_order)
                 coarse_angular_step_deg = healpix_angular_step(coarse_size_healpix_order)
-                coarse_image_window_size = relion_local_pass1_current_size(
+                # --strict_highres_exp: pass 1 scores at the E-step cap, as pass 2 does.
+                coarse_image_window_size = image_window_size if strict_pass1 else relion_local_pass1_current_size(
                     pre_update_healpix_order=coarse_size_healpix_order,
                     pixel_size=(
                         float(optics.optics_pixel_sizes[0])
@@ -152,6 +157,7 @@ def prepare_numbered_local_sampling(
         coarse_angular_step_deg=coarse_angular_step_deg,
         perturbation=deferred_perturbation,
         angular_step_deg=angular_step_deg,
+        wsum_current_size=wsum_current_size,
     )
 
 
@@ -243,7 +249,9 @@ def plan_expectation_sampling(
     ``symmetry.point_group`` and ``schedule.particle_diameter_ang``; ``optics`` as the window plan and the
     local sampling read it.
     """
-    windows = plan_expectation_windows(current_size, optics, log=logger)
+    windows = plan_expectation_windows(
+        current_size, optics, log=logger, strict_highres_exp_angstrom=options.adaptive.strict_highres_exp_angstrom
+    )
     sigma_rot, sigma_psi = relion_local_search_sigmas(state, use_local=use_local)
 
     # Angular step behind this iteration's pass-1 coarse size, when RELION's
@@ -260,8 +268,10 @@ def plan_expectation_sampling(
             trial_grid,
             optics,
             base_translations=coarse_grids.base_translations,
-            image_window_size=windows.image_window_size,
-            model_support_size=windows.model_window_size,
+            image_window_size=windows.score_window_size,
+            model_support_size=windows.engine_model_window_size,
+            strict_pass1=windows.score_size is not None,
+            wsum_current_size=windows.wsum_size_for_engine,
             base_healpix_order=coarse_grids.rotation_grid.healpix_order,
             coarse_size_healpix_order=coarse_size_healpix_order,
             perturbation=perturbation,

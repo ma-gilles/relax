@@ -59,6 +59,7 @@ class Half1AccuracyInputs(NamedTuple):
         sigma2_noise_native,
         current_image_size,
         projector_data=None,
+        projector_current_size=None,
     ):
         """RELION's expected angular/translational accuracy of half 1 at one image size.
 
@@ -66,7 +67,10 @@ class Half1AccuracyInputs(NamedTuple):
         run's optimizer seed and scores them against the current reference; the
         regular iterations and the final all-data pass supply the reference, the
         previous best angles, class labels, class weights, half-1 noise and the
-        image size, and share the run-constant inputs.
+        image size, and share the run-constant inputs. ``projector_current_size`` is the
+        references' projector size when the image size is capped below it (--strict_highres_exp:
+        RELION projects through PPref at the current size and caps only the image); None is
+        ``current_image_size``.
         """
 
         return estimate_relion_expected_accuracy(
@@ -88,6 +92,7 @@ class Half1AccuracyInputs(NamedTuple):
             optics_group_ids=self.optics_group_ids,
             projector_data=projector_data,
             gridding_kernel=self.gridding_kernel,
+            group_grid=None if projector_current_size is None else dict(projector_current_size=int(projector_current_size)),
         )
 
 
@@ -137,8 +142,13 @@ def estimate_iteration_accuracy(
     relion_firstiter_cc_this_iter: bool,
     build_shared_projector: bool,
     log: logging.Logger,
+    accuracy_image_size=None,
 ):
     """Estimate half 1's expected accuracy before a numbered expectation; ``(IterationAccuracy, projector)``.
+
+    ``accuracy_image_size`` is the image size the estimate scores at when it differs from ``current_size``:
+    RELION's --strict_highres_exp size (ml_optimiser.cpp:9343); the projector, its ``r_max`` included, stays at
+    ``current_size``.
 
     ``reference``, ``best_eulers_deg``, ``class_assignments`` and ``sigma2_noise_native`` are half 1's.
     With ``build_shared_projector`` the estimate projects through a ``ProjectorReuse`` of ``reference``
@@ -201,7 +211,8 @@ def estimate_iteration_accuracy(
                 class_ids=accuracy_class_ids,
                 class_weights=class_weights,
                 sigma2_noise_native=sigma2_noise_native,
-                current_image_size=current_size,
+                current_image_size=current_size if accuracy_image_size is None else accuracy_image_size,
+                projector_current_size=None if accuracy_image_size is None else current_size,
             )
             exact_acc_rot_this_iter = float(accuracy.acc_rot)
             exact_acc_trans_this_iter = float(accuracy.acc_trans_angstrom)

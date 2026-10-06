@@ -193,6 +193,8 @@ class DenseSamplingSpec:
     cs_for_engine: int | None
     coarse_engine: str = "auto"
     model_current_size_for_engine: int | None = None
+    # --strict_highres_exp: the weighted sums' image size, above cs_for_engine (None: cs_for_engine).
+    wsum_current_size_for_engine: int | None = None
     coarse_angular_step_deg: float | None = None
     coarse_rotation_ids: object | None = None
     coarse_scoring_rotations: object | None = None
@@ -725,6 +727,8 @@ def _score_half_dense_one_shape(
         em_kwargs["optics_group_ids"] = half.particles.optics_group_ids
     if sampling.model_current_size_for_engine is not None:
         em_kwargs["reconstruction_current_size"] = sampling.model_current_size_for_engine
+    if sampling.wsum_current_size_for_engine is not None:
+        em_kwargs["wsum_current_size"] = sampling.wsum_current_size_for_engine
     if half.image_seed_classes is not None and not variant.k_class_enabled:
         raise NotImplementedError("a seed iteration runs on the adaptive or first-iteration CC K-class route")
     if execution.preserve_bpref_particle_order:
@@ -1790,6 +1794,7 @@ def _score_half_local_one_shape(
                 optics.projection_scale,
             ),
             nyquist_column_counting=execution.nyquist_column_counting,
+            wsum_current_size=sampling.wsum_current_size,
     )
     local_support = LocalSearchSupportPolicy(
             disable_adjoint_y=execution.disable_adjoint_y,
@@ -1856,6 +1861,7 @@ def _score_half_local_one_shape(
                 local_kernel,
                 current_size=sampling.coarse_image_window_size,
                 reconstruction_current_size=None,
+                wsum_current_size=None,
                 use_float64_scoring=parent_precision.use_float64_scoring,
                 use_float64_projections=parent_precision.use_float64_projections,
                 relion_exact_score_translation=bool(

@@ -205,6 +205,8 @@ class RunSettings:
     adaptive_fraction: float = 0.999
     low_resol_join_halves: float = 40.0
     auto_local_healpix_order: int = 4
+    # RELION --strict_highres_exp in Angstrom; -1 when off, as relion_refine records it.
+    strict_highres_exp: float = -1.0
     do_solvent_fsc: bool = False
     max_significants: int = -1
     symmetry: str = "C1"
@@ -757,7 +759,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
         ("rlnBodyStarFile", "None"),
         ("rlnTauSpectrumName", "None"),
         ("rlnMaximumCoarseImageSize", -1),
-        ("rlnHighresLimitExpectation", -1.0),
+        ("rlnHighresLimitExpectation", float(settings.strict_highres_exp)),
         ("rlnLowresLimitExpectation", -1.0),
         ("rlnIncrementImageSize", int(snapshot.incr_size)),
         ("rlnDoMapEstimation", True),

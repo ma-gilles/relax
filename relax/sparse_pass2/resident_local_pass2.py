@@ -407,6 +407,7 @@ def compute_local_search_resident(
     *,
     current_size,
     reconstruction_current_size=None,
+    wsum_current_size=None,
     accumulate_noise=False,
     projection_padding_factor=1,
     reconstruction_padding_factor=1,
@@ -474,6 +475,9 @@ def compute_local_search_resident(
     ``nyquist_column_counting`` is the consistency option of the per-image sums
     (docs/math/relion_consistency_options.md): it changes the scoring weights and the image
     the noise statistics read, for the fine pass and its parent probe alike.
+
+    ``wsum_current_size`` is the weighted sums' image size when the fine pass scores below it
+    (``--strict_highres_exp``), as in :func:`resident_pass2._resident_pass2`; None is ``current_size``.
     """
 
     from recovar import cuda_backproject
@@ -490,6 +494,7 @@ def compute_local_search_resident(
         # The resident drivers score RELION's window at every size, the box included
         # (window_at_box below), so the full box is an explicit current size here.
         current_size = int(experiment_dataset.image_shape[0])
+    wsum_current_size = current_size if wsum_current_size is None else int(wsum_current_size)
     try:
         (
             mstep_current_size,
@@ -664,11 +669,17 @@ def compute_local_search_resident(
     ).astype(precision_policy.score_complex_dtype)
 
     n_shells = image_shape[0] // 2 + 1
+    # With a weighted-sum size above the scoring size, the noise crop is that size's rectangle.
+    noise_crop_indices = window_indices
+    if wsum_current_size != current_size:
+        noise_crop_indices = _make_relion_wavg_rectangle(
+            image_shape, wsum_current_size, recon_window_indices, reconstruction_current_size=mstep_current_size
+        ).centered_indices
     shell_indices_half = mask_relion_noise_shell_indices_to_current_window(
         make_relion_noise_shell_indices_half(image_shape),
         image_shape,
-        current_size,
-        window_indices,
+        wsum_current_size,
+        noise_crop_indices,
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
@@ -689,7 +700,7 @@ def compute_local_search_resident(
     )
     relion_wavg_rectangle = _make_relion_wavg_rectangle(
         image_shape,
-        current_size,
+        wsum_current_size,
         recon_window_indices,
         reconstruction_current_size=mstep_current_size,
     )
@@ -1068,7 +1079,7 @@ def compute_local_search_resident(
             n_images=n_images,
             n_coarse_rot=_posterior_bin_capacity(posterior_bin_ids.size, n_classes=n_classes),
             n_scale_groups=n_scale_groups,
-            current_size=current_size,
+            current_size=wsum_current_size,
             include_unweighted_high_shell=include_unweighted_norm_high_shell,
             use_exact_relion_gaussian=True,
             relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
@@ -1163,6 +1174,7 @@ def compute_local_search_resident(
                 rect_indices_device=rect_indices_device,
                 image_shape=image_shape,
                 current_size=current_size,
+                wsum_current_size=wsum_current_size,
                 mstep_current_size=volume_current_size,
                 mstep_max_r=mstep_adjoint_max_r(
                     volume_current_size, reconstruction_image_radius, reconstruction_padding_factor,
@@ -2111,6 +2123,7 @@ def _start_resident_local_chunk(
     current_size,
     mstep_current_size,
     recon_volume_shape,
+    wsum_current_size=None,
     mstep_max_r=None,
     max_adjoint_block_bytes,
     noise_variance_for_noise,
@@ -2160,6 +2173,8 @@ def _start_resident_local_chunk(
     n_valid_rows = int(chunk.n_valid_rows)
     n_valid_images = int(chunk.n_valid_images)
     image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
+    # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
+    operand_current_size = current_size if wsum_current_size is None else wsum_current_size
 
     profile = parse_env_flag(_CHUNK_PROFILE_ENV, default=False)
     marks: dict[str, float] = {}
@@ -2206,7 +2221,7 @@ def _start_resident_local_chunk(
             noise_shell_indices_half=image_tables.shell_indices_half,
             n_noise_shells=int(stats_config.n_shells),
             image_shape=image_shape,
-            current_size=current_size,
+            current_size=operand_current_size,
             n_fine_trans=int(n_fine_trans),
             accumulate_noise=accumulate_noise,
             source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),
@@ -2229,7 +2244,7 @@ def _start_resident_local_chunk(
             n_fine_trans=int(n_fine_trans),
             n_recon_windowed=int(n_recon_windowed),
             image_shape=image_shape,
-            current_size=current_size,
+            current_size=operand_current_size,
             use_exact_relion_gaussian=True,
             accumulate_noise=accumulate_noise,
             source_faithful_spectrum_norm=bool(source_faithful_spectrum_norm),

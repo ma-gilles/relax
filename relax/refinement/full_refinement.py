@@ -428,6 +428,7 @@ def main(command=None):
     command_options.resolve_job_defaults(args)
     command_options.resolve_standalone_k1_start(args)
     command_options.validate_sigma_ang(args)
+    command_options.validate_strict_highres_exp(args)
     if (
         args.state_swap_target_relion_iteration is not None
         or args.state_swap_variant is not None
@@ -1209,6 +1210,7 @@ def main(command=None):
                     particle_diameter=float(particle_diameter_ang or 0.0),
                     adaptive_oversampling=int(args.adaptive_oversampling),
                     auto_local_healpix_order=int(args.auto_local_healpix_order),
+                    strict_highres_exp=-1.0 if args.strict_highres_exp is None else float(args.strict_highres_exp),
                     max_significants=int(args.max_significants),
                     symmetry=symmetry,
                     healpix_order_original=int(initial_sampling.coarse_order),

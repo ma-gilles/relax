@@ -137,10 +137,33 @@ class ExpectationWindows:
     model_size: int
     image_size: int
     image_box_size: int
+    # --strict_highres_exp: the E-step's image size, below image_size; None scores at image_size.
+    score_size: int | None = None
 
     @property
     def image_window_size(self) -> int | None:
         return self.image_size if self.image_size < self.image_box_size else None
+
+    @property
+    def score_window_size(self) -> int | None:
+        """The E-step's scoring window: the --strict_highres_exp size, else the image window."""
+        if self.score_size is None:
+            return self.image_window_size
+        return self.score_size if self.score_size < self.image_box_size else None
+
+    @property
+    def wsum_size_for_engine(self) -> int | None:
+        """The weighted sums' image size an engine needs when the E-step scores below it, else None."""
+        if self.score_size is not None and self.score_size < self.image_size:
+            return int(self.image_size)
+        return None
+
+    @property
+    def engine_model_window_size(self) -> int | None:
+        """The M-step window an engine reconstructs at; explicit whenever the E-step scores below it."""
+        if self.score_size is not None and self.score_size < self.image_size:
+            return self.model_size
+        return self.model_window_size
 
     @property
     def model_window_size(self) -> int | None:
@@ -150,11 +173,15 @@ class ExpectationWindows:
         return None
 
 
-def plan_expectation_windows(current_size: int, optics: RunOptics, *, log: logging.Logger) -> ExpectationWindows:
+def plan_expectation_windows(
+    current_size: int, optics: RunOptics, *, log: logging.Logger, strict_highres_exp_angstrom: float | None = None
+) -> ExpectationWindows:
     """Remap single-shape optics while keeping model support independent.
 
     Shape classes are not remapped here: each class remaps its own support. Reads every field of
-    ``optics``. See ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
+    ``optics``. ``strict_highres_exp_angstrom`` (RELION --strict_highres_exp) caps the E-step's size at
+    :func:`relion_strict_highres_image_size`. See
+    ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
     image_geometry = optics.image_geometry
     model_pixel_size = optics.model_pixel_size
@@ -182,11 +209,49 @@ def plan_expectation_windows(current_size: int, optics: RunOptics, *, log: loggi
             "image_current_size=%d model_pixel_size=%.9g",
             current_size, image_size, model_pixel_size,
         )
+    score_size = None
+    if strict_highres_exp_angstrom is not None:
+        if optics.multi_shape_halves:
+            raise NotImplementedError("--strict_highres_exp with optics groups on several image shapes")
+        limit = relion_strict_highres_image_size(
+            float(optics.optics_pixel_sizes[0]) if optics.optics_pixel_sizes is not None else model_pixel_size,
+            int(optics.optics_image_sizes[0]) if optics.optics_image_sizes is not None else image_geometry.box_size,
+            strict_highres_exp_angstrom,
+        )
+        score_size = min(limit, image_size)
+        log.info(
+            "RELION --strict_highres_exp %.3f A: E-step size %d (limit %d, image current size %d)",
+            strict_highres_exp_angstrom, score_size, limit, image_size,
+        )
     return ExpectationWindows(
         model_size=current_size,
         image_size=image_size,
         image_box_size=image_geometry.box_size,
+        score_size=score_size,
     )
+
+
+_QUIET_LOG = logging.getLogger(__name__ + ".quiet")
+_QUIET_LOG.propagate = False
+_QUIET_LOG.addHandler(logging.NullHandler())
+
+
+def strict_e_step_size(current_size: int, optics: RunOptics, options: RefinementOptions) -> int | None:
+    """The --strict_highres_exp E-step size at this current size (the expected accuracy's size), or None when off."""
+    limit = options.adaptive.strict_highres_exp_angstrom
+    if limit is None:
+        return None
+    return plan_expectation_windows(current_size, optics, log=_QUIET_LOG, strict_highres_exp_angstrom=limit).score_size
+
+
+def relion_strict_highres_image_size(pixel_size: float, box_size: int, limit_angstrom: float) -> int:
+    """RELION's --strict_highres_exp image size, ``2 * ROUND(box * pixel / limit)`` (ml_optimiser.cpp:5755-5758).
+
+    ``remap_sizes * ori_size * pixel_size`` is the optics group's box times its pixel size. ROUND rounds
+    half away from zero.
+    """
+    value = float(box_size) * float(pixel_size) / float(limit_angstrom)
+    return 2 * int(np.floor(value + 0.5))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -217,17 +282,21 @@ def plan_adaptive_image_size(
     optics_image_sizes = optics.optics_image_sizes
     optics_pixel_sizes = optics.optics_pixel_sizes
     angular_step_deg = healpix_angular_step(pre_update_healpix_order)
-    coarse_size = compute_coarse_image_size(
-        angular_step_deg,
-        float(optics_pixel_sizes[0]) if optics_pixel_sizes is not None else image_geometry.pixel_size_angstrom,
-        int(optics_image_sizes[0]) if optics_image_sizes is not None else image_geometry.box_size,
-        particle_diameter=options.schedule.particle_diameter_ang,
-    )
-    coarse_size = clamp_relion_coarse_image_size(
-        coarse_size,
-        windows.image_size if windows.image_window_size is not None else None,
-        image_geometry.box_size,
-    )
+    if windows.score_size is not None:
+        # --strict_highres_exp replaces the angular rule: pass 1 scores at the E-step cap as well.
+        coarse_size = int(windows.score_size)
+    else:
+        coarse_size = compute_coarse_image_size(
+            angular_step_deg,
+            float(optics_pixel_sizes[0]) if optics_pixel_sizes is not None else image_geometry.pixel_size_angstrom,
+            int(optics_image_sizes[0]) if optics_image_sizes is not None else image_geometry.box_size,
+            particle_diameter=options.schedule.particle_diameter_ang,
+        )
+        coarse_size = clamp_relion_coarse_image_size(
+            coarse_size,
+            windows.image_size if windows.image_window_size is not None else None,
+            image_geometry.box_size,
+        )
     if sealed_sampling_state is not None:
         coarse_size = int(sealed_sampling_state["coarse_size"])
         if coarse_size > windows.model_size:

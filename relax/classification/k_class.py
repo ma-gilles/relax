@@ -390,6 +390,9 @@ def _run_sparse_k_class_adaptive_pass2(
     if reconstruction_groups:
         common["reconstruction_group_ids"] = base_engine_kwargs["reconstruction_group_ids"]
         common["reconstruction_group_count"] = int(base_engine_kwargs["reconstruction_group_count"])
+    if base_engine_kwargs.get("wsum_current_size") is not None:
+        # --strict_highres_exp: the weighted sums' image size, above the E-step's (the resident engine).
+        common["wsum_current_size"] = int(base_engine_kwargs["wsum_current_size"])
     if n_classes == 1 and base_engine_kwargs.get("relion_f32_normalization_sum_weight") is not None:
         common["relion_f32_normalization_sum_weight"] = base_engine_kwargs["relion_f32_normalization_sum_weight"]
         common["relion_coarse_hard_assignment"] = base_engine_kwargs.get("relion_coarse_hard_assignment")
@@ -1166,6 +1169,9 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
            if pass2_kwargs.get("symmetry_label", "C1") != "C1" else {}),
         **_translation_angle_scale_kwargs(pass2_kwargs),
     )
+    if pass2_kwargs.get("wsum_current_size") is not None:
+        # --strict_highres_exp: the weighted sums' image size, above the E-step's (the resident engine).
+        common["wsum_current_size"] = int(pass2_kwargs["wsum_current_size"])
     _apply_bpref_particle_order_policy(
         common,
         pass2_kwargs,
@@ -1728,6 +1734,7 @@ def run_dense_k_class_em_adaptive(
         # The coarse probe is score-only.  RELION's separate model-coordinate
         # cutoff is consumed by fine-pass BPref, not by this scorer wrapper.
         coarse_probe_kwargs.pop("reconstruction_current_size", None)
+        coarse_probe_kwargs.pop("wsum_current_size", None)
         coarse_probe_kwargs["image_batch_size"] = sig_ibs
         coarse_probe_kwargs["rotation_block_size"] = sig_rbs
         coarse_probe_kwargs["relion_firstiter_score_mode"] = "normalized_cc"

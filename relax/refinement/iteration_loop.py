@@ -143,6 +143,7 @@ from relax.refinement.iteration_planning import (
     refresh_coarse_grids,
     resolve_current_size,
     resolve_numbered_perturbation,
+    strict_e_step_size,
 )
 from relax.refinement.iteration_snapshot import (
     SnapshotCapture,
@@ -753,10 +754,11 @@ def _with_stable_window_class_history(refine):
 
 
 @_with_stable_window_class_history
-def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coarse_cs, image_window_size):
+def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coarse_cs, fine_window_size):
     """A numbered iteration's dense route: its first-iteration mode, the adaptive sizes and the class options.
 
-    ``coarse_cs`` is the adaptive pass-1 size, None off the adaptive route.
+    ``coarse_cs`` is the adaptive pass-1 size, None off the adaptive route; ``fine_window_size`` is the pass-2
+    scoring window (the E-step size).
     """
 
     return DenseVariantPolicy(
@@ -765,7 +767,7 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
         k_class_enabled=int(k_class.n_classes) > 1,
         relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
         firstiter_coarse_current_size=coarse_cs,
-        firstiter_fine_current_size=image_window_size if use_adaptive else None,
+        firstiter_fine_current_size=fine_window_size if use_adaptive else None,
         firstiter_log_label="" if use_adaptive else "(non-adaptive site) ",
         firstiter_updates_em_kwargs_ibs=bool(use_adaptive),
         skip_align=bool(k_class.skip_align),
@@ -1569,7 +1571,7 @@ def refine_single_volume(
             class_assignments=class_assignments[0],
             class_weights=class_mixture.weights,
             sigma2_noise_native=noise_model.radial_per_half[0],
-            current_size=current_size,
+            current_size=current_size, accuracy_image_size=strict_e_step_size(current_size, optics, options),
             image_box_size=grid_size,
             n_classes=n_classes,
             iteration=iteration,
@@ -1777,7 +1779,7 @@ def refine_single_volume(
         numbered_variant = _numbered_dense_variant(
             first_iteration, k_class, use_adaptive=use_adaptive,
             coarse_cs=coarse_cs if use_adaptive else None,  # bound only on the adaptive route
-            image_window_size=sampling_plan.windows.image_window_size,
+            fine_window_size=sampling_plan.windows.score_window_size,
         )
         numbered_expectation = prepare_numbered_expectation(
             trial_grid,
@@ -1807,7 +1809,7 @@ def refine_single_volume(
                 grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
                 random_perturbation=random_perturbation,
                 coarse_size=sampling_plan.local.coarse_image_window_size if use_local else coarse_cs,
-                fine_size=sampling_plan.windows.image_window_size,
+                fine_size=sampling_plan.windows.score_window_size,
             )
         else:
             numbered_tomo_sampling = None

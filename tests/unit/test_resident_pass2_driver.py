@@ -1926,3 +1926,30 @@ def test_only_host_pixel_indices_are_validated_per_call():
 
     assert _host_pixel_indices(np.arange(4, dtype=np.int32))
     assert not _host_pixel_indices(jnp.arange(4, dtype=jnp.int32))
+
+
+@requires_resident_gpu
+def test_weighted_sums_keep_the_current_size_when_the_e_step_scores_below_it(_resident_production_env):
+    """--strict_highres_exp: the E-step scores at the cap, the noise and Wavg sums stay at the current size.
+
+    RELION's storeWeightedSums always uses image_current_size (ml_optimiser.cpp:6803-6806). Scoring at 4
+    with the weighted sums at 6 must run (the Wavg rectangle at the scoring size refused a wider model)
+    and fill the noise shell 3, which a score-sized mask would leave empty; ``wsum_current_size`` equal
+    to the scoring size changes nothing.
+    """
+
+    args = _driver_fixture_args()
+    full = rp.compute_pass2_stats_resident(**args)
+    capped_args = dict(args, current_size=4, reconstruction_current_size=6)
+    with pytest.raises(ValueError, match="cannot exceed the particle-image crop"):
+        rp.compute_pass2_stats_resident(**capped_args)
+    capped = rp.compute_pass2_stats_resident(**dict(capped_args, wsum_current_size=6))
+    noise_full = np.asarray(full.noise_stats.wsum_sigma2_noise)
+    noise_capped = np.asarray(capped.noise_stats.wsum_sigma2_noise)
+    assert noise_capped.shape == noise_full.shape
+    assert noise_capped[3] > 0.0
+    assert_matches(noise_capped != 0.0, noise_full != 0.0)
+    assert np.asarray(capped.Ft_ctf).any()
+    same = rp.compute_pass2_stats_resident(**dict(args, wsum_current_size=args["current_size"]))
+    assert_matches(np.asarray(same.noise_stats.wsum_sigma2_noise), noise_full)
+    assert_matches(same.hard_assignment, full.hard_assignment)
