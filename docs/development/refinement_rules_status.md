@@ -5,6 +5,41 @@ The agent-facing record of the open items of the refinement package against
 deleting it here in the commit that closes it; record a decision in the "Decided" section. Numbers are of
 the branch after main 7d8a1a1 (2026-10-05).
 
+## Verdict (close-out, 2026-10-05, main after 00eac89)
+
+`relax/refinement` meets the rules the refactor worked through, with the recorded exceptions below; it does
+not yet meet rules 8 and 10, and rules 4, 9 and 11 were not audited in full.
+
+| Rule | Status |
+| --- | --- |
+| 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. |
+| 3 lifetimes | Met for what moved: the controller tests check the required lifetimes (`frame_holds`, `keep_operands=False`). The M-step results stay unpacked into locals because records would move the accumulators' release points. |
+| 4 JAX | Not audited: no slice changed a jit boundary. |
+| 5 decide once | Met for flags and the controller's diagnostics (option resolvers in `command_options`, `DiagnosticEnvironment`); exceptions below. |
+| 6 contracts | Met: the controller's 24 mode tests select contract functions, mode-only steps or refusals (owner, 2026-10-04 and 2026-10-05); the final scoring loop and `DenseVariantPolicy.k_class_enabled` are variants. |
+| 7 one owner | Met for the start-up facts the command held three times; no known duplicate. |
+| 8 config/state/results | Partly: option records are frozen; `refine_single_volume` and `run_final_all_data` still return dicts. |
+| 9 transitions | Not audited in full: the operations this work extracted return results; `apply_iter_replay_overrides` and the halves' installs mutate in place and say so. |
+| 10 signatures | Not met: 29 functions take ten or more parameters (ceiling-tracked). |
+| 11 layers | Not audited beyond the command: the command no longer reaches into replay readers or reports. |
+| 12 edges | Met for the command: every admission refuses with a message, each tested. |
+| 13 tests | Met: no test reads controller or command source; four engine-core lint tests are an exception. |
+| 14 evidence | Met: each landing listed what the fingerprint and the tiers do not cover (below). |
+
+### Accepted, recorded exceptions
+
+- The command still builds the parity, replay and checkpoint option records from start-up results
+  (item 1 below): they are results, not flags.
+- Environment reads that stay where they are used (item 2 below), each with its reason.
+- `refine_single_volume` stays one function of 1,992 lines (owner, 2026-10-04); it holds no step with a
+  mode flag.
+- The coverage limits below (RELION run-directory fixture, local-search harness), costed and not built.
+
+### Still open (not exceptions)
+
+- Results as named types (rule 8): the controller's and the final pass's result dicts.
+- Width (rule 10): the 29 wide functions; first `run_final_all_data` (28), `build_archive_metadata` (25).
+
 ## Open, in the order they are worked
 
 1. **The command still assembles three option records from start-up results (rules 5, 7).** The
