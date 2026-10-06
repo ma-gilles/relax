@@ -762,12 +762,19 @@ def _relion_device_scoring_rotations_left_f32(eulers_deg, right_matrix, left_mat
 
     from relax.cuda import kernels as em_cuda_kernels
 
-    eulers_f32 = np.asarray(eulers_deg, dtype=np.float32).reshape(-1, 3)
+    # A device array of Euler rows stays on the device (the exact cut gathers its rows there).
+    eulers_f32 = (
+        eulers_deg.astype(jnp.float32) if isinstance(eulers_deg, jax.Array) else np.asarray(eulers_deg, dtype=np.float32)
+    ).reshape(-1, 3)
     right_f32 = np.eye(3, dtype=np.float32) if right_matrix is None else np.asarray(right_matrix, dtype=np.float32)
     rotations = em_cuda_kernels.relion_make_scoring_rotations_left_f32(
         jnp.asarray(eulers_f32),
         jnp.asarray(right_f32),
-        jnp.asarray(np.asarray(left_matrices, dtype=np.float32).reshape(-1, 3, 3)),
+        (
+            left_matrices.astype(jnp.float32)
+            if isinstance(left_matrices, jax.Array)
+            else jnp.asarray(np.asarray(left_matrices, dtype=np.float32))
+        ).reshape(-1, 3, 3),
         do_right=right_matrix is not None,
     )
     return rotations

@@ -125,6 +125,16 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         assert_matches(got[b], direct.T.astype(np.float32), rtol=1e-5)  # translation-major
 
 
+def test_two_flushes_of_significance_fit_the_device_share(monkeypatch):
+    """A flush is held until the next is dispatched, so the device share bounds two flushes' diff2: a full
+    card keeps the 512 MB flush, a card with 2.4 GB free (a 600 MB quarter) cuts 300 MB per flush."""
+
+    monkeypatch.setattr(tomo_coarse, "_device_share_bytes", lambda cap: int(cap))
+    assert tomo_coarse._significance_batch_bytes() == 512 << 20
+    monkeypatch.setattr(tomo_coarse, "_device_share_bytes", lambda cap: int(min(cap, 600 << 20)))
+    assert tomo_coarse._significance_batch_bytes() == 300 << 20
+
+
 def test_coarse_batches_share_one_shape_within_the_budget():
     batches = tomo_coarse._coarse_batches(
         [130, 90, 200, 50, 70], n_slots=39, n_trans=81, budget_bytes=40 * 256 * 81 * 4 * 2
@@ -615,9 +625,11 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
 
     def pass1_rotations(eulers, random_perturbation, angular_sampling_deg, *, left_matrices):
         # [S, R, 3, 3]: RELION's device matrices need the RELION binding; any per-image stand-in will do.
-        base = np.asarray(eulers, dtype=np.float32)[:, :, None] * np.eye(3, dtype=np.float32)[None, :, :] / 180.0
+        # Traceable: the exact cut builds its rotations inside a program.
+        base = jnp.asarray(eulers, dtype=jnp.float32)[:, :, None] * jnp.eye(3, dtype=jnp.float32)[None, :, :] / 180.0
         # Each image's matrices depend on its own left matrix (not on its place in the call).
-        return np.stack([base + np.float32(left[0, 0]) for left in np.asarray(left_matrices)])
+        left = jnp.asarray(left_matrices, dtype=jnp.float32)
+        return base[None] + left[:, 0, 0][:, None, None, None]
 
     from relax import sampling
 
@@ -723,14 +735,93 @@ def test_near_cut_rows_are_the_cut_and_minimum_neighbourhoods_of_capped_particle
     assert_matches(put[1], diff2[1])
 
 
-@pytest.mark.parametrize("flushes", ["one_flush", "flushes_of_three"])
+@pytest.mark.parametrize("call_bytes", [64 << 20, 2000], ids=["one_call", "groups_of_two"])
+@pytest.mark.parametrize("local", [False, True], ids=["global", "local"])
+def test_undecided_scorer_rotations_are_the_per_particle_builds(monkeypatch, local, call_bytes):
+    """The exact cut's scorer matrices built on the device from its undecided rotations are bitwise those of
+    one rotation-kernel call per particle with its own images (the earlier host loop)."""
+
+    def pass1_rotations(eulers_deg, random_perturbation, angular_sampling_deg, *, left_matrices):
+        # Traceable and elementwise, so a program and the eager reference round alike.
+        e = jnp.asarray(eulers_deg, dtype=jnp.float32)
+        base = jnp.sin(e[:, :, None] * jnp.float32(0.01) + jnp.arange(3, dtype=jnp.float32)[None, None, :])
+        left = jnp.asarray(left_matrices, dtype=jnp.float32)
+        return left[:, None, :, :] * base[None, :, :, :]
+
+    monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATION_CALL_BYTES", call_bytes)
+    _check_undecided_scorer_rotations(pass1_rotations, local, 0.0)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("local", [False, True], ids=["global", "local"])
+def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_device, monkeypatch, local):
+    """The same with RELION's rotation kernel (perturbed, left matrices): bitwise the per-particle calls."""
+
+    import jax
+
+    from relax.cuda.kernels import custom_cuda_requested
+    from relax.sampling import _relion_adaptive_pass1_rotations
+
+    if jax.default_backend() != "gpu" or not custom_cuda_requested():
+        pytest.skip("needs the custom CUDA rotation kernel")
+
+    def pass1_rotations(*args, **kwargs):
+        return np.asarray(_relion_adaptive_pass1_rotations(*args, **kwargs))
+
+    monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATION_CALL_BYTES", 2000)
+    _check_undecided_scorer_rotations(_relion_adaptive_pass1_rotations, local, 0.37, reference=pass1_rotations)
+
+
+def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbation, reference=None):
+    reference = pass1_rotations if reference is None else reference
+    rng = np.random.default_rng(7)
+    n_particles, slots, capacity, n_rot, r_pad = 5, 4, 3, 11, 16
+    n_images = np.array([4, 2, 3, 1, 4])
+    counts = np.array([11, 9, 11, 6, 10]) if local else np.full(n_particles, n_rot)
+    unit_rows = [np.sort(rng.choice(n_rot, size=int(c), replace=False)) for c in counts] if local else None
+    eulers = rng.uniform(-180.0, 180.0, size=(n_rot, 3))
+    particle_left = [rng.normal(size=(int(n), 3, 3)) for n in n_images]
+    # Class-major ids of two classes, some past a particle's count (padded rotations); particle 2 has none.
+    ids = rng.integers(0, 2 * r_pad, size=(n_particles, capacity)).astype(np.int32)
+    use = rng.random((n_particles, capacity)) < 0.7
+    use[2] = False
+    use[0, 0] = True
+
+    want = np.zeros((n_particles, slots, capacity, 3, 3), dtype=np.float32)
+    for p in np.flatnonzero(use.any(axis=1)):
+        grid_rows = np.minimum(np.where(use[p], ids[p] % r_pad, 0), int(counts[p]) - 1)
+        if local:
+            grid_rows = unit_rows[p][grid_rows]
+        want[p, : n_images[p]] = np.asarray(
+            reference(eulers[grid_rows], random_perturbation, 15.0, left_matrices=particle_left[p])
+        )
+
+    got = tomo_coarse._undecided_scorer_rotations(
+        jnp.asarray(ids),
+        jnp.asarray(use),
+        counts,
+        unit_rows,
+        jnp.asarray(eulers.astype(np.float32)),
+        particle_left,
+        random_perturbation,
+        15.0,
+        r_pad=r_pad,
+        slots=slots,
+        pass1_rotations=pass1_rotations,
+    )
+    np.testing.assert_array_equal(np.asarray(got), want)
+
+
+@pytest.mark.parametrize("variant", ["one_flush", "one_row", "flushes_of_three"])
 @pytest.mark.parametrize("n_classes", [1, 2])
-def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes, flushes):
+def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes, variant):
     """The pass with a scorer that is off by less than its stated bound: where max_significants cuts, the
     supports are the cut of the exact diff2, and only the undecided rotations were scored exactly.
 
-    ``flushes_of_three``: one particle per batch and three per flush, so the last flush holds one particle and is
-    padded to three; every flush's programs see three particles and the supports are the one-flush pass's."""
+    ``one_row`` leaves room for one undecided rotation per particle, so the flush learns from the device that
+    its cut must be taken again, at its size. ``flushes_of_three``: one particle per batch and three per flush, so
+    the last flush holds one particle and is padded to three; every flush's programs see three particles and the
+    supports are the one-flush pass's."""
 
     rng = np.random.default_rng(31)
     offsets = np.array([0, 2, 5, 6, 9])
@@ -776,9 +867,11 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         )
 
     def pass1_rotations(eulers, random_perturbation, angular_sampling_deg, *, left_matrices):
-        base = np.asarray(eulers, dtype=np.float32)[:, :, None] * np.eye(3, dtype=np.float32)[None, :, :] / 180.0
+        # Traceable: the exact cut builds its rotations inside a program.
+        base = jnp.asarray(eulers, dtype=jnp.float32)[:, :, None] * jnp.eye(3, dtype=jnp.float32)[None, :, :] / 180.0
         # Each image's matrices depend on its own left matrix (not on its place in the call).
-        return np.stack([base + np.float32(left[0, 0]) for left in np.asarray(left_matrices)])
+        left = jnp.asarray(left_matrices, dtype=jnp.float32)
+        return base[None] + left[:, 0, 0][:, None, None, None]
 
     captured = []
     significance = tomo_coarse.particle_coarse_significance
@@ -822,8 +915,10 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         padding_factor=2,
         image_size=8,
     )
+    if variant == "one_row":
+        monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATIONS", 1)
     supports, _pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
-    if flushes == "flushes_of_three":
+    if variant == "flushes_of_three":
         # One particle per batch (the stand-in GEMM's rounding pattern follows the batch layout, so both passes
         # below share it): flushes of two particles need no padding; flushes of three end with one padded to three.
         batches = tomo_coarse._coarse_batches
@@ -842,7 +937,8 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         return
     supports = [supports] if n_classes == 1 else supports
     wobbly = captured[0]
-    assert len(captured) == 2 and captured[1].shape == wobbly.shape  # one batch: its GEMM cut, then the exact cut
+    # One batch: its GEMM cut, then the exact cut; a squeezed flush takes both again at the size it needs.
+    assert len(captured) == (5 if variant == "one_row" else 2) and captured[-1].shape == wobbly.shape
     r_pad = wobbly.shape[1] // n_classes
     assert direct_calls and max(direct_calls) < n_rot  # a few rotations per particle, not the grid
 
@@ -855,7 +951,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     captured.clear()
     all_exact, _ = tomo_coarse.particle_coarse_supports(None, **kwargs)
     all_exact = [all_exact] if n_classes == 1 else all_exact
-    exact = captured[1]
+    exact = captured[-1]
     assert 0.0 < np.max(np.abs(exact - wobbly)) <= 3 * bound
     n_capped = 0
     for unit in range(n_units):
