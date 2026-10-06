@@ -68,3 +68,23 @@ def test_vdam_batch_step_factor():
     # The final all-particle update keeps VDAM's step; a batch above the subset never raises it.
     assert Config(iterations=6000, stochastic_batch_size=300).step_factor(6000, 100_000) == 1.0
     assert Config(iterations=6000, stochastic_batch_size=50_000).step_factor(4001, 100_000) == 1.0
+
+
+def test_vdam_refuses_iteration_counts_with_a_nan_tau2_fudge():
+    import numpy as np
+
+    from relax.ppca_initial_model.config import Config
+
+    # RELION's tau2-fudge sigmoid length grad_inbetween_iter // 4 is 0 for 4 and 5 iterations, so the fudge at
+    # iteration 1 is NaN and every VDAM gate (rho = 2 * fudge * signal / disagreement) would be NaN.
+    for iterations in (4, 5):
+        with pytest.raises(
+            ValueError, match=r"tau2-fudge schedule for \d+ iterations is not finite at iteration\(s\) \[1\]"
+        ):
+            Config(iterations=iterations)
+        # Momentum SGD does not read the fudge.
+        Config(iterations=iterations, optimizer="momentum_sgd")
+    # Every accepted VDAM count schedules a finite fudge on every iteration.
+    for iterations in (1, 2, 3, 6, 7, 50, 200):
+        config = Config(iterations=iterations)
+        assert all(np.isfinite(config.schedule(it, 2000)[2]) for it in range(1, iterations + 1))

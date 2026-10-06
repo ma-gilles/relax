@@ -98,6 +98,20 @@ class Config:
             raise ValueError("Shift range must be nonnegative and step positive")
         if self.optimizer not in ("vdam", "momentum_sgd"):
             raise ValueError("Optimizer must be vdam or momentum_sgd")
+        if self.optimizer == "vdam":
+            # RELION's tau2-fudge sigmoid has length grad_inbetween_iter // 4; for 4 and 5 iterations that is 0 and
+            # the fudge at iteration grad_ini_iter is 0/0 = NaN (kept for RELION parity in relax.vdam.schedules).
+            # The VDAM update multiplies the fudge into every gate, so such a run cannot produce a finite model.
+            phases = compute_phase_lengths(self.iterations)
+            unusable = [
+                i for i in range(1, self.iterations + 1) if not np.isfinite(compute_tau2_fudge(i, phases, True, 3))
+            ]
+            if unusable:
+                raise ValueError(
+                    f"VDAM's tau2-fudge schedule for {self.iterations} iterations is not finite at iteration(s) "
+                    f"{unusable} (RELION's sigmoid length grad_inbetween_iter // 4 is 0); choose another iteration "
+                    "count or optimizer momentum_sgd"
+                )
         if not np.isfinite(self.sgd_learning_rate) or self.sgd_learning_rate <= 0:
             raise ValueError("Momentum SGD learning rate must be finite and positive")
         if self.gemm_precision not in ("auto", "fp32", "tf32"):
