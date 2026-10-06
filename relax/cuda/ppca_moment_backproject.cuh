@@ -10,7 +10,11 @@
 // columns, at its Hermitian partner; targets with kz < 0 fold to their Hermitian partner.
 //
 // The accumulator is (groups, V, 32): channel c lives in lane c % 32 of group c / 32 (the metric
-// channels, then the real and imaginary parts of each residual channel). One warp handles 32
+// channels, optionally the exact-diagonal trace, then the real and imaginary parts of each residual
+// channel). The exact-diagonal trace channel scatters the LHS trace with the squared weight of each
+// observation, sum_p w_p^2 tr L_p: the trace of the diagonal of the projection Hessian P^T L P where
+// the other metric channels hold sum_p w_p L_p. A doubled interior target (MODE 1: a pixel and its
+// Hermitian partner on one voxel) holds two observations of weight w / 2 each, so 2 (w / 2)^2. One warp handles 32
 // pixels of one rotation: each lane first expands its own pixel's targets and channel values,
 // then for every pixel the warp adds one channel per lane, so each target is one warp-wide atomic
 // to one 128-byte voxel row instead of one scattered atomic per channel. Only float32 association
@@ -28,7 +32,8 @@ struct Geometry {
     float c0, c1, c2, max_r2;
 };
 
-// emit(i0, i1, hkz, weight, fold) for every half-volume target of one trilinear point.
+// emit(i0, i1, hkz, weight, fold, doubled) for every half-volume target of one trilinear point;
+// doubled marks a MODE 1 interior target, whose weight is two observations' sum.
 // MODE (recovar CONJ_MODE): 0 normal, 1 double interior kz, 2 boundary columns only.
 template <int MODE, typename Emit>
 __device__ __forceinline__ void trilinear_targets(const Geometry& g, float rk0, float rk1, float rk2, Emit& emit) {
@@ -69,8 +74,9 @@ __device__ __forceinline__ void trilinear_targets(const Geometry& g, float rk0, 
                 }
                 if (hkz > ic2) continue;
                 if (MODE == 2 && hkz > 0 && hkz < ic2) continue;
-                if (MODE == 1 && hkz > 0 && hkz < ic2) w *= 2.f;
-                emit(sj0, sj1, hkz, w, fold);
+                const bool doubled = MODE == 1 && hkz > 0 && hkz < ic2;
+                if (doubled) w *= 2.f;
+                emit(sj0, sj1, hkz, w, fold, doubled);
             }
         }
     }
@@ -116,7 +122,11 @@ __device__ __forceinline__ void pixel_targets(const Geometry& g, const float* R,
     }
 }
 
-// One lane's targets of its own pixel: voxel offset (high bit: negate imaginary parts) and weight.
+// One lane's targets of its own pixel: voxel offset (bit 31: negate imaginary parts; bit 30: a doubled
+// target) and weight.
+constexpr int kConjugateBit = static_cast<int>(1u << 31);
+constexpr int kDoubledBit = 1 << 30;
+constexpr int kOffsetMask = kDoubledBit - 1;
 struct Collect {
     const Geometry& g;
     int* offset;
@@ -124,9 +134,9 @@ struct Collect {
     int n = 0;
     bool conjugate = false;
     __device__ Collect(const Geometry& geometry, int* o, float* w) : g(geometry), offset(o), weight(w) {}
-    __device__ __forceinline__ void operator()(int i0, int i1, int i2, float w, bool fold) {
-        const int o = (i0 * g.N1 + i1) * g.N2_eff + i2;
-        offset[n] = (fold != conjugate) ? (o | (1 << 31)) : o;
+    __device__ __forceinline__ void operator()(int i0, int i1, int i2, float w, bool fold, bool doubled) {
+        const int o = ((i0 * g.N1 + i1) * g.N2_eff + i2) | (doubled ? kDoubledBit : 0);
+        offset[n] = (fold != conjugate) ? (o | kConjugateBit) : o;
         weight[n] = w;
         n++;
     }
@@ -141,13 +151,14 @@ __host__ __device__ constexpr int packed_index(int i, int j, int P) {  // np.tri
 // residual R_p - sum_q L_pq A_q and the noise-power correction
 // sum_pq L_pq Re(conj A_p A_q) - 2 sum_p Re(R_p conj A_p) are formed in registers; the correction is
 // summed over rotations into correction (F,), and the metric channels (the K packed LHS images, or their
-// trace) and the residual's real/imaginary parts are scattered into out (G, V, 32). out and correction
+// trace), with exact_trace the trace again under squared weights, and the residual's real/imaginary parts
+// are scattered into out (G, V, 32). out and correction
 // are zero on entry. Templated on P so a pixel's projections and packed LHS sit in registers; each lane's
 // channel values are stored with an odd stride so the lanes' stores do not share banks.
 template <int P>
 __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     Geometry g, const float* __restrict__ rot, const int* __restrict__ pix_idx, const float* __restrict__ lhs,
-    const float* __restrict__ rhs, const float* __restrict__ proj, int metric_trace, int stride,
+    const float* __restrict__ rhs, const float* __restrict__ proj, int metric_trace, int exact_trace, int stride,
     float* __restrict__ out, float* __restrict__ correction) {
     extern __shared__ float s_value[];  // [kWarps][32][stride], stride = channels | 1
     __shared__ int s_offset[kWarps][32][kMaxTargets];
@@ -163,7 +174,8 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     const int f = base + lane;
     constexpr int K = P * (P + 1) / 2;
     const int metric = metric_trace ? 1 : K;
-    const int channels = metric + 2 * P;
+    const int residual0 = metric + (exact_trace ? 1 : 0);  // first residual channel
+    const int channels = residual0 + 2 * P;
     float* value = s_value + (warp * 32 + lane) * stride;
     Collect collect(g, s_offset[warp][lane], s_weight[warp][lane]);
     if (f < g.n_pix && pix_idx[f] >= 0) {  // a negative index is padding: no channels, no targets
@@ -195,8 +207,8 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
                 pim += Lij * Aj.y;
                 if (j >= i) power += (j == i ? 1.f : 2.f) * Lij * (Ai.x * Aj.x + Ai.y * Aj.y);
             }
-            value[metric + 2 * i] = Rre - pre;
-            value[metric + 2 * i + 1] = Rim - pim;
+            value[residual0 + 2 * i] = Rre - pre;
+            value[residual0 + 2 * i + 1] = Rim - pim;
             cross += Rre * Ai.x + Rim * Ai.y;
             trace += Lr[packed_index(i, i, P)];
         }
@@ -206,6 +218,7 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
 #pragma unroll
             for (int k = 0; k < K; k++) value[k] = Lr[k];
         }
+        if (exact_trace) value[metric] = trace;
         atomicAdd(&correction[f], power - 2.f * cross);
     } else {
         for (int c = 0; c < channels; c++) value[c] = 0.f;
@@ -213,11 +226,12 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
     s_count[warp][lane] = collect.n;
     __syncwarp();
     const long V = (long)g.N0 * g.N1 * g.N2_eff;
-    const int first_imag = metric + 1;  // residual parts alternate re, im
+    const int first_imag = residual0 + 1;  // residual parts alternate re, im
     for (int group = 0; group * 32 < channels; group++) {
         const int c = group * 32 + lane;
         const bool active = c < channels;
-        const bool imag = active && c >= metric && ((c - first_imag) & 1) == 0;
+        const bool imag = active && c >= residual0 && ((c - first_imag) & 1) == 0;
+        const bool squared = exact_trace && c == metric;
         float* vol = out + group * V * 32;
         for (int j = 0; j < 32; j++) {
             const float v = active ? s_value[(warp * 32 + j) * stride + c] : 0.f;
@@ -225,8 +239,10 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
             const int n = s_count[warp][j];
             for (int t = 0; t < n; t++) {
                 const int o = s_offset[warp][j][t];
-                const float x = s_weight[warp][j][t] * ((imag && o < 0) ? -v : v);
-                if (active) atomicAdd(&vol[(long)(o & 0x7fffffff) * 32 + lane], x);
+                float w = s_weight[warp][j][t];
+                if (squared) w = (o & kDoubledBit) ? 0.5f * w * w : w * w;
+                const float x = w * ((imag && o < 0) ? -v : v);
+                if (active) atomicAdd(&vol[(long)(o & kOffsetMask) * 32 + lane], x);
             }
         }
     }
@@ -234,25 +250,27 @@ __global__ void __launch_bounds__(32 * kWarps) moment_scatter_kernel(
 
 template <int P>
 cudaError_t launch_scatter_p(cudaStream_t stream, size_t smem, Geometry g, const float* rot, const int* pix,
-                             const float* lhs, const float* rhs, const float* proj, int metric_trace, int stride,
-                             float* out, float* correction) {
+                             const float* lhs, const float* rhs, const float* proj, int metric_trace, int exact_trace,
+                             int stride, float* out, float* correction) {
     // The static target tables add to the per-pixel channel values: opt in whenever any is dynamic.
     cudaError_t err =
         cudaFuncSetAttribute(moment_scatter_kernel<P>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
     if (err != cudaSuccess) return err;
     dim3 grid((g.n_pix + 32 * kWarps - 1) / (32 * kWarps), g.n_rot);
     moment_scatter_kernel<P>
-        <<<grid, 32 * kWarps, smem, stream>>>(g, rot, pix, lhs, rhs, proj, metric_trace, stride, out, correction);
+        <<<grid, 32 * kWarps, smem, stream>>>(g, rot, pix, lhs, rhs, proj, metric_trace, exact_trace, stride, out,
+                                              correction);
     return cudaGetLastError();
 }
 
 inline cudaError_t launch_scatter(int P, cudaStream_t stream, size_t smem, Geometry g, const float* rot,
                                   const int* pix, const float* lhs, const float* rhs, const float* proj,
-                                  int metric_trace, int stride, float* out, float* correction) {
+                                  int metric_trace, int exact_trace, int stride, float* out, float* correction) {
     switch (P) {
 #define PPCA_SCATTER_CASE(N) \
     case N:                  \
-        return launch_scatter_p<N>(stream, smem, g, rot, pix, lhs, rhs, proj, metric_trace, stride, out, correction);
+        return launch_scatter_p<N>(stream, smem, g, rot, pix, lhs, rhs, proj, metric_trace, exact_trace, stride, out, \
+                                   correction);
         PPCA_SCATTER_CASE(1) PPCA_SCATTER_CASE(2) PPCA_SCATTER_CASE(3) PPCA_SCATTER_CASE(4) PPCA_SCATTER_CASE(5)
         PPCA_SCATTER_CASE(6) PPCA_SCATTER_CASE(7) PPCA_SCATTER_CASE(8) PPCA_SCATTER_CASE(9) PPCA_SCATTER_CASE(10)
         PPCA_SCATTER_CASE(11) PPCA_SCATTER_CASE(12) PPCA_SCATTER_CASE(13) PPCA_SCATTER_CASE(14) PPCA_SCATTER_CASE(15)
@@ -267,7 +285,7 @@ inline cudaError_t launch_scatter(int P, cudaStream_t stream, size_t smem, Geome
 
 ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_t image_w, int64_t full_image_w,
                                     int64_t N0, int64_t N1, int64_t N2, int64_t max_r2_x4, int64_t metric_trace,
-                                    ffi::AnyBuffer lhs, ffi::AnyBuffer rhs, ffi::AnyBuffer proj,
+                                    int64_t exact_trace, ffi::AnyBuffer lhs, ffi::AnyBuffer rhs, ffi::AnyBuffer proj,
                                     ffi::AnyBuffer pixel_indices, ffi::AnyBuffer rot,
                                     ffi::Result<ffi::AnyBuffer> out, ffi::Result<ffi::AnyBuffer> correction) {
     namespace m = ppca_moment_bp;
@@ -289,7 +307,7 @@ ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_
         return ffi::Error::InvalidArgument(
             "PpcaMomentScatterF32: expected lhs (tri(P),R,F), rhs (P,R,2F), proj (P,R,2F), indices (F,), "
             "rotations (R,6), out (G,V,32), correction (F,)");
-    const int64_t channels = (metric_trace ? 1 : P * (P + 1) / 2) + 2 * P;
+    const int64_t channels = (metric_trace ? 1 : P * (P + 1) / 2) + (exact_trace ? 1 : 0) + 2 * P;
     const int64_t V = N0 * N1 * (N2 / 2 + 1);
     if (od[0] != (channels + 31) / 32 || od[1] != V)
         return ffi::Error::InvalidArgument("PpcaMomentScatterF32: output groups or volume size mismatch");
@@ -319,7 +337,8 @@ ffi::Error PpcaMomentScatterF32Impl(cudaStream_t stream, int64_t image_h, int64_
                                 static_cast<const int*>(pixel_indices.untyped_data()),
                                 static_cast<const float*>(lhs.untyped_data()),
                                 static_cast<const float*>(rhs.untyped_data()),
-                                static_cast<const float*>(proj.untyped_data()), (int)metric_trace, stride,
+                                static_cast<const float*>(proj.untyped_data()), (int)metric_trace, (int)exact_trace,
+                                stride,
                                 static_cast<float*>(out->untyped_data()),
                                 static_cast<float*>(correction->untyped_data()));
     if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
@@ -337,6 +356,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(PpcaMomentScatterF32, PpcaMomentScatterF32Impl,
                                   .Attr<int64_t>("N2")
                                   .Attr<int64_t>("max_r2_x4")
                                   .Attr<int64_t>("metric_trace")
+                                  .Attr<int64_t>("exact_trace")
                                   .Arg<ffi::AnyBuffer>()   /* lhs (tri(P), R, F)     */
                                   .Arg<ffi::AnyBuffer>()   /* rhs (P, R, 2F)         */
                                   .Arg<ffi::AnyBuffer>()   /* proj (P, R, 2F)        */

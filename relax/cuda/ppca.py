@@ -25,6 +25,7 @@ def ppca_moment_scatter_f32(
     volume_shape,
     max_r,
     metric_trace: bool,
+    exact_trace: bool = False,
 ) -> tuple[jax.Array, jax.Array]:
     """PPCA residuals of one rotation block and their backprojection with the metric images.
 
@@ -32,13 +33,15 @@ def ppca_moment_scatter_f32(
     ``(P, R, 2F)`` RHS images (real parts, then imaginary parts) on the window
     ``pixel_indices`` of the half image (``-1`` pads: no contribution); ``projections`` ``(P, R, 2F)`` on the same window in the
     same planar layout (:func:`ppca_window_project_f32`); rotations ``(R, 3, 3)``. Returns ``(groups, V, 32)`` half volumes holding the
-    metric channels (the packed LHS, or its trace with ``metric_trace``) and the real and
+    metric channels (the packed LHS, or its trace with ``metric_trace``), with ``exact_trace`` one more
+    channel holding the LHS trace scattered with squared interpolation weights (``sum_p w_p^2 tr L_p``,
+    the trace of the exact diagonal of the linear-interpolation projection Hessian), and the real and
     imaginary parts of the residual ``R_p - sum_q L_pq A_q`` (channel ``c`` is lane ``c % 32``
     of group ``c // 32``), and the noise-power correction ``(F,)``
     ``sum_r [sum_pq L_pq Re(conj A_p A_q) - 2 sum_p Re(R_p conj A_p)]`` of
     :func:`relax.ppca_refinement.residual_statistics.residual_statistics_from_moment_images`.
-    Each channel is recovar's linear-interpolation ``batch_backproject_indexed`` (half volume,
-    half image, no RELION x-fold, unit upsampling) into a zero volume, up to float32 order.
+    Each channel but the exact trace is recovar's linear-interpolation ``batch_backproject_indexed``
+    (half volume, half image, no RELION x-fold, unit upsampling) into a zero volume, up to float32 order.
     """
 
     library.ensure_ffi()
@@ -50,7 +53,7 @@ def ppca_moment_scatter_f32(
         raise ValueError("ppca_moment_scatter_f32 supports unit upsampling only")
     rot6 = cuda_backproject.rot_to_compact(jnp.asarray(rotation_matrices), jnp.float32)
     P = rhs_parts.shape[0]
-    channels = (1 if metric_trace else P * (P + 1) // 2) + 2 * P
+    channels = (1 if metric_trace else P * (P + 1) // 2) + (1 if exact_trace else 0) + 2 * P
     N0, N1, N2 = (int(n) for n in volume_shape)
     out_types = (
         jax.ShapeDtypeStruct((-(-channels // 32), N0 * N1 * (N2 // 2 + 1), 32), jnp.float32),
@@ -70,6 +73,7 @@ def ppca_moment_scatter_f32(
         N2=kw["N2"],
         max_r2_x4=kw["max_r2_x4"],
         metric_trace=np.int64(int(metric_trace)),
+        exact_trace=np.int64(int(exact_trace)),
     )
 
 
