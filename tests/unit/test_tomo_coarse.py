@@ -544,7 +544,9 @@ def test_the_class_texture_is_refilled_for_the_next_pass(gpu_device):
         expected = np.asarray(tomo_coarse._coarse_gemm_projections(changed, rotations, layout, texture=fresh, **kwargs))
         tomo_coarse._CLASS_TEXTURES.pop(1)[0].close_after(jnp.asarray(expected))
     assert fresh is not first
-    np.testing.assert_array_equal(refilled, expected)
+    # Both textures hold the same projector and interpolate it with the same kernel: the default float32 band
+    # (no bitwise float asserts, user rule 2026-09-24).
+    assert_matches(refilled, expected)
 
 
 def test_padded_particles_with_their_own_rotation_priors_cut_as_one_by_one():

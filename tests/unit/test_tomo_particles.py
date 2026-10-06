@@ -95,7 +95,11 @@ def test_translation_angles_follow_relions_per_image_phase_operand():
 
 
 def test_threaded_translation_angles_equal_the_single_call(monkeypatch):
-    """Blocks of images on host threads give the bytes of one call, for scalar and per-image sizes."""
+    """Blocks of images on host threads give the phases of one call, for scalar and per-image sizes.
+
+    Each image's phases are the same float32 arithmetic either way; the default float32 band (helpers.float_compare)
+    leaves room for a compiler or library change of the last bits (no bitwise float asserts, user rule 2026-09-24).
+    """
     rng = np.random.default_rng(11)
     n_particles, n_images, n_shifts = 7, 53, 9
     image_particle = np.sort(rng.integers(0, n_particles, n_images))
@@ -107,7 +111,8 @@ def test_threaded_translation_angles_equal_the_single_call(monkeypatch):
         monkeypatch.setattr(tomo_particles, "_THREADED_PHASE_VALUES", 4 * n_shifts)  # blocks of four images
         threaded = tomo_particles.tilt_translation_angles(shifts, old, projections, image_particle, size)
         monkeypatch.undo()
-        assert threaded.dtype == np.float32 and threaded.tobytes() == single.tobytes()
+        assert threaded.dtype == np.float32
+        assert_matches(threaded, single)
 
 
 def test_image_slots_visit_each_particles_images_in_order():
