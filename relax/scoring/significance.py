@@ -30,7 +30,6 @@ from relax.helpers.env_flags import (
     parse_env_int_set,
     parse_env_strict_flag,
 )
-from relax.helpers.optics_noise import noise_rows
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion.relion_coarse_operands import (
     _assemble_relion_exact_coarse_gaussian_operands,
@@ -1390,6 +1389,10 @@ def _compute_k_class_significance_batched(
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, image_shape).squeeze()
     if noise_variance_half.ndim == 2 and optics_group_ids is None:
         raise ValueError("a per-optics-group noise table needs optics_group_ids")
+    # Each batch gathers its images' group spectra on the host: an eager device gather would
+    # compile a program for every batch size (1339 compiles in a several-shape VDAM run).
+    noise_table_host = np.asarray(noise_variance_half) if noise_variance_half.ndim == 2 else None
+    image_groups_host = None if noise_table_host is None else np.asarray(optics_group_ids, dtype=np.int32)
     coarse_gaussian_shifted_corrected = None
     coarse_gaussian_unshifted_corrected = None
     coarse_gaussian_translation_angles = None
@@ -1933,13 +1936,9 @@ def _compute_k_class_significance_batched(
             batch_image_indices = _repeat_pad_batch_axis(np.asarray(indices), batch_size)
             # Each image's own optics-group spectrum; the one shared spectrum otherwise.
             batch_noise_half = noise_variance_half
-            if noise_variance_half.ndim == 2:
-                batch_noise_half = jnp.asarray(
-                    _repeat_pad_batch_axis(
-                        np.asarray(noise_rows(noise_variance_half, optics_group_ids, indices)),
-                        batch_size,
-                    )
-                )
+            if noise_table_host is not None:
+                batch_groups = image_groups_host[np.asarray(indices, dtype=np.int64)]
+                batch_noise_half = jnp.asarray(_repeat_pad_batch_axis(noise_table_host[batch_groups], batch_size))
             real_space_pre_shift_applied = integer_pre_shifts is not None
             if real_space_pre_shift_applied and not relion_cuda_preprocess:
                 batch_data = apply_relion_integer_pre_shifts(batch_data, integer_pre_shifts)
