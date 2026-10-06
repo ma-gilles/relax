@@ -1248,7 +1248,6 @@ def main(command=None):
         translations=translations_jnp,
         options=RefinementOptions(
             symmetry=SymmetryOptions(point_group=symmetry),
-            disc_type=os.environ.get("RELAX_DISC_TYPE_OVERRIDE", "linear_interp"),
             schedule=command_options.resolve_schedule(
                 args,
                 initial_sampling=initial_sampling,

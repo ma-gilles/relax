@@ -716,7 +716,7 @@ def _fixed_diagnostic_runtime_config(
         "do_norm_correction": True,
         "do_scale_correction": False,
         "refs_are_ctf_corrected": True,
-        "disc_type": os.environ.get("RELAX_DISC_TYPE_OVERRIDE", "linear_interp"),
+        "disc_type": "linear_interp",
         "image_fourier_backend": str(args.image_fourier_backend),
         "local_search_translation_prior_mode": "coarse",
         "declared_relion_command_line": str(args.frozen_boundary_relion_command_line),
