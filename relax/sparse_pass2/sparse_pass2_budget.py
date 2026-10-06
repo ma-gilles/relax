@@ -62,12 +62,16 @@ _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION = 0.006
 
 
 # The expected-accuracy projector slab (float64 real and imaginary planes) stays on
-# the device whole up to this fraction of device memory and is streamed in z-plane
-# chunks of this size above it. At EMPIAR-10202's full box the slab is 30.7 GiB,
-# which the pool of a 26-iteration run could not place (gpuport 15003773, final
-# all-data pass). A full-size box-256 slab (1.1 GB at padding 2) stays whole on a
-# 16 GB device; box 512 (8.7 GB) and up stream on 80 GB devices.
+# the device whole up to this fraction of device memory; above it, each projection
+# streams it in z-plane chunks of at most ACCURACY_SLAB_STREAM_CHUNK_BYTES. At
+# EMPIAR-10202's full box the slab is 30.7 GiB, which the pool of a 26-iteration run
+# could not place (gpuport 15003773, final all-data pass), and chunks of a tenth of
+# the device, uploaded and freed at every projection, fragmented the pool until a
+# 7.65 GiB reconstruction buffer failed at iteration 23 (gpuport 15073680; the same
+# run without streaming passed, 15085606/15085607). Small chunks leave no large hole.
+# A full-size box-256 slab (1.1 GB at padding 2) stays whole on a 16 GB device.
 _AUTO_ACCURACY_SLAB_DEVICE_FRACTION = 0.100
+ACCURACY_SLAB_STREAM_CHUNK_BYTES = 512 * 1024**2
 
 
 _DEFAULT_ADJOINT_BLOCK_MAX_BYTES = 512 * 1024**2
@@ -452,8 +456,8 @@ def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None = None) ->
     return max(1, int(float(device_memory_bytes) * _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION))
 
 
-def accuracy_slab_chunk_bytes(device_memory_bytes: int | None = None) -> int | None:
-    """Device bytes of one expected-accuracy slab chunk, or None for no bound (no accelerator)."""
+def accuracy_slab_resident_bytes(device_memory_bytes: int | None = None) -> int | None:
+    """The largest expected-accuracy slab kept whole on the device, or None for no bound (no accelerator)."""
 
     if device_memory_bytes is None:
         device_memory_bytes = _device_memory_limit_bytes()

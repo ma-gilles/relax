@@ -24,9 +24,10 @@ the projector slab is zero-padded to the class radius, so the device programs
 compile once per class instead of once per current size (13 sizes in a 200-iteration
 VDAM run). The pixels outside the current size hold zeros and are not valid SNR terms.
 A slab larger than the device budget
-(:func:`relax.sparse_pass2.sparse_pass2_budget.accuracy_slab_chunk_bytes`) is
-streamed in z-plane chunks; each sample takes each of its two z planes from the
-chunk holding it, so the values do not depend on the chunking.
+(:func:`relax.sparse_pass2.sparse_pass2_budget.accuracy_slab_resident_bytes`) is
+streamed in z-plane chunks of at most ``ACCURACY_SLAB_STREAM_CHUNK_BYTES``; each
+sample takes each of its two z planes from the chunk holding it, so the values do
+not depend on the chunking.
 ``relax.relion_bind`` is the unit-test oracle
 (``tests/unit/test_relion_expected_accuracy_vs_relion_bind.py``).
 """
@@ -42,7 +43,7 @@ import numpy as np
 
 from relax.helpers import relion_random
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.sparse_pass2.sparse_pass2_budget import accuracy_slab_chunk_bytes
+from relax.sparse_pass2.sparse_pass2_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
 
 PVALUE = 4.60517
 _PI = 3.14159265358979323846
@@ -184,19 +185,21 @@ class _Projector:
 
         return _inverse3(np.asarray(matrices, dtype=np.float64)) * self.padding_factor
 
-    def device(self, chunk_bytes: int | None):
-        """The slab placed for :func:`_project_on_device`, at most ``chunk_bytes`` of planes at a time.
+    def device(self, resident_bytes: int | None, stream_chunk_bytes: int):
+        """The slab placed for :func:`_project_on_device`.
 
-        A slab within ``chunk_bytes`` (or any slab when it is None) is one resident
-        chunk. A larger one is cut into equal z-plane chunks (the last zero-padded,
-        so one program serves them all) that each projection uploads in turn.
+        A slab within ``resident_bytes`` (or any slab when it is None) is one resident
+        chunk. A larger one is cut into equal z-plane chunks of at most
+        ``stream_chunk_bytes`` (the last zero-padded, so one program serves them all)
+        that each projection uploads in turn.
         """
 
         nz, ny, nx = self.data_shape
         plane_bytes = 2 * 8 * ny * nx
-        planes = nz if chunk_bytes is None else max(1, min(nz, int(chunk_bytes) // plane_bytes))
+        resident = resident_bytes is None or nz * plane_bytes <= int(resident_bytes)
+        planes = nz if resident else max(1, min(nz, int(stream_chunk_bytes) // plane_bytes))
         pixels = tuple(jnp.asarray(v) for v in (self.pixel_x, self.pixel_y, self.pixel_flat))
-        if planes == nz:
+        if resident:
             whole = (jnp.asarray(self.real.reshape(-1)), jnp.asarray(self.imag.reshape(-1)))
             return _DeviceSlab(pixels, planes, ((0, whole),))
         chunks = []
@@ -563,7 +566,7 @@ def expected_angular_errors(
             projector_data[k], int(projector_r_max), int(padding_factor), int(current_image_size),
             capacity_image_size=capacity, capacity_r_max=capacity_r_max,
         )
-        device = projector.device(accuracy_slab_chunk_bytes())
+        device = projector.device(accuracy_slab_resident_bytes(), ACCURACY_SLAB_STREAM_CHUNK_BYTES)
         errors = [np.empty(n_trials), np.empty(n_trials)]
         for chunk in chunks:
             rows = np.concatenate([np.arange(trial_image_offsets[t], trial_image_offsets[t + 1]) for t in chunk])

@@ -193,7 +193,7 @@ def estimate_iteration_accuracy(
                     ),
                 )
             # A failure raises: an infinite accuracy would hide it behind a changed
-            # convergence decision (the slab is sized by accuracy_slab_chunk_bytes).
+            # convergence decision (the slab is sized by accuracy_slab_resident_bytes).
             accuracy = inputs.estimate(
                 projector_data=None if shared_projector_half1 is None else shared_projector_half1.projector.data,
                 reference_fourier=reference,

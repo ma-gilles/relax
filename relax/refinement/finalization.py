@@ -188,7 +188,7 @@ def run_final_all_data(
                 n_units=expected_accuracy_inputs.dataset.n_units,
             )
             # A failure raises: the slab is sized to the device by its budget
-            # (accuracy_slab_chunk_bytes), and an infinite accuracy would hide it.
+            # (accuracy_slab_resident_bytes), and an infinite accuracy would hide it.
             final_expected_accuracy = expected_accuracy_inputs.estimate(
                 reference_fourier=final_join_means[0],
                 best_eulers_deg=final_eulers_half1,

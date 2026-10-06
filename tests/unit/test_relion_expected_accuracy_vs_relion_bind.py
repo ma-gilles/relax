@@ -142,20 +142,22 @@ def _slab_bytes(size, current_size, padding):
     return 2 * 8 * side * side * (side // 2 + 1), 2 * 8 * side * (side // 2 + 1)
 
 
-@pytest.mark.parametrize("planes_short", [0, 1, 7])
-def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short):
-    """At the budget the slab is resident; a plane over it streams in chunks, still exact."""
+@pytest.mark.parametrize(("planes_short", "chunk_planes"), [(0, 3), (1, 3), (7, 1), (1, 40)])
+def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short, chunk_planes):
+    """At the resident budget the slab stays whole; a plane over it streams in chunks no larger than the
+    stream chunk, and the accuracies stay exact."""
     from relax.helpers import relion_expected_accuracy as accuracy
 
     size, current_size, padding = 32, 32, 2
     slab_bytes, plane_bytes = _slab_bytes(size, current_size, padding)
-    budget = slab_bytes - planes_short * plane_bytes
-    monkeypatch.setattr(accuracy, "accuracy_slab_chunk_bytes", lambda: budget)
+    chunk_bytes = chunk_planes * plane_bytes
+    monkeypatch.setattr(accuracy, "accuracy_slab_resident_bytes", lambda: slab_bytes - planes_short * plane_bytes)
+    monkeypatch.setattr(accuracy, "ACCURACY_SLAB_STREAM_CHUNK_BYTES", chunk_bytes)
     placed = []
     device = accuracy._Projector.device
 
-    def recording(self, chunk_bytes):
-        slab = device(self, chunk_bytes)
+    def recording(self, resident_bytes, stream_chunk_bytes):
+        slab = device(self, resident_bytes, stream_chunk_bytes)
         placed.append(slab)
         return slab
 
@@ -164,17 +166,20 @@ def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short):
     oracle = _oracle(case, size=size, current_size=current_size, padding=padding, do_ctf=False)
     ours = _ours(case, size=size, current_size=current_size, padding=padding, ctf_images=None)
     _assert_same(ours, oracle)
-    assert placed and all(slab.streamed == (planes_short > 0) for slab in placed)
-    if planes_short:
-        assert all(len(slab.chunks) >= 2 for slab in placed)
+    assert placed and all(slab.streamed == (planes_short > 0 and chunk_bytes < slab_bytes) for slab in placed)
+    for slab in placed:
+        if slab.streamed:
+            assert all(real.nbytes + imag.nbytes <= chunk_bytes for _, (real, imag) in slab.chunks)
 
 
-def test_slab_budget_streams_the_full_box_10202_slab_and_keeps_box_256_whole():
-    from relax.sparse_pass2.sparse_pass2_budget import accuracy_slab_chunk_bytes
+def test_slab_budget_streams_the_full_box_10202_slab_in_small_chunks_and_keeps_box_256_whole():
+    from relax.sparse_pass2.sparse_pass2_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
 
     h100, p100 = int(79.65 * 1024**3), int(14.30 * 1024**3)
-    assert _slab_bytes(800, 800, 2)[0] > accuracy_slab_chunk_bytes(h100)
-    assert _slab_bytes(256, 256, 2)[0] <= accuracy_slab_chunk_bytes(p100)
+    assert _slab_bytes(800, 800, 2)[0] > accuracy_slab_resident_bytes(h100)
+    assert _slab_bytes(256, 256, 2)[0] <= accuracy_slab_resident_bytes(p100)
+    # No streamed chunk is a large block: each is at most 512 MiB, at least one full-box plane (20.6 MB).
+    assert _slab_bytes(800, 800, 2)[1] <= ACCURACY_SLAB_STREAM_CHUNK_BYTES <= 512 * 1024**2
 
 
 def test_with_ctf_matches():
