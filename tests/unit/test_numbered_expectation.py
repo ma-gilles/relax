@@ -277,6 +277,7 @@ def test_recording_uses_published_half_identity_and_preserves_capture_order(
     monkeypatch.setattr(expectation, '_record_score_profile', profile)
     monkeypatch.setattr(expectation.bpref_diagnostics, 'flush_selected_bpref_device_panel', panel)
     monkeypatch.setattr(expectation._parity_dump, 'collect_e_step', capture)
+    monkeypatch.setattr(expectation._parity_dump, 'is_active', lambda: True)
     expectation.record_numbered_half(
         result, particle_half, outputs, significance,
         profile_history=profile_history, iteration=4, image_window_size=None,
@@ -424,3 +425,39 @@ def test_empty_full_layout_does_not_read_unused_volume_geometry(monkeypatch, n_c
         assert actual.Ft_y is None and actual.Ft_ctf is None
     else:
         assert actual.Ft_y.shape == (8**3,)
+
+
+@pytest.mark.parametrize('dump_active', [False, True])
+@pytest.mark.parametrize('with_layout', [False, True])
+def test_recorded_half_hands_the_parity_dump_its_input_rows_only_when_it_dumps(monkeypatch, dump_active, with_layout):
+    """The parity dump receives each image's row in the input stack (None for a dataset without an index
+    layout, or when no dump is active); a failing layout is an error, not a missing row list (rule 12)."""
+    half, _phase, _kwargs = numbered_inputs()
+    if not with_layout:
+        half = replace(half, particles=replace(half.particles, dataset=SimpleNamespace(
+            n_units=2, n_images=2, image_shape=(4, 4), volume_shape=(4, 4, 4))))
+    collected = {}
+    monkeypatch.setattr(expectation._parity_dump, 'is_active', lambda: dump_active)
+    monkeypatch.setattr(expectation._parity_dump, 'collect_e_step', lambda **kw: collected.update(kw))
+    monkeypatch.setattr(expectation.bpref_diagnostics, 'flush_selected_bpref_device_panel', lambda **kw: None)
+    per_half = PerHalfOutputs()
+    expectation.record_numbered_half(
+        engine_result(), half.particles, per_half, expectation.SignificanceStatistics(), profile_history=[],
+        iteration=0, image_window_size=4, healpix_order=0, k_class_enabled=False,
+    )
+    if dump_active and with_layout:
+        np.testing.assert_array_equal(collected['original_image_indices'], [2, 3])
+        assert collected['original_image_indices'].dtype == np.int64
+    else:
+        assert collected['original_image_indices'] is None
+
+    def broken(indices):
+        raise IndexError('layout out of range')
+
+    if dump_active and with_layout:
+        half.particles.dataset._index_layout = SimpleNamespace(original_image_indices_for_local=broken)
+        with pytest.raises(IndexError, match='layout out of range'):
+            expectation.record_numbered_half(
+                engine_result(), half.particles, per_half, expectation.SignificanceStatistics(), profile_history=[],
+                iteration=0, image_window_size=4, healpix_order=0, k_class_enabled=False,
+            )

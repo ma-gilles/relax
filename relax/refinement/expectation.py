@@ -139,15 +139,16 @@ def record_numbered_half(
     significance.record(k, score_result.significant_counts, for_convergence=not k_class_enabled)
     bpref_diagnostics.flush_selected_bpref_device_panel(iteration_index=iteration, half_index=k)
 
-    try:
-        original_image_indices = np.asarray(
-            particle_half.dataset._index_layout.original_image_indices_for_local(
-                np.arange(particle_half.dataset.n_images, dtype=np.int32)
-            ),
+    # The parity dump records each image's row in the input stack; a dataset without an index layout has none.
+    index_layout = getattr(particle_half.dataset, "_index_layout", None)
+    original_image_indices = (
+        np.asarray(
+            index_layout.original_image_indices_for_local(np.arange(particle_half.dataset.n_images, dtype=np.int32)),
             dtype=np.int64,
         )
-    except Exception:
-        original_image_indices = None
+        if index_layout is not None and _parity_dump.is_active()
+        else None
+    )
     _parity_dump.collect_e_step(
         half=k,
         em_stats=score_result.em_stats,
