@@ -289,11 +289,19 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
         eulers = [np.ascontiguousarray(angles[rows], dtype=np.float32), np.empty((0, 3), dtype=np.float32)]
         if not np.all(np.isfinite(eulers[0])):
             raise ValueError("Class3D input Euler angles are not finite")
+    # relion_refine reads rlnNormCorrection for Class3D as for auto-refine (Experiment::read) and
+    # scales each image by avg_norm / normcorr from iteration 1; 1 where the label is absent.
+    norm_corrections = np.ones(n_particles, dtype=np.float64)
+    if "rlnNormCorrection" in input_particles.columns:
+        norm_corrections = _input_numeric_columns(input_particles, ("rlnNormCorrection",), field="norm-correction")[:, 0]
+        if np.any(norm_corrections <= 0.0):
+            raise ValueError("RECOVAR input STAR rlnNormCorrection values must be positive")
     return {
         "iteration": "input_star" if with_orientations else "input_star_translation_only",
         "previous_best_rotation_eulers": eulers,
         "previous_best_translations": [selected, np.empty((0, 2), dtype=np.float32)],
         "translation_units": translation_units,
+        "norm_corrections": [np.ascontiguousarray(norm_corrections[rows]), np.empty(0, dtype=np.float64)],
     }
 
 
@@ -542,16 +550,20 @@ def prepare_initial_poses(
             )
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"Invalid input-STAR Class3D origin initialization: {exc}") from exc
+        initial_image_corrections, initial_scale_corrections = _initial_corrections_from_norm(
+            init_previous_best_poses["norm_corrections"],
+        )
         resolved_initial_pose_source = "input_star" if local_search_at_start else "input_star_translations"
         initial_pose_source_path = input_pose_path
         initial_pose_source_sha256 = _sha256_file(input_pose_path)
         log.info(
             "Fresh Class3D translation initialization: source=%s sha256=%s "
-            "translation_units=%s particles=%d (%s)",
+            "translation_units=%s particles=%d norm_corrections=%s (%s)",
             input_pose_path,
             initial_pose_source_sha256,
             init_previous_best_poses["translation_units"],
             init_previous_best_poses["previous_best_translations"][0].shape[0],
+            "unit" if initial_image_corrections is None else "from input rlnNormCorrection",
             "orientations kept: --skip_align"
             if skip_align
             else "orientations: the local searches' centres"

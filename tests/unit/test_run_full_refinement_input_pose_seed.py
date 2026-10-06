@@ -93,7 +93,13 @@ def test_prepared_input_poses_pair_source_half_order_units_and_corrections(
         assert prepared.poses["previous_best_rotation_eulers"] == [None, None]
         assert prepared.poses["previous_best_translations"][1].shape == (0, 2)
         assert_matches(prepared.poses["previous_best_translations"][0], [[2.5, -2.5], [0.5, -0.5], [3.5, -3.5], [1.5, -1.5]])
-        assert prepared.image_corrections is None and prepared.scale_corrections is None
+        if norm_corrections:
+            # relion_refine scales each image by 1 / rlnNormCorrection in Class3D too (all-data order 2, 0, 3, 1).
+            assert_matches(prepared.image_corrections[0], np.array([0.8, 2.0, 0.5, 1.25], dtype=np.float32))
+            assert prepared.image_corrections[1].shape == (0,)
+            assert_matches(prepared.scale_corrections[0], np.ones(4, dtype=np.float32))
+        else:
+            assert prepared.image_corrections is None and prepared.scale_corrections is None
     else:
         assert prepared.provenance.resolved_source == "input_star"
         assert_matches(prepared.poses["previous_best_rotation_eulers"][0], [[30, 31, 32], [10, 11, 12]])
