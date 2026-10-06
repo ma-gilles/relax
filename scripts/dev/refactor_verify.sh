@@ -4,12 +4,16 @@
 # Run it from the checkout. Prints one line per check: fingerprint of the worktree against HEAD (no difference
 # in outputs or non-log trace rows; a log-only difference passes under rule 2), ruff findings the base lacks,
 # git diff --check, stale selftest mutation anchors, and pytest on the structure test plus the arguments. REFACTOR_BASE (default origin/main) is the revision whose ruff findings are
-# the baseline; REFACTOR_PYTHON defaults to the checkout's pixi environment. Logs go to $REFACTOR_SCRATCH/logs.
+# the baseline; REFACTOR_PYTHON defaults to the checkout's pixi environment. REFACTOR_FINGERPRINT is the module's
+# harness (default scripts/dev/fingerprint.py, the refinement controller; scripts/dev/vdam_fingerprint.py for
+# relax/vdam). Logs go to $REFACTOR_SCRATCH/logs.
 set -u
 S=${REFACTOR_SCRATCH:?set REFACTOR_SCRATCH to a scratch directory outside the checkout}
 W=$(git rev-parse --show-toplevel) || exit 2
 PY=${REFACTOR_PYTHON:-$W/.pixi/envs/default/bin/python}
 BASE=$(git -C "$W" rev-parse "${REFACTOR_BASE:-origin/main}") || exit 2
+FP=${REFACTOR_FINGERPRINT:-scripts/dev/fingerprint.py}
+FPN=$(basename "$FP" .py)
 mkdir -p "$S/logs" "$S/fp"
 cd "$W" || exit 2
 unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV RELAX_TEST_RECEIPTS
@@ -19,11 +23,11 @@ status=0
 ruff_findings() { "$PY" -m ruff check relax tests scripts --output-format concise 2>/dev/null | sed "s/:[0-9]*:[0-9]*:/:/" | grep -v "^Found\|fixable\|^All checks" | sort; }
 
 H=$(git rev-parse HEAD)
-parent=$S/fp/fp_${H:0:12}.json
-[ -f "$parent" ] || "$PY" scripts/dev/fingerprint.py run "$parent" --rev HEAD --work-dir "$S/fp" > "$S/logs/fp_run_${H:0:7}.txt" 2>&1
-"$PY" scripts/dev/fingerprint.py run "$S/fp/fp_worktree.json" --work-dir "$S/fp" > "$S/logs/fp_run_worktree.txt" 2>&1 || tail -5 "$S/logs/fp_run_worktree.txt"
-"$PY" scripts/dev/fingerprint.py diff "$parent" "$S/fp/fp_worktree.json" > "$S/logs/fp_vs_parent.txt" 2>&1; rc=$?
-echo "fingerprint worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added' "$S/logs/fp_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
+parent=$S/fp/${FPN}_${H:0:12}.json
+[ -f "$parent" ] || "$PY" "$FP" run "$parent" --rev HEAD --work-dir "$S/fp" > "$S/logs/${FPN}_run_${H:0:7}.txt" 2>&1
+"$PY" "$FP" run "$S/fp/${FPN}_worktree.json" --work-dir "$S/fp" > "$S/logs/${FPN}_run_worktree.txt" 2>&1 || tail -5 "$S/logs/${FPN}_run_worktree.txt"
+"$PY" "$FP" diff "$parent" "$S/fp/${FPN}_worktree.json" > "$S/logs/${FPN}_vs_parent.txt" 2>&1; rc=$?
+echo "$FPN worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added' "$S/logs/${FPN}_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
 
 if [ ! -f "$S/logs/ruff_base_${BASE:0:12}.txt" ]; then
   rm -rf "$S/ruff_base_src"; mkdir -p "$S/ruff_base_src"; git archive "$BASE" | tar -x -C "$S/ruff_base_src"

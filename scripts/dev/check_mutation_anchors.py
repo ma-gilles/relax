@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Check that every fingerprint selftest mutation still finds its anchor text in the source.
+"""Check that every fingerprint selftest mutation (refinement and VDAM) still finds its anchor text in the source.
 
     python scripts/dev/check_mutation_anchors.py         # exit 1 when a mutation is stale
 
@@ -20,7 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.dev import fingerprint  # noqa: E402
+from scripts.dev import fingerprint, vdam_fingerprint  # noqa: E402
+
+MUTATIONS = (*fingerprint.MUTATIONS, *vdam_fingerprint.MUTATIONS)
 
 
 def stale_mutations(root: Path = REPO_ROOT) -> list[tuple[str, int, int]]:
@@ -30,7 +32,7 @@ def stale_mutations(root: Path = REPO_ROOT) -> list[tuple[str, int, int]]:
     ).stdout.split()
     sources = [(root / name).read_text() for name in listed]
     stale = []
-    for mutation in fingerprint.MUTATIONS:
+    for mutation in MUTATIONS:
         name, old, new = mutation[:3]
         expected = mutation[5] if len(mutation) > 5 else 1
         first_line = old.strip().splitlines()[0].strip()
@@ -44,7 +46,7 @@ def main() -> int:
     stale = stale_mutations()
     for name, found, expected in stale:
         print(f"STALE {name}: {found} replacements, expected {expected}")
-    print(f"mutation anchors checked: {len(fingerprint.MUTATIONS)} stale: {len(stale)}")
+    print(f"mutation anchors checked: {len(MUTATIONS)} stale: {len(stale)}")
     return 1 if stale else 0
 
 

@@ -15,24 +15,27 @@
 # both sides; "compare" decides). Run it from the worktree, or as a Slurm job from there
 # (sbatch --account=<account> --export=ALL scripts/dev/refactor_gate.sh all). REFACTOR_WORKTREE defaults to
 # the checkout of the current directory, REFACTOR_PYTHON to its pixi environment, REFACTOR_TAG (a suffix
-# for log names, so two gates can share one scratch directory) to the short head. Logs: $REFACTOR_SCRATCH/logs.
+# for log names, so two gates can share one scratch directory) to the short head, REFACTOR_FINGERPRINT (the
+# module's harness for fp and selftest) to scripts/dev/fingerprint.py. Logs: $REFACTOR_SCRATCH/logs.
 set -u
 S=${REFACTOR_SCRATCH:?set REFACTOR_SCRATCH to a scratch directory outside the checkout}
 W=${REFACTOR_WORKTREE:-$(git rev-parse --show-toplevel)} || exit 2
 PY=${REFACTOR_PYTHON:-$W/.pixi/envs/default/bin/python}
 T=${REFACTOR_TAG:-$(git -C "$W" rev-parse --short HEAD)}
+FP=${REFACTOR_FINGERPRINT:-scripts/dev/fingerprint.py}
+FPN=$(basename "$FP" .py)
 mkdir -p "$S/logs"
 unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV RELAX_TEST_RECEIPTS
 export CUDA_VISIBLE_DEVICES= JAX_PLATFORMS=cpu PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 step_fp() {
-  cd "$W" && PYTHONPATH=$W "$PY" scripts/dev/fingerprint.py check "${1:-origin/main}" --work-dir "$S/fp_gate_$T" > "$S/logs/fp_check_$T.txt" 2>&1; rc=$?
-  echo "fp check vs ${1:-origin/main}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added' "$S/logs/fp_check_$T.txt" | paste -sd ' ')"; return $rc
+  cd "$W" && PYTHONPATH=$W "$PY" "$FP" check "${1:-origin/main}" --work-dir "$S/${FPN}_gate_$T" > "$S/logs/${FPN}_check_$T.txt" 2>&1; rc=$?
+  echo "$FPN check vs ${1:-origin/main}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added' "$S/logs/${FPN}_check_$T.txt" | paste -sd ' ')"; return $rc
 }
 step_selftest() {
-  cd "$W" && PYTHONPATH=$W "$PY" scripts/dev/fingerprint.py selftest --jobs 4 --work-dir "$S/fp_selftest_$T" > "$S/logs/fp_selftest_$T.txt" 2>&1; rc=$?
-  echo "selftest: rc=$rc $(grep -E '^[0-9]+ mutations, [0-9]+ failed' "$S/logs/fp_selftest_$T.txt")"; return $rc
+  cd "$W" && PYTHONPATH=$W "$PY" "$FP" selftest --jobs 4 --work-dir "$S/${FPN}_selftest_$T" > "$S/logs/${FPN}_selftest_$T.txt" 2>&1; rc=$?
+  echo "$FPN selftest: rc=$rc $(grep -E '^[0-9]+ mutations, [0-9]+ failed' "$S/logs/${FPN}_selftest_$T.txt")"; return $rc
 }
 step_guard() {
   cd "$W" && PYTHONPATH=$W JAX_COMPILATION_CACHE_DIR=$S/jax_cache_guard_$T RECOVAR_JAX_CACHE_DIR=$S/recovar_jax_cache_guard_$T \
