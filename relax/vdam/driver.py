@@ -640,12 +640,10 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             )
     profile.record("initial_artifacts")
 
+    def record_iteration(current, _iteration, meta):
+        _record_native_sampling_post_iteration(sampling_state, current, meta=meta)
+
     def artifact_sink(current, iteration, meta):
-        _record_native_sampling_post_iteration(
-            sampling_state,
-            current,
-            meta=meta,
-        )
         if not opts.write_iter_artifacts or not _should_write_iteration_artifacts(
             iteration, int(opts.nr_iter), int(opts.grad_write_iter)
         ):
@@ -705,6 +703,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             random_seed=int(opts.random_seed),
             expectation_step=expectation_step,
             iter_artifact_sink=artifact_sink,
+            record_iteration=record_iteration,
             post_mstep_update=post_mstep_update,
             particle_order=particle_order,
             grad_ini_frac=grad_ini_frac,

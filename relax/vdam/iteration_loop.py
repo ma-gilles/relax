@@ -251,6 +251,7 @@ def run_vdam_iterations(
     expectation_step: ExpectationStepFn,
     update: VdamUpdate | MomentumSgdUpdate,
     iter_artifact_sink: IterArtifactSink = lambda *args, **kw: None,
+    record_iteration: IterArtifactSink | None = None,
     post_mstep_update: PostMstepUpdateFn | None = None,
     particle_order: Sequence[int] | None = None,
     grad_ini_frac: float = 0.3,
@@ -272,7 +273,8 @@ def run_vdam_iterations(
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``.
 
     ``update`` is the optimizer's model update (:class:`VdamUpdate` or :class:`MomentumSgdUpdate`), chosen
-    once by the caller.
+    once by the caller. ``record_iteration`` updates the caller's own run state from the completed
+    iteration (the sampling controller's counters) before ``iter_artifact_sink`` writes its outputs.
     """
     phase_lengths = _resolve_phase_lengths(
         int(state.nr_iter),
@@ -446,6 +448,8 @@ def run_vdam_iterations(
             iteration_profile["pre_artifact_time_s"] = float(time.perf_counter() - iteration_started)
             meta["vdam_iteration_profile_summary"] = iteration_profile
             stage_started = time.perf_counter()
+        if record_iteration is not None:
+            record_iteration(current, it, meta)
         iter_artifact_sink(current, it, meta)
         if pilot_controls is not None and pilot_controls.stop_requested():
             break
