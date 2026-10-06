@@ -32,6 +32,7 @@ from relax.sparse_pass2.resident_significance import (
     compact_batch_significance_classes,
     csr_capacity_for_total,
     host_support_rows,
+    significant_coarse_parents,
 )
 
 pytestmark = pytest.mark.unit
@@ -378,6 +379,35 @@ def test_support_list_carries_its_csr_and_stays_a_list():
     assert rows.csr is csr
     with pytest.raises(ValueError, match="CSR covers"):
         DeviceCompactedSignificantSamples(rows[:-1], csr=csr)
+
+
+def test_csr_selecting_one_image_detaches_ids_and_keeps_image_positions():
+    csr = build_coarse_significance_csr(
+        n_images=3, n_coarse_rot=8, n_coarse_trans=1,
+        n_significant_per_batch=[np.array([2, 0, 1], dtype=np.int32)],
+        store_excluded_per_batch=[np.zeros(3, dtype=bool)],
+        ids_per_batch=[np.array([1, 3, 6], dtype=np.int32)],
+    )
+    selected = csr.select_images(np.array([False, False, True]))
+    np.testing.assert_array_equal(selected.offsets, [0, 0, 0, 1])
+    np.testing.assert_array_equal(selected.n_significant, [0, 0, 1])
+    np.testing.assert_array_equal(selected.store_excluded, [False, False, False])
+    np.testing.assert_array_equal(selected.image_ids(2), [6])
+    assert not np.shares_memory(selected.ids, csr.ids)
+
+
+def test_coarse_parent_union_scans_across_id_blocks_and_keeps_empty_parent_zero():
+    ids = np.arange(2, (1 << 20) + 7, dtype=np.int32)
+    csr = build_coarse_significance_csr(
+        n_images=2, n_coarse_rot=ids.size + 2, n_coarse_trans=2,
+        n_significant_per_batch=[np.asarray([ids.size, 0], dtype=np.int32)],
+        store_excluded_per_batch=[np.zeros(2, dtype=bool)], ids_per_batch=[ids],
+    )
+    support = DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+    parents = significant_coarse_parents(
+        support, n_images=2, n_coarse_rot=csr.n_coarse_rot, n_coarse_trans=2,
+    )
+    np.testing.assert_array_equal(parents, np.union1d([0], np.unique(ids.astype(np.int64) // 2)))
 
 
 # --- The candidate tables equal the host path's, field by field ------------

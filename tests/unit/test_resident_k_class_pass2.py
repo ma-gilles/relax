@@ -495,3 +495,85 @@ def test_seed_iteration_scores_the_first_copy_and_gives_each_support_to_its_clas
     assert_matches(by_class[2][2], supports[2])
     with pytest.raises(ValueError, match="one class in range"):
         seed_iteration_supports(supports, [0, 3, 1], 3)
+
+
+@requires_resident_gpu
+def test_fifteen_seed_classes_in_blocks_match_plain_list_pass(_resident_production_env, monkeypatch):
+    """The large-run seed path changes storage while retaining every class's statistics."""
+
+    from test_resident_significance import _csr_from_supports
+
+    from relax.classification.k_class_inputs import seed_iteration_supports
+    from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
+    from relax.sparse_pass2.resident_significance import DeviceCompactedSignificantSamples, host_support_rows
+
+    n_classes = 15
+    args = _driver_fixture_args()
+    original = args.pop("significant_sample_indices")
+    prior = args.pop("rotation_log_prior")
+    volume = args.pop("volume")
+    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
+        args.pop(name)
+    n_images, n_rot, n_trans = len(original), len(prior), len(args["translations"])
+    cells = [np.arange(n_rot * n_trans, dtype=np.int32) if row is None else row for row in original]
+    csr = _csr_from_supports(cells, n_coarse_rot=n_rot, n_coarse_trans=n_trans)
+    compact = DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+    seeds = np.array([0, 0, 1, 1, 2, 2, 6, 6, 10, 10, 14, 14])
+    seed_classes = seed_iteration_supports(compact, seeds, n_classes)
+    # Independent host encoding and class partitioning: ordinary lists retain
+    # the previous whole-table route. Active classes span multiple image
+    # blocks; the remaining classes have no images.
+    masks = np.zeros((n_images, n_rot * n_trans), dtype=bool)
+    for image, ids in enumerate(cells):
+        masks[image, ids] = True
+    rows = [compact_significant_sample_indices_from_mask(mask) for mask in masks]
+    plain = [
+        [rows[i] if seeds[i] == k else np.zeros(0, dtype=np.int32) for i in range(n_images)]
+        for k in range(n_classes)
+    ]
+    volumes = jnp.stack([volume] * n_classes)
+    class_prior = (prior - np.float32(np.log(n_classes))).astype(np.float32)
+    priors = [class_prior] * n_classes
+    whole = _resident(args, volumes, plain, priors)
+
+    block_counts = []
+    build_tables = rp._candidate_table_blocks
+
+    def record_blocks(*a, **kw):
+        result = build_tables(*a, **kw)
+        block_counts.append(result[0].n_blocks)
+        return result
+
+    monkeypatch.setattr(rp, "_BLOCK_ROWS", 128)
+    monkeypatch.setattr(rp, "_candidate_table_blocks", record_blocks)
+    blocked = _resident(args, volumes, seed_classes, priors)
+    assert block_counts and max(block_counts) > 1
+    np.testing.assert_array_equal(blocked.per_class_hard_assignments, whole.per_class_hard_assignments)
+    assert len(blocked.Ft_y) == len(blocked.Ft_ctf) == n_classes
+    # Same 1e-6 band as test_projection_sums_backproject_like_every_row above:
+    # table blocks regroup the same float32 accumulations.
+    for k in range(n_classes):
+        for field in ("Ft_y", "Ft_ctf"):
+            assert _rel_l2(getattr(whole, field)[k], getattr(blocked, field)[k]) < 1e-6, (field, k)
+        np.testing.assert_array_equal(
+            blocked.per_class_best_pose_rotation_ids[k], whole.per_class_best_pose_rotation_ids[k],
+        )
+        for field in ("per_class_best_pose_rotations", "per_class_best_pose_translations"):
+            assert_matches(getattr(blocked, field)[k], getattr(whole, field)[k], err_msg=f"{field}[{k}]")
+    for field in (
+        "class_log_evidence_per_image", "class_best_log_score_per_image",
+        "class_rotation_posterior_sums", "class_reconstruction_posterior_sums",
+    ):
+        assert_matches(np.float32(getattr(blocked, field)), np.float32(getattr(whole, field)), err_msg=field)
+    for field in (
+        "log_evidence_per_image", "best_log_score_per_image",
+        "max_posterior_per_image", "rotation_posterior_sums",
+    ):
+        assert_matches(
+            np.float32(getattr(blocked.stats, field)), np.float32(getattr(whole.stats, field)), err_msg=field,
+        )
+    for field in (
+        "wsum_sigma2_noise", "wsum_img_power", "wsum_norm_correction",
+        "wsum_scale_correction_xa", "wsum_scale_correction_aa", "wsum_sigma2_offset", "sumw",
+    ):
+        assert _rel_l2(getattr(whole.noise_stats, field), getattr(blocked.noise_stats, field)) < 1e-6, field

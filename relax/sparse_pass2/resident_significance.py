@@ -245,6 +245,32 @@ class CoarseSignificanceCSR:
             n_significant=self.n_significant[start:stop],
         )
 
+    def select_images(self, selected) -> "CoarseSignificanceCSR":
+        """Keep selected images' supports, leaving the other images empty.
+
+        Image positions stay unchanged. Only the selected ids are copied, so
+        partitioning a seed iteration across classes copies one total support,
+        rather than a full copy per class.
+        """
+
+        selected = np.asarray(selected, dtype=bool)
+        if selected.shape != (self.n_images,):
+            raise ValueError("image selection must have one boolean per image")
+        images = np.flatnonzero(selected)
+        ids = (
+            np.concatenate([self.image_ids(image) for image in images])
+            if images.size
+            else np.zeros(0, dtype=np.int32)
+        )
+        return build_coarse_significance_csr(
+            n_images=self.n_images,
+            n_coarse_rot=self.n_coarse_rot,
+            n_coarse_trans=self.n_coarse_trans,
+            n_significant_per_batch=[np.where(selected, self.n_significant, np.int32(0))],
+            store_excluded_per_batch=[selected & self.store_excluded],
+            ids_per_batch=[ids],
+        )
+
 
 class DeviceCompactedSignificantSamples(list):
     """The usual per-image support list, carrying its device-compacted CSR.
@@ -541,10 +567,15 @@ def significant_coarse_parents(support, *, n_images: int, n_coarse_rot: int, n_c
     every_parent = np.asarray(csr.store_excluded, dtype=bool) | (n_significant == int(csr.n_samples))
     if bool(np.any(every_parent & (n_significant != 0))):
         return None
-    parents = np.unique(np.asarray(csr.ids, dtype=np.int64) // int(n_coarse_trans))
+    # Global supports can contain billions of cells. Scan bounded slices rather
+    # than allocating and sorting a second, int64 copy of the whole id buffer.
+    parent_present = np.zeros(int(n_coarse_rot), dtype=bool)
+    step = 1 << 20
+    for start in range(0, csr.ids.size, step):
+        parent_present[csr.ids[start : start + step] // int(n_coarse_trans)] = True
     if bool(np.any(n_significant == 0)):
-        parents = np.union1d(parents, [0])
-    return parents
+        parent_present[0] = True
+    return np.flatnonzero(parent_present)
 
 
 # ---------------------------------------------------------------------------

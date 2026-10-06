@@ -111,6 +111,14 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
     seeds = np.asarray(unit_seed_classes, dtype=np.int64).reshape(-1)
     if seeds.size != len(first_class_supports) or np.any((seeds < 0) | (seeds >= int(n_classes))):
         raise ValueError("a seed iteration gives every unit one class in range")
+    from relax.sparse_pass2.resident_significance import DeviceCompactedSignificantSamples, host_support_rows
+
+    if isinstance(first_class_supports, DeviceCompactedSignificantSamples):
+        classes = []
+        for k in range(int(n_classes)):
+            csr = first_class_supports.csr.select_images(seeds == k)
+            classes.append(DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr))
+        return classes
     empty = np.zeros(0, dtype=np.int32)
     return [
         [support if seeds[u] == k else empty for u, support in enumerate(first_class_supports)]
