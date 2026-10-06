@@ -596,7 +596,9 @@ def run_tilt_chunk(
                 image_shape=tuple(int(n) for n in image_shape),
             )
             if mstep.scale_xa_per_image is not None:
-                mstep = rp._fold_class_scale_sums(mstep, stage_tables.wavg_scale_pixel_mask[accumulator % n_classes])
+                mstep = rp._fold_class_scale_sums(
+                    mstep, stage_tables.wavg_scale_pixel_mask, rp._device_int32(accumulator % n_classes)
+                )
             Ft_y_out[accumulator], Ft_ctf_out[accumulator] = mstep.Ft_y, mstep.Ft_ctf
         del tables_b
 

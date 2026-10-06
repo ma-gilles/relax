@@ -424,7 +424,9 @@ def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
         scale_aa_per_image=jnp.zeros(3, dtype=jnp.float64),
     )
     mask = np.asarray([True, False, True, True, False])
-    folded = rp._fold_class_scale_sums(carry, jnp.asarray(mask))
+    # The class's row of the mask table, selected inside the program.
+    masks = np.stack([~mask, mask])
+    folded = rp._fold_class_scale_sums(carry, jnp.asarray(masks), jnp.int32(1))
     host = np.asarray(triplet, dtype=np.float64)
     assert_matches(np.asarray(folded.scale_xa_per_image), 1.0 + host[:, mask, 0].sum(axis=1))
     assert_matches(np.asarray(folded.scale_aa_per_image), host[:, mask, 1].sum(axis=1))

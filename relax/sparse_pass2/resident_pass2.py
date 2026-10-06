@@ -3121,10 +3121,9 @@ def _resident_pass2(
         # The score tail gets no weight, and the fine scorer's lookup covers the
         # logical rectangle only (the runtime kernel never reads past it); its
         # -1 pad keeps the buffer at the physical class's size.
-        score_logical_mask = jnp.asarray(
-            np.arange(int(n_windowed)) < int(stable_window_plan.logical_score_pixels)
+        half_weights_windowed = _times_logical_mask(
+            half_weights_windowed, jnp.int32(int(stable_window_plan.logical_score_pixels))
         )
-        half_weights_windowed = half_weights_windowed * score_logical_mask.astype(half_weights_windowed.dtype)
         logical_lookup = _relion_cuda_fine_full_to_compact_lookup(
             image_shape,
             current_size,
@@ -3213,13 +3212,11 @@ def _resident_pass2(
         # scale term they could enter is exactly zero; the M-step masks their
         # sums (_resident_mstep_block) and the Wavg kernels stop at the logical
         # rectangle, whose layout is RELION's byte for byte.
-        recon_tail = ~jnp.asarray(
-            np.arange(int(n_recon_windowed)) < int(stable_window_plan.logical_reconstruction_pixels)
-        )
-        shell_indices_noise = jnp.where(recon_tail, jnp.int32(image_shape[0] // 2 + 1), shell_indices_noise)
-        # [P] or, with optics groups, [G, P]: the tail mask broadcasts over groups.
-        noise_variance_for_noise = jnp.where(
-            recon_tail, jnp.zeros((), noise_variance_for_noise.dtype), noise_variance_for_noise
+        shell_indices_noise, noise_variance_for_noise = _mask_recon_tail(
+            shell_indices_noise,
+            noise_variance_for_noise,
+            jnp.int32(int(stable_window_plan.logical_reconstruction_pixels)),
+            shell_sentinel=int(image_shape[0] // 2 + 1),
         )
         relion_wavg_rectangle = _make_stable_relion_wavg_rectangle(image_shape, stable_window_plan)
         logical_rect_pixels = int(stable_window_plan.logical_rectangle_pixels)
@@ -3300,12 +3297,15 @@ def _resident_pass2(
         n_score_pixels=n_windowed,
         n_recon_pixels=n_recon_windowed,
     )
-    Ft_y_total = tuple(
-        jnp.zeros(accumulator_shape, dtype=recon_y_accum_dtype) for _ in range(int(tables.n_slots))
-    )
-    Ft_ctf_total = tuple(
-        jnp.zeros(accumulator_shape, dtype=recon_ctf_accum_dtype) for _ in range(int(tables.n_slots))
-    )
+    # Every slot's two accumulators are zeroed by one program per shape class.
+    n_slots = int(tables.n_slots)
+    zero_accumulators = _zero_block_partials(
+        ((tuple(accumulator_shape), jnp.dtype(recon_y_accum_dtype)),) * n_slots
+        + ((tuple(accumulator_shape), jnp.dtype(recon_ctf_accum_dtype)),) * n_slots
+    )()
+    Ft_y_total = tuple(zero_accumulators[:n_slots])
+    Ft_ctf_total = tuple(zero_accumulators[n_slots:])
+    del zero_accumulators
     logger.info(
         "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB free)",
         "per-projection sums, one backprojection per pass" if presum_adjoint else "per-row backprojection",
@@ -3397,13 +3397,10 @@ def _resident_pass2(
         score_indices_np = np.asarray(window_indices, dtype=np.int64)
         recon_indices_np = np.asarray(recon_window_indices, dtype=np.int64)
         union_indices_np = np.union1d(score_indices_np, recon_indices_np)
-        union_indices = jnp.asarray(union_indices_np, dtype=jnp.int32)
-        union_score_take = jnp.asarray(
-            np.searchsorted(union_indices_np, score_indices_np), dtype=jnp.int32
-        )
-        union_recon_take = jnp.asarray(
-            np.searchsorted(union_indices_np, recon_indices_np), dtype=jnp.int32
-        )
+        # Cast on the host: a device cast of the int64 indices was a program per size.
+        union_indices = jnp.asarray(union_indices_np.astype(np.int32))
+        union_score_take = jnp.asarray(np.searchsorted(union_indices_np, score_indices_np).astype(np.int32))
+        union_recon_take = jnp.asarray(np.searchsorted(union_indices_np, recon_indices_np).astype(np.int32))
         cache_projection_bytes = _projection_cache_transient_bytes(
             n_projections,
             int(union_indices_np.size),
@@ -6822,6 +6819,32 @@ def _scalar_operand(value, dtype) -> jax.Array:
     return jnp.asarray(np.asarray(value, dtype=jnp.dtype(dtype)))
 
 
+@jax.jit
+def _times_logical_mask(values, n_logical):
+    """``values`` times the mask of its first ``n_logical`` pixels (last axis); one program per physical class.
+
+    The count is traced, so the logical sizes of a physical class share the program.
+    """
+
+    mask = jnp.arange(values.shape[-1], dtype=jnp.int32) < n_logical
+    return values * mask.astype(values.dtype)
+
+
+@partial(jax.jit, static_argnames=("shell_sentinel",))
+def _mask_recon_tail(shell_indices_noise, noise_variance_for_noise, n_logical, *, shell_sentinel: int):
+    """The recon tail past the ``n_logical`` pixels: the shell sentinel and zero noise variance.
+
+    ``noise_variance_for_noise`` is ``[P]`` or, with optics groups, ``[G, P]``; the tail
+    mask broadcasts over groups. One program per physical class (the count is traced).
+    """
+
+    tail = ~(jnp.arange(shell_indices_noise.shape[-1], dtype=jnp.int32) < n_logical)
+    return (
+        jnp.where(tail, jnp.int32(shell_sentinel), shell_indices_noise),
+        jnp.where(tail, jnp.zeros((), noise_variance_for_noise.dtype), noise_variance_for_noise),
+    )
+
+
 def _device_int32(value: int) -> jax.Array:
     """A device int32 scalar, made once per distinct value for the process.
 
@@ -7150,8 +7173,12 @@ class _ChunkMstepCarry(NamedTuple):
 
 
 @jax.jit
-def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_mask_rect) -> "_ChunkMstepCarry":
+def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_masks_rect, class_index) -> "_ChunkMstepCarry":
     """Move one class's Wavg XA/AA into the per-image scale sums under its own mask.
+
+    ``class_masks_rect`` is every class's mask and ``class_index`` a device (or
+    traced) index: selecting the row inside the program keeps the per-slot
+    selection out of eager dispatch, one program for every class.
 
     RELION keeps XA and AA per class and adds them to the particle's scale sums
     only where that class's ``data_vs_prior_class > 3``
@@ -7161,7 +7188,7 @@ def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_mask_rect) -> "_Chun
     """
 
     triplet = mstep.wavg_triplet_pixels
-    mask = jnp.asarray(class_mask_rect, dtype=bool).reshape(1, -1)
+    mask = jnp.asarray(class_masks_rect[class_index], dtype=bool).reshape(1, -1)
     zero = jnp.float32(0.0)
     xa = jnp.sum(jnp.where(mask, triplet[:, :, 0], zero).astype(jnp.float64), axis=1)
     aa = jnp.sum(jnp.where(mask, triplet[:, :, 1], zero).astype(jnp.float64), axis=1)
@@ -7921,20 +7948,20 @@ def _initial_mstep_carry(
     )
     if _carry_aval_probe_enabled():
         _check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
-    wavg_triplet_pixels, noise_shells, a2_per_image, xa_per_image = _zero_block_partials(
+    n_class_scale = 2 if int(getattr(spec, "n_classes", 1)) > 1 else 0
+    # K>1: the per-image class scale sums are zeroed in the same program.
+    wavg_triplet_pixels, noise_shells, a2_per_image, xa_per_image, *scale_sums = _zero_block_partials(
         (
             ((image_capacity, int(spec.n_rect), 3), jnp.dtype(jnp.float32)),
             (_noise_shell_shape(spec.stats_config), jnp.dtype(dtypes["noise_shells"])),
             ((image_capacity,), jnp.dtype(dtypes["a2"])),
             ((image_capacity,), jnp.dtype(dtypes["xa"])),
         )
+        + (((image_capacity,), jnp.dtype(jnp.float64)),) * n_class_scale
     )()
     class_scale = {}
-    if int(getattr(spec, "n_classes", 1)) > 1:
-        class_scale = dict(
-            scale_xa_per_image=jnp.zeros((image_capacity,), dtype=jnp.float64),
-            scale_aa_per_image=jnp.zeros((image_capacity,), dtype=jnp.float64),
-        )
+    if n_class_scale:
+        class_scale = dict(scale_xa_per_image=scale_sums[0], scale_aa_per_image=scale_sums[1])
     return _ChunkMstepCarry(
         Ft_y=Ft_y,
         Ft_ctf=Ft_ctf,
@@ -8103,13 +8130,18 @@ def _resident_chunk_statistics_program(
     *,
     spec: _ChunkProgramSpec,
 ):
-    """:func:`_resident_chunk_statistics` as one program per capacity class.
+    """The chunk's Wavg image power, then :func:`_resident_chunk_statistics`, as one program per capacity class.
 
+    The image power (:func:`_add_chunk_wavg_image_power`) is read only by the
+    statistics, so it runs inside this program rather than as one of its own.
     The statistics accumulator is donated: it is a running total the driver
     rebinds every chunk, so updating it in place is what the loose dispatch
     already did through ``_accumulate_chunk_image_terms``.
     """
 
+    mstep = _add_chunk_wavg_image_power(
+        mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
+    )
     return _resident_chunk_statistics(
         stats, rows, operands, tables, posterior, mstep, spec=spec
     )
@@ -8269,7 +8301,9 @@ def _run_resident_chunk_program(
         mstep = jax.lax.fori_loop(0, n_blocks, block, mstep)
         if mstep.scale_xa_per_image is not None:
             # Slot ``class + K * group``: the scale sums are masked by the slot's class.
-            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
+            mstep = _fold_class_scale_sums(
+                mstep, tables.wavg_scale_pixel_mask, slot_index % int(spec.n_classes)
+            )
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
     mstep = _add_chunk_wavg_image_power(
@@ -8405,20 +8439,23 @@ def _resident_chunk_stages_finish(
             )
         if mstep.scale_xa_per_image is not None:
             # Slot ``class + K * group``: the scale sums are masked by the slot's class.
-            mstep = _fold_class_scale_sums(mstep, tables.wavg_scale_pixel_mask[slot_index % int(spec.n_classes)])
+            mstep = _fold_class_scale_sums(
+                mstep, tables.wavg_scale_pixel_mask, _device_int32(slot_index % int(spec.n_classes))
+            )
         Ft_y_out.append(mstep.Ft_y)
         Ft_ctf_out.append(mstep.Ft_ctf)
-    mstep = _add_chunk_wavg_image_power(
-        mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
-    )
     if timing_hook is not None:
         timing_hook("mstep", (Ft_y_out, Ft_ctf_out))
 
     if glue_jit:
+        # The program adds the chunk's Wavg image power first, as below.
         stats = _resident_chunk_statistics_program(
             stats, rows, operands, tables, posterior, mstep, spec=spec
         )
     else:
+        mstep = _add_chunk_wavg_image_power(
+            mstep, operands, tables, posterior.row_posterior, posterior.kernel_row_image_ids, spec=spec
+        )
         stats = _resident_chunk_statistics(
             stats, rows, operands, tables, posterior, mstep, spec=spec
         )

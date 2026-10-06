@@ -211,7 +211,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
     def finish_class(carry, ops, class_id):
         if plan.n_classes == 1:
             return carry
-        return _fold_class_scale_sums(carry, ops.wavg_scale_pixel_mask[class_id])
+        return _fold_class_scale_sums(carry, ops.wavg_scale_pixel_mask, class_id)
 
     if plan.n_optics_groups == 1 and plan.use_rfloat_ctf_wavg:
         def factorized_step(carry, ops, posterior, rec_projection, _class_id, rot_start, trans_start, batch, grid):
