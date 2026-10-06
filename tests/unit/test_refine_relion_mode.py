@@ -4112,8 +4112,8 @@ class MockDataset:
     def get_valid_frequency_indices(self, pixel_res):
         return np.ones(self.volume_size, dtype=bool)
 
-    def original_image_indices_from_local(self, indices):
-        return np.asarray(indices, dtype=np.int64)
+    def original_image_indices_from_local(self, indices=None):
+        return np.arange(self.n_images, dtype=np.int64) if indices is None else np.asarray(indices, dtype=np.int64)
 
 
 def test_pass2_operands_route_relion_cuda_norm_and_shift_before_fft(rng):
@@ -4366,8 +4366,8 @@ class RawRealImageDataset:
     def get_valid_frequency_indices(self, pixel_res):
         return np.ones(self.volume_size, dtype=bool)
 
-    def original_image_indices_from_local(self, indices):
-        return np.asarray(indices, dtype=np.int64)
+    def original_image_indices_from_local(self, indices=None):
+        return np.arange(self.n_images, dtype=np.int64) if indices is None else np.asarray(indices, dtype=np.int64)
 
 
 # ---------------------------------------------------------------------------
