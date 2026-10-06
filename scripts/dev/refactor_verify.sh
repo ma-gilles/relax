@@ -27,7 +27,9 @@ ruff_findings() { "$PY" -m ruff check relax tests scripts --output-format concis
 H=$(git rev-parse HEAD)
 parent=$S/fp/${FPN}_${H:0:12}.json
 [ -f "$parent" ] || "$PY" "$FP" run "$parent" --rev HEAD --work-dir "$S/fp" > "$S/logs/${FPN}_run_${H:0:7}.txt" 2>&1
-"$PY" "$FP" run "$S/fp/${FPN}_worktree.json" --work-dir "$S/fp" > "$S/logs/${FPN}_run_worktree.txt" 2>&1 || tail -5 "$S/logs/${FPN}_run_worktree.txt"
+# A failed run must not leave the previous worktree fingerprint to be compared.
+rm -f "$S/fp/${FPN}_worktree.json"
+"$PY" "$FP" run "$S/fp/${FPN}_worktree.json" --work-dir "$S/fp" > "$S/logs/${FPN}_run_worktree.txt" 2>&1 || { tail -5 "$S/logs/${FPN}_run_worktree.txt"; status=1; }
 "$PY" "$FP" diff "$parent" "$S/fp/${FPN}_worktree.json" > "$S/logs/${FPN}_vs_parent.txt" 2>&1; rc=$?
 echo "$FPN worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added|controller inputs retired' "$S/logs/${FPN}_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
 
