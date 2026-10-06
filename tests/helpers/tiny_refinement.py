@@ -250,6 +250,7 @@ def run_tiny_refinement(
     """
 
     import relax.sampling as sampling
+    from relax.parity.relion_replay_source import RelionReplaySource
     from relax.refinement import iteration_loop
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
@@ -310,22 +311,25 @@ def run_tiny_refinement(
             "k_class",
             KClassOptions(n_classes=n_classes, init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes))),
         )
+    options = RefinementOptions(
+        disc_type="linear_interp",
+        schedule=RefinementSchedule(
+            **{"max_iter": max_iter, "init_current_size": 4, "init_healpix_order": 2, "max_healpix_order": 2,
+               **(schedule or {})}
+        ),
+        parity=RelionParityOptions(**(parity or {})),
+        **option_groups,
+    )
     return iteration_loop.refine_single_volume(
         halves,
         _hermitian_volume(VOLUME_SHAPE, seed=42) if init_volume is None else init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
         jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
         jnp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=jnp.float32),
-        options=RefinementOptions(
-            disc_type="linear_interp",
-            schedule=RefinementSchedule(
-                **{"max_iter": max_iter, "init_current_size": 4, "init_healpix_order": 2, "max_healpix_order": 2,
-                   **(schedule or {})}
-            ),
-            parity=RelionParityOptions(**(parity or {})),
-            **option_groups,
-        ),
+        options=options,
         observer=observer,
+        # The input source the command chooses for these options.
+        source=RelionReplaySource.from_options(options),
     )
 
 

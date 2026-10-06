@@ -648,7 +648,7 @@ def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_roun
     assert rounded_star_grid.shape[0] == 25
 
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
-    result = iteration_loop_module.apply_iter_replay_overrides(
+    result = relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override=None,
         perturb_replay_relion_dir=str(tmp_path),
         perturb_replay_relion_prefix="custom",
@@ -757,7 +757,7 @@ def test_replay_override_preserves_half_specific_sigma_offsets():
         voxel_size = 1.0
 
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
-    result = iteration_loop_module.apply_iter_replay_overrides(
+    result = relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override={
             "translation_sigma_angstrom": 99.0,
             "translation_sigma_angstrom_per_half": [5.0, 7.0],
@@ -817,7 +817,7 @@ def test_replay_override_preserves_native_scale_and_rescales_star_image_correcti
     )
 
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
-    iteration_loop_module.apply_iter_replay_overrides(
+    relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override={
             "image_corrections": [
                 np.asarray([1.0, 2.0], dtype=np.float32),
@@ -875,7 +875,7 @@ def test_replay_explicit_scoring_scale_preserves_image_to_scale_ratio():
         voxel_size = 1.0
 
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
-    iteration_loop_module.apply_iter_replay_overrides(
+    relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
             "serialized_scale_corrections": [np.asarray([4.0, 5.0]), np.asarray([], dtype=np.float32)],
@@ -925,7 +925,7 @@ def test_replay_cold_start_falls_back_to_serialized_scale():
     )
 
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
-    iteration_loop_module.apply_iter_replay_overrides(
+    relion_replay_module.apply_iter_replay_overrides(
         iter_replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
             "serialized_scale_corrections": [np.asarray([4.0, 5.0]), np.asarray([], dtype=np.float32)],
@@ -1161,7 +1161,7 @@ def test_final_all_data_runs_with_cold_start_only_override(
     monkeypatch.setattr(resolution_helpers, "k1_current_resolution_shell", record_resolution_shell)
     monkeypatch.setattr(finalization, "k1_current_resolution_shell", record_resolution_shell)
 
-    result = refine_single_volume(
+    result = _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -4415,6 +4415,14 @@ def fake_global_estep(monkeypatch):
     return calls
 
 
+
+def _refine_replaying(*args, options, **kwargs):
+    """``refine_single_volume`` with the input source the command chooses for ``options`` (its replay slots or
+    RELION replay directory)."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+
+    return refine_single_volume(*args, options=options, source=RelionReplaySource.from_options(options), **kwargs)
+
 @pytest.fixture(autouse=True)
 def _clear_parity_dump_env(monkeypatch):
     """Isolate these tests from ambient RELION-parity-dump debugging env vars.
@@ -5472,7 +5480,7 @@ class TestRelionModeSmokeTest:
         )
         install_fake_adaptive_engine(monkeypatch, engine_calls)
 
-        result = refine_single_volume(
+        result = _refine_replaying(
             half_datasets,
             init_volume,
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -8664,7 +8672,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
     prev_eulers_h1 = np.zeros((half_datasets[0].n_units, 3), dtype=np.float32)
     prev_eulers_h2 = np.zeros((half_datasets[1].n_units, 3), dtype=np.float32)
 
-    refine_single_volume(
+    _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -8811,7 +8819,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
         else ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2])
     )
 
-    refine_single_volume(
+    _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -9017,7 +9025,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     monkeypatch.setattr(regularization_relion, "compute_relion_tau2_from_iref_power_spectrum", fake_iref_tau2)
     monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
 
-    result = refine_single_volume(
+    result = _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -9046,7 +9054,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     np.testing.assert_allclose(result.history.tau2_radial_trajectory[0], iref_tau2, rtol=0.0, atol=1e-5)
 
     init_tau2_volume = jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32) * 3.0
-    init_result = refine_single_volume(
+    init_result = _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -9075,7 +9083,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
 
     same_iter_tau2 = class_tau2 + 1000.0
     monkeypatch.setenv("RELAX_KCLASS_REPLAY_TAU2", "1")
-    replay_result = refine_single_volume(
+    replay_result = _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -9104,7 +9112,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
     np.testing.assert_allclose(replay_result.history.tau2_radial_trajectory[0], same_iter_tau2, rtol=0.0, atol=1e-5)
     assert iref_tau2_calls == [0, 1, 0, 1]
 
-    same_iter_replay_result = refine_single_volume(
+    same_iter_replay_result = _refine_replaying(
         half_datasets,
         init_volume,
         jnp.ones(IMAGE_SIZE, dtype=jnp.float32),

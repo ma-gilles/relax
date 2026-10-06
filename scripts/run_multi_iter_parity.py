@@ -1457,6 +1457,7 @@ def main():
 
     from relax.diagnostics import observers
     from relax.helpers.map_io import write_map_from_ft
+    from relax.parity.relion_replay_source import RelionReplaySource
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
     from relax.refinement.refinement_options import (
@@ -2440,90 +2441,93 @@ def main():
     # Group IDs select the same coarse/fine scoring route as the ongoing
     # refinement. A terminal replay must preserve them even when its newly
     # estimated scale statistics have no downstream consumer.
+    run_options = RefinementOptions(
+        disc_type="linear_interp",
+        schedule=RefinementSchedule(
+            max_iter=args.max_iter,
+            init_current_size=current_size,
+            init_healpix_order=hp_order,
+            max_healpix_order=args.max_healpix_order,
+            init_translation_range=offset_range / pixel_size,
+            init_translation_step=offset_step / pixel_size,
+            init_translation_sigma_angstrom=sigma_offset_angst_per_half,
+            particle_diameter_ang=particle_diameter,
+            init_relion_iteration=iteration,
+            init_fsc=fsc,
+            init_ave_Pmax=ave_Pmax,
+            init_has_high_fsc_at_limit=has_high_fsc_at_limit,
+            skip_final_iteration=args.skip_final_iteration,
+            force_max_iter_after_convergence=args.force_max_iter_after_convergence,
+        ),
+        batching=RefinementBatching(
+            image_batch_size=args.image_batch_size,
+            rotation_block_size=args.rotation_block_size,
+        ),
+        adaptive=AdaptiveOptions(
+            adaptive_oversampling=oversampling, max_significants=max_significants,
+            coarse_engine=args.coarse_engine,
+        ),
+        parity=RelionParityOptions(
+            tau2_fudge=1.0,
+            perturb_factor=0.5,
+            optics_group_ids_per_half=optics_group_ids_per_half,
+            relion_optics_image_sizes=relion_optics_image_sizes,
+            relion_optics_pixel_sizes=relion_optics_pixel_sizes,
+            relion_model_pixel_size=relion_model_pixel_size,
+            perturb_seed=optimizer_random_seed,
+            perturb_replay_relion_dir=str(relion_dir),
+            perturb_replay_relion_prefix=run_prefix,
+            perturb_replay_max_iter=args.replay_override_max_iter,
+            emulate_relion_firstiter_cc=do_firstiter_cc,
+            relion_firstiter_ini_high_angstrom=relion_ini_high if args.iter == 0 else None,
+            first_iteration_score_mode=args.first_iteration_score_mode,
+            first_iteration_reconstruction_mode=args.first_iteration_reconstruction_mode,
+            image_fourier_backend=args.image_fourier_backend,
+            preserve_bpref_particle_order=(
+                args.diagnostic_preserve_bpref_particle_order
+                or args.diagnostic_native_relion_particle_order_seed is not None
+            ),
+            allow_replayed_bpref_particle_order=(
+                args.diagnostic_native_relion_particle_order_seed is not None
+            ),
+            optimizer_random_seed=optimizer_random_seed,
+        ),
+        replay=ReplayState(
+            init_reference_real=initial_reference_real_for_projector,
+            init_image_corrections=[corr_h1, corr_h2],
+            init_scale_corrections=[scale_corr_h1, scale_corr_h2],
+            init_group_ids=[group_ids_h1, group_ids_h2],
+            init_group_count=group_count,
+            init_previous_best_translations=[trans_h1, trans_h2],
+            init_previous_best_rotation_eulers=[euler_h1, euler_h2],
+            init_direction_prior=direction_prior,
+            replay_iteration_overrides=replay_iteration_overrides,
+            final_replay_override=explicit_final_replay_override,
+        ),
+        debug=EngineDebugOptions(
+            disable_adjoint_y=args.disable_adjoint_y,
+            disable_adjoint_ctf=args.disable_adjoint_ctf,
+        ),
+        local_search=LocalSearchOptions(
+            local_search_profile_mode=args.local_search_profile,
+            local_search_translation_prior_mode=args.local_search_translation_prior_mode,
+        ),
+        symmetry=SymmetryOptions(point_group=point_group),
+    )
     result = refine_single_volume(
         experiment_datasets=[ds_half1, ds_half2],
         init_volume=[jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)],
         init_noise_variance=noise_variance,
         init_mean_variance=mean_variance.reshape(-1),
         translations=None,
-        options=RefinementOptions(
-            disc_type="linear_interp",
-            schedule=RefinementSchedule(
-                max_iter=args.max_iter,
-                init_current_size=current_size,
-                init_healpix_order=hp_order,
-                max_healpix_order=args.max_healpix_order,
-                init_translation_range=offset_range / pixel_size,
-                init_translation_step=offset_step / pixel_size,
-                init_translation_sigma_angstrom=sigma_offset_angst_per_half,
-                particle_diameter_ang=particle_diameter,
-                init_relion_iteration=iteration,
-                init_fsc=fsc,
-                init_ave_Pmax=ave_Pmax,
-                init_has_high_fsc_at_limit=has_high_fsc_at_limit,
-                skip_final_iteration=args.skip_final_iteration,
-                force_max_iter_after_convergence=args.force_max_iter_after_convergence,
-            ),
-            batching=RefinementBatching(
-                image_batch_size=args.image_batch_size,
-                rotation_block_size=args.rotation_block_size,
-            ),
-            adaptive=AdaptiveOptions(
-                adaptive_oversampling=oversampling, max_significants=max_significants,
-                coarse_engine=args.coarse_engine,
-            ),
-            parity=RelionParityOptions(
-                tau2_fudge=1.0,
-                perturb_factor=0.5,
-                optics_group_ids_per_half=optics_group_ids_per_half,
-                relion_optics_image_sizes=relion_optics_image_sizes,
-                relion_optics_pixel_sizes=relion_optics_pixel_sizes,
-                relion_model_pixel_size=relion_model_pixel_size,
-                perturb_seed=optimizer_random_seed,
-                perturb_replay_relion_dir=str(relion_dir),
-                perturb_replay_relion_prefix=run_prefix,
-                perturb_replay_max_iter=args.replay_override_max_iter,
-                emulate_relion_firstiter_cc=do_firstiter_cc,
-                relion_firstiter_ini_high_angstrom=relion_ini_high if args.iter == 0 else None,
-                first_iteration_score_mode=args.first_iteration_score_mode,
-                first_iteration_reconstruction_mode=args.first_iteration_reconstruction_mode,
-                image_fourier_backend=args.image_fourier_backend,
-                preserve_bpref_particle_order=(
-                    args.diagnostic_preserve_bpref_particle_order
-                    or args.diagnostic_native_relion_particle_order_seed is not None
-                ),
-                allow_replayed_bpref_particle_order=(
-                    args.diagnostic_native_relion_particle_order_seed is not None
-                ),
-                optimizer_random_seed=optimizer_random_seed,
-            ),
-            replay=ReplayState(
-                init_reference_real=initial_reference_real_for_projector,
-                init_image_corrections=[corr_h1, corr_h2],
-                init_scale_corrections=[scale_corr_h1, scale_corr_h2],
-                init_group_ids=[group_ids_h1, group_ids_h2],
-                init_group_count=group_count,
-                init_previous_best_translations=[trans_h1, trans_h2],
-                init_previous_best_rotation_eulers=[euler_h1, euler_h2],
-                init_direction_prior=direction_prior,
-                replay_iteration_overrides=replay_iteration_overrides,
-                final_replay_override=explicit_final_replay_override,
-            ),
-            debug=EngineDebugOptions(
-                disable_adjoint_y=args.disable_adjoint_y,
-                disable_adjoint_ctf=args.disable_adjoint_ctf,
-            ),
-            local_search=LocalSearchOptions(
-                local_search_profile_mode=args.local_search_profile,
-                local_search_translation_prior_mode=args.local_search_translation_prior_mode,
-            ),
-            symmetry=SymmetryOptions(point_group=point_group),
-        ),
+        options=run_options,
         observer=observers.combine(
             ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
             + observers.observers_from_environment()
         ),
+        source=RelionReplaySource.from_options(run_options),
     )
+    del run_options
     elapsed = time.time() - t0
     history = result.history
     completed_iters = len(history.current_sizes)

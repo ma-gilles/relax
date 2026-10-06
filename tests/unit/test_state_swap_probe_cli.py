@@ -298,13 +298,14 @@ def test_relion_references_are_applied_before_state_restoration(monkeypatch):
 
 
 def test_state_swap_snapshot_is_bounded_to_target_iteration(monkeypatch):
-    """Only the target iteration snapshots the run's own state, before its replay overrides."""
+    """Only the target iteration snapshots the run's own state, before its replayed state."""
     from helpers.tiny_refinement import CallTrace
 
+    from relax.parity.relion_replay_source import RelionReplaySource
     from relax.refinement import iteration_loop
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "apply_iter_replay_overrides", "replay")
+    trace.wrap(RelionReplaySource, "numbered_state", "replay")
     trace.wrap(iteration_loop, "_snapshot_state_swap_inputs", "snapshot")
     trace.wrap(iteration_loop, "_apply_state_swap_probe", "swap")
     _state_swap_run(monkeypatch, trace)

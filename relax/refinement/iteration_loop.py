@@ -49,7 +49,6 @@ from relax.diagnostics.relion_replay import (
     _maybe_debug_replay_relion_references,
     _validate_bpref_particle_order_scope,
     apply_final_replay_state,
-    apply_iter_replay_overrides,
     sealed_rotation_ids_for_scoring,
 )
 from relax.diagnostics.state_swap_runtime import (
@@ -179,7 +178,7 @@ from relax.refinement.noise_updates import (
     update_posterior_noise_variance,
 )
 from relax.refinement.optics_shapes import MultiShapeHalf
-from relax.refinement.ports import FinishedIteration, ReconstructedIteration, RunObserver
+from relax.refinement.ports import FinishedIteration, InputSource, NumberedState, ReconstructedIteration, RunObserver
 from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
     build_numbered_projectors,
@@ -771,6 +770,7 @@ def refine_single_volume(
     translations: jnp.ndarray | None,
     options: RefinementOptions | None = None,
     observer: RunObserver | None = None,
+    source: InputSource | None = None,
 ) -> RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
@@ -793,6 +793,8 @@ def refine_single_volume(
         Defaults to ``RefinementOptions()`` when omitted.
     observer : the run's ``RunObserver`` (``relax.refinement.ports``): dumps and captures that watch the run
         and never change it. Defaults to one that does nothing.
+    source : the run's ``InputSource`` (``relax.refinement.ports``): what a comparison run takes from
+        elsewhere (a RELION run) instead of computing it. Defaults to the native source.
 
     Returns
     -------
@@ -807,6 +809,8 @@ def refine_single_volume(
         options = RefinementOptions()
     if observer is None:
         observer = RunObserver()
+    if source is None:
+        source = InputSource()
 
     options = with_validated_sampling_schedule(options)
 
@@ -884,6 +888,14 @@ def refine_single_volume(
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
     consistency = require_consistency_route(options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves)
+    if type(source) is InputSource and (
+        options.replay.replay_iteration_overrides is not None or options.parity.perturb_replay_relion_dir is not None
+    ):
+        # Until the replay settings leave the options (code rule 15), they need the source that reads them.
+        raise ValueError(
+            "the options name replay slots or a RELION replay directory but the run has the native input source; "
+            "pass source=relax.parity.relion_replay_source.RelionReplaySource.from_options(options)"
+        )
     relion_translation_angle_scale = (
         # Shape classes carry their translations in class pixels already; tilt images have their own phases.
         1.0
@@ -1447,13 +1459,6 @@ def refine_single_volume(
             replay_saved_healpix_order=replay_saved_healpix_order,
         )
 
-        # --- Replay override: force recovar's sampling state to mirror RELION ---
-        # When replaying, RELION's per-iter sampling.star / model.star /
-        # iter_replay_override dict dictate the actual hp_order, sigma priors,
-        # translation grid, current_size, direction priors, noise, etc. used
-        # at this iteration. Helper mutates state + relion_half_inputs +
-        # direction-prior lists in place; returns explicit new values for
-        # everything else.
         recovar_state_swap_snapshot = None
         state_swap_target_this_iteration = (
             debug.state_swap_probe is not None
@@ -1461,60 +1466,42 @@ def refine_single_volume(
         )
         if state_swap_target_this_iteration:
             recovar_state_swap_snapshot = _snapshot_state_swap_inputs(**_state_swap_inputs())
-        replay_result = apply_iter_replay_overrides(
-            iter_replay_override=iter_replay_override,
-            perturb_replay_relion_dir=perturb_replay_relion_dir,
-            perturb_replay_relion_prefix=perturb_replay_relion_prefix,
-            init_relion_iteration=init_relion_iteration,
-            iteration=iteration,
-            state=state,
-            cs=current_size,
-            image_geometry=image_geometry,
-            n_classes=n_classes,
-            relion_half_inputs=halves,
-            previous_best_rotations=previous_best_rotations,
-            noise_model=noise_model,
-            current_sigma_offset_angstrom=sigma_offset.shared_angstrom,
-            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
-            direction_priors=direction_priors,
-            preserve_existing_direction_prior=replay.preserve_initial_direction_prior,
-            sealed_sampling_state=sealed_sampling_state,
-            dtype=scoring_dtype,
-            symmetry=symmetry,
+        # A frozen boundary's sealed sampling state installs this iteration's sampling controls first.
+        sealed_prior_translations = sealed_sampling_meta = None
+        if sealed_sampling_state is not None:
+            current_size, sealed_prior_translations, sealed_sampling_meta = replay_policy._install_sealed_sampling(
+                state, sealed_sampling_state, iteration=iteration, image_geometry=image_geometry, dtype=scoring_dtype,
+            )
+        # The input source supplies the state this iteration scores with (the native source: the run's own).
+        numbered = source.numbered_state(
+            iteration,
+            NumberedState(
+                current_size=current_size, noise_model=noise_model, sigma_offset=sigma_offset,
+                previous_best_rotations=previous_best_rotations, mean_variance=reference_model.tau2,
+                class_mixture=class_mixture, prior_translations=sealed_prior_translations,
+                sampling_meta=sealed_sampling_meta, projector_state=None,
+            ),
+            state=state, halves=halves, direction_priors=direction_priors, image_geometry=image_geometry,
+            sampling_sealed=sealed_sampling_state is not None,
         )
-        current_size = replay_result.cs
-        _replay_prior_translations = replay_result.prior_translations
-        _replay_meta = replay_result.replay_meta
-        previous_best_rotations = replay_result.previous_best_rotations
-        noise_model = replay_result.noise_model
-        replay_mean_variance = (
-            None
-            if iter_replay_override is None
-            else iter_replay_override.get("mean_variance")
-        )
-        if replay_mean_variance is not None:
-            replay_mean_variance = np.asarray(replay_mean_variance, dtype=np.float64).reshape(-1)
-            expected_mean_variance_shape = tuple(reference_model.tau2.shape)
-            if replay_mean_variance.shape != expected_mean_variance_shape:
-                raise ValueError(
-                    "K=1 replay mean_variance shape mismatch: "
-                    f"expected {expected_mean_variance_shape}, "
-                    f"got {replay_mean_variance.shape}"
-                )
-            reference_model.tau2 = jnp.asarray(replay_mean_variance)
-            logger.info("Replay override: K=1 tau2/mean_variance <- model.star")
+        current_size = numbered.current_size
+        _replay_prior_translations = numbered.prior_translations
+        _replay_meta = numbered.sampling_meta
+        previous_best_rotations = numbered.previous_best_rotations
+        noise_model = numbered.noise_model
+        reference_model.tau2 = numbered.mean_variance
+        class_mixture = numbered.class_mixture
+        # Both halves' translation prior widths, a scalar width repeated.
         sigma_offset = SigmaOffset(
-            replay_result.current_sigma_offset_angstrom,
-            as_sigma_offset_half_pair(replay_result.current_sigma_offset_angstrom_per_half),
+            numbered.sigma_offset.shared_angstrom,
+            as_sigma_offset_half_pair(
+                numbered.sigma_offset.shared_angstrom
+                if numbered.sigma_offset.per_half_angstrom is None
+                else numbered.sigma_offset.per_half_angstrom
+            ),
         )
         if replay_saved_healpix_order is not None:
             replay_saved_healpix_order = int(state.healpix_order)
-        if k_class_enabled and replay_result.class_weights is not None:
-            class_mixture = class_mixture_from_weights(np.asarray(replay_result.class_weights, dtype=np.float64))
-            logger.info(
-                "Replay override: class priors <- direction-prior row sums (%s)",
-                ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(class_mixture.weights)),
-            )
 
         reference_model.maps = _maybe_debug_replay_relion_references(
             reference_model, options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
@@ -1570,7 +1557,7 @@ def refine_single_volume(
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
             relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-            build_shared_projector=has_previous_iteration and replay_result.relion_projector_state is None,
+            build_shared_projector=has_previous_iteration and numbered.projector_state is None,
             log=logger,
         )
         if iteration_accuracy.sampling_accuracy is not None:
@@ -1724,7 +1711,7 @@ def refine_single_volume(
 
         # The previous iteration's slabs are released before this iteration's are built.
         projectors = [None, None]
-        captured_projector_state = replay_result.relion_projector_state
+        captured_projector_state = numbered.projector_state
         # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
         # coarse operands on every route, as RELION builds Projector::data every iteration.
         if captured_projector_state is not None:

@@ -610,6 +610,7 @@ MUTATIONS = (
 def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None:
     """Run the cases against ``source`` in this process; the caller has set the CPU-only environment."""
     import importlib
+    import importlib.util
     import logging
     import threading
     import types
@@ -985,26 +986,34 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             parity.update(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0)
         error, result = None, {}
         try:
+            options = refinement_options.RefinementOptions(
+                disc_type="linear_interp",
+                schedule=refinement_options.RefinementSchedule(
+                    max_iter=max_iter, init_current_size=4, init_healpix_order=init_order, max_healpix_order=2,
+                    **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
+                    **({"skip_final_iteration": True} if skip_final else {}),
+                ),
+                batching=refinement_options.RefinementBatching(
+                    image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS,
+                ),
+                parity=refinement_options.RelionParityOptions(**parity),
+                **extra,
+            )
+            source = {}
+            if importlib.util.find_spec("relax.parity") is not None:
+                # A source with the input-source port (code rule 15): the replay enters through it.
+                from relax.parity.relion_replay_source import RelionReplaySource
+
+                source["source"] = RelionReplaySource.from_options(options)
             result = iteration_loop.refine_single_volume(
                 halves,
                 init_volume,
                 jnp.ones(fixtures.IMAGE_SIZE, dtype=jnp.float32),
                 jnp.ones(fixtures.VOLUME_SIZE, dtype=jnp.float32) * 100.0,
                 translations,
-                options=refinement_options.RefinementOptions(
-                    disc_type="linear_interp",
-                    schedule=refinement_options.RefinementSchedule(
-                        max_iter=max_iter, init_current_size=4, init_healpix_order=init_order, max_healpix_order=2,
-                        **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
-                        **({"skip_final_iteration": True} if skip_final else {}),
-                    ),
-                    batching=refinement_options.RefinementBatching(
-                        image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS,
-                    ),
-                    parity=refinement_options.RelionParityOptions(**parity),
-                    **extra,
-                ),
+                options=options,
                 **observer,
+                **source,
             )
         except Exception as exc:  # recorded: both sides must fail the same way
             error = (type(exc).__name__, scrub(str(exc)))

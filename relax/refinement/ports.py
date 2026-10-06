@@ -1,11 +1,16 @@
-"""The ports through which observation enters the refinement (code rule 15).
+"""The ports through which comparison and observation enter the refinement (code rule 15).
+
+An :class:`InputSource` supplies inputs a comparison run takes from elsewhere (a RELION run) instead of the
+values the run computed: at a call site of the controller it receives the run's values and returns the
+values the iteration uses. This base class is the native source: it returns what it is given. The command
+chooses the source once (``relax.parity``); the algorithm never imports an implementation.
 
 A :class:`RunObserver` watches a run: dumps, captures and profiles of what the run computed. It never changes
 the run: no hook returns a value the algorithm uses, and the run's numbers are the same with any observer.
 The command chooses the observer once (``relax.diagnostics.observers``) and hands it to
 ``refine_single_volume``; the algorithm's modules never import an implementation, only this interface.
 
-This base class is the default and does nothing. Each hook is named for the moment of the run it is called
+The base ``RunObserver`` is the default and does nothing. Each hook is named for the moment of the run it is called
 at and receives the values the run holds then; an observer must not mutate them, and must not keep a device
 array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The two
 collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``) and
@@ -104,6 +109,42 @@ class FinishedIteration(NamedTuple):
     half_inputs: Any
     corrections: Any
     scale_correction_data_vs_prior: Any
+
+
+class NumberedState(NamedTuple):
+    """The inputs of a numbered iteration a source may replace, as the run holds them before its expectation.
+
+    ``sigma_offset`` is the run's ``SigmaOffset``; ``mean_variance`` the reference model's tau2;
+    ``class_mixture`` its ``ClassMixture``; ``prior_translations`` and ``sampling_meta`` the translation
+    prior and sampling record a sealed sampling state installed (None otherwise); ``projector_state`` a
+    captured RELION projector for this iteration (None: build it).
+    """
+
+    current_size: int
+    noise_model: Any
+    sigma_offset: Any
+    previous_best_rotations: list
+    mean_variance: Any
+    class_mixture: Any
+    prior_translations: Any
+    sampling_meta: Any
+    projector_state: Any
+
+
+class InputSource:
+    """The native source: every input is the one the run computed."""
+
+    def numbered_state(
+        self, iteration: int, inputs: NumberedState, *, state, halves, direction_priors, image_geometry,
+        sampling_sealed: bool,
+    ) -> NumberedState:
+        """The state numbered iteration ``iteration`` scores with.
+
+        A replaying source may also update ``state`` (its sampling controls), the ``halves`` (poses and
+        corrections) and the ``direction_priors`` list in place, and says so; ``sampling_sealed`` is set when
+        a sealed sampling state already installed this iteration's sampling.
+        """
+        return inputs
 
 
 class RunObserver:

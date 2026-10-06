@@ -42,6 +42,7 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
+from relax.parity.relion_replay_source import RelionReplaySource
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (
@@ -1206,6 +1207,105 @@ def main(command=None):
     # names them and CPython keeps a call's arguments referenced for its duration.
     initial_mean_variance_host = np.asarray(jax.device_get(mean_variance))
     del mean_variance
+    run_options = RefinementOptions(
+        symmetry=SymmetryOptions(point_group=symmetry),
+        schedule=command_options.resolve_schedule(
+            args,
+            initial_sampling=initial_sampling,
+            init_current_size=init_current_size,
+            ini_high_angstrom=_ini_high_for_lowpass,
+            init_data_vs_prior=relion_start_data_vs_prior,
+            particle_diameter_ang=particle_diameter_ang,
+            relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
+            frozen_boundary=frozen_boundary,
+            continued_iterations=None if resume_snapshot is None else continued_iterations,
+        ),
+        batching=command_options.resolve_batching(args),
+        overlap=command_options.resolve_overlap(args),
+        adaptive=adaptive_options,
+        parity=RelionParityOptions(
+            tau2_fudge=effective_tau2_fudge,
+            perturb_factor=args.perturb_factor,
+            perturb_seed=effective_perturb_seed,
+            optimizer_random_seed=args.seed,
+            relion_optics_image_sizes=half_sets.optics_image_sizes,
+            relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
+            optics_group_ids_per_half=optics_group_ids_per_half,
+            relion_model_pixel_size=relion_model_pixel_size,
+            perturb_replay_relion_dir=args.perturb_replay_relion_dir,
+            solvent_mask_path=args.solvent_mask,
+            solvent_correct_fsc=bool(args.solvent_correct_fsc),
+            perturb_replay_restart_state_iterations=restart_provenance.iterations,
+            final_sampling_replay_relion_dir=final_replay.sampling_dir,
+            image_fourier_backend=args.image_fourier_backend,
+            emulate_relion_firstiter_cc=bool(args.firstiter_cc),
+            relion_firstiter_ini_high_angstrom=(
+                relion_firstiter_ini_high_angstrom if args.firstiter_cc else None
+            ),
+            use_per_half_mean_variance=(
+                frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
+            ),
+            preserve_bpref_particle_order=use_fresh_auto_refine_order,
+            firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
+        ),
+        consistency=consistency_options,
+        local_search=command_options.resolve_local_search(args),
+        k_class=command_options.resolve_k_class(
+            args, trial_order=particle_layout.accuracy_trial_order_local, resumed=resume_snapshot is not None
+        ),
+        checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
+        replay=ReplayState(
+            init_reference_real=None if resume_snapshot is not None else references.real_for_projector,
+            init_refinement_state_fields=(
+                None if frozen_boundary is None else frozen_boundary.refinement_state_fields
+            ),
+            replay_iteration_overrides=replay_iteration_overrides,
+            final_replay_override=final_replay.override,
+            final_replay_reference_maps=final_replay.reference_maps,
+            final_replay_source_iteration=final_replay.source_iteration,
+            init_group_ids=list(particle_groups.group_ids_per_half),
+            init_group_count=particle_groups.n_groups,
+            relion_scale_follower_count=follower_topology.n_followers,
+            relion_scale_follower_owners_by_iteration=follower_topology.owners_by_iteration,
+            relion_scale_reduction_mode=follower_topology.reduction_mode,
+            relion_follower_scale_replay=follower_topology.replay,
+            init_relion_optics_group_count=particle_groups.n_optics_groups,
+            init_previous_best_translations=(
+                None
+                if initial_poses.poses is None
+                else initial_poses.poses["previous_best_translations"]
+            ),
+            init_previous_best_rotation_eulers=(
+                None
+                if initial_poses.poses is None
+                else initial_poses.poses["previous_best_rotation_eulers"]
+            ),
+            init_angle_priors=None if initial_poses.poses is None else initial_poses.poses.get("angle_priors"),
+            init_image_corrections=(
+                initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections
+            ),
+            init_scale_corrections=(
+                initial_poses.scale_corrections if frozen_boundary is None else frozen_boundary.scale_corrections
+            ),
+            init_direction_prior=(
+                None if frozen_boundary is None else frozen_boundary.direction_prior_per_half
+            ),
+            preserve_initial_direction_prior=frozen_boundary is not None,
+        ),
+        debug=command_options.resolve_debug(
+            args,
+            state_swap_probe=state_swap_probe,
+            frozen_boundary=frozen_boundary,
+            expected_accuracy=ExpectedAccuracyOptions(
+                half1_base_order_local=particle_layout.accuracy_base_order_local,
+                half1_trial_order_local=particle_layout.accuracy_trial_order_local,
+                half1_optics_group_ids=particle_layout.accuracy_optics_group_ids,
+                half1_particle_ids=particle_layout.accuracy_particle_ids,
+                half1_ctf_params=half_sets.accuracy_ctf_params,
+                do_ctf_correction=expected_accuracy_do_ctf_correction,
+            ),
+        ),
+    )
     result = refine_single_volume(
         experiment_datasets=experiment_datasets,
         init_volume=references.fourier,
@@ -1214,107 +1314,12 @@ def main(command=None):
         ),
         init_mean_variance=initial_mean_variance_host,
         translations=translations_jnp,
-        options=RefinementOptions(
-            symmetry=SymmetryOptions(point_group=symmetry),
-            schedule=command_options.resolve_schedule(
-                args,
-                initial_sampling=initial_sampling,
-                init_current_size=init_current_size,
-                ini_high_angstrom=_ini_high_for_lowpass,
-                init_data_vs_prior=relion_start_data_vs_prior,
-                particle_diameter_ang=particle_diameter_ang,
-                relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
-                frozen_boundary=frozen_boundary,
-                continued_iterations=None if resume_snapshot is None else continued_iterations,
-            ),
-            batching=command_options.resolve_batching(args),
-            overlap=command_options.resolve_overlap(args),
-            adaptive=adaptive_options,
-            parity=RelionParityOptions(
-                tau2_fudge=effective_tau2_fudge,
-                perturb_factor=args.perturb_factor,
-                perturb_seed=effective_perturb_seed,
-                optimizer_random_seed=args.seed,
-                relion_optics_image_sizes=half_sets.optics_image_sizes,
-                relion_optics_pixel_sizes=half_sets.optics_pixel_sizes,
-                optics_group_ids_per_half=optics_group_ids_per_half,
-                relion_model_pixel_size=relion_model_pixel_size,
-                perturb_replay_relion_dir=args.perturb_replay_relion_dir,
-                solvent_mask_path=args.solvent_mask,
-                solvent_correct_fsc=bool(args.solvent_correct_fsc),
-                perturb_replay_restart_state_iterations=restart_provenance.iterations,
-                final_sampling_replay_relion_dir=final_replay.sampling_dir,
-                image_fourier_backend=args.image_fourier_backend,
-                emulate_relion_firstiter_cc=bool(args.firstiter_cc),
-                relion_firstiter_ini_high_angstrom=(
-                    relion_firstiter_ini_high_angstrom if args.firstiter_cc else None
-                ),
-                use_per_half_mean_variance=(
-                    frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
-                ),
-                preserve_bpref_particle_order=use_fresh_auto_refine_order,
-                firstiter_cc_tree_rescore_max_margin=firstiter_cc_tree_rescore_max_margin,
-            ),
-            consistency=consistency_options,
-            local_search=command_options.resolve_local_search(args),
-            k_class=command_options.resolve_k_class(
-                args, trial_order=particle_layout.accuracy_trial_order_local, resumed=resume_snapshot is not None
-            ),
-            checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
-            replay=ReplayState(
-                init_reference_real=None if resume_snapshot is not None else references.real_for_projector,
-                init_refinement_state_fields=(
-                    None if frozen_boundary is None else frozen_boundary.refinement_state_fields
-                ),
-                replay_iteration_overrides=replay_iteration_overrides,
-                final_replay_override=final_replay.override,
-                final_replay_reference_maps=final_replay.reference_maps,
-                final_replay_source_iteration=final_replay.source_iteration,
-                init_group_ids=list(particle_groups.group_ids_per_half),
-                init_group_count=particle_groups.n_groups,
-                relion_scale_follower_count=follower_topology.n_followers,
-                relion_scale_follower_owners_by_iteration=follower_topology.owners_by_iteration,
-                relion_scale_reduction_mode=follower_topology.reduction_mode,
-                relion_follower_scale_replay=follower_topology.replay,
-                init_relion_optics_group_count=particle_groups.n_optics_groups,
-                init_previous_best_translations=(
-                    None
-                    if initial_poses.poses is None
-                    else initial_poses.poses["previous_best_translations"]
-                ),
-                init_previous_best_rotation_eulers=(
-                    None
-                    if initial_poses.poses is None
-                    else initial_poses.poses["previous_best_rotation_eulers"]
-                ),
-                init_angle_priors=None if initial_poses.poses is None else initial_poses.poses.get("angle_priors"),
-                init_image_corrections=(
-                    initial_poses.image_corrections if frozen_boundary is None else frozen_boundary.image_corrections
-                ),
-                init_scale_corrections=(
-                    initial_poses.scale_corrections if frozen_boundary is None else frozen_boundary.scale_corrections
-                ),
-                init_direction_prior=(
-                    None if frozen_boundary is None else frozen_boundary.direction_prior_per_half
-                ),
-                preserve_initial_direction_prior=frozen_boundary is not None,
-            ),
-            debug=command_options.resolve_debug(
-                args,
-                state_swap_probe=state_swap_probe,
-                frozen_boundary=frozen_boundary,
-                expected_accuracy=ExpectedAccuracyOptions(
-                    half1_base_order_local=particle_layout.accuracy_base_order_local,
-                    half1_trial_order_local=particle_layout.accuracy_trial_order_local,
-                    half1_optics_group_ids=particle_layout.accuracy_optics_group_ids,
-                    half1_particle_ids=particle_layout.accuracy_particle_ids,
-                    half1_ctf_params=half_sets.accuracy_ctf_params,
-                    do_ctf_correction=expected_accuracy_do_ctf_correction,
-                ),
-            ),
-        ),
+        options=run_options,
         observer=observers.command_observer(args),
+        source=RelionReplaySource.from_options(run_options),
     )
+    # The options (with their replay slots and start-up arrays) live no longer than the refinement, as before.
+    del run_options
 
     if run_file_writer is not None:
         run_file_writer.wait()  # the last iteration's files, written in the background
