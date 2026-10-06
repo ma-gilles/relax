@@ -60,13 +60,12 @@ from relax.refinement.local_sampling import LocalSearchSettings, local_search_ce
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
-from relax.refinement.refinement_result import ModelMaps, RefinementResult, ReplayTelemetry
+from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import _relion_metadata_translations
-from relax.relion.relion_worker_scale import _finalize_relion_follower_scale_replay_telemetry
 
 # The numbered controller's log: the final pass logs under its name.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -141,8 +140,8 @@ def run_final_all_data(
     """Score the converged halves at full size and reconstruct the final maps.
 
     Replay and final-pass admission are resolved by the numbered controller.
-    The returned result holds this phase's results with ``numbered`` None; the caller adds
-    the set-up and numbered-iteration metadata after execution.
+    The returned result holds this phase's results with ``numbered`` and ``replay`` None; the caller adds
+    the set-up and numbered-iteration metadata and the follower-scale replay's accounting after execution.
     ``sigma_offset`` is the run's ``SigmaOffset`` (shared and per-half translation prior widths) and
     ``class_mixture`` its ``ClassMixture`` (class weights and their log priors; one class for K=1). The
     class count is ``options.k_class.n_classes``; arrays are in the global scoring dtype.
@@ -156,7 +155,6 @@ def run_final_all_data(
     adaptive = options.adaptive
     batching = options.batching
     debug = options.debug
-    replay = options.replay
     local_search = options.local_search
     symmetry = options.symmetry.point_group
     init_relion_iteration = options.schedule.init_relion_iteration
@@ -752,20 +750,9 @@ def run_final_all_data(
     )
     history.wall_times.append(final_iter_elapsed)
 
-    (
-        replay_requested_iterations,
-        replay_applied_iterations,
-    ) = _finalize_relion_follower_scale_replay_telemetry(
-        replay.relion_follower_scale_replay,
-        applied_iterations=history.relion_follower_scale_replay_applied_iterations,
-        logger=logger,
-    )
-
     return RefinementResult(
         maps=final_model_maps,
-        replay=ReplayTelemetry(
-            requested_iterations=replay_requested_iterations, applied_iterations=replay_applied_iterations,
-        ),
+        replay=None,
         follower_scale=follower_setup.result_outputs(history),
         # RELION-mode specific outputs
         convergence_state=state,

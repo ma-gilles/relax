@@ -727,6 +727,16 @@ def k1_maximization(
     )
 
 
+def _follower_replay_telemetry(source, history) -> ReplayTelemetry:
+    """The follower-scale replay's requested and applied iterations (both None without a replay), validated
+    against the iterations the run applied; raises if the replay was not applied as requested."""
+
+    requested, applied = _finalize_relion_follower_scale_replay_telemetry(
+        source, applied_iterations=history.relion_follower_scale_replay_applied_iterations, logger=logger,
+    )
+    return ReplayTelemetry(requested_iterations=requested, applied_iterations=applied)
+
+
 def _with_stable_window_class_history(refine):
     """Run a refinement inside one stable-window class history (resident_pass2)."""
 
@@ -1897,19 +1907,9 @@ def refine_single_volume(
             )
             # Local search is K=1 (Class3D was rejected above), so there are no class products.
             merged_mean, merged_class_means = _merged_mean_from_halves(reference_model.maps, None)
-            (
-                replay_requested_iterations,
-                replay_applied_iterations,
-            ) = _finalize_relion_follower_scale_replay_telemetry(
-                replay.relion_follower_scale_replay,
-                applied_iterations=history.relion_follower_scale_replay_applied_iterations,
-                logger=logger,
-            )
             return RefinementResult(
                 maps=ModelMaps(mean=merged_mean, means=reference_model.maps, class_means=merged_class_means),
-                replay=ReplayTelemetry(
-                    requested_iterations=replay_requested_iterations, applied_iterations=replay_applied_iterations,
-                ),
+                replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),
                 follower_scale=None,
                 convergence_state=state,
                 numbered=NumberedMetadata(
@@ -2566,6 +2566,14 @@ def refine_single_volume(
     # top of a permitted loop iteration.  If the last numbered iteration
     # merely makes the state convergence-ready, ``iter <= nr_iter`` ends and
     # RELION does not synthesize another boundary after the cap.
+    # Set-up and numbered-iteration facts; the final pass leaves them as they are.
+    numbered = NumberedMetadata(
+        hard_assignments=hard_assignments,
+        frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
+        expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
+        expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
+        setup_phase_seconds=setup_phase_seconds,
+    )
     should_run_final_iteration = finalization._should_run_final_all_data_iteration(
         logger=logger,
         has_converged=state.has_converged,
@@ -2589,14 +2597,6 @@ def refine_single_volume(
             reference_model.maps,
             class_mixture.weights if k_class_enabled else None,
         )
-        (
-            replay_requested_iterations,
-            replay_applied_iterations,
-        ) = _finalize_relion_follower_scale_replay_telemetry(
-            replay.relion_follower_scale_replay,
-            applied_iterations=history.relion_follower_scale_replay_applied_iterations,
-            logger=logger,
-        )
         return RefinementResult(
             maps=ModelMaps(
                 mean=merged_mean,
@@ -2605,18 +2605,10 @@ def refine_single_volume(
                 class_weights=class_mixture.weights if k_class_enabled else None,
                 class_assignments=class_assignments if k_class_enabled else None,
             ),
-            replay=ReplayTelemetry(
-                requested_iterations=replay_requested_iterations, applied_iterations=replay_applied_iterations,
-            ),
+            replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),
             follower_scale=follower_setup.result_outputs(history),
             convergence_state=state,
-            numbered=NumberedMetadata(
-                hard_assignments=hard_assignments,
-                frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
-                expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
-                expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
-                setup_phase_seconds=setup_phase_seconds,
-            ),
+            numbered=numbered,
             history=history,
         )
     if not state.has_converged:
@@ -2746,16 +2738,8 @@ def refine_single_volume(
         collect_local_search_profile=collect_local_search_profile,
         relion_translation_angle_scale=relion_translation_angle_scale,
     )
-    # Setup and numbered-iteration metadata retain their existing caller ownership.
     return replace(
-        final_result,
-        numbered=NumberedMetadata(
-            hard_assignments=hard_assignments,
-            frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
-            expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
-            expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
-            setup_phase_seconds=setup_phase_seconds,
-        ),
+        final_result, numbered=numbered, replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),
     )
 
 ### THIS FILE SHOULD BE MUCH SHORTER - REMOVE UN-NECESSARY IF STATEMENTS/RELION THINGS THAT DONT MATTER/ WE DONT USE

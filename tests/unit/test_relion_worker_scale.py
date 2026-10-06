@@ -1222,15 +1222,14 @@ def test_sparse_follower_scale_replay_accounting_guards_every_result_return(monk
     """
     from helpers.tiny_refinement import CallTrace
 
-    from relax.refinement import finalization, iteration_loop
+    from relax.refinement import iteration_loop
 
     replay = _follower_scale_replay(2)
     seen = {}
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
                before=lambda call: seen.setdefault("history", call.args[1]))
-    for module in (iteration_loop, finalization):
-        trace.wrap(module, "_finalize_relion_follower_scale_replay_telemetry", "accounting")
+    trace.wrap(iteration_loop, "_finalize_relion_follower_scale_replay_telemetry", "accounting")
     result = _follower_run(monkeypatch, final=final, follower_replay=replay)
     (accounting,) = trace.calls("accounting")
     assert accounting.args[0] is replay
