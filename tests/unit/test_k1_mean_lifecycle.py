@@ -114,8 +114,8 @@ def test_rotation_posterior_trajectory_is_kept_only_for_diagnostic_runs(monkeypa
     default = run_tiny_refinement(monkeypatch)
     diagnostic = run_tiny_refinement(monkeypatch, debug=EngineDebugOptions(save_intermediates_dir=str(tmp_path)))
 
-    assert default["rotation_posterior_trajectory_per_half"] == []
-    assert len(diagnostic["rotation_posterior_trajectory_per_half"]) == 2
+    assert default.history.rotation_posterior_trajectory_per_half == []
+    assert len(diagnostic.history.rotation_posterior_trajectory_per_half) == 2
 
 
 def test_production_runner_leaves_cold_start_host_owned_until_normalization(monkeypatch, tmp_path):
