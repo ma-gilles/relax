@@ -44,9 +44,12 @@ reason; the sections after this one hold the detail.
    and checkpoint records stay in `full_refinement.main`: their fields are start-up results (half sets,
    references, noise, poses, replay inputs, follower topology, the frozen boundary), not flags, so a
    resolver would be a function of ten or more of them. `main` is 1,020 lines.
-2. **Environment reads below the boundary (rule 5).** The controller's diagnostic switches and dump
-   directories are one `DiagnosticEnvironment` (`EngineDebugOptions.environment`), read when the options are
-   built; add a new diagnostic variable there. Still read where used, each with its reason:
+2. **Environment reads below the boundary (rule 5).** The controller's remaining diagnostic switches and
+   dump directories are one `DiagnosticEnvironment` (`EngineDebugOptions.environment`), read when the options
+   are built; the final pass's two run variants are `FinalPassOptions`, read the same way. Dumps that watch
+   the run are observers (`relax.refinement.ports.RunObserver`, rule 15), built at the command from flags
+   and the environment (`relax.diagnostics.observers`): the intermediates, the parity capture and timings,
+   the BPref accumulator captures and the noise-update terms. Still read where used, each with its reason:
    - `projector_preparation.prepare_scoring_projector`: `RELAX_RELION_PROJECTOR_CACHE_DIR` and
      `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/helpers/expected_accuracy.py` calls it too, outside this
      package.
@@ -113,8 +116,10 @@ accepted, with the reason:
   XLA's iFFT normalisation at box scale), the box-scale host staging and the end-of-iteration sync
   (memory boundaries), and about twelve once-per-iteration syncs for logs and history.
 - **Rule 9: met, with exceptions.** Fixed: the six operations that update arguments in place now say so.
-  Accepted: `half_scoring` appends local-search profile rows to the list the controller hands its
-  diagnostics policy (an observation sink nothing reads back); the `adaptive_pass2_*` switches and
+  The local-search probe (`stop_after_local_search*`, `LocalSearchOptions`) and the final pass's
+  after-the-cap and merged-reference variants (`FinalPassOptions`) change the run, so they are run options,
+  not diagnostics (2026-10-06). Accepted: `half_scoring` appends local-search profile rows to the list the
+  controller hands its diagnostics policy (an observation sink nothing reads back); the `adaptive_pass2_*` switches and
   `diagnostic_score_only` of `LocalDiagnosticPolicy` are opt-in diagnostic variants of the pass-2 layout
   (default path unchanged). The prior's result is a dict named `details` (`prior_shells`, `ssnr_shells`)
   that the resolution and the run files read: it is the prior's output, not a diagnostics structure, and
@@ -132,8 +137,14 @@ accepted, with the reason:
 - **RELION run directories have no CPU fixture.** The fingerprint's `main_*` cases do not reach the frozen
   boundary, the RELION replays (`--relion_init_dir`, `--perturb_replay_relion_dir`, the final-only replay),
   the state-swap probe or captured projectors: the tiny data cannot produce a RELION run directory. CPU
-  tests stand in for the one callee that supplies such a fact (a stand-in boundary or follower topology);
-  the paths themselves are checked by the GPU tiers only. Cost of closing it: a tiny run-directory fixture
+  tests stand in for the one callee that supplies such a fact (a stand-in boundary or follower topology).
+  The GPU tiers run only two of these paths end to end: the numbered STAR replay
+  (`--perturb_replay_relion_dir`: fast parity, long `realdata_hp3_replay`) and `--relion_init_dir` (long
+  `k1_relion_seeded_debug`). The frozen boundary, the state-swap probe, captured projectors, the final-only
+  replay and the follower dispatch schedule are passed by no tier: from the command they have CPU admission
+  tests only; at the controller boundary the fingerprint's cases exercise the state-swap probe, the frozen
+  scoring-state assertion, the sealed sampling state and per-iteration and final-only replay priors
+  (parity audit, 2026-10-06). Cost of closing it: a tiny run-directory fixture
   written by RELION itself on the tiny data (`run_it000/001_{data,model,optimiser,sampling}.star`, half
   maps), checked in with its manifest, plus fingerprint cases using it: about two to three agent-days,
   mostly in making RELION's numbered files consistent with the stand-in engine's run.
