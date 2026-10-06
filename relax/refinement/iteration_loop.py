@@ -976,6 +976,7 @@ def refine_single_volume(
         image_geometry,
         subtomogram=tomo_halves,
         dtype=scoring_dtype,
+        source=source,
     )
     resume = options.checkpoint.resume
     _mark_setup_phase("state_init")
@@ -2305,7 +2306,7 @@ def refine_single_volume(
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
             scheduling_resolution_shell=resolution_estimate.scheduling_shell,
-            replay_dir=star_directory,
+            source=source,
             translations=coarse_grids.translations,
             statistics=statistics,
             current_classes=current_combined_classes,

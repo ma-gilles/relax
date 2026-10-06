@@ -13,10 +13,7 @@ from relax import sampling
 from relax.dense import scoring_policy
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.frozen_boundary import _restore_diagnostic_frozen_boundary_state
-from relax.diagnostics.relion_replay import (
-    _restore_convergence_state_from_replay_restart,
-    _sealed_sampling_base_grids,
-)
+from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_for_state, healpix_angular_step
 from relax.helpers.fourier_window import quantize_current_size
 from relax.helpers.resolution import (
@@ -40,6 +37,7 @@ from relax.reconstruction.regularization_relion import (
     update_relion_growth_state_from_fsc,
 )
 from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
+from relax.refinement.ports import InputSource
 from relax.sampling import _relion_adaptive_pass1_rotations
 
 if TYPE_CHECKING:
@@ -295,13 +293,17 @@ def initialize_refinement_state(
     *,
     subtomogram: bool,
     dtype,
+    source: InputSource | None = None,
 ) -> RefinementState:
     """Resolve startup sampling/convergence state before initial grid construction.
 
-    Replay restart takes precedence over fresh FSC/ini_high initialization;
+    A replay restart's convergence counters (``source.restore_convergence_state``, the native source has
+    none) take precedence over fresh FSC/ini_high initialization;
     diagnostic frozen fields and a validated continuation are applied afterwards.
     See ``docs/math/relion_refinement_algorithm.md#startup-sampling-state``.
     """
+    if source is None:
+        source = InputSource()
     schedule = options.schedule
     parity = options.parity
     init_relion_iteration = schedule.init_relion_iteration
@@ -332,12 +334,8 @@ def initialize_refinement_state(
     # RELION's convergence counters are not initialized against an infinite
     # previous resolution.  They resume from the previous optimiser/model STAR
     # in replay mode, or from the initial FSC/ini_high state in a fresh run.
-    if (
-        options.debug.sealed_sampling_state is None
-        and parity.perturb_replay_relion_dir is not None
-        and int(init_relion_iteration) > 0
-    ):
-        _restore_convergence_state_from_replay_restart(state, options)
+    if source.restore_convergence_state(state):
+        pass
     elif schedule.init_fsc is not None:
         initialize_resolution_from_fsc(
             state, options, grid_size=grid_size, voxel_size=image_geometry.pixel_size_angstrom,

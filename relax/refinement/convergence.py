@@ -8,11 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.diagnostics.relion_replay import (
-    OptimiserAccuracyReplay,
-    apply_optimiser_convergence_replay,
-    read_optimiser_accuracy_replay,
-)
+from relax.diagnostics.relion_replay import OptimiserAccuracyReplay
 from relax.helpers.convergence import (
     ExpectationStatistics,
     RefinementState,
@@ -24,6 +20,7 @@ from relax.helpers.convergence import (
     update_refinement_state,
 )
 from relax.helpers.resolution import ImageGeometry, shell_index_to_resolution_angstrom
+from relax.refinement.ports import InputSource
 
 if TYPE_CHECKING:
     from relax.refinement.half_inputs import PoseComparison
@@ -122,19 +119,17 @@ class ConvergenceUpdate(NamedTuple):
 
 def _iteration_accuracy_for_convergence(
     state: RefinementState,
-    options: RefinementOptions,
     *,
     iteration: int,
-    replay_dir: str | None,
+    source: InputSource,
     n_translations: int,
     significant_counts,
     exact_acc_rot: float | None,
     exact_acc_trans: float | None,
     log: logging.Logger,
 ) -> OptimiserAccuracyReplay:
-    """Admit this iteration's accuracy: the exact estimate, the support width when opted in, then replay."""
-    parity = options.parity
-
+    """Admit this iteration's accuracy: the exact estimate, the support width when opted in, then the input
+    source's (a replayed optimiser's)."""
     iter_acc_rot = exact_acc_rot
     iter_acc_trans = exact_acc_trans
     convergence_acc_rot = None
@@ -156,38 +151,18 @@ def _iteration_accuracy_for_convergence(
             approx_convergence_reason,
         )
 
-    return read_optimiser_accuracy_replay(
-        replay_dir=replay_dir,
-        replay_prefix=parity.perturb_replay_relion_prefix,
-        init_relion_iteration=options.schedule.init_relion_iteration,
-        iteration=iteration,
-        sealed_sampling_state=options.debug.sealed_sampling_state,
-        acc_rot=iter_acc_rot,
-        acc_trans=iter_acc_trans,
-        convergence_acc_rot=convergence_acc_rot,
-        convergence_acc_trans=convergence_acc_trans,
-        logger=log,
+    return source.convergence_accuracy(
+        iteration,
+        OptimiserAccuracyReplay(
+            metadata=None,
+            optimiser_star=None,
+            optimiser_iteration=None,
+            acc_rot=iter_acc_rot,
+            acc_trans=iter_acc_trans,
+            convergence_acc_rot=convergence_acc_rot,
+            convergence_acc_trans=convergence_acc_trans,
+        ),
     )
-
-
-def _apply_replayed_optimiser_controls(
-    state: RefinementState,
-    accuracy_replay: OptimiserAccuracyReplay,
-    options: RefinementOptions,
-    *,
-    replay_dir: str | None,
-    log: logging.Logger,
-) -> None:
-    if accuracy_replay.metadata is not None:
-        apply_optimiser_convergence_replay(
-            state,
-            metadata=accuracy_replay.metadata,
-            optimiser_star=accuracy_replay.optimiser_star,
-            optimiser_iteration=accuracy_replay.optimiser_iteration,
-            replay_dir=replay_dir,
-            replay_prefix=options.parity.perturb_replay_relion_prefix,
-            logger=log,
-        )
 
 
 def update_k1_iteration_convergence(
@@ -198,7 +173,7 @@ def update_k1_iteration_convergence(
     image_geometry: ImageGeometry,
     iteration: int,
     native_sampling_boundary: bool,
-    replay_dir: str | None,
+    source: InputSource,
     scheduling_resolution_shell: float,
     translations,
     statistics: ExpectationStatistics,
@@ -225,9 +200,8 @@ def update_k1_iteration_convergence(
     )
     accuracy_replay = _iteration_accuracy_for_convergence(
         state,
-        options,
         iteration=iteration,
-        replay_dir=replay_dir,
+        source=source,
         n_translations=n_trans_current,
         significant_counts=significant_counts,
         exact_acc_rot=exact_acc_rot,
@@ -262,7 +236,7 @@ def update_k1_iteration_convergence(
         # Fresh auto-refine followers reset the hidden-variable counter before
         # iteration 2 (ml_optimiser_mpi.cpp:1233-1234); Class3D does not.
         state = replace(state, suppress_hidden_variable_increment_once=True)
-    _apply_replayed_optimiser_controls(state, accuracy_replay, options, replay_dir=replay_dir, log=log)
+    source.apply_optimiser_controls(iteration, state, accuracy_replay)
     return ConvergenceUpdate(state, accuracy_replay)
 
 
@@ -273,7 +247,7 @@ def update_class_iteration_convergence(
     *,
     image_geometry: ImageGeometry,
     iteration: int,
-    replay_dir: str | None,
+    source: InputSource,
     scheduling_resolution_shell: float,
     translations,
     statistics: ExpectationStatistics,
@@ -302,9 +276,8 @@ def update_class_iteration_convergence(
     )
     accuracy_replay = _iteration_accuracy_for_convergence(
         state,
-        options,
         iteration=iteration,
-        replay_dir=replay_dir,
+        source=source,
         n_translations=n_trans_current,
         significant_counts=significant_counts,
         exact_acc_rot=exact_acc_rot,
@@ -332,7 +305,7 @@ def update_class_iteration_convergence(
         check_convergence_now=False,
         symmetry_label=options.symmetry.point_group,
     )
-    _apply_replayed_optimiser_controls(state, accuracy_replay, options, replay_dir=replay_dir, log=log)
+    source.apply_optimiser_controls(iteration, state, accuracy_replay)
     return ConvergenceUpdate(state, accuracy_replay)
 
 
@@ -344,7 +317,7 @@ def update_iteration_convergence(
     image_geometry: ImageGeometry,
     iteration: int,
     native_sampling_boundary: bool,
-    replay_dir: str | None,
+    source: InputSource,
     scheduling_resolution_shell: float,
     translations,
     statistics: ExpectationStatistics,
@@ -370,7 +343,7 @@ def update_iteration_convergence(
             options,
             image_geometry=image_geometry,
             iteration=iteration,
-            replay_dir=replay_dir,
+            source=source,
             scheduling_resolution_shell=scheduling_resolution_shell,
             translations=translations,
             statistics=statistics,
@@ -388,7 +361,7 @@ def update_iteration_convergence(
         image_geometry=image_geometry,
         iteration=iteration,
         native_sampling_boundary=native_sampling_boundary,
-        replay_dir=replay_dir,
+        source=source,
         scheduling_resolution_shell=scheduling_resolution_shell,
         translations=translations,
         statistics=statistics,

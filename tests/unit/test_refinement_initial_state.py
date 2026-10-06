@@ -30,7 +30,13 @@ def _geometry(pixel_size=2.25):
 
 
 def _initialize(options, *, subtomogram=False, pixel_size=2.25, dtype=np.float32):
-    return initialize_refinement_state(options, _geometry(pixel_size), subtomogram=subtomogram, dtype=dtype)
+    """The start-up state with the input source the command chooses for ``options``."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+
+    return initialize_refinement_state(
+        options, _geometry(pixel_size), subtomogram=subtomogram, dtype=dtype,
+        source=RelionReplaySource.from_options(options),
+    )
 
 
 @pytest.mark.parametrize('n_classes', [1, 4])

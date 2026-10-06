@@ -155,6 +155,19 @@ class InputSource:
         """This iteration's sampling perturbation; ``native()`` computes the run's own (and advances its RNG)."""
         return native()
 
+    def restore_convergence_state(self, state) -> bool:
+        """Restore ``state``'s convergence counters from a replayed run's restart iteration, in place; return
+        whether it did (then the run's own initial resolution is not set)."""
+        return False
+
+    def convergence_accuracy(self, iteration: int, accuracy):
+        """The accuracies the iteration's convergence update reads (an ``OptimiserAccuracyReplay``; the run's
+        own carry no optimiser record)."""
+        return accuracy
+
+    def apply_optimiser_controls(self, iteration: int, state, accuracy) -> None:
+        """After the iteration's convergence update: install a replayed optimiser's counters in ``state``."""
+
 
 class RunObserver:
     """Watches a refinement run and never steers it; every hook does nothing by default."""

@@ -22,7 +22,10 @@ from relax.diagnostics.relion_replay import (
     _past_perturb_replay_max_iter,
     _perturbation_restart_state_iteration,
     _resolve_replay_random_perturbation,
+    _restore_convergence_state_from_replay_restart,
     apply_iter_replay_overrides,
+    apply_optimiser_convergence_replay,
+    read_optimiser_accuracy_replay,
 )
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.mean_helpers import class_mixture_from_weights
@@ -70,6 +73,47 @@ class RelionReplaySource(InputSource):
                 parity.perturb_replay_max_iter,
             )
         return directory
+
+    def restore_convergence_state(self, state):
+        """A replay restart (init_relion_iteration > 0, no sealed sampling state) resumes RELION's convergence
+        counters from its optimiser and model STAR files."""
+        options = self.options
+        if (
+            options.debug.sealed_sampling_state is not None
+            or options.parity.perturb_replay_relion_dir is None
+            or int(options.schedule.init_relion_iteration) <= 0
+        ):
+            return False
+        _restore_convergence_state_from_replay_restart(state, options)
+        return True
+
+    def convergence_accuracy(self, iteration, accuracy):
+        """RELION's numbered optimiser accuracies, while the STAR replay is live and no sealed state is."""
+        return read_optimiser_accuracy_replay(
+            replay_dir=self._star_directory(iteration),
+            replay_prefix=self.options.parity.perturb_replay_relion_prefix,
+            init_relion_iteration=self.options.schedule.init_relion_iteration,
+            iteration=iteration,
+            sealed_sampling_state=self.options.debug.sealed_sampling_state,
+            acc_rot=accuracy.acc_rot,
+            acc_trans=accuracy.acc_trans,
+            convergence_acc_rot=accuracy.convergence_acc_rot,
+            convergence_acc_trans=accuracy.convergence_acc_trans,
+            logger=logger,
+        )
+
+    def apply_optimiser_controls(self, iteration, state, accuracy):
+        """The numbered optimiser STAR's counters, changes and convergence flag, installed in ``state``."""
+        if accuracy.metadata is not None:
+            apply_optimiser_convergence_replay(
+                state,
+                metadata=accuracy.metadata,
+                optimiser_star=accuracy.optimiser_star,
+                optimiser_iteration=accuracy.optimiser_iteration,
+                replay_dir=self._star_directory(iteration),
+                replay_prefix=self.options.parity.perturb_replay_relion_prefix,
+                logger=logger,
+            )
 
     def random_perturbation(self, iteration, sampling_meta, native):
         """The perturbation of RELION's sampling STAR (exact from its seed where the precision allows), when the

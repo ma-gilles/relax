@@ -8,6 +8,7 @@ from helpers.float_compare import assert_matches
 
 from relax.helpers.convergence import ExpectationStatistics, RefinementState
 from relax.helpers.resolution import ImageGeometry
+from relax.parity.relion_replay_source import RelionReplaySource
 from relax.refinement.convergence import update_class_iteration_convergence, update_k1_iteration_convergence
 from relax.refinement.half_inputs import PoseComparison
 from relax.refinement.refinement_options import (
@@ -31,7 +32,7 @@ def _operands(options, state, dtype, pixel_size, overrides):
     kwargs = dict(
         image_geometry=ImageGeometry(image_shape=(16, 16), pixel_size_angstrom=pixel_size),
         iteration=0,
-        replay_dir=options.parity.perturb_replay_relion_dir,
+        source=RelionReplaySource.from_options(options),
         scheduling_resolution_shell=4,
         translations=np.asarray([[0, 0], [1, 0]], dtype=dtype),
         current_assignments=np.asarray([0, 2, 4], dtype=np.int32),
@@ -214,8 +215,11 @@ def test_expired_replay_does_not_read_the_configured_startup_directory(tmp_path)
     (tmp_path/'run_it001_optimiser.star').write_text(
         'data_optimiser_general\n\n_rlnOverallAccuracyRotations 0.125\n_rlnHasConverged 1\n'
     )
-    options = RefinementOptions(parity=RelionParityOptions(perturb_replay_relion_dir=str(tmp_path)))
-    result = _update_k1(options=options, replay_dir=None)
+    # The replay ended before this iteration (--replay-override-max-iter 0).
+    options = RefinementOptions(
+        parity=RelionParityOptions(perturb_replay_relion_dir=str(tmp_path), perturb_replay_max_iter=0),
+    )
+    result = _update_k1(options=options)
     assert result.accuracy.metadata is None
     assert_matches(result.state.acc_rot, 1.0)
     assert result.state.has_converged is False
