@@ -2,6 +2,7 @@
 "note": "Per-file wall seconds of the GPU unit sweep (max over the relax sweep runs of 2026-09-23/24, local A100, em_work/relax_gpusweep_20260923/runs/*/junit.xml). Used only to balance shards; regenerate with scripts/run_test_tier.py durations <junit.xml...>.",
 "seconds": {
 "tests/integration/test_em_runner_import_provenance_subprocess.py": 6,
+"tests/integration/test_tomo_mstep_translation_blocks.py": 260,
 "tests/ppca_abinitio/test_compute_bHb_terms_correctness.py": 1,
 "tests/ppca_abinitio/test_compute_bHb_terms_dtype.py": 3,
 "tests/unit/initial_model/test_audit_vdam_candidate_native_envelope.py": 0,

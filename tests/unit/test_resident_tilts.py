@@ -507,3 +507,21 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
     tile_bytes = units * translations * window * 8
     one, many = temp_bytes(1), temp_bytes(8)
     assert many < one + 2 * tile_bytes, (one, many, tile_bytes)
+
+
+@pytest.mark.unit
+def test_tilt_mstep_census_logs_one_line_per_pass(caplog):
+    """The census line names the largest k, the smallest block and how many chunks needed several blocks."""
+
+    import logging
+
+    census = resident_tilts.TiltMstepCensus()
+    census.log()  # a pass without tilt chunks logs nothing
+    census.add(16, 16, 1)
+    census.add(64, 8, 8)
+    census.add(8, 16, 1)
+    with caplog.at_level(logging.INFO, logger="relax.sparse_pass2.resident_tilts"):
+        census.log()
+    assert [r.getMessage() for r in caplog.records] == [
+        "Tilt M-step translation blocks: largest k 64, smallest block 8 translations, multi-block chunks 1/3"
+    ]

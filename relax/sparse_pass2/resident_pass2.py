@@ -4373,7 +4373,7 @@ def _resident_pass2(
     # streamed pass projects per chunk because the cache did not fit, so it
     # keeps one chunk's projections alive at a time and is not pipelined.
     if tilt is not None:
-        from relax.sparse_pass2.resident_tilts import run_tilt_chunk
+        from relax.sparse_pass2.resident_tilts import TiltMstepCensus, run_tilt_chunk
 
         # Without the half's resident operands (they do not fit), each chunk prepares the same
         # per-image operands for its own tilt images, a consecutive range of the half's images.
@@ -4416,6 +4416,7 @@ def _resident_pass2(
             firstiter_cc=bool(firstiter_cc),
         )
         unit_image_offsets = np.asarray(tilt.unit_image_offsets, dtype=np.int64)
+        mstep_census = TiltMstepCensus()
         for chunk in chunks:
             chunk_operands, operand_image_start = resident_operands, 0
             if chunk_operands is None:
@@ -4451,9 +4452,11 @@ def _resident_pass2(
                     device_memory_bytes, has_external_normalization=False
                 ),
                 slot_block=tilt_slot_block,
+                mstep_census=mstep_census,
                 score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
             )
             Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
+        mstep_census.log()
     deferred = _global_chunk_loop_pipelined(stream_projections)
     pending = None
     pending_alone = False

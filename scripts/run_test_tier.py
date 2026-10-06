@@ -176,6 +176,8 @@ FIXTURE_SETS = {
         "k4_5k128_oracle_h1_os1",
         "k1_50k256_data",
         "k1_50k256_relion_initialmodel_it008",
+        "cryoet_et09_box64_data",  # relax#27 tier guard (tests/integration/test_tomo_mstep_translation_blocks.py)
+        "cryoet_et09_box64_relion_vdam_it190",
     ],
     "long": [
         "k1_50k256_data",

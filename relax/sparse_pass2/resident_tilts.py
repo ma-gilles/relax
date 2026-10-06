@@ -14,6 +14,7 @@ Single-particle data are the one-image case: ``unit_image_offsets = arange(n + 1
 
 from __future__ import annotations
 
+import logging
 from functools import partial
 from typing import NamedTuple
 
@@ -24,6 +25,8 @@ import numpy as np
 from relax.refinement import tomo_particles
 from relax.sparse_pass2.sparse_pass2_projection_blocks import project_rows_by_class
 from relax.sparse_pass2.sparse_pass2_wavg import weighted_image_power_from_shells
+
+logger = logging.getLogger(__name__)
 
 
 class ChunkTiltLayout(NamedTuple):
@@ -198,6 +201,34 @@ def _slot_tables_block(slots: "SlotMstepTables", start: int, stop: int) -> "Slot
     return block._replace(slot=jnp.arange(stop - start, dtype=jnp.int32))
 
 
+class TiltMstepCensus:
+    """A pass's tilt M-step translation blocks, logged once per pass (relax#27).
+
+    Each chunk adds its particles' ``k`` (:func:`unit_mstep_translations`), the translations one block
+    holds and its block count (:func:`mstep_translation_blocks`). More than one block is where each
+    row's partials are merged before the adjoint; the line records whether a run reached it.
+    """
+
+    def __init__(self):
+        self.chunks: list[tuple[int, int, int]] = []
+
+    def add(self, k: int, block: int, n_blocks: int) -> None:
+        self.chunks.append((int(k), int(block), int(n_blocks)))
+
+    def log(self) -> None:
+        if not self.chunks:
+            return
+        k, block, _ = zip(*self.chunks)
+        multi = sum(1 for _, _, n in self.chunks if n > 1)
+        logger.info(
+            "Tilt M-step translation blocks: largest k %d, smallest block %d translations, multi-block chunks %d/%d",
+            max(k),
+            min(block),
+            multi,
+            len(self.chunks),
+        )
+
+
 def run_tilt_chunk(
     chunk,
     *,
@@ -219,6 +250,7 @@ def run_tilt_chunk(
     operand_image_start: int = 0,
     slot_block: int | None = None,
     score_pixel_indices=None,
+    mstep_census: TiltMstepCensus | None = None,
 ):
     """Score, weight and backproject one chunk of particles; return ``(Ft_y_total, Ft_ctf_total, stats)``.
 
@@ -240,7 +272,8 @@ def run_tilt_chunk(
       translated tiles cover only those (the dropped terms carry exactly zero posterior).
     - Memory: the translated Wavg tiles of one slot are ``[C_U, T_b, P_rect]`` (the slot view) and
       ``[block rows, T_b, P_rect]`` (the per-row gather), for blocks of ``T_b`` of the particles'
-      ``k`` translations, sized so both fit ``tile_budget_bytes`` (:func:`mstep_translation_blocks`).
+      ``k`` translations, sized so both fit ``tile_budget_bytes`` (:func:`mstep_translation_blocks`);
+      ``mstep_census`` records each chunk's ``k`` and blocks (:class:`TiltMstepCensus`).
     - K>1 classes (RELION subtomogram Class3D): a particle's rows are class-major (the candidate
       tables' class layout), each (slot, row) projects from its class's reference, the posterior
       segment is the particle's over every class, and each accumulator slot's rows backproject into
@@ -500,6 +533,8 @@ def run_tilt_chunk(
             bytes_per_translation=bytes_per_translation,
             tile_budget_bytes=max(int(tile_budget_bytes) - row_sum_bytes, 0),
         )
+    if mstep_census is not None:
+        mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))
     slot_spec = rp._make_chunk_program_spec(
         row_capacity=row_capacity,
         image_capacity=unit_capacity,
