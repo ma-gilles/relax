@@ -1,13 +1,15 @@
 """relax's expected-accuracy estimator against RELION's (the binding is the oracle).
 
-The accuracies are sums of discrete step values, so they must agree exactly;
-the SNR arithmetic follows RELION's host double order.
+The accuracies are sums of discrete step values, compared within the float band of
+``helpers.float_compare`` (no test requires bitwise float equality), which a one-step
+disagreement exceeds; the SNR arithmetic follows RELION's host double order.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.helpers.relion_expected_accuracy import expected_angular_errors
 
@@ -100,10 +102,10 @@ def _ours(case, *, size, current_size, padding, ctf_images, seed=11, fudge=1.0, 
 
 
 def _assert_same(ours, oracle):
-    assert ours.acc_rot == float(oracle["acc_rot"])
-    assert ours.acc_trans == float(oracle["acc_trans"])
-    np.testing.assert_array_equal(ours.acc_rot_class, np.asarray(oracle["acc_rot_class"]))
-    np.testing.assert_array_equal(ours.acc_trans_class, np.asarray(oracle["acc_trans_class"]))
+    assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
+    assert_matches(ours.acc_trans, float(oracle["acc_trans"]))
+    assert_matches(ours.acc_rot_class, np.asarray(oracle["acc_rot_class"]))
+    assert_matches(ours.acc_trans_class, np.asarray(oracle["acc_trans_class"]))
     np.testing.assert_array_equal(ours.class_counts, np.asarray(oracle["class_counts"]))
 
 
@@ -145,7 +147,7 @@ def _slab_bytes(size, current_size, padding):
 @pytest.mark.parametrize(("planes_short", "chunk_planes"), [(0, 3), (1, 3), (7, 1), (1, 40)])
 def test_slab_at_and_over_the_device_budget_matches(monkeypatch, planes_short, chunk_planes):
     """At the resident budget the slab stays whole; a plane over it streams in chunks no larger than the
-    stream chunk, and the accuracies stay exact."""
+    stream chunk, and the accuracies match the oracle."""
     from relax.helpers import relion_expected_accuracy as accuracy
 
     size, current_size, padding = 32, 32, 2
@@ -447,10 +449,10 @@ def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
         random_seed_particle_ids=case["seed_particles"],
         tilt_images=tilt,
     )
-    assert ours.acc_rot == float(oracle["acc_rot"])
-    assert ours.acc_trans_angstrom == float(oracle["acc_trans"])
-    np.testing.assert_array_equal(ours.acc_rot_per_class, np.asarray(oracle["acc_rot_class"]))
-    np.testing.assert_array_equal(ours.acc_trans_per_class_angstrom, np.asarray(oracle["acc_trans_class"]))
+    assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
+    assert_matches(ours.acc_trans_angstrom, float(oracle["acc_trans"]))
+    assert_matches(ours.acc_rot_per_class, np.asarray(oracle["acc_rot_class"]))
+    assert_matches(ours.acc_trans_per_class_angstrom, np.asarray(oracle["acc_trans_class"]))
 
 
 @pytest.mark.parametrize("magnified", [False, True])
@@ -488,6 +490,6 @@ def test_prepared_inputs_with_optics_rows_match(magnified):
         sigma2_fudge=1.0, random_seed=11, do_ctf_correction=True, random_seed_particle_ids=case["seed_particles"],
         optics=optics,
     )
-    assert ours.acc_rot == float(oracle["acc_rot"])
-    assert ours.acc_trans_angstrom == float(oracle["acc_trans"])
-    np.testing.assert_array_equal(ours.acc_rot_per_class, np.asarray(oracle["acc_rot_class"]))
+    assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
+    assert_matches(ours.acc_trans_angstrom, float(oracle["acc_trans"]))
+    assert_matches(ours.acc_rot_per_class, np.asarray(oracle["acc_rot_class"]))

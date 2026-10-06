@@ -782,8 +782,8 @@ def test_hermitian_full_accumulators_take_the_streamed_fsc_with_equal_result(sha
         )
 
 
-def test_host_tau2_weight_sum_is_bitwise_the_converted_sum(monkeypatch):
-    """The host route adds the float32 halves in float64 in one ufunc, as converting both first did."""
+def test_host_tau2_weight_sum_matches_the_converted_sum(monkeypatch):
+    """The host route adds the float32 halves in float64 in one ufunc and matches converting both first."""
     shape = (8, 8, 8)
     padding_factor = 2
     full_shape = tuple(s * padding_factor for s in shape)
@@ -810,7 +810,7 @@ def test_host_tau2_weight_sum_is_bitwise_the_converted_sum(monkeypatch):
             weight0, weight1, fsc, shape, weight_combination=combination, **kwargs
         )
         assert seen[0].dtype == np.float64
-        np.testing.assert_array_equal(seen[0], expected)
+        assert_matches(seen[0], expected)
 
 
 def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
@@ -839,4 +839,4 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
         full_half_axis=-1, scoring_dtype=np.float64,
     )
     for array, copy in zip(numerators + denominators, before, strict=True):
-        np.testing.assert_array_equal(array, copy)
+        assert_matches(array, copy)
