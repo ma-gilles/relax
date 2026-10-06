@@ -132,6 +132,15 @@ accepted, with the reason:
   private names from `relax.helpers`, `relax.diagnostics` and `relax.relion` stay until those modules make
   them public.
 
+## Fingerprint against a main older than 7237d091
+
+On a main without 7237d091 (the CPU mock datasets' `original_image_indices_from_local(indices=None)`), 70 of the
+fingerprint's 109 cases end in a TypeError at the final pass's expected-accuracy estimate (the final pass
+raises since 48330782). A `fingerprint.py check` of a later head against such a main therefore exits 1: those
+70 cases now complete. At 43ce3087 every output difference against main 34d9f53e was in one of those cases,
+every other case was identical, and every commit was 0-diff against its parent (the case-by-case check:
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/parity_ports_20261006/verify/logs/fpcheck_main.txt`).
+
 ## Known coverage limits (recorded, not being built)
 
 - **RELION run directories have no CPU fixture.** The fingerprint's `main_*` cases do not reach the frozen
