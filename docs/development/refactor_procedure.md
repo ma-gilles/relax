@@ -20,10 +20,13 @@ its status document names the value.
       caller must hold. Counts (lines, parameters, mode tests) are supporting evidence, not a required
       reduction. If you cannot name the benefit, the slice is not defined yet.
 - [ ] Inventory before removal. For every name you will move, rename or delete: all callers, and
-      `grep -rn '<name>' tests/ scripts/ docs/` (monkeypatch strings, `inspect.getsource` pins, captured
-      keyword arguments, function-local names that tests execute as text). A test that reads or executes
+      `grep -rn '<name>' tests/ scripts/ docs/ relax/renamed_environment.json` (monkeypatch strings,
+      `inspect.getsource` pins, captured keyword arguments, function-local names that tests execute as text,
+      renamed and retired environment names). A test that reads or executes
       source text is converted to a behavioural test when the code it pins changes, keeping its assertions
-      (rule 13). Before each commit, run every test file that names the module (`grep -rl`), not only the
+      (rule 13): pin where a name lives by object identity (`new_home.f is package.f`), and an import
+      direction by importing the module in a clean subprocess and checking `sys.modules`. Before each
+      commit, run every test file that names the module (`grep -rl`), not only the
       verify list: a moved private name breaks the file that imports it, wherever it is.
 - [ ] List the installs, history writes and release points (`del`, `x = None`) in the stretch. Installs
       and history writes stay statements of the controller (rule 9); if the slice needs one to leave it, it
@@ -49,6 +52,11 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       it receives; small CPU cases (seconds each) that reach every branch you will touch; an ordered trace of
       log records and selected calls; hashes of every result, file and checkpoint; and a selftest of
       deliberate mutations that must each show. `scripts/dev/fingerprint.py` is the model.
+- [ ] Every case that is not a refusal runs a finite path: its worker asserts that its results are finite.
+      A NaN anywhere in a case hides every mutation downstream of it.
+- [ ] Prove each switch is live. For every option or environment field a case sets, the selftest has a
+      mutation that ignores it. If that mutation goes undetected, the switch is dead: refuse or retire it
+      (section 3) in its own commit.
 - [ ] Run every new test helper once on a GPU node (a medium tier, or one GPU job): a stand-in that passes
       on a CPU can fail where JAX sees a device.
 - [ ] Write down what is still not covered. That list goes into the report (rule 14).
@@ -63,10 +71,22 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       such: the line then ends "only log rows differ (N); accepted under rule 2" and the check passes); `ruff`
       findings that `origin/main` lacks (none); `git diff --check`; `scripts/dev/check_mutation_anchors.py`
       (every selftest mutation still finds its anchor in the source); and `pytest` on the module's structure
-      tests plus the files given.
-- [ ] An environment variable read below the boundary becomes a field of an options record whose default
-      factory reads it (`refinement_options.DiagnosticEnvironment`): the read happens once, when the
-      options are built, and tests that set the variable before building the options keep working.
+      tests plus the files given. Per-commit verify may run on the login node with `OMP_NUM_THREADS<=4`,
+      only the module's unit files, and only when the node's load is below 20; full lists run in the Slurm
+      gate.
+- [ ] An environment variable read below the boundary (rule 5). First find whether anything sets it
+      (`grep -rn` over `tests/ scripts/ docs/`) and whether its value reaches arithmetic (its "ignore"
+      mutation, section 2). Then, by kind:
+      - set by nothing and reaching nothing: retire it. Add it to the `retired` table of
+        `relax/renamed_environment.json` (importing relax then refuses it), naming the replacement flag if
+        there is one;
+      - a diagnostic or engine-variant switch: a field of the module's environment record
+        (`refinement_options.DiagnosticEnvironment`, `vdam.native_options.VdamEnvironment`), whose default
+        factory reads it once when the options are built; tests that set the variable before building the
+        options keep working;
+      - a dump destination owned by `relax/diagnostics` that changes no computed value: it may stay where
+        the dump is written; list it in the status document;
+      - a switch that forks production scoring or reconstruction: ask the owner before changing it.
 - [ ] A new option field shows in the fingerprint as "added inputs" (a controller input only the new side
       has); it is accepted and listed. Results, files, checkpoints and trace must still be identical.
 - [ ] The commit message says what moved, what did not, the benefit, the supporting numbers, and any
@@ -98,8 +118,9 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       keeps the job off a degraded node. Current practice, not an owner ruling: smoke alone is enough for docs, tests,
       scripts and moves the fingerprint covers completely; medium is needed when the slice touches a route
       the fingerprint does not reach, moves a name a GPU test may patch, or changes scoring, reconstruction,
-      noise, priors or convergence.
-      Each run writes `RECEIPT.json` in its run root.
+      noise, priors or convergence. The module's status document lists which tier tests reach the module;
+      medium is required when only medium reaches it (relax/vdam: only medium's `vdam_k1_50k` runs its real
+      engine). Each run writes `RECEIPT.json` in its run root.
 - [ ] Ceilings, as the last commit:
       `python scripts/report_refinement_structure.py --lower-ceilings docs/development/refinement_structure_metrics.json`,
       and the span quoted in the module's `AGENTS.md`. The ceilings are review signals with slack (owner
@@ -131,5 +152,6 @@ to "does it read better", with the cost named.
 
 Keep `HANDOFF.json` in the scratch directory current from the first commit: task and constraints; worktree,
 branch, base and head; the decision taken and the reason; the numbers; job IDs with what each checks; paths
-of logs and receipts; what is next; what is not covered. A fresh agent must be able to continue from that
-file alone.
+of logs and receipts; what is next; what is not covered; and the text of every drafted deliverable (a
+list of findings, a verdict, a report), not a pointer to it, updated as each item is drafted. A fresh agent
+must be able to continue from that file alone.
