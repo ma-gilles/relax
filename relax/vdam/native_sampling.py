@@ -756,9 +756,6 @@ def _build_sampling_plan(
 
 
 def _random_perturbation_for_iteration(opts: NativeInitialModelOptions, iteration: int) -> float:
-    env_override = os.environ.get("RELAX_RANDOM_PERTURBATION")
-    if env_override is not None:
-        return float(env_override)
     if opts.random_perturbation is not None:
         return float(opts.random_perturbation)
     return _random_perturbation_sequence(

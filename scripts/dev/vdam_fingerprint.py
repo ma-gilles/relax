@@ -104,12 +104,10 @@ def _cases() -> dict[str, tuple[str, dict]]:
     add("k1_clear_caches", "K=1 clearing the JAX caches every iteration", env={"RELAX_CLEAR_JAX_CACHES_PER_ITER": "1"})
     add("k1_skip_accuracy", "K=1 skipping the expected-accuracy estimate (diagnostic)",
         env={"RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY": "1"})
-    add("k1_engine_switches", "K=1 with the engine diagnostic switches of the environment set",
-        env={"RELAX_ADAPTIVE_FRACTION": "0.99", "RELAX_HALF_SPECTRUM_SCORING": "1", "RELAX_SQUARE_WINDOW": "1",
-             "RELAX_RECON_SQUARE_WINDOW": "0", "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE": "1",
-             "RELAX_RANDOM_PERTURBATION": "0.25"})
-    add("k1_refused_retired_switch", "the retired exact-projector switch is refused",
-        env={"RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR": "1"})
+    add("k1_adaptive_fraction", "K=1 with the adaptive fraction of the environment (RELAX_ADAPTIVE_FRACTION)",
+        env={"RELAX_ADAPTIVE_FRACTION": "0.99"})
+    add("k1_no_subtract_reference", "K=1 backprojecting the images, not the residuals "
+        "(RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE)", env={"RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE": "1"})
     add("k1_refused_sgd_oversampling", "momentum SGD with oversampling 1 is refused",
         ["--optimizer", "momentum_sgd", "--fixed-healpix-order", "1", "--fourier-radius-schedule", "3x2,4x2,5x1,6x1"])
     return cases
@@ -153,8 +151,8 @@ MUTATIONS = (
      "the uniform-prior report doubles the joint prior", True),
     ("subtract_switch_ignored", "engine_kwargs[\"reconstruction_subtract_projected_reference\"] = False", "pass",
      "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is ignored", True),
-    ("perturbation_override", "return float(env_override)", "return 0.5 * float(env_override)",
-     "RELAX_RANDOM_PERTURBATION is halved", True),
+    ("adaptive_fraction_ignored", "engine_kwargs[\"adaptive_fraction\"] = float(_af)", "pass",
+     "RELAX_ADAPTIVE_FRACTION is ignored", True),
     ("write_cadence", "return (iteration % grad_write_iter) == 0 or iteration == nr_iter",
      "return (iteration % grad_write_iter) == 1 or iteration == nr_iter",
      "the iteration files are written at the wrong cadence", True),

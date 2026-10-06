@@ -502,10 +502,6 @@ def test_resolve_class_inputs_builds_the_exact_projector_and_no_dense_means(monk
     assert exact_half.dtype == dtype
     assert exact_rmax == 2
 
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR", "0")
-    with pytest.raises(ValueError, match="was removed"):
-        _resolve_class_inputs(state, config)
-
 
 def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     projector_half = np.ones((2, 3, 3, 2), dtype=np.complex64)

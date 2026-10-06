@@ -617,7 +617,6 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             ),
         )
     profile.record("state_setup")
-    dense_adapter.refuse_retired_projector_switch()
     projector_context = dense_adapter._IterationProjectorContext()
     expectation_step = _native_expectation_step(
         dataset,

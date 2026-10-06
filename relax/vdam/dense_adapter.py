@@ -38,8 +38,6 @@ INITIAL_MODEL_LOCAL_BATCH_REFERENCE_SIZE = 256
 INITIAL_MODEL_LOCAL_BATCH_REFERENCE_COUNT_40GB = 32
 
 _INACTIVE_CLASS_LOG_PRIOR = -1.0e30
-# Retired 2026-09-30: InitialModel always scores with RELION's exact projector.
-_RETIRED_EXACT_RELION_PROJECTOR_ENV = "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR"
 _RELION_PROJECTOR_DUMP_DIR_ENV = "RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR"
 # VDAM prepares its projector one way: the device FFT in double, narrowed to
 # the complex64 slab that RELION's GPU projector holds as a float texture
@@ -235,15 +233,8 @@ def _dense_estep_config(
     )
     if _af := os.environ.get("RELAX_ADAPTIVE_FRACTION"):
         engine_kwargs["adaptive_fraction"] = float(_af)
-    for env_var, kwarg in (
-        ("RELAX_USE_FLOAT64_SCORING", "use_float64_scoring"),
-        ("RELAX_HALF_SPECTRUM_SCORING", "half_spectrum_scoring"),
-        ("RELAX_SQUARE_WINDOW", "square_window"),
-    ):
-        if os.environ.get(env_var):
-            engine_kwargs[kwarg] = True
-    if (_recon_sq := os.environ.get("RELAX_RECON_SQUARE_WINDOW")) is not None:
-        engine_kwargs["recon_square_window"] = bool(int(_recon_sq))
+    if os.environ.get("RELAX_USE_FLOAT64_SCORING"):
+        engine_kwargs["use_float64_scoring"] = True
     if os.environ.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"):
         engine_kwargs["reconstruction_subtract_projected_reference"] = False
     if isinstance(dataset, MultiShapeDataset):
@@ -386,16 +377,6 @@ def _finish_relion_projector_class_inputs(
     return projector_half_by_class, int(projector_r_max)
 
 
-def refuse_retired_projector_switch() -> None:
-    """Refuse ``RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR``, which selected dense-mean scoring."""
-
-    if os.environ.get(_RETIRED_EXACT_RELION_PROJECTOR_ENV) is not None:
-        raise ValueError(
-            f"{_RETIRED_EXACT_RELION_PROJECTOR_ENV} was removed on 2026-09-30: InitialModel always scores "
-            "with RELION's exact projector (one implementation); unset it"
-        )
-
-
 def _resolve_class_inputs(
     state: InitialModelState,
     config: DenseInitialModelEstepConfig,
@@ -414,7 +395,6 @@ def _resolve_class_inputs(
         relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
         relion_projector_r_max = int(config.relion_projector_r_max)
     elif config.relion_projector_frame:
-        refuse_retired_projector_switch()
         relion_projector_half_by_class, relion_projector_r_max = prepare_relion_projector_class_inputs(
             state,
             padding_factor=config.padding_factor,
