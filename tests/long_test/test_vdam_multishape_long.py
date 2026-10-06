@@ -13,8 +13,7 @@ Pass criteria:
     scripts/score_initialmodel_maps.py, registered with fit_rigid_both_hands, frozen mask
     multioptics_k2_c1) is at or above the floor of case ``vdam_multishape_200it`` in
     tests/tiers/fsc_thresholds.json, once that case is approved. The floor is a regression and
-    crash guard derived from relax and GPU RELION seed runs, not the RELION band: the row is
-    OPEN against CPU RELION.
+    crash guard derived from relax and GPU RELION (the row's reference) seed runs.
 """
 
 from __future__ import annotations

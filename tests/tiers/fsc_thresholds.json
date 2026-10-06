@@ -217,7 +217,7 @@
    "approved": false,
    "fsc_auc_floor": 0.6346,
    "tier": "long (item long_vdam_multishape_200it); weighted masked FSC-AUC of the it200 map against reference_gt_class001_relion.mrc, mask multioptics_k2_c1, scripts/score_initialmodel_maps.py",
-   "rule": "regression and crash guard, not the RELION band (row multioptics_k2_10k128_initialmodel_vdam_k1 is OPEN against CPU RELION): min - 3 sd over relax seeds 1-6 at 845c636 plus GPU RELION mpiscale seeds 1-6 r1; the relax-only set gives 0.6394, the lower floor is used",
+   "rule": "regression and crash guard from the seed distribution of relax and of GPU RELION, the reference of row multioptics_k2_10k128_initialmodel_vdam_k1 (user, 2026-10-06): min - 3 sd over relax seeds 1-6 at 845c636 plus GPU RELION mpiscale seeds 1-6 r1; the relax-only set gives 0.6394, the lower floor is used",
    "measured": {
     "relax_845c636": [
      0.64283,
