@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -212,11 +213,11 @@ def particle_coarse_diff2(image_diff2_in_slot_order):
 
 
 # Bytes of per-image projections ([images, R, P]) and coarse diff2 ([images, R, T] float32) one call holds, at most
-# (_coarse_batch_bytes caps it by what the device can still hand out).
+# (_coarse_pass_budget caps it by what the device can still hand out).
 _COARSE_BATCH_BYTES = 2 << 30
 
 # Bytes of particles' summed diff2 ([P, K * R, T] float32) one significance call cuts, at most
-# (_significance_batch_bytes caps it by what the device can still hand out).
+# (_flush_plan bounds the flush by what the device can still hand out).
 _SIGNIFICANCE_BATCH_BYTES = 512 << 20
 
 
@@ -657,8 +658,8 @@ _OPERAND_IMAGE_BATCH = 1024
 _COARSE_OPERAND_BLOCK_BYTES = 4 << 30
 
 
-def _device_share_bytes(cap: int) -> int:
-    """At most ``cap`` and a quarter of what the device can still hand out (``cap`` when unknown)."""
+def _device_available_bytes() -> float | None:
+    """What the JAX allocator can still hand out on the device (``None`` when unknown)."""
 
     from relax.sparse_pass2.sparse_pass2_budget import (
         _device_free_memory_bytes,
@@ -667,44 +668,96 @@ def _device_share_bytes(cap: int) -> int:
         device_available_bytes,
     )
 
-    available = device_available_bytes(
+    return device_available_bytes(
         _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
     )
+
+
+class CoarsePassBudget(NamedTuple):
+    """Device bytes of one coarse pass: its operand block, its GEMM batch and its flushes (with their cuts)."""
+
+    operand_block: int
+    batch: int
+    flush: int
+
+
+def _coarse_pass_budget(resident_bytes: int) -> CoarsePassBudget:
+    """One budget for the coarse pass, read once: three quarters of what the device can still hand out, less the
+    pass's ``resident_bytes`` not yet allocated (each class's full projector for the exact cut).
+
+    The operand block and the GEMM batch take at most a quarter of it each, within their fixed caps; the flushes
+    take the rest. The three parts were each a quarter of the free memory read at its own call, which with the
+    uncounted operands and cut copies of the flushes ran 16 and 40 GB cards out of memory (relax#28). On an 80 GB
+    card the block and the batch keep their fixed caps.
+    """
+
+    available = _device_available_bytes()
     if available is None:
-        return int(cap)
-    return int(min(int(cap), max(256 << 20, 0.25 * float(available))))
+        return CoarsePassBudget(_COARSE_OPERAND_BLOCK_BYTES, _COARSE_BATCH_BYTES, 1 << 62)
+    usable = 0.75 * max(float(available) - float(resident_bytes), 0.0)
+    operand_block = int(min(_COARSE_OPERAND_BLOCK_BYTES, max(256 << 20, 0.25 * usable)))
+    batch = int(min(_COARSE_BATCH_BYTES, max(256 << 20, 0.25 * usable)))
+    return CoarsePassBudget(operand_block, batch, int(max(256 << 20, usable - operand_block - batch)))
 
 
-def _coarse_operand_block_bytes() -> int:
-    """At most ``_COARSE_OPERAND_BLOCK_BYTES`` and a quarter of what the device can still hand out.
+# A flush's cut, in copies of its summed diff2 live beside the held flushes (the significance's log weights, mask
+# and weights, the near-cut search's tables and sort, then the exact scores and their significance). Measured on
+# et09 at iteration 100 (H100), every cut on the full sort (sorted_rotations=None, job 15134533): the coarse pass's
+# device peak (live bytes plus the near-cut program's temporaries) grew by 167 MB per flush particle between
+# flushes of 29 and 7, 6.6 diff2 copies beyond the held flushes and the operand copy (4.1 with the 256-rotation
+# sort, job 15131889).
+_CUT_DIFF2_COPIES = 7
 
-    The coarse pass runs next to the refinement's resident state; a fixed 4 GiB block did not fit
-    beside it at iteration 12 of a 5k-particle box-256 run (etbench w2_02_n5k, 3.09 GiB refused).
+# The share of a flush's budget left for scoring its undecided rotations again (their scorer matrices and
+# per-image direct squares scale with the rotations, not with the diff2): _rescore_rows_per_call.
+_RESCORE_SHARE = 0.125
+
+
+def _flush_plan(
+    diff2_bytes: int, operand_bytes: int, *, batch_particles: int, flush_bytes: int, describe: str
+) -> tuple[int, int, int, int]:
+    """Particles one flush cuts, its rescore bytes, and the diff2 and device bounds it was taken from.
+
+    The flush is whole coarse batches of ``batch_particles`` with at most ``_SIGNIFICANCE_BATCH_BYTES`` of summed
+    diff2, and its device bytes within ``flush_bytes`` (``_coarse_pass_budget``). Per particle a flush holds its
+    summed diff2 (``diff2_bytes``), its significant-cell mask (a quarter of that) and its operands
+    (``operand_bytes``) until it is collected, so two flushes' are held at once; the operands are concatenated once
+    more while it is dispatched, and its cut works on ``_CUT_DIFF2_COPIES`` more copies of the diff2, one more while
+    its undecided rotations are scored again in groups (each group's diff2 replaces the last). The rescore
+    of the undecided rotations takes ``_RESCORE_SHARE`` of ``flush_bytes``. Counting the diff2 alone ran a 16 GB
+    V100 out of memory at box 192 with 41 tilts, where the operands dominate (relax#28). The device bound is rounded
+    down to a power of two of particles, so the free bytes at plan time give few flush sizes and few programs.
     """
 
-    return _device_share_bytes(_COARSE_OPERAND_BLOCK_BYTES)
+    diff2_bytes, operand_bytes = int(diff2_bytes), int(operand_bytes)
+    by_diff2 = max(1, _SIGNIFICANCE_BATCH_BYTES // max(diff2_bytes, 1))
+    # The rescore's groups each write a new diff2 while the previous group's is alive: one copy beyond the cut's.
+    held = 2 * (diff2_bytes + diff2_bytes // 4 + operand_bytes) + operand_bytes + (_CUT_DIFF2_COPIES + 1) * diff2_bytes
+    rescore_bytes = int(_RESCORE_SHARE * int(flush_bytes))
+    by_device = (int(flush_bytes) - rescore_bytes) // max(held, 1)
+    if by_device < 1:
+        raise MemoryError(
+            f"The tomo coarse pass needs {held / 2**30:.2f} GiB of device memory per particle ({describe}) and this "
+            f"GPU can give its flushes {(int(flush_bytes) - rescore_bytes) / 2**30:.2f} GiB: run on a GPU with "
+            "more memory or with a smaller box."
+        )
+    power = 1 << (int(by_device).bit_length() - 1)
+    batch = max(int(batch_particles), 1)
+    return min(by_diff2, max(batch, power // batch * batch)), rescore_bytes, by_diff2, int(by_device)
 
 
-def _coarse_batch_bytes() -> int:
-    """At most ``_COARSE_BATCH_BYTES`` and a quarter of what the device can still hand out.
+def _rescore_rows_per_call(particles: int, slots: int, n_trans: int, rescore_bytes: int, capacity: int) -> int:
+    """Undecided rotations per particle scored again in one call, a power of two within ``rescore_bytes``.
 
-    A fixed 2 GiB batch, next to half 1's resident state on a 16 GB P100, asked for a 6.42 GiB program
-    buffer and ran out of memory (Polar 413469, cryoet_s1 iteration 1, half 2).
+    Per particle and rotation a call holds its slots' scorer matrices (36 B each), their direct squares and the
+    translation blocks' concatenation (twice ``n_trans`` float32 per slot), and the particle's sum and the
+    flush's updated rows (twice ``n_trans`` float32). A flat K > 1 posterior leaves thousands of rotations
+    undecided, whose matrices alone were gigabytes in one call.
     """
 
-    return _device_share_bytes(_COARSE_BATCH_BYTES)
-
-
-def _significance_batch_bytes() -> int:
-    """The summed diff2 one flush cuts: at most ``_SIGNIFICANCE_BATCH_BYTES``, and two flushes' within a quarter
-    of what the device can still hand out.
-
-    A flush keeps its GEMM diff2 (and its particles' operands) on the device until the next flush has been
-    dispatched and it is collected, in case its exact cut must be taken again at a larger size; so two
-    flushes' diff2 are held at once (``particle_coarse_supports``).
-    """
-
-    return _device_share_bytes(2 * _SIGNIFICANCE_BATCH_BYTES) // 2
+    per_row = int(particles) * (int(slots) * (36 + 2 * int(n_trans) * 4) + 2 * int(n_trans) * 4)
+    rows = max(1, int(rescore_bytes) // max(per_row, 1))
+    return min(int(capacity), 1 << (rows.bit_length() - 1))
 
 
 def _coarse_projection_bytes_per_pixel(
@@ -959,7 +1012,6 @@ def particle_coarse_supports(
     # a block of consecutive particles at a time (_COARSE_OPERAND_BLOCK_BYTES); the coarse batches are
     # consecutive particles, so each batch reads one block.
     operand_bytes_per_image = int(layout.score_indices_np.size) * (8 + 4) + 4
-    block_images = max(1, _coarse_operand_block_bytes() // operand_bytes_per_image)
     operand_block = None  # (first image, image stop, unshifted, weight, initial)
 
     def operands_for(units):
@@ -994,6 +1046,11 @@ def particle_coarse_supports(
         )
         for k, class_projector in enumerate(class_projectors)
     ]
+    # One budget for the pass, less the full projectors the exact cut builds for each class on first use (complex64
+    # cubes kept for the pass, and one more cube and the cast half while one is built).
+    cube_bytes = 8 * int(np.prod(jax.eval_shape(relion_projector_half_to_texture_full, class_projectors[0]).shape))
+    budget = _coarse_pass_budget((n_classes + 1) * cube_bytes + 8 * int(np.prod(np.shape(class_projectors[0]))))
+    block_images = max(1, budget.operand_block // operand_bytes_per_image)
     batches = _coarse_batches(
         rotation_counts,
         n_slots=slots,
@@ -1006,16 +1063,30 @@ def particle_coarse_supports(
             current_size=int(layout.current_size),
             model_max_r=int(model_max_r),
         ),
-        budget_bytes=_coarse_batch_bytes(),
+        budget_bytes=budget.batch,
     )
     score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
     r_pad_all = batches[0][1] if batches else 0
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
-    significance_batch = max(1, _significance_batch_bytes() // max(n_classes * r_pad_all * n_coarse_trans * 4, 1))
-    # A flush holds whole batches, the first that reach significance_batch particles, and never more than the pass.
     p_pad_all = batches[0][2] if batches else 1
+    n_score_pixels = int(layout.score_indices_np.size)
+    significance_batch, rescore_bytes, by_diff2, by_device = _flush_plan(
+        n_classes * r_pad_all * n_coarse_trans * 4,
+        slots * (n_score_pixels * (8 + 4) + 4 + n_coarse_trans * 2 * 4),  # unshifted, weight, initial, phases
+        batch_particles=p_pad_all,
+        flush_bytes=budget.flush,
+        describe=(
+            f"box {int(layout.image_shape[0])}, current size {int(layout.current_size)}, {slots} tilts, "
+            f"{n_classes} x {r_pad_all} rotations x {n_coarse_trans} translations"
+        ),
+    )
+    # A flush holds whole batches, the first that reach significance_batch particles, and never more than the pass.
     flush_size = min(-(-significance_batch // p_pad_all) * p_pad_all, n_units)
+    logger.info(
+        "Coarse flushes of %d particles for %d (%d per coarse batch; bounds %d by the diff2 cap, %d by the device's "
+        "%.2f GiB flush budget)", flush_size, n_units, p_pad_all, by_diff2, by_device, budget.flush / 2**30,
+    )
     class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
     eulers_f32 = jnp.asarray(np.asarray(coarse_eulers_deg, dtype=np.float32))  # the exact cut's rotations, gathered on the device
     rescored, n_scored = [], 0
@@ -1075,7 +1146,24 @@ def particle_coarse_supports(
         ids, use = first_rows(rows, capacity=capacity)
         for class_index, class_projector in enumerate(class_projectors):
             if class_full[class_index] is None:
-                class_full[class_index] = relion_projector_half_to_texture_full(class_projector).astype(jnp.complex64)
+                # Cast first (the embedding only moves values): one complex64 cube, not a complex128 one and its cast.
+                class_full[class_index] = relion_projector_half_to_texture_full(
+                    jnp.asarray(class_projector).astype(jnp.complex64)
+                )
+        # The undecided rotations go in groups that fit the flush's rescore bytes; a rotation's direct square does
+        # not depend on the others of its call.
+        per_call = _rescore_rows_per_call(units_all.size, slots, n_coarse_trans, rescore_bytes, capacity)
+        exact = diff2
+        for first in range(0, capacity, per_call):
+            chunk = slice(first, first + per_call)
+            exact = rescore(units_all, exact, ids[:, chunk], use[:, chunk], operands)
+        real = (jnp.arange(units_all.size) < n_real)[:, None] & use  # a padded flush's copies are not counted
+        check = (most, unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
+        return significance(units_all, exact), check
+
+    def rescore(units_all, diff2, ids, use, operands):
+        """``diff2`` with the rotations ``ids`` (where ``use``) scored again by the direct square."""
+
         row_rotations = _undecided_scorer_rotations(
             ids,
             use,
@@ -1089,8 +1177,8 @@ def particle_coarse_supports(
             slots=slots,
             pass1_rotations=_relion_adaptive_pass1_rotations,
         )
-        unshifted, weight, initial, angles = (jnp.concatenate(parts, axis=0) for parts in zip(*operands))
-        exact = _exact_rows_diff2(
+        unshifted, weight, initial, angles = operands
+        return _exact_rows_diff2(
             diff2,
             ids,
             use,
@@ -1107,9 +1195,6 @@ def particle_coarse_supports(
             model_max_r=int(model_max_r),
             padding_factor=int(padding_factor),
         )
-        real = (jnp.arange(units_all.size) < n_real)[:, None] & use  # a padded flush's copies are not counted
-        check = (most, unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
-        return significance(units_all, exact), check
 
     def exact_cut_again(cut_operands, unresolved):
         """The flush's exact cut at the size its undecided rotations need (read from the device): every
@@ -1154,6 +1239,8 @@ def particle_coarse_supports(
             error = jnp.concatenate([error, jnp.repeat(error[:1], padding, axis=0)], axis=0)
             n_images = jnp.concatenate([n_images, jnp.repeat(n_images[:1], padding, axis=0)], axis=0)
             operands.append(tuple(jnp.repeat(value[:1], padding, axis=0) for value in operands[0]))
+        # One copy of the flush's operands, held until it is collected; the batches' slices are freed with the list.
+        operands = tuple(jnp.concatenate(parts, axis=0) for parts in zip(*operands))
         cut_operands = (units_all, diff2, error, n_images, operands, n_real)
         stats, check = exact_cut(*cut_operands, sorted_rotations=_SORTED_ROTATIONS, capacity=_UNDECIDED_ROTATIONS)
         for value in check:

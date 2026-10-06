@@ -125,14 +125,87 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         assert_matches(got[b], direct.T.astype(np.float32), rtol=1e-5)  # translation-major
 
 
-def test_two_flushes_of_significance_fit_the_device_share(monkeypatch):
-    """A flush is held until the next is dispatched, so the device share bounds two flushes' diff2: a full
-    card keeps the 512 MB flush, a card with 2.4 GB free (a 600 MB quarter) cuts 300 MB per flush."""
+@pytest.mark.parametrize("available_gb", [70, 30, 10, None])
+def test_the_coarse_pass_budget_is_one_reading_shared_by_block_batch_and_flushes(monkeypatch, available_gb):
+    """Operand block, GEMM batch and flushes share three quarters of one reading, less the full projectors not
+    yet built; an 80 GB card keeps the block's and the batch's fixed caps, an unknown device all the caps."""
 
-    monkeypatch.setattr(tomo_coarse, "_device_share_bytes", lambda cap: int(cap))
-    assert tomo_coarse._significance_batch_bytes() == 512 << 20
-    monkeypatch.setattr(tomo_coarse, "_device_share_bytes", lambda cap: int(min(cap, 600 << 20)))
-    assert tomo_coarse._significance_batch_bytes() == 300 << 20
+    gib = 1 << 30
+    reading = None if available_gb is None else available_gb * gib
+    monkeypatch.setattr(tomo_coarse, "_device_available_bytes", lambda: reading)
+    resident = 650 << 20  # two classes' full projectors at box 192
+    budget = tomo_coarse._coarse_pass_budget(resident)
+    if reading is None:
+        assert budget == (tomo_coarse._COARSE_OPERAND_BLOCK_BYTES, tomo_coarse._COARSE_BATCH_BYTES, 1 << 62)
+        return
+    assert budget.operand_block + budget.batch + budget.flush <= 0.75 * (reading - resident) + 1
+    if available_gb == 70:
+        assert (budget.operand_block, budget.batch) == (tomo_coarse._COARSE_OPERAND_BLOCK_BYTES, 2 * gib)
+
+
+# Per-particle bytes of a flush: et09_box64 at iteration 100 (36864 rotations x 123 translations, 41 tilts of 924
+# score pixels) and a w2_09_box192-like pass (4608 x 27, 41 tilts of 14000 pixels), whose operands dominate.
+_ET09 = dict(diff2_bytes=36864 * 123 * 4, operand_bytes=41 * (924 * 12 + 4 + 123 * 8))
+_W2_09 = dict(diff2_bytes=4608 * 27 * 4, operand_bytes=41 * (14000 * 12 + 4 + 27 * 8))
+
+
+def _flush_held_bytes(particles, diff2_bytes, operand_bytes):
+    return particles * (
+        2 * (diff2_bytes + diff2_bytes // 4 + operand_bytes)
+        + operand_bytes
+        + (tomo_coarse._CUT_DIFF2_COPIES + 1) * diff2_bytes
+    )
+
+
+@pytest.mark.parametrize("card_gb, available_gb", [(80, 70), (40, 30), (16, 10)])
+def test_flush_plan_keeps_two_flushes_and_their_cut_within_the_flush_budget(monkeypatch, card_gb, available_gb):
+    """Two held flushes (diff2, mask, operands), the dispatch's operand copy and the cut's diff2 copies fit the
+    flush budget less its rescore share; on an 80 GB card et09's flush is the 512 MB diff2 flush as before and
+    w2_09's 1000 particles are one flush."""
+
+    monkeypatch.setattr(tomo_coarse, "_device_available_bytes", lambda: available_gb * 2**30)
+    flush_bytes = tomo_coarse._coarse_pass_budget(0).flush
+    for sizes in (_ET09, _W2_09):
+        particles, rescore, by_diff2, by_device = tomo_coarse._flush_plan(
+            **sizes, batch_particles=1, flush_bytes=flush_bytes, describe="test"
+        )
+        assert 1 <= particles <= min(by_diff2, by_device)
+        assert _flush_held_bytes(particles, **sizes) + rescore <= flush_bytes
+        assert particles * sizes["diff2_bytes"] <= tomo_coarse._SIGNIFICANCE_BATCH_BYTES
+    if card_gb == 80:
+        plan = tomo_coarse._flush_plan(**_ET09, batch_particles=1, flush_bytes=flush_bytes, describe="test")
+        assert plan[0] == (512 << 20) // _ET09["diff2_bytes"]
+        plan = tomo_coarse._flush_plan(**_W2_09, batch_particles=1, flush_bytes=flush_bytes, describe="test")
+        assert plan[0] >= 1000
+    if card_gb == 16:
+        # The diff2-only plan held more than the whole flush budget at box 192 (relax#28).
+        old = tomo_coarse._SIGNIFICANCE_BATCH_BYTES // _W2_09["diff2_bytes"]
+        assert _flush_held_bytes(old, **_W2_09) > flush_bytes
+
+
+def test_flush_plan_keeps_whole_batches_and_names_an_impossible_particle():
+    flush_bytes = 1 << 30
+    rescore = int(tomo_coarse._RESCORE_SHARE * flush_bytes)
+    by_device = (flush_bytes - rescore) // _flush_held_bytes(1, **_W2_09)
+    power = 1 << (by_device.bit_length() - 1)  # rounded down to a power of two, then to whole batches
+    assert 4 < power <= by_device < 2 * power
+    for batch in (4, 3):
+        plan = tomo_coarse._flush_plan(**_W2_09, batch_particles=batch, flush_bytes=flush_bytes, describe="test")
+        assert plan == (power // batch * batch, rescore, (512 << 20) // _W2_09["diff2_bytes"], by_device)
+    with pytest.raises(MemoryError, match="box 192, current size 96, 41 tilts"):
+        tomo_coarse._flush_plan(
+            **_W2_09, batch_particles=1, flush_bytes=1 << 20, describe="box 192, current size 96, 41 tilts"
+        )
+
+
+def test_rescore_groups_fit_their_bytes():
+    """The undecided rotations scored again per call: a power of two within the rescore bytes, at most the
+    capacity, at least one."""
+
+    per_row = 30 * (41 * (36 + 2 * 27 * 4) + 2 * 27 * 4)
+    assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 100 * per_row, 4096) == 64
+    assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 100 * per_row, 32) == 32
+    assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 1, 32) == 1
 
 
 @pytest.mark.parametrize("capacity", [1, 4, 16, 64])
@@ -188,8 +261,8 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: int(6.6 * gib))
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(9.8 * gib))
     monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
-    share = tomo_coarse._coarse_batch_bytes()
-    assert share == int(0.25 * 6.6 * gib)
+    share = tomo_coarse._coarse_pass_budget(0).batch
+    assert share == int(0.25 * 0.75 * 6.6 * gib)
     batches = tomo_coarse._coarse_batches(
         [rotations] * 600, n_slots=slots, n_trans=trans, n_pixels=pixels, projection_bytes_per_pixel=32,
         budget_bytes=share,
@@ -206,7 +279,7 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     # Unknown device readings keep the fixed cap.
     monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: None)
-    assert tomo_coarse._coarse_batch_bytes() == tomo_coarse._COARSE_BATCH_BYTES
+    assert tomo_coarse._coarse_pass_budget(0).batch == tomo_coarse._COARSE_BATCH_BYTES
 
 
 def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
@@ -222,7 +295,7 @@ def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
     monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 70 * gib)
     monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
     monkeypatch.setattr(projection, "relion_coarse_packed_rows_serve", lambda *a: True)
-    assert tomo_coarse._coarse_batch_bytes() == tomo_coarse._COARSE_BATCH_BYTES
+    assert tomo_coarse._coarse_pass_budget(0).batch == tomo_coarse._COARSE_BATCH_BYTES
     bytes_per_pixel = tomo_coarse._coarse_projection_bytes_per_pixel(
         [object()], np.complex64, image_size=128, current_size=48, model_max_r=24
     )
@@ -230,7 +303,7 @@ def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
     for rotations, pixels in ((4608, 278), (36864, 921), (448, 2520)):
         planned = tomo_coarse._coarse_batches(
             [rotations] * 600, n_slots=41, n_trans=81, n_pixels=pixels,
-            projection_bytes_per_pixel=bytes_per_pixel, budget_bytes=tomo_coarse._coarse_batch_bytes(),
+            projection_bytes_per_pixel=bytes_per_pixel, budget_bytes=tomo_coarse._coarse_pass_budget(0).batch,
         )
         fixed = tomo_coarse._coarse_batches([rotations] * 600, n_slots=41, n_trans=81, n_pixels=pixels)
         assert [(list(u), r, p, s) for u, r, p, s in planned] == [(list(u), r, p, s) for u, r, p, s in fixed]
@@ -828,7 +901,7 @@ def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbatio
     assert_matches(np.asarray(got), want)
 
 
-@pytest.mark.parametrize("variant", ["one_flush", "one_row", "flushes_of_three"])
+@pytest.mark.parametrize("variant", ["one_flush", "one_row", "flushes_of_three", "rescored_one_by_one"])
 @pytest.mark.parametrize("n_classes", [1, 2])
 def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes, variant):
     """The pass with a scorer that is off by less than its stated bound: where max_significants cuts, the
@@ -933,6 +1006,10 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     )
     if variant == "one_row":
         monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATIONS", 1)
+    if variant == "rescored_one_by_one":
+        # The undecided rotations scored again one call per rotation: the same exact cut.
+        monkeypatch.setattr(tomo_coarse, "_rescore_rows_per_call", lambda *args: 1)
+        tomo_coarse._exact_rows_diff2.clear_cache()  # a trace cached by "one_row" would bypass direct_calls
     supports, _pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
     if variant == "flushes_of_three":
         # One particle per batch (the stand-in GEMM's rounding pattern follows the batch layout, so both passes
@@ -940,7 +1017,9 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         batches = tomo_coarse._coarse_batches
         monkeypatch.setattr(tomo_coarse, "_coarse_batches", lambda *a, **k: batches(*a, **{**k, "budget_bytes": 1}))
         monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 2 * n_classes * 256 * n_trans * 4)
+        captured.clear()
         unpadded, unpadded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        unpadded_gemm = np.concatenate(captured[0::2])  # each flush's GEMM diff2, then its exact one
         monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 3 * n_classes * 256 * n_trans * 4)
         captured.clear()
         padded, padded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
@@ -950,6 +1029,24 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
             for unit in range(n_units):
                 np.testing.assert_array_equal(got[unit], want[unit], err_msg=f"class {k} particle {unit}")
         assert_matches(padded_pmax, unpadded_pmax)
+        # The device share, not the diff2 bytes, bounds the flush to one particle: same supports, diff2 and Pmax.
+        monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 512 << 20)
+        plan = tomo_coarse._flush_plan
+
+        def one_particle_budget(diff2_bytes, operand_bytes, **plan_kwargs):
+            held = _flush_held_bytes(1, diff2_bytes, operand_bytes)
+            plan_kwargs["flush_bytes"] = int(held / (1 - tomo_coarse._RESCORE_SHARE)) + 8
+            return plan(diff2_bytes, operand_bytes, **plan_kwargs)
+
+        monkeypatch.setattr(tomo_coarse, "_flush_plan", one_particle_budget)
+        captured.clear()
+        bounded, bounded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        assert [c.shape[0] for c in captured] == [1] * (2 * n_units)
+        assert_matches(np.concatenate(captured[0::2]), unpadded_gemm)
+        for k, (got, want) in enumerate(zip(*(([x] if n_classes == 1 else x) for x in (bounded, unpadded)))):
+            for unit in range(n_units):
+                np.testing.assert_array_equal(got[unit], want[unit], err_msg=f"class {k} particle {unit}")
+        assert_matches(bounded_pmax, unpadded_pmax)
         return
     supports = [supports] if n_classes == 1 else supports
     wobbly = captured[0]
