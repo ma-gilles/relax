@@ -1820,9 +1820,11 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         tilt_images,
         optics_group_ids,
         experiment_dataset,
+        isolate_in_subprocess,
     ):
         assert tilt_images is None  # single particles
         assert optics_group_ids is None  # one optics group
+        assert isolate_in_subprocess is False
         event_order.append("estimate_accuracy")
         estimate_calls.append(
             {
@@ -1928,28 +1930,44 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     assert event_order == ["prepare_projector", "estimate_accuracy", "run_estep"]
 
 
-def test_expected_accuracy_skip_diagnostic_is_explicit_and_strict(monkeypatch):
-    monkeypatch.delenv(driver.INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV, raising=False)
-    assert driver._skip_native_sampling_accuracy_diagnostic() is False
+@pytest.mark.parametrize(
+    "name, field",
+    [
+        ("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY", "skip_expected_accuracy"),
+        ("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS", "isolate_expected_accuracy"),
+    ],
+)
+def test_expected_accuracy_diagnostic_switches_are_explicit_and_strict(monkeypatch, name, field):
+    monkeypatch.delenv(name, raising=False)
+    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is False
 
-    monkeypatch.setenv(driver.INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV, "1")
-    assert driver._skip_native_sampling_accuracy_diagnostic() is True
+    monkeypatch.setenv(name, "1")
+    assert getattr(native_options.NativeInitialModelOptions(fn_img="x").environment, field) is True
 
-    monkeypatch.setenv(driver.INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV, "yes")
+    monkeypatch.setenv(name, "yes")
     with pytest.raises(ValueError, match="must be 0 or 1"):
-        driver._skip_native_sampling_accuracy_diagnostic()
+        native_options.NativeInitialModelOptions(fn_img="x")
 
 
-def test_expected_accuracy_subprocess_diagnostic_is_explicit_and_strict(monkeypatch):
-    monkeypatch.delenv(native_sampling.INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV, raising=False)
-    assert native_sampling._isolate_native_sampling_accuracy_diagnostic() is False
+def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
+    monkeypatch.delenv("RELAX_ADAPTIVE_FRACTION", raising=False)
+    monkeypatch.delenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", raising=False)
+    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, True)
 
-    monkeypatch.setenv(native_sampling.INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV, "1")
-    assert native_sampling._isolate_native_sampling_accuracy_diagnostic() is True
+    monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "")  # empty is unset, as the E-step read it
+    monkeypatch.setenv("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE", "0")  # any value disables
+    environment = native_options.NativeInitialModelOptions(fn_img="x").environment
+    assert (environment.adaptive_fraction, environment.subtract_projected_reference) == (None, False)
 
-    monkeypatch.setenv(native_sampling.INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV, "yes")
-    with pytest.raises(ValueError, match="must be 0 or 1"):
-        native_sampling._isolate_native_sampling_accuracy_diagnostic()
+    monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "0.99")
+    options = native_options.NativeInitialModelOptions(fn_img="x")
+    monkeypatch.delenv("RELAX_ADAPTIVE_FRACTION")  # read when the options were built, not later
+    assert options.environment.adaptive_fraction == 0.99
+
+    monkeypatch.setenv("RELAX_ADAPTIVE_FRACTION", "most")
+    with pytest.raises(ValueError):
+        native_options.NativeInitialModelOptions(fn_img="x")
 
 
 def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_path):
@@ -2262,7 +2280,6 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
         Path(path).write_bytes(b"iteration-zero-map")
 
     monkeypatch.setattr(output, "write_map", fake_write_mrc)  # the artifact writer resolves the name in output
-    monkeypatch.setenv("RECOVAR_INITIAL_MODEL_PROFILE", "1")
     prefix = str(tmp_path / "run")
     output._write_iteration_artifacts(
         prefix,
@@ -2273,6 +2290,7 @@ def test_iteration_zero_artifacts_use_the_normal_iteration_writer(monkeypatch, t
         optics_star=None,
         dataset=SimpleNamespace(voxel_size=1.5, n_images=2),
         particle_state=particle_state,
+        profile_stages=True,
     )
 
     assert (tmp_path / "run_it000_class001.mrc").read_bytes() == b"iteration-zero-map"

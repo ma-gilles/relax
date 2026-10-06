@@ -230,7 +230,7 @@ def _initial_state_from_particles(
     optics_star,
     opts: NativeInitialModelOptions,
 ) -> tuple[InitialModelState, np.ndarray]:
-    profile = output._StageProfile()
+    profile = output._StageProfile(opts.environment.profile)
 
     ori_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)

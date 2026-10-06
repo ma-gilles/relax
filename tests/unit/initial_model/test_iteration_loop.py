@@ -25,6 +25,7 @@ from relax.vdam.iteration_loop import (
     update_image_size_and_resolution_pointers,
 )
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
+from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
 
@@ -478,7 +479,6 @@ class TestRunVdamIterations:
             seen_subset_sizes.append(int(current.subset_size))
             seen_meta.append(meta)
 
-        monkeypatch.setenv("RECOVAR_INITIAL_MODEL_PROFILE", "1")
         monkeypatch.setattr(loop, "vdam_m_step", lambda current, accumulators, **kwargs: current)
 
         run_vdam_iterations(
@@ -493,6 +493,7 @@ class TestRunVdamIterations:
             expectation_step=lambda current, particle_ids, halfset_ids: ([], {}),
             iter_artifact_sink=sink,
             refresh_tau2_from_projector=False,
+            environment=VdamEnvironment(profile=True),
         )
 
         assert seen_meta[0]["subset_size"] == seen_subset_sizes[0]

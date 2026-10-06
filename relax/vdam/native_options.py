@@ -5,7 +5,8 @@ Sampling and continuation read these records without importing the driver.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from typing import Literal
 
 from relax.helpers.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
@@ -19,6 +20,45 @@ from relax.vdam.schedules import (
     GUI_DEFAULT_NR_ITER,
     GUI_DEFAULT_TAU2_FUDGE,
 )
+
+
+@dataclass(frozen=True)
+class VdamEnvironment:
+    """The InitialModel's switches of the process environment, read once when the options are built.
+
+    :meth:`from_environ` reads each as its consumer used to; the default instance has every switch off.
+    ``profile`` (RECOVAR_INITIAL_MODEL_PROFILE, any value) prints stage wall times;
+    ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: 1, true or TRUE) releases JAX's
+    buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
+    ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and
+    RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS: 0 or 1) skip the estimate or run it in a spawned process.
+    Two engine diagnostics: ``adaptive_fraction`` (RELAX_ADAPTIVE_FRACTION, a float; ``None`` when unset or
+    empty keeps the engine's RELION 0.999) and ``subtract_projected_reference`` (``False`` when
+    RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE has any value: back-project the images, not the residuals).
+    """
+
+    profile: bool = False
+    clear_jax_caches_per_iteration: bool = False
+    skip_expected_accuracy: bool = False
+    isolate_expected_accuracy: bool = False
+    adaptive_fraction: float | None = None
+    subtract_projected_reference: bool = True
+
+    @classmethod
+    def from_environ(cls, environ=None) -> VdamEnvironment:
+        env = os.environ if environ is None else environ
+
+        def strict(name):
+            if (value := env.get(name, "").strip()) not in {"", "0", "1"}:
+                raise ValueError(f"{name} must be 0 or 1")
+            return value == "1"
+
+        return cls(bool(env.get("RECOVAR_INITIAL_MODEL_PROFILE")),
+                   env.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"),
+                   strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
+                   strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
+                   float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,
+                   not env.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,6 +130,8 @@ class NativeInitialModelOptions(InitialModelDefaults):
     diagnostic_continue_optimiser: str | None = None
     diagnostic_stop_after_iteration: int | None = None
     diagnostic_continue_input_order: bool = False
+    # Read from the process environment when the options are built; not part of the saved options file.
+    environment: VdamEnvironment = field(default_factory=VdamEnvironment.from_environ)
 
     def validate_run(self) -> None:
         """Check supported settings before loading particles or creating run state."""

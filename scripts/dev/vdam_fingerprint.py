@@ -151,7 +151,7 @@ MUTATIONS = (
      "the uniform-prior report doubles the joint prior", True),
     ("subtract_switch_ignored", "engine_kwargs[\"reconstruction_subtract_projected_reference\"] = False", "pass",
      "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is ignored", True),
-    ("adaptive_fraction_ignored", "engine_kwargs[\"adaptive_fraction\"] = float(_af)", "pass",
+    ("adaptive_fraction_ignored", "engine_kwargs[\"adaptive_fraction\"] = adaptive_fraction", "pass",
      "RELAX_ADAPTIVE_FRACTION is ignored", True),
     ("write_cadence", "return (iteration % grad_write_iter) == 0 or iteration == nr_iter",
      "return (iteration % grad_write_iter) == 1 or iteration == nr_iter",

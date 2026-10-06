@@ -54,7 +54,6 @@ from relax.vdam.native_sampling import (
     _build_sampling_plan,
     _estimate_native_sampling_accuracy,
     _initial_sampling_state,
-    _isolate_native_sampling_accuracy_diagnostic,
     _prepare_native_sampling_for_iteration,
     _record_native_sampling_assignment_changes,
     _record_native_sampling_post_iteration,
@@ -71,9 +70,6 @@ from relax.vdam.tomo_estep import run_tomo_initial_model_estep
 
 logger = logging.getLogger(__name__)
 
-INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV = "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"
-
-
 @dataclass(frozen=True)
 class NativeInitialModelResult:
     """Summary returned by ``run_native_initial_model``."""
@@ -83,14 +79,6 @@ class NativeInitialModelResult:
     final_model_star: str
     final_mrc: str
     class_mrcs: tuple[str, ...]
-
-
-def _skip_native_sampling_accuracy_diagnostic() -> bool:
-    """Return whether the focused controller discriminator skips accuracy estimation."""
-    value = os.environ.get(INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV, "").strip()
-    if value not in {"", "0", "1"}:
-        raise ValueError(f"{INITIAL_MODEL_SKIP_EXPECTED_ACCURACY_ENV} must be 0 or 1")
-    return value == "1"
 
 
 def _native_expectation_step(
@@ -131,7 +119,7 @@ def _native_expectation_step(
             )
         )
         pass1_healpix_order = int(sampling_state.healpix_order)
-        skip_expected_accuracy = _skip_native_sampling_accuracy_diagnostic()
+        skip_expected_accuracy = opts.environment.skip_expected_accuracy
         if (
             (optics_state is not None or tilt_images is not None)
             and not skip_expected_accuracy
@@ -163,6 +151,7 @@ def _native_expectation_step(
                 tilt_images=tilt_images,
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,
+                isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
             )
         sampling_updated = (
             _prepare_native_sampling_for_iteration(sampling_state, state, iteration=iteration, do_grad=do_grad)
@@ -348,9 +337,7 @@ def _native_expectation_step(
     ):
         result.meta["sampling_accuracy_estimated"] = accuracy_meta is not None
         result.meta["sampling_accuracy_skipped_by_diagnostic"] = bool(skip_expected_accuracy)
-        result.meta["sampling_accuracy_isolated_by_diagnostic"] = bool(
-            _isolate_native_sampling_accuracy_diagnostic()
-        )
+        result.meta["sampling_accuracy_isolated_by_diagnostic"] = bool(opts.environment.isolate_expected_accuracy)
         if accuracy_meta is not None:
             result.meta.update(accuracy_meta)
         result.meta.update(
@@ -442,7 +429,7 @@ def _refuse_unsupported_multi_shape(opts: NativeInitialModelOptions, datasets) -
 def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialModelResult:
     """Run native recovar InitialModel refinement."""
 
-    profile = output._StageProfile()
+    profile = output._StageProfile(opts.environment.profile)
 
     from relax.vdam.mstep_single_class import _validate_mstep_precision_route
 
@@ -649,6 +636,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
                 optics_star=optics_star,
                 dataset=dataset,
                 particle_state=particle_state,
+                profile_stages=opts.environment.profile,
             )
     profile.record("initial_artifacts")
 
@@ -671,6 +659,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             optics_star=optics_star,
             dataset=dataset,
             particle_state=particle_state,
+            profile_stages=opts.environment.profile,
         )
 
     post_mstep_update = None
@@ -733,6 +722,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             fourier_radius_schedule=opts.fourier_radius_schedule,
             stochastic_all_iterations=bool(opts.stochastic_all_iterations),
             uniform_class_direction_prior=bool(opts.uniform_class_direction_prior),
+            environment=opts.environment,
         )
     profile.record("iterations")
     if opts.pilot_controls is not None:

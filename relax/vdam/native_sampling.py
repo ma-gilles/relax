@@ -55,7 +55,6 @@ RELION_INITIALMODEL_SMALL_CHANGE_INIT_ORIENTATIONS = 999.0
 RELION_INITIALMODEL_SMALL_CHANGE_INIT_CLASSES = 9999999.0
 
 
-INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV = "RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"
 
 
 @dataclass(frozen=True)
@@ -301,14 +300,6 @@ def _prepare_native_sampling_for_iteration(
     return _relion_update_native_sampling_state(sampling_state, do_grad=do_grad)
 
 
-def _isolate_native_sampling_accuracy_diagnostic() -> bool:
-    """Return whether expected accuracy runs in a fresh spawned process."""
-    value = os.environ.get(INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV, "").strip()
-    if value not in {"", "0", "1"}:
-        raise ValueError(f"{INITIAL_MODEL_ISOLATE_EXPECTED_ACCURACY_ENV} must be 0 or 1")
-    return value == "1"
-
-
 def _best_eulers_from_particle_state(
     particle_state: NativeParticleState,
     particle_ids: np.ndarray,
@@ -371,6 +362,7 @@ def _estimate_native_sampling_accuracy(
     tilt_images: dict | None = None,
     optics_group_ids: np.ndarray | None = None,
     experiment_dataset=None,
+    isolate_in_subprocess: bool = False,
 ) -> dict[str, object] | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
@@ -420,7 +412,7 @@ def _estimate_native_sampling_accuracy(
     current_image_size = int(state.current_size if state.current_size > 0 else state.ori_size)
     accuracy_estimator = (
         estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs
-        if _isolate_native_sampling_accuracy_diagnostic()
+        if isolate_in_subprocess
         else estimate_relion_expected_accuracy_from_prepared_inputs
     )
     def group_constant(values, trials, name):

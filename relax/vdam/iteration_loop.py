@@ -22,7 +22,6 @@ module is the pure orchestrator.
 from __future__ import annotations
 
 import hashlib
-import os
 import time
 from dataclasses import replace
 from typing import Callable, Literal, Sequence
@@ -37,6 +36,7 @@ from relax.vdam.estep_meta_updates import (
     with_uniform_class_direction_priors,
 )
 from relax.vdam.m_step import vdam_m_step
+from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_MU,
@@ -229,6 +229,7 @@ def run_vdam_iterations(
     fourier_radius_schedule: tuple[int, ...] | None = None,
     stochastic_all_iterations: bool = False,
     uniform_class_direction_prior: bool = False,
+    environment: VdamEnvironment = VdamEnvironment(),
 ) -> InitialModelState:
     """Full VDAM loop; ``state`` must come from ``initialise_denovo_state`` + ``seed_noise_from_mavg``."""
     phase_lengths = _resolve_phase_lengths(
@@ -261,7 +262,7 @@ def run_vdam_iterations(
                 "and no greater than state.nr_iter"
             )
     current = with_uniform_class_direction_priors(state) if uniform_class_direction_prior else state
-    profile_iterations = bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE"))
+    profile_iterations = environment.profile
 
     for it in range(start_iteration + 1, final_iteration + 1):
         iteration_started = time.perf_counter()
@@ -438,9 +439,8 @@ def run_vdam_iterations(
             iteration_profile["total_time_s"] = float(time.perf_counter() - iteration_started)
             print(f"VDAM iteration {it} profile: {iteration_profile}", flush=True)
 
-        # RELAX_CLEAR_JAX_CACHES_PER_ITER=1: release scratch buffers to avoid
-        # CUFFT_ALLOC_FAILED at 50k×256² (forces next-iter recompile).
-        if os.environ.get("RELAX_CLEAR_JAX_CACHES_PER_ITER", "") in ("1", "true", "TRUE"):
+        # Release scratch buffers to avoid CUFFT_ALLOC_FAILED at 50k×256² (forces next-iter recompile).
+        if environment.clear_jax_caches_per_iteration:
             import gc
 
             import jax

@@ -28,8 +28,8 @@ def _class_mrc_paths(output_prefix: str, iteration: int, K: int) -> tuple[str, .
 class _StageProfile:
     """Optional elapsed-stage report for InitialModel startup and artifact I/O."""
 
-    def __init__(self):
-        self.enabled = bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE"))
+    def __init__(self, enabled: bool):
+        self.enabled = bool(enabled)
         self.started = self.stage_started = time.perf_counter()
         self.values = {}
 
@@ -51,6 +51,7 @@ def _write_initial_run_metadata(opts, continuation) -> None:
     Path(opts.outputname).parent.mkdir(parents=True, exist_ok=True)
     config_path = f"{opts.outputname}_native_options.json"
     native_options = asdict(opts)
+    del native_options["environment"]  # the saved options keep their format
     native_options["resolved_cuda_allocator"] = os.environ.get(
         "TF_GPU_ALLOCATOR",
         "default",
@@ -96,8 +97,9 @@ def _write_iteration_artifacts(
     optics_star=None,
     dataset=None,
     particle_state: NativeParticleState | None = None,
+    profile_stages: bool = False,
 ) -> None:
-    profile = _StageProfile()
+    profile = _StageProfile(profile_stages)
 
     out_dir = Path(output_prefix).parent
     out_dir.mkdir(parents=True, exist_ok=True)

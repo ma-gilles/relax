@@ -222,7 +222,7 @@ def _dense_estep_config(
         coarse_translations=coarse_translations,
         particle_diameter_ang=float(opts.particle_diameter),
         pass1_healpix_order=int(pass1_healpix_order),
-        return_profile=bool(os.environ.get("RECOVAR_INITIAL_MODEL_PROFILE")),
+        return_profile=opts.environment.profile,
     )
     # The adaptive route rebuilds RELION's fine translations from the
     # unperturbed host grid (``prepare_adaptive_pass2_grids``).
@@ -231,11 +231,11 @@ def _dense_estep_config(
     engine_kwargs["coarse_base_translations"] = np.asarray(
         sampling_plan.coarse_base_translations, dtype=np.float64
     )
-    if _af := os.environ.get("RELAX_ADAPTIVE_FRACTION"):
-        engine_kwargs["adaptive_fraction"] = float(_af)
+    if (adaptive_fraction := opts.environment.adaptive_fraction) is not None:
+        engine_kwargs["adaptive_fraction"] = adaptive_fraction
     if os.environ.get("RELAX_USE_FLOAT64_SCORING"):
         engine_kwargs["use_float64_scoring"] = True
-    if os.environ.get("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"):
+    if not opts.environment.subtract_projected_reference:
         engine_kwargs["reconstruction_subtract_projected_reference"] = False
     if isinstance(dataset, MultiShapeDataset):
         # Each image shape rebuilds its pre-shifts and coarse pdf_offset in its own pixels.

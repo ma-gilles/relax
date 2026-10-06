@@ -190,7 +190,6 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
         )
 
     monkeypatch.setattr(native_sampling, "estimate_relion_expected_accuracy_from_prepared_inputs", fake_estimator)
-    monkeypatch.setattr(native_sampling, "_isolate_native_sampling_accuracy_diagnostic", lambda: False)
     sampling_state = replace(
         native_sampling._initial_sampling_state(
             native_sampling.NativeInitialModelOptions(fn_img="x", outputname="y"), pixel_size=2.0
