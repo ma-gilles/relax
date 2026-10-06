@@ -432,7 +432,8 @@ class SnapshotCapture:
         One map and one tau2 curve per half, the split-half FSC and the curve
         that drives image-size growth; no class operands.
 
-        ``begin`` precedes array capture so replacing the prior header releases
+        Fills ``assembly`` (from ``begin``) in place. ``begin`` precedes array capture so replacing the prior
+        header releases
         the preceding checkpoint's retained arrays before new maps are copied.
         See ``docs/math/relion_refinement_algorithm.md#checkpoint-capture``.
         """
@@ -485,7 +486,8 @@ class SnapshotCapture:
         One class stack that both half slots hold, one tau2 curve per class,
         the class weights and each particle's class; no FSC curves.
 
-        ``begin`` precedes array capture so replacing the prior header releases
+        Fills ``assembly`` (from ``begin``) in place. ``begin`` precedes array capture so replacing the prior
+        header releases
         the preceding checkpoint's retained arrays before new maps are copied.
         See ``docs/math/relion_refinement_algorithm.md#checkpoint-capture``.
         """

@@ -1617,8 +1617,8 @@ def taper_first_cc_k1_prior(
 ) -> K1ReportingPrior:
     """Taper K1 reporting priors after the untapered regularized reconstruction.
 
-    Preserve incoming list/dict identity and the half -> prior/SSNR update
-    order. The expanded taper and radial grid are temporary implementation
+    Updates ``variance_per_half`` and ``details_per_half`` in place, preserving their identity and the
+    half -> prior/SSNR update order. The expanded taper and radial grid are temporary implementation
     arrays; model installation and shared/per-half policy stay with the caller.
     """
     tau2_taper = _firstiter_cc_ini_high_tau2_taper(
@@ -1676,7 +1676,7 @@ def taper_first_cc_class_prior(
 
     The controller first tapers/publishes data-vs-prior for scheduling. This
     operation then adapts the shell stack and aggregate detail arrays in their
-    existing order, preserving the detail mapping's identity.
+    existing order, in place, preserving the detail mapping's identity.
     """
     def taper_shells(values):
         return _firstiter_cc_ini_high_tapered(
@@ -1756,7 +1756,8 @@ def reconstruct_unregularized_class_means(
 
 
 def align_k1_volume_signs(means, previous_means, unregularized_means, volume_shape) -> None:
-    """Align K=1 means and matching diagnostic maps to previous references."""
+    """Align K=1 means and matching diagnostic maps to previous references, in place (``means[k]`` and
+    ``unregularized_means[k]`` are replaced)."""
 
     for k in range(2):
         means[k], sign_flipped = _align_fourier_volume_sign_to_reference(
@@ -1771,7 +1772,8 @@ def align_k1_volume_signs(means, previous_means, unregularized_means, volume_sha
 
 
 def share_kclass_volume_signs(means, unregularized_means) -> None:
-    """Keep the image/CTF-determined K-class sign and share its class stack."""
+    """Keep the image/CTF-determined K-class sign and share its class stack, in place (slot 1 of ``means``
+    and ``unregularized_means`` takes slot 0's)."""
 
     means[1] = means[0]
     if unregularized_means[0] is not None:
