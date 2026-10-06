@@ -11,6 +11,7 @@ compares relax's adjoint with RELION's own BackProjector (the binding).
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from scipy.spatial.transform import Rotation
 
 from relax.helpers import adjoint
@@ -70,10 +71,13 @@ def test_anisotropy_is_decided_from_the_magnification_matrix(matrix, anisotropic
 
 def test_anisotropic_clip_keeps_the_rounded_image_support_and_the_reference_radius():
     clip = adjoint.mstep_adjoint_max_r(36, None, 2, anisotropic_magnification=True)
-    assert clip == adjoint.ReferenceSphereClip(18.5, 2, 18.0)
-    assert adjoint._recovar_clip_kwargs(clip) == {"max_r": 18.5, "upsampling": 2}
+    assert clip.upsampling == 2
+    assert_matches([clip.image_radius, clip.reference_radius], [18.5, 18.0])
+    kwargs = adjoint._recovar_clip_kwargs(clip)
+    assert kwargs["upsampling"] == 2
+    assert_matches(kwargs["max_r"], 18.5)
     # Without magnification nothing changes.
-    assert adjoint.mstep_adjoint_max_r(36, None, 2) == 18.0
+    assert_matches(adjoint.mstep_adjoint_max_r(36, None, 2), 18.0)
     with pytest.raises(NotImplementedError, match="another pixel size"):
         adjoint.mstep_adjoint_max_r(36, 20.0, 2, anisotropic_magnification=True)
 
