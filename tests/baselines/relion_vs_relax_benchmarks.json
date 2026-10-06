@@ -5743,8 +5743,15 @@
      "masked_res_05_A": 90.67
     },
     "cross": {
-     "fsc_auc": 0.9737,
-     "masked_fsc_auc": 0.9856
+     "fsc_auc": 0.9745,
+     "masked_fsc_auc": 0.981,
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_pdb_k2_5k128_initialmodel_vdam_200it.json",
+     "via_reference_frame_fsc_auc": 0.9063,
+     "per_class_transform": [
+      "class_fit_mirror",
+      "class_fit_proper"
+     ]
     },
     "relion_repeat": {
      "pair": "RELION seed 29 in this job vs relion_s29 (earlier run of the same command and seed)",
@@ -5783,7 +5790,8 @@
     "Earlier record (before the 2026-09-27 refresh): Fixed (retained-mass normalization, 2026-09-24): the class splits match RELION at all three seeds, the seed-mean reference FSC-AUC equals RELION's, and relax's same-seed runs span RELION's at seeds 29 and 53. The seed-29 spread (2.1x RELION's, borderline) is closed as basin sampling: means equal and per-step parity at RELION's rounding floor.",
     "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
     "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
-    "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded."
+    "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.9737 / 0.9856 -> 0.9745 / 0.981; 2 of 2 classes use their own fit; via the reference frame 0.9063."
    ],
    "null_reasons": {},
    "evidence": {
@@ -5837,6 +5845,14 @@
      "relion_masked_fsc_auc": 0.3287,
      "quality_pass": false,
      "time_ratio_relax_over_relion": 2.39
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.9737,
+      "masked_fsc_auc": 0.9856
+     }
     }
    ],
    "benchmark": false,
@@ -5911,8 +5927,17 @@
      "masked_res_05_A": 60.44
     },
     "cross": {
-     "fsc_auc": 0.8852,
-     "masked_fsc_auc": 0.887
+     "fsc_auc": 0.8998,
+     "masked_fsc_auc": 0.8971,
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_pdb_k4_5k128_initialmodel_vdam_200it.json",
+     "via_reference_frame_fsc_auc": 0.9717,
+     "per_class_transform": [
+      "consensus",
+      "class_fit_mirror",
+      "class_fit_proper",
+      "class_fit_proper"
+     ]
     },
     "relion_repeat": {
      "pair": "RELION seed 29 in this job vs relion_s29 (earlier run of the same command and seed)",
@@ -5950,7 +5975,8 @@
     "Earlier record (before the 2026-09-27 refresh): Not a bug: relax (fix and before) is at or above RELION at every scored seed; the fix leaves K=4 seed 29 at 0.1441 against RELION 0.1236.",
     "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
     "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
-    "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded."
+    "Missing evidence (2026-10-03 curation): /scratch/gpfs/CRYOEM/gilleslab/em_work/codex/vdam_crossdataset_matrix2_20260919 no longer exists; the row's values stand as recorded.",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.8852 / 0.887 -> 0.8998 / 0.8971; 3 of 4 classes use their own fit; via the reference frame 0.9717."
    ],
    "null_reasons": {},
    "evidence": {
@@ -6027,6 +6053,14 @@
      "quality_reason": "inside or above the 6-run RELION band at 3 seeds",
      "time_ratio_relax_over_relion": 2.77,
      "score_json": "docs/benchmarks/initialmodel_scores/pdb128_k4_bench83b9ae9.json"
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.8852,
+      "masked_fsc_auc": 0.887
+     }
     }
    ]
   },
@@ -6104,9 +6138,29 @@
      "masked_res_05_A": 11.1
     },
     "cross": {
-     "fsc_auc": 0.3892,
-     "masked_fsc_auc": 0.4728,
-     "relion_run": "bpd_relion_s29"
+     "fsc_auc": 0.4484,
+     "masked_fsc_auc": 0.5153,
+     "relion_run": "bpd_relion_s29",
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_ribosembly_k15_50k256_initialmodel_vdam_200it.json",
+     "via_reference_frame_fsc_auc": 0.3753,
+     "per_class_transform": [
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_proper",
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_proper",
+      "consensus",
+      "class_fit_proper",
+      "class_fit_proper",
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_proper"
+     ]
     },
     "relion_repeat": {
      "pair": "RELION seed 29 vs seed 41 (different-seed repeat; seed 53 in the notes)",
@@ -6153,7 +6207,8 @@
     "Earlier record (before the 2026-09-27 refresh): All scored runs (FSC-AUC unmasked / masked): relion_s29 vs reference 0.1435 unmasked / 0.1514 masked; relax_s29 vs reference 0.0974 unmasked / 0.0985 masked; relaxfix_s29 vs reference 0.1321 unmasked / 0.1374 masked; relion_s29 vs relax_s29 0.2267 / 0.2690; relion_s29 vs relaxfix_s29 0.3582 / 0.4402; relax_s29 vs relaxfix_s29 0.2170 / 0.2884.",
     "Earlier record (before the 2026-09-27 refresh): Seeds (2026-09-25, same command and candidate cand_cb18995): RELION seeds 29/41/53 masked population-weighted reference FSC-AUC 0.1514/0.0367/0.0606 (unmasked 0.1435/0.0342/0.0600); relax seeds 29/41 0.1374/0.0371 (unmasked 0.1321/0.0360). Both relax seeds are inside the RELION band 0.0367-0.1514; at seed 41 relax is at RELION's value (0.0371 vs 0.0367). The seed spread (0.037-0.151) is far wider than the seed-29 relax-RELION difference, so the seed-29 gap is within RELION's own seed variation.",
     "Earlier record (before the 2026-09-27 refresh): Same-seed relax-vs-RELION X-AUC: seed 29 0.3591 (masked 0.4410), seed 41 0.2895 (masked 0.4777); RELION different-seed pairs 0.0386-0.0672 (masked 0.0771-0.0998), so K=15 runs of different seeds land in different class structures.",
-    "Earlier record (before the 2026-09-27 refresh): Seed-41 walls (vdamk2 job 14425400, one node, 8 CPUs and one H100 per arm): relax 29,808 s with the JAX pool capped at .50 (XLA_PYTHON_CLIENT_MEM_FRACTION inherited from the submitting shell), RELION 10,955 s. RELION seed 53 ran in the same lane and hit a RELION illegal memory access at iteration 200 (custom_allocator.cuh:176); its rerun (job 14450986, 13,229 s, separate job) is the band member. Scores: docs/benchmarks/initialmodel_scores/ribo_k15_seeds.json."
+    "Earlier record (before the 2026-09-27 refresh): Seed-41 walls (vdamk2 job 14425400, one node, 8 CPUs and one H100 per arm): relax 29,808 s with the JAX pool capped at .50 (XLA_PYTHON_CLIENT_MEM_FRACTION inherited from the submitting shell), RELION 10,955 s. RELION seed 53 ran in the same lane and hit a RELION illegal memory access at iteration 200 (custom_allocator.cuh:176); its rerun (job 14450986, 13,229 s, separate job) is the band member. Scores: docs/benchmarks/initialmodel_scores/ribo_k15_seeds.json.",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.3892 / 0.4728 -> 0.4484 / 0.5153; 14 of 15 classes use their own fit; via the reference frame 0.3753."
    ],
    "null_reasons": {},
    "evidence": {
@@ -6291,6 +6346,15 @@
      },
      "relion_wall_s": 55075.0,
      "relion_wall_definition": "sum over seeds 29/41/53/61/67 of the arm-script walls (WALL.json), each run cold on one H100"
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.3892,
+      "masked_fsc_auc": 0.4728,
+      "relion_run": "bpd_relion_s29"
+     }
     }
    ]
   },
@@ -6368,9 +6432,18 @@
      "masked_res_05_A": 8.92
     },
     "cross": {
-     "fsc_auc": 0.0786,
-     "masked_fsc_auc": 0.0903,
-     "relion_run": "bpd_relion_s41"
+     "fsc_auc": 0.3978,
+     "masked_fsc_auc": 0.5896,
+     "relion_run": "bpd_relion_s41",
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_ribosembly_k4_100k256_initialmodel_vdam_k4_200it.json",
+     "via_reference_frame_fsc_auc": 0.1925,
+     "per_class_transform": [
+      "class_fit_proper",
+      "class_fit_proper",
+      "class_fit_mirror",
+      "class_fit_mirror"
+     ]
     },
     "relion_repeat": {
      "pair": "RELION seed 41 in this job vs relion_s41 (earlier run of the same command and seed)",
@@ -6424,7 +6497,8 @@
     "Earlier record (before the 2026-09-27 refresh): Before the regeneration (RELION maps of 2026-09-19, lost): Rerun on the retained-mass fix (relax 237e76b): VDAM K>1 had divided sigma2_noise, pdf_class, sigma2_offset and ave_Pmax by the full responsibility mass instead of RELION's retained fine-pass mass (acc_ml_optimiser_impl.h:4065-4142, ml_optimiser.cpp:6170-6171, 6387).",
     "Earlier record (before the 2026-09-27 refresh): Before the regeneration (RELION maps of 2026-09-19, lost): relax K=4 seed 41 on the fix: 16946 s (pre-split 25cc4475b: 22393 s). Class populations relax 0.000/0.079/0.755/0.166 vs RELION seed 41 0.000/0.095/0.757/0.147 (before the fix 0.000/0.144/0.750/0.106); relax ave Pmax 0.355 vs RELION 0.359 (before 0.518).",
     "Earlier record (before the 2026-09-27 refresh): Before the regeneration (RELION maps of 2026-09-19, lost): Population-weighted reference FSC-AUC: relax fix 0.0728 (masked 0.0760), before the fix 0.0489; RELION seed 41 0.0677, seed 29 0.0718.",
-    "Earlier record (before the 2026-09-27 refresh): Before the regeneration (RELION maps of 2026-09-19, lost): Fixed (retained-mass normalization, 2026-09-25): relax on the fix (0.0728) is at or above both RELION seeds (0.0677, 0.0718); the earlier 0.0489 deficit was the VDAM K>1 normalization bug."
+    "Earlier record (before the 2026-09-27 refresh): Before the regeneration (RELION maps of 2026-09-19, lost): Fixed (retained-mass normalization, 2026-09-25): relax on the fix (0.0728) is at or above both RELION seeds (0.0677, 0.0718); the earlier 0.0489 deficit was the VDAM K>1 normalization bug.",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.0786 / 0.0903 -> 0.3978 / 0.5896; 4 of 4 classes use their own fit; via the reference frame 0.1925."
    ],
    "null_reasons": {},
    "evidence": {
@@ -6570,6 +6644,15 @@
       "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
       "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
      }
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.0786,
+      "masked_fsc_auc": 0.0903,
+      "relion_run": "bpd_relion_s41"
+     }
     }
    ]
   },
@@ -6647,9 +6730,16 @@
      "masked_res_05_A": 68.0
     },
     "cross": {
-     "fsc_auc": 0.0458,
-     "masked_fsc_auc": 0.0468,
-     "relion_run": "bpd_relion_s29"
+     "fsc_auc": 0.0955,
+     "masked_fsc_auc": 0.0993,
+     "relion_run": "bpd_relion_s29",
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_synth_pdb_k2_50k256_snr05_initialmodel_vdam_k2_200it.json",
+     "via_reference_frame_fsc_auc": 0.0708,
+     "per_class_transform": [
+      "class_fit_proper",
+      "class_fit_proper"
+     ]
     },
     "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470"
    },
@@ -6689,7 +6779,8 @@
     "Earlier record (before the 2026-10-02 refresh): seed 67: masked reference FSC-AUC relax 0.0489 / RELION 0.0275 (mean GT 0.0368 / 0.0290); relax-vs-RELION masked X-AUC 0.2121; occupied classes (> 1%) relax 1 / RELION 1; walls relax 1176 s / RELION 1954 s",
     "Earlier record (before the 2026-09-29 refresh): New-generation synthetic fixture synth_pdb_k2_50k256_snr05_20260927 (curated, README in the fixture): 50000 particles, box 256, 2.125 Å/px, noise_level 0.2, total B 40 Å² (README), seed 42.",
     "Earlier record (before the 2026-09-29 refresh): Standalone InitialModel-VDAM from particles only on both engines. RELION command: --iter 200 --grad --denovo_3dref --i particles.star --ctf --flatten_solvent --zero_mask --dont_combine_weights_via_disc --pool 3 --pad 1 --auto_sampling --preread_images --K 2 --sym C1 --particle_diameter 380 --oversampling 1 --healpix_order 1 --offset_range 6 --offset_step 2 --tau2_fudge 4 --grad_write_iter 50 --random_seed 29; relax the same settings with production defaults.",
-    "Earlier record (before the 2026-09-29 refresh): ng_relax_s29 (relax f9c8bfd3, job 14573572, della-h20g2): masked GT FSC-AUC relax 0.2633 / RELION 0.2493 (unmasked 0.2616 / 0.2472); relax-vs-RELION X-AUC 0.0757 (masked 0.0787); populations relax [0.5, 0.5] / RELION [0.5, 0.5]; walls relax 2331 s / RELION 2119 s"
+    "Earlier record (before the 2026-09-29 refresh): ng_relax_s29 (relax f9c8bfd3, job 14573572, della-h20g2): masked GT FSC-AUC relax 0.2633 / RELION 0.2493 (unmasked 0.2616 / 0.2472); relax-vs-RELION X-AUC 0.0757 (masked 0.0787); populations relax [0.5, 0.5] / RELION [0.5, 0.5]; walls relax 2331 s / RELION 2119 s",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.0458 / 0.0468 -> 0.0955 / 0.0993; 2 of 2 classes use their own fit; via the reference frame 0.0708. The relax and RELION maps genuinely disagree here (0.07 via the reference frame as well), so the low X-AUC is not the single-transform artefact; the row deserves a closer look (team-lead 2026-10-05)."
    ],
    "null_reasons": {
     "initial_model.relion_repeat": "one RELION run of this command and seed on the new-generation fixture"
@@ -6834,6 +6925,15 @@
       "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
       "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
      }
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.0458,
+      "masked_fsc_auc": 0.0468,
+      "relion_run": "bpd_relion_s29"
+     }
     }
    ]
   },
@@ -6911,9 +7011,18 @@
      "masked_res_05_A": 8.77
     },
     "cross": {
-     "fsc_auc": 0.071,
-     "masked_fsc_auc": 0.072,
-     "relion_run": "bpd_relion_s29"
+     "fsc_auc": 0.5906,
+     "masked_fsc_auc": 0.6373,
+     "relion_run": "bpd_relion_s29",
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_synth_ribo_k4_100k256_snr05_initialmodel_vdam_k4_200it.json",
+     "via_reference_frame_fsc_auc": 0.2281,
+     "per_class_transform": [
+      "class_fit_mirror",
+      "class_fit_proper",
+      "class_fit_mirror",
+      "class_fit_proper"
+     ]
     },
     "scorer_sha": "5744444f2e33d2ab455b73b221ee922809180470"
    },
@@ -6962,7 +7071,8 @@
     "Earlier record (before the 2026-09-29 refresh): seed 53 (ng59_relax_s53, relax 59d210c9): masked GT FSC-AUC relax 0.2941 / RELION 0.2482 (mean GT 0.1133 / 0.0977); relax-vs-RELION masked X-AUC 0.5860; populations relax [0.793, 0.091, 0.114, 0.002] / RELION [0.792, 0.1, 0.106, 0.001]; walls relax 4771 s / RELION 8453 s (0.56x)",
     "Earlier record (before the 2026-09-29 refresh): seed 61 (ng59_relax_s61, relax 59d210c9): masked GT FSC-AUC relax 0.0511 / RELION 0.0514 (mean GT 0.0383 / 0.0393); relax-vs-RELION masked X-AUC 0.5408; populations relax [0.001, 0.111, 0.101, 0.787] / RELION [0.002, 0.076, 0.115, 0.807]; walls relax 4081 s / RELION 8563 s (0.48x)",
     "Earlier record (before the 2026-09-29 refresh): seed 67 (ng59_relax_s67, relax 59d210c9): masked GT FSC-AUC relax 0.2611 / RELION 0.3712 (mean GT 0.1022 / 0.1351); relax-vs-RELION masked X-AUC 0.5409; populations relax [0.014, 0.79, 0.0, 0.196] / RELION [0.015, 0.798, 0.0, 0.186]; walls relax 3165 s / RELION 6258 s (0.51x)",
-    "Earlier record (before the 2026-09-29 refresh): Seeds 29, 53, 61, 67: same-node pairs on cand_59d210c (relax main 59d210c9), same command; seed 41 is kspeed's run 14604448 against the pair's RELION arm (2026-09-28)."
+    "Earlier record (before the 2026-09-29 refresh): Seeds 29, 53, 61, 67: same-node pairs on cand_59d210c (relax main 59d210c9), same command; seed 41 is kspeed's run 14604448 against the pair's RELION arm (2026-09-28).",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.071 / 0.072 -> 0.5906 / 0.6373; 4 of 4 classes use their own fit; via the reference frame 0.2281."
    ],
    "null_reasons": {
     "initial_model.relion_repeat": "one RELION run of this command and seed on the new-generation fixture"
@@ -7114,6 +7224,15 @@
       "b": "RELION GUI InitialModel defaults (the band command); relax production defaults, every RELAX_* variable and XLA_PYTHON_CLIENT_MEM_FRACTION unset, empty per-arm compile cache; both pre-read the particle stack; --scratch_dir on node-local /tmp for both; --grad_write_iter 50",
       "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
       "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+     }
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.071,
+      "masked_fsc_auc": 0.072,
+      "relion_run": "bpd_relion_s29"
      }
     }
    ]
@@ -7961,8 +8080,17 @@
      "masked_res_05_A": 69.87
     },
     "cross": {
-     "fsc_auc": 0.9908,
-     "masked_fsc_auc": 0.995
+     "fsc_auc": 0.9944,
+     "masked_fsc_auc": 0.9962,
+     "scorer_sha": "fd95e16fdafce0f5ec98972d37415f6e003b48da",
+     "score_json": "docs/benchmarks/initialmodel_scores/pairfix_empiar10076_10k256_initialmodel_vdam_k4_20it.json",
+     "via_reference_frame_fsc_auc": 0.9948,
+     "per_class_transform": [
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_mirror",
+      "class_fit_mirror"
+     ]
     },
     "relion_repeat": {
      "pair": "RELION seed 29 in this job vs relion_s29_pair (earlier run of the same command and seed)",
@@ -7991,7 +8119,8 @@
     "Earlier record (before the 2026-09-27 refresh): Previous record (maps lost 2026-09-26): RELION 13666090 136.4 s, relax recovar 5ca9c8fff 1206.9 s (8.85x, parity harness); reference FSC-AUC RELION 0.0385-0.0389, relax 0.0389; X-AUC 0.9887 vs RELION a-b 0.9873.",
     "Earlier record (before the 2026-09-27 refresh): All scored runs (FSC-AUC unmasked / masked): relion_s29_pair vs reference 0.0386 unmasked / 0.0490 masked; relion_s29_a vs reference 0.0386 unmasked / 0.0489 masked; relion_s29_b vs reference 0.0389 unmasked / 0.0493 masked; relax_s29_d9517e7 vs reference 0.0387 unmasked / 0.0491 masked; relion_s29_pair vs relion_s29_a 0.9951 / 0.9982; relion_s29_pair vs relion_s29_b 0.9873 / 0.9937; relion_s29_pair vs relax_s29_d9517e7 0.9949 / 0.9979; relion_s29_a vs relion_s29_b 0.9877 / 0.9937; relion_s29_a vs relax_s29_d9517e7 0.9952 / 0.9980; relion_s29_b vs relax_s29_d9517e7 0.9888 / 0.9943.",
     "Earlier record (before the 2026-09-27 refresh): relax minus RELION reference FSC-AUC: +0.0001 unmasked, +0.0001 masked.",
-    "Earlier record (before the 2026-09-27 refresh): relax (0.0387, masked 0.0491) is inside the three RELION runs (0.0386-0.0389, masked 0.0489-0.0493); relax-vs-RELION X-AUC 0.9888-0.9952 (masked 0.9943-0.9980) lies inside the RELION pairs 0.9873-0.9951 (masked 0.9937-0.9982). RELION's runs again split into two branches (pair and a vs b); relax follows the pair/a branch (X-AUC 0.9949 / 0.9952)."
+    "Earlier record (before the 2026-09-27 refresh): relax (0.0387, masked 0.0491) is inside the three RELION runs (0.0386-0.0389, masked 0.0489-0.0493); relax-vs-RELION X-AUC 0.9888-0.9952 (masked 0.9943-0.9980) lies inside the RELION pairs 0.9873-0.9951 (masked 0.9937-0.9982). RELION's runs again split into two branches (pair and a vs b); relax follows the pair/a branch (X-AUC 0.9949 / 0.9952).",
+    "X-AUC rescored 2026-10-05 with the per-class pair registration (relax fd95e16f, job 15074617; only the quoted relax-vs-RELION pair): unmasked / masked 0.9908 / 0.995 -> 0.9944 / 0.9962; 4 of 4 classes use their own fit; via the reference frame 0.9948. 1 registration in that rescore stopped on its optimizer budget (/arms/rf_relion_s29/class_fits/class_to_mean:1:mirror); its class value is reported as fitted."
    ],
    "null_reasons": {},
    "evidence": {
@@ -8036,6 +8165,14 @@
      "relion_masked_fsc_auc": 0.049,
      "quality_pass": true,
      "time_ratio_relax_over_relion": 2.3
+    },
+    {
+     "date": "2026-10-05",
+     "note": "X-AUC before the per-class pair registration (fd95e16f): one consensus transform for every class",
+     "initial_model_cross": {
+      "fsc_auc": 0.9908,
+      "masked_fsc_auc": 0.995
+     }
     }
    ]
   },

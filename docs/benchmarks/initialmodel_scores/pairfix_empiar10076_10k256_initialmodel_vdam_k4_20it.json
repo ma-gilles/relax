@@ -1,0 +1,1820 @@
+{
+ "id": "pairfix_empiar10076_10k256_initialmodel_vdam_k4_20it",
+ "K": 4,
+ "box": 256,
+ "pixel_size_A": 1.6374975442886353,
+ "reference": {
+  "kind": "relion_autorefine_consensus",
+  "frame": "relion",
+  "paths": [
+   "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10076_vdam256/reference/relion_refine_run_class001_fcrop256.mrc"
+  ],
+  "note": "RELION auto-refine map of EMPIAR-10076 (realdata_em_full_native_20260828), Fourier-cropped 320->256; K=4 run: every class is scored against this one consensus map",
+  "sha256": [
+   "2c6c5d2c7ca3af0786d1caac46aff3a7813dc3a6288b9c65be450a82e9491799"
+  ]
+ },
+ "mask": {
+  "key": "empiar10076_im256_c1",
+  "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar_10076_vdam256/masks/empiar10076_im256_c1/empiar10076_im256_c1_mask.mrc",
+  "sha256": "b8a611900131c718d5b3e12a129b751de84c8458ee2438659347213ac2e3ea1b"
+ },
+ "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
+ "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; for K>1 each b class is also fitted on its own onto the a class its reference-frame map matches, and each matched class uses the better transform (2026-10-05); diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+ "arms": {
+  "rf_relion_s29": {
+   "engine": "relion",
+   "maps": [
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relion/output/run_it020_class001.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relion/output/run_it020_class002.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relion/output/run_it020_class003.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relion/output/run_it020_class004.mrc"
+   ],
+   "map_sha256": [
+    "bc09573fdbea0ee828ba0dec19faa5eea0b712d2569bd2a2a578e244eb622d10",
+    "9050c814b0de4dc8fdd8daa728fb6d0a40359766f807848f08d89dfefa2ad41b",
+    "b25e33b109c41bb86b2ad42f7376418ef7f595604712efc856c34edddf3c8d35",
+    "3001e0dd621396c9db021b4399565a5afd2b5892656a293ac411135d4729a20b"
+   ],
+   "populations": [
+    0.656146,
+    0.330857,
+    0.0007000304,
+    0.012297
+   ],
+   "fit_to_reference": {
+    "hand": "mirror",
+    "rotation_matrix": [
+     [
+      0.6632551945404732,
+      0.7419857464400121,
+      -0.09772256134044371
+     ],
+     [
+      0.2150504251122191,
+      -0.06388476140731802,
+      0.9745111861435884
+     ],
+     [
+      0.716830427349546,
+      -0.6673648847068505,
+      -0.2019362500545142
+     ]
+    ],
+    "translation_voxels": [
+     -0.6421538221622941,
+     9.247816308033306,
+     -4.264148404838492
+    ],
+    "mirror_x": true,
+    "fit_lowpass_corr": 0.6753855967148664,
+    "start_lowpass_corrs": [
+     0.6753803163476687,
+     0.6653943479850198,
+     0.6753855967148664
+    ],
+    "failed_starts": [],
+    "fine_start_corr": 0.5921893398026684,
+    "fine_corr": 0.5942636955689066,
+    "fine_evaluations": 963,
+    "lowpass_optimizer_success": true,
+    "lowpass_evaluations": 952,
+    "fine_optimizer_success": true,
+    "fine_optimizer_message": "Optimization terminated successfully.",
+    "other_hand": {
+     "rotation_matrix": [
+      [
+       0.3577640956064049,
+       0.9331721404094973,
+       -0.034563105452035725
+      ],
+      [
+       0.14847387568250325,
+       -0.020302584694050885,
+       0.9887079008961935
+      ],
+      [
+       0.9219329477433527,
+       -0.35885590620512053,
+       -0.14581522021707471
+      ]
+     ],
+     "translation_voxels": [
+      -1.6742864758795148,
+      8.077987306644872,
+      -6.816105258362174
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.6631509035683324,
+     "start_lowpass_corrs": [
+      0.6631496501001634,
+      0.6631474247604481,
+      0.6631509035683324
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.575420284161541,
+     "fine_corr": 0.5805865396667081,
+     "fine_evaluations": 1157,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 923,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "class_fits": {
+    "class_to_mean:1:proper": {
+     "rotation_matrix": [
+      [
+       0.17426462649194155,
+       0.9846269595517038,
+       -0.011899179702457852
+      ],
+      [
+       0.17833950581813174,
+       -0.01967464312616493,
+       0.983772295341967
+      ],
+      [
+       0.9684146119396218,
+       -0.17355880542866542,
+       -0.17902647971740374
+      ]
+     ],
+     "translation_voxels": [
+      -2.6015803601545264,
+      9.127602984718257,
+      -8.628657355528185
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.5858095661478472,
+     "start_lowpass_corrs": [
+      0.5858095661478472,
+      0.5696074103923316,
+      0.5858060329925553
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.4957487899354659,
+     "fine_corr": 0.4977607959716101,
+     "fine_evaluations": 702,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1227,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:1:mirror": {
+     "rotation_matrix": [
+      [
+       0.7573512913458278,
+       0.6089495989663476,
+       -0.23579526588871805
+      ],
+      [
+       0.31830799339926996,
+       -0.028975268274001154,
+       0.9475444344021973
+      ],
+      [
+       0.5701745722451477,
+       -0.7926795189401414,
+       -0.21577798177267493
+      ]
+     ],
+     "translation_voxels": [
+      -0.8262544040784725,
+      10.067081836565986,
+      -3.4184569360048953
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.5770416934795638,
+     "start_lowpass_corrs": [
+      0.5681481786038832,
+      0.5695971143976416,
+      0.5770416934795638
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.48097042125943956,
+     "fine_corr": 0.4870040555344057,
+     "fine_evaluations": 622,
+     "lowpass_optimizer_success": false,
+     "lowpass_evaluations": 6400,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:proper": {
+     "rotation_matrix": [
+      [
+       0.6959871097123338,
+       0.3396907742707448,
+       -0.6326232061737971
+      ],
+      [
+       0.6957970771228285,
+       -0.5367003041301797,
+       0.4773041074764622
+      ],
+      [
+       -0.17739326532200003,
+       -0.7723748839921682,
+       -0.6098923413164687
+      ]
+     ],
+     "translation_voxels": [
+      1.1320316704253865,
+      8.263328481073248,
+      -6.102852708033152
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.623853516461996,
+     "start_lowpass_corrs": [
+      0.6054144180816737,
+      0.623853516461996,
+      0.605416881033186
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.552637949719745,
+     "fine_corr": 0.5541709091669318,
+     "fine_evaluations": 745,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1078,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:mirror": {
+     "rotation_matrix": [
+      [
+       0.4581188164722778,
+       0.887119292585929,
+       0.05609376717497416
+      ],
+      [
+       0.060495438028600745,
+       -0.09407517141045463,
+       0.9937253967277989
+      ],
+      [
+       0.8868300017318805,
+       -0.4518508856314595,
+       -0.0967642763745924
+      ]
+     ],
+     "translation_voxels": [
+      0.43264884522289226,
+      9.831890509303898,
+      -7.34827213854454
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.6276759104419717,
+     "start_lowpass_corrs": [
+      0.6276758934013417,
+      0.6276759104419717,
+      0.6276738020394576
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.5540880639612633,
+     "fine_corr": 0.5574677170315697,
+     "fine_evaluations": 1042,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1368,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:proper": {
+     "rotation_matrix": [
+      [
+       0.13952578987355055,
+       -0.35793827232257175,
+       -0.9232620143636878
+      ],
+      [
+       -0.2970655506286097,
+       -0.9045663826365478,
+       0.30579685746186425
+      ],
+      [
+       -0.9446081794002648,
+       0.2316027905932121,
+       -0.23254146898898267
+      ]
+     ],
+     "translation_voxels": [
+      -0.10406421338086086,
+      10.294977656286747,
+      -5.55783182329799
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.8546839022305911,
+     "start_lowpass_corrs": [
+      0.8546813708936913,
+      0.8546747562366224,
+      0.8546839022305911
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7821518716571061,
+     "fine_corr": 0.7827385058503719,
+     "fine_evaluations": 1360,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1055,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:mirror": {
+     "rotation_matrix": [
+      [
+       -0.28475402924393123,
+       -0.6863822101297166,
+       -0.6691745694860137
+      ],
+      [
+       0.8178947694735297,
+       0.19012104070479277,
+       -0.5430489259258029
+      ],
+      [
+       0.4999632875493839,
+       -0.7019497499812732,
+       0.5072506871400371
+      ]
+     ],
+     "translation_voxels": [
+      -0.44929300838680136,
+      9.821887851450786,
+      -5.320583899253619
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.858218917316062,
+     "start_lowpass_corrs": [
+      0.8582002306813262,
+      0.8582177903316479,
+      0.858218917316062
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7853740380851707,
+     "fine_corr": 0.7856074576064537,
+     "fine_evaluations": 1606,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1375,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:proper": {
+     "rotation_matrix": [
+      [
+       0.5109310661781942,
+       -0.22309920494288443,
+       0.8301663630669859
+      ],
+      [
+       -0.4806850053795499,
+       -0.8747864560291416,
+       0.060750160092272965
+      ],
+      [
+       0.7126649782452311,
+       -0.43008766676321647,
+       -0.554196019185357
+      ]
+     ],
+     "translation_voxels": [
+      0.26032676733320625,
+      10.79562314022756,
+      -3.131871824650758
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.8525473013327755,
+     "start_lowpass_corrs": [
+      0.8525423474078321,
+      0.8525472256663694,
+      0.8525473013327755
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7720425464146923,
+     "fine_corr": 0.776094433524805,
+     "fine_evaluations": 1514,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1484,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:mirror": {
+     "rotation_matrix": [
+      [
+       0.11161685618742809,
+       -0.3733597120356883,
+       0.9209474484700324
+      ],
+      [
+       -0.7285730521942263,
+       -0.6609848643950044,
+       -0.17966723868615284
+      ],
+      [
+       0.675812832839999,
+       -0.6509236011002717,
+       -0.34579687751544264
+      ]
+     ],
+     "translation_voxels": [
+      -1.554580958649321,
+      12.90662966918935,
+      -5.674148675049736
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.8578782696535592,
+     "start_lowpass_corrs": [
+      0.8578636614690935,
+      0.8578668658232833,
+      0.8578782696535592
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7835535378273444,
+     "fine_corr": 0.7841143030657787,
+     "fine_evaluations": 1391,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1814,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "vs_reference": {
+    "per_class": [
+     {
+      "class": 2,
+      "reference_class": 1,
+      "population": 0.330857,
+      "fsc_auc": 0.04392256699908844,
+      "transform": "class_to_mean_mirror",
+      "res_05_A": 104.79984283447266,
+      "res_0143_A": 38.109033757990055,
+      "fsc": [
+       1.0,
+       0.94194,
+       0.88168,
+       0.85977,
+       0.47938,
+       0.49236,
+       0.50113,
+       0.34618,
+       0.3129,
+       0.21218,
+       0.1869,
+       0.08442,
+       0.01339,
+       0.02463,
+       0.14235,
+       0.1885,
+       0.12523,
+       0.09792,
+       0.01205,
+       -0.05835,
+       -0.05291,
+       -0.01245,
+       -0.01571,
+       -0.03373,
+       0.00786,
+       0.01887,
+       0.02827,
+       0.0151,
+       0.01861,
+       0.00739,
+       0.02952,
+       0.03141,
+       0.02998,
+       0.01656,
+       -0.00779,
+       -0.03037,
+       -0.01092,
+       0.01761,
+       0.00652,
+       -0.02437,
+       0.0004,
+       -0.01795,
+       -0.00256,
+       0.00643,
+       0.0155,
+       0.01841,
+       -0.00056,
+       -0.00568,
+       -0.01471,
+       0.00141,
+       0.02129,
+       0.0104,
+       -0.01665,
+       -0.02533,
+       0.0076,
+       0.01581,
+       -0.00619,
+       0.00565,
+       0.00427,
+       0.02116,
+       0.00947,
+       -0.02972,
+       -0.00986,
+       0.00583,
+       -0.00412,
+       -0.01291,
+       0.00778,
+       0.01969,
+       0.00601,
+       0.00948,
+       -0.00344,
+       -0.01496,
+       0.00521,
+       0.01323,
+       0.00016,
+       0.00011,
+       0.0019,
+       -0.00049,
+       0.0053,
+       -0.00716,
+       -0.00694,
+       0.00332,
+       -0.0018,
+       0.00321,
+       0.00837,
+       0.00577,
+       -0.00058,
+       -0.00374,
+       -0.00116,
+       -0.00152,
+       -0.00258,
+       -0.00472,
+       0.00877,
+       -0.00171,
+       0.00199,
+       0.00049,
+       0.00437,
+       0.00511,
+       0.00029,
+       0.00436,
+       -0.00539,
+       -0.00956,
+       0.01454,
+       0.00573,
+       -0.00234,
+       -0.00098,
+       -0.00313,
+       -0.00013,
+       -0.00188,
+       0.00164,
+       0.00736,
+       0.00352,
+       0.00162,
+       3e-05,
+       0.00392,
+       -0.00137,
+       -0.00227,
+       -0.00514,
+       -0.0035,
+       0.01129,
+       0.00443,
+       -0.00062,
+       -0.0023,
+       -0.00271,
+       0.00221,
+       0.0016,
+       -0.00163
+      ],
+      "masked_fsc_auc": 0.05789569478322561,
+      "masked_res_05_A": 83.83987426757812,
+      "masked_res_0143_A": 34.93328094482422,
+      "masked_fsc": [
+       1.0,
+       0.9522,
+       0.89395,
+       0.86585,
+       0.50616,
+       0.45565,
+       0.48602,
+       0.36253,
+       0.32828,
+       0.23288,
+       0.21749,
+       0.15304,
+       0.10101,
+       0.0825,
+       0.20783,
+       0.26609,
+       0.18785,
+       0.16984,
+       0.11417,
+       0.01437,
+       -0.01587,
+       0.02242,
+       0.02176,
+       -0.01365,
+       0.00749,
+       0.02562,
+       0.02061,
+       0.01426,
+       0.01135,
+       -0.01064,
+       -0.02464,
+       -0.03736,
+       -0.03348,
+       -0.00501,
+       -0.008,
+       -0.02003,
+       -0.00757,
+       0.02639,
+       0.0709,
+       0.04245,
+       0.0638,
+       0.06325,
+       0.03304,
+       0.01605,
+       0.00818,
+       0.00767,
+       -0.00086,
+       0.03149,
+       0.01368,
+       0.00283,
+       0.01284,
+       -0.01368,
+       0.00426,
+       0.00126,
+       -0.00189,
+       0.01308,
+       0.00454,
+       -0.00684,
+       -0.00267,
+       0.01019,
+       0.00147,
+       0.01055,
+       0.02459,
+       -0.00235,
+       -0.01979,
+       -0.00387,
+       0.0245,
+       0.01991,
+       0.00984,
+       0.00953,
+       0.01165,
+       0.00037,
+       0.01035,
+       0.01428,
+       0.00635,
+       -0.00672,
+       -0.00587,
+       0.00061,
+       0.01639,
+       0.01054,
+       0.00843,
+       0.01204,
+       0.00633,
+       0.00209,
+       0.00494,
+       0.01235,
+       0.00548,
+       0.0071,
+       0.00125,
+       0.00821,
+       0.00743,
+       0.00277,
+       0.00987,
+       0.01783,
+       0.02381,
+       0.0135,
+       0.00794,
+       0.01132,
+       0.01087,
+       0.01527,
+       0.01216,
+       0.00363,
+       0.01028,
+       0.01616,
+       0.01242,
+       0.0145,
+       0.0149,
+       0.0108,
+       0.01558,
+       0.01232,
+       0.00684,
+       0.01457,
+       0.01881,
+       0.0196,
+       0.01629,
+       0.01945,
+       0.01842,
+       0.02095,
+       0.0196,
+       0.01499,
+       0.00758,
+       0.02136,
+       0.03302,
+       0.02921,
+       0.02598,
+       0.02515,
+       0.02485
+      ]
+     }
+    ],
+    "mean_fsc_auc": 0.04392256699908844,
+    "weighted_fsc_auc": 0.04392256699908844,
+    "mean_masked_fsc_auc": 0.05789569478322561,
+    "weighted_masked_fsc_auc": 0.0578956947832256
+   }
+  },
+  "rf_relax_s29": {
+   "engine": "relax",
+   "maps": [
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relax_out/run_it020_class001.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relax_out/run_it020_class002.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relax_out/run_it020_class003.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_e10076_10k_k4/s29/relax_out/run_it020_class004.mrc"
+   ],
+   "map_sha256": [
+    "87ce453d1fc0d275b3056628b2bb76fa5a61599c9dfb10c1a6d9ecc8bf59c4dc",
+    "b707d6d691944d3b31ec919f348d586f8a53962ea579e685c8b24e9d267207d5",
+    "905b91bd149697da75b92fce52315a0b860685239f57ff20c730126b5820f44b",
+    "b5b733b408d05bc5a8ab6b905a414e2a13e1399dab78861b91e4ac485dc9587d"
+   ],
+   "populations": [
+    0.657818236136,
+    0.329052772964,
+    0.000703412939125,
+    0.0124255779608
+   ],
+   "fit_to_reference": {
+    "hand": "mirror",
+    "rotation_matrix": [
+     [
+      0.6629131555828344,
+      0.7423365936619863,
+      -0.09737828230939344
+     ],
+     [
+      0.21440763707876193,
+      -0.06361250821180009,
+      0.974670618189194
+     ],
+     [
+      0.7173391898659314,
+      -0.6670006225704161,
+      -0.20133220351738684
+     ]
+    ],
+    "translation_voxels": [
+     -0.6507151719471804,
+     9.248592886605863,
+     -4.258292883978761
+    ],
+    "mirror_x": true,
+    "fit_lowpass_corr": 0.6760897965472886,
+    "start_lowpass_corrs": [
+     0.6760824325806423,
+     0.6661390091703993,
+     0.6760897965472886
+    ],
+    "failed_starts": [],
+    "fine_start_corr": 0.592673179433581,
+    "fine_corr": 0.5947709781630384,
+    "fine_evaluations": 997,
+    "lowpass_optimizer_success": true,
+    "lowpass_evaluations": 1104,
+    "fine_optimizer_success": true,
+    "fine_optimizer_message": "Optimization terminated successfully.",
+    "other_hand": {
+     "rotation_matrix": [
+      [
+       0.35282278318654803,
+       0.9351146064927902,
+       -0.03281396636086825
+      ],
+      [
+       0.14735868017333048,
+       -0.020899048382807817,
+       0.9888623004009542
+      ],
+      [
+       0.9240138002443861,
+       -0.35372857178990674,
+       -0.1451709146399534
+      ]
+     ],
+     "translation_voxels": [
+      -1.663904693030696,
+      8.084261294408783,
+      -6.84627943105442
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.6640117947384705,
+     "start_lowpass_corrs": [
+      0.6640049808492243,
+      0.6640077991126053,
+      0.6640117947384705
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.5762069796092519,
+     "fine_corr": 0.581229579697891,
+     "fine_evaluations": 848,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 3817,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "class_fits": {
+    "class_to_mean:1:proper": {
+     "rotation_matrix": [
+      [
+       0.16850731103106711,
+       0.9856397185933927,
+       -0.010937607609366073
+      ],
+      [
+       0.17772812169924773,
+       -0.019466663966512338,
+       0.9838870685964278
+      ],
+      [
+       0.9695452546871324,
+       -0.16773608474371926,
+       -0.17845617105752123
+      ]
+     ],
+     "translation_voxels": [
+      -2.607480114759888,
+      9.1452221704648,
+      -8.586980793458668
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.5864716652030395,
+     "start_lowpass_corrs": [
+      0.5864716652030395,
+      0.570272958795639,
+      0.5864700075113803
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.4964051308862222,
+     "fine_corr": 0.49838051139249345,
+     "fine_evaluations": 1019,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1814,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:1:mirror": {
+     "rotation_matrix": [
+      [
+       0.7584205983736018,
+       0.6082448121385995,
+       -0.23417182680482262
+      ],
+      [
+       0.31766002042731156,
+       -0.0312334330023446,
+       0.9476901308365557
+      ],
+      [
+       0.5691136155327405,
+       -0.7931347433881384,
+       -0.21690313839565378
+      ]
+     ],
+     "translation_voxels": [
+      -0.7912307793567145,
+      10.081255115823728,
+      -3.4338391371794343
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.577694280295063,
+     "start_lowpass_corrs": [
+      0.5688232719491004,
+      0.5702220042553411,
+      0.577694280295063
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.4814704276979065,
+     "fine_corr": 0.48769443972080423,
+     "fine_evaluations": 891,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1548,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:proper": {
+     "rotation_matrix": [
+      [
+       0.6976238148206643,
+       0.33887012621628454,
+       -0.6312590993825145
+      ],
+      [
+       0.6916672225878799,
+       -0.548333769527562,
+       0.47002822297524105
+      ],
+      [
+       -0.18686215826815214,
+       -0.7645241099885955,
+       -0.6169160551108345
+      ]
+     ],
+     "translation_voxels": [
+      1.1340986429457065,
+      8.077584841023585,
+      -5.9738141231242325
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.6253196260985782,
+     "start_lowpass_corrs": [
+      0.6060707469046206,
+      0.6253196260985782,
+      0.6060723858488286
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.5540370031115933,
+     "fine_corr": 0.5554073840357204,
+     "fine_evaluations": 1377,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1080,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:mirror": {
+     "rotation_matrix": [
+      [
+       0.4611982013586381,
+       0.8853829471268748,
+       0.0582516609247018
+      ],
+      [
+       0.05585479710853608,
+       -0.09448998135358078,
+       0.9939576877632992
+      ],
+      [
+       0.8855373852658741,
+       -0.45515786312083995,
+       -0.09303149432181212
+      ]
+     ],
+     "translation_voxels": [
+      0.40717772332590524,
+      9.84153353586499,
+      -7.339280551679646
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.6286691822651328,
+     "start_lowpass_corrs": [
+      0.6286688652480453,
+      0.6286627997351603,
+      0.6286691822651328
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.5553565889567347,
+     "fine_corr": 0.5584210289873485,
+     "fine_evaluations": 792,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1126,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:proper": {
+     "rotation_matrix": [
+      [
+       0.13881377597592529,
+       -0.35737934410529126,
+       -0.9235858054377933
+      ],
+      [
+       -0.2995081231146234,
+       -0.9040905124348598,
+       0.3048199952654486
+      ],
+      [
+       -0.9439415340939613,
+       0.23430823658622066,
+       -0.23253823444800312
+      ]
+     ],
+     "translation_voxels": [
+      -0.09445692802326713,
+      10.326221308302738,
+      -5.583821615048571
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.854665085538464,
+     "start_lowpass_corrs": [
+      0.854665085538464,
+      0.8546566122265732,
+      0.8546512565207472
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7820336255889421,
+     "fine_corr": 0.7827487314299172,
+     "fine_evaluations": 1065,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1084,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:mirror": {
+     "rotation_matrix": [
+      [
+       -0.2845024439525399,
+       -0.6801281643561398,
+       -0.675636025856067
+      ],
+      [
+       0.8228081848647523,
+       0.18844077794123218,
+       -0.5361685967384469
+      ],
+      [
+       0.4919807418025668,
+       -0.7084601282065572,
+       0.5060031585246727
+      ]
+     ],
+     "translation_voxels": [
+      -0.4394302157628849,
+      9.844742554355394,
+      -5.313854859301124
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.8582527449639007,
+     "start_lowpass_corrs": [
+      0.8582086275910955,
+      0.8582449630430318,
+      0.8582527449639007
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7853726061005178,
+     "fine_corr": 0.7856183396650123,
+     "fine_evaluations": 1158,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 6101,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:proper": {
+     "rotation_matrix": [
+      [
+       0.5109276032129767,
+       -0.22382360052888015,
+       0.8299734815771714
+      ],
+      [
+       -0.4813192709130185,
+       -0.8744564864996135,
+       0.060478199927838594
+      ],
+      [
+       0.7122392461264707,
+       -0.4303822127656296,
+       -0.5545145689809755
+      ]
+     ],
+     "translation_voxels": [
+      0.27982522050768843,
+      10.820278384263526,
+      -3.1495501204550744
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.8523869348962415,
+     "start_lowpass_corrs": [
+      0.8523828510876642,
+      0.8523869348962415,
+      0.8523836749802659
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7718039475265712,
+     "fine_corr": 0.7760015573407051,
+     "fine_evaluations": 1157,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1834,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:mirror": {
+     "rotation_matrix": [
+      [
+       0.11640742436354803,
+       -0.3756451182255477,
+       0.9194237634009463
+      ],
+      [
+       -0.7301138230463847,
+       -0.6599514390980483,
+       -0.17719453555064169
+      ],
+      [
+       0.6733372980532397,
+       -0.6506572394016142,
+       -0.3510869406067864
+      ]
+     ],
+     "translation_voxels": [
+      -1.5759430410248714,
+      12.944539122045674,
+      -5.682307502852213
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.8576606332059111,
+     "start_lowpass_corrs": [
+      0.8576512821631004,
+      0.8576467911367611,
+      0.8576606332059111
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7832508243784398,
+     "fine_corr": 0.7839059567913369,
+     "fine_evaluations": 1544,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1010,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "vs_reference": {
+    "per_class": [
+     {
+      "class": 2,
+      "reference_class": 1,
+      "population": 0.329052772964,
+      "fsc_auc": 0.04417021059105527,
+      "transform": "class_to_mean_mirror",
+      "res_05_A": 104.79984283447266,
+      "res_0143_A": 38.109033757990055,
+      "fsc": [
+       1.0,
+       0.94266,
+       0.88268,
+       0.85969,
+       0.47769,
+       0.49453,
+       0.50251,
+       0.34467,
+       0.31366,
+       0.21319,
+       0.18738,
+       0.08047,
+       0.01146,
+       0.02605,
+       0.1405,
+       0.18562,
+       0.12884,
+       0.10069,
+       0.01085,
+       -0.0583,
+       -0.04096,
+       0.00151,
+       -0.00444,
+       -0.026,
+       0.01151,
+       0.02092,
+       0.02766,
+       0.01533,
+       0.02237,
+       0.00583,
+       0.01777,
+       0.01483,
+       0.02436,
+       0.01955,
+       -0.0048,
+       -0.0285,
+       -0.01427,
+       0.0175,
+       0.01288,
+       -0.01962,
+       -0.0008,
+       -0.01913,
+       -0.00552,
+       0.00288,
+       0.01763,
+       0.01989,
+       7e-05,
+       -0.00557,
+       -0.01479,
+       0.00087,
+       0.0226,
+       0.01507,
+       -0.01286,
+       -0.02667,
+       0.0064,
+       0.01376,
+       -0.00717,
+       0.0091,
+       0.00491,
+       0.01959,
+       0.00788,
+       -0.03122,
+       -0.00933,
+       0.00666,
+       -0.00424,
+       -0.01227,
+       0.00937,
+       0.01991,
+       0.00481,
+       0.00796,
+       -0.00355,
+       -0.01324,
+       0.006,
+       0.01111,
+       0.00067,
+       0.00238,
+       0.00163,
+       -0.00182,
+       0.00448,
+       -0.00697,
+       -0.00681,
+       0.00352,
+       -0.00251,
+       0.00073,
+       0.00822,
+       0.00711,
+       0.00094,
+       -0.00455,
+       -0.00144,
+       -0.00047,
+       -0.00343,
+       -0.00437,
+       0.00946,
+       -0.00183,
+       0.002,
+       0.00067,
+       0.00392,
+       0.00409,
+       0.00021,
+       0.00523,
+       -0.00507,
+       -0.00999,
+       0.0144,
+       0.00494,
+       -0.00234,
+       -0.0,
+       -0.00261,
+       -0.0,
+       -0.00251,
+       0.0013,
+       0.00743,
+       0.00315,
+       0.0011,
+       0.00056,
+       0.00368,
+       -0.00221,
+       -0.00315,
+       -0.00566,
+       -0.00435,
+       0.01172,
+       0.00541,
+       -0.00033,
+       -0.00211,
+       -0.00229,
+       0.00231,
+       0.00034,
+       -0.00107
+      ],
+      "masked_fsc_auc": 0.05825250997635273,
+      "masked_res_05_A": 83.83987426757812,
+      "masked_res_0143_A": 34.93328094482422,
+      "masked_fsc": [
+       1.0,
+       0.95294,
+       0.89527,
+       0.86588,
+       0.50381,
+       0.4573,
+       0.48718,
+       0.36031,
+       0.32861,
+       0.23471,
+       0.21769,
+       0.15051,
+       0.10063,
+       0.08423,
+       0.20754,
+       0.26516,
+       0.19185,
+       0.17331,
+       0.11388,
+       0.0146,
+       -0.00411,
+       0.03526,
+       0.03247,
+       -0.00701,
+       0.01059,
+       0.02762,
+       0.02275,
+       0.01712,
+       0.01496,
+       -0.01178,
+       -0.03712,
+       -0.05422,
+       -0.04098,
+       -0.00734,
+       -0.01037,
+       -0.01808,
+       -0.00485,
+       0.03132,
+       0.07264,
+       0.0418,
+       0.0614,
+       0.06433,
+       0.03626,
+       0.01603,
+       0.00626,
+       0.00776,
+       0.00203,
+       0.03003,
+       0.01127,
+       0.00237,
+       0.01494,
+       -0.00938,
+       0.00751,
+       -0.00045,
+       -0.00366,
+       0.01236,
+       0.00274,
+       -0.00823,
+       -0.00317,
+       0.01185,
+       0.00323,
+       0.01006,
+       0.02329,
+       -0.00135,
+       -0.01964,
+       -0.00408,
+       0.02659,
+       0.01991,
+       0.00787,
+       0.00814,
+       0.01144,
+       0.00179,
+       0.01075,
+       0.01292,
+       0.00554,
+       -0.00541,
+       -0.0049,
+       0.00046,
+       0.01578,
+       0.01054,
+       0.00819,
+       0.01241,
+       0.00727,
+       0.00174,
+       0.00472,
+       0.01253,
+       0.0055,
+       0.00717,
+       0.00141,
+       0.00902,
+       0.00753,
+       0.00302,
+       0.0102,
+       0.0178,
+       0.02373,
+       0.01373,
+       0.0081,
+       0.01152,
+       0.0107,
+       0.01547,
+       0.01226,
+       0.00373,
+       0.01067,
+       0.0163,
+       0.0128,
+       0.01491,
+       0.01501,
+       0.01105,
+       0.01575,
+       0.01224,
+       0.00677,
+       0.01457,
+       0.01915,
+       0.02046,
+       0.01678,
+       0.01956,
+       0.01865,
+       0.02129,
+       0.02004,
+       0.01545,
+       0.00805,
+       0.02226,
+       0.03379,
+       0.02956,
+       0.02611,
+       0.02526,
+       0.02503
+      ]
+     }
+    ],
+    "mean_fsc_auc": 0.04417021059105527,
+    "weighted_fsc_auc": 0.04417021059105527,
+    "mean_masked_fsc_auc": 0.05825250997635273,
+    "weighted_masked_fsc_auc": 0.05825250997635272
+   }
+  }
+ },
+ "pairs": [
+  {
+   "a": "rf_relion_s29",
+   "b": "rf_relax_s29",
+   "pair_fit": {
+    "hand": "mirror",
+    "rotation_matrix": [
+     [
+      0.6336377357942378,
+      0.7700860452275653,
+      -0.07396419892975314
+     ],
+     [
+      0.1862162270636425,
+      -0.0590251049898049,
+      0.9807341911849126
+     ],
+     [
+      0.7508839701017287,
+      -0.6352035263808844,
+      -0.18080305173739586
+     ]
+    ],
+    "translation_voxels": [
+     -0.32879903331475124,
+     9.414093244805802,
+     -5.339485559239791
+    ],
+    "mirror_x": true,
+    "fit_lowpass_corr": 0.9773559186288434,
+    "start_lowpass_corrs": [
+     0.977354716429188,
+     0.9773559186288434,
+     0.9773549280988261
+    ],
+    "failed_starts": [],
+    "fine_start_corr": 0.9672806613709585,
+    "fine_corr": 0.9688476015639881,
+    "fine_evaluations": 453,
+    "lowpass_optimizer_success": true,
+    "lowpass_evaluations": 876,
+    "fine_optimizer_success": true,
+    "fine_optimizer_message": "Optimization terminated successfully."
+   },
+   "matching": [
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     3,
+     3
+    ],
+    [
+     4,
+     4
+    ]
+   ],
+   "per_class_transform": [
+    "class_fit_mirror",
+    "class_fit_mirror",
+    "class_fit_mirror",
+    "class_fit_mirror"
+   ],
+   "class_fits": {
+    "class_to_a1:proper": {
+     "rotation_matrix": [
+      [
+       -0.048345903836003845,
+       0.9983375667625203,
+       0.031381146775891544
+      ],
+      [
+       -0.15375881189860235,
+       -0.038482033347747524,
+       0.9873587802176842
+      ],
+      [
+       0.9869249725008533,
+       0.04290962479576149,
+       0.15536364682279086
+      ]
+     ],
+     "translation_voxels": [
+      -1.8252490979276685,
+      9.13378548015996,
+      -7.549628188563831
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.7079171892026175,
+     "start_lowpass_corrs": [
+      0.7079157953888765,
+      0.7079171892026175,
+      0.7079116926644579
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.6082515719835925,
+     "fine_corr": 0.617495541907499,
+     "fine_evaluations": 603,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1516,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a1:mirror": {
+     "rotation_matrix": [
+      [
+       0.6630656713254637,
+       0.7421632169770043,
+       -0.09766102024890183
+      ],
+      [
+       0.2151363236097646,
+       -0.06397539703497712,
+       0.9744862804769967
+      ],
+      [
+       0.7169799702734987,
+       -0.6671588326182614,
+       -0.202086155602139
+      ]
+     ],
+     "translation_voxels": [
+      -0.6386302379027813,
+      9.250323849924454,
+      -4.262218260415169
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9914476855038413,
+     "start_lowpass_corrs": [
+      0.9914457745179123,
+      0.9914462024181473,
+      0.9914476855038413
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9988908647703594,
+     "fine_corr": 0.9989025904240973,
+     "fine_evaluations": 670,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 741,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a2:proper": {
+     "rotation_matrix": [
+      [
+       0.5040000775072286,
+       0.861972140074645,
+       0.054662158828977236
+      ],
+      [
+       0.05818637812638261,
+       -0.09702995798869979,
+       0.9935791526865108
+      ],
+      [
+       0.8617414155494914,
+       -0.49758337692074067,
+       -0.09905814322361833
+      ]
+     ],
+     "translation_voxels": [
+      5.865712628678905,
+      10.475473270670138,
+      2.5123902257097397
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.8152125026716561,
+     "start_lowpass_corrs": [
+      0.8152118219962476,
+      0.8152069338141555,
+      0.8152125026716561
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.7528663160208711,
+     "fine_corr": 0.7539997751810802,
+     "fine_evaluations": 807,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1144,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a2:mirror": {
+     "rotation_matrix": [
+      [
+       0.4577520984261348,
+       0.8872848972668843,
+       0.056467047634567
+      ],
+      [
+       0.06089642375209342,
+       -0.09465249157730832,
+       0.9936460795536874
+      ],
+      [
+       0.8869919063670624,
+       -0.45140493674781834,
+       -0.09735985373357187
+      ]
+     ],
+     "translation_voxels": [
+      0.4318832608372222,
+      9.819081778743916,
+      -7.337656821117451
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9950389141082989,
+     "start_lowpass_corrs": [
+      0.9950387912113415,
+      0.9950389141082989,
+      0.9950374786093947
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9993976792822945,
+     "fine_corr": 0.9994076994703719,
+     "fine_evaluations": 563,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 905,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a3:proper": {
+     "rotation_matrix": [
+      [
+       -0.13190216798288684,
+       0.5032633666412469,
+       -0.8540069097368781
+      ],
+      [
+       0.7720906501675746,
+       -0.48815383079542696,
+       -0.4069175167077006
+      ],
+      [
+       -0.6216734239174346,
+       -0.7130440528303057,
+       -0.32417639136449466
+      ]
+     ],
+     "translation_voxels": [
+      -1.8182894154422529,
+      7.079802539855679,
+      -4.46181087711463
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9919989906634986,
+     "start_lowpass_corrs": [
+      0.9919989906634986,
+      0.9897421327430853,
+      0.9919986856212448
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9908968692317108,
+     "fine_corr": 0.9909026539539189,
+     "fine_evaluations": 783,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 833,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a3:mirror": {
+     "rotation_matrix": [
+      [
+       0.6649926158470921,
+       0.7411027803785445,
+       -0.0924742655230783
+      ],
+      [
+       0.20535996996762806,
+       -0.062398474466769716,
+       0.9766953020871529
+      ],
+      [
+       0.7180613508633764,
+       -0.6684856762110996,
+       -0.19368736948198867
+      ]
+     ],
+     "translation_voxels": [
+      -0.6476816403386313,
+      9.23197730176591,
+      -4.258305715157695
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9961533180754205,
+     "start_lowpass_corrs": [
+      0.989406876162666,
+      0.9860890673030626,
+      0.9961533180754205
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9966440469192697,
+     "fine_corr": 0.9966448457200194,
+     "fine_evaluations": 781,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 723,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a4:proper": {
+     "rotation_matrix": [
+      [
+       0.2648963622183254,
+       0.6608156645634433,
+       -0.7022482287276147
+      ],
+      [
+       0.9640432575182758,
+       -0.16545828850963779,
+       0.20795228394276577
+      ],
+      [
+       0.02122533667692883,
+       -0.7320834735404399,
+       -0.6808841846099194
+      ]
+     ],
+     "translation_voxels": [
+      3.544426117687563,
+      14.552820563068844,
+      -0.9447406023258442
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9737247017984854,
+     "start_lowpass_corrs": [
+      0.9625135667080142,
+      0.9737247017984854,
+      0.9577082852675468
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9560520745415556,
+     "fine_corr": 0.956085376800783,
+     "fine_evaluations": 737,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1012,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a4:mirror": {
+     "rotation_matrix": [
+      [
+       0.6635447969500297,
+       0.741829414615496,
+       -0.09694030148382121
+      ],
+      [
+       0.21391298401888875,
+       -0.06396033076555385,
+       0.9747565395299973
+      ],
+      [
+       0.7169027393647469,
+       -0.6675314192602406,
+       -0.20112748840407235
+      ]
+     ],
+     "translation_voxels": [
+      -0.6680134661317118,
+      9.250673913903285,
+      -4.261278779511198
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.995937422984663,
+     "start_lowpass_corrs": [
+      0.995937422984663,
+      0.9959368427463486,
+      0.9959355185929183
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9968575428507451,
+     "fine_corr": 0.9968595501205784,
+     "fine_evaluations": 586,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 696,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "per_class_fsc_auc": [
+    0.9961175415394968,
+    0.9909100907060954,
+    0.9909804698871272,
+    0.9985904606538605
+   ],
+   "mean_fsc_auc": 0.9941496406966449,
+   "weighted_fsc_auc": 0.9944262813899097,
+   "diagnostic_via_reference_frame_mean_fsc_auc": 0.9947646349438571,
+   "per_class_masked_fsc_auc": [
+    0.9974372909482281,
+    0.9937357572189369,
+    0.9987229232903401,
+    0.9995913956219705
+   ],
+   "mean_masked_fsc_auc": 0.9973718417698689,
+   "weighted_masked_fsc_auc": 0.9962434814913562
+  }
+ ],
+ "seconds": 1435.7,
+ "unconverged_fits": [
+  {
+   "fit": "/arms/rf_relion_s29/class_fits/class_to_mean:1:mirror",
+   "lowpass_optimizer_success": false,
+   "fine_optimizer_success": true,
+   "fine_optimizer_message": "Optimization terminated successfully."
+  }
+ ]
+}

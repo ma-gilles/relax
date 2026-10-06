@@ -1,0 +1,2414 @@
+{
+ "id": "pairfix_pdb_k4_5k128_initialmodel_vdam_200it",
+ "K": 4,
+ "box": 128,
+ "pixel_size_A": 4.25,
+ "reference": {
+  "kind": "gt",
+  "frame": "relax",
+  "paths": [
+   "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class001.mrc",
+   "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class002.mrc",
+   "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class003.mrc",
+   "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_pdb_k4_5k_128/reference_gt_class004.mrc"
+  ],
+  "sha256": [
+   "00bc4cf2c3dd820416ca26f71d0a7f487f52d67c8168325676e15972c1d6a3bc",
+   "16f4a97be56defea19c4033cfa7684e380fa08651309bbd7eeefa305ff11ee64",
+   "93c1190f2efa9cd2ad7937917ed21d737ca17368c1ef4ba4244c30f46e0d28d2",
+   "0a1cdb6fcd63fa45182561ce4447f03605b0fc7e597451cd7ee93f4549a122ce"
+  ]
+ },
+ "mask": {
+  "key": "pdb_k4_5k128_c1",
+  "path": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k4_5k_128/masks/pdb_k4_5k128_c1/pdb_k4_5k128_c1_mask.mrc",
+  "sha256": "41916d7c348cc82afc7e25c03fad1322f6692e5ba7283c2a428e56214a4078e9"
+ },
+ "fsc_auc_definition": "normalized trapezoid of the shell FSC over shells 1..n//2-2 (full spectrum)",
+ "alignment": "relax.diagnostics.gt_registration.fit_rigid_both_hands (both hands with proper rotations, 3 coarse HEALPix-2 starts, low-pass fit, fine stage at shell 16 on 48^3 samples; sign +1); cubic apply. Arm vs reference: candidates = arm consensus and (K>1) each class, fitted to the reference mean; each (class, reference class) pair uses its best candidate by unmasked FSC-AUC, then the Hungarian match (2026-10-01). Pair: b consensus registered onto a's reference-frame consensus; for K>1 each b class is also fitted on its own onto the a class its reference-frame map matches, and each matched class uses the better transform (2026-10-05); diagnostic_via_reference_frame uses the per-class reference-frame maps.",
+ "arms": {
+  "rf_relion_s29": {
+   "engine": "relion",
+   "maps": [
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relion/output/run_it200_class001.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relion/output/run_it200_class002.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relion/output/run_it200_class003.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relion/output/run_it200_class004.mrc"
+   ],
+   "map_sha256": [
+    "de3bf02e2ae7438cd969e222dc071f41d938d49c9497a7c404774d3d19d556c1",
+    "c675130df91b6691939b5143538deef02e1396e31e6bac9528d7cfa2182e6b80",
+    "551d2a5e9f01883c202f3c977ebd375c0a75ee90ece632f6d19023dbe596f52a",
+    "08042932159481e9c2e4673c54217b6024e7c142ea6a407d82ddcc22ad828eab"
+   ],
+   "populations": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fit_to_reference": {
+    "hand": "proper",
+    "rotation_matrix": [
+     [
+      0.5400051337226928,
+      -0.43208132008267924,
+      -0.7222881616008572
+     ],
+     [
+      -0.2584494717823305,
+      0.7315819491294978,
+      -0.6308658512261692
+     ],
+     [
+      0.8009983308900033,
+      0.5273457921928401,
+      0.28338681932640214
+     ]
+    ],
+    "translation_voxels": [
+     -0.305227059245674,
+     0.15366714720145094,
+     -0.505954558839547
+    ],
+    "mirror_x": false,
+    "fit_lowpass_corr": 0.9645759071247488,
+    "start_lowpass_corrs": [
+     0.9391925785714274,
+     0.9645759071247488,
+     0.9645757329555261
+    ],
+    "failed_starts": [],
+    "fine_start_corr": 0.9107455293923746,
+    "fine_corr": 0.914805770475693,
+    "fine_evaluations": 996,
+    "lowpass_optimizer_success": true,
+    "lowpass_evaluations": 989,
+    "fine_optimizer_success": true,
+    "fine_optimizer_message": "Optimization terminated successfully.",
+    "other_hand": {
+     "rotation_matrix": [
+      [
+       -0.27961884308563945,
+       -0.19361213293528184,
+       -0.9403869653348558
+      ],
+      [
+       -0.8951627397904254,
+       -0.30154858427450526,
+       0.3282561813781129
+      ],
+      [
+       -0.3471267374927312,
+       0.9335859860250111,
+       -0.08899570110606542
+      ]
+     ],
+     "translation_voxels": [
+      -0.34218275376277296,
+      -0.6154082149811746,
+      -0.340915867664529
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9652541087536674,
+     "start_lowpass_corrs": [
+      0.9652541087536674,
+      0.9652537260445242,
+      0.9652523743080875
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.900646004658684,
+     "fine_corr": 0.9034120547621611,
+     "fine_evaluations": 730,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 765,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "class_fits": {
+    "class_to_mean:1:proper": {
+     "rotation_matrix": [
+      [
+       0.5400051337226928,
+       -0.43208132008267924,
+       -0.7222881616008572
+      ],
+      [
+       -0.2584494717823305,
+       0.7315819491294978,
+       -0.6308658512261692
+      ],
+      [
+       0.8009983308900033,
+       0.5273457921928401,
+       0.28338681932640214
+      ]
+     ],
+     "translation_voxels": [
+      -0.305227059245674,
+      0.15366714720145094,
+      -0.505954558839547
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9645759071247488,
+     "start_lowpass_corrs": [
+      0.9391925785714274,
+      0.9645759071247488,
+      0.9645757329555261
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9107455293923746,
+     "fine_corr": 0.914805770475693,
+     "fine_evaluations": 996,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 989,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:1:mirror": {
+     "rotation_matrix": [
+      [
+       -0.27961884308563945,
+       -0.19361213293528184,
+       -0.9403869653348558
+      ],
+      [
+       -0.8951627397904254,
+       -0.30154858427450526,
+       0.3282561813781129
+      ],
+      [
+       -0.3471267374927312,
+       0.9335859860250111,
+       -0.08899570110606542
+      ]
+     ],
+     "translation_voxels": [
+      -0.34218275376277296,
+      -0.6154082149811746,
+      -0.340915867664529
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9652541087536674,
+     "start_lowpass_corrs": [
+      0.9652541087536674,
+      0.9652537260445242,
+      0.9652523743080875
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.900646004658684,
+     "fine_corr": 0.9034120547621611,
+     "fine_evaluations": 730,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 765,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:proper": {
+     "rotation_matrix": [
+      [
+       -0.9877209149498335,
+       0.009246511051345767,
+       0.15595478897437107
+      ],
+      [
+       -0.10521606635733363,
+       -0.7772850005142119,
+       -0.6202883259871255
+      ],
+      [
+       0.11548581536687712,
+       -0.6290807023021756,
+       0.7687135334050315
+      ]
+     ],
+     "translation_voxels": [
+      -0.8770046555400356,
+      1.465950881792656,
+      0.6782674278649099
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9176515631687496,
+     "start_lowpass_corrs": [
+      0.9176515631687496,
+      0.9171971424862467,
+      0.9171969040519437
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8700018551485096,
+     "fine_corr": 0.8702587196071565,
+     "fine_evaluations": 1129,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 2066,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:mirror": {
+     "rotation_matrix": [
+      [
+       0.9867916848584652,
+       0.06205286132382923,
+       0.14963827416712966
+      ],
+      [
+       -0.16183071296579535,
+       0.3361051672456112,
+       0.9278168660311054
+      ],
+      [
+       0.0072794941564503085,
+       -0.9397780370663732,
+       0.34170784306553575
+      ]
+     ],
+     "translation_voxels": [
+      -0.8893794516574954,
+      -0.9849677675432766,
+      1.0214674279584122
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9180309298290421,
+     "start_lowpass_corrs": [
+      0.9180279845672081,
+      0.9180309298290421,
+      0.9180268489873499
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8677944334374148,
+     "fine_corr": 0.8683032774997566,
+     "fine_evaluations": 699,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1623,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:proper": {
+     "rotation_matrix": [
+      [
+       0.2658349467740849,
+       0.8409129551274663,
+       0.4713779619078634
+      ],
+      [
+       0.22959250890497973,
+       0.41967511524983103,
+       -0.8781572054562656
+      ],
+      [
+       -0.936279371196619,
+       0.34166972288868785,
+       -0.0815030032135689
+      ]
+     ],
+     "translation_voxels": [
+      -2.0710177449815776,
+      0.40572272880916277,
+      -1.054394305882081
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9007887225633777,
+     "start_lowpass_corrs": [
+      0.9007887225633777,
+      0.900784787974969,
+      0.9007867688686926
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8580048109130417,
+     "fine_corr": 0.8588553447002018,
+     "fine_evaluations": 1240,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1021,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:mirror": {
+     "rotation_matrix": [
+      [
+       0.22509123417783172,
+       -0.8103904110314976,
+       -0.5409263517379242
+      ],
+      [
+       -0.4358374477596322,
+       0.41278865676861987,
+       -0.7997819977803502
+      ],
+      [
+       0.8714239240614582,
+       0.41577987752097695,
+       -0.26028338022618924
+      ]
+     ],
+     "translation_voxels": [
+      -0.2627126171113776,
+      0.33214650248237876,
+      -0.727126948875342
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.8883651895009269,
+     "start_lowpass_corrs": [
+      0.8883644786834076,
+      0.8883636648742852,
+      0.8883651895009269
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8401070997262386,
+     "fine_corr": 0.8407468325774339,
+     "fine_evaluations": 862,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 846,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:proper": {
+     "rotation_matrix": [
+      [
+       -0.607473549491686,
+       0.47360000736948954,
+       -0.6377138227195575
+      ],
+      [
+       -0.7488695326784309,
+       -0.6091797268154829,
+       0.26094919709208103
+      ],
+      [
+       -0.26489679064488547,
+       0.6360841873971028,
+       0.7247251871222682
+      ]
+     ],
+     "translation_voxels": [
+      -0.7851886284338534,
+      0.37277769252197535,
+      -0.9792360653952602
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9048080686009773,
+     "start_lowpass_corrs": [
+      0.8998368694734412,
+      0.9048080686009773,
+      0.8998361329243753
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8568841514985774,
+     "fine_corr": 0.857432721362875,
+     "fine_evaluations": 1006,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 756,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:mirror": {
+     "rotation_matrix": [
+      [
+       0.008286610937473848,
+       -0.9397506097606165,
+       0.3417603305442578
+      ],
+      [
+       0.9705365778266881,
+       -0.0747469771269974,
+       -0.22906689090926463
+      ],
+      [
+       0.24081130201805678,
+       0.3335890898469636,
+       0.9114429416894085
+      ]
+     ],
+     "translation_voxels": [
+      -0.9091319187424509,
+      0.4608205612510383,
+      -0.719593019198812
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9049813774097593,
+     "start_lowpass_corrs": [
+      0.904977706138696,
+      0.9049813774097593,
+      0.9049768540730745
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8567412075809169,
+     "fine_corr": 0.8574639306092146,
+     "fine_evaluations": 756,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 967,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "vs_reference": {
+    "per_class": [
+     {
+      "class": 1,
+      "reference_class": 2,
+      "population": 1.0,
+      "fsc_auc": 0.21569685677353567,
+      "transform": "consensus_proper",
+      "res_05_A": 54.4,
+      "res_0143_A": 18.133333333333333,
+      "fsc": [
+       1.0,
+       0.9989,
+       0.98984,
+       0.94642,
+       0.84168,
+       0.84525,
+       0.79905,
+       0.71217,
+       0.64019,
+       0.63179,
+       0.48727,
+       0.43899,
+       0.56098,
+       0.49621,
+       0.39159,
+       0.36948,
+       0.40367,
+       0.35848,
+       0.33544,
+       0.33716,
+       0.2899,
+       0.22291,
+       0.15829,
+       0.14683,
+       0.15466,
+       0.15325,
+       0.18456,
+       0.19902,
+       0.19828,
+       0.15438,
+       0.11981,
+       0.07752,
+       0.05171,
+       0.02076,
+       -0.00371,
+       0.01612,
+       0.05436,
+       0.01645,
+       -0.0656,
+       -0.06465,
+       -0.01405,
+       -0.01557,
+       -0.02289,
+       -0.04179,
+       -0.03457,
+       -0.03729,
+       -0.03014,
+       0.0041,
+       0.02373,
+       0.03419,
+       0.03221,
+       0.01266,
+       0.0027,
+       0.00301,
+       0.00528,
+       -0.00187,
+       -0.00368,
+       0.01532,
+       0.01278,
+       0.00482,
+       0.01828,
+       0.01737,
+       0.00592
+      ],
+      "masked_fsc_auc": 0.2157030503026575,
+      "masked_res_05_A": 54.4,
+      "masked_res_0143_A": 18.133333333333333,
+      "masked_fsc": [
+       1.0,
+       0.9988,
+       0.98984,
+       0.94776,
+       0.8454,
+       0.84498,
+       0.80291,
+       0.71105,
+       0.64081,
+       0.63727,
+       0.48967,
+       0.43518,
+       0.56063,
+       0.49999,
+       0.39386,
+       0.37017,
+       0.4024,
+       0.35808,
+       0.3353,
+       0.33807,
+       0.28978,
+       0.22221,
+       0.15687,
+       0.14559,
+       0.15457,
+       0.15443,
+       0.18499,
+       0.19856,
+       0.19663,
+       0.15538,
+       0.12403,
+       0.0822,
+       0.04786,
+       0.00901,
+       -0.01674,
+       0.00756,
+       0.04186,
+       0.01199,
+       -0.04901,
+       -0.04062,
+       -0.011,
+       -0.01134,
+       -0.01027,
+       -0.02345,
+       -0.03923,
+       -0.03007,
+       0.00392,
+       0.02524,
+       0.02725,
+       0.01599,
+       0.02146,
+       0.01899,
+       0.01428,
+       0.00179,
+       -0.0106,
+       -0.02024,
+       -0.01749,
+       0.00359,
+       0.01622,
+       0.00783,
+       -0.00105,
+       -0.00111,
+       -0.00546
+      ]
+     },
+     {
+      "class": 2,
+      "reference_class": 1,
+      "population": 0.0,
+      "fsc_auc": 0.07048738037354749,
+      "transform": "class_to_mean_mirror",
+      "res_05_A": 90.66666666666667,
+      "res_0143_A": 90.66666666666667,
+      "fsc": [
+       1.0,
+       0.99134,
+       0.97192,
+       0.9376,
+       0.87389,
+       0.66992,
+       0.08828,
+       -0.05032,
+       -0.02811,
+       0.01185,
+       0.13302,
+       0.12904,
+       -0.00354,
+       -0.17607,
+       -0.06735,
+       -0.01799,
+       0.00518,
+       0.0174,
+       -0.00095,
+       0.00585,
+       0.08186,
+       0.07451,
+       0.05622,
+       0.04205,
+       -0.03948,
+       -0.07451,
+       -0.08862,
+       0.00868,
+       0.11223,
+       0.07696,
+       0.00328,
+       -0.06756,
+       -0.02161,
+       0.00734,
+       0.02151,
+       -0.00927,
+       -0.03239,
+       -0.06086,
+       0.04286,
+       0.06407,
+       0.03216,
+       -0.02628,
+       -0.00655,
+       0.02076,
+       0.02468,
+       0.02634,
+       0.00137,
+       -0.01139,
+       -0.03457,
+       -0.00578,
+       0.01367,
+       0.01922,
+       0.01689,
+       0.01569,
+       0.01509,
+       -0.00036,
+       -0.03419,
+       -0.02236,
+       -0.00376,
+       0.02025,
+       0.02802,
+       0.0171,
+       0.00231
+      ],
+      "masked_fsc_auc": 0.06999809786014512,
+      "masked_res_05_A": 90.66666666666667,
+      "masked_res_0143_A": 90.66666666666667,
+      "masked_fsc": [
+       1.0,
+       0.99128,
+       0.97176,
+       0.93724,
+       0.87324,
+       0.67016,
+       0.09659,
+       -0.04929,
+       -0.03003,
+       0.00804,
+       0.13238,
+       0.12624,
+       -0.00695,
+       -0.16837,
+       -0.06289,
+       -0.0146,
+       0.0099,
+       0.01882,
+       -6e-05,
+       0.00312,
+       0.06559,
+       0.0675,
+       0.05304,
+       0.04314,
+       -0.02774,
+       -0.0685,
+       -0.08693,
+       -4e-05,
+       0.10682,
+       0.07655,
+       0.00627,
+       -0.06071,
+       -0.02389,
+       -0.00093,
+       0.00576,
+       -0.00978,
+       -0.03118,
+       -0.06281,
+       0.02902,
+       0.06091,
+       0.03294,
+       -0.02387,
+       -0.005,
+       0.02363,
+       0.02817,
+       0.02399,
+       -0.00388,
+       -0.01516,
+       -0.03328,
+       -0.00298,
+       0.01523,
+       0.02221,
+       0.02433,
+       0.01998,
+       0.01443,
+       -0.00318,
+       -0.03585,
+       -0.0222,
+       -0.00605,
+       0.01764,
+       0.02723,
+       0.01671,
+       0.00352
+      ]
+     },
+     {
+      "class": 3,
+      "reference_class": 3,
+      "population": 0.0,
+      "fsc_auc": 0.1111874536099327,
+      "transform": "class_to_mean_proper",
+      "res_05_A": 108.8,
+      "res_0143_A": 60.44444444444444,
+      "fsc": [
+       1.0,
+       0.99833,
+       0.98998,
+       0.95062,
+       0.78772,
+       0.42579,
+       0.53505,
+       0.4732,
+       0.19169,
+       0.11651,
+       0.28263,
+       0.10653,
+       -0.01637,
+       0.05218,
+       0.19021,
+       0.18276,
+       0.11086,
+       -0.005,
+       0.04583,
+       0.06049,
+       0.04112,
+       0.00824,
+       0.01806,
+       0.00743,
+       0.02812,
+       0.0614,
+       0.01882,
+       0.00118,
+       0.11573,
+       0.13173,
+       0.10609,
+       0.00107,
+       0.01722,
+       0.0659,
+       0.05958,
+       0.02145,
+       0.02934,
+       0.02794,
+       0.00437,
+       -0.00519,
+       -0.01698,
+       -0.01452,
+       0.03937,
+       0.03744,
+       0.03469,
+       0.00694,
+       -0.03858,
+       -0.03304,
+       -0.01116,
+       0.01538,
+       0.02733,
+       0.04643,
+       0.02737,
+       -0.0609,
+       -0.05432,
+       -0.02288,
+       -0.00214,
+       -0.02245,
+       -0.033,
+       -0.01301,
+       0.04893,
+       0.06405,
+       0.03605
+      ],
+      "masked_fsc_auc": 0.11095789104834679,
+      "masked_res_05_A": 108.8,
+      "masked_res_0143_A": 60.44444444444444,
+      "masked_fsc": [
+       1.0,
+       0.99826,
+       0.98988,
+       0.95094,
+       0.79025,
+       0.43451,
+       0.54484,
+       0.48044,
+       0.19646,
+       0.11977,
+       0.27866,
+       0.10154,
+       -0.01591,
+       0.05157,
+       0.1835,
+       0.17494,
+       0.09717,
+       -0.01675,
+       0.0419,
+       0.0614,
+       0.05727,
+       0.01608,
+       0.02172,
+       0.00708,
+       0.02251,
+       0.05924,
+       0.01928,
+       0.00204,
+       0.11055,
+       0.13012,
+       0.10195,
+       0.00284,
+       0.02067,
+       0.06792,
+       0.05613,
+       0.01421,
+       0.02389,
+       0.01701,
+       -0.02151,
+       -0.01062,
+       -0.0135,
+       -0.00234,
+       0.04802,
+       0.03884,
+       0.03508,
+       0.00792,
+       -0.03696,
+       -0.03134,
+       -0.00922,
+       0.01443,
+       0.02772,
+       0.04684,
+       0.02705,
+       -0.05941,
+       -0.05183,
+       -0.01952,
+       -0.00538,
+       -0.02576,
+       -0.03364,
+       -0.01092,
+       0.05333,
+       0.06666,
+       0.0395
+      ]
+     },
+     {
+      "class": 4,
+      "reference_class": 4,
+      "population": 0.0,
+      "fsc_auc": 0.0704365946319596,
+      "transform": "class_to_mean_proper",
+      "res_05_A": 108.8,
+      "res_0143_A": 108.8,
+      "fsc": [
+       1.0,
+       0.99862,
+       0.99002,
+       0.94649,
+       0.69986,
+       0.09758,
+       0.67971,
+       0.47964,
+       0.08658,
+       -0.04065,
+       0.20412,
+       -0.00114,
+       -0.16042,
+       0.09449,
+       0.04453,
+       -0.03781,
+       -0.03708,
+       -0.05226,
+       -0.06647,
+       -0.03037,
+       -0.04894,
+       -0.09968,
+       -0.08714,
+       -0.02698,
+       0.00181,
+       -0.00084,
+       0.00458,
+       0.01004,
+       0.01088,
+       0.02475,
+       0.04137,
+       0.00152,
+       -0.05595,
+       -0.04237,
+       -0.04763,
+       0.0269,
+       0.05602,
+       0.06122,
+       -0.01873,
+       -0.05756,
+       -0.04467,
+       -0.03127,
+       0.03925,
+       0.04175,
+       0.02478,
+       -0.01587,
+       -0.02388,
+       -0.00165,
+       -0.0044,
+       0.00599,
+       0.00576,
+       0.00736,
+       0.01067,
+       0.02074,
+       0.01712,
+       0.02332,
+       0.03238,
+       0.0197,
+       0.02626,
+       0.03299,
+       -0.01256,
+       -0.02197,
+       -0.00915
+      ],
+      "masked_fsc_auc": 0.07066399318201952,
+      "masked_res_05_A": 108.8,
+      "masked_res_0143_A": 108.8,
+      "masked_fsc": [
+       1.0,
+       0.99866,
+       0.99034,
+       0.94819,
+       0.7066,
+       0.11531,
+       0.68671,
+       0.48569,
+       0.09255,
+       -0.04073,
+       0.21043,
+       0.01048,
+       -0.13629,
+       0.12567,
+       0.05851,
+       -0.03416,
+       -0.04258,
+       -0.05207,
+       -0.06814,
+       -0.03814,
+       -0.05078,
+       -0.08828,
+       -0.07808,
+       -0.02807,
+       -0.0295,
+       -0.02005,
+       -0.01151,
+       -0.01067,
+       0.00813,
+       0.02191,
+       0.0395,
+       0.00637,
+       -0.05412,
+       -0.04545,
+       -0.0563,
+       0.01807,
+       0.04947,
+       0.04966,
+       -0.031,
+       -0.05981,
+       -0.04544,
+       -0.03344,
+       0.02853,
+       0.03291,
+       0.01363,
+       -0.02647,
+       -0.02312,
+       0.00665,
+       0.0102,
+       0.01349,
+       0.00737,
+       0.01104,
+       0.02056,
+       0.02222,
+       0.0124,
+       0.01637,
+       0.02906,
+       0.02423,
+       0.03319,
+       0.04098,
+       -0.00738,
+       -0.01945,
+       -0.00839
+      ]
+     }
+    ],
+    "mean_fsc_auc": 0.11695207134724388,
+    "weighted_fsc_auc": 0.21569685677353567,
+    "mean_masked_fsc_auc": 0.11683075809829224,
+    "weighted_masked_fsc_auc": 0.2157030503026575
+   }
+  },
+  "rf_relax_s29": {
+   "engine": "relax",
+   "maps": [
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relax_out/run_it200_class001.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relax_out/run_it200_class002.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relax_out/run_it200_class003.mrc",
+    "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_k1plus_20260925/refresh_20260927/vdam_pdb_k4/s29/relax_out/run_it200_class004.mrc"
+   ],
+   "map_sha256": [
+    "f426a3340070be437b205413107a52ce7fa5ca744c98964312af210a32830559",
+    "c93b04175d9fcaa13d4c2cafad0fb8203a56aeb24c7c9d60b6de1e5253c48da5",
+    "6718c16f125f160c8bf4f30a8bdd3d6ad16418622bbea878fb70ea4dfe4f04b1",
+    "14fdf44963a2d2a1706a029078d86d9e964a688f2b2dd3d2c1063fc7bb856f6a"
+   ],
+   "populations": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "fit_to_reference": {
+    "hand": "proper",
+    "rotation_matrix": [
+     [
+      0.5220706470169161,
+      -0.4241724419877603,
+      -0.7399459297688439
+     ],
+     [
+      -0.26821885826461345,
+      0.7418952820430073,
+      -0.6145323706311604
+     ],
+     [
+      0.8096300905935784,
+      0.5192967648083963,
+      0.2735507018177202
+     ]
+    ],
+    "translation_voxels": [
+     -0.24785708769558268,
+     0.15380202483224598,
+     -0.5484412369042236
+    ],
+    "mirror_x": false,
+    "fit_lowpass_corr": 0.9656375476563501,
+    "start_lowpass_corrs": [
+     0.9656367222728519,
+     0.9656353568106156,
+     0.9656375476563501
+    ],
+    "failed_starts": [],
+    "fine_start_corr": 0.9164755136127053,
+    "fine_corr": 0.919338230311838,
+    "fine_evaluations": 822,
+    "lowpass_optimizer_success": true,
+    "lowpass_evaluations": 745,
+    "fine_optimizer_success": true,
+    "fine_optimizer_message": "Optimization terminated successfully.",
+    "other_hand": {
+     "rotation_matrix": [
+      [
+       -0.27386542404541997,
+       -0.19117093707716376,
+       -0.9425770007428897
+      ],
+      [
+       -0.8962686946613503,
+       -0.3047563376922881,
+       0.32222042394364675
+      ],
+      [
+       -0.3488554951300922,
+       0.9330472911130621,
+       -0.087878302578709
+      ]
+     ],
+     "translation_voxels": [
+      -0.30171877665638014,
+      -0.5862594898331238,
+      -0.35524314105351895
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9633072809621248,
+     "start_lowpass_corrs": [
+      0.9633058397117672,
+      0.9633069962155903,
+      0.9633072809621248
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9009452018064253,
+     "fine_corr": 0.9030780942045827,
+     "fine_evaluations": 796,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1070,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "class_fits": {
+    "class_to_mean:1:proper": {
+     "rotation_matrix": [
+      [
+       0.5220706470169161,
+       -0.4241724419877603,
+       -0.7399459297688439
+      ],
+      [
+       -0.26821885826461345,
+       0.7418952820430073,
+       -0.6145323706311604
+      ],
+      [
+       0.8096300905935784,
+       0.5192967648083963,
+       0.2735507018177202
+      ]
+     ],
+     "translation_voxels": [
+      -0.24785708769558268,
+      0.15380202483224598,
+      -0.5484412369042236
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9656375476563501,
+     "start_lowpass_corrs": [
+      0.9656367222728519,
+      0.9656353568106156,
+      0.9656375476563501
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9164755136127053,
+     "fine_corr": 0.919338230311838,
+     "fine_evaluations": 822,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 745,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:1:mirror": {
+     "rotation_matrix": [
+      [
+       -0.27386542404541997,
+       -0.19117093707716376,
+       -0.9425770007428897
+      ],
+      [
+       -0.8962686946613503,
+       -0.3047563376922881,
+       0.32222042394364675
+      ],
+      [
+       -0.3488554951300922,
+       0.9330472911130621,
+       -0.087878302578709
+      ]
+     ],
+     "translation_voxels": [
+      -0.30171877665638014,
+      -0.5862594898331238,
+      -0.35524314105351895
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9633072809621248,
+     "start_lowpass_corrs": [
+      0.9633058397117672,
+      0.9633069962155903,
+      0.9633072809621248
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9009452018064253,
+     "fine_corr": 0.9030780942045827,
+     "fine_evaluations": 796,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1070,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:proper": {
+     "rotation_matrix": [
+      [
+       -0.9872313937728464,
+       0.009497030242124817,
+       0.15900937571697832
+      ],
+      [
+       -0.10723108652534022,
+       -0.777794264406464,
+       -0.6193041065090739
+      ],
+      [
+       0.11779503059092948,
+       -0.6284472043640479,
+       0.7688812925901465
+      ]
+     ],
+     "translation_voxels": [
+      -0.8859383551847719,
+      1.4664666069669599,
+      0.6716018365251234
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9175235582543642,
+     "start_lowpass_corrs": [
+      0.9175235582543642,
+      0.9171971937952641,
+      0.9171903650863306
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8696449507213219,
+     "fine_corr": 0.8702591725839227,
+     "fine_evaluations": 1042,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1615,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:2:mirror": {
+     "rotation_matrix": [
+      [
+       0.9875787600742513,
+       0.05944397399528344,
+       0.14544623269735163
+      ],
+      [
+       -0.15698908440557136,
+       0.3348405471476005,
+       0.9291050722945149
+      ],
+      [
+       0.006528401619422655,
+       -0.9403979061767116,
+       0.3400134674255594
+      ]
+     ],
+     "translation_voxels": [
+      -0.8794555315185113,
+      -0.9822241520923619,
+      1.0194508559901563
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9180319047048343,
+     "start_lowpass_corrs": [
+      0.9180295538856499,
+      0.9180319047048343,
+      0.918026113802214
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8677696265933869,
+     "fine_corr": 0.8683043721058885,
+     "fine_evaluations": 1168,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1304,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:proper": {
+     "rotation_matrix": [
+      [
+       0.26984591734182634,
+       0.8422942431690634,
+       0.46660860345497535
+      ],
+      [
+       0.22569886791172156,
+       0.4157574584411487,
+       -0.8810254007541005
+      ],
+      [
+       -0.9360786302001104,
+       0.3430541410255979,
+       -0.07791440436705993
+      ]
+     ],
+     "translation_voxels": [
+      -2.0744878275684786,
+      0.41622250945283157,
+      -1.0619740524691053
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9007890652863162,
+     "start_lowpass_corrs": [
+      0.9007887473221385,
+      0.9007848151602333,
+      0.9007890652863162
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8580403026231983,
+     "fine_corr": 0.8588579685550446,
+     "fine_evaluations": 1351,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1560,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:3:mirror": {
+     "rotation_matrix": [
+      [
+       0.2337077779065851,
+       -0.8112673240450962,
+       -0.5359347007636988
+      ],
+      [
+       -0.43506304848903554,
+       0.40568762506770345,
+       -0.80382690593582
+      ],
+      [
+       0.8695405789181971,
+       0.4210259847130998,
+       -0.2581400817598291
+      ]
+     ],
+     "translation_voxels": [
+      -0.26531855346751326,
+      0.3371016810892922,
+      -0.7337077741365623
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.888366407867061,
+     "start_lowpass_corrs": [
+      0.8883645586771609,
+      0.8883602911784861,
+      0.888366407867061
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.840072683347076,
+     "fine_corr": 0.8407513469739255,
+     "fine_evaluations": 1066,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1370,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:proper": {
+     "rotation_matrix": [
+      [
+       -0.6110583972174894,
+       0.47067464787453667,
+       -0.6364534633719687
+      ],
+      [
+       -0.7452657669970992,
+       -0.6130736200880731,
+       0.2621443741420568
+      ],
+      [
+       -0.26680811781544134,
+       0.6345124996406976,
+       0.7254014861216481
+      ]
+     ],
+     "translation_voxels": [
+      -0.7861070917727975,
+      0.3731442628393297,
+      -0.9771298070836131
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9048080748192512,
+     "start_lowpass_corrs": [
+      0.8998446512435919,
+      0.9048080748192512,
+      0.8998382293150905
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8568841222962179,
+     "fine_corr": 0.8574320624550993,
+     "fine_evaluations": 556,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 718,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_mean:4:mirror": {
+     "rotation_matrix": [
+      [
+       -0.0023647718503803095,
+       -0.9392413689897585,
+       0.3432492660332139
+      ],
+      [
+       0.9715517805834057,
+       -0.08344509289057112,
+       -0.2216394687723691
+      ],
+      [
+       0.2368154249606847,
+       0.3329603088218299,
+       0.9127189530463153
+      ]
+     ],
+     "translation_voxels": [
+      -0.9087971830392333,
+      0.46487637813491495,
+      -0.7160577618775401
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9049803302354845,
+     "start_lowpass_corrs": [
+      0.9049774891360833,
+      0.9049803302354845,
+      0.9049784928686461
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.8567937248578258,
+     "fine_corr": 0.8574633257315708,
+     "fine_evaluations": 898,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 812,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "vs_reference": {
+    "per_class": [
+     {
+      "class": 1,
+      "reference_class": 2,
+      "population": 1.0,
+      "fsc_auc": 0.23891539575407547,
+      "transform": "consensus_proper",
+      "res_05_A": 49.45454545454545,
+      "res_0143_A": 17.548387096774192,
+      "fsc": [
+       1.0,
+       0.99892,
+       0.99016,
+       0.94834,
+       0.84868,
+       0.85641,
+       0.81149,
+       0.72635,
+       0.65825,
+       0.65614,
+       0.51128,
+       0.48044,
+       0.60023,
+       0.52705,
+       0.43274,
+       0.43312,
+       0.46442,
+       0.39943,
+       0.37655,
+       0.39092,
+       0.35366,
+       0.28989,
+       0.23131,
+       0.22543,
+       0.22914,
+       0.21257,
+       0.22841,
+       0.23667,
+       0.24886,
+       0.21358,
+       0.14759,
+       0.08974,
+       0.07987,
+       0.08576,
+       0.08119,
+       0.08131,
+       0.09831,
+       0.04655,
+       -0.03847,
+       -0.04552,
+       -0.02264,
+       -0.02362,
+       -0.01705,
+       -0.02624,
+       -0.03538,
+       -0.04538,
+       -0.03258,
+       0.01132,
+       0.01967,
+       0.00434,
+       -0.00612,
+       -0.00349,
+       0.00093,
+       0.01639,
+       0.00766,
+       -0.01281,
+       -0.01454,
+       0.01729,
+       0.01131,
+       -0.00107,
+       0.00682,
+       0.00975,
+       0.0039
+      ],
+      "masked_fsc_auc": 0.23944135216802112,
+      "masked_res_05_A": 49.45454545454545,
+      "masked_res_0143_A": 17.548387096774192,
+      "masked_fsc": [
+       1.0,
+       0.99882,
+       0.99016,
+       0.94954,
+       0.85193,
+       0.85621,
+       0.81488,
+       0.72517,
+       0.65787,
+       0.66011,
+       0.51289,
+       0.47579,
+       0.59872,
+       0.52996,
+       0.43487,
+       0.43393,
+       0.46417,
+       0.39962,
+       0.37596,
+       0.38994,
+       0.35152,
+       0.28866,
+       0.23188,
+       0.22688,
+       0.2306,
+       0.21335,
+       0.22835,
+       0.23516,
+       0.24612,
+       0.21261,
+       0.15096,
+       0.09445,
+       0.07892,
+       0.0779,
+       0.06993,
+       0.07106,
+       0.08726,
+       0.04599,
+       -0.0251,
+       -0.03286,
+       -0.02255,
+       -0.0159,
+       0.00108,
+       -0.00644,
+       -0.03911,
+       -0.04627,
+       -0.01219,
+       0.0195,
+       0.02079,
+       0.00293,
+       0.00751,
+       0.01104,
+       0.01702,
+       0.01528,
+       0.00054,
+       -0.0234,
+       -0.02729,
+       -0.00556,
+       0.00783,
+       0.0056,
+       -0.00085,
+       -0.00387,
+       -0.00899
+      ]
+     },
+     {
+      "class": 2,
+      "reference_class": 1,
+      "population": 0.0,
+      "fsc_auc": 0.07052402750435632,
+      "transform": "class_to_mean_mirror",
+      "res_05_A": 90.66666666666667,
+      "res_0143_A": 90.66666666666667,
+      "fsc": [
+       1.0,
+       0.99135,
+       0.97193,
+       0.93757,
+       0.87375,
+       0.66927,
+       0.08716,
+       -0.05124,
+       -0.02901,
+       0.0107,
+       0.13275,
+       0.12933,
+       -0.00281,
+       -0.17515,
+       -0.06701,
+       -0.01787,
+       0.0048,
+       0.01629,
+       -0.0017,
+       0.00527,
+       0.08181,
+       0.07502,
+       0.05657,
+       0.04167,
+       -0.03988,
+       -0.07421,
+       -0.08789,
+       0.00979,
+       0.11237,
+       0.07692,
+       0.00315,
+       -0.06805,
+       -0.0216,
+       0.0074,
+       0.02155,
+       -0.00923,
+       -0.03213,
+       -0.06035,
+       0.0436,
+       0.06445,
+       0.03242,
+       -0.02717,
+       -0.00726,
+       0.0208,
+       0.02527,
+       0.02696,
+       0.00199,
+       -0.0106,
+       -0.03389,
+       -0.00628,
+       0.01309,
+       0.01955,
+       0.01797,
+       0.01568,
+       0.01459,
+       -0.00044,
+       -0.03344,
+       -0.02175,
+       -0.00348,
+       0.02018,
+       0.02853,
+       0.01721,
+       0.00271
+      ],
+      "masked_fsc_auc": 0.07002851246483902,
+      "masked_res_05_A": 90.66666666666667,
+      "masked_res_0143_A": 90.66666666666667,
+      "masked_fsc": [
+       1.0,
+       0.99129,
+       0.97176,
+       0.93721,
+       0.87309,
+       0.66952,
+       0.09546,
+       -0.05021,
+       -0.03091,
+       0.00694,
+       0.13211,
+       0.12652,
+       -0.00623,
+       -0.16746,
+       -0.06253,
+       -0.01445,
+       0.00955,
+       0.01771,
+       -0.00082,
+       0.00252,
+       0.06554,
+       0.068,
+       0.05338,
+       0.04275,
+       -0.02813,
+       -0.06819,
+       -0.08619,
+       0.00095,
+       0.10693,
+       0.07652,
+       0.00619,
+       -0.06113,
+       -0.02388,
+       -0.00091,
+       0.00568,
+       -0.0098,
+       -0.03089,
+       -0.06222,
+       0.02988,
+       0.06132,
+       0.03321,
+       -0.02479,
+       -0.00577,
+       0.02364,
+       0.02875,
+       0.02466,
+       -0.00325,
+       -0.01439,
+       -0.03265,
+       -0.00337,
+       0.01471,
+       0.02255,
+       0.02533,
+       0.01995,
+       0.01398,
+       -0.00318,
+       -0.03513,
+       -0.02164,
+       -0.00585,
+       0.01745,
+       0.02758,
+       0.01671,
+       0.00406
+      ]
+     },
+     {
+      "class": 3,
+      "reference_class": 3,
+      "population": 0.0,
+      "fsc_auc": 0.11122137679853027,
+      "transform": "class_to_mean_proper",
+      "res_05_A": 108.8,
+      "res_0143_A": 60.44444444444444,
+      "fsc": [
+       1.0,
+       0.99833,
+       0.98999,
+       0.95064,
+       0.7877,
+       0.42542,
+       0.53413,
+       0.4731,
+       0.19222,
+       0.11709,
+       0.28299,
+       0.10768,
+       -0.01471,
+       0.05237,
+       0.18964,
+       0.18203,
+       0.1097,
+       -0.00467,
+       0.04658,
+       0.06059,
+       0.03946,
+       0.00791,
+       0.01798,
+       0.00712,
+       0.02768,
+       0.06134,
+       0.01847,
+       9e-05,
+       0.1147,
+       0.13104,
+       0.10516,
+       0.00021,
+       0.01729,
+       0.0657,
+       0.05961,
+       0.02271,
+       0.03015,
+       0.02811,
+       0.00372,
+       -0.00518,
+       -0.01666,
+       -0.01416,
+       0.03921,
+       0.03663,
+       0.03283,
+       0.00169,
+       -0.04089,
+       -0.03427,
+       -0.01266,
+       0.01576,
+       0.02825,
+       0.0472,
+       0.0262,
+       -0.06154,
+       -0.05395,
+       -0.02146,
+       0.00175,
+       -0.01838,
+       -0.02915,
+       -0.01037,
+       0.04966,
+       0.06496,
+       0.03786
+      ],
+      "masked_fsc_auc": 0.11098920050055967,
+      "masked_res_05_A": 108.8,
+      "masked_res_0143_A": 60.44444444444444,
+      "masked_fsc": [
+       1.0,
+       0.99827,
+       0.98989,
+       0.95096,
+       0.79024,
+       0.43412,
+       0.54388,
+       0.48031,
+       0.19698,
+       0.12034,
+       0.27903,
+       0.10271,
+       -0.01425,
+       0.05177,
+       0.18295,
+       0.17422,
+       0.09603,
+       -0.01641,
+       0.04266,
+       0.0615,
+       0.05568,
+       0.01575,
+       0.02163,
+       0.00676,
+       0.0221,
+       0.0592,
+       0.01893,
+       0.00092,
+       0.10947,
+       0.12941,
+       0.10104,
+       0.0021,
+       0.02073,
+       0.06772,
+       0.05615,
+       0.01541,
+       0.02468,
+       0.01718,
+       -0.02205,
+       -0.01057,
+       -0.01318,
+       -0.00203,
+       0.04782,
+       0.03806,
+       0.0333,
+       0.00311,
+       -0.03922,
+       -0.03258,
+       -0.0107,
+       0.01475,
+       0.02859,
+       0.04755,
+       0.02587,
+       -0.06007,
+       -0.05151,
+       -0.01819,
+       -0.00167,
+       -0.02164,
+       -0.0298,
+       -0.00846,
+       0.05392,
+       0.06744,
+       0.04141
+      ]
+     },
+     {
+      "class": 4,
+      "reference_class": 4,
+      "population": 0.0,
+      "fsc_auc": 0.0704279529508797,
+      "transform": "class_to_mean_proper",
+      "res_05_A": 108.8,
+      "res_0143_A": 108.8,
+      "fsc": [
+       1.0,
+       0.99862,
+       0.99001,
+       0.94648,
+       0.69992,
+       0.09787,
+       0.67933,
+       0.47896,
+       0.08568,
+       -0.0414,
+       0.20385,
+       -0.00154,
+       -0.16087,
+       0.09415,
+       0.04445,
+       -0.03796,
+       -0.03748,
+       -0.05251,
+       -0.06645,
+       -0.03027,
+       -0.04912,
+       -0.09996,
+       -0.08731,
+       -0.02702,
+       0.00219,
+       -0.0008,
+       0.0044,
+       0.00948,
+       0.01066,
+       0.02464,
+       0.04128,
+       0.00158,
+       -0.056,
+       -0.04252,
+       -0.04828,
+       0.02634,
+       0.0559,
+       0.06134,
+       -0.0183,
+       -0.05739,
+       -0.04417,
+       -0.02996,
+       0.03998,
+       0.0415,
+       0.0239,
+       -0.01846,
+       -0.02535,
+       -0.00312,
+       -0.00619,
+       0.00662,
+       0.00784,
+       0.00995,
+       0.01443,
+       0.02195,
+       0.0176,
+       0.02361,
+       0.03068,
+       0.01883,
+       0.02625,
+       0.03442,
+       -0.01071,
+       -0.02131,
+       -0.00968
+      ],
+      "masked_fsc_auc": 0.07065556499064465,
+      "masked_res_05_A": 108.8,
+      "masked_res_0143_A": 108.8,
+      "masked_fsc": [
+       1.0,
+       0.99865,
+       0.99033,
+       0.94818,
+       0.70667,
+       0.1156,
+       0.68634,
+       0.485,
+       0.09165,
+       -0.04146,
+       0.21017,
+       0.01009,
+       -0.13673,
+       0.12536,
+       0.05843,
+       -0.03432,
+       -0.04296,
+       -0.0523,
+       -0.06813,
+       -0.03805,
+       -0.05089,
+       -0.08855,
+       -0.07826,
+       -0.02813,
+       -0.0292,
+       -0.02003,
+       -0.01169,
+       -0.01115,
+       0.00794,
+       0.02179,
+       0.0394,
+       0.00642,
+       -0.05417,
+       -0.0456,
+       -0.05692,
+       0.01748,
+       0.04932,
+       0.04975,
+       -0.03065,
+       -0.05964,
+       -0.04496,
+       -0.03222,
+       0.02926,
+       0.03269,
+       0.01278,
+       -0.02878,
+       -0.02456,
+       0.00518,
+       0.00843,
+       0.01405,
+       0.00948,
+       0.01375,
+       0.02433,
+       0.02337,
+       0.01276,
+       0.01653,
+       0.02743,
+       0.02344,
+       0.03318,
+       0.04226,
+       -0.00564,
+       -0.01882,
+       -0.00871
+      ]
+     }
+    ],
+    "mean_fsc_auc": 0.12277218825196043,
+    "weighted_fsc_auc": 0.23891539575407547,
+    "mean_masked_fsc_auc": 0.1227786575310161,
+    "weighted_masked_fsc_auc": 0.23944135216802112
+   }
+  }
+ },
+ "pairs": [
+  {
+   "a": "rf_relion_s29",
+   "b": "rf_relax_s29",
+   "pair_fit": {
+    "hand": "proper",
+    "rotation_matrix": [
+     [
+      0.5330433606112838,
+      -0.42862915273611746,
+      -0.7294805173086851
+     ],
+     [
+      -0.26599876365063846,
+      0.733566555431244,
+      -0.6253996853925265
+     ],
+     [
+      0.8031870476075673,
+      0.5274060657382105,
+      0.277007957246686
+     ]
+    ],
+    "translation_voxels": [
+     -0.2818112232788256,
+     0.11751630887577037,
+     -0.5004556967793001
+    ],
+    "mirror_x": false,
+    "fit_lowpass_corr": 0.9973465964302708,
+    "start_lowpass_corrs": [
+     0.9973462564931155,
+     0.9973465964302708,
+     0.997346296406134
+    ],
+    "failed_starts": [],
+    "fine_start_corr": 0.9956173677255338,
+    "fine_corr": 0.996048768745575,
+    "fine_evaluations": 424,
+    "lowpass_optimizer_success": true,
+    "lowpass_evaluations": 953,
+    "fine_optimizer_success": true,
+    "fine_optimizer_message": "Optimization terminated successfully."
+   },
+   "matching": [
+    [
+     1,
+     1
+    ],
+    [
+     2,
+     2
+    ],
+    [
+     3,
+     3
+    ],
+    [
+     4,
+     4
+    ]
+   ],
+   "per_class_transform": [
+    "consensus",
+    "class_fit_mirror",
+    "class_fit_proper",
+    "class_fit_proper"
+   ],
+   "class_fits": {
+    "class_to_a1:proper": {
+     "rotation_matrix": [
+      [
+       0.5330433606112838,
+       -0.42862915273611746,
+       -0.7294805173086851
+      ],
+      [
+       -0.26599876365063846,
+       0.733566555431244,
+       -0.6253996853925265
+      ],
+      [
+       0.8031870476075673,
+       0.5274060657382105,
+       0.277007957246686
+      ]
+     ],
+     "translation_voxels": [
+      -0.2818112232788256,
+      0.11751630887577037,
+      -0.5004556967793001
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9973465964302708,
+     "start_lowpass_corrs": [
+      0.9973462564931155,
+      0.9973465964302708,
+      0.997346296406134
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9956173677255338,
+     "fine_corr": 0.996048768745575,
+     "fine_evaluations": 424,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 953,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a1:mirror": {
+     "rotation_matrix": [
+      [
+       -0.34989585414956287,
+       -0.2690865098517252,
+       -0.8973100587114606
+      ],
+      [
+       -0.8647623607870383,
+       -0.275544438132082,
+       0.41983487465967284
+      ],
+      [
+       -0.36022069709412285,
+       0.9228584468000997,
+       -0.13628402897893643
+      ]
+     ],
+     "translation_voxels": [
+      -0.18656275990929,
+      -0.12799179605693492,
+      -0.42294442889905703
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9912276436838506,
+     "start_lowpass_corrs": [
+      0.9912267734063402,
+      0.9912266535691231,
+      0.9912276436838506
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9342540373403695,
+     "fine_corr": 0.93998323157561,
+     "fine_evaluations": 1239,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 570,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a2:proper": {
+     "rotation_matrix": [
+      [
+       0.6842866159345129,
+       -0.19344494796171952,
+       -0.7030866798346986
+      ],
+      [
+       0.7275452329350577,
+       0.24628677120140613,
+       0.6403286346593122
+      ],
+      [
+       0.04929260884113518,
+       -0.94969567675086,
+       0.30927069093976717
+      ]
+     ],
+     "translation_voxels": [
+      -1.3476940650433544,
+      -1.1348958046920432,
+      1.012061591704738
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9942691373022134,
+     "start_lowpass_corrs": [
+      0.9942691373022134,
+      0.9751233947180363,
+      0.9751251529452056
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.991716047765592,
+     "fine_corr": 0.9917454727842685,
+     "fine_evaluations": 785,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1413,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a2:mirror": {
+     "rotation_matrix": [
+      [
+       0.9883481850987541,
+       0.05545116596653453,
+       0.14174989666645466
+      ],
+      [
+       -0.15214649155218685,
+       0.3330260216311111,
+       0.9305617196214956
+      ],
+      [
+       0.00439432820338484,
+       -0.9412857361659671,
+       0.33758236442405337
+      ]
+     ],
+     "translation_voxels": [
+      -0.880218296532349,
+      -0.9745712113291769,
+      1.0244362624326064
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.99808491032724,
+     "start_lowpass_corrs": [
+      0.9980498234703253,
+      0.99808491032724,
+      0.998071005088407
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9992065703761688,
+     "fine_corr": 0.999208893183313,
+     "fine_evaluations": 688,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1114,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a3:proper": {
+     "rotation_matrix": [
+      [
+       0.2638582022238446,
+       0.8423193034783782,
+       0.4699755739470939
+      ],
+      [
+       0.2272874499474351,
+       0.41922701128381157,
+       -0.8789704933081854
+      ],
+      [
+       -0.9374002689436316,
+       0.3387431239121208,
+       -0.08083212100807835
+      ]
+     ],
+     "translation_voxels": [
+      -2.0689179349756492,
+      0.4074389837419342,
+      -1.0526555170840421
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9980314802390794,
+     "start_lowpass_corrs": [
+      0.9807451474723505,
+      0.9980314802390794,
+      0.9807454867923981
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9990803452469539,
+     "fine_corr": 0.9990812901044578,
+     "fine_evaluations": 539,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1047,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a3:mirror": {
+     "rotation_matrix": [
+      [
+       0.5762060580552217,
+       -0.7914495302117941,
+       -0.20394661014096965
+      ],
+      [
+       -0.10262948091513607,
+       0.1774948111838076,
+       -0.9787557313497142
+      ],
+      [
+       0.8108352288273815,
+       0.5848959164931438,
+       0.021047531021312904
+      ]
+     ],
+     "translation_voxels": [
+      -0.00444669990280242,
+      0.7137078432015105,
+      -1.3655351248729284
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9839270715374159,
+     "start_lowpass_corrs": [
+      0.9839270715374159,
+      0.9839267743882126,
+      0.9839270307790654
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.978244541697626,
+     "fine_corr": 0.9790023093165721,
+     "fine_evaluations": 620,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 760,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a4:proper": {
+     "rotation_matrix": [
+      [
+       -0.6076055397875054,
+       0.4735737615025698,
+       -0.6376075598954589
+      ],
+      [
+       -0.7487045935159519,
+       -0.6094352488932667,
+       0.26082582129558285
+      ],
+      [
+       -0.2650602566731711,
+       0.6358589228930496,
+       0.7248630839749279
+      ]
+     ],
+     "translation_voxels": [
+      -0.7841452885971205,
+      0.37288600701214797,
+      -0.9790290184106553
+     ],
+     "mirror_x": false,
+     "fit_lowpass_corr": 0.9979434749034737,
+     "start_lowpass_corrs": [
+      0.9979404665283934,
+      0.997942879252978,
+      0.9979434749034737
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9988743410856346,
+     "fine_corr": 0.9988765369342949,
+     "fine_evaluations": 520,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1077,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    },
+    "class_to_a4:mirror": {
+     "rotation_matrix": [
+      [
+       -0.06372515606216816,
+       -0.9416278568896395,
+       0.33056933253748333
+      ],
+      [
+       0.9919844091173353,
+       -0.09598418731680064,
+       -0.08218252766412437
+      ],
+      [
+       0.10911478613361049,
+       0.3226825296085275,
+       0.9401967605413553
+      ]
+     ],
+     "translation_voxels": [
+      -0.6890159667798065,
+      0.3365989073393203,
+      -0.9618159527730088
+     ],
+     "mirror_x": true,
+     "fit_lowpass_corr": 0.9951439610046977,
+     "start_lowpass_corrs": [
+      0.9951405009678764,
+      0.9951439610046977,
+      0.995142111505696
+     ],
+     "failed_starts": [],
+     "fine_start_corr": 0.9927798938578256,
+     "fine_corr": 0.9929498650832911,
+     "fine_evaluations": 990,
+     "lowpass_optimizer_success": true,
+     "lowpass_evaluations": 1198,
+     "fine_optimizer_success": true,
+     "fine_optimizer_message": "Optimization terminated successfully."
+    }
+   },
+   "per_class_fsc_auc": [
+    0.899773132649692,
+    0.9964726801125579,
+    0.9996633265712213,
+    0.9999951874167503
+   ],
+   "mean_fsc_auc": 0.9739760816875553,
+   "weighted_fsc_auc": 0.899773132649692,
+   "diagnostic_via_reference_frame_mean_fsc_auc": 0.9717486441909683,
+   "per_class_masked_fsc_auc": [
+    0.897111764043862,
+    0.9965721186208971,
+    0.9996838007582066,
+    0.999995469340237
+   ],
+   "mean_masked_fsc_auc": 0.9733407881908007,
+   "weighted_masked_fsc_auc": 0.897111764043862
+  }
+ ],
+ "seconds": 568.6,
+ "unconverged_fits": []
+}
