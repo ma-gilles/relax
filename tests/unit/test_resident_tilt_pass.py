@@ -420,6 +420,111 @@ def test_each_particles_own_translations_are_the_whole_grid_mstep(_resident_prod
     _assert_noise_stats_match(dense.noise_stats, sparse.noise_stats)
 
 
+@requires_resident_gpu
+def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(_resident_production_env, monkeypatch):  # noqa: F811
+    """An M-step split into one-translation blocks is the one-block M-step (relax#27).
+
+    The blocks merge each row's partials before its one adjoint, so only float32 reassociation within a
+    row and the atomics' order differ: the discrete state is exact, the scores equal and the maps and
+    sums inside the repeat band. K=2 with VDAM's pseudo-halfsets exercises every accumulator slot.
+    """
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.sparse_pass2 import resident_tilts
+
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    supports = [class_supports[:n_units] for class_supports in supports]
+    vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
+    whole = _resident(vdam, volumes, supports, priors)
+    blocks = resident_tilts.mstep_translation_blocks
+    n_blocks = []
+
+    def one_translation_each(kept, *, bytes_per_translation, tile_budget_bytes):
+        out = blocks(kept, bytes_per_translation=1, tile_budget_bytes=1)
+        n_blocks.append(len(out))
+        return out
+
+    monkeypatch.setattr(resident_tilts, "mstep_translation_blocks", one_translation_each)
+    blocked = _resident(vdam, volumes, supports, priors)
+    assert max(n_blocks) > 1
+
+    assert_matches(whole.per_class_hard_assignments, blocked.per_class_hard_assignments)
+    for field in ("class_log_evidence_per_image", "class_best_log_score_per_image", "class_rotation_posterior_sums"):
+        assert_matches(np.asarray(getattr(whole, field)), np.asarray(getattr(blocked, field)), err_msg=field)
+    for k in range(2):
+        _assert_accumulators_match(whole.Ft_y[k], whole.Ft_ctf[k], blocked.Ft_y[k], blocked.Ft_ctf[k])
+    _assert_noise_stats_match(whole.noise_stats, blocked.noise_stats)
+
+
+@requires_resident_gpu
+def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight(_resident_production_env):  # noqa: F811
+    """The swamping toy of relax#27: many rows into one voxel, each row's weight split over translation blocks.
+
+    200k rows of weight 0.5-1 plus four tails (one per block) of up to 2e-3 of it, all at the DC voxel.
+    Adjoined block by block, each tail lands on a float32 total ~1e5 times the row and is lost (-4e-3);
+    merged per row first (the tilt M-step's row sums, ``resident_tilts._tilt_mstep_program``), they enter
+    at the row's own scale and the voxel keeps the one-block total (three runs on a local GPU: one block
+    -1.6e-6 to -9.9e-6, merged -2.0e-6 to -9.4e-6, blocks -4.0e-3 against the float64 sum; the float32
+    atomics' order moves the first two between runs).
+    """
+
+    from types import SimpleNamespace
+
+    from relax.sparse_pass2 import resident_pass2 as rp
+
+    n, n_rows = 8, 200_000
+    spec = SimpleNamespace(
+        stable_window=False,
+        image_shape=(n, n),
+        recon_volume_shape=(n, n, n),
+        mstep_max_r=float(n // 2),
+        max_adjoint_block_bytes=1 << 30,
+    )
+    # The window's one pixel is the DC term: every row adds into the DC voxel.
+    tables = SimpleNamespace(relion_x_half_recon_indices=jnp.zeros(1, dtype=jnp.int32), window_logical=None)
+    rotations = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (n_rows, 3, 3))
+    rng = np.random.default_rng(27)
+    weight = rng.uniform(0.5, 1.0, n_rows).astype(np.float32)
+    tails = (rng.uniform(0.0, 2e-3, (4, n_rows)) * weight).astype(np.float32)
+    volume_size = n * n * (n // 2 + 1)
+
+    def backproject(rows, volume):
+        rows = jnp.asarray(rows, dtype=jnp.float32)[:, None]
+        _, Ft_ctf = rp._backproject_block_rows(
+            rows.astype(jnp.complex64),
+            rows,
+            rotations,
+            jnp.zeros(volume_size, jnp.complex64),
+            volume,
+            tables=tables,
+            spec=spec,
+        )
+        return Ft_ctf
+
+    zero = jnp.zeros(volume_size, dtype=jnp.float32)
+    one_block = backproject(weight + tails.sum(axis=0), zero)
+    per_block = backproject(weight, zero)
+    for tail in tails:
+        per_block = backproject(tail, per_block)
+    row_sums = jnp.zeros(n_rows, dtype=jnp.float32).at[jnp.arange(n_rows)].add(weight)
+    for tail in tails:
+        row_sums = row_sums.at[jnp.arange(n_rows)].add(tail)
+    merged = backproject(row_sums, zero)
+
+    total = float(np.sum(weight, dtype=np.float64) + np.sum(tails, dtype=np.float64))
+    dc = int(np.argmax(np.asarray(one_block)))
+    error = {
+        name: float(np.asarray(v)[dc]) / total - 1.0
+        for name, v in (("one block", one_block), ("merged", merged), ("per block", per_block))
+    }
+    print("DC weight relative to the float64 sum", error)
+    assert abs(error["one block"]) < 5e-5 and abs(error["merged"]) < 5e-5
+    assert error["per block"] < -1e-3
+
+
 # ---------------------------------------------------------------------------
 # The --firstiter_cc iteration (normalized CC, winner takes all)
 # ---------------------------------------------------------------------------

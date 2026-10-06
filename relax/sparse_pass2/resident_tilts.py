@@ -479,17 +479,32 @@ def run_tilt_chunk(
         jnp.take_along_axis(row_posterior, jnp.asarray(unit_translations.index[row_unit_device], dtype=jnp.int32), axis=1),
         jnp.zeros((), row_posterior.dtype),
     )
-    translation_blocks = mstep_translation_blocks(
-        MstepTranslations(index=np.arange(n_unit_trans, dtype=np.int64), valid=np.ones(n_unit_trans, dtype=bool)),
-        bytes_per_translation=(unit_capacity + block_rows)
-        * (int(rect_indices_device.shape[0]) + int(exact_positions_device.shape[0]))
-        * 8,
-        tile_budget_bytes=int(tile_budget_bytes),
+    unit_kept = MstepTranslations(index=np.arange(n_unit_trans, dtype=np.int64), valid=np.ones(n_unit_trans, dtype=bool))
+    bytes_per_translation = (
+        (unit_capacity + block_rows) * (int(rect_indices_device.shape[0]) + int(exact_positions_device.shape[0])) * 8
     )
+    translation_blocks = mstep_translation_blocks(
+        unit_kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=int(tile_budget_bytes)
+    )
+    # Several blocks merge each row's partials in a [C_R, recon pixels] pair before its one adjoint
+    # (relax#27); the pair's bytes come out of the tiles' budget.
+    merge_row_partials = len(translation_blocks) > 1
+    if merge_row_partials:
+        row_sum_bytes = (
+            row_capacity
+            * int(spec.n_recon_pixels)
+            * (np.dtype(Ft_y_total[0].dtype).itemsize + np.dtype(Ft_ctf_total[0].dtype).itemsize)
+        )
+        translation_blocks = mstep_translation_blocks(
+            unit_kept,
+            bytes_per_translation=bytes_per_translation,
+            tile_budget_bytes=max(int(tile_budget_bytes) - row_sum_bytes, 0),
+        )
     slot_spec = rp._make_chunk_program_spec(
         row_capacity=row_capacity,
         image_capacity=unit_capacity,
         n_fine_trans=int(translation_blocks[0].index.size),
+        presum_adjoint=merge_row_partials,
         **spec_kwargs,
     )
     unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)
@@ -797,6 +812,13 @@ def _tilt_mstep_program(
     its unit's ``k`` translations (:func:`unit_mstep_translations`), and ``slots.angles`` the units' phases
     there; ``kept_index``/``kept_valid`` are the translation blocks' ``[K, T_b]`` positions in those ``k``
     and validity: positions outside a block (and padding) carry zero posterior there.
+
+    With more than one translation block (``slot_spec.presum_adjoint``), a row's weight arrives as one
+    partial per block. Adjoined block by block, a partial below half an ulp of a voxel's float32 total
+    is lost (relax#27: DC and low shells at et09 lost ~1e-6 of their weight, more with more blocks). So
+    the blocks add each row's partials into a ``[C_R, recon pixels]`` pair at the row's own scale, and
+    each row is backprojected once, as in one block (and in RELION, which sums an orientation's
+    translations before it backprojects).
     """
 
     from relax.cuda import kernels as em_cuda_kernels
@@ -804,6 +826,7 @@ def _tilt_mstep_program(
 
     row_capacity = int(row_posterior.shape[0])
     block_rows = int(slot_spec.mstep_block_rows)
+    merge_row_partials = bool(slot_spec.presum_adjoint)
     fields = {name: getattr(operands, name) for name in _SLOT_VIEW_FIELDS}
 
     def one_slot(full, xs):
@@ -811,10 +834,17 @@ def _tilt_mstep_program(
         ordered_posterior = row_posterior[order]
         gathered, window = _slot_view_gather(fields, wavg_window, safe, valid)
         kernel_row_image_ids = jnp.where(active, units, jnp.int32(-1))
+        row_fine_rot = slot * jnp.int32(row_capacity) + order
+        Ft_y, Ft_ctf = full.Ft_y, full.Ft_ctf
+        if merge_row_partials:
+            # Each row's partials, by its visiting position, until the one adjoint below.
+            n_recon = int(slot_spec.n_recon_pixels)
+            Ft_y = jnp.zeros((row_capacity, n_recon), dtype=full.Ft_y.dtype)
+            Ft_ctf = jnp.zeros((row_capacity, n_recon), dtype=full.Ft_ctf.dtype)
         # The block stages' dtypes follow from the gathered operands alone (rp._mstep_block_operand_dtypes).
         slot_carry = rp._initial_mstep_carry(
-            full.Ft_y,
-            full.Ft_ctf,
+            Ft_y,
+            Ft_ctf,
             operands._replace(**gathered),
             stage_tables._replace(translation_angles=angles[0]),
             spec=slot_spec,
@@ -839,8 +869,9 @@ def _tilt_mstep_program(
                 row_image_local=units,
                 kernel_row_image_ids=kernel_row_image_ids,
                 row_posterior=jnp.where(active[:, None], block_posterior, jnp.zeros((), block_posterior.dtype)),
-                row_fine_rot=slot * jnp.int32(row_capacity) + order,
+                row_fine_rot=row_fine_rot,
                 projections=None,
+                row_sum_ids=jnp.arange(row_capacity, dtype=jnp.int32) if merge_row_partials else None,
             )
 
             def block(i, carry):
@@ -865,6 +896,24 @@ def _tilt_mstep_program(
             )
 
         slot_carry = jax.lax.fori_loop(0, int(kept_index.shape[0]), translation_block, slot_carry)
+        Ft_y, Ft_ctf = slot_carry.Ft_y, slot_carry.Ft_ctf
+        if merge_row_partials:
+
+            def adjoint(i, volumes):
+                def take(values):
+                    return jax.lax.dynamic_slice_in_dim(values, i * jnp.int32(block_rows), block_rows, axis=0)
+
+                rotations = rp._cached_block_projections(stage_tables, take(row_fine_rot))[2]
+                return rp._backproject_block_rows(
+                    take(slot_carry.Ft_y),
+                    take(slot_carry.Ft_ctf),
+                    rotations,
+                    *volumes,
+                    tables=stage_tables,
+                    spec=slot_spec,
+                )
+
+            Ft_y, Ft_ctf = jax.lax.fori_loop(0, n_blocks, adjoint, (full.Ft_y, full.Ft_ctf))
         placed = _place_slot_partials(
             {name: getattr(full, name) for name in _SLOT_PARTIAL_FIELDS},
             {name: getattr(slot_carry, name) for name in _SLOT_PARTIAL_FIELDS},
@@ -872,7 +921,7 @@ def _tilt_mstep_program(
             slot_carry.noise_shells,
             target,
         )
-        return full._replace(Ft_y=slot_carry.Ft_y, Ft_ctf=slot_carry.Ft_ctf, **placed), None
+        return full._replace(Ft_y=Ft_y, Ft_ctf=Ft_ctf, **placed), None
 
     xs = (
         slots.slot,

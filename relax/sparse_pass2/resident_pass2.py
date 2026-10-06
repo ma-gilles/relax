@@ -7618,42 +7618,8 @@ def _resident_mstep_block(
             a2_per_image=carry.a2_per_image + block_a2,
             xa_per_image=carry.xa_per_image + block_xa,
         )
-    runtime_mstep_max_r = None
-    if spec.stable_window and tables.window_logical is not None:
-        runtime_mstep_max_r = tables.window_logical.mstep_max_r
-    Ft_y = _accumulate_adjoint_block_chunked(
-        summed,
-        block_mstep_rotations,
-        carry.Ft_y,
-        window_indices=tables.relion_x_half_recon_indices,
-        use_windowed_adjoint=True,
-        image_shape=spec.image_shape,
-        volume_shape=spec.recon_volume_shape,
-        disc_type="linear_interp",
-        half_image=True,
-        half_volume=True,
-        max_r=spec.mstep_max_r,
-        relion_x_half=True,
-        max_block_bytes=int(spec.max_adjoint_block_bytes),
-        log_label="resident-y-window",
-        runtime_max_r=runtime_mstep_max_r,
-    )
-    Ft_ctf = _accumulate_adjoint_block_chunked(
-        bpref_ctf_probs,
-        block_mstep_rotations,
-        carry.Ft_ctf,
-        window_indices=tables.relion_x_half_recon_indices,
-        use_windowed_adjoint=True,
-        image_shape=spec.image_shape,
-        volume_shape=spec.recon_volume_shape,
-        disc_type="linear_interp",
-        half_image=True,
-        half_volume=True,
-        max_r=spec.mstep_max_r,
-        relion_x_half=True,
-        max_block_bytes=int(spec.max_adjoint_block_bytes),
-        log_label="resident-ctf-window",
-        runtime_max_r=runtime_mstep_max_r,
+    Ft_y, Ft_ctf = _backproject_block_rows(
+        summed, bpref_ctf_probs, block_mstep_rotations, carry.Ft_y, carry.Ft_ctf, tables=tables, spec=spec
     )
     return carry._replace(
         Ft_y=Ft_y,
@@ -7663,6 +7629,38 @@ def _resident_mstep_block(
         a2_per_image=carry.a2_per_image + block_a2,
         xa_per_image=carry.xa_per_image + block_xa,
     )
+
+
+def _backproject_block_rows(summed, ctf_probs, block_mstep_rotations, Ft_y, Ft_ctf, *, tables, spec):
+    """Both windowed adjoints of one row block: ``summed`` into ``Ft_y``, ``ctf_probs`` into ``Ft_ctf``.
+
+    The block body's adjoint (:func:`_resident_mstep_block`), and the tilt M-step's once it has merged
+    each row's translation-block partials (``resident_tilts._tilt_mstep_program``, relax#27).
+    """
+
+    runtime_mstep_max_r = None
+    if spec.stable_window and tables.window_logical is not None:
+        runtime_mstep_max_r = tables.window_logical.mstep_max_r
+    adjoint_kwargs = dict(
+        window_indices=tables.relion_x_half_recon_indices,
+        use_windowed_adjoint=True,
+        image_shape=spec.image_shape,
+        volume_shape=spec.recon_volume_shape,
+        disc_type="linear_interp",
+        half_image=True,
+        half_volume=True,
+        max_r=spec.mstep_max_r,
+        relion_x_half=True,
+        max_block_bytes=int(spec.max_adjoint_block_bytes),
+        runtime_max_r=runtime_mstep_max_r,
+    )
+    Ft_y = _accumulate_adjoint_block_chunked(
+        summed, block_mstep_rotations, Ft_y, log_label="resident-y-window", **adjoint_kwargs
+    )
+    Ft_ctf = _accumulate_adjoint_block_chunked(
+        ctf_probs, block_mstep_rotations, Ft_ctf, log_label="resident-ctf-window", **adjoint_kwargs
+    )
+    return Ft_y, Ft_ctf
 
 
 def _mstep_block_operand_dtypes(
@@ -7930,6 +7928,9 @@ class _MstepBlockInputs(NamedTuple):
     class_row_range: jax.Array | None = None  # int32 [2]
     # Each slot's live rows in this order (:func:`_make_mstep_block_inputs`).
     slot_offsets: jax.Array | None = None  # int32 [n_slots + 1]
+    # With ``spec.presum_adjoint``, each row's sum slot when it is not its projection id: a tilt slot's
+    # visiting position, so the row's translation-block partials merge before one adjoint (relax#27).
+    row_sum_ids: jax.Array | None = None  # int32 [C_R]
 
 
 def _resident_mstep_block_at(
@@ -7970,6 +7971,8 @@ def _resident_mstep_block_at(
             )
     else:
         block_projections = blocks.projections
+    if spec.presum_adjoint and blocks.row_sum_ids is not None:
+        block_sum_ids = take(blocks.row_sum_ids)
     block_kernel_ids = take(blocks.kernel_row_image_ids)
     block_posterior = take(blocks.row_posterior)
     if blocks.class_row_range is not None:

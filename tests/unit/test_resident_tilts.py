@@ -473,6 +473,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
     @dataclasses.dataclass(frozen=True)
     class Spec:
         mstep_block_rows: int = 8
+        presum_adjoint: bool = False  # the row-sum merge (relax#27) adds one [C_R, recon] pair, not per block
 
     def temp_bytes(n_blocks):
         slots = resident_tilts.SlotMstepTables(
