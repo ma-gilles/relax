@@ -61,6 +61,7 @@ tests/unit/test_final_boundary_factorial.py
 tests/unit/test_final_half_preparation.py
 tests/unit/test_finalize_frozen_boundary_v3.py
 tests/unit/test_final_local_pass1_size_guard.py
+tests/unit/test_final_pass_expected_accuracy.py
 tests/unit/test_final_reconstruction.py
 tests/unit/test_final_scoring_halves.py
 tests/unit/test_firstiter_cc_batch_budget.py
