@@ -361,6 +361,14 @@ class SigmaOffset:
     per_half_angstrom: object
 
 
+def copy_optional_float_pair(values):
+    """Two widths as Python floats, for a record that outlives the run's arrays (None stays None)."""
+
+    if values is None:
+        return None
+    return [float(values[0]), float(values[1])]
+
+
 def sigma_offset_from_halves(per_half) -> SigmaOffset:
     """Each half's width with their mean as the shared value."""
 

@@ -4,7 +4,10 @@ Each numbered iteration takes from RELION what the run supplies: its override sl
 replay's per-iteration state, ``--relion_init_dir``'s run_it000 state, captured projectors) and, while the
 STAR replay is live (``--perturb_replay_relion_dir`` up to ``perturb_replay_max_iter``), the sampling
 controls and direction priors of its numbered STAR files. ``relax.diagnostics.relion_replay`` reads and
-installs them.
+installs them. A frozen boundary (``--frozen-boundary-dir``) supplies a sealed sampling state, its
+``RefinementState`` fields and the scoring state it checks before the first iteration
+(``relax.diagnostics.frozen_boundary``); a state-swap probe (``--state-swap-*``) swaps components of the
+replayed state back to the run's own (``relax.diagnostics.state_swap_runtime``).
 
 The command resolves what to replay into a ``RelionReplay`` and builds the source
 (``RelionReplaySource.for_run``); the run's options hold none of it.
@@ -22,9 +25,15 @@ import numpy as np
 
 from relax import sampling
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
+from relax.diagnostics.frozen_boundary import (
+    _assert_frozen_scoring_state_unchanged,
+    _frozen_scoring_state_arrays,
+    _restore_diagnostic_frozen_boundary_state,
+)
 from relax.diagnostics.relion_replay import (
     _class_tau2_replay,
     _has_numbered_replay_iteration_overrides,
+    _install_sealed_sampling,
     _past_perturb_replay_max_iter,
     _perturbation_restart_state_iteration,
     _prepare_final_replay_references,
@@ -35,11 +44,16 @@ from relax.diagnostics.relion_replay import (
     apply_iter_replay_overrides,
     apply_optimiser_convergence_replay,
     read_optimiser_accuracy_replay,
+    replay_class_relion_references,
+    replay_k1_relion_references,
+    sealed_rotation_ids_for_scoring,
     select_final_sampling_star,
 )
+from relax.diagnostics.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
+from relax.refinement.iteration_planning import build_sealed_initial_coarse_grids
 from relax.refinement.mean_helpers import class_mixture_from_weights
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState
 from relax.refinement.refinement_options import (
@@ -67,6 +81,10 @@ class RelionReplay:
     (``--final-replay-relion-dir``). The last two switches force (``RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE``)
     or forbid (``RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE``) replaying the last numbered state in
     the final pass; their defaults read the environment when the record is built.
+    A frozen boundary (``--frozen-boundary-dir``): its ``sealed_sampling_state`` and ``sealed_scoring_context``,
+    its ``frozen_refinement_state_fields`` and ``assert_scoring_state_unchanged`` (check, right before the
+    first iteration scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
+    state-swap probe's settings (``relax.diagnostics.state_swap_probe.build_state_swap_probe``).
     """
 
     perturb_replay_relion_dir: str | None = None
@@ -85,6 +103,11 @@ class RelionReplay:
     final_all_data_disable_replay_last_numbered_state: bool = field(
         default_factory=lambda: parse_env_true_flag(FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV)
     )
+    sealed_sampling_state: Any | None = None
+    sealed_scoring_context: Any | None = None
+    frozen_refinement_state_fields: Any | None = None
+    assert_scoring_state_unchanged: bool = False
+    state_swap_probe: dict | None = None
 
     def __post_init__(self):
         if self.perturb_replay_max_iter is not None and self.perturb_replay_max_iter < 0:
@@ -99,14 +122,16 @@ class RelionReplay:
     @property
     def replays(self) -> bool:
         """Whether there is anything to replay: override slots, a STAR replay directory, a final-pass replay
-        (its override, reference maps or sampling directory) or the forced last-numbered-state replay."""
+        (its override, reference maps or sampling directory), the forced last-numbered-state replay, a frozen
+        boundary or a state-swap probe."""
         return any(
             value is not None
             for value in (
                 self.replay_iteration_overrides, self.perturb_replay_relion_dir, self.final_replay_override,
-                self.final_replay_reference_maps, self.final_sampling_replay_relion_dir,
+                self.final_replay_reference_maps, self.final_sampling_replay_relion_dir, self.sealed_sampling_state,
+                self.sealed_scoring_context, self.frozen_refinement_state_fields, self.state_swap_probe,
             )
-        ) or self.final_all_data_replay_last_numbered_state
+        ) or self.final_all_data_replay_last_numbered_state or self.assert_scoring_state_unchanged
 
 
 class RelionReplaySource(InputSource):
@@ -117,6 +142,8 @@ class RelionReplaySource(InputSource):
         self.replay = replay
         self.options = options
         self._cutoff_announced = False
+        self._state_swap_snapshot = None
+        self._bound_scoring_state = None
         # The STAR directory of the last iteration asked about: the one the final pass replays from.
         self._live_directory = replay.perturb_replay_relion_dir
         if replay.perturb_replay_restart_state_iterations:
@@ -135,15 +162,106 @@ class RelionReplaySource(InputSource):
     def relion_replay(self) -> RelionReplay:
         return self.replay
 
+    @property
+    def sealed_sampling_state(self):
+        return self.replay.sealed_sampling_state
+
+    @property
+    def sealed_scoring_context(self):
+        return self.replay.sealed_scoring_context
+
+    @property
+    def swaps_state(self):
+        return self.replay.state_swap_probe is not None
+
     def replays_relion_state(self):
         replay = self.replay
         return any(
             value is not None
             for value in (
                 replay.perturb_replay_relion_dir, replay.replay_iteration_overrides, replay.final_replay_override,
-                replay.final_replay_reference_maps,
+                replay.final_replay_reference_maps, replay.frozen_refinement_state_fields,
+                replay.sealed_sampling_state, replay.state_swap_probe,
             )
         )
+
+    def restore_boundary_state(self, state):
+        """A frozen boundary's ``RefinementState`` fields, installed over the initial ones."""
+        if self.replay.frozen_refinement_state_fields is not None:
+            _restore_diagnostic_frozen_boundary_state(state, self.replay.frozen_refinement_state_fields)
+
+    def initial_coarse_grids(self, *, initialized_healpix_order, voxel_size, symmetry, native):
+        """A sealed sampling state's captured grids, checked against the initialized HEALPix order."""
+        if self.replay.sealed_sampling_state is None:
+            return native()
+        return build_sealed_initial_coarse_grids(
+            self.replay.sealed_sampling_state,
+            initialized_healpix_order=initialized_healpix_order,
+            voxel_size=voxel_size,
+            symmetry=symmetry,
+            log=logger,
+        )
+
+    def scoring_rotation_ids(self, trial_grid, *, use_local):
+        """A sealed global grid's captured rotation ids."""
+        return sealed_rotation_ids_for_scoring(self.replay.sealed_sampling_state, trial_grid, use_local=use_local)
+
+    def _swaps_at(self, iteration):
+        probe = self.replay.state_swap_probe
+        return probe is not None and int(probe.get("iteration", -1)) == int(iteration)
+
+    def state_swap_snapshot(self, iteration, scoring_inputs):
+        """The run's own state at the probe's target iteration, before RELION's is installed."""
+        if self._swaps_at(iteration):
+            self._state_swap_snapshot = _snapshot_state_swap_inputs(**scoring_inputs())
+
+    def scoring_references(self, iteration, reference_model, *, volume_shape):
+        """RELION's maps at the probe's target iteration when the probe replays references, else the model's."""
+        replay = replay_k1_relion_references if int(self.options.k_class.n_classes) == 1 else replay_class_relion_references
+        return replay(
+            reference_model, self.options, probe=self.replay.state_swap_probe, iteration=iteration,
+            replay_dir=self._star_directory(iteration), replay_prefix=self.replay.perturb_replay_relion_prefix,
+            volume_shape=volume_shape,
+        )
+
+    def swapped_state(self, iteration, scoring_inputs, *, volume_shape):
+        """The probe's variant of the replayed state at its target iteration: its components restored from the
+        run's own snapshot."""
+        if not self._swaps_at(iteration):
+            return None
+        return _apply_state_swap_probe(
+            probe=self.replay.state_swap_probe,
+            iteration=iteration,
+            recovar_snapshot=self._state_swap_snapshot,
+            volume_shape=volume_shape,
+            **scoring_inputs(),
+        )
+
+    def _frozen_arrays(self, scoring_arrays):
+        return _frozen_scoring_state_arrays(
+            **scoring_arrays(),
+            sealed_sampling_state=self.replay.sealed_sampling_state,
+            sealed_scoring_context=self.replay.sealed_scoring_context,
+        )
+
+    def scoring_state_bound(self, scoring_arrays):
+        """A frozen boundary binds the scoring state it checks before the first iteration (K=1 only)."""
+        if not self.replay.assert_scoring_state_unchanged:
+            return
+        if int(self.options.k_class.n_classes) > 1:
+            raise RuntimeError("Frozen scoring-state immutability assertion currently supports K=1 only")
+        self._bound_scoring_state = self._frozen_arrays(scoring_arrays)
+
+    def scoring_state_checked(self, iteration, scoring_arrays):
+        """Right before the first iteration scores: the bound scoring state is unchanged (its digest)."""
+        if self._bound_scoring_state is None or iteration != 0:
+            return None
+        digest = _assert_frozen_scoring_state_unchanged(self._bound_scoring_state, self._frozen_arrays(scoring_arrays))
+        logger.info(
+            "Frozen scoring-state ownership verified immediately before physical iteration %d scoring",
+            int(self.options.schedule.init_relion_iteration) + iteration + 1,
+        )
+        return digest
 
     def _slot(self, iteration: int):
         slots = self.replay.replay_iteration_overrides
@@ -311,7 +429,7 @@ class RelionReplaySource(InputSource):
         counters from its optimiser and model STAR files."""
         options = self.options
         if (
-            options.debug.sealed_sampling_state is not None
+            self.replay.sealed_sampling_state is not None
             or self.replay.perturb_replay_relion_dir is None
             or int(options.schedule.init_relion_iteration) <= 0
         ):
@@ -326,7 +444,7 @@ class RelionReplaySource(InputSource):
             replay_prefix=self.replay.perturb_replay_relion_prefix,
             init_relion_iteration=self.options.schedule.init_relion_iteration,
             iteration=iteration,
-            sealed_sampling_state=self.options.debug.sealed_sampling_state,
+            sealed_sampling_state=self.replay.sealed_sampling_state,
             acc_rot=accuracy.acc_rot,
             acc_trans=accuracy.acc_trans,
             convergence_acc_rot=accuracy.convergence_acc_rot,
@@ -375,17 +493,26 @@ class RelionReplaySource(InputSource):
         )
         return perturbation
 
-    def numbered_state(self, iteration, inputs, *, state, halves, direction_priors, image_geometry, sampling_sealed):
+    def numbered_state(self, iteration, inputs, *, state, halves, direction_priors, image_geometry):
         """RELION's sampling controls, priors, particle state, noise, tau2 and class weights for this iteration.
 
+        A sealed sampling state installs the sampling controls first (and the STAR replay's are not read).
         Updates ``state``'s sampling controls, the ``halves``' poses and corrections and the
         ``direction_priors`` list in place, as ``apply_iter_replay_overrides`` does.
         """
         options = self.options
+        sealed = self.replay.sealed_sampling_state
+        if sealed is not None:
+            current_size, prior_translations, sampling_meta = _install_sealed_sampling(
+                state, sealed, iteration=iteration, image_geometry=image_geometry, dtype=_dense_global_scoring_dtype(),
+            )
+            inputs = inputs._replace(
+                current_size=current_size, prior_translations=prior_translations, sampling_meta=sampling_meta,
+            )
         slot = self._slot(iteration)
         result = apply_iter_replay_overrides(
             iter_replay_override=slot,
-            perturb_replay_relion_dir=None if sampling_sealed else self._star_directory(iteration),
+            perturb_replay_relion_dir=None if sealed is not None else self._star_directory(iteration),
             perturb_replay_relion_prefix=self.replay.perturb_replay_relion_prefix,
             init_relion_iteration=options.schedule.init_relion_iteration,
             iteration=iteration,
@@ -428,8 +555,8 @@ class RelionReplaySource(InputSource):
             previous_best_rotations=result.previous_best_rotations,
             mean_variance=mean_variance,
             class_mixture=class_mixture,
-            prior_translations=inputs.prior_translations if sampling_sealed else result.prior_translations,
-            sampling_meta=inputs.sampling_meta if sampling_sealed else result.replay_meta,
+            prior_translations=inputs.prior_translations if sealed is not None else result.prior_translations,
+            sampling_meta=inputs.sampling_meta if sealed is not None else result.replay_meta,
             projector_state=result.relion_projector_state,
         )
 

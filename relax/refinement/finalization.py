@@ -160,7 +160,7 @@ def run_final_all_data(
     symmetry = options.symmetry.point_group
     init_relion_iteration = options.schedule.init_relion_iteration
     particle_diameter_ang = options.schedule.particle_diameter_ang
-    sealed_sampling_state = debug.sealed_sampling_state
+    sealed_sampling_state = source.sealed_sampling_state
     k_class_enabled = n_classes > 1
     grid_size = image_geometry.box_size
     volume_shape = reconstruction_settings.volume_shape

@@ -6,7 +6,7 @@ import pytest
 
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_adaptive_image_size
-from relax.refinement.refinement_options import EngineDebugOptions, RefinementOptions, RefinementSchedule
+from relax.refinement.refinement_options import RefinementOptions, RefinementSchedule
 
 pytestmark = pytest.mark.unit
 
@@ -21,10 +21,8 @@ def _global_window(incoming, *, current=172, sealed=None):
             model_pixel_size=1.400011, optics_image_sizes=[380], optics_pixel_sizes=[1.400011],
             multi_shape_halves=False,
         ),
-        RefinementOptions(
-            schedule=RefinementSchedule(particle_diameter_ang=250.0),
-            debug=EngineDebugOptions(sealed_sampling_state=sealed),
-        ),
+        RefinementOptions(schedule=RefinementSchedule(particle_diameter_ang=250.0)),
+        sealed_sampling_state=sealed,
         log=logging.getLogger(__name__),
     ).size
 

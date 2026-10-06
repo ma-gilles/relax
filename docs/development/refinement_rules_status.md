@@ -93,14 +93,19 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   (`--perturb_replay_relion_dir`), `--relion_init_dir`'s run_it000 slot and every other override slot, the
   cutoff, perturbation, optimiser and restart counters, the Class3D prior replay, the final pass's replayed
   state and sampling STAR (the final-only replay rides these call sites; its functions are unchanged).
+  The frozen boundary (`--frozen-boundary-dir`: its sealed sampling state and scoring context, its
+  `RefinementState` fields and the check that the scoring state is unchanged before the first iteration) and
+  the state-swap probe (`--state-swap-*`: its snapshot, RELION references and swap) are `RelionReplay` fields;
+  only the source calls `relax.diagnostics.frozen_boundary` and `state_swap_runtime`
+  (`tests/unit/test_refinement_port_imports.py`). Owner decision, 2026-10-06: these and the final-only
+  replay are ported on the fingerprint and the CPU admission tests alone. **Runs from a real RELION run
+  directory (a frozen boundary, a state-swap probe, a final-only replay) are not tested**: no tier runs
+  them and no CPU fixture is a RELION run directory (see Known coverage limits).
 - Run options, not diagnostics (rule 9): the local-search probe (`LocalSearchOptions.stop_after_local_search*`)
   and the final pass's after-the-cap and merged-reference variants (`FinalPassOptions`).
 
 Not yet through the ports, each still read where it was:
-- The untiered comparison features, waiting for the owner's decision (no GPU tier runs them): the sealed
-  sampling state of a frozen boundary (installed by the controller before the source), the state-swap probe
-  and its RELION references, the frozen scoring-state assertion, the captured projector (a slot field the
-  source passes through).
+- The captured projector (a slot field the source passes through), to be retired (owner, 2026-10-06).
 - The follower dispatch schedule (`--relion-dispatch-schedule`, `--relion-scale-followers`). The audit listed it
   as untiered, but medium's three K4 fast cases pass it (a strict K>1 replay requires it); see the tier list
   below.

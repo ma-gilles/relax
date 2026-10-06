@@ -13,7 +13,6 @@ from relax.refinement.convergence import update_class_iteration_convergence, upd
 from relax.refinement.half_inputs import PoseComparison
 from relax.refinement.refinement_options import (
     CheckpointOptions,
-    EngineDebugOptions,
     KClassOptions,
     RefinementOptions,
     RefinementSchedule,
@@ -183,11 +182,10 @@ def test_numbered_replay_accuracy_precedes_state_update_and_controls_follow_it(t
         '_rlnChangesOptimalOffsets 0.625\n'
         '_rlnHasConverged 1\n'
     )
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_relion_iteration=3),
-        debug=EngineDebugOptions(sealed_sampling_state={} if sealed else None),
-    )
-    result = _update_k1(options=options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
+    options = RefinementOptions(schedule=RefinementSchedule(init_relion_iteration=3))
+    result = _update_k1(options=options, relion_replay=RelionReplay(
+        perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={} if sealed else None,
+    ))
     if sealed:
         assert result.accuracy.metadata is None
         assert_matches(result.state.acc_rot, 1.0)

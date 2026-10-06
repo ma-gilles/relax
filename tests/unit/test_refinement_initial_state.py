@@ -15,12 +15,10 @@ from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.iteration_snapshot import IterationSnapshot, refinement_state_fields
 from relax.refinement.refinement_options import (
     CheckpointOptions,
-    EngineDebugOptions,
     KClassOptions,
     RefinementOptions,
     RefinementSchedule,
     RelionParityOptions,
-    ReplayState,
 )
 
 pytestmark = pytest.mark.unit
@@ -127,11 +125,11 @@ def test_sealed_state_suppresses_restart_read_and_frozen_fields_override_resolut
     (tmp_path / 'run_it002_half1_model.star').write_text('data_model_general\n')
     options = RefinementOptions(
         schedule=RefinementSchedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
-        debug=EngineDebugOptions(sealed_sampling_state={}),
-        replay=ReplayState(init_refinement_state_fields=dict(current_resolution=12.0,
-                                                            previous_resolution=12.0, nr_iter_wo_resol_gain=2)),
     )
-    state = _initialize(options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
+    state = _initialize(options, relion_replay=RelionReplay(
+        perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={},
+        frozen_refinement_state_fields=dict(current_resolution=12.0, previous_resolution=12.0, nr_iter_wo_resol_gain=2),
+    ))
     assert state.healpix_order == options.schedule.init_healpix_order
     assert state.nr_iter_wo_resol_gain == 2
     assert_matches(state.current_resolution, 12.0)
@@ -173,9 +171,8 @@ def test_continuation_refuses_mismatched_iteration_class_or_box(field, value):
 
 
 def test_frozen_numbered_restart_refuses_already_converged_state():
-    options = RefinementOptions(replay=ReplayState(init_refinement_state_fields={'has_converged': True}))
     with pytest.raises(ValueError, match='cannot already be converged'):
-        _initialize(options)
+        _initialize(RefinementOptions(), relion_replay=RelionReplay(frozen_refinement_state_fields={'has_converged': True}))
 
 
 def test_k1_options_refuse_class3d_seed_classes():

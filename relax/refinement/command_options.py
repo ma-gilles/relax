@@ -19,7 +19,6 @@ from relax.helpers.particle_io import add_particle_read_arguments
 from relax.refinement.refinement_options import (
     RELAX_MODE_CONSISTENCY,
     AdaptiveOptions,
-    EngineDebugOptions,
     HalfOverlapOptions,
     InitialSampling,
     KClassOptions,
@@ -1703,13 +1702,16 @@ def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
     )
 
 
-def resolve_debug(args, *, state_swap_probe, frozen_boundary, expected_accuracy) -> EngineDebugOptions:
-    """The diagnostic switches: intermediates, the state-swap probe, the local-search stops, and a frozen
-    boundary's sealed state (its fixed diagnostic arm only) with the immutability check it asks for."""
-    sealed = frozen_boundary is not None and frozen_boundary.fixed_diagnostic_arm
-    return EngineDebugOptions(
-        state_swap_probe=state_swap_probe,
-        assert_initial_scoring_state_immutable=frozen_boundary is not None,
+def frozen_boundary_replay(frozen_boundary) -> dict:
+    """What a frozen boundary replays, as ``RelionReplay`` fields: its ``RefinementState`` fields, the check
+    that the scoring state is unchanged before the first iteration, and (its fixed diagnostic arm only) its
+    sealed sampling state and scoring context. Nothing without a boundary."""
+    if frozen_boundary is None:
+        return {}
+    sealed = frozen_boundary.fixed_diagnostic_arm
+    return dict(
+        frozen_refinement_state_fields=frozen_boundary.refinement_state_fields,
+        assert_scoring_state_unchanged=True,
         sealed_sampling_state=frozen_boundary.sampling_state if sealed else None,
         sealed_scoring_context=(
             {
@@ -1724,5 +1726,4 @@ def resolve_debug(args, *, state_swap_probe, frozen_boundary, expected_accuracy)
             if sealed
             else None
         ),
-        expected_accuracy=expected_accuracy,
     )

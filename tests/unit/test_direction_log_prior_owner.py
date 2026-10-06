@@ -123,7 +123,8 @@ def test_both_halves_are_expanded_in_half_order_with_their_own_prior():
     first, second = _prior(1), _prior(2)
     pair = op.relion_direction_log_priors(
         [op.DirectionPrior(first, ORDER), op.DirectionPrior(second, ORDER)], RefinementOptions(),
-        use_local=False, scoring_healpix_order=ORDER, dtype=np.float32, log=logging.getLogger(__name__),
+        use_local=False, scoring_healpix_order=ORDER, sealed_sampling_state=None, dtype=np.float32,
+        log=logging.getLogger(__name__),
     )
     assert len(pair) == 2
     for half_index, (got, values) in enumerate(zip(pair, (first, second), strict=True)):

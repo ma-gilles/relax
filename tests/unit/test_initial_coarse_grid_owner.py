@@ -180,14 +180,15 @@ def test_controller_builds_one_initial_grid_and_one_final_sampling(monkeypatch, 
     its sampling once."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
-    from relax.refinement.refinement_options import EngineDebugOptions
+    from relax.parity import relion_replay_source
+    from relax.parity.relion_replay_source import RelionReplay
 
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, "build_initial_coarse_grids", "initial")
-    trace.wrap(iteration_loop, "build_sealed_initial_coarse_grids", "sealed")
+    trace.wrap(relion_replay_source, "build_sealed_initial_coarse_grids", "sealed")
     trace.wrap(finalization, "run_final_all_data", "final")
     trace.wrap(finalization, "prepare_final_sampling", "final_sampling")
-    extra = {"debug": EngineDebugOptions(sealed_sampling_state=TINY_SEALED)} if sealed else {}
+    extra = {"relion_replay": RelionReplay(sealed_sampling_state=TINY_SEALED)} if sealed else {}
     run_tiny_refinement(monkeypatch, max_iter=1, **extra)
 
     assert trace.labels() == ["sealed" if sealed else "initial", "final", "final_sampling"]

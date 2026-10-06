@@ -1006,6 +1006,16 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 "sigma_rot_deg": 0.0, "sigma_psi_deg": 0.0,
                 "coarse_size": 4, "current_size": 6,
             }
+        replay_class = None
+        if importlib.util.find_spec("relax.parity") is not None:
+            replay_class = getattr(importlib.import_module("relax.parity.relion_replay_source"), "RelionReplay", None)
+        source_fields = {}
+        if replay_class is not None and "sealed_sampling_state" in {f.name for f in dataclasses.fields(replay_class)}:
+            # A source whose frozen boundary and state-swap probe enter through the input source (code rule 15).
+            renamed = {"assert_initial_scoring_state_immutable": "assert_scoring_state_unchanged"}
+            for name in ("state_swap_probe", "assert_initial_scoring_state_immutable", "sealed_sampling_state"):
+                if name in debug_fields:
+                    source_fields[renamed.get(name, name)] = debug_fields.pop(name)
         if debug_fields:
             extra["debug"] = refinement_options.EngineDebugOptions(**debug_fields)
         if perturb is not None:
@@ -1029,6 +1039,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                     )
                     for name in names if name in group
                 }
+                replay_settings.update(source_fields)
             options = refinement_options.RefinementOptions(
                 disc_type="linear_interp",
                 schedule=refinement_options.RefinementSchedule(

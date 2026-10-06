@@ -240,19 +240,12 @@ def require_consistency_route(
     chosen = consistency.non_default()
     if not chosen:
         return consistency
-    replay, debug = options.replay, options.debug
-    relion_state = (
-        replays_relion_state
-        or replay.init_refinement_state_fields is not None
-        or debug.sealed_sampling_state is not None
-        or debug.state_swap_probe is not None
-    )
     reasons = [
         reason
         for reason, present in (
             ("subtomogram particles", subtomograms),
             ("optics groups on several image shapes", several_image_shapes),
-            ("replayed or frozen RELION state", relion_state),
+            ("replayed or frozen RELION state", replays_relion_state),
         )
         if present
     ]
@@ -399,10 +392,6 @@ class EngineDebugOptions:
 
     disable_adjoint_y: bool = False
     disable_adjoint_ctf: bool = False
-    state_swap_probe: str | None = None
-    assert_initial_scoring_state_immutable: bool = False
-    sealed_sampling_state: Any | None = None
-    sealed_scoring_context: Any | None = None
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # Read from the environment when the options are built; nothing below reads it again.
     environment: DiagnosticEnvironment = field(default_factory=DiagnosticEnvironment.from_environ)
@@ -461,7 +450,6 @@ class ReplayState:
     init_angle_priors: Any | None = None
     preserve_initial_direction_prior: bool = False
     init_reference_real: Any | None = None
-    init_refinement_state_fields: Any | None = None
     init_relion_optics_group_count: Any | None = None
     relion_scale_follower_count: int = 0
     relion_scale_follower_owners_by_iteration: Any | None = None

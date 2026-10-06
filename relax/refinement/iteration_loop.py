@@ -35,24 +35,11 @@ from relax.dense.scoring_policy import (
 )
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import relion_replay as replay_policy
-from relax.diagnostics.frozen_boundary import (
-    _assert_frozen_scoring_state_unchanged,
-    _frozen_scoring_state_arrays,
-)
 from relax.diagnostics.iteration import (
     _significance_dump_half_indices,
 )
 from relax.diagnostics.reconstruction import check_half_accumulators_before_join
-from relax.diagnostics.relion_replay import (
-    _maybe_debug_replay_relion_references,
-    _validate_bpref_particle_order_scope,
-    sealed_rotation_ids_for_scoring,
-)
-from relax.diagnostics.state_swap_runtime import (
-    _apply_state_swap_probe,
-    _copy_optional_float_pair,
-    _snapshot_state_swap_inputs,
-)
+from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.convergence import (
     _direction_prior_healpix_order_for_scoring,
     _exhaustive_grid_order_for_state,
@@ -108,6 +95,7 @@ from relax.refinement.half_inputs import (
     _sigma_offset_for_half,
     as_sigma_offset_half_pair,
     configure_half_image_preprocessing,
+    copy_optional_float_pair,
     initialize_halfsets,
     normalize_sigma_offset_per_half,
     prepare_particle_pose_update,
@@ -121,7 +109,6 @@ from relax.refinement.half_scoring import (
 from relax.refinement.iteration_planning import (
     RunOptics,
     build_initial_coarse_grids,
-    build_sealed_initial_coarse_grids,
     coarse_pass1_rotations,
     first_iteration_policy,
     initialize_refinement_state,
@@ -838,7 +825,7 @@ def refine_single_volume(
     tau2_fudge = parity.tau2_fudge
     init_relion_iteration = schedule.init_relion_iteration
     n_classes = k_class.n_classes
-    sealed_sampling_state = debug.sealed_sampling_state
+    sealed_sampling_state = source.sealed_sampling_state
 
 
     setup_t0 = time.time()
@@ -917,9 +904,9 @@ def refine_single_volume(
             None if source.relion_replay is None else source.relion_replay.replay_iteration_overrides
         ),
         sealed_sampling_state=sealed_sampling_state,
-        sealed_scoring_context=debug.sealed_scoring_context,
+        sealed_scoring_context=source.sealed_scoring_context,
         allow_replayed_bpref_particle_order=parity.allow_replayed_bpref_particle_order,
-        allow_state_swap_fresh_bpref_particle_order=debug.state_swap_probe is not None,
+        allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
     class_mixture = _initialize_class_log_priors(
@@ -983,18 +970,12 @@ def refine_single_volume(
     initial_grid_order = (
         int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
     )
-    if sealed_sampling_state is not None:
-        coarse_grids = build_sealed_initial_coarse_grids(
-            sealed_sampling_state,
-            initialized_healpix_order=(
-                schedule.init_healpix_order if resume is None else state.healpix_order
-            ),
-            voxel_size=source_pixel_size_angstrom,
-            symmetry=symmetry,
-            log=logger,
-        )
-    else:
-        coarse_grids = build_initial_coarse_grids(
+    coarse_grids = source.initial_coarse_grids(
+        initialized_healpix_order=schedule.init_healpix_order if resume is None else state.healpix_order,
+        voxel_size=source_pixel_size_angstrom,
+        symmetry=symmetry,
+        native=partial(
+            build_initial_coarse_grids,
             initial_grid_order,
             translations if resume is None else None,
             translation_range=(
@@ -1006,7 +987,8 @@ def refine_single_volume(
             n_classes=n_classes,
             voxel_size=source_pixel_size_angstrom,
             symmetry=symmetry,
-        )
+        ),
+    )
     # Unperturbed base grid — `coarse_grids.translations` may be replaced per-iter by
     # a perturbed copy (SamplingPerturbation). Keep the base so each iter
     # perturbs a fresh copy rather than compounding prior perturbations.
@@ -1270,7 +1252,6 @@ def refine_single_volume(
     replay_saved_healpix_order = (
         None if native_sampling_boundary else int(state.healpix_order)
     )
-    frozen_initial_scoring_state = None
     frozen_initial_scoring_state_sha256 = None
     def _state_swap_inputs():
         """The scoring-state values a state-swap probe snapshots and later swaps, as bound right now."""
@@ -1290,7 +1271,7 @@ def refine_single_volume(
     def _frozen_scoring_state_now():
         """The scoring-state arrays as bound right now; the loop re-binds several of them per iteration."""
 
-        return _frozen_scoring_state_arrays(
+        return dict(
             means=reference_model.maps,
             mean_variance=reference_model.tau2,
             mean_variance_per_half=(
@@ -1301,16 +1282,9 @@ def refine_single_volume(
             current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
             direction_priors=direction_priors,
             experiment_datasets=experiment_datasets,
-            sealed_sampling_state=sealed_sampling_state,
-            sealed_scoring_context=debug.sealed_scoring_context,
         )
 
-    if debug.assert_initial_scoring_state_immutable:
-        if k_class_enabled:
-            raise RuntimeError(
-                "Frozen scoring-state immutability assertion currently supports K=1 only"
-            )
-        frozen_initial_scoring_state = _frozen_scoring_state_now()
+    source.scoring_state_bound(_frozen_scoring_state_now)
     # Per-half numbered-iteration assignments; a final-only replay
     # (--max_iter 0 --force-final-after-zero-iterations) runs no numbered
     # iteration and reports none.
@@ -1438,30 +1412,16 @@ def refine_single_volume(
             replay_saved_healpix_order=replay_saved_healpix_order,
         )
 
-        recovar_state_swap_snapshot = None
-        state_swap_target_this_iteration = (
-            debug.state_swap_probe is not None
-            and int(debug.state_swap_probe.get("iteration", -1)) == int(iteration)
-        )
-        if state_swap_target_this_iteration:
-            recovar_state_swap_snapshot = _snapshot_state_swap_inputs(**_state_swap_inputs())
-        # A frozen boundary's sealed sampling state installs this iteration's sampling controls first.
-        sealed_prior_translations = sealed_sampling_meta = None
-        if sealed_sampling_state is not None:
-            current_size, sealed_prior_translations, sealed_sampling_meta = replay_policy._install_sealed_sampling(
-                state, sealed_sampling_state, iteration=iteration, image_geometry=image_geometry, dtype=scoring_dtype,
-            )
+        source.state_swap_snapshot(iteration, _state_swap_inputs)
         # The input source supplies the state this iteration scores with (the native source: the run's own).
         numbered = source.numbered_state(
             iteration,
             NumberedState(
                 current_size=current_size, noise_model=noise_model, sigma_offset=sigma_offset,
                 previous_best_rotations=previous_best_rotations, mean_variance=reference_model.tau2,
-                class_mixture=class_mixture, prior_translations=sealed_prior_translations,
-                sampling_meta=sealed_sampling_meta, projector_state=None,
+                class_mixture=class_mixture, prior_translations=None, sampling_meta=None, projector_state=None,
             ),
             state=state, halves=halves, direction_priors=direction_priors, image_geometry=image_geometry,
-            sampling_sealed=sealed_sampling_state is not None,
         )
         current_size = numbered.current_size
         _replay_prior_translations = numbered.prior_translations
@@ -1482,43 +1442,27 @@ def refine_single_volume(
         if replay_saved_healpix_order is not None:
             replay_saved_healpix_order = int(state.healpix_order)
 
-        reference_model.maps = _maybe_debug_replay_relion_references(
-            reference_model, options, iteration=iteration, replay_dir=star_directory,
-            replay_prefix=None if source.relion_replay is None else source.relion_replay.perturb_replay_relion_prefix,
-            volume_shape=volume_shape,
-        )
-
-        (
-            current_size,
-            reference_model,
-            noise_model,
-            previous_best_rotations,
-            swapped_sigma_offset_angstrom,
-            swapped_sigma_offset_angstrom_per_half,
-            direction_priors,
-        ) = _apply_state_swap_probe(
-            probe=debug.state_swap_probe,
-            iteration=iteration,
-            recovar_snapshot=recovar_state_swap_snapshot,
-            volume_shape=volume_shape,
-            **_state_swap_inputs(),
-        )
-        sigma_offset = SigmaOffset(swapped_sigma_offset_angstrom, swapped_sigma_offset_angstrom_per_half)
+        reference_model.maps = source.scoring_references(iteration, reference_model, volume_shape=volume_shape)
+        swapped = source.swapped_state(iteration, _state_swap_inputs, volume_shape=volume_shape)
+        if swapped is not None:
+            (
+                current_size,
+                reference_model,
+                noise_model,
+                previous_best_rotations,
+                swapped_sigma_offset_angstrom,
+                swapped_sigma_offset_angstrom_per_half,
+                direction_priors,
+            ) = swapped
+            sigma_offset = SigmaOffset(swapped_sigma_offset_angstrom, swapped_sigma_offset_angstrom_per_half)
+            history.state_swap_probe_applied_relion_iterations.append(int(init_relion_iteration) + int(iteration) + 1)
         if not parity.use_per_half_mean_variance:
             # State-swap diagnostics historically replace the one shared tau2.
             # Do not leave the scorer pointing at pre-swap aliases.
             reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
-        if state_swap_target_this_iteration:
-            history.state_swap_probe_applied_relion_iterations.append(int(init_relion_iteration) + int(iteration) + 1)
-        if frozen_initial_scoring_state is not None and iteration == 0:
-            frozen_initial_scoring_state_sha256 = _assert_frozen_scoring_state_unchanged(
-                frozen_initial_scoring_state,
-                _frozen_scoring_state_now(),
-            )
-            logger.info(
-                "Frozen scoring-state ownership verified immediately before physical iteration %d scoring",
-                int(init_relion_iteration) + iteration + 1,
-            )
+        checked = source.scoring_state_checked(iteration, _frozen_scoring_state_now)
+        if checked is not None:
+            frozen_initial_scoring_state_sha256 = checked
 
         # Half 1's projector of this iteration's references, built for the
         # expected-accuracy estimate and reused by the scoring projector setup
@@ -1567,7 +1511,7 @@ def refine_single_volume(
             current_size,
             state.healpix_order,
             float(sigma_offset.shared_angstrom),
-            _copy_optional_float_pair(sigma_offset.per_half_angstrom),
+            copy_optional_float_pair(sigma_offset.per_half_angstrom),
         )
         scoring_current_size = int(current_size)
 
@@ -1589,7 +1533,7 @@ def refine_single_volume(
         # The order is still tracked for sigma calculation.
         coarse_grids = refresh_coarse_grids(
             coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
-            star_sampling=star_directory is not None, log=logger,
+            star_sampling=star_directory is not None and sealed_sampling_state is None, log=logger,
         )
 
         # --- Local angular search bookkeeping ---
@@ -1616,7 +1560,8 @@ def refine_single_volume(
             ),
         )
         trial_grid = iteration_trial_grid(
-            coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta, dtype=scoring_dtype,
+            coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta,
+            sealed_grid=sealed_sampling_state is not None, dtype=scoring_dtype,
         )
         coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
         # RELION's coarse device geometry also applies at OS0. Keep this
@@ -1645,13 +1590,11 @@ def refine_single_volume(
             state, use_local=use_local, grid_healpix_order=coarse_grids.rotation_grid.healpix_order,
             local_search_order=sampling_plan.local.search.healpix_order if use_local else None,
         )
-        coarse_rotation_ids_for_scoring = sealed_rotation_ids_for_scoring(
-            sealed_sampling_state, trial_grid, use_local=use_local,
-        )
+        coarse_rotation_ids_for_scoring = source.scoring_rotation_ids(trial_grid, use_local=use_local)
 
         direction_log_priors = relion_direction_log_priors(
             direction_priors, options, use_local=use_local, scoring_healpix_order=direction_prior_healpix_order,
-            dtype=scoring_dtype, log=logger,
+            sealed_sampling_state=sealed_sampling_state, dtype=scoring_dtype, log=logger,
         )
 
         # --- Run E+M on each half-set ---
@@ -1678,7 +1621,8 @@ def refine_single_volume(
             #         orientations only.
 
             coarse_image_plan = plan_adaptive_image_size(
-                coarse_size_healpix_order, sampling_plan.windows, optics, options, log=logger,
+                coarse_size_healpix_order, sampling_plan.windows, optics, options,
+                sealed_sampling_state=sealed_sampling_state, log=logger,
             )
             coarse_size = coarse_image_plan.size
             coarse_cs = coarse_size if coarse_size < grid_size else None
@@ -2331,7 +2275,7 @@ def refine_single_volume(
         per_class_sigma_offset = sigma_offset_result.per_class_sigma_offset_angstrom
         history.record_sigma_offset_update(
             float(sigma_offset.shared_angstrom),
-            _copy_optional_float_pair(sigma_offset.per_half_angstrom),
+            copy_optional_float_pair(sigma_offset.per_half_angstrom),
             None if per_class_sigma_offset is None else per_class_sigma_offset.tolist(),
         )
         history.record_pose_accuracy_diagnostics(accuracy_replay, iteration_accuracy, state, n_classes=n_classes)

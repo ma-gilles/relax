@@ -243,7 +243,7 @@ def test_full_runner_propagates_and_serializes_state_swap_probe(monkeypatch, tmp
         "--state-swap-variant", "recovar_direction_prior", "--state-swap-replay-relion-references", data=data,
     )
     (probe,) = trace.calls("probe")
-    assert inputs["options"].debug.state_swap_probe is probe.result
+    assert inputs["source"].relion_replay.state_swap_probe is probe.result
     assert (probe.result["target_relion_iteration"], probe.result["iteration"]) == (2, 1)
 
 
@@ -274,14 +274,15 @@ def _state_swap_run(monkeypatch, trace):
     from helpers.tiny_refinement import run_tiny_refinement
 
     from relax.parity.relion_replay_source import RelionReplay
-    from relax.refinement.refinement_options import EngineDebugOptions
 
     run_tiny_refinement(
         monkeypatch, max_iter=3, final_after_max_iter=False, parity=dict(low_resol_join_halves_angstrom=0.0),
-        debug=EngineDebugOptions(state_swap_probe={"iteration": 1, "variant": "recovar_direction_prior"}),
-        relion_replay=RelionReplay(replay_iteration_overrides=[
-            None if index == 0 else {"direction_prior": _direction_prior_pair(200 + index)} for index in range(3)
-        ]),
+        relion_replay=RelionReplay(
+            replay_iteration_overrides=[
+                None if index == 0 else {"direction_prior": _direction_prior_pair(200 + index)} for index in range(3)
+            ],
+            state_swap_probe={"iteration": 1, "variant": "recovar_direction_prior"},
+        ),
     )
     return trace
 
@@ -289,31 +290,30 @@ def _state_swap_run(monkeypatch, trace):
 def test_relion_references_are_applied_before_state_restoration(monkeypatch):
     from helpers.tiny_refinement import CallTrace
 
-    from relax.refinement import iteration_loop
+    from relax.parity import relion_replay_source
 
     trace = CallTrace(monkeypatch)
-    trace.wrap(iteration_loop, "_maybe_debug_replay_relion_references", "references")
-    trace.wrap(iteration_loop, "_apply_state_swap_probe", "swap")
+    trace.wrap(relion_replay_source, "replay_k1_relion_references", "references")
+    trace.wrap(relion_replay_source, "_apply_state_swap_probe", "swap")
     _state_swap_run(monkeypatch, trace)
-    assert trace.labels() == ["references", "swap"] * 3
+    assert trace.labels() == ["references", "references", "swap", "references"]
 
 
 def test_state_swap_snapshot_is_bounded_to_target_iteration(monkeypatch):
     """Only the target iteration snapshots the run's own state, before its replayed state."""
     from helpers.tiny_refinement import CallTrace
 
+    from relax.parity import relion_replay_source
     from relax.parity.relion_replay_source import RelionReplaySource
-    from relax.refinement import iteration_loop
 
     trace = CallTrace(monkeypatch)
     trace.wrap(RelionReplaySource, "numbered_state", "replay")
-    trace.wrap(iteration_loop, "_snapshot_state_swap_inputs", "snapshot")
-    trace.wrap(iteration_loop, "_apply_state_swap_probe", "swap")
+    trace.wrap(relion_replay_source, "_snapshot_state_swap_inputs", "snapshot")
+    trace.wrap(relion_replay_source, "_apply_state_swap_probe", "swap")
     _state_swap_run(monkeypatch, trace)
-    assert trace.labels() == ["replay", "swap", "snapshot", "replay", "swap", "replay", "swap"]
+    assert trace.labels() == ["replay", "snapshot", "replay", "swap", "replay"]
     snapshot = trace.calls("snapshot")[0].result
-    assert trace.calls("swap")[1].kwargs["recovar_snapshot"] is snapshot
-    assert all(call.kwargs["recovar_snapshot"] is None for index, call in enumerate(trace.calls("swap")) if index != 1)
+    assert trace.calls("swap")[0].kwargs["recovar_snapshot"] is snapshot
 
 
 def test_sigma_offset_state_swap_preserves_asymmetric_half_values():

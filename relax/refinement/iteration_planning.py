@@ -12,7 +12,6 @@ import numpy as np
 from relax import sampling
 from relax.dense import scoring_policy
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.diagnostics.frozen_boundary import _restore_diagnostic_frozen_boundary_state
 from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 from relax.helpers.convergence import RefinementState, _exhaustive_grid_order_for_state, healpix_angular_step
 from relax.helpers.fourier_window import quantize_current_size
@@ -247,16 +246,16 @@ def plan_adaptive_image_size(
     optics: RunOptics,
     options: RefinementOptions,
     *,
+    sealed_sampling_state,
     log: logging.Logger,
 ) -> CoarseImageSize:
-    """Size pass 1 from incoming sampling, then admit an exact sealed width.
+    """Size pass 1 from incoming sampling, then admit an exact sealed width (``sealed_sampling_state``, the
+    input source's, or None).
 
     The fine grid can already have advanced to another order. Reads from ``optics``: the image geometry
-    and the first optics group's box and pixel size; from ``options``:
-    ``schedule.particle_diameter_ang`` and ``debug.sealed_sampling_state``. See
-    ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
+    and the first optics group's box and pixel size; from ``options``: ``schedule.particle_diameter_ang``.
+    See ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
-    sealed_sampling_state = options.debug.sealed_sampling_state
     image_geometry = optics.image_geometry
     optics_image_sizes = optics.optics_image_sizes
     optics_pixel_sizes = optics.optics_pixel_sizes
@@ -347,8 +346,7 @@ def initialize_refinement_state(
         initialize_resolution_from_ini_high(
             state, schedule.ini_high_angstrom, grid_size=grid_size, voxel_size=image_geometry.pixel_size_angstrom
         )
-    if options.replay.init_refinement_state_fields is not None:
-        _restore_diagnostic_frozen_boundary_state(state, options)
+    source.restore_boundary_state(state)
     # A continuation (RELION --continue) starts from the run files' sampling state; the
     # rest of its snapshot is installed just before the loop.
     resume = options.checkpoint.resume
@@ -363,6 +361,11 @@ def initialize_refinement_state(
                 source.relion_replay.perturb_replay_relion_dir is not None
                 or source.relion_replay.replay_iteration_overrides is not None
             ),
+            starts_from_frozen_boundary=source.relion_replay is not None and (
+                source.relion_replay.sealed_sampling_state is not None
+                or source.relion_replay.frozen_refinement_state_fields is not None
+            ),
+            swaps_state=source.swaps_state,
         )
         state = resume.refinement_state(state)
     return state
@@ -515,15 +518,15 @@ def refresh_coarse_grids(
     """The exhaustive coarse grids of ``state``'s sampling, rebuilt where they changed.
 
     A new HEALPix order rebuilds the rotation grid (up to the exhaustive-grid cap) and the translation
-    grid. When RELION's numbered sampling STAR set this iteration's sampling (``star_sampling``) and no
-    sealed sampling state did, a replayed translation range or step rebuilds the translation grid alone. ``grids.translations`` may be a perturbed copy; a rebuild
+    grid. When RELION's numbered sampling STAR set this iteration's sampling (``star_sampling``; a sealed
+    sampling state's is not the STAR's), a replayed translation range or step rebuilds the translation grid alone. ``grids.translations`` may be a perturbed copy; a rebuild
     replaces it with the base grid. Reads from ``state``: ``healpix_order`` (and the fields the
     exhaustive-grid cap reads), ``translation_range`` and ``translation_step``; from ``options``:
-    ``k_class.n_classes``, ``symmetry.point_group`` and ``debug.sealed_sampling_state``.
+    ``k_class.n_classes`` and ``symmetry.point_group``.
     """
     n_classes = int(options.k_class.n_classes)
     symmetry = options.symmetry.point_group
-    replay_translations = star_sampling and options.debug.sealed_sampling_state is None
+    replay_translations = star_sampling
     current_rotation_grid = grids.rotation_grid
     base_translations = grids.base_translations
     current_translations = grids.translations
@@ -593,6 +596,7 @@ def iteration_trial_grid(
     random_perturbation: float,
     *,
     replay_metadata,
+    sealed_grid: bool,
     dtype,
 ) -> sampling.TrialGrid:
     """This iteration's trial grid: the coarse grid, under RELION's sampling perturbation where one applies.
@@ -602,8 +606,8 @@ def iteration_trial_grid(
     M-step rotations. The angular sampling that scales the perturbation is the grid's HEALPix order, or
     the replayed order when ``replay_metadata`` supplies one. Reads from ``grids``: the rotation grid
     (rotations, Euler rows, order), ``base_translations`` (the unperturbed host translations) and
-    ``translations``; ``state.translation_step``; from ``options``: ``parity.perturb_factor``,
-    ``debug.sealed_sampling_state`` (a sealed grid keeps its own Euler rows) and ``symmetry.point_group``.
+    ``translations``; ``state.translation_step``; from ``options``: ``parity.perturb_factor`` and
+    ``symmetry.point_group``. A sealed grid (``sealed_grid``) keeps its own Euler rows.
     """
     rotation_grid = grids.rotation_grid
     rotation_eulers = np.asarray(
@@ -626,7 +630,7 @@ def iteration_trial_grid(
         mstep_source_eulers=sampling._relion_mstep_source_eulers(
             rotation_eulers,
             _angsamp_order,
-            use_grid_eulers=options.debug.sealed_sampling_state is not None,
+            use_grid_eulers=sealed_grid,
             symmetry=options.symmetry.point_group,
         ),
         base_translations=grids.base_translations,

@@ -405,14 +405,13 @@ def _validate_bpref_particle_order_scope(
     )
 
 
-def _state_swap_reference_dir(options, perturb_replay_relion_dir, *, iteration: int):
+def _state_swap_reference_dir(probe, perturb_replay_relion_dir, *, iteration: int):
     """The RELION directory a state-swap probe reads its references from, or ``None`` to keep the run's own.
 
-    Only the probe's target iteration replaces references, and only when the probe asks for it. Reads
-    ``options.debug.state_swap_probe`` (its ``iteration`` and ``replay_relion_references`` entries).
+    Only the probe's target iteration replaces references, and only when the probe asks for it. Reads the
+    ``probe``'s ``iteration`` and ``replay_relion_references`` entries (None: no probe).
     """
 
-    probe = options.debug.state_swap_probe
     if (
         probe is None
         or int(probe.get("iteration", -1)) != int(iteration)
@@ -470,15 +469,16 @@ def _load_relion_replay_reference(
     return reference
 
 
-def replay_k1_relion_references(reference_model, options, *, iteration: int, replay_dir, replay_prefix, volume_shape):
-    """The two K=1 scoring references: RELION's half maps at a state-swap probe's target, else the model's own.
+def replay_k1_relion_references(
+    reference_model, options, *, probe, iteration: int, replay_dir, replay_prefix, volume_shape,
+):
+    """The two K=1 scoring references: RELION's half maps at a state-swap ``probe``'s target, else the model's own.
 
     ``replay_dir`` is the replay directory still live at this iteration and ``replay_prefix`` its file prefix.
-    Reads ``reference_model.maps``; from ``options``: ``debug.state_swap_probe`` and
-    ``schedule.init_relion_iteration``.
+    Reads ``reference_model.maps``; from ``options``: ``schedule.init_relion_iteration``.
     """
 
-    relion_dir = _state_swap_reference_dir(options, replay_dir, iteration=iteration)
+    relion_dir = _state_swap_reference_dir(probe, replay_dir, iteration=iteration)
     if relion_dir is None:
         return reference_model.maps
     return [
@@ -495,15 +495,17 @@ def replay_k1_relion_references(reference_model, options, *, iteration: int, rep
     ]
 
 
-def replay_class_relion_references(reference_model, options, *, iteration: int, replay_dir, replay_prefix, volume_shape):
-    """Each half's class stack of scoring references: RELION's class maps at a state-swap probe's target.
+def replay_class_relion_references(
+    reference_model, options, *, probe, iteration: int, replay_dir, replay_prefix, volume_shape,
+):
+    """Each half's class stack of scoring references: RELION's class maps at a state-swap ``probe``'s target.
 
     Elsewhere the model's own maps. ``replay_dir`` is the replay directory still live at this iteration.
-    Reads ``reference_model.maps``; from ``options``: ``debug.state_swap_probe``,
-    ``schedule.init_relion_iteration`` and ``k_class.n_classes`` (``replay_prefix``: the replay's file prefix).
+    Reads ``reference_model.maps``; from ``options``: ``schedule.init_relion_iteration`` and
+    ``k_class.n_classes`` (``replay_prefix``: the replay's file prefix).
     """
 
-    relion_dir = _state_swap_reference_dir(options, replay_dir, iteration=iteration)
+    relion_dir = _state_swap_reference_dir(probe, replay_dir, iteration=iteration)
     if relion_dir is None:
         return reference_model.maps
     return [
@@ -524,26 +526,6 @@ def replay_class_relion_references(reference_model, options, *, iteration: int, 
         )
         for half_idx in range(2)
     ]
-
-
-def _maybe_debug_replay_relion_references(reference_model, options, *, iteration: int, replay_dir, replay_prefix, volume_shape):
-    """Replace scoring references with RELION maps for a state-swap probe.
-
-    This is the one remaining mode decision of the reference replay (read from
-    ``options.k_class.n_classes``), to be removed when the K=1 and Class3D
-    trajectories call ``replay_k1_relion_references`` and
-    ``replay_class_relion_references`` directly.
-    """
-
-    if int(options.k_class.n_classes) == 1:
-        return replay_k1_relion_references(
-            reference_model, options, iteration=iteration, replay_dir=replay_dir, replay_prefix=replay_prefix,
-            volume_shape=volume_shape,
-        )
-    return replay_class_relion_references(
-        reference_model, options, iteration=iteration, replay_dir=replay_dir, replay_prefix=replay_prefix,
-        volume_shape=volume_shape,
-    )
 
 
 def _replay_perturbation_seed(

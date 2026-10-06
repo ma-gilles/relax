@@ -965,6 +965,7 @@ def main(command=None):
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.refinement_options import (
         CheckpointOptions,
+        EngineDebugOptions,
         ExpectedAccuracyOptions,
         RefinementOptions,
         RelionParityOptions,
@@ -1253,9 +1254,6 @@ def main(command=None):
         checkpoint=CheckpointOptions(writer=run_file_writer, resume=resume_snapshot),
         replay=ReplayState(
             init_reference_real=None if resume_snapshot is not None else references.real_for_projector,
-            init_refinement_state_fields=(
-                None if frozen_boundary is None else frozen_boundary.refinement_state_fields
-            ),
             init_group_ids=list(particle_groups.group_ids_per_half),
             init_group_count=particle_groups.n_groups,
             relion_scale_follower_count=follower_topology.n_followers,
@@ -1285,10 +1283,7 @@ def main(command=None):
             ),
             preserve_initial_direction_prior=frozen_boundary is not None,
         ),
-        debug=command_options.resolve_debug(
-            args,
-            state_swap_probe=state_swap_probe,
-            frozen_boundary=frozen_boundary,
+        debug=EngineDebugOptions(
             expected_accuracy=ExpectedAccuracyOptions(
                 half1_base_order_local=particle_layout.accuracy_base_order_local,
                 half1_trial_order_local=particle_layout.accuracy_trial_order_local,
@@ -1318,6 +1313,8 @@ def main(command=None):
                 final_replay_reference_maps=final_replay.reference_maps,
                 final_replay_source_iteration=final_replay.source_iteration,
                 final_sampling_replay_relion_dir=final_replay.sampling_dir,
+                state_swap_probe=state_swap_probe,
+                **command_options.frozen_boundary_replay(frozen_boundary),
             ),
             run_options,
         ),

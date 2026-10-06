@@ -182,8 +182,13 @@ def host_half_pair(values, dtype=None):
 
 def validate_resume_snapshot(
     snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, grid_size, options, replays_relion_trajectory=False,
+    starts_from_frozen_boundary=False, swaps_state=False,
 ):
-    """Refuse a continuation the loop cannot start exactly from ``snapshot``."""
+    """Refuse a continuation the loop cannot start exactly from ``snapshot``.
+
+    The input source says whether the run replays a RELION trajectory, starts from a frozen boundary or swaps
+    state with a state-swap probe.
+    """
 
     problems = []
     if int(snapshot.relion_iteration) != int(init_relion_iteration):
@@ -196,11 +201,11 @@ def validate_resume_snapshot(
         problems.append(f"snapshot box {snapshot.ori_size} != image box {grid_size}")
     if replays_relion_trajectory:
         problems.append("a continuation cannot replay a RELION trajectory")
-    if options.debug.sealed_sampling_state is not None or options.replay.init_refinement_state_fields is not None:
+    if starts_from_frozen_boundary:
         problems.append("a continuation cannot start from a frozen boundary")
     if options.parity.use_per_half_mean_variance:
         problems.append("per-half scoring tau2 is a frozen-boundary diagnostic")
-    if options.debug.state_swap_probe is not None:
+    if swaps_state:
         problems.append("state-swap probes need a replayed trajectory")
     if options.adaptive.relion_current_sizes is not None or options.adaptive.relion_healpix_orders is not None:
         problems.append("sampling oracles do not apply to a continuation")

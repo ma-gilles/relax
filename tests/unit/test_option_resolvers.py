@@ -100,22 +100,20 @@ def test_class_seeds_are_drawn_only_for_a_fresh_class3d_run_from_one_reference()
                                                resumed=resumed).first_iteration_seed_classes is None
 
 
-def test_debug_switches_come_from_their_flags_and_a_sealed_boundary():
-    args = _args("--save_intermediates_dir", "dump", "--stop_after_local_search")
-    debug = command_options.resolve_debug(args, state_swap_probe="probe", frozen_boundary=None, expected_accuracy="acc")
-    assert debug.state_swap_probe == "probe"
-    assert command_options.resolve_local_search(args).stops_after_local_search
-    assert debug.expected_accuracy == "acc" and not debug.assert_initial_scoring_state_immutable
-    assert debug.sealed_sampling_state is None and debug.sealed_scoring_context is None
+def test_a_frozen_boundary_replays_its_state_and_its_sealed_sampling_on_the_fixed_arm():
+    assert command_options.resolve_local_search(_args("--stop_after_local_search")).stops_after_local_search
+    assert command_options.frozen_boundary_replay(None) == {}
     boundary = SimpleNamespace(fixed_diagnostic_arm=True, sampling_state="sampling", schema="s", completed_relion_iteration=3,
                                consumer_relion_iteration=4, source_sha256="h", source_roles={}, runtime_config={},
-                               map_lineage=[])
-    sealed = command_options.resolve_debug(args, state_swap_probe=None, frozen_boundary=boundary, expected_accuracy="acc")
-    assert sealed.assert_initial_scoring_state_immutable and sealed.sealed_sampling_state == "sampling"
-    assert sealed.sealed_scoring_context["consumer_relion_iteration"] == 4
+                               map_lineage=[], refinement_state_fields={"healpix_order": 2})
+    sealed = command_options.frozen_boundary_replay(boundary)
+    assert sealed["assert_scoring_state_unchanged"] and sealed["sealed_sampling_state"] == "sampling"
+    assert sealed["sealed_scoring_context"]["consumer_relion_iteration"] == 4
+    assert sealed["frozen_refinement_state_fields"] == {"healpix_order": 2}
     boundary.fixed_diagnostic_arm = False
-    unsealed = command_options.resolve_debug(args, state_swap_probe=None, frozen_boundary=boundary, expected_accuracy="a")
-    assert unsealed.assert_initial_scoring_state_immutable and unsealed.sealed_scoring_context is None
+    unsealed = command_options.frozen_boundary_replay(boundary)
+    assert unsealed["assert_scoring_state_unchanged"] and unsealed["sealed_scoring_context"] is None
+    assert unsealed["sealed_sampling_state"] is None
 
 
 def test_the_intermediates_observer_comes_from_its_flags(tmp_path):

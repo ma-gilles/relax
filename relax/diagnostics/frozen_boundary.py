@@ -17,8 +17,6 @@ from pathlib import Path
 import numpy as np
 from recovar.utils.file_hash import sha256_file
 
-from relax.refinement.refinement_options import RefinementOptions
-
 logger = logging.getLogger(__name__)
 
 FROZEN_BOUNDARY_SCHEMA_V2 = "recovar.em.frozen_boundary.v2"
@@ -57,7 +55,7 @@ _REFINEMENT_STATE_FIELD_DTYPES = {
 }
 
 
-def _restore_diagnostic_frozen_boundary_state(state, options: RefinementOptions) -> None:
+def _restore_diagnostic_frozen_boundary_state(state, fields) -> None:
     """Overwrite explicit RefinementState fields for a diagnostic frozen-boundary restart.
 
     The production refinement path does not call this -- see module docstring.
@@ -65,7 +63,6 @@ def _restore_diagnostic_frozen_boundary_state(state, options: RefinementOptions)
     ``FrozenRefinementBoundary`` (below) can carry, so both restart paths
     validate against ``_REFINEMENT_STATE_FIELD_DTYPES``.
     """
-    fields = options.replay.init_refinement_state_fields
     unexpected_fields = sorted(set(fields) - set(_REFINEMENT_STATE_FIELD_DTYPES))
     if unexpected_fields:
         raise ValueError(f"unsupported frozen-boundary RefinementState fields: {unexpected_fields}")

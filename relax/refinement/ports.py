@@ -173,23 +173,63 @@ class InputSource:
     # What a replaying source replays (``relax.parity.relion_replay_source.RelionReplay``), for the admission
     # checks that refuse combinations with it; None for the native source.
     relion_replay = None
+    # A frozen RELION boundary's sealed sampling state (captured directions, psi angles, translations and
+    # sizes) and the scoring context sealed with it; None natively. The sampling plan reads them.
+    sealed_sampling_state = None
+    sealed_scoring_context = None
+    # Whether a state-swap probe swaps state in some iteration (it then admits a fresh BPref particle order).
+    swaps_state = False
 
     def replays_relion_state(self) -> bool:
-        """Whether the run's state comes from a RELION run (replayed slots, STAR files or final-pass state),
-        which options computed with relax's own rules cannot be combined with."""
+        """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state, a
+        frozen boundary or a state-swap probe), which options computed with relax's own rules cannot be
+        combined with."""
         return False
+
+    def restore_boundary_state(self, state) -> None:
+        """After the initial resolution is set: install a frozen boundary's ``RefinementState`` fields in
+        ``state``."""
+
+    def initial_coarse_grids(self, *, initialized_healpix_order: int, voxel_size, symmetry: str, native):
+        """The first iteration's coarse grids (a ``CoarseGrids``); ``native()`` builds the run's own."""
+        return native()
 
     def numbered_state(
         self, iteration: int, inputs: NumberedState, *, state, halves, direction_priors, image_geometry,
-        sampling_sealed: bool,
     ) -> NumberedState:
         """The state numbered iteration ``iteration`` scores with.
 
         A replaying source may also update ``state`` (its sampling controls), the ``halves`` (poses and
-        corrections) and the ``direction_priors`` list in place, and says so; ``sampling_sealed`` is set when
-        a sealed sampling state already installed this iteration's sampling.
+        corrections) and the ``direction_priors`` list in place, and says so.
         """
         return inputs
+
+    def state_swap_snapshot(self, iteration: int, scoring_inputs) -> None:
+        """Before iteration ``iteration``'s numbered state is installed; ``scoring_inputs()`` returns the run's
+        own state (keywords ``state``, ``cs``, ``reference_model``, ``noise_model``, ``relion_half_inputs``,
+        ``previous_best_rotations``, the two sigma offsets and ``direction_priors``)."""
+
+    def scoring_references(self, iteration: int, reference_model, *, volume_shape):
+        """The maps iteration ``iteration`` scores against (the native source: the model's own)."""
+        return reference_model.maps
+
+    def swapped_state(self, iteration: int, scoring_inputs, *, volume_shape):
+        """The scoring state with a probe's components swapped back to the run's own snapshot (a tuple of
+        size, reference model, noise model, previous best rotations, the two sigma offsets and direction
+        priors), or None when iteration ``iteration`` swaps nothing."""
+        return None
+
+    def scoring_state_bound(self, scoring_arrays) -> None:
+        """Before the first iteration; ``scoring_arrays()`` returns the arrays the run will score with."""
+
+    def scoring_state_checked(self, iteration: int, scoring_arrays):
+        """Right before iteration ``iteration`` scores: a check of the arrays ``scoring_arrays()`` returns
+        against those bound before the first iteration; its digest, or None when nothing is checked."""
+        return None
+
+    def scoring_rotation_ids(self, trial_grid, *, use_local: bool):
+        """The rotation ids the scorer reads for ``trial_grid`` (None: the grid's own)."""
+        return None
 
     def relion_run_directory(self, iteration: int):
         """The RELION run directory whose numbered STAR files supply iteration ``iteration``'s sampling (None:

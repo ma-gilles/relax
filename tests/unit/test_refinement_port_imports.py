@@ -1,7 +1,8 @@
 """The algorithm's modules never import a port implementation (code rule 15).
 
-Observers (``relax.diagnostics.observers``) and comparison input sources (``relax.parity``) are chosen by the
-command and handed to the controller through ``relax.refinement.ports``; the algorithm imports only the ports.
+Observers (``relax.diagnostics.observers``) and comparison input sources (``relax.parity``, which alone calls the
+frozen boundary and the state-swap probe) are chosen by the command and handed to the controller through
+``relax.refinement.ports``; the algorithm imports only the ports.
 """
 
 import json
@@ -16,8 +17,15 @@ import relax.refinement
 pytestmark = pytest.mark.unit
 
 # The command boundary chooses the implementations; every other module of the package is the algorithm.
-COMMAND_MODULES = {"full_refinement", "command_options"}
-IMPLEMENTATIONS = ("relax.diagnostics.observers", "relax.parity")
+# particle_loading is the command's particle reader (only full_refinement imports it; it reads the flags).
+COMMAND_MODULES = {"full_refinement", "command_options", "particle_loading"}
+IMPLEMENTATIONS = (
+    "relax.diagnostics.observers",
+    "relax.parity",
+    # The frozen boundary and the state-swap probe, which only the replay input source calls.
+    "relax.diagnostics.frozen_boundary",
+    "relax.diagnostics.state_swap_runtime",
+)
 
 
 def test_the_algorithm_modules_import_no_port_implementation():

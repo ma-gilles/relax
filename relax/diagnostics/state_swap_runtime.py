@@ -15,6 +15,7 @@ import numpy as np
 
 from relax.diagnostics.state_swap_probe import _STATE_SWAP_VARIANT_COMPONENTS
 from relax.helpers.orientation_priors import DirectionPrior
+from relax.refinement.half_inputs import copy_optional_float_pair
 from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
 
@@ -88,12 +89,6 @@ def _copy_direction_prior_state(priors):
     )
 
 
-def _copy_optional_float_pair(values):
-    if values is None:
-        return None
-    return [float(values[0]), float(values[1])]
-
-
 def _restore_state_fields(state, state_fields, fields):
     for field_name in fields:
         if field_name in state_fields:
@@ -128,7 +123,7 @@ def _snapshot_state_swap_inputs(
         "previous_best_rotation_eulers": _copy_half_pair([particle_half.rotation_eulers for particle_half in relion_half_inputs]),
         "previous_best_rotations": _copy_half_pair(previous_best_rotations),
         "current_sigma_offset_angstrom": float(current_sigma_offset_angstrom),
-        "current_sigma_offset_angstrom_per_half": _copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
+        "current_sigma_offset_angstrom_per_half": copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
         "direction_prior_per_half": priors,
         "direction_prior_order_per_half": prior_orders,
     }
@@ -399,7 +394,7 @@ def _apply_state_swap_probe(
         ]
     if "sigma_offset" in components:
         current_sigma_offset_angstrom = float(recovar_snapshot["current_sigma_offset_angstrom"])
-        current_sigma_offset_angstrom_per_half = _copy_optional_float_pair(
+        current_sigma_offset_angstrom_per_half = copy_optional_float_pair(
             recovar_snapshot["current_sigma_offset_angstrom_per_half"]
         )
     if "current_size" in components:

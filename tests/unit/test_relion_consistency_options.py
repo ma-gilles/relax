@@ -15,10 +15,8 @@ from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement import command_options, iteration_loop, iteration_snapshot
 from relax.refinement.refinement_options import (
     CheckpointOptions,
-    EngineDebugOptions,
     RefinementOptions,
     RelionConsistencyOptions,
-    ReplayState,
 )
 
 pytestmark = pytest.mark.unit
@@ -110,10 +108,10 @@ def test_optics_groups_on_several_image_shapes_refuse_the_option(name, value):
         dict(relion_replay=RelionReplay(replay_iteration_overrides=[{}])),
         dict(relion_replay=RelionReplay(final_replay_override={})),
         dict(relion_replay=RelionReplay(final_replay_reference_maps=[None, None])),
-        dict(replay=ReplayState(init_refinement_state_fields={})),
+        dict(relion_replay=RelionReplay(frozen_refinement_state_fields={})),
         dict(relion_replay=RelionReplay(perturb_replay_relion_dir="relion")),
-        dict(debug=EngineDebugOptions(sealed_sampling_state=object())),
-        dict(debug=EngineDebugOptions(state_swap_probe={"iteration": 0})),
+        dict(relion_replay=RelionReplay(sealed_sampling_state=object())),
+        dict(relion_replay=RelionReplay(state_swap_probe={"iteration": 0})),
     ],
     ids=["iteration-overrides", "final-override", "final-references", "frozen-state", "star-replay", "sealed", "swap"],
 )

@@ -764,12 +764,13 @@ def make_relion_direction_log_prior(direction_prior, healpix_order, rotations=No
 
 
 def relion_direction_log_priors(
-    direction_priors, options, *, use_local: bool, scoring_healpix_order, dtype: np.dtype, log,
+    direction_priors, options, *, use_local: bool, scoring_healpix_order, sealed_sampling_state, dtype: np.dtype, log,
 ) -> list[HalfDirectionLogPriors]:
     """Both halves' direction log priors for one expectation, half 1 then half 2.
 
     Each half scores with its own model's prior (:func:`relion_direction_log_priors_for_half`). Reads from
-    ``options``: ``k_class.n_classes``, ``debug.sealed_sampling_state`` and ``symmetry.point_group``.
+    ``options``: ``k_class.n_classes`` and ``symmetry.point_group``; a sealed sampling state (the input
+    source's, or None) expands the priors over its captured rotations.
     """
     return [
         relion_direction_log_priors_for_half(
@@ -777,7 +778,7 @@ def relion_direction_log_priors(
             scoring_healpix_order=scoring_healpix_order,
             n_classes=int(options.k_class.n_classes),
             prior=prior,
-            sealed_sampling_state=options.debug.sealed_sampling_state,
+            sealed_sampling_state=sealed_sampling_state,
             dtype=dtype,
             log=log,
             half_index=half_index,
