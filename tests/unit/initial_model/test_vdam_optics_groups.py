@@ -74,10 +74,10 @@ def test_particle_optics_follow_each_particles_group():
         voxel_size = 4.25
 
     voltage, cs, q0, pixel = initial_model_io._particle_optics(main, optics, _Dataset())
-    assert voltage.tolist() == [200.0, 300.0, 200.0]
-    assert cs.tolist() == [1.4, 2.7, 1.4]
-    assert q0.tolist() == [0.07, 0.1, 0.07]
-    assert pixel == 4.25
+    np.testing.assert_allclose(voltage, [200.0, 300.0, 200.0], rtol=1e-12)
+    np.testing.assert_allclose(cs, [1.4, 2.7, 1.4], rtol=1e-12)
+    np.testing.assert_allclose(q0, [0.07, 0.1, 0.07], rtol=1e-12)
+    assert pixel == pytest.approx(4.25, rel=1e-12)
     other_grid = optics.assign(_rlnImagePixelSize=[4.25, 5.44])
     with pytest.raises(ValueError, match="one dataset per image shape"):
         initial_model_io._particle_optics(main, other_grid, _Dataset())
@@ -87,7 +87,7 @@ def test_noise_rows_per_group():
     spectra = np.abs(np.random.default_rng(1).standard_normal((2, 9))) + 0.1
     rows = dense_adapter._noise_variance_from_sigma2(spectra, 16)
     assert rows.shape == (2, 256)
-    np.testing.assert_array_equal(rows[1], dense_adapter._noise_variance_from_sigma2(spectra[1:], 16))
+    np.testing.assert_allclose(rows[1], dense_adapter._noise_variance_from_sigma2(spectra[1:], 16), rtol=1e-12)
     assert dense_adapter._noise_variance_from_sigma2(spectra[:1], 16).shape == (256,)
 
 
@@ -120,7 +120,7 @@ def test_noise_update_per_group_and_empty_group_keeps_its_spectrum():
             mu=0.9,
         )
         np.testing.assert_allclose(updated.sigma2_noise[g], alone.sigma2_noise[0], rtol=1e-15)
-    np.testing.assert_array_equal(updated.sigma2_noise[2], 2.0)
+    np.testing.assert_allclose(updated.sigma2_noise[2], 2.0, rtol=1e-15)
 
 
 def test_noise_floors_follow_the_running_average():
@@ -207,7 +207,10 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
         sigma2_fudge=1.0,
         optics_group_ids=groups,
     )
-    assert calls == [([0, 3, 5, 6], 1.0, 300.0), ([1, 2, 4, 7], 3.0, 200.0)]
+    assert calls == [
+        ([0, 3, 5, 6], pytest.approx(1.0, rel=1e-12), pytest.approx(300.0, rel=1e-12)),
+        ([1, 2, 4, 7], pytest.approx(3.0, rel=1e-12), pytest.approx(200.0, rel=1e-12)),
+    ]
     # Trial-count-weighted class means: (4 * 1 + 4 * 3) / 8.
     assert meta["estimated_acc_rot"] == pytest.approx(2.0)
     assert meta["estimated_acc_class_counts"].tolist() == [8]

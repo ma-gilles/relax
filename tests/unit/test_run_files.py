@@ -426,10 +426,11 @@ def test_unnormalized_run_files_carry_relion_norm_and_spectra_past_current_size(
     np.testing.assert_allclose(np.asarray(data["rlnNormCorrection"], dtype=np.float64), 1.0, rtol=1e-6)
     for h in (1, 2):
         model = read_star_blocks(out / f"run_it005_half{h}_model.star")
-        assert float(model["model_general"]["rlnNormCorrectionAverage"]) == 1.0
+        assert float(model["model_general"]["rlnNormCorrectionAverage"]) == pytest.approx(1.0, rel=1e-6)
         table = model["model_class_1"]
         written_tau2 = np.asarray(table["rlnReferenceTau2"], dtype=np.float64)
         written_ssnr = np.asarray(table["rlnSsnrMap"], dtype=np.float64)
+        # Past the current size the written spectrum is zero-filled, not computed: a structural check.
         assert np.all(written_tau2[past] == 0.0) and np.all(written_tau2[~past] > 0.0)
         np.testing.assert_allclose(written_ssnr[past], 0.001 / 0.999, rtol=1e-12)
 

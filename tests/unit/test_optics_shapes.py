@@ -813,6 +813,7 @@ def test_bpref_cubes_on_different_windows_merge_on_the_smaller_centred_cube():
     expected = np.stack(
         [np.asarray(crop_public_full_volume(physical[0, h], (7, 7, 7), (5, 5, 5))) for h in range(2)]
     )[None]
+    # An index-selection check: the cut moves elements without arithmetic, so exact equality is the contract.
     np.testing.assert_array_equal(cut[0], expected)
     assert cut[1] is logical
     same = [physical, physical.copy()]
