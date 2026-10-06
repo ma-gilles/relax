@@ -30,8 +30,9 @@ trace rows. Log order is not behaviour (code rule 2 in ``docs/development/refact
 log rows differ they print "only log rows differ (N); accepted under rule 2" and exit 0. A controller input
 present only in B (a leaf under ``refine<N>/inputs``: a new option field the command hands the controller) is
 listed and accepted: a value that changed what the controller does would change its results, which are
-compared. So is one present only in A whose value there was ``None`` or ``False`` (an option field that was
-off in the case and is retired, its behaviour now chosen through a port: code rule 15), and the length of the
+compared. So is one present only in A whose value there was ``None``, ``False`` or the field's declared default
+(recorded with a ``=default`` mark; an option field that was off in the case and is retired, its behaviour now
+chosen through a port: code rule 15), and the length of the
 container that holds only such added or retired members; a removed input that was on, or a changed one, is an
 output difference. Any other difference exits 1.
 
@@ -81,9 +82,11 @@ DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
 # The classes a difference is counted in; only a difference confined to "log" is accepted.
 DIFFERENCE_CLASSES = ("outputs", "added", "retired", "trace", "log")
-# A controller input B no longer has is accepted only at one of these off values in A: an option field that
-# was off in the case is retired (its non-default behaviour moved behind a port, code rule 15).
+# A controller input B no longer has is accepted only at one of these off values in A, or at its declared
+# default (a leaf ending in DEFAULT_MARK): an option field that was off in the case is retired (its non-default
+# behaviour moved behind a port, code rule 15).
 OFF_VALUES = frozenset({"None", "False"})
+DEFAULT_MARK = "=default"
 # Leaves of what full_refinement.main hands the controller (fingerprints of the main_* cases).
 CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 TMP_TOKEN = "<TMP>"
@@ -101,6 +104,17 @@ def _array_leaf(value) -> str | None:
         return None
     digest = hashlib.sha256(np.ascontiguousarray(host).tobytes()).hexdigest()
     return f"{type(value).__module__.split('.')[0]} {host.dtype} {tuple(host.shape)} sha256:{digest}"
+
+
+def _is_field_default(field, value) -> bool:
+    """Whether a dataclass field holds its declared plain default (None, a bool, number, string or empty tuple)."""
+    if field.default is not dataclasses.MISSING:
+        default = field.default
+    else:
+        return False
+    if default is None or isinstance(default, (bool, int, float, str)) or default == ():
+        return type(value) is type(default) and value == default
+    return False
 
 
 def flatten(value, path: str = "", out: dict | None = None, *, scrub=lambda text: text) -> dict:
@@ -126,7 +140,14 @@ def flatten(value, path: str = "", out: dict | None = None, *, scrub=lambda text
             flatten(item, f"{path}[{index}]", out, scrub=scrub)
     elif dataclasses.is_dataclass(value) and not isinstance(value, type):
         for field in dataclasses.fields(value):
-            flatten(getattr(value, field.name), f"{path}<{type(value).__name__}>/{field.name}", out, scrub=scrub)
+            item = getattr(value, field.name)
+            item_path = f"{path}<{type(value).__name__}>/{field.name}"
+            if _is_field_default(field, item):
+                # A field at its declared default: marked, so removing it can be told from removing a set value.
+                leaves = flatten(item, item_path, {}, scrub=scrub)
+                out.update({key: f"{leaf} {DEFAULT_MARK}" for key, leaf in leaves.items()})
+            else:
+                flatten(item, item_path, out, scrub=scrub)
     elif hasattr(value, "__dict__") and not hasattr(value, "shape"):
         flatten(vars(value), f"{path}<{type(value).__name__}>", out, scrub=scrub)
     else:
@@ -249,7 +270,9 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             for key in added[:shown_per_section]:
                 lines.append(f"ADDED {name} {section} {key}: {flat_b[key]}")
             retired = [
-                key for key in changed if key not in flat_b and CONTROLLER_INPUT.match(key) and flat_a[key] in OFF_VALUES
+                key for key in changed
+                if key not in flat_b and CONTROLLER_INPUT.match(key)
+                and (flat_a[key] in OFF_VALUES or flat_a[key].endswith(DEFAULT_MARK))
             ]
             counts["retired"] += len(retired)
             for key in retired[:shown_per_section]:

@@ -171,6 +171,25 @@ def test_a_controller_input_retired_at_its_off_value_is_listed_and_accepted_but_
         assert counts["outputs"] == 1 and not fingerprint.accepted(counts)
 
 
+def test_a_dataclass_field_at_its_declared_default_is_marked_and_may_be_retired():
+    import dataclasses
+
+    @dataclasses.dataclass
+    class Options:
+        prefix: str = "run"
+        dims: tuple = ()
+        count: int = 3
+
+    leaves = fingerprint.flatten({"o": Options(dims=(1,))}, "refine0/inputs[1]")
+    assert leaves["refine0/inputs[1]/o<Options>/prefix"].endswith(fingerprint.DEFAULT_MARK)
+    assert not leaves["refine0/inputs[1]/o<Options>/dims#"].endswith(fingerprint.DEFAULT_MARK)
+    a = _fingerprint(k1=_case({**leaves, "/mean": "aa"}))
+    b = _fingerprint(k1=_case({key: value for key, value in {**leaves, "/mean": "aa"}.items() if "/prefix" not in key}))
+    assert fingerprint.diff_fingerprints(a, b)[0]["retired"] == 1
+    b = _fingerprint(k1=_case({key: value for key, value in {**leaves, "/mean": "aa"}.items() if "/dims" not in key}))
+    assert fingerprint.diff_fingerprints(a, b)[0]["outputs"] >= 1
+
+
 def test_a_mutation_matches_through_reindentation_and_replaces_line_for_line():
     source = "def f():\n    if ready:\n        value = build(\n            a,\n        )\n    return [tau2, tau2]\n"
 
