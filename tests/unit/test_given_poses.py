@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from helpers.float_compare import assert_matches
 
 from relax.classification.given_poses import given_pose_grids
 from relax.refinement import command_options
@@ -29,11 +30,11 @@ def test_each_image_gets_its_own_rotation_and_translation(n):
     # The smallest HEALPix grid that holds the list (576 rotations at order 0, 4608 at order 1).
     assert grid_size >= n and (grids.healpix_order == 0 or rotation_grid_size(grids.healpix_order - 1) < n)
     assert grids.rotations.shape == (grid_size, 3, 3)
-    assert np.array_equal(grids.rotations[:n], rotations)
-    assert np.array_equal(grids.rotations[n:], np.broadcast_to(np.eye(3, dtype=np.float32), (grid_size - n, 3, 3)))
+    assert_matches(grids.rotations[:n], rotations)
+    assert_matches(grids.rotations[n:], np.broadcast_to(np.eye(3, dtype=np.float32), (grid_size - n, 3, 3)))
     # One zero translation; each particle's own goes to pass 2 as its image translation.
-    assert np.array_equal(grids.translations, np.zeros((1, 2), np.float32))
-    assert np.array_equal(grids.image_translations, translations)
+    assert_matches(grids.translations, np.zeros((1, 2), np.float32))
+    assert_matches(grids.image_translations, translations)
     assert np.array_equal(grids.rotation_parent_map, np.arange(grid_size))
     assert np.array_equal(grids.translation_parent_map, [0])
     samples = np.concatenate(grids.supports)
@@ -92,8 +93,8 @@ def test_class3d_pose_seed_keeps_the_input_orientations_under_skip_align():
     assert empty.shape == (0, 3) and eulers.dtype == np.float32
     # An absent angle label reads as zero, as relion_refine reads it.
     expected = np.stack([particles["rlnAngleRot"], particles["rlnAngleTilt"], np.zeros(n)], axis=1)[rows]
-    assert np.array_equal(eulers, expected.astype(np.float32))
-    assert np.array_equal(given["previous_best_translations"][0], searched["previous_best_translations"][0])
+    assert_matches(eulers, expected.astype(np.float32))
+    assert_matches(given["previous_best_translations"][0], searched["previous_best_translations"][0])
 
 
 def test_given_supports_carry_the_csr_that_limits_the_projection_cache():
