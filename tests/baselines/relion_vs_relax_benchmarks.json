@@ -14246,6 +14246,342 @@
    }
   },
   {
+   "id": "cryoet_eto_plain_1000_128_tomo_autorefine_solvent_mask_5d94e8cc",
+   "section": "feature_checks",
+   "dataset": "eto_plain (simulated subtomograms: 8c9c, 1000 particles in 8 tomograms, +-60/3 deg, box 128 at 2.125 A) with a reference solvent mask (feature)",
+   "label": "eto_plain --solvent_mask (feature)",
+   "empiar_id": null,
+   "particles": 1000,
+   "box": 128,
+   "pixel_size_A": 2.125,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "cryo-ET Refine3D auto-refine K=1 with --solvent_mask and --solvent_correct_fsc, seeds 1-8",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
+    "resolution_A": null,
+    "resolution_definition": "half_fsc_0143",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": 2550,
+    "wall_definition": "indicative only (team-lead 2026-10-06): median arm wall over seeds 1-8, not a same-node pair",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "15053951",
+     "15084934"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "5d94e8ccd",
+    "source_repo": "etoptics' pre-landing snapshot 1133b434 (relax_etoptics_20261003/src_row1_1133b43, natives native_24245c1 checked); landed as relax main 5d94e8cc (+ GPU e2e test d046c0a2) after rebases that did not change the row-1 numerical code; production defaults",
+    "resolution_A": null,
+    "resolution_definition": "half_fsc_0143",
+    "masked_resolution_A": null,
+    "wall_s": 970,
+    "wall_definition": "indicative only (team-lead 2026-10-06): median arm wall over seeds 1-8, not a same-node pair",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [
+     "15072328",
+     "15084935",
+     "15084936"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "masked GT FSC-AUC, full spectrum, frozen mask etoptics_8c9c_b40_c1 (cryoet_optics_premult_20261004/scripts score_case.py); one run per seed and engine",
+    "relion": 0.859862,
+    "relax": 0.858254,
+    "relion_band": [
+     0.859862,
+     0.871229
+    ],
+    "relax_per_seed": {
+     "1": 0.858254,
+     "2": 0.856461,
+     "3": 0.868628,
+     "4": 0.867975,
+     "5": 0.870904,
+     "6": 0.862759,
+     "7": 0.863385,
+     "8": 0.868052
+    },
+    "relion_per_seed": {
+     "1": [
+      0.859862
+     ],
+     "2": [
+      0.861816
+     ],
+     "3": [
+      0.864876
+     ],
+     "4": [
+      0.867821
+     ],
+     "5": [
+      0.871229
+     ],
+     "6": [
+      0.86275
+     ],
+     "7": [
+      0.868133
+     ],
+     "8": [
+      0.867779
+     ]
+    },
+    "paired_mean_se": [
+     -0.000981,
+     0.001
+    ],
+    "no_mask_same_scorer": {
+     "relax_ad433cd_s1_7runs": [
+      0.857808,
+      0.858207,
+      0.858301,
+      0.858403,
+      0.858467,
+      0.858458,
+      0.858408
+     ],
+     "relax_ad433cd_s2": 0.861652,
+     "relax_ad433cd_s3": 0.863973,
+     "relax_7d69a95_s1": 0.858381,
+     "relion_s1": [
+      0.857622,
+      0.857466
+     ],
+     "relion_s2": [
+      0.861696,
+      0.861678
+     ],
+     "relion_s3": [
+      0.863954
+     ]
+    },
+    "relion_mask_r2_s1_s3": [
+     0.85978,
+     0.86197,
+     0.86481
+    ]
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": null,
+   "matched": "no",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Feature check (etoptics, team-lead 2026-10-06): subtomogram half of row 1 of the feature-gap list (--solvent_mask, --solvent_correct_fsc; relax main 5d94e8cc + d046c0a2).",
+    "Page verdict: miss (worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229). etoptics' summary, paired relax - RELION over seeds 1-8: -9.8e-04 ± 1.0e-03 (SE = sd/sqrt 8).",
+    "Per seed, masked GT FSC-AUC relax / RELION: s1 0.85825 / 0.85986; s2 0.85646 / 0.86182; s3 0.86863 / 0.86488; s4 0.86798 / 0.86782; s5 0.87090 / 0.87123; s6 0.86276 / 0.86275; s7 0.86338 / 0.86813; s8 0.86805 / 0.86778.",
+    "Without --solvent_mask, the same fixture on one scorer (benchw 2026-10-06; relax runs on ad433cd and 7d69a95, RELION mpiscale without the mask): seed 1 relax 0.85781-0.85847 (7 runs) vs RELION 0.85762/0.85747; seed 2 0.86165 vs 0.86170/0.86168; seed 3 0.86397 vs 0.86395. Without the mask the programs agree (relax at or above RELION); the seed-1/2 deficit appears only with the mask (seed 2 relax drops from 0.86165 to 0.85646 while RELION rises to 0.86182), so it is specific to the solvent-mask path, not the fixture. Reported to etoptics.",
+    "Reading (etoptics, 2026-10-06): miss under the page rule; mask-specific; paired mean -9.8e-4 ± 1.0e-3 (8 seeds); with the mask the per-seed differences scatter by ±5e-3 in both directions (s2 -5.4e-3, s7 -4.8e-3, s3 +3.8e-3), and with one run per seed per program spread vs bias is not yet separated. RELION reproduces itself under the mask within 1.5e-4 (r2 at s1-s3: 0.85978 / 0.86197 / 0.86481 vs r1 0.85986 / 0.86182 / 0.86488; row1/scores_eto_plain_mask_relion_r2.json). Repeat check queued by etoptics (relax x2 at s1/s2/s7 on e225adae, jobs 15146448/15146449; RELION s7 r2, job 15146454): a relax spread of about 5e-3 means trajectory spread on the mask path, a persistent low s2 means a bias.",
+    "Speed, indicative only (not a same-node pair; RELION is the patched mpiscale build, not stock): median wall over seeds 1-8 relax 970 s (926-1086; jobs 15072328, 15084935, 15084936) vs RELION 2550 s (2489-3341; jobs 15053951, 15084934, three concurrent runs per node)."
+   ],
+   "null_reasons": {
+    "relion.resolution_A": "the score files record the final and masked resolutions per run in the notes",
+    "relax.resolution_A": "the score files record the final and masked resolutions per run in the notes",
+    "relion.relion_reported_resolution_A": "per-run values in the score files",
+    "relion.masked_resolution_A": "per-run values in the score files",
+    "relax.masked_resolution_A": "per-run values in the score files",
+    "time_ratio_relax_over_relion": "indicative walls only (not a same-node pair, patched RELION build)",
+    "relion.masked_band_auc": "rows score GT FSC-AUC",
+    "relax.masked_band_auc": "rows score GT FSC-AUC",
+    "relion.iterations": "not recorded",
+    "relax.iterations": "not recorded",
+    "cross_engine": "map agreement only for the K=2 note",
+    "cross_engine_masked_band_auc": "map agreement only for the K=2 note"
+   },
+   "mask": {
+    "dataset": "etoptics_8c9c_b40_c1",
+    "sha256": "f61225868a67121edd1fd613ef9b0998ea605dfc44941b5f610cbe00469f460e"
+   },
+   "evidence": {
+    "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/cases/eto_plain",
+    "solvent_mask": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/masks/etoptics_eto_plain_solvent_ref/solvent_ref_mask.mrc",
+    "mask_script": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/make_solvent_ref_mask.py",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_8seeds.json",
+    "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/row1_20261005",
+    "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/relion/eto_plain/refine3d_cc_mask",
+    "no_mask_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/row1_nomask_20261006/score.json",
+    "no_mask_relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/runs/relax/drift_ad433cd",
+    "no_mask_relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/relion_refs/eto_plain/refine3d_cc_mpiscale",
+    "source": "etoptics via team-lead, 2026-10-06",
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/row1_solvent_mask_rows.py",
+    "relion_r2_scores": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_relion_r2.json"
+   },
+   "date": "2026-10-06",
+   "quality_pass": false,
+   "quality_reason": "worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229",
+   "feature_reference": "RELION's --solvent_mask (Refine3D/Class3D reference mask) and --solvent_correct_fsc (Refine3D): RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
+   "history": []
+  },
+  {
+   "id": "noise1_k1_5k128_refine3d_solvent_mask_5d94e8cc",
+   "section": "feature_checks",
+   "dataset": "data_noise1_5k_normalized (simulated K=1, 5k particles, box 128 at 4.25 A) with a reference solvent mask (feature)",
+   "label": "noise1_k1_5k128 --solvent_mask (feature)",
+   "empiar_id": null,
+   "particles": 5000,
+   "box": 128,
+   "pixel_size_A": 4.25,
+   "symmetry": "C1",
+   "classes": 1,
+   "workflow": "Refine3D auto-refine K=1 with --solvent_mask and --solvent_correct_fsc, seeds 1-8",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "relion": {
+    "version": "RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
+    "resolution_A": null,
+    "resolution_definition": "half_fsc_0143",
+    "relion_reported_resolution_A": null,
+    "masked_resolution_A": null,
+    "wall_s": null,
+    "wall_definition": "no same-node pair",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "5d94e8ccd",
+    "source_repo": "etoptics' pre-landing snapshot 1133b434 (relax_etoptics_20261003/src_row1_1133b43, natives native_24245c1 checked); landed as relax main 5d94e8cc (+ GPU e2e test d046c0a2) after rebases that did not change the row-1 numerical code; production defaults",
+    "resolution_A": null,
+    "resolution_definition": "half_fsc_0143",
+    "masked_resolution_A": null,
+    "wall_s": null,
+    "wall_definition": "no same-node pair",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 1,
+    "iterations": null,
+    "jobs": [],
+    "masked_band_auc": null
+   },
+   "gt": {
+    "metric": "GT FSC-AUC over shells 1-40 of the masked half-map pair (relax scripts/masked_fsc.py score, frozen scoring mask noise1_k1_5k128_c1; the solvent mask is a separate file); one run per seed and engine",
+    "relion": 0.977236,
+    "relax": 0.97718,
+    "relion_band": [
+     0.973804,
+     0.978125
+    ],
+    "relax_per_seed": {
+     "1": 0.97718,
+     "2": 0.977238,
+     "3": 0.976255,
+     "4": 0.976585,
+     "5": 0.974741,
+     "6": 0.97738,
+     "7": 0.978065,
+     "8": 0.977803
+    },
+    "relion_per_seed": {
+     "1": [
+      0.977236
+     ],
+     "2": [
+      0.977318
+     ],
+     "3": [
+      0.976271
+     ],
+     "4": [
+      0.976635
+     ],
+     "5": [
+      0.973804
+     ],
+     "6": [
+      0.977395
+     ],
+     "7": [
+      0.978125
+     ],
+     "8": [
+      0.977753
+     ]
+    },
+    "paired_mean_se": [
+     8.87e-05,
+     0.00012
+    ]
+   },
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "time_ratio_relax_over_relion": null,
+   "matched": "no",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": false
+   },
+   "notes": [
+    "Feature check (etoptics, team-lead 2026-10-06): row 1 of the feature-gap list, --solvent_mask (reference mask in place of the spherical mask) and --solvent_correct_fsc (high-resolution noise substitution of the gold-standard FSC), landed as relax main 5d94e8cc with the GPU end-to-end test d046c0a2.",
+    "Page verdict: miss (worst s2 −8.0e-5 vs same-seed RELION; below same-seed RELION at 6 of 8 seeds (systematic); inside across-seed band). etoptics' summary, paired relax - RELION over seeds 1-8: +8.9e-05 ± 1.2e-04 (SE = sd/sqrt 8); the positive mean comes from seed 5 (+9.4e-04). The seed rule (paired mean within the SE) is the page's rule only for bit-reproducible references; GPU RELION is not one, so the page rule decides.",
+    "Per seed, GT FSC-AUC relax / RELION: s1 0.977180 / 0.977236; s2 0.977238 / 0.977318; s3 0.976255 / 0.976271; s4 0.976585 / 0.976635; s5 0.974741 / 0.973804; s6 0.977380 / 0.977395; s7 0.978065 / 0.978125; s8 0.977803 / 0.977753. Final resolution equal at 7 of 8 seeds (seed 5: relax 11.574468 vs RELION 11.826087 A).",
+    "Class3D K=2 with --solvent_mask (data_pdb_k2_5k_128, seeds 1-3, 25 iterations; no --solvent_correct_fsc, Class3D has no gold-standard FSC): relax and RELION class maps agree at masked FSC-AUC 0.99999 (seeds 1 and 3) and 0.9985-0.9989 (seed 2) against both RELION repeats. Caveat: class accuracy is 0.50 in both programs, so this fixture does not separate the classes at 25 iterations and the K=2 check covers the mask code path, not classification quality (score file in evidence).",
+    "Speed: not measured as a pair; see the subtomogram row for indicative walls."
+   ],
+   "null_reasons": {
+    "relion.resolution_A": "the score files record the final and masked resolutions per run in the notes",
+    "relax.resolution_A": "the score files record the final and masked resolutions per run in the notes",
+    "relion.relion_reported_resolution_A": "per-run values in the score files",
+    "relion.masked_resolution_A": "per-run values in the score files",
+    "relax.masked_resolution_A": "per-run values in the score files",
+    "relion.wall_s": "no same-node pair",
+    "relax.wall_s": "no same-node pair",
+    "time_ratio_relax_over_relion": "no same-node pair",
+    "relion.masked_band_auc": "rows score GT FSC-AUC",
+    "relax.masked_band_auc": "rows score GT FSC-AUC",
+    "relion.iterations": "not recorded",
+    "relax.iterations": "not recorded",
+    "cross_engine": "map agreement only for the K=2 note",
+    "cross_engine_masked_band_auc": "map agreement only for the K=2 note"
+   },
+   "mask": {
+    "dataset": "noise1_k1_5k128_c1",
+    "sha256": "3ca550e9ee8470aff405a8162d1225414dae6cdb07c835ebe7f9b5876e74a5d3"
+   },
+   "evidence": {
+    "fixture": "/scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_5k_normalized",
+    "solvent_mask": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_noise1_5k_normalized/masks/noise1_k1_5k128_solvent_ref/solvent_ref_mask.mrc",
+    "mask_script": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/make_solvent_ref_mask.py",
+    "scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_spa",
+    "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/relax",
+    "relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/relion/k1_5k128_gui60/refine3d_mask",
+    "k2_scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/score_k2.json",
+    "k2_relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/relax",
+    "k2_relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/relion/k2_5k128/class3d_mask",
+    "k2_solvent_mask": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/data_pdb_k2_5k_128/masks/pdb_k2_5k128_solvent_ref/solvent_ref_mask.mrc",
+    "source": "etoptics via team-lead, 2026-10-06",
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/row1_solvent_mask_rows.py"
+   },
+   "date": "2026-10-06",
+   "quality_pass": false,
+   "quality_reason": "worst s2 −8.0e-5 vs same-seed RELION; below same-seed RELION at 6 of 8 seeds (systematic); inside across-seed band",
+   "feature_reference": "RELION's --solvent_mask (Refine3D/Class3D reference mask) and --solvent_correct_fsc (Refine3D): RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
+   "history": []
+  },
+  {
    "id": "multioptics_k2_10k128_initialmodel_vdam_k1_845c636",
    "section": "feature_checks",
    "dataset": "multioptics_k2_10k128 (two optics groups with different image shapes; synthetic, 10k particles, box 128)",
