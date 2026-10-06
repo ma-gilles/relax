@@ -12,7 +12,10 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
    promotion, casts, operation and reduction order, random-state progression, coordinate conventions,
    saved formats and restart semantics; the default path stays bit-identical and reproduces RELION.
    Production EM is float32. Numerical, execution and structural changes go in separate commits, each with
-   its own evidence. Do not fix an apparent mathematical inconsistency inside a refactor.
+   its own evidence. A refusal of a previously accepted input is a fourth kind: its own commit, fingerprint
+   differences confined to the cases that set that input, and the message says what its users now see.
+   Do not fix an apparent mathematical inconsistency inside a refactor; where RELION's value is non-finite,
+   rule 12 decides.
 2. **Preserve supported interfaces, not internals.** Public functions, CLI behaviour, output schemas, saved
    formats, restart contracts and required diagnostics are contracts. Private functions, local names and the
    order of ordinary log messages are not: move them and migrate their callers and tests. Keep a
@@ -20,7 +23,8 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
 3. **Required lifetimes, not old scopes.** Trace each large host or device buffer through records, views,
    closures, callbacks and asynchronous consumers. Do not extend a lifetime by accident, and do not shorten
    one a consumer needs; releasing an unused buffer earlier is allowed. Preserve donation, aliasing, stream
-   and FFI requirements. State any intentional lifetime change and its peak-memory effect.
+   and FFI requirements. State any intentional lifetime change and its peak-memory effect. A module-level
+   cache of a device array is a lifetime extension: name its key, size and release, or remove it.
 4. **JAX compilation is an execution contract.** A Python function boundary is not a jit boundary: do not
    add jit regions, transfers, synchronisation or large intermediates to match the source decomposition.
    Keep Python side effects out of traced code, keep compiled-function identity stable, and choose static
@@ -31,9 +35,13 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
 
 5. **Decide once, at the owning boundary.** Arguments, modes, environment variables and defaults become
    option records where they enter, with their precedence preserved and each default defined once. Below
-   that point nothing reads `args`, `os.environ` or a mode string.
+   that point nothing reads `args`, `os.environ` or a mode string; the one exception is a dump destination
+   owned by `relax/diagnostics` that changes no computed value, read where the dump is written and listed in
+   the module's status document. Below the boundary, parameters whose values come from options have no
+   defaults: a default that copies an options default is a second owner (rule 7).
 6. **Split by contract, not by flag.** If two variants need different operands, invariants or state
-   transitions, they are two functions, chosen by one decision; a function whose arguments are half unused
+   transitions, they are two functions, or two records with the same methods called at the same points of
+   the controller, chosen by one decision; a function whose arguments are half unused
    in each mode is two contracts. A parameter that selects a legitimate variant of one coherent operation
    (a layout, a precision, a JAX static specialisation) may stay. Share an implementation where the contract
    is shared; measure before duplicating a sequence to remove a flag.
@@ -60,11 +68,16 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
 12. **Check at the edge, then trust; never fall back silently.** Validate external inputs, restored state and
     newly computed invariants where they become available. An unsupported combination refuses with a
     message naming it. A supported fallback is explicit and tested; a silent substitution, skip or
-    success-shaped result is a defect.
+    success-shaped result is a defect. Where RELION computes a non-finite value (NaN, infinity) that reaches
+    arithmetic, the configuration refuses at the options edge, naming it, unless the owner records a parity
+    exception; the commit records what RELION does. This applies only to non-finite values that reach
+    arithmetic: one that is never used, or only logged, is pinned by a test instead.
 13. **Test behaviour with independent evidence.** Focused numerical tests with independently justified
     expectations, and integration through real callers, covering affected modes, non-default settings,
-    boundaries and failure paths. No new test reads or executes source text; convert an existing one when the
-    code it pins changes, keeping its assertions. Never weaken a tolerance, assertion or reference to make a
+    boundaries and failure paths. No new test reads or executes source text (`inspect.getsource`, a search
+    of a file's text, where a name is defined); structure measurements (line counts, parameter counts,
+    spans) are allowed. Convert an existing source-reading test when the code it pins changes, moves or is
+    renamed, keeping its assertions (procedure, section 1). Never weaken a tolerance, assertion or reference to make a
     change pass.
 14. **Evidence matches risk, and says what it does not cover.** The fingerprint harness covers controller
     moves on a stand-in engine, not engine numbers, GPU order, memory or lifetimes. Use real-engine checks
@@ -84,3 +97,21 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
 - v1 14, 15, 18 → procedure. v1 17 (ceilings only go down) → procedure, as review signals with slack
   (owner, 2026-10-05). v1 19 → rule 14.
 - New: rules 1 (as a rule), 2, 4, 5, 8, 11, 12, 14.
+
+## Changes from v3 (main 3849a3d3)
+
+From the test of the rules on `relax/vdam` (gap numbers of `refactor_vdam_20261006/HANDOFF.json`):
+
+- Rule 1: a refusal of a formerly accepted input is its own kind of change (gap 9); pointer to rule 12
+  for RELION's non-finite values (gap 7).
+- Rule 3: a module-level device-array cache is a lifetime extension (gap 15).
+- Rule 5: the dump-destination exception, which every status document had recorded (gap 13); no defaults
+  below the boundary for values that come from options (gap 14).
+- Rule 6: two records with the same methods are a split by contract too (gap 16).
+- Rule 12: a RELION non-finite value that reaches arithmetic refuses unless the owner records a parity
+  exception (gap 7, owner policy).
+- Rule 13: structure measurements are not source reading (gap 10); a move or rename triggers the
+  conversion (gap 11).
+- Procedure and template (gaps 5, 6, 8, 11, 12, 13, 17, 18, 19, 21); tooling: `REFACTOR_MODULE`,
+  `scripts/dev/ceilings.py`, `report_refinement_structure.py --package`, the gate's module test
+  directories, `run_test_tier.py --exclude` (gaps 1-4, 20).
