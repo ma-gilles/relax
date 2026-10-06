@@ -263,7 +263,9 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
     not centre its first global search on the input orientations (see
     ``_kclass_firstiter_translation_seed``), so only translations are
     returned: ``rows`` indexes the input STAR in the order of the single
-    all-data accumulator, and the second accumulator is empty.
+    all-data accumulator, and the second accumulator is empty. With local
+    searches from the start (``--sigma_ang``, ``with_angles``) the input angles
+    are the searches' centres, 0 where the STAR has none, as relion_refine reads them.
     """
     rows = np.asarray(rows, dtype=np.int64)
     n_particles = len(input_particles)
@@ -535,11 +537,12 @@ def prepare_initial_poses(
                 input_particles,
                 particle_layout.half1_rows,
                 voxel_size=pixel_size_angstrom,
-                with_orientations=skip_align,
+                # --skip_align classifies at the input poses; --sigma_ang centres its local searches on them.
+                with_orientations=skip_align or local_search_at_start,
             )
         except (TypeError, ValueError) as exc:
             raise SystemExit(f"Invalid input-STAR Class3D origin initialization: {exc}") from exc
-        resolved_initial_pose_source = "input_star_translations"
+        resolved_initial_pose_source = "input_star" if local_search_at_start else "input_star_translations"
         initial_pose_source_path = input_pose_path
         initial_pose_source_sha256 = _sha256_file(input_pose_path)
         log.info(
@@ -549,7 +552,11 @@ def prepare_initial_poses(
             initial_pose_source_sha256,
             init_previous_best_poses["translation_units"],
             init_previous_best_poses["previous_best_translations"][0].shape[0],
-            "orientations kept: --skip_align" if skip_align else "orientations intentionally unset",
+            "orientations kept: --skip_align"
+            if skip_align
+            else "orientations: the local searches' centres"
+            if local_search_at_start
+            else "orientations intentionally unset",
         )
     elif use_input_star_pose_seed:
         input_pose_path = (Path(data_dir) / "particles.star").resolve()

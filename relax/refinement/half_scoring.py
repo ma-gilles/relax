@@ -43,7 +43,12 @@ from relax.diagnostics.local_debug import log_local_adaptive_support, log_local_
 from relax.helpers.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
 from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
 from relax.helpers.oversampling import AdaptivePass2Grids, prepare_adaptive_pass2_grids
-from relax.local.local_layout import build_local_adaptive_pass2_hypothesis_layout, build_local_hypothesis_layout
+from relax.local.local_layout import (
+    build_local_adaptive_pass2_hypothesis_layout,
+    build_local_hypothesis_layout,
+    expand_local_layout_classes,
+    restrict_local_layout_classes,
+)
 from relax.refinement.firstiter_cc import (
     FirstIterCCBatching,
     FirstIterCCData,
@@ -1632,6 +1637,9 @@ def _score_half_local_one_shape(
         if sampling.model_support_size is None
         else sampling.model_support_size
     )
+    # Class3D local searches (--sigma_ang) score every class at each particle's local orientations.
+    projector_slabs = None if half.projector is None else half.projector.data
+    n_classes = int(np.shape(projector_slabs)[0]) if projector_slabs is not None and np.ndim(projector_slabs) == 4 else 1
 
     # For local search the per-chunk M-step only sees the cone-restricted
     # rotation set (typically a few thousand rotations per image with high
@@ -1754,6 +1762,8 @@ def _score_half_local_one_shape(
             rotation_grid_mstep_rotations=sampling.mstep_rotations,
             generate_relion_mstep_rotations=True,
             symmetry=sampling.search.symmetry,
+            n_classes=n_classes,
+            image_seed_classes=half.image_seed_classes if n_classes > 1 else None,
     )
     local_batching = LocalSearchBatchPolicy(
             image_batch_size=safe_ibs,
@@ -1805,6 +1815,12 @@ def _score_half_local_one_shape(
             translation_prior_reference_translations,
             parent_local_layout_dtype,
         )
+        if n_classes > 1:
+            # Class3D: pass 1 and pass 2 share the class-expanded parents, so the significant samples
+            # carry their class into pass 2's support.
+            parent_layout = expand_local_layout_classes(parent_layout, n_classes)
+            if half.image_seed_classes is not None:
+                parent_layout = restrict_local_layout_classes(parent_layout, half.image_seed_classes)
         parent_local_rot_max = (
             int(np.max(np.asarray(parent_layout.rotation_counts, dtype=np.int64)))
             if int(np.asarray(parent_layout.rotation_counts).size)
@@ -2015,6 +2031,29 @@ def _score_half_local_one_shape(
                 ),
                 **local_profile_k,
             )
+    # Must match the current-size BPref grid allocated by the local engine above; downstream
+    # join/reconstruct calls infer layout from this shape.
+    mstep_accumulator_shape = (
+        relion_backprojector_volume_shape(
+            half.particles.dataset.volume_shape,
+            RECONSTRUCTION_PADDING_FACTOR,
+            # Images on another grid fill the backprojector at the reference model size.
+            current_size=(
+                reconstruction_current_size_for_engine
+                if optics.reference_current_size is None
+                else optics.reference_current_size
+            ),
+        )
+        if local_relion_x_half_mstep
+        else None
+    )
+    if local_outputs.class_pass is not None:
+        return _class_local_half_result(
+            local_outputs.class_pass,
+            n_classes=n_classes,
+            significant_counts=relion_significant_counts_k,
+            mstep_accumulator_shape=mstep_accumulator_shape,
+        )
     pose_dtype = _dense_global_scoring_dtype()
     best_rots = np.asarray(best_rots_k, dtype=pose_dtype)
     best_eulers = (
@@ -2034,24 +2073,41 @@ def _score_half_local_one_shape(
         best_pose_translations=best_translations,
         significant_counts=relion_significant_counts_k,
         mstep_full_half_axis=0 if local_relion_x_half_mstep else None,
-        mstep_accumulator_shape=(
-            # Must match the current-size BPref grid allocated by the local
-            # engine above; downstream join/reconstruct calls infer layout
-            # from this shape.
-            relion_backprojector_volume_shape(
-                half.particles.dataset.volume_shape,
-                RECONSTRUCTION_PADDING_FACTOR,
-                # Images on another grid fill the backprojector at the reference model size.
-                current_size=(
-                    reconstruction_current_size_for_engine
-                    if optics.reference_current_size is None
-                    else optics.reference_current_size
-                ),
-            )
-            if local_relion_x_half_mstep
-            else None
-        ),
+        mstep_accumulator_shape=mstep_accumulator_shape,
     )
+
+
+def _class_local_half_result(class_pass, *, n_classes: int, significant_counts, mstep_accumulator_shape):
+    """A Class3D local pass as the half's K-class result, as the subtomogram K-class pass adapts its own.
+
+    ``class_pass`` is the resident local engine's ``ResidentKClassPass2Output``; its class rotation sums
+    are over the layout's posterior grid, which is the direction-prior grid of the local search.
+    """
+
+    from relax.classification.k_class import _class_segmented_em_result
+
+    k_class_result = _class_segmented_em_result(
+        class_pass,
+        n_classes=n_classes,
+        class_posterior_sums_from_noise=True,
+        return_profile=False,
+        host_accumulators=True,
+        mstep_full_half_axis=0,
+        mstep_accumulator_shape=mstep_accumulator_shape,
+    )
+    score_result = class_em_to_half_result(
+        k_class_result,
+        effective_rotations=np.zeros((int(np.shape(class_pass.class_rotation_posterior_sums)[1]), 0)),
+        rot_pmap_for_collapse=None,
+        adaptive_os_local=0,
+        require_best_pose_details=True,
+        pose_dtype=_dense_global_scoring_dtype(),
+    )
+    score_result.ha = np.asarray(score_result.ha, dtype=np.int32)
+    score_result.significant_counts = significant_counts
+    score_result.mstep_full_half_axis = 0
+    score_result.mstep_accumulator_shape = mstep_accumulator_shape
+    return score_result
 
 
 def _score_half_local_in_bpref_scope(

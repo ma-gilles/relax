@@ -1637,10 +1637,10 @@ def refine_single_volume(
         # snapped grid indices.
         adaptive_pass1_rotations = None
         use_local = state.do_local_search and all(half.rotation_eulers is not None for half in halves)
-        if use_local and k_class_enabled:
-            # Class3D keeps global searches: RELION switches to local searches from the
-            # HEALPix order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
-            raise RuntimeError("K>1 (Class3D) reached local angular searches; RELION never does")
+        if use_local and k_class_enabled and options.local_search.sigma_ang_deg is None:
+            # Class3D searches locally only with --sigma_ang: RELION switches from the HEALPix
+            # order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
+            raise RuntimeError("K>1 (Class3D) reached local angular searches without --sigma_ang")
         # --- Apply RELION SamplingPerturbation to the trial grid for this iter ---
         # healpix_sampling.cpp:1909-1934 (rotations) + 1810-1820 (translations)
         # Perturbation is a rigid rotation of SO(3): A := A @ R_perturb applied
@@ -2057,11 +2057,11 @@ def refine_single_volume(
                         direction_priors[half_index] = learned
             else:
                 exhaustive_grid_size = rotation_grid_size(
-                    coarse_grids.rotation_grid.healpix_order,
+                    direction_prior_healpix_order,  # a local search's posterior grid (pdf_direction still accumulates)
                     symmetry=symmetry,
                 )
                 if (
-                    trial_grid.rotations.shape[0] == exhaustive_grid_size
+                    (use_local or trial_grid.rotations.shape[0] == exhaustive_grid_size)
                     and all(
                         rot_sum is not None
                         for rot_sum in per_half.class_rotation_posterior
@@ -2070,7 +2070,7 @@ def refine_single_volume(
                     learned_priors = learn_class_direction_priors(
                         per_half.class_rotation_posterior,
                         n_classes=n_classes,
-                        healpix_order=coarse_grids.rotation_grid.healpix_order,
+                        healpix_order=direction_prior_healpix_order,
                         dtype=scoring_dtype,
                         symmetry=symmetry,
                     )

@@ -457,6 +457,18 @@ def prepare_numbered_expectation(
     )
 
 
+def empty_half_rotation_count(sampling, grid_rotation_count: int, *, use_local: bool, symmetry: str) -> int:
+    """The rotation-sum length an empty half reports, the grid its occupied twin sums over.
+
+    A local pass bins its rotation posterior on the parent (pass-1) grid, which is the
+    direction-prior grid of a local search (``_direction_prior_healpix_order_for_scoring``);
+    a global pass on its trial grid.
+    """
+    if use_local:
+        return int(rotation_grid_size(sampling.search.parent_order, symmetry=symmetry))
+    return int(grid_rotation_count)
+
+
 def score_numbered_half(
     half: HalfScoringData,
     phase: NumberedExpectation,
@@ -573,8 +585,8 @@ def score_numbered_half(
     if particle_half.dataset.n_units == 0:
         logger.info("Skipping E-step/M-step accumulation for empty half-%d dataset", particle_half.index + 1)
         n_shells = int(image_geometry.image_shape[0] // 2 + 1)
-        n_rot_for_stats = int(
-            rotation_grid_size(sampling.search.healpix_order, symmetry=symmetry) if use_local else phase.grid.rotations.shape[0]
+        n_rot_for_stats = empty_half_rotation_count(
+            sampling, phase.grid.rotations.shape[0], use_local=use_local, symmetry=symmetry
         )
         empty_k1_x_half_mstep = (
             (not k_class_enabled)
@@ -648,7 +660,7 @@ def score_numbered_half(
             dtype=scoring_dtype,
         )
         local_result = _score_half_local_in_bpref_scope(
-            half=replace(half, mean_variance=None),
+            half=replace(half, mean_variance=None, image_seed_classes=seed_classes_k),
             sampling=sampling,
             priors=LocalPriorSpec(
                 trans_prior_center=local_trans_prior_center,

@@ -788,8 +788,21 @@ angles (the input STAR's at iteration 1; 0 where the STAR has none, and
 [`prepare_initial_poses`](../../relax/relion/input_poses.py) centres a start without any pose source at
 (0, 0, 0) with a warning). The one exception is RELION's prior mode below the local-search order:
 there an angle with an `rlnAngle*Prior` is centred on that prior in every iteration, including the final
-one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical). Class3D
-(`--sigma_ang` with K>1) is not implemented yet.
+one ([`local_search_centre_half`](../../relax/refinement/local_sampling.py); non-helical).
+
+**Class3D with `--sigma_ang` (K>1).** Every iteration is a local search of that width at the fixed HEALPix
+order, centred on each particle's previous best angles (the input STAR's at iteration 1). RELION scores
+every class at the particle's local orientations and normalizes over classes and poses jointly; in prior
+mode the orientation weight is the local Gaussian prior, which replaces `pdf_direction`, and since
+`pdf_direction` carries the class mass no `pdf_class` enters the weights (`ml_optimiser.cpp:7207-7219`,
+`acc_ml_optimiser_impl.h:1960-1972`). `pdf_direction` and `pdf_class` are still accumulated in the
+M-step (`ml_optimiser.cpp:5179-5211`). relax repeats each image's local rows per class
+([`expand_local_layout_classes`](../../relax/local/local_layout.py)); the resident local pass projects each
+class's rows with its reference, takes the joint posterior and each class's sub-segment evidence, and
+backprojects each class into its own BPref
+([`compute_local_search_resident`](../../relax/sparse_pass2/resident_local_pass2.py)). The first iteration
+from one reference scores each particle against its seed class only
+([`restrict_local_layout_classes`](../../relax/local/local_layout.py)).
 
 [`expected_accuracy.py`](../../relax/helpers/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior

@@ -21,6 +21,7 @@ from relax.local.local_layout import (
     _local_search_engine_rotation_block_size,
     build_local_hypothesis_layout,
     expand_local_layout_classes,
+    restrict_local_layout_classes,
 )
 from relax.relion.optics_aberrations import (
     dataset_projection_magnification,
@@ -99,8 +100,10 @@ class LocalSearchGridSpec:
     rotation_grid_mstep_rotations: object | None = None
     generate_relion_mstep_rotations: bool = False
     symmetry: str = "C1"
-    # Class3D: each image's rows are scored against every class (expand_local_layout_classes).
+    # Class3D: each image's rows are scored against every class (expand_local_layout_classes), or, in
+    # the first iteration from one reference, against each image's seed class only.
     n_classes: int = 1
+    image_seed_classes: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -266,6 +269,8 @@ def _run_local_search_iteration(
     # Class3D local searches (--sigma_ang) score each image's rows against every class.
     if int(grid.n_classes) > 1 and int(getattr(local_layout, "n_classes", 1)) == 1:
         local_layout = expand_local_layout_classes(local_layout, int(grid.n_classes))
+        if grid.image_seed_classes is not None:
+            local_layout = restrict_local_layout_classes(local_layout, grid.image_seed_classes)
     local_n_classes = int(getattr(local_layout, "n_classes", 1))
     local_kernel_classes = local_n_classes
     local_rotation_count = (

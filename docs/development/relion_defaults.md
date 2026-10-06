@@ -35,7 +35,7 @@ value in that audit.
 | `--healpix_order` | 3 | 2 (7.5 deg with oversampling 1) | 4205, 4489; 3714, 4000 | 2 | yes |
 | `--adaptive_oversampling` | 1 | 1 | 4480; 3992 | 1 | no |
 | `--auto_local_healpix_order` | 4 | 4 (1.8 deg with oversampling 1) | 4217, 4499 | 4 | no |
-| `--sigma_ang` (K=1) | (no option) | not passed (Refine3D); Class3D "Perform local angular searches: No" | 4003-4005 | -1 (off) | new option, off |
+| `--sigma_ang` | (no option) | not passed (Refine3D); Class3D "Perform local angular searches: No" | 4003-4005 | -1 (off) | new option, off |
 | `--offset_range` (px) | 3 | 5 | 4209; 3718 | 6 | yes |
 | `--offset_step` (px, before oversampling) | 1 | 2 (1 px times 2^oversampling) | 4213, 4504; 3722, 4015 | 2 | yes |
 | `--init_resolution` (`--ini_high`) | 30 A | 60 A | 4172; 3658 | -1 (off) | yes |
@@ -60,7 +60,7 @@ value in that audit.
 | K=1 E/M engine (implementation) | compact pass 2 and exact local search | (implementation) | - | - | yes (K=1 resident flip): the device-resident pass 2, local search and device significance by default, with the qualified flag set (soft-posterior block BPref, sequential CUDA Wavg, padded final coarse batch; jitted stage glue and local image-capacity ladder set at the K=1 entry points). The resident pass 2 is the only pass-2 engine since the compact engine was deleted (2026-09-26; `RELAX_SPARSE_PASS2_RESIDENT` is retired). `RELAX_LOCAL_SEARCH_RESIDENT=0` selects the deprecated exact local engine; a local pass the resident checks refuse runs on it with a logged reason (per-iteration `pass2_engine_trajectory`). Qualified on EMPIAR-10073, 10097, 10345 and K1 50k/256 flip pairs ([benchmarks](../benchmarks/relion_vs_relax.md)) |
 | VDAM E-step engine (implementation) | exact-local route | (implementation) | - | - | yes (VDAM K>1 default, 2026-09-26): `--pass2_engine auto` runs K>1 on the adaptive route with the device-resident pass 2 (pseudo-halfset slots in one pass) and K=1 on the exact-local route; a K>1 configuration the adaptive route refuses runs exact-local with a logged reason, `adaptive` makes it an error; per-iteration `pass2_engine` / `pass2_engines` in `run_itNNN_recovar_meta.json`. Gate: pdb K2/K4 three seeds and noise1 50k K1 ([em_status](em_status.md)) |
 | final all-data gridding correction (`griddingCorrect`) | off unless `RELAX_FINAL_ALL_DATA_GRID_CORRECT=1` | always on (not an option) | `backprojector.cpp:1798`, `projector.cpp:595-627` | always on | yes (df88eab): always on; the selector and its env var are retired. Qualified end to end by K1 100k/256 job 14365794 |
-| `--solvent_mask`, `--solvent_correct_fsc`, `--blush`, `--auto_ignore_angles`, `--helix`, `--relax_sym`, `--sigma_ang` for Class3D, `--fast_subsets`, `--strict_highres_exp` | (no option) | off / not passed | 4200-4221; 3695-3734 | off | not implemented |
+| `--solvent_mask`, `--solvent_correct_fsc`, `--blush`, `--auto_ignore_angles`, `--helix`, `--relax_sym`, `--fast_subsets`, `--strict_highres_exp` | (no option) | off / not passed | 4200-4221; 3695-3734 | off | not implemented |
 | `--skip_align` ("Perform image alignment: No") | `--skip_align` (Class3D, single particles) | off | 765; 2411-2416, 4502-4516, 5198 | off | yes (2026-10-05): classes at the input angles and offsets, the offset's remainder after rounding as the one translation; the direction prior is kept. `--firstiter_cc` from one reference scores at the given poses. Refused with `--firstiter_cc` from several references, `--continue`, K=1, several image shapes and subtomograms |
 
 ## 3D initial model (InitialModel / VDAM)

@@ -28,13 +28,12 @@ from relax.relion.input_poses import _load_input_star_previous_best_poses, prepa
 pytestmark = pytest.mark.unit
 
 
-def test_sigma_ang_must_be_positive_and_k1_until_the_class3d_route():
-    validate_sigma_ang(SimpleNamespace(n_classes=1, sigma_ang=None))
-    validate_sigma_ang(SimpleNamespace(n_classes=1, sigma_ang=2.0))
-    with pytest.raises(SystemExit, match="must be positive"):
-        validate_sigma_ang(SimpleNamespace(n_classes=1, sigma_ang=0.0))
-    with pytest.raises(SystemExit, match="Class3D"):
-        validate_sigma_ang(SimpleNamespace(n_classes=2, sigma_ang=2.0))
+def test_sigma_ang_must_be_positive_for_refine3d_and_class3d():
+    for n_classes in (1, 2):
+        validate_sigma_ang(SimpleNamespace(n_classes=n_classes, sigma_ang=None))
+        validate_sigma_ang(SimpleNamespace(n_classes=n_classes, sigma_ang=2.0))
+        with pytest.raises(SystemExit, match="must be positive"):
+            validate_sigma_ang(SimpleNamespace(n_classes=n_classes, sigma_ang=0.0))
 
 
 @pytest.mark.parametrize("healpix_order", [2, 4])

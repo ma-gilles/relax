@@ -1212,6 +1212,46 @@ def expand_local_layout_classes(layout: LocalHypothesisLayout, n_classes: int) -
     )
 
 
+def restrict_local_layout_classes(layout: LocalHypothesisLayout, image_classes) -> LocalHypothesisLayout:
+    """A class-expanded layout keeping, for each image, only the rows of its given class.
+
+    RELION's first Class3D iteration from one reference scores each particle against one random class
+    only (do_generate_seeds: exp_iclass_min = exp_iclass_max), with or without local searches.
+    """
+
+    if layout.n_classes == 1:
+        raise ValueError("only a class-expanded layout has classes to restrict")
+    image_classes = np.asarray(image_classes, dtype=np.int64).reshape(-1)
+    offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
+    counts = np.diff(offsets)
+    if image_classes.shape != counts.shape:
+        raise ValueError(f"one class per image is needed, got {image_classes.shape} for {counts.shape[0]} images")
+    row_image = np.repeat(np.arange(counts.shape[0], dtype=np.int64), counts)
+    keep = np.asarray(layout.row_class_flat, dtype=np.int64) == image_classes[row_image]
+    new_counts = np.bincount(row_image[keep], minlength=counts.shape[0])
+    if np.any(new_counts == 0):
+        raise ValueError(f"image {int(np.flatnonzero(new_counts == 0)[0])} has no row of its seed class")
+
+    def take(values):
+        return None if values is None else np.asarray(values)[keep]
+
+    new_offsets = np.zeros(counts.shape[0] + 1, dtype=np.int64)
+    new_offsets[1:] = np.cumsum(new_counts, dtype=np.int64)
+    return replace(
+        layout,
+        rotation_offsets=new_offsets,
+        rotation_ids_flat=take(layout.rotation_ids_flat),
+        rotations_flat=take(layout.rotations_flat),
+        rotation_log_priors_flat=take(layout.rotation_log_priors_flat),
+        rotation_counts=new_counts.astype(np.asarray(layout.rotation_counts).dtype),
+        rotation_posterior_ids_flat=take(layout.rotation_posterior_ids_flat),
+        sample_mask_bits=take(layout.sample_mask_bits),
+        mstep_rotations_flat=take(layout.mstep_rotations_flat),
+        source_eulers_flat=take(layout.source_eulers_flat),
+        row_class_flat=take(layout.row_class_flat).astype(np.int32),
+    )
+
+
 def build_local_adaptive_pass2_hypothesis_layout(
     parent_layout: LocalHypothesisLayout,
     significant_sample_indices,

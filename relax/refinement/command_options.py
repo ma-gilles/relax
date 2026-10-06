@@ -150,13 +150,12 @@ def resolve_job_defaults(args) -> None:
 
 
 def validate_sigma_ang(args) -> None:
-    """Admit RELION's --sigma_ang: a positive width, and K=1 until the Class3D local route exists."""
-    if args.sigma_ang is None:
-        return
-    if not args.sigma_ang > 0:
+    """Admit RELION's --sigma_ang: a positive width (Refine3D and Class3D), not with --skip_align."""
+    if args.sigma_ang is not None and not args.sigma_ang > 0:
         raise SystemExit(f"--sigma_ang must be positive, got {args.sigma_ang}")
-    if int(args.n_classes) != 1:
-        raise SystemExit("--sigma_ang is not supported for Class3D (K>1) yet")
+    if args.sigma_ang is not None and getattr(args, "skip_align", False):
+        # relion_refine drops the orientational prior when it skips the alignment (ml_optimiser.cpp:2381-2390).
+        raise SystemExit("--sigma_ang has no effect with --skip_align, which searches no orientations")
 
 
 def resolve_standalone_k1_start(args) -> None:
