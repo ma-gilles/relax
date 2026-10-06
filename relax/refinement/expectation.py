@@ -258,15 +258,17 @@ def run_numbered_halves(
     *,
     overlap_halves: bool,
     iteration: int,
+    observer: RunObserver,
     log: logging.Logger,
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
 
     ``run_half(k)`` scores half ``k`` and records its outputs; the halves run one after another, or one
     thread each when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
-    halves for a diagnostic stops here. Then the deferred preprocess checks are drained (dropped when
-    the halves raise, :func:`relax.cuda.kernels.expectation_relion_preprocess_checks`) and the halves'
-    significant-sample counts combined.
+    halves for a diagnostic stops here. Then the ``observer`` sees the end of the expectation, the deferred
+    preprocess checks are drained (dropped when the halves raise,
+    :func:`relax.cuda.kernels.expectation_relion_preprocess_checks`) and the halves' significant-sample
+    counts combined.
     """
     from relax.cuda.kernels import expectation_relion_preprocess_checks
 
@@ -289,7 +291,7 @@ def run_numbered_halves(
             )
 
         # E-step + per-half M-step accumulators are now both populated.
-        _parity_dump.mark_stage(iteration, "e_step")
+        observer.stage_finished(iteration, "e_step")
     significance.combine()
 
 

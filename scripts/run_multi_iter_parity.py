@@ -1455,7 +1455,7 @@ def main():
     from recovar.reconstruction import regularization
     from recovar.utils import helpers
 
-    from relax.diagnostics.observers import IntermediatesObserver
+    from relax.diagnostics import observers
     from relax.helpers.map_io import write_map_from_ft
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -2519,7 +2519,10 @@ def main():
             ),
             symmetry=SymmetryOptions(point_group=point_group),
         ),
-        observer=None if save_intermediates_dir is None else IntermediatesObserver(save_intermediates_dir),
+        observer=observers.combine(
+            ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
+            + observers.observers_from_environment()
+        ),
     )
     elapsed = time.time() - t0
     history = result.history

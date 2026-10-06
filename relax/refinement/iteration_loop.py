@@ -34,7 +34,6 @@ from relax.dense.scoring_policy import (
     _dense_global_scoring_dtype,
 )
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics import reconstruction as reconstruction_diagnostics
 from relax.diagnostics import relion_replay as replay_policy
 from relax.diagnostics.frozen_boundary import (
@@ -44,7 +43,6 @@ from relax.diagnostics.frozen_boundary import (
 from relax.diagnostics.iteration import (
     _maybe_dump_noise_update_debug,
     _significance_dump_half_indices,
-    dump_numbered_iteration,
 )
 from relax.diagnostics.relion_replay import (
     _has_numbered_replay_iteration_overrides,
@@ -181,7 +179,7 @@ from relax.refinement.noise_updates import (
     update_posterior_noise_variance,
 )
 from relax.refinement.optics_shapes import MultiShapeHalf
-from relax.refinement.ports import ReconstructedIteration, RunObserver
+from relax.refinement.ports import FinishedIteration, ReconstructedIteration, RunObserver
 from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
     build_numbered_projectors,
@@ -1372,7 +1370,7 @@ def refine_single_volume(
             )
             break
         t0 = time.time()
-        _parity_dump.start_iteration(iteration)
+        observer.iteration_started(iteration)
         iter_replay_override = None
         if replay.replay_iteration_overrides is not None and iteration < len(replay.replay_iteration_overrides):
             iter_replay_override = replay.replay_iteration_overrides[iteration]
@@ -1893,6 +1891,7 @@ def refine_single_volume(
             significance,
             overlap_halves=options.overlap.overlap_halves,
             iteration=iteration,
+            observer=observer,
             log=logger,
         )
 
@@ -2040,7 +2039,7 @@ def refine_single_volume(
                 bpref_boundary_iteration_matches=_bpref_boundary_iteration_matches,
                 bpref_accum_dump_dir=debug.environment.bpref_accum_dump_dir,
             )
-        _parity_dump.mark_stage(iteration, "recon")
+        observer.stage_finished(iteration, "recon")
 
         history.significant_counts.append(significance.recorded)
 
@@ -2112,7 +2111,6 @@ def refine_single_volume(
         # parity dumps.
         need_unreg_means = (
             observer.wants_unfiltered_maps(numbered_relion_iteration)
-            or _parity_dump.is_active()
             or (
                 options.checkpoint.writer is not None
                 and options.checkpoint.writer.wants_unfiltered_maps(numbered_relion_iteration, n_classes=n_classes)
@@ -2155,7 +2153,7 @@ def refine_single_volume(
         if k_class_enabled:
             fsc = None
             history.record_fsc(fsc, None)
-            _parity_dump.mark_stage(iteration, "fsc")
+            observer.stage_finished(iteration, "fsc")
         else:
             # FSC was already computed above in the RELION-exact ordering block
             # (current_iter_fsc) and used to derive tau2 BEFORE the Wiener solve.
@@ -2163,7 +2161,7 @@ def refine_single_volume(
             # underlying unreg accumulators).
             fsc = current_iter_fsc
             history.record_fsc(fsc, tau2_fsc_for_update)
-            _parity_dump.mark_stage(iteration, "fsc")
+            observer.stage_finished(iteration, "fsc")
 
         observer.maps_reconstructed(ReconstructedIteration(
             iteration, numerators=(Ft_y_0, Ft_y_1), denominators=(Ft_ctf_0, Ft_ctf_1), reference_model=reference_model,
@@ -2298,7 +2296,7 @@ def refine_single_volume(
         noise_from_res_per_half = noise_update.noise_from_res_per_half
         noise_model = noise_update.model
         if not first_iteration.relion_firstiter_cc:
-            _parity_dump.mark_stage(iteration, "noise_update")
+            observer.stage_finished(iteration, "noise_update")
 
         correction_report = NormScaleCorrectionReport()
         norm_scale_update = numbered_norm_scale_update(
@@ -2398,7 +2396,7 @@ def refine_single_volume(
         # regardless of whether adaptive oversampling was used.
         previous_assignments = [ha.copy() if ha is not None else None for ha in per_half.coarse_ha]
         previous_class_assignments = [cls.copy() if cls is not None else None for cls in class_assignments]
-        _parity_dump.mark_stage(iteration, "convergence")
+        observer.stage_finished(iteration, "convergence")
 
         # --- RELION's run_itNNN files (ml_optimiser.cpp:3489) ---
         checkpoint_writer = options.checkpoint.writer
@@ -2452,36 +2450,15 @@ def refine_single_volume(
             )
             checkpoint_writer(snapshot)
 
-        if _parity_dump.is_active():
-            dump_numbered_iteration(
-                iteration,
-                init_relion_iteration=init_relion_iteration,
-                state=state,
-                current_size=current_size,
-                sigma_offset_angstrom=sigma_offset.shared_angstrom,
-                random_perturbation=random_perturbation,
-                settings=reconstruction_settings,
-                pixel_size_angstrom=source_pixel_size_angstrom,
-                ave_pmax=statistics.ave_pmax,
-                fsc=fsc,
-                noise_variance=noise_model.average_variance,
-                means=reference_model.maps,
-                unfiltered_means=unreg_means,
-                poses=pose_update.current,
-                half_inputs=halves,
-                corrections=correction_report,
-                scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
-                log=logger,
-            )
-        elif _parity_dump.timing_is_active():
-            try:
-                _parity_dump.dump_timing_iteration(
-                    iteration=iteration,
-                    init_relion_iteration=int(init_relion_iteration),
-                    iteration_start=t0,
-                )
-            except Exception as exc:
-                logger.warning("parity_dump.dump_timing_iteration failed at iter %d: %s", iteration, exc)
+        observer.iteration_finished(FinishedIteration(
+            iteration, iteration_start=t0, init_relion_iteration=init_relion_iteration, state=state,
+            current_size=current_size, sigma_offset_angstrom=sigma_offset.shared_angstrom,
+            random_perturbation=random_perturbation, settings=reconstruction_settings,
+            pixel_size_angstrom=source_pixel_size_angstrom, ave_pmax=statistics.ave_pmax, fsc=fsc,
+            noise_variance=noise_model.average_variance, means=reference_model.maps, unfiltered_means=unreg_means,
+            poses=pose_update.current, half_inputs=halves, corrections=correction_report,
+            scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
+        ))
 
         # --- Timing ---
         elapsed = time.time() - t0

@@ -226,8 +226,11 @@ def test_capture_conversion_failure_retains_warning_and_iteration_context(caplog
 
 @pytest.mark.parametrize('timing', [False, True])
 def test_actual_inactive_capture_gate_does_not_read_full_payload(monkeypatch, timing):
-    """Without a parity dump the loop never builds the full capture; a timing dump gets one row per iteration."""
+    """Without a parity dump the parity observer never builds the full capture; a timing dump gets one row per
+    iteration."""
     from helpers.tiny_refinement import run_tiny_refinement
+
+    from relax.diagnostics import observers
 
     events = []
 
@@ -237,8 +240,8 @@ def test_actual_inactive_capture_gate_does_not_read_full_payload(monkeypatch, ti
     monkeypatch.setattr(parity_dump, 'is_active', lambda: False)
     monkeypatch.setattr(parity_dump, 'timing_is_active', lambda: timing)
     monkeypatch.setattr(parity_dump, 'dump_timing_iteration', lambda **values: events.append(values))
-    monkeypatch.setattr(iteration_loop, 'dump_numbered_iteration', reject_full)
-    run_tiny_refinement(monkeypatch, final_after_max_iter=False)
+    monkeypatch.setattr(observers, 'dump_numbered_iteration', reject_full)
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False, observer=observers.ParityDumpObserver())
     assert [(event['iteration'], event['init_relion_iteration']) for event in events] == (
         [(0, 0), (1, 0)] if timing else []
     )

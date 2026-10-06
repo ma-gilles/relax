@@ -82,6 +82,30 @@ class FinalHalfScored(NamedTuple):
     use_local: bool
 
 
+class FinishedIteration(NamedTuple):
+    """A numbered iteration at its end, after the convergence update and the run files: its state, maps,
+    poses, corrections and statistics. ``iteration_start`` is its ``time.time()`` at the top of the loop."""
+
+    iteration: int
+    iteration_start: float
+    init_relion_iteration: int
+    state: Any
+    current_size: int
+    sigma_offset_angstrom: Any
+    random_perturbation: Any
+    settings: Any
+    pixel_size_angstrom: Any
+    ave_pmax: Any
+    fsc: Any
+    noise_variance: Any
+    means: Any
+    unfiltered_means: Any
+    poses: Any
+    half_inputs: Any
+    corrections: Any
+    scale_correction_data_vs_prior: Any
+
+
 class RunObserver:
     """Watches a refinement run and never steers it; every hook does nothing by default."""
 
@@ -94,6 +118,16 @@ class RunObserver:
     def wants_unfiltered_maps(self, numbered_relion_iteration: int) -> bool:
         """Whether this numbered iteration should also reconstruct its unregularized maps for the observer."""
         return False
+
+    def iteration_started(self, iteration: int) -> None:
+        """A numbered iteration starts (after the convergence check that could have ended the loop)."""
+
+    def stage_finished(self, iteration: int, stage: str) -> None:
+        """A stage of a numbered iteration is done: ``e_step``, ``recon``, ``fsc``, ``noise_update`` (not in a
+        first-iteration CC) or ``convergence``, in that order."""
+
+    def iteration_finished(self, finished: FinishedIteration) -> None:
+        """A numbered iteration is complete, before its timing log and end-of-iteration releases."""
 
     def maps_reconstructed(self, maps: ReconstructedIteration) -> None:
         """A numbered iteration's maps and FSC are made."""

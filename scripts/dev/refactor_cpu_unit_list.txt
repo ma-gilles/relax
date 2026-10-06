@@ -153,6 +153,7 @@ tests/unit/test_run_files.py
 tests/unit/test_run_full_refinement_image_backend.py
 tests/unit/test_run_full_refinement_input_pose_seed.py
 tests/unit/test_run_full_refinement_overrides.py
+tests/unit/test_run_observers.py
 tests/unit/test_run_full_refinement_results_archive.py
 tests/unit/test_run_full_refinement_sampling.py
 tests/unit/test_run_k_class_parity.py
