@@ -79,21 +79,21 @@ def _cases() -> dict[str, tuple[str, dict]]:
         assert name not in cases, name
         cases[name] = (description, dict(arguments=list(arguments), **keywords))
 
-    add("k1_default", "K=1, VDAM, float32 M-step, solvent flattening, four iterations")
-    add("k2_default", "K=2, VDAM", ["--nr-iter", "4", "--K", "2"])
+    add("k1_default", "K=1, VDAM, float32 M-step, solvent flattening, six iterations")
+    add("k2_default", "K=2, VDAM", ["--K", "2"])
     add("k1_mstep_f64", "K=1 with the float64 diagnostic M-step", ["--mstep-compute-dtype", "float64"])
     add("k1_no_solvent", "K=1 without solvent flattening", ["--no-solvent"])
     add("k2_uniform_prior", "K=2 with the uniform class/direction prior", ["--K", "2", "--uniform-class-direction-prior"])
-    add("k1_fourier_schedule", "K=1 with an explicit Fourier radius schedule", ["--fourier-radius-schedule", "3x1,4x1,5x1,6x1"])
+    add("k1_fourier_schedule", "K=1 with an explicit Fourier radius schedule", ["--fourier-radius-schedule", "3x2,4x2,5x1,6x1"])
     add("k2_momentum_sgd", "K=2 momentum SGD on a fixed grid and a radius schedule",
         ["--K", "2", "--optimizer", "momentum_sgd", "--oversampling", "0", "--fixed-healpix-order", "1",
-         "--fourier-radius-schedule", "3x1,4x1,5x1,6x1", "--sgd-learning-rate", "0.5"])
+         "--fourier-radius-schedule", "3x2,4x2,5x1,6x1", "--sgd-learning-rate", "0.5"])
     add("k1_stochastic", "K=1 stochastic batches in every iteration (pilot controls)",
         ["--stochastic-all-iterations", "--stochastic-batch-size", "10", "--grad-em-iters", "0"])
     add("k1_pilot_caps", "K=1 with pilot caps on the Fourier radius and the HEALPix order",
         ["--max-fourier-radius", "4", "--max-healpix-order", "1"])
-    add("k1_em_tail", "K=1, six iterations, the last two without gradients (EM tail)",
-        ["--nr-iter", "6", "--grad-em-iters", "2"])
+    add("k1_em_tail", "K=1, eight iterations, the last two without gradients (EM tail)",
+        ["--nr-iter", "8", "--grad-em-iters", "2"])
     add("k1_write_every_2", "K=1 writing every second iteration", ["--grad-write-iter", "2"])
     add("k1_no_artifacts", "K=1 writing only the final outputs", ["--no-write-iter-artifacts"])
     add("k1_seed_zero", "K=1 with random seed 0 (no particle shuffle)", ["--random-seed", "0"])
@@ -111,7 +111,7 @@ def _cases() -> dict[str, tuple[str, dict]]:
     add("k1_refused_retired_switch", "the retired exact-projector switch is refused",
         env={"RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR": "1"})
     add("k1_refused_sgd_oversampling", "momentum SGD with oversampling 1 is refused",
-        ["--optimizer", "momentum_sgd", "--fixed-healpix-order", "1", "--fourier-radius-schedule", "3x1,4x1,5x1,6x1"])
+        ["--optimizer", "momentum_sgd", "--fixed-healpix-order", "1", "--fourier-radius-schedule", "3x2,4x2,5x1,6x1"])
     return cases
 
 
@@ -364,7 +364,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         case_root = Path(tempfile.mkdtemp(dir=tmp_root, prefix="case"))
         star = write_tiny_dataset(case_root / "data", optics_groups=optics_groups)
         outdir = case_root / "out"
-        argv = ["--i", str(star), "--o", str(outdir / "run"), "--nr-iter", "4", "--grad-write-iter", "1",
+        # Six iterations: with four or five, RELION's tau2-fudge schedule is NaN in iteration 1.
+        argv = ["--i", str(star), "--o", str(outdir / "run"), "--nr-iter", "6", "--grad-write-iter", "1",
                 "--random-seed", "7", "--particle-diameter", "40", "--image-batch-size", "8",
                 "--bootstrap-min-particles", "8", "--sigma2-min-particles", "8",
                 "--image-fourier-backend", "host_numpy", "--no-jax-compilation-cache", "--no-require-custom-cuda", *arguments]
