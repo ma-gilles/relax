@@ -13,6 +13,7 @@ resident fine pass and M-step over tilt units (``resident_pass2._resident_pass2(
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -22,6 +23,9 @@ from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
 )
+
+if TYPE_CHECKING:
+    from relax.refinement.half_scoring import HalfScoringData
 
 
 def is_relion5_2d_stack_star(particles_star) -> bool:
@@ -805,24 +809,14 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
 
 
 def score_tomo_half_in_loop(
-    half: TomoHalf,
+    data: HalfScoringData,
     *,
     use_local: bool,
     use_adaptive: bool,
-    volume,
-    noise_variance,
-    relion_projector_half,
-    relion_projector_r_max,
     sampling: TomoSampling,
     rotation_log_prior,
-    previous_translations,
     sigma_offset_angst: float,
     max_significants,
-    unit_groups,
-    scale_corrections,
-    group_ids,
-    scale_correction_group_count,
-    scale_correction_data_vs_prior,
     reconstruction_current_size,
     local_search=None,
     symmetry: str = "C1",
@@ -832,6 +826,10 @@ def score_tomo_half_in_loop(
     normalized_cc: bool = False,
 ):
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``.
+
+    ``data`` is the half's expectation operands, as the SPA scorers take them: its particles (a
+    ``TomoHalf`` dataset with their previous translations, optics groups and scale corrections), reference,
+    noise, RELION projector and scale groups.
 
     Per-unit fields are the particles'. The best translations are the winning trial shifts in pixels
     (3D); the loop adds the rounded previous offset, as RELION writes ``old + shift``. The returned
@@ -854,6 +852,14 @@ def score_tomo_half_in_loop(
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
     from relax.sampling import rotation_grid_size
 
+    half = data.particles.dataset
+    volume, noise_variance = data.reference, data.noise_variance
+    relion_projector_half = None if data.projector is None else data.projector.data
+    relion_projector_r_max = None if data.projector is None else data.projector.r_max
+    previous_translations = data.particles.translations
+    unit_groups, scale_corrections = data.particles.optics_group_ids, data.particles.scale_corrections
+    group_ids, scale_correction_group_count = data.scale_group_ids, data.scale_group_count
+    scale_correction_data_vs_prior = data.scale_correction_data_vs_prior
     if bool(use_local) != (local_search is not None):
         raise ValueError("a local-search iteration needs its local-search inputs, and only it")
     if not (use_adaptive or use_local) or int(sampling.oversampling_order) < 1:

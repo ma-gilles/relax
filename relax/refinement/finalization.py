@@ -425,13 +425,17 @@ def run_final_all_data(
                     "a subtomogram final all-data pass without local search needs the global direction priors"
                 )
             final_result = _score_tomo_half_in_loop(
-                half.dataset,
+                HalfScoringData(
+                    particles=half,
+                    reference=final_join_means[half.index],
+                    noise_variance=noise_model.variance_per_half[half.index],
+                    projector=projector,
+                    scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
+                    scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
+                    scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
+                ),
                 use_local=True,
                 use_adaptive=final_local_sampling.search.oversampling_order > 0,
-                volume=final_join_means[half.index],
-                noise_variance=noise_model.variance_per_half[half.index],
-                relion_projector_half=projector.data,
-                relion_projector_r_max=projector.r_max,
                 sampling=local_tomo_sampling(
                     fine_order=final_local_sampling.search.healpix_order,
                     oversampling_order=final_local_sampling.search.oversampling_order,
@@ -448,14 +452,8 @@ def run_final_all_data(
                     sigma_psi=final_local_sampling.search.sigma_psi,
                 ),
                 rotation_log_prior=None,
-                previous_translations=half.translations,
                 sigma_offset_angst=final_sigma_offset_k,
                 max_significants=adaptive.max_significants,
-                unit_groups=half.optics_group_ids,
-                scale_corrections=half.scale_corrections,
-                group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
-                scale_correction_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
-                scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
                 reconstruction_current_size=final_current_size,
                 symmetry=symmetry,
             )

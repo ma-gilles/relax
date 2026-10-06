@@ -610,13 +610,9 @@ def score_numbered_half(
     )
     if tomo_halves:
         score_result = _score_tomo_half_in_loop(
-            particle_half.dataset,
+            half,
             use_local=use_local,
             use_adaptive=phase.use_adaptive,
-            volume=half.reference,
-            noise_variance=half.noise_variance,
-            relion_projector_half=None if half.projector is None else half.projector.data,
-            relion_projector_r_max=None if half.projector is None else half.projector.r_max,
             sampling=tomo_sampling,
             local_search=(
                 dict(
@@ -628,14 +624,8 @@ def score_numbered_half(
                 else None
             ),
             rotation_log_prior=direction_priors.rotation_log_prior,
-            previous_translations=previous_translations_k,
             sigma_offset_angst=sigma_offset_angstrom,
             max_significants=options.adaptive.max_significants,
-            unit_groups=particle_half.optics_group_ids,
-            scale_corrections=particle_half.scale_corrections,
-            group_ids=half.scale_group_ids,
-            scale_correction_group_count=half.scale_group_count,
-            scale_correction_data_vs_prior=half.scale_correction_data_vs_prior,
             reconstruction_current_size=model_support_size,
             symmetry=symmetry,
             class_log_priors=class_log_priors if k_class_enabled else None,
