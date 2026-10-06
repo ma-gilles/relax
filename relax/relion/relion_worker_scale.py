@@ -1461,6 +1461,7 @@ class FollowerScaleOutputs:
 def setup_relion_follower_scale_state(
     options: RefinementOptions,
     *,
+    topology: PreparedFollowerTopology | None,
     relion_half_inputs,
     experiment_datasets,
     k_class_enabled: bool,
@@ -1469,6 +1470,8 @@ def setup_relion_follower_scale_state(
     """Build (or return the inert default for) RELION's per-follower
     group-scale emulation state.
 
+    ``topology`` is the replayed RELION run's follower topology and captured
+    dispatch schedule (the input source's; None: no followers).
     See this module's docstring for the MPI-follower parity rationale.
     Updates each particle half's ``scale_corrections`` when the
     strict follower topology is active, seeding each half's per-particle
@@ -1478,7 +1481,8 @@ def setup_relion_follower_scale_state(
     schedule = options.schedule
     init_relion_iteration = int(schedule.init_relion_iteration)
 
-    follower_count = int(replay.relion_scale_follower_count or 0)
+    follower_count = 0 if topology is None else int(topology.n_followers or 0)
+    owners_by_iteration = None if topology is None else topology.owners_by_iteration
     follower_scale_state = None
     follower_owners_per_half = [None, None]
     follower_owners_by_iteration = None
@@ -1492,7 +1496,7 @@ def setup_relion_follower_scale_state(
         n_followers=follower_count,
         init_relion_iteration=init_relion_iteration,
     )
-    if replay.relion_follower_scale_replay is not None and follower_count < 1:
+    if topology is not None and topology.replay is not None and follower_count < 1:
         raise ValueError(
             "RELION follower-scale replay requires active strict follower-scale topology"
         )
@@ -1501,7 +1505,7 @@ def setup_relion_follower_scale_state(
             raise ValueError("RELION follower-local scale emulation is strict K-class state only")
         if relion_half_inputs[0].group_ids is None:
             raise ValueError("RELION follower-local scale emulation requires physical group IDs")
-        if replay.relion_scale_follower_owners_by_iteration is None:
+        if owners_by_iteration is None:
             raise ValueError(
                 "RELION follower-local scale emulation requires a captured per-iteration "
                 "dynamic dispatch schedule; seed-only ownership is not exact"
@@ -1512,21 +1516,19 @@ def setup_relion_follower_scale_state(
         optics_group_count = int(replay.init_relion_optics_group_count or 0)
         if optics_group_count < 1:
             raise ValueError("RELION follower-local scale emulation requires a positive optics-group count")
-        scale_reduction_mode = replay.relion_scale_reduction_mode
+        scale_reduction_mode = topology.reduction_mode
         if scale_reduction_mode not in RELION_SCALE_REDUCTION_MODES:
             raise ValueError(
                 "RELION follower-local scale emulation requires the oracle's group-scale "
                 f"reduction mode {RELION_SCALE_REDUCTION_MODES}, got {scale_reduction_mode!r}"
             )
 
-        if isinstance(replay.relion_scale_follower_owners_by_iteration, Mapping):
-            raw_owner_items = replay.relion_scale_follower_owners_by_iteration.items()
+        if isinstance(owners_by_iteration, Mapping):
+            raw_owner_items = owners_by_iteration.items()
         else:
             raw_owner_items = (
                 (init_relion_iteration + schedule_idx + 1, owner_pair)
-                for schedule_idx, owner_pair in enumerate(
-                    replay.relion_scale_follower_owners_by_iteration
-                )
+                for schedule_idx, owner_pair in enumerate(owners_by_iteration)
             )
         follower_owners_by_iteration = {}
         for relion_iteration, owner_pair in raw_owner_items:
@@ -1606,13 +1608,13 @@ def setup_relion_follower_scale_state(
             n_optics_groups=optics_group_count,
             initial_group_scales=initial_group_scales,
         )
-        if replay.relion_follower_scale_replay is not None:
+        if topology.replay is not None:
             requested_numbered_iterations = range(
                 init_relion_iteration + 1,
                 init_relion_iteration + int(schedule.max_iter) + 1,
             )
             validate_relion_follower_scale_replay(
-                replay.relion_follower_scale_replay,
+                topology.replay,
                 n_followers=follower_count,
                 n_groups=physical_group_count,
                 schedule_iterations=list(follower_owners_by_iteration),
@@ -1622,8 +1624,8 @@ def setup_relion_follower_scale_state(
             follower_scale_replay_by_iteration = {
                 int(relion_iteration): np.asarray(scales, dtype=np.float64).copy()
                 for relion_iteration, scales in zip(
-                    replay.relion_follower_scale_replay.relion_iterations,
-                    replay.relion_follower_scale_replay.follower_scales,
+                    topology.replay.relion_iterations,
+                    topology.replay.follower_scales,
                     strict=True,
                 )
             }
@@ -1637,8 +1639,8 @@ def setup_relion_follower_scale_state(
             follower_scale_replay_by_iteration,
             (
                 ()
-                if replay.relion_follower_scale_replay is None
-                else replay.relion_follower_scale_replay.source_artifact_relative_paths
+                if topology.replay is None
+                else topology.replay.source_artifact_relative_paths
             ),
         )
         first_relion_iteration = init_relion_iteration + 1

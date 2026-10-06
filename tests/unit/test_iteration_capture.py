@@ -98,7 +98,7 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
     writer = _Writer()
     run = dict(final_after_max_iter=False, checkpoint=CheckpointOptions(writer=writer))
     if follower:
-        run.update(n_classes=2, replay=follower_scale_replay(2))
+        run.update(n_classes=2, **follower_scale_replay(2))
     if mode == 'follower_missing':
         with pytest.raises(RuntimeError, match='requires per-half norm/scale statistics'):
             run_tiny_refinement(monkeypatch, **run)

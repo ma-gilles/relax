@@ -1043,14 +1043,11 @@ def _follower_statistics(n_images):
 def _follower_run(monkeypatch, *, final, follower_replay=None):
     """A two-iteration Class3D run under the strict follower-scale emulation; ``final`` converges it so the
     final all-data pass runs (RELION iteration 3)."""
-    from dataclasses import replace
-
     from helpers.tiny_refinement import follower_scale_replay, run_tiny_refinement
 
-    replay = replace(follower_scale_replay(3), relion_follower_scale_replay=follower_replay)
     return run_tiny_refinement(
         monkeypatch, n_classes=2, final_after_max_iter=False, converge_after=2 if final else None,
-        replay=replay, engine_noise_fields=_follower_statistics,
+        engine_noise_fields=_follower_statistics, **follower_scale_replay(3, replay=follower_replay),
     )
 
 
@@ -1087,8 +1084,8 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
     Both are copies; the result reports both trajectories through one result_outputs call."""
     from helpers.tiny_refinement import CallTrace
 
+    from relax.parity.relion_replay_source import RelionReplaySource
     from relax.refinement import iteration_loop
-    from relax.refinement.ports import InputSource
     from relax.relion import relion_worker_scale
 
     seen = {}
@@ -1116,7 +1113,7 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
 
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, "_dispatch_relion_follower_scale_for_numbered_iteration", "dispatch", after=dispatched)
-    trace.wrap(InputSource, "numbered_state", "replay")
+    trace.wrap(RelionReplaySource, "numbered_state", "replay")
     trace.wrap(iteration_loop, "_update_relion_follower_corrections", "update",
                before=post_mstep_count(lambda call: len(trace.calls("update")) - 1), after=installed)
     trace.wrap(relion_worker_scale, "update_relion_follower_scales", "update_scales")

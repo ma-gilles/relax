@@ -85,6 +85,9 @@ class RelionReplay:
     its ``frozen_refinement_state_fields`` and ``assert_scoring_state_unchanged`` (check, right before the
     first iteration scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
     state-swap probe's settings (``relax.diagnostics.state_swap_probe.build_state_swap_probe``).
+    ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
+    which particle in each iteration, ``--relion-dispatch-schedule``) and follower-scale replay
+    (``relax.relion.relion_worker_scale.PreparedFollowerTopology``; None or no followers: none).
     """
 
     perturb_replay_relion_dir: str | None = None
@@ -108,6 +111,7 @@ class RelionReplay:
     frozen_refinement_state_fields: Any | None = None
     assert_scoring_state_unchanged: bool = False
     state_swap_probe: dict | None = None
+    follower_topology: Any | None = None
 
     def __post_init__(self):
         if self.perturb_replay_max_iter is not None and self.perturb_replay_max_iter < 0:
@@ -131,7 +135,10 @@ class RelionReplay:
                 self.final_replay_reference_maps, self.final_sampling_replay_relion_dir, self.sealed_sampling_state,
                 self.sealed_scoring_context, self.frozen_refinement_state_fields, self.state_swap_probe,
             )
-        ) or self.final_all_data_replay_last_numbered_state or self.assert_scoring_state_unchanged
+        ) or self.final_all_data_replay_last_numbered_state or self.assert_scoring_state_unchanged or (
+            self.follower_topology is not None
+            and (int(self.follower_topology.n_followers or 0) > 0 or self.follower_topology.replay is not None)
+        )
 
 
 class RelionReplaySource(InputSource):
@@ -173,6 +180,10 @@ class RelionReplaySource(InputSource):
     @property
     def swaps_state(self):
         return self.replay.state_swap_probe is not None
+
+    @property
+    def follower_topology(self):
+        return self.replay.follower_topology
 
     def replays_relion_state(self):
         replay = self.replay

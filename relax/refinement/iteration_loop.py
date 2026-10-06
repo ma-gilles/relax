@@ -1079,6 +1079,7 @@ def refine_single_volume(
 
     follower_setup = setup_relion_follower_scale_state(
         options,
+        topology=source.follower_topology,
         relion_half_inputs=halves,
         experiment_datasets=experiment_datasets,
         k_class_enabled=k_class_enabled,
@@ -1087,6 +1088,8 @@ def refine_single_volume(
             () if source.relion_replay is None else source.relion_replay.perturb_replay_restart_state_iterations
         ),
     )
+    # The replayed run's follower-scale replay (None without one).
+    follower_scale_replay = None if source.follower_topology is None else source.follower_topology.replay
 
     if resume is None:
         # --- A fresh run starts from the caller's references, noise and replayed particle state ---
@@ -1337,7 +1340,7 @@ def refine_single_volume(
                 iteration=iteration,
                 numbered_relion_iteration=numbered_relion_iteration,
                 relion_half_inputs=halves,
-                relion_follower_scale_replay_source=replay.relion_follower_scale_replay,
+                relion_follower_scale_replay_source=follower_scale_replay,
                 dtype=scoring_dtype,
                 logger=logger,
             )
@@ -1789,7 +1792,7 @@ def refine_single_volume(
             merged_mean, merged_class_means = _merged_mean_from_halves(reference_model.maps, None)
             return RefinementResult(
                 maps=ModelMaps(mean=merged_mean, means=reference_model.maps, class_means=merged_class_means),
-                replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),
+                replay=_follower_replay_telemetry(follower_scale_replay, history),
                 follower_scale=None,
                 convergence_state=state,
                 numbered=NumberedMetadata(
@@ -2433,7 +2436,7 @@ def refine_single_volume(
                 class_weights=class_mixture.weights if k_class_enabled else None,
                 class_assignments=class_assignments if k_class_enabled else None,
             ),
-            replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),
+            replay=_follower_replay_telemetry(follower_scale_replay, history),
             follower_scale=follower_setup.result_outputs(history),
             convergence_state=state,
             numbered=numbered,
@@ -2524,7 +2527,7 @@ def refine_single_volume(
         observer=observer,
     )
     return replace(
-        final_result, numbered=numbered, replay=_follower_replay_telemetry(replay.relion_follower_scale_replay, history),
+        final_result, numbered=numbered, replay=_follower_replay_telemetry(follower_scale_replay, history),
     )
 
 ### THIS FILE SHOULD BE MUCH SHORTER - REMOVE UN-NECESSARY IF STATEMENTS/RELION THINGS THAT DONT MATTER/ WE DONT USE

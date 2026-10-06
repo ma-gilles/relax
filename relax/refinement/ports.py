@@ -177,6 +177,9 @@ class InputSource:
     sealed_scoring_context = None
     # Whether a state-swap probe swaps state in some iteration (it then admits a fresh BPref particle order).
     swaps_state = False
+    # A replayed MPI RELION run's follower topology and captured dispatch schedule (a
+    # ``relax.relion.relion_worker_scale.PreparedFollowerTopology``); None natively: no followers.
+    follower_topology = None
 
     def replays_relion_state(self) -> bool:
         """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state, a

@@ -1255,10 +1255,6 @@ def main(command=None):
             init_reference_real=None if resume_snapshot is not None else references.real_for_projector,
             init_group_ids=list(particle_groups.group_ids_per_half),
             init_group_count=particle_groups.n_groups,
-            relion_scale_follower_count=follower_topology.n_followers,
-            relion_scale_follower_owners_by_iteration=follower_topology.owners_by_iteration,
-            relion_scale_reduction_mode=follower_topology.reduction_mode,
-            relion_follower_scale_replay=follower_topology.replay,
             init_relion_optics_group_count=particle_groups.n_optics_groups,
             init_previous_best_translations=(
                 None
@@ -1313,6 +1309,7 @@ def main(command=None):
                 final_replay_source_iteration=final_replay.source_iteration,
                 final_sampling_replay_relion_dir=final_replay.sampling_dir,
                 state_swap_probe=state_swap_probe,
+                follower_topology=follower_topology,
                 **command_options.frozen_boundary_replay(frozen_boundary),
             ),
             run_options,

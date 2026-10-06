@@ -97,7 +97,11 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   `RefinementState` fields and the check that the scoring state is unchanged before the first iteration) and
   the state-swap probe (`--state-swap-*`: its snapshot, RELION references and swap) are `RelionReplay` fields;
   only the source calls `relax.diagnostics.frozen_boundary` and `state_swap_runtime`
-  (`tests/unit/test_refinement_port_imports.py`). Owner decision, 2026-10-06: these and the final-only
+  (`tests/unit/test_refinement_port_imports.py`). The follower topology of an MPI RELION run
+  (`--relion-scale-followers`, the captured dispatch schedule `--relion-dispatch-schedule` and the follower-scale
+  replay) is `RelionReplay.follower_topology`; the controller reads it as `source.follower_topology`. It is a
+  tiered replay (medium's three K4 fast cases; a strict K>1 replay requires it) and stays (lead, 2026-10-06).
+  Owner decision, 2026-10-06: these and the final-only
   replay are ported on the fingerprint and the CPU admission tests alone. **Runs from a real RELION run
   directory (a frozen boundary, a state-swap probe, a final-only replay) are not tested**: no tier runs
   them and no CPU fixture is a RELION run directory (see Known coverage limits).
@@ -111,9 +115,6 @@ the flags refuse and name the tag, and its archive and ledger keys keep the valu
 A frozen boundary's replay slots now stay empty (`empty_replay_slots`).
 
 Not yet through the ports, each still read where it was:
-- The follower dispatch schedule (`--relion-dispatch-schedule`, `--relion-scale-followers`). The audit listed it
-  as untiered, but medium's three K4 fast cases pass it (a strict K>1 replay requires it); see the tier list
-  below.
 - The engine telemetry, the profile histories and the setup timers: they are archive keys of the default
   run (`RefinementHistory`, `NumberedMetadata.setup_phase_seconds`).
 - The significance and pass-2 single-half selectors (`RELAX_SIGNIFICANCE_DUMP_TARGET_HALF`,

@@ -924,7 +924,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     _stand_in_device(monkeypatch)
     with pytest.raises(_Stop):
         _run_main(monkeypatch, "refine", write_tiny_data_dir(tmp_path / "data"), tmp_path / "out", [])
-    assert controller["options"].replay.relion_follower_scale_replay is replay
+    assert controller["source"].follower_topology.replay is replay
     assert archive["follower_replay"] is replay and archive["relion_dispatch_schedule"] is schedule
     assert command_options.parse_refinement_args(
         ["--data_dir", "d", "--output", "o", "--relion-follower-scale-replay", "r.npz"]

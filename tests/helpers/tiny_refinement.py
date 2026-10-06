@@ -215,22 +215,28 @@ def write_replay_dir(root, *, max_iter, n_classes=1, prior_order=2):
     return str(root)
 
 
-def follower_scale_replay(n_iterations, n_followers=2):
-    """``ReplayState`` for Class3D's strict RELION follower-scale emulation on the tiny half sets: two physical
-    groups, one optics group, and a captured dispatch schedule for RELION iterations 1 to ``n_iterations``."""
+def follower_scale_replay(n_iterations, n_followers=2, replay=None):
+    """``run_tiny_refinement`` arguments for Class3D's strict RELION follower-scale emulation on the tiny half
+    sets: two physical groups and one optics group (``ReplayState``), and the input source's follower topology
+    with a captured dispatch schedule for RELION iterations 1 to ``n_iterations`` and the follower-scale
+    ``replay`` (None: none)."""
 
+    from relax.parity.relion_replay_source import RelionReplay
     from relax.refinement.refinement_options import ReplayState
-    from relax.relion.relion_worker_scale import RELION_SCALE_REDUCTION_MODES
+    from relax.relion.relion_worker_scale import RELION_SCALE_REDUCTION_MODES, PreparedFollowerTopology
 
     n_half = N_IMAGES // 2
     owners = [np.arange(n_half) % n_followers, (np.arange(n_half) + 1) % n_followers]
-    return ReplayState(
-        init_group_ids=[np.arange(n_half) % 2, (np.arange(n_half) + 1) % 2],
-        init_group_count=2,
-        relion_scale_follower_count=n_followers,
-        relion_scale_follower_owners_by_iteration={it: owners for it in range(1, n_iterations + 1)},
-        init_relion_optics_group_count=1,
-        relion_scale_reduction_mode=RELION_SCALE_REDUCTION_MODES[0],
+    return dict(
+        replay=ReplayState(
+            init_group_ids=[np.arange(n_half) % 2, (np.arange(n_half) + 1) % 2],
+            init_group_count=2,
+            init_relion_optics_group_count=1,
+        ),
+        relion_replay=RelionReplay(follower_topology=PreparedFollowerTopology(
+            n_followers=n_followers, replay=replay, reduction_mode=RELION_SCALE_REDUCTION_MODES[0],
+            owners_by_iteration={it: owners for it in range(1, n_iterations + 1)},
+        )),
     )
 
 
