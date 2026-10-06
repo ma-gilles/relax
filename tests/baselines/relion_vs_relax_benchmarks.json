@@ -14030,7 +14030,7 @@
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
-    "version": "GPU: RELION 5.0.1 + MPI scale-sum patch (mpiscale) relion_refine --j 12 --gpu 0 non-MPI (behaves as stock), one H100; CPU: stock RELION 5.0.1 CPU build relion_refine (accuracy reference candidate)",
+    "version": "GPU RELION 5.0.1 + MPI scale-sum patch (mpiscale) relion_refine --j 12 --gpu 0 non-MPI (behaves as stock for one scale group per shape), one H100; the reference the user chose for several-shape VDAM (2026-10-06)",
     "resolution_A": 11.333333,
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": null,
@@ -14064,11 +14064,11 @@
    },
    "gt": {
     "metric": "population-weighted masked GT FSC-AUC of the registered final map (scripts/score_initialmodel_maps.py at etvdam's src_845c636, which contains 5744444f and fd95e16f), frozen mask multioptics_k2_c1",
-    "relion": 0.653873,
+    "relion": 0.649212,
     "relax": 0.642827,
     "relion_band": [
-     0.64244,
-     0.654168
+     0.641337,
+     0.649212
     ],
     "relax_per_seed": {
      "1": 0.642827,
@@ -14078,15 +14078,7 @@
      "5": 0.644047,
      "6": 0.644515
     },
-    "relion_cpu_per_seed": {
-     "1": 0.653873,
-     "2": 0.646946,
-     "3": 0.648332,
-     "4": 0.64955,
-     "5": 0.64244,
-     "6": 0.654168
-    },
-    "relion_gpu_per_seed": {
+    "relion_per_seed": {
      "1": 0.649212,
      "2": 0.641337,
      "3": 0.644535,
@@ -14095,23 +14087,14 @@
      "6": 0.645904
     },
     "paired_mean_se": {
-     "relax_minus_cpu": [
-      -0.00511,
-      0.0019
-     ],
-     "relax_minus_gpu": [
+     "relax_minus_relion": [
       4e-05,
       0.00142
-     ],
-     "gpu_minus_cpu": [
-      -0.00515,
-      0.00108
      ]
     },
     "means": {
      "relax": 0.64411,
-     "relion_cpu": 0.64922,
-     "relion_gpu": 0.64407
+     "relion": 0.64407
     }
    },
    "cross_engine": null,
@@ -14127,11 +14110,12 @@
     "timing_controlled": true
    },
    "notes": [
-    "OPEN under the user's seed rule against CPU RELION. Six paired seeds (relax main 845c6363): relax -0.00511 ± 0.00190 below CPU RELION, GPU RELION -0.00515 ± 0.00108 below CPU RELION, relax vs GPU RELION +0.00004 ± 0.00142. One RELION iteration from the same iteration-150 state takes the same step on the CPU and the GPU (5-6% of the step, step correlation 0.998, amplitude 1.00 per shell), so the CPU advantage comes from the trajectory, not the update. Which reference to use (CPU or GPU RELION) is open until the user decides. (etvdam; em_status 782951ac.)",
-    "Seed rule (user, 2026-10-04): when the reference is bit-reproducible (CPU RELION), relax passes if its seed mean is not below the reference's by more than the standard error of the difference on the same seeds. CPU RELION is the candidate reference only on several-shape rows, because GPU RELION drops the coarse scale difference of a group on another box (ma-gilles/relax#12).",
-    "Per seed, masked GT FSC-AUC relax / CPU RELION / GPU RELION: s1 0.64283 / 0.65387 / 0.64921; s2 0.64278 / 0.64695 / 0.64134; s3 0.64567 / 0.64833 / 0.64453; s4 0.64481 / 0.64955 / 0.64199; s5 0.64405 / 0.64244 / 0.64143; s6 0.64451 / 0.65417 / 0.64590. Means 0.64411 / 0.64922 / 0.64407.",
+    "Reference (user, 2026-10-06, via team-lead and etvdam 9f448e54): GPU RELION is the only reference for several-shape VDAM; the CPU RELION comparison and its caveat are retired (they stay in this row's history).",
+    "Six seeds (relax main 845c6363, jobs 15089781, scoring 15100451): weighted masked GT FSC-AUC relax mean 0.64411 vs GPU RELION 0.64407; paired relax - GPU RELION +0.00004 ± 0.00142.",
+    "Per seed, masked GT FSC-AUC relax / GPU RELION: s1 0.64283 / 0.64921; s2 0.64278 / 0.64134; s3 0.64567 / 0.64453; s4 0.64481 / 0.64199; s5 0.64405 / 0.64143; s6 0.64451 / 0.64590.",
+    "GPU RELION walls per seed (r1): 525/580/611/600/584/604 s (mean 584; jobs 14868221, 14971808); seed 1 relax 516 s vs 525 s (0.98x).",
     "History: an earlier 0d73d5b branch run gave the same picture over 12 seeds (relax equals GPU RELION, paired -0.00005 ± 0.00057); several-shape VDAM landed as af9e5870, was reverted after a crash at iteration 110 in all six reruns, and re-landed as 845c6363 with the merge cut.",
-    "Speed: relax 3124 s vs GPU RELION non-MPI --j 12 3504 s summed over seeds 1-6 (0.89x); all cold on one H100 each, separate jobs; relax's six arms shared one node (job 15089781). CPU RELION walls 60284-78077 s per seed are not a speed reference."
+    "Speed: relax 3124 s vs GPU RELION non-MPI --j 12 3504 s summed over seeds 1-6 (0.89x); all cold on one H100 each, separate jobs; relax's six arms shared one node (job 15089781)."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "InitialModel (VDAM) has no gold-standard half maps; masked half-map resolution does not apply",
@@ -14152,23 +14136,117 @@
     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/mshape_845c636_cfg.json",
     "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/mshape_qual_live/mshape_k1/src_845c636",
     "relion_runs": [
-     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/relion/multioptics_k2_mshape/vdam_k1_cpu",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/relion/multioptics_k2_mshape/vdam_k1_mpiscale"
     ],
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930",
     "source": "etvdam via team-lead, 2026-10-06"
    },
    "date": "2026-10-06",
-   "quality_pass": null,
-   "quality_reason": "OPEN (reference not chosen): vs CPU RELION -0.00511 ± 0.00190 (does not pass the seed rule), vs GPU RELION +0.00004 ± 0.00142 (passes); weighted masked GT FSC-AUC, seeds 1-6",
-   "feature_reference": "optics groups of several image shapes in VDAM InitialModel: CPU RELION 5.0.1 (bit-reproducible; applies the coarse scale difference) and GPU RELION 5.0.1 mpiscale build non-MPI --j 12 (drops it, ma-gilles/relax#12), one run per seed, seeds 1-6; the user has not chosen the reference",
+   "quality_pass": true,
+   "quality_reason": "worst s1 −0.0064 vs same-seed RELION; inside across-seed band; paired relax - GPU RELION +0.00004 ± 0.00142 over seeds 1-6",
+   "feature_reference": "optics groups of several image shapes in VDAM InitialModel: GPU RELION 5.0.1 (mpiscale build, non-MPI --j 12, one H100), one run per seed, seeds 1-6; the only reference (user, 2026-10-06)",
    "time_check": {
     "a": "relax and GPU RELION each on 1 H100 + 12 CPUs; separate jobs: relax 15089781 (six arms on one node), GPU RELION 14868221 and 14971808",
     "b": "relax 845c6363 production defaults and RELION's GUI InitialModel command (--grad --denovo_3dref --auto_sampling --tau2_fudge 4); RELION mpiscale build run non-MPI (behaves as stock)",
     "c": "job-script walls (WALL.json), end to end, cold; summed over seeds 1-6",
     "d": "H100 80GB HBM3 for every arm (GPU.csv / PROVENANCE.txt)"
    },
-   "history": []
+   "history": [
+    {
+     "date": "2026-10-06",
+     "relion": {
+      "version": "GPU RELION 5.0.1 + MPI scale-sum patch (mpiscale) relion_refine --j 12 --gpu 0 non-MPI (behaves as stock for one scale group per shape), one H100; the reference the user chose for several-shape VDAM (2026-10-06)",
+      "resolution_A": 11.333333,
+      "resolution_definition": "engine_current_resolution",
+      "relion_reported_resolution_A": null,
+      "masked_resolution_A": null,
+      "wall_s": 3504,
+      "wall_definition": "sum over seeds 1-6 of the GPU RELION run's job-script wall (WALL.json), cold, one H100 each (jobs 14868221, 14971808)",
+      "gpu_model": "H100 80GB",
+      "gpu_count": 1,
+      "iterations": 200,
+      "jobs": [
+       "14868221",
+       "14971808"
+      ],
+      "masked_band_auc": null
+     },
+     "gt": {
+      "metric": "population-weighted masked GT FSC-AUC of the registered final map (scripts/score_initialmodel_maps.py at etvdam's src_845c636, which contains 5744444f and fd95e16f), frozen mask multioptics_k2_c1",
+      "relion": 0.653873,
+      "relax": 0.642827,
+      "relion_band": [
+       0.64244,
+       0.654168
+      ],
+      "relax_per_seed": {
+       "1": 0.642827,
+       "2": 0.642778,
+       "3": 0.645675,
+       "4": 0.644814,
+       "5": 0.644047,
+       "6": 0.644515
+      },
+      "relion_cpu_per_seed": {
+       "1": 0.653873,
+       "2": 0.646946,
+       "3": 0.648332,
+       "4": 0.64955,
+       "5": 0.64244,
+       "6": 0.654168
+      },
+      "relion_gpu_per_seed": {
+       "1": 0.649212,
+       "2": 0.641337,
+       "3": 0.644535,
+       "4": 0.641993,
+       "5": 0.641425,
+       "6": 0.645904
+      },
+      "paired_mean_se": {
+       "relax_minus_cpu": [
+        -0.00511,
+        0.0019
+       ],
+       "relax_minus_gpu": [
+        4e-05,
+        0.00142
+       ],
+       "gpu_minus_cpu": [
+        -0.00515,
+        0.00108
+       ]
+      },
+      "means": {
+       "relax": 0.64411,
+       "relion_cpu": 0.64922,
+       "relion_gpu": 0.64407
+      }
+     },
+     "quality_pass": null,
+     "quality_reason": "OPEN (reference not chosen): vs CPU RELION -0.00511 ± 0.00190 (does not pass the seed rule), vs GPU RELION +0.00004 ± 0.00142 (passes); weighted masked GT FSC-AUC, seeds 1-6",
+     "feature_reference": "optics groups of several image shapes in VDAM InitialModel: CPU RELION 5.0.1 (bit-reproducible; applies the coarse scale difference) and GPU RELION 5.0.1 mpiscale build non-MPI --j 12 (drops it, ma-gilles/relax#12), one run per seed, seeds 1-6; the user has not chosen the reference",
+     "notes": [
+      "OPEN under the user's seed rule against CPU RELION. Six paired seeds (relax main 845c6363): relax -0.00511 ± 0.00190 below CPU RELION, GPU RELION -0.00515 ± 0.00108 below CPU RELION, relax vs GPU RELION +0.00004 ± 0.00142. One RELION iteration from the same iteration-150 state takes the same step on the CPU and the GPU (5-6% of the step, step correlation 0.998, amplitude 1.00 per shell), so the CPU advantage comes from the trajectory, not the update. Which reference to use (CPU or GPU RELION) is open until the user decides. (etvdam; em_status 782951ac.)",
+      "Seed rule (user, 2026-10-04): when the reference is bit-reproducible (CPU RELION), relax passes if its seed mean is not below the reference's by more than the standard error of the difference on the same seeds. CPU RELION is the candidate reference only on several-shape rows, because GPU RELION drops the coarse scale difference of a group on another box (ma-gilles/relax#12).",
+      "Per seed, masked GT FSC-AUC relax / CPU RELION / GPU RELION: s1 0.64283 / 0.65387 / 0.64921; s2 0.64278 / 0.64695 / 0.64134; s3 0.64567 / 0.64833 / 0.64453; s4 0.64481 / 0.64955 / 0.64199; s5 0.64405 / 0.64244 / 0.64143; s6 0.64451 / 0.65417 / 0.64590. Means 0.64411 / 0.64922 / 0.64407.",
+      "History: an earlier 0d73d5b branch run gave the same picture over 12 seeds (relax equals GPU RELION, paired -0.00005 ± 0.00057); several-shape VDAM landed as af9e5870, was reverted after a crash at iteration 110 in all six reruns, and re-landed as 845c6363 with the merge cut.",
+      "Speed: relax 3124 s vs GPU RELION non-MPI --j 12 3504 s summed over seeds 1-6 (0.89x); all cold on one H100 each, separate jobs; relax's six arms shared one node (job 15089781). CPU RELION walls 60284-78077 s per seed are not a speed reference."
+     ],
+     "evidence": {
+      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/mshape_845c636/mshape_vdam_k1_845c636.json",
+      "score_sha256": "806139894d04d7dd2e0aa64f234ac74c1258c3216c16071f44c29c6c479e99a5",
+      "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_evidence/etvdam_scores_20261003/cryoet_vdam_20261001/mshape_845c636_cfg.json",
+      "relax_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/mshape_qual_live/mshape_k1/src_845c636",
+      "relion_runs": [
+       "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/relion/multioptics_k2_mshape/vdam_k1_mpiscale"
+      ],
+      "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930",
+      "source": "etvdam via team-lead, 2026-10-06"
+     },
+     "note": "values before the user chose GPU RELION as the only reference for several-shape VDAM (2026-10-06); the row was OPEN between CPU and GPU RELION"
+    }
+   ]
   },
   {
    "id": "cryoet_et09_box64_2000_64_tomo_vdam_k1_1a107f5",
