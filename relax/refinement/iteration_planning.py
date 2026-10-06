@@ -14,8 +14,6 @@ from relax.dense import scoring_policy
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
 from relax.diagnostics.frozen_boundary import _restore_diagnostic_frozen_boundary_state
 from relax.diagnostics.relion_replay import (
-    _perturbation_restart_state_iteration,
-    _resolve_replay_random_perturbation,
     _restore_convergence_state_from_replay_restart,
     _sealed_sampling_base_grids,
 )
@@ -53,45 +51,28 @@ def resolve_numbered_perturbation(
     options: RefinementOptions,
     *,
     iteration: int,
-    replay_metadata,
-    replay_dir: str | None,
+    sealed_sampling_meta,
     rng,
     log: logging.Logger,
 ) -> float:
-    """Resolve sealed, STAR-replayed or native perturbation, in that order.
+    """The run's own sampling perturbation of this iteration: a sealed sampling state's, else the native advance.
 
-    Only native sampling advances the run RNG. Replay may instead reconstruct
-    the seeded sequence from a restart iteration. Reads from ``options``:
-    ``schedule.init_relion_iteration``; ``parity.perturb_factor``, ``perturb_seed`` and the
-    ``perturb_replay_*`` prefix, precision and restart-state iterations. See
+    Only the native advance moves the run RNG. A RELION run's perturbation is an input source's
+    (``InputSource.random_perturbation``). Reads from ``options``: ``schedule.init_relion_iteration``;
+    ``parity.perturb_factor`` and ``perturb_seed``. See
     ``docs/math/relion_refinement_algorithm.md#2-sampling-grids-and-units``.
     """
     parity = options.parity
     init_relion_iteration = options.schedule.init_relion_iteration
-    if replay_metadata is not None:
-        if replay_metadata.get("sealed_v3", False):
-            perturbation = float(replay_metadata["random_perturbation"])
-            source = "sealed_frozen_boundary_v3"
-        else:
-            relion_iteration = init_relion_iteration + iteration + 1
-            restart_iteration = _perturbation_restart_state_iteration(
-                parity.perturb_replay_restart_state_iterations, relion_iteration,
-            )
-            perturbation, source = _resolve_replay_random_perturbation(
-                star_value=float(replay_metadata["random_perturbation"]),
-                perturbation_factor=float(replay_metadata["perturbation_factor"]),
-                relion_iteration=relion_iteration,
-                replay_dir=str(replay_dir),
-                replay_prefix=parity.perturb_replay_relion_prefix,
-                explicit_seed=parity.perturb_seed,
-                precision_mode=str(parity.perturb_replay_precision),
-                restart_state_iteration=restart_iteration,
-            )
+    if sealed_sampling_meta is not None:
+        if not sealed_sampling_meta.get("sealed_v3", False):
+            raise RuntimeError("a sampling record from RELION's STAR files needs the replay input source")
+        perturbation = float(sealed_sampling_meta["random_perturbation"])
         log.info(
             "Perturbation replay: iter=%d rp=%+.12g pf=%.3f relion_hp_order=%d source=%s",
             iteration + 1, perturbation,
-            float(replay_metadata["perturbation_factor"]),
-            int(replay_metadata["healpix_order"]), source,
+            float(sealed_sampling_meta["perturbation_factor"]),
+            int(sealed_sampling_meta["healpix_order"]), "sealed_frozen_boundary_v3",
         )
         return perturbation
     if not parity.perturb_factor > 0:
@@ -526,21 +507,21 @@ def refresh_coarse_grids(
     *,
     voxel_size,
     dtype,
-    replay_dir: str | None,
+    star_sampling: bool,
     log: logging.Logger,
 ) -> CoarseGrids:
     """The exhaustive coarse grids of ``state``'s sampling, rebuilt where they changed.
 
     A new HEALPix order rebuilds the rotation grid (up to the exhaustive-grid cap) and the translation
-    grid. Under a live STAR replay (``replay_dir``) without sealed sampling, a replayed translation range
-    or step rebuilds the translation grid alone. ``grids.translations`` may be a perturbed copy; a rebuild
+    grid. When RELION's numbered sampling STAR set this iteration's sampling (``star_sampling``) and no
+    sealed sampling state did, a replayed translation range or step rebuilds the translation grid alone. ``grids.translations`` may be a perturbed copy; a rebuild
     replaces it with the base grid. Reads from ``state``: ``healpix_order`` (and the fields the
     exhaustive-grid cap reads), ``translation_range`` and ``translation_step``; from ``options``:
     ``k_class.n_classes``, ``symmetry.point_group`` and ``debug.sealed_sampling_state``.
     """
     n_classes = int(options.k_class.n_classes)
     symmetry = options.symmetry.point_group
-    replay_translations = replay_dir is not None and options.debug.sealed_sampling_state is None
+    replay_translations = star_sampling and options.debug.sealed_sampling_state is None
     current_rotation_grid = grids.rotation_grid
     base_translations = grids.base_translations
     current_translations = grids.translations

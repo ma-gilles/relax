@@ -18,7 +18,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.diagnostics.relion_replay import _past_perturb_replay_max_iter, apply_iter_replay_overrides
+from relax.diagnostics.relion_replay import (
+    _past_perturb_replay_max_iter,
+    _perturbation_restart_state_iteration,
+    _resolve_replay_random_perturbation,
+    apply_iter_replay_overrides,
+)
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.mean_helpers import class_mixture_from_weights
 from relax.refinement.ports import InputSource, NumberedState
@@ -32,6 +37,7 @@ class RelionReplaySource(InputSource):
 
     def __init__(self, options):
         self.options = options
+        self._cutoff_announced = False
 
     @classmethod
     def from_options(cls, options) -> InputSource:
@@ -50,6 +56,48 @@ class RelionReplaySource(InputSource):
         if parity.perturb_replay_relion_dir is None or _past_perturb_replay_max_iter(iteration, parity.perturb_replay_max_iter):
             return None
         return parity.perturb_replay_relion_dir
+
+    def relion_run_directory(self, iteration):
+        """The STAR replay's directory up to ``perturb_replay_max_iter`` (announced once when it ends), else None."""
+        parity = self.options.parity
+        directory = self._star_directory(iteration)
+        if directory is None and parity.perturb_replay_relion_dir is not None and not self._cutoff_announced:
+            self._cutoff_announced = True
+            logger.info(
+                "Replay override: disabling RELION per-iteration STAR replay from "
+                "iteration %d onward (--replay-override-max-iter %d)",
+                iteration + 1,
+                parity.perturb_replay_max_iter,
+            )
+        return directory
+
+    def random_perturbation(self, iteration, sampling_meta, native):
+        """The perturbation of RELION's sampling STAR (exact from its seed where the precision allows), when the
+        STAR set this iteration's sampling; otherwise the run's own."""
+        if sampling_meta is None or sampling_meta.get("sealed_v3", False):
+            return native()
+        parity = self.options.parity
+        relion_iteration = self.options.schedule.init_relion_iteration + iteration + 1
+        restart_iteration = _perturbation_restart_state_iteration(
+            parity.perturb_replay_restart_state_iterations, relion_iteration,
+        )
+        perturbation, source = _resolve_replay_random_perturbation(
+            star_value=float(sampling_meta["random_perturbation"]),
+            perturbation_factor=float(sampling_meta["perturbation_factor"]),
+            relion_iteration=relion_iteration,
+            replay_dir=str(self._star_directory(iteration)),
+            replay_prefix=parity.perturb_replay_relion_prefix,
+            explicit_seed=parity.perturb_seed,
+            precision_mode=str(parity.perturb_replay_precision),
+            restart_state_iteration=restart_iteration,
+        )
+        logger.info(
+            "Perturbation replay: iter=%d rp=%+.12g pf=%.3f relion_hp_order=%d source=%s",
+            iteration + 1, perturbation,
+            float(sampling_meta["perturbation_factor"]),
+            int(sampling_meta["healpix_order"]), source,
+        )
+        return perturbation
 
     def numbered_state(self, iteration, inputs, *, state, halves, direction_priors, image_geometry, sampling_sealed):
         """RELION's sampling controls, priors, particle state, noise, tau2 and class weights for this iteration.

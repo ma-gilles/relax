@@ -828,9 +828,6 @@ def refine_single_volume(
 
     particle_diameter_ang = schedule.particle_diameter_ang
     tau2_fudge = parity.tau2_fudge
-    perturb_replay_relion_dir = parity.perturb_replay_relion_dir
-    perturb_replay_relion_prefix = parity.perturb_replay_relion_prefix
-    perturb_replay_max_iter = parity.perturb_replay_max_iter
     init_relion_iteration = schedule.init_relion_iteration
     final_replay_override = replay.final_replay_override
     n_classes = k_class.n_classes
@@ -918,7 +915,7 @@ def refine_single_volume(
         preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
         n_classes=n_classes,
         init_relion_iteration=init_relion_iteration,
-        perturb_replay_relion_dir=perturb_replay_relion_dir,
+        perturb_replay_relion_dir=parity.perturb_replay_relion_dir,
         replay_iteration_overrides=replay.replay_iteration_overrides,
         sealed_sampling_state=sealed_sampling_state,
         sealed_scoring_context=debug.sealed_scoring_context,
@@ -1260,9 +1257,9 @@ def refine_single_volume(
         "RELION mode setup timing before iteration loop: %s",
         ", ".join(f"{key}={value:.1f}s" for key, value in setup_phase_seconds.items()),
     )
-    native_sampling_boundary = replay_policy._native_sampling_boundary_for_iteration(
-        options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
-    )
+    # The RELION run whose numbered STAR files supply the sampling (an input source's; None natively).
+    star_directory = source.relion_run_directory(iteration - 1)
+    native_sampling_boundary = source.relion_run_directory(iteration) is None and sealed_sampling_state is None
     # A numbered RELION sampling STAR is the state *after* the expectation
     # transition that produced it.  The next expectation computes
     # image_coarse_size from that saved state before updateAngularSampling.
@@ -1329,20 +1326,10 @@ def refine_single_volume(
         seed_after_cc = seeded_start and bool(parity.emulate_relion_firstiter_cc)
         single_class_iteration = seed_after_cc and iteration == 0
         seed_iteration = seeded_start and iteration == (1 if seed_after_cc else 0)
-        if perturb_replay_relion_dir is not None and replay_policy._past_perturb_replay_max_iter(
-            iteration, perturb_replay_max_iter
-        ):
-            logger.info(
-                "Replay override: disabling RELION per-iteration STAR replay from "
-                "iteration %d onward (--replay-override-max-iter %d)",
-                iteration + 1,
-                perturb_replay_max_iter,
-            )
-            perturb_replay_relion_dir = None
+        star_directory = source.relion_run_directory(iteration)
+        native_sampling_boundary = star_directory is None and sealed_sampling_state is None
+        if native_sampling_boundary:
             replay_saved_healpix_order = None
-        native_sampling_boundary = replay_policy._native_sampling_boundary_for_iteration(
-            options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
-        )
         # RELION checks convergence at the top of iteration n from the
         # completed n-1 statistics and the fine-enough decision latched during
         # expectation n-1.  If true, iteration n is the unnumbered joined
@@ -1504,7 +1491,7 @@ def refine_single_volume(
             replay_saved_healpix_order = int(state.healpix_order)
 
         reference_model.maps = _maybe_debug_replay_relion_references(
-            reference_model, options, iteration=iteration, replay_dir=perturb_replay_relion_dir,
+            reference_model, options, iteration=iteration, replay_dir=star_directory,
             volume_shape=volume_shape,
         )
 
@@ -1609,7 +1596,7 @@ def refine_single_volume(
         # The order is still tracked for sigma calculation.
         coarse_grids = refresh_coarse_grids(
             coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
-            replay_dir=perturb_replay_relion_dir, log=logger,
+            star_sampling=star_directory is not None, log=logger,
         )
 
         # --- Local angular search bookkeeping ---
@@ -1628,9 +1615,12 @@ def refine_single_volume(
         # Perturbation is a rigid rotation of SO(3): A := A @ R_perturb applied
         # AFTER oversampling. At adaptive_oversampling=0 (os0 RELION runs),
         # the coarse grid IS the trial grid so we apply directly here.
-        random_perturbation = resolve_numbered_perturbation(
-            random_perturbation, options, iteration=iteration, replay_metadata=_replay_meta,
-            replay_dir=perturb_replay_relion_dir, rng=perturb_rng, log=logger,
+        random_perturbation = source.random_perturbation(
+            iteration, _replay_meta,
+            native=partial(
+                resolve_numbered_perturbation, random_perturbation, options, iteration=iteration,
+                sealed_sampling_meta=_replay_meta, rng=perturb_rng, log=logger,
+            ),
         )
         trial_grid = iteration_trial_grid(
             coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta, dtype=scoring_dtype,
@@ -2315,7 +2305,7 @@ def refine_single_volume(
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
             scheduling_resolution_shell=resolution_estimate.scheduling_shell,
-            replay_dir=perturb_replay_relion_dir,
+            replay_dir=star_directory,
             translations=coarse_grids.translations,
             statistics=statistics,
             current_classes=current_combined_classes,
@@ -2647,7 +2637,7 @@ def refine_single_volume(
         rotation_grid=coarse_grids.rotation_grid,
         random_perturbation=random_perturbation,
         perturb_rng=perturb_rng,
-        perturb_replay_relion_dir=perturb_replay_relion_dir,
+        perturb_replay_relion_dir=star_directory,
         sigma_offset=sigma_offset,
         class_mixture=class_mixture,
         class_assignments=class_assignments,

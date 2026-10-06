@@ -146,6 +146,15 @@ class InputSource:
         """
         return inputs
 
+    def relion_run_directory(self, iteration: int):
+        """The RELION run directory whose numbered STAR files supply iteration ``iteration``'s sampling (None:
+        the run samples natively). ``iteration`` -1 asks before the first iteration."""
+        return None
+
+    def random_perturbation(self, iteration: int, sampling_meta, native) -> float:
+        """This iteration's sampling perturbation; ``native()`` computes the run's own (and advances its RNG)."""
+        return native()
+
 
 class RunObserver:
     """Watches a refinement run and never steers it; every hook does nothing by default."""

@@ -113,7 +113,6 @@ from relax.refinement.noise_updates import (
 )
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
-    EngineDebugOptions,
     KClassOptions,
     LocalSearchOptions,
     RefinementBatching,
@@ -565,50 +564,48 @@ def testrefine_single_volume_clears_perturb_replay_dir_past_cutoff_source(monkey
         if call.result and Path(replay_dir).exists():
             shutil.move(replay_dir, tmp_path / "moved")
 
+    from relax.parity import relion_replay_source
+    from relax.parity.relion_replay_source import RelionReplaySource
+
     trace = CallTrace(monkeypatch)
-    trace.wrap(relion_replay_module, "_past_perturb_replay_max_iter", "cutoff", after=move_replay_dir_away)
-    trace.wrap(relion_replay_module, "_native_sampling_boundary_for_iteration", "boundary")
+    trace.wrap(relion_replay_source, "_past_perturb_replay_max_iter", "cutoff", after=move_replay_dir_away)
+    trace.wrap(RelionReplaySource, "relion_run_directory", "directory")
     trace.wrap(iteration_loop_module, "relion_expectation_coarse_size_order", "coarse_order")
     run_tiny_refinement(
         monkeypatch, max_iter=3, final_after_max_iter=False, converge_after=None,
         parity=dict(perturb_replay_relion_dir=replay_dir, perturb_replay_max_iter=1, low_resol_join_halves_angstrom=0.0),
     )
-    # The loop asks while it still has a directory: iteration 1 is in range, iteration 2 is past it.
-    assert [call.result for call in trace.calls("cutoff") if call.inside == ()] == [False, True]
+    # Iteration 1 is in range, iteration 2 is the first past it, and every later question is answered past it.
+    cutoffs = [call.result for call in trace.calls("cutoff")]
+    assert cutoffs[cutoffs.index(True):] == [True] * (len(cutoffs) - cutoffs.index(True))
     assert not Path(replay_dir).exists()
-    boundaries = trace.calls("boundary")
-    # The start-up decision and the first iteration's read the directory; the two past the cutoff do not.
-    assert [call.kwargs["replay_dir"] for call in boundaries] == [replay_dir, replay_dir, None, None]
+    # The start-up decisions and the first iteration's get the directory; the two past the cutoff do not.
+    directories = {call.args[1]: call.result for call in trace.calls("directory")}
+    assert directories == {-1: replay_dir, 0: replay_dir, 1: None, 2: None}
     # Nor does the coarse size keep the replayed sampling order.
     saved_orders = [call.kwargs["replay_saved_healpix_order"] for call in trace.calls("coarse_order")]
     assert saved_orders[0] is not None and saved_orders[1:] == [None, None]
 
 
 @pytest.mark.parametrize(
-    ("iteration", "replay_dir", "cutoff", "sealed", "expected_native"),
+    ("iteration", "replay_dir", "cutoff", "expected_directory"),
     [
-        (0, "/replay", None, None, False),
-        (0, "/replay", 0, None, True),
-        (0, "/replay", 1, None, False),
-        (1, "/replay", 1, None, True),
-        (1, None, 1, None, True),
-        (1, None, 1, object(), False),
+        (0, "/replay", None, "/replay"),
+        (0, "/replay", 0, None),
+        (0, "/replay", 1, "/replay"),
+        (1, "/replay", 1, None),
+        (1, None, 1, None),
     ],
 )
-def test_native_sampling_boundary_transitions_at_replay_cutoff(
-    iteration, replay_dir, cutoff, sealed, expected_native
-):
-    assert (
-        relion_replay_module._native_sampling_boundary_for_iteration(
-            RefinementOptions(
-                parity=RelionParityOptions(perturb_replay_max_iter=cutoff),
-                debug=EngineDebugOptions(sealed_sampling_state=sealed),
-            ),
-            iteration=iteration,
-            replay_dir=replay_dir,
-        )
-        is expected_native
+def test_replay_source_supplies_the_star_directory_up_to_the_cutoff(iteration, replay_dir, cutoff, expected_directory):
+    """The controller samples natively where the source supplies no STAR directory and no sealed sampling state
+    set the iteration (the sealed state is the controller's own test)."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+
+    options = RefinementOptions(
+        parity=RelionParityOptions(perturb_replay_max_iter=cutoff, perturb_replay_relion_dir=replay_dir),
     )
+    assert RelionReplaySource(options).relion_run_directory(iteration) == expected_directory
 
 
 def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_rounding(monkeypatch, tmp_path):

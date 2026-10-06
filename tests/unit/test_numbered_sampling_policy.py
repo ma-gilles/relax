@@ -99,7 +99,7 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
         )
         current = iteration_planning.resolve_numbered_perturbation(
             current, _options(parity, 10), iteration=iteration,
-            replay_metadata=None, replay_dir=None, rng=rng, log=LOG,
+            sealed_sampling_meta=None, rng=rng, log=LOG,
         )
         assert_matches(current, expected)
     assert_matches(rng.random(), reference_rng.random())
@@ -107,30 +107,46 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
 
 @pytest.mark.parametrize("sealed", [False, True])
 def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
+    """A sealed sampling state's perturbation (the run's own resolution) and a RELION STAR's (the replay
+    source's) are read, not drawn: the native RNG does not move."""
+    from relax.parity.relion_replay_source import RelionReplaySource
+
     rng = np.random.default_rng(23)
     reference_rng = np.random.default_rng(23)
-    result = iteration_planning.resolve_numbered_perturbation(
-        0.125, _options(RelionParityOptions(perturb_factor=0.5), 10),
-        iteration=0,
-        replay_metadata={"sealed_v3": sealed, "random_perturbation": 0.25,
-                         "perturbation_factor": 0.5, "healpix_order": 3},
-        replay_dir=str(tmp_path), rng=rng, log=LOG,
-    )
+    options = _options(RelionParityOptions(perturb_factor=0.5, perturb_replay_relion_dir=str(tmp_path)), 10)
+    meta = {"sealed_v3": sealed, "random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3}
+
+    def native():
+        return iteration_planning.resolve_numbered_perturbation(
+            0.125, options, iteration=0, sealed_sampling_meta=meta, rng=rng, log=LOG,
+        )
+
+    result = RelionReplaySource(options).random_perturbation(0, meta, native)
     assert_matches(result, 0.25)
     assert_matches(rng.random(), reference_rng.random())
 
 
+def test_a_star_sampling_record_refuses_the_native_resolution():
+    with pytest.raises(RuntimeError, match="replay input source"):
+        iteration_planning.resolve_numbered_perturbation(
+            0.125, _options(RelionParityOptions(perturb_factor=0.5), 10), iteration=0,
+            sealed_sampling_meta={"random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3},
+            rng=None, log=LOG,
+        )
+
+
 def test_replay_restart_uses_physical_iteration(tmp_path):
+    from relax.parity.relion_replay_source import RelionReplaySource
+
     (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
-    result = iteration_planning.resolve_numbered_perturbation(
-        0.125, _options(RelionParityOptions(
-            perturb_factor=0.5, perturb_replay_precision="seed_exact",
-            perturb_replay_restart_state_iterations=(11,),
-            perturb_replay_relion_dir=str(tmp_path),
-        ), 11), iteration=0,
-        replay_metadata={"random_perturbation": -0.06873, "perturbation_factor": 0.5,
-                         "healpix_order": 3},
-        replay_dir=str(tmp_path), rng=None, log=LOG,
+    options = _options(RelionParityOptions(
+        perturb_factor=0.5, perturb_replay_precision="seed_exact",
+        perturb_replay_restart_state_iterations=(11,),
+        perturb_replay_relion_dir=str(tmp_path),
+    ), 11)
+    result = RelionReplaySource(options).random_perturbation(
+        0, {"random_perturbation": -0.06873, "perturbation_factor": 0.5, "healpix_order": 3},
+        native=lambda: pytest.fail("native perturbation"),
     )
     assert_matches(result, -0.06873074173927307)
 
@@ -139,7 +155,7 @@ def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypat
     monkeypatch.setattr(sampling, "_advance_relion_perturbation", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = iteration_planning.resolve_numbered_perturbation(
         0.25, _options(RelionParityOptions(perturb_factor=0.0), 10), iteration=2,
-        replay_metadata=None, replay_dir=None,
+        sealed_sampling_meta=None,
         rng=None, log=LOG,
     )
     assert_matches(result, 0.25)
