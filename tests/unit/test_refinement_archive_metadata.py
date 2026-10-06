@@ -67,10 +67,6 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
             oracle_id="dispatch-oracle", oracle_manifest_sha256="dispatch-manifest",
             particle_order_sha256="particle-order",
         ) if diagnostics else None,
-        captured_projector=SimpleNamespace(
-            source_dir=Path("projectors"), source_manifest=Path("projectors/manifest.json"),
-            replay_slot=1, source_manifest_sha256="projector-hash",
-        ) if diagnostics else None,
         state_swap_probe=dict(
             target_relion_iteration=2, iteration=1, variant="recovar",
             replay_relion_references=False, replay_override_keys=["noise_variance"],

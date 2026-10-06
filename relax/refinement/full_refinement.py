@@ -1006,9 +1006,9 @@ def main(command=None):
     replay_iteration_overrides = None
     if args.perturb_replay_relion_dir is not None:
         if frozen_boundary is not None:
-            replay_iteration_overrides = frozen_boundary_cli.projector_only_replay_slots(args.max_iter)
+            replay_iteration_overrides = frozen_boundary_cli.empty_replay_slots(args.max_iter)
             logger.info(
-                "Diagnostic frozen restart: local replay slot 0 is projector-only; "
+                "Diagnostic frozen restart: local replay slot 0 is empty; "
                 "sealed per-half scoring state suppresses process-start noise broadcast"
             )
         else:
@@ -1093,9 +1093,8 @@ def main(command=None):
                 "run_it000 particle state",
             )
 
-    captured_projector = frozen_boundary_cli.attach_cli_projector_capture(
-        args, replay_iteration_overrides, volume_shape=ds.volume_shape, frozen_boundary=frozen_boundary
-    )
+    if frozen_boundary is not None:
+        frozen_boundary_cli.validate_empty_replay_slots(replay_iteration_overrides)
 
     effective_tau2_fudge, tau2_fudge_source = _resolve_tau2_fudge(
         args.n_classes,
@@ -1350,7 +1349,6 @@ def main(command=None):
         max_significants=args.max_significants,
         max_significants_resolution=runtime_controls.max_significants_resolution,
         restart=restart_provenance,
-        captured_projector=captured_projector,
         max_iter=args.max_iter,
         random_seed=args.seed,
         random_seed_source=optimizer_seed_source,
@@ -1386,7 +1384,6 @@ def main(command=None):
         particle_layout=particle_layout,
         restart=restart_provenance,
         relion_dispatch_schedule=relion_dispatch_schedule,
-        captured_projector=captured_projector,
         state_swap_probe=state_swap_probe,
         symmetry_provenance=symmetry_provenance,
         tau2_fudge_source=tau2_fudge_source,

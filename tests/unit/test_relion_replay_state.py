@@ -9,7 +9,6 @@ from helpers.float_compare import assert_matches
 
 import relax.diagnostics.relion_replay as relion_replay_module
 import relax.helpers.orientation_priors as orientation_priors_module
-import relax.refinement.projector_preparation as projector_preparation
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
@@ -201,7 +200,7 @@ def test_frozen_replay_explicitly_suppresses_external_direction_prior_reload(
 
     direction_priors = [DirectionPrior(values, 3) for values in priors]
     relion_replay_module.apply_iter_replay_overrides(
-        iter_replay_override={"relion_projector_state": None},
+        iter_replay_override={},
         perturb_replay_relion_dir=str(tmp_path),
         init_relion_iteration=0,
         iteration=1,
@@ -230,98 +229,6 @@ def test_frozen_replay_explicitly_suppresses_external_direction_prior_reload(
 
     assert_matches(priors[0], np.full(768, 1.0 / 768.0, dtype=np.float32))
     assert_matches(priors[1], np.full(768, 1.0 / 768.0, dtype=np.float32))
-
-
-def _captured_projector_override(projector):
-    return {
-        "projector_half_by_half": [projector, projector.copy()],
-        "projector_r_max_by_half": [4, 4],
-        "current_size": 8,
-        "padding_factor": 2,
-        "volume_shape": [8, 8, 8],
-        "n_classes": 1,
-        "source_manifest_sha256": "a" * 64,
-    }
-
-
-def test_captured_relion_projector_replay_state_is_atomic_and_copied():
-    projector = np.zeros((1, 9, 9, 5), dtype=np.complex64)
-    projector[0, 2, 3, 1] = np.complex64(1.25 - 0.5j)
-
-    state = relion_replay_module._parse_relion_projector_replay_state(
-        _captured_projector_override(projector),
-        n_classes=1,
-    )
-    projector[...] = np.complex64(99.0 + 7.0j)
-
-    assert state is not None
-    assert state.source_manifest_sha256 == "a" * 64
-    assert state.projector_r_max_by_half == (4, 4)
-    assert state.projector_half_by_half[0][0, 2, 3, 1] == np.complex64(1.25 - 0.5j)
-    assert state.projector_half_by_half[0].flags.writeable is False
-    resolved = projector_preparation._validate_captured_relion_projector_for_iteration(
-        state,
-        current_size=8,
-        volume_shape=(8, 8, 8),
-        padding_factor=2,
-        n_classes=1,
-    )
-    assert [projector.r_max for projector in resolved] == [4, 4]
-    assert resolved[0].data is state.projector_half_by_half[0]
-    assert resolved[1].data is state.projector_half_by_half[1]
-    assert all(projector.power_spectrum is None for projector in resolved)
-
-
-@pytest.mark.parametrize(
-    ("mutation", "error_type", "message"),
-    [
-        (lambda value: value.pop("source_manifest_sha256"), ValueError, "keys must match"),
-        (
-            lambda value: value.__setitem__("source_manifest_sha256", "not-a-sha"),
-            ValueError,
-            "64 lowercase hex digits",
-        ),
-        (
-            lambda value: value.__setitem__("source_manifest_sha256", "A" * 64),
-            ValueError,
-            "64 lowercase hex digits",
-        ),
-        (
-            lambda value: value["projector_half_by_half"].__setitem__(
-                0, value["projector_half_by_half"][0].astype(np.complex128)
-            ),
-            TypeError,
-            "must be complex64",
-        ),
-        (
-            lambda value: value["projector_half_by_half"][0].__setitem__(
-                (0, 0, 0, 0), np.complex64(np.nan + 0j)
-            ),
-            ValueError,
-            "non-finite",
-        ),
-    ],
-)
-def test_captured_relion_projector_replay_state_rejects_corruption(mutation, error_type, message):
-    override = _captured_projector_override(np.zeros((1, 9, 9, 5), dtype=np.complex64))
-    mutation(override)
-    with pytest.raises(error_type, match=message):
-        relion_replay_module._parse_relion_projector_replay_state(override, n_classes=1)
-
-
-def test_captured_relion_projector_replay_state_rejects_live_geometry_mismatch():
-    state = relion_replay_module._parse_relion_projector_replay_state(
-        _captured_projector_override(np.zeros((1, 9, 9, 5), dtype=np.complex64)),
-        n_classes=1,
-    )
-    with pytest.raises(ValueError, match="current_size captured=8 replay=10"):
-        projector_preparation._validate_captured_relion_projector_for_iteration(
-            state,
-            current_size=10,
-            volume_shape=(8, 8, 8),
-            padding_factor=2,
-            n_classes=1,
-        )
 
 
 @pytest.mark.parametrize("available", range(8))

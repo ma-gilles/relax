@@ -56,7 +56,7 @@ honoured:
 - subtomogram particles and optics groups on several image shapes (their scorers are not reached);
 - a run seeded from, replaying or frozen at RELION's own state (`--relion_init_dir`,
   `--perturb_replay_relion_dir`, `--frozen-boundary-dir`, `--init_relion_iteration`, replay
-  overrides, captured projectors, state swaps): those statistics, references and projectors were
+  overrides, state swaps): those statistics and references were
   computed with RELION's rules;
 - a continuation (`--continue`) whose run files were written with other option values: the run
   files record the non-default options (`relax_consistency_<name>` in the optimiser STAR).

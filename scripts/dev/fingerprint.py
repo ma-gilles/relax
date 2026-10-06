@@ -38,8 +38,8 @@ output difference. Any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
-emulation; captured RELION projectors; a sealed sampling state beyond one global iteration; GPU
-operation order, peak memory and array lifetimes.
+emulation; a sealed sampling state beyond one global iteration; GPU operation order, peak memory and array
+lifetimes.
 """
 
 from __future__ import annotations
@@ -62,14 +62,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 1
 NOT_COVERED = (
     "in full_refinement.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
-    "STAR replays, --final-replay-relion-dir), frozen boundaries, state-swap probes, captured projectors, "
+    "STAR replays, --final-replay-relion-dir), frozen boundaries, state-swap probes, "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",
     "local search, local sampling and the profile-only return",
     "symmetry other than C1",
     "tomography",
     "multi-shape optics halves",
-    "follower-scale emulation, captured RELION projectors; a sealed sampling state beyond one global iteration",
+    "follower-scale emulation; a sealed sampling state beyond one global iteration",
     "GPU operation order, peak memory and array lifetimes",
 )
 # A log template containing one of these formats a wall time: its template is kept, its text dropped.

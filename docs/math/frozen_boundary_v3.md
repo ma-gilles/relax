@@ -19,7 +19,9 @@ separate hashes and an explicit transform identifier.
 The arm is deliberately labelled `reconstructed-projector
 boundary`: it rebuilds the RECOVAR projector from the captured Iref-derived
 mean. It must not claim exact captured-projector parity. A future exact
-projector arm must directly consume the schema-4 captured projector arrays.
+projector arm must directly consume the schema-4 captured projector arrays (the
+captured-projector replay was retired; its code is at git tag
+`retired/captured-projector-20261006`).
 
 ## Finalization
 

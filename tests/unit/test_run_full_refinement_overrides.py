@@ -32,11 +32,9 @@ from relax.diagnostics.frozen_boundary_cli import (
     _validate_fixed_diagnostic_math_environment,
     _verify_fixed_diagnostic_provenance_manifests,
     _verify_frozen_boundary_source_hashes,
-    attach_cli_projector_capture,
-    attach_projector_capture,
+    empty_replay_slots,
     expand_boundary_noise,
-    projector_only_replay_slots,
-    validate_projector_only_replay_slots,
+    validate_empty_replay_slots,
 )
 from relax.diagnostics.initial_model_replay import read_initial_model
 from relax.diagnostics.relion_replay import (
@@ -286,32 +284,19 @@ def test_relion_sigma2_to_native_noise_variance_can_preserve_float64_reciprocal_
     assert np.any(got != got.astype(np.float32).astype(np.float64))
 
 
-def test_frozen_replay_is_exactly_projector_only():
-    slots = projector_only_replay_slots(1)
-    projector = object()
-    slots[0]["relion_projector_state"] = projector
-
-    validate_projector_only_replay_slots(slots, projector_slot=0)
-
-    assert slots == [{"relion_projector_state": projector}, {}]
+def test_frozen_replay_slots_stay_empty():
+    slots = empty_replay_slots(1)
+    validate_empty_replay_slots(slots)
+    assert slots == [{}, {}]
 
 
-@pytest.mark.parametrize("field", ["noise_variance", "class_tau2", "future_override"])
-def test_frozen_replay_rejects_any_nonprojector_override(field):
-    slots = projector_only_replay_slots(1)
-    slots[0]["relion_projector_state"] = object()
-    slots[0][field] = object()
+@pytest.mark.parametrize("field", ["noise_variance", "class_tau2", "relion_projector_state"])
+def test_frozen_replay_rejects_any_override(field):
+    slots = empty_replay_slots(1)
+    slots[1][field] = object()
 
-    with pytest.raises(ValueError, match="not projector-only"):
-        validate_projector_only_replay_slots(slots, projector_slot=0)
-
-
-def test_frozen_replay_rejects_projector_in_final_slot():
-    slots = projector_only_replay_slots(1)
-    slots[1]["relion_projector_state"] = object()
-
-    with pytest.raises(ValueError, match="exactly one projector"):
-        validate_projector_only_replay_slots(slots, projector_slot=0)
+    with pytest.raises(ValueError, match="slot 1 is not empty"):
+        validate_empty_replay_slots(slots)
 
 
 def test_frozen_scoring_state_negative_overwrite_regression():
@@ -500,9 +485,6 @@ def _fixed_diagnostic_args():
         apply_initial_lowpass=False,
         image_fourier_backend="relion_cuda",
         final_replay_relion_dir=None,
-        relion_projector_capture_dir=None,
-        relion_projector_capture_manifest=None,
-        relion_projector_capture_iteration=None,
         perturb_replay_restart_provenance=None,
         relion_dispatch_schedule=None,
         relion_follower_scale_replay=None,
@@ -535,7 +517,7 @@ def test_fixed_diagnostic_arm_rejects_alternate_projector_and_float_mode():
         }
     )
 
-    args.relion_projector_capture_dir = "/substitute"
+    args.relion_init_dir = "/substitute"
     with pytest.raises(ValueError, match="alternate state/projector/oracle"):
         _validate_fixed_diagnostic_arm_cli(args)
     with pytest.raises(ValueError, match="unsealed RECOVAR environment"):
@@ -681,7 +663,7 @@ def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeyp
     boundary = _StandInBoundary()
     monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args: (boundary, None))
     monkeypatch.setattr(frozen_boundary_cli, "validate_particle_half_inputs", lambda *a, **k: None)
-    monkeypatch.setattr(frozen_boundary_cli, "validate_projector_only_replay_slots", lambda *a, **k: None)
+    monkeypatch.setattr(frozen_boundary_cli, "validate_empty_replay_slots", lambda *a, **k: None)
     schedule = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")["options"].schedule
     assert (schedule.init_current_size, schedule.init_relion_incr_size) == (12, 7) != (fresh.init_current_size, 10)
     assert schedule.init_fsc is boundary.fsc and schedule.init_ave_Pmax == 0.25
@@ -702,200 +684,16 @@ def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
 
 
 @pytest.mark.parametrize(
-    ("capture", "message"),
-    [
-        (dict(relion_projector_capture_dir="c"), "requires --perturb_replay_relion_dir"),
-        (dict(relion_projector_capture_dir="c", perturb_replay_relion_dir="r"), "requires --relion-projector-capture-iteration"),
-        (dict(relion_projector_capture_iteration=3), "manifest/iteration require --relion-projector-capture-dir"),
-        (dict(relion_projector_capture_manifest="m"), "manifest/iteration require --relion-projector-capture-dir"),
-    ],
+    "flag", ["--relion-projector-capture-dir", "--relion-projector-capture-manifest", "--relion-projector-capture-iteration"],
 )
-def test_projector_capture_options_are_refused_without_their_companions(capture, message):
-    args = SimpleNamespace(**{
-        "relion_projector_capture_dir": None, "relion_projector_capture_manifest": None,
-        "relion_projector_capture_iteration": None, "perturb_replay_relion_dir": None, **capture,
-    })
-    with pytest.raises(SystemExit, match=message):
-        attach_cli_projector_capture(args, None, volume_shape=(8, 8, 8), frozen_boundary=None)
+def test_the_retired_projector_capture_flags_refuse_and_name_the_tag(flag, capsys):
+    from relax.refinement.command_options import CAPTURED_PROJECTOR_TAG, parse_refinement_args
 
-
-def test_no_projector_capture_leaves_the_slots_alone():
-    args = SimpleNamespace(relion_projector_capture_dir=None, relion_projector_capture_manifest=None,
-                           relion_projector_capture_iteration=None)
-    assert attach_cli_projector_capture(args, None, volume_shape=(8, 8, 8), frozen_boundary=None) is None
-
-
-def test_attach_relion_projector_capture_targets_exact_replay_slot(tmp_path, monkeypatch):
-    capture_dir = tmp_path / "score_dump"
-    capture_dir.mkdir()
-    manifest = capture_dir / "iter3_VALIDATED_SHA256SUMS"
-    manifest.write_text("sealed\n")
-    relion_dir = tmp_path / "relion"
-    relion_dir.mkdir()
-    model = relion_dir / "run_it003_half1_model.star"
-    model.write_text("model\n")
-    expected_state = {
-        "projector_half_by_half": [
-            np.zeros((1, 87, 87, 44), dtype=np.complex64),
-            np.zeros((1, 87, 87, 44), dtype=np.complex64),
-        ],
-        "projector_r_max_by_half": [21, 21],
-        "current_size": 42,
-        "padding_factor": 2,
-        "volume_shape": [256, 256, 256],
-        "n_classes": 1,
-        "source_manifest_sha256": "a" * 64,
-    }
-    observed = {}
-
-    def fake_model_metadata(path):
-        observed["model_path"] = Path(path)
-        return {"current_image_size": 42}
-
-    def fake_build(capture_root, **kwargs):
-        observed["capture_root"] = Path(capture_root)
-        observed.update(kwargs)
-        return expected_state
-
-    monkeypatch.setattr("relax.relion.relion_metadata.read_relion_model_metadata", fake_model_metadata)
-    monkeypatch.setattr(frozen_boundary_cli, "build_relion_projector_replay_state", fake_build)
-    overrides = [{"slot": index} for index in range(4)]
-
-    capture = attach_projector_capture(
-        overrides,
-        capture_dir=capture_dir,
-        manifest_path=manifest,
-        capture_iteration=3,
-        init_relion_iteration=0,
-        relion_replay_dir=relion_dir,
-        volume_shape=(256, 256, 256),
-        n_classes=1,
-    )
-
-    assert capture.replay_slot == 2
-    assert capture.state is expected_state
-    assert capture.source_dir == capture_dir.resolve()
-    assert capture.source_manifest == manifest.resolve()
-    assert capture.source_manifest_sha256 == expected_state["source_manifest_sha256"]
-    assert overrides[2]["relion_projector_state"] is expected_state
-    assert "relion_projector_state" not in overrides[1]
-    assert observed == {
-        "model_path": model,
-        "capture_root": capture_dir.resolve(),
-        "manifest_path": manifest.resolve(),
-        "iteration": 3,
-        "current_size": 42,
-        "volume_shape": (256, 256, 256),
-        "n_classes": 1,
-    }
-
-
-def test_attach_relion_projector_capture_rejects_unrepresented_iteration(tmp_path):
-    with pytest.raises(ValueError, match="outside the configured replay trajectory"):
-        attach_projector_capture(
-            [{}],
-            capture_dir=tmp_path,
-            manifest_path=tmp_path / "manifest",
-            capture_iteration=3,
-            init_relion_iteration=0,
-            relion_replay_dir=tmp_path,
-            volume_shape=(8, 8, 8),
-            n_classes=1,
-        )
-
-
-def test_attach_relion_projector_capture_rejects_late_restart(tmp_path):
-    with pytest.raises(ValueError, match="uninterrupted cold-start trajectory"):
-        attach_projector_capture(
-            [{}],
-            capture_dir=tmp_path,
-            manifest_path=tmp_path / "manifest",
-            capture_iteration=3,
-            init_relion_iteration=2,
-            relion_replay_dir=tmp_path,
-            volume_shape=(8, 8, 8),
-            n_classes=1,
-        )
-
-
-def test_attach_relion_projector_capture_accepts_immediate_validated_frozen_restart(
-    tmp_path, monkeypatch
-):
-    capture_dir = tmp_path / "score_dump"
-    capture_dir.mkdir()
-    manifest = capture_dir / "iter3_VALIDATED_SHA256SUMS"
-    manifest.write_text("sealed\n")
-    relion_dir = tmp_path / "relion"
-    relion_dir.mkdir()
-    (relion_dir / "run_it003_half1_model.star").write_text("model\n")
-    expected_state = {"source_manifest_sha256": "a" * 64}
-    monkeypatch.setattr(
-        "relax.relion.relion_metadata.read_relion_model_metadata",
-        lambda path: {"current_image_size": 42},
-    )
-    monkeypatch.setattr(
-        frozen_boundary_cli,
-        "build_relion_projector_replay_state",
-        lambda *args, **kwargs: expected_state,
-    )
-    overrides = [{"state": "it3"}, {"state": "final"}]
-
-    capture = attach_projector_capture(
-        overrides,
-        capture_dir=capture_dir,
-        manifest_path=manifest,
-        capture_iteration=3,
-        init_relion_iteration=2,
-        relion_replay_dir=relion_dir,
-        volume_shape=(256, 256, 256),
-        n_classes=1,
-        validated_frozen_boundary_iteration=2,
-    )
-
-    assert capture.replay_slot == 0
-    assert capture.state is expected_state
-    assert overrides[0]["relion_projector_state"] is expected_state
-
-
-def test_attach_relion_projector_capture_rejects_nonadjacent_frozen_restart(tmp_path):
-    with pytest.raises(ValueError, match="immediately following"):
-        attach_projector_capture(
-            [{}, {}, {}],
-            capture_dir=tmp_path,
-            manifest_path=tmp_path / "manifest",
-            capture_iteration=4,
-            init_relion_iteration=2,
-            relion_replay_dir=tmp_path,
-            volume_shape=(8, 8, 8),
-            n_classes=1,
-            validated_frozen_boundary_iteration=2,
-        )
-
-
-@pytest.mark.parametrize(
-    ("overrides", "message"),
-    [
-        ([{}, None, {}], "has no state override"),
-        (
-            [{}, {"relion_projector_state": object()}, {}],
-            "is already populated",
-        ),
-    ],
-)
-def test_attach_relion_projector_capture_rejects_nonatomic_slot(
-    tmp_path, overrides, message
-):
-    with pytest.raises(ValueError, match=message):
-        attach_projector_capture(
-            overrides,
-            capture_dir=tmp_path,
-            manifest_path=tmp_path / "manifest",
-            capture_iteration=2,
-            init_relion_iteration=0,
-            relion_replay_dir=tmp_path,
-            volume_shape=(8, 8, 8),
-            n_classes=1,
-        )
+    with pytest.raises(SystemExit):
+        parse_refinement_args(["--data_dir", "d", "--output", "o", flag, "x"])
+    assert f"{flag} was retired" in capsys.readouterr().err
+    assert CAPTURED_PROJECTOR_TAG == "retired/captured-projector-20261006"
+    assert not hasattr(parse_refinement_args(["--data_dir", "d", "--output", "o"]), "relion_projector_capture_dir")
 
 
 def test_relion_mpi_autorefine_scoring_noise_uses_rank1_broadcast():

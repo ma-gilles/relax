@@ -104,8 +104,13 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
 - Run options, not diagnostics (rule 9): the local-search probe (`LocalSearchOptions.stop_after_local_search*`)
   and the final pass's after-the-cap and merged-reference variants (`FinalPassOptions`).
 
+Retired (owner, 2026-10-06): the captured RELION projector (`--relion-projector-capture-dir`, `-manifest`,
+`-iteration`; `relax/diagnostics/relion_projector_capture.py`, `scripts/parity/rebuild_relion_projector_capture.py`)
+is deleted. Its code is at git tag `retired/captured-projector-20261006`, the last commit of main that has it;
+the flags refuse and name the tag, and its archive and ledger keys keep the values a run without one wrote.
+A frozen boundary's replay slots now stay empty (`empty_replay_slots`).
+
 Not yet through the ports, each still read where it was:
-- The captured projector (a slot field the source passes through), to be retired (owner, 2026-10-06).
 - The follower dispatch schedule (`--relion-dispatch-schedule`, `--relion-scale-followers`). The audit listed it
   as untiered, but medium's three K4 fast cases pass it (a strict K>1 replay requires it); see the tier list
   below.
@@ -204,21 +209,19 @@ Smoke additionally runs the GPU unit files a change touches, within its budget.
 
 So smoke reaches the K=1 replay and local search only. A slice that touches cold start, Class3D, the
 numbered STAR replay, `--relion_init_dir`, the dispatch schedule, multi-optics, tomography or the final pass
-needs medium. No tier runs the frozen boundary, the state-swap probe, the captured projector or the
-final-only replay.
+needs medium. No tier runs the frozen boundary, the state-swap probe or the final-only replay.
 
 ## Known coverage limits (recorded, not being built)
 
 - **RELION run directories have no CPU fixture.** The fingerprint's `main_*` cases do not reach the frozen
   boundary, the RELION replays (`--relion_init_dir`, `--perturb_replay_relion_dir`, the final-only replay),
-  the state-swap probe or captured projectors: the tiny data cannot produce a RELION run directory. CPU
+  or the state-swap probe: the tiny data cannot produce a RELION run directory. CPU
   tests stand in for the one callee that supplies such a fact (a stand-in boundary or follower topology).
   The GPU tiers run three of these paths end to end: the numbered STAR replay
   (`--perturb_replay_relion_dir`: medium `k1_perturbreplay` and the K4 fast cases, long `realdata_hp3_replay`),
   `--relion_init_dir` (medium `kclass_nonadaptive_replay` and `kclass_strict_oversample_coldstart`, long
   `k1_relion_seeded_debug`) and the follower dispatch schedule (the same K4 medium cases; a strict K>1 replay
-  requires it). The frozen boundary, the state-swap probe, captured projectors and the final-only replay are
-  passed by no tier: from the command they have CPU admission
+  requires it). The frozen boundary, the state-swap probe and the final-only replay are passed by no tier: from the command they have CPU admission
   tests only; at the controller boundary the fingerprint's cases exercise the state-swap probe, the frozen
   scoring-state assertion, the sealed sampling state and per-iteration and final-only replay priors
   (parity audit, 2026-10-06). Cost of closing it: a tiny run-directory fixture

@@ -940,14 +940,13 @@ array allocation, transfer, JIT boundary, RNG call or buffer release is introduc
 
 ### Sealed restart runtime adaptation
 
-[`projector_only_replay_slots`](../../relax/diagnostics/frozen_boundary_cli.py)
-allocates only numbered/final slot dictionaries for a sealed restart. Its local
-slot zero must not reapply fresh-process half-1 noise broadcast. The boundary
-supplies the complete scoring state. `attach_projector_capture` validates the
-existing iteration, matching model window, manifested capture and replay slot,
-then attaches its captured projector at that same command phase.
-`validate_projector_only_replay_slots` rejects extra overrides, absent slots or
-misplaced/duplicate captures before execution.
+[`empty_replay_slots`](../../relax/diagnostics/frozen_boundary_cli.py)
+allocates only empty numbered/final slot dictionaries for a sealed restart. Its
+local slot zero must not reapply fresh-process half-1 noise broadcast. The
+boundary supplies the complete scoring state. `validate_empty_replay_slots`
+rejects any override and absent slots before execution. (A captured RELION
+projector could once be attached to one slot; it was retired, and its code is at
+git tag `retired/captured-projector-20261006`.)
 
 `expand_boundary_noise` in that owner passes the sealed radial profiles to the
 existing RECOVAR radial-noise formula with float32 scoring input. Serialized

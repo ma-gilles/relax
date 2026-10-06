@@ -272,7 +272,6 @@ def validate_continue_args(args) -> int:
             ("--relion_current_sizes", args.relion_current_sizes),
             ("--relion_healpix_orders", args.relion_healpix_orders),
             ("--final-replay-relion-dir", args.final_replay_relion_dir),
-            ("--relion-projector-capture-dir", args.relion_projector_capture_dir),
             ("--state-swap-variant", args.state_swap_variant),
         )
         if value is not None
@@ -305,6 +304,21 @@ def validate_tomo_args(args, frozen_boundary, double_image_preprocessing):
         raise SystemExit("subtomogram particles have no float64 scoring diagnostic")
     if args.relion_softmask_reduction != "control":
         raise SystemExit("subtomogram particles have no soft-mask reduction probe")
+
+
+# The git tag at the last commit of main that has the captured RELION projector (owner, 2026-10-06).
+CAPTURED_PROJECTOR_TAG = "retired/captured-projector-20261006"
+
+
+class _RetiredFlag(argparse.Action):
+    """A flag whose feature was deleted: giving it is an error that names the git tag keeping the code."""
+
+    def __init__(self, option_strings, dest, *, feature, tag, **kwargs):
+        super().__init__(option_strings, dest, nargs="?", default=argparse.SUPPRESS, help=argparse.SUPPRESS, **kwargs)
+        self.feature, self.tag = feature, tag
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.error(f"{option_string} was retired with {self.feature}; its code is at git tag {self.tag}")
 
 
 def parse_refinement_args(argv=None):
@@ -590,29 +604,10 @@ def parse_refinement_args(argv=None):
             "first continued expectation is numbered iteration 12."
         ),
     )
-    parser.add_argument(
-        "--relion-projector-capture-dir",
-        default=None,
-        help=(
-            "Directory containing a validated live RELION Projector::data capture. "
-            "Requires --perturb_replay_relion_dir and "
-            "--relion-projector-capture-iteration."
-        ),
-    )
-    parser.add_argument(
-        "--relion-projector-capture-manifest",
-        default=None,
-        help=(
-            "Validated SHA-256 manifest for --relion-projector-capture-dir. "
-            "Defaults to iterN_VALIDATED_SHA256SUMS inside that directory."
-        ),
-    )
-    parser.add_argument(
-        "--relion-projector-capture-iteration",
-        type=int,
-        default=None,
-        help="Numbered RELION expectation iteration represented by the live capture.",
-    )
+    for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
+                 "--relion-projector-capture-iteration"):
+        parser.add_argument(flag, action=_RetiredFlag, feature="the captured RELION projector",
+                            tag=CAPTURED_PROJECTOR_TAG)
     parser.add_argument(
         "--perturb-replay-restart-provenance",
         default=None,
@@ -1098,7 +1093,6 @@ def require_consistency_arguments(args) -> None:
             ("--frozen-boundary-dir", args.frozen_boundary_dir),
             ("--init_noise_from_npz", args.init_noise_from_npz),
             ("--final-replay-relion-dir", args.final_replay_relion_dir),
-            ("--relion-projector-capture-dir", args.relion_projector_capture_dir),
             ("--state-swap-variant", args.state_swap_variant),
         )
         if value is not None

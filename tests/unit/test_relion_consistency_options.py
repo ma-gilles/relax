@@ -116,7 +116,7 @@ def test_optics_groups_on_several_image_shapes_refuse_the_option(name, value):
     ids=["iteration-overrides", "final-override", "final-references", "frozen-state", "star-replay", "sealed", "swap"],
 )
 def test_replayed_or_frozen_relion_state_refuses_the_option(name, value, group):
-    """Replayed statistics, references and captured projectors were computed with RELION's rules."""
+    """Replayed statistics, references and frozen sampling were computed with RELION's rules."""
     with pytest.raises(NotImplementedError, match="replayed or frozen RELION state"):
         _refine_stubs([_stub_half(), _stub_half()], name, value, **group)
 

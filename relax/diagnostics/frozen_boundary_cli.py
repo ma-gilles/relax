@@ -26,23 +26,8 @@ from relax.diagnostics.frozen_boundary import (
     verify_fixed_diagnostic_boundary_sources,
 )
 from relax.diagnostics.parity_provenance import git_head_or_none, git_worktree_provenance
-from relax.diagnostics.relion_projector_capture import build_relion_projector_replay_state
 
 logger = logging.getLogger('relax.refinement.full_refinement')
-
-
-class CapturedProjector(NamedTuple):
-    """Installed replay state paired with its validated source identity.
-
-    ``state`` is the same object installed in the numbered replay slot. Keeping
-    that borrowed reference here preserves the command's original retention.
-    """
-
-    replay_slot: int
-    state: dict
-    source_dir: Path
-    source_manifest: Path
-    source_manifest_sha256: str
 
 
 class BoundaryInputs(NamedTuple):
@@ -373,14 +358,13 @@ def validate_particle_half_inputs(
         )
 
 
-def projector_only_replay_slots(max_iter: int) -> list[dict]:
-    """Return projector-only replay slots for a sealed frozen restart.
+def empty_replay_slots(max_iter: int) -> list[dict]:
+    """Return the empty replay slots of a sealed frozen restart.
 
     A restarted process must not reinterpret its local slot 0 as RELION's
     process-start iteration 0.  In particular, doing so broadcasts half-1
     sigma2_noise over half 2.  Scoring primitives owned by the boundary are
-    instead supplied through its sealed initial state; only a separately
-    sealed projector may be attached to these slots later.
+    instead supplied through its sealed initial state.
     """
 
     count = int(max_iter) + 1
@@ -389,140 +373,13 @@ def projector_only_replay_slots(max_iter: int) -> list[dict]:
     return [{} for _ in range(count)]
 
 
-def validate_projector_only_replay_slots(
-    replay_slots: list[dict],
-    *,
-    projector_slot: int | None = None,
-) -> None:
-    allowed = {"relion_projector_state"}
+def validate_empty_replay_slots(replay_slots: list[dict]) -> None:
+    """A frozen restart's replay slots stay empty: the boundary supplies its state."""
     for slot_index, slot in enumerate(replay_slots):
         if slot is None:
             raise ValueError(f"frozen replay slot {slot_index} is missing")
-        unexpected = sorted(set(slot) - allowed)
-        if unexpected:
-            raise ValueError(
-                f"frozen replay slot {slot_index} is not projector-only: {unexpected}"
-            )
-    if projector_slot is not None:
-        projector_slot = int(projector_slot)
-        if projector_slot < 0 or projector_slot >= len(replay_slots):
-            raise ValueError(f"frozen projector slot {projector_slot} is out of range")
-        projector_slots = [
-            index
-            for index, slot in enumerate(replay_slots)
-            if "relion_projector_state" in slot
-        ]
-        if projector_slots != [projector_slot]:
-            raise ValueError(
-                "frozen replay must contain exactly one projector in numbered "
-                f"slot {projector_slot}; got {projector_slots}"
-            )
-        nonempty_other_slots = [
-            index
-            for index, slot in enumerate(replay_slots)
-            if index != projector_slot and slot
-        ]
-        if nonempty_other_slots:
-            raise ValueError(
-                "frozen replay unused/final slots must be empty; got "
-                f"{nonempty_other_slots}"
-            )
-
-
-def attach_projector_capture(
-    replay_iteration_overrides,
-    *,
-    capture_dir,
-    manifest_path,
-    capture_iteration,
-    init_relion_iteration,
-    relion_replay_dir,
-    volume_shape,
-    n_classes,
-    validated_frozen_boundary_iteration=None,
-):
-    """Attach one sealed live projector to its exact numbered replay slot."""
-
-    from relax.relion.relion_metadata import read_relion_model_metadata
-
-    capture_iteration = int(capture_iteration)
-    init_relion_iteration = int(init_relion_iteration)
-    frozen_iteration = (
-        None
-        if validated_frozen_boundary_iteration is None
-        else int(validated_frozen_boundary_iteration)
-    )
-    if init_relion_iteration != 0 and frozen_iteration != init_relion_iteration:
-        raise ValueError(
-            "captured RELION projector replay currently requires an uninterrupted "
-            "cold-start trajectory (init_relion_iteration=0); a later jump would "
-            "reapply MPI process-start noise semantics without a validated frozen boundary"
-        )
-    if frozen_iteration is not None and capture_iteration != frozen_iteration + 1:
-        raise ValueError(
-            "frozen-boundary projector capture must represent the immediately following "
-            f"numbered iteration: boundary={frozen_iteration}, capture={capture_iteration}"
-        )
-    replay_slot = capture_iteration - init_relion_iteration - 1
-    if replay_iteration_overrides is None:
-        raise ValueError("captured RELION projector requires trajectory replay overrides")
-    if replay_slot < 0 or replay_slot >= len(replay_iteration_overrides):
-        raise ValueError(
-            "captured RELION projector iteration is outside the configured replay trajectory: "
-            f"capture_iteration={capture_iteration}, init_relion_iteration={init_relion_iteration}, "
-            f"replay_slots={len(replay_iteration_overrides)}"
-        )
-    existing = replay_iteration_overrides[replay_slot]
-    if existing is None:
-        raise ValueError(f"captured RELION projector replay slot {replay_slot} has no state override")
-    if "relion_projector_state" in existing:
-        raise ValueError(f"captured RELION projector replay slot {replay_slot} is already populated")
-
-    relion_replay_dir = Path(relion_replay_dir).expanduser().resolve()
-    model_candidates = (
-        relion_replay_dir / f"run_it{capture_iteration:03d}_half1_model.star",
-        relion_replay_dir / f"run_it{capture_iteration:03d}_model.star",
-    )
-    model_path = next((path for path in model_candidates if path.is_file()), None)
-    if model_path is None:
-        raise ValueError(
-            "captured RELION projector has no matching replay control model: "
-            + " or ".join(str(path) for path in model_candidates)
-        )
-    model_metadata = read_relion_model_metadata(model_path)
-    current_size = int(model_metadata["current_image_size"])
-    if current_size <= 0:
-        raise ValueError(f"invalid captured-projector replay current size: {current_size}")
-
-    capture_dir = Path(capture_dir).expanduser().resolve()
-    manifest_path = Path(manifest_path).expanduser().resolve()
-    projector_state = build_relion_projector_replay_state(
-        capture_dir,
-        manifest_path=manifest_path,
-        iteration=capture_iteration,
-        current_size=current_size,
-        volume_shape=tuple(int(value) for value in volume_shape),
-        n_classes=int(n_classes),
-    )
-    replay_iteration_overrides[replay_slot] = {
-        **existing,
-        "relion_projector_state": projector_state,
-    }
-    logger.info(
-        "STRICT-PARITY: attached captured RELION Projector::data iteration=%d "
-        "replay_slot=%d current_size=%d manifest=%s",
-        capture_iteration,
-        replay_slot,
-        current_size,
-        projector_state["source_manifest_sha256"],
-    )
-    return CapturedProjector(
-        replay_slot=replay_slot,
-        state=projector_state,
-        source_dir=capture_dir,
-        source_manifest=manifest_path,
-        source_manifest_sha256=projector_state["source_manifest_sha256"],
-    )
+        if slot:
+            raise ValueError(f"frozen replay slot {slot_index} is not empty: {sorted(slot)}")
 
 
 def expand_boundary_noise(noise_radial_per_half, image_shape):
@@ -767,9 +624,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
 
     forbidden_options = {
         "final_replay_relion_dir",
-        "relion_projector_capture_dir",
-        "relion_projector_capture_manifest",
-        "relion_projector_capture_iteration",
         "perturb_replay_restart_provenance",
         "relion_dispatch_schedule",
         "relion_follower_scale_replay",
@@ -892,58 +746,3 @@ def _verify_fixed_diagnostic_provenance_manifests(boundary, source_paths) -> Non
     }
     if environment_manifest != expected_environment:
         raise ValueError("sealed runtime command/build/environment manifest content mismatch")
-
-
-def attach_cli_projector_capture(args, replay_slots, *, volume_shape, frozen_boundary):
-    """Attach the captured RELION projector the command names (``--relion-projector-capture-dir``) to its
-    replay slot and return it (None without one). A frozen boundary's slots must stay projector-only."""
-    captured_projector = None
-    if args.relion_projector_capture_dir is not None:
-        if args.perturb_replay_relion_dir is None:
-            raise SystemExit(
-                "--relion-projector-capture-dir requires --perturb_replay_relion_dir"
-            )
-        if args.relion_projector_capture_iteration is None:
-            raise SystemExit(
-                "--relion-projector-capture-dir requires "
-                "--relion-projector-capture-iteration"
-            )
-        capture_dir = Path(args.relion_projector_capture_dir).expanduser().resolve()
-        capture_manifest = (
-            Path(args.relion_projector_capture_manifest).expanduser().resolve()
-            if args.relion_projector_capture_manifest is not None
-            else capture_dir
-            / f"iter{int(args.relion_projector_capture_iteration)}_VALIDATED_SHA256SUMS"
-        )
-        try:
-            captured_projector = attach_projector_capture(
-                replay_slots,
-                capture_dir=capture_dir,
-                manifest_path=capture_manifest,
-                capture_iteration=args.relion_projector_capture_iteration,
-                init_relion_iteration=args.init_relion_iteration,
-                relion_replay_dir=args.perturb_replay_relion_dir,
-                volume_shape=volume_shape,
-                n_classes=args.n_classes,
-                validated_frozen_boundary_iteration=(
-                    None
-                    if frozen_boundary is None
-                    else frozen_boundary.completed_relion_iteration
-                ),
-            )
-        except (OSError, TypeError, ValueError) as exc:
-            raise SystemExit(f"Invalid captured RELION projector replay: {exc}") from exc
-    elif (
-        args.relion_projector_capture_manifest is not None
-        or args.relion_projector_capture_iteration is not None
-    ):
-        raise SystemExit(
-            "--relion-projector-capture-manifest/iteration require "
-            "--relion-projector-capture-dir"
-        )
-    if frozen_boundary is not None:
-        validate_projector_only_replay_slots(
-            replay_slots,
-            projector_slot=None if captured_projector is None else captured_projector.replay_slot,
-        )
-    return captured_projector

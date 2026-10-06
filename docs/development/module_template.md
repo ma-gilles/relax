@@ -61,7 +61,7 @@ The current list of open items, coverage limits and decisions is
 - Also unfinished at the boundary: `full_refinement.main` is 1,020 lines (was 1,791). The fingerprint runs it
   (19 `main_*` cases: K=1 and Class3D runs, `--continue`, schedules, start-up noise, the ledger, refused
   commands; not the frozen boundary or RELION replay, which only the GPU tiers run) and its start-up maps,
-  start-up noise and prior, half sets, replay inputs, follower routing, captured projectors, restart
+  start-up noise and prior, half sets, replay inputs, follower routing, restart
   provenance and reports are now functions with their own tests. What remains inline is the order of those
   calls and the translation of about 200 `args.` reads into the controller's option records (the call alone is
   170 lines); `command_options` resolves only part of them. About 20 lines of `relax/refinement/` outside the

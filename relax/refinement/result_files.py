@@ -196,7 +196,6 @@ def build_archive_metadata(
     particle_layout,
     restart: "RestartProvenance",
     relion_dispatch_schedule,
-    captured_projector,
     state_swap_probe,
     symmetry_provenance,
     tau2_fudge_source,
@@ -271,22 +270,12 @@ def build_archive_metadata(
         "perturb_replay_restart_provenance_sha256": np.asarray(
             restart.sha256 or ""
         ),
-        "relion_projector_replay_slot": np.int64(
-            -1 if captured_projector is None else captured_projector.replay_slot
-        ),
-        "relion_projector_source_manifest_sha256": np.asarray(
-            "" if captured_projector is None else captured_projector.source_manifest_sha256
-        ),
-        "relion_projector_capture_dir": np.asarray(
-            ""
-            if captured_projector is None
-            else str(captured_projector.source_dir)
-        ),
-        "relion_projector_capture_manifest": np.asarray(
-            ""
-            if captured_projector is None
-            else str(captured_projector.source_manifest)
-        ),
+        # The captured RELION projector is retired (git tag retired/captured-projector-20261006); its keys
+        # keep the values a run without one wrote.
+        "relion_projector_replay_slot": np.int64(-1),
+        "relion_projector_source_manifest_sha256": np.asarray(""),
+        "relion_projector_capture_dir": np.asarray(""),
+        "relion_projector_capture_manifest": np.asarray(""),
         "frozen_boundary_dir": np.asarray(
             "" if frozen_boundary is None else str(frozen_boundary.source_dir)
         ),
@@ -616,7 +605,6 @@ class RunReport:
     max_significants: int
     max_significants_resolution: dict
     restart: "RestartProvenance"
-    captured_projector: object | None
     # Sampling and seed, which the benchmark ledger records.
     max_iter: int
     random_seed: int
@@ -637,7 +625,6 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
 
     ``fields`` is the result's ``archive_fields()``."""
     timing_rows = parity_dump._collect_timing_rows(report.timing_dir)
-    captured = report.captured_projector
     return {
         "git_commit": git_head_or_none(),
         "python_version": platform.python_version(),
@@ -671,10 +658,11 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
             else None
         ),
         "perturb_replay_restart_provenance_sha256": report.restart.sha256,
-        "relion_projector_replay_slot": None if captured is None else captured.replay_slot,
-        "relion_projector_source_manifest_sha256": None if captured is None else captured.source_manifest_sha256,
-        "relion_projector_capture_dir": None if captured is None else str(captured.source_dir),
-        "relion_projector_capture_manifest": None if captured is None else str(captured.source_manifest),
+        # Retired with the captured RELION projector (git tag retired/captured-projector-20261006).
+        "relion_projector_replay_slot": None,
+        "relion_projector_source_manifest_sha256": None,
+        "relion_projector_capture_dir": None,
+        "relion_projector_capture_manifest": None,
     }
 
 

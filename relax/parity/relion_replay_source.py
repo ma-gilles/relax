@@ -557,7 +557,6 @@ class RelionReplaySource(InputSource):
             class_mixture=class_mixture,
             prior_translations=inputs.prior_translations if sealed is not None else result.prior_translations,
             sampling_meta=inputs.sampling_meta if sealed is not None else result.replay_meta,
-            projector_state=result.relion_projector_state,
         )
 
 

@@ -172,7 +172,6 @@ from relax.refinement.ports import (
     RunObserver,
 )
 from relax.refinement.projector_preparation import (
-    _validate_captured_relion_projector_for_iteration,
     build_numbered_projectors,
     prepare_initial_real_references,
 )
@@ -1419,7 +1418,7 @@ def refine_single_volume(
             NumberedState(
                 current_size=current_size, noise_model=noise_model, sigma_offset=sigma_offset,
                 previous_best_rotations=previous_best_rotations, mean_variance=reference_model.tau2,
-                class_mixture=class_mixture, prior_translations=None, sampling_meta=None, projector_state=None,
+                class_mixture=class_mixture, prior_translations=None, sampling_meta=None,
             ),
             state=state, halves=halves, direction_priors=direction_priors, image_geometry=image_geometry,
         )
@@ -1481,7 +1480,7 @@ def refine_single_volume(
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
             relion_firstiter_cc_this_iter=first_iteration.relion_firstiter_cc,
-            build_shared_projector=has_previous_iteration and numbered.projector_state is None,
+            build_shared_projector=has_previous_iteration,
             log=logger,
         )
         if iteration_accuracy.sampling_accuracy is not None:
@@ -1638,36 +1637,19 @@ def refine_single_volume(
 
         # The previous iteration's slabs are released before this iteration's are built.
         projectors = [None, None]
-        captured_projector_state = numbered.projector_state
         # Every dense, local and tomo scorer reads this projector: pass 1 scores RELION's exact
         # coarse operands on every route, as RELION builds Projector::data every iteration.
-        if captured_projector_state is not None:
-            projectors = _validate_captured_relion_projector_for_iteration(
-                captured_projector_state,
-                current_size=sampling_plan.windows.model_window_size,
-                volume_shape=volume_shape,
-                padding_factor=PROJECTION_PADDING_FACTOR,
-                n_classes=n_classes,
-            )
-            logger.info(
-                "RELION mode: using captured exact Projector::data at current_size=%s "
-                "r_max=%s manifest=%s",
-                sampling_plan.windows.model_window_size,
-                None if projectors[0] is None else projectors[0].r_max,
-                captured_projector_state.source_manifest_sha256,
-            )
-        else:
-            projectors = build_numbered_projectors(
-                halves,
-                reference_model.maps,
-                reconstruction_settings,
-                current_size=sampling_plan.windows.model_window_size,
-                n_classes=n_classes,
-                reusable_half1=shared_projector_half1,
-                real_references_by_half=initial_real_references_by_half if iteration == 0 else None,
-                iteration=iteration,
-                log=logger,
-            )
+        projectors = build_numbered_projectors(
+            halves,
+            reference_model.maps,
+            reconstruction_settings,
+            current_size=sampling_plan.windows.model_window_size,
+            n_classes=n_classes,
+            reusable_half1=shared_projector_half1,
+            real_references_by_half=initial_real_references_by_half if iteration == 0 else None,
+            iteration=iteration,
+            log=logger,
+        )
 
         # Freeze the exact iteration-start curve used by RELION's scale XA/AA
         # shell gate.  The scheduling variable is updated again after the

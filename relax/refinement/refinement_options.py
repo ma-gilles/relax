@@ -232,7 +232,7 @@ def require_consistency_route(
 
     Subtomogram particles and optics groups on several image shapes run their own scorers,
     which no option reaches. Replayed, frozen or swapped RELION state (statistics, references,
-    captured projectors) was computed with RELION's rules. The separable gridding window is
+    frozen sampling) was computed with RELION's rules. The separable gridding window is
     threaded through K=1 only: Class3D's tau2 is the power of the radially corrected reference.
     """
 

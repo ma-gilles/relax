@@ -135,8 +135,7 @@ class NumberedState(NamedTuple):
 
     ``sigma_offset`` is the run's ``SigmaOffset``; ``mean_variance`` the reference model's tau2;
     ``class_mixture`` its ``ClassMixture``; ``prior_translations`` and ``sampling_meta`` the translation
-    prior and sampling record a sealed sampling state installed (None otherwise); ``projector_state`` a
-    captured RELION projector for this iteration (None: build it).
+    prior and sampling record a sealed sampling state installed (None otherwise).
     """
 
     current_size: int
@@ -147,7 +146,6 @@ class NumberedState(NamedTuple):
     class_mixture: Any
     prior_translations: Any
     sampling_meta: Any
-    projector_state: Any
 
 
 class ClassTau2(NamedTuple):

@@ -128,7 +128,6 @@ tests/unit/test_relion_initial_lowpass.py
 tests/unit/test_relion_input_particle_table.py
 tests/unit/test_relion_particle_shuffle.py
 tests/unit/test_relion_perturbation_precision.py
-tests/unit/test_relion_projector_capture.py
 tests/unit/test_relion_reference_star.py
 tests/unit/test_relion_replay_state.py
 tests/unit/test_relion_shell_stats_native_half.py

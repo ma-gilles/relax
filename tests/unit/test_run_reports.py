@@ -27,13 +27,13 @@ SHARED = {
 }
 
 
-def _report(tmp_path, captured=None):
+def _report(tmp_path):
     return result_files.RunReport(
         data_dir=str(tmp_path / "data"), output_dir=str(tmp_path / "out"), timing_dir=None, total_time_s=12.5,
         n_images=6, image_shape=(8, 8), volume_shape=(8, 8, 8), voxel_size=1.5, healpix_order=2,
         auto_local_healpix_order=4, sigma_ang=None, adaptive_oversampling=1, max_significants=-1,
         max_significants_resolution={"active_max_significants": -1}, restart=RestartProvenance((3,), tmp_path / "provenance.json", "ab" * 32),
-        captured_projector=captured, max_iter=3, random_seed=42,
+        max_iter=3, random_seed=42,
         random_seed_source="explicit CLI", n_rotations=96, n_translations=21,
         initial_sampling=SimpleNamespace(coarse_order=1, fine_order=2, max_order=None, max_order_source="none"),
         frozen_boundary=None, symmetry_provenance={"label": "C1"},
@@ -43,8 +43,6 @@ def _report(tmp_path, captured=None):
 
 
 def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, capsys):
-    captured = SimpleNamespace(replay_slot=2, source_manifest_sha256="cd" * 32, source_dir=tmp_path / "capture",
-                               source_manifest=tmp_path / "capture" / "SUMS")
     result = refinement_result(
         history=RefinementHistory(
             current_sizes=[12, 16], wall_times=[1.0], local_profile_history=[{"iteration": 1, "rows": 3}],
@@ -55,7 +53,7 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
         profile_stop=ProfileStop(score_only=True, wall_seconds=2.0, significant_count=None),
     )
     ledger = tmp_path / "ledger" / "ledger.json"
-    path = result_files.write_profile_only_summary(result, _report(tmp_path, captured), benchmark_ledger_json=ledger)
+    path = result_files.write_profile_only_summary(result, _report(tmp_path), benchmark_ledger_json=ledger)
     summary = json.loads(Path(path).read_text())
     assert path == tmp_path / "out" / "local_search_profile_only.json"
     assert json.loads(ledger.read_text()) == summary
@@ -65,7 +63,8 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
         "local_profile_rows", "global_profile_rows", "state_swap_probe", "state_swap_probe_applied_relion_iterations",
     }
     assert summary["profile_only"] is True and summary["diagnostic_single_half"] is True
-    assert summary["relion_projector_replay_slot"] == 2 and summary["perturb_replay_restart_state_iterations"] == [3]
+    # The captured projector is retired; its ledger keys keep the values of a run without one.
+    assert summary["relion_projector_replay_slot"] is None and summary["perturb_replay_restart_state_iterations"] == [3]
     assert summary["state_swap_probe_applied_relion_iterations"] == [5]
     assert summary["stop_after_local_search_score_only"] is True
     assert summary["setup_phase_seconds"] == {"state_init": 0.5}

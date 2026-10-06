@@ -1,9 +1,7 @@
-"""Prepare RELION projector slabs for scoring and validate captured geometry.
+"""Prepare RELION projector slabs for scoring.
 
 Device preparation converts references, reuses the existing disk cache and
-writes optional projector dumps. Captured preparation checks the replay state
-against the live scoring geometry. Neither path owns iteration scheduling.
-The captured-state type and its serialized identity remain in relion_replay.
+writes optional projector dumps. It does not own iteration scheduling.
 """
 
 from __future__ import annotations
@@ -16,8 +14,6 @@ from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
-
-from relax.diagnostics.relion_replay import RelionProjectorReplayState
 
 logger = logging.getLogger(__name__)
 
@@ -258,48 +254,6 @@ def prepare_scoring_projector(
             n_classes=np.int64(n_classes),
         )
     return PreparedProjector(data=projector_half, r_max=projector_r_max, power_spectrum=projector_power)
-
-
-def _validate_captured_relion_projector_for_iteration(
-    replay_state: RelionProjectorReplayState,
-    *,
-    current_size: int | None,
-    volume_shape,
-    padding_factor: int,
-    n_classes: int,
-) -> list[PreparedProjector]:
-    """Bind a captured projector state to one exact live replay geometry."""
-
-    resolved_current_size = int(current_size) if current_size is not None else int(volume_shape[0])
-    expected_volume_shape = tuple(int(value) for value in volume_shape)
-    mismatches = []
-    if replay_state.current_size != resolved_current_size:
-        mismatches.append(
-            f"current_size captured={replay_state.current_size} replay={resolved_current_size}"
-        )
-    if replay_state.padding_factor != int(padding_factor):
-        mismatches.append(
-            f"padding_factor captured={replay_state.padding_factor} replay={int(padding_factor)}"
-        )
-    if replay_state.volume_shape != expected_volume_shape:
-        mismatches.append(
-            f"volume_shape captured={replay_state.volume_shape} replay={expected_volume_shape}"
-        )
-    if replay_state.n_classes != int(n_classes):
-        mismatches.append(
-            f"n_classes captured={replay_state.n_classes} replay={int(n_classes)}"
-        )
-    if mismatches:
-        raise ValueError(
-            "captured RELION Projector::data does not match the live replay boundary: "
-            + "; ".join(mismatches)
-        )
-    return [
-        PreparedProjector(data=data, r_max=int(r_max))
-        for data, r_max in zip(
-            replay_state.projector_half_by_half, replay_state.projector_r_max_by_half, strict=True
-        )
-    ]
 
 
 def build_numbered_projectors(
