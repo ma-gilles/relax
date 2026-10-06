@@ -138,6 +138,16 @@ def flatten(value, path: str = "", out: dict | None = None, *, scrub=lambda text
     return out
 
 
+def result_fields(result):
+    """The controller's result as its flat archive mapping.
+
+    A ``RefinementResult`` is recorded through ``archive_fields()`` (the saved keys and values); a dict, which
+    an older tree returns, is recorded as it is. Both trees of a check are then recorded the same way.
+    """
+    archive_fields = getattr(result, "archive_fields", None)
+    return result if archive_fields is None else archive_fields()
+
+
 def digest_operands(*values) -> int:
     """A seed from every array and scalar handed to a stand-in, so a changed operand changes its result."""
     import numpy as np
@@ -990,6 +1000,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                     flatten(np.load(path, allow_pickle=True), rel, files, scrub=scrub)
                 else:
                     files[rel] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        result = result_fields(result)
         out = {
             "status": {
                 "error": repr(error),
@@ -1110,7 +1121,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             refine_inputs.append(flatten([list(args), kwargs], scrub=scrub))
             record("call", "refine_single_volume", "inputs")
             out = original_refine(*args, **kwargs)
-            refine_results.append(flatten(out, scrub=scrub))
+            refine_results.append(flatten(result_fields(out), scrub=scrub))
             return out
 
         patch(iteration_loop, "refine_single_volume", refine_spy)
