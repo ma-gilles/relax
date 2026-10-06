@@ -88,9 +88,11 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
         the dump is written; list it in the status document;
       - a switch that forks production scoring or reconstruction: ask the owner before changing it.
 - [ ] A new option field shows in the fingerprint as "added inputs" (a controller input only the new side
-      has); it is accepted and listed. Results, files, checkpoints and trace must still be identical.
+      has); it is accepted and listed. A removed field that the cases left at `None` or `False` shows as
+      "retired inputs" and is accepted too; a removed field that a case set is an output difference.
+      Results, files, checkpoints and trace must still be identical.
 - [ ] The commit message says what moved, what did not, the benefit, the supporting numbers, and any
-      log-only trace differences or added inputs.
+      log-only trace differences, added or retired inputs.
 
 ## 4. Gate at the end of the slice
 
