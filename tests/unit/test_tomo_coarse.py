@@ -135,6 +135,20 @@ def test_two_flushes_of_significance_fit_the_device_share(monkeypatch):
     assert tomo_coarse._significance_batch_bytes() == 300 << 20
 
 
+@pytest.mark.parametrize("capacity", [1, 4, 16, 64])
+def test_significant_cells_are_the_first_true_cells_in_order(capacity):
+    """The two-step compaction (rows holding a true cell, then their cells) gives ``nonzero``'s first
+    ``capacity`` flat ids, -1 past the true cells, including rows with several true cells."""
+
+    rng = np.random.default_rng(capacity)
+    mask = rng.random((3, 5 * 7)) < 0.04
+    mask[1, 7:14] = True  # one row of seven true cells
+    want = np.flatnonzero(mask)[:capacity]
+    want = np.concatenate([want, np.full(capacity - want.size, -1)])
+    got = np.asarray(tomo_coarse._significant_cells(jnp.asarray(mask), capacity=capacity, row_length=7))
+    np.testing.assert_array_equal(got, want)
+
+
 def test_coarse_batches_share_one_shape_within_the_budget():
     batches = tomo_coarse._coarse_batches(
         [130, 90, 200, 50, 70], n_slots=39, n_trans=81, budget_bytes=40 * 256 * 81 * 4 * 2

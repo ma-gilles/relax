@@ -437,11 +437,21 @@ def _add_image_diff2_in_slot_order(total, image_diff2):
     return total
 
 
-@partial(jax.jit, static_argnames=("capacity",))
-def _significant_cells(mask, *, capacity: int):
-    """Flat ids (row-major over ``mask`` ``[P, N]``) of its true cells, ascending, padded to ``capacity``."""
+@partial(jax.jit, static_argnames=("capacity", "row_length"))
+def _significant_cells(mask, *, capacity: int, row_length: int):
+    """Flat ids (row-major over ``mask`` ``[P, N]``) of its true cells, ascending, padded to ``capacity`` with -1.
 
-    return jnp.nonzero(mask.reshape(-1), size=capacity, fill_value=-1)[0]
+    The cells are found in two steps, the rows of ``row_length`` cells holding one and then the cells of the first
+    ``capacity`` such rows: one ``nonzero`` over every cell scattered all ``P * N`` of them, 122 ms per et09 flush
+    of 29 particles on an A100 (``N`` = 36864 rotations x 123 translations).
+    """
+
+    rows = mask.reshape(-1, row_length)
+    hit = jnp.any(rows, axis=1)
+    row_ids = jnp.nonzero(hit, size=capacity, fill_value=0)[0]
+    held = rows[row_ids] & (jnp.arange(capacity) < jnp.sum(hit))[:, None]
+    cell = jnp.nonzero(held.reshape(-1), size=capacity, fill_value=-1)[0]
+    return jnp.where(cell >= 0, row_ids[cell // row_length] * row_length + cell % row_length, -1)
 
 
 # Rotations per particle whose samples the adaptive-fraction rule sorts (exact_cut.undecided_rotations).
@@ -1118,7 +1128,9 @@ def particle_coarse_supports(
         # K * R * T booleans per particle). A padded flush's copies' cells are dropped.
         mask = stats["mask"] & (jnp.arange(stats["mask"].shape[0]) < n_real)[:, None]
         counts = jnp.sum(mask, axis=1, dtype=jnp.int32)
-        flat = _significant_cells(mask, capacity=cells_capacity) if cells_capacity else None
+        flat = (
+            _significant_cells(mask, capacity=cells_capacity, row_length=n_coarse_trans) if cells_capacity else None
+        )
         for value in (counts, flat, stats["pmax"]):
             if value is not None:
                 value.copy_to_host_async()
@@ -1164,7 +1176,9 @@ def particle_coarse_supports(
         counts = np.asarray(counts, dtype=np.int64)
         n_significant = int(counts.sum())
         if flat is None or n_significant > int(flat.shape[0]):
-            flat = _significant_cells(mask, capacity=max(1, 1 << (max(n_significant, 1) - 1).bit_length()))
+            flat = _significant_cells(
+                mask, capacity=max(1, 1 << (max(n_significant, 1) - 1).bit_length()), row_length=n_coarse_trans
+            )
         cells_capacity = max(int(cells_capacity), 1 << max(2 * n_significant - 1, 1).bit_length())
         flat = np.asarray(flat, dtype=np.int64)[:n_significant]
         particle_pmax = np.asarray(pmax, dtype=np.float64)
