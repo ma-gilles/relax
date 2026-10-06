@@ -81,6 +81,56 @@ not yet meet rules 8 and 10, and rules 4, 9 and 11 were not audited in full.
    functions take ten or more parameters; the widest are `run_final_all_data` (28), `score_tomo_half` (26)
    and `build_archive_metadata` (25).
 
+## Rule 10: the functions with ten or more parameters
+
+The target is the smallest coherent input, not a count. Grouped (2026-10-05): `score_tomo_half_in_loop` takes
+`HalfScoringData` (24 -> 14), `build_archive_metadata` and `RunReport` take `RestartProvenance`. The rest are
+accepted, with the reason:
+
+| Function | Params | Accepted because |
+| --- | --- | --- |
+| `finalization.run_final_all_data` | 28 | Takes the controller's owners whole; the rest are run flags and perturbation values of different lifetimes that no record holds. |
+| `tomo_half.score_tomo_half` | 26 | Engine boundary (rule 11: engines take arrays); `relax/vdam` calls it with raw arrays. |
+| `result_files.build_archive_metadata` | 23 | One field each of many owners, written once into the archive. |
+| `expectation.score_numbered_half` | 19 | Takes the half, phase and options records; the rest are per-half operands. |
+| `expectation_batches.prepare_half_batches` | 19 | Reads three fields of `RelionParityOptions` and two of `DenseVariantPolicy`: fields of a large object (rule 10). |
+| `mean_helpers.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
+| `expectation.prepare_numbered_expectation` | 18 | No record covers more than two of its inputs. |
+| `mean_helpers._reconstruct_volume_eager` | 18 | Six fields equal `ReconstructionSettings`'s at the production calls, but the solver is called with raw geometry by 21 tests and by the final pass; grouping is left for a slice of its own. |
+| `convergence.update_*_iteration_convergence` (3) | 14-16 | Separate inputs of one update; the mode dispatch is temporary. |
+| `iteration_loop.class_maximization`, `k1_maximization` | 16 | M-step operands plus iteration scalars; `per_half` would carry posterior arrays past their release (rule 3). |
+| `SnapshotCapture.finish`, `finish_k1`, `finish_class` | 13-15 | One snapshot field per parameter, each from a different owner. |
+| `iteration_planning.plan_halfmap_image_size`, `plan_class_image_size` | 10-14 | Scheduling inputs; `ImageGeometry` would change the pixel size's scalar type (rule 1). RELION's growth latch is a pair. |
+| `expectation.prepare_final_half` | 13 | Operands plus settings. |
+| `optics_shapes.shape_class_engine_inputs` | 13 | No production caller yet; kept for VDAM's multi-shape loop (`em_status.md`). |
+| `local_sampling.prepare_numbered_local_sampling` | 11 | `CoarseGrids` would cover two fields. |
+| `mean_helpers.join_half_accumulators_at_low_resolution` | 11 | Three fields equal `ReconstructionSettings`'s, but K=1 passes the raw pixel-size scalar the settings convert (rule 1). |
+| `mean_helpers.estimate_class_prior`, `estimate_split_half_prior` | 10-11 | Already take `ReconstructionSettings`; the rest are operands. |
+| `optics_shapes.prepare_optics` | 11 | `HalfSet` would cover two fields. |
+| `TomoHalf.__init__`, `RunFileWriter.__init__`, `BatchPlanner.__call__` | 10-11 | A record's own constructor; writer policy beside `RunSettings`; a per-pass query with defaults. |
+
+## Rules 4, 9 and 11: audit findings (2026-10-05)
+
+- **Rule 4: met.** Two jit sites, both module-level or shape-cached, no side effects in traced code, no
+  record crosses a transformation. Fixed: the end-of-iteration `block_until_ready` no longer swallows
+  device errors. Accepted: the donating normalisation executable (`mean_helpers`, an int32 overflow of
+  XLA's iFFT normalisation at box scale), the box-scale host staging and the end-of-iteration sync
+  (memory boundaries), and about twelve once-per-iteration syncs for logs and history.
+- **Rule 9: met, with exceptions.** Fixed: the six operations that update arguments in place now say so.
+  Accepted: `half_scoring` appends local-search profile rows to the list the controller hands its
+  diagnostics policy (an observation sink nothing reads back); the `adaptive_pass2_*` switches and
+  `diagnostic_score_only` of `LocalDiagnosticPolicy` are opt-in diagnostic variants of the pass-2 layout
+  (default path unchanged). The prior's result is a dict named `details` (`prior_shells`, `ssnr_shells`)
+  that the resolution and the run files read: it is the prior's output, not a diagnostics structure, and
+  is listed with the result types (rule 8).
+- **Rule 11: met, with exceptions.** Fixed: the controller no longer imports the command
+  (`configure_half_image_preprocessing` moved to `half_inputs`); `InitialSampling` and `RestartProvenance`
+  moved to `refinement_options`; `relax.diagnostics.relion_replay` imports two now-public `half_inputs`
+  helpers. Accepted until those packages are refactored: `relax/refinement/tomo_particles.py` (numpy only)
+  is imported by two engines and three other workflows, and its home moves with them; 62 imports of
+  private names from `relax.helpers`, `relax.diagnostics` and `relax.relion` stay until those modules make
+  them public.
+
 ## Known coverage limits (recorded, not being built)
 
 - **RELION run directories have no CPU fixture.** The fingerprint's `main_*` cases do not reach the frozen
