@@ -286,6 +286,7 @@ def test_estep_meta_aggregates_noise_stats_for_model_updates():
     halfset_results = {
         0: SimpleNamespace(
             class_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
+            class_mstep_posterior_sums=np.asarray([1.0, 2.0], dtype=np.float32),
             noise_stats=(
                 _fake_noise_stats(0.0, 0.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
                 _fake_noise_stats(0.0, 0.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
@@ -294,6 +295,7 @@ def test_estep_meta_aggregates_noise_stats_for_model_updates():
         ),
         1: SimpleNamespace(
             class_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
+            class_mstep_posterior_sums=np.asarray([3.0, 4.0], dtype=np.float32),
             noise_stats=(
                 _fake_noise_stats(0.0, 1.25, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
                 _fake_noise_stats(0.0, 1.75, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
@@ -314,6 +316,13 @@ def test_estep_meta_aggregates_noise_stats_for_model_updates():
     np.testing.assert_allclose(meta["wsum_img_power"], [14.0, 16.0, 18.0])
     np.testing.assert_allclose(meta["halfset_0_wsum_sigma2_noise"], [1.0, 2.0, 3.0])
     np.testing.assert_allclose(meta["halfset_1_wsum_img_power"], [10.0, 11.0, 12.0])
+
+
+def test_estep_meta_refuses_a_result_without_mstep_class_mass():
+    halfset_results = {0: SimpleNamespace(class_posterior_sums=np.asarray([1.0, 2.0]), class_mstep_posterior_sums=None)}
+
+    with pytest.raises(ValueError, match="no M-step class mass"):
+        _estep_meta(halfset_results)
 
 
 def test_estep_meta_uses_significant_mstep_mass_for_relion_probability_updates():

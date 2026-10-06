@@ -242,10 +242,11 @@ def _estep_meta(halfset_results: dict[int, Any]) -> dict[str, Any]:
     for h, result in halfset_results.items():
         if getattr(result, "class_posterior_sums", None) is not None:
             full_sums = np.asarray(result.class_posterior_sums, dtype=np.float64)
-            sums = np.asarray(
-                getattr(result, "class_mstep_posterior_sums", full_sums),
-                dtype=np.float64,
-            )
+            # The engine always resolves the M-step (retained) class mass (k_class_results); a result
+            # without it cannot normalise the class and offset updates.
+            if getattr(result, "class_mstep_posterior_sums", None) is None:
+                raise ValueError(f"the E-step result of half {h} has class posterior sums but no M-step class mass")
+            sums = np.asarray(result.class_mstep_posterior_sums, dtype=np.float64)
             meta[f"halfset_{h}_class_posterior_sums"] = sums
             meta[f"halfset_{h}_class_posterior_sums_full"] = full_sums
             add_class_total("class_posterior_sums", sums)
