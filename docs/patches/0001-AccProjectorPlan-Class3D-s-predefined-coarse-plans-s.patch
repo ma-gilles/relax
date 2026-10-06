@@ -1,0 +1,122 @@
+From b8153b6a944752f966c6dcf33cb38c2b396d9f18 Mon Sep 17 00:00:00 2001
+From: mg6942 <mg6942@princeton.edu>
+Date: Thu, 1 Oct 2026 10:40:17 -0400
+Subject: [PATCH] AccProjectorPlan: Class3D's predefined coarse plans skip
+ optics groups' magnification and scale difference; use on-the-fly plans when
+ any group's matrix is not the identity
+
+The CUDA/HIP/SYCL/CPU bundles predefine the coarse projector plans unless skip_align, skip_rotate,
+auto-refine, an orientational prior or tomo data ask for on-the-fly plans. The predefined plans are set up
+without MBL/MBR, so pass 1 of a classification projects unmagnified references for anisotropically
+magnified groups and ignores the scale difference of groups on another pixel size or box, while pass 2
+and auto-refine apply both (acc_ml_optimiser_impl.h getAllSquaredDifferencesCoarse / Fine).
+---
+ src/acc/cpu/cpu_ml_optimiser.cpp     | 14 ++++++++++++++
+ src/acc/cuda/cuda_ml_optimiser.cu    | 14 ++++++++++++++
+ src/acc/hip/hip_ml_optimiser.hip.cpp | 14 ++++++++++++++
+ src/acc/sycl/sycl_ml_optimiser.cpp   | 14 ++++++++++++++
+ 4 files changed, 56 insertions(+)
+
+diff --git a/src/acc/cpu/cpu_ml_optimiser.cpp b/src/acc/cpu/cpu_ml_optimiser.cpp
+index 8c59f12..58758bf 100644
+--- a/src/acc/cpu/cpu_ml_optimiser.cpp
++++ b/src/acc/cpu/cpu_ml_optimiser.cpp
+@@ -125,6 +125,20 @@ void MlDataBundle::setup(MlOptimiser *baseMLO)
+ 	else
+ 		generateProjectionPlanOnTheFly = false;
+ 
++	// The predefined coarse plans are set up without MBL/MBR, so they cannot carry an optics group's
++	// anisotropic magnification (applyAnisoMag) or scale difference (applyScaleDifference), which
++	// getAllSquaredDifferencesCoarse multiplies into MBL for on-the-fly plans and the fine pass always
++	// applies. Use on-the-fly plans whenever any optics group's matrix is not the identity.
++	for (int og = 0; !generateProjectionPlanOnTheFly && og < baseMLO->mydata.obsModel.numberOfOpticsGroups(); og++)
++	{
++		Matrix2D<RFLOAT> mag;
++		mag.initIdentity(3);
++		mag = baseMLO->mydata.obsModel.applyAnisoMag(mag, og);
++		mag = baseMLO->mydata.obsModel.applyScaleDifference(mag, og, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size);
++		if (!mag.isIdentity())
++			generateProjectionPlanOnTheFly = true;
++	}
++
+ 	for (int iclass = 0; iclass < nr_classes; iclass++)
+ 	{
+ 		//If doing predefined projector plan at all and is this class significant
+diff --git a/src/acc/cuda/cuda_ml_optimiser.cu b/src/acc/cuda/cuda_ml_optimiser.cu
+index 89ac0ce..1a273eb 100644
+--- a/src/acc/cuda/cuda_ml_optimiser.cu
++++ b/src/acc/cuda/cuda_ml_optimiser.cu
+@@ -100,6 +100,20 @@ void MlDeviceBundle::setupFixedSizedObjects()
+ 	else
+ 		generateProjectionPlanOnTheFly = false;
+ 
++	// The predefined coarse plans are set up without MBL/MBR, so they cannot carry an optics group's
++	// anisotropic magnification (applyAnisoMag) or scale difference (applyScaleDifference), which
++	// getAllSquaredDifferencesCoarse multiplies into MBL for on-the-fly plans and the fine pass always
++	// applies. Use on-the-fly plans whenever any optics group's matrix is not the identity.
++	for (int og = 0; !generateProjectionPlanOnTheFly && og < baseMLO->mydata.obsModel.numberOfOpticsGroups(); og++)
++	{
++		Matrix2D<RFLOAT> mag;
++		mag.initIdentity(3);
++		mag = baseMLO->mydata.obsModel.applyAnisoMag(mag, og);
++		mag = baseMLO->mydata.obsModel.applyScaleDifference(mag, og, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size);
++		if (!mag.isIdentity())
++			generateProjectionPlanOnTheFly = true;
++	}
++
+     //std::cerr << "DEBUG: setting generateProjectionPlanOnTheFly = true;" << std::endl;
+     //generateProjectionPlanOnTheFly = true;
+ 
+diff --git a/src/acc/hip/hip_ml_optimiser.hip.cpp b/src/acc/hip/hip_ml_optimiser.hip.cpp
+index 7019517..63835fd 100644
+--- a/src/acc/hip/hip_ml_optimiser.hip.cpp
++++ b/src/acc/hip/hip_ml_optimiser.hip.cpp
+@@ -103,6 +103,20 @@ void MlDeviceBundle::setupFixedSizedObjects()
+ 	else
+ 		generateProjectionPlanOnTheFly = false;
+ 
++	// The predefined coarse plans are set up without MBL/MBR, so they cannot carry an optics group's
++	// anisotropic magnification (applyAnisoMag) or scale difference (applyScaleDifference), which
++	// getAllSquaredDifferencesCoarse multiplies into MBL for on-the-fly plans and the fine pass always
++	// applies. Use on-the-fly plans whenever any optics group's matrix is not the identity.
++	for (int og = 0; !generateProjectionPlanOnTheFly && og < baseMLO->mydata.obsModel.numberOfOpticsGroups(); og++)
++	{
++		Matrix2D<RFLOAT> mag;
++		mag.initIdentity(3);
++		mag = baseMLO->mydata.obsModel.applyAnisoMag(mag, og);
++		mag = baseMLO->mydata.obsModel.applyScaleDifference(mag, og, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size);
++		if (!mag.isIdentity())
++			generateProjectionPlanOnTheFly = true;
++	}
++
+ 	unsigned nr_proj = baseMLO->mymodel.PPref.size();
+ 	unsigned nr_bproj = baseMLO->wsum_model.BPref.size();
+ 
+diff --git a/src/acc/sycl/sycl_ml_optimiser.cpp b/src/acc/sycl/sycl_ml_optimiser.cpp
+index 274e99d..3bb2209 100644
+--- a/src/acc/sycl/sycl_ml_optimiser.cpp
++++ b/src/acc/sycl/sycl_ml_optimiser.cpp
+@@ -182,6 +182,20 @@ void MlSyclDataBundle::setup(MlOptimiser *baseMLO)
+ 	else
+ 		generateProjectionPlanOnTheFly = false;
+ 
++	// The predefined coarse plans are set up without MBL/MBR, so they cannot carry an optics group's
++	// anisotropic magnification (applyAnisoMag) or scale difference (applyScaleDifference), which
++	// getAllSquaredDifferencesCoarse multiplies into MBL for on-the-fly plans and the fine pass always
++	// applies. Use on-the-fly plans whenever any optics group's matrix is not the identity.
++	for (int og = 0; !generateProjectionPlanOnTheFly && og < baseMLO->mydata.obsModel.numberOfOpticsGroups(); og++)
++	{
++		Matrix2D<RFLOAT> mag;
++		mag.initIdentity(3);
++		mag = baseMLO->mydata.obsModel.applyAnisoMag(mag, og);
++		mag = baseMLO->mydata.obsModel.applyScaleDifference(mag, og, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size);
++		if (!mag.isIdentity())
++			generateProjectionPlanOnTheFly = true;
++	}
++
+ 	for (int iclass = 0; iclass < nr_classes; iclass++)
+ 	{
+ 		//If doing predefined projector plan at all and is this class significant
+-- 
+2.52.0
+

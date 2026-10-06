@@ -1,5 +1,51 @@
 # RELION instrumentation patches
 
+## RELION fixes for the reference build
+
+Unlike the diagnostic patches below, these change RELION's production behaviour. Each one fixes a RELION 5.0.1
+defect recorded as a `relion-bug` issue on the relax repository, for the patched RELION build that serves as
+the GPU reference. relax itself follows RELION's intended method, so it needs no change for them.
+
+### 0001-AccProjectorPlan-Class3D-s-predefined-coarse-plans-s.patch (relax#12)
+
+**What it fixes.** In classification (no `--auto_refine`, `--skip_align`, `--skip_rotate`, orientational prior
+or tomography data), the accelerated paths (CUDA, HIP, SYCL, CPU-acc) score pass 1 with predefined coarse
+projector plans. Those plans are set up without `MBL`/`MBR`, so pass 1 ignores the optics group's anisotropic
+magnification (`ObservationModel::applyAnisoMag`) and its scale difference (another pixel size or box,
+`applyScaleDifference`). Pass 2, auto-refine and the non-accelerated CPU path apply both. The patch makes each
+backend's `setupFixedSizedObjects` use on-the-fly plans whenever any optics group's
+`applyScaleDifference(applyAnisoMag(I3))` is not the identity, so pass 1 also takes the magnification and
+scale difference into account.
+
+**Base.** RELION commit `b252392` from the reference-build chain: RELION 5.0.1 `f2c1a38`, then `8bc2ab1`
+(the MPI pieced pack carries every scale group's sums, relax#1), then `b252392` (the device backprojector
+accumulates in double, relax#4). The patch is commit `b8153b6` on top of that chain. Its SHA-256 is
+`af57ed54658a8c7a8ff22dc7febd73839209da0ea1e121e6957844f19d01c5aa`.
+
+```bash
+git -C /absolute/path/to/relion rev-parse HEAD   # b252392...
+git -C /absolute/path/to/relion apply --check \
+  /absolute/path/to/relax/docs/patches/0001-AccProjectorPlan-Class3D-s-predefined-coarse-plans-s.patch
+git -C /absolute/path/to/relion am \
+  /absolute/path/to/relax/docs/patches/0001-AccProjectorPlan-Class3D-s-predefined-coarse-plans-s.patch
+```
+
+**Evidence (relax#12).** Fixture `optics_mag_k2_10k256_20260930` (MagMat [[1.015, 0.004], [0.004, 0.99]]),
+seed 42, `--firstiter_cc`, on the `b252392` build:
+
+- The iteration-1 poses of RELION Class3D K=2's class-1 particles differ from RELION auto-refine K=1 (same
+  reference and data) for 19.4% of particles, at the coarse level. relax, which applies the magnification in
+  every pass, equals RELION K=1 at 100%, and relax K=2's class-1 particles equal K=1 at 100%.
+- Without magnification (the even-Zernike and beam-tilt K=2 fixtures), relax and RELION Class3D agree at 100%
+  at iteration 1.
+- After 25 iterations the masked GT FSC-AUC was relax 0.208381 against RELION 0.213430-0.215135 (four runs).
+
+**Qualification.** Not yet built or qualified. The first build was stopped on 2026-10-01, when the user decided
+to qualify Class3D magnification against stock RELION run on the CPU instead. Its `getAllSquaredDifferences`
+applies both terms in both passes. On 2026-10-06 the user approved fixing confident RELION defects in our own
+build. benchw is building and qualifying this patch as the GPU reference: pass-1 poses against auto-refine K=1,
+and final masked GT FSC-AUC against the stock CPU runs.
+
 ## Case-22 coarse component and operand series
 
 The numbered `0001`--`0005` patches form a diagnostic-only series on top of
