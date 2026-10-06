@@ -87,6 +87,12 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       - a dump destination owned by `relax/diagnostics` that changes no computed value: it may stay where
         the dump is written; list it in the status document;
       - a switch that forks production scoring or reconstruction: ask the owner before changing it.
+- [ ] A dump, capture, profile or timing becomes an observer (rule 15): a `RunObserver` hook named for the
+      moment of the run (`relax/refinement/ports.py`), the writing in `relax/diagnostics/observers.py`,
+      built by the command (`command_observer`) and passed as `observer=`. An input taken from RELION
+      becomes an `InputSource` method whose native default returns the run's own value, implemented in
+      `relax/parity`. The option field it replaces is retired in the same commit (the fingerprint lists it
+      as a retired input); `tests/unit/test_refinement_port_imports.py` must still pass.
 - [ ] A new option field shows in the fingerprint as "added inputs" (a controller input only the new side
       has); it is accepted and listed. A removed field that the cases left at `None` or `False` shows as
       "retired inputs" and is accepted too; a removed field that a case set is an output difference.

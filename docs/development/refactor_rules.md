@@ -84,6 +84,20 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
     for numerical paths and device measurements for execution changes. Every report separates what was read,
     executed, numerically compared and performance-measured, and lists what was not.
 
+## Ports
+
+15. **Comparison and observation enter through ports.** Machinery that exists to compare with RELION
+    (replayed, captured or frozen inputs, RELION's schedules, oracle precision, probes) is an input source
+    (`relax.refinement.ports.InputSource`); dumps, captures, profiles and timings are an observer
+    (`RunObserver`). Each is chosen once at the command; its default is the native computation or nothing,
+    and its implementation lives outside the algorithm's modules (`relax/parity`,
+    `relax/diagnostics/observers.py`), which do not import it (`tests/unit/test_refinement_port_imports.py`).
+    The algorithm does not branch on which source or observer it was given, and its records hold no field
+    that only they use. A source may replace an input, at a call site the controller assigns; an observer may
+    not, and a value the algorithm uses never comes from one. A switch that changes what the run does is a
+    run option, not a diagnostic (rule 9). A RELION-faithful step of the default path is the algorithm, not
+    comparison machinery.
+
 ## Changes from v1 (refactor_rules.md, main 2297cf4)
 
 - v1 1–3 (share steps; no mode flag below the decision; do not split to satisfy it) → rule 6, now a contract
@@ -115,3 +129,9 @@ From the test of the rules on `relax/vdam` (gap numbers of `refactor_vdam_202610
 - Procedure and template (gaps 5, 6, 8, 11, 12, 13, 17, 18, 19, 21); tooling: `REFACTOR_MODULE`,
   `scripts/dev/ceilings.py`, `report_refinement_structure.py --package`, the gate's module test
   directories, `run_test_tier.py --exclude` (gaps 1-4, 20).
+
+## Added after v4
+
+- Rule 15 (comparison and observation enter through ports), from the parity and diagnostics audit
+  (2026-10-06), numbered after rule 14 so cited rule numbers do not change. It gives rule 9 a mechanism and
+  rule 5 the object the decision yields.
