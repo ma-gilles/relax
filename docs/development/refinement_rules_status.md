@@ -37,7 +37,8 @@ not yet meet rules 8 and 10, and rules 4, 9 and 11 were not audited in full.
 
 ### Still open (not exceptions)
 
-- Results as named types (rule 8): the controller's and the final pass's result dicts.
+- Results as named types (rule 8): the prior's `details` dict. The controller's and the final pass's results
+  are `RefinementResult` (`refinement_result.py`); `archive_fields()` is their saved mapping.
 - Width (rule 10): the 29 wide functions; first `run_final_all_data` (28), `build_archive_metadata` (25).
 
 ## Open, in the order they are worked

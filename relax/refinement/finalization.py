@@ -60,10 +60,8 @@ from relax.refinement.local_sampling import LocalSearchSettings, local_search_ce
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
-from relax.refinement.result_files import (
-    _model_result_fields,
-    final_pass_result_fields,
-)
+from relax.refinement.refinement_result import ModelMaps, RefinementResult, ReplayTelemetry
+from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling
 from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
@@ -140,12 +138,12 @@ def run_final_all_data(
     collect_local_search_profile,
     source_faithful_spectrum_norm,
     relion_translation_angle_scale,
-) -> dict:
+) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
 
     Replay and final-pass admission are resolved by the numbered controller.
-    The returned mapping contains this phase's results; the caller publishes
-    setup and numbered-iteration metadata after execution.
+    The returned result holds this phase's results with ``numbered`` None; the caller adds
+    the set-up and numbered-iteration metadata after execution.
     ``sigma_offset`` is the run's ``SigmaOffset`` (shared and per-half translation prior widths) and
     ``class_mixture`` its ``ClassMixture`` (class weights and their log priors; one class for K=1). The
     class count is ``options.k_class.n_classes``; arrays are in the global scoring dtype.
@@ -559,8 +557,8 @@ def run_final_all_data(
     final_reconstruct_t0 = time.time()
     # The one mode decision of the final reconstruction. Each branch is its mode's whole sequence over the
     # steps of final_reconstruction.py, in order: accumulators, prior, resolution, maps. Both bind final_maps,
-    # final_tau2_update_details, final_iter_fsc, final_unfiltered_means_for_output, final_model_fields and
-    # the two mode operands of final_pass_result_fields.
+    # final_tau2_update_details, final_iter_fsc, final_model_maps and
+    # the two mode operands of final_pass_result.
     #
     # RELION calls updateCurrentResolution after the final all-data
     # iteration too (ml_optimiser_mpi.cpp:4329), from that iteration's
@@ -634,11 +632,14 @@ def run_final_all_data(
         )
         final_tau2_update_details = final_class_priors.details
         final_iter_fsc = None
-        final_unfiltered_means_for_output = None
         final_prior_weight_combination = "class_iref"
         final_class_assignments = final_outs.class_assignments
-        final_model_fields = _model_result_fields(
-            final_maps.merged, final_maps.halves, final_maps.halves[0], class_weights, final_class_assignments,
+        final_model_maps = ModelMaps(
+            mean=final_maps.merged,
+            means=final_maps.halves,
+            class_means=final_maps.halves[0],
+            class_weights=class_weights,
+            class_assignments=final_class_assignments,
         )
     else:
         # K=1: unfiltered half maps, optional low-resolution join, release of the pass outputs' references;
@@ -743,7 +744,9 @@ def run_final_all_data(
         )
         final_prior_weight_combination = "sum"
         final_class_assignments = None
-        final_model_fields = _model_result_fields(final_maps.merged, final_maps.halves, None, None, None)
+        final_model_maps = ModelMaps(
+            mean=final_maps.merged, means=final_maps.halves, unfiltered_means=final_unfiltered_means_for_output,
+        )
     logger.info(
         "RELION final all-data reconstruction done: wall=%.1fs",
         time.time() - final_reconstruct_t0,
@@ -765,16 +768,17 @@ def run_final_all_data(
         logger=logger,
     )
 
-    return {
-        **final_model_fields,
-        "unfiltered_means": final_unfiltered_means_for_output,
-        "relion_follower_scale_replay_requested_iterations": replay_requested_iterations,
-        "relion_follower_scale_replay_applied_iterations": replay_applied_iterations,
-        **follower_setup.to_result_dict(history),
+    return RefinementResult(
+        maps=final_model_maps,
+        replay=ReplayTelemetry(
+            requested_iterations=replay_requested_iterations, applied_iterations=replay_applied_iterations,
+        ),
+        follower_scale=follower_setup.result_outputs(history),
         # RELION-mode specific outputs
-        "convergence_state": state,
-        **history.to_dict(),
-        **final_pass_result_fields(
+        convergence_state=state,
+        history=history,
+        numbered=None,
+        final_pass=final_pass_result(
             final_outs, final_sampling.settings,
             accuracy=final_expected_accuracy,
             accuracy_status=final_expected_accuracy_status,
@@ -784,4 +788,4 @@ def run_final_all_data(
             class_assignments=final_class_assignments,
             gridding_kernel=reconstruction_settings.gridding_kernel,
         ),
-    }
+    )

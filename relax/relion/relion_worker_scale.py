@@ -1408,34 +1408,52 @@ class RelionFollowerScaleSetup:
     physical_group_count: int = 0
     scale_reduction_mode: str | None = None
 
-    def to_result_dict(self, history: RefinementHistory) -> dict:
-        """Return this run's follower-scale result-dict entries.
-
-        Reproduces the exact key strings ``refine_single_volume``'s
-        return sites have always used, mirroring ``RefinementHistory.to_dict()``.
-        """
-        keys = (
-            "relion_scale_follower_scales",
-            "relion_scale_rank1_serialized",
-            "relion_scale_follower_owners_half1",
-            "relion_scale_follower_owners_half1_trajectory",
-            "relion_scale_follower_scales_numbered_pre_score_trajectory",
-            "relion_scale_follower_scales_numbered_post_mstep_trajectory",
-        )
+    def result_outputs(self, history: RefinementHistory) -> FollowerScaleOutputs:
+        """This run's follower-scale outputs, as host copies taken now; every field None when emulation is off."""
         if self.follower_scale_state is None:
-            return dict.fromkeys(keys)
-        return {
-            "relion_scale_follower_scales": np.asarray(self.follower_scale_state.scales, dtype=np.float64),
-            "relion_scale_rank1_serialized": relion_rank1_serialized_scales(self.follower_scale_state),
-            "relion_scale_follower_owners_half1": np.asarray(self.follower_owners_per_half[0], dtype=np.int64),
-            "relion_scale_follower_owners_half1_trajectory": np.asarray(
+            return FollowerScaleOutputs()
+        return FollowerScaleOutputs(
+            follower_scales=np.asarray(self.follower_scale_state.scales, dtype=np.float64),
+            rank1_serialized=relion_rank1_serialized_scales(self.follower_scale_state),
+            follower_owners_half1=np.asarray(self.follower_owners_per_half[0], dtype=np.int64),
+            follower_owners_half1_trajectory=np.asarray(
                 history.relion_follower_owners_half1_trajectory, dtype=np.int64
             ),
-            "relion_scale_follower_scales_numbered_pre_score_trajectory": np.asarray(
+            follower_scales_numbered_pre_score_trajectory=np.asarray(
                 history.relion_scale_follower_scales_numbered_pre_score_trajectory, dtype=np.float64
             ),
-            "relion_scale_follower_scales_numbered_post_mstep_trajectory": np.asarray(
+            follower_scales_numbered_post_mstep_trajectory=np.asarray(
                 history.relion_scale_follower_scales_numbered_post_mstep_trajectory, dtype=np.float64
+            ),
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class FollowerScaleOutputs:
+    """A run's RELION follower-scale outputs (``relion_scale_*`` in the archive); all None when off.
+
+    Host copies taken when the controller returns, so the result does not keep the mutable
+    ``RelionFollowerScaleSetup`` alive.
+    """
+
+    follower_scales: np.ndarray | None = None
+    rank1_serialized: np.ndarray | None = None
+    follower_owners_half1: np.ndarray | None = None
+    follower_owners_half1_trajectory: np.ndarray | None = None
+    follower_scales_numbered_pre_score_trajectory: np.ndarray | None = None
+    follower_scales_numbered_post_mstep_trajectory: np.ndarray | None = None
+
+    def archive_fields(self) -> dict:
+        return {
+            "relion_scale_follower_scales": self.follower_scales,
+            "relion_scale_rank1_serialized": self.rank1_serialized,
+            "relion_scale_follower_owners_half1": self.follower_owners_half1,
+            "relion_scale_follower_owners_half1_trajectory": self.follower_owners_half1_trajectory,
+            "relion_scale_follower_scales_numbered_pre_score_trajectory": (
+                self.follower_scales_numbered_pre_score_trajectory
+            ),
+            "relion_scale_follower_scales_numbered_post_mstep_trajectory": (
+                self.follower_scales_numbered_post_mstep_trajectory
             ),
         }
 

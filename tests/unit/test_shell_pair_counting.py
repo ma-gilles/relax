@@ -532,7 +532,7 @@ def test_k1_refinement_hands_every_shell_statistic_the_counting(monkeypatch, cou
 
     result = run_tiny_refinement(monkeypatch, consistency=RelionConsistencyOptions(shell_pair_counting=counting))
 
-    assert result["final_all_data_ran"]
+    assert result.final_all_data_ran
     assert len(fsc_calls) == 3 and len(tau2_calls) == 5  # two iterations and the final pass
     for calls in (fsc_calls, tau2_calls, stats_calls):
         assert calls and {kwargs["shell_pair_counting"] for _, kwargs in calls} == {counting}

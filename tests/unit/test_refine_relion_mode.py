@@ -33,6 +33,7 @@ import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _hermitian_volume, _make_rotations
 from helpers.fake_adaptive_engine import adaptive_result, fake_adaptive_engine, install_fake_adaptive_engine
+from helpers.refinement_results import refinement_result
 from helpers.refinement_specs import (
     local_half_owners,
     local_iteration_keywords,
@@ -1067,7 +1068,7 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
         return model
 
     monkeypatch.setattr(iteration_loop_module, "initialize_noise_model", record_initial_noise)
-    marker = {"final_boundary_reached": True}
+    marker = refinement_result()
     replayed_noise = jnp.full(IMAGE_SIZE, 7.0, dtype=jnp.float32)
 
     def capture(halves, **inputs):
@@ -1113,13 +1114,14 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
             }) if replace_noise else ReplayState(),
         ),
     )
-    assert result is marker
-    assert result["final_boundary_reached"] is True
-    assert result["hard_assignments"] == [None, None]
-    assert result["frozen_initial_scoring_state_sha256"] is None
-    assert result["expected_accuracy_trial_local_indices"] is None
-    assert result["expected_accuracy_trial_particle_ids"] is None
-    assert set(result["setup_phase_seconds"]) == {
+    # The final pass's result, with the set-up and numbered metadata added by the controller.
+    assert result.maps is marker.maps and result.history is marker.history
+    assert marker.numbered is None
+    assert result.numbered.hard_assignments == [None, None]
+    assert result.numbered.frozen_initial_scoring_state_sha256 is None
+    assert result.numbered.expected_accuracy_trial_local_indices is None
+    assert result.numbered.expected_accuracy_trial_particle_ids is None
+    assert set(result.numbered.setup_phase_seconds) == {
         "mask_and_image_cache", "state_init", "sampling_grid", "initial_arrays",
         "direction_prior", "noise_radial_init", "before_iterations",
     }
@@ -1171,8 +1173,8 @@ def test_final_all_data_runs_with_cold_start_only_override(
         ),
     )
 
-    assert result["convergence_state"].has_converged is True
-    assert result["final_all_data_ran"] is True
+    assert result.convergence_state.has_converged is True
+    assert result.final_all_data_ran is True
 
     # RELION updates rlnCurrentResolution from the final all-data DVP too.
     # The mock data carry no signal, so the split-half value sits at the
@@ -1185,8 +1187,8 @@ def test_final_all_data_runs_with_cold_start_only_override(
     final_call = resolution_calls[-1]
     assert len(resolution_calls) == 1
     assert final_call["current_size"] == grid
-    assert_matches(final_call["dvp"], result["tau2_ssnr_final_all_data"].astype(np.float32))
-    state = result["convergence_state"]
+    assert_matches(final_call["dvp"], result.final_pass.tau2_ssnr.astype(np.float32))
+    state = result.convergence_state
     assert state.current_resolution == grid * voxel / forced_final_shell
     assert state.previous_resolution == grid * voxel / 5
 
@@ -1229,8 +1231,8 @@ def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(
         ),
     )
 
-    assert result["convergence_state"].has_converged is False
-    assert result["final_all_data_ran"] is False
+    assert result.convergence_state.has_converged is False
+    assert result.final_all_data_ran is False
 
 
 def _mock_local_search_result(
@@ -4583,7 +4585,7 @@ class TestRelionModeSmokeTest:
         assert_matches(reconstruction_tau[1], untapered_tau[1])
         assert reconstruction_tau[0].dtype == np.float64
         assert reconstruction_tau[1].dtype == np.float64
-        assert_matches(result["tau2_radial_trajectory"][0], untapered_tau[0] * taper)
+        assert_matches(result.history.tau2_radial_trajectory[0], untapered_tau[0] * taper)
 
     def test_align_fourier_volume_sign_to_reference_flips_negative_overlap(self):
         ref = np.array([1.0 + 0.0j, -2.0 + 0.0j], dtype=np.complex64)
@@ -4913,21 +4915,22 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        # Basic return dict structure
-        assert "mean" in result
-        assert "means" in result
-        assert "fsc" in result
-        assert "hard_assignments" in result
-        assert "current_sizes" in result
-        assert "fsc_history" in result
-        assert "pixel_resolutions" in result
-        assert "wall_times" in result
+        # Basic saved result structure
+        fields = result.archive_fields()
+        assert "mean" in fields
+        assert "means" in fields
+        assert "fsc" in fields
+        assert "hard_assignments" in fields
+        assert "current_sizes" in fields
+        assert "fsc_history" in fields
+        assert "pixel_resolutions" in fields
+        assert "wall_times" in fields
 
         # RELION-specific keys
-        assert "convergence_state" in result
-        assert "data_vs_prior_trajectory" in result
-        assert "healpix_order_trajectory" in result
-        assert "ave_Pmax_trajectory" in result
+        assert "convergence_state" in fields
+        assert "data_vs_prior_trajectory" in fields
+        assert "healpix_order_trajectory" in fields
+        assert "ave_Pmax_trajectory" in fields
 
     def test_relion_mode_does_not_finalize_after_max_iter_exhaustion(
         self,
@@ -4951,9 +4954,9 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is False
-        assert len(result["wall_times"]) == 1
-        assert len(result["current_sizes"]) == 1
+        assert result.convergence_state.has_converged is False
+        assert len(result.history.wall_times) == 1
+        assert len(result.history.current_sizes) == 1
 
     def test_relion_mode_joins_lowres_halves_on_first_iteration(
         self,
@@ -5081,13 +5084,13 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
-        assert len(result["wall_times"]) == 2
+        assert result.convergence_state.has_converged is True
+        assert len(result.history.wall_times) == 2
         assert len(engine_calls) == 4
         assert not np.array_equal(np.asarray(engine_calls[-2]["means"]), np.asarray(engine_calls[-1]["means"]))
         assert expected_accuracy_current_sizes == [IMAGE_SHAPE[0]]
-        assert result["final_all_data_expected_accuracy_status"] == "ok"
-        assert result["final_all_data_acc_rot"] == pytest.approx(1.25)
+        assert result.final_pass.expected_accuracy_status == "ok"
+        assert result.final_pass.acc_rot == pytest.approx(1.25)
 
         # Final reconstruction produces two unfiltered halves (first, from the
         # pre-join accumulators, so the join can update them in place), then a
@@ -5099,7 +5102,7 @@ class TestRelionModeSmokeTest:
         assert all(call[0]["current_size"] == IMAGE_SHAPE[0] for call in final_calls)
         assert all(call[0]["use_spherical_mask"] is True for call in final_calls[:2])
         assert all(call[0]["grid_correct"] is True for call in final_calls[:2])
-        products = [*result["unfiltered_means"], result["mean"], *result["means"]]
+        products = [*result.maps.unfiltered_means, result.maps.mean, *result.maps.means]
         for product, (_, reconstructed) in zip(products, final_calls, strict=True):
             assert_matches(np.asarray(product), np.asarray(reconstructed).reshape(-1))
 
@@ -5168,7 +5171,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
+        assert result.convergence_state.has_converged is True
         assert engine_call["idx"] == 4
         assert len(whole_tau2_calls) == 1
         final_half0, final_half1 = whole_tau2_calls[0]
@@ -5261,13 +5264,13 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["final_all_data_ran"] is True
+        assert result.final_all_data_ran is True
         assert len(collectors) == 1
         assert events == expected
         if n_classes > 1:
-            assert result["unfiltered_means"] is None
+            assert result.maps.unfiltered_means is None
             return
-        assert result["unfiltered_means"] is operands["unfiltered:result"]
+        assert result.maps.unfiltered_means is operands["unfiltered:result"]
         # The unfiltered maps read the pass outputs' own arrays, before any join.
         prejoin_numerators, prejoin_denominators = operands["unfiltered"][0]
         prior_numerators, prior_denominators = operands["halfmap_prior"][0]
@@ -5376,7 +5379,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
+        assert result.convergence_state.has_converged is True
         run_em_rotation_priors = [
             None if call["kwargs"].get("rotation_log_prior") is None else np.asarray(call["kwargs"]["rotation_log_prior"])
             for call in engine_calls
@@ -5428,7 +5431,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
+        assert result.convergence_state.has_converged is True
         run_em_translation_priors = [call["kwargs"].get("translation_log_prior") for call in engine_calls]
         run_em_translation_prior_centers = [call["kwargs"].get("translation_prior_centers") for call in engine_calls]
         assert len(run_em_translation_priors) == 4
@@ -5489,13 +5492,13 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
+        assert result.convergence_state.has_converged is True
         run_em_noise = [np.asarray(call["noise_variance"], dtype=np.float32) for call in engine_calls]
         assert len(run_em_noise) == 4
         assert_matches(run_em_noise[-2], replay_noise_h1)
         assert_matches(run_em_noise[-1], replay_noise_h2)
-        assert result["final_all_data_noise_source_half"] == -1
-        assert result["final_all_data_noise_source_halves"] == (0, 1)
+        assert result.final_pass.noise_source_half == -1
+        assert result.final_pass.noise_source_halves == (0, 1)
 
     def test_relion_final_iteration_uses_local_search_when_converged_state_is_local(
         self,
@@ -5683,7 +5686,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
+        assert result.convergence_state.has_converged is True
         # The first iteration's global E-step, one per half; the final iteration is local.
         assert len(engine_calls) == 2
         assert len(local_calls) == 2
@@ -5747,11 +5750,11 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
-        assert len(result["wall_times"]) == 2
-        assert np.asarray(result["class_means"]).shape == (2, VOLUME_SIZE)
-        np.testing.assert_allclose(np.sum(result["class_weights"]), 1.0, rtol=1e-6, atol=1e-6)
-        for half_classes in result["class_assignments"]:
+        assert result.convergence_state.has_converged is True
+        assert len(result.history.wall_times) == 2
+        assert np.asarray(result.maps.class_means).shape == (2, VOLUME_SIZE)
+        np.testing.assert_allclose(np.sum(result.maps.class_weights), 1.0, rtol=1e-6, atol=1e-6)
+        for half_classes in result.maps.class_assignments:
             assert np.asarray(half_classes).shape == (N_IMAGES // 2,)
 
     def test_relion_final_iteration_supports_k4_exactly_once(
@@ -5807,14 +5810,14 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
-        assert result["final_all_data_ran"] is True
-        assert len(result["wall_times"]) == 2
-        assert np.asarray(result["class_means"]).shape == (n_classes, VOLUME_SIZE)
-        np.testing.assert_allclose(np.sum(result["class_weights"]), 1.0, rtol=1e-6, atol=1e-6)
-        for half_classes in result["class_assignments"]:
+        assert result.convergence_state.has_converged is True
+        assert result.final_all_data_ran is True
+        assert len(result.history.wall_times) == 2
+        assert np.asarray(result.maps.class_means).shape == (n_classes, VOLUME_SIZE)
+        np.testing.assert_allclose(np.sum(result.maps.class_weights), 1.0, rtol=1e-6, atol=1e-6)
+        for half_classes in result.maps.class_assignments:
             assert np.asarray(half_classes).shape == (N_IMAGES // 2,)
-        for half_classes in result["final_all_data_class_assignments"]:
+        for half_classes in result.final_pass.class_assignments:
             assert np.asarray(half_classes).shape == (N_IMAGES // 2,)
         assert final_all_data_pass_count == 1
 
@@ -5861,9 +5864,9 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is False
-        assert result["final_all_data_ran"] is False
-        assert np.asarray(result["class_means"]).shape == (n_classes, VOLUME_SIZE)
+        assert result.convergence_state.has_converged is False
+        assert result.final_all_data_ran is False
+        assert np.asarray(result.maps.class_means).shape == (n_classes, VOLUME_SIZE)
         assert final_all_data_pass_count == 0
 
     def test_relion_final_iteration_k_class_adaptive_uses_sparse_pass2_route(
@@ -5994,7 +5997,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert result["convergence_state"].has_converged is True
+        assert result.convergence_state.has_converged is True
         assert len(adaptive_calls) == 4
         final_calls = adaptive_calls[-2:]
         assert all(call["coarse_current_size"] == 4 for call in final_calls)
@@ -6030,12 +6033,12 @@ class TestRelionModeSmokeTest:
         )
 
         # Final mean should be finite
-        assert np.all(np.isfinite(np.array(result["mean"]))), "Mean not finite"
+        assert np.all(np.isfinite(np.array(result.maps.mean))), "Mean not finite"
         # FSC should be computed
-        assert result["fsc"] is not None
+        assert result.history.fsc_history[-1] is not None
         # Hard assignments valid
         for k in range(2):
-            ha = result["hard_assignments"][k]
+            ha = result.numbered.hard_assignments[k]
             assert ha is not None
             assert np.all(ha >= 0)
 
@@ -6069,26 +6072,26 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert np.all(np.isfinite(np.asarray(result["mean"])))
-        assert np.asarray(result["class_means"]).shape == (2, VOLUME_SIZE)
-        assert np.asarray(result["means"][0]).shape == (2, VOLUME_SIZE)
-        assert np.asarray(result["means"][1]).shape == (2, VOLUME_SIZE)
-        np.testing.assert_allclose(np.asarray(result["means"][0]), np.asarray(result["means"][1]))
-        np.testing.assert_allclose(np.sum(result["class_weights"]), 1.0, rtol=1e-6, atol=1e-6)
-        assert len(result["class_mstep_weight_trajectory"]) == 1
-        assert len(result["class_assignment_history"]) == 1
+        assert np.all(np.isfinite(np.asarray(result.maps.mean)))
+        assert np.asarray(result.maps.class_means).shape == (2, VOLUME_SIZE)
+        assert np.asarray(result.maps.means[0]).shape == (2, VOLUME_SIZE)
+        assert np.asarray(result.maps.means[1]).shape == (2, VOLUME_SIZE)
+        np.testing.assert_allclose(np.asarray(result.maps.means[0]), np.asarray(result.maps.means[1]))
+        np.testing.assert_allclose(np.sum(result.maps.class_weights), 1.0, rtol=1e-6, atol=1e-6)
+        assert len(result.history.class_mstep_weight_trajectory) == 1
+        assert len(result.history.class_assignment_history) == 1
         assert_matches(
-            result["class_assignment_history"][0],
+            result.history.class_assignment_history[0],
             np.concatenate(
                 [
-                    np.asarray(result["class_assignments"][0], dtype=np.int32),
-                    np.asarray(result["class_assignments"][1], dtype=np.int32),
+                    np.asarray(result.maps.class_assignments[0], dtype=np.int32),
+                    np.asarray(result.maps.class_assignments[1], dtype=np.int32),
                 ],
             ),
         )
         for half_idx in range(2):
-            assert result["class_assignments"][half_idx].shape == (half_datasets[half_idx].n_units,)
-            assert np.all(result["class_assignments"][half_idx] >= 0)
+            assert result.maps.class_assignments[half_idx].shape == (half_datasets[half_idx].n_units,)
+            assert np.all(result.maps.class_assignments[half_idx] >= 0)
 
     def test_relion_mode_uses_engine_pmax(
         self,
@@ -6135,9 +6138,9 @@ class TestRelionModeSmokeTest:
         assert len(engine_calls) == 2
         half1_mass = float(half_datasets[0].n_units)
         expected_ave_pmax = float(np.sum(pmax_per_half[0], dtype=np.float64) / half1_mass)
-        assert result["ave_Pmax_trajectory"] == pytest.approx([expected_ave_pmax], abs=1e-6)
-        assert result["ave_Pmax_denominator_trajectory"] == pytest.approx([half1_mass], abs=1e-6)
-        assert result["convergence_state"].ave_Pmax == pytest.approx(expected_ave_pmax, abs=1e-6)
+        assert result.history.ave_Pmax_trajectory == pytest.approx([expected_ave_pmax], abs=1e-6)
+        assert result.history.ave_Pmax_denominator_trajectory == pytest.approx([half1_mass], abs=1e-6)
+        assert result.convergence_state.ave_Pmax == pytest.approx(expected_ave_pmax, abs=1e-6)
 
     @pytest.mark.gpu  # pass 2 runs only on the device-resident engine
     def test_relion_mode_forwards_particle_diameter_to_coarse_size(
@@ -6777,7 +6780,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        state = result["convergence_state"]
+        state = result.convergence_state
         assert isinstance(state, RefinementState)
         assert state.auto_local_healpix_order == 3
         # After 2 iterations, iteration counter should be at least 1
@@ -6932,7 +6935,7 @@ class TestRelionModeSmokeTest:
         assert len(tau2_fsc_inputs) == 2
         for tau2_fsc in tau2_fsc_inputs:
             np.testing.assert_allclose(tau2_fsc, raw_fsc, atol=1e-7)
-        np.testing.assert_allclose(np.asarray(result["fsc_history"][0]), raw_fsc, atol=1e-7)
+        np.testing.assert_allclose(np.asarray(result.history.fsc_history[0]), raw_fsc, atol=1e-7)
 
     def test_firstiter_cc_lowpass_runs_before_solvent_flatten(self, monkeypatch):
         """RELION applies iter-1 ini_high low-pass before solvent flatten."""
@@ -7095,7 +7098,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert len(result["current_sizes"]) == 1
+        assert len(result.history.current_sizes) == 1
         assert (out_dir / "it000_half1_unreg.mrc").exists()
         assert (out_dir / "it000_half2_unreg.mrc").exists()
 
@@ -7252,7 +7255,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert len(result["current_sizes"]) == 1
+        assert len(result.history.current_sizes) == 1
         assert (out_dir / "it000_half1_reg.mrc").exists()
         assert (out_dir / "it000_half2_reg.mrc").exists()
         assert not (out_dir / "it000_half1_unreg.mrc").exists()
@@ -7291,7 +7294,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert len(result["current_sizes"]) == 2
+        assert len(result.history.current_sizes) == 2
 
     def test_relion_mode_trajectories_populated(
         self,
@@ -7319,12 +7322,12 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        n_iters = len(result["current_sizes"])
+        n_iters = len(result.history.current_sizes)
         assert n_iters <= 2
-        assert len(result["healpix_order_trajectory"]) == n_iters
-        assert len(result["ave_Pmax_trajectory"]) == n_iters
+        assert len(result.history.healpix_order_trajectory) == n_iters
+        assert len(result.history.ave_Pmax_trajectory) == n_iters
         # data_vs_prior is populated starting from iteration 1
-        assert len(result["data_vs_prior_trajectory"]) <= n_iters
+        assert len(result.history.data_vs_prior_trajectory) <= n_iters
 
     def test_relion_mode_updates_sigma_offset_from_posterior_noise_stats(
         self,
@@ -7374,8 +7377,8 @@ class TestRelionModeSmokeTest:
             np.sqrt(noise_offset_wsums[1] / (2.0 * half_datasets[1].n_units)),
         ]
         expected_sigma = float(np.mean(expected_per_half))
-        assert result["sigma_offset_trajectory"][0] == pytest.approx(expected_sigma)
-        assert result["sigma_offset_per_half_trajectory"][0] == pytest.approx(expected_per_half)
+        assert result.history.sigma_offset_trajectory[0] == pytest.approx(expected_sigma)
+        assert result.history.sigma_offset_per_half_trajectory[0] == pytest.approx(expected_per_half)
 
     def test_relion_mode_passes_per_half_noise_to_engine(
         self,
@@ -7567,12 +7570,12 @@ class TestRelionModeSmokeTest:
         assert call_idx["value"] == 2
         assert fine_mstep_prune_values == [True, True]
         assert_matches(
-            np.asarray(result["significant_counts"][0], dtype=np.int32),
+            np.asarray(result.history.significant_counts[0], dtype=np.int32),
             np.concatenate(counts_by_half),
         )
-        assert np.isnan(result["acc_rot_trajectory"][0])
-        assert result["expected_accuracy_status_trajectory"] == ["unavailable_inputs"]
-        assert np.isinf(result["convergence_state"].acc_rot)
+        assert np.isnan(result.history.acc_rot_trajectory[0])
+        assert result.history.expected_accuracy_status_trajectory == ["unavailable_inputs"]
+        assert np.isinf(result.convergence_state.acc_rot)
 
     def test_k1_zero_oversampling_enters_adaptive_engine(
         self,
@@ -7615,7 +7618,7 @@ class TestRelionModeSmokeTest:
             ),
         )
 
-        assert np.asarray(result["mean"]).shape == (VOLUME_SIZE,)
+        assert np.asarray(result.maps.mean).shape == (VOLUME_SIZE,)
         assert len(engine_calls) == 2
         for call in engine_calls:
             assert call["kwargs"]["oversampling_order"] == 0
@@ -7770,19 +7773,19 @@ class TestRelionModeSmokeTest:
         assert call_idx["value"] == 2
         assert fine_mstep_prune_values == [True, True]
         assert_matches(
-            np.asarray(result["significant_counts"][0], dtype=np.int32),
+            np.asarray(result.history.significant_counts[0], dtype=np.int32),
             np.concatenate(counts_by_half),
         )
-        assert np.isnan(result["acc_rot_trajectory"][0])
-        assert np.isinf(result["convergence_state"].acc_rot)
-        assert result["ave_Pmax_trajectory"] == pytest.approx([0.75], abs=1e-6)
-        assert result["ave_Pmax_denominator_trajectory"] == pytest.approx(
+        assert np.isnan(result.history.acc_rot_trajectory[0])
+        assert np.isinf(result.convergence_state.acc_rot)
+        assert result.history.ave_Pmax_trajectory == pytest.approx([0.75], abs=1e-6)
+        assert result.history.ave_Pmax_denominator_trajectory == pytest.approx(
             [0.8 * half_datasets[0].n_units],
             abs=1e-6,
         )
-        assert result["convergence_state"].ave_Pmax == pytest.approx(0.75, abs=1e-6)
+        assert result.convergence_state.ave_Pmax == pytest.approx(0.75, abs=1e-6)
         np.testing.assert_allclose(
-            result["pmax_per_image_history"][0],
+            result.history.pmax_per_image_history[0],
             np.concatenate(
                 [
                     np.full(half_datasets[0].n_units, 0.6),
@@ -8891,7 +8894,7 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
     expected_h1 = relion_translation_search_base(prev_h1) + chosen_trans[None, :]
     expected_h2 = relion_translation_search_base(prev_h2) + chosen_trans[None, :]
 
-    best_hist = result["best_translations_history"]
+    best_hist = result.history.best_translations_history
     assert len(best_hist) == 1
     np.testing.assert_allclose(
         np.concatenate(best_hist[0], axis=0),
@@ -9040,8 +9043,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         ),
     )
 
-    assert len(result["tau2_radial_trajectory"]) == 1
-    np.testing.assert_allclose(result["tau2_radial_trajectory"][0], iref_tau2, rtol=0.0, atol=1e-5)
+    assert len(result.history.tau2_radial_trajectory) == 1
+    np.testing.assert_allclose(result.history.tau2_radial_trajectory[0], iref_tau2, rtol=0.0, atol=1e-5)
 
     init_tau2_volume = jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.float32) * 3.0
     init_result = refine_single_volume(
@@ -9067,8 +9070,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             ),
         ),
     )
-    assert len(init_result["tau2_radial_trajectory"]) == 1
-    np.testing.assert_allclose(init_result["tau2_radial_trajectory"][0], iref_tau2, rtol=0.0, atol=1e-5)
+    assert len(init_result.history.tau2_radial_trajectory) == 1
+    np.testing.assert_allclose(init_result.history.tau2_radial_trajectory[0], iref_tau2, rtol=0.0, atol=1e-5)
     assert iref_tau2_calls == [0, 1, 0, 1]
 
     same_iter_tau2 = class_tau2 + 1000.0
@@ -9098,8 +9101,8 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         ),
     )
 
-    assert len(replay_result["tau2_radial_trajectory"]) == 1
-    np.testing.assert_allclose(replay_result["tau2_radial_trajectory"][0], same_iter_tau2, rtol=0.0, atol=1e-5)
+    assert len(replay_result.history.tau2_radial_trajectory) == 1
+    np.testing.assert_allclose(replay_result.history.tau2_radial_trajectory[0], same_iter_tau2, rtol=0.0, atol=1e-5)
     assert iref_tau2_calls == [0, 1, 0, 1]
 
     same_iter_replay_result = refine_single_volume(
@@ -9127,9 +9130,9 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
         ),
     )
 
-    assert len(same_iter_replay_result["tau2_radial_trajectory"]) == 1
+    assert len(same_iter_replay_result.history.tau2_radial_trajectory) == 1
     np.testing.assert_allclose(
-        same_iter_replay_result["tau2_radial_trajectory"][0],
+        same_iter_replay_result.history.tau2_radial_trajectory[0],
         same_iter_tau2,
         rtol=0.0,
         atol=1e-5,
@@ -9274,7 +9277,7 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
         atol=1e-6,
     )
     assert all(call["relion_half_volume_mstep"] is False for call in dense_calls)
-    best_hist = result["best_translations_history"]
+    best_hist = result.history.best_translations_history
     assert len(best_hist) == 1
     np.testing.assert_allclose(best_hist[0][0], expected_h1, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(best_hist[0][1], expected_h2, rtol=1e-6, atol=1e-6)
@@ -9418,7 +9421,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         build_local_search_grid_metadata(5),
     )
     expected_euler = iteration_loop_module.utils.R_to_relion(expected_rotation, degrees=True)[0].astype(np.float32)
-    observed = np.asarray(result["best_rotation_eulers_history"][0], dtype=np.float32).reshape(-1, 3)
+    observed = np.asarray(result.history.best_rotation_eulers_history[0], dtype=np.float32).reshape(-1, 3)
     assert observed.shape[0] == N_IMAGES
     np.testing.assert_allclose(
         observed,

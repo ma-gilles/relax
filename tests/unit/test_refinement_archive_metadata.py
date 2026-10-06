@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.refinement_results import refinement_result
 
+from relax.helpers.iteration_history import RefinementHistory
 from relax.refinement.command_options import resolve_initial_sampling
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
@@ -86,10 +88,10 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
     tmp_path, n_classes, diagnostics, max_order,
 ):
     inputs = metadata_inputs(n_classes=n_classes, diagnostics=diagnostics, max_order=max_order)
-    result = dict(
+    result = refinement_result(history=RefinementHistory(
         current_sizes=[16, 24], pixel_resolutions=[12.0, 8.0], wall_times=[2.5, 3.5],
         state_swap_probe_applied_relion_iterations=[2] if diagnostics else [],
-    )
+    ))
     metadata = build_archive_metadata(result, **inputs)
     assert metadata["half1_indices"] is inputs["particle_layout"].half1_rows
     assert metadata["half2_indices"] is inputs["particle_layout"].half2_rows

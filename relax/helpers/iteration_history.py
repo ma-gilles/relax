@@ -250,7 +250,7 @@ class RefinementHistory:
         self.smallest_change_offsets_trajectory.append(float(state.current_changes_optimal_offsets_angstrom))
 
     def to_dict(self) -> dict:
-        """Return the trajectory entries of the function's result dict."""
+        """Return the trajectory entries of the saved result mapping (``RefinementResult.archive_fields``)."""
         return {
             "fsc": self.fsc_history[-1] if self.fsc_history else None,
             "current_sizes": self.current_sizes,

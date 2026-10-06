@@ -529,7 +529,7 @@ MUTATIONS = (
      "the first-iteration CC emulation applies to every iteration", True),
     ("current_size_not_quantised", "current_size = quantize_current_size(image_size_plan.size, ori_size=grid_size)", "current_size = int(image_size_plan.size) + 1",
      "the planned current size is used one pixel larger and unquantised", True),
-    ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history.to_dict(),', '"final_all_data_ran": True,\n**history.to_dict(),',
+    ("numbered_result_claims_final_pass", '"final_all_data_ran": False,\n**history,', '"final_all_data_ran": True,\n**history,',
      "the result of a run without a final pass says the final pass ran", True),
     # One per per-mode operation split out of a function that received the mode, and one per dispatch left.
     ("checkpoint_reads_k1_layout", "if int(self.n_classes) > 1:\nreturn self.finish_class(", "if False:\nreturn self.finish_class(",

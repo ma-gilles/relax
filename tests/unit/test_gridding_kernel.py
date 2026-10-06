@@ -370,7 +370,7 @@ def test_refinement_hands_every_k1_site_the_kernel(monkeypatch, kernel):
         consistency=RelionConsistencyOptions(gridding_kernel=kernel),
     )
 
-    assert result["final_all_data_ran"] and result["final_all_data_gridding_correct"] == kernel
+    assert result.final_all_data_ran and result.final_pass.gridding_correct == kernel
     # Per numbered iteration two regularized half maps; the final pass two unfiltered, one merged, two half maps.
     assert [kwargs["gridding_kernel"] for _, kwargs in reconstructions] == [kernel] * 9
     assert len(numbered_projectors) >= 4 and len(final_projectors) == 2

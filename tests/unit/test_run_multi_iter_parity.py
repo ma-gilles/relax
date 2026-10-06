@@ -347,19 +347,21 @@ def test_initial_scoring_noise_pair_preserves_binary64_state():
 
 
 def test_final_output_uses_joined_reconstruction_not_average_of_regularized_halves():
-    result = {
-        "mean": np.asarray([7.0 + 2.0j, 8.0 + 3.0j], dtype=np.complex64),
-        "means": [
+    from relax.refinement.refinement_result import ModelMaps
+
+    maps = ModelMaps(
+        mean=np.asarray([7.0 + 2.0j, 8.0 + 3.0j], dtype=np.complex64),
+        means=[
             np.asarray([1.0 + 0.0j, 2.0 + 0.0j], dtype=np.complex64),
             np.asarray([3.0 + 0.0j, 4.0 + 0.0j], dtype=np.complex64),
         ],
-    }
+    )
 
-    half1, half2, merged = final_output_fourier_volumes(result)
+    half1, half2, merged = final_output_fourier_volumes(maps)
 
-    assert_matches(half1, result["means"][0])
-    assert_matches(half2, result["means"][1])
-    assert_matches(merged, result["mean"])
+    assert_matches(half1, maps.means[0])
+    assert_matches(half2, maps.means[1])
+    assert_matches(merged, maps.mean)
     assert not np.array_equal(merged, (half1 + half2) / 2.0)
 
 
@@ -947,7 +949,7 @@ def test_final_only_replay_reports_empty_numbered_assignments(monkeypatch):
     trace = CallTrace(monkeypatch).wrap(finalization, "run_final_all_data", "final")
     result = run_tiny_refinement(monkeypatch, max_iter=0)
     assert trace.labels() == ["final"]
-    assert result["hard_assignments"] == [None, None]
+    assert result.numbered.hard_assignments == [None, None]
 
 
 def test_normalization_overrides_are_a_no_op_for_multi_stack_datasets():

@@ -1345,7 +1345,7 @@ def main(command=None):
         run_file_writer.wait()  # the last iteration's files, written in the background
     validate_state_swap_probe_application(
         state_swap_probe,
-        result.get("state_swap_probe_applied_relion_iterations"),
+        result.history.state_swap_probe_applied_relion_iterations,
     )
 
     total_time = time.time() - t_start
@@ -1382,7 +1382,7 @@ def main(command=None):
         diagnostic_single_half=args.diagnostic_single_half,
         state_swap_probe=state_swap_probe,
     )
-    if result.get("profile_only"):
+    if result.profile_only:
         write_profile_only_summary(result, report, benchmark_ledger_json=args.benchmark_ledger_json)
         return
 
@@ -1426,7 +1426,7 @@ def main(command=None):
         write_benchmark_ledger(args.benchmark_ledger_json, result, report, archive_report)
 
     write_final_maps(
-        result,
+        result.maps,
         output_dir=args.output,
         volume_shape=ds.volume_shape,
         pixel_size_angstrom=ds.voxel_size,

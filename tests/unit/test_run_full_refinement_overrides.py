@@ -1004,7 +1004,10 @@ _TINY_RESULT = []
 
 
 def _archive_metadata(result, *, half_indices=None, n_images=None):
-    """What write_refinement_archive adds to its metadata for a tiny K=1 run's result updated by ``result``."""
+    """What write_refinement_archive adds to its metadata for a tiny K=1 run's saved result fields updated by
+    ``result``."""
+    from types import SimpleNamespace
+
     from helpers.tiny_refinement import N_IMAGES, run_tiny_refinement
 
     from relax.refinement.result_files import write_refinement_archive
@@ -1015,7 +1018,8 @@ def _archive_metadata(result, *, half_indices=None, n_images=None):
     if half_indices is None:
         half_indices = (np.arange(N_IMAGES // 2), np.arange(N_IMAGES // 2, N_IMAGES))
     metadata = {}
-    write_refinement_archive({**_TINY_RESULT[0], **result}, out_path="unused.npz", metadata=metadata,
+    fields = {**_TINY_RESULT[0].archive_fields(), **result}
+    write_refinement_archive(SimpleNamespace(archive_fields=lambda: fields), out_path="unused.npz", metadata=metadata,
                              half_indices=half_indices, n_images=N_IMAGES if n_images is None else n_images,
                              skip_large_outputs=True)
     return metadata
@@ -1039,12 +1043,13 @@ def test_refinement_results_persist_final_tau2_weight_combination():
 
 def test_final_all_data_writes_matched_unfiltered_half_products(tmp_path):
     """A K=1 result with unfiltered half maps also writes them, beside the filtered ones."""
+    from relax.refinement.refinement_result import ModelMaps
     from relax.refinement.result_files import write_final_maps
 
     shape = (4, 4, 4)
     volume = np.zeros(64, dtype=np.complex64)
-    result = {"mean": volume, "means": [volume, volume], "unfiltered_means": [volume, volume]}
-    write_final_maps(result, output_dir=tmp_path, volume_shape=shape, pixel_size_angstrom=2.0, n_classes=1,
+    maps = ModelMaps(mean=volume, means=[volume, volume], unfiltered_means=[volume, volume])
+    write_final_maps(maps, output_dir=tmp_path, volume_shape=shape, pixel_size_angstrom=2.0, n_classes=1,
                      skip_large_outputs=False)
     assert {path.name for path in tmp_path.iterdir()} == {
         "final_merged.mrc", "final_half1.mrc", "final_half2.mrc", "final_half1_unfil.mrc", "final_half2_unfil.mrc",
@@ -1093,6 +1098,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     """The admitted follower replay reaches the controller and, with the dispatch capture, the archive.
     (Loading and validating the replay: test_relion_worker_scale; its archive keys:
     test_refinement_archive_metadata.)"""
+    from helpers.refinement_results import refinement_result
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
     from relax.refinement import command_options, full_refinement, iteration_loop
@@ -1112,7 +1118,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
                         lambda *a, **k: relion_worker_scale.PreparedFollowerTopology(
                             n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))
     controller = {}
-    monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or {})
+    monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or refinement_result())
     archive = {}
 
     def build_archive_metadata(result, **kw):

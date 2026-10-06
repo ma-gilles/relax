@@ -424,10 +424,10 @@ def _profile_value_to_jsonable(value):
     return arr.tolist()
 
 
-def _collect_local_profile_history(result):
+def _collect_local_profile_history(history):
     return [
         {key: _profile_value_to_jsonable(value) for key, value in row.items()}
-        for row in result.get("local_profile_history", [])
+        for row in history.local_profile_history
     ]
 
 
@@ -589,16 +589,16 @@ def relion_final_gt_series(relion_final_ft: dict[str, np.ndarray], relion_merged
     return series
 
 
-def final_output_fourier_volumes(result):
-    """Return final half maps and RELION-semantic joined reconstruction.
+def final_output_fourier_volumes(maps):
+    """Return final half maps and RELION-semantic joined reconstruction from the result's ``maps``.
 
     The final all-data path reconstructs the combined BPref accumulator as
-    ``result["mean"]``.  Averaging the two separately regularized half maps is
+    ``maps.mean``.  Averaging the two separately regularized half maps is
     not equivalent because Wiener reconstruction is nonlinear in the weights.
     """
-    half1 = np.asarray(result["means"][0], dtype=np.complex64).reshape(-1)
-    half2 = np.asarray(result["means"][1], dtype=np.complex64).reshape(-1)
-    merged = np.asarray(result["mean"], dtype=np.complex64).reshape(-1)
+    half1 = np.asarray(maps.means[0], dtype=np.complex64).reshape(-1)
+    half2 = np.asarray(maps.means[1], dtype=np.complex64).reshape(-1)
+    merged = np.asarray(maps.mean, dtype=np.complex64).reshape(-1)
     return half1, half2, merged
 
 
@@ -2521,7 +2521,8 @@ def main():
         ),
     )
     elapsed = time.time() - t0
-    completed_iters = len(result.get("current_sizes", []))
+    history = result.history
+    completed_iters = len(history.current_sizes)
     if completed_iters != args.max_iter:
         print(
             f"\nCompleted {completed_iters} emitted iterations in {elapsed:.1f}s "
@@ -2532,10 +2533,10 @@ def main():
 
     if args.timing_only:
         ledger_path = args.benchmark_ledger_json or os.path.join(out_dir, "benchmark_ledger.json")
-        local_profile_rows = _collect_local_profile_history(result)
+        local_profile_rows = _collect_local_profile_history(history)
         if not local_profile_rows and save_intermediates_dir is not None:
             local_profile_rows = _collect_local_profile_rows(save_intermediates_dir)
-        wall_times = [float(x) for x in result.get("wall_times", [])]
+        wall_times = [float(x) for x in history.wall_times]
         ledger = {
             "git_commit": git_head_or_none(),
             "python_version": platform.python_version(),
@@ -2558,9 +2559,9 @@ def main():
             "disable_adjoint_ctf": bool(args.disable_adjoint_ctf),
             "compile_count_from_log": _count_compile_lines(args.compile_log),
             "wall_times_trajectory": wall_times,
-            "current_sizes": [int(x) for x in result.get("current_sizes", [])],
-            "pixel_resolutions": [float(x) for x in result.get("pixel_resolutions", [])],
-            "ave_Pmax_trajectory": [float(x) for x in result.get("ave_Pmax_trajectory", [])],
+            "current_sizes": [int(x) for x in history.current_sizes],
+            "pixel_resolutions": [float(x) for x in history.pixel_resolutions],
+            "ave_Pmax_trajectory": [float(x) for x in history.ave_Pmax_trajectory],
             "local_profile_rows": local_profile_rows,
             "local_profile_summary": _summarize_local_profile_rows(local_profile_rows, wall_times),
         }
@@ -2570,11 +2571,13 @@ def main():
         return
 
     # ---- Save results ----
+    # The script's archive is written from the saved-format mapping of the result.
+    fields = result.archive_fields()
     save_dict = {
         "volume_shape": np.array([N, N, N]),
         "voxel_size": np.float64(pixel_size),
-        "current_sizes": np.array(result["current_sizes"]),
-        "pixel_resolutions": np.array(result["pixel_resolutions"]),
+        "current_sizes": np.array(fields["current_sizes"]),
+        "pixel_resolutions": np.array(fields["pixel_resolutions"]),
         "n_half1_particles": np.int32(half1_indices.size),
         "n_half2_particles": np.int32(half2_indices.size),
         "half1_indices": half1_indices,
@@ -2591,40 +2594,40 @@ def main():
         "relion_noise_state": np.array(relion_noise_state_label(args.restart_broadcast_noise_state)),
         "disable_adjoint_y": np.bool_(args.disable_adjoint_y),
         "disable_adjoint_ctf": np.bool_(args.disable_adjoint_ctf),
-        "final_all_data_ran": np.bool_(result.get("final_all_data_ran", False)),
+        "final_all_data_ran": np.bool_(fields.get("final_all_data_ran", False)),
     }
-    if result.get("ave_Pmax_trajectory"):
-        save_dict["ave_Pmax_trajectory"] = np.array(result["ave_Pmax_trajectory"])
-    if result.get("pmax_per_image_history"):
-        for i, pmax_arr in enumerate(result["pmax_per_image_history"]):
+    if fields.get("ave_Pmax_trajectory"):
+        save_dict["ave_Pmax_trajectory"] = np.array(fields["ave_Pmax_trajectory"])
+    if fields.get("pmax_per_image_history"):
+        for i, pmax_arr in enumerate(fields["pmax_per_image_history"]):
             save_dict[f"pmax_per_image_iter_{i:03d}"] = np.asarray(pmax_arr)
-    if result.get("healpix_order_trajectory"):
-        save_dict["healpix_order_trajectory"] = np.array(result["healpix_order_trajectory"])
+    if fields.get("healpix_order_trajectory"):
+        save_dict["healpix_order_trajectory"] = np.array(fields["healpix_order_trajectory"])
     # Which E-step engine each pass ran on, per iteration and for the final all-data
     # pass (relax.sparse_pass2.engine_record), as JSON: resident vs fallback per run.
     for key in (
         "pass2_engine_trajectory", "final_all_data_pass2_engines",
         "coarse_engine_trajectory", "final_all_data_coarse_engines",
     ):
-        if result.get(key) is not None:
-            save_dict[key] = np.asarray(json.dumps(result[key]))
-    if result.get("wall_times"):
-        save_dict["wall_times_trajectory"] = np.array(result["wall_times"], dtype=np.float64)
-    if result.get("sigma_offset_trajectory"):
-        save_dict["sigma_offset_trajectory"] = np.array(result["sigma_offset_trajectory"], dtype=np.float64)
-    if result.get("sigma_offset_used_trajectory"):
-        save_dict["sigma_offset_used_trajectory"] = np.array(result["sigma_offset_used_trajectory"], dtype=np.float64)
-    if result.get("sigma_offset_per_half_trajectory"):
+        if fields.get(key) is not None:
+            save_dict[key] = np.asarray(json.dumps(fields[key]))
+    if fields.get("wall_times"):
+        save_dict["wall_times_trajectory"] = np.array(fields["wall_times"], dtype=np.float64)
+    if fields.get("sigma_offset_trajectory"):
+        save_dict["sigma_offset_trajectory"] = np.array(fields["sigma_offset_trajectory"], dtype=np.float64)
+    if fields.get("sigma_offset_used_trajectory"):
+        save_dict["sigma_offset_used_trajectory"] = np.array(fields["sigma_offset_used_trajectory"], dtype=np.float64)
+    if fields.get("sigma_offset_per_half_trajectory"):
         save_dict["sigma_offset_per_half_trajectory"] = np.asarray(
-            result["sigma_offset_per_half_trajectory"], dtype=np.float64
+            fields["sigma_offset_per_half_trajectory"], dtype=np.float64
         )
-    if result.get("sigma_offset_used_per_half_trajectory"):
+    if fields.get("sigma_offset_used_per_half_trajectory"):
         save_dict["sigma_offset_used_per_half_trajectory"] = np.asarray(
-            result["sigma_offset_used_per_half_trajectory"], dtype=np.float64
+            fields["sigma_offset_used_per_half_trajectory"], dtype=np.float64
         )
-    if result.get("direction_prior_trajectory_per_half"):
+    if fields.get("direction_prior_trajectory_per_half"):
         save_dict["direction_prior_trajectory_per_half"] = np.asarray(
-            result["direction_prior_trajectory_per_half"], dtype=object
+            fields["direction_prior_trajectory_per_half"], dtype=object
         )
     for scalar_name in [
         "frac_changed_trajectory",
@@ -2632,8 +2635,8 @@ def main():
         "smallest_change_angles_trajectory",
         "smallest_change_offsets_trajectory",
     ]:
-        if result.get(scalar_name):
-            save_dict[scalar_name] = np.array(result[scalar_name], dtype=np.float64)
+        if fields.get(scalar_name):
+            save_dict[scalar_name] = np.array(fields[scalar_name], dtype=np.float64)
 
     def _save_array_or_half_sequence(key, value, dtype=None):
         try:
@@ -2675,14 +2678,14 @@ def main():
         ("tau2_ssnr_trajectory", "tau2_ssnr_iter"),
         ("rotation_posterior_trajectory_per_half", "rotation_posterior_per_half_iter"),
     ]:
-        if result.get(traj_name):
-            for i, arr_i in enumerate(result[traj_name]):
+        if fields.get(traj_name):
+            for i, arr_i in enumerate(fields[traj_name]):
                 if arr_i is not None:
                     _save_array_or_half_sequence(f"{prefix_name}_{i:03d}", arr_i)
-    if result.get("significant_counts"):
+    if fields.get("significant_counts"):
         add_significant_count_artifacts(
             save_dict,
-            result["significant_counts"],
+            fields["significant_counts"],
             [half1_indices, half2_indices],
             len(our_subsets),
         )
@@ -2690,8 +2693,8 @@ def main():
         ("best_rotation_eulers_history", "best_rotation_eulers_iter"),
         ("best_translations_history", "best_translations_iter"),
     ]:
-        if result.get(traj_name):
-            for i, arr_i in enumerate(result[traj_name]):
+        if fields.get(traj_name):
+            for i, arr_i in enumerate(fields[traj_name]):
                 if arr_i is not None:
                     _save_array_or_half_sequence(f"{prefix_name}_{i:03d}", arr_i, dtype=replay_real_dtype)
 
@@ -2700,7 +2703,7 @@ def main():
         "final_all_data_best_translations",
         "final_all_data_max_posterior",
     ):
-        value = result.get(key)
+        value = fields.get(key)
         if value is not None:
             save_dict[key] = _concat_half_sequence(value, replay_real_dtype)
     for key in (
@@ -2709,7 +2712,7 @@ def main():
         "tau2_fsc_used_final_all_data",
         "tau2_ssnr_final_all_data",
     ):
-        value = result.get(key)
+        value = fields.get(key)
         if value is not None:
             save_dict[key] = np.asarray(value)
     for key in (
@@ -2720,18 +2723,18 @@ def main():
         "final_all_data_sampling_offset_step",
         "final_all_data_grid_correct",
     ):
-        if key in result:
-            save_dict[key] = np.asarray(result[key])
+        if key in fields:
+            save_dict[key] = np.asarray(fields[key])
     for key in (
         "final_all_data_sampling_star",
         "final_all_data_sampling_star_source",
         "final_all_data_gridding_correct",
         "tau2_weight_combination_final_all_data",
     ):
-        if result.get(key) is not None:
-            save_dict[key] = np.asarray(str(result[key]))
+        if fields.get(key) is not None:
+            save_dict[key] = np.asarray(str(fields[key]))
 
-    final_half1_ft, final_half2_ft, final_merged_ft = final_output_fourier_volumes(result)
+    final_half1_ft, final_half2_ft, final_merged_ft = final_output_fourier_volumes(result.maps)
 
     save_dict["final_half1_ft"] = final_half1_ft
     save_dict["final_half2_ft"] = final_half2_ft
@@ -2760,24 +2763,24 @@ def main():
     )
 
     # ---- Summary table ----
-    n_iters = len(result["current_sizes"])
+    n_iters = len(history.current_sizes)
     print(f"\n{'iter':>4} {'cs':>4} {'pixres':>6} {'pmax':>8} {'hp':>3} {'FSC@0.5':>8} {'res(A)':>8}")
     print("-" * 50)
     for i in range(n_iters):
-        cs_i = result["current_sizes"][i]
-        pr_i = result["pixel_resolutions"][i]
+        cs_i = history.current_sizes[i]
+        pr_i = history.pixel_resolutions[i]
         pmax_i = (
-            result["ave_Pmax_trajectory"][i]
-            if result.get("ave_Pmax_trajectory") and i < len(result["ave_Pmax_trajectory"])
+            history.ave_Pmax_trajectory[i]
+            if history.ave_Pmax_trajectory and i < len(history.ave_Pmax_trajectory)
             else 0
         )
         hp_i = (
-            result["healpix_order_trajectory"][i]
-            if result.get("healpix_order_trajectory") and i < len(result["healpix_order_trajectory"])
+            history.healpix_order_trajectory[i]
+            if history.healpix_order_trajectory and i < len(history.healpix_order_trajectory)
             else hp_order
         )
         fsc_i = (
-            np.array(result["fsc_history"][i]) if result.get("fsc_history") and i < len(result["fsc_history"]) else None
+            np.array(history.fsc_history[i]) if history.fsc_history and i < len(history.fsc_history) else None
         )
         fsc05 = 0
         if fsc_i is not None:
@@ -2793,7 +2796,7 @@ def main():
         run_prefix=run_prefix,
         start_iteration=iteration,
         completed_iterations=completed_iters,
-        final_all_data_ran=bool(result.get("final_all_data_ran", False)),
+        final_all_data_ran=result.final_all_data_ran,
     )
     save_dict["relion_final_oracle_mode"] = np.array(final_oracle_mode)
     relion_final_real = {}
@@ -2955,7 +2958,7 @@ def main():
 
     ledger_path = args.benchmark_ledger_json or os.path.join(out_dir, "benchmark_ledger.json")
     local_profile_rows = _collect_local_profile_rows(save_intermediates_dir)
-    wall_times = [float(x) for x in result.get("wall_times", [])]
+    wall_times = [float(x) for x in history.wall_times]
     ledger = {
         "git_commit": git_head_or_none(),
         "python_version": platform.python_version(),
@@ -2979,7 +2982,7 @@ def main():
         "gt_align_all_series": bool(args.gt_align_all_series),
         "gt_metrics": gt_ledger_summary,
         "force_max_iter_after_convergence": bool(args.force_max_iter_after_convergence),
-        "final_all_data_ran": bool(result.get("final_all_data_ran", False)),
+        "final_all_data_ran": result.final_all_data_ran,
         "relion_final_oracle_mode": final_oracle_mode,
         "relion_final_oracle_paths": {label: str(path) for label, path in final_oracle_paths.items()},
         "final_merged_corr_vs_relion": (
@@ -2998,8 +3001,8 @@ def main():
         "disable_adjoint_ctf": bool(args.disable_adjoint_ctf),
         "compile_count_from_log": _count_compile_lines(args.compile_log),
         "wall_times_trajectory": wall_times,
-        "current_sizes": [int(x) for x in result.get("current_sizes", [])],
-        "pixel_resolutions": [float(x) for x in result.get("pixel_resolutions", [])],
+        "current_sizes": [int(x) for x in history.current_sizes],
+        "pixel_resolutions": [float(x) for x in history.pixel_resolutions],
         "local_profile_rows": local_profile_rows,
         "local_profile_summary": _summarize_local_profile_rows(local_profile_rows, wall_times),
     }
@@ -3029,8 +3032,8 @@ def main():
         else:
             print(f"  GT poses present but not in expected tuple format: {gt_pose_path}")
 
-    if result.get("pmax_per_image_history"):
-        for i_iter, pmax_arr in enumerate(result["pmax_per_image_history"]):
+    if history.pmax_per_image_history:
+        for i_iter, pmax_arr in enumerate(history.pmax_per_image_history):
             target_it = iteration + 1 + i_iter
             target_data_star = relion_dir / f"{run_prefix}_it{target_it:03d}_data.star"
             if not target_data_star.exists():
@@ -3136,8 +3139,8 @@ def main():
             )
             print(f"  Saved per-particle comparison: {comp_path}")
 
-            best_eulers_hist = result.get("best_rotation_eulers_history")
-            best_trans_hist = result.get("best_translations_history")
+            best_eulers_hist = history.best_rotation_eulers_history
+            best_trans_hist = history.best_translations_history
             if best_eulers_hist and i_iter < len(best_eulers_hist) and best_eulers_hist[i_iter] is not None:
                 best_eulers_arr = _concat_half_sequence(best_eulers_hist[i_iter], np.float64)
                 recovar_eulers_orig = np.full((n_total, 3), np.nan, dtype=np.float64)

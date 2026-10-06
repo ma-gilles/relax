@@ -7,9 +7,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from helpers.refinement_results import numbered_metadata, refinement_result
 
+from relax.helpers.iteration_history import RefinementHistory
 from relax.refinement import result_files
 from relax.refinement.refinement_options import RestartProvenance
+from relax.refinement.refinement_result import ProfileStop
 
 pytestmark = pytest.mark.unit
 
@@ -42,11 +45,15 @@ def _report(tmp_path, captured=None):
 def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, capsys):
     captured = SimpleNamespace(replay_slot=2, source_manifest_sha256="cd" * 32, source_dir=tmp_path / "capture",
                                source_manifest=tmp_path / "capture" / "SUMS")
-    result = {
-        "current_sizes": [12, 16], "wall_times": [1.0, 2.0], "setup_phase_seconds": {"state_init": 0.5},
-        "local_profile_history": [{"iteration": 1, "rows": 3}], "global_profile_history": [],
-        "stop_after_local_search_score_only": True, "state_swap_probe_applied_relion_iterations": [5],
-    }
+    result = refinement_result(
+        history=RefinementHistory(
+            current_sizes=[12, 16], wall_times=[1.0], local_profile_history=[{"iteration": 1, "rows": 3}],
+            global_profile_history=[], state_swap_probe_applied_relion_iterations=[5],
+        ),
+        numbered=numbered_metadata(setup_phase_seconds={"state_init": 0.5}),
+        follower_scale=None,
+        profile_stop=ProfileStop(score_only=True, wall_seconds=2.0, significant_count=None),
+    )
     ledger = tmp_path / "ledger" / "ledger.json"
     path = result_files.write_profile_only_summary(result, _report(tmp_path, captured), benchmark_ledger_json=ledger)
     summary = json.loads(Path(path).read_text())
@@ -60,6 +67,9 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
     assert summary["profile_only"] is True and summary["diagnostic_single_half"] is True
     assert summary["relion_projector_replay_slot"] == 2 and summary["perturb_replay_restart_state_iterations"] == [3]
     assert summary["state_swap_probe_applied_relion_iterations"] == [5]
+    assert summary["stop_after_local_search_score_only"] is True
+    assert summary["setup_phase_seconds"] == {"state_init": 0.5}
+    assert summary["wall_times_trajectory"] == [2.0]  # the stopped iteration's own wall time
     assert summary["local_profile_rows"] == [{"iteration": 1, "rows": 3}]
     printed = capsys.readouterr().out
     assert "LOCAL SEARCH PROFILE ONLY" in printed and "Profiles: 1" in printed and "Current size: 16" in printed
@@ -68,7 +78,9 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
 def test_benchmark_ledger_holds_the_shared_fields_and_the_run_trajectories(tmp_path):
     archive = result_files.ArchiveReport(git_provenance={"head": "x"}, local_profile_rows=[], global_profile_rows=[],
                                          setup_phase_seconds={"state_init": 0.5})
-    result = {"current_sizes": [12], "wall_times": [1.0], "pixel_resolutions": [3.0], "ave_Pmax_trajectory": [0.5]}
+    result = refinement_result(history=RefinementHistory(
+        current_sizes=[12], wall_times=[1.0], pixel_resolutions=[3.0], ave_Pmax_trajectory=[0.5],
+    ))
     path = tmp_path / "ledger.json"
     result_files.write_benchmark_ledger(path, result, _report(tmp_path), archive)
     ledger = json.loads(path.read_text())

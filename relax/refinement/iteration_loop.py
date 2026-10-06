@@ -197,9 +197,12 @@ from relax.refinement.refinement_options import (
     require_consistency_route,
     with_validated_sampling_schedule,
 )
-from relax.refinement.result_files import (
-    _model_result_fields,
-    _numbered_result_metadata,
+from relax.refinement.refinement_result import (
+    ModelMaps,
+    NumberedMetadata,
+    ProfileStop,
+    RefinementResult,
+    ReplayTelemetry,
 )
 from relax.refinement.tomo_half import TomoHalf, numbered_iteration_tomo_sampling
 from relax.relion.geometry import (
@@ -776,7 +779,7 @@ def refine_single_volume(
     init_mean_variance: jnp.ndarray,
     translations: jnp.ndarray | None,
     options: RefinementOptions | None = None,
-) -> dict:
+) -> RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
     Implements the loop described in ``docs/math/relion_refinement_algorithm.md``.
@@ -799,25 +802,12 @@ def refine_single_volume(
 
     Returns
     -------
-    dict with keys:
-        mean : jnp.ndarray -- final merged mean volume
-        means : list of 2 jnp.ndarray -- per-half-set means
-        fsc : jnp.ndarray -- final FSC curve
-        hard_assignments : list of 2 np.ndarray -- per-half-set assignments
-        current_sizes : list of int -- current_size at each iteration
-        fsc_history : list of jnp.ndarray -- FSC curve at each iteration
-        pixel_resolutions : list of float -- pixel resolution at each iter
-        wall_times : list of float -- wall time per iteration
-        significant_counts : list of (jnp.ndarray or None) -- per-image
-            significant sample counts at each iteration (None when
-            adaptive_oversampling=0).
-
-    RELION-specific keys:
-        convergence_state : RefinementState -- final convergence state
-        data_vs_prior_trajectory : list of jnp.ndarray -- per-iteration
-            data_vs_prior curves
-        healpix_order_trajectory : list of int -- HEALPix order per iter
-        ave_Pmax_trajectory : list of float -- average Pmax per iter
+    RefinementResult (``relax.refinement.refinement_result``): the maps (``maps.mean``, ``maps.means``),
+    the last ``convergence_state``, the run's ``history`` (``current_sizes``, ``fsc_history``,
+    ``pixel_resolutions``, ``wall_times``, ``significant_counts``, the trajectories), the set-up and
+    numbered-iteration metadata (``numbered``), the final pass's outputs (``final_pass``, None when it did
+    not run) and ``profile_stop`` for a local-search diagnostic stop. ``archive_fields()`` is the flat
+    mapping the archive and reports read.
     """
     if options is None:
         options = RefinementOptions()
@@ -1912,23 +1902,27 @@ def refine_single_volume(
                 applied_iterations=history.relion_follower_scale_replay_applied_iterations,
                 logger=logger,
             )
-            return {
-                "profile_only": True,
-                **_model_result_fields(merged_mean, reference_model.maps, merged_class_means, None, None),
-                "relion_follower_scale_replay_requested_iterations": replay_requested_iterations,
-                "relion_follower_scale_replay_applied_iterations": replay_applied_iterations,
-                "convergence_state": state,
-                **_numbered_result_metadata(
-                    hard_assignments, frozen_initial_scoring_state_sha256,
-                    published_accuracy.trial_local_indices, published_accuracy.trial_particle_ids,
-                    setup_phase_seconds,
+            return RefinementResult(
+                maps=ModelMaps(mean=merged_mean, means=reference_model.maps, class_means=merged_class_means),
+                replay=ReplayTelemetry(
+                    requested_iterations=replay_requested_iterations, applied_iterations=replay_applied_iterations,
                 ),
-                "final_all_data_ran": False,
-                "stop_after_local_search_score_only": bool(debug.stop_after_local_search_score_only),
-                **history.to_dict(),
-                "wall_times": [elapsed],
-                "significant_counts": [significance.recorded],
-            }
+                follower_scale=None,
+                convergence_state=state,
+                numbered=NumberedMetadata(
+                    hard_assignments=hard_assignments,
+                    frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
+                    expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
+                    expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
+                    setup_phase_seconds=setup_phase_seconds,
+                ),
+                history=history,
+                profile_stop=ProfileStop(
+                    score_only=bool(debug.stop_after_local_search_score_only),
+                    wall_seconds=elapsed,
+                    significant_count=significance.recorded,
+                ),
+            )
         if k_class_enabled:
             class_mixture = class_mixture_from_weights(
                 _class_weights_from_posterior(
@@ -2600,24 +2594,28 @@ def refine_single_volume(
             applied_iterations=history.relion_follower_scale_replay_applied_iterations,
             logger=logger,
         )
-        return {
-            **_model_result_fields(
-                merged_mean, reference_model.maps, merged_class_means,
-                class_mixture.weights if k_class_enabled else None,
-                class_assignments if k_class_enabled else None,
+        return RefinementResult(
+            maps=ModelMaps(
+                mean=merged_mean,
+                means=reference_model.maps,
+                class_means=merged_class_means,
+                class_weights=class_mixture.weights if k_class_enabled else None,
+                class_assignments=class_assignments if k_class_enabled else None,
             ),
-            "relion_follower_scale_replay_requested_iterations": replay_requested_iterations,
-            "relion_follower_scale_replay_applied_iterations": replay_applied_iterations,
-            **follower_setup.to_result_dict(history),
-            "convergence_state": state,
-            **_numbered_result_metadata(
-                hard_assignments, frozen_initial_scoring_state_sha256,
-                published_accuracy.trial_local_indices, published_accuracy.trial_particle_ids,
-                setup_phase_seconds,
+            replay=ReplayTelemetry(
+                requested_iterations=replay_requested_iterations, applied_iterations=replay_applied_iterations,
             ),
-            "final_all_data_ran": False,
-            **history.to_dict(),
-        }
+            follower_scale=follower_setup.result_outputs(history),
+            convergence_state=state,
+            numbered=NumberedMetadata(
+                hard_assignments=hard_assignments,
+                frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
+                expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
+                expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
+                setup_phase_seconds=setup_phase_seconds,
+            ),
+            history=history,
+        )
     if not state.has_converged:
         logger.info(
             "Diagnostic %s=1: running RELION final all-data iteration after max_iter exhaustion "
@@ -2747,12 +2745,16 @@ def refine_single_volume(
         relion_translation_angle_scale=relion_translation_angle_scale,
     )
     # Setup and numbered-iteration metadata retain their existing caller ownership.
-    final_result.update(_numbered_result_metadata(
-        hard_assignments, frozen_initial_scoring_state_sha256,
-        published_accuracy.trial_local_indices, published_accuracy.trial_particle_ids,
-        setup_phase_seconds,
-    ))
-    return final_result
+    return replace(
+        final_result,
+        numbered=NumberedMetadata(
+            hard_assignments=hard_assignments,
+            frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
+            expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
+            expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
+            setup_phase_seconds=setup_phase_seconds,
+        ),
+    )
 
 ### THIS FILE SHOULD BE MUCH SHORTER - REMOVE UN-NECESSARY IF STATEMENTS/RELION THINGS THAT DONT MATTER/ WE DONT USE
 ## MOVE THINGS AWAY TO DIFFERNET FILE E.G. I/O PERHAPS. IT SHOULD BE EASY TO UDNERSTAND WHERE THE MAIN ENGINE OF ITER IS GOING, WHAT ARE THE MAIN STEPS (E-M ACCUMULATION) POSTPROCESSING, NOISE UPDATING, ETC

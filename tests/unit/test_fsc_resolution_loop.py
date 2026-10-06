@@ -48,9 +48,9 @@ def _assert_relion_hard_assignments_in_range(result, n_translations):
     """Validate pose IDs against the generated RELION grid."""
     from relax.sampling import rotation_grid_size
 
-    final_order = result["healpix_order_trajectory"][-1]
+    final_order = result.history.healpix_order_trajectory[-1]
     n_total_poses = rotation_grid_size(final_order) * int(n_translations)
-    for assignments in result["hard_assignments"]:
+    for assignments in result.numbered.hard_assignments:
         assert assignments is not None
         assert assignments.shape == (N_IMAGES // 2,)
         assert np.all(assignments >= 0)
@@ -254,7 +254,7 @@ class TestOracleMode:
         )
 
         # On the tiny 8px mock dataset these values all saturate at full resolution.
-        assert result["current_sizes"] == [8, 8, 8], f"Oracle sizes not used: {result['current_sizes']}"
+        assert result.history.current_sizes == [8, 8, 8], f"Oracle sizes not used: {result.history.current_sizes}"
 
     def test_oracle_with_zero_first(self, half_datasets, init_volume, translations):
         """RELION iteration 0 has current_size=0; should use init_current_size."""
@@ -275,9 +275,9 @@ class TestOracleMode:
         )
 
         # On the tiny 8px mock dataset all oracle/full-resolution requests clamp to 8.
-        assert result["current_sizes"][0] == 8
-        assert result["current_sizes"][1] == 8
-        assert result["current_sizes"][2] == 8
+        assert result.history.current_sizes[0] == 8
+        assert result.history.current_sizes[1] == 8
+        assert result.history.current_sizes[2] == 8
 
     def test_oracle_produces_valid_outputs(self, half_datasets, init_volume, translations):
         """Oracle mode produces finite volumes and valid assignments."""
@@ -298,10 +298,10 @@ class TestOracleMode:
         )
 
         # Final mean should be finite
-        assert np.all(np.isfinite(np.array(result["mean"]))), "Mean not finite"
+        assert np.all(np.isfinite(np.array(result.maps.mean))), "Mean not finite"
         # FSC should be computed
-        assert result["fsc"] is not None
-        assert len(result["fsc_history"]) == 2
+        assert result.history.fsc_history[-1] is not None
+        assert len(result.history.fsc_history) == 2
         # RELION mode regenerates the angular grid from the active HEALPix order.
         _assert_relion_hard_assignments_in_range(result, translations.shape[0])
 
@@ -330,7 +330,7 @@ class TestResolutionProgression:
             ),
         )
 
-        sizes = result["current_sizes"]
+        sizes = result.history.current_sizes
         assert len(sizes) == 3
         # The tiny 8px mock dataset can legitimately clamp to very small sizes,
         # but should not drop below the scaled minimum of 4.
@@ -352,12 +352,12 @@ class TestResolutionProgression:
             ),
         )
 
-        assert len(result["fsc_history"]) == 3
-        assert len(result["pixel_resolutions"]) == 3
-        assert len(result["wall_times"]) == 3
+        assert len(result.history.fsc_history) == 3
+        assert len(result.history.pixel_resolutions) == 3
+        assert len(result.history.wall_times) == 3
 
         # Each FSC curve should have valid entries
-        for fsc in result["fsc_history"]:
+        for fsc in result.history.fsc_history:
             assert jnp.all(jnp.isfinite(fsc))
         # Every half-set E-step ran the adaptive engine at oversampling 1.
         assert len(fake_global_estep) >= 2 * 3
@@ -379,7 +379,7 @@ class TestResolutionProgression:
             ),
         )
 
-        for t in result["wall_times"]:
+        for t in result.history.wall_times:
             assert t > 0, f"Wall time should be positive, got {t}"
 
 
@@ -408,8 +408,8 @@ class TestOneIterationWithWindowing:
             ),
         )
 
-        assert np.all(np.isfinite(np.array(result["mean"])))
-        assert result["current_sizes"] == [4]
+        assert np.all(np.isfinite(np.array(result.maps.mean)))
+        assert result.history.current_sizes == [4]
 
     def test_single_iteration_no_window(self, half_datasets, init_volume, translations):
         """One EM iteration at current_size=None (full res) produces valid output."""
@@ -428,9 +428,9 @@ class TestOneIterationWithWindowing:
             ),
         )
 
-        assert np.all(np.isfinite(np.array(result["mean"])))
+        assert np.all(np.isfinite(np.array(result.maps.mean)))
         # On the tiny 8px mock dataset, any oversized request clamps to full resolution.
-        assert result["current_sizes"] == [8]
+        assert result.history.current_sizes == [8]
 
     def test_hard_assignments_valid_range(self, half_datasets, init_volume, translations):
         """Hard assignments are in valid range after one iteration."""

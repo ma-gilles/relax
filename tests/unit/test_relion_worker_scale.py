@@ -1084,7 +1084,7 @@ def test_final_dispatch_remap_is_wired_before_final_scoring(monkeypatch):
 def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypatch, final):
     """Pre-score telemetry is recorded at dispatch, before the replay overrides and scoring; the M-step
     installs the updated state on the setup, then the post-M-step scales are recorded before convergence.
-    Both are copies; the result reports both trajectories through one to_result_dict call."""
+    Both are copies; the result reports both trajectories through one result_outputs call."""
     from helpers.tiny_refinement import CallTrace
 
     from relax.refinement import iteration_loop
@@ -1122,13 +1122,13 @@ def test_numbered_scale_telemetry_brackets_scoring_and_mstep_boundaries(monkeypa
     trace.wrap(iteration_loop, "update_iteration_convergence", "convergence",
                before=post_mstep_count(lambda call: len(trace.calls("convergence"))))
     trace.wrap(iteration_loop, "update_iteration_convergence", "convergence_recorded", before=recorded)
-    trace.wrap(RelionFollowerScaleSetup, "to_result_dict", "result")
+    trace.wrap(RelionFollowerScaleSetup, "result_outputs", "result")
     result = _follower_run(monkeypatch, final=final)
     numbered = ["dispatch", "replay", "update", "convergence"]
     assert trace.labels(*numbered, "result") == numbered * 2 + ["result"]
-    for key in ("relion_scale_follower_scales_numbered_pre_score_trajectory",
-                "relion_scale_follower_scales_numbered_post_mstep_trajectory"):
-        assert result[key].shape == (2, 2, 2) and result[key].dtype == np.float64
+    for trajectory in (result.follower_scale.follower_scales_numbered_pre_score_trajectory,
+                       result.follower_scale.follower_scales_numbered_post_mstep_trajectory):
+        assert trajectory.shape == (2, 2, 2) and trajectory.dtype == np.float64
 
 
 def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, caplog):
@@ -1236,8 +1236,8 @@ def test_sparse_follower_scale_replay_accounting_guards_every_result_return(monk
     assert accounting.args[0] is replay
     assert accounting.kwargs["applied_iterations"] is seen["history"].relion_follower_scale_replay_applied_iterations
     requested, applied = accounting.result
-    assert result["relion_follower_scale_replay_requested_iterations"] is requested
-    assert result["relion_follower_scale_replay_applied_iterations"] is applied
+    assert result.replay.requested_iterations is requested
+    assert result.replay.applied_iterations is applied
     np.testing.assert_array_equal(applied, [2])
 
 
