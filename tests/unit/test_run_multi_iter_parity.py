@@ -10,7 +10,6 @@ from helpers.float_compare import assert_matches
 
 from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.iteration_history import add_significant_count_artifacts
-from relax.refinement.iteration_loop import _fresh_k1_spectrum_norm_default
 from scripts import diff_relion_recovar_per_iter as parity_diff
 from scripts.postprocess_multi_iter_gt import resolve_intermediates_dir
 from scripts.run_multi_iter_parity import (
@@ -564,13 +563,6 @@ def test_replayed_bpref_particle_order_requires_explicit_diagnostic_scope():
         **kwargs,
         allow_replayed_bpref_particle_order=True,
     )
-
-
-def test_preserved_particle_order_selects_production_arithmetic_in_replays_too():
-    """One K=1 arithmetic: a replay that preserves RELION's order uses it too."""
-
-    assert _fresh_k1_spectrum_norm_default(preserve_bpref_particle_order=True)
-    assert not _fresh_k1_spectrum_norm_default(preserve_bpref_particle_order=False)
 
 
 def test_complete_table_replays_default_to_the_native_relion_order():

@@ -81,7 +81,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
                                                 collect_local_search_profile=False, diagnostic_score_only=False,
                                                 local_profile_history=[]) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
-        scoring_dtype=np.float32, source_faithful_spectrum_norm=False, relion_translation_angle_scale=1.,
+        scoring_dtype=np.float32, relion_translation_angle_scale=1.,
         iteration=0, numbered_relion_iteration=1,
     )
     phase = expectation.NumberedExpectation(
@@ -146,6 +146,38 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
     assert captured['optics']['noise_radial'] is radial
     assert captured['optics']['with_log_prior'] is not local
     assert radial.dtype == np.float64
+
+
+@pytest.mark.parametrize('local', [False, True])
+@pytest.mark.parametrize('preserve_order', [False, True])
+def test_preserved_particle_order_selects_production_arithmetic_in_replays_too(monkeypatch, local, preserve_order):
+    """One K=1 arithmetic: a run that preserves RELION's particle order (fresh, or a replay of RELION's state)
+    scores with the source-faithful spectrum normalisation; a run that does not, without it."""
+    stub_planning(monkeypatch)
+    half, phase, kwargs = numbered_inputs(local=local)
+    kwargs['options'] = replace(
+        kwargs['options'], parity=replace(kwargs['options'].parity, preserve_bpref_particle_order=preserve_order),
+    )
+    captured = {}
+    planning = expectation.prepare_half_batches
+
+    def plan(*args, **inputs):
+        captured['batches'] = inputs['source_faithful_spectrum_norm']
+        return planning(*args, **inputs)
+
+    def dense(half, sampling, priors, batching, variant, execution, optics):
+        captured['execution'] = execution.source_faithful_spectrum_norm
+        return engine_result()
+
+    def local_scorer(**inputs):
+        captured['execution'] = inputs['execution'].source_faithful_spectrum_norm
+        return engine_result()
+
+    monkeypatch.setattr(expectation, 'prepare_half_batches', plan)
+    monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', dense)
+    monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', local_scorer)
+    expectation.score_numbered_half(half, phase, **kwargs)
+    assert captured == {'batches': preserve_order, 'execution': preserve_order}
 
 
 def test_actual_numbered_half_binding_does_not_read_unused_radial_noise(monkeypatch):

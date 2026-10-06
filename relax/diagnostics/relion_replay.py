@@ -329,7 +329,7 @@ def _validate_k1_bpref_particle_order_scope(
     """Fail closed unless RELION's physical order can be preserved for this K=1 run.
 
     Preserving RELION's order selects the production K=1 arithmetic
-    (``_fresh_k1_spectrum_norm_default``), so every K=1 run that knows the
+    (the source-faithful powerClass normalisation), so every K=1 run that knows the
     order uses it: a fresh run, a fresh run that replays RELION's
     perturbations and per-iteration state (``--perturb_replay_relion_dir``),
     and an imported-boundary replay that reconstructs the native order

@@ -487,14 +487,15 @@ def score_numbered_half(
     initial_class_assignments,
     single_class_iteration: bool,
     scoring_dtype,
-    source_faithful_spectrum_norm: bool,
     relion_translation_angle_scale: float,
     iteration: int,
     numbered_relion_iteration: int,
 ) -> HalfScoreResult:
     """Build half-specific priors/batches and accumulate an empty, SPA or tomography half.
 
-    Canonical pose grids and the applied translation base accompany the result.
+    Canonical pose grids and the applied translation base accompany the result. RELION's source-faithful
+    powerClass normalisation (and with it the exact BPref operands) is on wherever RELION's particle order is
+    preserved (``options.parity.preserve_bpref_particle_order``).
     The controller owns publication, accumulator offloading and post-score capture.
     """
     sampling = phase.sampling
@@ -508,6 +509,7 @@ def score_numbered_half(
     symmetry = sampling.search.symmetry if use_local else sampling.symmetry
     coarse_size_step_deg = sampling.coarse_angular_step_deg
     particle_diameter_ang = options.schedule.particle_diameter_ang
+    source_faithful_spectrum_norm = options.parity.preserve_bpref_particle_order
     bpref_diagnostics.set_bpref_contribution_dump_context(
         iteration=iteration + 1,
         half=particle_half.index + 1,
@@ -679,7 +681,7 @@ def score_numbered_half(
                 disc_type=options.disc_type,
                 disable_adjoint_y=options.debug.disable_adjoint_y,
                 disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
-                source_faithful_spectrum_norm=(source_faithful_spectrum_norm),
+                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                 relion_translation_angle_scale=(relion_translation_angle_scale),
                 nyquist_column_counting=options.consistency.nyquist_column_counting,
             ),

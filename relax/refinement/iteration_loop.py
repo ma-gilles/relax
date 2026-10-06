@@ -237,21 +237,6 @@ logger = logging.getLogger(__name__)
 
 
 
-def _fresh_k1_spectrum_norm_default(
-    *,
-    preserve_bpref_particle_order: bool,
-) -> bool:
-    """Enable the production K=1 arithmetic wherever RELION's order is preserved.
-
-    This selects source-faithful powerClass normalization and, through it, the
-    exact BPref operands and the atomic Wavg triplet. Imported-boundary
-    replays preserve RELION's native order too, so they run the same
-    arithmetic as a fresh run rather than a second, replay-only variant.
-    """
-
-    return bool(preserve_bpref_particle_order)
-
-
 def _relion_k1_translation_angle_scale(
     *,
     n_classes: int,
@@ -935,9 +920,6 @@ def refine_single_volume(
         allow_state_swap_fresh_bpref_particle_order=debug.state_swap_probe is not None,
         continues_own_run=options.checkpoint.resume is not None,
     )
-    source_faithful_spectrum_norm = _fresh_k1_spectrum_norm_default(
-        preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
-    )
     class_mixture = _initialize_class_log_priors(
         n_classes,
         k_class.init_class_log_priors,
@@ -979,7 +961,8 @@ def refine_single_volume(
         pixel_size_angstrom=source_pixel_size_angstrom,
         particle_diameter_angstrom=particle_diameter_ang,
         fourier_backend=parity.image_fourier_backend,
-        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+        # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
+        source_faithful_spectrum_norm=parity.preserve_bpref_particle_order,
         log=logger,
     )
 
@@ -1863,7 +1846,6 @@ def refine_single_volume(
                 initial_class_assignments=k_class.first_iteration_seed_classes if seed_iteration else None,
                 single_class_iteration=single_class_iteration,
                 scoring_dtype=scoring_dtype,
-                source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                 relion_translation_angle_scale=relion_translation_angle_scale,
                 iteration=iteration,
                 numbered_relion_iteration=numbered_relion_iteration,
@@ -2762,7 +2744,6 @@ def refine_single_volume(
         previous_data_vs_prior_for_scheduling=previous_data_vs_prior_for_scheduling,
         iteration=iteration,
         collect_local_search_profile=collect_local_search_profile,
-        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         relion_translation_angle_scale=relion_translation_angle_scale,
     )
     # Setup and numbered-iteration metadata retain their existing caller ownership.

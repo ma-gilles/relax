@@ -136,7 +136,6 @@ def run_final_all_data(
     previous_data_vs_prior_for_scheduling,
     iteration,
     collect_local_search_profile,
-    source_faithful_spectrum_norm,
     relion_translation_angle_scale,
 ) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
@@ -372,7 +371,8 @@ def run_final_all_data(
                 final_sampling.settings.relion_iteration
             ),
             preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
+            # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
+            source_faithful_spectrum_norm=parity.preserve_bpref_particle_order,
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=parity.firstiter_cc_tree_rescore_max_margin,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
