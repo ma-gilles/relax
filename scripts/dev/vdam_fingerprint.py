@@ -108,6 +108,8 @@ def _cases() -> dict[str, tuple[str, dict]]:
         env={"RELAX_ADAPTIVE_FRACTION": "0.99"})
     add("k1_no_subtract_reference", "K=1 backprojecting the images, not the residuals "
         "(RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE)", env={"RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE": "1"})
+    add("k1_refused_float64_scoring", "the float64 scoring switch is refused (the resident E-step is float32)",
+        env={"RELAX_USE_FLOAT64_SCORING": "1"})
     add("k1_refused_sgd_oversampling", "momentum SGD with oversampling 1 is refused",
         ["--optimizer", "momentum_sgd", "--fixed-healpix-order", "1", "--fourier-radius-schedule", "3x2,4x2,5x1,6x1"])
     return cases
@@ -153,6 +155,8 @@ MUTATIONS = (
      "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is ignored", True),
     ("adaptive_fraction_ignored", "engine_kwargs[\"adaptive_fraction\"] = adaptive_fraction", "pass",
      "RELAX_ADAPTIVE_FRACTION is ignored", True),
+    ("float64_scoring_admitted", "if env.get(\"RELAX_USE_FLOAT64_SCORING\", \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}:", "if False:",
+     "RELAX_USE_FLOAT64_SCORING is admitted and silently ignored", True),
     ("write_cadence", "return (iteration % grad_write_iter) == 0 or iteration == nr_iter",
      "return (iteration % grad_write_iter) == 1 or iteration == nr_iter",
      "the iteration files are written at the wrong cadence", True),

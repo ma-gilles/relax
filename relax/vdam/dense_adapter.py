@@ -233,8 +233,6 @@ def _dense_estep_config(
     )
     if (adaptive_fraction := opts.environment.adaptive_fraction) is not None:
         engine_kwargs["adaptive_fraction"] = adaptive_fraction
-    if os.environ.get("RELAX_USE_FLOAT64_SCORING"):
-        engine_kwargs["use_float64_scoring"] = True
     if not opts.environment.subtract_projected_reference:
         engine_kwargs["reconstruction_subtract_projected_reference"] = False
     if isinstance(dataset, MultiShapeDataset):

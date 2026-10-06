@@ -1970,6 +1970,13 @@ def test_engine_diagnostic_switches_are_read_once_with_the_options(monkeypatch):
         native_options.NativeInitialModelOptions(fn_img="x")
 
 
+def test_float64_scoring_switch_is_refused_with_the_options(monkeypatch):
+    # The resident E-step never took it: InitialModel ignored RELAX_USE_FLOAT64_SCORING until 2026-10-06.
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1")
+    with pytest.raises(NotImplementedError, match="float32 only"):
+        native_options.NativeInitialModelOptions(fn_img="x")
+
+
 def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_path):
     from relax.helpers import relion_expected_accuracy
 

@@ -47,6 +47,8 @@ class VdamEnvironment:
     @classmethod
     def from_environ(cls, environ=None) -> VdamEnvironment:
         env = os.environ if environ is None else environ
+        if env.get("RELAX_USE_FLOAT64_SCORING", "").strip().lower() in {"1", "true", "yes", "on"}:
+            raise NotImplementedError("RELAX_USE_FLOAT64_SCORING: InitialModel's resident E-step scores in float32 only")
 
         def strict(name):
             if (value := env.get(name, "").strip()) not in {"", "0", "1"}:
