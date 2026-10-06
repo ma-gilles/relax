@@ -1,4 +1,4 @@
-"""Model and particle-state updates from the InitialModel E-step metadata.
+"""Model and particle-state updates from the InitialModel E-step's sums and metadata.
 
 RELION's ``MlOptimiser::maximization`` noise (sigma2) and class-probability
 (pdf_class) updates for the native VDAM InitialModel, computed from the
@@ -14,15 +14,11 @@ import numpy as np
 
 from relax.diagnostics import vdam_noise
 from relax.helpers.orientation_priors import relion_round_away_from_zero
+from relax.vdam.estep_common import EstepSums
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from relax.vdam.state import InitialModelState, NativeParticleState
 
 MIN_SIGMA2_OFFSET_ANGSTROM2: float = 2.0
-
-
-def _posterior_sums_from_meta(meta: dict, key: str) -> np.ndarray | None:
-    value = meta.get(key)
-    return None if value is None else np.asarray(value, dtype=np.float64)
 
 
 def _my_mu(mu: float, do_grad: bool, subset_size: int) -> float:
@@ -50,27 +46,27 @@ def with_uniform_class_direction_priors(
     )
 
 
-def update_noise_from_estep_meta(
+def update_noise_from_estep(
     state: InitialModelState,
-    meta: dict,
+    sums: EstepSums,
     *,
     do_grad: bool,
     mu: float = DEFAULT_GRAD_MU,
+    report: dict | None = None,
 ) -> InitialModelState:
     """Update ``sigma2_noise`` from E-step weighted sums (engine units → RELION /N⁴).
+
+    ``report`` (the E-step's meta) is only what a non-finite sum dumps (diagnostics.vdam_noise).
 
     One optics group's sums are ``[n]`` with a scalar ``noise_sumw``; several groups give
     ``[G, n]`` sums and ``[G]`` weights, and each group with noise sums is updated on its own
     (``maximizationOtherParameters``, ml_optimiser.cpp:6316-6372: a group whose sums are zero
     keeps its spectrum).
     """
-    wsum_sigma2_noise = _posterior_sums_from_meta(meta, "wsum_sigma2_noise")
-    wsum_img_power = _posterior_sums_from_meta(meta, "wsum_img_power")
-    wsum_noise_a2 = _posterior_sums_from_meta(meta, "wsum_noise_a2")
-    wsum_noise_xa = _posterior_sums_from_meta(meta, "wsum_noise_xa")
-    noise_sumw = _posterior_sums_from_meta(meta, "noise_sumw")
-    if wsum_sigma2_noise is None or wsum_img_power is None or noise_sumw is None:
+    if sums.noise is None:
         return state
+    wsum_sigma2_noise, wsum_img_power = sums.noise.wsum_sigma2_noise, sums.noise.wsum_img_power
+    wsum_noise_a2, wsum_noise_xa, noise_sumw = sums.noise.wsum_noise_a2, sums.noise.wsum_noise_xa, sums.noise.sumw
     total_sumw = float(np.sum(noise_sumw))
     if total_sumw <= 0.0 or not np.all(np.isfinite(noise_sumw)):
         return state
@@ -100,7 +96,7 @@ def update_noise_from_estep_meta(
             vdam_noise._array_finite_summary("wsum_img_power", wsum_img_power),
             f"noise_sumw={noise_sumw!r}",
         ]
-        if dump_path := vdam_noise._dump_noise_failure_meta(state, meta, summaries):
+        if dump_path := vdam_noise._dump_noise_failure_meta(state, report or {}, summaries):
             summaries.append(f"dump={dump_path}")
         raise ValueError("noise weighted sums must be finite: " + "; ".join(summaries))
 
@@ -120,7 +116,7 @@ def update_noise_from_estep_meta(
         # RELION blends, then applies its floors (ml_optimiser.cpp:5255-5282): a shell without data decays by mu.
         new_sigma2[g] = noise_relion.apply_relion_sigma2_floors(
             new_sigma2[g] * my_mu + (1.0 - my_mu) * np.asarray(wsum_g, dtype=np.float64) / float(shape[0] ** 4),
-            ctf_premultiplied="premultiplied_average_ctf2" in meta,
+            ctf_premultiplied=sums.average_ctf2 is not None,
         )
         if not np.all(np.isfinite(new_sigma2[g])) or np.any(new_sigma2[g] <= 0.0):
             raise ValueError("updated sigma2_noise must be positive and finite")
@@ -137,16 +133,16 @@ def update_noise_from_estep_meta(
     return new_state
 
 
-def update_probabilities_from_estep_meta(
+def update_probabilities_from_estep(
     state: InitialModelState,
-    meta: dict,
+    sums: EstepSums,
     *,
     do_grad: bool,
     mu: float = DEFAULT_GRAD_MU,
     uniform_class_direction_prior: bool = False,
 ) -> InitialModelState:
     """``MlOptimiser::maximizationOtherParameters`` for pdf_class / pdf_direction / sigma2_offset."""
-    class_sums = _posterior_sums_from_meta(meta, "class_posterior_sums")
+    class_sums = sums.class_mass
     if class_sums is None:
         return state
     if class_sums.shape != (state.K,):
@@ -167,7 +163,7 @@ def update_probabilities_from_estep_meta(
             new_pdf_class /= pdf_class_sum
         new_state.pdf_class = new_pdf_class
 
-    direction_sums = _posterior_sums_from_meta(meta, "class_direction_posterior_sums")
+    direction_sums = sums.direction_mass
     if uniform_class_direction_prior:
         if direction_sums is not None:
             if direction_sums.ndim != 2 or direction_sums.shape[0] != state.K:
@@ -198,12 +194,11 @@ def update_probabilities_from_estep_meta(
         new_pdf_direction += (1.0 - my_mu) * direction_sums / sum_weight
         new_state.pdf_direction = new_pdf_direction
 
-    wsum_sigma2_offset = meta.get("wsum_sigma2_offset")
+    wsum_sigma2_offset = sums.offset_wsum
     if wsum_sigma2_offset is not None:
-        wsum_sigma2_offset = float(wsum_sigma2_offset)
         if not np.isfinite(wsum_sigma2_offset) or wsum_sigma2_offset < 0.0:
             raise ValueError("wsum_sigma2_offset must be non-negative and finite")
-        sigma2_offset_sumw = float(meta.get("sigma2_offset_sumw", sum_weight))
+        sigma2_offset_sumw = sums.offset_sumw
         if not np.isfinite(sigma2_offset_sumw) or sigma2_offset_sumw <= 0.0:
             raise ValueError("sigma2_offset_sumw must be positive and finite")
         sigma2_offset = float(state.sigma2_offset) * my_mu
@@ -212,7 +207,7 @@ def update_probabilities_from_estep_meta(
         # Its sum_weight is accumulated from the same significant-pruned
         # reconstruction weights as wsum_sigma2_offset, rather than from the
         # unpruned per-image class responsibilities.
-        offset_dims = float(meta.get("offset_dims", 2))
+        offset_dims = float(sums.offset_dims)
         sigma2_offset += (1.0 - my_mu) * wsum_sigma2_offset / (offset_dims * sigma2_offset_sumw)
         new_state.sigma2_offset = max(float(sigma2_offset), MIN_SIGMA2_OFFSET_ANGSTROM2)
 

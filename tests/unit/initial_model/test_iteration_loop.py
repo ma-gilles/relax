@@ -15,11 +15,12 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
-from relax.vdam.estep_meta_updates import update_noise_from_estep_meta, update_probabilities_from_estep_meta
+from relax.vdam.estep_common import estep_sums
+from relax.vdam.estep_meta_updates import update_noise_from_estep, update_probabilities_from_estep
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import (
     VdamUpdate,
-    _ave_pmax_from_meta,
+    _ave_pmax,
     refresh_tau2_from_projector_power,
     run_vdam_iterations,
     update_current_resolution_from_data_vs_prior,
@@ -40,31 +41,33 @@ def test_ave_pmax_uses_combined_vdam_retained_posterior_mass():
     pmax = np.asarray([0.25, 0.5, 0.75, 1.0], dtype=np.float32)
     retained_mass = np.asarray([3.5], dtype=np.float64)
 
-    actual = _ave_pmax_from_meta(
-        {
-            "max_posterior_per_image": pmax,
-            "class_posterior_sums": retained_mass,
-            "noise_sumw": 1.0,
-        }
+    actual = _ave_pmax(
+        estep_sums(
+            {
+                "max_posterior_per_image": pmax,
+                "class_posterior_sums": retained_mass,
+                "noise_sumw": 1.0,
+                "wsum_sigma2_noise": np.ones(3),
+                "wsum_img_power": np.ones(3),
+            }
+        )
     )
 
     assert actual == pytest.approx(float(np.sum(pmax, dtype=np.float64)) / 3.5)
 
 
-def test_ave_pmax_uses_noise_mass_when_class_mass_is_unavailable():
+def test_pmax_without_class_mass_is_refused():
     pmax = np.asarray([0.2, 0.4], dtype=np.float32)
 
-    actual = _ave_pmax_from_meta({"max_posterior_per_image": pmax, "noise_sumw": 1.5})
+    with pytest.raises(ValueError, match="no class posterior mass"):
+        estep_sums({"max_posterior_per_image": pmax, "noise_sumw": 1.5, "wsum_sigma2_noise": [1.0], "wsum_img_power": [1.0]})
+    with pytest.raises(ValueError, match="no class posterior mass"):
+        estep_sums({"max_posterior_per_image": pmax})
 
-    assert actual == pytest.approx(float(np.sum(pmax, dtype=np.float64)) / 1.5)
 
-
-def test_ave_pmax_retains_plain_mean_fallback_for_minimal_callbacks():
-    pmax = np.asarray([0.2, 0.4], dtype=np.float32)
-
-    actual = _ave_pmax_from_meta({"max_posterior_per_image": pmax})
-
-    assert actual == pytest.approx(float(np.mean(pmax, dtype=np.float64)))
+def test_a_partial_set_of_noise_sums_is_refused():
+    with pytest.raises(ValueError, match="not all of"):
+        estep_sums({"wsum_sigma2_noise": [1.0], "noise_sumw": 1.0})
 
 
 @pytest.fixture(scope="module")
@@ -104,6 +107,7 @@ def _stub_estep_factory(ori_size: int):
                 accumulators.append(VdamAccumulator(data=data, weight=weight, class_idx=k, halfset_idx=h))
         meta = {
             "max_posterior_per_image": np.full(len(particle_ids), rng.uniform(0.1, 0.3), dtype=np.float32),
+            "class_posterior_sums": np.full(K, len(particle_ids) / K),
             "nr_significant_mean": int(rng.integers(10, 200)),
             "iter": state.iter,
         }
@@ -128,7 +132,10 @@ def test_vdam_iteration_loop_can_execute_exactly_one_absolute_restart_iteration(
 
     def estep(current, particle_ids, halfset_ids):
         seen.append(int(current.iter))
-        return [], {"max_posterior_per_image": np.ones(len(particle_ids), dtype=np.float32)}
+        return [], {
+            "max_posterior_per_image": np.ones(len(particle_ids), dtype=np.float32),
+            "class_posterior_sums": np.asarray([float(len(particle_ids))]),
+        }
 
     monkeypatch.setattr(loop, "vdam_m_step", lambda current, accumulators, **kwargs: current)
     final = run_vdam_iterations(
@@ -290,7 +297,10 @@ class TestRunVdamIterations:
 
         def estep(current, particle_ids, halfset_ids):
             seen_current_sizes.append(int(current.current_size))
-            return [], {"max_posterior_per_image": np.asarray([0.2, 0.3], dtype=np.float32)}
+            return [], {
+                "max_posterior_per_image": np.asarray([0.2, 0.3], dtype=np.float32),
+                "class_posterior_sums": np.asarray([2.0]),
+            }
 
         def fake_m_step(current, accumulators, **kwargs):
             out = current
@@ -614,9 +624,10 @@ class TestRunVdamIterations:
                 ]
             ),
             "wsum_sigma2_offset": 500.0,
+            "sigma2_offset_sumw": 100.0,  # the E-step writes it with the offset sums
         }
 
-        out = update_probabilities_from_estep_meta(state, meta, do_grad=True, mu=0.9)
+        out = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
 
         np.testing.assert_allclose(out.pdf_class, [0.48, 0.52])
         np.testing.assert_allclose(
@@ -642,7 +653,7 @@ class TestRunVdamIterations:
             "sigma2_offset_sumw": 80.0,
         }
 
-        out = update_probabilities_from_estep_meta(state, meta, do_grad=True, mu=0.9)
+        out = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
 
         assert out.sigma2_offset == pytest.approx(90.3125)
 
@@ -664,7 +675,7 @@ class TestRunVdamIterations:
             "noise_sumw": 4.0,
         }
 
-        out = update_noise_from_estep_meta(state, meta, do_grad=False)
+        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False)
 
         expected_engine_units = noise_relion.normalize_wsum_to_sigma2_noise(
             meta["wsum_sigma2_noise"],
@@ -695,7 +706,7 @@ class TestRunVdamIterations:
             "noise_sumw": 4.0,
         }
 
-        out = update_noise_from_estep_meta(state, meta, do_grad=True, mu=0.9)
+        out = update_noise_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
 
         expected_engine_units = noise_relion.normalize_wsum_to_sigma2_noise(
             meta["wsum_sigma2_noise"],
@@ -730,7 +741,7 @@ class TestRunVdamIterations:
         monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR", str(tmp_path))
         monkeypatch.setenv("RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION", "1")
 
-        out = update_noise_from_estep_meta(state, meta, do_grad=False)
+        out = update_noise_from_estep(state, estep_sums(meta), do_grad=False)
 
         dump_path = tmp_path / "initialmodel_noise_update_it001.npz"
         with np.load(dump_path, allow_pickle=False) as payload:
@@ -761,6 +772,7 @@ class TestRunVdamIterations:
             "wsum_img_power": np.asarray([5.0, 6.0, 7.0, 8.0, 9.0], dtype=np.float64),
             "noise_sumw": 4.0,
             "max_posterior_per_image": np.asarray([0.5, 0.6], dtype=np.float32),
+            "class_posterior_sums": np.asarray([2.0]),
         }
 
         def estep(current, particle_ids, halfset_ids):
@@ -786,7 +798,7 @@ class TestRunVdamIterations:
         np.testing.assert_allclose(seen_noise[0], 0.01)
         state_for_expected = state
         state_for_expected.subset_size = 10
-        expected = update_noise_from_estep_meta(state_for_expected, meta, do_grad=True, mu=0.9).sigma2_noise
+        expected = update_noise_from_estep(state_for_expected, estep_sums(meta), do_grad=True, mu=0.9).sigma2_noise
         np.testing.assert_allclose(seen_noise[1], expected)
 
     def test_direction_prior_resizes_uniformly_when_sampling_changes(self):
@@ -812,7 +824,7 @@ class TestRunVdamIterations:
             "class_direction_posterior_sums": direction_sums,
         }
 
-        out = update_probabilities_from_estep_meta(state, meta, do_grad=True, mu=0.9)
+        out = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
 
         assert out.pdf_direction.shape == (2, 5)
         expected_uniform = np.full((2, 5), 1.0 / 10.0, dtype=np.float64)
@@ -830,11 +842,11 @@ class TestRunVdamIterations:
         state.pdf_class = np.asarray([0.5, 0.5], dtype=np.float64)
         state.subset_size = -1
 
-        out = update_probabilities_from_estep_meta(
+        out = update_probabilities_from_estep(
             state,
-            {
+            estep_sums({
                 "class_posterior_sums": np.asarray([0.0, 10.0]),
-            },
+            }),
             do_grad=True,
             mu=0.9,
         )

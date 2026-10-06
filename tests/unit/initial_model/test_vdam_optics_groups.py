@@ -13,7 +13,8 @@ from relax.relion import initial_model_io
 from relax.relion.initial_noise import relion_startup_positions
 from relax.vdam import bootstrap_reconstruction as br
 from relax.vdam import dense_adapter, native_sampling
-from relax.vdam.estep_meta_updates import update_noise_from_estep_meta
+from relax.vdam.estep_common import estep_sums
+from relax.vdam.estep_meta_updates import update_noise_from_estep
 from relax.vdam.init import initialise_denovo_state
 
 
@@ -111,11 +112,11 @@ def test_noise_update_per_group_and_empty_group_keeps_its_spectrum():
     power[2] = 0.0
     sumw = np.array([40.0, 25.0, 0.0])
     meta = dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=sumw)
-    updated = update_noise_from_estep_meta(_state(3), meta, do_grad=True, mu=0.9)
+    updated = update_noise_from_estep(_state(3), estep_sums(meta), do_grad=True, mu=0.9)
     for g in range(2):
-        alone = update_noise_from_estep_meta(
+        alone = update_noise_from_estep(
             _state(1),
-            dict(wsum_sigma2_noise=wsum[g], wsum_img_power=power[g], noise_sumw=float(sumw[g])),
+            estep_sums(dict(wsum_sigma2_noise=wsum[g], wsum_img_power=power[g], noise_sumw=float(sumw[g]))),
             do_grad=True,
             mu=0.9,
         )
@@ -134,13 +135,13 @@ def test_noise_floors_follow_the_running_average():
     power[6:] = 0.0
     state = _state(1)
     state.sigma2_noise = np.full((1, shells), 1e-10)
-    updated = update_noise_from_estep_meta(
-        state, dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=10.0), do_grad=True, mu=0.9
+    updated = update_noise_from_estep(
+        state, estep_sums(dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=10.0)), do_grad=True, mu=0.9
     )
     np.testing.assert_allclose(updated.sigma2_noise[0, 6:], 0.9e-10, rtol=1e-15)
     state.sigma2_noise = np.full((1, shells), 1e-14)
-    updated = update_noise_from_estep_meta(
-        state, dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=10.0), do_grad=True, mu=0.9
+    updated = update_noise_from_estep(
+        state, estep_sums(dict(wsum_sigma2_noise=wsum, wsum_img_power=power, noise_sumw=10.0)), do_grad=True, mu=0.9
     )
     # 0.9e-14 is below 1e-14: those shells take shell 5's updated value.
     np.testing.assert_allclose(updated.sigma2_noise[0, 6:], updated.sigma2_noise[0, 5], rtol=1e-15)

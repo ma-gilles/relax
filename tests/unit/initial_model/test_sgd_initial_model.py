@@ -24,7 +24,8 @@ from relax.sgd_initial_model.noise import (
 )
 from relax.sgd_initial_model.optimizer import _bandlimit_real_map, _class_step, sgd_m_step
 from relax.vdam.dense_adapter import _noise_variance_from_sigma2
-from relax.vdam.estep_meta_updates import update_probabilities_from_estep_meta
+from relax.vdam.estep_common import estep_sums
+from relax.vdam.estep_meta_updates import update_probabilities_from_estep
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -322,7 +323,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
     from relax.vdam import iteration_loop
 
     monkeypatch.setattr(iteration_loop, "vdam_m_step", lambda state, **kwargs: state)
-    monkeypatch.setattr(iteration_loop, "update_noise_from_estep_meta", lambda state, meta, **kwargs: state)
+    monkeypatch.setattr(iteration_loop, "update_noise_from_estep", lambda state, sums, **kwargs: state)
     monkeypatch.setattr(iteration_loop, "update_current_resolution_from_data_vs_prior", lambda state: state)
     monkeypatch.setattr(sgd_optimizer, "sgd_m_step", lambda state, *args, **kwargs: state)
     monkeypatch.setattr(sgd_noise, "update_sgd_noise", lambda state, meta: state)
@@ -413,10 +414,9 @@ def test_uniform_joint_prior_is_fixed_while_offset_updates_and_default_still_lea
         "wsum_sigma2_offset": 500.0,
         "sigma2_offset_sumw": 80.0,
     }
-    uniform = update_probabilities_from_estep_meta(
-        state, meta, do_grad=True, mu=0.9, uniform_class_direction_prior=True
+    uniform = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9, uniform_class_direction_prior=True
     )
-    learned = update_probabilities_from_estep_meta(state, meta, do_grad=True, mu=0.9)
+    learned = update_probabilities_from_estep(state, estep_sums(meta), do_grad=True, mu=0.9)
     np.testing.assert_array_equal(uniform.pdf_class, np.full(k, 1.0 / k))
     np.testing.assert_array_equal(uniform.pdf_direction, np.full((k, 5), 1.0 / (5 * k)))
     assert np.isclose(uniform.pdf_direction.sum(), 1.0)

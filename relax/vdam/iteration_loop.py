@@ -30,9 +30,10 @@ import numpy as np
 
 from relax.helpers.convergence import _relion_optimizer_average_pmax
 from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
+from relax.vdam.estep_common import EstepSums, estep_sums
 from relax.vdam.estep_meta_updates import (
-    update_noise_from_estep_meta,
-    update_probabilities_from_estep_meta,
+    update_noise_from_estep,
+    update_probabilities_from_estep,
     with_uniform_class_direction_priors,
 )
 from relax.vdam.m_step import vdam_m_step
@@ -175,26 +176,15 @@ def update_image_size_and_resolution_pointers(state: InitialModelState, pilot_co
     return replace(state, current_size=int(current_size))
 
 
-def _ave_pmax_from_meta(meta: dict) -> float | None:
-    pmax = meta.get("max_posterior_per_image")
-    if pmax is not None:
-        arr = np.asarray(pmax, dtype=np.float32)
-        if arr.size:
-            # RELION accumulates Pmax over all VDAM pseudo-halfsets, then
-            # divides by the retained M-step posterior mass (rather than the
-            # particle count).  Treat the two pseudo-halfsets as one optimiser
-            # population when reusing the Class3D normalization helper.
-            normalization_mass = meta.get("class_posterior_sums")
-            if normalization_mass is not None:
-                normalization_mass = float(np.sum(np.asarray(normalization_mass, dtype=np.float64)))
-            elif meta.get("noise_sumw") is not None:
-                normalization_mass = float(np.sum(np.asarray(meta["noise_sumw"], dtype=np.float64)))
-            if normalization_mass is not None:
-                _, average, _ = _relion_optimizer_average_pmax([arr], [normalization_mass])
-                return average
-            return float(np.mean(arr, dtype=np.float64))
-
-    return None
+def _ave_pmax(sums: EstepSums) -> float | None:
+    """RELION's average Pmax, or None without per-image Pmax (the state keeps its value)."""
+    if sums.pmax is None or not sums.pmax.size:
+        return None
+    # RELION accumulates Pmax over all VDAM pseudo-halfsets, then divides by the retained M-step
+    # posterior mass (rather than the particle count). Treat the two pseudo-halfsets as one optimiser
+    # population when reusing the Class3D normalization helper.
+    _, average, _ = _relion_optimizer_average_pmax([sums.pmax], [float(np.sum(sums.class_mass))])
+    return average
 
 
 @dataclass(frozen=True)
@@ -204,7 +194,7 @@ class VdamUpdate:
     padding_factor: int
     mstep_compute_dtype: Literal["float32", "float64"]
 
-    def maximize(self, current: InitialModelState, accumulators, meta: dict) -> InitialModelState:
+    def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
         return vdam_m_step(
             current,
             accumulators=accumulators,
@@ -212,11 +202,11 @@ class VdamUpdate:
             tau2_fudge_factor=current.tau2_fudge_factor,
             padding_factor=self.padding_factor,
             mstep_compute_dtype=self.mstep_compute_dtype,
-            average_ctf2=meta.get("premultiplied_average_ctf2"),
+            average_ctf2=sums.average_ctf2,
         )
 
-    def update_noise(self, current: InitialModelState, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
-        return update_noise_from_estep_meta(current, meta, do_grad=do_grad, mu=mu)
+    def update_noise(self, current, sums: EstepSums, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
+        return update_noise_from_estep(current, sums, do_grad=do_grad, mu=mu, report=meta)
 
     def update_resolution(self, current: InitialModelState) -> InitialModelState:
         return update_current_resolution_from_data_vs_prior(current)
@@ -224,20 +214,23 @@ class VdamUpdate:
 
 @dataclass(frozen=True)
 class MomentumSgdUpdate:
-    """The opt-in momentum-SGD update; its resolution is the caller's Fourier radius schedule."""
+    """The opt-in momentum-SGD update; its resolution is the caller's Fourier radius schedule.
+
+    relax.sgd_initial_model reads its noise sums from the E-step's ``meta`` and adds its report there.
+    """
 
     learning_rate: float
     padding_factor: int
 
-    def maximize(self, current: InitialModelState, accumulators, meta: dict) -> InitialModelState:
+    def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
         from relax.sgd_initial_model.optimizer import sgd_m_step
 
         return sgd_m_step(current, accumulators, learning_rate=self.learning_rate, padding_factor=self.padding_factor, meta=meta)
 
-    def update_noise(self, current: InitialModelState, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
+    def update_noise(self, current, sums: EstepSums, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
         from relax.sgd_initial_model.noise import update_sgd_noise
 
-        del do_grad, mu  # its own noise estimate, without VDAM's momentum
+        del sums, do_grad, mu  # its own noise estimate, without VDAM's momentum
         return update_sgd_noise(current, meta)
 
     def update_resolution(self, current: InitialModelState) -> InitialModelState:
@@ -399,12 +392,13 @@ def run_vdam_iterations(
                 if key in passes:
                     iteration_profile[f"expectation_{key}"] = float(passes[key])
 
-        current = update.maximize(current, accumulators, meta)
+        sums = estep_sums(meta)
+        current = update.maximize(current, accumulators, sums, meta)
         if profile_iterations:
             _record_stage("mstep")
-        current = update_probabilities_from_estep_meta(
+        current = update_probabilities_from_estep(
             current,
-            meta,
+            sums,
             do_grad=do_grad,
             mu=mu,
             uniform_class_direction_prior=uniform_class_direction_prior,
@@ -428,8 +422,8 @@ def run_vdam_iterations(
             meta["effective_pdf_class_prior_by_class"] = np.asarray(current.pdf_class, dtype=np.float64).tolist()
             meta["effective_joint_direction_prior_per_class_direction"] = 1.0 / float(current.K * n_directions)
             meta["effective_joint_direction_count"] = n_directions
-        current = update.update_noise(current, meta, do_grad=do_grad, mu=mu)
-        ave_pmax = _ave_pmax_from_meta(meta)
+        current = update.update_noise(current, sums, meta, do_grad=do_grad, mu=mu)
+        ave_pmax = _ave_pmax(sums)
         if ave_pmax is not None:
             current = replace(current, ave_Pmax=float(ave_pmax))
         if post_mstep_update is not None and (stochastic_all_iterations or not current.has_converged):

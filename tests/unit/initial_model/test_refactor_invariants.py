@@ -464,15 +464,28 @@ SAMPLING = ("NativeSamplingPlan", "NativeSamplingState", "_build_sampling_plan",
 
 
 def test_iteration_loop_updates_definition_ownership():
-    loop_src = inspect.getsource(iteration_loop)
-    for name in ("update_noise_from_estep_meta", "update_probabilities_from_estep_meta"):
-        assert inspect.getmodule(getattr(estep_meta_updates, name)) is estep_meta_updates and f"\ndef {name}(" not in loop_src
-    for name in ("select_subset_for_iter", "restore_subset_order_for_continuation"):
-        assert inspect.getmodule(getattr(subset_schedule, name)) is subset_schedule and f"\ndef {name}(" not in loop_src
-    assert iteration_loop.update_noise_from_estep_meta is estep_meta_updates.update_noise_from_estep_meta
+    # The loop uses the owners' objects, never a copy of its own, and the owners import without the loop.
+    import subprocess
+
+    from conftest import repo_python_command, repo_subprocess_env
+
+    for owner, names in (
+        (estep_meta_updates, ("update_noise_from_estep", "update_probabilities_from_estep")),
+        (subset_schedule, ("select_subset_for_iter", "restore_subset_order_for_continuation")),
+    ):
+        for name in names:
+            assert inspect.getmodule(getattr(owner, name)) is owner
+            assert getattr(iteration_loop, name, getattr(owner, name)) is getattr(owner, name)
+    assert iteration_loop.update_noise_from_estep is estep_meta_updates.update_noise_from_estep
     assert iteration_loop.select_subset_for_iter is subset_schedule.select_subset_for_iter
-    for mod in (estep_meta_updates, subset_schedule):
-        assert "vdam.iteration_loop import" not in inspect.getsource(mod)
+    code = """\
+import sys
+import relax.vdam.estep_meta_updates, relax.vdam.subset_schedule
+assert "relax.vdam.iteration_loop" not in sys.modules
+"""
+    result = subprocess.run(repo_python_command("-c", code), env=repo_subprocess_env(), capture_output=True,
+                            text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
 
 
 def test_mstep_single_class_definition_ownership():

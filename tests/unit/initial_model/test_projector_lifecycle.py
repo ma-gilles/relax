@@ -136,7 +136,7 @@ def test_loop_callback_is_once_before_estep_and_respects_disabled(monkeypatch, r
 
     def estep(current, ids, halves):
         events.append((current.iter, "estep", current.current_size))
-        return [], {"max_posterior_per_image": np.ones(len(ids))}
+        return [], {"max_posterior_per_image": np.ones(len(ids)), "class_posterior_sums": np.asarray([float(len(ids))])}
 
     def mstep(current, **kwargs):
         assert kwargs["mstep_compute_dtype"] == mstep_compute_dtype

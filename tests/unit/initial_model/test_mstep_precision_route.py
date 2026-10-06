@@ -274,7 +274,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
         random_seed=29,
         expectation_step=lambda current, ids, halves: (
             [_accum(current), _accum(current)],
-            {"max_posterior_per_image": np.ones(len(ids))},
+            {"max_posterior_per_image": np.ones(len(ids)), "class_posterior_sums": np.asarray([float(len(ids))])},
         ),
         refresh_tau2_from_projector=False,
         update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32"),

@@ -56,6 +56,69 @@ class DenseInitialModelEstepResult:
     halfset_results: dict[int, Any]
 
 
+@dataclass(frozen=True)
+class EstepNoiseSums:
+    """One E-step's weighted noise sums (engine units): ``[n]`` with a 0-d weight for one optics group,
+    ``[G, n]`` with ``[G]`` weights for several. ``a2``/``xa``: the boundary dump's extra sums, or None."""
+
+    wsum_sigma2_noise: np.ndarray
+    wsum_img_power: np.ndarray
+    sumw: np.ndarray
+    wsum_noise_a2: np.ndarray | None
+    wsum_noise_xa: np.ndarray | None
+
+
+@dataclass(frozen=True)
+class EstepSums:
+    """What the model update reads from one E-step; the rest of the E-step's ``meta`` is its report.
+
+    Built once by :func:`estep_sums` where the E-step returns. ``class_mass`` ([K], float64) is the retained
+    (M-step) class posterior mass, ``direction_mass`` [K, D] the class/direction posterior, ``pmax`` [n]
+    (float32) each image's maximum posterior; ``offset_wsum``/``offset_sumw`` the offset sums over the
+    significant-pruned weights and ``offset_dims`` 2 for particles, 3 for subtomograms; ``average_ctf2``
+    the subset's average CTF^2 of CTF-premultiplied images. A None group: the E-step has no such sums
+    (an empty subset has none), and the update that reads it keeps the model.
+    """
+
+    class_mass: np.ndarray | None
+    direction_mass: np.ndarray | None
+    pmax: np.ndarray | None
+    offset_wsum: float | None
+    offset_sumw: float | None
+    offset_dims: int
+    noise: EstepNoiseSums | None
+    average_ctf2: Any | None
+
+
+def estep_sums(meta: dict[str, Any]) -> EstepSums:
+    """Read the model update's operands from an E-step's ``meta``, once; refuse a partial set of sums."""
+
+    def array(key, dtype=np.float64):
+        return None if meta.get(key) is None else np.asarray(meta[key], dtype=dtype)
+
+    noise_keys = ("wsum_sigma2_noise", "wsum_img_power", "noise_sumw")
+    present = [key for key in noise_keys if meta.get(key) is not None]
+    if present and len(present) != len(noise_keys):
+        raise ValueError(f"the E-step meta has {present} but not all of {list(noise_keys)}")
+    if meta.get("wsum_sigma2_offset") is not None and meta.get("sigma2_offset_sumw") is None:
+        raise ValueError("the E-step meta has wsum_sigma2_offset but no sigma2_offset_sumw")
+    pmax = array("max_posterior_per_image", np.float32)
+    if pmax is not None and pmax.size and meta.get("class_posterior_sums") is None:
+        raise ValueError("the E-step meta has per-image Pmax but no class posterior mass to normalise it")
+    return EstepSums(
+        class_mass=array("class_posterior_sums"),
+        direction_mass=array("class_direction_posterior_sums"),
+        pmax=pmax,
+        offset_wsum=None if meta.get("wsum_sigma2_offset") is None else float(meta["wsum_sigma2_offset"]),
+        offset_sumw=None if meta.get("sigma2_offset_sumw") is None else float(meta["sigma2_offset_sumw"]),
+        offset_dims=int(meta.get("offset_dims", 2)),  # the subtomogram E-step writes 3
+        noise=None if not present else EstepNoiseSums(
+            *(array(key) for key in noise_keys), wsum_noise_a2=array("wsum_noise_a2"), wsum_noise_xa=array("wsum_noise_xa")
+        ),
+        average_ctf2=meta.get("premultiplied_average_ctf2"),
+    )
+
+
 def _select_image_rows(value, image_indices: np.ndarray, *, n_images: int, name: str):
     if value is None:
         return None

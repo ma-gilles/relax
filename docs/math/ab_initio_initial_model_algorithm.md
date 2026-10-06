@@ -310,8 +310,10 @@ for iter = 1 .. nr_iter:
     state = default_schedule_update(...)
     state = select_subset_for_iter(..., do_grad=do_grad)
     accumulators, meta = expectation_step(state, subset_particle_ids, halfset_ids)
-    state = vdam_m_step(state, accumulators, stepsize, tau2_fudge)
-    state = update_probabilities_from_estep_meta(state, meta, do_grad, mu)
+    sums = estep_sums(meta)                  # the update's operands; meta is the report
+    state = update.maximize(state, accumulators, sums, meta)   # VdamUpdate or MomentumSgdUpdate
+    state = update_probabilities_from_estep(state, sums, do_grad, mu)
+    state = update.update_noise(state, sums, meta, do_grad, mu)
     iter_artifact_sink(state, iter, meta)
 ```
 
@@ -727,8 +729,8 @@ BPref rows must not receive that extra conversion.
 
 ## Detail: Posterior Priors and Metadata Updates
 
-After each M-step, `update_probabilities_from_estep_meta` updates class and
-direction priors from dense E-step metadata:
+After each M-step, `update_probabilities_from_estep` updates class and
+direction priors from the E-step's sums (`EstepSums`, read once from its metadata):
 
 ```text
 if do_grad and subset_size != -1:
