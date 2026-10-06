@@ -13,7 +13,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
@@ -344,6 +344,15 @@ class LocalSearchOptions:
             )
 
 
+class InitialSampling(NamedTuple):
+    """Startup pass orders and the resolved refinement limit with its source."""
+
+    coarse_order: int
+    fine_order: int
+    max_order: int | None
+    max_order_source: str
+
+
 @dataclass(frozen=True)
 class ExpectedAccuracyOptions:
     """Half1 oracle inputs for RELION's expected-accuracy calculation."""
@@ -624,6 +633,7 @@ __all__ = [
     "LocalSearchOptions",
     "ExpectedAccuracyOptions",
     "DiagnosticEnvironment",
+    "InitialSampling",
     "EngineDebugOptions",
     "KClassOptions",
     "SymmetryOptions",

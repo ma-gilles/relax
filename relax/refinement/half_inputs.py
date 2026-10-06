@@ -320,7 +320,7 @@ def initialize_halfsets(
     )
 
 
-def _normalize_sigma_offset_per_half(values):
+def normalize_sigma_offset_per_half(values):
     """Return a strict two-element float list for half-specific sigma offsets."""
     if values is None:
         return None
@@ -334,17 +334,17 @@ def _normalize_sigma_offset_per_half(values):
     return [float(arr[0]), float(arr[1])]
 
 
-def _as_sigma_offset_half_pair(values):
+def as_sigma_offset_half_pair(values):
     """Return a scalar or explicit pair as a strict two-half sigma list."""
 
     arr = np.asarray(values, dtype=np.float64).reshape(-1)
     if arr.size == 1:
         arr = np.repeat(arr, 2)
-    return _normalize_sigma_offset_per_half(arr)
+    return normalize_sigma_offset_per_half(arr)
 
 
 def _mean_sigma_offset_per_half(values):
-    per_half = _normalize_sigma_offset_per_half(values)
+    per_half = normalize_sigma_offset_per_half(values)
     if per_half is None:
         return None
     return float(0.5 * (per_half[0] + per_half[1]))
@@ -365,3 +365,67 @@ def sigma_offset_from_halves(per_half) -> SigmaOffset:
     """Each half's width with their mean as the shared value."""
 
     return SigmaOffset(_mean_sigma_offset_per_half(per_half), per_half)
+
+
+def configure_half_image_preprocessing(
+    experiment_datasets,
+    *,
+    pixel_size_angstrom,
+    particle_diameter_angstrom: float | None,
+    fourier_backend: str,
+    source_faithful_spectrum_norm: bool,
+    log,
+) -> None:
+    """Configure half image backends and masks before refinement state is built.
+
+    Shape classes use their own pixels; SPA and tilt-image masks keep the
+    reference pixel scalar used by the existing refinement path.
+    """
+    from relax.helpers.batch_planning import _image_backend
+    from relax.refinement.optics_shapes import MultiShapeHalf
+    from relax.refinement.tomo_half import TomoHalf
+    from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
+
+    multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
+    # A half of several image shapes sets up each shape class's images, masked with
+    # the class's own pixel size as RELION does.
+    image_datasets = [
+        dataset
+        for half in experiment_datasets
+        for dataset in (
+            [c.dataset for c in half.classes]
+            if isinstance(half, MultiShapeHalf)
+            else [half.images] if isinstance(half, TomoHalf) else [half]
+        )
+    ]
+    for ds in image_datasets:
+        backend = _image_backend(ds)
+        if backend is None:
+            continue
+        mask_pixel_size = ds.voxel_size if multi_shape_halves else pixel_size_angstrom
+        if hasattr(backend, "set_relion_fourier_backend"):
+            from relax.cuda import (
+                kernels as _em_cuda_kernels,  # noqa: F401  (registers the relion_cuda preprocessor, relax split seam S2)
+            )
+
+            backend.set_relion_fourier_backend(fourier_backend)
+        if source_faithful_spectrum_norm and getattr(backend, "relion_fourier_backend", None) not in (None, "relion_cuda"):
+            # The fresh K=1 defaults score from RELION's CUDA image preprocessing;
+            # fail here instead of inside the first sparse pass 2.
+            raise ValueError(
+                "fresh K=1 refinement defaults (source-faithful powerClass normalization and "
+                "exact RELION BPref operands) require RELION CUDA image preprocessing; pass "
+                "--image-fourier-backend relion_cuda or disable the fresh particle order"
+            )
+        if particle_diameter_angstrom is not None and particle_diameter_angstrom > 0:
+            backend.set_relion_image_mask(
+                pixel_size=mask_pixel_size,
+                particle_diameter_ang=particle_diameter_angstrom,
+                width_mask_edge_px=IMAGE_MASK_EDGE_PIXELS,
+            )
+            log.info(
+                "RELION mode: image mask radius=%.1f px (particle_diameter=%.1f A, edge=%d px)",
+                particle_diameter_angstrom / (2.0 * mask_pixel_size),
+                particle_diameter_angstrom,
+                IMAGE_MASK_EDGE_PIXELS,
+            )

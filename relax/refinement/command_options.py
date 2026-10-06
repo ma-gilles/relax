@@ -21,6 +21,7 @@ from relax.refinement.refinement_options import (
     AdaptiveOptions,
     EngineDebugOptions,
     HalfOverlapOptions,
+    InitialSampling,
     KClassOptions,
     LocalSearchOptions,
     RefinementBatching,
@@ -95,15 +96,6 @@ def resolve_firstiter_controls(
             )
     return use_initial_projector_real, margin
 
-
-
-class InitialSampling(NamedTuple):
-    """Startup pass orders and the resolved refinement limit with its source."""
-
-    coarse_order: int
-    fine_order: int
-    max_order: int | None
-    max_order_source: str
 
 
 def resolve_initial_sampling(

@@ -27,7 +27,7 @@ from relax.helpers import iteration_history
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 
 if TYPE_CHECKING:
-    from relax.refinement.command_options import InitialSampling
+    from relax.refinement.refinement_options import InitialSampling
     from relax.relion.input_poses import PoseProvenance
 
 

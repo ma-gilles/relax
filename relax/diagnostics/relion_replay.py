@@ -33,8 +33,8 @@ from relax.helpers.orientation_priors import (
 from relax.refinement.half_inputs import (
     HalfSet,
     SigmaOffset,
-    _as_sigma_offset_half_pair,
-    _normalize_sigma_offset_per_half,
+    as_sigma_offset_half_pair,
+    normalize_sigma_offset_per_half,
     optional_half_arrays,
     sigma_offset_from_halves,
 )
@@ -793,14 +793,14 @@ def _install_final_replay_particle_state(
     _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")
     if _final_replay_sigma_per_half is not None:
         sigma_offset = sigma_offset_from_halves(
-            _normalize_sigma_offset_per_half(_final_replay_sigma_per_half)
+            normalize_sigma_offset_per_half(_final_replay_sigma_per_half)
         )
         _final_replay_fields.append("translation_sigma_angstrom_per_half")
     _final_replay_sigma = final_replay_override.get("translation_sigma_angstrom")
     if _final_replay_sigma is not None and _final_replay_sigma_per_half is None:
         sigma_offset = SigmaOffset(
             float(_final_replay_sigma),
-            _as_sigma_offset_half_pair(float(_final_replay_sigma)),
+            as_sigma_offset_half_pair(float(_final_replay_sigma)),
         )
         _final_replay_fields.append("translation_sigma_angstrom")
     _final_replay_prev_trans = final_replay_override.get("previous_best_translations")
@@ -1743,7 +1743,7 @@ def _install_replay_override_particle_state(
 
     _replay_sigma_per_half = iter_replay_override.get("translation_sigma_angstrom_per_half")
     if _replay_sigma_per_half is not None:
-        current_sigma_offset_angstrom_per_half = _normalize_sigma_offset_per_half(_replay_sigma_per_half)
+        current_sigma_offset_angstrom_per_half = normalize_sigma_offset_per_half(_replay_sigma_per_half)
         current_sigma_offset_angstrom = float(
             0.5
             * (
@@ -1761,7 +1761,7 @@ def _install_replay_override_particle_state(
     _replay_sigma = iter_replay_override.get("translation_sigma_angstrom")
     if _replay_sigma is not None and _replay_sigma_per_half is None:
         current_sigma_offset_angstrom = float(_replay_sigma)
-        current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(_replay_sigma)
+        current_sigma_offset_angstrom_per_half = as_sigma_offset_half_pair(_replay_sigma)
         logger.info(
             "Replay override: sigma_offset <- %.4f A (iter=%d)",
             current_sigma_offset_angstrom,
@@ -1859,7 +1859,7 @@ def apply_k1_iter_replay_overrides(
     _replay_prior_translations = None
     _replay_meta = None
     _replay_projector_state = None
-    _current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(
+    _current_sigma_offset_angstrom_per_half = as_sigma_offset_half_pair(
         current_sigma_offset_angstrom
         if current_sigma_offset_angstrom_per_half is None
         else current_sigma_offset_angstrom_per_half
@@ -2007,7 +2007,7 @@ def apply_class_iter_replay_overrides(
     _replay_meta = None
     _replay_class_weights = None
     _replay_projector_state = None
-    _current_sigma_offset_angstrom_per_half = _as_sigma_offset_half_pair(
+    _current_sigma_offset_angstrom_per_half = as_sigma_offset_half_pair(
         current_sigma_offset_angstrom
         if current_sigma_offset_angstrom_per_half is None
         else current_sigma_offset_angstrom_per_half

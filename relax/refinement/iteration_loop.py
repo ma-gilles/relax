@@ -115,10 +115,11 @@ from relax.refinement.expectation import (
 from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.half_inputs import (
     SigmaOffset,
-    _as_sigma_offset_half_pair,
-    _normalize_sigma_offset_per_half,
     _sigma_offset_for_half,
+    as_sigma_offset_half_pair,
+    configure_half_image_preprocessing,
     initialize_halfsets,
+    normalize_sigma_offset_per_half,
     prepare_particle_pose_update,
     prepare_pose_comparison,
     sigma_offset_from_halves,
@@ -183,7 +184,6 @@ from relax.refinement.noise_updates import (
     update_posterior_noise_variance,
 )
 from relax.refinement.optics_shapes import MultiShapeHalf
-from relax.refinement.particle_loading import configure_half_image_preprocessing
 from relax.refinement.projector_preparation import (
     _validate_captured_relion_projector_for_iteration,
     build_numbered_projectors,
@@ -1145,7 +1145,7 @@ def refine_single_volume(
         # posterior-weighted offset moment when the E-step path propagates it.
         # RELION stores and updates this quantity in Angstrom², and its default
         # lower bound is min_sigma2_offset=2 Å² (ml_optimiser.cpp).
-        sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom))
+        sigma_offset = sigma_offset_from_halves(as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom))
         relion_incr_size = int(schedule.init_relion_incr_size)
         relion_has_high_fsc_at_limit = bool(schedule.init_has_high_fsc_at_limit) if schedule.init_has_high_fsc_at_limit is not None else False
         direction_priors = initial_direction_priors_from_snapshot(
@@ -1203,7 +1203,7 @@ def refine_single_volume(
             previous_class_assignments = [None if c is None else c.copy() for c in class_assignments]
             class_mixture = class_mixture_from_weights(np.asarray(resume.class_weights, dtype=np.float64))
         previous_data_vs_prior_for_scheduling = np.asarray(resume.data_vs_prior, dtype=scoring_dtype)
-        sigma_offset = sigma_offset_from_halves(_as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
+        sigma_offset = sigma_offset_from_halves(as_sigma_offset_half_pair(resume.sigma_offset_angstrom))
         relion_incr_size = int(resume.incr_size)
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         if resume.direction_prior is None:
@@ -1520,7 +1520,7 @@ def refine_single_volume(
             logger.info("Replay override: K=1 tau2/mean_variance <- model.star")
         sigma_offset = SigmaOffset(
             replay_result.current_sigma_offset_angstrom,
-            _as_sigma_offset_half_pair(replay_result.current_sigma_offset_angstrom_per_half),
+            as_sigma_offset_half_pair(replay_result.current_sigma_offset_angstrom_per_half),
         )
         if replay_saved_healpix_order is not None:
             replay_saved_healpix_order = int(state.healpix_order)
@@ -2406,7 +2406,7 @@ def refine_single_volume(
         )
         sigma_offset = SigmaOffset(
             sigma_offset_result.current_sigma_offset_angstrom,
-            _normalize_sigma_offset_per_half(sigma_offset_result.current_sigma_offset_angstrom_per_half),
+            normalize_sigma_offset_per_half(sigma_offset_result.current_sigma_offset_angstrom_per_half),
         )
         per_class_sigma_offset = sigma_offset_result.per_class_sigma_offset_angstrom
         history.record_sigma_offset_update(
