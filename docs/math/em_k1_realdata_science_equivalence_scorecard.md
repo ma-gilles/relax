@@ -314,7 +314,7 @@ RELION against RELION (same band FSC-AUCs):
 | flip-job RELION arm vs speedbench r1 (--preread_images) | 0.9919 | 0.9847 | 0.9838 |
 | repeat 14397251 vs speedbench r1 (--preread_images) | 0.9904 | 0.9815 | 0.9815 |
 
-### EMPIAR-10097 (resident engine)\* (relax `f6c8299b6`)
+### EMPIAR-10097 (resident engine)\* (relax `b61b1916c`)
 
 \* RELION's same-command runs split into its two known 10097 pose basins: four runs (the ef6234c and 7e885ab pair RELION arms, the d3d62ca arm and its repeat) agree (0.9767-0.9799 merged), the cd26a5e job's RELION arm differs from all of them (0.9287-0.9299). relax lands in the majority basin and meets the thresholds against those four runs (0.9756-0.9763 merged, refresh 2026-10-04). All comparisons: see the per-reference table.
 

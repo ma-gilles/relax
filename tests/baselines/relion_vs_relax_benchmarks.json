@@ -409,17 +409,18 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
-    "source_sha": "f6c8299b657803ad37654c7e63fdee4ec2fbb37d",
-    "source_repo": "relax main f6c8299 (frozen snapshot relax_bench_refresh_20261003/cand_f6c8299, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot), production defaults",
+    "source_sha": "b61b1916c6a513a3fc0939fb1501a4a58219dcb1",
+    "source_repo": "relax main b61b1916 (2026-10-08 benchmark freeze: snapshot relax_bench_refresh_20261003/cand_b61b191, env and natives of cand_d046c0a reused after an identical-lock and native-source check; contains compact --scratch_dir staging 09a50856 and speedw's item A); production defaults",
     "resolution_A": 7.452,
     "resolution_definition": "scorecard_band",
     "masked_resolution_A": 5.989,
-    "wall_s": 2562,
-    "wall_definition": "arm-script wall of python relax_run.py end to end, cold (WALL.json)",
+    "wall_s": 2426,
+    "wall_definition": "UPPER BOUND: arm-script wall (WALL.json) of relax refine end to end, seed 42, one H100 + 12 CPUs, --scratch_dir, job 15178060 (della-h19g2), node shared with two other jobs (see notes)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 22,
     "jobs": [
+     "15178060",
      "14956559"
     ],
     "masked_band_auc": 0.8725,
@@ -428,7 +429,7 @@
    "gt": null,
    "cross_engine": "map gate PASS (relax scripts/score_k1_map_gate.py): thresholds (merged >= 0.95, each half >= 0.90) met against 4 of 5 same-command RELION runs; RELION-vs-RELION band merged 0.9287-0.9799, halves 0.8807-0.9662 / 0.8835-0.9663",
    "cross_engine_masked_band_auc": 0.9941,
-   "time_ratio_relax_over_relion": 0.31,
+   "time_ratio_relax_over_relion": 0.29,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -439,6 +440,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Benchmark freeze 2026-10-08 (relax main b61b1916: compact --scratch_dir staging 09a50856 + speedw's item A; team-lead 2026-10-07): seed 42, 2426 s, 22 iterations, staging 34.13 GB in 25.0 s, against the row's RELION MPI 3x4 8295 s (0.29x; earlier 2562 s, 0.31x). The wall is an UPPER BOUND: della-h19g2 also ran bindw's cell 13 jobs 15178030 (K=2 RELION, from 13:52:39) and 15178031 (K=2 relax seed 1, from 13:53:41) during this arm (14:09-14:50); contention can only slow relax (team-lead: quote it with this note). RELION wall reused from the row's earlier separate job (mpiscale-patched RELION 5.0.1, H100), not a same-node pair. Map gate against 5 RELION runs: thresholds met against 4 of 5 (relion_cd26 fails as before); jointly resolved 7.62 vs 7.45 A, masked 5.88 vs 5.99 A against the 7e885ab RELION arm.",
     "Refresh 2026-10-04 on relax main f6c8299b (frozen snapshot held for the whole refresh): the relax arm was rerun cold on one H100 at the row's quote seed and its wall is quoted against the row's existing RELION wall on the same GPU model (not a same-node pair). Included landings: the refinement readability refactor (4c669ab5), stable windows for images on another grid (acb14b2c), one M-step block per device-loop iteration (5e38f26c), float32 matmuls on every GPU (9fdfe693). Not included (not on main at the freeze): the tilt M-step OOM fix, the dense-engine removal, bindw's four VDAM commits. Refactor control, same job and node, new f6c8299b vs pre-refactor d1ba3e83: pdb K4 50k Class3D masked mean GT FSC-AUC 0.240746 vs 0.240746, walls 407 vs 404 s; EMPIAR-10097 VDAM K=1 seed 41 masked FSC-AUC vs reference 0.40152/0.40066 vs 0.39902/0.39941 (two runs each; not distinguishable with two runs per side), map agreement new-vs-control 0.8840/0.8819 equal to same-code agreement 0.8795/0.8802, walls 1109/1111 vs 1109/1034 s.",
     "Refresh 2026-10-04, seed 42: relax 2562 s (was 2970 s) against RELION 8295 s from the row's earlier pair; 22 iterations, HEALPix order max 5; engine-reported final resolution 7.45 Å; scorecard-band resolution 7.45 Å (was 7.29), masked 5.99 Å (was 5.989).",
     "Map gate per RELION run after the refresh (merged / half1 / half2): ef6234c job's RELION arm 0.9760/0.9597/0.9581; cd26a5e flip job's RELION arm 0.9297/0.8832/0.8853; d3d62ca job's RELION arm 0.9757/0.9590/0.9582; d3d62ca job's RELION repeat 0.9756/0.9576/0.9583; the row's RELION pair arm 0.9763/0.9592/0.9595. Below the RELION-vs-RELION band (reported only): none.",
@@ -479,9 +481,15 @@
      "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_f6c8299/empiar10097_k1_autorefine_resident_ef6234c/s42/relax",
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/k1/k1_10097full/score.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_f6c8299"
+    },
+    "freeze_20261008": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_b61b191/empiar10097_k1_autorefine_resident_ef6234c/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/freeze_b61b191/k1_10097full_score.json",
+     "masked_fsc_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/freeze_b61b191/k1_10097full_masked/masked_fsc.json",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_b61b191"
     }
    },
-   "date": "2026-10-04",
+   "date": "2026-10-08",
    "history": [
     {
      "date": "2026-09-25",
@@ -607,10 +615,41 @@
       "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
      },
      "result_marker_note": "RELION's same-command runs split into its two known 10097 pose basins: four runs (the ef6234c and this job's RELION arms, the d3d62ca arm and its repeat) agree (0.9767-0.9799 merged), the cd26a5e job's RELION arm differs from all of them (0.9287-0.9299). relax lands in the majority basin and meets the thresholds against those four runs (0.9754-0.9761 merged). All comparisons: see the per-reference table."
+    },
+    {
+     "date": "2026-10-04",
+     "relax": {
+      "source_sha": "b61b1916c6a513a3fc0939fb1501a4a58219dcb1",
+      "source_repo": "relax main b61b1916 (2026-10-08 benchmark freeze: snapshot relax_bench_refresh_20261003/cand_b61b191, env and natives of cand_d046c0a reused after an identical-lock and native-source check; contains compact --scratch_dir staging 09a50856 and speedw's item A); production defaults",
+      "resolution_A": 7.452,
+      "resolution_definition": "scorecard_band",
+      "masked_resolution_A": 5.989,
+      "wall_s": 2426,
+      "wall_definition": "UPPER BOUND: arm-script wall (WALL.json) of relax refine end to end, seed 42, one H100 + 12 CPUs, --scratch_dir, job 15178060 (della-h19g2), node shared with two other jobs (see notes)",
+      "gpu_model": "H100 80GB",
+      "gpu_count": 1,
+      "iterations": 22,
+      "jobs": [
+       "15178060",
+       "14956559"
+      ],
+      "masked_band_auc": 0.8725,
+      "masked_resolution_definition": "relion_postprocess_masked_frozen"
+     },
+     "time_ratio_relax_over_relion": 0.31,
+     "quality_pass": true,
+     "quality_reason": "same resolution (7.45 Å, masked 5.99 Å); map gate thresholds met vs 4 of 5 RELION runs",
+     "time_check": {
+      "a": "relax: Slurm job 14956559 (della-h20g3), one H100, one process, 12 CPUs, 2026-10-04; RELION: the row's earlier job 14643274 (one H100, 12 CPUs). Not the same job or node: the refresh reran relax only.",
+      "b": "relax main 7e885ab production defaults (every RELAX_* and XLA_PYTHON_CLIENT_MEM_FRACTION unset), standalone start-up, empty compile cache, HEALPix uncapped as RELION; --scratch_dir on node-local /tmp for both.",
+      "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, particle copy, compilation and final writes included.",
+      "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+     },
+     "note": "values before the 2026-10-08 freeze (b61b1916)"
     }
    ],
    "time_check": {
-    "a": "relax: Slurm job 14956559 (della-h20g3), one H100, one process, 12 CPUs, 2026-10-04; RELION: the row's earlier job 14643274 (one H100, 12 CPUs). Not the same job or node: the refresh reran relax only.",
+    "a": "relax: job 15178060 on della-h19g2 (14:09-14:50, 2026-10-07), which also ran bindw's cell 13 jobs 15178030 (K=2 RELION, started 13:52:39) and 15178031 (K=2 relax seed 1, started 13:53:41); RELION wall reused from the row's earlier separate job (mpiscale-patched RELION 5.0.1 MPI 3x4, H100)",
     "b": "relax main 7e885ab production defaults (every RELAX_* and XLA_PYTHON_CLIENT_MEM_FRACTION unset), standalone start-up, empty compile cache, HEALPix uncapped as RELION; --scratch_dir on node-local /tmp for both.",
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, particle copy, compilation and final writes included.",
     "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
@@ -758,7 +797,7 @@
     }
    ],
    "quality_pass": true,
-   "quality_reason": "same resolution (7.45 Å, masked 5.99 Å); map gate thresholds met vs 4 of 5 RELION runs",
+   "quality_reason": "map gate thresholds met vs 4 of 5 RELION runs (relion_cd26 fails the merged/each-half band, as before); jointly resolved relax 7.62 vs RELION 7.45 A; masked relax 5.88 vs RELION 5.99 A",
    "result_marker": {
     "symbol": "*",
     "note": "RELION's same-command runs split into its two known 10097 pose basins: four runs (the ef6234c and 7e885ab pair RELION arms, the d3d62ca arm and its repeat) agree (0.9767-0.9799 merged), the cd26a5e job's RELION arm differs from all of them (0.9287-0.9299). relax lands in the majority basin and meets the thresholds against those four runs (0.9756-0.9763 merged, refresh 2026-10-04). All comparisons: see the per-reference table."
