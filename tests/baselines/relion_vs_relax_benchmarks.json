@@ -15516,7 +15516,40 @@
      0.85978,
      0.86197,
      0.86481
-    ]
+    ],
+    "repeats_s1_s2_s7": {
+     "relax": {
+      "1": [
+       0.85825,
+       0.85822,
+       0.85841
+      ],
+      "2": [
+       0.85646,
+       0.85647,
+       0.85671
+      ],
+      "7": [
+       0.86338,
+       0.8634,
+       0.86345
+      ]
+     },
+     "relion": {
+      "1": [
+       0.85986,
+       0.85978
+      ],
+      "2": [
+       0.86182,
+       0.86197
+      ],
+      "7": [
+       0.86813,
+       0.86806
+      ]
+     }
+    }
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
@@ -15535,7 +15568,7 @@
     "Page verdict: miss (worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229). etoptics' summary, paired relax - RELION over seeds 1-8: -9.8e-04 ± 1.0e-03 (SE = sd/sqrt 8).",
     "Per seed, masked GT FSC-AUC relax / RELION: s1 0.85825 / 0.85986; s2 0.85646 / 0.86182; s3 0.86863 / 0.86488; s4 0.86798 / 0.86782; s5 0.87090 / 0.87123; s6 0.86276 / 0.86275; s7 0.86338 / 0.86813; s8 0.86805 / 0.86778.",
     "Without --solvent_mask, the same fixture on one scorer (benchw 2026-10-06; relax runs on ad433cd and 7d69a95, RELION mpiscale without the mask): seed 1 relax 0.85781-0.85847 (7 runs) vs RELION 0.85762/0.85747; seed 2 0.86165 vs 0.86170/0.86168; seed 3 0.86397 vs 0.86395. Without the mask the programs agree (relax at or above RELION); the seed-1/2 deficit appears only with the mask (seed 2 relax drops from 0.86165 to 0.85646 while RELION rises to 0.86182), so it is specific to the solvent-mask path, not the fixture. Reported to etoptics.",
-    "Reading (etoptics, 2026-10-06): miss under the page rule; mask-specific; paired mean -9.8e-4 ± 1.0e-3 (8 seeds); with the mask the per-seed differences scatter by ±5e-3 in both directions (s2 -5.4e-3, s7 -4.8e-3, s3 +3.8e-3), and with one run per seed per program spread vs bias is not yet separated. RELION reproduces itself under the mask within 1.5e-4 (r2 at s1-s3: 0.85978 / 0.86197 / 0.86481 vs r1 0.85986 / 0.86182 / 0.86488; row1/scores_eto_plain_mask_relion_r2.json). Repeat check queued by etoptics (relax x2 at s1/s2/s7 on e225adae, jobs 15146448/15146449; RELION s7 r2, job 15146454): a relax spread of about 5e-3 means trajectory spread on the mask path, a persistent low s2 means a bias.",
+    "Subtomogram miss: reproducible seed-dependent deviation on the --solvent_mask path (ma-gilles/relax#35); each program reproduces within 2.5e-4; without the mask relax ties RELION at the same seeds. Repeats (etoptics, 2026-10-07; relax on e225adae x2 and 1133b434, RELION mpiscale): s1 relax 0.85825/0.85822/0.85841 vs RELION 0.85986/0.85978; s2 0.85646/0.85647/0.85671 vs 0.86182/0.86197; s7 0.86338/0.86340/0.86345 vs 0.86813/0.86806 (row1/scores_eto_plain_mask_repeats.json, scores_eto_plain_mask_relion_r2.json). Under investigation: one-step check from RELION's state (job 15167893).",
     "Speed, indicative only (not a same-node pair; RELION is the patched mpiscale build, not stock): median wall over seeds 1-8 relax 970 s (926-1086; jobs 15072328, 15084935, 15084936) vs RELION 2550 s (2489-3341; jobs 15053951, 15084934, three concurrent runs per node)."
    ],
    "null_reasons": {
@@ -15568,11 +15601,13 @@
     "no_mask_relion_runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/relion_refs/eto_plain/refine3d_cc_mpiscale",
     "source": "etoptics via team-lead, 2026-10-06",
     "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/row1_solvent_mask_rows.py",
-    "relion_r2_scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_relion_r2.json"
+    "relion_r2_scores": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_relion_r2.json",
+    "repeats_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etoptics_20261003/row1/scores_eto_plain_mask_repeats.json",
+    "issue": "https://github.com/ma-gilles/relax/issues/35"
    },
    "date": "2026-10-06",
    "quality_pass": false,
-   "quality_reason": "worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229",
+   "quality_reason": "worst s2 −0.0054 vs same-seed RELION; s1/s2 below across-seed RELION band 0.859862-0.871229; relax#35",
    "feature_reference": "RELION's --solvent_mask (Refine3D/Class3D reference mask) and --solvent_correct_fsc (Refine3D): RELION 5.0.1 + MPI scale-sum patch (relion_patched_mpi_scale_20260926 mpiscale build), relion_refine_mpi 3 ranks x 4 threads, --gpu, one H100 per run (MPI is needed: non-MPI relion_refine ignores --solvent_correct_fsc)",
    "history": []
   },
