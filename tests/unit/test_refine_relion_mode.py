@@ -4600,6 +4600,30 @@ class TestRelionModeSmokeTest:
         assert flipped is True
         np.testing.assert_allclose(aligned, ref)
 
+    @pytest.mark.parametrize("relative_overlap", [0.5, -0.5, 1e-3, -1e-3])
+    def test_align_fourier_volume_sign_matches_the_float64_real_space_overlap(self, relative_overlap):
+        """The device overlap takes the same flip decision as the float64 host dot product of the centred real
+        volumes, down to a thousandth of the volumes' norms."""
+
+        rng = np.random.default_rng(5)
+        shape = (16, 16, 16)
+        ref_real = rng.normal(size=shape)
+        noise = rng.normal(size=shape)
+        ref_c, noise_c = ref_real - ref_real.mean(), noise - noise.mean()
+        noise_c -= ref_c * np.vdot(ref_c, noise_c) / np.vdot(ref_c, ref_c)  # orthogonal to the reference
+        vol_real = noise_c / np.linalg.norm(noise_c) + relative_overlap * ref_c / np.linalg.norm(ref_c) + 3.0
+        to_ft = lambda v: np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(v))).astype(np.complex64).reshape(-1)  # noqa: E731
+        ref_ft, vol_ft = to_ft(ref_real), to_ft(vol_real)
+
+        def host_overlap(v_ft, r_ft):
+            back = lambda f: np.real(np.fft.fftshift(np.fft.ifftn(np.fft.ifftshift(f.reshape(shape)))))  # noqa: E731
+            v, r = back(v_ft.astype(np.complex128)), back(r_ft.astype(np.complex128))
+            return float(np.dot((r - r.mean()).ravel(), (v - v.mean()).ravel()))
+
+        aligned, flipped = _align_fourier_volume_sign_to_reference(vol_ft, ref_ft, shape)
+        assert flipped is (host_overlap(vol_ft, ref_ft) < 0.0) is (relative_overlap < 0)
+        assert_matches(np.asarray(aligned), -vol_ft if flipped else vol_ft)
+
     def test_compute_coarse_image_size_uses_particle_diameter(self):
         """RELION coarse_size should depend on particle diameter, not box size."""
         coarse_from_particle = compute_coarse_image_size(
