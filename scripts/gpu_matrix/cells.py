@@ -26,6 +26,7 @@ FIXTURES = {
     "w2_09_box192": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_09_box192/project",
     "ms2_448": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ms2_icos_448_b40_20260930",
     "multioptics_k2_10k128": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/project",
+    "optics_mag_k1": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/optics_mag_k1_10k256_20260929",
 }
 
 _REFINE_K1 = [
@@ -426,6 +427,21 @@ CELLS["class3d_multioptics_k2_10k128"] = {
         *("--offset_step", "1", "--tau2_fudge", "4", "--max_iter", "25", "--seed", "1", "--firstiter_cc"),
     ],
     "box": 128,
+}
+
+# Robustness cell 12b: etoptics' cell-10 Refine3D K=1 with anisotropic magnification (cell10_20261006/cell10.sbatch, seed 42).
+CELLS["refine_k1_mag_10k256"] = {
+    "module": "relax.commands.refine",
+    "args": [
+        *("--data_dir", "{fx:optics_mag_k1}", "--output", "{out}", "--max_iter", "999", "--healpix_order", "2"),
+        *("--auto_local_healpix_order", "4", "--offset_range", "5", "--offset_step", "2"),
+        *("--adaptive_oversampling", "1"),
+        *("--init_resolution", "60", "--perturb_seed", "42", "--relion-half-sets-from-input"),
+        *("--particle_diameter_ang", "380", "--tau2_fudge", "1", "--firstiter_cc", "--apply-initial-lowpass"),
+        *("--sym", "C1"),
+        *("--init_volume", "{fx:optics_mag_k1}/reference_init_class001_relion.mrc", "--seed", "42"),
+    ],
+    "box": 256,
 }
 
 
