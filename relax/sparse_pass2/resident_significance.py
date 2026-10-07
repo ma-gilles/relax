@@ -56,6 +56,7 @@ from relax.sparse_pass2.resident_candidates import (
     all_translations_words,
     build_resident_candidate_tables,
     n_mask_words,
+    table_block_starts,
     translation_word_and_bit,
 )
 
@@ -631,7 +632,7 @@ def csr_candidate_rows_per_image(
     csr: CoarseSignificanceCSR,
     child_offsets: np.ndarray,
     *,
-    images_per_step: int = 8192,
+    cells_per_step: int = 1 << 23,
 ) -> np.ndarray:
     """Candidate rows each image's table holds, without building the table.
 
@@ -639,8 +640,9 @@ def csr_candidate_rows_per_image(
     full or complement-encoded support takes every coarse parent, an empty one
     parent 0, and a sparse one the distinct coarse rotations of its ids; each
     parent brings its fine children (``child_offsets`` from
-    :func:`fine_rotation_children`). The ids are read ``images_per_step``
-    images at a time, so the int64 temporaries stay a fraction of the ids.
+    :func:`fine_rotation_children`). The ids are read in steps of whole images
+    holding at most ``cells_per_step`` ids (or one image), so the int64
+    temporaries stay bounded however dense the support is.
     """
 
     n_images = int(csr.n_images)
@@ -654,21 +656,23 @@ def csr_candidate_rows_per_image(
     rows = np.where(n_significant == 0, child_counts[0], int(child_counts.sum())).astype(np.int64)
     offsets = csr.offsets.astype(np.int64)
     n_trans = int(csr.n_coarse_trans)
-    for start in range(0, n_images, int(images_per_step)):
-        stop = min(n_images, start + int(images_per_step))
-        if not bool(sparse[start:stop].any()):
+    steps = table_block_starts(offsets, cells_per_step)
+    for step_start, stop in zip(steps[:-1].tolist(), steps[1:].tolist()):
+        if not bool(sparse[step_start:stop].any()):
             continue
-        rot = csr.ids[offsets[start] : offsets[stop]].astype(np.int64) // n_trans
-        cell_image = np.repeat(np.arange(stop - start, dtype=np.int64), np.diff(offsets[start : stop + 1]))
+        rot = csr.ids[offsets[step_start] : offsets[stop]].astype(np.int64) // n_trans
+        cell_image = np.repeat(
+            np.arange(stop - step_start, dtype=np.int64), np.diff(offsets[step_start : stop + 1])
+        )
         parent_start = np.ones(rot.size, dtype=bool)
         parent_start[1:] = (rot[1:] != rot[:-1]) | (cell_image[1:] != cell_image[:-1])
         # Row counts stay far below 2**53, so the float64 bincount is exact.
         block_rows = np.bincount(
             cell_image[parent_start],
             weights=child_counts[rot[parent_start]].astype(np.float64),
-            minlength=stop - start,
+            minlength=stop - step_start,
         ).astype(np.int64)
-        rows[start:stop] = np.where(sparse[start:stop], block_rows, rows[start:stop])
+        rows[step_start:stop] = np.where(sparse[step_start:stop], block_rows, rows[step_start:stop])
     return rows
 
 

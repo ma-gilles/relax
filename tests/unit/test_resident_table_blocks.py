@@ -52,8 +52,8 @@ def _children():
     )
 
 
-@pytest.mark.parametrize("images_per_step", [1, 4, 1000])
-def test_row_counts_are_the_built_tables_rows(images_per_step):
+@pytest.mark.parametrize("cells_per_step", [1, 4, 1000])
+def test_row_counts_are_the_built_tables_rows(cells_per_step):
     csr = _class_csr(seed=5)
     children = _children()
     tables = build_resident_candidate_tables_from_csr(
@@ -67,7 +67,7 @@ def test_row_counts_are_the_built_tables_rows(images_per_step):
         fine_rotation_parent_override=FINE_ROT_PARENT,
         children=children,
     )
-    counts = csr_candidate_rows_per_image(csr, children[0], images_per_step=images_per_step)
+    counts = csr_candidate_rows_per_image(csr, children[0], cells_per_step=cells_per_step)
     np.testing.assert_array_equal(counts, np.diff(np.asarray(tables.row_offsets, dtype=np.int64)))
 
 
@@ -82,7 +82,7 @@ def test_block_starts_hold_at_most_the_budget_unless_one_image_exceeds_it():
 
 
 def _source(n_classes, *, whole, execution_order, groups, monkeypatch):
-    monkeypatch.setattr(rp, "_BLOCK_ROWS", 40)
+    monkeypatch.setattr(rp, "_BLOCK_UNITS", 40)
     csrs = [_class_csr(seed=11 + 7 * k) for k in range(n_classes)]
     supports = [DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr) for csr in csrs]
     priors = [np.linspace(-1.0, 1.0, N_COARSE_ROT, dtype=np.float32) + k for k in range(n_classes)]

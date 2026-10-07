@@ -126,7 +126,7 @@ from relax.sparse_pass2.compile_ahead import (
     resolve_compile_ahead_config,
 )
 from relax.sparse_pass2.resident_candidates import (
-    _BLOCK_ROWS,
+    _BLOCK_UNITS,
     CandidateTableBlocks,
     chunk_segment_offsets,
     map_over_classes,
@@ -2127,8 +2127,9 @@ def _candidate_table_blocks(
     """The pass's candidate tables over every class, as :class:`CandidateTableBlocks`.
 
     With every class's device-compacted CSR the tables are built one image
-    block of at most ``_BLOCK_ROWS`` rows at a time, when the chunk loop first
-    reaches the block; only the per-image row counts are computed here. The
+    block of at most ``_BLOCK_UNITS`` rows plus significant ids at a time, when
+    the chunk loop first reaches the block; only the per-image row counts are
+    computed here. The
     rows, their order and their fields are the whole-pass build's, since each
     image's rows depend on that image alone. ``whole`` (the zero-oversampling
     coarse reuse reads every image's table) and a host-path support build the
@@ -2183,6 +2184,9 @@ def _candidate_table_blocks(
     )
     row_offsets = np.zeros(n_images + 1, dtype=np.int64)
     row_offsets[1:] = np.cumsum(rows_per_image)
+    # A block is counted in rows plus the classes' significant ids its builders read (_BLOCK_UNITS).
+    unit_offsets = row_offsets.copy()
+    unit_offsets[1:] += np.cumsum(np.sum([csr.counts() for csr in csrs], axis=0, dtype=np.int64))
     csr_kwargs = dict(
         nside_level=table_kwargs["nside_level"],
         oversampling_order=table_kwargs["oversampling_order"],
@@ -2219,7 +2223,7 @@ def _candidate_table_blocks(
         n_classes=len(csrs),
         n_slot_groups=1 if reconstruction_group_count is None else int(reconstruction_group_count),
         row_offsets=row_offsets,
-        block_starts=table_block_starts(row_offsets, _BLOCK_ROWS),
+        block_starts=table_block_starts(unit_offsets, _BLOCK_UNITS),
         build_block=build_block,
     )
     return blocks, 0.0, time.time() - table_t0

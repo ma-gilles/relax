@@ -841,22 +841,29 @@ def share_image_capacity(chunks, row_capacity_ladder) -> list[CapacityChunk]:
     ]
 
 
-# Candidate rows one image block's tables may hold: about 1.3 GB of merged
-# host rows, plus the per-class builders' int64 temporaries while it builds.
-# Class3D K4 100k/256 held 1.3e9 rows at once and its host process was killed
-# at 134 GB (bench job 14557771).
-_BLOCK_ROWS = 1 << 26
+# One image block's size, counted as its candidate rows plus its classes'
+# significant coarse ids: the per-class builders hold several int64 temporaries
+# per row and per id while the block builds (about 60-70 bytes per unit, all
+# classes together), so this bounds the build's host peak at about 2 GB.
+# Counting rows alone let a dense support build 1.1e8 ids per block: Class3D K4
+# on EMPIAR-10076 10k/256 at current size 34 reached 27.8 GB of anonymous host
+# memory (relax#34); K4 100k/256 held 1.3e9 rows at once and its host process
+# was killed at 134 GB (bench job 14557771).
+_BLOCK_UNITS = 1 << 25
 
 
-def table_block_starts(row_offsets, max_rows: int) -> np.ndarray:
-    """Image starts of consecutive blocks of at most ``max_rows`` rows (one image may exceed it)."""
+def table_block_starts(offsets, max_units: int) -> np.ndarray:
+    """Image starts of consecutive blocks of at most ``max_units`` (one image may exceed it).
 
-    row_offsets = np.asarray(row_offsets, dtype=np.int64)
-    n_images = row_offsets.size - 1
+    ``offsets`` are per-image CSR offsets of whatever a block is counted in.
+    """
+
+    offsets = np.asarray(offsets, dtype=np.int64)
+    n_images = offsets.size - 1
     starts = [0]
     while starts[-1] < n_images:
         start = starts[-1]
-        stop = int(np.searchsorted(row_offsets, row_offsets[start] + int(max_rows), side="right")) - 1
+        stop = int(np.searchsorted(offsets, offsets[start] + int(max_units), side="right")) - 1
         starts.append(min(n_images, max(stop, start + 1)))
     return np.asarray(starts if n_images else [0, 0], dtype=np.int64)
 
