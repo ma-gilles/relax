@@ -25,6 +25,7 @@ FIXTURES = {
     "ppca_et_k3": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_ppca_k3conf_box64_20261002/project",
     "w2_09_box192": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_bench_20260926/cases/w2_09_box192/project",
     "ms2_448": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/synth_ms2_icos_448_b40_20260930",
+    "multioptics_k2_10k128": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/multioptics_k2_10k128_20260930/project",
 }
 
 _REFINE_K1 = [
@@ -414,6 +415,18 @@ CELLS["tomo_class3d_et13_it25"]["args"] = [
     "25" if previous == "--max_iter" else value
     for previous, value in zip([None, *CELLS["tomo_class3d_et13_it3"]["args"]], CELLS["tomo_class3d_et13_it3"]["args"])
 ]
+
+# multioptics_k2_10k128_class3d_25it, seed 1 (two optics groups on two image shapes; robustness cell 12b)
+CELLS["class3d_multioptics_k2_10k128"] = {
+    "module": "relax.commands.class3d",
+    "args": [
+        *("--data_dir", "{fx:multioptics_k2_10k128}", "--output", "{out}"),
+        *("--init_volume", "{fx:multioptics_k2_10k128}/reference_init_relion.mrc", "--n_classes", "2"),
+        *("--init_resolution", "40", "--particle_diameter_ang", "200", "--healpix_order", "2", "--offset_range", "5"),
+        *("--offset_step", "1", "--tau2_fudge", "4", "--max_iter", "25", "--seed", "1", "--firstiter_cc"),
+    ],
+    "box": 128,
+}
 
 
 def cell_fixtures(name: str) -> list[str]:
