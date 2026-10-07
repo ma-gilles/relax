@@ -434,6 +434,51 @@ def test_fold_class_scale_sums_masks_each_class_and_clears_its_channels():
     assert_matches(np.asarray(folded.wavg_triplet_pixels[:, :, 2]), np.asarray(triplet[:, :, 2]))
 
 
+
+def _fold_carry(n_images, n_rect, accumulator_voxels):
+    rng = np.random.default_rng(11)
+    return rp._ChunkMstepCarry(
+        Ft_y=jnp.zeros(accumulator_voxels, dtype=jnp.complex64),
+        Ft_ctf=jnp.zeros(accumulator_voxels, dtype=jnp.float32),
+        wavg_triplet_pixels=jnp.asarray(rng.normal(size=(n_images, n_rect, 3)), dtype=jnp.float32),
+        noise_shells=jnp.zeros(4, dtype=jnp.float64),
+        a2_per_image=jnp.zeros(n_images),
+        xa_per_image=jnp.zeros(n_images),
+        scale_xa_per_image=jnp.zeros(n_images, dtype=jnp.float64),
+        scale_aa_per_image=jnp.zeros(n_images, dtype=jnp.float64),
+    )
+
+
+def test_fold_class_scale_sums_keeps_the_slot_accumulators():
+    """relax#36: the fold leaves the slot's BPref accumulators as they are, not copies of them."""
+
+    carry = _fold_carry(4, 7, 64)
+    masks = jnp.asarray(np.ones((2, 7), dtype=bool))
+    folded = rp._fold_class_scale_sums(carry, masks, jnp.int32(0))
+    assert folded.Ft_y is carry.Ft_y
+    assert folded.Ft_ctf is carry.Ft_ctf
+    assert folded.noise_shells is carry.noise_shells
+
+
+@requires_resident_gpu
+def test_fold_class_scale_sums_allocates_no_accumulator_on_the_device():
+    """relax#36: with the old carry still alive (the finish loop's accumulator list), the fold adds only its
+    small outputs to the pool; a 2.37 GiB accumulator copy per slot ran a 16 GB card out of memory."""
+
+    import jax
+
+    device = jax.devices()[0]
+    accumulator_voxels = 64 << 20  # 512 MiB complex64 + 256 MiB float32
+    carry = _fold_carry(32, 1024, accumulator_voxels)
+    masks = jnp.asarray(np.ones((2, 1024), dtype=bool))
+    jax.block_until_ready(rp._fold_class_scale_sums(carry, masks, jnp.int32(0)))  # compile outside the measure
+    jax.block_until_ready(carry)
+    before = device.memory_stats()["bytes_in_use"]
+    folded = rp._fold_class_scale_sums(carry, masks, jnp.int32(1))
+    jax.block_until_ready(folded)
+    grown = device.memory_stats()["bytes_in_use"] - before
+    small_outputs = int(carry.wavg_triplet_pixels.nbytes) + 2 * int(carry.scale_xa_per_image.nbytes)
+    assert grown <= 2 * small_outputs, (grown, small_outputs)
 @requires_resident_gpu
 @pytest.mark.parametrize("streamed", [False, True], ids=["cached", "streamed"])
 def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_production_env, monkeypatch, streamed):

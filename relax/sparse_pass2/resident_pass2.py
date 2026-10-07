@@ -7179,6 +7179,16 @@ class _ChunkMstepCarry(NamedTuple):
 
 
 @jax.jit
+def _fold_class_scale_sums_program(triplet, scale_xa_per_image, scale_aa_per_image, class_masks_rect, class_index):
+    """The fold's arithmetic on the three arrays it changes: ``(triplet, scale_xa, scale_aa)``."""
+
+    mask = jnp.asarray(class_masks_rect[class_index], dtype=bool).reshape(1, -1)
+    zero = jnp.float32(0.0)
+    xa = jnp.sum(jnp.where(mask, triplet[:, :, 0], zero).astype(jnp.float64), axis=1)
+    aa = jnp.sum(jnp.where(mask, triplet[:, :, 1], zero).astype(jnp.float64), axis=1)
+    return triplet.at[:, :, :2].set(zero), scale_xa_per_image + xa, scale_aa_per_image + aa
+
+
 def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_masks_rect, class_index) -> "_ChunkMstepCarry":
     """Move one class's Wavg XA/AA into the per-image scale sums under its own mask.
 
@@ -7191,18 +7201,17 @@ def _fold_class_scale_sums(mstep: "_ChunkMstepCarry", class_masks_rect, class_in
     (acc_ml_optimiser_impl.h:4893-4912); the diff2 channel is summed over
     classes. The class's blocks have just accumulated its XA/AA pixels, so they
     are masked and summed here and the two channels cleared for the next class.
+
+    Only the triplet and the two scale vectors pass through the program; the rest of the carry is
+    rebuilt around them. A program that took and returned the whole carry copied the slot's
+    BPref accumulators (Ft_y and Ft_ctf) at every call: 2.37 GiB at a multi-optics K=2 Class3D
+    slot of current size 114, which ran a 16 GB card out of memory (relax#36).
     """
 
-    triplet = mstep.wavg_triplet_pixels
-    mask = jnp.asarray(class_masks_rect[class_index], dtype=bool).reshape(1, -1)
-    zero = jnp.float32(0.0)
-    xa = jnp.sum(jnp.where(mask, triplet[:, :, 0], zero).astype(jnp.float64), axis=1)
-    aa = jnp.sum(jnp.where(mask, triplet[:, :, 1], zero).astype(jnp.float64), axis=1)
-    return mstep._replace(
-        wavg_triplet_pixels=triplet.at[:, :, :2].set(zero),
-        scale_xa_per_image=mstep.scale_xa_per_image + xa,
-        scale_aa_per_image=mstep.scale_aa_per_image + aa,
+    triplet, scale_xa, scale_aa = _fold_class_scale_sums_program(
+        mstep.wavg_triplet_pixels, mstep.scale_xa_per_image, mstep.scale_aa_per_image, class_masks_rect, class_index
     )
+    return mstep._replace(wavg_triplet_pixels=triplet, scale_xa_per_image=scale_xa, scale_aa_per_image=scale_aa)
 
 
 def _logical_current_size(tables: _ChunkStageTables, spec: _ChunkProgramSpec):
