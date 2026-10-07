@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77.0", "setuptools_scm>=6.2"]
+requires = ["setuptools>=77.0", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -54,6 +54,11 @@ include = ["relax*"]
 write_to = "relax/_version.py"
 local_scheme = "no-local-version"
 fallback_version = "0.0.0"
+
+# Only version tags (v1.2.3) name a version: describing with any tag made setuptools_scm parse a record tag
+# (retired/captured-projector-20261006) as the version and the editable build, so `pixi run`, failed.
+[tool.setuptools_scm.scm.git]
+describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v[0-9]*"]
 
 [tool.ruff]
 line-length = 120
