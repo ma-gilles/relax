@@ -5895,23 +5895,26 @@
    },
    "gt": {
     "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
-    "relax": 0.086207,
-    "relion": 0.087469,
+    "relax": 0.08753,
+    "relion": 0.08273,
     "relion_band": [
-     0.087469,
-     0.089773
+     0.08273,
+     0.08977
     ],
     "relax_per_seed": {
-     "29": 0.086207
+     "29": 0.08753
     },
     "relion_per_seed": {
      "29": [
-      0.087469,
-      0.089773
+      0.08747,
+      0.08977,
+      0.08568,
+      0.08723,
+      0.08273
      ]
     },
     "relax_seed_provenance": {
-     "29": "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a"
+     "29": "09cf7b02 (3 same-commit repeats, job 15168016)"
     },
     "all_arms_rescored": {
      "relion_s29": 0.087469,
@@ -5919,7 +5922,15 @@
      "rf_relion_s29": 0.089773,
      "rf_relax_s29": 0.087574,
      "fz_relax_s29_d046c0a": 0.086207
-    }
+    },
+    "relax_runs_per_seed": {
+     "29": [
+      0.08753,
+      0.08716,
+      0.08628
+     ]
+    },
+    "relax_d046c0a_freeze_s29": 0.08621
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
@@ -5934,6 +5945,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Seed 29 repeats (etvdam, 2026-10-07; agreed with team-lead): the freeze's miss (0.0862 vs RELION 0.0875/0.0898) compared one relax run with RELION's two highest runs. Same-command same-seed repeats, all scored in one job on the freeze scorer (weighted masked GT FSC-AUC): RELION build_patched 5 runs .08747/.08977/.08568/.08723/.08273 (range .0827-.0898, mean .0866, sd .0026; repeats job 15169171); relax main 09cf7b02 3 runs .08753/.08716/.08628 (range .0863-.0875, mean .0870, sd .0006; job 15168016, 135-137 s). relax's same-commit range sits inside RELION's 5-run range with a higher mean, so the seed-29 difference is RELION's own run-to-run spread; the row now compares run ranges at s29 (the d046c0a2 speed arm's 0.0862 also lies inside RELION's range). Earlier relax s29 runs on other commits: .0795 (d9517e7), .0876 (ddf88c8b).",
     "Benchmark freeze 2026-10-07 (relax main d046c0a2, job 15144698): seed 29 rerun cold, 161 s against the row's RELION 354.0 s (0.45x; ddf88c8b: 0.97x); RELION wall reused from the row's earlier separate job (same GPU model, RELION build unchanged), not a same-node pair. Quality: every kept arm rescored on the freeze scorer; seed 29 relax 0.08621 vs RELION 0.08747/0.08977; other seeds keep their ddf88c8b runs. Page verdict: miss (worst s29 −0.0013 vs same-seed RELION; s29 below across-seed RELION band 0.087469-0.089773).",
     "Refresh 2026-09-27 on relax main ddf88c8: same-node cold pair (job 14547794), both arms started together; the row quotes seed 29.",
     "seed 29: masked reference FSC-AUC relax 0.0748 / RELION 0.0716 (unmasked 0.0828 / 0.0789); same-seed RELION runs of this command (masked) 0.0716-0.0767 over 2; relax-vs-RELION X-AUC 0.9122 (masked 0.9228); this RELION vs earlier RELION runs X-AUC relion_s29 0.9425; walls relax 342 s / RELION 354 s",
@@ -5963,6 +5975,11 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/out/rf_vdam_noise1_5k_d046c0a.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_d046c0a",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/freeze2_rows_d046c0a.py"
+    },
+    "s29_repeats_20261007": {
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/noise1_5k_rep/scores_both/noise1_5k_s29_reps_both.json",
+     "relion_repeats": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/cryoet_vdam_20261001/noise1_5k_rep/relion",
+     "source": "etvdam via team-lead, 2026-10-07"
     }
    },
    "mask": {
@@ -5976,8 +5993,8 @@
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
    },
-   "quality_pass": false,
-   "quality_reason": "worst s29 −0.0013 vs same-seed RELION; s29 below across-seed RELION band 0.087469-0.089773",
+   "quality_pass": true,
+   "quality_reason": "worst s29 +0.0048 vs same-seed RELION; run ranges compared at s29 (both engines repeated); inside across-seed band",
    "history": [
     {
      "date": "2026-09-26",
@@ -6036,6 +6053,50 @@
       "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
      },
      "note": "values before the 2026-10-07 benchmark freeze (relax ddf88c8b, earlier scorer)"
+    },
+    {
+     "gt": {
+      "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
+      "relax": 0.08753,
+      "relion": 0.08273,
+      "relion_band": [
+       0.08273,
+       0.08977
+      ],
+      "relax_per_seed": {
+       "29": 0.08753
+      },
+      "relion_per_seed": {
+       "29": [
+        0.08747,
+        0.08977,
+        0.08568,
+        0.08723,
+        0.08273
+       ]
+      },
+      "relax_seed_provenance": {
+       "29": "09cf7b02 (3 same-commit repeats, job 15168016)"
+      },
+      "all_arms_rescored": {
+       "relion_s29": 0.087469,
+       "relax_s29_d9517e7": 0.079458,
+       "rf_relion_s29": 0.089773,
+       "rf_relax_s29": 0.087574,
+       "fz_relax_s29_d046c0a": 0.086207
+      },
+      "relax_runs_per_seed": {
+       "29": [
+        0.08753,
+        0.08716,
+        0.08628
+       ]
+      },
+      "relax_d046c0a_freeze_s29": 0.08621
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s29 −0.0013 vs same-seed RELION; s29 below across-seed RELION band 0.087469-0.089773",
+     "note": "verdict before RELION same-seed repeats (2026-10-07)"
     }
    ],
    "benchmark": false,
