@@ -1784,17 +1784,18 @@
     "masked_resolution_definition": "relion_postprocess_masked_frozen"
    },
    "relax": {
-    "source_sha": "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a",
-    "source_repo": "relax main d046c0a2 (2026-10-07 benchmark freeze, frozen snapshot relax_bench_refresh_20261003/cand_d046c0a, own pixi env lock f720b1fe, recovar c60e3c26f, natives built at the snapshot); production defaults",
+    "source_sha": "b61b1916c6a513a3fc0939fb1501a4a58219dcb1",
+    "source_repo": "relax main b61b1916 (2026-10-08 benchmark freeze: snapshot relax_bench_refresh_20261003/cand_b61b191, env and natives of cand_d046c0a reused after an identical-lock and native-source check; contains compact --scratch_dir staging 09a50856 and speedw's item A b61b1916); production defaults",
     "resolution_A": 15.969,
     "resolution_definition": "scorecard_band",
     "masked_resolution_A": 22.357,
-    "wall_s": 391,
-    "wall_definition": "arm-script wall (WALL.json) of relax end to end, seed 42, cold (empty JAX cache), one H100 + 12 CPUs, job 15144698 (della-h21g1, several arms on the node's GPUs)",
+    "wall_s": 362,
+    "wall_definition": "arm-script wall (WALL.json) of relax refine end to end, seed 42, cold, one H100 + 12 CPUs, --scratch_dir, job 15177938 (della-h21g3), no other cold arm on the node",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 18,
     "jobs": [
+     "15177938",
      "15144698",
      "14547790"
     ],
@@ -1804,7 +1805,7 @@
    "gt": null,
    "cross_engine": "map gate PASS (relax scripts/score_k1_map_gate.py): thresholds (merged >= 0.95, each half >= 0.90) met against 4 of 4 same-command RELION runs; against this job's RELION arm 0.9913/0.9865/0.9859; RELION-vs-RELION band merged 0.9787-0.9957, halves 0.9661-0.9920 / 0.9656-0.9943",
    "cross_engine_masked_band_auc": 0.9959,
-   "time_ratio_relax_over_relion": 0.6,
+   "time_ratio_relax_over_relion": 0.55,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -1815,6 +1816,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Benchmark freeze 2026-10-08 (relax main b61b1916: compact --scratch_dir staging 09a50856 + speedw's item A; team-lead 2026-10-07): seed 42 cold, 362 s, 17 iterations plus the final pass, staging 16.7 s for 2.63 GB, against the row's RELION MPI 3x4 653 s (0.55x; d046c0a2: 391 s, 0.6x); RELION wall reused from the row's earlier separate job (mpiscale-patched RELION 5.0.1, H100), not a same-node pair. A repeat on the same code (speedw, job 15177975, della-h21g4): 364 s with 20 iterations plus the final pass; its staging read the stack a minute after this run (1.6 s, storage cache warmed), so it is not quoted as cold. The two runs show the trajectory's iteration-count spread on this row (17 vs 20). Map gate (4 RELION runs): thresholds met against 4 of 4; cross-engine merged band AUC vs the same-command pair 0.9939.",
     "Benchmark freeze 2026-10-07 (relax main d046c0a2, job 15144698): seed 42 rerun cold, 391 s against the row's RELION MPI 3x4 653 s (0.6x; ddf88c8b: 0.77x); RELION wall reused from the row's earlier separate job (same GPU model, RELION build unchanged), not a same-node pair. Map gate (relax scripts/score_k1_map_gate.py, 4 RELION runs): thresholds met against 4 of 4; cross-engine merged band AUC vs the same-node RELION pair 0.9780; below the RELION-vs-RELION band on 6 entries (reported only, rule of 2026-09-23).",
     "Refresh 2026-09-27 on relax main ddf88c8: same-node cold pair (job 14547790); relax 500 s vs RELION MPI 3x4 653 s.",
     "HEALPix order: relax max 4 over 18 iterations, RELION max 4 over 18; relax ran with the K=1 default cap 7, which did not bind (team-lead 2026-09-27).",
@@ -1857,9 +1859,15 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/k1_10097_score.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_d046c0a",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/freeze2_rows_d046c0a.py"
+    },
+    "freeze_20261008": {
+     "arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/arms_b61b191/empiar10097_10k_k1_autorefine_resident_589ce09/s42/relax",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/freeze_b61b191/k1_10097_10k_score.json",
+     "repeat_run_speedw": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_speedw_20260930/census2_20261007/e10097_wall_b61b1916",
+     "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_b61b191"
     }
    },
-   "date": "2026-10-07",
+   "date": "2026-10-08",
    "history": [
     {
      "date": "2026-09-25",
@@ -1917,6 +1925,32 @@
       "d": "H100 80GB HBM3 on both GPUs (GPU.csv); same node, same time."
      },
      "note": "values before the 2026-10-07 benchmark freeze (relax ddf88c8b)"
+    },
+    {
+     "date": "2026-10-07",
+     "relax": {
+      "source_sha": "b61b1916c6a513a3fc0939fb1501a4a58219dcb1",
+      "source_repo": "relax main b61b1916 (2026-10-08 benchmark freeze: snapshot relax_bench_refresh_20261003/cand_b61b191, env and natives of cand_d046c0a reused after an identical-lock and native-source check; contains compact --scratch_dir staging 09a50856 and speedw's item A b61b1916); production defaults",
+      "resolution_A": 15.969,
+      "resolution_definition": "scorecard_band",
+      "masked_resolution_A": 22.357,
+      "wall_s": 362,
+      "wall_definition": "arm-script wall (WALL.json) of relax refine end to end, seed 42, cold, one H100 + 12 CPUs, --scratch_dir, job 15177938 (della-h21g3), no other cold arm on the node",
+      "gpu_model": "H100 80GB",
+      "gpu_count": 1,
+      "iterations": 18,
+      "jobs": [
+       "15177938",
+       "15144698",
+       "14547790"
+      ],
+      "masked_band_auc": 0.6915,
+      "masked_resolution_definition": "relion_postprocess_masked_frozen"
+     },
+     "time_ratio_relax_over_relion": 0.6,
+     "quality_pass": true,
+     "quality_reason": "map gate thresholds met vs 4 of 4 RELION runs; resolution relax 15.97 vs RELION 15.97 A (same-command pair)",
+     "note": "values before the 2026-10-08 freeze (b61b1916: compact staging + speedw item A)"
     }
    ],
    "time_check": {
