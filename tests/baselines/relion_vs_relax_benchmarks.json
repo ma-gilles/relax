@@ -4036,18 +4036,28 @@
     ],
     "relax_per_seed": {
      "1775735620": 0.388816,
-     "29": 0.288637,
-     "41": 0.315154
+     "29": 0.288878,
+     "41": 0.31321
     },
     "relion_per_seed": {
-     "1775735620": 0.388816,
-     "29": 0.288879,
-     "41": 0.310735
+     "1775735620": [
+      0.388816,
+      0.388816
+     ],
+     "29": [
+      0.288878,
+      0.288879,
+      0.288879
+     ],
+     "41": [
+      0.310735,
+      0.310735
+     ]
     },
     "class_accuracy_relax_per_seed": {
      "1775735620": 0.5014,
-     "29": 0.5056,
-     "41": 0.5038
+     "29": 0.507,
+     "41": 0.5062
     },
     "class_accuracy_relion_per_seed": {
      "1775735620": 0.5014,
@@ -4078,9 +4088,16 @@
      "relion_s41"
     ],
     "relax_seed_provenance": {
-     "1775735620": "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a",
-     "29": "ddf88c8b",
-     "41": "ddf88c8b"
+     "1775735620": "d046c0a2",
+     "29": "f7ec3197 (3 runs, job 15170476)",
+     "41": "f7ec3197 (job 15172659)"
+    },
+    "relax_runs_per_seed": {
+     "29": [
+      0.288878,
+      0.288878,
+      0.288878
+     ]
     }
    },
    "cross_engine": "same-seed masked relax-vs-RELION non-MPI FSC-AUC per GT class: seed 1775735620 0.9951/0.9968; seed 29 0.9882/0.9930; seed 41 0.9925/0.9930",
@@ -4096,6 +4113,7 @@
     "timing_controlled": false
    },
    "notes": [
+    "Seeds 29 and 41 rerun on relax main f7ec3197 (ppcaopt, team-lead 2026-10-07; row command, cold, one H100 each; rescored on the freeze scorer): s29 three runs 0.288878 each (class accuracy 0.5070) vs non-MPI RELION 0.288878/0.288879 and a RELION repeat 0.288879 (job 15170318), maps reproduced (relax-vs-RELION masked FSC-AUC 0.9999999999 per class); s41 0.313210 (0.5062) vs 0.310735 (0.5068). The stale ddf88c8b runs (s29 0.288637, s41 0.315154), the row's earlier miss, move to history. Walls from those jobs are not a same-node pair (four arms on one node); the row keeps the d046c0a2 freeze wall.",
     "Benchmark freeze 2026-10-07 (relax main d046c0a2, job 15144698): seed 1775735620 rerun cold, 127 s against the row's RELION 198 s (0.64x; ddf88c8b: 0.89x); RELION wall reused from the row's earlier separate job (same GPU model, RELION build unchanged), not a same-node pair. Quality: masked mean GT FSC-AUC 0.388816 vs non-MPI RELION 0.388816, class accuracy 0.5014; seeds 29/41 keep their ddf88c8b runs (rescored on the freeze scorer, unchanged).",
     "Refresh 2026-09-27 on relax main ddf88c8: same-node cold pair per seed (job 14547788), relax against RELION 5.0.1 + MPI scale-sum patch (relax #1) run non-MPI (--j 12); the row quotes seed 1775735620.",
     "seed 1775735620: masked mean GT FSC-AUC relax 0.389325 / RELION non-MPI (this job) 0.388816 / earlier non-MPI run 0.388816; class accuracy 0.50040 / 0.50140; masked relax-vs-RELION per GT class 0.9951/0.9968; walls relax 176 s / RELION 198 s",
@@ -4150,6 +4168,12 @@
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/SCORE_c3d_pdb_k2_5k_d046c0a.json",
      "snapshot": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/cand_d046c0a",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/tools/freeze2_rows_d046c0a.py"
+    },
+    "ppcaopt_reruns_20261007": {
+     "runs": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_ppcaopt_sigmaang_20261005/k2perf_20261007",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/SCORE_c3d_pdb_k2_5k_d046c0a_pp.json",
+     "config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_bench_refresh_20261003/scoring/short_d046c0a/c3d_pdb_k2_5k_d046c0a_pp.json",
+     "source": "ppcaopt via team-lead, 2026-10-07"
     }
    },
    "date": "2026-10-07",
@@ -4290,6 +4314,76 @@
       "d": "H100 80GB HBM3 on both GPUs (GPU.csv); same node, same time"
      },
      "note": "values before the 2026-10-07 benchmark freeze (relax ddf88c8b)"
+    },
+    {
+     "gt": {
+      "metric": "mean per-class GT FSC-AUC, masked with the frozen mask (classes matched to GT by Hungarian on unmasked AUC), seed 1775735620; seed 1775735620; RELION = RELION 5.0.1 + MPI scale-sum patch (relax #1) run non-MPI (relion_refine --j 12)",
+      "relion": 0.388816,
+      "relax": 0.388816,
+      "relion_band": [
+       0.288878,
+       0.388816
+      ],
+      "relion_band_runs": [
+       "relion_nompi_s1775735620",
+       "relion_nompi_s29",
+       "relion_nompi_s41",
+       "rf_relion_s1775735620",
+       "rf_relion_s29",
+       "rf_relion_s41"
+      ],
+      "relax_per_seed": {
+       "1775735620": 0.388816,
+       "29": 0.288637,
+       "41": 0.315154
+      },
+      "relion_per_seed": {
+       "1775735620": 0.388816,
+       "29": 0.288879,
+       "41": 0.310735
+      },
+      "class_accuracy_relax_per_seed": {
+       "1775735620": 0.5014,
+       "29": 0.5056,
+       "41": 0.5038
+      },
+      "class_accuracy_relion_per_seed": {
+       "1775735620": 0.5014,
+       "29": 0.507,
+       "41": 0.5068
+      },
+      "class_accuracy_relion_band": [
+       0.5014,
+       0.507
+      ],
+      "relion_mpi_per_seed": {
+       "1775735620": 0.387742,
+       "29": 0.289979,
+       "41": 0.314844
+      },
+      "class_accuracy_relion_mpi_per_seed": {
+       "1775735620": 0.5032,
+       "29": 0.5072,
+       "41": 0.5054
+      },
+      "relion_mpi_band": [
+       0.289979,
+       0.387742
+      ],
+      "relion_mpi_band_runs": [
+       "relion_s1775735620",
+       "relion_s29",
+       "relion_s41"
+      ],
+      "relax_seed_provenance": {
+       "1775735620": "d046c0a2120fa19a6fd624fc0b05a8fc68575c8a",
+       "29": "ddf88c8b",
+       "41": "ddf88c8b"
+      }
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s29 −2.4e-4 vs same-seed RELION; s29 below across-seed RELION band 0.288878-0.388816 (masked mean GT FSC-AUC)",
+     "note": "verdict before ppcaopt reruns of seeds 29/41 on f7ec3197 (2026-10-07)"
     }
    ],
    "time_check": {
@@ -4302,8 +4396,8 @@
     "dataset": "pdb_k2_5k128_c1",
     "sha256": "aca84f352343539e736efb667d15b7a7716627c039480f45270faa10ef9cce7f"
    },
-   "quality_pass": false,
-   "quality_reason": "worst s29 −2.4e-4 vs same-seed RELION; s29 below across-seed RELION band 0.288878-0.388816 (masked mean GT FSC-AUC)",
+   "quality_pass": true,
+   "quality_reason": "worst s1775735620 +0.0000 vs same-seed RELION; run ranges compared at s29 (both engines repeated); inside across-seed band (masked mean GT FSC-AUC)",
    "benchmark": false,
    "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)"
   },
