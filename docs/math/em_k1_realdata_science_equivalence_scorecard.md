@@ -387,7 +387,7 @@ RELION against RELION (same band FSC-AUCs):
 | this job's RELION arm vs seed repeat 14363852 (seed 20260924) | 0.9318 | 0.8003 | 0.7979 |
 | reference 14313014 (seed 42) vs seed repeat 14363852 (seed 20260924) | 0.9296 | 0.7986 | 0.7965 |
 
-### EMPIAR-10097 10k subset (resident engine) (relax `ddf88c8be`)
+### EMPIAR-10097 10k subset (resident engine) (relax `d046c0a21`)
 
 relax against each same-command RELION run (band FSC-AUC over the scorecard band; masked columns use the frozen mask; thresholds: merged >= 0.95 and each half >= 0.90):
 
