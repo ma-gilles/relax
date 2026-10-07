@@ -41,6 +41,7 @@ the exact coverage needs a run before the row is trusted.
 | 15 | InitialModel optics: anisotropic magnification; optics groups on several image grids together with premultiplied or aberrated groups | InitialModel | refused (premultiplied images, odd and even aberrations, and optics groups on several image grids are supported, but not combined) | occasional (merged data sets) | magnification in the VDAM scorer; optics-table CTF terms in VDAM's per-shape-class E-step (`vdam/shape_class_estep.py`). Medium. | |
 | 16 | Subtomograms: InitialModel with symmetry (relax runs the subtomogram VDAM in C1), InitialModel optics beyond premultiplied images, magnification, a reference mask (row 1), no alignment (row 2) | subtomogram | refused or absent | common for rows 1 and 2; occasional for the rest | per-tilt versions of the single-particle paths. Small to medium each. | |
 | 17 | Continuing a run, `--continue` | InitialModel; Refine3D and Class3D on several image shapes | `relax refine` and `relax class3d` continue from their run files (`--continue <output>/run_itNNN_optimiser.star`, written every iteration by default), except for particle STARs with several image shapes, which are refused; subtomogram runs (verify). `relax initial_model` has only a diagnostic one-iteration continuation, no user-facing resume | common on clusters with wall-time limits | read the VDAM state back from its written iteration (model, gradient moments, sampling) and rebuild the E-step input; the several-shape resume needs the per-shape state in the run files. Medium. | |
+| 17a | Particle output (`run_itNNN_data.star`) and the other run files for several image shapes | Refine3D, Class3D | groups with different image sizes or pixel sizes run, but no run files are written: maps and `refinement_results.npz` only, one log warning (`full_refinement.py`; [relax#38](https://github.com/ma-gilles/relax/issues/38)); InitialModel writes them | anyone refining several image shapes | write one data.star with the optics table carrying each group's `rlnImageSize`/pixel size, and the model and optimiser state per shape class. Medium. | |
 
 ## C. Rare or legacy
 
@@ -59,7 +60,8 @@ the exact coverage needs a run before the row is trusted.
 
 Auto-refine with split halves and `--low_resol_join_halves`, `--firstiter_cc`, adaptive oversampling,
 point-group symmetry, `--continue` for Refine3D and Class3D (row 17 lists its limits), `--preread_images`
-and `--scratch_dir`, several optics groups including other pixel sizes and boxes (Refine3D, Class3D),
+and `--scratch_dir`, several optics groups including other pixel sizes and boxes (Refine3D and Class3D without run files there,
+row 17a),
 CTF-premultiplied images, odd and even aberrations, anisotropic magnification (Refine3D, Class3D), RELION 5
 2D-stack subtomograms in Refine3D, Class3D and InitialModel, VDAM InitialModel with K classes, symmetry
 applied at the end, flattened solvent and zero masking.
