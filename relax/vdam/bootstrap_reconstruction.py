@@ -19,6 +19,7 @@ oracle (``tests/unit/initial_model/test_bootstrap_reconstruction_vs_relion_bind.
 
 from __future__ import annotations
 
+import functools
 import math
 
 import numpy as np
@@ -57,6 +58,29 @@ def fftw_window_rows(full_size: int, size: int) -> np.ndarray:
     return np.where(logical < 0, logical + int(full_size), logical)
 
 
+def _frozen(*arrays):
+    return tuple(array.setflags(write=False) or array for array in arrays)
+
+
+@functools.lru_cache(maxsize=8)
+def _soft_mask_geometry(shape: tuple, radius: float, cosine_width: float):
+    """:func:`soft_mask_outside_map`'s grid-only part (radius, edge weights, their serial sum), memoized."""
+
+    axes = [_logical_axis(size) for size in shape]
+    grids = np.meshgrid(*axes, indexing="ij")
+    r = np.sqrt(sum(g.astype(np.int64) * g for g in grids).astype(np.float64))
+    if radius < 0:
+        radius = float(shape[-1]) / 2.0
+    radius_p = radius + cosine_width
+    outside = r > radius_p
+    edge = ~outside & ~(r < radius)
+    raised = np.where(edge, 0.5 + 0.5 * np.cos(_PI * (radius_p - r) / cosine_width), 0.0)
+    weight = np.where(outside, 1.0, raised).reshape(-1)
+    counted = outside.reshape(-1) | edge.reshape(-1)
+    total = np.cumsum(weight[counted])[-1] if np.any(counted) else 0.0
+    return (*_frozen(outside, edge, raised, counted), total)
+
+
 def soft_mask_outside_map(volume, radius: float = -1.0, cosine_width: float = 3.0) -> np.ndarray:
     """``softMaskOutsideMap(vol, radius, cosine_width)`` without a noise map (mask.cpp).
 
@@ -64,19 +88,8 @@ def soft_mask_outside_map(volume, radius: float = -1.0, cosine_width: float = 3.
     """
 
     vol = np.asarray(volume, dtype=np.float64)
-    axes = [_logical_axis(size) for size in vol.shape]
-    grids = np.meshgrid(*axes, indexing="ij")
-    r = np.sqrt(sum(g.astype(np.int64) * g for g in grids).astype(np.float64))
-    if radius < 0:
-        radius = float(vol.shape[-1]) / 2.0
-    radius_p = radius + cosine_width
-    outside = r > radius_p
-    edge = ~outside & ~(r < radius)
-    raised = np.where(edge, 0.5 + 0.5 * np.cos(_PI * (radius_p - r) / cosine_width), 0.0)
-    weight = np.where(outside, 1.0, raised).reshape(-1)
+    outside, edge, raised, counted, total = _soft_mask_geometry(vol.shape, float(radius), float(cosine_width))
     weighted = np.where(outside, vol, raised * vol).reshape(-1)
-    counted = outside.reshape(-1) | edge.reshape(-1)
-    total = np.cumsum(weight[counted])[-1] if np.any(counted) else 0.0
     background = (np.cumsum(weighted[counted])[-1] if np.any(counted) else 0.0) / total
     out = np.where(outside, background, vol)
     return np.where(edge, (1 - raised) * vol + raised * background, out)
@@ -91,6 +104,60 @@ def initial_low_pass_filter(volume, ori_size: int, pixel_size: float, ini_high_a
     return initial_low_pass_filter_references(
         vol[None], ori_size=int(ori_size), pixel_size=float(pixel_size), ini_high_ang=float(ini_high_ang)
     )[0]
+
+
+@functools.lru_cache(maxsize=4)
+def _reconstruct_geometry(n: int, r_max: int, pf: float):
+    """The data-independent indices of :meth:`BackProjector3D.reconstruct` for one size (memoized per class run)."""
+
+    half = n // 2 + 1
+    max_r2 = _relion_round(r_max * pf) * _relion_round(r_max * pf)
+    kp = _fftw_axis(n, half)[:, None, None]
+    ip = _fftw_axis(n, half)[None, :, None]
+    jp = np.arange(half)[None, None, :]
+    r2 = kp * kp + ip * ip + jp * jp
+    inside = r2 <= max_r2
+    centre = n // 2
+    source = (kp + centre, ip + centre, np.broadcast_to(jp, r2.shape))
+    round_max_r2 = _relion_round(r_max * pf * r_max * pf)
+    shell = np.floor(np.sqrt(r2.astype(np.float64)) / pf).astype(np.int64)
+    within = r2 < round_max_r2
+    counter = np.bincount(shell[within], minlength=r_max)[:r_max].astype(np.float64)
+    return (*_frozen(inside), source, *_frozen(shell, within, counter))
+
+
+@functools.lru_cache(maxsize=4)
+def _window_geometry(n: int, half: int, padoridim: int):
+    """``windowToOridimRealSpace``'s placement indices and ``(-1)^(k+i+j)`` sign as ``1 - 2 * (parity)`` (memoized)."""
+
+    new_half = padoridim // 2 + 1
+    kp = _fftw_axis(n, half)
+    ip = _fftw_axis(n, half)
+    jp = np.arange(half)
+    if new_half > half:
+        max_r2 = (half - 1) * (half - 1)
+        r2 = kp[:, None, None] ** 2 + ip[None, :, None] ** 2 + jp[None, None, :] ** 2
+        k_idx, i_idx, j_idx = np.nonzero(r2 <= max_r2)
+        place = ((k_idx, i_idx, j_idx), (kp[k_idx] % padoridim, ip[i_idx] % padoridim, jp[j_idx]))
+    else:
+        ko = _fftw_axis(padoridim, new_half)
+        place = ((ko % n)[:, None, None], (ko % n)[None, :, None], np.arange(new_half)[None, None, :])
+    parity = np.add.outer(np.add.outer(np.arange(padoridim), np.arange(padoridim)), np.arange(new_half)) & 1
+    return place, _frozen(1.0 - 2.0 * parity)[0]
+
+
+@functools.lru_cache(maxsize=4)
+def _gridding_geometry(ori: int, pf: float):
+    """``griddingCorrect``'s ``r > 0`` mask and ``sinc(r / (ori pf))**2`` on the logical grid (memoized)."""
+
+    axes = [_logical_axis(ori)] * 3
+    k, i, j = np.meshgrid(*axes, indexing="ij")
+    r = np.sqrt((k * k + i * i + j * j).astype(np.float64))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rval = r / (ori * pf)
+        sinc = np.sin(_PI * rval) / (_PI * rval)
+        sinc2 = sinc * sinc
+    return _frozen(r > 0.0, sinc2)
 
 
 class BackProjector3D:
@@ -202,26 +269,12 @@ class BackProjector3D:
     def reconstruct(self) -> np.ndarray:
         """``reconstruct(vol, max_iter_preweight, do_map=false, ...)`` with ``skip_gridding`` and ``data_dim = 2``."""
 
-        pf = self.padding_factor
         r_max = self.r_max
-        n = self.pad_size
-        half = n // 2 + 1
-        max_r2 = _relion_round(r_max * pf) * _relion_round(r_max * pf)
-        kp = _fftw_axis(n, half)[:, None, None]
-        ip = _fftw_axis(n, half)[None, :, None]
-        jp = np.arange(half)[None, None, :]
-        r2 = kp * kp + ip * ip + jp * jp
-        inside = r2 <= max_r2
-        centre = n // 2
-        source = (kp + centre, ip + centre, np.broadcast_to(jp, r2.shape))
+        inside, source, shell, within, counter = _reconstruct_geometry(self.pad_size, r_max, self.padding_factor)
         f_weight = np.where(inside, self.weight[source[0], source[1], source[2]], 0.0)
         f_conv = np.where(inside, self.data[source[0], source[1], source[2]], 0.0)
         # 1/1000 of the radially averaged weight per shell floors the division.
-        round_max_r2 = _relion_round(r_max * pf * r_max * pf)
-        shell = np.floor(np.sqrt(r2.astype(np.float64)) / pf).astype(np.int64)
-        within = r2 < round_max_r2
         radavg = np.bincount(shell[within], weights=f_weight[within], minlength=r_max)[:r_max]
-        counter = np.bincount(shell[within], minlength=r_max)[:r_max].astype(np.float64)
         if np.any((counter <= 0) & (radavg <= 0)):
             raise ValueError("BUG: zeros in counter or radavg_weight")
         radavg = radavg / (1000.0 * counter)
@@ -239,19 +292,12 @@ class BackProjector3D:
         new_half = padoridim // 2 + 1
         n, half = f_in.shape[0], f_in.shape[-1]
         out = np.zeros((padoridim, padoridim, new_half), dtype=np.complex128)
-        kp = _fftw_axis(n, half)
-        ip = _fftw_axis(n, half)
-        jp = np.arange(half)
+        place, sign = _window_geometry(n, half, padoridim)
         if new_half > half:
-            max_r2 = (half - 1) * (half - 1)
-            r2 = kp[:, None, None] ** 2 + ip[None, :, None] ** 2 + jp[None, None, :] ** 2
-            k_idx, i_idx, j_idx = np.nonzero(r2 <= max_r2)
-            out[kp[k_idx] % padoridim, ip[i_idx] % padoridim, jp[j_idx]] = f_in[k_idx, i_idx, j_idx]
+            source, target = place
+            out[target] = f_in[source]
         else:
-            ko = _fftw_axis(padoridim, new_half)
-            src = (ko % n)[:, None, None], (ko % n)[None, :, None], np.arange(new_half)[None, None, :]
-            out = f_in[src[0], src[1], src[2]]
-        sign = (-1.0) ** (np.add.outer(np.add.outer(np.arange(padoridim), np.arange(padoridim)), np.arange(new_half)))
+            out = f_in[place]
         out = out * sign
         # FFTW's backward transform is unnormalised.
         real = np.fft.irfftn(out, s=(padoridim,) * 3, axes=(0, 1, 2)) * float(padoridim) ** 3
@@ -259,14 +305,10 @@ class BackProjector3D:
         real = real[start : start + ori, start : start + ori, start : start + ori]
         real = real / float(pf * pf * pf * ori)
         real = soft_mask_outside_map(real)
-        axes = [_logical_axis(ori)] * 3
-        k, i, j = np.meshgrid(*axes, indexing="ij")
-        r = np.sqrt((k * k + i * i + j * j).astype(np.float64))
+        nonzero, sinc2 = _gridding_geometry(ori, pf)
         with np.errstate(invalid="ignore", divide="ignore"):
-            rval = r / (ori * pf)
-            sinc = np.sin(_PI * rval) / (_PI * rval)
-            corrected = real / (sinc * sinc)
-        return np.where(r > 0.0, corrected, real)
+            corrected = real / sinc2
+        return np.where(nonzero, corrected, real)
 
 
 def bootstrap_references(
@@ -455,7 +497,14 @@ def postprocess_references(
             vol = initial_low_pass_filter(vol, ori_size, pixel_size, ini_high_ang)
             vol = soft_mask_outside_map(vol, diameter_px / 2.0, float(width_mask_edge_px))
         out.append(vol)
+    clear_geometry_caches()
     return np.asarray(out)
+
+
+def clear_geometry_caches() -> None:
+    """Free the memoized start-up geometry (a few hundred MB at box 256) once the references are made."""
+    for cached in (_soft_mask_geometry, _reconstruct_geometry, _window_geometry, _gridding_geometry):
+        cached.cache_clear()
 
 
 __all__ = [
