@@ -574,7 +574,10 @@ def main(command=None):
     resume_snapshot = None
     if args.continue_optimiser_star is not None:
         if shape_class_rows is not None:
-            raise SystemExit("--continue does not support particle STARs with several image shapes yet")
+            raise SystemExit(
+                "--continue does not support particle STARs with several image shapes yet (relax#38); "
+                "restart the run from its input instead"
+            )
         resume_snapshot = read_run_files(
             args.continue_optimiser_star,
             image_names=[str(name) for name in our_names],
@@ -1168,37 +1171,34 @@ def main(command=None):
 
     run_file_writer = None
     if int(args.write_iteration_every) > 0:
-        if shape_class_rows is not None:
-            logger.warning("RELION run files are not written for particle STARs with several image shapes")
-        else:
-            run_file_writer = RunFileWriter(
-                args.output,
-                settings=RunSettings(
-                    output_root=os.path.join(args.output, "run"),
-                    random_seed=int(args.seed),
-                    nr_iter=int(args.max_iter),
-                    particle_diameter=float(particle_diameter_ang or 0.0),
-                    adaptive_oversampling=int(args.adaptive_oversampling),
-                    auto_local_healpix_order=int(args.auto_local_healpix_order),
-                    strict_highres_exp=-1.0 if args.strict_highres_exp is None else float(args.strict_highres_exp),
-                    max_significants=int(args.max_significants),
-                    symmetry=symmetry,
-                    healpix_order_original=int(initial_sampling.coarse_order),
-                    offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
-                    offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
-                    perturbation_factor=float(args.perturb_factor),
-                    do_solvent_fsc=bool(args.solvent_correct_fsc),
-                    solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
-                    command_line=" ".join(sys.orig_argv),
-                    mode=args.mode,
-                ),
-                input_star=os.path.join(args.data_dir, "particles.star"),
-                half_rows=[particle_layout.half1_rows, particle_layout.half2_rows],
-                write_every=int(args.write_iteration_every),
-                # RELION writes run_itNNN_half{1,2}_class001_unfil.mrc when it corrects the FSC.
-                write_unfiltered_maps=bool(args.write_unfiltered_half_maps or args.solvent_correct_fsc),
-                keep_iterations=int(args.keep_iterations),
-            )
+        run_file_writer = RunFileWriter(
+            args.output,
+            settings=RunSettings(
+                output_root=os.path.join(args.output, "run"),
+                random_seed=int(args.seed),
+                nr_iter=int(args.max_iter),
+                particle_diameter=float(particle_diameter_ang or 0.0),
+                adaptive_oversampling=int(args.adaptive_oversampling),
+                auto_local_healpix_order=int(args.auto_local_healpix_order),
+                strict_highres_exp=-1.0 if args.strict_highres_exp is None else float(args.strict_highres_exp),
+                max_significants=int(args.max_significants),
+                symmetry=symmetry,
+                healpix_order_original=int(initial_sampling.coarse_order),
+                offset_range_original_angstrom=float(args.offset_range) * float(ds.voxel_size),
+                offset_step_original_angstrom=float(args.offset_step) * float(ds.voxel_size),
+                perturbation_factor=float(args.perturb_factor),
+                do_solvent_fsc=bool(args.solvent_correct_fsc),
+                solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
+                command_line=" ".join(sys.orig_argv),
+                mode=args.mode,
+            ),
+            input_star=os.path.join(args.data_dir, "particles.star"),
+            half_rows=[particle_layout.half1_rows, particle_layout.half2_rows],
+            write_every=int(args.write_iteration_every),
+            # RELION writes run_itNNN_half{1,2}_class001_unfil.mrc when it corrects the FSC.
+            write_unfiltered_maps=bool(args.write_unfiltered_half_maps or args.solvent_correct_fsc),
+            keep_iterations=int(args.keep_iterations),
+        )
     continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
 
     # The start-up tau2 is a box-scale volume (float64 at start-up: 4.1 GB at box 800).

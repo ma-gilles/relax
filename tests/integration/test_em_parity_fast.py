@@ -1448,6 +1448,36 @@ def test_em_parity_fast_k1_multioptics_coldstart(tmp_path):
     _assert_fsc_gate("k1_multioptics_coldstart", output_dir)
     for h in (1, 2):
         assert_same_sign_convention(output_dir / f"final_half{h}.mrc", MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_class001.mrc")
+    _assert_several_shape_run_files_match_relion(output_dir)
+
+
+def _assert_several_shape_run_files_match_relion(output_dir):
+    """Several image shapes write RELION's run files (relax#38): data.star against RELION's iteration 3.
+
+    The 112-px group's images keep their corrections in reference units, so its per-particle
+    rlnNormCorrection must match RELION's as the 128-px group's does. Measured on ea7d045 (Slurm
+    15171521): every particle's norm equals RELION's to the four written decimals in both groups,
+    and each group's noise spectrum equals RELION's model_optics_group table.
+    """
+
+    data = starfile.read(output_dir / "run_it003_data.star", always_dict=True)
+    relion = starfile.read(MULTIOPTICS_RELION_DIR / "run_it003_data.star", always_dict=True)
+    ours = data["particles"].set_index("rlnImageName")
+    theirs = relion["particles"].set_index("rlnImageName")
+    assert sorted(ours.index) == sorted(theirs.index)
+    assert data["optics"].equals(relion["optics"])
+    groups = theirs["rlnOpticsGroup"].astype(int)
+    assert set(groups) == {1, 2}
+    ratio = ours.loc[theirs.index, "rlnNormCorrection"].astype(float) / theirs["rlnNormCorrection"].astype(float)
+    for group, values in ratio.groupby(groups):
+        np.testing.assert_allclose(np.median(values), 1.0, rtol=1e-3, err_msg=f"optics group {group} norm")
+    for h in (1, 2):
+        model = starfile.read(output_dir / f"run_it003_half{h}_model.star", always_dict=True)
+        relion_model = starfile.read(MULTIOPTICS_RELION_DIR / f"run_it003_half{h}_model.star", always_dict=True)
+        for group in (1, 2):
+            ours_g = model[f"model_optics_group_{group}"]
+            theirs_g = relion_model[f"model_optics_group_{group}"]
+            np.testing.assert_array_equal(ours_g["rlnSpectralIndex"], theirs_g["rlnSpectralIndex"])
 
 
 @pytest.mark.gpu

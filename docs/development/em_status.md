@@ -918,6 +918,10 @@ how it was qualified.
   refused (etw's multishape K>1 route). Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001`
   (`scores/et15_og_k2`).
   Evidence: `/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_k2optics_20260930`.
+- Run files on several image shapes (2026-10-07, relax#38): Refine3D and Class3D write run_itNNN_{data,model,
+  optimiser,sampling}.star for optics groups of several image shapes. On multioptics_s3b_600 (Refine3D, 3 iterations,
+  Slurm 15171521) every particle's rlnNormCorrection equals RELION's iteration 3 in both groups, the optics table is
+  RELION's and each group's noise table matches. `--continue` from them is still refused (phase 2, deferred).
 - Class3D (K>1) on optics groups of several image shapes (2026-10-01): each half is scored per shape
   class and merged (`optics_shapes.merge_k_class_outputs`), as K=1 is. Qualified on
   multioptics_k2_10k128_20260930 (K=2, 128 px at 4.25 A and 112 px at 5.44 A, --firstiter_cc), one

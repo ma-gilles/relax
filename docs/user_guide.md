@@ -75,11 +75,8 @@ command.
   `data_particles` block with `rlnImageName` (`index@stack.mrcs`) and the CTF
   columns. Several optics groups, including groups with different image sizes,
   are supported. Limitation: `relax refine` and `relax class3d` on groups with
-  different image sizes or pixel sizes write the maps and `refinement_results.npz`
-  but no RELION run files (no `run_itNNN_data.star`, `_model.star`,
-  `_optimiser.star`) and so no per-particle STAR output and no `--continue`
-  ([relax#38](https://github.com/ma-gilles/relax/issues/38)); `relax initial_model`
-  writes them.
+  different image sizes or pixel sizes write their run files but cannot
+  `--continue` from them yet ([relax#38](https://github.com/ma-gilles/relax/issues/38)).
 - **Reference map** (refine and class3d): an MRC in RELION's map convention,
   the file `relion_refine --ref` would read. relax accepts a map written by
   RELION or relax, or an unlabelled map whose file name contains `_relion`;

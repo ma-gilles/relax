@@ -60,9 +60,14 @@ def test_class3d_k2_two_image_shapes_runs_and_writes_every_particle(tmp_path):
         f"relax class3d exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
     )
 
-    # Runs on several image shapes write no RELION run files; the results archive holds
-    # every image's state in particle-STAR order.
+    # The results archive holds every image's state in particle-STAR order, and the RELION run
+    # files are written for several image shapes too (relax#38): every particle, by its input name.
     n_images = len(starfile.read(FIXTURE_DIR / "particles.star")["particles"])
+    data = starfile.read(output_dir / f"run_it{N_ITER:03d}_data.star", always_dict=True)
+    names = starfile.read(FIXTURE_DIR / "particles.star", always_dict=True)["particles"]["rlnImageName"]
+    assert sorted(map(str, data["particles"]["rlnImageName"])) == sorted(map(str, names))
+    assert set(data["particles"]["rlnClassNumber"].astype(int)) <= {1, 2}
+    assert set(data["optics"]["rlnImageSize"].astype(int)) == {128, 112}
     last = N_ITER - 1
     with np.load(output_dir / "refinement_results.npz", allow_pickle=True) as results:
         classes = np.asarray(results[f"class_assignments_by_image_iter_{last:03d}"])
