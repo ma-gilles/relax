@@ -1276,6 +1276,11 @@ files (to reuse recovar's per-file staging redirect): the EMPIAR-10076 10k fixtu
 stack, so every run copied 34.58 GB to local disk in 38 s. The input STAR stays the only source of image names for
 every output (`tests/integration/test_scratch_dir_image_names.py`). Subtomogram tilt stacks are one file per particle
 and are still staged whole.
+Measured staging of the 10076 selection (10k images, 2.62 GB) on H100 compute nodes: 14.4 s on della-h19g2 (Slurm
+15171091, 16 threads; run wall 111 s) and 2.3 s on della-h21g1 (15171377, 12 threads; wall 97 s), against 38.2 s for the
+whole-file copy (wall 137 s). Neither node is proven cold (h21g1 had read the stack in an earlier benchmark job), so
+14.4 s and 111 s are the conservative numbers. Several-shape VDAM K1 (10k images, 0.58 GB) stages in under 1 s and runs
+unchanged (410-416 s).
 
 Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer, every
 class and rotation block of an image batch is scored, given its priors and reduced (class and global
