@@ -14677,6 +14677,7 @@
    },
    "notes": [
     "Reference (user, 2026-10-06, via team-lead and etvdam 9f448e54): GPU RELION is the only reference for several-shape VDAM; the CPU RELION comparison and its caveat are retired (they stay in this row's history).",
+    "Reference caveat (team-lead 2026-10-06): stock GPU RELION likely has relax#12 on this row. Class3D's and InitialModel's predefined coarse projector plans skip the scale difference of the optics group on the other box; etvdam's iteration-2 gate puts most of the relax-vs-GPU-RELION offset in that second group (angle differences 7.1% vs 2.3% in the first). Patched-GPU RELION arms (bindw's coarse-plan fix, build relion_patched_coarsemag_bpd_20261006) are planned once that build qualifies; the verdict will then be redone against them.",
     "Six seeds (relax main 845c6363, jobs 15089781, scoring 15100451): weighted masked GT FSC-AUC relax mean 0.64411 vs GPU RELION 0.64407; paired relax - GPU RELION +0.00004 ± 0.00142.",
     "Per seed, masked GT FSC-AUC relax / GPU RELION: s1 0.64283 / 0.64921; s2 0.64278 / 0.64134; s3 0.64567 / 0.64453; s4 0.64481 / 0.64199; s5 0.64405 / 0.64143; s6 0.64451 / 0.64590.",
     "GPU RELION walls per seed (r1): 525/580/611/600/584/604 s (mean 584; jobs 14868221, 14971808); seed 1 relax 516 s vs 525 s (0.98x).",
@@ -14709,7 +14710,7 @@
    },
    "date": "2026-10-06",
    "quality_pass": true,
-   "quality_reason": "worst s1 −0.0064 vs same-seed RELION; inside across-seed band; paired relax - GPU RELION +0.00004 ± 0.00142 over seeds 1-6",
+   "quality_reason": "worst s1 −0.0064 vs same-seed RELION; inside across-seed band; paired relax - GPU RELION +0.00004 ± 0.00142 over seeds 1-6; reference stock GPU RELION has relax#12 on group 2 (patched-GPU arms planned)",
    "feature_reference": "optics groups of several image shapes in VDAM InitialModel: GPU RELION 5.0.1 (mpiscale build, non-MPI --j 12, one H100), one run per seed, seeds 1-6; the only reference (user, 2026-10-06)",
    "time_check": {
     "a": "relax and GPU RELION each on 1 H100 + 12 CPUs; separate jobs: relax 15089781 (six arms on one node), GPU RELION 14868221 and 14971808",
