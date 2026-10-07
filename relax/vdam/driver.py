@@ -23,7 +23,7 @@ from relax.diagnostics.vdam_mstep_replay import (
 )
 from relax.diagnostics.vdam_tomo_continuation import tomo_checkpoint_particle_state
 from relax.helpers.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
-from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, prepare_particle_reads
+from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.tomo_half import TomoDataset, load_tomo_dataset, tilt_image_accuracy_inputs
 from relax.relion import initial_model_io, relion_ctf, vdam_checkpoint
@@ -485,12 +485,16 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         tilt_images = tilt_image_accuracy_inputs(dataset.subset(np.arange(n_particles)))
     else:
         shape_class_rows = optics_shape_class_rows(opts.fn_img)
+        # Images come through the scratch STAR copy when --scratch_dir staged compact stacks; image
+        # names, CTF and poses for every output keep coming from opts.fn_img.
+        images_star = image_star(opts.fn_img, particle_scratch)
+        compact = images_star != opts.fn_img
         datasets = [
             load_dataset(
-                opts.fn_img,
+                images_star,
                 lazy=not particle_read_policy.preread_images,
-                datadir=opts.datadir,
-                strip_prefix=opts.strip_prefix,
+                datadir=None if compact else opts.datadir,
+                strip_prefix=None if compact else opts.strip_prefix,
                 ind=rows,
             )
             for rows in (shape_class_rows or [None])

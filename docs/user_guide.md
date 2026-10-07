@@ -219,7 +219,7 @@ The same inputs as the subtomogram auto-refine.
 - `relax refine --help` lists every option; `docs/development/em_parity_runbook.md`
   maps each `relion_refine` option to its relax name.
 - `--preread_images` reads all particles into memory at start-up;
-  `--scratch_dir DIR` copies the stacks to local disk first (RELION's
+  `--scratch_dir DIR` copies the referenced particles to local disk first (RELION's
   `--preread_images` and `--scratch_dir`).
 - `--max_iter N` limits the number of iterations.
 - `--mode relax` sets every opt-in correction of RELION's own inconsistencies (`--gridding_kernel separable`

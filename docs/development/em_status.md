@@ -1269,6 +1269,13 @@ iteration 2 the run differs from the previous code by a map relL2 of 1.9e-7 with
 repeats (5.4e-7, job 15132562). Same-node SPA pairs (job 15129721): K1 noise1 50k refine 802 vs 809 s, map gate 4 of 4,
 masked GT 0.679335 against same-seed RELION 0.679354; K4 pdb 50k Class3D 345 vs 344 s, masked GT 0.240796 (RELION
 same seed 0.240796, band 0.239769-0.24114), class accuracy 0.87506 (band 0.87462-0.87824).
+`--scratch_dir` (2026-10-07) stages single particles as RELION's `copyParticlesToScratch` does: only the
+referenced particles, one compact stack per optics group in STAR order, read through a scratch copy of the particle
+STAR whose `_rlnImageName` points into them (`relax/helpers/particle_io.py`). Until then relax copied whole stack
+files (to reuse recovar's per-file staging redirect): the EMPIAR-10076 10k fixture names 10k images of a 131k-image
+stack, so every run copied 34.58 GB to local disk in 38 s. The input STAR stays the only source of image names for
+every output (`tests/integration/test_scratch_dir_image_names.py`). Subtomogram tilt stacks are one file per particle
+and are still staged whole.
 
 Pass 1 as one program per image batch (speedw, 2026-10-02): with the cached coarse GEMM scorer, every
 class and rotation block of an image batch is scored, given its priors and reduced (class and global

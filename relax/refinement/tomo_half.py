@@ -207,7 +207,9 @@ def load_tomo_dataset(
     from relax.relion.tomo_input import flatten_relion5_tomo
 
     flat_star = flatten_relion5_tomo(particles_star, tomograms_star, flat_star)
-    scratch = None if read_policy is None else prepare_particle_reads(str(flat_star), read_policy, datadir=datadir)
+    scratch = None if read_policy is None else prepare_particle_reads(
+        str(flat_star), read_policy, datadir=datadir, compact=False
+    )
     images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
     assert_reads_from_scratch(images, scratch)
     return TomoDataset(images, read_star(str(flat_star))[0], particles_star, tomograms_star)

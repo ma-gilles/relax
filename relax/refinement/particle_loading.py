@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, prepare_particle_reads
+from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement import command_options
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 from relax.refinement.tomo_half import TomoDataset, is_relion5_2d_stack_star, load_tomo_dataset
@@ -352,7 +352,7 @@ def load_particle_inputs(
         )
     elif shape_class_rows is None:
         ds = load_dataset(
-            os.path.join(args.data_dir, "particles.star"),
+            image_star(os.path.join(args.data_dir, "particles.star"), particle_scratch),
             lazy=not particle_read_policy.preread_images,
             dtype=np.complex128 if _double_image_preprocessing else np.complex64,
             # relion_refine reads a particle STAR without angles as zero angles.
@@ -366,7 +366,7 @@ def load_particle_inputs(
         ds = MultiShapeDataset(
             [
                 load_dataset(
-                    os.path.join(args.data_dir, "particles.star"),
+                    image_star(os.path.join(args.data_dir, "particles.star"), particle_scratch),
                     lazy=not particle_read_policy.preread_images,
                     dtype=np.complex64,
                     absent_angles_zero=True,

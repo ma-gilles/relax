@@ -24,6 +24,7 @@ from relax.helpers.particle_io import (
     ParticleReadPolicy,
     add_particle_read_arguments,
     assert_reads_from_scratch,
+    image_star,
     prepare_particle_reads,
 )
 from relax.refinement import particle_loading
@@ -93,7 +94,7 @@ def _fixture(tmp_path):
 
 def _load(star, policy):
     scratch = prepare_particle_reads(star, policy)
-    ds = load_dataset(star, lazy=not policy.preread_images, absent_angles_zero=True)
+    ds = load_dataset(image_star(star, scratch), lazy=not policy.preread_images, absent_angles_zero=True)
     assert_reads_from_scratch(ds, scratch)
     return ds, scratch
 
@@ -251,7 +252,8 @@ def test_default_scratch_and_preread_read_identical_bytes(tmp_path):
         loader = ds.image_source.backend.source
         assert (loader._cached is not None) == (mode == "preread")
         if mode == "scratch":
-            assert scratch is not None and len(scratch.staged) == 2
+            # One compact stack for the one optics group (RELION's copyParticlesToScratch).
+            assert scratch is not None and len(scratch.staged) == 1
             assert all(path.startswith(scratch.directory) for path in loader.stack_files())
         else:
             assert scratch is None
@@ -288,7 +290,7 @@ def test_scratch_too_small_fails_before_copying(tmp_path, monkeypatch):
     class _Usage:
         free = 5 * 1024**3
 
-    monkeypatch.setattr(staging.shutil, "disk_usage", lambda path: _Usage)
+    monkeypatch.setattr(particle_io.shutil, "disk_usage", lambda path: _Usage)
     with pytest.raises(staging.StagingSpaceError, match="kept free"):
         prepare_particle_reads(star, ParticleReadPolicy(scratch_dir=str(scratch_root), keep_free_scratch_gb=10.0))
     assert os.listdir(scratch_root) == []
@@ -348,3 +350,102 @@ def test_arguments_default_to_the_relion_gui():
     assert ParticleReadPolicy.from_args(parsed) == ParticleReadPolicy(
         preread_images=True, scratch_dir="/tmp", keep_free_scratch_gb=2.0
     )
+
+
+def _two_group_fixture(tmp_path):
+    """Two optics groups sharing one stack, one particle named twice, rows in a non-physical order."""
+
+    rng = np.random.default_rng(11)
+    (tmp_path / "Extract").mkdir()
+    big = rng.standard_normal((40, D, D)).astype(np.float32)
+    with mrcfile.new(tmp_path / "Extract" / "big.mrcs", overwrite=True) as mrc:
+        mrc.set_data(big)
+        mrc.voxel_size = 1.5
+    picks = [7, 31, 2, 7, 19, 0, 25, 11]  # stack image 7 is named twice
+    groups = ["2", "1", "1", "2", "2", "1", "2", "1"]
+    n = len(picks)
+    data = pd.DataFrame(
+        {
+            "_rlnImageName": [f"{i + 1:06d}@Extract/big.mrcs" for i in picks],
+            "_rlnOpticsGroup": groups,
+            "_rlnAngleRot": rng.uniform(-180, 180, n),
+            "_rlnAngleTilt": rng.uniform(0, 180, n),
+            "_rlnAnglePsi": rng.uniform(-180, 180, n),
+            "_rlnDefocusU": rng.uniform(9000, 20000, n),
+            "_rlnDefocusV": rng.uniform(9000, 20000, n),
+            "_rlnDefocusAngle": rng.uniform(0, 180, n),
+        }
+    )
+    optics = pd.DataFrame(
+        {
+            "_rlnOpticsGroup": ["1", "2"],
+            "_rlnImagePixelSize": [1.5, 1.5],
+            "_rlnImageSize": [D, D],
+            "_rlnVoltage": [300.0, 300.0],
+            "_rlnSphericalAberration": [2.7, 2.7],
+            "_rlnAmplitudeContrast": [0.1, 0.1],
+        }
+    )
+    star = tmp_path / "particles.star"
+    write_star(str(star), data, optics)
+    return str(star), big[picks], groups
+
+
+def test_scratch_stages_only_referenced_particles_per_optics_group_in_star_order(tmp_path):
+    star, expected, groups = _two_group_fixture(tmp_path)
+    local = tmp_path / "local"
+    local.mkdir()
+    ds, scratch = _load(star, ParticleReadPolicy(scratch_dir=str(local), keep_free_scratch_gb=0.0))
+    try:
+        assert sorted(scratch.staged) == ["opticsgroup1_particles.mrcs", "opticsgroup2_particles.mrcs"]
+        # Each group's stack holds its particles in STAR order; the duplicate keeps its own slot.
+        for group in ("1", "2"):
+            rows = [k for k, g in enumerate(groups) if g == group]
+            with mrcfile.open(scratch.staged[f"opticsgroup{group}_particles.mrcs"]) as mrc:
+                assert mrc.data.shape == (len(rows), D, D)
+                assert_matches(mrc.data, expected[rows])
+        # Only the referenced particles are copied, not the 40-image source stack.
+        assert sum(os.path.getsize(path) for path in scratch.staged.values()) < os.path.getsize(
+            tmp_path / "Extract" / "big.mrcs"
+        )
+        assert_matches(ds.image_source.host_images(np.arange(ds.n_units)), expected)
+        assert all(path.startswith(scratch.directory) for path in ds.image_source.backend.source.stack_files())
+        # The scratch STAR differs from the input in the image names only.
+        original = starfile.read(star, always_dict=True)
+        copy = starfile.read(scratch.image_star, always_dict=True)
+        assert copy["optics"].equals(original["optics"])
+        assert copy["particles"].drop(columns="rlnImageName").equals(original["particles"].drop(columns="rlnImageName"))
+        assert all("@opticsgroup" in str(name) for name in copy["particles"]["rlnImageName"])
+    finally:
+        scratch.cleanup()
+    assert os.listdir(local) == []
+
+
+def test_subtomogram_stacks_are_still_staged_whole(tmp_path):
+    star, expected = _fixture(tmp_path)
+    scratch = prepare_particle_reads(star, ParticleReadPolicy(scratch_dir=str(tmp_path)), compact=False)
+    try:
+        assert scratch.image_star is None and len(scratch.staged) == 2
+        assert image_star(star, scratch) == star
+        ds = load_dataset(star, lazy=True, absent_angles_zero=True)
+        assert_reads_from_scratch(ds, scratch)
+        assert_matches(ds.image_source.host_images(np.arange(ds.n_units)), expected)
+    finally:
+        scratch.cleanup()
+
+
+
+def test_copy_images_reads_dense_and_sparse_selections_through_spans(tmp_path):
+    rng = np.random.default_rng(3)
+    stack = rng.standard_normal((700, D, D)).astype(np.float32)
+    path = tmp_path / "stack.mrcs"
+    with mrcfile.new(path, overwrite=True) as mrc:
+        mrc.set_data(stack)
+    with mrcfile.mmap(path, permissive=True) as mrc:
+        layout = (1024 + int(mrc.header.nsymbt), mrc.data.dtype)
+    dense = np.setdiff1d(np.arange(700), np.arange(0, 700, 3))  # spans longer than the span cap, small gaps
+    sparse = rng.permutation(700)[:40]  # gaps wider than the read-through gap, in non-physical order
+    for picks in (dense, sparse, np.array([5, 5, 6])):  # a particle named twice
+        out = np.empty((picks.size, D, D), dtype=np.float32)
+        particle_io._copy_images(str(path), layout, (D, D), picks, out, np.arange(picks.size))
+        assert_matches(out, stack[picks])

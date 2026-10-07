@@ -81,9 +81,12 @@ Particle images are read the way RELION reads them
 ([`relax/helpers/particle_io.py`](../../relax/helpers/particle_io.py)). Auto-refine,
 Class3D and InitialModel stream batches from the original stacks by default, as the
 RELION GUI does (no pre-read, no scratch). `--preread_images` holds every particle
-in host memory. `--scratch_dir DIR` copies the referenced stack files to `DIR` at
-start-up, checks the free space first and keeps `--keep_free_scratch` GB free,
-reads from the copy and removes it at exit. On della, pass
+in host memory. `--scratch_dir DIR` copies the referenced particles to `DIR` at
+start-up, one compact stack per optics group in STAR order as RELION's
+`copyParticlesToScratch` does (subtomogram tilt stacks are copied whole), checks the
+free space for that copy first and keeps `--keep_free_scratch` GB free, reads from the
+copy through a scratch copy of the particle STAR, and removes both at exit. Every output
+STAR names the input's images. On della, pass
 `--scratch_dir /tmp`: `/tmp` inside a job is a private node-local NVMe xfs mount that
 Slurm cleans up (28 TB on the cryoem H100 nodes, 5.9 TB on the A100 nodes, about 6.5 GB/s
 direct reads and 6,400-6,800 random particle reads per second). The EMPIAR-10097 stack
