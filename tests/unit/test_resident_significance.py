@@ -660,3 +660,62 @@ def test_batches_of_one_shape_share_one_compaction_program():
         if before is None:
             before = size
     assert _compact_program()._cache_size() == before
+
+
+def test_seed_iteration_supports_keep_a_csr_whose_tables_match_the_host_path():
+    # A seed iteration gives each image's first-class support to its random class only. With a device-compacted
+    # first-class support every class keeps a CSR, so the resident pass builds its tables block by block; each
+    # class's tables must be the host path's for that class's rows, empty images included.
+    from relax.classification.k_class_inputs import seed_iteration_supports
+
+    n_samples = STD_N_COARSE_ROT * N_COARSE_TRANS
+    supports = _supports(9, n_samples, seed=11)
+    csr = _csr_from_supports(supports, n_coarse_rot=STD_N_COARSE_ROT, n_coarse_trans=N_COARSE_TRANS)
+    first_class = DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr)
+    seeds = np.array([0, 2, 1, 2, 0, 1, 1, 2, 0])
+    rotation_log_prior = np.linspace(-1.0, 1.0, STD_N_COARSE_ROT, dtype=np.float32)
+
+    by_class = seed_iteration_supports(first_class, seeds, 3)
+
+    assert [len(rows) for rows in by_class] == [9, 9, 9]
+    for k, rows in enumerate(by_class):
+        assert np.array_equal(rows.csr.n_significant > 0, (seeds == k) & (csr.n_significant > 0))
+        expected = build_resident_candidate_tables(
+            _prepare_per_image_pass2_inputs(
+                list(rows),
+                n_coarse_rot=STD_N_COARSE_ROT,
+                n_coarse_trans=N_COARSE_TRANS,
+                nside_level=STD_NSIDE_LEVEL,
+                oversampling_order=STD_OVERSAMPLING,
+                n_fine_trans=N_FINE_TRANS,
+                fine_translation_parent=FINE_TRANS_PARENT,
+                rotation_log_prior=rotation_log_prior,
+                random_perturbation=0.0,
+                relion_parent_execution_order=True,
+                dtype=np.float32,
+            ),
+            n_coarse_trans=N_COARSE_TRANS,
+            n_fine_trans=N_FINE_TRANS,
+            fine_translation_parent=FINE_TRANS_PARENT,
+        )
+        got = build_resident_candidate_tables_from_csr(
+            rows.csr,
+            nside_level=STD_NSIDE_LEVEL,
+            oversampling_order=STD_OVERSAMPLING,
+            n_fine_trans=N_FINE_TRANS,
+            fine_translation_parent=FINE_TRANS_PARENT,
+            rotation_log_prior=rotation_log_prior,
+            random_perturbation=0.0,
+            relion_parent_execution_order=True,
+            dtype=np.float32,
+        )
+        _assert_tables_equal(got, expected)
+
+
+def test_seed_iteration_supports_without_a_csr_stay_plain_lists():
+    from relax.classification.k_class_inputs import seed_iteration_supports
+
+    supports = [np.array([1, 2], np.int32), np.array([3], np.int32)]
+    by_class = seed_iteration_supports(supports, [1, 0], 2)
+    assert all(type(rows) is list for rows in by_class)
+    assert by_class[0][1] is supports[1] and by_class[1][0] is supports[0] and by_class[0][0].size == 0

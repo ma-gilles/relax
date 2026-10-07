@@ -483,6 +483,30 @@ def host_support_rows(csr: CoarseSignificanceCSR) -> list:
     return rows
 
 
+def csr_restricted_to_images(csr: CoarseSignificanceCSR, keep) -> CoarseSignificanceCSR:
+    """``csr`` with every image outside ``keep`` (bool ``[n_images]``) given no significant sample.
+
+    The kept images' ids are this CSR's, in order; a dropped image becomes an empty support, the
+    ``np.zeros(0)`` row of a seed iteration's other classes (``k_class_inputs.seed_iteration_supports``).
+    """
+
+    keep = np.asarray(keep, dtype=bool)
+    if keep.shape != (int(csr.n_images),):
+        raise ValueError(f"keep must have one flag per image, got shape {keep.shape} for {csr.n_images} images")
+    counts = np.where(keep, csr.counts(), 0).astype(np.int64)
+    offsets = np.zeros(int(csr.n_images) + 1, dtype=np.int32)
+    offsets[1:] = np.cumsum(counts).astype(np.int32)
+    return CoarseSignificanceCSR(
+        n_images=int(csr.n_images),
+        n_coarse_rot=int(csr.n_coarse_rot),
+        n_coarse_trans=int(csr.n_coarse_trans),
+        offsets=offsets,
+        ids=csr.ids[np.repeat(keep, csr.counts())],
+        store_excluded=csr.store_excluded & keep,
+        n_significant=np.where(keep, csr.n_significant, 0).astype(np.int32),
+    )
+
+
 def resident_significance_csr(
     significant_sample_indices,
     *,

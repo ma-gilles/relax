@@ -105,14 +105,25 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
     ``first_class_supports[u]`` is unit ``u``'s coarse support scored against the first class
     (:func:`seed_iteration_first_class`) and ``unit_seed_classes[u]`` its random class (0-based,
     ``relax.relion.input_particle_table.relion_class3d_seed_classes``); the other classes get no candidates, as
-    RELION scores none of them.
+    RELION scores none of them. A first-class support compacted on the device keeps its CSR per class, so the
+    resident pass builds the candidate tables block by block (``resident_pass2._candidate_table_blocks``) instead of
+    whole on the host.
     """
 
     seeds = np.asarray(unit_seed_classes, dtype=np.int64).reshape(-1)
     if seeds.size != len(first_class_supports) or np.any((seeds < 0) | (seeds >= int(n_classes))):
         raise ValueError("a seed iteration gives every unit one class in range")
     empty = np.zeros(0, dtype=np.int32)
-    return [
+    by_class = [
         [support if seeds[u] == k else empty for u, support in enumerate(first_class_supports)]
         for k in range(int(n_classes))
+    ]
+    csr = getattr(first_class_supports, "csr", None)
+    if csr is None:
+        return by_class
+    from relax.sparse_pass2.resident_significance import DeviceCompactedSignificantSamples, csr_restricted_to_images
+
+    return [
+        DeviceCompactedSignificantSamples(rows, csr=csr_restricted_to_images(csr, seeds == k))
+        for k, rows in enumerate(by_class)
     ]
