@@ -64,6 +64,7 @@ __all__ = [
     "expand_mask_rows",
     "materialize_chunk",
     "plan_capacity_chunks",
+    "plan_pass_chunks",
     "share_image_capacity",
     "table_block_starts",
 ]
@@ -816,6 +817,63 @@ def plan_capacity_chunks(
             i = best_stop
 
     return chunks
+
+
+# A pass's chunks take one row class when that costs at most this many chunks more
+# than the greedy plan (which fills the largest class and gives the remainder a
+# smaller one); otherwise the greedy plan is kept. Padding the remainder up to the
+# largest class instead would pay for the whole capacity in the shape-static
+# scoring, posterior and statistics programs.
+_MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS = 4
+
+
+def plan_pass_chunks(tables, *, row_capacity_ladder, image_capacity_ladder, image_ranges) -> list[CapacityChunk]:
+    """A pass's chunks over ``image_ranges`` (table blocks), all of one row class and one image class.
+
+    The chunk programs are keyed on the row capacity, so a pass whose greedy plan
+    (:func:`plan_capacity_chunks`) fills the largest class and gives each block's
+    remainder a smaller one compiled every program twice per size (524288 and
+    131072 rows on EMPIAR-10097, 32768 and 8192 on the pdb K2 5k Class3D). The pass
+    is planned again with the smallest class the greedy plan used whose plan has at
+    most :data:`_MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS` more chunks and no new one-image
+    overflow chunk; failing that, the greedy plan is kept. The class is one the
+    ladder offered and the greedy plan already ran, so the chunk memory never
+    exceeds the greedy plan's peak, and a smaller class pads fewer rows. The image
+    class is shared as by :func:`share_image_capacity`.
+    """
+
+    row_capacity_ladder = tuple(int(v) for v in row_capacity_ladder)
+
+    def plan(row_ladder):
+        return [
+            chunk
+            for image_range in image_ranges
+            for chunk in plan_capacity_chunks(
+                tables,
+                row_capacity_ladder=row_ladder,
+                image_capacity_ladder=image_capacity_ladder,
+                image_range=image_range,
+            )
+        ]
+
+    largest = max(row_capacity_ladder)
+
+    def overflow_count(chunks, regular_bound):
+        return sum(int(chunk.row_capacity) > regular_bound for chunk in chunks)
+
+    chunks = plan(row_capacity_ladder)
+    used = sorted({int(chunk.row_capacity) for chunk in chunks if int(chunk.row_capacity) <= largest})
+    if len(used) > 1:
+        greedy_overflow = overflow_count(chunks, largest)
+        for capacity in used[:-1]:
+            single = plan((capacity,))
+            if (
+                len(single) <= len(chunks) + _MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS
+                and overflow_count(single, capacity) == greedy_overflow
+            ):
+                chunks = single
+                break
+    return share_image_capacity(chunks, row_capacity_ladder)
 
 
 def share_image_capacity(chunks, row_capacity_ladder) -> list[CapacityChunk]:

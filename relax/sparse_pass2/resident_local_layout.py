@@ -56,7 +56,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from relax.sparse_pass2.resident_candidates import CapacityChunk, plan_capacity_chunks, share_image_capacity
+from relax.sparse_pass2.resident_candidates import CapacityChunk, plan_pass_chunks
 
 __all__ = [
     "ResidentLocalTables",
@@ -269,7 +269,7 @@ def plan_local_capacity_chunks(
     row_capacity_ladder,
     image_capacity_ladder,
 ) -> list[CapacityChunk]:
-    """Chunk a local table with the shared greedy planner (T5).
+    """Chunk a local table with the shared planner (T5), in one row and one image class (:func:`plan_pass_chunks`).
 
     The planner reads only ``row_offsets`` and ``n_images``, so the local table
     reuses it verbatim: images stay in order, a chunk never exceeds its
@@ -279,12 +279,12 @@ def plan_local_capacity_chunks(
     a ~87k-row maximum), so one-image chunks are expected, not exceptional.
     """
 
-    chunks = plan_capacity_chunks(
+    return plan_pass_chunks(
         tables,
         row_capacity_ladder=row_capacity_ladder,
         image_capacity_ladder=image_capacity_ladder,
+        image_ranges=[(0, int(tables.n_images))],
     )
-    return share_image_capacity(chunks, row_capacity_ladder)
 
 
 def expand_local_mask_rows(tables: ResidentLocalTables, start: int, stop: int) -> np.ndarray:

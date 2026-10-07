@@ -230,6 +230,84 @@ def test_chunks_are_contiguous_ordered_and_cover_every_row_exactly_once():
     assert covered_rows == tables.n_rows
 
 
+def _covers_in_order(chunks, tables):
+    assert chunks[0].image_start == 0 and chunks[-1].image_stop == tables.n_images
+    for prev, cur in zip(chunks, chunks[1:]):
+        assert prev.image_stop == cur.image_start and prev.row_stop == cur.row_start
+    for chunk in chunks:
+        assert chunk.n_valid_rows <= chunk.row_capacity and chunk.n_valid_images <= chunk.image_capacity
+
+
+def test_a_pass_runs_in_one_row_class_when_few_extra_chunks_cost():
+    """The greedy plan's remainder chunk took a smaller row class, which compiled the chunk
+    programs twice per size; the pass is planned again in the smallest class it used."""
+
+    from relax.sparse_pass2.resident_candidates import plan_pass_chunks
+
+    # 20 one-row images: greedy fills one 16-row chunk and puts the 4-row remainder in class 4.
+    tables = _synthetic_tables([1] * 20)
+    ladder = dict(row_capacity_ladder=(4, 16), image_capacity_ladder=(32,))
+    greedy = plan_capacity_chunks(tables, **ladder)
+    assert sorted({c.row_capacity for c in greedy}) == [4, 16]
+    chunks = plan_pass_chunks(tables, **ladder, image_ranges=[(0, tables.n_images)])
+    assert {c.row_capacity for c in chunks} == {4} and len(chunks) == 5
+    assert len({c.image_capacity for c in chunks}) == 1
+    _covers_in_order(chunks, tables)
+
+
+def test_a_pass_with_many_chunks_keeps_the_greedy_plan():
+    """When the smallest class would cost more than a few extra chunks, the greedy plan is kept:
+    the remainder is not padded up to the largest class, whose shape-static programs would pay
+    for the whole capacity."""
+
+    from relax.sparse_pass2.resident_candidates import _MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS, plan_pass_chunks
+
+    n = 16 * 10 + 4  # ten full 16-row chunks and a 4-row remainder
+    tables = _synthetic_tables([1] * n)
+    ladder = dict(row_capacity_ladder=(4, 16), image_capacity_ladder=(32,))
+    greedy = plan_capacity_chunks(tables, **ladder)
+    assert -(-n // 4) > len(greedy) + _MAX_EXTRA_CHUNKS_FOR_ONE_ROW_CLASS
+    chunks = plan_pass_chunks(tables, **ladder, image_ranges=[(0, n)])
+    assert [(c.image_start, c.image_stop, c.row_capacity) for c in chunks] == [
+        (c.image_start, c.image_stop, c.row_capacity) for c in greedy
+    ]
+    _covers_in_order(chunks, tables)
+
+
+def test_one_row_class_keeps_the_overflow_chunks_of_the_greedy_plan():
+    """An image past the smaller class would become a new one-image overflow chunk there, so
+    that class is rejected and the greedy plan is kept."""
+
+    from relax.sparse_pass2.resident_candidates import plan_pass_chunks
+
+    # A 12-row image fits class 16 but would overflow class 4; the 3-row tail takes class 4.
+    tables = _synthetic_tables([12, 3, 3])
+    ladder = dict(row_capacity_ladder=(4, 16), image_capacity_ladder=(32,))
+    greedy = plan_capacity_chunks(tables, **ladder)
+    assert sorted({c.row_capacity for c in greedy}) == [4, 16]
+    chunks = plan_pass_chunks(tables, **ladder, image_ranges=[(0, tables.n_images)])
+    assert [c.row_capacity for c in chunks] == [c.row_capacity for c in greedy]
+    _covers_in_order(chunks, tables)
+
+
+def test_one_row_class_chunks_stay_inside_their_table_blocks_and_cover_each_image_once():
+    """Chunks never cross an image range, and the re-planned pass covers every image and row
+    exactly once, as the greedy plan does."""
+
+    from relax.sparse_pass2.resident_candidates import plan_pass_chunks
+
+    tables = _synthetic_tables([1] * 23 + [3, 2] + [1] * 14)
+    ranges = [(0, 20), (20, tables.n_images)]
+    ladder = dict(row_capacity_ladder=(4, 16), image_capacity_ladder=(32,))
+    chunks = plan_pass_chunks(tables, **ladder, image_ranges=ranges)
+    for chunk in chunks:
+        assert any(lo <= chunk.image_start and chunk.image_stop <= hi for lo, hi in ranges)
+    images = [i for c in chunks for i in range(c.image_start, c.image_stop)]
+    assert images == list(range(tables.n_images))
+    greedy = [c for lo, hi in ranges for c in plan_capacity_chunks(tables, **ladder, image_range=(lo, hi))]
+    assert sum(c.n_valid_rows for c in chunks) == sum(c.n_valid_rows for c in greedy) == tables.n_rows
+
+
 def test_the_chunks_of_a_pass_share_its_largest_image_class():
     from relax.sparse_pass2.resident_candidates import share_image_capacity
 
