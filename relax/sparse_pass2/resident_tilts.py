@@ -173,7 +173,6 @@ def tilt_projection_slot_block(max_rows: int, *, slot_capacity: int, slot_row_by
     at least one.
     """
 
-    slot_capacity = int(slot_capacity)
     need = int(max_rows) * int(slot_row_bytes)
     if budget_bytes is None or need <= 0 or need * slot_capacity <= int(budget_bytes) // 2:
         return slot_capacity
@@ -223,7 +222,7 @@ def run_tilt_chunk(
     resident_operands,
     project_rotations,
     base_tables,
-    n_fine_trans,
+    n_fine_trans: int,
     spec_kwargs,
     stats,
     Ft_y_total,
@@ -275,14 +274,12 @@ def run_tilt_chunk(
     from relax.sparse_pass2.resident_candidates import expand_chunk_mask_jnp
     from relax.sparse_pass2.resident_scoring import tilt_image_rows_raw_diff2, tilt_rows_scores_from_raw
 
-    row_capacity = int(chunk.row_capacity)
+    row_capacity = chunk.row_capacity
     unit_capacity = int(chunk.image_capacity)
-    n_valid_rows = int(chunk.n_valid_rows)
+    n_valid_rows = chunk.n_valid_rows
     n_slots = int(tilt.slot_capacity)
     image_capacity = tilt_chunk_image_capacity(unit_capacity, n_slots)
-    n_fine_trans = int(n_fine_trans)
 
-    n_classes = int(tables.n_classes)
     n_accumulators = len(Ft_y_total)
     if n_accumulators != int(tables.n_slots):
         raise ValueError(f"{n_accumulators} BPref pairs for the tables' {int(tables.n_slots)} accumulator slots")
@@ -313,7 +310,7 @@ def run_tilt_chunk(
         layout, row_eulers, tilt.image_left, row_spa_matrices=np.asarray(tilt.fine_rotations)[row_fine_rot]
     )
     row_class = np.zeros(row_capacity, dtype=np.int64)
-    if n_classes > 1:
+    if tables.n_classes > 1:
         row_class[:n_valid_rows] = np.asarray(host["row_class"], dtype=np.int64)[:n_valid_rows]
     entry_class = np.tile(row_class, n_slots)
     slot_block = n_slots if slot_block is None else max(1, min(int(slot_block), n_slots))
@@ -321,7 +318,7 @@ def run_tilt_chunk(
 
     def project_block(start, stop):
         entries = slice(start * row_capacity, stop * row_capacity)
-        return project_slot_rows(project_rotations, slot_matrices[entries], entry_class[entries], n_classes=n_classes)
+        return project_slot_rows(project_rotations, slot_matrices[entries], entry_class[entries], n_classes=tables.n_classes)
 
     # One block: the chunk's projections are made once, for the scores and the M-step.
     whole = project_block(0, n_slots) if len(slot_blocks) == 1 else None
@@ -583,7 +580,7 @@ def run_tilt_chunk(
             )
             if mstep.scale_xa_per_image is not None:
                 mstep = rp._fold_class_scale_sums(
-                    mstep, stage_tables.wavg_scale_pixel_mask, rp._device_int32(accumulator % n_classes)
+                    mstep, stage_tables.wavg_scale_pixel_mask, rp._device_int32(accumulator % tables.n_classes)
                 )
             Ft_y_out[accumulator], Ft_ctf_out[accumulator] = mstep.Ft_y, mstep.Ft_ctf
         del tables_b
@@ -986,7 +983,6 @@ def unit_mstep_translations(
     others drops only terms whose posterior is exactly zero.
     """
 
-    n_fine_trans = int(n_fine_trans)
     row_unit = np.asarray(row_unit, dtype=np.int64)
     mass = np.asarray(row_posterior) > 0.0
     unit_mass = np.zeros((int(unit_capacity), n_fine_trans), dtype=bool)
@@ -1025,13 +1021,12 @@ def mstep_translation_blocks(
     the last padded with ``valid`` false.
     """
 
-    size = int(kept.index.size)
     fit = min(max(int(tile_budget_bytes) // max(int(bytes_per_translation), 1), 1), TILT_MSTEP_MAX_TRANSLATIONS)
-    if size <= fit:
+    if kept.index.size <= fit:
         return (kept,)
     block = pow2_floor(fit)
     out = []
-    for start in range(0, size, block):
+    for start in range(0, kept.index.size, block):
         index = kept.index[start : start + block]
         valid = kept.valid[start : start + block]
         pad = block - index.size
@@ -1177,8 +1172,6 @@ def accumulate_tilt_chunk_terms(
     from relax.sparse_pass2.resident_statistics import ResidentStatistics, _drop_index, segment_sum_by_image
 
     config = spec.stats_config
-    n_shells = int(config.n_shells)
-    n_fine_trans = int(config.n_fine_trans)
     unit_capacity = int(unit_ids.shape[0])
     valid_unit = unit_ids >= 0
     unit_slot = _drop_index(unit_ids, int(config.image_capacity))
@@ -1196,12 +1189,11 @@ def accumulate_tilt_chunk_terms(
     unit_mass = jnp.where(
         valid_unit, jnp.sum(translation_posterior, axis=1), jnp.zeros((), translation_posterior.dtype)
     )
-    n_optics_groups = int(config.n_optics_groups)
-    if n_optics_groups == 1:
+    if config.n_optics_groups == 1:
         sumw = stats.sumw + jnp.sum(unit_mass.astype(jnp.float64))
     else:
         sumw = stats.sumw + jax.ops.segment_sum(
-            unit_mass.astype(jnp.float64), unit_optics_groups, num_segments=n_optics_groups
+            unit_mass.astype(jnp.float64), unit_optics_groups, num_segments=config.n_optics_groups
         )
 
     # --- 3. image power: each image with its particle's mass / n_images (1 / n_images above the cutoff)
@@ -1228,19 +1220,19 @@ def accumulate_tilt_chunk_terms(
     # --- 5/6. noise shells with the direct low-shell residual --------------
     direct_residual = operands.image_noise_scale[:, None] * mstep.wavg_triplet_pixels[:, :, 2]
     direct_residual = jnp.where(valid_image[:, None], direct_residual, jnp.float32(0.0))
-    if n_optics_groups == 1:
+    if config.n_optics_groups == 1:
         residual_shells, image_power_shells = rp._replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
             jnp.asarray(mstep.noise_shells, dtype=jnp.float64),
             weighted_img_shells.astype(jnp.float64),
             direct_residual,
             tables.wavg_shell_indices,
             exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
-            shell_count=n_shells,
+            shell_count=config.n_shells,
         )
     else:
         image_optics = jnp.asarray(operands.optics_groups, dtype=jnp.int32)
         residual_per_group, power_per_group = [], []
-        for group in range(n_optics_groups):
+        for group in range(config.n_optics_groups):
             in_group = valid_image & (image_optics == group)
             group_img_shells, _ = weighted_image_power_from_shells(
                 operands.image_power_shells,
@@ -1258,7 +1250,7 @@ def accumulate_tilt_chunk_terms(
                 jnp.where(in_group[:, None], direct_residual, jnp.float32(0.0)),
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
-                shell_count=n_shells,
+                shell_count=config.n_shells,
             )
             residual_per_group.append(group_residual)
             power_per_group.append(group_power)
@@ -1294,11 +1286,11 @@ def accumulate_tilt_chunk_terms(
     absolute = jnp.asarray(posterior.class_log_z, dtype=jnp.float64) + log_score_offset
     neg_inf = jnp.asarray(-jnp.inf, dtype=jnp.float64)
     best_cell_index = jnp.asarray(posterior.best_cell_index, dtype=jnp.int64)
-    best_local_rot = (best_cell_index // jnp.int64(n_fine_trans)).astype(jnp.int32)
+    best_local_rot = (best_cell_index // jnp.int64(config.n_fine_trans)).astype(jnp.int32)
     last_row = jnp.int64(int(spec.row_capacity) - 1)
     best_chunk_row = jnp.clip(rows.image_row_start + best_local_rot.astype(jnp.int64), 0, last_row).astype(jnp.int32)
     row_fine_rot = jnp.asarray(row_fine_rot, dtype=jnp.int64)
-    n_t = jnp.int64(n_fine_trans)
+    n_t = jnp.int64(config.n_fine_trans)
     best_cell_values = row_fine_rot[best_chunk_row] * n_t + best_cell_index % n_t
 
     # --- 11. the class axis (K>1): the particle's --------------------------

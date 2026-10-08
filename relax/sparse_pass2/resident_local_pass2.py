@@ -589,7 +589,7 @@ def compute_local_search_resident(
     )
     # Class3D local search (K>1): the layout's rows repeat per class; each class's rows are
     # projected with its own reference and backprojected into its own BPref.
-    n_classes = int(tables.n_classes)
+    n_classes = tables.n_classes
 
     # ---- window, weights and lookups --------------------------------------
     window_setup = _sparse_pass2_window_setup(
@@ -1348,7 +1348,7 @@ def _finalize_class_local_pass(
     Winners are rows of the layout's flat order, decoded through the tables as for K=1.
     """
 
-    n_classes = int(tables.n_classes)
+    n_classes = tables.n_classes
     Ft_y_public, Ft_ctf_public = [], []
     for k in range(n_classes):
         y, ctf = finalize_half_volume_bpref(
@@ -1451,8 +1451,7 @@ def _prepare_chunk_score_operands(
     with ``score_only`` and the rows are permuted and padded exactly as there.
     """
 
-    image_capacity = int(chunk.image_capacity)
-    n_valid_images = int(chunk.n_valid_images)
+    image_capacity = chunk.image_capacity
     image_indices = np.asarray(image_indices)
     batch_images, padded_ctf_params, fetched_indices, padded_fetched_indices = rp.fetch_capacity_batch(
         experiment_dataset, image_indices, image_capacity
@@ -1485,7 +1484,7 @@ def _prepare_chunk_score_operands(
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )
     permutation = jnp.asarray(order, dtype=jnp.int32)
-    valid_images = jnp.asarray(np.arange(image_capacity) < n_valid_images, dtype=bool)
+    valid_images = jnp.asarray(np.arange(image_capacity) < chunk.n_valid_images, dtype=bool)
 
     def take(values):
         return rp._zero_padded_images(values[permutation], valid_images)
@@ -1608,7 +1607,7 @@ def _run_resident_parent_probe(
 
     from relax.cuda import kernels as em_cuda_kernels
 
-    n_images = int(tables.n_images)
+    n_images = tables.n_images
     t = int(n_fine_trans)
     complex_bytes = np.dtype(precision_policy.score_complex_dtype).itemsize
     projector_output_size = projection_kwargs.get("projector_output_size")
@@ -1677,7 +1676,6 @@ def _run_resident_parent_probe(
     def start(chunk):
         """Enqueue one chunk up to its posterior; returns what :func:`finish` reads back."""
 
-        image_capacity = int(chunk.image_capacity)
         image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
         host_chunk = materialize_local_chunk(tables, chunk)
         ops = _prepare_chunk_score_operands(
@@ -1733,8 +1731,8 @@ def _run_resident_parent_probe(
             )
         n_valid_images_device = jnp.asarray(host_chunk["n_valid_images"], dtype=jnp.int32)
         chunk_image_ids = jnp.where(
-            jnp.arange(image_capacity, dtype=jnp.int32) < n_valid_images_device,
-            jnp.arange(image_capacity, dtype=jnp.int32),
+            jnp.arange(chunk.image_capacity, dtype=jnp.int32) < n_valid_images_device,
+            jnp.arange(chunk.image_capacity, dtype=jnp.int32),
             jnp.int32(-1),
         )
         scored = score_resident_projected_chunk(
@@ -1753,7 +1751,7 @@ def _run_resident_parent_probe(
             full_to_compact=full_to_compact,
             logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
             row_capacity=int(chunk.row_capacity),
-            image_capacity=image_capacity,
+            image_capacity=chunk.image_capacity,
             n_fine_trans=t,
             n_score_pixels=int(n_score_pixels),
         )
@@ -1781,7 +1779,7 @@ def _run_resident_parent_probe(
             segment_offsets,
             n_valid_images_device,
             log_z,
-            jnp.ones((image_capacity,), dtype=jnp.float32),
+            jnp.ones((chunk.image_capacity,), dtype=jnp.float32),
             adaptive_fraction=float(adaptive_fraction),
             keep_all=False,
             use_external_sum_weight=False,
@@ -1792,17 +1790,16 @@ def _run_resident_parent_probe(
     def finish(chunk, host_chunk, segment_offsets_np, device):
         """Read one chunk's support back and record it per image."""
 
-        row_capacity = int(chunk.row_capacity)
-        n_valid_rows = int(chunk.n_valid_rows)
-        n_valid_images = int(chunk.n_valid_images)
+        n_valid_rows = chunk.n_valid_rows
+        n_valid_images = chunk.n_valid_images
         mask, best_cell, log_z_out, best_log, max_post, n_significant, weights, min_diff2 = device
         mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, n_sig_np, min_diff2_np = jax.device_get(
             (mask, best_cell, log_z_out, best_log, max_post, n_significant, min_diff2)
         )
-        mask_np = np.asarray(mask_np, dtype=bool).reshape(row_capacity, t)[:n_valid_rows]
+        mask_np = np.asarray(mask_np, dtype=bool).reshape(chunk.row_capacity, t)[:n_valid_rows]
         image_row_start = segment_offsets_np.astype(np.int64)[:n_valid_images] // t
         if max_significants > 0 and int(np.max(np.asarray(n_sig_np)[:n_valid_images], initial=0)) > max_significants:
-            weights_np = np.asarray(jax.device_get(weights), dtype=np.float32).reshape(row_capacity, t)[:n_valid_rows]
+            weights_np = np.asarray(jax.device_get(weights), dtype=np.float32).reshape(chunk.row_capacity, t)[:n_valid_rows]
             row_bounds = np.append(image_row_start, n_valid_rows)
             mask_np = _cap_significant_samples(mask_np, weights_np, row_bounds, max_significants)
             n_sig_np = np.array(n_sig_np, copy=True)
@@ -2168,10 +2165,9 @@ def _start_resident_local_chunk(
     result is otherwise brought back.
     """
 
-    row_capacity = int(chunk.row_capacity)
-    image_capacity = int(chunk.image_capacity)
-    n_valid_rows = int(chunk.n_valid_rows)
-    n_valid_images = int(chunk.n_valid_images)
+    row_capacity = chunk.row_capacity
+    image_capacity = chunk.image_capacity
+    n_valid_rows = chunk.n_valid_rows
     image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
     # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
     operand_current_size = current_size if wsum_current_size is None else wsum_current_size
@@ -2370,7 +2366,7 @@ def _start_resident_local_chunk(
     mark("posterior", row_posterior, log_z_out, best_cell_index)
     if significant_counts is not None:
         significant_counts[chunk.image_start : chunk.image_stop] = np.asarray(
-            jax.device_get(n_significant)[:n_valid_images], dtype=np.int32
+            jax.device_get(n_significant)[:chunk.n_valid_images], dtype=np.int32
         )
 
     mstep_rotations = jnp.asarray(
@@ -2521,7 +2517,7 @@ def _start_resident_local_chunk(
             )
             translation_sqdist_ang = rp._zero_padded_images(
                 jnp.asarray(translation_sqdist_angstrom(fine_translations, centers, voxel_size)),
-                jnp.asarray(np.arange(image_capacity) < n_valid_images, dtype=bool),
+                jnp.asarray(np.arange(image_capacity) < chunk.n_valid_images, dtype=bool),
             )
         chunk_tables = image_tables._replace(translation_sqdist_ang=translation_sqdist_ang)
 
@@ -2586,7 +2582,7 @@ def _start_resident_local_chunk(
             logger.info(
                 "Resident local chunk profile: images=%d/%d rows=%d/%d live_rows=%d row_pad=%.1f%% "
                 "blocks=%d proj_rows=%d recon_tile=%s wavg_tile=%s | %s | chunk=%.3fs",
-                n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows_host,
+                chunk.n_valid_images, image_capacity, n_valid_rows, row_capacity, n_live_rows_host,
                 100.0 * (row_capacity - n_valid_rows) / max(row_capacity, 1),
                 n_blocks, n_projected_rows,
                 f"{recon_operand.dtype}{tuple(recon_operand.shape)}",

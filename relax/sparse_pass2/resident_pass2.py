@@ -1526,8 +1526,6 @@ def _accumulate_chunk_image_terms(
     already-summed chunk partials, because the pixel axis is walked in blocks.
     """
 
-    n_shells = int(config.n_shells)
-    n_fine_trans = int(config.n_fine_trans)
     image_capacity = int(operands.image_ids.shape[0])
     norm_shell_cutoff = config.norm_unweighted_shell_cutoff
     direct_noise_shell_stop = config.direct_noise_exclusive_shell_stop
@@ -1556,14 +1554,13 @@ def _accumulate_chunk_image_terms(
         )
     support_mass = jnp.sum(translation_posterior, axis=1)
     support_mass = jnp.where(valid_image, support_mass, jnp.zeros((), support_mass.dtype))
-    n_optics_groups = int(config.n_optics_groups)
-    if n_optics_groups == 1:
+    if config.n_optics_groups == 1:
         sumw = stats.sumw + jnp.sum(support_mass.astype(jnp.float64))
     else:
         # RELION's sumw_group[optics_group]: the support mass of each group's images.
         image_optics = jnp.asarray(operands.optics_groups, dtype=jnp.int32)
         sumw = stats.sumw + jax.ops.segment_sum(
-            support_mass.astype(jnp.float64), image_optics, num_segments=n_optics_groups
+            support_mass.astype(jnp.float64), image_optics, num_segments=config.n_optics_groups
         )
 
     # --- 3. weighted image power shells and per-image norm power -----------
@@ -1586,7 +1583,7 @@ def _accumulate_chunk_image_terms(
     )
 
     # --- 5/6. noise shells with RELION's direct low-shell replacement ------
-    if n_optics_groups == 1:
+    if config.n_optics_groups == 1:
         residual_shells, img_power_shells = (
             _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(operands.block_noise_shells, dtype=jnp.float64),
@@ -1594,13 +1591,13 @@ def _accumulate_chunk_image_terms(
                 operands.wavg_triplet_pixels[:, :, 2],
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=direct_noise_shell_stop,
-                shell_count=n_shells,
+                shell_count=config.n_shells,
             )
         )
     else:
         # The same two steps once per optics group, over that group's images only.
         residual_per_group, power_per_group = [], []
-        for group in range(n_optics_groups):
+        for group in range(config.n_optics_groups):
             in_group = valid_image & (image_optics == group)
             group_img_shells, _ = weighted_image_power_from_shells(
                 operands.image_power_shells,
@@ -1617,7 +1614,7 @@ def _accumulate_chunk_image_terms(
                 jnp.where(in_group[:, None], operands.wavg_triplet_pixels[:, :, 2], jnp.float32(0.0)),
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=direct_noise_shell_stop,
-                shell_count=n_shells,
+                shell_count=config.n_shells,
             )
             residual_per_group.append(group_residual)
             power_per_group.append(group_power)
@@ -1695,10 +1692,10 @@ def _accumulate_chunk_image_terms(
     )
 
     best_cell_index = jnp.asarray(operands.best_cell_index, dtype=jnp.int64)
-    best_local_rot = (best_cell_index // jnp.int64(n_fine_trans)).astype(jnp.int32)
-    best_translation = best_cell_index % jnp.int64(n_fine_trans)
+    best_local_rot = (best_cell_index // jnp.int64(config.n_fine_trans)).astype(jnp.int32)
+    best_translation = best_cell_index % jnp.int64(config.n_fine_trans)
     best_cell_values = (
-        jnp.asarray(operands.best_fine_rot, dtype=jnp.int64) * jnp.int64(n_fine_trans)
+        jnp.asarray(operands.best_fine_rot, dtype=jnp.int64) * jnp.int64(config.n_fine_trans)
         + best_translation
     )
     best_cell = stats.best_cell.at[image_slot].set(best_cell_values, mode="drop")
@@ -1832,7 +1829,6 @@ def fetch_capacity_batch(experiment_dataset, image_indices, capacity: int):
     """
 
     image_indices = np.asarray(image_indices)
-    capacity = int(capacity)
     n = int(image_indices.shape[0])
     if n > capacity or n == 0:
         raise ValueError(f"cannot pad a batch of {n} rows to capacity {capacity}")
@@ -1991,7 +1987,7 @@ def _coarse_normalization_reuse(
 
     if relion_f32_normalization_sum_weight is None:
         return None
-    n_images = int(tables.n_images)
+    n_images = tables.n_images
     sum_weight = np.asarray(relion_f32_normalization_sum_weight, dtype=np.float64).reshape(-1)
     if sum_weight.shape != (n_images,):
         raise ValueError(
@@ -3295,13 +3291,12 @@ def _resident_pass2(
         n_recon_pixels=n_recon_windowed,
     )
     # Every slot's two accumulators are zeroed by one program per shape class.
-    n_slots = int(tables.n_slots)
     zero_accumulators = _zero_block_partials(
-        ((tuple(accumulator_shape), jnp.dtype(recon_y_accum_dtype)),) * n_slots
-        + ((tuple(accumulator_shape), jnp.dtype(recon_ctf_accum_dtype)),) * n_slots
+        ((tuple(accumulator_shape), jnp.dtype(recon_y_accum_dtype)),) * tables.n_slots
+        + ((tuple(accumulator_shape), jnp.dtype(recon_ctf_accum_dtype)),) * tables.n_slots
     )()
-    Ft_y_total = tuple(zero_accumulators[:n_slots])
-    Ft_ctf_total = tuple(zero_accumulators[n_slots:])
+    Ft_y_total = tuple(zero_accumulators[:tables.n_slots])
+    Ft_ctf_total = tuple(zero_accumulators[tables.n_slots:])
     del zero_accumulators
     logger.info(
         "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB available to the allocator)",
@@ -5438,12 +5433,10 @@ def _row_projection_ids(host_chunk, n_fine_rot: int | None, slot_of_projection=N
 def _chunk_class_layout(host_chunk, chunk, *, n_classes: int, n_fine_trans: int, place) -> _ChunkClassLayout:
     """The (slot, class) posterior sub-segments of one chunk."""
 
-    row_capacity = int(chunk.row_capacity)
-    image_capacity = int(chunk.image_capacity)
-    n_valid_rows = int(chunk.n_valid_rows)
-    n_segments = image_capacity * int(n_classes)
+    n_valid_rows = chunk.n_valid_rows
+    n_segments = chunk.image_capacity * int(n_classes)
     row_class = np.asarray(host_chunk["row_class"], dtype=np.int64)
-    row_segment = np.full(row_capacity, n_segments, dtype=np.int64)
+    row_segment = np.full(chunk.row_capacity, n_segments, dtype=np.int64)
     row_segment[:n_valid_rows] = (
         np.asarray(host_chunk["row_image_local"][:n_valid_rows], dtype=np.int64) * int(n_classes)
         + row_class[:n_valid_rows]
@@ -5482,8 +5475,7 @@ def _chunk_host_rows(tables: CandidateTableBlocks, chunk):
 
     block_tables, local_chunk, image_base = tables.chunk_tables(chunk)
     host_chunk = materialize_chunk(block_tables, local_chunk)
-    n_valid_images = int(chunk.n_valid_images)
-    host_chunk["image_ids"][:n_valid_images] += np.int32(image_base)
+    host_chunk["image_ids"][:chunk.n_valid_images] += np.int32(image_base)
     return block_tables, host_chunk, local_chunk
 
 
@@ -5502,20 +5494,18 @@ def _make_chunk_row_arrays(
     carry projection ids (:func:`_row_projection_ids`) and the class layout.
     """
 
-    image_capacity = int(chunk.image_capacity)
     tables, host_chunk, local_chunk = _chunk_host_rows(tables, chunk)
     segment_offsets_np = chunk_segment_offsets(tables, local_chunk, n_fine_trans=n_fine_trans)
-    image_row_start_np = segment_offsets_np.astype(np.int64)[:image_capacity] // int(n_fine_trans)
+    image_row_start_np = segment_offsets_np.astype(np.int64)[:chunk.image_capacity] // int(n_fine_trans)
     image_row_count_np = (
         segment_offsets_np.astype(np.int64)[1:] - segment_offsets_np.astype(np.int64)[:-1]
     ) // int(n_fine_trans)
-    n_classes = int(tables.n_classes)
-    if n_classes > 1 and n_fine_rot is None:
+    if tables.n_classes > 1 and n_fine_rot is None:
         raise ValueError("a K-class chunk needs n_fine_rot for its projection ids")
     classes = None
-    if n_classes > 1:
+    if tables.n_classes > 1:
         classes = _chunk_class_layout(
-            host_chunk, chunk, n_classes=n_classes, n_fine_trans=n_fine_trans, place=place
+            host_chunk, chunk, n_classes=tables.n_classes, n_fine_trans=n_fine_trans, place=place
         )
     mstep = None
     if int(tables.n_slots) > 1:
@@ -5524,7 +5514,7 @@ def _make_chunk_row_arrays(
         {
             "row_image_local": (host_chunk["row_image_local"], jnp.int32),
             "row_fine_rot": (
-                _row_projection_ids(host_chunk, n_fine_rot if n_classes > 1 else None, slot_of_projection),
+                _row_projection_ids(host_chunk, n_fine_rot if tables.n_classes > 1 else None, slot_of_projection),
                 jnp.int32,
             ),
             "row_log_prior": (host_chunk["row_log_prior"], jnp.float32),
@@ -5546,7 +5536,7 @@ def _make_chunk_translation_sqdist(
     *,
     translation_prior_centers_np,
     image_indices,
-    image_capacity,
+    image_capacity: int,
     n_valid_images,
     fine_translations,
     voxel_size,
@@ -5561,7 +5551,6 @@ def _make_chunk_translation_sqdist(
 
     if translation_prior_centers_np is None:
         return default
-    image_capacity = int(image_capacity)
     padded_image_indices = _pad_batch_to_capacity(
         np.asarray(image_indices).reshape(-1, 1), image_capacity
     ).reshape(-1)
@@ -6275,8 +6264,7 @@ def _prepare_chunk_reconstruction_operands(
     their image ids are -1.
     """
 
-    image_capacity = int(chunk.image_capacity)
-    n_valid_images = int(chunk.n_valid_images)
+    image_capacity = chunk.image_capacity
     image_indices = np.asarray(image_indices)
 
     batch_images, padded_ctf_params, fetched_indices, padded_fetched_indices = fetch_capacity_batch(
@@ -6399,7 +6387,7 @@ def _prepare_chunk_reconstruction_operands(
 
     permutation = jnp.asarray(order, dtype=jnp.int32)
     valid_images = jnp.asarray(
-        np.arange(image_capacity) < n_valid_images, dtype=bool
+        np.arange(image_capacity) < chunk.n_valid_images, dtype=bool
     )
     score_shifted_cc = cc_half_batch_norm = None
     if normalized_cc:
@@ -6457,18 +6445,18 @@ def _prepare_chunk_reconstruction_operands(
     # posterior is zero, so the value is never observable.
     scale_chunk = np.ones(image_capacity, dtype=np.float32)
     if scale_corrections_np is not None:
-        scale_chunk[:n_valid_images] = np.asarray(
+        scale_chunk[:chunk.n_valid_images] = np.asarray(
             scale_corrections_np[image_indices], dtype=np.float32
         )
     group_ids_chunk = np.full(image_capacity, -1, dtype=np.int32)
     if group_ids_np is not None:
-        group_ids_chunk[:n_valid_images] = np.asarray(
+        group_ids_chunk[:chunk.n_valid_images] = np.asarray(
             group_ids_np[image_indices], dtype=np.int32
         )
     optics_groups_chunk = None
     if optics_groups_np is not None:
         optics_groups_chunk = np.zeros(image_capacity, dtype=np.int32)
-        optics_groups_chunk[:n_valid_images] = np.asarray(
+        optics_groups_chunk[:chunk.n_valid_images] = np.asarray(
             optics_groups_np[image_indices], dtype=np.int32
         )
 
@@ -7232,14 +7220,10 @@ def _resident_chunk_posterior(
     and its oracle cannot drift apart.
     """
 
-    row_capacity = int(spec.row_capacity)
-    image_capacity = int(spec.image_capacity)
-    n_fine_trans = int(spec.n_fine_trans)
-
-    row_index = jnp.arange(row_capacity, dtype=jnp.int32)
+    row_index = jnp.arange(spec.row_capacity, dtype=jnp.int32)
     row_is_valid = row_index < rows.n_valid_rows
     kernel_row_image_ids = jnp.where(row_is_valid, rows.row_image_local, jnp.int32(-1))
-    image_index = jnp.arange(image_capacity, dtype=jnp.int32)
+    image_index = jnp.arange(spec.image_capacity, dtype=jnp.int32)
     chunk_image_ids = jnp.where(image_index < rows.n_valid_images, image_index, jnp.int32(-1))
 
     if spec.firstiter_cc:
@@ -7270,9 +7254,9 @@ def _resident_chunk_posterior(
         full_to_compact=tables.full_to_compact,
         fine_translation_parent=tables.fine_translation_parent,
         logical_current_size=_logical_current_size(tables, spec),
-        row_capacity=row_capacity,
-        image_capacity=image_capacity,
-        n_fine_trans=n_fine_trans,
+        row_capacity=spec.row_capacity,
+        image_capacity=spec.image_capacity,
+        n_fine_trans=spec.n_fine_trans,
         n_score_pixels=int(spec.n_score_pixels),
         score_take=tables.union_score_take,
         native_fft_size=int(spec.union_native_fft_size),
@@ -7300,9 +7284,6 @@ def _chunk_posterior_from_scores(
 ) -> _ChunkPosterior:
     """The segmented RELION posterior of a scored chunk (:func:`_resident_chunk_posterior`'s tail)."""
 
-    row_capacity = int(spec.row_capacity)
-    image_capacity = int(spec.image_capacity)
-    n_fine_trans = int(spec.n_fine_trans)
     scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
 
     reuse = bool(spec.reuse_coarse_normalization)
@@ -7313,7 +7294,7 @@ def _chunk_posterior_from_scores(
         coarse_sum_weight = tables.coarse_reuse.sum_weight[image_slot]
         external_sum_weight = coarse_sum_weight.astype(jnp.float32)
     else:
-        external_sum_weight = jnp.ones((image_capacity,), dtype=jnp.float32)
+        external_sum_weight = jnp.ones((spec.image_capacity,), dtype=jnp.float32)
     log_z = cuda_backproject.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
@@ -7354,16 +7335,16 @@ def _chunk_posterior_from_scores(
     classes = None
     if rows.classes is not None:
         classes = _class_sub_segment_posterior(
-            scores_flat.reshape(row_capacity, n_fine_trans),
+            scores_flat.reshape(spec.row_capacity, spec.n_fine_trans),
             rows,
             row_is_valid,
-            n_segments=image_capacity * int(spec.n_classes),
+            n_segments=spec.image_capacity * int(spec.n_classes),
             n_classes=int(spec.n_classes),
             cuda_backproject=cuda_backproject,
         )
     return _ChunkPosterior(
         row_posterior=jnp.asarray(reconstruction_probs, dtype=jnp.float32).reshape(
-            row_capacity, n_fine_trans
+            spec.row_capacity, spec.n_fine_trans
         ),
         min_diff2=scored.min_diff2,
         class_log_z=jnp.asarray(log_z_out, dtype=jnp.float64),
@@ -7463,9 +7444,6 @@ def _resident_chunk_posterior_firstiter_cc(
 
     from relax.sparse_pass2.resident_scoring import score_resident_chunk_normalized_cc
 
-    row_capacity = int(spec.row_capacity)
-    image_capacity = int(spec.image_capacity)
-    n_fine_trans = int(spec.n_fine_trans)
     scored = score_resident_chunk_normalized_cc(
         rows.row_image_local,
         rows.row_fine_rot,
@@ -7479,14 +7457,14 @@ def _resident_chunk_posterior_firstiter_cc(
         half_weights=tables.half_weights,
         full_to_compact=tables.full_to_compact,
         fine_translation_parent=tables.fine_translation_parent,
-        row_capacity=row_capacity,
-        n_fine_trans=n_fine_trans,
+        row_capacity=spec.row_capacity,
+        n_fine_trans=spec.n_fine_trans,
         block_rows=int(spec.mstep_block_rows),
     )
     return _winner_take_all_posterior(
         scored,
         rows,
-        image_capacity=image_capacity,
+        image_capacity=spec.image_capacity,
         cuda_backproject=cuda_backproject,
         row_is_valid=row_is_valid,
         kernel_row_image_ids=kernel_row_image_ids,
@@ -7842,7 +7820,6 @@ def _probe_mstep_block_output_avals(
 
     block_rows = int(spec.mstep_block_rows)
     n_pixels = int(spec.n_recon_pixels)
-    image_capacity = int(spec.image_capacity)
 
     def probe(summed_masked, ctf_probs, proj, proj_abs2, noise, shells, row_image, row_groups):
         return _resident_block_noise_and_norm(
@@ -7855,7 +7832,7 @@ def _probe_mstep_block_output_avals(
             row_image,
             row_groups,
             n_shells=int(spec.stats_config.n_shells),
-            image_capacity=image_capacity,
+            image_capacity=spec.image_capacity,
             float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
         )
 
@@ -7955,7 +7932,6 @@ def _initial_mstep_carry(
     zero changes no float value except the unobservable ``-0.0`` case.
     """
 
-    image_capacity = int(spec.image_capacity)
     dtypes = _mstep_block_operand_dtypes(
         operands, tables, spec=spec, projection_dtypes=projection_dtypes
     )
@@ -7965,12 +7941,12 @@ def _initial_mstep_carry(
     # K>1: the per-image class scale sums are zeroed in the same program.
     wavg_triplet_pixels, noise_shells, a2_per_image, xa_per_image, *scale_sums = _zero_block_partials(
         (
-            ((image_capacity, int(spec.n_rect), 3), jnp.dtype(jnp.float32)),
+            ((spec.image_capacity, int(spec.n_rect), 3), jnp.dtype(jnp.float32)),
             (_noise_shell_shape(spec.stats_config), jnp.dtype(dtypes["noise_shells"])),
-            ((image_capacity,), jnp.dtype(dtypes["a2"])),
-            ((image_capacity,), jnp.dtype(dtypes["xa"])),
+            ((spec.image_capacity,), jnp.dtype(dtypes["a2"])),
+            ((spec.image_capacity,), jnp.dtype(dtypes["xa"])),
         )
-        + (((image_capacity,), jnp.dtype(jnp.float64)),) * n_class_scale
+        + (((spec.image_capacity,), jnp.dtype(jnp.float64)),) * n_class_scale
     )()
     class_scale = {}
     if n_class_scale:
@@ -8578,10 +8554,9 @@ def _run_resident_chunk(
 
     # The operands' powerClass terms sum above the weighted sums' size (--strict_highres_exp).
     operand_current_size = current_size if wsum_current_size is None else wsum_current_size
-    row_capacity = int(chunk.row_capacity)
-    image_capacity = int(chunk.image_capacity)
-    n_valid_rows = int(chunk.n_valid_rows)
-    n_valid_images = int(chunk.n_valid_images)
+    row_capacity = chunk.row_capacity
+    image_capacity = chunk.image_capacity
+    n_valid_rows = chunk.n_valid_rows
     image_indices = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int64)
     timing = _chunk_timing_enabled()
     chunk_t0 = time.time()
@@ -8590,7 +8565,7 @@ def _run_resident_chunk(
         jax.block_until_ready(Ft_y_total)
         chunk_t0 = time.time()
 
-    n_classes = int(tables.n_classes)
+    n_classes = tables.n_classes
     rows = _make_chunk_row_arrays(
         tables, chunk, n_fine_trans, place=_PLACE_ON_DEVICE, n_fine_rot=n_fine_rot,
         slot_of_projection=slot_of_projection,
@@ -8677,7 +8652,7 @@ def _run_resident_chunk(
         # ``image_stop``; the padded slots carry -1 and the gather zeroes them,
         # which is what the per-chunk preparation's capacity mask did.
         image_slots = np.full(image_capacity, -1, dtype=np.int32)
-        image_slots[:n_valid_images] = image_indices[:n_valid_images]
+        image_slots[:chunk.n_valid_images] = image_indices[:chunk.n_valid_images]
         recon = gather_resident_chunk_operands(
             resident_operands,
             image_slots,
@@ -8740,7 +8715,7 @@ def _run_resident_chunk(
         translation_prior_centers_np=translation_prior_centers_np,
         image_indices=image_indices,
         image_capacity=image_capacity,
-        n_valid_images=n_valid_images,
+        n_valid_images=chunk.n_valid_images,
         fine_translations=fine_translations,
         voxel_size=voxel_size,
     )
@@ -8871,7 +8846,7 @@ def _run_resident_chunk(
             "Resident pass-2 chunk timing: jit=%d images=%d/%d rows=%d/%d occupancy=%.3f "
             "mstep_blocks=%d/%d projections=%.3fs operands=%.3fs %s total=%.3fs",
             int(use_jit),
-            n_valid_images, image_capacity, n_valid_rows, row_capacity,
+            chunk.n_valid_images, image_capacity, n_valid_rows, row_capacity,
             n_valid_rows / max(row_capacity, 1),
             blocks, row_capacity // int(mstep_block_rows),
             stage_t.get("projections", 0.0),
@@ -8919,7 +8894,6 @@ def _run_lone_resident_chunk(
             "cross-correlation pass and the streamed per-rotation projection sums do not implement"
         )
     host_ids = np.asarray(host_projection_ids, dtype=np.int64)
-    block_rows = int(block_rows)
 
     def block_ids(ids):
         padded = np.full(block_rows, ids[0] if ids.size else 0, dtype=np.int64)
