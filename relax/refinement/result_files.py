@@ -24,6 +24,7 @@ from recovar.core import fourier_transform_utils as ftu
 from relax.diagnostics import parity_dump
 from relax.diagnostics.parity_provenance import git_head_or_none, git_worktree_provenance
 from relax.helpers import iteration_history
+from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.refinement.refinement_result import FinalPassResult, ModelMaps, RefinementResult
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 
@@ -751,15 +752,6 @@ def write_benchmark_ledger(path, result: RefinementResult, report: RunReport, ar
     logger.info("Benchmark ledger saved to %s", path)
 
 
-def _shell_resolution_angstrom(shell_index, box_size, voxel_size):
-    """The resolution of a Fourier shell in Angstrom (infinite for shell 0, the shell index without a pixel size)."""
-    if voxel_size <= 0:
-        return float(shell_index)
-    if shell_index <= 0:
-        return float("inf")
-    return float(box_size) * float(voxel_size) / shell_index
-
-
 def print_refinement_summary(result: RefinementResult, *, total_time_s: float, box_size: int, pixel_size: float) -> None:
     """Print the per-iteration table and the final size and resolution of a completed run."""
     history = result.history
@@ -775,7 +767,7 @@ def print_refinement_summary(result: RefinementResult, *, total_time_s: float, b
     for i in range(len(history.current_sizes)):
         cs = history.current_sizes[i]
         pr = history.pixel_resolutions[i]
-        res_a = _shell_resolution_angstrom(pr, box_size, pixel_size)
+        res_a = shell_index_to_resolution_angstrom(pr, box_size, pixel_size)
         wt = history.wall_times[i]
         line = f"{i + 1:4d}  {cs:8d}  {pr:8.1f}  {res_a:8.2f}  {wt:8.1f}"
         if history.significant_counts[i] is not None:
@@ -798,6 +790,6 @@ def print_refinement_summary(result: RefinementResult, *, total_time_s: float, b
     elif history.current_sizes:
         print(
             "Final resolution: "
-            f"{_shell_resolution_angstrom(history.pixel_resolutions[-1], box_size, pixel_size):.2f} A"
+            f"{shell_index_to_resolution_angstrom(history.pixel_resolutions[-1], box_size, pixel_size):.2f} A"
         )
     print("=" * 70)
