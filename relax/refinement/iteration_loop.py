@@ -134,7 +134,6 @@ from relax.refinement.mean_helpers import (
     reference_model_from_snapshot,
     share_kclass_volume_signs,
     shared_tau2_per_half,
-    weighted_class_merge,
 )
 from relax.refinement.noise_updates import (
     _mean_noise_variance,
@@ -161,7 +160,6 @@ from relax.refinement.projector_preparation import (
     prepare_initial_real_references,
 )
 from relax.refinement.refinement_options import (
-    FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
     FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
     RefinementOptions,
     require_consistency_route,
@@ -169,7 +167,6 @@ from relax.refinement.refinement_options import (
     with_validated_sampling_schedule,
 )
 from relax.refinement.refinement_result import (
-    ModelMaps,
     NumberedMetadata,
     ProfileStop,
     RefinementResult,
@@ -1759,7 +1756,7 @@ def refine_single_volume(
     if profile_stop is not None:
         # Local search is K=1 (Class3D was rejected above), so there are no class products.
         return RefinementResult(
-            maps=ModelMaps(mean=merged_half_map(reference_model.maps), means=reference_model.maps, class_means=None),
+            maps=finalization.numbered_k1_maps(reference_model.maps),
             replay=_follower_replay_telemetry(follower_scale_replay, history),
             follower_scale=None,
             convergence_state=state,
@@ -1767,51 +1764,18 @@ def refine_single_volume(
             history=history,
             profile_stop=profile_stop,
         )
-    should_run_final_iteration = finalization._should_run_final_all_data_iteration(
-        logger=logger,
-        has_converged=state.has_converged,
-        iteration=iteration,
-        max_iter=options.schedule.max_iter,
-        force_max_iter_after_convergence=options.schedule.force_max_iter_after_convergence,
-        after_max_iter=options.final_pass.after_max_iter,
-        k_class_enabled=k_class_enabled,
-    )
-    if options.schedule.skip_final_iteration or not should_run_final_iteration:
-        if not options.schedule.skip_final_iteration:
-            logger.info(
-                "Skipping RELION final all-data iteration: has_converged=%s, "
-                "iteration=%d, max_iter=%d, force_max_iter_after_convergence=%s",
-                state.has_converged,
-                iteration,
-                options.schedule.max_iter,
-                options.schedule.force_max_iter_after_convergence,
-            )
-        merged_mean = merged_half_map(reference_model.maps)
-        merged_class_means = None
-        if k_class_enabled:
-            merged_class_means = merged_mean
-            merged_mean = weighted_class_merge(merged_class_means, class_mixture.weights)
+    if not finalization.final_pass_due(state, options, iteration=iteration, k_class_enabled=k_class_enabled):
         return RefinementResult(
-            maps=ModelMaps(
-                mean=merged_mean,
-                means=reference_model.maps,
-                class_means=merged_class_means,
-                class_weights=class_mixture.weights if k_class_enabled else None,
-                class_assignments=class_assignments if k_class_enabled else None,
+            maps=(
+                finalization.numbered_class_maps(reference_model.maps, class_mixture.weights, class_assignments)
+                if k_class_enabled
+                else finalization.numbered_k1_maps(reference_model.maps)
             ),
             replay=_follower_replay_telemetry(follower_scale_replay, history),
             follower_scale=follower_setup.result_outputs(history),
             convergence_state=state,
             numbered=numbered,
             history=history,
-        )
-    if not state.has_converged:
-        logger.info(
-            "Diagnostic %s=1: running RELION final all-data iteration after max_iter exhaustion "
-            "(iteration=%d, max_iter=%d)",
-            FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
-            iteration,
-            options.schedule.max_iter,
         )
     # --- RELION's final iteration: do_join_random_halves + do_use_all_data ---
     # After convergence, RELION runs ONE more iter with:

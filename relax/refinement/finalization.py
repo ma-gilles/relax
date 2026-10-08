@@ -51,10 +51,15 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.iteration_planning import RunOptics
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
-from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
+from relax.refinement.mean_helpers import (
+    _class_weights_from_posterior,
+    join_half_accumulators_at_low_resolution,
+    merged_half_map,
+    weighted_class_merge,
+)
 from relax.refinement.ports import FinalHalfScored, InputSource, RunObserver
 from relax.refinement.projector_preparation import prepare_scoring_projector
-from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
+from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.tomo_half import local_tomo_sampling, score_tomo_half_in_loop
@@ -99,6 +104,62 @@ def _should_run_final_all_data_iteration(
         )
         return False
     return True
+
+
+def final_pass_due(state, options: RefinementOptions, *, iteration: int, k_class_enabled: bool) -> bool:
+    """Whether the run ends with RELION's final all-data pass, after ``iteration`` numbered iterations.
+
+    ``_should_run_final_all_data_iteration`` decides; ``schedule.skip_final_iteration`` skips the pass
+    silently, any other skip is logged, and a pass run without convergence (``final_pass.after_max_iter``) is
+    logged as the diagnostic it is.
+    """
+    should_run_final_iteration = _should_run_final_all_data_iteration(
+        logger=logger,
+        has_converged=state.has_converged,
+        iteration=iteration,
+        max_iter=options.schedule.max_iter,
+        force_max_iter_after_convergence=options.schedule.force_max_iter_after_convergence,
+        after_max_iter=options.final_pass.after_max_iter,
+        k_class_enabled=k_class_enabled,
+    )
+    if options.schedule.skip_final_iteration or not should_run_final_iteration:
+        if not options.schedule.skip_final_iteration:
+            logger.info(
+                "Skipping RELION final all-data iteration: has_converged=%s, "
+                "iteration=%d, max_iter=%d, force_max_iter_after_convergence=%s",
+                state.has_converged,
+                iteration,
+                options.schedule.max_iter,
+                options.schedule.force_max_iter_after_convergence,
+            )
+        return False
+    if not state.has_converged:
+        logger.info(
+            "Diagnostic %s=1: running RELION final all-data iteration after max_iter exhaustion "
+            "(iteration=%d, max_iter=%d)",
+            FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
+            iteration,
+            options.schedule.max_iter,
+        )
+    return True
+
+
+def numbered_k1_maps(means) -> ModelMaps:
+    """The published maps of a K=1 run that ends after its numbered iterations: the half maps and their merge."""
+    return ModelMaps(mean=merged_half_map(means), means=means, class_means=None)
+
+
+def numbered_class_maps(means, class_weights, class_assignments) -> ModelMaps:
+    """The published maps of a Class3D run that ends after its numbered iterations: the half pair of class
+    stacks, their merged class maps, the class-weighted merge of those, and the class weights and assignments."""
+    merged_class_means = merged_half_map(means)
+    return ModelMaps(
+        mean=weighted_class_merge(merged_class_means, class_weights),
+        means=means,
+        class_means=merged_class_means,
+        class_weights=class_weights,
+        class_assignments=class_assignments,
+    )
 
 
 def run_final_all_data(
