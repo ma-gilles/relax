@@ -237,17 +237,17 @@ class TomoHalf:
         image_shape,
         volume_shape,
         voxel_size,
-        image_frames=None,
-        unit_tomogram=None,
+        image_frames,
+        unit_tomogram,
     ):
         self.images = images
         self.unit_image_offsets = np.asarray(unit_image_offsets, dtype=np.int64)
         self.image_projections = np.asarray(image_projections, dtype=np.float64)
         self.image_left = np.asarray(image_left, dtype=np.float64)
         self.unit_optics_group = np.asarray(unit_optics_group, dtype=np.int64)
-        # Each image's tilt-series frame and each unit's tomogram, as in TomoDataset (None when not given).
-        self.image_frames = None if image_frames is None else np.asarray(image_frames, dtype=np.int64)
-        self.unit_tomogram = None if unit_tomogram is None else np.asarray(unit_tomogram)
+        # Each image's tilt-series frame and each unit's tomogram, as in TomoDataset.
+        self.image_frames = np.asarray(image_frames, dtype=np.int64)
+        self.unit_tomogram = np.asarray(unit_tomogram)
         self.image_shape = tuple(int(size) for size in image_shape)
         self.volume_shape = tuple(int(size) for size in volume_shape)
         self.voxel_size = float(voxel_size)
@@ -411,9 +411,7 @@ class TomoScoreResult:
     # K>1: ResidentKClassPass2Output of compute_k_class_pass2_stats_resident.
     pass2: object
     coarse_hard_assignment: np.ndarray  # int32 [P], coarse rotation * T_coarse + coarse translation
-    best_translations_px: np.ndarray  # [P, 3] rounded old offset + the winning trial shift (RELION's new offset)
     significant_counts: np.ndarray  # int32 [P], coarse significant samples
-    coarse_max_posterior: np.ndarray  # [P]
 
 
 def score_tomo_half(
@@ -603,9 +601,8 @@ def score_tomo_half(
             scale_corrections=image_scale,
         )
         supports = [np.asarray([cell], dtype=np.int32) for cell in winners]
-        coarse_pmax = np.ones(half.n_units, dtype=np.float64)
     else:
-        supports, coarse_pmax = tomo_coarse.particle_coarse_supports(
+        supports, _coarse_pmax = tomo_coarse.particle_coarse_supports(
             half.images,
             unit_image_offsets=half.unit_image_offsets,
             image_projections=half.image_projections,
@@ -734,7 +731,6 @@ def score_tomo_half(
             **options,
         )
         hard = np.asarray(pass2.hard_assignment, dtype=np.int64)
-        best_translations = np.asarray(pass2.best_translations, dtype=np.float64)
         significant_counts = np.asarray([s.size for s in supports], dtype=np.int32)
     else:
         pass2 = compute_k_class_pass2_stats_resident(
@@ -752,17 +748,13 @@ def score_tomo_half(
         winner = np.argmax(np.asarray(pass2.class_best_log_score_per_image, dtype=np.float64), axis=0)
         units = np.arange(half.n_units)
         hard = np.asarray(pass2.per_class_hard_assignments, dtype=np.int64)[winner, units]
-        class_translations = np.asarray(np.stack(pass2.per_class_best_pose_translations), dtype=np.float64)
-        best_translations = class_translations[winner, units]
         significant_counts = np.sum([[s.size for s in class_supports] for class_supports in supports], axis=0)
     n_fine_trans = int(fine_px.shape[0])
     coarse_hard = rot_parent[hard // n_fine_trans] * int(coarse_px.shape[0]) + fine_parent[hard % n_fine_trans]
     return TomoScoreResult(
         pass2=pass2,
         coarse_hard_assignment=coarse_hard.astype(np.int32),
-        best_translations_px=best_translations + tomo_particles.relion_gpu_old_offsets(old_offsets_px),
         significant_counts=np.asarray(significant_counts, dtype=np.int32),
-        coarse_max_posterior=np.asarray(coarse_pmax, dtype=np.float64),
     )
 
 
@@ -814,7 +806,6 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
 def score_tomo_half_in_loop(
     data: HalfScoringData,
     *,
-    use_local: bool,
     use_adaptive: bool,
     sampling: TomoSampling,
     rotation_log_prior,
@@ -863,9 +854,7 @@ def score_tomo_half_in_loop(
     unit_groups, scale_corrections = data.particles.optics_group_ids, data.particles.scale_corrections
     group_ids, scale_correction_group_count = data.scale_group_ids, data.scale_group_count
     scale_correction_data_vs_prior = data.scale_correction_data_vs_prior
-    if bool(use_local) != (local_search is not None):
-        raise ValueError("a local-search iteration needs its local-search inputs, and only it")
-    if not (use_adaptive or use_local) or int(sampling.oversampling_order) < 1:
+    if not (use_adaptive or local_search is not None) or int(sampling.oversampling_order) < 1:
         raise NotImplementedError("subtomogram particles run RELION's adaptive two-pass E-step only")
     if RECONSTRUCTION_PADDING_FACTOR != PROJECTION_PADDING_FACTOR:
         raise ValueError("the tomo half pass projects and backprojects with one padding factor")
@@ -915,8 +904,6 @@ def score_tomo_half_in_loop(
         if n_classes > 1:
             from relax.classification.k_class import _rotation_prior_with_class_log_prior
 
-            if local_search is not None:
-                raise ValueError("Class3D keeps global searches")
             class_priors = (
                 [prior] * n_classes
                 if class_rotation_log_prior is None

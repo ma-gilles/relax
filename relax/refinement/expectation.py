@@ -715,7 +715,6 @@ def score_numbered_half(
     if tomo_halves:
         score_result = _score_tomo_half_in_loop(
             half.data,
-            use_local=use_local,
             use_adaptive=phase.use_adaptive,
             sampling=tomo_sampling,
             local_search=(

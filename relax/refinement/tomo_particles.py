@@ -31,12 +31,6 @@ import numpy as np
 _THREADED_PHASE_VALUES = 1 << 20
 
 
-def image_particle_counts(image_particle, n_particles: int) -> np.ndarray:
-    """Number of images of each particle."""
-
-    return np.bincount(np.asarray(image_particle, dtype=np.int64), minlength=int(n_particles))
-
-
 def tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections, image_particle):
     """2D shift of every image for every 3D trial shift: ``[I, T, 2]``.
 
@@ -158,7 +152,7 @@ def image_noise_scale(image_particle, n_particles: int) -> np.ndarray:
     """
 
     image_particle = np.asarray(image_particle, dtype=np.int64)
-    counts = image_particle_counts(image_particle, n_particles)
+    counts = np.bincount(image_particle, minlength=n_particles)
     return 1.0 / counts[image_particle].astype(np.float64)
 
 

@@ -407,7 +407,6 @@ def run_final_all_data(
                     scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
                     scale_correction_data_vs_prior=previous_data_vs_prior_for_scheduling,
                 ),
-                use_local=True,
                 use_adaptive=final_local_sampling.search.oversampling_order > 0,
                 sampling=local_tomo_sampling(
                     fine_order=final_local_sampling.search.healpix_order,
