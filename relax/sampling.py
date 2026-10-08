@@ -30,7 +30,6 @@ def _get_relion_grid_metadata(
     retained asymmetric-unit direction.  The public flattened direction
     component is the compact row index into this retained table.
     """
-    healpix_order = int(healpix_order)
     symmetry = canonicalize_rotational_symmetry(symmetry)
     cache_key = (healpix_order, symmetry)
     cached = _GRID_METADATA_CACHE.get(cache_key)
@@ -113,7 +112,6 @@ def build_local_search_grid_metadata(
     axes, return factorized metadata. Otherwise, fall back to full per-rotation
     metadata.
     """
-    healpix_order = int(healpix_order)
     symmetry = canonicalize_rotational_symmetry(symmetry)
     if grid_eulers is None:
         meta = _get_relion_grid_metadata(healpix_order, symmetry)
@@ -362,7 +360,6 @@ def relion_translations_in_pixel_3d(
         raise ValueError(f"translations_angst must have shape (T, 3), got {translations_angst.shape}")
     offset_step = float(offset_step)
     pixel_size = float(pixel_size)
-    oversampling_order = int(oversampling_order)
     if oversampling_order < 0:
         raise ValueError("oversampling_order must be non-negative")
     n_sub = int(round(2.0**oversampling_order))
@@ -520,7 +517,7 @@ def relion_sampling_perturbation_for_iteration(
     random_seed,
     relion_iteration,
     *,
-    restart_state_iteration=None,
+    restart_state_iteration: int | None = None,
 ):
     """Return RELION's stored SamplingPerturbation at ``run_itNNN``.
 
@@ -540,7 +537,6 @@ def relion_sampling_perturbation_for_iteration(
     if relion_iteration < 0:
         raise ValueError("relion_iteration must be non-negative")
     if restart_state_iteration is not None:
-        restart_state_iteration = int(restart_state_iteration)
         if restart_state_iteration < 0:
             raise ValueError("restart_state_iteration must be non-negative")
         if restart_state_iteration >= int(relion_iteration):
@@ -872,7 +868,6 @@ def _relion_nested_child_offsets(oversampling_order: int) -> np.ndarray:
     loop and ``x`` as the inner loop. The two orders are identical for one
     oversampling level but differ for two or more levels.
     """
-    oversampling_order = int(oversampling_order)
     if oversampling_order < 0:
         raise ValueError("oversampling_order must be non-negative")
 
@@ -1126,7 +1121,6 @@ def _compute_oversampled_rotation_grid_rows(
         else np.asarray(coarse_metadata["directions_ipix"], dtype=np.int64)[parent_directions]
     )
 
-    oversampling_order = int(oversampling_order)
     current_pixels = parent_pixels.copy()
     parent_map = np.arange(len(parent_rotation_indices), dtype=np.int64)
     if oversampling_order > 0:
@@ -1604,7 +1598,6 @@ def get_local_rotation_grid_fast(
         union, with out-of-cone entries set to ``-1e30``.
     """
     prior_rotation_indices = np.asarray(prior_rotation_indices)
-    healpix_order = int(healpix_order)
     grid_metadata = build_local_search_grid_metadata(healpix_order) if grid_metadata is None else grid_metadata
     mode = str(grid_metadata["mode"])
     symmetry = canonicalize_rotational_symmetry(str(grid_metadata.get("symmetry", "C1")))

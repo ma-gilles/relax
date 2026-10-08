@@ -72,7 +72,6 @@ def n_pixels(order: int) -> int:
 def nest_to_xyf(order: int, pix):
     """``Healpix_Base::nest2xyf`` for NEST pixel indices."""
 
-    order = int(order)
     pix = np.asarray(pix, dtype=np.int64)
     face = pix >> (2 * order)
     pix = pix & ((nside(order) << order) - 1)
@@ -98,7 +97,6 @@ def xyf_to_nest(order: int, ix, iy, face):
 def pix_to_z_phi(order: int, pix):
     """``Healpix_Base::pix2ang_z_phi`` in the NEST scheme (healpix_base.cc:494-527)."""
 
-    order = int(order)
     ns = nside(order)
     npix = n_pixels(order)
     fact2 = 4.0 / npix
@@ -360,7 +358,6 @@ def _remove_seam_duplicates(directions, left, right, cos_max_ang) -> np.ndarray:
 
 @functools.lru_cache(maxsize=None)
 def _sampling(order: int, symmetry: str):
-    order = int(order)
     parsed = parse_rotational_symmetry(symmetry)
     pixels = np.arange(n_pixels(order), dtype=np.int64)
     rot, tilt = pixel_rot_tilt(order, pixels)
@@ -426,8 +423,6 @@ def oversampled_orientations(
     times ``2**oversampling_order`` psi samples, then the perturbation.
     """
 
-    order = int(order)
-    oversampling_order = int(oversampling_order)
     sampling = healpix_sampling(order, symmetry)
     idirs = np.asarray(idirs, dtype=np.int64).reshape(-1)
     ipsis = np.asarray(ipsis, dtype=np.int64).reshape(-1)
