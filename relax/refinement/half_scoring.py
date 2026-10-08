@@ -289,11 +289,7 @@ def _score_adaptive_kclass_dense(
         )
     pass2_grids = sampling.pass2_grids(adaptive_oversampling=adaptive_os, symmetry=symmetry)
     adaptive_em_kwargs = dict(em_kwargs)
-    n_classes = (
-        int(np.asarray(half.reference).shape[0])
-        if np.asarray(half.reference).ndim >= 2
-        else 1
-    )
+    n_classes = int(np.shape(half.reference)[0]) if np.ndim(half.reference) >= 2 else 1
     grid_batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
         coarse_rotations=pass2_grids.coarse_rotations,
         coarse_translations=pass2_grids.coarse_translations,
@@ -407,7 +403,7 @@ def _score_kclass_at_given_poses(
         stored - np.asarray(base, dtype=np.float64),
         symmetry=symmetry,
     )
-    n_classes = int(np.asarray(half.reference).shape[0])
+    n_classes = int(np.shape(half.reference)[0])
     plan = _plan_kclass_adaptive_grid_batch_sizes(
         coarse_rotations=grids.rotations[:1],
         coarse_translations=grids.translations[:1],
