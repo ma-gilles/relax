@@ -45,6 +45,20 @@ def test_windows_cap_only_the_e_step(current_size, score):
     assert off.engine_model_window_size == off.model_window_size
 
 
+def test_cap_uses_the_image_pixel_size_without_optics_pixel_sizes():
+    # RELION's cap is 2 * ROUND(remap_sizes * ori_size * mymodel.pixel_size / limit) (ml_optimiser.cpp:6917,
+    # 6932), which is the optics group's box times its image pixel size, whatever the model pixel size. Class3D
+    # runs have no per-optics pixel sizes and a model pixel size that may be the MRC header value (544/384 here)
+    # instead of the STAR one (1.416667): 384 * 1.416667 / 8.704 = 62.50001 -> 126, 384 * 544/384 / 8.704 =
+    # 62.49999 -> 124.
+    optics = iteration_planning.RunOptics(
+        image_geometry=ImageGeometry(image_shape=(384, 384), pixel_size_angstrom=1.416667),
+        model_pixel_size=544 / 384, optics_image_sizes=None, optics_pixel_sizes=None, multi_shape_halves=False,
+    )
+    windows = iteration_planning.plan_expectation_windows(384, optics, log=LOG, strict_highres_exp_angstrom=8.704)
+    assert windows.score_size == relion_strict_highres_image_size(1.416667, 384, 8.704) == 126
+
+
 def test_off_windows_are_unchanged():
     windows = ExpectationWindows(model_size=64, image_size=64, image_box_size=128)
     assert windows.score_window_size == windows.image_window_size == 64

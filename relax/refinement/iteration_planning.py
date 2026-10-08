@@ -191,8 +191,10 @@ def plan_expectation_windows(
     if strict_highres_exp_angstrom is not None:
         if optics.multi_shape_halves:
             raise NotImplementedError("--strict_highres_exp with optics groups on several image shapes")
+        # The image pixel size, as for the coarse size (plan_adaptive_image_size): RELION's
+        # remap_sizes * ori_size * model pixel size is the optics group's box times its pixel size.
         limit = relion_strict_highres_image_size(
-            float(optics.optics_pixel_sizes[0]) if optics.optics_pixel_sizes is not None else model_pixel_size,
+            float(optics.optics_pixel_sizes[0]) if optics.optics_pixel_sizes is not None else image_geometry.pixel_size_angstrom,
             int(optics.optics_image_sizes[0]) if optics.optics_image_sizes is not None else image_geometry.box_size,
             strict_highres_exp_angstrom,
         )
