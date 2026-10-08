@@ -31,7 +31,7 @@ parent=$S/fp/${FPN}_${H:0:12}.json
 rm -f "$S/fp/${FPN}_worktree.json"
 "$PY" "$FP" run "$S/fp/${FPN}_worktree.json" --work-dir "$S/fp" > "$S/logs/${FPN}_run_worktree.txt" 2>&1 || { tail -5 "$S/logs/${FPN}_run_worktree.txt"; status=1; }
 "$PY" "$FP" diff "$parent" "$S/fp/${FPN}_worktree.json" > "$S/logs/${FPN}_vs_parent.txt" 2>&1; rc=$?
-echo "$FPN worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added|controller inputs retired' "$S/logs/${FPN}_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
+echo "$FPN worktree vs ${H:0:7}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added|controller inputs retired|controller inputs moved|controller inputs redefaulted' "$S/logs/${FPN}_vs_parent.txt" | paste -sd ' ')"; [ $rc = 0 ] || status=1
 
 if [ ! -f "$S/logs/ruff_base_${BASE:0:12}.txt" ]; then
   rm -rf "$S/ruff_base_src"; mkdir -p "$S/ruff_base_src"; git archive "$BASE" | tar -x -C "$S/ruff_base_src"

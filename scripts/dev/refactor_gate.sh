@@ -36,7 +36,7 @@ export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 XLA_PYTHON_CLI
 
 step_fp() {
   cd "$W" && PYTHONPATH=$W "$PY" "$FP" check "${1:-origin/main}" --work-dir "$S/${FPN}_gate_$T" > "$S/logs/${FPN}_check_$T.txt" 2>&1; rc=$?
-  echo "$FPN check vs ${1:-origin/main}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added|controller inputs retired' "$S/logs/${FPN}_check_$T.txt" | paste -sd ' ')"; return $rc
+  echo "$FPN check vs ${1:-origin/main}: rc=$rc $(grep -E 'cases compared|only log rows differ|controller inputs added|controller inputs retired|controller inputs moved|controller inputs redefaulted' "$S/logs/${FPN}_check_$T.txt" | paste -sd ' ')"; return $rc
 }
 step_selftest() {
   cd "$W" && PYTHONPATH=$W "$PY" "$FP" selftest --jobs 4 --work-dir "$S/${FPN}_selftest_$T" > "$S/logs/${FPN}_selftest_$T.txt" 2>&1; rc=$?

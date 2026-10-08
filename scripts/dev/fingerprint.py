@@ -34,8 +34,10 @@ compared. So is one present only in A whose value there was ``None``, ``False`` 
 (recorded with a ``=default`` mark; an option field that was off in the case and is retired, its behaviour now
 chosen through a port: code rule 15), and the length of the
 container that holds only such added or retired members. So is an input moved to another option group with its
-value (``MOVED_INPUTS`` names each move), and a leaf of any section whose record field was renamed with its value
-(``RENAMED_FIELDS``). A removed input that was on, or a changed one, is an output difference. Any other difference exits 1.
+value (``MOVED_INPUTS`` names each move), a leaf of any section whose record field was renamed with its value
+(``RENAMED_FIELDS``), and an input whose value is unchanged but whose field's declared default changed (only its
+``=default`` mark differs: the record's default was aligned, the value the command hands over was not). A removed
+input that was on, or a changed one, is an output difference. Any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -83,7 +85,7 @@ NODE_DEPENDENT_TEMPLATES = (
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
 # The classes a difference is counted in; only a difference confined to "log" is accepted.
-DIFFERENCE_CLASSES = ("outputs", "added", "retired", "moved", "trace", "log")
+DIFFERENCE_CLASSES = ("outputs", "added", "retired", "moved", "redefaulted", "trace", "log")
 # A controller input B no longer has is accepted only at one of these off values in A, or at its declared
 # default (a leaf ending in DEFAULT_MARK): an option field that was off in the case is retired (its non-default
 # behaviour moved behind a port, code rule 15).
@@ -130,6 +132,11 @@ def _is_field_default(field, value) -> bool:
     if default is None or isinstance(default, (bool, int, float, str)) or default == ():
         return type(value) is type(default) and value == default
     return False
+
+
+def _unmarked(leaf: str) -> str:
+    """A flattened leaf without its ``=default`` mark."""
+    return leaf.removesuffix(f" {DEFAULT_MARK}")
 
 
 def flatten(value, path: str = "", out: dict | None = None, *, scrub=lambda text: text) -> dict:
@@ -286,12 +293,23 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
                 if key not in flat_b
                 for old, new in (*(MOVED_INPUTS if CONTROLLER_INPUT.match(key) else ()), *RENAMED_FIELDS)
                 if old in key and key.replace(old, new) not in flat_a
-                and flat_b.get(key.replace(old, new)) == flat_a[key]
+                # the same value; a mark that moved with the field's declared default does not count
+                and _unmarked(flat_b.get(key.replace(old, new), "")) == _unmarked(flat_a[key])
             }
             counts["moved"] += len(moved_pairs)
             for key in list(moved_pairs)[:shown_per_section]:
                 lines.append(f"MOVED {name} {section} {key} -> {moved_pairs[key]}")
             changed = [key for key in changed if key not in moved_pairs and key not in moved_pairs.values()]
+            # The same value under a field whose declared default changed: only the =default mark differs.
+            redefaulted = [
+                key for key in changed
+                if key in flat_a and key in flat_b and CONTROLLER_INPUT.match(key)
+                and _unmarked(flat_a[key]) == _unmarked(flat_b[key])
+            ]
+            counts["redefaulted"] += len(redefaulted)
+            for key in redefaulted[:shown_per_section]:
+                lines.append(f"REDEFAULTED {name} {section} {key}: {flat_a[key]} -> {flat_b[key]}")
+            changed = [key for key in changed if key not in redefaulted]
             added = [key for key in changed if key not in flat_a and CONTROLLER_INPUT.match(key)]
             counts["added"] += len(added)
             for key in added[:shown_per_section]:
@@ -342,7 +360,7 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
     lines.append(
         f"{len(set(cases_a) & set(cases_b))} cases compared; {sum(counts.values())} differences "
         f"(outputs {counts['outputs']}, added inputs {counts['added']}, retired inputs {counts['retired']}, "
-        f"moved inputs {counts['moved']}, "
+        f"moved inputs {counts['moved']}, redefaulted inputs {counts['redefaulted']}, "
         f"trace rows {counts['trace']}, log rows {counts['log']}); leaves compared: "
         + ", ".join(f"{section} {totals[section]}" for section in SECTIONS)
         + f"; trace rows {totals['trace']}"
@@ -357,6 +375,11 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
         lines.append(
             f"controller inputs moved ({counts['moved']}); accepted: option fields moved or record fields renamed "
             "(MOVED_INPUTS, RENAMED_FIELDS)"
+        )
+    if counts["redefaulted"] and not counts["outputs"] and not counts["trace"]:
+        lines.append(
+            f"controller inputs redefaulted ({counts['redefaulted']}); accepted: same values, the fields' declared "
+            "defaults changed"
         )
     return counts, lines
 
