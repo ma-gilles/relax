@@ -1520,5 +1520,3 @@ def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
             else None
         ),
     )
-
-

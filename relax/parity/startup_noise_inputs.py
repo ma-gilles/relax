@@ -66,4 +66,3 @@ def live_initial_noise(dataset, half_sets, *, mask_params, log):
         np.asarray(sigma2[:5]),
     )
     return sigma2, variance
-
