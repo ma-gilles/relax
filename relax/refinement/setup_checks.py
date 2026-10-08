@@ -51,7 +51,7 @@ def _relion_k1_translation_angle_scale(
     return float(model_pixel_size) / float(unique_optics[0])
 
 
-def _optics_group_ids_per_half(optics_group_ids_per_half, noise_variance_per_half, experiment_datasets):
+def checked_optics_group_ids(optics_group_ids_per_half, noise_variance_per_half, experiment_datasets):
     """Each half's per-image optics-group rows, or ``[None, None]`` for one group.
 
     A half's noise is a flat vector (one optics group) or ``[G, P]`` rows

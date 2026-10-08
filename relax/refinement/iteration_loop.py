@@ -181,7 +181,7 @@ from relax.refinement.refinement_result import (
     ReplayTelemetry,
 )
 from relax.refinement.setup_checks import (
-    _optics_group_ids_per_half,
+    checked_optics_group_ids,
     checked_run_optics,
     reconstruction_settings_for_run,
     translation_angle_scale_for_run,
@@ -477,7 +477,7 @@ def refine_single_volume(
         log=logger,
     )
     initial_noise_variance_per_half = _normalize_noise_variance_per_half(init_noise_variance)
-    optics_group_ids_per_half = _optics_group_ids_per_half(
+    optics_group_ids_per_half = checked_optics_group_ids(
         options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )
     setup_phase_seconds["initial_arrays"] = setup_clock.seconds
