@@ -50,9 +50,10 @@ def _stalled_state():
 ])
 def test_k1_native_sampling_uses_completed_iteration_counters(previous, native, advance):
     state = _stalled_state()
-    result = convergence.advance_k1_expectation_sampling(
+    result = convergence.advance_expectation_sampling(
         state, AdaptiveOptions(), iteration=0,
-        has_previous_iteration=previous, native_sampling_boundary=native, log=LOG,
+        may_advance_natively=previous and convergence.uses_native_auto_refine(native_sampling_boundary=native, n_classes=1),
+        log=LOG,
     )
     assert result.healpix_order == (3 if advance else 2)
     if not advance:
@@ -61,7 +62,10 @@ def test_k1_native_sampling_uses_completed_iteration_counters(previous, native, 
 
 def test_class3d_sampling_ignores_completed_iteration_counters():
     state = _stalled_state()
-    result = convergence.advance_class_expectation_sampling(state, AdaptiveOptions(), iteration=0, log=LOG)
+    may_advance = convergence.uses_native_auto_refine(native_sampling_boundary=True, n_classes=4)
+    result = convergence.advance_expectation_sampling(
+        state, AdaptiveOptions(), iteration=0, may_advance_natively=may_advance, log=LOG,
+    )
     assert result.healpix_order == 2
     assert result is state
 
@@ -70,9 +74,9 @@ def test_class3d_sampling_ignores_completed_iteration_counters():
 def test_explicit_schedule_precedes_k1_native_advance(previous, native, monkeypatch):
     state = RefinementState(healpix_order=2, max_healpix_order=5)
     monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
-    result = convergence.advance_k1_expectation_sampling(
+    result = convergence.advance_expectation_sampling(
         state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1,
-        has_previous_iteration=previous, native_sampling_boundary=native, log=LOG,
+        may_advance_natively=previous and native, log=LOG,
     )
     assert result.healpix_order == 3
 
@@ -80,8 +84,8 @@ def test_explicit_schedule_precedes_k1_native_advance(previous, native, monkeypa
 def test_explicit_schedule_sets_the_class3d_order(monkeypatch):
     state = RefinementState(healpix_order=2, max_healpix_order=5)
     monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
-    result = convergence.advance_class_expectation_sampling(
-        state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1, log=LOG,
+    result = convergence.advance_expectation_sampling(
+        state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1, may_advance_natively=False, log=LOG,
     )
     assert result.healpix_order == 3
 

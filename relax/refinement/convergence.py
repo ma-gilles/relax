@@ -47,67 +47,24 @@ def _scheduled_healpix_order_state(
     return state
 
 
-def advance_k1_expectation_sampling(
-    state: RefinementState,
-    adaptive: AdaptiveOptions,
-    *,
-    iteration: int,
-    has_previous_iteration: bool,
-    native_sampling_boundary: bool,
-    log: logging.Logger,
-) -> RefinementState:
-    """Choose the next K=1 angular grid after accuracy, before expectation.
-
-    Native auto-refine uses the preceding iteration's stall counters. An
-    explicit HEALPix schedule takes precedence, including on the first iteration.
-    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy``.
-    """
-    if adaptive.relion_healpix_orders is not None:
-        state = _scheduled_healpix_order_state(state, adaptive, iteration=iteration, log=log)
-    elif has_previous_iteration and native_sampling_boundary:
-        state = update_angular_sampling(state)
-    return state
-
-
-def advance_class_expectation_sampling(
-    state: RefinementState,
-    adaptive: AdaptiveOptions,
-    *,
-    iteration: int,
-    log: logging.Logger,
-) -> RefinementState:
-    """Class3D keeps its angular grid unless an explicit HEALPix schedule sets this iteration's order."""
-    if adaptive.relion_healpix_orders is not None:
-        state = _scheduled_healpix_order_state(state, adaptive, iteration=iteration, log=log)
-    return state
-
-
 def advance_expectation_sampling(
     state: RefinementState,
     adaptive: AdaptiveOptions,
     *,
     iteration: int,
-    has_previous_iteration: bool,
-    native_sampling_boundary: bool,
-    n_classes: int,
+    may_advance_natively: bool,
     log: logging.Logger,
 ) -> RefinementState:
-    """The one remaining mode decision of the expectation sampling transition.
+    """Choose this expectation's angular grid after accuracy, before expectation.
 
-    K=1 may advance natively (``advance_k1_expectation_sampling``); Class3D
-    never does (``advance_class_expectation_sampling``). Remove this dispatch
-    when the K1 and Class3D trajectories call those directly.
+    An explicit HEALPix schedule takes precedence, including on the first iteration. Otherwise the
+    grid advances only where ``may_advance_natively``: native K=1 auto-refine after a completed
+    iteration, from its stall counters (the controller decides; Class3D keeps its grid).
+    See ``docs/math/relion_refinement_algorithm.md#iteration-convergence-policy``.
     """
-    if n_classes == 1:
-        return advance_k1_expectation_sampling(
-            state,
-            adaptive,
-            iteration=iteration,
-            has_previous_iteration=has_previous_iteration,
-            native_sampling_boundary=native_sampling_boundary,
-            log=log,
-        )
-    return advance_class_expectation_sampling(state, adaptive, iteration=iteration, log=log)
+    if adaptive.relion_healpix_orders is not None:
+        return _scheduled_healpix_order_state(state, adaptive, iteration=iteration, log=log)
+    return update_angular_sampling(state) if may_advance_natively else state
 
 
 class ConvergenceUpdate(NamedTuple):

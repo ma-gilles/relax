@@ -1451,9 +1451,9 @@ def refine_single_volume(
             state,
             options.adaptive,
             iteration=iteration,
-            has_previous_iteration=has_previous_iteration,
-            native_sampling_boundary=native_sampling_boundary,
-            n_classes=options.k_class.n_classes,
+            may_advance_natively=has_previous_iteration and uses_native_auto_refine(
+                native_sampling_boundary=native_sampling_boundary, n_classes=options.k_class.n_classes,
+            ),
             log=logger,
         )
 
