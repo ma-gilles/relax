@@ -20,7 +20,27 @@ or time, never a number of the run.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, NamedTuple
+
+
+@dataclass
+class OptimiserAccuracyReplay:
+    """Numbered optimiser accuracy override read before the state update.
+
+    ``metadata`` and ``optimiser_iteration`` are ``None`` unless the numbered
+    optimiser STAR was read; ``optimiser_star`` is the selected path whenever
+    replay is active. The accuracy fields carry the caller's values with finite
+    RELION accuracies substituted.
+    """
+
+    metadata: dict | None
+    optimiser_star: str | None
+    optimiser_iteration: int | None
+    acc_rot: float | None
+    acc_trans: float | None
+    convergence_acc_rot: float | None
+    convergence_acc_trans: float | None
 
 
 class ReconstructedIteration(NamedTuple):

@@ -40,6 +40,7 @@ from relax.refinement.noise_updates import (
     NoiseModel,
     noise_model_from_pixels,
 )
+from relax.refinement.ports import OptimiserAccuracyReplay
 from relax.relion import relion_metadata
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
@@ -1055,25 +1056,6 @@ def _restore_convergence_state_from_replay_restart(state, replay, init_relion_it
         state.smallest_changes_optimal_offsets_angstrom,
         state.smallest_changes_optimal_classes,
     )
-
-
-@dataclass
-class OptimiserAccuracyReplay:
-    """Numbered optimiser accuracy override read before the state update.
-
-    ``metadata`` and ``optimiser_iteration`` are ``None`` unless the numbered
-    optimiser STAR was read; ``optimiser_star`` is the selected path whenever
-    replay is active. The accuracy fields carry the caller's values with finite
-    RELION accuracies substituted.
-    """
-
-    metadata: dict | None
-    optimiser_star: str | None
-    optimiser_iteration: int | None
-    acc_rot: float | None
-    acc_trans: float | None
-    convergence_acc_rot: float | None
-    convergence_acc_trans: float | None
 
 
 def read_optimiser_accuracy_replay(
