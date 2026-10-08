@@ -42,6 +42,7 @@ tests/unit/test_debug_relion_reference_replay.py
 tests/unit/test_dense_iteration_behavior.py
 tests/unit/test_dense_scale_group_routing.py
 tests/unit/test_dev_fingerprint.py
+tests/unit/test_dev_pass1_fingerprint.py
 tests/unit/test_diff_relion_recovar_direction_prior.py
 tests/unit/test_direction_log_prior_owner.py
 tests/unit/test_direction_prior_learning_owner.py
