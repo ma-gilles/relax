@@ -65,6 +65,22 @@ def frozen_boundary_references(frozen_boundary, *, complex_dtype) -> StartupRefe
     return StartupReferences(fourier=halves, prior_source=merged)
 
 
+def _startup_map(volume_real, *, volume_shape, pixel_size, ini_high: float | None, real_dtype, complex_dtype):
+    """One loaded reference map as the loop starts from it: ``(fourier, real64)``.
+
+    With ``ini_high``, RELION's start-up low-pass at ``pixel_size``, back in ``real_dtype`` for the DFT;
+    ``real64`` is the float64 real map (the filtered one when filtered), ``fourier`` the flat centred DFT in
+    ``complex_dtype``.
+    """
+    if ini_high is not None:
+        real64 = _initial_lowpass_real(volume_real, volume_shape, pixel_size, ini_high)
+        volume_real = real64.astype(real_dtype, copy=False)
+    else:
+        real64 = np.asarray(volume_real, dtype=np.float64)
+    fourier = np.array(ftu.get_dft3(jnp.asarray(volume_real))).astype(complex_dtype).reshape(-1)
+    return fourier, real64
+
+
 def load_k1_reference(
     path,
     *,
@@ -83,27 +99,24 @@ def load_k1_reference(
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise SystemExit(f"Initial RELION reference has invalid voxel size {model_pixel_size}: {path}")
     assert init_vol_real.shape == volume_shape, f"Volume shape mismatch: {init_vol_real.shape} vs {volume_shape}"
-    reference_for_projector = None
+    # RELION filters ``mymodel.Iref`` in model coordinates.  The
+    # particle STAR optics pixel size can be a rounded serialization
+    # (for example 1.416667 versus the MRC header ratio
+    # 544.0 / 384 = 1.4166666666666667 A/px),
+    # which is enough to flip marginal firstiter-CC winners.
+    init_vol_ft, reference_real = _startup_map(
+        init_vol_real,
+        volume_shape=volume_shape,
+        pixel_size=model_pixel_size,
+        ini_high=ini_high,
+        real_dtype=real_dtype,
+        complex_dtype=complex_dtype,
+    )
     if ini_high is not None:
-        # RELION filters ``mymodel.Iref`` in model coordinates.  The
-        # particle STAR optics pixel size can be a rounded serialization
-        # (for example 1.416667 versus the MRC header ratio
-        # 544.0 / 384 = 1.4166666666666667 A/px),
-        # which is enough to flip marginal firstiter-CC winners.
-        filtered_real = _initial_lowpass_real(init_vol_real, volume_shape, model_pixel_size, ini_high)
-        if real_for_projector:
-            reference_for_projector = filtered_real
-        reference_real = filtered_real
-        init_vol_real = filtered_real.astype(real_dtype, copy=False)
         log.info(
             "Applied RELION initialLowPassFilterReferences to init reference: ini_high=%.2f A, fmask_edge=%d shells",
             ini_high, REFERENCE_FILTER_EDGE_SHELLS,
         )
-    else:
-        reference_real = np.asarray(init_vol_real, dtype=np.float64)
-        if real_for_projector:
-            reference_for_projector = reference_real
-    init_vol_ft = np.array(ftu.get_dft3(jnp.asarray(init_vol_real))).astype(complex_dtype).reshape(-1)
     log.info(
         "Initial volume loaded from %s: shape=%s model_pixel_size=%.9g A/px",
         path,
@@ -113,7 +126,7 @@ def load_k1_reference(
     return StartupReferences(
         fourier=init_vol_ft,
         prior_source=init_vol_ft,
-        real_for_projector=reference_for_projector,
+        real_for_projector=reference_real if real_for_projector else None,
         reference_real=reference_real,
         model_pixel_size=model_pixel_size,
     )
@@ -157,17 +170,17 @@ def load_class_references(
         assert vol_real.shape == volume_shape, (
             f"Class {k + 1} volume shape mismatch at {p}: {vol_real.shape} vs {volume_shape}"
         )
-        if ini_high is not None:
-            filtered_real = _initial_lowpass_real(vol_real, volume_shape, model_pixel_size, ini_high)
-            if real_for_projector:
-                per_class_real_for_projector.append(filtered_real)
-            class_references_real.append(np.asarray(filtered_real, dtype=np.float64))
-            vol_real = filtered_real.astype(real_dtype, copy=False)
-        else:
-            class_references_real.append(np.asarray(vol_real, dtype=np.float64))
-            if real_for_projector:
-                per_class_real_for_projector.append(np.asarray(vol_real, dtype=np.float64))
-        vol_ft = np.array(ftu.get_dft3(jnp.asarray(vol_real))).astype(complex_dtype).reshape(-1)
+        vol_ft, reference_real = _startup_map(
+            vol_real,
+            volume_shape=volume_shape,
+            pixel_size=model_pixel_size,
+            ini_high=ini_high,
+            real_dtype=real_dtype,
+            complex_dtype=complex_dtype,
+        )
+        class_references_real.append(reference_real)
+        if real_for_projector:
+            per_class_real_for_projector.append(reference_real)
         per_class_ft.append(vol_ft)
         log.info("Class %d initial volume loaded from %s", k + 1, p)
     if ini_high is not None:

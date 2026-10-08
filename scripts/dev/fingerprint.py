@@ -648,10 +648,9 @@ MUTATIONS = (
      "Class3D seeds random classes from per-class maps instead of from one reference", True),
     ("main_tau2_fudge_ignored", "parity=RelionParityOptions(\ntau2_fudge=effective_tau2_fudge,", "parity=RelionParityOptions(\ntau2_fudge=1.0,",
      "the controller is handed the default tau2 fudge instead of --tau2_fudge", True),
-    ("startup_k1_lowpass_skipped", "filtered_real = _initial_lowpass_real(init_vol_real, volume_shape, model_pixel_size, ini_high)",
-     "filtered_real = np.asarray(init_vol_real, dtype=np.float64)", "the K=1 start-up reference is not low-pass filtered", True),
-    ("startup_class_lowpass_skipped", "filtered_real = _initial_lowpass_real(vol_real, volume_shape, model_pixel_size, ini_high)",
-     "filtered_real = np.asarray(vol_real, dtype=np.float64)", "the Class3D start-up references are not low-pass filtered", True),
+    ("startup_lowpass_skipped", "real64 = _initial_lowpass_real(volume_real, volume_shape, pixel_size, ini_high)",
+     "real64 = np.asarray(volume_real, dtype=np.float64)",
+     "the start-up references (K=1 and Class3D, one step) are not low-pass filtered", True),
     ("startup_class_prior_last_class", "prior_source=per_class_ft[0],", "prior_source=per_class_ft[-1],",
      "the Class3D start-up tau2 is bootstrapped from the last class", True),
 )
