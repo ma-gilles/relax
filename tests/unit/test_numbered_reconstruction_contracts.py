@@ -80,7 +80,6 @@ class _Recorder:
         monkeypatch.setattr(mean_helpers, "_make_relion_solvent_mask", mask)
         monkeypatch.setattr(mean_helpers, "_apply_relion_solvent_flatten_k1", flatten)
         monkeypatch.setattr(mean_helpers, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
-        monkeypatch.setattr(mean_helpers.gc, "collect", lambda: None)
 
         def flatten_class(class_maps, _mask, class_idx, *, volume_shape):
             self.events.append("flatten_class")

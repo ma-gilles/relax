@@ -184,7 +184,6 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
         "_large_relion_solvent_mask_uses_compiled_builder",
         lambda _shape: True,
     )
-    monkeypatch.setattr(mean_helpers.gc, "collect", lambda: events.append(("gc",)))
 
     result = mean_helpers._apply_relion_solvent_flatten_k1(
         volume_ft,
@@ -204,7 +203,6 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
         ("device_get", "flattened"),
         ("delete", "flattened"),
         ("delete", "solvent_mask"),
-        ("gc",),
     ]
 
 

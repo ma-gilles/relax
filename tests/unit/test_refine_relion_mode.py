@@ -9591,7 +9591,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
 
     def fake_finish(value, *_args, **_kwargs):
         events.append("finish")
-        assert events == ["stage", "block", "device_get", "release", "collect", "finish"]
+        assert events == ["stage", "block", "device_get", "release", "finish"]
         assert value is host_boundary
         return value
 
@@ -9633,7 +9633,6 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
         reject_crop,
     )
     monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
-    monkeypatch.setattr(mean_helpers_module.gc, "collect", lambda: events.append("collect"))
 
     volume_shape = (2, 2, 2)
     accumulator_shape = (3, 3, 3)
@@ -9650,7 +9649,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
     )
 
     assert returned is host_boundary
-    assert events == ["stage", "block", "device_get", "release", "collect", "finish"]
+    assert events == ["stage", "block", "device_get", "release", "finish"]
 
 
 @pytest.mark.parametrize("n_classes", [2, 4])

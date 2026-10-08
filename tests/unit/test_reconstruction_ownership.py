@@ -204,13 +204,12 @@ class TestReconstructionOwnership:
             def block_until_ready(self):
                 events.append("block")
 
-        monkeypatch.setattr(mean_helpers_module.gc, "collect", lambda: events.append("collect"))
         result = Result()
         returned = mean_helpers_module._finish_host_staged_reconstruction(
             result, np.ones(1, dtype=np.float32), jnp.ones(1, dtype=jnp.float32)
         )
         assert returned is result
-        assert events == ["block", "collect"]
+        assert events == ["block"]
         events.clear()
         returned = mean_helpers_module._finish_host_staged_reconstruction(
             result, jnp.ones(1, dtype=jnp.float32), jnp.ones(1, dtype=jnp.float32)
@@ -257,7 +256,7 @@ class TestReconstructionOwnership:
 
         def fake_finish(value, *_args, **kwargs):
             events.append("finish")
-            assert events == ["regularize", "divide", "block", "device_get", "release", "collect", "collect", "finish"]
+            assert events == ["regularize", "divide", "block", "device_get", "release", "finish"]
             assert value.shape == (4, 4, 3)
             assert_matches(value, np.ones((4, 4, 3), dtype=np.complex64))
             assert kwargs["gridding_correct"] == "radial"
@@ -268,7 +267,6 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "_divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "_finish_large_relion_postprocess_from_fftw_half", fake_finish)
         monkeypatch.setattr(mean_helpers_module.jax, "device_get", fake_device_get)
-        monkeypatch.setattr(mean_helpers_module.gc, "collect", lambda: events.append("collect"))
         caplog.set_level("INFO", logger=mean_helpers_module.__name__)
         volume_shape = (2, 2, 2)
         accumulator_shape = (5, 5, 5)
@@ -286,7 +284,7 @@ class TestReconstructionOwnership:
             retained_device_numerator=retained_numerator, programs=ReconstructionPrograms.from_environ(),
         )
         assert returned is host_boundary
-        assert events == ["regularize", "divide", "block", "device_get", "release", "collect", "collect", "finish"]
+        assert events == ["regularize", "divide", "block", "device_get", "release", "finish"]
         assert (
             "RELION split pre-IFFT host boundary: accumulator_shape=(5, 5, 5) reconstruction_shape=(4, 4, 4) packed_half_bytes=384"
             in caplog.text

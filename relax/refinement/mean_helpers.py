@@ -8,7 +8,6 @@ final all-data orchestration shares numerical primitives with its own policies.
 from __future__ import annotations
 
 import functools
-import gc
 import logging
 import math
 from dataclasses import dataclass, field
@@ -1047,7 +1046,6 @@ def _reconstruct_volume_eager(
         del stage_a_numerator
         del regularized_filter_device
         del stage_a_filter
-        gc.collect()
 
         fftw_half_host = _crop_relion_wiener_half_to_fftw_host(
             wiener_half_host,
@@ -1056,7 +1054,6 @@ def _reconstruct_volume_eager(
             relion_functions,
         )
         del wiener_half_host
-        gc.collect()
     else:
         if retained_device_numerator is not None:
             raise ValueError(
@@ -1083,7 +1080,6 @@ def _reconstruct_volume_eager(
             wiener_half_host = np.asarray(jax.device_get(wiener_half_device))
             regularization_relion.delete_device_array(wiener_half_device)
             del wiener_half_device
-            gc.collect()
             logger.info(
                 "RELION pre-window Wiener half padded on the host: accumulator_shape=%s reconstruction_shape=%s",
                 accumulator_shape,
@@ -1129,7 +1125,6 @@ def _reconstruct_volume_eager(
             fftw_half_device.block_until_ready()
             fftw_half_host = np.asarray(jax.device_get(fftw_half_device))
             del fftw_half_device
-        gc.collect()
 
     explicit_irfft_normalization = _large_irfft_requires_explicit_normalization(
         reconstruction_shape,
@@ -1151,7 +1146,6 @@ def _reconstruct_volume_eager(
             workers=programs.host_fft_workers,
         )
         del fftw_half_host
-        gc.collect()
         result = relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real(
             unpadded_real_host,
             vol_shape,
@@ -1546,7 +1540,6 @@ def _reconstruct_k1_maps(
         reconstructed_means.append(_finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half))
         if k == 0 and retained_device_numerator is not None:
             retained_device_numerator = None
-            gc.collect()
     return reconstructed_means
 
 
@@ -2307,7 +2300,6 @@ def _finish_host_staged_reconstruction(result, *accumulators):
 
     if any(isinstance(accumulator, np.ndarray) for accumulator in accumulators):
         result.block_until_ready()
-        gc.collect()
     return result
 
 
@@ -2406,5 +2398,4 @@ def _apply_relion_solvent_flatten_k1(
     flattened_host = np.array(jax.device_get(flattened), copy=True, order="C")
     regularization_relion.delete_device_array(flattened)
     regularization_relion.delete_device_array(solvent_mask)
-    gc.collect()
     return flattened_host
