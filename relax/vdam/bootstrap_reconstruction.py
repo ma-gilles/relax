@@ -359,7 +359,7 @@ def bootstrap_references(
     generator = None
     eulers = np.empty((todo, 3))
     for part in range(todo):
-        generator = relion_random.GlibcRand(int(random_seed) + int(seeds[part]))
+        generator = relion_random.init_random_generator(int(random_seed) + int(seeds[part]))
         eulers[part] = [
             float(relion_random.rnd_unif(generator)) * 360.0,
             float(relion_random.rnd_unif(generator)) * 180.0,
