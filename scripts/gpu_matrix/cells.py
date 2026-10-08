@@ -458,6 +458,20 @@ CELLS["class3d_k3_10073_10k380_s29"] = {
     "box": 380,
 }
 
+# Robustness cell 16 (etw, relax_onengine_20260926/cell16_vdam_box380_20261007/cell16.sbatch): VDAM InitialModel K=1,
+# 200 iterations, on the cell-15 10073 subset at box 380.
+CELLS["vdam_k1_10073_10k380_s29"] = {
+    "module": "relax.commands.initial_model",
+    "args": [
+        *("--i", "{fx:e10073_10k380}/particles.star", "--datadir", "{fx:e10073_10k380}", "--o", "{out}/run"),
+        *("--nr_iter", "200", "--padding_factor", "1", "--K", "1", "--sym", "C1", "--particle_diameter", "250"),
+        *("--oversampling", "1", "--healpix_order", "1", "--offset_range", "6", "--offset_step", "2"),
+        *("--tau2_fudge", "4", "--grad_write_iter", "10", "--random_seed", "29", "--j", "{cpus}", "--gpu", "0"),
+        "--preread_images",
+    ],
+    "box": 380,
+}
+
 
 def cell_fixtures(name: str) -> list[str]:
     """The fixture names a cell's arguments refer to."""
