@@ -7,6 +7,30 @@ import numpy as np
 
 
 @dataclass(frozen=True)
+class OutputPlan:
+    """What one pass 1 returns and how many rows it has: fixed from the call's arguments before the first batch.
+
+    ``n_images`` images are scored against ``n_classes * n_rot * n_trans`` poses. ``collect_significance`` asks for the
+    significant samples; ``relion_f32_coarse_support_enabled`` is the float32 support route (RELION's coarse posterior
+    on the device, which also yields ``sum_weight`` and the per-image maximum), ``return_relion_f32_normalization`` asks
+    for that normalization on every route; ``return_class_best`` and ``return_class_second`` ask for each class's best
+    and runner-up pose. ``score_real_dtype`` is the dtype of the published scores (float64 only for the diagnostic
+    float64 scoring).
+    """
+
+    n_classes: int
+    n_rot: int
+    n_trans: int
+    n_images: int
+    score_real_dtype: Any
+    collect_significance: bool
+    relion_f32_coarse_support_enabled: bool
+    return_relion_f32_normalization: bool
+    return_class_best: bool
+    return_class_second: bool
+
+
+@dataclass(frozen=True)
 class BatchOutputs:
     """One image batch's outputs of pass 1, from the end of its score program until its host read-back.
 
@@ -101,58 +125,61 @@ class Pass1Outputs:
     device_significance_starts: list
 
     @classmethod
-    def allocate(
-        cls,
-        *,
-        n_classes: int,
-        n_rot: int,
-        n_images: int,
-        score_real_dtype,
-        collect_significance: bool,
-        relion_f32_coarse_support_enabled: bool,
-        return_relion_f32_normalization: bool,
-        return_class_best: bool,
-        return_class_second: bool,
-    ) -> "Pass1Outputs":
-        """The arrays of a pass over ``n_images`` images, for the routes the call asks for."""
+    def allocate(cls, plan: OutputPlan) -> "Pass1Outputs":
+        """The arrays of a pass over ``plan.n_images`` images, for the routes the call asks for."""
 
         return cls(
-            sig_rot_any=np.zeros((n_classes, n_rot), dtype=bool),
-            n_sig_all=np.empty(n_images, dtype=np.int32),
-            cutoff_count_all=np.empty(n_images, dtype=np.int32),
-            hard_assignment=np.empty(n_images, dtype=np.int32),
-            class_assignment=np.empty(n_images, dtype=np.int32),
-            significant_sample_indices=[[None] * n_images for _ in range(n_classes)] if collect_significance else None,
-            normalization_log_z=np.empty(n_images, dtype=np.float64),
-            normalization_log_evidence=np.empty(n_images, dtype=np.float64),
-            log_evidence=np.empty(n_images, dtype=score_real_dtype),
-            best_log_score=np.empty(n_images, dtype=score_real_dtype),
-            max_posterior=np.empty(n_images, dtype=score_real_dtype),
+            sig_rot_any=np.zeros((plan.n_classes, plan.n_rot), dtype=bool),
+            n_sig_all=np.empty(plan.n_images, dtype=np.int32),
+            cutoff_count_all=np.empty(plan.n_images, dtype=np.int32),
+            hard_assignment=np.empty(plan.n_images, dtype=np.int32),
+            class_assignment=np.empty(plan.n_images, dtype=np.int32),
+            significant_sample_indices=[[None] * plan.n_images for _ in range(plan.n_classes)]
+            if plan.collect_significance
+            else None,
+            normalization_log_z=np.empty(plan.n_images, dtype=np.float64),
+            normalization_log_evidence=np.empty(plan.n_images, dtype=np.float64),
+            log_evidence=np.empty(plan.n_images, dtype=plan.score_real_dtype),
+            best_log_score=np.empty(plan.n_images, dtype=plan.score_real_dtype),
+            max_posterior=np.empty(plan.n_images, dtype=plan.score_real_dtype),
             relion_f32_sum_weight=(
-                np.empty(n_images, dtype=np.float32)
-                if (relion_f32_coarse_support_enabled or return_relion_f32_normalization) and collect_significance
+                np.empty(plan.n_images, dtype=np.float32)
+                if (plan.relion_f32_coarse_support_enabled or plan.return_relion_f32_normalization)
+                and plan.collect_significance
                 else None
             ),
-            relion_f32_max_posterior=np.empty(n_images, dtype=np.float32) if return_relion_f32_normalization else None,
-            class_log_evidence=np.empty((n_classes, n_images), dtype=np.float64),
+            relion_f32_max_posterior=np.empty(plan.n_images, dtype=np.float32)
+            if plan.return_relion_f32_normalization
+            else None,
+            class_log_evidence=np.empty((plan.n_classes, plan.n_images), dtype=np.float64),
             class_best_log_score=(
-                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_best else None
+                np.empty((plan.n_classes, plan.n_images), dtype=plan.score_real_dtype)
+                if plan.return_class_best
+                else None
             ),
             class_second_best_log_score=(
-                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_second else None
+                np.empty((plan.n_classes, plan.n_images), dtype=plan.score_real_dtype)
+                if plan.return_class_second
+                else None
             ),
             class_best_offset_free_log_score=(
-                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_best else None
+                np.empty((plan.n_classes, plan.n_images), dtype=plan.score_real_dtype)
+                if plan.return_class_best
+                else None
             ),
             class_second_best_offset_free_log_score=(
-                np.empty((n_classes, n_images), dtype=score_real_dtype) if return_class_second else None
+                np.empty((plan.n_classes, plan.n_images), dtype=plan.score_real_dtype)
+                if plan.return_class_second
+                else None
             ),
-            class_hard_assignment=np.empty((n_classes, n_images), dtype=np.int32) if return_class_best else None,
+            class_hard_assignment=np.empty((plan.n_classes, plan.n_images), dtype=np.int32)
+            if plan.return_class_best
+            else None,
             class_second_hard_assignment=(
-                np.empty((n_classes, n_images), dtype=np.int32) if return_class_second else None
+                np.empty((plan.n_classes, plan.n_images), dtype=np.int32) if plan.return_class_second else None
             ),
-            device_significance_counts=[[] for _ in range(n_classes)],
-            device_significance_polarity=[[] for _ in range(n_classes)],
-            device_significance_ids=[[] for _ in range(n_classes)],
-            device_significance_starts=[[] for _ in range(n_classes)],
+            device_significance_counts=[[] for _ in range(plan.n_classes)],
+            device_significance_polarity=[[] for _ in range(plan.n_classes)],
+            device_significance_ids=[[] for _ in range(plan.n_classes)],
+            device_significance_starts=[[] for _ in range(plan.n_classes)],
         )

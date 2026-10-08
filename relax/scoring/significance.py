@@ -55,7 +55,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 )
 from relax.scoring.coarse_layout import compact_projection_window_positions, plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
-from relax.scoring.pass1_results import BatchOutputs, Pass1Outputs
+from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
     _relion_coarse_gaussian_gemm_scores_jit,
@@ -1344,9 +1344,10 @@ def _compute_k_class_significance_batched(
     pass1_prior_terms = None
     exact_rotation_prior = None
 
-    outputs = Pass1Outputs.allocate(
+    output_plan = OutputPlan(
         n_classes=n_classes,
         n_rot=n_rot,
+        n_trans=n_trans,
         n_images=n_images,
         score_real_dtype=score_real_dtype,
         collect_significance=collect_significance,
@@ -1355,6 +1356,7 @@ def _compute_k_class_significance_batched(
         return_class_best=return_class_best,
         return_class_second=return_class_second,
     )
+    outputs = Pass1Outputs.allocate(output_plan)
 
     tree_rescore_examined = 0
     tree_rescore_ambiguous = 0
