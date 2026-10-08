@@ -1704,7 +1704,6 @@ def run_dense_k_class_em_adaptive(
         if relion_projector_half is not None:
             significance_projector_half = seed_iteration_first_class(relion_projector_half)[0]
     coarse_significance_support_audit = None
-    exact_coarse_operand_assembly = None
     coarse_actual_backend = None
     pass1_t0 = time.time()
     if given_supports is not None:
@@ -1867,9 +1866,6 @@ def run_dense_k_class_em_adaptive(
         coarse_significance_support_audit = _full_coarse_stats.get(
             "coarse_significance_support_audit",
         )
-        exact_coarse_operand_assembly = _full_coarse_stats.get(
-            "exact_coarse_operand_assembly",
-        )
     if coarse_engine == "gemm_hybrid" and coarse_actual_backend not in {"gemm_macro", "exact_cc_gemm"}:
         raise RuntimeError(f"gemm_hybrid selected but coarse scorer executed {coarse_actual_backend!r}")
     pass1_s = time.time() - pass1_t0
@@ -1885,7 +1881,6 @@ def run_dense_k_class_em_adaptive(
         result = _with_coarse_significance_diagnostics(
             result,
             support_audit=coarse_significance_support_audit,
-            exact_coarse_operand_assembly=exact_coarse_operand_assembly,
         )
         if coarse_engine == "gemm_hybrid":
             from relax.sparse_pass2.engine_record import record_coarse_engine_call

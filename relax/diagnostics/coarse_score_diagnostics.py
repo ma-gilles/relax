@@ -115,29 +115,13 @@ def _build_coarse_significance_support_audit(
     return result
 
 
-def _with_coarse_significance_diagnostics(
-    result,
-    *,
-    support_audit: dict | None,
-    exact_coarse_operand_assembly: dict | None = None,
-):
+def _with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
     """Propagate exact coarse-support telemetry to InitialModel."""
 
-    additions = {
-        key: dict(value)
-        for key, value in (
-            ("coarse_significance_support_audit", support_audit),
-            (
-                "exact_coarse_operand_assembly",
-                exact_coarse_operand_assembly,
-            ),
-        )
-        if value is not None
-    }
-    if not additions:
+    if support_audit is None:
         return result
     profile_summary = dict(result.profile_summary or {})
-    profile_summary.update(additions)
+    profile_summary["coarse_significance_support_audit"] = dict(support_audit)
     return result._replace(profile_summary=profile_summary)
 
 
