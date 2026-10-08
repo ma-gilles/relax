@@ -53,6 +53,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
+from relax.scoring.pass1_assembly import significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
@@ -1658,59 +1659,7 @@ def _compute_k_class_significance_batched(
             _srt[-1],
         )
 
-    if any(outputs.device_significance_counts):
-        from relax.sparse_pass2.resident_significance import (
-            DeviceCompactedSignificantSamples,
-            build_coarse_significance_csr,
-            host_support_rows,
-        )
-
-        for class_index in range(n_classes):
-            covered = int(sum(int(counts.size) for counts in outputs.device_significance_counts[class_index]))
-            if covered != n_images:
-                # Some batches kept the host mask (a score dump): publish the
-                # compacted batches as host rows too.
-                for start, counts, polarity, ids in zip(
-                    outputs.device_significance_starts[class_index],
-                    outputs.device_significance_counts[class_index],
-                    outputs.device_significance_polarity[class_index],
-                    outputs.device_significance_ids[class_index],
-                    strict=True,
-                ):
-                    batch_rows = host_support_rows(
-                        build_coarse_significance_csr(
-                            n_images=int(counts.size),
-                            n_coarse_rot=n_rot,
-                            n_coarse_trans=n_trans,
-                            n_significant_per_batch=[counts],
-                            store_excluded_per_batch=[polarity],
-                            ids_per_batch=[ids],
-                        )
-                    )
-                    for offset, row in enumerate(batch_rows):
-                        outputs.significant_sample_indices[class_index][start + offset] = row
-                continue
-            coarse_significance_csr = build_coarse_significance_csr(
-                n_images=n_images,
-                n_coarse_rot=n_rot,
-                n_coarse_trans=n_trans,
-                n_significant_per_batch=outputs.device_significance_counts[class_index],
-                store_excluded_per_batch=outputs.device_significance_polarity[class_index],
-                ids_per_batch=outputs.device_significance_ids[class_index],
-            )
-            outputs.significant_sample_indices[class_index] = DeviceCompactedSignificantSamples(
-                host_support_rows(coarse_significance_csr),
-                csr=coarse_significance_csr,
-            )
-            logger.info(
-                "Coarse significance compacted on the device (class %d): %d images, %d ids "
-                "(%.2f MB) instead of a %.2f GB support mask",
-                class_index,
-                n_images,
-                int(coarse_significance_csr.ids.size),
-                coarse_significance_csr.ids.nbytes / 1e6,
-                float(n_images) * float(n_rot) * float(n_trans) / 1e9,
-            )
+    significant_sample_indices = significant_samples_after_loop(outputs, output_plan)
 
     full_stats = {
         "normalization_log_z": outputs.normalization_log_z,
@@ -1745,14 +1694,14 @@ def _compute_k_class_significance_batched(
             )
         )
     if _coarse_significance_support_audit_enabled():
-        if outputs.significant_sample_indices is None:
+        if significant_sample_indices is None:
             raise RuntimeError(
                 f"{_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV}=1 requires "
                 "collect_significance=True",
             )
         full_stats["coarse_significance_support_audit"] = (
             _build_coarse_significance_support_audit(
-                outputs.significant_sample_indices,
+                significant_sample_indices,
                 samples_per_class=n_rot * n_trans,
                 include_ids=_coarse_significance_support_audit_ids_enabled(),
             )
@@ -1794,6 +1743,6 @@ def _compute_k_class_significance_batched(
         outputs.n_sig_all,
         outputs.hard_assignment,
         outputs.class_assignment,
-        outputs.significant_sample_indices,
+        significant_sample_indices,
         full_stats,
     )
