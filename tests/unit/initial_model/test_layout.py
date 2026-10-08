@@ -1,4 +1,4 @@
-"""Regression tests for `relax.vdam.layout`.
+"""Regression tests for the BPref layout bridge in `relax.vdam.estep_common`.
 
 These pin behavior that's load-bearing for InitialModel/VDAM RELION parity:
 - the BPref converter clamps near-denormal weight noise to 0 so RELION's
@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from helpers.vdam import bpref_to_run_em_output
 
-from relax.vdam.layout import relion_x_public_output_to_bpref
+from relax.vdam.estep_common import relion_x_public_output_to_bpref
 from helpers.float_compare import assert_matches
 
 
@@ -254,7 +254,7 @@ def test_bpref_converter_rejects_unknown_compact_accumulator_shape():
 
 def test_a_physical_class_cube_gives_the_logical_bpref_slab():
     """A pass that keeps its BPref at the physical cube hands the adapter the same slab as the cropped cube."""
-    from relax.vdam.layout import relion_x_public_output_to_bpref
+    from relax.vdam.estep_common import relion_x_public_output_to_bpref
 
     rng = np.random.default_rng(3)
     ori_size, r_max = 32, 5

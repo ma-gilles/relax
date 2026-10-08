@@ -225,7 +225,7 @@ assignments onto the coarse grid when a fine pass ran
 [`heterogeneity._fixed_rotation_covariance_images`](../../tests/oracles/heterogeneity.py) accumulates the
 fixed-rotation covariance-column update in image space (right-hand side and normal
 operator per rotation) for both the Equinox and the classic accumulator, which only
-convert to half images and back-project. In [`vdam.layout`](../../relax/vdam/layout.py),
+convert to half images and back-project. In [`vdam.estep_common`](../../relax/vdam/estep_common.py),
 `_centered_bpref_sources` validates and centers the data/weight cubes once for the
 dense and the RELION-x-half BPref converters, and `_bpref_slab_outputs` applies RELION's
 double-precision cast and denormal-weight clamp

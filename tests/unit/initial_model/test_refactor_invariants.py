@@ -40,8 +40,8 @@ from relax.vdam import (
     state,
     subset_schedule,
 )
+from relax.vdam.estep_common import relion_bpref_frame_scales
 from relax.vdam.init import compute_current_size_for_denovo, compute_ini_high_angstrom, compute_ini_high_shell
-from relax.vdam.layout import relion_bpref_frame_scales
 from relax.vdam.schedules import (
     compute_phase_lengths,
     compute_stepsize,
@@ -243,7 +243,7 @@ class TestLayoutGoldenValues:
 
     def test_bp_slab_full_half_complex_path(self):
         """``r_max >= c`` returns a roll of the full half-complex slab."""
-        from relax.vdam.layout import _bp_slab
+        from relax.vdam.estep_common import _bp_slab
 
         N = 8
         c = N // 2  # 4
@@ -257,7 +257,7 @@ class TestLayoutGoldenValues:
 
     def test_bp_slab_cropped_path(self):
         """``r_max < c`` returns a centered cropped half-spectrum slab."""
-        from relax.vdam.layout import _bp_slab
+        from relax.vdam.estep_common import _bp_slab
 
         N = 16
         c = N // 2  # 8
@@ -319,7 +319,9 @@ LOC_BUDGETS = {
     # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
     # Optics features (2026-10-02): the trials' optics-table CTFs in the expected accuracy (+6).
     # Subtomogram optics features (2026-10-03, etoptics): the tilt trials' optics-table CTFs (+3).
-    "sampling_layout": (1012, ("native_sampling.py", "layout.py")),
+    # layout.py (139 lines when this ceiling was set) moved into estep_common.py (2026-10-08, e3): its
+    # allowance moved with it to "estep" (-139 here, +139 there).
+    "sampling_layout": (873, ("native_sampling.py",)),
     # The exact-local VDAM route (sparse_pass2_estep.py, 1062 lines) was removed on
     # 2026-09-27; the adaptive-route E-step joins this budget with the helpers it shared
     # (1846 counted lines at integration, with the shared projector setup). The reviewed
@@ -327,7 +329,8 @@ LOC_BUDGETS = {
     # Subtomogram InitialModel's E-step adapter tomo_estep.py (+134, 2026-10-01): a real raise, no headroom.
     # +4: estep_meta_updates keeps the coarse cut's rlnNrOfSignificantSamples per particle (2026-10-01).
     # Several optics groups (2026-10-01): per-group noise rows, ids and the per-group noise update (+47).
-    "estep": (2148, (
+    # +139: layout.py's allowance, with the file merged into estep_common.py (2026-10-08, e3).
+    "estep": (2287, (
         "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),

@@ -31,7 +31,7 @@ def empty_moments(theta):
 def metric_floor(image_size):
     """VDAM BPref floor=1 in full-real-image PPCA statistic units.
 
-    layout.relion_bpref_frame_scales gives weight_relion=N^4*weight_engine
+    estep_common.relion_bpref_frame_scales gives weight_relion=N^4*weight_engine
     for per-component noise. Total-coefficient noise is twice that variance,
     so the PPCA weight/floor is half the engine value. No N/b scaling.
     """

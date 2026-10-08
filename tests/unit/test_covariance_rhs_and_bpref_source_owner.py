@@ -5,7 +5,7 @@ import oracles.heterogeneity as hetero
 import pytest
 from helpers.float_compare import matches
 
-from relax.vdam import layout
+from relax.vdam import estep_common as layout
 
 
 def test_covariance_images_have_per_rotation_layout():

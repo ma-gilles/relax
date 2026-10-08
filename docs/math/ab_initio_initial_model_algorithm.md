@@ -188,7 +188,7 @@ vdam_reconstruct_grad(Iref, momentum_data, weight, tau2_fudge, step_size)
 ```
 
 The E-step-to-RELION BackProjector layout conversion is handled by
-[`layout.py::relion_x_public_output_to_bpref`](../../relax/vdam/layout.py).
+[`estep_common.py::relion_x_public_output_to_bpref`](../../relax/vdam/estep_common.py).
 The RELION BPref frame scales, applied to every InitialModel E-step's accumulators, are:
 
 ```text
@@ -197,7 +197,7 @@ bp_weight *=  N^4
 ```
 
 Those scales are implemented by
-[`layout.py::relion_bpref_frame_scales`](../../relax/vdam/layout.py).
+[`estep_common.py::relion_bpref_frame_scales`](../../relax/vdam/estep_common.py).
 Applying them twice, or omitting them on a dense path, gives the common failure
 mode where scores look good but BPref or maps do not.
 
@@ -236,7 +236,7 @@ Use this index only after reading the algorithm sections above.
   [`subset_schedule.py::select_vdam_subset`](../../relax/vdam/subset_schedule.py)
 - InitialModel dense bridge and M-step:
   [`dense_adapter.py`](../../relax/vdam/dense_adapter.py),
-  [`layout.py`](../../relax/vdam/layout.py),
+  [`estep_common.py`](../../relax/vdam/estep_common.py),
   [`m_step.py`](../../relax/vdam/m_step.py)
 - Standard EM / K-class:
   [`k_class.py`](../../relax/classification/k_class.py)
@@ -444,7 +444,7 @@ The dense-to-VDAM bridge is:
 
 ```text
 E-step Ft_y[k], Ft_ctf[k]
-  -> layout.py::relion_x_public_output_to_bpref
+  -> estep_common.py::relion_x_public_output_to_bpref
   -> frame scales from relion_bpref_frame_scales
   -> VdamAccumulator(data, weight, class_idx=k, halfset_idx=h)
 ```
@@ -693,7 +693,7 @@ The data-vs-weight part of regularization enters through BPref / reconstruction
 weights. In standard reconstruction, `Ft_ctf` is the data weight and tau2 adds
 `inv_tau` to its denominator. In native InitialModel, dense E-step accumulators
 are converted to RELION BackProjector slabs by
-[`layout.py::relion_x_public_output_to_bpref`](../../relax/vdam/layout.py)
+[`estep_common.py::relion_x_public_output_to_bpref`](../../relax/vdam/estep_common.py)
 and then handed to `vdam_reconstruct_grad`; that binding sees the BPref weight
 array, the current reference, `tau2_fudge_factor`, and `mom1_noise_power`. The
 Python-visible dense-to-BPref frame conversion is documented above: dense

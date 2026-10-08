@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.helpers.half_volume_mstep import enforce_relion_half_volume_x0_hermitian_host
-from relax.vdam.layout import relion_bpref_frame_scales
+from relax.vdam.estep_common import relion_bpref_frame_scales
 from scripts.analyze_vdam_mstep_boundary import _read_relion_array
 from scripts.lib.bpref_contribution_replay import (
     BPrefAccumulatorReplay,

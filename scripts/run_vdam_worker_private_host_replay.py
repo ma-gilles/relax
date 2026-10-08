@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from relax.helpers.half_volume_mstep import enforce_half_volume_x0
-from relax.vdam.layout import relion_bpref_frame_scales
+from relax.vdam.estep_common import relion_bpref_frame_scales
 from scripts import analyze_vdam_mstep_boundary, run_vdam_exact_native_host_replay
 
 SCHEMA = "recovar.vdam_worker_private_host_replay.v6"

@@ -114,7 +114,7 @@ marginal-likelihood Hessian. Interpolated projections generally produce
 off-voxel normal-operator terms that diagonal gridding does not retain.
 
 Sources: [E-step](../../relax/vdam/adaptive_estep.py),
-[layouts](../../relax/vdam/layout.py),
+[layouts](../../relax/vdam/estep_common.py),
 [state](../../relax/vdam/state.py).
 
 ### 3.2 Preconditioning and moments

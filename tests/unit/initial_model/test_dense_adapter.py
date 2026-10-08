@@ -21,9 +21,9 @@ from relax.vdam.estep_common import (
     DenseInitialModelEstepResult,
     _arrays_to_accumulators,
     _estep_meta,
+    relion_bpref_frame_scales,
 )
 from relax.vdam.init import initialise_denovo_state
-from relax.vdam.layout import relion_bpref_frame_scales
 from relax.vdam.state import InitialModelState
 
 pytestmark = pytest.mark.unit
