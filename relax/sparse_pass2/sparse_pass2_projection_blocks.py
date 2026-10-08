@@ -20,6 +20,7 @@ from relax.helpers.projection import compute_projections_block as _compute_proje
 from relax.helpers.projection import (
     compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
 )
+from relax.helpers.shape_buckets import pow2_ceil
 from relax.sparse_pass2.sparse_pass2_budget import _MAX_PROJECTED_ROTATIONS_ENV, _optional_positive_int_env
 
 logger = logging.getLogger(__name__)
@@ -411,7 +412,7 @@ def class_call_length(n_rows: int) -> int:
     """
 
     n_rows = int(n_rows)
-    quantum = max(256, (1 << int(n_rows - 1).bit_length()) // 8)
+    quantum = max(256, pow2_ceil(n_rows) // 8)
     return -(-n_rows // quantum) * quantum
 
 

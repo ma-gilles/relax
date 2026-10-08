@@ -63,6 +63,7 @@ from relax.helpers.deterministic_reduce import (
 from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.optics_noise import pixel_rows
 from relax.helpers.projection import compute_noise_block
+from relax.helpers.shape_buckets import pow2_floor
 from relax.sparse_pass2.sparse_pass2_wavg import (
     _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
@@ -227,7 +228,7 @@ def resident_image_capacity(n_images: int) -> int:
     n_images = int(n_images)
     if n_images <= 0:
         raise ValueError(f"n_images must be positive, got {n_images}")
-    octave = 1 << (n_images.bit_length() - 1)
+    octave = pow2_floor(n_images)
     step = max(
         _RESIDENT_IMAGE_QUANTUM,
         octave // _RESIDENT_IMAGE_CLASSES_PER_OCTAVE,

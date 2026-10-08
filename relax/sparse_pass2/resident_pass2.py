@@ -108,6 +108,7 @@ from relax.helpers.projection import (
     relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
 )
 from relax.helpers.scale_groups import prepare_scale_correction_groups
+from relax.helpers.shape_buckets import pow2_ceil, pow2_floor
 from relax.helpers.translation_prior import (
     translation_prior_centers_for_images,
     translation_sqdist_angstrom,
@@ -547,13 +548,6 @@ class ResidentPass2Plan:
     mstep_block_rows: int
 
 
-def _floor_power_of_two(value: int) -> int:
-    value = int(value)
-    if value <= 1:
-        return 1
-    return 1 << (value.bit_length() - 1)
-
-
 def _resolve_mstep_block_rows(
     *,
     n_recon_pixels: int,
@@ -577,7 +571,7 @@ def _resolve_mstep_block_rows(
             raise ValueError(f"{_MSTEP_BLOCK_ROWS_ENV} must be a positive power of two, got {block}")
     else:
         bytes_per_row = max(int(n_recon_pixels), 1) * 44
-        block = _floor_power_of_two(max(int(max_block_bytes) // bytes_per_row, 1))
+        block = pow2_floor(max(int(max_block_bytes) // bytes_per_row, 1))
     smallest = int(row_capacity_ladder[0])
     block = min(block, smallest)
     while block > 1 and smallest % block:
@@ -606,7 +600,7 @@ def _cap_image_capacity_ladder(
     per_image = max(int(n_fine_trans), 1) * max(int(n_recon_pixels), 1) * 8 * 3
     cap = max(int(max_tile_bytes) // max(per_image, 1), 1)
     kept = tuple(value for value in ladder if int(value) <= cap)
-    return kept if kept else (1 << (int(cap).bit_length() - 1),)
+    return kept if kept else (pow2_floor(cap),)
 
 
 # Share of the measured headroom (after the half's reserved operands) that one
@@ -5299,7 +5293,7 @@ def _projection_slot_capacity(n_needed: int, n_fine_rot: int) -> int | None:
     to twice as large is reused rather than compiling a smaller one.
     """
 
-    size = max(_MIN_PROJECTION_SLOTS, 1 << max(int(n_needed) - 1, 0).bit_length())
+    size = max(_MIN_PROJECTION_SLOTS, pow2_ceil(n_needed))
     history = _STABLE_WINDOW_CLASSES_RUN.get()
     if history is not None:
         used = history.setdefault(("projection_slots", int(n_fine_rot)), set())

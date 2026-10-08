@@ -19,6 +19,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
+from relax.helpers.shape_buckets import pow2_ceil
+
 # The fused coarse projector's translation capacity (one 128-thread block).
 FUSED_TRANSLATION_CAPACITY = 128
 
@@ -148,7 +150,7 @@ def row_capacity(most: int, n_rows: int, least: int = 64) -> int:
     """The rows scored again per image: ``most`` rounded up to a power of two (at least ``least``), so few
     shapes compile."""
 
-    return min(1 << max(int(most) - 1, int(least) - 1).bit_length(), int(n_rows))
+    return min(pow2_ceil(most, minimum=least), int(n_rows))
 
 
 @partial(jax.jit, static_argnames=("capacity",))

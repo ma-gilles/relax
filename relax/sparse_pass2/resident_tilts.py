@@ -22,6 +22,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.helpers.shape_buckets import pow2_ceil, pow2_floor
 from relax.refinement import tomo_particles
 from relax.sparse_pass2.sparse_pass2_projection_blocks import project_rows_by_class
 from relax.sparse_pass2.sparse_pass2_wavg import weighted_image_power_from_shells
@@ -1011,7 +1012,7 @@ def unit_mstep_translations(
         unit_mass[sorted_units[starts]] = np.logical_or.reduceat(mass[order], starts, axis=0)
     counts = unit_mass.sum(axis=1)
     largest = int(counts.max(initial=0))
-    k = max(int(minimum), 1 << max(largest - 1, 0).bit_length())
+    k = max(int(minimum), pow2_ceil(largest))
     if k >= n_fine_trans:
         k = n_fine_trans
     # Translations with mass first, each set ascending (a stable sort of "no mass").
@@ -1043,7 +1044,7 @@ def mstep_translation_blocks(
     fit = min(max(int(tile_budget_bytes) // max(int(bytes_per_translation), 1), 1), TILT_MSTEP_MAX_TRANSLATIONS)
     if size <= fit:
         return (kept,)
-    block = 1 << (int(fit).bit_length() - 1)
+    block = pow2_floor(fit)
     out = []
     for start in range(0, size, block):
         index = kept.index[start : start + block]
@@ -1368,6 +1369,6 @@ def tilt_capacity_ladders(row_ladder, image_ladder, *, slot_capacity: int, min_r
     """
 
     slots = max(int(slot_capacity), 1)
-    rows = sorted({max(int(min_rows), 1 << max(int(r) // slots, 1).bit_length() - 1) for r in row_ladder})
+    rows = sorted({max(int(min_rows), pow2_floor(max(int(r) // slots, 1))) for r in row_ladder})
     units = sorted({max(1, int(b)) for b in image_ladder})
     return tuple(rows), tuple(units)

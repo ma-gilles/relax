@@ -14,7 +14,7 @@ import numpy as np
 
 from relax.helpers.batch_planning import _plan_consecutive_padded_batches
 from relax.helpers.env_flags import parse_env_binary_flag, parse_env_flag
-from relax.helpers.shape_buckets import power_of_two_bucket
+from relax.helpers.shape_buckets import pow2_ceil, pow2_floor, power_of_two_bucket
 from relax.local.local_layout import _exact_bucket_rotation_size
 
 _LARGE_BUCKET_POW2_ENV = "RELAX_SPARSE_PASS2_LARGE_BUCKET_POW2"
@@ -306,11 +306,6 @@ def vectorized_hypothesis_prep_enabled() -> bool:
     """
 
     return parse_env_binary_flag(VECTORIZED_HYPOTHESIS_PREP_ENV)
-
-
-def _pow2_at_least(value: int, floor: int) -> int:
-    value = max(int(value), int(floor))
-    return 1 << (value - 1).bit_length()
 
 
 def _fine_children_ranges(fine_parent_np, n_coarse_rot):
@@ -939,8 +934,8 @@ def _prepare_per_image_pass2_inputs(
         # One coarse-row capacity for the whole pass: the device index builder
         # otherwise compiled a family per chunk-wise coarse-row count (census job
         # 13837258: 28 compiles, 18.7 s). Padded coarse rows are inert.
-        "coarse_rows_capacity": _pow2_at_least(
-            max((int(np.asarray(u).shape[0]) for u in per_image_unique_rot), default=1), 64
+        "coarse_rows_capacity": pow2_ceil(
+            max((int(np.asarray(u).shape[0]) for u in per_image_unique_rot), default=1), minimum=64
         ),
     }
 
@@ -1092,7 +1087,7 @@ def padded_rotations_from_table_device(table, table_key, rotation_indices, count
 def _flat_rows_quantum(n_rows: int) -> int:
     n_rows = max(1, int(n_rows))
     if n_rows <= 4096:
-        return 1 << (n_rows - 1).bit_length()
+        return pow2_ceil(n_rows)
     return ((n_rows + 4095) // 4096) * 4096
 
 
@@ -1349,11 +1344,11 @@ def bucket_chunk_bounds(n_images: int, max_per_chunk: int, *, ladder: bool | Non
         ladder = ladder_chunks_enabled()
     if not ladder:
         return [(start, min(start + max_per_chunk, n_images)) for start in range(0, n_images, max_per_chunk)]
-    largest_power = 1 << (max_per_chunk.bit_length() - 1)
+    largest_power = pow2_floor(max_per_chunk)
     bounds = []
     start = 0
     while n_images - start >= LADDER_CHUNK_FLOOR:
-        size = min(largest_power, 1 << ((n_images - start).bit_length() - 1))
+        size = min(largest_power, pow2_floor(n_images - start))
         bounds.append((start, start + size))
         start += size
     # The remainder must still respect the caller's cap: it is derived from

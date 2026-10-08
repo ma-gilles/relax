@@ -5,6 +5,8 @@ from helpers.float_compare import assert_matches
 from relax.helpers.shape_buckets import (
     coarse_bucket,
     pad_axis,
+    pow2_ceil,
+    pow2_floor,
     power_bucket,
     power_of_two_bucket,
     round_up_to_multiple,
@@ -16,6 +18,18 @@ def test_round_up_to_multiple():
     assert round_up_to_multiple(1, 8) == 8
     assert round_up_to_multiple(16, 8) == 16
     assert round_up_to_multiple(17, 8) == 24
+
+
+def test_pow2_ceil_and_floor_match_the_bit_length_rules_they_replace():
+    for value in range(-3, 300):
+        for minimum in (0, 1, 2, 64):
+            assert pow2_ceil(value, minimum=minimum) == 1 << (max(value, minimum) - 1).bit_length()
+        if value >= 1:
+            assert pow2_floor(value) == 1 << (value.bit_length() - 1)
+    assert [pow2_ceil(v) for v in (0, 1, 2, 3, 64, 65)] == [1, 1, 2, 4, 64, 128]
+    assert [pow2_floor(v) for v in (1, 2, 3, 64, 65)] == [1, 2, 2, 64, 64]
+    with pytest.raises(ValueError, match="positive"):
+        pow2_floor(0)
 
 
 def test_power_of_two_bucket():

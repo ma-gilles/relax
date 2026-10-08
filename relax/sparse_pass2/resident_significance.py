@@ -50,6 +50,7 @@ from functools import partial
 
 import numpy as np
 
+from relax.helpers.shape_buckets import pow2_ceil
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.sparse_pass2.resident_candidates import (
     ResidentCandidateTables,
@@ -95,10 +96,7 @@ def csr_capacity_for_total(total: int) -> int:
     total = int(total)
     if total < 0:
         raise ValueError("compact id total must be non-negative")
-    capacity = _MIN_CSR_CAPACITY
-    while capacity < total:
-        capacity <<= 1
-    return capacity
+    return max(_MIN_CSR_CAPACITY, pow2_ceil(total))
 
 
 # ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.helpers.shape_buckets import pow2_ceil, pow2_floor
 from relax.scoring.exact_cut import (
     FUSED_TRANSLATION_CAPACITY as _FUSED_TRANSLATION_CAPACITY,
 )
@@ -741,7 +742,7 @@ def _flush_plan(
             f"GPU can give its flushes {(int(flush_bytes) - rescore_bytes) / 2**30:.2f} GiB: run on a GPU with "
             "more memory or with a smaller box."
         )
-    power = 1 << (int(by_device).bit_length() - 1)
+    power = pow2_floor(by_device)
     batch = max(int(batch_particles), 1)
     return min(by_diff2, max(batch, power // batch * batch)), rescore_bytes, by_diff2, int(by_device)
 
@@ -757,7 +758,7 @@ def _rescore_rows_per_call(particles: int, slots: int, n_trans: int, rescore_byt
 
     per_row = int(particles) * (int(slots) * (36 + 2 * int(n_trans) * 4) + 2 * int(n_trans) * 4)
     rows = max(1, int(rescore_bytes) // max(per_row, 1))
-    return min(int(capacity), 1 << (rows.bit_length() - 1))
+    return min(int(capacity), pow2_floor(rows))
 
 
 def _coarse_projection_bytes_per_pixel(
@@ -1264,9 +1265,9 @@ def particle_coarse_supports(
         n_significant = int(counts.sum())
         if flat is None or n_significant > int(flat.shape[0]):
             flat = _significant_cells(
-                mask, capacity=max(1, 1 << (max(n_significant, 1) - 1).bit_length()), row_length=n_coarse_trans
+                mask, capacity=pow2_ceil(n_significant), row_length=n_coarse_trans
             )
-        cells_capacity = max(int(cells_capacity), 1 << max(2 * n_significant - 1, 1).bit_length())
+        cells_capacity = max(int(cells_capacity), pow2_ceil(2 * n_significant, minimum=2))
         flat = np.asarray(flat, dtype=np.int64)[:n_significant]
         particle_pmax = np.asarray(pmax, dtype=np.float64)
         cell_offsets = np.concatenate([[0], np.cumsum(counts)])
