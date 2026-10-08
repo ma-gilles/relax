@@ -171,6 +171,8 @@ from relax.refinement.ports import (
     NumberedState,
     ReconstructedIteration,
     RunObserver,
+    ScoringArrays,
+    ScoringState,
 )
 from relax.refinement.projector_preparation import (
     build_numbered_projectors,
@@ -1197,38 +1199,9 @@ def refine_single_volume(
         None if native_sampling_boundary else int(state.healpix_order)
     )
     frozen_initial_scoring_state_sha256 = None
-    def _state_swap_inputs():
-        """The scoring-state values a state-swap probe snapshots and later swaps, as bound right now."""
-
-        return dict(
-            state=state,
-            cs=current_size,
-            reference_model=reference_model,
-            noise_model=noise_model,
-            relion_half_inputs=halves,
-            previous_best_rotations=previous_best_rotations,
-            current_sigma_offset_angstrom=sigma_offset.shared_angstrom,
-            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
-            direction_priors=direction_priors,
-        )
-
-    def _frozen_scoring_state_now():
-        """The scoring-state arrays as bound right now; the loop re-binds several of them per iteration."""
-
-        return dict(
-            means=reference_model.maps,
-            mean_variance=reference_model.tau2,
-            mean_variance_per_half=(
-                reference_model.tau2_per_half if options.parity.use_per_half_mean_variance else None
-            ),
-            relion_half_inputs=halves,
-            noise_variance_per_half=noise_model.variance_per_half,
-            current_sigma_offset_angstrom_per_half=sigma_offset.per_half_angstrom,
-            direction_priors=direction_priors,
-            experiment_datasets=experiment_datasets,
-        )
-
-    source.scoring_state_bound(_frozen_scoring_state_now)
+    source.scoring_state_bound(
+        ScoringArrays(reference_model, noise_model, sigma_offset, halves, direction_priors, experiment_datasets)
+    )
     # Per-half numbered-iteration assignments; a final-only replay
     # (--max_iter 0 --force-final-after-zero-iterations) runs no numbered
     # iteration and reports none.
@@ -1361,7 +1334,13 @@ def refine_single_volume(
             replay_saved_healpix_order=replay_saved_healpix_order,
         )
 
-        source.state_swap_snapshot(iteration, _state_swap_inputs)
+        source.state_swap_snapshot(
+            iteration,
+            ScoringState(
+                state, current_size, reference_model, noise_model, halves, previous_best_rotations, sigma_offset,
+                direction_priors,
+            ),
+        )
         # The input source supplies the state this iteration scores with (the native source: the run's own).
         numbered = source.numbered_state(
             iteration,
@@ -1391,7 +1370,14 @@ def refine_single_volume(
             replay_saved_healpix_order = int(state.healpix_order)
 
         reference_model.maps = source.scoring_references(iteration, reference_model, volume_shape=volume_shape)
-        swapped = source.swapped_state(iteration, _state_swap_inputs, volume_shape=volume_shape)
+        swapped = source.swapped_state(
+            iteration,
+            ScoringState(
+                state, current_size, reference_model, noise_model, halves, previous_best_rotations, sigma_offset,
+                direction_priors,
+            ),
+            volume_shape=volume_shape,
+        )
         if swapped is not None:
             (
                 current_size,
@@ -1410,7 +1396,10 @@ def refine_single_volume(
             # State-swap diagnostics historically replace the one shared tau2.
             # Do not leave the scorer pointing at pre-swap aliases.
             reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
-        checked = source.scoring_state_checked(iteration, _frozen_scoring_state_now)
+        checked = source.scoring_state_checked(
+            iteration,
+            ScoringArrays(reference_model, noise_model, sigma_offset, halves, direction_priors, experiment_datasets),
+        )
         if checked is not None:
             frozen_initial_scoring_state_sha256 = checked
 

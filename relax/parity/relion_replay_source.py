@@ -56,7 +56,7 @@ from relax.refinement.final_sampling import FinalSamplingSettings, native_final_
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.iteration_planning import CoarseGrids, CoarseImageSize
 from relax.refinement.mean_helpers import class_mixture_from_weights
-from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState
+from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState
 from relax.refinement.refinement_options import (
     FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
     FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV,
@@ -311,10 +311,10 @@ class RelionReplaySource(InputSource):
         probe = self.replay.state_swap_probe
         return probe is not None and int(probe.get("iteration", -1)) == int(iteration)
 
-    def state_swap_snapshot(self, iteration, scoring_inputs):
-        """The run's own state at the probe's target iteration, before RELION's is installed."""
+    def state_swap_snapshot(self, iteration, scoring):
+        """The run's own state at the probe's target iteration, before RELION's is installed (a copy)."""
         if self._swaps_at(iteration):
-            self._state_swap_snapshot = _snapshot_state_swap_inputs(**scoring_inputs())
+            self._state_swap_snapshot = _snapshot_state_swap_inputs(**_state_swap_keywords(scoring))
 
     def scoring_references(self, iteration, reference_model, *, volume_shape):
         """RELION's maps at the probe's target iteration when the probe replays references, else the model's."""
@@ -325,7 +325,7 @@ class RelionReplaySource(InputSource):
             volume_shape=volume_shape,
         )
 
-    def swapped_state(self, iteration, scoring_inputs, *, volume_shape):
+    def swapped_state(self, iteration, scoring, *, volume_shape):
         """The probe's variant of the replayed state at its target iteration: its components restored from the
         run's own snapshot."""
         if not self._swaps_at(iteration):
@@ -335,29 +335,38 @@ class RelionReplaySource(InputSource):
             iteration=iteration,
             recovar_snapshot=self._state_swap_snapshot,
             volume_shape=volume_shape,
-            **scoring_inputs(),
+            **_state_swap_keywords(scoring),
         )
 
-    def _frozen_arrays(self, scoring_arrays):
+    def _frozen_arrays(self, arrays):
         return _frozen_scoring_state_arrays(
-            **scoring_arrays(),
+            means=arrays.reference_model.maps,
+            mean_variance=arrays.reference_model.tau2,
+            mean_variance_per_half=(
+                arrays.reference_model.tau2_per_half if self.options.parity.use_per_half_mean_variance else None
+            ),
+            relion_half_inputs=arrays.halves,
+            noise_variance_per_half=arrays.noise_model.variance_per_half,
+            current_sigma_offset_angstrom_per_half=arrays.sigma_offset.per_half_angstrom,
+            direction_priors=arrays.direction_priors,
+            experiment_datasets=arrays.experiment_datasets,
             sealed_sampling_state=self.replay.sealed_sampling_state,
             sealed_scoring_context=self.replay.sealed_scoring_context,
         )
 
-    def scoring_state_bound(self, scoring_arrays):
+    def scoring_state_bound(self, arrays):
         """A frozen boundary binds the scoring state it checks before the first iteration (K=1 only)."""
         if self.replay.frozen_refinement_state_fields is None:
             return
         if int(self.options.k_class.n_classes) > 1:
             raise RuntimeError("Frozen scoring-state immutability assertion currently supports K=1 only")
-        self._bound_scoring_state = self._frozen_arrays(scoring_arrays)
+        self._bound_scoring_state = self._frozen_arrays(arrays)
 
-    def scoring_state_checked(self, iteration, scoring_arrays):
+    def scoring_state_checked(self, iteration, arrays):
         """Right before the first iteration scores: the bound scoring state is unchanged (its digest)."""
         if self._bound_scoring_state is None or iteration != 0:
             return None
-        digest = _assert_frozen_scoring_state_unchanged(self._bound_scoring_state, self._frozen_arrays(scoring_arrays))
+        digest = _assert_frozen_scoring_state_unchanged(self._bound_scoring_state, self._frozen_arrays(arrays))
         logger.info(
             "Frozen scoring-state ownership verified immediately before physical iteration %d scoring",
             int(self.options.schedule.init_relion_iteration) + iteration + 1,
@@ -708,6 +717,21 @@ def build_sealed_initial_coarse_grids(
         ),
         base_translations=np.asarray(current_translations, dtype=np.float64),
         translations=current_translations,
+    )
+
+
+def _state_swap_keywords(scoring: ScoringState) -> dict:
+    """The state-swap probe's keywords for the run's ``scoring`` state."""
+    return dict(
+        state=scoring.state,
+        cs=scoring.current_size,
+        reference_model=scoring.reference_model,
+        noise_model=scoring.noise_model,
+        relion_half_inputs=scoring.halves,
+        previous_best_rotations=scoring.previous_best_rotations,
+        current_sigma_offset_angstrom=scoring.sigma_offset.shared_angstrom,
+        current_sigma_offset_angstrom_per_half=scoring.sigma_offset.per_half_angstrom,
+        direction_priors=scoring.direction_priors,
     )
 
 

@@ -150,6 +150,34 @@ class NumberedState(NamedTuple):
     sampling_healpix_order: int | None
 
 
+class ScoringState(NamedTuple):
+    """A numbered iteration's scoring state as the run holds it at a source's call: the ``RefinementState``, the
+    current size, the reference and noise models, the halves (poses and corrections), the previous best
+    rotations, the ``SigmaOffset`` and the direction priors. A source that keeps any of it past the call copies
+    it."""
+
+    state: Any
+    current_size: int
+    reference_model: Any
+    noise_model: Any
+    halves: Any
+    previous_best_rotations: Any
+    sigma_offset: Any
+    direction_priors: Any
+
+
+class ScoringArrays(NamedTuple):
+    """The arrays the run scores with, as it holds them at a source's call: the reference and noise models, the
+    ``SigmaOffset``, the halves, the direction priors and the experiment datasets."""
+
+    reference_model: Any
+    noise_model: Any
+    sigma_offset: Any
+    halves: Any
+    direction_priors: Any
+    experiment_datasets: Any
+
+
 class ClassTau2(NamedTuple):
     """A Class3D iteration's prior shells taken from elsewhere (``shells``, ``(K, n_shells)``; None: the M-step
     computes its own from the previous references) and the label its log and dumps give their source."""
@@ -221,27 +249,25 @@ class InputSource:
         """
         return inputs
 
-    def state_swap_snapshot(self, iteration: int, scoring_inputs) -> None:
-        """Before iteration ``iteration``'s numbered state is installed; ``scoring_inputs()`` returns the run's
-        own state (keywords ``state``, ``cs``, ``reference_model``, ``noise_model``, ``relion_half_inputs``,
-        ``previous_best_rotations``, the two sigma offsets and ``direction_priors``)."""
+    def state_swap_snapshot(self, iteration: int, scoring: ScoringState) -> None:
+        """Before iteration ``iteration``'s numbered state is installed, with the run's own ``scoring`` state."""
 
     def scoring_references(self, iteration: int, reference_model, *, volume_shape):
         """The maps iteration ``iteration`` scores against (the native source: the model's own)."""
         return reference_model.maps
 
-    def swapped_state(self, iteration: int, scoring_inputs, *, volume_shape):
-        """The scoring state with a probe's components swapped back to the run's own snapshot (a tuple of
+    def swapped_state(self, iteration: int, scoring: ScoringState, *, volume_shape):
+        """The ``scoring`` state with a probe's components swapped back to the run's own snapshot (a tuple of
         size, reference model, noise model, previous best rotations, the two sigma offsets and direction
         priors), or None when iteration ``iteration`` swaps nothing."""
         return None
 
-    def scoring_state_bound(self, scoring_arrays) -> None:
-        """Before the first iteration; ``scoring_arrays()`` returns the arrays the run will score with."""
+    def scoring_state_bound(self, arrays: ScoringArrays) -> None:
+        """Before the first iteration, with the ``arrays`` the run will score with."""
 
-    def scoring_state_checked(self, iteration: int, scoring_arrays):
-        """Right before iteration ``iteration`` scores: a check of the arrays ``scoring_arrays()`` returns
-        against those bound before the first iteration; its digest, or None when nothing is checked."""
+    def scoring_state_checked(self, iteration: int, arrays: ScoringArrays):
+        """Right before iteration ``iteration`` scores: a check of its ``arrays`` against those bound before the
+        first iteration; its digest, or None when nothing is checked."""
         return None
 
     def scoring_rotation_ids(self, trial_grid, *, use_local: bool):
