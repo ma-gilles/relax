@@ -17,6 +17,7 @@ from relax.refinement.command_options import validate_sigma_ang
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.iteration_planning import initialize_refinement_state
 from relax.refinement.local_sampling import local_search_centre_half
+from relax.refinement.ports import InputSource
 from relax.refinement.refinement_options import (
     KClassOptions,
     LocalSearchOptions,
@@ -43,7 +44,8 @@ def test_sigma_ang_turns_the_prior_on_at_iteration_one_with_its_width(healpix_or
         local_search=LocalSearchOptions(sigma_ang_deg=2.0),
     )
     state = initialize_refinement_state(
-        options, ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=2.0), subtomogram=False, dtype=np.float32
+        options, ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=2.0), subtomogram=False, dtype=np.float32,
+        source=InputSource(),
     )
     assert state.do_local_search
     assert_matches(state.sigma_rot, np.deg2rad(2.0))
@@ -54,7 +56,8 @@ def test_without_sigma_ang_only_the_local_order_starts_local():
     for order, local in ((3, False), (4, True)):
         options = RefinementOptions(schedule=RefinementSchedule(init_healpix_order=order), k_class=KClassOptions())
         state = initialize_refinement_state(
-            options, ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=2.0), subtomogram=False, dtype=np.float32
+            options, ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=2.0), subtomogram=False, dtype=np.float32,
+            source=InputSource(),
         )
         assert state.do_local_search is local
         assert state.sigma_rot == 0.0

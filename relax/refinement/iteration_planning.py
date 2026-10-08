@@ -35,7 +35,7 @@ from relax.reconstruction.regularization_relion import (
     resolution_from_data_vs_prior,
     update_relion_growth_state_from_fsc,
 )
-from relax.refinement.iteration_snapshot import validate_resume_snapshot as _validate_resume_snapshot
+from relax.refinement.iteration_snapshot import validate_resume_snapshot
 from relax.refinement.ports import InputSource
 from relax.sampling import _relion_adaptive_pass1_rotations
 
@@ -174,37 +174,16 @@ def plan_expectation_windows(
     :func:`relion_strict_highres_image_size`. See
     ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
-    image_geometry = optics.image_geometry
-    model_pixel_size = optics.model_pixel_size
-    optics_image_sizes = None if optics.multi_shape_halves else optics.optics_image_sizes
-    optics_pixel_sizes = optics.optics_pixel_sizes
-    image_current_size = current_size
-    if optics_image_sizes is not None:
-        remapped = relion_optics_image_current_sizes(
-            current_size,
-            model_box_size=image_geometry.box_size,
-            model_pixel_size=model_pixel_size,
-            optics_image_sizes=optics_image_sizes,
-            optics_pixel_sizes=optics_pixel_sizes,
-        )
-        unique_sizes = np.unique(remapped)
-        if unique_sizes.size != 1:
-            raise NotImplementedError(
-                "K=1 parity currently requires all optics groups to share one remapped "
-                f"image current size; got {remapped.tolist()}",
-            )
-        image_current_size = int(unique_sizes[0])
+    image_current_size = _optics_image_current_size(current_size, optics)
     if image_current_size != current_size:
         log.info(
             "RELION optics current-size remap: model_current_size=%d "
             "image_current_size=%d model_pixel_size=%.9g",
-            current_size, image_current_size, model_pixel_size,
+            current_size, image_current_size, optics.model_pixel_size,
         )
     score_size = None
     if strict_highres_exp_angstrom is not None:
-        if optics.multi_shape_halves:
-            raise NotImplementedError("--strict_highres_exp with optics groups on several image shapes")
-        limit = relion_strict_highres_image_size(*optics.first_optics_group_geometry(), strict_highres_exp_angstrom)
+        limit = _strict_highres_limit(optics, strict_highres_exp_angstrom)
         score_size = min(limit, image_current_size)
         log.info(
             "RELION --strict_highres_exp %.3f A: E-step size %d (limit %d, image current size %d)",
@@ -213,14 +192,38 @@ def plan_expectation_windows(
     return ExpectationWindows(
         model_size=current_size,
         image_current_size=image_current_size,
-        image_box_size=image_geometry.box_size,
+        image_box_size=optics.image_geometry.box_size,
         score_size=score_size,
     )
 
 
-_QUIET_LOG = logging.getLogger(__name__ + ".quiet")
-_QUIET_LOG.propagate = False
-_QUIET_LOG.addHandler(logging.NullHandler())
+def _optics_image_current_size(current_size: int, optics: RunOptics) -> int:
+    """The images' current size for the model's ``current_size``: RELION's optics remap on single-shape optics
+    groups (which must agree on one size), else ``current_size``."""
+    optics_image_sizes = None if optics.multi_shape_halves else optics.optics_image_sizes
+    if optics_image_sizes is None:
+        return current_size
+    remapped = relion_optics_image_current_sizes(
+        current_size,
+        model_box_size=optics.image_geometry.box_size,
+        model_pixel_size=optics.model_pixel_size,
+        optics_image_sizes=optics_image_sizes,
+        optics_pixel_sizes=optics.optics_pixel_sizes,
+    )
+    unique_sizes = np.unique(remapped)
+    if unique_sizes.size != 1:
+        raise NotImplementedError(
+            "K=1 parity currently requires all optics groups to share one remapped "
+            f"image current size; got {remapped.tolist()}",
+        )
+    return int(unique_sizes[0])
+
+
+def _strict_highres_limit(optics: RunOptics, strict_highres_exp_angstrom: float) -> int:
+    """The --strict_highres_exp image size of the first optics group (single-shape optics only)."""
+    if optics.multi_shape_halves:
+        raise NotImplementedError("--strict_highres_exp with optics groups on several image shapes")
+    return relion_strict_highres_image_size(*optics.first_optics_group_geometry(), strict_highres_exp_angstrom)
 
 
 def strict_e_step_size(current_size: int, optics: RunOptics, options: RefinementOptions) -> int | None:
@@ -228,7 +231,7 @@ def strict_e_step_size(current_size: int, optics: RunOptics, options: Refinement
     limit = options.adaptive.strict_highres_exp_angstrom
     if limit is None:
         return None
-    return plan_expectation_windows(current_size, optics, log=_QUIET_LOG, strict_highres_exp_angstrom=limit).score_size
+    return min(_strict_highres_limit(optics, limit), _optics_image_current_size(current_size, optics))
 
 
 def relion_strict_highres_image_size(pixel_size: float, box_size: int, limit_angstrom: float) -> int:
@@ -298,7 +301,7 @@ def initialize_refinement_state(
     *,
     subtomogram: bool,
     dtype,
-    source: InputSource | None = None,
+    source: InputSource,
 ) -> RefinementState:
     """Resolve startup sampling/convergence state before initial grid construction.
 
@@ -307,8 +310,6 @@ def initialize_refinement_state(
     diagnostic frozen fields and a validated continuation are applied afterwards.
     See ``docs/math/relion_refinement_algorithm.md#startup-sampling-state``.
     """
-    if source is None:
-        source = InputSource()
     schedule = options.schedule
     parity = options.parity
     init_relion_iteration = schedule.init_relion_iteration
@@ -326,7 +327,6 @@ def initialize_refinement_state(
         auto_local_healpix_order=options.local_search.auto_local_healpix_order,
         # Class3D (K>1) never switches to local searches from the HEALPix order.
         auto_sampling=not (options.k_class.n_classes > 1),
-        current_resolution=float("inf"),
         voxel_size_angstrom=image_geometry.pixel_size_angstrom,
         particle_diameter_angstrom=float(schedule.particle_diameter_ang or 0.0),
         subtomogram=subtomogram,
@@ -358,7 +358,7 @@ def initialize_refinement_state(
     # rest of its snapshot is installed just before the loop.
     resume = options.checkpoint.resume
     if resume is not None:
-        _validate_resume_snapshot(
+        validate_resume_snapshot(
             resume,
             init_relion_iteration=init_relion_iteration,
             n_classes=options.k_class.n_classes,
@@ -915,14 +915,15 @@ def plan_halfmap_image_size(
 
     See ``docs/math/relion_refinement_algorithm.md`` for image-size scheduling.
     """
-    fsc_prev_raw = np.asarray(
-        fsc_history[-1] if fsc_history else restart.fsc,
-        dtype=dtype,
-    ).copy()
+    if growth_fsc_history:
+        fsc_for_growth = growth_fsc_history[-1]
+    elif restart is not None and restart.fsc_for_growth is not None:
+        fsc_for_growth = restart.fsc_for_growth
+    else:
+        # The raw FSC: this run's last one, else the continued snapshot's.
+        fsc_for_growth = fsc_history[-1] if fsc_history else restart.fsc
     fsc_prev_for_growth = _zero_shells_past_current_size(
-        growth_fsc_history[-1]
-        if growth_fsc_history
-        else (fsc_prev_raw if restart is None or restart.fsc_for_growth is None else restart.fsc_for_growth),
+        fsc_for_growth,
         current_size=previous_size,
         box_size=box_size,
         dtype=dtype,
