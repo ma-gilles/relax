@@ -58,7 +58,10 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
    value the algorithm uses never travels in a log or diagnostics structure.
 10. **Signatures show the dependency.** Pass the smallest coherent input: a record when it is the concept the
     function works on, fields when it reads a few of a large object. Document what is not obvious: shapes,
-    dtypes, units, frames, absent states, mutation.
+    dtypes, units, frames, absent states, mutation. Do not unpack a record or option group into locals; read
+    its fields where they are used. A result unpacked in full right after the call means the record or the call
+    boundary is wrong. No closures that capture controller state to pass as callbacks: a callback takes its
+    inputs explicitly and returns its result, and the caller applies the state updates.
 11. **Layers point down:** command, controller, operations, engines (and RECOVAR). Engines take arrays and
     policies and know nothing of options, state or history. Workflows do not import each other's internals;
     an authoritative formula has one home.
@@ -135,3 +138,8 @@ From the test of the rules on `relax/vdam` (gap numbers of `refactor_vdam_202610
 - Rule 15 (comparison and observation enter through ports), from the parity and diagnostics audit
   (2026-10-06), numbered after rule 14 so cited rule numbers do not change. It gives rule 9 a mechanism and
   rule 5 the object the decision yields.
+- Rule 10: two sentences from the owner's review of `relax/refinement` (2026-10-07,
+  `em_work/refactor_review_20261007/COMMENTS.md`, items A-C): no unpacking of records or option groups into
+  locals, and no closures over controller state as callbacks. Option aliases, a record unpacked into seven
+  locals, and a 25-variable closure had all passed the rules, which said how to group and pass values but not
+  "do not just rename them" or "do not hide dependencies in closures".

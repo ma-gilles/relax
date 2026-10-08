@@ -15,12 +15,12 @@ reason; the sections after this one hold the detail.
 | 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. Archive keys are unchanged (`RefinementResult.archive_fields`). |
 | 3 lifetimes | Met: the controller tests check required lifetimes (`frame_holds`, `keep_operands=False`). Exception: the M-step results stay unpacked into locals, because records would move the accumulators' release points. `RefinementResult` keeps the run's `RefinementHistory` (host curves, kilobytes). |
 | 4 JAX | Met (audit below). Exceptions: the donating normalisation executable, the box-scale host staging and the end-of-iteration sync. |
-| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, `DiagnosticEnvironment`). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2). |
+| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, `DiagnosticEnvironment`). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
 | 6 contracts | Met: the controller's 24 mode tests select contract functions, mode-only steps or refusals (owner, 2026-10-04 and 2026-10-05); the final scoring loop and `DenseVariantPolicy.k_class_enabled` are variants. |
 | 7 one owner | Met; no known duplicate. Exception: the pixel size is kept as the input scalar and as `ReconstructionSettings.voxel_size` (a float) on purpose (rule 1). |
 | 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization_relion` as a dict (`return_details=True`); that module owns the type. |
-| 9 transitions | Met (audit below). Exceptions: the local-search profile sink and the opt-in pass-2 diagnostic variants. |
-| 10 signatures | Met: two groupings; every remaining function with ten or more parameters is accepted with its reason (table below). |
+| 9 transitions | Met (audit below). The expected-accuracy inputs, which steer sampling, are `options.expected_accuracy`, no longer under `debug`; each numbered half's per_half and significance writes are `finish_numbered_half`, a module-level step with explicit inputs (owner review, 2026-10-07). Exceptions: the local-search profile sink and the opt-in pass-2 diagnostic variants. |
+| 10 signatures | Met: two groupings; every remaining function with ten or more parameters is accepted with its reason (table below). The two sentences added on 2026-10-07 (no record or option group unpacked into locals; no closures over controller state as callbacks) are met by `k1_maximization` (reads `SplitHalfPrior` where used), the two controllers (no option aliases) and the numbered halves (`NumberedHalfInputs`, `finish_numbered_half`). Open against the first sentence: the M-step results are still unpacked at their call (item 3; the rule 3 exception). |
 | 11 layers | Met (audit below). Exceptions: `tomo_particles` (shared by engines and other workflows) and 62 private-name imports from `relax.helpers`, `relax.diagnostics` and `relax.relion`, until those modules are refactored. |
 | 12 edges | Met: every command admission refuses with a message, each tested; the end-of-iteration sync no longer swallows device errors. |
 | 13 tests | Met: no test reads controller or command source. Exception: four engine-core lint tests. |
@@ -32,7 +32,7 @@ reason; the sections after this one hold the detail.
 - The command builds the parity, replay and checkpoint option records from start-up results: they are
   results, not flags.
 - Environment reads that stay where they are used (item 2 below), each with its reason.
-- `refine_single_volume` stays one function of 1,992 lines (owner, 2026-10-04). It holds no step with a
+- `refine_single_volume` stays one function (1,784 lines on 2026-10-07; owner, 2026-10-04). It holds no step with a
   mode flag.
 - The prior's per-shell outputs stay a dict until `relax.reconstruction` is refactored.
 - The coverage limits below (RELION run-directory fixture, local-search harness): costed, not built.
@@ -64,7 +64,13 @@ reason; the sections after this one hold the detail.
      `relax.helpers.dtype_policy`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
      `relax.dense.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
-3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,992 lines. Its mode
+   - The dense precision below the controller: `half_scoring`, `expectation_batches`, `iteration_planning`,
+     `relax/parity/relion_replay_source.py` and `relax/diagnostics/iteration.py` read `DENSE_PRECISION`
+     (or `_dense_global_scoring_dtype()`) where they use it. The controller and the final pass read
+     `options.precision`, whose default is that policy when the options are built, and
+     `require_process_precision` refuses options whose precision differs, so the two cannot disagree.
+     Threading `options.precision` into the engines is its own slice.
+3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,784 lines (2026-10-07). Its mode
    decisions, read by the rules (2026-10-05): 24 tests of `k_class_enabled`. None makes a step take a
    mode flag; each either selects one of two contract functions (image size: `plan_class_image_size` or
    `plan_halfmap_image_size`; M-step: `class_maximization` or `k1_maximization`; direction priors,
@@ -132,7 +138,7 @@ accepted, with the reason:
 | `finalization.run_final_all_data` | 28 | Takes the controller's owners whole; the rest are run flags and perturbation values of different lifetimes that no record holds. |
 | `tomo_half.score_tomo_half` | 26 | Engine boundary (rule 11: engines take arrays); `relax/vdam` calls it with raw arrays. |
 | `result_files.build_archive_metadata` | 23 | One field each of many owners, written once into the archive. |
-| `expectation.score_numbered_half` | 19 | Takes the half, phase and options records; the rest are per-half operands. |
+| `expectation.score_numbered_half` | 17 | Takes `NumberedHalfInputs`, the phase and the options; the rest are the iteration's shared operands, bound once by the controller. |
 | `expectation_batches.prepare_half_batches` | 19 | Reads three fields of `RelionParityOptions` and two of `DenseVariantPolicy`: fields of a large object (rule 10). |
 | `mean_helpers.estimate_class_priors` | 19 | Array operands and iteration scalars; `reference_model` would add a mutable owner. |
 | `expectation.prepare_numbered_expectation` | 18 | No record covers more than two of its inputs. |
