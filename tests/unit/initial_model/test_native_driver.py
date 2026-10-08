@@ -789,7 +789,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
     main = pd.DataFrame({"_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]})
     particle_state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
     assert_matches(particle_state.best_pose_eulers_deg, np.zeros((3, 3)))
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
     state.Iref[:] = 1.0
     optics_state = NativeOpticsState(
         voltage=300.0, Cs=2.7, Q0=0.07, pixel_size=2.0,
@@ -831,7 +831,7 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
         best_pose_eulers_deg=np.zeros((2, 3)),
         best_pose_eulers_valid=np.ones(2, dtype=bool),
     )
-    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
+    state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
     tilt_images = {
         "image_offsets": np.asarray([0, 2, 4]),
         "voltage": np.full(4, 300.0),
@@ -2393,7 +2393,7 @@ def test_final_outputs_replace_stale_files_of_a_reused_prefix(tmp_path):
     ml_optimiser.cpp:1361 and 3489); files an earlier run left under the same prefix are not its result."""
     import mrcfile
 
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.5, K=1, nr_iter=3, n_directions=4)
+    state = initialise_denovo_state(box_size=8, pixel_size=1.5, K=1, nr_iter=3, n_directions=4)
     state.iter = 3
     state.current_resolution = 0.05
     state.Iref[0] = np.arange(8**3, dtype=np.float64).reshape(8, 8, 8)

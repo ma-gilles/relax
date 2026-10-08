@@ -187,7 +187,7 @@ def test_final_output_is_the_largest_class_aligned_like_relion_gui(tmp_path, sym
     n = 32
     rng = np.random.default_rng(0)
     maps = np.stack([rng.standard_normal((n,) * 3), recovar_volume_to_relion(_c4_test_map(n))]).astype(np.float32)
-    state = initialise_denovo_state(ori_size=n, pixel_size=2.5, K=2, nr_iter=200, n_directions=4)
+    state = initialise_denovo_state(box_size=n, pixel_size=2.5, K=2, nr_iter=200, n_directions=4)
     state.iter, state.Iref, state.pdf_class = 200, maps, np.array([0.3, 0.7])
 
     final_mrc, class_mrcs, report = output._write_final_outputs(
