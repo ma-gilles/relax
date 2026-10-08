@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
+from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 from relax.symmetry import canonicalize_rotational_symmetry
 
 if TYPE_CHECKING:
@@ -38,6 +39,9 @@ class RefinementSchedule:
     init_translation_step: float = 2.0
     init_translation_sigma_angstrom: float = 10.0
     particle_diameter_ang: float | None = None
+    # RELION's width_mask_edge (--maskedge, ml_optimiser.cpp:1235-1237): the soft edge, in pixels, of the
+    # particle-diameter image mask (ml_optimiser.cpp:3193) and of the reference's solvent flattening.
+    width_mask_edge_px: float = IMAGE_MASK_EDGE_PIXELS
     init_relion_iteration: int = 0
     init_fsc: Any | None = None
     # RELION's --ini_high of a fresh run, which seeds the iteration-0 current resolution

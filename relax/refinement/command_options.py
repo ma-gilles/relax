@@ -1640,7 +1640,7 @@ def resolve_schedule(
     init_current_size,
     ini_high_angstrom,
     init_data_vs_prior,
-    particle_diameter_ang,
+    image_mask,
     relion_init_sigma_offset_angstrom,
     frozen_boundary,
     continued_iterations,
@@ -1674,7 +1674,9 @@ def resolve_schedule(
                 else args.offset_sigma_angstrom
             )
         ),
-        particle_diameter_ang=particle_diameter_ang,
+        # The loader's (particle diameter or None, edge width): the RELION image mask the run resolved.
+        particle_diameter_ang=image_mask[0],
+        width_mask_edge_px=image_mask[1],
         init_relion_iteration=args.init_relion_iteration if continued_iterations is None else continued_iterations,
         skip_final_iteration=bool(args.skip_final_iteration),
     )

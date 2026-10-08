@@ -58,7 +58,7 @@ def test_the_command_hands_the_resolved_groups_to_the_controller(monkeypatch, tm
 def _schedule(args, frozen_boundary=None, continued_iterations=None, sigma_offset=None):
     return command_options.resolve_schedule(
         args, initial_sampling=SimpleNamespace(coarse_order=2, max_order=5), init_current_size=24,
-        ini_high_angstrom=30.0, init_data_vs_prior="dvp", particle_diameter_ang=180.0,
+        ini_high_angstrom=30.0, init_data_vs_prior="dvp", image_mask=(180.0, 5.0),
         relion_init_sigma_offset_angstrom=sigma_offset, frozen_boundary=frozen_boundary,
         continued_iterations=continued_iterations,
     )
@@ -125,3 +125,28 @@ def test_the_intermediates_observer_comes_from_its_flags(tmp_path):
     assert observer.directory == str(tmp_path / "dump") and observer.skip_unregularized
     assert not observer.wants_unfiltered_maps(1)
     assert observer.keeps_rotation_posteriors and observer.collects_local_search_profiles
+
+
+@pytest.mark.parametrize("edge", ["5", "7"])
+def test_the_resolved_mask_edge_reaches_the_controller(monkeypatch, tmp_path, edge):
+    # RELION masks images (ml_optimiser.cpp:3193) and flattens references (:6684) with one width_mask_edge,
+    # --maskedge (:1235); the loader resolves it from --width_mask_edge_px and the controller must use it.
+    options = controller_inputs(
+        monkeypatch, tmp_path, "refine", "--particle_diameter_ang", "40", "--width_mask_edge_px", edge
+    )["options"]
+    assert options.schedule.width_mask_edge_px == float(edge)
+
+
+def test_half_image_preprocessing_masks_with_the_resolved_edge():
+    # The second mask call on the halves' backends (shared with the loader's) used the constant 5 and
+    # overwrote the loader's mask; it now uses the run's edge.
+    from relax.refinement.half_inputs import configure_half_image_preprocessing
+
+    calls = []
+    backend = SimpleNamespace(set_relion_image_mask=lambda **kwargs: calls.append(kwargs))
+    halves = [SimpleNamespace(image_source=SimpleNamespace(backend=backend)) for _ in range(2)]
+    configure_half_image_preprocessing(
+        halves, pixel_size_angstrom=1.5, particle_diameter_angstrom=60.0, width_mask_edge_px=7.0,
+        fourier_backend="jax", source_faithful_spectrum_norm=False, log=LOG,
+    )
+    assert calls == [dict(pixel_size=1.5, particle_diameter_ang=60.0, width_mask_edge_px=7.0)] * 2

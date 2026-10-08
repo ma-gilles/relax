@@ -458,7 +458,7 @@ def main(command=None):
     if relax._XLA_RESERVE_LOG_LINE is not None:
         logger.info("%s", relax._XLA_RESERVE_LOG_LINE)
     # An entry point that started the backend without that reserve is refused here, not in the final pass.
-    from relax.relion.geometry import PROJECTION_PADDING_FACTOR
+    from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS, PROJECTION_PADDING_FACTOR
 
     xla_memory_reserve.require_projector_texture_reserve(
         xla_memory_reserve.model_box_from_map_headers(xla_memory_reserve.reference_maps_from_argv(sys.argv[1:])),
@@ -493,6 +493,8 @@ def main(command=None):
     del particle_inputs
     args._relion_mask_params = relion_mask_params
     particle_diameter_ang = None if relion_mask_params is None else float(relion_mask_params[0])
+    # The loader's resolved edge (--width_mask_edge_px, or a found or sealed optimiser's rlnWidthMaskEdge).
+    width_mask_edge_px = IMAGE_MASK_EDGE_PIXELS if relion_mask_params is None else float(relion_mask_params[1])
     logger.info("Dataset: %d images, image_shape=%s, voxel_size=%.3f A/px", ds.n_units, ds.image_shape, ds.voxel_size)
 
     # ---- Create half-sets ----
@@ -1217,7 +1219,7 @@ def main(command=None):
             init_current_size=init_current_size,
             ini_high_angstrom=_ini_high_for_lowpass,
             init_data_vs_prior=relion_start_data_vs_prior,
-            particle_diameter_ang=particle_diameter_ang,
+            image_mask=(particle_diameter_ang, width_mask_edge_px),
             relion_init_sigma_offset_angstrom=relion_init_sigma_offset_angstrom,
             frozen_boundary=frozen_boundary,
             continued_iterations=None if resume_snapshot is None else continued_iterations,

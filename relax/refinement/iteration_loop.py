@@ -190,7 +190,6 @@ from relax.refinement.refinement_result import (
 )
 from relax.refinement.tomo_half import TomoHalf, numbered_iteration_tomo_sampling
 from relax.relion.geometry import (
-    IMAGE_MASK_EDGE_PIXELS,
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
     REFERENCE_FILTER_EDGE_SHELLS,
@@ -854,7 +853,7 @@ def refine_single_volume(
         padding_factor=RECONSTRUCTION_PADDING_FACTOR,
         projection_padding_factor=PROJECTION_PADDING_FACTOR,
         minres_map=RELION_MINRES_MAP,
-        width_mask_edge=IMAGE_MASK_EDGE_PIXELS,
+        width_mask_edge=options.schedule.width_mask_edge_px,
         fmask_edge=REFERENCE_FILTER_EDGE_SHELLS,
         tau2_fudge=options.parity.tau2_fudge,
         particle_diameter_angstrom=options.schedule.particle_diameter_ang,
@@ -886,6 +885,7 @@ def refine_single_volume(
         experiment_datasets,
         pixel_size_angstrom=source_pixel_size_angstrom,
         particle_diameter_angstrom=options.schedule.particle_diameter_ang,
+        width_mask_edge_px=options.schedule.width_mask_edge_px,
         fourier_backend=options.parity.image_fourier_backend,
         # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
         source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,

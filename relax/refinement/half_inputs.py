@@ -380,6 +380,7 @@ def configure_half_image_preprocessing(
     *,
     pixel_size_angstrom,
     particle_diameter_angstrom: float | None,
+    width_mask_edge_px: float,
     fourier_backend: str,
     source_faithful_spectrum_norm: bool,
     log,
@@ -392,7 +393,6 @@ def configure_half_image_preprocessing(
     from relax.helpers.batch_planning import _image_backend
     from relax.refinement.optics_shapes import MultiShapeHalf
     from relax.refinement.tomo_half import TomoHalf
-    from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
     # A half of several image shapes sets up each shape class's images, masked with
@@ -429,11 +429,11 @@ def configure_half_image_preprocessing(
             backend.set_relion_image_mask(
                 pixel_size=mask_pixel_size,
                 particle_diameter_ang=particle_diameter_angstrom,
-                width_mask_edge_px=IMAGE_MASK_EDGE_PIXELS,
+                width_mask_edge_px=width_mask_edge_px,
             )
             log.info(
-                "RELION mode: image mask radius=%.1f px (particle_diameter=%.1f A, edge=%d px)",
+                "RELION mode: image mask radius=%.1f px (particle_diameter=%.1f A, edge=%g px)",
                 particle_diameter_angstrom / (2.0 * mask_pixel_size),
                 particle_diameter_angstrom,
-                IMAGE_MASK_EDGE_PIXELS,
+                width_mask_edge_px,
             )
