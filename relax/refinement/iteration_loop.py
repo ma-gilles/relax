@@ -434,12 +434,7 @@ def refine_single_volume(
             dtype=scoring_dtype,
         ),
     )
-    # Unperturbed base grid — `coarse_grids.translations` may be replaced per-iter by
-    # a perturbed copy (SamplingPerturbation). Keep the base so each iter
-    # perturbs a fresh copy rather than compounding prior perturbations.
-    # Keep RELION's host-RFLOAT base grid separate so each perturbation starts
-    # from the unrounded coordinates.  In double mode the score/pose grid is
-    # also RFLOAT; explicit CUDA-f32 helpers cast only at their ABI boundary.
+    # coarse_grids keeps the unperturbed host-RFLOAT base translations: each iteration perturbs a fresh copy.
     collect_local_search_profile = options.local_search.collects_profile(observer.collects_local_search_profiles)
     setup_phase_seconds["sampling_grid"] = setup_clock.seconds
 
@@ -467,8 +462,6 @@ def refine_single_volume(
     )
     setup_phase_seconds["initial_arrays"] = setup_clock.seconds
 
-    # History tracking: one RefinementHistory instance accumulates every
-    # per-iteration trajectory (see helpers/iteration_history.py).
     history = RefinementHistory(keep_rotation_posteriors=observer.keeps_rotation_posteriors)
     take_pass_engines()  # entries from before this run's first iteration belong to no iteration
     take_coarse_engine_calls()
@@ -535,11 +528,7 @@ def refine_single_volume(
             if options.schedule.init_data_vs_prior is None
             else np.asarray(options.schedule.init_data_vs_prior, dtype=scoring_dtype)
         )
-        # C1 (RELION-parity): per-iter sigma2_offset update from data. Initialized
-        # from `init_translation_sigma_angstrom`; updated from RELION's
-        # posterior-weighted offset moment when the E-step path propagates it.
-        # RELION stores and updates this quantity in Angstrom², and its default
-        # lower bound is min_sigma2_offset=2 Å² (ml_optimiser.cpp).
+        # RELION's sigma2_offset in Angstrom^2 (min_sigma2_offset=2 A^2), updated each iteration from the data.
         sigma_offset = sigma_offset_from_halves(
             as_sigma_offset_half_pair(options.schedule.init_translation_sigma_angstrom)
         )
@@ -888,13 +877,8 @@ def refine_single_volume(
             state.do_local_search,
         )
 
-        # --- Angular step refinement: regenerate rotation grid if needed ---
-        # When update_refinement_state incremented healpix_order, we need
-        # a new rotation grid at the finer level.
-        # IMPORTANT: At order >= 5, the full grid has 2.4M+ rotations which
-        # OOMs the GPU.  Instead, keep the order-4 grid as the "base" and
-        # rely on local search + oversampling to achieve finer angular steps.
-        # The order is still tracked for sigma calculation.
+        # --- Rotation grid at the state's order: from order 5 the base grid stays at order 4 (the full order-5
+        # grid has 2.4M+ rotations) and local search plus oversampling give the finer steps. ---
         coarse_grids = source.coarse_grids(
             iteration, coarse_grids, state, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
         )
@@ -902,11 +886,7 @@ def refine_single_volume(
             coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype, log=logger,
         )
 
-        # --- Local angular search bookkeeping ---
-        # Once RELION enters local search, each image should search around its
-        # own previous orientation on the true current HEALPix order. Use the
-        # exact rotations selected in the previous iteration, not the nearest
-        # snapped grid indices.
+        # --- Local angular search: each image searches around its previous exact rotation at the current order ---
         adaptive_pass1_rotations = None
         if state.do_local_search:
             # A half without poses is centred at Euler angles (0, 0, 0) with zero offsets.
@@ -917,11 +897,8 @@ def refine_single_volume(
             # Class3D searches locally only with --sigma_ang: RELION switches from the HEALPix
             # order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
             raise RuntimeError("K>1 (Class3D) reached local angular searches without --sigma_ang")
-        # --- Apply RELION SamplingPerturbation to the trial grid for this iter ---
-        # healpix_sampling.cpp:1909-1934 (rotations) + 1810-1820 (translations)
-        # Perturbation is a rigid rotation of SO(3): A := A @ R_perturb applied
-        # AFTER oversampling. At adaptive_oversampling=0 (os0 RELION runs),
-        # the coarse grid IS the trial grid so we apply directly here.
+        # --- RELION's SamplingPerturbation of the trial grid (healpix_sampling.cpp:1810-1820, 1909-1934): a rigid
+        # rotation applied after oversampling; at OS0 the coarse grid is the trial grid. ---
         random_perturbation = source.random_perturbation(
             iteration,
             native=partial(
@@ -963,27 +940,19 @@ def refine_single_volume(
             sealed_sampling_state=source.sealed_sampling_state, dtype=scoring_dtype, log=logger,
         )
 
-        # --- Run E+M on each half-set ---
-        # Two modes: single-pass (adaptive_oversampling=0) or two-pass
-        # coarse/fine (adaptive_oversampling>=1).
+        # --- E-step on each half: one pass (adaptive_oversampling=0) or coarse then fine (>=1) ---
         significance = SignificanceStatistics()
         use_adaptive = _should_use_adaptive_search(
             state, options, use_local=use_local, n_rotations=trial_grid.rotations.shape[0],
         )
-        # Track the rotation grids used for pose extraction.
-        # When adaptive oversampling is active, ha_k indices refer to the
-        # oversampled grid (from pass 2), not trial_grid.rotations.
-        # ``per_half.coarse_ha`` holds the coarse-grid assignments (always indexed into
-        # trial_grid.rotations, even when adaptive oversampling is used).
+        # per_half.coarse_ha holds the coarse-grid assignments (trial_grid.rotations indices on every route).
         per_half = PerHalfOutputs()
         # The assignments outlive the iteration: the result, the next accuracy estimate and the final pass read them.
         hard_assignments = per_half.hard_assignments
         class_assignments = per_half.class_assignments
-        # --- TWO-PASS ADAPTIVE OVERSAMPLING (RELION parity) ---
-        # Pass 1: coarse E-step at reduced resolution to find significant orientations.
-        # Pass 2: oversampled E+M at full current_size for significant orientations only.
-        # Off the adaptive route there is no pass-1 plan, and pass 1 (where a scorer has one) takes the full
-        # window: coarse_cs is None.
+        # Two-pass adaptive oversampling: pass 1 at a reduced size finds the significant orientations, pass 2
+        # scores them oversampled at current_size. Off the adaptive route coarse_cs is None (pass 1, where a
+        # scorer has one, takes the full window).
         coarse_image_plan = (
             source.adaptive_coarse_size(
                 plan_adaptive_image_size(coarse_size_healpix_order, sampling_plan.windows, optics, options, log=logger),
@@ -1012,9 +981,7 @@ def refine_single_volume(
             log=logger,
         )
 
-        # Freeze the exact iteration-start curve used by RELION's scale XA/AA
-        # shell gate.  The scheduling variable is updated again after the
-        # reconstruction, before parity diagnostics are written.
+        # The iteration-start curve RELION's scale XA/AA shell gate reads (the scheduling curve changes later).
         scale_correction_data_vs_prior_this_iter = previous_data_vs_prior_for_scheduling
 
         diagnostic_half_indices = _significance_dump_half_indices(
@@ -1022,10 +989,6 @@ def refine_single_volume(
             n_classes=options.k_class.n_classes,
             experiment_datasets=experiment_datasets,
         )
-        # The two halves are independent inside the E-step. Extracting one
-        # half's work into a function changes neither what runs nor its
-        # order; it makes the two callable independently, which is what the
-        # overlap option uses. Serial dispatch stays the default.
         numbered_variant = _numbered_dense_variant(
             first_iteration, options.k_class, use_adaptive=use_adaptive,
             coarse_cs=coarse_cs,
@@ -1196,18 +1159,9 @@ def refine_single_volume(
             init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
         )
 
-        # --- RELION-exact M-step ordering ---
-        # K=1 stays on RELION's split-half auto-refine path
-        # (compareTwoHalves -> updateSSNRarrays -> reconstruct).
-        # K>1 switches to RELION Class3D semantics:
-        #   1. combine the two half accumulators per class
-        #   2. carry the previous Iref power spectrum forward as tau2
-        #   3. run one Wiener solve per class
-        #
-        # Snapshot the previous-iter means BEFORE the reconstruction so sign
-        # alignment has a reference at iter 1.
-        # mstep is the mode's record (ClassMaximization or K1Maximization); both carry previous_means and
-        # tau2_update_details, and the rest is read under the same mode test.
+        # --- RELION-exact M-step: K=1 on the split-half auto-refine path (compareTwoHalves -> updateSSNRarrays
+        # -> reconstruct); Class3D joins the halves per class, carries the previous Iref power spectrum forward
+        # as tau2 and solves once per class. mstep is the mode's record (ClassMaximization or K1Maximization). ---
         if k_class_enabled:
             mstep = class_maximization(
                 reference_model,
@@ -1308,12 +1262,7 @@ def refine_single_volume(
             k_class_enabled=k_class_enabled,
         )
 
-        # --- Compute unregularized half-maps only when diagnostics need them ---
-        # K=1 FSC was already computed above directly from the BackProjector
-        # accumulators (mstep.fsc), matching RELION ordering. For K>1
-        # the shared class3D prior is from the previous Iref power spectrum.
-        # Reconstructing unreg here is only needed for saved intermediates /
-        # parity dumps.
+        # --- Unregularized half-maps, reconstructed only for the run files and the observer ---
         need_unreg_means = (
             observer.wants_unfiltered_maps(numbered_relion_iteration)
             or (
@@ -1354,19 +1303,10 @@ def refine_single_volume(
             "" if need_unreg_means else " (skipped; diagnostics disabled)",
         )
 
-        # K>1 uses the shared per-class data_vs_prior curve to drive growth;
-        # K=1 keeps the split-half FSC history.
-        if k_class_enabled:
-            fsc = None
-            history.record_fsc(fsc, None)
-        else:
-            # FSC was already computed above in the RELION-exact ordering block
-            # (mstep.fsc) and used to derive tau2 BEFORE the Wiener solve.
-            # Reuse it here — recomputing would give the same value (same
-            # underlying unreg accumulators).
-            fsc = mstep.fsc
-            # The FSC also drives size growth; the history and the run files keep it as that curve too.
-            history.record_fsc(fsc, fsc)
+        # K=1's FSC (the M-step's, which set tau2 before the Wiener solve) also drives size growth; Class3D has
+        # none (its shared per-class curve drives growth).
+        fsc = None if k_class_enabled else mstep.fsc
+        history.record_fsc(fsc, fsc)
         observer.stage_finished(iteration, "fsc")
 
         observer.maps_reconstructed(ReconstructedIteration(
@@ -1395,16 +1335,12 @@ def refine_single_volume(
         history.record_pass2_engines(take_pass_engines())
         history.record_coarse_engines(take_coarse_engine_calls())
 
-        # tau2 was already updated BEFORE the Wiener solve (matching RELION's
-        # reconstruct() which calls updateSSNRarrays before the filter).
-
         # --- Resolution from updated FSC-derived SSNR (RELION auto-refine) ---
         if k_class_enabled:
             current_combined_classes = concatenate_assignments(class_assignments)
             history.class_assignment_history.append(current_combined_classes.copy())
             previous_combined_classes = concatenate_assignments_or_none(previous_class_assignments)
-            # K>1: data_vs_prior comes from the shared per-class prior and the
-            # combined class accumulators.
+            # K>1: from the shared per-class prior and the combined class accumulators.
             resolution_estimate = estimate_class_iteration_resolution(
                 history.data_vs_prior_trajectory[-1],
                 current_size=current_size,
@@ -1439,10 +1375,7 @@ def refine_single_volume(
             )
         history.pixel_resolutions.append(resolution_estimate.scheduling_shell)
 
-        # --- Update poses and noise ---
-        # Snapshot the iter K-1 best rotations / translations BEFORE the
-        # loop overwrites them, so update_refinement_state below can compute
-        # the RELION-exact change metrics (B3) between iter K-1 and iter K.
+        # --- Update poses and noise (the previous best poses stay for RELION's change metrics, B3) ---
         pose_update = prepare_particle_pose_update(
             per_half,
             halves,
@@ -1475,10 +1408,7 @@ def refine_single_volume(
             previous_data_vs_prior_for_scheduling = np.asarray(resolution_estimate.data_vs_prior, dtype=scoring_dtype)
             history.data_vs_prior_trajectory.append(previous_data_vs_prior_for_scheduling)
 
-        # RELION-style posterior-weighted noise update. Helper folds the
-        # K-class (shared) / K=1 (per-half) / firstiter_cc-skip variants;
-        # returns updated radial sigma2_noise + the unrolled
-        # ``noise_variance`` representation consumed by the engine.
+        # RELION's posterior-weighted noise update: the radial sigma2_noise and the engine's pixel rows.
         noise_update = update_posterior_noise_variance(
             per_half.noise_stats,
             noise_model,
@@ -1540,13 +1470,10 @@ def refine_single_volume(
                 np.asarray(follower_setup.follower_scale_state.scales, dtype=np.float64).copy()
             )
 
-        # Save per-iter per-shell sigma2 (after this iter's noise update) and
-        # the exact shell-wise tau2 ingredients used in the Wiener update.
+        # The iteration's sigma2 shells (after the noise update) and the tau2 ingredients of its Wiener update.
         history.record_noise_and_tau2(noise_from_res, noise_from_res_per_half, mstep.tau2_update_details)
 
-        # --- Update convergence state ---
-        # This checks assignment changes, resolution stalls, and may trigger
-        # angular step refinement or convergence.
+        # --- Convergence state: assignment changes, resolution stalls, angular-step refinement ---
         state, accuracy_replay = update_iteration_convergence(
             state,
             pose_comparison,
@@ -1575,9 +1502,7 @@ def refine_single_volume(
         # Sampling transitions and optimiser replay preserve this field.
         history.frac_changed_trajectory.append(float(state.fraction_changed))
 
-        # --- C1 (RELION-parity): update sigma2_offset from data ---
-        # Posterior-weighted RELION update with fallback to hard-assignment
-        # proxy; see ``update_c1_sigma_offset_from_posterior`` for details.
+        # --- sigma2_offset from the posterior-weighted offsets (RELION parity, C1) ---
         sigma_offset_result = update_c1_sigma_offset_from_posterior(
             per_half,
             sigma_offset,
@@ -1599,10 +1524,8 @@ def refine_single_volume(
             accuracy_replay, iteration_accuracy, state, n_classes=options.k_class.n_classes
         )
 
-        # Save assignments for next iteration's change tracking.
-        # Use per_half.coarse_ha (indexed into trial_grid.rotations/base rotation grid)
-        # so that local search and convergence detection work correctly
-        # regardless of whether adaptive oversampling was used.
+        # The next iteration's change tracking reads the coarse-grid assignments (trial-grid indices on every
+        # route, adaptive or not).
         previous_assignments = [ha.copy() if ha is not None else None for ha in per_half.coarse_ha]
         previous_class_assignments = [cls.copy() if cls is not None else None for cls in class_assignments]
         observer.stage_finished(iteration, "convergence")
@@ -1669,7 +1592,6 @@ def refine_single_volume(
             scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
         ))
 
-        # --- Timing ---
         elapsed = iteration_clock.seconds
         history.wall_times.append(elapsed)
 
@@ -1725,11 +1647,9 @@ def refine_single_volume(
     # return path or RELION's unnumbered final all-data pass.
     bpref_diagnostics.clear_bpref_contribution_dump_context()
 
-    # RELION can enter final all-data only when checkConvergence() ran at the
-    # top of a permitted loop iteration.  If the last numbered iteration
-    # merely makes the state convergence-ready, ``iter <= nr_iter`` ends and
-    # RELION does not synthesize another boundary after the cap.
-    # Set-up and numbered-iteration facts; the final pass leaves them as they are.
+    # RELION enters the final pass only when checkConvergence() ran at the top of a permitted iteration; a run
+    # made convergence-ready by its last numbered iteration ends at the cap (``iter <= nr_iter``). Set-up and
+    # numbered-iteration facts; the final pass leaves them as they are.
     numbered = NumberedMetadata(
         hard_assignments=hard_assignments,
         frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
@@ -1761,18 +1681,8 @@ def refine_single_volume(
             numbered=numbered,
             history=history,
         )
-    # --- RELION's final iteration: do_join_random_halves + do_use_all_data ---
-    # After convergence, RELION runs ONE more iter with:
-    #   - current_size = ori_size (Nyquist, all shells)
-    #   - joined weighted sums for reconstruction
-    #   - each half still scored against its own half-map
-    # See ml_optimiser.cpp:10157-10160 (sets do_join_random_halves and
-    # do_use_all_data) and ml_optimiser.cpp:5707-5708 (forces current_size to
-    # ori_size when do_use_all_data is true).
-    #
-    # Implementation: run one more E+M at full Nyquist for each half, using
-    # that half's own reference map, then join the weighted sums into one final
-    # reconstruction.
+    # --- RELION's final iteration (do_join_random_halves + do_use_all_data, ml_optimiser.cpp:10157-10160 and
+    # 5707-5708): one more E+M at full Nyquist, each half against its own map, the weighted sums joined. ---
     final_join_means = [reference_model.maps[0], reference_model.maps[1]]
     if not k_class_enabled and options.final_pass.merged_reference:
         final_merged_reference = merged_half_map(reference_model.maps)
@@ -1799,10 +1709,8 @@ def refine_single_volume(
     if final_use_local:
         for half in halves:
             half.require_local_search_poses()
-    # K=1: RELION joins the half-set weighted sums after the post-convergence
-    # expectation step.  During that E-step each MPI follower still owns
-    # its numbered-iteration half model, so particles from random subset
-    # 1 and 2 are scored with sigma2_noise from half 1 and 2 respectively.
+    # Each half is still scored with its own numbered-iteration noise (one MPI follower per half); K=1 joins
+    # the half sums after this E-step.
     final_result = finalization.run_final_all_data(
         halves,
         reference_model=reference_model,
