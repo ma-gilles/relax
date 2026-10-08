@@ -60,8 +60,11 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
     function works on, fields when it reads a few of a large object. Document what is not obvious: shapes,
     dtypes, units, frames, absent states, mutation. Do not unpack a record or option group into locals; read
     its fields where they are used. A result unpacked in full right after the call means the record or the call
-    boundary is wrong. No closures that capture controller state to pass as callbacks: a callback takes its
-    inputs explicitly and returns its result, and the caller applies the state updates.
+    boundary is wrong. A function that returns three or more values returns a record, and a record is read by
+    field name, never unpacked by position. No closures that capture controller state to pass as callbacks: a
+    callback takes its inputs explicitly and returns its result, and the caller applies the state updates. A
+    port receives values, not a function that reads the controller's locals later, and an operation does not
+    receive an observer callback: the controller calls the observer with the operation's result.
 11. **Layers point down:** command, controller, operations, engines (and RECOVAR). Engines take arrays and
     policies and know nothing of options, state or history. Workflows do not import each other's internals;
     an authoritative formula has one home.
@@ -142,4 +145,6 @@ From the test of the rules on `relax/vdam` (gap numbers of `refactor_vdam_202610
   `em_work/refactor_review_20261007/COMMENTS.md`, items A-C): no unpacking of records or option groups into
   locals, and no closures over controller state as callbacks. Option aliases, a record unpacked into seven
   locals, and a 25-variable closure had all passed the rules, which said how to group and pass values but not
-  "do not just rename them" or "do not hide dependencies in closures".
+  "do not just rename them" or "do not hide dependencies in closures". Extended from the deep review
+  (`REVIEW_DEEP.md` findings 8 and 11): records for three or more results, read by name; ports receive values,
+  not thunks over controller locals; observers are called by the controller, not handed to operations.
