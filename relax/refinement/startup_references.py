@@ -31,14 +31,15 @@ class StartupReferences:
 
     ``fourier``: the loop's start-up volume, ``(V,)`` for K=1, ``(K, V)`` for Class3D, ``(2, V)`` (one per half)
     from a frozen boundary. ``prior_source``: the Fourier volume the start-up tau2 is bootstrapped from (the
-    reference, class 1, or the halves' mean). ``real_for_projector``: the real-space maps handed to the first
-    projector (float64) when that handoff is on, else None. ``reference_real`` (K=1) and
+    reference or class 1); None from a frozen boundary, which owns its tau2. ``real_for_projector``: the
+    real-space maps handed to the first projector (float64) when that handoff is on, else None.
+    ``reference_real`` (K=1) and
     ``class_references_real`` (Class3D, a list): the float64 real maps of RELION's start-up data-vs-prior.
     ``model_pixel_size``: the K=1 map header's pixel size (None otherwise).
     """
 
     fourier: np.ndarray
-    prior_source: np.ndarray
+    prior_source: np.ndarray | None
     real_for_projector: np.ndarray | None = None
     reference_real: np.ndarray | None = None
     class_references_real: list | None = None
@@ -58,11 +59,9 @@ def _initial_lowpass_real(volume_real, volume_shape, voxel_size, ini_high):
     return np.asarray(filtered, dtype=np.float64)
 
 
-def frozen_boundary_references(frozen_boundary, *, complex_dtype) -> StartupReferences:
-    """The per-half Fourier references a frozen boundary owns; the start-up tau2 uses their mean."""
-    halves = np.stack(frozen_boundary.means, axis=0)
-    merged = np.mean(halves.astype(np.complex128), axis=0).astype(complex_dtype)
-    return StartupReferences(fourier=halves, prior_source=merged)
+def frozen_boundary_references(frozen_boundary) -> StartupReferences:
+    """The per-half Fourier references a frozen boundary owns; its tau2 is its own, so nothing is bootstrapped."""
+    return StartupReferences(fourier=np.stack(frozen_boundary.means, axis=0), prior_source=None)
 
 
 def _startup_map(volume_real, *, volume_shape, pixel_size, ini_high: float | None, real_dtype, complex_dtype):

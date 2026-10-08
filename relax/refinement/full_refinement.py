@@ -690,9 +690,7 @@ def main(command=None):
                 "Frozen-boundary volume_shape does not match the active dataset: "
                 f"boundary={frozen_boundary.volume_shape}, dataset={tuple(ds.volume_shape)}"
             )
-        references = startup_references.frozen_boundary_references(
-            frozen_boundary, complex_dtype=_init_volume_complex_dtype,
-        )
+        references = startup_references.frozen_boundary_references(frozen_boundary)
         logger.info(
             "Initial per-half Fourier volumes loaded from frozen boundary %s",
             frozen_boundary.source_dir,
@@ -835,10 +833,9 @@ def main(command=None):
     noise_variance = None if initial_noise is None else initial_noise.pixel_variance
     del initial_noise
 
-    # Compute initial signal prior from init volume (weak prior). For K>1
-    # use class-1 as the representative volume; the engine derives per-class
-    # tau2 trajectories from the per-class FSCs once the loop starts.
-    mean_variance = startup_references.bootstrap_prior(references.prior_source, ds.volume_shape)
+    # The start-up tau2: a loaded RELION model's, a fresh RELION K=1 start's or a frozen boundary's
+    # (below), else the bootstrap from the reference's power spectrum (after them).
+    mean_variance = None
 
     # ---- STRICT-PARITY: --relion_init_dir override of bootstrapped iter-0 state ----
     # When set, replace the image-bootstrap sigma2_noise + power-spectrum-bootstrap
@@ -943,6 +940,11 @@ def main(command=None):
             if frozen_boundary.fixed_diagnostic_arm
             else frozen_boundary.mean_variance
         )
+    if mean_variance is None:
+        # The initial signal prior from the start-up volume (a weak prior). For K>1 class 1 is the
+        # representative volume; the engine derives per-class tau2 trajectories from the per-class FSCs
+        # once the loop starts.
+        mean_variance = startup_references.bootstrap_prior(references.prior_source, ds.volume_shape)
 
     # Compute initial current_size from init_resolution, unless an atomic
     # frozen boundary owns the numbered-iteration schedule.
