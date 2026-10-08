@@ -834,9 +834,6 @@ def make_relion_dispatch_schedule_from_chunks(
     originals = np.asarray(original_particle_id_by_sorted_position)
     if not (chunk_iters.shape == first.shape == last.shape == ranks.shape):
         raise ValueError("dispatch chunk columns must have identical shapes")
-    n_particles = int(n_particles)
-    n_followers = int(n_followers)
-    pool_size = int(pool_size)
     if iterations.size < 1 or np.unique(iterations).size != iterations.size:
         raise ValueError("relion_iterations must be non-empty and unique")
     if n_particles < 1 or n_followers < 1 or pool_size < 1:
@@ -954,13 +951,11 @@ def make_relion_follower_scale_state(
 ) -> RelionFollowerScaleState:
     """Construct a validated follower state, initially equal on all followers."""
 
-    n_followers = int(n_followers)
     if n_followers < 1:
         raise ValueError(f"n_followers must be positive, got {n_followers}")
     counts = np.asarray(group_counts, dtype=np.float64).reshape(-1)
     if counts.size < 1 or np.any(~np.isfinite(counts)) or np.any(counts < 0.0):
         raise ValueError("group_counts must be a non-empty finite non-negative vector")
-    n_optics_groups = int(n_optics_groups)
     if n_optics_groups < 0 or n_optics_groups > counts.size:
         raise ValueError(
             f"n_optics_groups must be in [0, {counts.size}], got {n_optics_groups}",
@@ -1023,7 +1018,6 @@ def relion_worker_group_ids(group_ids, follower_owners, *, n_groups: int) -> np.
     owners = np.asarray(follower_owners, dtype=np.int64).reshape(-1)
     if groups.shape != owners.shape:
         raise ValueError("group_ids and follower_owners must have the same shape")
-    n_groups = int(n_groups)
     if n_groups < 1:
         raise ValueError(f"n_groups must be positive, got {n_groups}")
     if groups.size and (int(np.min(groups)) < 0 or int(np.max(groups)) >= n_groups):
@@ -1479,7 +1473,6 @@ def setup_relion_follower_scale_state(
     """
     replay = options.replay
     schedule = options.schedule
-    init_relion_iteration = int(schedule.init_relion_iteration)
 
     follower_count = 0 if topology is None else int(topology.n_followers or 0)
     owners_by_iteration = None if topology is None else topology.owners_by_iteration
@@ -1494,7 +1487,7 @@ def setup_relion_follower_scale_state(
 
     validate_relion_follower_scale_start(
         n_followers=follower_count,
-        init_relion_iteration=init_relion_iteration,
+        init_relion_iteration=schedule.init_relion_iteration,
     )
     if topology is not None and topology.replay is not None and follower_count < 1:
         raise ValueError(
@@ -1527,12 +1520,11 @@ def setup_relion_follower_scale_state(
             raw_owner_items = owners_by_iteration.items()
         else:
             raw_owner_items = (
-                (init_relion_iteration + schedule_idx + 1, owner_pair)
+                (schedule.init_relion_iteration + schedule_idx + 1, owner_pair)
                 for schedule_idx, owner_pair in enumerate(owners_by_iteration)
             )
         follower_owners_by_iteration = {}
         for relion_iteration, owner_pair in raw_owner_items:
-            relion_iteration = int(relion_iteration)
             if relion_iteration in follower_owners_by_iteration:
                 raise ValueError(
                     f"RELION dispatch schedule contains duplicate iteration {relion_iteration}"
@@ -1557,8 +1549,8 @@ def setup_relion_follower_scale_state(
             follower_owners_by_iteration[relion_iteration] = normalized_pair
 
         required_numbered_iterations = range(
-            init_relion_iteration + 1,
-            init_relion_iteration + int(schedule.max_iter) + 1,
+            schedule.init_relion_iteration + 1,
+            schedule.init_relion_iteration + int(schedule.max_iter) + 1,
         )
         missing_numbered_iterations = [
             relion_iteration
@@ -1610,8 +1602,8 @@ def setup_relion_follower_scale_state(
         )
         if topology.replay is not None:
             requested_numbered_iterations = range(
-                init_relion_iteration + 1,
-                init_relion_iteration + int(schedule.max_iter) + 1,
+                schedule.init_relion_iteration + 1,
+                schedule.init_relion_iteration + int(schedule.max_iter) + 1,
             )
             validate_relion_follower_scale_replay(
                 topology.replay,
@@ -1619,7 +1611,7 @@ def setup_relion_follower_scale_state(
                 n_groups=physical_group_count,
                 schedule_iterations=list(follower_owners_by_iteration),
                 numbered_iterations=requested_numbered_iterations,
-                first_numbered_iteration=init_relion_iteration + 1,
+                first_numbered_iteration=schedule.init_relion_iteration + 1,
             )
             follower_scale_replay_by_iteration = {
                 int(relion_iteration): np.asarray(scales, dtype=np.float64).copy()
@@ -1643,7 +1635,7 @@ def setup_relion_follower_scale_state(
                 else topology.replay.source_artifact_relative_paths
             ),
         )
-        first_relion_iteration = init_relion_iteration + 1
+        first_relion_iteration = schedule.init_relion_iteration + 1
         follower_owners_per_half = [
             owners.copy()
             for owners in follower_owners_by_iteration[first_relion_iteration]
@@ -1701,7 +1693,6 @@ def _require_relion_follower_owners(
 ):
     """Return an exact captured owner row, failing closed when it is absent."""
 
-    relion_iteration = int(relion_iteration)
     try:
         return owners_by_relion_iteration[relion_iteration]
     except KeyError as exc:

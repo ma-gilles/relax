@@ -313,9 +313,8 @@ def _wrap_pad(values, axis: int, fft_size: int):
     n = values.shape[axis]
     head = jax.lax.slice_in_dim(values, n // 2, n, axis=axis)
     tail = jax.lax.slice_in_dim(values, 0, n // 2, axis=axis)
-    shape = list(values.shape)
-    shape[axis] = fft_size - n
-    return jnp.concatenate([head, jnp.zeros(shape, values.dtype), tail], axis=axis)
+    pad_shape = (*values.shape[:axis], fft_size - n, *values.shape[axis + 1:])
+    return jnp.concatenate([head, jnp.zeros(pad_shape, values.dtype), tail], axis=axis)
 
 
 @partial(jax.jit, static_argnames=("fft_size", "n_x"))
@@ -524,7 +523,6 @@ def prepare_local_class_projector_slabs(projector_half, n_classes: int, *, path_
     Shape normalization only, as :func:`prepare_local_projector_slab`; a host array is sliced before its
     upload, so each class's slab reaches the device on its own.
     """
-    n_classes = int(n_classes)
     if np.ndim(projector_half) != 4 or int(np.shape(projector_half)[0]) != n_classes:
         raise ValueError(
             f"{path_label} expected {n_classes} class slabs (K, z, y, x_half), got {np.shape(projector_half)}",

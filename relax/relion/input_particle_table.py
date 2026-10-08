@@ -65,7 +65,6 @@ def relion_particle_order(particles: pd.DataFrame) -> np.ndarray:
 
 def relion_random_subsets(existing, *, seed: int, n_particles: int) -> np.ndarray:
     """RELION's half-set labels for particles in RELION order (``divideParticlesInRandomHalves``)."""
-    n_particles = int(n_particles)
     if existing is not None:
         existing = np.asarray(existing, dtype=np.int64).reshape(-1)
         if existing.size != n_particles:

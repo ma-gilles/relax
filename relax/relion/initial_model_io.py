@@ -456,8 +456,7 @@ def _write_data_star(path: str, main_star, optics_star, dataset, particle_state:
                             f"cannot infer HEALPix order for max rotation id {int(np.max(rotation_ids[valid_rot]))}"
                         )
                     rotation_orders = np.full(n_images, inferred_order, dtype=np.int32)
-                for order in np.unique(rotation_orders[valid_rot]):
-                    order = int(order)
+                for order in np.unique(rotation_orders[valid_rot]).tolist():
                     if order < 0:
                         continue
                     order_mask = valid_rot & (rotation_orders == order)

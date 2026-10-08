@@ -469,9 +469,6 @@ def relion_active_max_significants(
     2-D references or 100 poses per class for 3-D references.
     """
 
-    maximum_significants_arg = int(maximum_significants_arg)
-    n_classes = int(n_classes)
-    reference_dimension = int(reference_dimension)
     if n_classes < 1:
         raise ValueError(f"n_classes must be positive, got {n_classes}")
     if reference_dimension not in {2, 3}:

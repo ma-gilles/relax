@@ -28,7 +28,6 @@ def _repeat_pad_batch_axis(value, target_size: int):
     """
 
     array = np.asarray(value)
-    target_size = int(target_size)
     if array.shape[0] >= target_size:
         return array
     if array.shape[0] == 0:
@@ -466,7 +465,6 @@ def _relion_coarse_pose_tie_break_keys(
         raise ValueError(
             f"candidate_pose_ids must have shape (n_rows, n_candidates), got {candidate_pose_ids.shape}",
         )
-    n_trans = int(n_trans)
     if n_trans <= 0:
         raise ValueError(f"n_trans must be positive, got {n_trans}")
     local_rotation_ids = candidate_pose_ids // n_trans
@@ -478,7 +476,6 @@ def _relion_coarse_pose_tie_break_keys(
             raise ValueError("candidate pose references a rotation outside coarse_rotation_ids")
         canonical_rotation_ids = coarse_rotation_ids[local_rotation_ids]
 
-    healpix_order = int(healpix_order)
     n_psi = int(rotation_grid_n_in_planes(healpix_order))
     n_rotations = int(rotation_grid_size(healpix_order, symmetry_label))
     n_directions = n_rotations // n_psi
