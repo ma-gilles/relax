@@ -53,12 +53,11 @@ def relion_solvent_mask(
 def relion_solvent_flatten_state(
     state: InitialModelState,
     *,
-    particle_diameter_ang: float | None = None,
-    width_mask_edge_px: float | None = None,
-    mask: np.ndarray | None = None,
-    compute_dtype: Literal["float32", "float64"] = "float64",
+    mask: np.ndarray,
+    compute_dtype: Literal["float32", "float64"],
 ) -> InitialModelState:
-    """Apply RELION's spherical ``solventFlatten`` mask to all references (post-maximization)."""
+    """Apply RELION's spherical ``solventFlatten`` mask (:func:`relion_solvent_mask`) to all references
+    (post-maximization)."""
     if compute_dtype not in {"float32", "float64"}:
         raise ValueError(f"Unknown solvent compute_dtype: {compute_dtype!r}")
     iref = jnp.asarray(state.Iref)
@@ -66,15 +65,6 @@ def relion_solvent_flatten_state(
         raise ValueError("float32 solvent multiplication requires float32 state.Iref")
     if iref.ndim != 4 or iref.shape[1:] != (state.ori_size,) * 3:
         raise ValueError(f"state.Iref must have shape (K, {state.ori_size}, ...), got {iref.shape}")
-    if mask is None:
-        if particle_diameter_ang is None or width_mask_edge_px is None:
-            raise ValueError("particle_diameter_ang and width_mask_edge_px are required when mask is not provided")
-        mask = relion_solvent_mask(
-            ori_size=int(state.ori_size),
-            pixel_size=float(state.pixel_size),
-            particle_diameter_ang=float(particle_diameter_ang),
-            width_mask_edge_px=float(width_mask_edge_px),
-        )
     if np.shape(mask) != (state.ori_size,) * 3:
         raise ValueError(f"mask must have shape ({state.ori_size},)*3, got {np.shape(mask)}")
     # The references stay on the device (vdam/mstep_single_class._run_m_step_transaction);
@@ -103,8 +93,8 @@ def vdam_m_step(
     grad_current_stepsize: float,
     tau2_fudge_factor: float,
     grad_min_resol_shell: float | None = None,
-    padding_factor: int = 1,
-    mstep_compute_dtype: Literal["float32", "float64"] = "float32",
+    padding_factor: int,
+    mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
 ) -> InitialModelState:
     """Full VDAM M-step over K classes.

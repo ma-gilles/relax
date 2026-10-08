@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
-from functools import partial
 from typing import Literal, Optional
 
 import jax.numpy as jnp
@@ -126,7 +125,6 @@ def _has_relion_reconstruction_weight(state: InitialModelState, k: int, accum_h0
 
 
 def _run_m_step_transaction(
-    transaction,
     state: InitialModelState,
     k: int,
     accum_h0: VdamAccumulator,
@@ -138,23 +136,26 @@ def _run_m_step_transaction(
     r_max: int,
     min_resol_shell: float,
     mstep_compute_dtype: Literal["float32", "float64"],
+    average_ctf2,
 ) -> InitialModelState:
     """Apply one shared-layout transaction and publish the new state on the device.
 
-    ``transaction`` takes and returns the reference in RECOVAR's axes
-    (``relion_vdam_m_step_host(..., recovar_layout=True, device_volumes=True)``).
-    The reference and moment volumes stay device arrays across iterations: each
-    update writes its slots into a new device array, so the previous state is
+    The transaction, ``relion_vdam_m_step_host(..., recovar_layout=True, device_volumes=True)``, takes
+    and returns the reference in RECOVAR's axes. The reference and moment volumes stay device arrays
+    across iterations: each update writes its slots into a new device array, so the previous state is
     never modified, and the host reads the volumes back only to write them.
     """
+    from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
+
+    host_options = dict(recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2)
     if mstep_compute_dtype == "float32":
-        _validate_mstep_state_precision(state)
+        host_options["compute_dtype"] = np.float32
     slot_h0 = half_slot_index(k, 0, state.K, state.pseudo_halfsets)
     slot_h1 = half_slot_index(k, 1, state.K, True) if state.pseudo_halfsets else None
     effective_stepsize = float(grad_current_stepsize) * (
         1.0 - np.exp(-float(3 * state.K + 10) * float(np.asarray(state.pdf_class)[k]))
     )
-    result = transaction(
+    result = relion_vdam_m_step_host(
         state.Iref[k],
         accum_h0.data,
         accum_h0.weight,
@@ -173,6 +174,7 @@ def _run_m_step_transaction(
         1,
         r_max,
         min_resol_shell,
+        **host_options,
     )
     if mstep_compute_dtype == "float32":
         expected_dtypes = {
@@ -223,8 +225,8 @@ def vdam_m_step_single_class(
     grad_current_stepsize: float,
     tau2_fudge_factor: float,
     grad_min_resol_shell: float | None = None,
-    padding_factor: int = 1,
-    mstep_compute_dtype: Literal["float32", "float64"] = "float32",
+    padding_factor: int,
+    mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
@@ -236,8 +238,8 @@ def vdam_m_step_single_class(
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
     ``average_ctf2``: the E-step's CTF-premultiplied average CTF^2 (SSNR tau2 correction), or None.
+    The precision route (dtype, no native replay variables) is checked once per run by the driver.
     """
-    _validate_mstep_precision_route(mstep_compute_dtype)
     if mstep_compute_dtype == "float32":
         _validate_mstep_state_precision(state)
     validate_mstep_inputs(state, k, accum_h1)
@@ -248,15 +250,7 @@ def vdam_m_step_single_class(
     # (backprojector.cpp::initZeros; ml_optimiser.cpp:5846).
     r_max = state.current_size // 2
     min_resol_shell = _grad_min_resol_shell_from_state(state, grad_min_resol_shell)
-    from relax.relion.relion_vdam_mstep import relion_vdam_m_step_host
-
-    transaction = partial(
-        relion_vdam_m_step_host, recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2
-    )
-    if mstep_compute_dtype == "float32":
-        transaction = partial(transaction, compute_dtype=np.float32)
     return _run_m_step_transaction(
-        transaction,
         state,
         k,
         accum_h0,
@@ -267,4 +261,5 @@ def vdam_m_step_single_class(
         r_max=r_max,
         min_resol_shell=min_resol_shell,
         mstep_compute_dtype=mstep_compute_dtype,
+        average_ctf2=average_ctf2,
     )

@@ -585,7 +585,7 @@ class TestRunVdamIterations:
             particle_diameter_ang=6.0,
             width_mask_edge_px=2.0,
         )
-        out = relion_solvent_flatten_state(state, mask=mask)
+        out = relion_solvent_flatten_state(state, mask=mask, compute_dtype="float64",)
 
         coords = np.arange(-4, 4, dtype=np.float64)
         z, y, x = np.meshgrid(coords, coords, coords, indexing="ij")
@@ -619,8 +619,13 @@ class TestRunVdamIterations:
             meta["post_update_seen"] = True
             updated = relion_solvent_flatten_state(
                 current,
-                particle_diameter_ang=8.0,
-                width_mask_edge_px=2.0,
+                mask=relion_solvent_mask(
+                    ori_size=int(current.ori_size),
+                    pixel_size=float(current.pixel_size),
+                    particle_diameter_ang=8.0,
+                    width_mask_edge_px=2.0,
+                ),
+                compute_dtype="float64",
             )
             seen["post_sum"] = float(updated.Iref.sum())
             return updated

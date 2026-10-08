@@ -46,10 +46,12 @@ def _case(K, pseudo, order):
     return state
 
 
-def _call(state, k, transaction):
+def _call(state, k, transaction, monkeypatch):
+    from relax.relion import relion_vdam_mstep
+
+    monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", lambda *args, **options: transaction(*args))
     accum = m_step.VdamAccumulator(np.zeros((4, 4, 3), dtype=np.complex128), np.ones((4, 4, 3)), k, 0)
     return mstep_single_class._run_m_step_transaction(
-        transaction,
         state,
         k,
         accum,
@@ -60,13 +62,14 @@ def _call(state, k, transaction):
         r_max=2,
         min_resol_shell=1.0,
         mstep_compute_dtype="float64",
+        average_ctf2=None,
     )
 
 
 @pytest.mark.parametrize("K,k", [(1, 0), (4, 0), (4, 1), (4, 3)])
 @pytest.mark.parametrize("pseudo", [False, True])
 @pytest.mark.parametrize("order", ["C", "F", "strided"])
-def test_publication_writes_the_updated_slots_and_leaves_the_input_state(K, k, pseudo, order):
+def test_publication_writes_the_updated_slots_and_leaves_the_input_state(K, k, pseudo, order, monkeypatch):
     state = _case(K, pseudo, order)
     originals = {
         f.name: getattr(state, f.name).tobytes()
@@ -92,7 +95,7 @@ def test_publication_writes_the_updated_slots_and_leaves_the_input_state(K, k, p
         calls.append(args)
         return result
 
-    actual = _call(state, k, transaction)
+    actual = _call(state, k, transaction, monkeypatch)
     assert len(calls) == 1
     # The reference is the input state with each updated slot replaced.
     h1 = half_slot_index(k, 1, K, True) if pseudo else None

@@ -97,7 +97,7 @@ def test_transaction_matches_primitives_exactly(
         padding_factor=padding_factor,
     )
     expected = vdam_m_step_single_class_native(state, **args)
-    actual = vdam_m_step_single_class(state, **args)
+    actual = vdam_m_step_single_class(state, **args, mstep_compute_dtype="float32")
     _assert_state_exact(actual, expected)
     _assert_state_exact(state, original)
     for a, e in zip(accumulators, original_accum):
@@ -137,7 +137,7 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
     args = dict(k=K-1, accum_h0=accumulators[0],
                 accum_h1=accumulators[1] if pseudo else None,
                 grad_current_stepsize=0.3, tau2_fudge_factor=4.0, padding_factor=padding)
-    expected = vdam_m_step_single_class(state, **args)
+    expected = vdam_m_step_single_class(state, **args, mstep_compute_dtype="float32")
     calls = []
     actual_host = relion_vdam_mstep.relion_vdam_m_step_host
 
@@ -146,7 +146,7 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
         return actual_host(*a, **kw)
 
     monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", counted)
-    actual = vdam_m_step_single_class(state, **args)
+    actual = vdam_m_step_single_class(state, **args, mstep_compute_dtype="float32")
     assert calls == [1]
     changed_arrays = {"Iref", "Igrad1", "Igrad2", "tau2_class", "sigma2_class",
                       "data_vs_prior_class", "fourier_coverage_class"}

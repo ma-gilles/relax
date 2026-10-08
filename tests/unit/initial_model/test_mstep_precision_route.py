@@ -171,6 +171,7 @@ def _call(state, **kwargs):
         accum_h1=_accum(state),
         grad_current_stepsize=0.0,
         tau2_fudge_factor=4.0,
+        padding_factor=1,
         mstep_compute_dtype="float32",
         **kwargs,
     )
@@ -178,12 +179,15 @@ def _call(state, **kwargs):
 
 @pytest.mark.parametrize("env", REPLAYS[:-1])
 def test_production_refuses_native_replays_before_consumption(monkeypatch, env):
+    # The driver checks the M-step's precision route once per run, before any input is read.
     monkeypatch.setenv(env, "missing")
     monkeypatch.setattr(
         vdam_mstep_replay, "_maybe_replay_native_bpref_accumulators", lambda *a, **k: pytest.fail("consumed replay")
     )
     with pytest.raises(ValueError, match=env):
-        _call(mstep_single_class._prepare_mstep_state_precision(_state(), "float32"))
+        driver.run_native_initial_model(
+            native_options.NativeInitialModelOptions(fn_img="missing.star", mstep_compute_dtype="float32")
+        )
 
 
 def test_mstep_dump_variable_does_not_divert_production(monkeypatch, tmp_path):
@@ -224,7 +228,7 @@ def test_real_host_device_transaction_publishes_f32_and_preserves_k4_other_slots
 
 
 @pytest.mark.parametrize("bad_field", ["iref", "mom1_h0", "sigma2", "tau2"])
-def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field):
+def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monkeypatch):
     state = mstep_single_class._prepare_mstep_state_precision(_state(), "float32")
     result = dict(
         iref=state.Iref[0],
@@ -239,9 +243,11 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field):
     result[bad_field] = result[bad_field].astype(
         np.float32 if bad_field == "tau2" else np.complex128 if "mom" in bad_field else np.float64
     )
+    from relax.relion import relion_vdam_mstep
+
+    monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", lambda *a, **options: result)
     with pytest.raises(ValueError, match="output|authoritative tau2"):
         mstep_single_class._run_m_step_transaction(
-            lambda *a: result,
             state,
             0,
             _accum(state),
@@ -252,6 +258,7 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field):
             r_max=8,
             min_resol_shell=1,
             mstep_compute_dtype="float32",
+            average_ctf2=None,
         )
 
 
@@ -294,7 +301,7 @@ def test_solvent_route_uses_explicit_f32_product_and_preserves_default():
     state = mstep_single_class._prepare_mstep_state_precision(_state(), "float32")
     state.Iref[:] = np.float32(1.0000001192092896)
     mask = np.full((16,) * 3, 1.0000000596046446, dtype=np.float64)
-    default = m_step.relion_solvent_flatten_state(state, mask=mask)
+    default = m_step.relion_solvent_flatten_state(state, mask=mask, compute_dtype="float64")
     actual = m_step.relion_solvent_flatten_state(state, mask=mask, compute_dtype="float32")
     assert_matches(default.Iref, (state.Iref * mask).astype(np.float32))
     assert_matches(actual.Iref, state.Iref * mask.astype(np.float32))
