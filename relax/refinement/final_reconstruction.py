@@ -52,18 +52,8 @@ def reconstruct_unfiltered_halfmaps(
     """Reconstruct host maps before low-frequency joining modifies the halves."""
     return [
         np.asarray(
-            mean_helpers._reconstruct_volume_eager(
-                half_ctf,
-                half_y,
-                settings.volume_shape,
-                settings.padding_factor,
-                tau=None,
-                tau2_fudge=settings.tau2_fudge,
-                projection_padding_factor=settings.projection_padding_factor,
-                minres_map=settings.minres_map,
-                current_size=current_size,
-                accumulator_volume_shape=accumulator_shape,
-                gridding_kernel=settings.gridding_kernel,
+            settings.reconstruct(
+                half_ctf, half_y, tau=None, current_size=current_size, accumulator_volume_shape=accumulator_shape
             ).reshape(-1)
         )
         for half_ctf, half_y in zip(denominators, numerators, strict=True)
@@ -184,15 +174,10 @@ def reconstruct_final_class_maps(
     mean_helpers._require_radial_gridding_for_classes(settings)
     class_means = jnp.stack(
         [
-            mean_helpers._reconstruct_volume_eager(
+            settings.reconstruct(
                 denominator[class_idx],
                 numerator[class_idx],
-                settings.volume_shape,
-                settings.padding_factor,
                 tau=prior_shells[class_idx],
-                tau2_fudge=settings.tau2_fudge,
-                projection_padding_factor=settings.projection_padding_factor,
-                minres_map=settings.minres_map,
                 current_size=current_size,
                 accumulator_volume_shape=accumulator_shape,
                 tau_is_1d=True,
@@ -227,18 +212,8 @@ def reconstruct_final_halfmaps(
         backprojections[index] = None
         maps.append(
             np.asarray(
-                mean_helpers._reconstruct_volume_eager(
-                    denominator,
-                    numerator,
-                    settings.volume_shape,
-                    settings.padding_factor,
-                    tau=prior,
-                    tau2_fudge=settings.tau2_fudge,
-                    projection_padding_factor=settings.projection_padding_factor,
-                    minres_map=settings.minres_map,
-                    current_size=current_size,
-                    accumulator_volume_shape=accumulator_shape,
-                    gridding_kernel=settings.gridding_kernel,
+                settings.reconstruct(
+                    denominator, numerator, tau=prior, current_size=current_size, accumulator_volume_shape=accumulator_shape
                 ).reshape(-1)
             )
         )

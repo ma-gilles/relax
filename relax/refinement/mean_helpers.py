@@ -1255,6 +1255,28 @@ class ReconstructionSettings:
                 f"solvent mask shape {np.shape(self.solvent_mask)} is not the model's {tuple(self.volume_shape)}"
             )
 
+    def reconstruct(self, Ft_ctf, Ft_y, *, tau, current_size, accumulator_volume_shape, **solve_options):
+        """One map from one accumulator pair with this run's reconstruction settings.
+
+        Forwards ``volume_shape``, ``padding_factor``, ``tau2_fudge``, ``projection_padding_factor``,
+        ``minres_map`` and ``gridding_kernel`` to ``_reconstruct_volume_eager``; ``solve_options`` are its
+        per-call options (``tau_is_1d``, ``preserve_output_precision``, ...).
+        """
+        return _reconstruct_volume_eager(
+            Ft_ctf,
+            Ft_y,
+            self.volume_shape,
+            self.padding_factor,
+            tau=tau,
+            tau2_fudge=self.tau2_fudge,
+            projection_padding_factor=self.projection_padding_factor,
+            minres_map=self.minres_map,
+            current_size=current_size,
+            accumulator_volume_shape=accumulator_volume_shape,
+            gridding_kernel=self.gridding_kernel,
+            **solve_options,
+        )
+
 
 def _require_radial_gridding_for_classes(settings: ReconstructionSettings) -> None:
     """Class3D keeps RELION's radial window: its tau2 is the power of the radially corrected reference."""
@@ -1430,21 +1452,15 @@ def _reconstruct_k1_maps(
         # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
         # rounded in float32 before it enters the Wiener denominator.
         reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
-        reconstructed = _reconstruct_volume_eager(
+        reconstructed = settings.reconstruct(
             Ft_ctf_half,
             Ft_y_half,
-            settings.volume_shape,
-            settings.padding_factor,
             tau=reconstruction_tau,
-            tau2_fudge=settings.tau2_fudge,
-            projection_padding_factor=settings.projection_padding_factor,
-            minres_map=settings.minres_map,
             current_size=cs_int,
             accumulator_volume_shape=accumulator_volume_shape,
             tau_is_1d=True,
             preserve_output_precision=True,
             relion_filter_scale=float(settings.volume_shape[0] ** 4),
-            gridding_kernel=settings.gridding_kernel,
             **(
                 {"retained_device_numerator": retained_device_numerator}
                 if k == 0 and retained_device_numerator is not None
@@ -1483,15 +1499,10 @@ def _reconstruct_class_maps(
             n_classes,
             cs_int,
         )
-        class_map = _reconstruct_volume_eager(
+        class_map = settings.reconstruct(
             combined_denominators[class_idx],
             combined_numerators[class_idx],
-            settings.volume_shape,
-            settings.padding_factor,
             tau=tau_by_class[class_idx],
-            tau2_fudge=settings.tau2_fudge,
-            projection_padding_factor=settings.projection_padding_factor,
-            minres_map=settings.minres_map,
             current_size=cs_int,
             accumulator_volume_shape=accumulator_volume_shape,
             tau_is_1d=True,
@@ -1807,17 +1818,8 @@ def reconstruct_unregularized_k1_halfmaps(
     """Reconstruct each K=1 half from its own unregularized accumulator."""
 
     return [
-        _reconstruct_volume_eager(
-            Ft_ctf_half,
-            Ft_y_half,
-            settings.volume_shape,
-            settings.padding_factor,
-            tau=None,
-            tau2_fudge=settings.tau2_fudge,
-            projection_padding_factor=settings.projection_padding_factor,
-            minres_map=settings.minres_map,
-            accumulator_volume_shape=accumulator_volume_shape,
-            gridding_kernel=settings.gridding_kernel,
+        settings.reconstruct(
+            Ft_ctf_half, Ft_y_half, tau=None, current_size=None, accumulator_volume_shape=accumulator_volume_shape
         )
         for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
     ]
@@ -1836,15 +1838,11 @@ def reconstruct_unregularized_class_means(
     _require_radial_gridding_for_classes(settings)
     unreg_shared = jnp.stack(
         [
-            _reconstruct_volume_eager(
+            settings.reconstruct(
                 Ft_ctf_combined[class_idx],
                 Ft_y_combined[class_idx],
-                settings.volume_shape,
-                settings.padding_factor,
                 tau=None,
-                tau2_fudge=settings.tau2_fudge,
-                projection_padding_factor=settings.projection_padding_factor,
-                minres_map=settings.minres_map,
+                current_size=None,
                 accumulator_volume_shape=accumulator_volume_shape,
             ).reshape(-1)
             for class_idx in range(n_classes)
