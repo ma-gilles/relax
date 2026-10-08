@@ -4230,7 +4230,6 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
     with pytest.raises(_CapturedStrictPreprocess):
         _compute_k_class_significance_batched(
             dataset,
-            jnp.asarray([_hermitian_volume(VOLUME_SHAPE, seed=883)]),
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             _make_rotations(1, seed=884),
             np.zeros((1, 2), dtype=np.float32),
@@ -4273,7 +4272,6 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monke
     with pytest.raises(_CapturedStrictPreprocess):
         _compute_k_class_significance_batched(
             dataset,
-            _hermitian_volume(VOLUME_SHAPE, seed=885)[None, :],
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             _make_rotations(1, seed=886),
             np.zeros((1, 2), dtype=np.float32),
@@ -6355,7 +6353,6 @@ class TestRelionModeSmokeTest:
         dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
         sig_rot_any, n_sig, ha, _, _, _ = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
@@ -6435,7 +6432,6 @@ class TestRelionModeSmokeTest:
         rotations = _make_rotations(3, seed=201)
         _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             jnp.zeros((1, 2), dtype=jnp.float32),
@@ -6484,7 +6480,6 @@ class TestRelionModeSmokeTest:
 
         unpadded = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
@@ -6494,7 +6489,6 @@ class TestRelionModeSmokeTest:
         )
         padded = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
@@ -6620,7 +6614,6 @@ class TestRelionModeSmokeTest:
 
         *_, full_stats = _compute_k_class_significance_batched(
             dataset,
-            jnp.asarray(init_volume)[None, :],
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             rotations,
             translations,
@@ -6686,7 +6679,6 @@ class TestRelionModeSmokeTest:
 
         _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,
@@ -6732,7 +6724,6 @@ class TestRelionModeSmokeTest:
 
         *_, full_stats = _compute_k_class_significance_batched(
             dataset,
-            means,
             noise,
             rotations,
             translations,

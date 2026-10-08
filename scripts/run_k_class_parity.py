@@ -1747,7 +1747,6 @@ def main() -> None:
             significant_full_stats,
         ) = _compute_k_class_significance_batched(
             ds,
-            means,
             noise_variance,
             coarse_scoring_rotations,
             translations.astype(np.float32),
@@ -1864,7 +1863,6 @@ def main() -> None:
             bpref_full_stats,
         ) = _compute_k_class_significance_batched(
             ds,
-            means,
             noise_variance,
             coarse_scoring_rotations,
             translations.astype(np.float32),

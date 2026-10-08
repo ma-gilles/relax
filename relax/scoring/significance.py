@@ -841,7 +841,6 @@ def _class_stacked_coarse_relion_projector(
 
 def _compute_k_class_significance_batched(
     experiment_dataset,
-    means,
     noise_variance,
     rotations,
     translations,
@@ -930,13 +929,9 @@ def _compute_k_class_significance_batched(
     # outputs are RFLOAT (double), never narrowed -- derive from the
     # caller's own use_float64_scoring instead of hardcoding float32.
     score_real_dtype = np.float64 if use_float64_scoring else np.float32
-    means_array = jnp.asarray(means)
-    if means_array.ndim != 2:
-        raise ValueError(f"means must have shape (n_classes, volume_size), got {means_array.shape}")
-    n_classes = int(means_array.shape[0])
+    # The class count is the length of the class priors; relion_projector_half carries the same count.
     class_log_priors_np = np.asarray(class_log_priors, dtype=np.float64).reshape(-1)
-    if class_log_priors_np.shape != (n_classes,):
-        raise ValueError(f"class_log_priors must have shape ({n_classes},), got {class_log_priors_np.shape}")
+    n_classes = int(class_log_priors_np.shape[0])
 
     translations_source = np.asarray(
         translations if translation_phase_source is None else translation_phase_source,
@@ -975,7 +970,6 @@ def _compute_k_class_significance_batched(
             relion_projector_half, n_classes, use_float64_scoring=use_float64_scoring,
             use_float64_projections=use_float64_projections,
         )
-    means_for_proj = [means_array[class_index] for class_index in range(n_classes)]
 
     cc_gaussian_support = score_mode == "normalized_cc" and firstiter_cc_support == "gaussian"
     half_weights = make_scoring_half_image_weights(
@@ -1465,8 +1459,7 @@ def _compute_k_class_significance_batched(
         )
         return projected, projected_abs2
 
-    def _project_block(class_index, mean_for_proj, rots_b):
-        del mean_for_proj
+    def _project_block(class_index, rots_b):
         if projector_returns_compact:
             return _project_relion_compact_score_rows(class_index, rots_b, return_abs2=True)
         projector_kwargs = {}
@@ -1492,12 +1485,12 @@ def _compute_k_class_significance_batched(
     projection_memo: dict = {}
     projection_memo_bytes = [0]
 
-    def _project_block_once(class_index, mean_for_proj, rots_b, *, rotation_start):
+    def _project_block_once(class_index, rots_b, *, rotation_start):
         key = (int(class_index), int(rotation_start), int(rots_b.shape[0]))
         cached = projection_memo.get(key)
         if cached is not None:
             return cached
-        projected = _project_block(class_index, mean_for_proj, rots_b)
+        projected = _project_block(class_index, rots_b)
         block_bytes = sum(int(value.size) * int(value.dtype.itemsize) for value in projected)
         if projection_memo_bytes[0] + block_bytes <= _PASS1_PROJECTION_MEMO_MAX_BYTES:
             projection_memo[key] = projected
@@ -1511,8 +1504,7 @@ def _compute_k_class_significance_batched(
             return_abs2=return_abs2,
         )
 
-    def _project_coarse_gemm_block_once(class_index, mean_for_proj, rots_b):
-        del mean_for_proj
+    def _project_coarse_gemm_block_once(class_index, rots_b):
         return _project_coarse_gemm_rows(
             class_index,
             rots_b,
@@ -2182,15 +2174,11 @@ def _compute_k_class_significance_batched(
                 for class_index, r0, rows, block_rows in pass1_blocks:
                     rots_b = rotations_padded[r0 : r0 + block_rows]
                     if exact_cc_enabled:
-                        reference, _ = _project_block_once(
-                            class_index, means_for_proj[class_index], rots_b, rotation_start=r0
-                        )
+                        reference, _ = _project_block_once(class_index, rots_b, rotation_start=r0)
                         if use_window and not projector_returns_compact:
                             reference = reference[:, window_indices]
                     else:
-                        reference, _ = _project_coarse_gemm_block_once(
-                            class_index, means_for_proj[class_index], rots_b
-                        )
+                        reference, _ = _project_coarse_gemm_block_once(class_index, rots_b)
                     block_state, block_values, block_dump = _coarse_pass1_block(
                         _class_block_state(pass1_state, class_index),
                         reference,

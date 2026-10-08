@@ -349,7 +349,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 optics_group_ids = np.arange(n_images) % 2
         args = (
             dataset,
-            jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
             noise,
             rotations,
             jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),
@@ -393,16 +392,21 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         if "shift" in corrections:
             kwargs["image_pre_shifts"] = np.stack([np.arange(n_images) % 3 - 1, np.arange(n_images) % 2]).T.astype(np.float32)
         kwargs.update(spec.get("kwargs", {}))
-        return args, kwargs
+        return args, kwargs, n_classes
 
-    def call_pass1(args, kwargs):
+    def call_pass1(args, kwargs, n_classes):
         """The call in the signature of the tree under test, so a base and a head with different signatures compare.
 
-        A base from before ``disc_type`` was removed (it was never read) takes it as the sixth positional.
+        A base from before the removal of two parameters nothing read takes ``means`` (read only for its class
+        count) as the second positional and ``disc_type`` as the sixth.
         """
         function = significance._compute_k_class_significance_batched
-        if "disc_type" in inspect.signature(function).parameters:
-            args = (*args, "linear_interp")
+        parameters = inspect.signature(function).parameters
+        args = list(args)
+        if "means" in parameters:
+            args.insert(1, jnp.zeros((n_classes, args[0].volume_size), dtype=jnp.complex64))
+        if "disc_type" in parameters:
+            args.append("linear_interp")
         return function(*args, **kwargs)
 
     def result_fields(result):
@@ -446,8 +450,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             install_recorders(patch)
             for key, value in env.items():
                 patch.setenv(key, value)
-            args, kwargs = build(spec)
-            result = call_pass1(args, kwargs)
+            args, kwargs, n_classes = build(spec)
+            result = call_pass1(args, kwargs, n_classes)
             fields = result_fields(result)
             if name not in REFUSED_CASES:
                 require_finite(fields)

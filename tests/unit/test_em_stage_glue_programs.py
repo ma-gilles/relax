@@ -41,7 +41,6 @@ def _significance_call(monkeypatch, n_classes=2):
     rotations[:, 0, 1] = np.asarray([0.0, 0.3, 0.1, 0.4, 0.2], dtype=np.float32)
     args = (
         dataset,
-        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
         jnp.ones(dataset.image_size, dtype=jnp.float32),
         rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),

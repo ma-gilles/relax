@@ -791,7 +791,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     firstiter_class_log_priors = np.zeros(n_classes, dtype=np.float64)
     full_stats = _compute_k_class_significance_batched(
         experiment_dataset,
-        means_array,
         noise_variance,
         rotations,
         translations,
@@ -1846,7 +1845,6 @@ def run_dense_k_class_em_adaptive(
                 _full_coarse_stats,
             ) = _compute_k_class_significance_batched(
                 experiment_dataset,
-                significance_means,
                 noise_variance,
                 coarse_rotations_np,
                 coarse_translations_np,

@@ -123,7 +123,6 @@ def _exact_pass1_call(n_classes, n_images=3):
     rotations[:, 0, 1] = np.asarray([0.0, 0.3, 0.1, 0.4, 0.2], dtype=np.float32)
     args = (
         dataset,
-        jnp.zeros((n_classes, dataset.volume_size), dtype=jnp.complex64),
         jnp.ones(dataset.image_size, dtype=jnp.float32),
         rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
@@ -301,7 +300,6 @@ def test_coarse_numeric_normalization_rejects_incompatible_modes(kwargs):
 
     with pytest.raises(ValueError, match="requires Gaussian float32 significance"):
         _compute_k_class_significance_batched(
-            None,
             None,
             None,
             None,

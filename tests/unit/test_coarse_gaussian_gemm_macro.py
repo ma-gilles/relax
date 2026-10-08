@@ -765,7 +765,6 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     def run():
         return significance._compute_k_class_significance_batched(
             dataset,
-            jnp.zeros((1, dataset.volume_size), dtype=jnp.complex64),
             jnp.ones(dataset.image_size, dtype=jnp.float32),
             rotations,
             translations,
@@ -1014,7 +1013,6 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         ]
         return significance._compute_k_class_significance_batched(
             selected_dataset,
-            jnp.zeros((2, selected_dataset.volume_size), dtype=jnp.complex64),
             jnp.ones(selected_dataset.image_size, dtype=jnp.float32),
             rotations,
             translations,
