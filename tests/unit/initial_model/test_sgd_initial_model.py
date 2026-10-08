@@ -309,13 +309,14 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
     # This stub lets the plan test assert it requests the same parent grid.
     requested_orders = []
 
-    def coarse_rotations(order, *, matrices):
-        requested_orders.append((order, matrices))
-        return np.broadcast_to(np.eye(3, dtype=np.float32), (12, 3, 3)).copy()
+    def coarse_eulers(order, *, rotation_index_order):
+        requested_orders.append((order, rotation_index_order))
+        return np.zeros((12, 3), dtype=np.float64)
 
-    monkeypatch.setattr(sampling, "get_relion_hidden_rotation_grid", coarse_rotations)
+    monkeypatch.setattr(sampling, "_get_relion_rotation_grid_eulers_float64", coarse_eulers)
     grids = [_build_sampling_plan(opts[name], iteration=iteration) for name in opts for iteration in (1, 3)]
-    assert requested_orders == [(1, True)] * 4
+    # RELION's native hidden-variable order (its source angles; the matrices are their host inverses).
+    assert requested_orders == [(1, "relion")] * 4
     for grid in grids:
         assert grid.oversampling == 0 and grid.healpix_order == 1
         assert grid.translation_parent is None

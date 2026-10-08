@@ -202,17 +202,19 @@ def adaptive_route_grids(
     (``AccProjectorPlan::setup``, :func:`relax.sampling._relion_adaptive_pass1_rotations`);
     the fine and M-step rotations are host-generated from the unperturbed source
     Euler rows, and the translations are oversampled from the host-double base grid
-    before the SamplingPerturbation shift.
+    before the SamplingPerturbation shift. The host coarse matrices (pass 1 off the GPU, and
+    the fine rows of oversampling 0) perturb the source angles as RELION's getOrientations does
+    (``A * Euler(p, p, p)`` back to angles, healpix_sampling.cpp:1909-1934) and are the host
+    inverses of those angles (:func:`relax.sampling.apply_relion_rotation_perturbation_to_eulers`).
     """
 
     order = int(healpix_order)
     angular_sampling = sampling.relion_angular_sampling_deg(order)
     source_eulers = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
-    host_rotations = sampling.apply_relion_rotation_perturbation(
-        sampling.get_relion_rotation_grid(order, rotation_index_order="recovar").astype(np.float32),
-        float(random_perturbation),
-        angular_sampling,
-    ).astype(np.float32, copy=False)
+    host_rotations = np.asarray(
+        sampling.apply_relion_rotation_perturbation_to_eulers(source_eulers, float(random_perturbation), angular_sampling)[0],
+        dtype=np.float32,
+    )
     device_rotations = sampling._relion_adaptive_pass1_rotations(
         source_eulers, float(random_perturbation), angular_sampling
     )

@@ -685,13 +685,19 @@ def _build_sampling_plan(
 
     translation_parent = None
     if oversampling == 0:
-        rotations = sampling.get_relion_hidden_rotation_grid(healpix_order, matrices=True).astype(np.float32)
+        # RELION's getOrientations perturbs the angles, and the scorer uses their host inverse matrices
+        # (healpix_sampling.cpp:1909-1934); the unperturbed grid is those matrices too.
+        rotations = np.asarray(
+            sampling.apply_relion_rotation_perturbation_to_eulers(
+                sampling._get_relion_rotation_grid_eulers_float64(healpix_order, rotation_index_order="relion"),
+                random_perturbation if perturbed else 0.0,
+                sampling.relion_angular_sampling_deg(healpix_order),
+            )[0],
+            dtype=np.float32,
+        )
         translations = coarse_translations
         metadata_translations = metadata_coarse_translations
         if perturbed:
-            rotations = sampling.apply_relion_rotation_perturbation(
-                rotations, random_perturbation, sampling.relion_angular_sampling_deg(healpix_order)
-            ).astype(np.float32)
             translations = sampling.apply_relion_translation_perturbation(
                 translations, random_perturbation, offset_step_px
             ).astype(np.float32)

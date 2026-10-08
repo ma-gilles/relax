@@ -239,3 +239,30 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
     assert [(a.halfset_idx, a.class_idx) for a in result.accumulators] == [(h, k) for h in halves for k in range(2)]
     assert all(not np.any(a.data) and not np.any(a.weight) for a in result.accumulators)
     assert result.meta == {"pass2_engine": "adaptive"}
+
+
+@pytest.mark.parametrize("oversampling_order", [0, 1])
+def test_route_perturbs_the_coarse_grid_by_relions_euler_route(oversampling_order):
+    """RELION perturbs each orientation as Euler angles: ``A = Euler(rot, tilt, psi) * Euler(p, p, p)`` back to
+    angles (healpix_sampling.cpp:1909-1934, getOrientations), and the scorer's matrices are the host inverses of
+    those angles (generateEulerMatrices). The route's host coarse matrices (pass 1 off the GPU, and the fine
+    rows of --oversampling 0) follow that route, not a float32 product of perturbed matrices."""
+    from relax import healpix_sampling
+
+    order, random_perturbation = 1, 0.37
+    route = adaptive_estep.adaptive_route_grids(
+        healpix_order=order,
+        oversampling_order=oversampling_order,
+        random_perturbation=random_perturbation,
+        coarse_base_translations=np.zeros((1, 2)),
+        translation_step=2.0,
+    )
+    source = sampling._get_relion_rotation_grid_eulers_float64(order, rotation_index_order="recovar")
+    expected = sampling._relion_mstep_rotations_from_eulers(
+        healpix_sampling.perturb_orientations(source, random_perturbation, order)
+    )
+    # Bitwise: the two routes differ by float32 ulps, which flip near-tied winners.
+    np.testing.assert_array_equal(np.asarray(route.pass1_rotations), expected)
+    assert np.asarray(route.pass1_rotations).dtype == expected.dtype == np.float32
+    if oversampling_order == 0:
+        np.testing.assert_array_equal(np.asarray(route.grids.fine_rotations), expected)
