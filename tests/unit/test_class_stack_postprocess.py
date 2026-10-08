@@ -34,7 +34,6 @@ def test_flatten_class_stack_matches_each_class_flattened_alone():
                     jnp.asarray(stack[k]),
                     solvent_mask,
                     VOLUME_SHAPE,
-                    half_index=0,
                 )
             )
             for k in range(N_CLASSES)
