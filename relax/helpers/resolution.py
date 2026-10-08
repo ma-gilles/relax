@@ -59,16 +59,12 @@ def relion_local_pass1_current_size(
     updated order controls the parent grid and fine-child expansion.
     """
 
-    coarse_size = compute_coarse_image_size(
+    coarse_size = relion_coarse_image_size(
         healpix_angular_step(int(pre_update_healpix_order)),
         pixel_size,
         box_size,
         particle_diameter=particle_diameter,
-    )
-    coarse_size = clamp_relion_coarse_image_size(
-        coarse_size,
-        current_size,
-        box_size,
+        current_size=current_size,
     )
     return coarse_size if coarse_size < int(box_size) else None
 
@@ -201,6 +197,19 @@ def clamp_relion_coarse_image_size(coarse_size, current_size, box_size):
     if current_size is None:
         return coarse_size
     return min(int(current_size), coarse_size)
+
+
+def relion_coarse_image_size(
+    angular_step_deg, pixel_size, box_size, *, particle_diameter, current_size, clamp_box_size=None
+):
+    """RELION's adaptive pass-1 image size: :func:`compute_coarse_image_size` clamped by
+    :func:`clamp_relion_coarse_image_size` to ``current_size`` and ``clamp_box_size`` (``box_size`` when None;
+    the numbered planner computes at the first optics group's box and clamps at the model box).
+    """
+    coarse_size = compute_coarse_image_size(angular_step_deg, pixel_size, box_size, particle_diameter=particle_diameter)
+    return clamp_relion_coarse_image_size(
+        coarse_size, current_size, box_size if clamp_box_size is None else clamp_box_size
+    )
 
 
 def _bootstrap_current_size_relion(init_current_size: int, box_size: int, incr_size: int = 10) -> int:

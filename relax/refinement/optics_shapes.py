@@ -30,7 +30,7 @@ from relax.helpers.orientation_priors import (
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
-from relax.helpers.resolution import clamp_relion_coarse_image_size, compute_coarse_image_size
+from relax.helpers.resolution import relion_coarse_image_size
 
 
 @dataclasses.dataclass(frozen=True)
@@ -598,12 +598,12 @@ def _class_coarse_size(coarse_sizing, shape_class: ShapeClass, class_current_siz
     the class's own pixel size and box, clamped to the class's current size.
     """
     angular_step_deg, particle_diameter_ang = coarse_sizing
-    size = clamp_relion_coarse_image_size(
-        compute_coarse_image_size(
-            angular_step_deg, shape_class.pixel_size, shape_class.box_size, particle_diameter=particle_diameter_ang
-        ),
-        class_current_size,
+    size = relion_coarse_image_size(
+        angular_step_deg,
+        shape_class.pixel_size,
         shape_class.box_size,
+        particle_diameter=particle_diameter_ang,
+        current_size=class_current_size,
     )
     return size if size < shape_class.box_size else None
 

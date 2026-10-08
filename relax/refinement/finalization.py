@@ -29,10 +29,9 @@ from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.expected_accuracy import _expected_accuracy_class_ids
 from relax.helpers.orientation_priors import relion_local_search_sigmas, relion_translation_search_base
 from relax.helpers.resolution import (
-    clamp_relion_coarse_image_size,
     class_current_resolution_shell,
-    compute_coarse_image_size,
     k1_current_resolution_shell,
+    relion_coarse_image_size,
     shell_index_to_resolution_angstrom,
 )
 from relax.refinement import final_reconstruction
@@ -242,16 +241,12 @@ def run_final_all_data(
             final_sampling.settings.random_perturbation,
         )
         if k_class_enabled and state.adaptive_oversampling > 0:
-            final_coarse_size = compute_coarse_image_size(
+            final_adaptive_pass1_current_size = relion_coarse_image_size(
                 healpix_angular_step(final_sampling.settings.grid_order),
                 image_geometry.pixel_size_angstrom,
                 image_geometry.box_size,
                 particle_diameter=options.schedule.particle_diameter_ang,
-            )
-            final_adaptive_pass1_current_size = clamp_relion_coarse_image_size(
-                final_coarse_size,
-                final_current_size,
-                image_geometry.box_size,
+                current_size=final_current_size,
             )
             final_adaptive_pass2_current_size = final_current_size
             logger.info(

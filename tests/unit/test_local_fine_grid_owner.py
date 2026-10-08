@@ -187,13 +187,10 @@ def test_coarse_image_size_is_owned_by_the_adaptive_pass1_sizing(monkeypatch):
     trace.wrap(iteration_loop, "plan_adaptive_image_size", "numbered")
     trace.wrap(finalization, "run_final_all_data", "final")
     for module in (iteration_planning, finalization):
-        trace.wrap(module, "compute_coarse_image_size", "compute")
-        trace.wrap(module, "clamp_relion_coarse_image_size", "clamp")
+        trace.wrap(module, "relion_coarse_image_size", "size")
     run_tiny_refinement(monkeypatch, n_classes=2, converge_after=2)
-    sizing = [(call.label, call.inside) for call in trace.calls_seen if call.label in ("compute", "clamp")]
-    assert sizing == 2 * [("compute", ("numbered",)), ("clamp", ("numbered",))] + [
-        ("compute", ("final",)), ("clamp", ("final",)),
-    ]
+    sizing = [(call.label, call.inside) for call in trace.calls_seen if call.label == "size"]
+    assert sizing == 2 * [("size", ("numbered",))] + [("size", ("final",))]
 
 
 @pytest.mark.parametrize("reuse", [False, True])

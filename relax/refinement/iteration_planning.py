@@ -21,12 +21,11 @@ from relax.helpers.resolution import (
     _firstiter_cc_scheduling_resolution_shell,
     _zero_shells_past_current_size,
     bootstrap_current_size_from_ini_high_relion,
-    clamp_relion_coarse_image_size,
     class_resolution_shells,
-    compute_coarse_image_size,
     initialize_resolution_from_firstiter_ini_high,
     initialize_resolution_from_fsc,
     initialize_resolution_from_ini_high,
+    relion_coarse_image_size,
     relion_optics_image_current_sizes,
 )
 from relax.reconstruction.regularization_relion import (
@@ -274,15 +273,12 @@ def plan_adaptive_image_size(
         # --strict_highres_exp replaces the angular rule: pass 1 scores at the E-step cap as well.
         coarse_size = int(windows.score_size)
     else:
-        coarse_size = compute_coarse_image_size(
+        coarse_size = relion_coarse_image_size(
             angular_step_deg,
             *optics.first_optics_group_geometry(),
             particle_diameter=options.schedule.particle_diameter_ang,
-        )
-        coarse_size = clamp_relion_coarse_image_size(
-            coarse_size,
-            windows.image_current_size if windows.image_window_size is not None else None,
-            image_geometry.box_size,
+            current_size=windows.image_current_size if windows.image_window_size is not None else None,
+            clamp_box_size=image_geometry.box_size,
         )
     if sealed_sampling_state is not None:
         coarse_size = int(sealed_sampling_state["coarse_size"])

@@ -5986,10 +5986,8 @@ class TestRelionModeSmokeTest:
             force_convergence_after_first_iter,
         )
         monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
-        monkeypatch.setattr(iteration_planning_module, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
-        monkeypatch.setattr(finalization, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
-        monkeypatch.setattr(iteration_planning_module, "clamp_relion_coarse_image_size", lambda coarse, *_args: int(coarse))
-        monkeypatch.setattr(finalization, "clamp_relion_coarse_image_size", lambda coarse, *_args: int(coarse))
+        monkeypatch.setattr(iteration_planning_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
+        monkeypatch.setattr(finalization, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
 
         result = refine_single_volume(
             half_datasets,
@@ -6165,15 +6163,15 @@ class TestRelionModeSmokeTest:
         class _Recorded(RuntimeError):
             pass
 
-        def wrap_compute_coarse_image_size(*args, **kwargs):
+        def wrap_coarse_image_size(*args, **kwargs):
             # Stop here: the mock half sets have no RELION CUDA preprocessing for pass 1.
             recorded["particle_diameter"] = kwargs.get("particle_diameter")
             raise _Recorded
 
         monkeypatch.setattr(
             iteration_planning_module,
-            "compute_coarse_image_size",
-            wrap_compute_coarse_image_size,
+            "relion_coarse_image_size",
+            wrap_coarse_image_size,
         )
 
         with pytest.raises(_Recorded):
@@ -7730,10 +7728,8 @@ class TestRelionModeSmokeTest:
 
         monkeypatch.setattr(oversampling_grids, "build_adaptive_pass2_grids", fake_build_pass2_grids)
         monkeypatch.setattr(half_scoring, "run_dense_k_class_em_adaptive", fake_adaptive_k_class)
-        monkeypatch.setattr(iteration_planning_module, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
-        monkeypatch.setattr(finalization, "compute_coarse_image_size", lambda *_args, **_kwargs: 4)
-        monkeypatch.setattr(iteration_planning_module, "clamp_relion_coarse_image_size", lambda coarse, *_args: int(coarse))
-        monkeypatch.setattr(finalization, "clamp_relion_coarse_image_size", lambda coarse, *_args: int(coarse))
+        monkeypatch.setattr(iteration_planning_module, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
+        monkeypatch.setattr(finalization, "relion_coarse_image_size", lambda *_args, **_kwargs: 4)
 
         result = refine_single_volume(
             half_datasets,
