@@ -1184,6 +1184,11 @@ def main(command=None):
                 random_seed=int(args.seed),
                 nr_iter=int(args.max_iter),
                 particle_diameter=float(particle_diameter_ang or 0.0),
+                # RELION writes its live values (ml_optimiser.cpp:1660-1665): the run's mask edge, and the
+                # Refine3D job's --low_resol_join_halves 40 (pipeline_jobs.cpp:4509) or, for Class3D, the
+                # binary's default -1 (ml_optimiser.cpp:895).
+                width_mask_edge=int(width_mask_edge_px),
+                low_resol_join_halves=RunSettings.low_resol_join_halves if int(args.n_classes) == 1 else -1.0,
                 adaptive_oversampling=int(args.adaptive_oversampling),
                 auto_local_healpix_order=int(args.auto_local_healpix_order),
                 strict_highres_exp=-1.0 if args.strict_highres_exp is None else float(args.strict_highres_exp),

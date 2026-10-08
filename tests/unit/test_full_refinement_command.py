@@ -208,3 +208,19 @@ def test_the_command_writes_its_archive_maps_and_history(monkeypatch, tmp_path):
     k2 = run_tiny_main(monkeypatch, tmp_path, "class3d", "--max_iter", "1", "--n_classes", "2", data=data, output="k2")
     with np.load(k2 / "refinement_results.npz", allow_pickle=True) as archive:
         assert {"class_weights", "class_assignments_iter_000"} <= set(archive)
+
+
+@pytest.mark.parametrize(("command", "n_classes", "join"), [("refine", 1, 40.0), ("class3d", 2, -1.0)])
+def test_run_files_record_the_runs_mask_edge_and_join_resolution(monkeypatch, tmp_path, command, n_classes, join):
+    # RELION writes its live values to optimiser_general (ml_optimiser.cpp:1660-1665): width_mask_edge from
+    # --maskedge, and low_resol_join_halves 40 from the Refine3D job (pipeline_jobs.cpp:4509) or the binary's
+    # default -1 for Class3D (ml_optimiser.cpp:895). relax wrote 5 and 40 whatever the run did.
+    data = write_tiny_data_dir(tmp_path / "data", n_classes=n_classes)
+    arguments = ["--max_iter", "1", "--particle_diameter_ang", "40", "--width_mask_edge_px", "7"]
+    if n_classes > 1:
+        arguments += ["--n_classes", str(n_classes)]
+    out = run_tiny_main(monkeypatch, tmp_path, command, *arguments, n_classes=n_classes, data=data)
+    text = (out / "run_it001_optimiser.star").read_text()
+    values = dict(line.split()[:2] for line in text.splitlines() if line.startswith("_rln") and len(line.split()) >= 2)
+    assert int(values["_rlnWidthMaskEdge"]) == 7
+    assert float(values["_rlnJoinHalvesUntilThisResolution"]) == join
