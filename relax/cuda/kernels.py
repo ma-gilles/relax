@@ -581,28 +581,60 @@ def relion_translate_score_f64(
     )
 
 
-@jax.jit
-def relion_exponentiate_f32(values: jax.Array, add: jax.Array) -> jax.Array:
-    """Apply RELION's fine-weight ``expf(value + add)`` CUDA kernel."""
+def _relion_posterior_rows_f32(target: str, operation: str, operand_name: str, values, operand):
+    """One RELION float32 posterior kernel on a 1-D ``values`` and a float32 scalar ``operand`` (traced)."""
 
     if values.dtype != jnp.float32:
         raise TypeError(f"values must be float32, got {values.dtype}")
     if values.ndim != 1 or values.shape[0] < 1:
         raise ValueError(f"values must be a nonempty 1-D array, got {values.shape}")
-    if add.dtype != jnp.float32 or add.ndim != 0:
-        raise TypeError(f"add must be a float32 scalar, got {add.dtype} {add.shape}")
+    if operand.dtype != jnp.float32 or operand.ndim != 0:
+        raise TypeError(f"{operand_name} must be a float32 scalar, got {operand.dtype} {operand.shape}")
     if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION float32 exponentiation requires a JAX GPU backend")
+        raise RuntimeError(f"RELION float32 {operation} requires a JAX GPU backend")
     if not custom_cuda_requested():
-        raise RuntimeError("RELION float32 exponentiation was requested but custom CUDA is disabled")
+        raise RuntimeError(f"RELION float32 {operation} was requested but custom CUDA is disabled")
     _ensure_ffi()
 
     output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
     return jax.ffi.ffi_call(
-        _TARGET_RELION_EXPONENTIATE_F32,
+        target,
         output_type,
         vmap_method="sequential",
-    )(values, add)
+    )(values, operand)
+
+
+def _relion_posterior_batched_f32(target: str, operation: str, operand_name: str, values, operand):
+    """One RELION float32 posterior kernel on a ``values`` matrix and one float32 ``operand`` per row (traced)."""
+
+    if values.dtype != jnp.float32 or values.ndim != 2:
+        raise TypeError(f"values must be a float32 matrix, got {values.dtype} {values.shape}")
+    if values.shape[0] < 1 or values.shape[1] < 1:
+        raise ValueError(f"values must be nonempty, got {values.shape}")
+    if operand.dtype != jnp.float32 or operand.shape != (values.shape[0],):
+        raise TypeError(
+            f"{operand_name} must be one float32 scalar per row, got "
+            f"{operand.dtype} {operand.shape} for values {values.shape}"
+        )
+    if jax.default_backend() != "gpu":
+        raise RuntimeError(f"RELION batched float32 {operation} requires a JAX GPU backend")
+    if not custom_cuda_requested():
+        raise RuntimeError(
+            f"RELION batched float32 {operation} was requested but custom CUDA is disabled"
+        )
+    _ensure_ffi()
+
+    return jax.ffi.ffi_call(
+        target,
+        jax.ShapeDtypeStruct(values.shape, jnp.float32),
+    )(values, operand)
+
+
+@jax.jit
+def relion_exponentiate_f32(values: jax.Array, add: jax.Array) -> jax.Array:
+    """Apply RELION's fine-weight ``expf(value + add)`` CUDA kernel."""
+
+    return _relion_posterior_rows_f32(_TARGET_RELION_EXPONENTIATE_F32, "exponentiation", "add", values, add)
 
 
 @jax.jit
@@ -612,53 +644,16 @@ def relion_exponentiate_batched_f32(
 ) -> jax.Array:
     """Apply RELION's float32 posterior exponentiation to a row batch."""
 
-    if values.dtype != jnp.float32 or values.ndim != 2:
-        raise TypeError(f"values must be a float32 matrix, got {values.dtype} {values.shape}")
-    if values.shape[0] < 1 or values.shape[1] < 1:
-        raise ValueError(f"values must be nonempty, got {values.shape}")
-    if add.dtype != jnp.float32 or add.shape != (values.shape[0],):
-        raise TypeError(
-            "add must be one float32 scalar per row, got "
-            f"{add.dtype} {add.shape} for values {values.shape}"
-        )
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION batched float32 exponentiation requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(
-            "RELION batched float32 exponentiation was requested but custom CUDA is disabled"
-        )
-    _ensure_ffi()
-
-    return jax.ffi.ffi_call(
-        _TARGET_RELION_EXPONENTIATE_BATCHED_F32,
-        jax.ShapeDtypeStruct(values.shape, jnp.float32),
-    )(values, add)
+    return _relion_posterior_batched_f32(
+        _TARGET_RELION_EXPONENTIATE_BATCHED_F32, "exponentiation", "add", values, add
+    )
 
 
 @jax.jit
 def relion_divide_f32(values: jax.Array, divisor: jax.Array) -> jax.Array:
     """Apply RELION's CUDA ``float / float`` posterior normalization."""
 
-    if values.dtype != jnp.float32:
-        raise TypeError(f"values must be float32, got {values.dtype}")
-    if values.ndim != 1 or values.shape[0] < 1:
-        raise ValueError(f"values must be a nonempty 1-D array, got {values.shape}")
-    if divisor.dtype != jnp.float32 or divisor.ndim != 0:
-        raise TypeError(
-            f"divisor must be a float32 scalar, got {divisor.dtype} {divisor.shape}"
-        )
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION float32 division requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError("RELION float32 division was requested but custom CUDA is disabled")
-    _ensure_ffi()
-
-    output_type = jax.ShapeDtypeStruct(values.shape, jnp.float32)
-    return jax.ffi.ffi_call(
-        _TARGET_RELION_DIVIDE_F32,
-        output_type,
-        vmap_method="sequential",
-    )(values, divisor)
+    return _relion_posterior_rows_f32(_TARGET_RELION_DIVIDE_F32, "division", "divisor", values, divisor)
 
 
 @jax.jit
@@ -668,27 +663,9 @@ def relion_divide_batched_f32(
 ) -> jax.Array:
     """Apply RELION float32 division to all posterior rows in one FFI call."""
 
-    if values.dtype != jnp.float32 or values.ndim != 2:
-        raise TypeError(f"values must be a float32 matrix, got {values.dtype} {values.shape}")
-    if values.shape[0] < 1 or values.shape[1] < 1:
-        raise ValueError(f"values must be nonempty, got {values.shape}")
-    if divisor.dtype != jnp.float32 or divisor.shape != (values.shape[0],):
-        raise TypeError(
-            "divisor must be one float32 scalar per row, got "
-            f"{divisor.dtype} {divisor.shape} for values {values.shape}"
-        )
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION batched float32 division requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(
-            "RELION batched float32 division was requested but custom CUDA is disabled"
-        )
-    _ensure_ffi()
-
-    return jax.ffi.ffi_call(
-        _TARGET_RELION_DIVIDE_BATCHED_F32,
-        jax.ShapeDtypeStruct(values.shape, jnp.float32),
-    )(values, divisor)
+    return _relion_posterior_batched_f32(
+        _TARGET_RELION_DIVIDE_BATCHED_F32, "division", "divisor", values, divisor
+    )
 
 
 @jax.jit
