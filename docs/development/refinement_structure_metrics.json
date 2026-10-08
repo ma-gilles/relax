@@ -8,7 +8,7 @@
   },
   "baseline": {
     "recorded_date": "2026-09-28",
-    "source_commit": "5c965cf21d12014979e22a61a8058d23d5565ff9",
+    "source_commit": "00fc34949e24b8407f6b9815460da07cb16f0923",
     "metrics": {
       "file_count": 15,
       "physical_lines": 14222,
@@ -22,9 +22,9 @@
   },
   "ceilings": {
     "recorded_date": "2026-10-08",
-    "source_commit": "22b3aa6c86726a04f779c6a1c2267a58b884bbfb",
+    "source_commit": "00fc34949e24b8407f6b9815460da07cb16f0923",
     "totals": {
-      "maximum_function_line_span": 1766,
+      "maximum_function_line_span": 1758,
       "maximum_parameter_count": 28,
       "large_argument_function_count": 29,
       "very_large_argument_function_count": 3,
