@@ -1783,7 +1783,9 @@ def test_expand_significant_samples_to_full_parent_translations_preserves_rotati
 def test_local_adaptive_pass2_denominator_support_mode(monkeypatch, value, expected):
     monkeypatch.setenv("RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT", value)
 
-    assert scoring_policy._local_adaptive_pass2_denominator_support_mode() == expected
+    from relax.refinement.refinement_options import ScoringVariants
+
+    assert ScoringVariants.from_environ().local_adaptive_pass2.denominator_mode == expected
 
 
 def test_build_local_adaptive_pass2_hypothesis_layout_accepts_int64_packed_samples():

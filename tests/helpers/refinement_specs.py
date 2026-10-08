@@ -5,6 +5,7 @@ import dataclasses
 from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.projector_preparation import PreparedProjector
+from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 
 _LOCAL_ITERATION_POSITIONAL = (
     "experiment_dataset",
@@ -184,6 +185,15 @@ def local_half_owners(**values):
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
+            # The run's ScoringVariants, read from the environment as the options would be, unless given.
+            relion_x_half_mstep=values.pop("relion_x_half_mstep", None)
+            if "relion_x_half_mstep" in values
+            else ScoringVariants.from_environ().k1_relion_x_half_mstep,
+            adaptive_pass2=LocalAdaptivePass2Support(
+                full_parent=values.pop("adaptive_pass2_full_parent", False),
+                rotation_only=values.pop("adaptive_pass2_rotation_only", False),
+                denominator_mode=values.pop("adaptive_pass2_denominator_mode", None),
+            ),
         ),
         half_scoring.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
@@ -192,9 +202,6 @@ def local_half_owners(**values):
             diagnostic_score_only=values.pop("diagnostic_score_only"),
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
-            adaptive_pass2_full_parent=values.pop("adaptive_pass2_full_parent", False),
-            adaptive_pass2_rotation_only=values.pop("adaptive_pass2_rotation_only", False),
-            adaptive_pass2_denominator_mode=values.pop("adaptive_pass2_denominator_mode", None),
         ),
         optics_shapes.OpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),

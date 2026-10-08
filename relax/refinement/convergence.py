@@ -82,6 +82,7 @@ def _iteration_accuracy_for_convergence(
     significant_counts,
     exact_acc_rot: float | None,
     exact_acc_trans: float | None,
+    approx_acc_rot_for_convergence: bool,
     log: logging.Logger,
 ) -> OptimiserAccuracyReplay:
     """Admit this iteration's accuracy: the exact estimate, the support width when opted in, then the input
@@ -93,7 +94,9 @@ def _iteration_accuracy_for_convergence(
             significant_counts,
             n_translations=n_translations,
         )
-        approx_for_convergence, approx_convergence_reason = _approx_acc_rot_policy_for_convergence()
+        approx_for_convergence, approx_convergence_reason = _approx_acc_rot_policy_for_convergence(
+            approx_acc_rot_for_convergence
+        )
         if approx_for_convergence and exact_acc_rot is None:
             convergence_acc_rot = approx_acc_rot
         log.info(
@@ -162,6 +165,7 @@ def update_iteration_convergence(
         significant_counts=significant_counts,
         exact_acc_rot=exact_acc_rot,
         exact_acc_trans=exact_acc_trans,
+        approx_acc_rot_for_convergence=options.variants.approx_acc_rot_for_convergence,
         log=log,
     )
     state = update_refinement_state(

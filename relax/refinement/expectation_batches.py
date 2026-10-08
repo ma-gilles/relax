@@ -11,7 +11,6 @@ import numpy as np
 
 from relax.classification.k_class_inputs import _select_projector_half_for_class
 from relax.dense import scoring_policy
-from relax.dense.scoring_policy import _k1_relion_x_half_mstep_enabled
 from relax.helpers.batch_planning import (
     _RELION_EM_COMPACT_K1_FIXED_BASE_GB,
     _estimate_relion_em_batch_sizes,
@@ -150,6 +149,7 @@ def prepare_half_batches(
     source_faithful_spectrum_norm,
     preserve_bpref_particle_order,
     bpref_device_signature_active,
+    use_relion_x_half_mstep: bool,
     multi_shape_halves,
     coarse_sizing,
 ) -> HalfBatchPlan:
@@ -193,7 +193,7 @@ def prepare_half_batches(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             winner_take_all=firstiter_winner_take_all_this_iter,
             preserve_bpref_particle_order=preserve_bpref_particle_order,
-            use_relion_x_half_mstep=_k1_relion_x_half_mstep_enabled(),
+            use_relion_x_half_mstep=use_relion_x_half_mstep,
             projector_half=SimpleNamespace(shape=projector_half.shape, dtype=np.dtype(np.complex64)),
             score_complex_dtype=np.complex64,
             recon_volume_size=int(np.prod(half_volume_accumulator_shape(recon_shape))),

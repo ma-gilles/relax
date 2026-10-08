@@ -1476,18 +1476,22 @@ class TestRefinementPolicy:
 
     def test_approx_acc_rot_convergence_policy_is_diagnostic_by_default(self, monkeypatch):
         from relax.helpers import convergence as convergence_helpers
+        from relax.refinement.refinement_options import ScoringVariants
 
         monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
-        allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence()
+        enabled = ScoringVariants.from_environ().approx_acc_rot_for_convergence
+        allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence(enabled)
 
         assert not allow
         assert reason == "diagnostic-only-default"
 
     def test_approx_acc_rot_convergence_policy_opt_in(self, monkeypatch):
         from relax.helpers import convergence as convergence_helpers
+        from relax.refinement.refinement_options import ScoringVariants
 
         monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", "1")
-        allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence()
+        enabled = ScoringVariants.from_environ().approx_acc_rot_for_convergence
+        allow, reason = convergence_helpers._approx_acc_rot_policy_for_convergence(enabled)
         assert allow
         assert reason == "forced-by-env"
 

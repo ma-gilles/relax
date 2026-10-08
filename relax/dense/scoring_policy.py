@@ -1,8 +1,9 @@
 """Execution defaults and existing diagnostic selectors for half-set scoring.
 
 Global precision and fine-scoring policy retain their import-time environment
-snapshot. Selector functions read their environment at call time, including legacy override
-precedence and invalid-value handling. This module performs no scoring or scheduling.
+snapshot. The scoring route variants are read once per run, when the refinement's options are built
+(``relax.refinement.refinement_options.ScoringVariants``); this module keeps their variable names and
+K=1's x-half default. This module performs no scoring or scheduling.
 """
 
 import logging
@@ -12,7 +13,7 @@ import jax
 import numpy as np
 
 from relax.helpers.dtype_policy import DensePrecisionPolicy
-from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
+from relax.helpers.env_flags import parse_env_true_flag
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,12 @@ _LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_ROTATION_O
 _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV = "RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT"
 _K1_RELION_X_HALF_MSTEP_ENV = "RELAX_K1_RELION_X_HALF_MSTEP"
 _K_CLASS_RELION_X_HALF_MSTEP_ENV = "RELAX_K_CLASS_RELION_X_HALF_MSTEP"
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
-
-_FALSE_ENV_VALUES = {"0", "false", "no", "off"}
+# RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT's tokens (refinement_options.ScoringVariants reads it).
+LOCAL_ADAPTIVE_PASS2_DENOMINATOR_MODES = {
+    **dict.fromkeys(("0", "false", "no", "off", "none", "default", "pruned", "pruned_parent")),
+    **dict.fromkeys(("rotation", "rotations", "rotation_only", "significant_rotation_full_translation"), "rotation_only"),
+    **dict.fromkeys(("full", "full_parent", "all", "all_parent"), "full_parent"),
+}
 
 # RELION stores windowFourierTransform(in, out, current_size) as a rectangular
 # FFTW half image, but the likelihood support is the nonzero Minvsigma2 mask:
@@ -65,25 +69,6 @@ RELION_ACC_DOUBLE_FLOORF_QUIRK = parse_env_true_flag(
 )
 
 
-def _k_class_relion_x_half_mstep_enabled() -> bool:
-    """Return whether K-class should use RELION x-half BPref M-step accumulators."""
-
-    value = os.environ.get(_K_CLASS_RELION_X_HALF_MSTEP_ENV)
-    if value is not None and value.strip() != "":
-        normalized = value.strip().lower()
-        if normalized in _TRUE_ENV_VALUES:
-            return True
-        if normalized in _FALSE_ENV_VALUES:
-            return False
-        logger.warning(
-            "Ignoring invalid %s=%r; using K-class RELION x-half M-step default",
-            _K_CLASS_RELION_X_HALF_MSTEP_ENV,
-            value,
-        )
-
-    return True
-
-
 def _jax_cpu_forced_from_env() -> bool:
     """Return whether JAX has been forced to CPU by environment."""
 
@@ -109,71 +94,6 @@ def _k1_relion_x_half_mstep_default_available() -> bool:
         return jax.default_backend() == "gpu"
     except Exception:
         return False
-
-
-def _k1_relion_x_half_mstep_enabled() -> bool:
-    """Default-on K=1 RELION x-half BPref accumulation."""
-
-    value = os.environ.get(_K1_RELION_X_HALF_MSTEP_ENV)
-    if value is None or value.strip() == "":
-        return _k1_relion_x_half_mstep_default_available()
-    normalized = value.strip().lower()
-    if normalized in _TRUE_ENV_VALUES:
-        return True
-    if normalized in _FALSE_ENV_VALUES:
-        return False
-    logger.warning(
-        "Ignoring invalid %s=%r; using K=1 RELION x-half M-step default",
-        _K1_RELION_X_HALF_MSTEP_ENV,
-        value,
-    )
-    return _k1_relion_x_half_mstep_default_available()
-
-
-def _local_adaptive_pass2_full_parent_enabled() -> bool:
-    """Return whether K=1 adaptive local pass-2 expands all parent samples."""
-
-    value = os.environ.get(_LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV)
-    if value is None or value.strip() == "":
-        return False
-    normalized = value.strip().lower()
-    if normalized in _TRUE_ENV_VALUES:
-        return True
-    if normalized in _FALSE_ENV_VALUES:
-        return False
-    logger.warning(
-        "Ignoring invalid %s=%r; using RELION pruned-parent local pass-2 default",
-        _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
-        value,
-    )
-    return False
-
-
-def _local_adaptive_pass2_rotation_only_enabled() -> bool:
-    """Diagnostic: expand significant parent rotations to all parent translations."""
-
-    return parse_env_flag_or_false(_LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV, logger=logger)
-
-
-def _local_adaptive_pass2_denominator_support_mode() -> str | None:
-    """Diagnostic mode for broad-denominator local adaptive pass 2."""
-
-    value = os.environ.get(_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV)
-    if value is None or value.strip() == "":
-        return None
-    normalized = value.strip().lower().replace("-", "_")
-    if normalized in _FALSE_ENV_VALUES or normalized in {"none", "default", "pruned", "pruned_parent"}:
-        return None
-    if normalized in {"rotation", "rotations", "rotation_only", "significant_rotation_full_translation"}:
-        return "rotation_only"
-    if normalized in {"full", "full_parent", "all", "all_parent"}:
-        return "full_parent"
-    logger.warning(
-        "Ignoring invalid %s=%r; expected rotation_only or full_parent",
-        _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
-        value,
-    )
-    return None
 
 
 def _dense_global_scoring_dtype() -> np.dtype:

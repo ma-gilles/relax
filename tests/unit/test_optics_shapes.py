@@ -18,6 +18,7 @@ from relax.dense.score_outputs import ClassScoreSummary, HalfScoreResult, PerHal
 from relax.helpers.types import RelionStats, make_noise_stats
 from relax.refinement import half_scoring, optics_shapes
 from relax.refinement.half_inputs import HalfSet
+from relax.refinement.refinement_options import ScoringVariants
 
 REF_BOX, REF_PIX = 32, 4.0
 
@@ -183,6 +184,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             disc_type="linear_interp",
             disable_adjoint_y=False,
             disable_adjoint_ctf=False,
+            relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
         ),
         optics,
     )

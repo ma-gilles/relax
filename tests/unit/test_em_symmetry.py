@@ -12,6 +12,7 @@ from helpers.refinement_specs import local_half_owners
 
 from relax.refinement import optics_shapes
 from relax.refinement.half_inputs import HalfSet
+from relax.refinement.refinement_options import ScoringVariants
 from relax.symmetry import (
     canonicalize_rotational_symmetry,
     parse_rotational_symmetry,
@@ -900,13 +901,16 @@ def _symmetric_dense_owners(half_scoring, values):
         half_scoring.DenseVariantPolicy(
             firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
             firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
-            k_class_enabled=values.pop("k_class_enabled"),
+            k_class_enabled=(k_class_enabled := values.pop("k_class_enabled")),
             relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
         ),
         half_scoring.DenseExecutionPolicy(
             disc_type=values.pop("disc_type"),
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
+            relion_x_half_mstep=values.pop("relion_x_half_mstep")
+            if "relion_x_half_mstep" in values
+            else ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
         ),
         optics_shapes.OpticsSpec(),
     )
@@ -925,14 +929,13 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
 
     from relax.refinement import half_scoring
 
-    monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     for name in ("prepare_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_dense_k_class_em_adaptive"):
         monkeypatch.setattr(
             half_scoring,
             name,
             lambda *_args, _name=name, **_kwargs: pytest.fail(f"unsupported non-C1 route reached {_name}"),
         )
-    kwargs = _k1_symmetric_dense_half_kwargs(relion_firstiter_cc_this_iter=firstiter_cc)
+    kwargs = _k1_symmetric_dense_half_kwargs(relion_firstiter_cc_this_iter=firstiter_cc, relion_x_half_mstep=False)
     with pytest.raises(RuntimeError, match="O reconstruction requires RELION x-half BPref accumulation"):
         half_scoring._score_half_dense(*_symmetric_dense_owners(half_scoring, kwargs))
 
@@ -942,7 +945,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
 
     from relax.refinement import half_scoring
 
-    monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(
         half_scoring,
         "_run_local_search_iteration",
@@ -982,6 +984,7 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         diagnostic_score_only=False,
         local_profile_history=[],
         symmetry="C4",
+        relion_x_half_mstep=False,
     )
     with pytest.raises(RuntimeError, match="C4 exact-local reconstruction requires RELION x-half BPref"):
         half_scoring._score_half_local(*local_half_owners(**kwargs))

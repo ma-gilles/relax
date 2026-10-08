@@ -18,9 +18,6 @@ from relax.dense.score_outputs import (
     _resolve_mstep_full_half_axis,
 )
 from relax.dense.scoring_policy import (
-    _local_adaptive_pass2_denominator_support_mode,
-    _local_adaptive_pass2_full_parent_enabled,
-    _local_adaptive_pass2_rotation_only_enabled,
     local_precision,
 )
 from relax.diagnostics import bpref_diagnostics
@@ -281,16 +278,6 @@ def run_final_all_data(
     )
     logger.info("=== RELION final all-data Nyquist iteration ===")
     if final_use_local:
-        if state.adaptive_oversampling > 0:
-            final_local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
-            final_local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
-            final_local_adaptive_denominator_mode = (
-                _local_adaptive_pass2_denominator_support_mode()
-            )
-        else:
-            final_local_adaptive_full_parent = False
-            final_local_adaptive_rotation_only = False
-            final_local_adaptive_denominator_mode = None
         final_local_batching = LocalBatchPolicy(
             max_significants=options.adaptive.max_significants,
         )
@@ -303,6 +290,8 @@ def run_final_all_data(
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
             relion_translation_angle_scale=relion_translation_angle_scale,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
+            relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
+            adaptive_pass2=options.variants.local_adaptive_pass2.at(state.adaptive_oversampling),
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,
@@ -311,9 +300,6 @@ def run_final_all_data(
             collect_local_search_profile=collect_local_search_profile,
             diagnostic_score_only=False,
             local_profile_history=history.local_profile_history,
-            adaptive_pass2_full_parent=final_local_adaptive_full_parent,
-            adaptive_pass2_rotation_only=final_local_adaptive_rotation_only,
-            adaptive_pass2_denominator_mode=final_local_adaptive_denominator_mode,
         )
     else:
         final_dense_sampling = DenseSamplingSpec(
@@ -358,6 +344,7 @@ def run_final_all_data(
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
+            relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
         )
     final_outs = PerHalfOutputs()
     for half, projector in zip(halves, final_projectors, strict=True):

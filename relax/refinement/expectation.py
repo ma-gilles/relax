@@ -17,12 +17,6 @@ from relax.dense.score_outputs import (
     _record_score_profile,
     empty_half_result,
 )
-from relax.dense.scoring_policy import (
-    _k1_relion_x_half_mstep_enabled,
-    _local_adaptive_pass2_denominator_support_mode,
-    _local_adaptive_pass2_full_parent_enabled,
-    _local_adaptive_pass2_rotation_only_enabled,
-)
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
 from relax.diagnostics.iteration import _bpref_device_signature_active_for_numbered_half
@@ -488,16 +482,6 @@ def prepare_numbered_expectation(
     See ``docs/math/relion_refinement_algorithm.md#numbered-expectation-preparation``.
     """
     if local_sampling is not None:
-        if local_sampling.search.oversampling_order > 0:
-            local_adaptive_full_parent = _local_adaptive_pass2_full_parent_enabled()
-            local_adaptive_rotation_only = _local_adaptive_pass2_rotation_only_enabled()
-            local_adaptive_denominator_mode = (
-                _local_adaptive_pass2_denominator_support_mode()
-            )
-        else:
-            local_adaptive_full_parent = False
-            local_adaptive_rotation_only = False
-            local_adaptive_denominator_mode = None
         numbered_sampling = local_sampling
         numbered_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration,
@@ -506,9 +490,6 @@ def prepare_numbered_expectation(
             collect_local_search_profile=collect_local_search_profile,
             diagnostic_score_only=bool(options.local_search.stop_after_local_search_score_only),
             local_profile_history=local_profile_history,
-            adaptive_pass2_full_parent=local_adaptive_full_parent,
-            adaptive_pass2_rotation_only=local_adaptive_rotation_only,
-            adaptive_pass2_denominator_mode=local_adaptive_denominator_mode,
         )
     else:
         numbered_sampling = DenseSamplingSpec(
@@ -631,6 +612,7 @@ def score_numbered_half(
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         bpref_device_signature_active=bpref_device_signature_active,
+        use_relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
         multi_shape_halves=multi_shape_halves,
         coarse_sizing=(coarse_size_step_deg, particle_diameter_ang) if phase.use_adaptive and multi_shape_halves else None,
     )
@@ -676,7 +658,7 @@ def score_numbered_half(
         empty_k1_x_half_mstep = (
             (not k_class_enabled)
             and (use_local or phase.use_adaptive)
-            and _k1_relion_x_half_mstep_enabled()
+            and options.variants.k1_relion_x_half_mstep
         )
         empty_result = empty_half_result(
             volume_shape=particle_half.dataset.volume_shape if empty_k1_x_half_mstep else None,
@@ -764,6 +746,8 @@ def score_numbered_half(
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
                 relion_translation_angle_scale=(relion_translation_angle_scale),
                 nyquist_column_counting=options.consistency.nyquist_column_counting,
+                relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
+                adaptive_pass2=options.variants.local_adaptive_pass2.at(sampling.search.oversampling_order),
             ),
             diagnostics=replace(
                 phase.local_diagnostics, bpref_device_signature_active=bpref_device_signature_active,
@@ -827,6 +811,7 @@ def score_numbered_half(
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
             firstiter_cc_support=options.consistency.firstiter_cc_support,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
+            relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
         )
         dense_result = _score_half_dense_in_bpref_scope(
             dense_half,

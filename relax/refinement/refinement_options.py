@@ -17,8 +17,13 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
-from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
+from relax.helpers.convergence import _APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
+from relax.helpers.env_flags import (
+    parse_env_choice,
+    parse_env_flag_or_false,
+    parse_env_optional_flag,
+    parse_env_true_flag,
+)
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 from relax.symmetry import canonicalize_rotational_symmetry
 
@@ -405,6 +410,74 @@ class DiagnosticEnvironment:
 
 
 @dataclass(frozen=True, kw_only=True)
+class LocalAdaptivePass2Support:
+    """The support of adaptive local pass 2: RELION's pruned parent, all parent samples (``full_parent``), or
+    the significant parent rotations with all their translations (``rotation_only``); and a broader support of
+    its denominator (``denominator_mode``), or None."""
+
+    full_parent: bool
+    rotation_only: bool
+    denominator_mode: Literal["full_parent", "rotation_only"] | None
+
+    def at(self, oversampling_order: int) -> LocalAdaptivePass2Support:
+        """This support where adaptive pass 2 runs (oversampling above 0); RELION's pruned parent elsewhere."""
+        if oversampling_order > 0:
+            return self
+        return LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScoringVariants:
+    """Scoring and M-step route variants chosen by environment variable, read once when the run's options are
+    built (``from_environ``, code rule 5); nothing below reads the variables again. They change what the run
+    computes, so they are run options, not diagnostics (code rule 9).
+
+    ``k1_relion_x_half_mstep`` / ``k_class_relion_x_half_mstep`` (``RELAX_K1_RELION_X_HALF_MSTEP``,
+    ``RELAX_K_CLASS_RELION_X_HALF_MSTEP``): RELION's x-half BPref M-step accumulators; K=1's default is on where
+    custom CUDA runs on a GPU, K-class's is on. ``local_adaptive_pass2`` (``RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT``,
+    ``_ROTATION_ONLY``, ``_DENOMINATOR_SUPPORT``; default RELION's pruned parent). ``approx_acc_rot_for_convergence``
+    (``RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE``): the support-width angular accuracy gates convergence.
+    """
+
+    k1_relion_x_half_mstep: bool
+    k_class_relion_x_half_mstep: bool
+    local_adaptive_pass2: LocalAdaptivePass2Support
+    approx_acc_rot_for_convergence: bool
+
+    def relion_x_half_mstep(self, *, k_class: bool) -> bool:
+        """Whether this run's K=1 (or, with ``k_class``, K-class) M-step uses RELION's x-half accumulators."""
+        return self.k_class_relion_x_half_mstep if k_class else self.k1_relion_x_half_mstep
+
+    @classmethod
+    def from_environ(cls) -> ScoringVariants:
+        from relax.dense import scoring_policy as sp
+
+        log = logging.getLogger(__name__)
+        k1 = parse_env_optional_flag(sp._K1_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K=1 RELION x-half M-step default")
+        k_class = parse_env_optional_flag(
+            sp._K_CLASS_RELION_X_HALF_MSTEP_ENV, logger=log, fallback="K-class RELION x-half M-step default"
+        )
+        full_parent = parse_env_optional_flag(
+            sp._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, logger=log, fallback="RELION pruned-parent local pass-2 default"
+        )
+        return cls(
+            k1_relion_x_half_mstep=sp._k1_relion_x_half_mstep_default_available() if k1 is None else k1,
+            k_class_relion_x_half_mstep=True if k_class is None else k_class,
+            local_adaptive_pass2=LocalAdaptivePass2Support(
+                full_parent=bool(full_parent),
+                rotation_only=parse_env_flag_or_false(sp._LOCAL_ADAPTIVE_PASS2_ROTATION_ONLY_ENV, logger=log),
+                denominator_mode=parse_env_choice(
+                    sp._LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
+                    sp.LOCAL_ADAPTIVE_PASS2_DENOMINATOR_MODES,
+                    logger=log,
+                    expected="rotation_only or full_parent",
+                ),
+            ),
+            approx_acc_rot_for_convergence=parse_env_true_flag(_APPROX_ACC_ROT_CONVERGENCE_ENV),
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
 class EngineDebugOptions:
     """Adjoint ablation, intermediate-dump, and test-harness controls."""
 
@@ -535,6 +608,8 @@ class RefinementOptions:
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
     precision: DensePrecisionPolicy = field(default_factory=lambda: _process_dense_precision())
+    # Read from the environment when the options are built; nothing below reads it again.
+    variants: ScoringVariants = field(default_factory=ScoringVariants.from_environ)
 
 
 def _process_dense_precision() -> DensePrecisionPolicy:

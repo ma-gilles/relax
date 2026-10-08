@@ -34,7 +34,7 @@ def prepare(planner, **overrides):
         relion_firstiter_cc_this_iter=False, firstiter_winner_take_all_this_iter=False,
         firstiter_cc_tree_rescore_max_margin=None,
         source_faithful_spectrum_norm=True, preserve_bpref_particle_order=True,
-        bpref_device_signature_active=False,
+        bpref_device_signature_active=False, use_relion_x_half_mstep=False,
         multi_shape_halves=False, coarse_sizing=(30.0, 100.0),
     )
     options.update(overrides)

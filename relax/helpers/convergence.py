@@ -1065,16 +1065,17 @@ def _env_bool(name: str, default: bool) -> bool:
     return default
 
 
-def _approx_acc_rot_policy_for_convergence() -> tuple[bool, str]:
-    """Return whether native support-width acc_rot may gate convergence.
+def _approx_acc_rot_policy_for_convergence(enabled: bool) -> tuple[bool, str]:
+    """Return whether native support-width acc_rot may gate convergence, and the reason logged.
 
     The support-width estimate is much cheaper than RELION's map-perturbation
     accuracy calculation, but it overstates certainty when posterior support
     collapses to a few samples.  Keep it diagnostic-only by default; callers
     can opt into the historical convergence gate with
-    RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE=1.
+    RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE=1, read once into
+    ``ScoringVariants.approx_acc_rot_for_convergence`` (``enabled``).
     """
-    if parse_env_true_flag(_APPROX_ACC_ROT_CONVERGENCE_ENV):
+    if enabled:
         return True, "forced-by-env"
     return False, "diagnostic-only-default"
 

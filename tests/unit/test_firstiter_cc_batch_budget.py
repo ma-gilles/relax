@@ -26,6 +26,7 @@ from relax.refinement import (
     optics_shapes,
 )
 from relax.refinement.half_inputs import HalfSet
+from relax.refinement.refinement_options import ScoringVariants
 from relax.relion import optics_aberrations
 
 
@@ -75,7 +76,7 @@ def _dense_owners(**values):
         half_scoring.DenseVariantPolicy(
             firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
             firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
-            k_class_enabled=values.pop("k_class_enabled"),
+            k_class_enabled=(k_class_enabled := values.pop("k_class_enabled")),
             relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
             firstiter_coarse_current_size=values.pop("firstiter_coarse_current_size", None),
             firstiter_fine_current_size=values.pop("firstiter_fine_current_size", None),
@@ -87,6 +88,7 @@ def _dense_owners(**values):
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             debug_iteration=values.pop("debug_iteration", None),
+            relion_x_half_mstep=ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
         ),
         optics_shapes.OpticsSpec(),
     )

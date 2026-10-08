@@ -4,6 +4,7 @@ import numpy as np
 
 from relax.classification import k_class
 from relax.refinement import half_scoring
+from relax.refinement.refinement_options import ScoringVariants
 
 
 def test_the_dense_pass2_switches_are_gone_and_refused():
@@ -68,6 +69,7 @@ def test_common_engine_keywords_are_the_sparse_pass2_keywords():
                 return_best_pose_details=True,
                 bpref_device_signature_active=False,
                 debug_iteration=3,
+                relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
             ),
         )
 

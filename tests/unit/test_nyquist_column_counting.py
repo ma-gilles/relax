@@ -217,8 +217,12 @@ def test_refinement_hands_the_engine_and_the_noise_update_the_rule(monkeypatch, 
 def test_local_search_policies_carry_the_rule():
     from relax.refinement.half_scoring import LocalExecutionPolicy
     from relax.refinement.local_search_iteration import LocalSearchKernelPolicy
+    from relax.refinement.refinement_options import LocalAdaptivePass2Support
 
-    assert LocalExecutionPolicy(disc_type="x", disable_adjoint_y=False, disable_adjoint_ctf=False).nyquist_column_counting == "relion"
+    pruned = LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None)
+    assert LocalExecutionPolicy(
+        disc_type="x", disable_adjoint_y=False, disable_adjoint_ctf=False, relion_x_half_mstep=False, adaptive_pass2=pruned
+    ).nyquist_column_counting == "relion"
     assert LocalSearchKernelPolicy(disc_type="x", current_size=8).nyquist_column_counting == "relion"
 
 

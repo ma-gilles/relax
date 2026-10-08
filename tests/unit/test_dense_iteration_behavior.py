@@ -16,6 +16,7 @@ from relax.diagnostics import local_debug
 from relax.helpers.convergence import _native_final_perturbation_healpix_order
 from relax.refinement import half_scoring
 from relax.refinement.local_search_iteration import _LocalSearchIterationResult
+from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 from relax.relion import relion_normalization
 
 pytestmark = pytest.mark.unit
@@ -400,7 +401,6 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         "build_local_adaptive_pass2_hypothesis_layout",
         lambda *_args, **_kwargs: fine_layout,
     )
-    monkeypatch.setattr(half_scoring, "_k1_relion_x_half_mstep_enabled", lambda: False)
     monkeypatch.setattr(half_scoring, "_run_local_search_iteration", fake_run_local_search_iteration)
 
     result = half_scoring._score_half_local(*local_half_owners(
@@ -442,6 +442,7 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         diagnostic_score_only=False,
         local_profile_history=[],
         adaptive_pass2_denominator_mode=denominator_mode,
+        relion_x_half_mstep=False,
     ))
 
     assert len(calls) == (2 if denominator_mode is None else 3)
@@ -522,10 +523,10 @@ def test_local_adaptive_support_preparation_keeps_variants_explicit(
                 search=SimpleNamespace(oversampling_order=1, symmetry="C1"),
                 perturbation=0.25,
             ),
-            SimpleNamespace(
-                adaptive_pass2_full_parent=full_parent,
-                adaptive_pass2_rotation_only=rotation_only,
-                adaptive_pass2_denominator_mode=denominator_mode,
+            LocalAdaptivePass2Support(
+                full_parent=full_parent,
+                rotation_only=rotation_only,
+                denominator_mode=denominator_mode,
             ),
             2,
             np.float32,
@@ -578,10 +579,13 @@ def test_native_final_perturbation_uses_active_local_order_but_preserves_global_
 def test_local_adaptive_pass2_defaults_to_relion_pruned_parent(monkeypatch):
     monkeypatch.delenv(scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, raising=False)
 
-    assert scoring_policy._local_adaptive_pass2_full_parent_enabled() is False
+    def full_parent():
+        return ScoringVariants.from_environ().local_adaptive_pass2.full_parent
+
+    assert full_parent() is False
 
     monkeypatch.setenv(scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "1")
-    assert scoring_policy._local_adaptive_pass2_full_parent_enabled() is True
+    assert full_parent() is True
 
     monkeypatch.setenv(scoring_policy._LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "0")
-    assert scoring_policy._local_adaptive_pass2_full_parent_enabled() is False
+    assert full_parent() is False

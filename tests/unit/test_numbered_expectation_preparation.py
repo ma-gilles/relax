@@ -12,6 +12,7 @@ from test_numbered_expectation import numbered_inputs
 
 from relax.refinement import expectation
 from relax.refinement.iteration_planning import ExpectationWindows
+from relax.refinement.refinement_options import LocalAdaptivePass2Support
 
 pytestmark = pytest.mark.unit
 
@@ -81,16 +82,11 @@ def test_dense_phase_preserves_full_grid_sentinels_and_distinct_support(
 
 
 @pytest.mark.parametrize('order', [0, 1])
-def test_local_phase_borrows_sampling_and_only_reads_adaptive_policy_for_parent_expansion(monkeypatch, order):
+def test_local_phase_borrows_sampling_and_carries_only_observation_policy(order):
     grid, windows, inputs = preparation_inputs(local=True, adaptive=order > 0)
-    events = []
-    monkeypatch.setattr(expectation, '_local_adaptive_pass2_full_parent_enabled', lambda: events.append('full') or True)
-    monkeypatch.setattr(expectation, '_local_adaptive_pass2_rotation_only_enabled', lambda: events.append('rotation') or True)
-    monkeypatch.setattr(expectation, '_local_adaptive_pass2_denominator_support_mode', lambda: events.append('denominator') or 'rotation')
     # Dense-only options and geometry may be absent on the local path.
     inputs['options'] = SimpleNamespace(local_search=SimpleNamespace(stop_after_local_search_score_only=True))
     phase = expectation.prepare_numbered_expectation(grid, object(), **inputs)
-    assert events == (['full', 'rotation', 'denominator'] if order else [])
     assert phase.sampling is inputs['local_sampling']
     assert phase.grid is grid
     diagnostics = phase.local_diagnostics
@@ -100,9 +96,13 @@ def test_local_phase_borrows_sampling_and_only_reads_adaptive_policy_for_parent_
     assert diagnostics.observer is inputs['observer']
     assert diagnostics.collect_local_search_profile is True
     assert diagnostics.diagnostic_score_only is True
-    assert diagnostics.adaptive_pass2_full_parent is bool(order)
-    assert diagnostics.adaptive_pass2_rotation_only is bool(order)
-    assert diagnostics.adaptive_pass2_denominator_mode == ('rotation' if order else None)
+
+
+def test_local_adaptive_pass2_support_applies_only_with_parent_oversampling():
+    """The run's adaptive pass-2 support (ScoringVariants) reaches scoring only where pass 2 oversamples."""
+    support = LocalAdaptivePass2Support(full_parent=True, rotation_only=True, denominator_mode='rotation_only')
+    assert support.at(1) is support
+    assert support.at(0) == LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None)
 
 
 @pytest.mark.parametrize('adaptive', [False, True])

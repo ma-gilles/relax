@@ -30,6 +30,39 @@ def parse_env_flag_or_false(name: str, *, logger: logging.Logger) -> bool:
     return False
 
 
+def parse_env_optional_flag(name: str, *, logger: logging.Logger, fallback: str) -> bool | None:
+    """Read a boolean token; None when unset or blank, so the caller applies its default.
+
+    An unrecognized value warns through the caller's logger, naming ``fallback`` (the default the caller
+    then uses), and is None too.
+    """
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    logger.warning("Ignoring invalid %s=%r; using %s", name, value, fallback)
+    return None
+
+
+def parse_env_choice(name: str, choices: dict, *, logger: logging.Logger, expected: str):
+    """Map a token through ``choices`` (keys lower case, ``-`` read as ``_``); None when unset or blank.
+
+    An unrecognized value warns through the caller's logger with ``expected`` and is None.
+    """
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return None
+    normalized = value.strip().lower().replace("-", "_")
+    if normalized in choices:
+        return choices[normalized]
+    logger.warning("Ignoring invalid %s=%r; expected %s", name, value, expected)
+    return None
+
+
 def parse_env_strict_flag(name: str, *, default: bool = False) -> bool:
     """Read a recognized boolean token, failing closed on anything else.
 

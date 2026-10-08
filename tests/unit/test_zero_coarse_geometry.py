@@ -163,10 +163,10 @@ def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration(monke
 
 
 def test_local_adaptive_overrides_are_resolved_before_half_scoring():
-    """Half scoring reads the local-adaptive overrides from its diagnostics record only.
+    """Half scoring reads the local-adaptive overrides from its execution record only.
 
-    The numbered phase resolves them into ``LocalDiagnosticPolicy`` (test_numbered_expectation_preparation);
-    the final local pass has no CPU run.
+    The run's ``ScoringVariants`` hold them; expectation and finalization put them in ``LocalExecutionPolicy``
+    (test_numbered_expectation_preparation); the final local pass has no CPU run.
     """
     for name in ("_local_adaptive_pass2_full_parent_enabled", "_local_adaptive_pass2_rotation_only_enabled",
                  "_local_adaptive_pass2_denominator_support_mode"):
@@ -236,7 +236,7 @@ def test_local_adaptive_parent_layout_exposes_five_story_inputs(monkeypatch):
 
 def test_local_adaptive_support_helper_exposes_six_story_inputs(monkeypatch):
     assert _parameters(half_scoring._prepare_local_adaptive_pass2_support) == [
-        "parent_layout", "significant_sample_indices", "sampling", "diagnostics", "parent_order",
+        "parent_layout", "significant_sample_indices", "sampling", "support", "parent_order",
         "fine_layout_dtype",
     ]
     samples = object()
@@ -248,7 +248,7 @@ def test_local_adaptive_support_helper_exposes_six_story_inputs(monkeypatch):
     (scorer,), (support,) = trace.calls("scorer"), trace.calls("support")
     assert support.args[0] is layout and support.args[1] is samples
     assert support.args[2] is scorer.args[1] and support.args[4] == 0
-    assert support.args[3] is scorer.args[5]
+    assert support.args[3] is scorer.args[4].adaptive_pass2
 
 
 @pytest.mark.parametrize("oversampling", [0, 1])

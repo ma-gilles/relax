@@ -10,7 +10,6 @@ by the ownership boundary.
 import logging
 import os
 from dataclasses import dataclass, field, replace
-from typing import Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -35,8 +34,6 @@ from relax.dense.scoring_policy import (
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
     _dense_global_scoring_dtype,
-    _k1_relion_x_half_mstep_enabled,
-    _k_class_relion_x_half_mstep_enabled,
     local_precision,
 )
 from relax.diagnostics import parity_dump as _parity_dump
@@ -75,6 +72,7 @@ from relax.refinement.optics_shapes import (
 )
 from relax.refinement.ports import RunObserver
 from relax.refinement.projector_preparation import PreparedProjector
+from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -261,6 +259,8 @@ class DenseExecutionPolicy:
     # per-image sums count the Hermitian pairs of the full-size Nyquist column.
     firstiter_cc_support: str = "relion"
     nyquist_column_counting: str = "relion"
+    # ScoringVariants.relion_x_half_mstep for this half's class count: RELION's x-half M-step accumulators.
+    relion_x_half_mstep: bool
 
 
 def _score_adaptive_kclass_dense(
@@ -531,7 +531,7 @@ def _score_adaptive_k1_dense(
             "adaptive engine (current_size=%s)",
             sampling.cs_for_engine,
         )
-    relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
+    relion_x_half_mstep = execution.relion_x_half_mstep
     if symmetry != "C1" and not relion_x_half_mstep:
         raise RuntimeError(
             f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
@@ -778,7 +778,7 @@ def _score_half_dense_one_shape(
         # K-class uses RELION's x-half BackProjector accumulator layout by
         # default, matching the K=1 parity path. The explicit selector can
         # still choose the dense full-volume path.
-        k_class_relion_x_half_mstep = _k_class_relion_x_half_mstep_enabled()
+        k_class_relion_x_half_mstep = execution.relion_x_half_mstep
         if symmetry != "C1" and not k_class_relion_x_half_mstep:
             raise RuntimeError(f"{symmetry} requires sparse RELION x-half BPref reconstruction")
         em_kwargs["mstep_relion_x_half"] = bool(k_class_relion_x_half_mstep)
@@ -890,7 +890,7 @@ def _score_half_dense_one_shape(
     n_trans_fine_for_collapse = None
     fine_rotations_for_pose = None
     if variant.relion_firstiter_cc_this_iter:
-        k1_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
+        k1_relion_x_half_mstep = execution.relion_x_half_mstep
         if symmetry != "C1" and not k1_relion_x_half_mstep:
             raise RuntimeError(
                 f"{symmetry} reconstruction requires RELION x-half BPref accumulation; "
@@ -1207,6 +1207,9 @@ class LocalExecutionPolicy:
     relion_translation_angle_scale: float = 1.0
     # RelionConsistencyOptions.nyquist_column_counting (see DenseExecutionPolicy).
     nyquist_column_counting: str = "relion"
+    # ScoringVariants: the K=1 x-half M-step, and adaptive pass 2's support (off without oversampling).
+    relion_x_half_mstep: bool
+    adaptive_pass2: LocalAdaptivePass2Support
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1219,9 +1222,6 @@ class LocalDiagnosticPolicy:
     local_profile_history: object
     debug_iteration: int | None = None
     bpref_device_signature_active: bool = False
-    adaptive_pass2_full_parent: bool = False
-    adaptive_pass2_rotation_only: bool = False
-    adaptive_pass2_denominator_mode: Literal["full_parent", "rotation_only"] | None = None
     observer: RunObserver = field(default_factory=RunObserver)
 
 
@@ -1278,7 +1278,7 @@ def _prepare_local_adaptive_pass2_support(
     parent_layout,
     significant_sample_indices,
     sampling: LocalSampling,
-    diagnostics: LocalDiagnosticPolicy,
+    support: LocalAdaptivePass2Support,
     parent_order: int,
     fine_layout_dtype,
 ):
@@ -1298,14 +1298,14 @@ def _prepare_local_adaptive_pass2_support(
             "rlnNrOfSignificantSamples-compatible counts are unavailable"
         )
 
-    parent_mode = "full_parent" if diagnostics.adaptive_pass2_full_parent else "pruned_parent"
-    if diagnostics.adaptive_pass2_full_parent:
+    parent_mode = "full_parent" if support.full_parent else "pruned_parent"
+    if support.full_parent:
         significant_sample_indices = [None] * len(significant_sample_indices)
         logger.info(
             "RELION local adaptive pass 2: expanding all parent samples; set %s=0 for pruned-parent support",
             _LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV,
         )
-    elif diagnostics.adaptive_pass2_rotation_only:
+    elif support.rotation_only:
         significant_sample_indices = _expand_significant_samples_to_full_parent_translations(
             significant_sample_indices,
             int(sampling.translations.shape[0]),
@@ -1331,9 +1331,8 @@ def _prepare_local_adaptive_pass2_support(
     )
 
     denominator_layout = None
-    denominator_mode = diagnostics.adaptive_pass2_denominator_mode
-    if denominator_mode is not None:
-        if denominator_mode == "full_parent":
+    if support.denominator_mode is not None:
+        if support.denominator_mode == "full_parent":
             denominator_significant_sample_indices = [None] * len(
                 pruned_parent_significant_sample_indices
             )
@@ -1353,7 +1352,7 @@ def _prepare_local_adaptive_pass2_support(
         log_local_denominator_support(
             logger,
             denominator_layout,
-            denominator_mode,
+            support.denominator_mode,
             _LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT_ENV,
         )
     log_local_adaptive_support(
@@ -1790,11 +1789,11 @@ def _score_half_local_one_shape(
             parent_layout,
             significant_sample_indices,
             sampling,
-            diagnostics,
+            execution.adaptive_pass2,
             parent_order,
             fine_local_layout_dtype,
         )
-    local_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
+    local_relion_x_half_mstep = execution.relion_x_half_mstep
     if diagnostics.diagnostic_score_only:
         local_relion_x_half_mstep = False
     if sampling.search.symmetry != "C1" and not diagnostics.diagnostic_score_only and not local_relion_x_half_mstep:
