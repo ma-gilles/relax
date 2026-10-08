@@ -75,13 +75,11 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
 
 
 def test_benchmark_ledger_holds_the_shared_fields_and_the_run_trajectories(tmp_path):
-    archive = result_files.ArchiveReport(git_provenance={"head": "x"}, local_profile_rows=[], global_profile_rows=[],
-                                         setup_phase_seconds={"state_init": 0.5})
     result = refinement_result(history=RefinementHistory(
         current_sizes=[12], wall_times=[1.0], pixel_resolutions=[3.0], ave_Pmax_trajectory=[0.5],
     ))
     path = tmp_path / "ledger.json"
-    result_files.write_benchmark_ledger(path, result, _report(tmp_path), archive)
+    result_files.write_benchmark_ledger(path, result, _report(tmp_path), {"head": "x"})
     ledger = json.loads(path.read_text())
     assert set(ledger) == SHARED | {
         "git_provenance", "max_iter", "random_seed", "random_seed_source", "n_iterations_emitted", "n_wall_times",

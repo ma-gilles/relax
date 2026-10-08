@@ -1384,7 +1384,7 @@ def main(command=None):
         use_fresh_auto_refine_order=use_fresh_auto_refine_order,
     )
 
-    archive_report = write_refinement_archive(
+    git_provenance = write_refinement_archive(
         result,
         out_path=os.path.join(args.output, "refinement_results.npz"),
         metadata=save_dict,
@@ -1394,7 +1394,7 @@ def main(command=None):
     )
 
     if args.benchmark_ledger_json:
-        write_benchmark_ledger(args.benchmark_ledger_json, result, report, archive_report)
+        write_benchmark_ledger(args.benchmark_ledger_json, result, report, git_provenance)
 
     write_final_maps(
         result.maps,

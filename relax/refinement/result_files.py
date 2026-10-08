@@ -13,7 +13,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -97,15 +97,6 @@ def final_pass_result(
     )
 
 
-class ArchiveReport(NamedTuple):
-    """Reported run provenance and profiles reused by the benchmark ledger."""
-
-    git_provenance: dict
-    local_profile_rows: list
-    global_profile_rows: list
-    setup_phase_seconds: dict
-
-
 ## same this should be moved elsewhere
 def _jsonable_profile_value(value):
     if value is None or isinstance(value, (str, bool, int, float)):
@@ -131,6 +122,12 @@ def profile_rows_for_json(rows):
         for row in rows
         if isinstance(row, dict)
     ]
+
+
+def _setup_phase_seconds(fields) -> dict:
+    """The set-up phases' cumulative seconds of an archive mapping (``RefinementResult.archive_fields()``), by
+    phase name, as the archive and the reports write them."""
+    return {str(key): float(value) for key, value in fields.get("setup_phase_seconds", {}).items()}
 
 
 def _rotation_posterior_arrays(key, posterior_per_half):
@@ -358,8 +355,9 @@ def write_refinement_archive(
     half_indices,
     n_images: int,
     skip_large_outputs: bool,
-) -> ArchiveReport:
-    """Append result arrays to caller-owned metadata and write its NPZ archive.
+) -> dict:
+    """Append result arrays to caller-owned metadata and write its NPZ archive; return the checkout's git
+    provenance it recorded (``git_worktree_provenance``), which the benchmark ledger repeats.
 
     The caller retains the payload through subsequent reporting. Half indices
     map half-order poses and class histories back to original image rows.
@@ -482,10 +480,6 @@ def write_refinement_archive(
 
     iteration_history.add_class_history_artifacts(save_dict, fields, half1_idx, half2_idx, n_images)
 
-    local_profile_rows = profile_rows_for_json(fields.get("local_profile_history", []))
-    global_profile_rows = profile_rows_for_json(fields.get("global_profile_history", []))
-    setup_phase_seconds = {str(key): float(value) for key, value in fields.get("setup_phase_seconds", {}).items()}
-
     iteration_history.add_refinement_history_artifacts(save_dict, fields, half1_idx, half2_idx, n_images)
 
     git_provenance = git_worktree_provenance()
@@ -499,6 +493,7 @@ def write_refinement_archive(
 
     # Save final merged volume (Fourier space)
     save_dict["final_mean_ft"] = np.asarray(fields["mean"])
+    setup_phase_seconds = _setup_phase_seconds(fields)
     if setup_phase_seconds:
         save_dict["setup_phase_names"] = np.asarray(list(setup_phase_seconds.keys()))
         save_dict["setup_phase_cumulative_s"] = np.asarray(list(setup_phase_seconds.values()), dtype=np.float64)
@@ -518,12 +513,7 @@ def write_refinement_archive(
         _savez_deflate_fast(out_path, save_dict)
         logger.info("Results saved to %s", out_path)
 
-    return ArchiveReport(
-        git_provenance=git_provenance,
-        local_profile_rows=local_profile_rows,
-        global_profile_rows=global_profile_rows,
-        setup_phase_seconds=setup_phase_seconds,
-    )
+    return git_provenance
 
 
 def write_final_maps(
@@ -687,9 +677,7 @@ def write_profile_only_summary(result: RefinementResult, report: RunReport, *, b
         "profile_only": True,
         "stop_after_local_search_score_only": bool(fields.get("stop_after_local_search_score_only", False)),
         "diagnostic_single_half": bool(report.diagnostic_single_half),
-        "setup_phase_seconds": {
-            str(key): float(value) for key, value in fields.get("setup_phase_seconds", {}).items()
-        },
+        "setup_phase_seconds": _setup_phase_seconds(fields),
         "local_profile_rows": local_profile_rows,
         "global_profile_rows": profile_rows_for_json(fields.get("global_profile_history", [])),
         "state_swap_probe": report.state_swap_probe,
@@ -715,14 +703,14 @@ def write_profile_only_summary(result: RefinementResult, report: RunReport, *, b
     return profile_path
 
 
-def write_benchmark_ledger(path, result: RefinementResult, report: RunReport, archive_report: ArchiveReport) -> None:
+def write_benchmark_ledger(path, result: RefinementResult, report: RunReport, git_provenance: dict) -> None:
     """Write a completed run's benchmark ledger: the shared report fields, the run's trajectories, its sampling
-    and the profiles and provenance its archive reported."""
+    and profiles, and the git provenance its archive recorded."""
     fields = result.archive_fields()  # the report reads the saved-format mapping
     initial_sampling, frozen_boundary = report.initial_sampling, report.frozen_boundary
     ledger = {
         **_report_fields(fields, report),
-        "git_provenance": archive_report.git_provenance,
+        "git_provenance": git_provenance,
         "max_iter": int(report.max_iter),
         "random_seed": int(report.random_seed),
         "random_seed_source": str(report.random_seed_source),
@@ -736,9 +724,9 @@ def write_benchmark_ledger(path, result: RefinementResult, report: RunReport, ar
         "finest_healpix_order": int(initial_sampling.fine_order),
         "max_healpix_order": None if initial_sampling.max_order is None else int(initial_sampling.max_order),
         "max_healpix_order_source": str(initial_sampling.max_order_source),
-        "setup_phase_seconds": archive_report.setup_phase_seconds,
-        "local_profile_rows": archive_report.local_profile_rows,
-        "global_profile_rows": archive_report.global_profile_rows,
+        "setup_phase_seconds": _setup_phase_seconds(fields),
+        "local_profile_rows": profile_rows_for_json(fields.get("local_profile_history", [])),
+        "global_profile_rows": profile_rows_for_json(fields.get("global_profile_history", [])),
         "frozen_boundary_dir": None if frozen_boundary is None else str(frozen_boundary.source_dir),
         "frozen_boundary_manifest_sha256": (
             None if frozen_boundary is None else frozen_boundary.source_manifest_sha256

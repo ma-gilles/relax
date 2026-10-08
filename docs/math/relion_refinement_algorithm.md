@@ -1018,8 +1018,8 @@ or performance equivalence.
 
 [`write_refinement_archive`](../../relax/refinement/result_files.py) appends the
 established result-array schema to caller-owned run metadata and writes the NPZ
-archive. Its `ArchiveReport` supplies the same computed provenance/profile values
-to the benchmark ledger. Half-order to original-image mappings retain the
+archive. It returns the git provenance it recorded, which the benchmark ledger
+repeats; the ledger derives the profile rows and set-up times from the same result. Half-order to original-image mappings retain the
 existing history helpers. Metadata, object-array layouts and precision are
 unchanged.
 
