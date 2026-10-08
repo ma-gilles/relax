@@ -65,6 +65,7 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
 
     from relax.diagnostics import observers
     from relax.refinement import iteration_loop as iteration_loop_module
+    from relax.refinement import maximization as maximization_module
     from relax.refinement import mean_helpers as mean_helpers_module
 
     maximization, operation, solve, lowpass, flatten = _NUMBERED_SEQUENCES[n_classes]
@@ -72,7 +73,7 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop_module, "ReconstructionSettings", "settings")
     trace.wrap(iteration_loop_module, maximization, "maximization")
-    trace.wrap(iteration_loop_module, operation, "operation")
+    trace.wrap(maximization_module, operation, "operation")
     for name, label in (
         (solve, "solve"), (lowpass, "lowpass"),
         ("_numbered_solvent_mask", "mask"), ("_make_relion_solvent_mask", "mask_builder"), (flatten, "flatten"),

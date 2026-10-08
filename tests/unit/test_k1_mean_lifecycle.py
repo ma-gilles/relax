@@ -11,7 +11,7 @@ from helpers.tiny_refinement import VOLUME_SHAPE, CallTrace, frame_holds, run_ti
 from relax.dense.score_outputs import PerHalfOutputs
 from relax.diagnostics.observers import IntermediatesObserver
 from relax.reconstruction import regularization_relion
-from relax.refinement import finalization, iteration_loop, mean_helpers
+from relax.refinement import finalization, iteration_loop, maximization, mean_helpers
 from relax.refinement.iteration_snapshot import IterationSnapshot
 from relax.refinement.refinement_options import CheckpointOptions
 
@@ -52,9 +52,9 @@ def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
         assert entry["model"].maps == [None, None]
 
     trace.wrap(iteration_loop, "k1_maximization", before=maximization_starts)
-    trace.wrap(iteration_loop, "_snapshot_and_release_previous_k1_means")
-    trace.wrap(iteration_loop, "estimate_split_half_prior", before=previous_means_released)
-    trace.wrap(iteration_loop, "reconstruct_numbered_k1_halfmaps", before=previous_means_released)
+    trace.wrap(maximization, "_snapshot_and_release_previous_k1_means")
+    trace.wrap(maximization, "estimate_split_half_prior", before=previous_means_released)
+    trace.wrap(maximization, "reconstruct_numbered_k1_halfmaps", before=previous_means_released)
     trace.wrap(regularization_relion, "compute_relion_fsc_from_backprojector", "fsc")
     trace.wrap(regularization_relion, "compute_relion_tau2_from_weights", "tau2")
     run_tiny_refinement(monkeypatch, init_volume=start_volume)

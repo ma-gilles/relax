@@ -8,7 +8,7 @@ from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.diagnostics import observers
 from relax.diagnostics import reconstruction as diagnostics
-from relax.refinement import iteration_loop
+from relax.refinement import iteration_loop, maximization
 from relax.refinement.mean_helpers import ReconstructionSettings
 from relax.refinement.refinement_options import ReconstructionPrograms
 
@@ -118,13 +118,13 @@ def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatc
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, "check_half_accumulators_before_join", "audit")
     trace.wrap(iteration_loop, "class_maximization", "class")
-    trace.wrap(iteration_loop, "_combine_optional_half_accumulators", "combine")
+    trace.wrap(maximization, "_combine_optional_half_accumulators", "combine")
     trace.wrap(iteration_loop, "k1_maximization", "k1")
-    trace.wrap(iteration_loop, "join_half_accumulators_at_low_resolution", "join")
-    trace.wrap(iteration_loop, "_snapshot_and_release_previous_k1_means", "release")
+    trace.wrap(maximization, "join_half_accumulators_at_low_resolution", "join")
+    trace.wrap(maximization, "_snapshot_and_release_previous_k1_means", "release")
     monkeypatch.setattr(observers, "write_bpref_accumulators", lambda *args, **kwargs: None)
     trace.wrap(observers, "write_bpref_accumulators", "dump")
-    trace.wrap(iteration_loop, "estimate_split_half_prior", "prior")
+    trace.wrap(maximization, "estimate_split_half_prior", "prior")
     run_tiny_refinement(monkeypatch, n_classes=n_classes, final_after_max_iter=False,
                         observer=observers.BpRefAccumulatorObserver(accum_dir=str(tmp_path)))
 

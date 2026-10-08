@@ -16,6 +16,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
 | `iteration_planning.py`, `convergence.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
 | `expectation.py`, `expectation_batches.py`, `half_scoring.py`, `half_inputs.py`, `local_search_iteration.py`, `local_sampling.py`, `firstiter_cc.py` | preparing and running a half's expectation |
+| `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |
 | `mean_helpers.py`, `noise_updates.py` | numbered prior estimation, reconstruction and noise updates |
 | `finalization.py`, `final_sampling.py`, `final_reconstruction.py` | the final all-data pass |
 | `run_files.py`, `result_files.py` | RELION's per-iteration run files and `--continue`; final archives and maps |

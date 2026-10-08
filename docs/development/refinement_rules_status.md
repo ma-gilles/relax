@@ -162,7 +162,7 @@ accepted, with the reason:
 | `expectation.prepare_numbered_expectation` | 18 | No record covers more than two of its inputs. |
 | `mean_helpers._reconstruct_volume_eager` | 18 | Six fields equal `ReconstructionSettings`'s at the production calls; those calls go through `ReconstructionSettings.reconstruct`, which forwards them. The solver keeps its raw-geometry signature for the 21 tests and the scripts that call it directly. |
 | `convergence.update_iteration_convergence` | 16 | Separate inputs of one update; the controller passes the K=1/Class3D differences as values (`sampling_decision_now`, `class_change_fraction`) and applies the K=1 follower-counter reset itself. |
-| `iteration_loop.class_maximization`, `k1_maximization` | 16 | M-step operands plus iteration scalars; `per_half` would carry posterior arrays past their release (rule 3). |
+| `maximization.class_maximization`, `k1_maximization` | 16 | M-step operands plus iteration scalars; `per_half` would carry posterior arrays past their release (rule 3). |
 | `SnapshotCapture.finish`, `finish_k1`, `finish_class` | 13-15 | One snapshot field per parameter, each from a different owner. |
 | `iteration_planning.plan_halfmap_image_size`, `plan_class_image_size` | 10-14 | Scheduling inputs; `ImageGeometry` would change the pixel size's scalar type (rule 1). RELION's growth latch is a pair. |
 | `expectation.prepare_final_half` | 13 | Operands plus settings. |
