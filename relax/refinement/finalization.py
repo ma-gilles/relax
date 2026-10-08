@@ -61,8 +61,7 @@ from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.result_files import final_pass_result
-from relax.refinement.tomo_half import local_tomo_sampling
-from relax.refinement.tomo_half import score_tomo_half_in_loop as _score_tomo_half_in_loop
+from relax.refinement.tomo_half import local_tomo_sampling, score_tomo_half_in_loop
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.relion.relion_metadata import _relion_metadata_translations
 
@@ -371,12 +370,6 @@ def run_final_all_data(
         bpref_diagnostics.clear_bpref_contribution_dump_context()
         final_half_t0 = time.time()
         logger.info(
-            "BPREF_DEVICE_SIGNATURE_ACTIVATION iteration=%d half=%d "
-            "final_all_data=true active=false",
-            iteration + 1,
-            half.index + 1,
-        )
-        logger.info(
             "RELION final all-data half-%d start: images=%d current_size=%d "
             "healpix_order=%d n_rot=%d n_trans=%d local_search=%s",
             half.index + 1,
@@ -404,7 +397,7 @@ def run_final_all_data(
                 raise NotImplementedError(
                     "a subtomogram final all-data pass without local search needs the global direction priors"
                 )
-            final_result = _score_tomo_half_in_loop(
+            final_result = score_tomo_half_in_loop(
                 HalfScoringData(
                     particles=half,
                     reference=final_join_means[half.index],
@@ -536,9 +529,7 @@ def run_final_all_data(
     )
     final_reconstruct_t0 = time.time()
     # The one mode decision of the final reconstruction. Each branch is its mode's whole sequence over the
-    # steps of final_reconstruction.py, in order: accumulators, prior, resolution, maps. Both bind final_maps,
-    # final_tau2_update_details, final_iter_fsc, final_model_maps and
-    # the two mode operands of final_pass_result.
+    # steps of final_reconstruction.py, in order: accumulators, prior, resolution, maps.
     #
     # RELION calls updateCurrentResolution after the final all-data
     # iteration too (ml_optimiser_mpi.cpp:4329), from that iteration's
@@ -743,7 +734,6 @@ def run_final_all_data(
         maps=final_model_maps,
         replay=None,
         follower_scale=follower_setup.result_outputs(history),
-        # RELION-mode specific outputs
         convergence_state=state,
         history=history,
         numbered=None,
