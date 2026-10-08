@@ -5128,8 +5128,9 @@ class TestRelionModeSmokeTest:
         assert len(final_calls) == 5
         assert [call[0]["tau"] is None for call in final_calls] == [True, True, False, False, False]
         assert all(call[0]["current_size"] == IMAGE_SHAPE[0] for call in final_calls)
-        assert all(call[0]["use_spherical_mask"] is True for call in final_calls[:2])
-        assert all(call[0]["grid_correct"] is True for call in final_calls[:2])
+        # The unfiltered halves take the solver's spherical mask and grid correction (its defaults).
+        assert all(call[0].get("use_spherical_mask", True) is True for call in final_calls[:2])
+        assert all(call[0].get("grid_correct", True) is True for call in final_calls[:2])
         products = [*result.maps.unfiltered_means, result.maps.mean, *result.maps.means]
         for product, (_, reconstructed) in zip(products, final_calls, strict=True):
             assert_matches(np.asarray(product), np.asarray(reconstructed).reshape(-1))

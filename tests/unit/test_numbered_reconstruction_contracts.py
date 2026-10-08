@@ -65,9 +65,8 @@ class _Recorder:
             assert kwargs["dtype"] == dtype
             return jnp.ones((2, 2, 2), dtype=dtype)
 
-        def flatten(value, _mask, _shape, *, half_index):
+        def flatten(value, _mask, _shape):
             self.events.append("flatten")
-            assert half_index == len(self.masks) - 1
             return value
 
         monkeypatch.setattr(mean_helpers, "_finish_host_staged_reconstruction", lambda value, *_args: value)

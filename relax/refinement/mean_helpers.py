@@ -543,7 +543,6 @@ class ClassPriorAggregation:
     shells: object
     data_vs_prior: np.ndarray
     details_per_class: list[dict]
-    source: str
 
 
 def estimate_class_priors(
@@ -553,7 +552,6 @@ def estimate_class_priors(
     settings: ReconstructionSettings,
     *,
     half_denominators,
-    prior_tau2,
     halves,
     n_classes,
     iteration,
@@ -588,16 +586,6 @@ def estimate_class_priors(
     # The prior shells an input source supplies (``ports.ClassTau2``), or None: the previous references'.
     kclass_tau2_source = class_tau2.source
     observer = RunObserver() if observer is None else observer
-    if iteration == 0:
-        mean_variance_arr = jnp.asarray(prior_tau2)
-        expected_shape = (n_classes, int(np.prod(settings.volume_shape)))
-        if tuple(mean_variance_arr.shape) == expected_shape:
-            log.info(
-                "Class3D initial per-class tau2 volume available at iter=%d with shape=%s; "
-                "M-step tau2 is recomputed from previous Iref power spectra",
-                iteration + 1,
-                tuple(mean_variance_arr.shape),
-            )
     # CTF-premultiplied images: RELION's average CTF^2 correction of data_vs_prior
     # (setAverageCTF2; Class3D has no split halves and does not fix tau2). It averages over
     # images, so a subtomogram half counts its tilt images, each with its particle's scale.
@@ -667,16 +655,18 @@ def estimate_class_priors(
         shells=mean_signal_variance_shells,
         data_vs_prior=data_vs_prior_iter,
         details_per_class=tau2_update_details_per_class,
-        source=kclass_tau2_source,
     )
 
 
-def _merged_mean_from_halves(means, class_weights=None):
-    merged = (means[0] + means[1]) / 2
-    if class_weights is None:
-        return merged, None
-    class_weights_jax = jnp.asarray(class_weights, dtype=merged.real.dtype)
-    return jnp.sum(class_weights_jax[:, None] * merged, axis=0), merged
+def merged_half_map(means):
+    """The mean of the two half maps (or half class stacks)."""
+    return (means[0] + means[1]) / 2
+
+
+def weighted_class_merge(class_means, class_weights):
+    """One map from a ``(K, V)`` class stack, weighted by the ``(K,)`` class weights."""
+    class_weights_jax = jnp.asarray(class_weights, dtype=class_means.real.dtype)
+    return jnp.sum(class_weights_jax[:, None] * class_means, axis=0)
 
 
 def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d):
@@ -796,6 +786,9 @@ def _reconstruct_volume_eager(
     letting the local exact path keep its accumulators in packed half-volume
     layout until the final iDFT boundary. ``gridding_kernel`` is the real-space
     correction window: RELION's ``"radial"`` one or the ``"separable"`` per-axis product.
+    relax always leaves ``use_spherical_mask``, ``grid_correct`` and ``return_real_space`` at their
+    defaults; the parameters remain for scripts/replay_bpref_contribution_bundle.py and
+    scripts/run_k_class_parity.py, which set them.
     """
     if gridding_kernel not in _RECOVAR_GRIDDING_CORRECT:
         raise ValueError(f"gridding_kernel must be 'radial' or 'separable', got {gridding_kernel!r}")
@@ -980,8 +973,6 @@ def _reconstruct_volume_eager(
             filter_input_donated,
         )
 
-        stage_a_numerator = None
-        stage_a_numerator_source = "device"
         if retained_device_numerator is not None:
             if tuple(retained_device_numerator.shape) != tuple(Ft_y.shape):
                 raise ValueError(
@@ -994,7 +985,6 @@ def _reconstruct_volume_eager(
                     f"{retained_device_numerator.dtype} != {Ft_y.dtype}"
                 )
             stage_a_numerator = retained_device_numerator
-            stage_a_numerator_source = "retained_join"
             logger.info(
                 "RELION Stage A reusing retained half-0 device numerator: shape=%s dtype=%s",
                 tuple(retained_device_numerator.shape),
@@ -1009,7 +999,6 @@ def _reconstruct_volume_eager(
             stage_a_numerator = jnp.asarray(Ft_y)
             stage_a_numerator.block_until_ready()
             if isinstance(Ft_y, np.ndarray):
-                stage_a_numerator_source = "staged_numpy"
                 logger.info(
                     "RELION Stage A staging host numerator for donation: shape=%s dtype=%s",
                     tuple(stage_a_numerator.shape),
@@ -1030,14 +1019,6 @@ def _reconstruct_volume_eager(
         _delete_device_array(stage_a_numerator)
         _delete_device_array(regularized_filter_device)
         _delete_device_array(stage_a_filter)
-        logger.info(
-            "RELION Stage A released donated device numerator after host transfer: "
-            "source=%s output_deleted=%s numerator_deleted=%s filter_deleted=%s",
-            stage_a_numerator_source,
-            _device_array_is_deleted(wiener_half_device),
-            _device_array_is_deleted(stage_a_numerator),
-            _device_array_is_deleted(regularized_filter_device),
-        )
         del wiener_half_device
         del stage_a_numerator
         del regularized_filter_device
@@ -1552,7 +1533,6 @@ def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
         settings.volume_shape,
         radius=flatten_radius,
         radius_p=flatten_radius + settings.width_mask_edge,
-        offset=jnp.zeros(3),
         dtype=dtype,
     )
 
@@ -1663,10 +1643,7 @@ def reconstruct_numbered_k1_halfmaps(
                 means[k],
                 solvent_mask,
                 settings.volume_shape,
-                half_index=k,
             )
-            if _large_relion_solvent_mask_uses_compiled_builder(settings.volume_shape):
-                solvent_mask = None
     if relion_firstiter_cc_this_iter:
         _log_first_cc_lowpass(settings)
     return means
@@ -1980,7 +1957,7 @@ def _host_irfft_and_center_crop(
     reconstruction_shape,
     output_shape,
     *,
-    workers=None,
+    workers: int,
 ):
     """Run a normalized c64-to-f32 inverse FFT and retain only its center crop.
 
@@ -2010,7 +1987,6 @@ def _host_irfft_and_center_crop(
     fftw_half = np.asarray(fftw_half, dtype=np.complex64, order="C").reshape(
         expected_half_shape,
     )
-    workers = _relion_host_fft_workers() if workers is None else max(1, int(workers))
     real_raw = scipy_fft.irfftn(
         fftw_half,
         s=reconstruction_shape,
@@ -2036,7 +2012,6 @@ def _host_irfft_and_center_crop(
         dtype=np.float32,
         order="C",
     )
-    del real_raw
     return cropped
 
 
@@ -2293,8 +2268,8 @@ def _compiled_relion_solvent_mask(volume_shape, *, dtype=None):
     return build
 
 
-def _make_relion_solvent_mask(volume_shape, *, radius, radius_p, offset, dtype=None):
-    """Build a RELION solvent mask without materializing a giant coordinate stack."""
+def _make_relion_solvent_mask(volume_shape, *, radius, radius_p, dtype):
+    """Build a RELION solvent mask, centred, without materializing a giant coordinate stack."""
 
     volume_shape = tuple(int(size) for size in volume_shape)
     if not _large_relion_solvent_mask_uses_compiled_builder(volume_shape):
@@ -2302,7 +2277,7 @@ def _make_relion_solvent_mask(volume_shape, *, radius, radius_p, offset, dtype=N
             volume_shape,
             radius=radius,
             radius_p=radius_p,
-            offset=offset,
+            offset=jnp.zeros(3),
             dtype=dtype,
         )
 
@@ -2312,13 +2287,10 @@ def _make_relion_solvent_mask(volume_shape, *, radius, radius_p, offset, dtype=N
         volume_shape,
         estimated_bytes,
     )
-    solvent_mask = _compiled_relion_solvent_mask(
-        volume_shape,
-        **({"dtype": dtype} if dtype is not None else {}),
-    )(
+    solvent_mask = _compiled_relion_solvent_mask(volume_shape, dtype=dtype)(
         radius,
         radius_p,
-        offset,
+        jnp.zeros(3),
     )
     solvent_mask.block_until_ready()
     logger.info(
@@ -2333,8 +2305,6 @@ def _apply_relion_solvent_flatten_k1(
     volume_ft_flat,
     solvent_mask,
     volume_shape,
-    *,
-    half_index,
 ):
     """Apply the K=1 solvent mask and host-stage box-scale FFT results."""
 
@@ -2355,22 +2325,5 @@ def _apply_relion_solvent_flatten_k1(
     _delete_device_array(flattened)
     _delete_device_array(vol_real)
     _delete_device_array(solvent_mask)
-    output_device_deleted = _device_array_is_deleted(flattened)
-    vol_real_deleted = _device_array_is_deleted(vol_real)
-    solvent_mask_deleted = _device_array_is_deleted(solvent_mask)
-    del flattened, vol_real, solvent_mask
     gc.collect()
-    logger.info(
-        "RELION box-scale solvent flatten lifecycle: half=%d shape=%s "
-        "output_ready=True output_host=True output_device_deleted=%s "
-        "vol_real_deleted=%s solvent_mask_deleted=%s output_dtype=%s "
-        "output_c_contiguous=%s",
-        int(half_index) + 1,
-        tuple(int(size) for size in volume_shape),
-        output_device_deleted,
-        vol_real_deleted,
-        solvent_mask_deleted,
-        flattened_host.dtype,
-        bool(flattened_host.flags.c_contiguous),
-    )
     return flattened_host

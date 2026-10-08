@@ -60,8 +60,8 @@ def test_box800_relion_solvent_mask_routes_to_compiled_builder(monkeypatch, capl
     expected_bytes = 12_288_000_000
     calls = []
 
-    def fake_factory(static_shape):
-        calls.append(("factory", static_shape))
+    def fake_factory(static_shape, *, dtype):
+        calls.append(("factory", static_shape, dtype))
 
         def fake_build(radius, radius_p, offset):
             calls.append(("build", radius, radius_p, tuple(np.asarray(offset))))
@@ -80,14 +80,14 @@ def test_box800_relion_solvent_mask_routes_to_compiled_builder(monkeypatch, capl
         volume_shape,
         radius=np.float64(100.0),
         radius_p=np.float64(105.0),
-        offset=jnp.zeros(3, dtype=jnp.float64),
+        dtype=jnp.float64,
     )
 
     assert mean_helpers._relion_solvent_mask_unfused_coordinate_bytes(volume_shape) == expected_bytes
     assert mean_helpers._large_relion_solvent_mask_uses_compiled_builder(volume_shape)
     assert not mean_helpers._large_relion_solvent_mask_uses_compiled_builder((256, 256, 256))
     assert calls == [
-        ("factory", volume_shape),
+        ("factory", volume_shape, jnp.float64),
         ("build", np.float64(100.0), np.float64(105.0), (0.0, 0.0, 0.0)),
     ]
     assert_matches(np.asarray(result), np.asarray([7.0]))
@@ -122,7 +122,6 @@ def test_box_scale_solvent_flatten_lifecycle_is_bitwise_exact(monkeypatch, volum
         volume_actual,
         mask_actual,
         volume_shape,
-        half_index=0,
     )
 
     assert isinstance(actual, np.ndarray)
@@ -135,7 +134,7 @@ def test_box_scale_solvent_flatten_lifecycle_is_bitwise_exact(monkeypatch, volum
     assert mask_actual.is_deleted()
 
 
-def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch, caplog):
+def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch):
     events = []
 
     class FakeBuffer:
@@ -191,13 +190,11 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch, ca
         lambda _shape: True,
     )
     monkeypatch.setattr(mean_helpers.gc, "collect", lambda: events.append(("gc",)))
-    caplog.set_level("INFO", logger=mean_helpers.__name__)
 
     result = mean_helpers._apply_relion_solvent_flatten_k1(
         volume_ft,
         solvent_mask,
         (800, 800, 800),
-        half_index=1,
     )
 
     assert isinstance(result, np.ndarray)
@@ -218,12 +215,6 @@ def test_box_scale_solvent_flatten_releases_dead_inputs_in_order(monkeypatch, ca
         ("delete", "solvent_mask"),
         ("gc",),
     ]
-    assert (
-        "RELION box-scale solvent flatten lifecycle: half=2 shape=(800, 800, 800) "
-        "output_ready=True output_host=True output_device_deleted=True "
-        "vol_real_deleted=True solvent_mask_deleted=True output_dtype=complex128 "
-        "output_c_contiguous=True"
-    ) in caplog.text
 
 
 def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeypatch):
@@ -345,7 +336,6 @@ def test_small_solvent_flatten_keeps_async_default_path(monkeypatch):
         volume_ft,
         solvent_mask,
         (8, 8, 8),
-        half_index=0,
     )
 
     assert result is flattened

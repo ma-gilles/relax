@@ -370,7 +370,6 @@ class TestReconstructionOwnership:
         assert all((value.is_deleted() for value in stage_outputs))
         assert all((value.is_deleted() for value in regularized_filters))
         assert "RELION Stage A staging host numerator for donation" in caplog.text
-        assert "source=staged_numpy output_deleted=True numerator_deleted=True filter_deleted=True" in caplog.text
 
 
 def test_relion_reconstruction_tau_shells_match_full_prior_bitwise():

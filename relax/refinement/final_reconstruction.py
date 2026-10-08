@@ -63,8 +63,6 @@ def reconstruct_unfiltered_halfmaps(
                 minres_map=settings.minres_map,
                 current_size=current_size,
                 accumulator_volume_shape=accumulator_shape,
-                use_spherical_mask=True,
-                grid_correct=True,
                 gridding_kernel=settings.gridding_kernel,
             ).reshape(-1)
         )
@@ -203,11 +201,10 @@ def reconstruct_final_class_maps(
         ],
         axis=0,
     )
-    merged = jnp.sum(
-        jnp.asarray(class_weights, dtype=class_means.real.dtype)[:, None] * class_means,
-        axis=0,
+    return FinalMaps(
+        merged=mean_helpers.weighted_class_merge(class_means, class_weights),
+        halves=[class_means, class_means],
     )
-    return FinalMaps(merged=merged, halves=[class_means, class_means])
 
 
 def reconstruct_final_halfmaps(

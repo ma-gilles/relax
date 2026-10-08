@@ -129,7 +129,6 @@ from relax.refinement.mean_helpers import (
     _class_weights_from_posterior,
     _host_tau2_volumes,
     _initialize_class_log_priors,
-    _merged_mean_from_halves,
     _normalize_initial_means,
     _snapshot_and_release_previous_k1_means,
     _stack_class_tau2_update_details,
@@ -140,6 +139,7 @@ from relax.refinement.mean_helpers import (
     estimate_split_half_prior,
     initialize_reference_model,
     join_half_accumulators_at_low_resolution,
+    merged_half_map,
     reconstruct_numbered_class_maps,
     reconstruct_numbered_k1_halfmaps,
     reconstruct_unregularized_class_means,
@@ -149,6 +149,7 @@ from relax.refinement.mean_helpers import (
     shared_tau2_per_half,
     taper_first_cc_class_prior,
     taper_first_cc_k1_prior,
+    weighted_class_merge,
 )
 from relax.refinement.noise_updates import (
     _mean_noise_variance,
@@ -381,7 +382,7 @@ def class_maximization(
     reconstruction; after a first-iteration CC pass, taper the reported curves. The caller records the
     returned data-vs-prior curve in the history and installs it as the next iteration's scheduling curve.
     ``class_tau2`` is the prior an input source supplies (None shells: the previous references').
-    Reads ``reference_model.maps`` and ``tau2``; from ``options``: ``k_class.n_classes`` and
+    Reads ``reference_model.maps``; from ``options``: ``k_class.n_classes`` and
     ``parity.relion_firstiter_ini_high_angstrom``.
     """
     parity = options.parity
@@ -402,7 +403,6 @@ def class_maximization(
         Ft_ctf_combined,
         reconstruction_settings,
         half_denominators=(Ft_ctf_0, Ft_ctf_1),
-        prior_tau2=reference_model.tau2,
         halves=halves,
         n_classes=options.k_class.n_classes,
         iteration=iteration,
@@ -421,7 +421,7 @@ def class_maximization(
     logger.info(
         "Computed iter-%d Class3D tau2 from %s: %.1fs",
         iteration + 1,
-        class_priors.source,
+        class_tau2.source,
         time.time() - _t_unreg_first,
     )
     reference_model.tau2 = class_priors.variance
@@ -1759,9 +1759,8 @@ def refine_single_volume(
                 elapsed,
             )
             # Local search is K=1 (Class3D was rejected above), so there are no class products.
-            merged_mean, merged_class_means = _merged_mean_from_halves(reference_model.maps, None)
             return RefinementResult(
-                maps=ModelMaps(mean=merged_mean, means=reference_model.maps, class_means=merged_class_means),
+                maps=ModelMaps(mean=merged_half_map(reference_model.maps), means=reference_model.maps, class_means=None),
                 replay=_follower_replay_telemetry(follower_scale_replay, history),
                 follower_scale=None,
                 convergence_state=state,
@@ -2376,10 +2375,11 @@ def refine_single_volume(
                 options.schedule.max_iter,
                 options.schedule.force_max_iter_after_convergence,
             )
-        merged_mean, merged_class_means = _merged_mean_from_halves(
-            reference_model.maps,
-            class_mixture.weights if k_class_enabled else None,
-        )
+        merged_mean = merged_half_map(reference_model.maps)
+        merged_class_means = None
+        if k_class_enabled:
+            merged_class_means = merged_mean
+            merged_mean = weighted_class_merge(merged_class_means, class_mixture.weights)
         return RefinementResult(
             maps=ModelMaps(
                 mean=merged_mean,
@@ -2416,7 +2416,7 @@ def refine_single_volume(
     # reconstruction.
     final_join_means = [reference_model.maps[0], reference_model.maps[1]]
     if not k_class_enabled and options.final_pass.merged_reference:
-        final_merged_reference, _ = _merged_mean_from_halves(reference_model.maps)
+        final_merged_reference = merged_half_map(reference_model.maps)
         final_join_means = [final_merged_reference, final_merged_reference]
         logger.info(
             "Diagnostic %s=1: final all-data K=1 E-step uses merged reference for both halves",
