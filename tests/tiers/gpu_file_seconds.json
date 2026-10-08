@@ -144,7 +144,6 @@
 "tests/unit/test_dense_scale_group_routing.py": 0,
 "tests/unit/test_dense_shape_buckets.py": 0,
 "tests/unit/test_direction_log_prior_owner.py": 0,
-"tests/unit/test_direction_prior_remapping.py": 0,
 "tests/unit/test_donor_batch_dispatch_recovery.py": 0,
 "tests/unit/test_em_agent_policy_docs.py": 0,
 "tests/unit/test_em_batch_planning.py": 0,

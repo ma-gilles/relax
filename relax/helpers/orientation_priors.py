@@ -614,91 +614,6 @@ def _fold_direction_vectors_to_asu(query_vectors, target_order, symmetry):
     return mapped
 
 
-def remap_direction_prior_to_healpix_order(direction_prior, src_order, dst_order, symmetry: str = "C1", *, dtype: np.dtype = np.float32):
-    """Remap a RELION direction prior between HEALPix orders.
-
-    ``dtype`` defaults to float32; double-precision callers should pass
-    ``np.float64`` -- see ``normalize_direction_prior_per_half``.
-    """
-    direction_prior = np.asarray(direction_prior, dtype=np.float64).reshape(-1)
-    from relax.symmetry import canonicalize_rotational_symmetry
-
-    symmetry = canonicalize_rotational_symmetry(symmetry)
-    if symmetry != "C1":
-        from relax.sampling import build_local_search_grid_metadata
-
-        source = build_local_search_grid_metadata(int(src_order), symmetry=symmetry)
-        destination = build_local_search_grid_metadata(int(dst_order), symmetry=symmetry)
-        if direction_prior.shape != (int(source["n_pixels"]),):
-            raise ValueError(
-                f"{symmetry} direction prior at HEALPix order {src_order} must have "
-                f"shape {(int(source['n_pixels']),)}, got {direction_prior.shape}"
-            )
-        if src_order == dst_order:
-            out = direction_prior.copy()
-        elif src_order > dst_order:
-            dst_idx = _fold_direction_vectors_to_asu(
-                source["dir_vecs"],
-                dst_order,
-                symmetry,
-            )
-            out = np.zeros(int(destination["n_pixels"]), dtype=np.float64)
-            np.add.at(out, dst_idx, direction_prior)
-        else:
-            src_idx = _fold_direction_vectors_to_asu(
-                destination["dir_vecs"],
-                src_order,
-                symmetry,
-            )
-            out = direction_prior[src_idx]
-        total = float(out.sum())
-        if total <= 0.0 or not np.isfinite(total):
-            out.fill(1.0 / max(out.shape[0], 1))
-        else:
-            out /= total
-        return out.astype(dtype)
-
-    # Preserve the historical C1 mapping exactly.
-    if src_order == dst_order:
-        out = direction_prior.copy()
-    elif src_order > dst_order:
-        theta, phi = hp.pix2ang(2**src_order, np.arange(direction_prior.shape[0], dtype=np.int64))
-        dst_idx = hp.ang2pix(2**dst_order, theta, phi)
-        out = np.zeros(hp.nside2npix(2**dst_order), dtype=np.float64)
-        np.add.at(out, dst_idx, direction_prior)
-    else:
-        theta, phi = hp.pix2ang(2**dst_order, np.arange(hp.nside2npix(2**dst_order), dtype=np.int64))
-        src_idx = hp.ang2pix(2**src_order, theta, phi)
-        out = direction_prior[src_idx]
-    total = float(out.sum())
-    if total <= 0.0 or not np.isfinite(total):
-        out.fill(1.0 / max(out.shape[0], 1))
-    else:
-        out /= total
-    return out.astype(dtype)
-
-
-def remap_half_direction_prior_to_healpix_order(
-    direction_prior, src_order, dst_order, *, symmetry: str = "C1", n_classes=None, dtype: np.dtype = np.float32
-):
-    """Remap one half's global vector or class rows without mixing class mass.
-
-    ``n_classes=None`` selects the global-prior path. Otherwise remap each class
-    in its original order and stack the results along the existing class axis.
-    Preserve the scalar remapper's dtype default: file replay and explicit
-    runtime-dtype replay deliberately remain distinct at their call sites.
-    """
-    if n_classes is None:
-        return remap_direction_prior_to_healpix_order(direction_prior, src_order, dst_order, symmetry=symmetry, dtype=dtype)
-    return np.stack(
-        [
-            remap_direction_prior_to_healpix_order(direction_prior[class_idx], src_order, dst_order, symmetry=symmetry, dtype=dtype)
-            for class_idx in range(n_classes)
-        ],
-        axis=0,
-    )
-
-
 def make_relion_direction_log_prior(direction_prior, healpix_order, rotations=None, symmetry: str = "C1", *, dtype: np.dtype = np.float32):
     """Expand RELION's learned ``pdf_direction`` onto a rotation grid.
 
@@ -742,11 +657,13 @@ def make_relion_direction_log_prior(direction_prior, healpix_order, rotations=No
         norms = np.where(norms > 1e-12, norms, 1.0)
         view_dirs = view_dirs / norms
         if symmetry == "C1":
+            # RELION numbers C1 directions by NEST pixel (healpix_sampling.cpp:85).
             pixel_idx = hp.vec2pix(
                 2**healpix_order,
                 view_dirs[:, 0],
                 view_dirs[:, 1],
                 view_dirs[:, 2],
+                nest=True,
             )
         else:
             pixel_idx = _fold_direction_vectors_to_asu(

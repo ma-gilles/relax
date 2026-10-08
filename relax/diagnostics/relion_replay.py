@@ -27,8 +27,6 @@ from relax.helpers.orientation_priors import (
     normalize_class_direction_prior,
     normalize_class_direction_prior_per_half,
     normalize_direction_prior_per_half,
-    remap_direction_prior_to_healpix_order,
-    remap_half_direction_prior_to_healpix_order,
 )
 from relax.refinement.half_inputs import (
     HalfSet,
@@ -706,8 +704,10 @@ def apply_k1_final_replay_state(
 
     Each field ``final_replay_override`` supplies replaces the run's own: the translation prior width, the
     previous poses and corrections of ``halves`` and the entries of ``direction_priors`` (both written in
-    place, a half's prior vector remapped to ``healpix_order``), and the noise model. An absent field keeps
-    the argument's value.
+    place), and the noise model. An absent field keeps the argument's value. A prior at another HEALPix
+    order than ``healpix_order`` is installed at its own order, which scoring ignores: RELION resets
+    ``pdf_direction`` to an even distribution whenever the number of directions changes
+    (``MlModel::initialisePdfDirection``, ``ml_model.cpp:1150-1165``); it never remaps it.
     """
     sigma_offset, noise_model, _final_replay_fields = _install_final_replay_particle_state(
         final_replay_override,
@@ -730,15 +730,6 @@ def apply_k1_final_replay_state(
                 _prior,
                 symmetry=symmetry, expected_order=healpix_order,
             )
-            if _prior_order != healpix_order:
-                _prior = remap_direction_prior_to_healpix_order(
-                    _prior,
-                    _prior_order,
-                    healpix_order,
-                    symmetry=symmetry,
-                    dtype=dtype,
-                )
-                _prior_order = healpix_order
             direction_priors[_half_idx] = DirectionPrior(_prior, _prior_order)
         _final_replay_fields.append("direction_prior")
     _log_final_replay_fields(log, override_index, _final_replay_fields)
@@ -764,8 +755,9 @@ def apply_class_final_replay_state(
 
     Each field ``final_replay_override`` supplies replaces the run's own: the translation prior width, the
     previous poses and corrections of ``halves`` and the entries of ``direction_priors`` (both written in
-    place, a half's class rows remapped to ``healpix_order`` and then normalised per class at ``dtype``), and
-    the noise model. An absent field keeps the argument's value.
+    place, a half's class rows normalised per class at ``dtype``), and the noise model. An absent field keeps
+    the argument's value. A prior at another HEALPix order than ``healpix_order`` keeps its own order, which
+    scoring ignores, as RELION resets it (``apply_k1_final_replay_state``).
     """
     sigma_offset, noise_model, _final_replay_fields = _install_final_replay_particle_state(
         final_replay_override,
@@ -790,16 +782,6 @@ def apply_class_final_replay_state(
                 _prior_k[0],
                 symmetry=symmetry, expected_order=healpix_order,
             )
-            if _prior_order_k != healpix_order:
-                _prior_k = remap_half_direction_prior_to_healpix_order(
-                    _prior_k,
-                    _prior_order_k,
-                    healpix_order,
-                    n_classes=n_classes,
-                    dtype=dtype,
-                    symmetry=symmetry,
-                )
-                _prior_order_k = healpix_order
             _prior_k = normalize_class_direction_prior(_prior_k, n_classes, dtype=dtype)
             direction_priors[_half_idx] = DirectionPrior(_prior_k, _prior_order_k)
         _final_replay_fields.append("direction_prior")

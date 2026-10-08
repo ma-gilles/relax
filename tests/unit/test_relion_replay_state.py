@@ -479,3 +479,48 @@ def test_sealed_rotation_ids_are_checked_against_the_global_trial_grid():
         relion_replay_module.sealed_rotation_ids_for_scoring(
             sealed, SimpleNamespace(rotations=np.zeros((5, 3, 3))), use_local=False,
         )
+
+
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_final_replay_prior_at_another_order_is_not_remapped(n_classes):
+    # RELION never remaps pdf_direction between HEALPix orders: MlModel::initialisePdfDirection
+    # (ml_model.cpp:1150-1165) resets it to an even distribution whenever the number of directions
+    # changes. The replay therefore installs the prior at its own order, which scoring ignores.
+    source_order, run_order = 2, 3
+    n_dirs = 12 * 4**source_order
+    prior = np.zeros(n_dirs, dtype=np.float64)
+    prior[5] = 1.0
+    replayed = prior if n_classes == 1 else np.stack([prior] * n_classes)
+    direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
+    sigma_offset = object()
+    noise_model = object()
+    out = relion_replay_module.apply_final_replay_state(
+        {"direction_prior": [replayed, replayed]},
+        [SimpleNamespace(image_corrections=None, scale_corrections=None) for _ in range(2)],
+        direction_priors,
+        sigma_offset=sigma_offset,
+        noise_model=noise_model,
+        n_classes=n_classes,
+        healpix_order=run_order,
+        image_shape=(IMAGE_SIZE, IMAGE_SIZE),
+        symmetry="C1",
+        dtype=np.float32,
+        override_index=0,
+        log=SimpleNamespace(info=lambda *args, **kwargs: None),
+    )
+    assert out == (sigma_offset, noise_model)
+    for installed in direction_priors:
+        assert installed.healpix_order == source_order
+        assert_matches(installed.values, replayed.astype(np.float32))
+        logs = orientation_priors_module.relion_direction_log_priors_for_half(
+            use_local=False,
+            scoring_healpix_order=run_order,
+            n_classes=n_classes,
+            prior=installed,
+            sealed_sampling_state=None,
+            dtype=np.float32,
+            log=SimpleNamespace(info=lambda *args, **kwargs: None),
+            half_index=0,
+            symmetry="C1",
+        )
+        assert logs.rotation_log_prior is None and logs.class_rotation_log_prior is None

@@ -44,7 +44,6 @@ tests/unit/test_dev_fingerprint.py
 tests/unit/test_diff_relion_recovar_direction_prior.py
 tests/unit/test_direction_log_prior_owner.py
 tests/unit/test_direction_prior_learning_owner.py
-tests/unit/test_direction_prior_remapping.py
 tests/unit/test_em_agent_policy_docs.py
 tests/unit/test_em_batch_planning.py
 tests/unit/test_em_debug_dumps.py

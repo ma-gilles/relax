@@ -433,7 +433,7 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_init_prior_one_half", f"K={k} start-up prior for half 2 only", init_prior=(None, 2), dump=False, writer=True, **common)
         add(f"k{k}_iter_prior", f"K={k} per-iteration replay priors; the final pass reuses the last slot", iter_prior=[2, 2, 1], dump=False, writer=True, **common)
         add(f"k{k}_iter_prior_final_same_order", f"K={k} per-iteration replay priors, one half missing in the last slot", iter_prior=[None, 2, (2, None)], dump=False, **common)
-        add(f"k{k}_final_prior_remap", f"K={k} final-only replay prior remapped from order 1", final_prior=1, dump=False, **common)
+        add(f"k{k}_final_prior_remap", f"K={k} final-only replay prior at order 1, kept at its order (RELION resets, never remaps)", final_prior=1, dump=False, **common)
         add(f"k{k}_final_prior", f"K={k} final-only replay prior at the run's order", final_prior=2, dump=False, **common)
         add(f"k{k}_star_prior", f"K={k} priors and sampling replayed from RELION STAR files", star_prior=[2, 1, 2, 2], writer=True, **common)
         add(f"k{k}_star_prior_preserved", f"K={k} STAR replay with a start-up prior", star_prior=[2, 2, 2, 2], init_prior=2, dump=False, **common)
@@ -610,8 +610,6 @@ MUTATIONS = (
      "the final-pass replay treats every run as K1", True),
     ("k1_final_replay_prior_order_dropped", "direction_priors[_half_idx] = DirectionPrior(_prior, _prior_order)", "direction_priors[_half_idx] = DirectionPrior(_prior, None)",
      "the K1 final-pass replay installs a prior without its HEALPix order", True),
-    ("k1_final_replay_prior_not_remapped", "if _prior_order != healpix_order:", "if False:",
-     "the K1 final-pass replay keeps a prior at its source order", True),
     ("final_replay_fields_log_dropped", '",".join(fields) if fields else "<none>",', '"<none>",',
      "the final-pass replay log names no installed field", True),
     ("star_k1_prior_reversed", "direction_priors[_half_idx] = DirectionPrior(_relion_direction_prior, _relion_direction_prior_order)", "direction_priors[_half_idx] = DirectionPrior(_relion_direction_prior[::-1], _relion_direction_prior_order)",

@@ -459,61 +459,6 @@ def test_symmetry_direction_prior_geometry_expansion_matches_canonical_ids(label
 
 
 @pytest.mark.parametrize(
-    "label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"]
-)
-def test_symmetry_direction_prior_remap_is_normalized_and_uniform_preserving(label):
-    from relax.helpers.orientation_priors import (
-        infer_direction_prior_healpix_order,
-        remap_direction_prior_to_healpix_order,
-    )
-    from relax.sampling import build_local_search_grid_metadata
-
-    src_order = 3
-    dst_order = 4
-    src_count = int(
-        build_local_search_grid_metadata(src_order, symmetry=label)["n_pixels"]
-    )
-    dst_count = int(
-        build_local_search_grid_metadata(dst_order, symmetry=label)["n_pixels"]
-    )
-    source = np.full(src_count, 1.0 / src_count, dtype=np.float32)
-
-    assert (
-        infer_direction_prior_healpix_order(
-            source,
-            symmetry=label,
-            expected_order=src_order,
-        )
-        == src_order
-    )
-    upsampled = remap_direction_prior_to_healpix_order(
-        source,
-        src_order,
-        dst_order,
-        symmetry=label,
-    )
-    downsampled = remap_direction_prior_to_healpix_order(
-        upsampled,
-        dst_order,
-        src_order,
-        symmetry=label,
-    )
-
-    assert upsampled.shape == (dst_count,)
-    assert downsampled.shape == (src_count,)
-    assert np.all(np.isfinite(upsampled)) and np.all(upsampled >= 0.0)
-    assert np.all(np.isfinite(downsampled)) and np.all(downsampled >= 0.0)
-    np.testing.assert_allclose(upsampled.sum(), 1.0, rtol=0.0, atol=2e-7)
-    np.testing.assert_allclose(downsampled.sum(), 1.0, rtol=0.0, atol=2e-7)
-    np.testing.assert_allclose(
-        upsampled,
-        np.full(dst_count, 1.0 / dst_count, dtype=np.float32),
-        rtol=2e-6,
-        atol=2e-8,
-    )
-
-
-@pytest.mark.parametrize(
     ("requested", "canonical"),
     [("c7", "C7"), ("d5", "D5"), ("t", "T"), ("o", "O"), ("i", "I2"), ("i1", "I1")],
 )

@@ -4792,6 +4792,7 @@ class TestRelionModeSmokeTest:
             view_dirs[:, 0],
             view_dirs[:, 1],
             view_dirs[:, 2],
+            nest=True,
         )
 
         got = make_relion_direction_log_prior(
@@ -4801,6 +4802,9 @@ class TestRelionModeSmokeTest:
         )
         expected = np.log(direction_prior[expected_pixels]).astype(np.float32)
         np.testing.assert_allclose(got, expected, rtol=1e-6, atol=1e-6)
+        # RELION numbers C1 directions by NEST pixel (healpix_sampling.cpp:85), so on the unperturbed grid the
+        # geometric lookup is the sample-index lookup: rotation r takes direction r % n_pixels.
+        np.testing.assert_array_equal(got, make_relion_direction_log_prior(direction_prior, order))
 
     def test_make_relion_direction_log_prior_tracks_perturbed_view_directions(self):
         order = 3
@@ -4821,6 +4825,7 @@ class TestRelionModeSmokeTest:
             view_dirs[:, 0],
             view_dirs[:, 1],
             view_dirs[:, 2],
+            nest=True,
         )
 
         got = make_relion_direction_log_prior(
