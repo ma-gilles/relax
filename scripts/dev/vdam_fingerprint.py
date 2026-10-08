@@ -9,13 +9,14 @@
 
 The VDAM counterpart of ``scripts/dev/fingerprint.py`` (the refinement controller's harness), with the same
 commands, output format and comparison rules; the pure logic (flattening, operand digests, the diff and its
-accepted classes, mutations) is imported from it. ``run`` calls the command entry, ``relax initial_model``
-(``relax.commands.initial_model.main``), on a written data directory of 24 images of 24 pixels for a few
-iterations, and records per case: the state ``run_native_initial_model`` returns, every file the run wrote,
-the model state at every model-STAR write (the checkpoints), and one ordered trace of log records, printed
-lines and engine calls. Everything above the E-step engine runs as in production on the CPU: the start-up
-reference, the expected-accuracy estimate, the projector, the subset schedule, the VDAM and momentum-SGD
-M-steps, the noise and prior updates and the output writers.
+accepted classes, mutations) is imported from it, and the command line is ``scripts/dev/fingerprint_cli.py``.
+``run`` calls the command entry, ``relax initial_model`` (``relax.commands.initial_model.main``), on a written
+data directory of 24 images of 24 pixels for a few iterations, and records per case: the state
+``run_native_initial_model`` returns, every file the run wrote, the model state at every model-STAR write (the
+checkpoints), and one ordered trace of log records, printed lines and engine calls. Everything above the
+E-step engine runs as in production on the CPU: the start-up reference, the expected-accuracy estimate, the
+projector, the subset schedule, the VDAM and momentum-SGD M-steps, the noise and prior updates and the output
+writers.
 
 The E-step engine (``run_dense_k_class_em_adaptive``) runs only on a GPU, so it is replaced on both sides by
 one stand-in whose output is seeded by a hash of every operand it receives: a changed operand anywhere
@@ -30,33 +31,28 @@ preprocessing; GPU operation order, peak memory and array lifetimes.
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import fingerprint_cli  # noqa: E402
 from fingerprint import (  # noqa: E402
     TMP_TOKEN,
     accepted,
     diff_fingerprints,
     differing_cases,
     digest_operands,
-    export_rev,
     flatten,
     log_row,
     mutated_tree,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 NOT_COVERED = (
     "the real E-step engine and its numbers (a stand-in seeded by its operands replaces run_dense_k_class_em_adaptive)",
     "subtomogram InitialModel (--ios) and optics groups on several image shapes",
@@ -448,196 +444,29 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 # ----------------------------------------------------------------------------- commands
 
 
-def _print_not_covered() -> None:
-    print("NOT covered by these fingerprints:")
-    for item in NOT_COVERED:
-        print(f"  - {item}")
-
-
-def run_tree(source: Path, out: Path, work_dir: Path, names: list[str], *, threads: int = 4, quiet: bool = False) -> int:
-    """Fingerprint ``source`` in a child process with a CPU-only environment that imports from ``source``."""
-    label = hashlib.sha256(f"{source}|{out}".encode()).hexdigest()[:12]
-    tmp_root = work_dir / f"vtmp_{label}"
-    shutil.rmtree(tmp_root, ignore_errors=True)
-    tmp_root.mkdir(parents=True)
-    env = {k: v for k, v in os.environ.items()
-           if k not in ("PYTHONHOME", "CONDA_PREFIX", "VIRTUAL_ENV") and not k.startswith(("RELAX_", "RECOVAR_INITIAL"))}
-    env.update(
-        PYTHONPATH=str(source), PYTHONNOUSERSITE="1", PYTHONDONTWRITEBYTECODE="1",
-        CUDA_VISIBLE_DEVICES="", JAX_PLATFORMS="cpu", XLA_PYTHON_CLIENT_PREALLOCATE="false",
-        OMP_NUM_THREADS=str(threads), OPENBLAS_NUM_THREADS=str(threads), MKL_NUM_THREADS=str(threads),
-        RECOVAR_JAX_CACHE_DIR=str(work_dir / f"recovar_jax_cache_{label}"),
-    )
-    env.pop("JAX_COMPILATION_CACHE_DIR", None)
-    command = [sys.executable, str(Path(__file__).resolve()), "_worker", str(source), str(out), str(tmp_root), *names]
-    log_path = out.with_suffix(out.suffix + ".log")
-    with open(log_path, "w") as log:
-        code = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
-    if not quiet or code != 0:
-        tail = log_path.read_text().splitlines()
-        for line in tail if code != 0 else tail[-1:]:
-            print(line)
-    shutil.rmtree(tmp_root, ignore_errors=True)
-    return code
-
-
-def _resolve_source(args, work_dir: Path) -> Path:
-    if getattr(args, "rev", None):
-        return export_rev(args.rev, work_dir)
-    return Path(args.source).resolve() if getattr(args, "source", None) else REPO_ROOT
-
-
-def _work_dir(args) -> Path:
-    if not args.work_dir:
-        return Path(tempfile.mkdtemp(prefix="relax-vdam-fingerprint-"))
-    path = Path(args.work_dir).resolve()
-    if REPO_ROOT in path.parents or path == REPO_ROOT:
-        raise SystemExit(f"--work-dir {path} is inside the checkout; choose a directory outside it")
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _case_names(requested: list[str]) -> list[str]:
-    unknown = [name for name in requested if name not in CASES]
-    if unknown:
-        raise SystemExit(f"unknown case(s): {', '.join(unknown)}; `vdam_fingerprint.py cases` lists them")
-    return requested or list(CASES)
-
-
-def command_run(args) -> int:
-    work_dir = _work_dir(args)
-    code = run_tree(_resolve_source(args, work_dir), Path(args.out).resolve(), work_dir, _case_names(args.cases))
-    _print_not_covered()
-    return code
-
-
-def command_diff(args) -> int:
-    a, b = (json.loads(Path(path).read_text()) for path in (args.a, args.b))
-    counts, lines = diff_fingerprints(a, b)
-    print(f"A: {args.a} ({a['source']})\nB: {args.b} ({b['source']})")
-    print("\n".join(lines))
-    _print_not_covered()
-    return 0 if accepted(counts) else 1
-
-
-def command_check(args) -> int:
-    work_dir = _work_dir(args)
-    names = _case_names(args.cases)
-    base_source = export_rev(args.base, work_dir)
-    base_out = work_dir / f"vfp_{base_source.name[4:]}.json"
-    if names != list(CASES) or not base_out.exists():
-        if run_tree(base_source, base_out, work_dir, names) != 0:
-            return 2
-    if args.head:
-        head_source = export_rev(args.head, work_dir)
-        head_out = work_dir / f"vfp_{head_source.name[4:]}.json"
-    else:
-        head_source, head_out = REPO_ROOT, work_dir / "vfp_worktree.json"
-    if run_tree(head_source, head_out, work_dir, names) != 0:
-        return 2
-    return command_diff(argparse.Namespace(a=str(base_out), b=str(head_out)))
-
-
-def command_cases(args) -> int:
-    for name, (description, _) in CASES.items():
-        print(f"{name:30s} {description}")
-    print(f"{len(CASES)} cases")
-    _print_not_covered()
-    return 0
-
-
-def command_selftest(args) -> int:
-    work_dir = _work_dir(args)
-    source = _resolve_source(args, work_dir)
-    known = {mutation[0]: mutation for mutation in MUTATIONS}
-    unknown = [name for name in args.mutations if name not in known]
-    if unknown:
-        raise SystemExit(f"unknown mutation(s): {', '.join(unknown)}")
-    selected = [known[name] for name in args.mutations] if args.mutations else list(MUTATIONS)
-    clean_out = work_dir / "vfp_selftest_clean.json"
-    if run_tree(source, clean_out, work_dir, list(CASES), quiet=True) != 0:
-        print("the unmutated tree failed to run")
-        return 2
-    clean = json.loads(clean_out.read_text())
-
-    def one(mutation):
-        name, old, new, _, _ = mutation
-        target = work_dir / f"vmutant_{name}"
-        shutil.rmtree(target, ignore_errors=True)
-        target.mkdir()
-        changed = mutated_tree(source, target, old, new)
-        if sum(changed.values()) != 1:
-            return name, changed, []
-        out = work_dir / f"vfp_mutant_{name}.json"
-        if run_tree(target, out, work_dir, list(CASES), threads=2, quiet=True) != 0:
-            return name, changed, None
-        cases = differing_cases(clean, json.loads(out.read_text()))
-        shutil.rmtree(target, ignore_errors=True)
-        return name, changed, cases
-
-    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        outcomes = list(pool.map(one, selected))
-    failures = 0
-    for (name, _, _, description, expected), (_, changed, cases) in zip(selected, outcomes, strict=True):
-        if sum(changed.values()) != 1:
-            verdict, detail = "FAIL", (
-                f"the mutation's target text is in {sum(changed.values())} places of this tree, not one; update MUTATIONS"
-            )
-        elif cases is None:
-            verdict, detail = "FAIL", "the mutated tree did not run to a fingerprint"
-        elif expected and not cases:
-            verdict, detail = "FAIL", "not detected"
-        elif not expected and not cases:
-            verdict, detail = "BLIND", "not detected (known blind spot of the cases)"
-        elif not expected:
-            verdict, detail = "OK", f"detected in {len(cases)} cases (was a known blind spot; mark it detected)"
-        else:
-            verdict, detail = "OK", f"detected in {len(cases)} cases, e.g. {cases[0]}"
-        failures += verdict == "FAIL"
-        print(f"{verdict:5s} {name}: {description} [{', '.join(changed)}] -> {detail}")
-    print(f"{len(selected)} mutations, {failures} failed")
-    _print_not_covered()
-    return 1 if failures else 0
+HARNESS = fingerprint_cli.Harness(
+    script=Path(__file__).resolve(),
+    description=__doc__.split("\n\n")[0],
+    cases=CASES,
+    mutations=MUTATIONS,
+    not_covered=NOT_COVERED,
+    worker=_worker,
+    diff_fingerprints=diff_fingerprints,
+    accepted=accepted,
+    differing_cases=differing_cases,
+    mutated_tree=mutated_tree,
+    file_prefix="v",
+    temp_prefix="relax-vdam-fingerprint-",
+    case_width=30,
+    cases_note="",
+    # The child runs with the harness's own switches only: no relax or InitialModel variable of the caller.
+    dropped_env_prefixes=("RELAX_", "RECOVAR_INITIAL"),
+    jax_compilation_cache=False,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if argv[:1] == ["_worker"]:
-        _worker(argv[1], argv[2], argv[3], argv[4:])
-        return 0
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    commands = parser.add_subparsers(dest="command", required=True)
-
-    def add_tree_options(sub):
-        tree = sub.add_mutually_exclusive_group()
-        tree.add_argument("--source", help="a source tree with relax/ and tests/ (default: this checkout as it is)")
-        tree.add_argument("--rev", help="a commit to export with git archive and fingerprint")
-        sub.add_argument("--work-dir", help="scratch directory outside the checkout (default: a new temp directory)")
-
-    run = commands.add_parser("run", help="fingerprint one source tree to a JSON file")
-    run.add_argument("out")
-    run.add_argument("cases", nargs="*")
-    add_tree_options(run)
-    run.set_defaults(function=command_run)
-    diff = commands.add_parser("diff", help="compare two fingerprint files; exit 1 unless only log rows differ")
-    diff.add_argument("a")
-    diff.add_argument("b")
-    diff.set_defaults(function=command_diff)
-    check = commands.add_parser("check", help="fingerprint BASE and HEAD (default: the worktree) and diff them")
-    check.add_argument("base")
-    check.add_argument("head", nargs="?")
-    check.add_argument("--cases", nargs="*", default=[])
-    check.add_argument("--work-dir")
-    check.set_defaults(function=command_check)
-    cases = commands.add_parser("cases", help="list the cases")
-    cases.set_defaults(function=command_cases)
-    selftest = commands.add_parser("selftest", help="check that each deliberately perturbed controller is detected")
-    selftest.add_argument("mutations", nargs="*")
-    selftest.add_argument("--jobs", type=int, default=4)
-    add_tree_options(selftest)
-    selftest.set_defaults(function=command_selftest)
-    args = parser.parse_args(argv)
-    return args.function(args)
+    return fingerprint_cli.main(HARNESS, argv)
 
 
 if __name__ == "__main__":

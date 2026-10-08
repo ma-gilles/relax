@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from scripts.dev import fingerprint
+from scripts.dev import fingerprint, fingerprint_cli
 
 
 @dataclass
@@ -253,10 +253,10 @@ def test_the_case_and_mutation_tables_are_well_formed():
 
 
 def test_scratch_inside_the_checkout_is_refused():
-    inside = fingerprint.REPO_ROOT / "scripts" / "dev" / "fingerprint_scratch"
+    inside = fingerprint_cli.REPO_ROOT / "scripts" / "dev" / "fingerprint_scratch"
 
     with pytest.raises(SystemExit, match="inside the checkout"):
-        fingerprint._work_dir(type("Args", (), {"work_dir": str(inside)})())
+        fingerprint_cli._work_dir(fingerprint.HARNESS, type("Args", (), {"work_dir": str(inside)})())
     assert not inside.exists()
 
 
