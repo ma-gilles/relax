@@ -893,10 +893,7 @@ def _compute_k_class_significance_batched(
     # Compact the coarse support mask on the device instead of pulling it
     # (ticket T13) whenever the ids are collected; every dense-mask
     # diagnostic keeps the host pull, checked per batch.
-    coarse_significance_device_enabled = bool(collect_significance)
-    # Per class: each class's slice of the joint support mask is compacted on
-    # its own, exactly as the host path encodes each class's slice.
-    if coarse_significance_device_enabled:
+    if collect_significance:
         from relax.sparse_pass2.resident_significance import (
             compact_batch_significance_classes,
         )
@@ -1388,10 +1385,7 @@ def _compute_k_class_significance_batched(
                 batch_pmax_host = np.asarray(batch.pmax, dtype=np.float32)[:batch.actual_batch_size]
                 if return_relion_f32_normalization:
                     outputs.relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
-            device_significance_batch = (
-                coarse_significance_device_enabled
-                and not batch.debug_dump_enabled
-            )
+            device_significance_batch = not batch.debug_dump_enabled
             if device_significance_batch:
                 # The mask stays on the device; only the per-image ids cross
                 # the bus.  ``sig_rot_any`` below is already a device
