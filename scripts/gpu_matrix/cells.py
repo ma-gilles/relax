@@ -472,6 +472,20 @@ CELLS["vdam_k1_10073_10k380_s29"] = {
     "box": 380,
 }
 
+# Robustness cell B (etoptics' review): Refine3D from the 10073 subset's refined poses, local search from iteration 1 at
+# box 380 on a real 16 GB card.
+CELLS["refine_k1_10073_10k380_local"] = {
+    "module": "relax.commands.refine",
+    "args": [
+        *("--data_dir", "{fx:e10073_10k380}", "--output", "{out}"),
+        *("--init_volume", "{fx:e10073_10k380}/reference_init_relion.mrc", "--relion-half-sets-from-input"),
+        *("--initial-pose-source", "input-star", "--healpix_order", "4", "--auto_local_healpix_order", "4"),
+        *("--offset_range", "3", "--offset_step", "1", "--adaptive_oversampling", "1", "--init_resolution", "30"),
+        *("--particle_diameter_ang", "250", "--tau2_fudge", "1", "--sym", "C1", "--seed", "42", "--max_iter", "999"),
+    ],
+    "box": 380,
+}
+
 
 def cell_fixtures(name: str) -> list[str]:
     """The fixture names a cell's arguments refer to."""
