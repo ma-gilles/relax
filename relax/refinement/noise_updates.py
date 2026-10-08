@@ -2,6 +2,15 @@
 
 Keep shell profiles, expanded pixel variances and their aliasing explicit.
 The controller and replay diagnostics import this owner directly.
+
+The posterior noise updates (``update_k1_posterior_noise_variance``, ``update_class_posterior_noise_variance``)
+share their operands. ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies
+RELION's 1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, the update keeps the
+previous sigma2_noise (matching RELION's iter-1 CC emulation, which skips the first-iter noise update).
+``summed_current_size`` (the expectation's image current size) divides each shell by the pixels that
+expectation summed instead of RELION's full-image ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``);
+None is RELION's count. ``nyquist_column_counting`` must be the rule the expectation's sums were accumulated
+with: ``"once"`` counts each Hermitian pair of the full-size Nyquist column once.
 """
 
 from __future__ import annotations
@@ -364,9 +373,9 @@ def _per_optics_group_sigma2_noise(
     previous_rows,
     image_shape,
     *,
-    ctf_premultiplied=False,
-    summed_current_size=None,
-    nyquist_column_counting="relion",
+    ctf_premultiplied,
+    summed_current_size,
+    nyquist_column_counting,
 ):
     """One half's M-step noise update with one spectrum per optics group.
 
@@ -585,9 +594,9 @@ def update_k1_posterior_noise_variance(
     image_shape,
     *,
     firstiter_cc: bool,
-    ctf_premultiplied: bool = False,
-    summed_current_size=None,
-    nyquist_column_counting="relion",
+    ctf_premultiplied: bool,
+    summed_current_size,
+    nyquist_column_counting,
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update of the two half-models.
 
@@ -595,16 +604,8 @@ def update_k1_posterior_noise_variance(
     accumulators via RELION's M-step formula and keeps an independent
     sigma2_noise; the pixel rows replace the entries of the model's list.
 
-    ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies RELION's
-    1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
-    sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
-    first-iter noise update).
-
-    ``summed_current_size`` (the expectation's image current size) divides each
-    shell by the pixels that expectation summed instead of RELION's full-image
-    ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``); None is RELION's count.
-    ``nyquist_column_counting`` must be the rule the expectation's sums were accumulated with:
-    ``"once"`` counts each Hermitian pair of the full-size Nyquist column once.
+    ``firstiter_cc``, ``ctf_premultiplied``, ``summed_current_size``, ``nyquist_column_counting``: see the module
+    docstring.
     """
 
     _require_noise_stats_of_both_halves(noise_stats_per_half)
@@ -647,9 +648,9 @@ def update_class_posterior_noise_variance(
     image_shape,
     *,
     firstiter_cc: bool,
-    ctf_premultiplied: bool = False,
-    summed_current_size=None,
-    nyquist_column_counting="relion",
+    ctf_premultiplied: bool,
+    summed_current_size,
+    nyquist_column_counting,
 ) -> NoiseUpdateResult:
     """RELION-style posterior-weighted noise update shared by every class (Class3D ordering).
 
@@ -658,16 +659,8 @@ def update_class_posterior_noise_variance(
     take the one pixel array in a new list and independent copies of the
     shell profile.
 
-    ``ctf_premultiplied`` (some optics group stores CTF-premultiplied images) applies RELION's
-    1e-15 sigma2 floor (ml_optimiser.cpp:5273-5274). When ``firstiter_cc`` is true, keeps the previous
-    sigma2_noise (matching RELION's iter-1 CC emulation, which skips the
-    first-iter noise update).
-
-    ``summed_current_size`` (the expectation's image current size) divides each
-    shell by the pixels that expectation summed instead of RELION's full-image
-    ``Npix_per_shell`` (``normalize_wsum_to_sigma2_noise``); None is RELION's count.
-    ``nyquist_column_counting`` must be the rule the expectation's sums were accumulated with:
-    ``"once"`` counts each Hermitian pair of the full-size Nyquist column once.
+    ``firstiter_cc``, ``ctf_premultiplied``, ``summed_current_size``, ``nyquist_column_counting``: see the module
+    docstring.
     """
 
     _require_noise_stats_of_both_halves(noise_stats_per_half)
@@ -704,9 +697,9 @@ def update_posterior_noise_variance(
     *,
     k_class_enabled: bool,
     firstiter_cc: bool,
-    ctf_premultiplied: bool = False,
-    summed_current_size=None,
-    nyquist_column_counting="relion",
+    ctf_premultiplied: bool,
+    summed_current_size,
+    nyquist_column_counting,
 ) -> NoiseUpdateResult:
     """The one remaining mode decision of the noise update.
 

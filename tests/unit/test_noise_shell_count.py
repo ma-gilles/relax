@@ -145,6 +145,7 @@ def test_every_noise_update_branch_hands_the_normalisation_the_size(monkeypatch,
         k_class_enabled=k_class,
         firstiter_cc=False,
         summed_current_size=summed_current_size,
+        ctf_premultiplied=False, nyquist_column_counting="relion",
     )
     assert calls and {kwargs.get("summed_current_size") for _, kwargs in calls} == {summed_current_size}
     assert np.all(np.isfinite(np.asarray(result.noise_from_res)))
@@ -153,11 +154,13 @@ def test_every_noise_update_branch_hands_the_normalisation_the_size(monkeypatch,
 def test_noise_update_changes_only_the_current_shell():
     rng_a, rng_b = np.random.default_rng(3), np.random.default_rng(3)
     relion = noise_updates.update_posterior_noise_variance(
-        [_stats(rng_a), _stats(rng_a)], _model(), SHAPE, k_class_enabled=False, firstiter_cc=False
+        [_stats(rng_a), _stats(rng_a)], _model(), SHAPE, k_class_enabled=False, firstiter_cc=False,
+        ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
     summed = noise_updates.update_posterior_noise_variance(
         [_stats(rng_b), _stats(rng_b)], _model(), SHAPE, k_class_enabled=False, firstiter_cc=False,
         summed_current_size=8,
+        ctf_premultiplied=False, nyquist_column_counting="relion",
     )
     ratio = np.asarray(summed.noise_from_res) / np.asarray(relion.noise_from_res)
     expected = np.ones(N_SHELLS)

@@ -67,7 +67,7 @@ def test_startup_noise_preserves_order_and_float32_boundary(monkeypatch):
     radial, noise = startup_noise.prepare_startup_noise(
         dataset, source_rows=rows,
         optics_group_ids=optics, mask_params=(12., 3),
-        optics_pixel_sizes=np.array([1.25]))
+        optics_pixel_sizes=np.array([1.25]), output_dtype=np.float32, pair_counting="relion")
     assert len(calls) == 1
     assert radial.dtype == np.float64 and noise.dtype == np.float32
     assert_matches(radial, sigma[0] * 8**4)
@@ -80,7 +80,7 @@ def test_startup_noise_float64_output_for_double_scoring(monkeypatch):
     monkeypatch.setattr(startup_noise, 'estimate_startup_sigma2', lambda ds, **kwargs: sigma)
     _radial, noise = startup_noise.prepare_startup_noise(
         SimpleNamespace(grid_size=8),         source_rows=np.arange(3), optics_group_ids=np.ones(3), mask_params=(12., 3),
-        optics_pixel_sizes=np.array([1.25]), output_dtype=np.float64)
+        optics_pixel_sizes=np.array([1.25]), output_dtype=np.float64, pair_counting="relion")
     assert noise.dtype == np.float64
 
 
@@ -99,7 +99,7 @@ def test_startup_noise_rejects_missing_or_unsupported_inputs(overrides):
                   optics_pixel_sizes=np.array([1.25])) | overrides
     with pytest.raises(ValueError, match='start-up noise'):
         startup_noise.prepare_startup_noise(SimpleNamespace(grid_size=8),
-            **params)
+            **params, output_dtype=np.float32, pair_counting="relion")
 
 
 def test_class3d_startup_noise_has_one_spectrum_per_optics_group(monkeypatch):
@@ -110,7 +110,7 @@ def test_class3d_startup_noise_has_one_spectrum_per_optics_group(monkeypatch):
     )
     radial, noise = startup_noise.prepare_startup_noise(SimpleNamespace(grid_size=8),
                 source_rows=np.arange(3), optics_group_ids=np.array([1, 2, 1]), mask_params=(12., 3),
-        optics_pixel_sizes=np.array([1.25, 1.25]))
+        optics_pixel_sizes=np.array([1.25, 1.25]), output_dtype=np.float32, pair_counting="relion")
     assert radial.shape[0] == 2 and noise.shape[0] == 2
 
 
@@ -125,7 +125,7 @@ def test_class3d_startup_noise_takes_unsplit_order(monkeypatch):
     monkeypatch.setattr(startup_noise, 'estimate_startup_sigma2', compute)
     startup_noise.prepare_startup_noise(
         SimpleNamespace(grid_size=8), source_rows=rows, optics_group_ids=np.ones(3, dtype=np.int64),
-        mask_params=(12., 3), optics_pixel_sizes=np.array([1.25]))
+        mask_params=(12., 3), optics_pixel_sizes=np.array([1.25]), output_dtype=np.float32, pair_counting="relion")
     assert_matches(seen['source_rows'], rows)
 
 

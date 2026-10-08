@@ -235,7 +235,7 @@ def estimate_startup_sigma2(
 
 def prepare_startup_noise(
     dataset, *, source_rows, optics_group_ids, mask_params,
-    optics_pixel_sizes, output_dtype=np.float32, pair_counting="relion",
+    optics_pixel_sizes, output_dtype, pair_counting,
 ):
     """Estimate fresh noise on the model grid and expand it for scoring.
 

@@ -38,6 +38,7 @@ def _update(stats_per_half, noise_per_half, radial_per_half):
         ),
         SHAPE,
         firstiter_cc=False,
+        ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
 
 
@@ -96,6 +97,7 @@ def test_class3d_update_keeps_one_spectrum_per_group_and_ignores_the_empty_accum
         ),
         SHAPE,
         firstiter_cc=False,
+        ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
     k1 = _update([stats, stats], [previous_rows, previous_rows], [previous_radial, previous_radial])
     for k in range(2):
@@ -113,6 +115,7 @@ def test_firstiter_cc_retains_noise_buffers_and_history_precision():
     result = noise_updates.update_k1_posterior_noise_variance(
         [_stats(np.random.default_rng(3)), _stats(np.random.default_rng(4))],
         model, SHAPE, firstiter_cc=True,
+        ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
     assert result.model.variance_per_half is model.variance_per_half
     assert all(a is b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
@@ -132,6 +135,7 @@ def test_k1_update_replaces_pixels_in_the_owned_list():
     result = noise_updates.update_k1_posterior_noise_variance(
         [_stats(np.random.default_rng(5)), _stats(np.random.default_rng(6))],
         model, SHAPE, firstiter_cc=False,
+        ctf_premultiplied=False, summed_current_size=None, nyquist_column_counting="relion",
     )
     assert result.model.variance_per_half is model.variance_per_half
     assert all(a is not b for a, b in zip(result.model.variance_per_half, original_pixels, strict=True))
@@ -317,5 +321,6 @@ def test_premultiplied_data_takes_relions_sigma2_floor(per_group):
             SHAPE,
             firstiter_cc=False,
             ctf_premultiplied=premultiplied,
+            summed_current_size=None, nyquist_column_counting="relion",
         )
         assert (np.min(result.noise_from_res) >= floor) == premultiplied

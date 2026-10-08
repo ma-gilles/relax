@@ -125,13 +125,14 @@ def test_start_up_noise_hands_the_estimate_the_counting(monkeypatch):
             optics_group_ids=np.ones(3, dtype=np.int64),
             mask_params=(12.0, 3),
             optics_pixel_sizes=np.array([1.25]),
+            output_dtype=np.float32,
             pair_counting=counting,
         )
     assert received == ["relion", "once"]
     assert [kwargs["pair_counting"] for _, kwargs in estimates] == ["relion", "once"]
-    # The default is RELION's rule.
-    startup_noise.prepare_startup_noise(
-        dataset, source_rows=np.arange(3), optics_group_ids=np.ones(3, dtype=np.int64), mask_params=(12.0, 3),
-        optics_pixel_sizes=np.array([1.25]),
-    )
-    assert received[-1] == "relion"
+    # The caller names the rule: no default below the command.
+    with pytest.raises(TypeError, match="pair_counting"):
+        startup_noise.prepare_startup_noise(
+            dataset, source_rows=np.arange(3), optics_group_ids=np.ones(3, dtype=np.int64), mask_params=(12.0, 3),
+            optics_pixel_sizes=np.array([1.25]), output_dtype=np.float32,
+        )
