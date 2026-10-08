@@ -2444,7 +2444,6 @@ def main():
     # refinement. A terminal replay must preserve them even when its newly
     # estimated scale statistics have no downstream consumer.
     run_options = RefinementOptions(
-        disc_type="linear_interp",
         schedule=RefinementSchedule(
             max_iter=args.max_iter,
             init_current_size=current_size,

@@ -526,7 +526,6 @@ class RefinementOptions:
     debug: EngineDebugOptions = field(default_factory=EngineDebugOptions)
     batching: RefinementBatching = field(default_factory=RefinementBatching)
     overlap: HalfOverlapOptions = field(default_factory=HalfOverlapOptions)
-    disc_type: str = "linear_interp"
     # Keep new option groups after the historical positional fields so
     # external positional construction retains its pre-symmetry meaning.
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)

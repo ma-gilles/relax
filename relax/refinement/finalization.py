@@ -301,7 +301,7 @@ def run_final_all_data(
             max_significants=options.adaptive.max_significants,
         )
         final_local_execution = LocalExecutionPolicy(
-            disc_type=options.disc_type,
+            disc_type="linear_interp",
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             # As the numbered local pass and the final dense pass: RELION's high-shell norm and sigma2 terms are
@@ -350,7 +350,7 @@ def run_final_all_data(
             skip_align=bool(options.k_class.skip_align),
         )
         final_dense_execution = DenseExecutionPolicy(
-            disc_type=options.disc_type,
+            disc_type="linear_interp",
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=not k_class_enabled,

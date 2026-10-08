@@ -766,7 +766,7 @@ def score_numbered_half(
                 max_significants=options.adaptive.max_significants,
             ),
             execution=LocalExecutionPolicy(
-                disc_type=options.disc_type,
+                disc_type="linear_interp",
                 disable_adjoint_y=options.debug.disable_adjoint_y,
                 disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
@@ -821,7 +821,7 @@ def score_numbered_half(
         )
         dense_variant = phase.variant
         dense_execution = DenseExecutionPolicy(
-            disc_type=options.disc_type,
+            disc_type="linear_interp",
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             bpref_device_signature_active=bpref_device_signature_active,

@@ -325,7 +325,6 @@ def run_tiny_refinement(
     if replay_fields:
         relion_replay = replace(relion_replay or RelionReplay(), **replay_fields)
     options = RefinementOptions(
-        disc_type="linear_interp",
         schedule=RefinementSchedule(
             **{"max_iter": max_iter, "init_current_size": 4, "init_healpix_order": 2, "max_healpix_order": 2,
                **(schedule or {})}

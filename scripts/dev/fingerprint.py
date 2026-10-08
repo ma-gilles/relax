@@ -1072,7 +1072,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 }
                 replay_settings.update(source_fields)
             options = refinement_options.RefinementOptions(
-                disc_type="linear_interp",
                 schedule=refinement_options.RefinementSchedule(
                     max_iter=max_iter, init_current_size=4, init_healpix_order=init_order, max_healpix_order=2,
                     **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
