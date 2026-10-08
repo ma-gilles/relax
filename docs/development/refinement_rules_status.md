@@ -32,7 +32,7 @@ reason; the sections after this one hold the detail.
 - The command builds the parity, replay and checkpoint option records from start-up results: they are
   results, not flags.
 - Environment reads that stay where they are used (item 2 below), each with its reason.
-- `refine_single_volume` stays one function (1,784 lines on 2026-10-07; owner, 2026-10-04). It holds no step with a
+- `refine_single_volume` stays one function (1,782 lines on 2026-10-07; owner, 2026-10-04). It holds no step with a
   mode flag.
 - The prior's per-shell outputs stay a dict until `relax.reconstruction` is refactored.
 - The coverage limits below (RELION run-directory fixture, local-search harness): costed, not built.
@@ -70,7 +70,7 @@ reason; the sections after this one hold the detail.
      `options.precision`, whose default is that policy when the options are built, and
      `require_process_precision` refuses options whose precision differs, so the two cannot disagree.
      Threading `options.precision` into the engines is its own slice.
-3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,784 lines (2026-10-07). Its mode
+3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,782 lines (2026-10-07). Its mode
    decisions, read by the rules (2026-10-05): 24 tests of `k_class_enabled`. None makes a step take a
    mode flag; each either selects one of two contract functions (image size: `plan_class_image_size` or
    `plan_halfmap_image_size`; M-step: `class_maximization` or `k1_maximization`; direction priors,
