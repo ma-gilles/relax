@@ -88,18 +88,13 @@ def test_common_engine_keywords_are_the_sparse_pass2_keywords():
     assert sparse["class_log_priors"] == "priors" and sparse["debug_iteration"] == 3
 
 
-def test_coarse_pose_assignments_need_a_fine_pass(monkeypatch):
-    calls = []
+def test_coarse_pose_assignments_need_a_fine_pass():
+    from relax.dense.score_outputs import _collapse_fine_pose_assignments_to_coarse as collapse
 
-    def fake_collapse(ha, **kwargs):
-        calls.append(kwargs)
-        return "collapsed"
-
-    monkeypatch.setattr(half_scoring, "_collapse_fine_pose_assignments_to_coarse", fake_collapse)
-    ha = np.zeros(2, dtype=np.int32)
-    assert half_scoring._coarse_pose_assignments(ha, rot_parent_map=None, trans_parent_map=None, n_trans_coarse=1, n_trans_fine=None) is None
-    assert half_scoring._coarse_pose_assignments(ha, rot_parent_map="rp", trans_parent_map="tp", n_trans_coarse=1, n_trans_fine=None) is None
-    assert half_scoring._coarse_pose_assignments(ha, rot_parent_map="rp", trans_parent_map=None, n_trans_coarse=1, n_trans_fine=3) is None
-    assert calls == []
-    assert half_scoring._coarse_pose_assignments(ha, rot_parent_map="rp", trans_parent_map="tp", n_trans_coarse=1, n_trans_fine=3) == "collapsed"
-    assert calls == [{"rot_parent_map": "rp", "trans_parent_map": "tp", "n_trans_coarse": 1, "n_trans_fine": 3}]
+    ha = np.array([0, 5], dtype=np.int32)
+    assert collapse(ha, rot_parent_map=None, trans_parent_map=None, n_trans_coarse=1, n_trans_fine=None) is None
+    assert collapse(ha, rot_parent_map=[0, 0], trans_parent_map=[0, 0, 0], n_trans_coarse=1, n_trans_fine=None) is None
+    assert collapse(ha, rot_parent_map=[0, 0], trans_parent_map=None, n_trans_coarse=1, n_trans_fine=3) is None
+    # Fine pose 5 = rotation 1, translation 2 of 3; parents rotation 1, translation 0 of 2 -> coarse 1 * 2 + 0.
+    coarse = collapse(ha, rot_parent_map=[0, 1], trans_parent_map=[0, 1, 0], n_trans_coarse=2, n_trans_fine=3)
+    assert coarse.dtype == np.int32 and coarse.tolist() == [0, 2]

@@ -344,8 +344,11 @@ def _collapse_fine_pose_assignments_to_coarse(
     rot_parent_map,
     trans_parent_map,
     n_trans_coarse: int,
-    n_trans_fine: int,
+    n_trans_fine: int | None,
 ):
+    """Collapse fine pose assignments onto the coarse grid; ``None`` when no fine pass ran."""
+    if trans_parent_map is None or n_trans_fine is None:
+        return None
     pose = np.asarray(pose_assignments, dtype=np.int64)
     rot_idx = pose // int(n_trans_fine)
     trans_idx = pose % int(n_trans_fine)

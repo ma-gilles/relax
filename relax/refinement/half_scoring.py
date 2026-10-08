@@ -147,20 +147,6 @@ def _adaptive_engine_common_kwargs(
     )
 
 
-def _coarse_pose_assignments(ha, *, rot_parent_map, trans_parent_map, n_trans_coarse, n_trans_fine):
-    """Collapse fine pose assignments onto the coarse grid; ``None`` when no fine pass ran."""
-
-    if trans_parent_map is None or n_trans_fine is None:
-        return None
-    return _collapse_fine_pose_assignments_to_coarse(
-        ha,
-        rot_parent_map=rot_parent_map,
-        trans_parent_map=trans_parent_map,
-        n_trans_coarse=n_trans_coarse,
-        n_trans_fine=n_trans_fine,
-    )
-
-
 @dataclass(frozen=True, kw_only=True)
 class HalfScoringData:
     """Persistent particle half and the model operands for one expectation."""
@@ -885,7 +871,7 @@ def _score_half_dense_one_shape(
         )
         if variant.skip_align:
             _keep_given_poses(score_result, half, given)
-        score_result.coarse_ha = _coarse_pose_assignments(
+        score_result.coarse_ha = _collapse_fine_pose_assignments_to_coarse(
             score_result.ha,
             rot_parent_map=rot_pmap_for_collapse,
             trans_parent_map=trans_pmap_for_collapse,
@@ -974,7 +960,7 @@ def _score_half_dense_one_shape(
         noise_stats_k = k1_adaptive_result.noise_stats[0]
     if noise_stats_k is None:
         raise RuntimeError("K=1 adaptive path did not return noise statistics")
-    coarse_ha_k = _coarse_pose_assignments(
+    coarse_ha_k = _collapse_fine_pose_assignments_to_coarse(
         ha_k,
         rot_parent_map=rot_pmap_for_collapse,
         trans_parent_map=trans_pmap_for_collapse,

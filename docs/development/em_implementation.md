@@ -219,7 +219,7 @@ fraction, the fine M-step rotations pruned only for sparse pass 2); the K=1 call
 significance skipping, the diagnostic float64 pass 2 and the host-double coarse
 translation phases, and the K-class call plans its own batches. Pass 2 always runs on the
 device-resident sparse engine (the dense pass 2 and its `RELAX_K1_DENSE_PASS2` /
-`RELAX_K_CLASS_DENSE_PASS2` switches were removed on 2026-10-03), and `_coarse_pose_assignments` collapses fine pose
+`RELAX_K_CLASS_DENSE_PASS2` switches were removed on 2026-10-03), and `_collapse_fine_pose_assignments_to_coarse` collapses fine pose
 assignments onto the coarse grid when a fine pass ran
 ([`test_adaptive_engine_call_owner.py`](../../tests/unit/test_adaptive_engine_call_owner.py)).
 [`heterogeneity._fixed_rotation_covariance_images`](../../tests/oracles/heterogeneity.py) accumulates the
