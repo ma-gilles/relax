@@ -12,10 +12,11 @@
 #                             <rev> (the launcher tests need git); writes logs/fail_<label>.txt
 #   clean <label>             the failure list of a tests run must be empty
 #   compare <label> <label>   the two failure lists must be identical (to compare a base by hand)
-#   all [BASE]                fp, selftest, guard, tests head HEAD, clean head (about 40 minutes; more with a
-#                             module's test directories)
+#   smell                     scripts/dev/smell_check.py against its baseline; a warning, never a failure
+#   all [BASE]                fp, selftest, guard, tests head HEAD, clean head, smell (about 40 minutes; more
+#                             with a module's test directories)
 # Each step prints one summary line and exits nonzero on failure ("tests" does not: "clean" or "compare"
-# decides). Run it from the worktree, or as a Slurm job from there
+# decides; "smell" always exits 0 and lists its new findings in its log). Run it from the worktree, or as a Slurm job from there
 # (sbatch --account=<account> --export=ALL scripts/dev/refactor_gate.sh all). REFACTOR_WORKTREE defaults to
 # the checkout of the current directory, REFACTOR_PYTHON to its pixi environment, REFACTOR_TAG (a suffix
 # for log names, so two gates can share one scratch directory) to the short head. REFACTOR_MODULE (default
@@ -74,6 +75,10 @@ step_clean() {
   if [ ! -s "$f" ]; then echo "failure list $1: empty"; return 0; fi
   echo "failure list $1: $(wc -l < "$f") failed"; cat "$f"; return 1
 }
+step_smell() {
+  cd "$W" && "$PY" scripts/dev/smell_check.py > "$S/logs/smell_$T.txt" 2>&1
+  echo "$(tail -1 "$S/logs/smell_$T.txt") -> $S/logs/smell_$T.txt (warning only)"; return 0
+}
 step_compare() {
   local a=$S/logs/fail_${1:?compare needs two labels}.txt b=$S/logs/fail_${2:?compare needs two labels}.txt
   if cmp -s "$a" "$b"; then echo "failure lists $1 / $2: identical ($(wc -l < "$a") failed on both)"; return 0; fi
@@ -87,9 +92,10 @@ guard) step_guard;;
 tests) step_tests "${2:-}" "${3:-}";;
 clean) step_clean "${2:-}";;
 compare) step_compare "${2:-}" "${3:-}";;
+smell) step_smell;;
 all) status=0; base=${2:-origin/main}
   step_fp "$base" || status=1; step_selftest || status=1; step_guard || status=1
   step_tests head HEAD || status=1; step_clean head || status=1
-  exit $status;;
-*) sed -n '6,23p' "$0"; exit 2;;
+  step_smell; exit $status;;
+*) sed -n '6,24p' "$0"; exit 2;;
 esac

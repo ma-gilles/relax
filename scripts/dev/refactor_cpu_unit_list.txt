@@ -161,6 +161,7 @@ tests/unit/test_run_multi_iter_parity.py
 tests/unit/test_run_reports.py
 tests/unit/test_segmented_joint_pmax_preservation.py
 tests/unit/test_sigma_offset_per_half.py
+tests/unit/test_smell_check.py
 tests/unit/test_snapshot_capture.py
 tests/unit/test_snapshot_direction_priors.py
 tests/unit/test_source_euler_publication.py
