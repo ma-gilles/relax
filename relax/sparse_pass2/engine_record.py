@@ -63,12 +63,18 @@ def record_pass_engine(pass_kind: str, engine: str, reason: str | None = None) -
     _entries.append(f"{pass_kind}:{engine}" if not reason else f"{pass_kind}:{engine} ({reason})")
 
 
+def _drain(entries: list) -> list:
+    """Return a copy of ``entries`` and clear it in place."""
+
+    taken = list(entries)
+    entries.clear()
+    return taken
+
+
 def take_pass_engines() -> list[str]:
     """Return the entries recorded since the last call and clear them."""
 
-    entries = list(_entries)
-    _entries.clear()
-    return entries
+    return _drain(_entries)
 
 
 def record_coarse_engine_call(
@@ -165,6 +171,4 @@ def record_coarse_engine_call(
 
 def take_coarse_engine_calls() -> list[dict]:
     """Return and clear executed global-call records since the last boundary."""
-    entries = list(_coarse_entries)
-    _coarse_entries.clear()
-    return entries
+    return _drain(_coarse_entries)
