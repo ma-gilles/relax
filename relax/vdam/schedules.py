@@ -13,6 +13,7 @@ from typing import Optional
 
 import numpy as np
 
+from relax.relion.macros import relion_round
 from relax.vdam.state import InitialModelState
 
 # GUI InitialModel defaults (pipeline_jobs.cpp::initialiseInimodelJob,
@@ -153,7 +154,7 @@ def compute_subset_size(
         subset_size = grad_ini_subset_size
     elif iter < grad_ini_iter + grad_inbetween_iter:
         frac = (iter - grad_ini_iter) / grad_inbetween_iter if grad_inbetween_iter > 0 else 0.0
-        subset_size = grad_ini_subset_size + _relion_round(frac * (grad_fin_subset_size - grad_ini_subset_size))
+        subset_size = grad_ini_subset_size + relion_round(frac * (grad_fin_subset_size - grad_ini_subset_size))
     else:
         subset_size = grad_fin_subset_size
 
@@ -299,8 +300,3 @@ def _step_sigmoid_value(
     # surrounding RFLOAT multiplication.
     one_minus_scale = float(np.float32(1.0) - np.float32(scale))
     return inflated * scale + base * one_minus_scale
-
-
-def _relion_round(x: float) -> int:
-    """``ROUND(x) == (int)floor(x + 0.5)``; symmetric around zero (RELION macro)."""
-    return int(math.floor(x + 0.5)) if x >= 0.0 else -int(math.floor(-x + 0.5))

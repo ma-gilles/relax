@@ -16,6 +16,7 @@ from typing import Literal, Optional
 import jax.numpy as jnp
 import numpy as np
 
+from relax.relion.macros import relion_round
 from relax.vdam.state import InitialModelState, VdamAccumulator, half_slot_index
 
 XMIPP_EQUAL_ACCURACY: float = 1e-6
@@ -98,7 +99,7 @@ def _relion_resolution_shell(ori_size: int, pixel_size: float, resolution_angstr
     if resolution_angstrom <= 0.0:
         raise ValueError(f"resolution_angstrom must be positive, got {resolution_angstrom}")
     shell = float(ori_size) * float(pixel_size) / float(resolution_angstrom)
-    return int(np.floor(shell + 0.5)) if shell >= 0.0 else -int(np.floor(-shell + 0.5))
+    return relion_round(shell)
 
 
 def _grad_min_resol_shell_from_state(

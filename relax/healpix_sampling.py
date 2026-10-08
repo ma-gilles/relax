@@ -21,10 +21,10 @@ import math
 import numpy as np
 
 from relax.helpers import libm
+from relax.relion.macros import PI, relion_ceil, relion_round
 from relax.symmetry import canonicalize_rotational_symmetry, parse_rotational_symmetry, relion_symmetry_operators
 
-# macros.h PI and Healpix lsconstants.h pi/halfpi, as doubles.
-_PI = 3.14159265358979323846
+# Healpix lsconstants.h halfpi, as a double.
 _HALFPI = 1.570796326794896619231321691639751442099
 _FLT_EPSILON = float(np.finfo(np.float32).eps)
 # Healpix_Base Tablefiller (healpix_base.cc:45-56).
@@ -54,25 +54,11 @@ _JPLL = np.array([1, 3, 5, 7, 0, 2, 4, 6, 1, 3, 5, 7], dtype=np.int64)
 
 
 def _deg2rad(degrees):
-    return degrees * _PI / 180
+    return degrees * PI / 180
 
 
 def _rad2deg(radians):
-    return radians * 180 / _PI
-
-
-def _relion_round(value: float) -> int:
-    """RELION ``ROUND`` (macros.h:197)."""
-
-    return int(value + 0.5) if value > 0 else int(value - 0.5)
-
-
-def _relion_ceil(value: float) -> int:
-    """RELION ``CEIL`` (macros.h:212)."""
-
-    if value == int(value):
-        return int(value)
-    return int(value + 1) if value > 0 else int(value)
+    return radians * 180 / PI
 
 
 def nside(order: int) -> int:
@@ -167,21 +153,21 @@ def pixel_rot_tilt(order: int, pix):
 
     z, phi = pix_to_z_phi(order, pix)
     rot = _rad2deg(phi)
-    tilt = libm.acos(z) * 180.0 / _PI
+    tilt = libm.acos(z) * 180.0 / PI
     # checkDirection: acos keeps tilt >= 0 and phi >= 0 keeps rot >= 0.
     rot = np.where(rot > 180.0, rot - 360.0, rot)
     return rot, tilt
 
 
 def default_psi_step(order: int) -> float:
-    return 360.0 / (6 * _relion_round(2.0 ** int(order)))
+    return 360.0 / (6 * relion_round(2.0 ** int(order)))
 
 
 def psi_angles(order: int, psi_step: float = -1.0) -> np.ndarray:
     """``setOrientations`` in-plane angles: ``ipsi * 360 / CEIL(360 / psi_step)``."""
 
     step = default_psi_step(order) if psi_step <= 0.0 else float(psi_step)
-    nr_psi = _relion_ceil(360.0 / step)
+    nr_psi = relion_ceil(360.0 / step)
     step = 360.0 / float(nr_psi)
     return np.arange(nr_psi, dtype=np.float64) * step
 
@@ -189,7 +175,7 @@ def psi_angles(order: int, psi_step: float = -1.0) -> np.ndarray:
 def angular_sampling_deg(order: int) -> float:
     """``getAngularSampling()`` for 3-D sampling at ``adaptive_oversampling = 0``."""
 
-    return 360.0 / (6 * _relion_round(2.0 ** int(order)))
+    return 360.0 / (6 * relion_round(2.0 ** int(order)))
 
 
 def euler_angles_to_matrix(eulers_deg) -> np.ndarray:
@@ -242,7 +228,7 @@ def euler_matrix_to_angles(matrices) -> np.ndarray:
         libm.atan2(a[singular, 1, 0], -a[singular, 0, 0]),
     )
     alpha = np.where(regular, alpha, 0.0)
-    beta = np.where(regular, beta, np.where(upright, 0.0, _PI))
+    beta = np.where(regular, beta, np.where(upright, 0.0, PI))
     gamma = np.where(regular, gamma, singular_gamma)
     return np.stack([_rad2deg(alpha), _rad2deg(beta), _rad2deg(gamma)], axis=-1)
 
@@ -462,7 +448,7 @@ def oversampled_orientations(
         fine_y = fact * y[:, None] + dj.reshape(-1)[None, :]
         fine_pix = xyf_to_nest(order + oversampling_order, fine_x, fine_y, face[:, None])
         rot, tilt = pixel_rot_tilt(order + oversampling_order, fine_pix)
-        nr_psi_over = _relion_round(2.0**oversampling_order)
+        nr_psi_over = relion_round(2.0**oversampling_order)
         psi_step = 360.0 / float(sampling["psi"].size)
         over = np.arange(nr_psi_over, dtype=np.float64)
         psi = psi_center[:, None] - 0.5 * psi_step + (0.5 + over)[None, :] * psi_step / nr_psi_over

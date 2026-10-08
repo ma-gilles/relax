@@ -18,11 +18,11 @@ import math
 
 import pytest
 
+from relax.relion.macros import relion_round
 from relax.vdam.native_options import InitialModelDefaults
 from relax.vdam.schedules import (
     DEFAULT_STEPSIZE_3D_INITIAL_MODEL,
     DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL,
-    _relion_round,
     _step_sigmoid_value,
     compute_phase_lengths,
     compute_stepsize,
@@ -304,7 +304,7 @@ class TestSubsetSizeSchedule:
             nr_particles=500,
             nr_iter=200,
         )
-        expected_97 = 200 + _relion_round((97 - 60) / 100 * 800)
+        expected_97 = 200 + relion_round((97 - 60) / 100 * 800)
         assert size_97 == expected_97
 
 
@@ -553,17 +553,17 @@ class TestHelpers:
         # RELION's ROUND macro (xmipp_macros.h):
         #   (x > 0) ? (int)(x + 0.5) : (int)(x - 0.5)
         # which rounds ties away from zero, not banker's-style.
-        assert _relion_round(0.5) == 1  # Python round(0.5) == 0 (bankers)
-        assert _relion_round(1.5) == 2
-        assert _relion_round(2.5) == 3  # Python round(2.5) == 2 (bankers)
-        assert _relion_round(0.49) == 0
-        assert _relion_round(0.51) == 1
+        assert relion_round(0.5) == 1  # Python round(0.5) == 0 (bankers)
+        assert relion_round(1.5) == 2
+        assert relion_round(2.5) == 3  # Python round(2.5) == 2 (bankers)
+        assert relion_round(0.49) == 0
+        assert relion_round(0.51) == 1
         # Negative ties round away from zero
-        assert _relion_round(-0.5) == -1  # (int)(-0.5 - 0.5) = (int)(-1.0) = -1
-        assert _relion_round(-1.5) == -2
-        assert _relion_round(-2.5) == -3
-        assert _relion_round(-0.49) == 0
-        assert _relion_round(-0.51) == -1
+        assert relion_round(-0.5) == -1  # (int)(-0.5 - 0.5) = (int)(-1.0) = -1
+        assert relion_round(-1.5) == -2
+        assert relion_round(-2.5) == -3
+        assert relion_round(-0.49) == 0
+        assert relion_round(-0.51) == -1
 
     def test_step_sigmoid_extremes(self):
         # Far past the sigmoid midpoint --> scale ~ 0, value ~ base

@@ -26,6 +26,7 @@ from relax.helpers.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
+from relax.vdam.init import compute_ini_high_shell
 
 
 @dataclasses.dataclass(frozen=True)
@@ -427,7 +428,7 @@ def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2):
     if isinstance(q, bool) or not isinstance(q, (int, np.integer)) or q <= 0:
         raise ValueError("q must be a positive integer")
     rng = np.random.default_rng(seed)
-    radius = max(1, int(np.floor(0.07 * particles.grid_size + 0.5)))
+    radius = max(1, compute_ini_high_shell(particles.grid_size))
     rhs, lhs, chosen = tilt_bootstrap(particles, rng, q + 1, radius)
     theta = seed_model(rhs, lhs, particles.volume_shape, particles.voxel_size, diameter_ang, radius, rng)
     images_for_noise = tilt_noise_images(particles, rng)

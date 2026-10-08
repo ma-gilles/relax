@@ -18,16 +18,12 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.relion.macros import relion_round, relion_round_array
+
 # randomize_at is the first shell whose unmasked FSC falls below this; the corrected formula starts
 # two shells above it (RELION: "small artefacts near the resolution of randomisation").
 _RANDOMIZE_FSC_AT = 0.8
 _CORRECTION_HANDOFF_SHELLS = 2
-
-
-def _relion_round(values):
-    """RELION's ROUND (macros.h): halves away from zero."""
-    values = np.asarray(values, dtype=np.float64)
-    return np.where(values > 0, np.floor(values + 0.5), np.ceil(values - 0.5)).astype(np.int64)
 
 
 def _fourier_resize(volume, new_size: int) -> np.ndarray:
@@ -67,7 +63,7 @@ def read_solvent_mask(path, *, box: int, pixel_size: float) -> np.ndarray:
     if mask.ndim != 3 or len(set(mask.shape)) != 1:
         raise ValueError(f"the solvent mask {path} must be a cubic 3-D map, got shape {mask.shape}")
     if mask_pixel > 0 and abs(mask_pixel - float(pixel_size)) > 0.001:
-        new_size = int(_relion_round(mask.shape[0] * mask_pixel / float(pixel_size)))
+        new_size = relion_round(float(mask.shape[0] * mask_pixel / float(pixel_size)))
         new_size += new_size % 2
         mask = _fourier_resize(mask, new_size)
     if mask.shape[0] != int(box):
@@ -81,7 +77,7 @@ def _fftw_shells(size: int):
     z = np.fft.fftfreq(size) * size
     x = np.arange(size // 2 + 1)
     radius_sq = z[:, None, None] ** 2 + z[None, :, None] ** 2 + x[None, None, :] ** 2
-    return _relion_round(np.sqrt(radius_sq)), radius_sq
+    return relion_round_array(np.asarray(np.sqrt(radius_sq), dtype=np.float64)).astype(np.int64), radius_sq
 
 
 def real_space_fsc(map1, map2) -> np.ndarray:

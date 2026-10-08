@@ -26,10 +26,8 @@ import numpy as np
 
 from relax.healpix_sampling import euler_angles_to_matrix
 from relax.helpers import relion_random
+from relax.relion.macros import PI, relion_round
 from relax.relion.reference_initialization import initial_low_pass_filter_references
-from relax.vdam.schedules import _relion_round
-
-_PI = 3.14159265358979323846
 
 
 def _logical_axis(size: int) -> np.ndarray:
@@ -74,7 +72,7 @@ def _soft_mask_geometry(shape: tuple, radius: float, cosine_width: float):
     radius_p = radius + cosine_width
     outside = r > radius_p
     edge = ~outside & ~(r < radius)
-    raised = np.where(edge, 0.5 + 0.5 * np.cos(_PI * (radius_p - r) / cosine_width), 0.0)
+    raised = np.where(edge, 0.5 + 0.5 * np.cos(PI * (radius_p - r) / cosine_width), 0.0)
     weight = np.where(outside, 1.0, raised).reshape(-1)
     counted = outside.reshape(-1) | edge.reshape(-1)
     total = np.cumsum(weight[counted])[-1] if np.any(counted) else 0.0
@@ -111,7 +109,7 @@ def _reconstruct_geometry(n: int, r_max: int, pf: float):
     """The data-independent indices of :meth:`BackProjector3D.reconstruct` for one size (memoized per class run)."""
 
     half = n // 2 + 1
-    max_r2 = _relion_round(r_max * pf) * _relion_round(r_max * pf)
+    max_r2 = relion_round(r_max * pf) * relion_round(r_max * pf)
     kp = _fftw_axis(n, half)[:, None, None]
     ip = _fftw_axis(n, half)[None, :, None]
     jp = np.arange(half)[None, None, :]
@@ -119,7 +117,7 @@ def _reconstruct_geometry(n: int, r_max: int, pf: float):
     inside = r2 <= max_r2
     centre = n // 2
     source = (kp + centre, ip + centre, np.broadcast_to(jp, r2.shape))
-    round_max_r2 = _relion_round(r_max * pf * r_max * pf)
+    round_max_r2 = relion_round(r_max * pf * r_max * pf)
     shell = np.floor(np.sqrt(r2.astype(np.float64)) / pf).astype(np.int64)
     within = r2 < round_max_r2
     counter = np.bincount(shell[within], minlength=r_max)[:r_max].astype(np.float64)
@@ -155,7 +153,7 @@ def _gridding_geometry(ori: int, pf: float):
     r = np.sqrt((k * k + i * i + j * j).astype(np.float64))
     with np.errstate(invalid="ignore", divide="ignore"):
         rval = r / (ori * pf)
-        sinc = np.sin(_PI * rval) / (_PI * rval)
+        sinc = np.sin(PI * rval) / (PI * rval)
         sinc2 = sinc * sinc
     return _frozen(r > 0.0, sinc2)
 
@@ -168,7 +166,7 @@ class BackProjector3D:
         self.padding_factor = float(padding_factor)
         r_max = self.ori_size // 2 if current_size < 0 else int(current_size) // 2
         self.r_max = min(r_max, self.ori_size // 2)
-        self.pad_size = 2 * (_relion_round(self.padding_factor * self.r_max) + 1) + 1
+        self.pad_size = 2 * (relion_round(self.padding_factor * self.r_max) + 1) + 1
         shape = (self.pad_size, self.pad_size, self.pad_size // 2 + 1)
         self.data = np.zeros(shape, dtype=np.complex128)
         self.weight = np.zeros(shape, dtype=np.float64)
@@ -194,7 +192,7 @@ class BackProjector3D:
         inv[:, 2, 2] = m[:, 1, 1] * m[:, 0, 0] - m[:, 1, 0] * m[:, 0, 1]
         det = m[:, 0, 0] * inv[:, 0, 0] + m[:, 1, 0] * inv[:, 0, 1] + m[:, 2, 0] * inv[:, 0, 2]
         inv = inv / det[:, None, None] * self.padding_factor
-        max_r2 = _relion_round(self.r_max * self.padding_factor) ** 2
+        max_r2 = relion_round(self.r_max * self.padding_factor) ** 2
         # Magnification identity (m00 = m11 = 1): Am_* are the first two columns.
         am_xx, am_xy = inv[:, 0, 0] * 1.0 + inv[:, 0, 1] * 0.0, inv[:, 0, 0] * 0.0 + inv[:, 0, 1] * 1.0
         am_yx, am_yy = inv[:, 1, 0] * 1.0 + inv[:, 1, 1] * 0.0, inv[:, 1, 0] * 0.0 + inv[:, 1, 1] * 1.0
@@ -287,7 +285,7 @@ class BackProjector3D:
         """``windowToOridimRealSpace`` then ``griddingCorrect`` (backprojector.cpp:2848-2967, projector.cpp:595)."""
 
         pf, ori = self.padding_factor, self.ori_size
-        padoridim = _relion_round(pf * ori)
+        padoridim = relion_round(pf * ori)
         padoridim += padoridim % 2
         new_half = padoridim // 2 + 1
         n, half = f_in.shape[0], f_in.shape[-1]

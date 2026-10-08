@@ -43,10 +43,10 @@ import numpy as np
 
 from relax.helpers import relion_random
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.relion.macros import PI, relion_round_array
 from relax.sparse_pass2.sparse_pass2_budget import ACCURACY_SLAB_STREAM_CHUNK_BYTES, accuracy_slab_resident_bytes
 
 PVALUE = 4.60517
-_PI = 3.14159265358979323846
 _EQUAL_ACCURACY = 1e-6
 
 
@@ -59,11 +59,6 @@ class ExpectedErrors:
     acc_rot_class: np.ndarray
     acc_trans_class: np.ndarray
     class_counts: np.ndarray
-
-
-def _relion_round(values):
-    values = np.asarray(values, dtype=np.float64)
-    return np.where(values > 0, np.trunc(values + 0.5), np.trunc(values - 0.5)).astype(np.int64)
 
 
 def _euler_matrices(eulers_deg):
@@ -324,7 +319,7 @@ def _shift(real, imag, xshift, yshift, *, shape, oridim):
     rows = jnp.arange(size)
     y = jnp.where(rows < half, rows, rows - size).astype(jnp.float64)
     x = jnp.arange(half, dtype=jnp.float64)
-    dotp = 2 * _PI * (x[None, None, :] * xs[:, None, None] + y[None, :, None] * ys[:, None, None])
+    dotp = 2 * PI * (x[None, None, :] * xs[:, None, None] + y[None, :, None] * ys[:, None, None])
     b, a = jnp.sin(dotp).reshape(-1, size * half), jnp.cos(dotp).reshape(-1, size * half)
     ac = a * real
     bd = b * imag
@@ -378,8 +373,8 @@ def _snr_terms(image_size, full_size, sigma2_noise, sigma2_fudge, remap_image_si
     rows = np.arange(image_size)
     iy = np.where(rows < half, rows, rows - image_size)[:, None]
     ix = np.arange(half)[None, :]
-    ires = _relion_round(np.sqrt((iy * iy + ix * ix).astype(np.float64)))
-    remapped = _relion_round(remap_image_sizes * ires)
+    ires = relion_round_array(np.sqrt((iy * iy + ix * ix).astype(np.float64))).astype(np.int64)
+    remapped = relion_round_array(np.asarray(remap_image_sizes * ires, dtype=np.float64)).astype(np.int64)
     sigma = np.asarray(sigma2_noise, dtype=np.float64)
     valid = (ires > 0) & (ires < half) & ~((ix == 0) & (iy < 0)) & (remapped < sigma.size)
     shell_sigma = np.where(valid, sigma[np.minimum(remapped, sigma.size - 1)], 0.0)

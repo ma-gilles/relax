@@ -16,7 +16,12 @@ from relax.relion import initial_model_io
 from relax.relion.initial_model_io import _experiment_read_order
 from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
 from relax.vdam import bootstrap_reconstruction, output
-from relax.vdam.init import initialise_data_vs_prior_from_references, initialise_denovo_state, seed_noise_from_mavg
+from relax.vdam.init import (
+    compute_ini_high_shell,
+    initialise_data_vs_prior_from_references,
+    initialise_denovo_state,
+    seed_noise_from_mavg,
+)
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import _n_directions_for_healpix_order
 from relax.vdam.state import InitialModelState
@@ -65,7 +70,7 @@ def compute_bootstrap_iref(
 
     if current_size <= 0:
         # RELION wsum_model.current_size = ROUND(0.07 * ori_size) (shell count, not A).
-        current_size = int(np.floor(0.07 * ori_size + 0.5))
+        current_size = compute_ini_high_shell(ori_size)
     todo = min(max(int(minimum_nr_particles), int(nr_classes) * 5), int(images.shape[0]))
     ctf_images = None
     if do_ctf_correction:
@@ -443,7 +448,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
         random_seed=int(opts.random_seed),
         padding_factor=int(opts.padding_factor),
         minimum_nr_particles=int(units.size),
-        current_size=int(np.floor(0.07 * ori_size + 0.5)),
+        current_size=compute_ini_high_shell(ori_size),
         image_particle=image_particle,
         image_projections=half.image_projections,
     )

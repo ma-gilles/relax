@@ -17,6 +17,8 @@ from recovar.reconstruction.regularization import (  # noqa: F401  (staying help
     logger,
 )
 
+from relax.relion.macros import relion_round, relion_round_array
+
 _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
 # Device bytes per padded-grid voxel of the device shell statistics: the two halves' weights, their combination and
 # its float64 copy (8 B each), and the radius, shell-index and mask grids of _padded_shell_sums_device.
@@ -57,12 +59,6 @@ def _shell_stats_on_host(n_voxels: int) -> bool:
 
 
 _LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS = 200_000_000
-
-
-def _relion_round_away_from_zero(x):
-    """Mirror RELION's ``ROUND`` macro for NumPy arrays."""
-    x = np.asarray(x)
-    return np.trunc(np.where(x > 0, x + 0.5, x - 0.5)).astype(np.int64)
 
 
 def _unscaled_fft_frequency_grid_np(n):
@@ -674,7 +670,7 @@ def _compute_relion_weight_shell_stats(
             if r_max is None:
                 radius_included_np = np.ones_like(padded_dist_np, dtype=bool)
             else:
-                max_r_pad = int(_relion_round_away_from_zero(np.asarray(float(r_max) * padding_factor)))
+                max_r_pad = relion_round(float(r_max) * padding_factor)
                 radius_included_np = padded_dist_np * padded_dist_np < float(max_r_pad * max_r_pad)
             if shell_rounding == "round":
                 shell_index_np = np.floor(padded_dist_np / padding_factor + 0.5).astype(np.int32)
@@ -736,7 +732,7 @@ def _compute_relion_weight_shell_stats(
                 max_r_pad=(
                     None
                     if r_max is None
-                    else int(_relion_round_away_from_zero(np.asarray(float(r_max) * padding_factor)))
+                    else relion_round(float(r_max) * padding_factor)
                 ),
                 shell_rounding=shell_rounding,
                 ori_half=int(ori_half),
@@ -766,7 +762,7 @@ def _compute_relion_weight_shell_stats(
         if r_max is None:
             included = jnp.ones(weight.shape[0], dtype=jnp.float64)
         else:
-            max_r_native = int(_relion_round_away_from_zero(np.asarray(float(r_max))))
+            max_r_native = relion_round(float(r_max))
             included = (radial_raw * radial_raw < float(max_r_native * max_r_native)).astype(jnp.float64)
         if pair_once:
             pair_weights = _pair_once_weights(volume_shape, is_half_layout=is_half_layout, full_half_axis=full_half_axis)
@@ -1019,9 +1015,9 @@ def _compute_relion_fsc_from_packed_half_streamed(
         )
         for size in padded_shape
     ]
-    rounded_relion_z = _relion_round_away_from_zero(axes[1] / pf)
-    rounded_relion_y = _relion_round_away_from_zero(axes[2] / pf)
-    rounded_relion_x = _relion_round_away_from_zero(axes[0] / pf)
+    rounded_relion_z = relion_round_array(axes[1] / pf).astype(np.int64)
+    rounded_relion_y = relion_round_array(axes[2] / pf).astype(np.int64)
+    rounded_relion_x = relion_round_array(axes[0] / pf).astype(np.int64)
     source_z_indices = np.flatnonzero(
         (rounded_relion_z >= -down_radius) & (rounded_relion_z <= down_radius)
     ).astype(np.intp, copy=False)
@@ -1132,9 +1128,9 @@ def _compute_relion_fsc_from_packed_half_streamed(
             continue
         z_indices = source_z_indices[rounded_relion_z[source_z_indices] == target_z]
         target_valid = target_radius_sq_yx + float(target_z * target_z) <= float(max_shell * max_shell)
-        target_shells = _relion_round_away_from_zero(
+        target_shells = relion_round_array(
             np.sqrt(target_radius_sq_yx + float(target_z * target_z))
-        )[target_valid]
+        ).astype(np.int64)[target_valid]
         if z_indices.size:
             labels = np.tile(local_labels_one_z, z_indices.size)
             avg0 = _downsample_one_half(data0_half, weight0_half, z_indices, labels)
@@ -1209,9 +1205,9 @@ def _relion_fsc_downsample_labels(padded_shape, pf, max_shell):
     # emulation; the shell bins are rotationally invariant, but the compact
     # half-axis selection is not.
     relion_z, relion_y, relion_x = np.meshgrid(axes[1], axes[2], axes[0], indexing="ij")
-    dz = _relion_round_away_from_zero(relion_z / pf)
-    dy = _relion_round_away_from_zero(relion_y / pf)
-    dx = _relion_round_away_from_zero(relion_x / pf)
+    dz = relion_round_array(relion_z / pf).astype(np.int64)
+    dy = relion_round_array(relion_y / pf).astype(np.int64)
+    dx = relion_round_array(relion_x / pf).astype(np.int64)
 
     down_radius = max_shell + 1
     down_size = 2 * down_radius + 1
@@ -1433,7 +1429,7 @@ def compute_relion_fsc_from_backprojector(
     x_axis = np.arange(0, down_xsize, dtype=np.float64)
     rz, ry, rx = np.meshgrid(z_axis, y_axis, x_axis, indexing="ij")
     radius = np.sqrt(rz * rz + ry * ry + rx * rx)
-    shell = _relion_round_away_from_zero(radius)
+    shell = relion_round_array(radius).astype(np.int64)
     shell_count = half + 1
     # RELION's calculateDownSampledFourierShellCorrelation bins by ROUND(R),
     # but first skips samples with exact native radius R > r_max.
@@ -1887,7 +1883,7 @@ def join_halves_at_low_resolution(
         pf = int(padding_factor)
         if pf <= 0:
             raise ValueError(f"padding_factor must be positive, got {padding_factor}")
-    lowres_r_max_padded = int(_relion_round_away_from_zero(float(pf) * lowres_r_max))
+    lowres_r_max_padded = relion_round(float(pf) * lowres_r_max)
     lowres_r2_max = lowres_r_max_padded * lowres_r_max_padded
 
     volume_shape = tuple(int(s) for s in volume_shape)

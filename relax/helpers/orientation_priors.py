@@ -12,6 +12,7 @@ import healpy as hp
 import numpy as np
 
 from relax.helpers.convergence import healpix_angular_step
+from relax.relion.macros import relion_round_array
 from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
 
 
@@ -23,9 +24,7 @@ def relion_round_away_from_zero(values, *, dtype: np.dtype = np.float32):
     (double under ``DoublePrec_CPU``/``DoublePrec_ACC``) throughout -- pass
     ``np.float64`` to match a genuine double-precision comparison.
     """
-    arr = np.asarray(values, dtype=np.float64)
-    rounded = np.where(arr >= 0.0, np.floor(arr + 0.5), -np.floor(-arr + 0.5))
-    return rounded.astype(dtype, copy=False)
+    return relion_round_array(np.asarray(values, dtype=np.float64)).astype(dtype, copy=False)
 
 
 def make_relion_translation_log_prior(

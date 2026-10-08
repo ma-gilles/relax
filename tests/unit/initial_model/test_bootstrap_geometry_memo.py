@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.relion.macros import PI, relion_round
 from relax.vdam import bootstrap_reconstruction as br
-from relax.vdam.schedules import _relion_round
 
 pytestmark = pytest.mark.unit
 
@@ -25,7 +25,7 @@ def _reference_soft_mask(volume, radius=-1.0, cosine_width=3.0):
     radius_p = radius + cosine_width
     outside = r > radius_p
     edge = ~outside & ~(r < radius)
-    raised = np.where(edge, 0.5 + 0.5 * np.cos(br._PI * (radius_p - r) / cosine_width), 0.0)
+    raised = np.where(edge, 0.5 + 0.5 * np.cos(PI * (radius_p - r) / cosine_width), 0.0)
     weight = np.where(outside, 1.0, raised).reshape(-1)
     weighted = np.where(outside, vol, raised * vol).reshape(-1)
     counted = outside.reshape(-1) | edge.reshape(-1)
@@ -38,7 +38,7 @@ def _reference_soft_mask(volume, radius=-1.0, cosine_width=3.0):
 def _reference_reconstruct(bp):
     pf, r_max, n = bp.padding_factor, bp.r_max, bp.pad_size
     half = n // 2 + 1
-    max_r2 = _relion_round(r_max * pf) * _relion_round(r_max * pf)
+    max_r2 = relion_round(r_max * pf) * relion_round(r_max * pf)
     kp = br._fftw_axis(n, half)[:, None, None]
     ip = br._fftw_axis(n, half)[None, :, None]
     jp = np.arange(half)[None, None, :]
@@ -48,7 +48,7 @@ def _reference_reconstruct(bp):
     source = (kp + centre, ip + centre, np.broadcast_to(jp, r2.shape))
     f_weight = np.where(inside, bp.weight[source], 0.0)
     f_conv = np.where(inside, bp.data[source], 0.0)
-    round_max_r2 = _relion_round(r_max * pf * r_max * pf)
+    round_max_r2 = relion_round(r_max * pf * r_max * pf)
     shell = np.floor(np.sqrt(r2.astype(np.float64)) / pf).astype(np.int64)
     within = r2 < round_max_r2
     radavg = np.bincount(shell[within], weights=f_weight[within], minlength=r_max)[:r_max]
@@ -58,7 +58,7 @@ def _reference_reconstruct(bp):
     weight = np.maximum(f_weight, floor)
     f_conv = np.where(weight == 0.0, f_conv, f_conv / np.where(weight == 0.0, 1.0, weight))
     ori = bp.ori_size
-    padoridim = _relion_round(pf * ori)
+    padoridim = relion_round(pf * ori)
     padoridim += padoridim % 2
     new_half = padoridim // 2 + 1
     out = np.zeros((padoridim, padoridim, new_half), dtype=np.complex128)
@@ -79,7 +79,7 @@ def _reference_reconstruct(bp):
     r = np.sqrt((k * k + i * i + j * j).astype(np.float64))
     with np.errstate(invalid="ignore", divide="ignore"):
         rval = r / (ori * pf)
-        sinc = np.sin(br._PI * rval) / (br._PI * rval)
+        sinc = np.sin(PI * rval) / (PI * rval)
         corrected = real / (sinc * sinc)
     return np.where(r > 0.0, corrected, real)
 

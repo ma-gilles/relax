@@ -14,6 +14,7 @@ from scipy.spatial.transform import Rotation
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
+from relax.vdam.init import compute_ini_high_shell
 
 
 def seed_maps_to_model(volumes, *, compute_dtype=jnp.float32):
@@ -89,7 +90,7 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
     rhs = jnp.zeros((channels, int(np.prod(half_shape))), jnp.complex64)
     lhs = jnp.zeros(rhs.shape, jnp.float32)
     images_for_noise = []
-    radius = max(1, int(np.floor(0.07 * n + 0.5)))
+    radius = max(1, compute_ini_high_shell(n))
     offset = 0
     for images, _r, _t, ctf_params, _noise, _pids, _ids in dataset.iter_batches(batch_size, indices=ids, by_image=True):
         count = len(images)

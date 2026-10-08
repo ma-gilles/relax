@@ -3,7 +3,7 @@
 Pins the work landed on ``claude/refactor-initial-model``:
 - Package import does not eagerly load execution modules.
 - Helpers extracted during dedup still exist with the right signatures.
-- Single source of truth for ``_relion_round`` (was duplicated in iteration_loop).
+- Single source of truth for RELION's ``ROUND`` (relax/relion/macros.py).
 - Pure-function outputs (schedules, init, layout) are byte-identical.
 - Reviewed responsibility budgets count every VDAM module and extracted owner.
 
@@ -59,23 +59,24 @@ REPO_ROOT = PACKAGE_DIR.parents[2]
 
 
 # ---------------------------------------------------------------------------
-# 2. Helper dedup — _relion_round must have exactly one definition.
+# 2. Helper dedup — RELION's ROUND has one home, relax/relion/macros.py.
 # ---------------------------------------------------------------------------
 
 
 def test_relion_round_is_single_source_of_truth():
-    """``_relion_round`` was duplicated in schedules.py + iteration_loop.py
-    before the refactor. The refactor pulled it to schedules.py and
-    re-imported it in iteration_loop. A merge must not reintroduce a duplicate.
+    """RELION's ``ROUND`` macro had seven private copies across relax; ``relax.relion.macros`` is its one home.
+
+    A merge must not reintroduce a private copy.
     """
     occurrences: dict[str, int] = {}
-    for py_file in PACKAGE_DIR.glob("*.py"):
+    relax_dir = PACKAGE_DIR.parent
+    for py_file in relax_dir.rglob("*.py"):
         text = py_file.read_text()
-        n = text.count("def _relion_round(")
+        n = sum(text.count(f"def {name}(") for name in ("_relion_round", "relion_round", "_relion_round_away_from_zero"))
         if n:
-            occurrences[py_file.name] = n
-    assert occurrences == {"schedules.py": 1}, (
-        f"_relion_round must be defined exactly once (in schedules.py); found definitions in: {occurrences}"
+            occurrences[str(py_file.relative_to(relax_dir))] = n
+    assert occurrences == {"relion/macros.py": 1}, (
+        f"RELION ROUND must be defined once (relax/relion/macros.py); found definitions in: {occurrences}"
     )
 
 
@@ -202,15 +203,16 @@ class TestScheduleGoldenValues:
         assert default_subset_sizes_for_3d_initial_model(50000) == (250, 5000)
 
     def test_relion_round_banker_semantics(self):
-        from relax.vdam.schedules import _relion_round
+        from relax.relion.macros import relion_round, relion_round_array
 
         # RELION's ROUND is C-style nearest-int away-from-zero, NOT banker's.
-        assert _relion_round(0.5) == 1
-        assert _relion_round(1.5) == 2
-        assert _relion_round(2.5) == 3
-        assert _relion_round(-1.5) == -2
-        assert _relion_round(-2.5) == -3
-        assert _relion_round(3.7) == 4
+        values = [0.5, 1.5, 2.5, -1.5, -2.5, 3.7, -0.5, 0.0, -0.49]
+        expected = [1, 2, 3, -2, -3, 4, -1, 0, 0]
+        assert [relion_round(v) for v in values] == expected
+        for dtype in (np.float32, np.float64):
+            rounded = relion_round_array(np.asarray(values, dtype=dtype))
+            assert rounded.dtype == dtype
+            assert rounded.astype(np.int64).tolist() == expected
 
 
 class TestInitGoldenValues:

@@ -30,6 +30,7 @@ import numpy as np
 
 from relax.helpers.convergence import _relion_optimizer_average_pmax
 from relax.reconstruction.regularization_relion import resolution_from_data_vs_prior
+from relax.relion.macros import relion_round
 from relax.vdam.estep_common import EstepSums, estep_sums
 from relax.vdam.estep_meta_updates import (
     update_noise_from_estep,
@@ -42,7 +43,6 @@ from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_MU,
     VdamPhaseLengths,
-    _relion_round,
     compute_stepsize,
     compute_subset_size,
     compute_tau2_fudge,
@@ -165,9 +165,9 @@ def update_current_resolution_from_data_vs_prior(
 
 def update_image_size_and_resolution_pointers(state: InitialModelState, pilot_controls=None) -> InitialModelState:
     """Mirror the current-size part of RELION ``updateImageSizeAndResolutionPointers``."""
-    maxres = _relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.ori_size))
+    maxres = relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.ori_size))
     if float(state.ave_Pmax) > 0.1 and bool(state.has_high_fsc_at_limit):
-        maxres += _relion_round(0.25 * float(state.ori_size) / 2.0)
+        maxres += relion_round(0.25 * float(state.ori_size) / 2.0)
     else:
         maxres += int(state.incr_size)
     current_size = min(max(2 * maxres, 2), int(state.ori_size))
