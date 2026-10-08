@@ -15,12 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
-from relax.diagnostics.coarse_gaussian_diagnostics import (
-    _significance_debug_dump_matches,
-)
-from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import (
-    parse_env_int_set,
     parse_env_strict_flag,
 )
 from relax.helpers.projection_cache import build_projection_cache
@@ -32,6 +27,7 @@ from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.gaussian_plan import coarse_gaussian_report, plan_coarse_gaussian
 from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
+from relax.scoring.pass1_dump import select_dump_targets
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import (
@@ -709,29 +705,15 @@ def _compute_k_class_significance_batched(
             )
             operands = operand_plan.prepare(batch_inputs, indices)
 
-            # Identify per-batch dump target rows so we can record raw scores
-            # (pre-prior) for each target image inside the per-class block loop.
-            # This enables direct diff against RELION's exp_Mweight_diff2
-            # without needing the full (batch, n_classes, n_rot*n_trans) cache.
-            debug_dump_enabled = collect_significance and _significance_debug_dump_matches(
+            dump_targets = select_dump_targets(
+                experiment_dataset,
+                indices,
+                collect_significance=collect_significance,
                 current_size=current_size,
                 debug_iteration=debug_iteration,
             )
-            dump_target_local_positions = None
-            if debug_dump_enabled:
-                _dump_targets = parse_env_int_set("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES")
-                if _dump_targets:
-                    _local_for_dump = np.asarray(indices, dtype=np.int64)
-                    _orig = original_image_indices(experiment_dataset, _local_for_dump)
-                    _positions = np.flatnonzero(np.isin(_orig, np.fromiter(_dump_targets, dtype=np.int64)))
-                    if _positions.size:
-                        dump_target_local_positions = _positions.astype(np.int64)
             program_inputs = operands.program_inputs()
-            dump_rows = (
-                None
-                if dump_target_local_positions is None
-                else jnp.asarray(dump_target_local_positions, dtype=jnp.int32)
-            )
+            dump_rows = None if dump_targets.rows is None else jnp.asarray(dump_targets.rows, dtype=jnp.int32)
             if pending_batch is not None:
                 publish_batch(pending_batch, outputs, output_plan, dump_context)
                 pending_batch = None
@@ -791,7 +773,7 @@ def _compute_k_class_significance_batched(
             # device and before that batch's score program (the call above the program): the device
             # scores this batch while the host prepares the next. Only a dump reads the large score and
             # operand arrays, and a dump batch publishes at once, so a waiting batch does not hold them.
-            defer_publish = collect_significance and relion_f32_coarse_support_enabled and not debug_dump_enabled
+            defer_publish = collect_significance and relion_f32_coarse_support_enabled and not dump_targets.enabled
             batch_outputs = BatchOutputs(
                 start_idx=start_idx,
                 end_idx=end_idx,
@@ -817,8 +799,8 @@ def _compute_k_class_significance_batched(
                 class_best_argmaxes=scores.class_best_argmaxes,
                 class_second_best_scores=scores.class_second_best_scores,
                 class_second_best_argmaxes=scores.class_second_best_argmaxes,
-                debug_dump_enabled=debug_dump_enabled,
-                dump_target_local_positions=dump_target_local_positions,
+                debug_dump_enabled=dump_targets.enabled,
+                dump_target_local_positions=dump_targets.rows,
                 dump_target_pre_prior_blocks_per_class=None if defer_publish else scores.dump_pre_prior_blocks,
                 dump_target_with_prior_blocks_per_class=None if defer_publish else scores.dump_with_prior_blocks,
                 translation_log_prior=None if defer_publish else batch_inputs.translation_log_prior,
