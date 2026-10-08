@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from relax.helpers.dtype_policy import DensePrecisionPolicy
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RefinementSchedule:
     """How long the refinement runs and what grid it starts at."""
 
@@ -57,7 +57,7 @@ class RefinementSchedule:
     init_relion_incr_size: int = 10
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class AdaptiveOptions:
     """Pose-search resolution + adaptive-oversampling knobs."""
 
@@ -78,7 +78,7 @@ class AdaptiveOptions:
             raise ValueError(f"strict_highres_exp_angstrom must be positive, got {self.strict_highres_exp_angstrom}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class SolventOptions:
     """RELION's --solvent_mask and --solvent_correct_fsc (relax.reconstruction.solvent_mask)."""
 
@@ -88,7 +88,7 @@ class SolventOptions:
     correct_fsc: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RelionParityOptions:
     """Knobs that pin RELION numerical behavior."""
 
@@ -142,7 +142,7 @@ _CONSISTENCY_CHOICES = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RelionConsistencyOptions:
     """Opt-in corrections of RELION's own mathematical inconsistencies, for studying their effect.
 
@@ -291,7 +291,7 @@ def require_consistency_route(
     return consistency
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class LocalSearchOptions:
     """Local angular-search controls."""
 
@@ -345,7 +345,7 @@ class RestartProvenance(NamedTuple):
     sha256: str | None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ExpectedAccuracyOptions:
     """Half 1's particle order, optics groups, ids and CTFs for RELION's expected-accuracy estimate.
 
@@ -366,7 +366,7 @@ FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAS
 FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class FinalPassOptions:
     """Two departures of the final all-data pass from RELION, set by environment variable and read once, when
     the run's options are built. They change what the run does, so they are run options (code rule 9).
@@ -387,7 +387,7 @@ class FinalPassOptions:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class DiagnosticEnvironment:
     """The refinement's execution switches from the environment, read once, when the run's options are built.
 
@@ -404,7 +404,7 @@ class DiagnosticEnvironment:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class EngineDebugOptions:
     """Adjoint ablation, intermediate-dump, and test-harness controls."""
 
@@ -414,7 +414,7 @@ class EngineDebugOptions:
     environment: DiagnosticEnvironment = field(default_factory=DiagnosticEnvironment.from_environ)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class KClassOptions:
     """K-class refinement controls."""
 
@@ -435,7 +435,7 @@ class KClassOptions:
             raise ValueError("first_iteration_seed_classes seeds a Class3D start; K=1 has no classes to seed")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class SymmetryOptions:
     """RELION-compatible proper rotational point group."""
 
@@ -449,7 +449,7 @@ class SymmetryOptions:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ReplayState:
     """The run's initial particle state (poses, corrections, groups, priors, the start-up reference) and the
     follower-scale and frozen-boundary seed state.
@@ -472,7 +472,7 @@ class ReplayState:
     init_relion_optics_group_count: Any | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RefinementBatching:
     """Batch sizes the iteration loop hands down to the engines."""
 
@@ -480,7 +480,7 @@ class RefinementBatching:
     rotation_block_size: int = 5000
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class HalfOverlapOptions:
     """Whether the two half-sets' E-steps may run concurrently.
 
@@ -495,7 +495,7 @@ class HalfOverlapOptions:
     overlap_halves: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class CheckpointOptions:
     """RELION's per-iteration run files and ``--continue``.
 
@@ -510,7 +510,7 @@ class CheckpointOptions:
     resume: Any | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RefinementOptions:
     """Configuration groups consumed by ``refine_single_volume``.
 
@@ -526,8 +526,6 @@ class RefinementOptions:
     debug: EngineDebugOptions = field(default_factory=EngineDebugOptions)
     batching: RefinementBatching = field(default_factory=RefinementBatching)
     overlap: HalfOverlapOptions = field(default_factory=HalfOverlapOptions)
-    # Keep new option groups after the historical positional fields so
-    # external positional construction retains its pre-symmetry meaning.
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
     checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)
     consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
@@ -622,30 +620,3 @@ def apply_k1_refine3d_env_defaults() -> None:
     for name, value in K1_REFINE3D_ENV_DEFAULTS.items():
         os.environ.setdefault(name, value)
 
-
-__all__ = [
-    "K1_REFINE3D_ENV_DEFAULTS",
-    "apply_k1_refine3d_env_defaults",
-    "RefinementSchedule",
-    "AdaptiveOptions",
-    "RelionParityOptions",
-    "RelionConsistencyOptions",
-    "SolventOptions",
-    "require_consistency_route",
-    "LocalSearchOptions",
-    "ExpectedAccuracyOptions",
-    "DiagnosticEnvironment",
-    "FinalPassOptions",
-    "InitialSampling",
-    "RestartProvenance",
-    "EngineDebugOptions",
-    "KClassOptions",
-    "SymmetryOptions",
-    "ReplayState",
-    "RefinementBatching",
-    "HalfOverlapOptions",
-    "CheckpointOptions",
-    "RefinementOptions",
-    "with_validated_sampling_schedule",
-    "require_process_precision",
-]
