@@ -430,3 +430,30 @@ def test_class3d_input_star_origins_are_the_default_and_need_no_half_sets():
         _resolve_input_star_pose_seed(
             "input-star", has_relion_half_sets=False, **(kwargs | {"has_competing_pose_source": True})
         )
+
+
+def test_class3d_replay_translation_seed_centres_local_searches_on_the_input_angles(tmp_path):
+    # With --sigma_ang RELION searches locally from iteration 1 around each particle's input angles, 0 where
+    # the STAR has none (exp_model.cpp:1104-1134, ml_optimiser.cpp:978-983); the RELION-seeded Class3D start
+    # left them unset, so iteration 1 searched globally without a word.
+    particles, inputs = _pose_preparation_inputs(tmp_path, n_classes=4)
+    path = tmp_path / "run_it000_data.star"
+    path.write_bytes((tmp_path / "particles.star").read_bytes())
+    translations = [np.arange(8, dtype=np.float32).reshape(4, 2), np.empty((0, 2), np.float32)]
+    inputs.update(
+        requested_source="auto", class3d_translations=translations,
+        class3d_translation_path=path, has_replay_pose_source=True, local_search_at_start=True,
+    )
+    prepared = prepare_initial_poses(particles, **inputs)
+    eulers = prepared.poses["previous_best_rotation_eulers"]
+    rows = inputs["particle_layout"].half1_rows
+    expected = np.stack(
+        [
+            particles[c].to_numpy(dtype=np.float64) if c in particles else np.zeros(len(particles))
+            for c in ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")
+        ],
+        axis=1,
+    )[rows]
+    assert_matches(np.asarray(eulers[0], dtype=np.float64), expected.astype(np.float32).astype(np.float64))
+    assert eulers[1].shape == (0, 3)
+

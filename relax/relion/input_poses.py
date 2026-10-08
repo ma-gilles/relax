@@ -525,7 +525,16 @@ def prepare_initial_poses(
     elif class3d_translations is not None:
         init_previous_best_poses = {
             "iteration": "000_translation_only",
-            "previous_best_rotation_eulers": [None, None],
+            # Local searches from iteration 1 (--sigma_ang) are centred on the input angles, 0 where the STAR
+            # has none (exp_model.cpp:1104-1134, ml_optimiser.cpp:978-983), in the all-data accumulator's order.
+            "previous_best_rotation_eulers": (
+                _load_input_star_class3d_translations(
+                    input_particles, particle_layout.half1_rows, voxel_size=pixel_size_angstrom,
+                    with_orientations=True,
+                )["previous_best_rotation_eulers"]
+                if local_search_at_start
+                else [None, None]
+            ),
             "previous_best_translations": class3d_translations,
         }
         resolved_initial_pose_source = "relion_run_it000_translations"
