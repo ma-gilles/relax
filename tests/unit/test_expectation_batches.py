@@ -131,17 +131,14 @@ def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monk
     assert policy.coarse_image_batch_size == 125
 
 
-def test_local_compact_staging_is_carried_into_the_runtime_size_callback(planner, monkeypatch):
+def test_local_half_plans_no_compact_staging(planner, monkeypatch):
+    """The local pass sizes its own tiles: a non-adaptive local half keeps the plain planner."""
     calls = capture_estimates(monkeypatch)
-    monkeypatch.setattr(batches.sparse_pass2_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
     monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: True)
     monkeypatch.setattr(batches.firstiter_bpref, "_relion_soft_compact_batch_planning_safe", lambda **k: True)
     policy = prepare(planner, use_local=True, rotations=None, translations=None)
     assert calls == []
-    policy.safe_batch_sizes(576, 29, current_size_for_batch=12)
-    assert calls[0]["compact_k1_relion_score_bpref_overlap"]
-    assert calls[0]["score_projector_staging_bytes"] > 0
-    assert calls[0]["model_current_size"] == 12
+    assert policy.safe_batch_sizes is planner
 
 
 @pytest.mark.parametrize("precision", ["scoring", "projection", "pass2"])

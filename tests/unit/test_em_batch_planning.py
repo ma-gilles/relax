@@ -10,7 +10,6 @@ from relax.local.local_layout import (
     LocalHypothesisLayout,
     _local_search_engine_rotation_block_size,
 )
-from relax.refinement import half_scoring
 
 IMAGE_SHAPE = (8, 8)
 VOLUME_SHAPE = (8, 8, 8)
@@ -33,48 +32,6 @@ def _identity_layout(rotation_counts, *, n_trans):
         translation_grid=np.zeros((n_trans, 2), dtype=np.float32),
         translation_log_priors=np.zeros((len(rotation_counts), n_trans), dtype=np.float32),
     )
-
-
-def test_local_search_outer_batch_sizing_uses_current_size_window():
-    """The local half's outer batch sizing is planned for the image window it scores, not the box."""
-    from helpers.refinement_specs import local_half_owners
-    from helpers.sparse_pass2_mock import MockDataset
-
-    from relax.sampling import relion_angular_sampling_deg
-
-    class Sized(Exception):
-        pass
-
-    sized = []
-
-    def safe_batch_sizes(*args, **kwargs):
-        sized.append(kwargs)
-        raise Sized
-
-    dataset = MockDataset(n_images=2, seed=3)
-    owners = local_half_owners(
-        k=0, experiment_dataset=dataset, means_k=np.zeros(dataset.volume_size, dtype=np.complex64),
-        noise_variance_k=np.ones(dataset.image_size, dtype=np.float32),
-        previous_best_rotation_eulers_k=np.zeros((dataset.n_units, 3), dtype=np.float32),
-        local_search_rotations=np.repeat(np.eye(3, dtype=np.float32)[None, :, :], 2, axis=0),
-        local_search_order=1, sigma_rot=np.deg2rad(1.0), sigma_psi=np.deg2rad(1.0),
-        current_translations=np.zeros((1, 2), dtype=np.float32), base_translations=np.zeros((1, 2), dtype=np.float32),
-        trans_prior_center=np.zeros((dataset.n_units, 2), dtype=np.float32),
-        trans_prior_center_for_engine=np.zeros((dataset.n_units, 2), dtype=np.float32),
-        current_sigma_offset_angstrom=1.0, disc_type="linear_interp", cs_for_engine=6,
-        local_pass1_current_size=4, image_corrections_k=None, scale_corrections_k=None,
-        translation_search_base=None, disable_adjoint_y=False, disable_adjoint_ctf=False, max_significants=None,
-        iteration=3, local_search_random_perturbation=0.0,
-        local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=1,
-        diagnostic_score_only=False, local_search_translation_prior_mode="coarse", replay_prior_translations=None,
-        collect_local_search_profile=False, safe_batch_sizes=safe_batch_sizes, local_profile_history=[],
-    )
-    sampling = owners[1]
-    assert sampling.image_window_size == 6 and dataset.image_shape[0] != 6
-    with pytest.raises(Sized):
-        half_scoring._score_half_local(*owners)
-    assert sized[0]["current_size_for_batch"] == sampling.image_window_size
-    assert sized[0]["image_shape_for_batch"] == dataset.image_shape
 
 
 # ---------------------------------------------------------------------------

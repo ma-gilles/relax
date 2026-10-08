@@ -31,13 +31,6 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
         )
 
     monkeypatch.setattr(local_search_iteration, "compute_local_search_resident", run_local)
-    monkeypatch.setattr(
-        local_search_iteration, "_estimate_relion_em_batch_sizes",
-        lambda **kwargs: SimpleNamespace(
-            image_batch_size=kwargs["requested_image_batch_size"],
-            rotation_block_size=kwargs["requested_rotation_block_size"],
-        ),
-    )
     rotations = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
     translations = np.zeros((2, 2), dtype=np.float32)
     result = local_search_iteration._run_local_search_iteration(*local_iteration_owners(
@@ -46,7 +39,7 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
         healpix_order=0, sigma_rot=1.0, sigma_psi=1.0,
         translations=translations[:1], prior_translations=translations,
         sigma_offset_angstrom=1.0,
-        disc_type="linear_interp", image_batch_size=2, rotation_block_size=1,
+        disc_type="linear_interp",
         current_size=2,
         pass2_layout=SimpleNamespace(rotation_counts=np.ones(2, dtype=np.int32), translation_grid=translations[:1]),
         return_reconstruction_sample_indices=True,

@@ -60,9 +60,7 @@ from relax.refinement.firstiter_cc import (
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.local_sampling import LocalSampling
 from relax.refinement.local_search_iteration import (
-    LocalSearchBatchPolicy,
     LocalSearchData,
-    LocalSearchDiagnosticPolicy,
     LocalSearchGridSpec,
     LocalSearchKernelPolicy,
     LocalSearchSupportPolicy,
@@ -84,7 +82,6 @@ from relax.relion.optics_aberrations import dataset_projection_magnification, pr
 from relax.sampling import (
     build_local_search_grid_metadata,
     relion_angular_sampling_deg,
-    rotation_grid_size,
 )
 
 logger = logging.getLogger("relax.dense.half_scoring")
@@ -1620,10 +1617,7 @@ def _score_half_local_one_shape(
     execution, diagnostic and optics owners. Only route-derived values become
     locals inside this function.
 
-    Sizes the per-chunk M-step batches against the cone-restricted
-    rotation count (not the full HEALPix grid) so chunk_size doesn't
-    collapse at high HEALPix orders. Routes through
-    ``_run_local_search_iteration``. Local searches are K=1 only: Class3D keeps
+    Routes through ``_run_local_search_iteration``. Local searches are K=1 only: Class3D keeps
     global searches, as RELION switches to local searches from the HEALPix order
     only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
 
@@ -1646,24 +1640,6 @@ def _score_half_local_one_shape(
     projector_slabs = None if half.projector is None else half.projector.data
     n_classes = int(np.shape(projector_slabs)[0]) if projector_slabs is not None and np.ndim(projector_slabs) == 4 else 1
 
-    # For local search the per-chunk M-step only sees the cone-restricted
-    # rotation set (typically a few thousand rotations per image with high
-    # overlap across the chunk) rather than the full ~10⁶-rotation grid at
-    # healpix order 5+. Estimate per-image cone size from
-    #     fraction = (sigma_cutoff * sigma_rot / pi)^2
-    # (spherical cap area as a fraction of full SO(3) volume; good to
-    # within ~30% for reasonable cones). Use that for an effective rotation
-    # count equal to ``chunk_size * cone_size`` with a 2x safety factor.
-    cone_radius = 3.0 * float(sampling.search.sigma_rot)  # sigma_cutoff=3.0
-    cone_fraction = max(
-        (cone_radius / float(np.pi)) ** 2,
-        1.0 / float(rotation_grid_size(sampling.search.healpix_order)),
-    )
-    est_cone_rots = int(np.ceil(rotation_grid_size(sampling.search.healpix_order) * cone_fraction))
-    eff_n_rot = max(64, 2 * est_cone_rots)
-    local_n_trans = int(sampling.translations.shape[0])
-    if int(sampling.search.oversampling_order) > 0:
-        local_n_trans *= int(4 ** int(sampling.search.oversampling_order))
     local_debug_iteration = (
         diagnostics.iteration + 1 if diagnostics.debug_iteration is None else int(diagnostics.debug_iteration)
     )
@@ -1682,23 +1658,6 @@ def _score_half_local_one_shape(
             fine_precision.use_float64_projections,
         )
 
-    safe_ibs, safe_rbs = batching.safe_batch_sizes(
-        eff_n_rot,
-        local_n_trans,
-        image_shape_for_batch=half.particles.dataset.image_shape,
-        current_size_for_batch=sampling.image_window_size,
-    )
-    logger.info(
-        "Local search batch sizing: cone_radius=%.3f rad (%.2f deg), est_cone_rots=%d, eff_n_rot=%d "
-        "n_trans=%d → image_batch_size=%d, rotation_block_size=%d",
-        cone_radius,
-        np.rad2deg(cone_radius),
-        est_cone_rots,
-        eff_n_rot,
-        local_n_trans,
-        safe_ibs,
-        safe_rbs,
-    )
     # Keep the local-search hypothesis grid genuinely double precision end to
     # end when either flag requests it; default stays float32 to match
     # RELION's accelerated-GPU precision.
@@ -1734,7 +1693,7 @@ def _score_half_local_one_shape(
             "RELION local search: expanding translations by oversampling_order=%d (coarse n=%d -> fine n=%d)",
             int(sampling.search.oversampling_order),
             int(sampling.translations.shape[0]),
-            int(local_n_trans),
+            int(sampling.translations.shape[0]) * 4 ** int(sampling.search.oversampling_order),
         )
     # Shared owners for one typed pass. Parent, denominator and final execution
     # derive their intentional differences with ``replace`` below.
@@ -1770,18 +1729,12 @@ def _score_half_local_one_shape(
             n_classes=n_classes,
             image_seed_classes=half.image_seed_classes if n_classes > 1 else None,
     )
-    local_batching = LocalSearchBatchPolicy(
-            image_batch_size=safe_ibs,
-            rotation_block_size=safe_rbs,
-            batch_size_planner=batching.safe_batch_sizes,
-    )
     local_kernel = LocalSearchKernelPolicy(
             disc_type=execution.disc_type,
             current_size=sampling.image_window_size,
             reconstruction_current_size=reconstruction_current_size_for_engine,
             projection_padding_factor=PROJECTION_PADDING_FACTOR,
             reconstruction_padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-            do_gridding_correction=True,
             square_window=RELION_FOURIER_WINDOW_SQUARE,
             half_spectrum_scoring=True,
             relion_projector_half=None if half.projector is None else half.projector.data,
@@ -1802,11 +1755,7 @@ def _score_half_local_one_shape(
             disable_adjoint_ctf=execution.disable_adjoint_ctf,
             adaptive_fraction=RELION_ADAPTIVE_FRACTION,
             max_significants=batching.max_significants,
-    )
-    local_diagnostics = LocalSearchDiagnosticPolicy(
             return_profile=diagnostics.collect_local_search_profile,
-            debug_iteration=local_debug_iteration,
-            debug_pass_label="pass2_final",
     )
     pass2_layout = None
     relion_significant_counts_k = None
@@ -1832,10 +1781,6 @@ def _score_half_local_one_shape(
             if int(np.asarray(parent_layout.rotation_counts).size)
             else 1
         )
-        parent_ibs, parent_rbs = batching.safe_batch_sizes(
-            max(64, parent_local_rot_max),
-            int(sampling.translations.shape[0]),
-        )
         logger.info(
             "RELION local adaptive pass 1: parent_order=%d local_rot_max=%d n_trans=%d current_size=%s",
             parent_order,
@@ -1857,7 +1802,6 @@ def _score_half_local_one_shape(
                 rotation_grid_mstep_rotations=None,
                 generate_relion_mstep_rotations=False,
             ),
-            replace(local_batching, image_batch_size=parent_ibs, rotation_block_size=parent_rbs),
             replace(
                 local_kernel,
                 current_size=sampling.coarse_image_window_size,
@@ -1883,8 +1827,8 @@ def _score_half_local_one_shape(
                 return_reconstruction_sample_indices=True,
                 apply_max_significants_to_support=True,
                 score_only=True,
+                return_profile=True,
             ),
-            replace(local_diagnostics, return_profile=True, debug_pass_label="pass1_parent"),
         )
         parent_profile = parent_outputs.profile_summary
         significant_sample_indices = parent_profile["reconstruction_sample_indices_by_image"]
@@ -1938,7 +1882,6 @@ def _score_half_local_one_shape(
                     rotation_grid_mstep_rotations=None,
                     generate_relion_mstep_rotations=False,
                 ),
-                local_batching,
                 replace(
                     local_kernel,
                     accumulate_noise=False,
@@ -1954,8 +1897,8 @@ def _score_half_local_one_shape(
                     disable_adjoint_ctf=True,
                     reconstruct_significant_only=False,
                     score_only=True,
+                    return_profile=False,
                 ),
-                replace(local_diagnostics, return_profile=False, debug_iteration=None, debug_pass_label=None),
             )
         finally:
             os.environ.update(saved_local_debug_env)
@@ -1986,7 +1929,6 @@ def _score_half_local_one_shape(
     local_outputs = _run_local_search_iteration(
         local_data,
         replace(local_grid, pass2_layout=pass2_layout),
-        local_batching,
         replace(
             local_kernel,
             accumulate_noise=local_accumulate_noise,
@@ -2012,7 +1954,6 @@ def _score_half_local_one_shape(
             stats_use_reconstruction_probs=local_reconstruct_significant_only,
             score_only=diagnostics.diagnostic_score_only,
         ),
-        local_diagnostics,
     )
     Ft_y_k = local_outputs.Ft_y
     Ft_ctf_k = local_outputs.Ft_ctf

@@ -245,7 +245,6 @@
   "RECOVAR_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES": "RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES",
   "RECOVAR_LOCAL_SELECTOR_CHUNK_SIZE": "RELAX_LOCAL_SELECTOR_CHUNK_SIZE",
   "RECOVAR_LOCAL_SELECTOR_MAX_ELEMENTS": "RELAX_LOCAL_SELECTOR_MAX_ELEMENTS",
-  "RECOVAR_LOCAL_XHALF_BATCH_GUARD": "RELAX_LOCAL_XHALF_BATCH_GUARD",
   "RECOVAR_LOWRES_JOIN_HOST_FALLBACK": "RELAX_LOWRES_JOIN_HOST_FALLBACK",
   "RECOVAR_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS": "RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS",
   "RECOVAR_MAP_RE": "RELAX_MAP_RE",
@@ -696,6 +695,8 @@
   "RECOVAR_RANDOM_PERTURBATION": "use relax initial_model --random-perturbation; the environment override outranked the flag (2026-10-06)",
   "RELAX_RANDOM_PERTURBATION": "use relax initial_model --random-perturbation; the environment override outranked the flag (2026-10-06)",
   "RECOVAR_INITIAL_MODEL_EXACT_RELION_PROJECTOR": "InitialModel always scores with RELION's exact projector (removed 2026-09-30)",
-  "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR": "InitialModel always scores with RELION's exact projector (removed 2026-09-30)"
+  "RELAX_INITIAL_MODEL_EXACT_RELION_PROJECTOR": "InitialModel always scores with RELION's exact projector (removed 2026-09-30)",
+  "RECOVAR_LOCAL_XHALF_BATCH_GUARD": "the local pass sizes its tiles from the projection byte budget; the batch-size guard it chose was never used (2026-10-08)",
+  "RELAX_LOCAL_XHALF_BATCH_GUARD": "the local pass sizes its tiles from the projection byte budget; the batch-size guard it chose was never used (2026-10-08)"
  }
 }

@@ -193,7 +193,7 @@ def test_local_half_core_keeps_owner_dependencies_visible():
 def test_local_iteration_core_keeps_owner_dependencies_visible():
     function = local_search_iteration._run_local_search_iteration
     assert tuple(inspect.signature(function).parameters) == (
-        "data", "grid", "batching", "kernel", "support", "diagnostics",
+        "data", "grid", "kernel", "support",
     )
 
     tree = ast.parse(inspect.getsource(function))
@@ -209,16 +209,12 @@ def test_local_iteration_core_keeps_owner_dependencies_visible():
         for owner in (
             local_search_iteration.LocalSearchData,
             local_search_iteration.LocalSearchGridSpec,
-            local_search_iteration.LocalSearchBatchPolicy,
             local_search_iteration.LocalSearchKernelPolicy,
             local_search_iteration.LocalSearchSupportPolicy,
-            local_search_iteration.LocalSearchDiagnosticPolicy,
         )
         for field in dataclasses.fields(owner)
     }
     normalized_or_planned_locals = {
-        "image_batch_size",
-        "rotation_block_size",
         "prior_rotations",
         "prior_translations",
     }

@@ -256,7 +256,7 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         max_posterior_per_image = np.array([1.0], dtype=np.float32)
         rotation_posterior_sums = np.array([1.0], dtype=np.float32)
 
-    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
+    def fake_run_local_search_iteration(data, grid, kernel, support):
         best_rotation = np.array(
             [
                 [0.93629336, -0.27509585, 0.21835066],
@@ -363,14 +363,12 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         translation_grid=np.zeros((4, 2), dtype=np.float32),
     )
 
-    def fake_run_local_search_iteration(data, grid, batching, kernel, support, diagnostics):
+    def fake_run_local_search_iteration(data, grid, kernel, support):
         call = SimpleNamespace(
             data=data,
             grid=grid,
-            batching=batching,
             kernel=kernel,
             support=support,
-            diagnostics=diagnostics,
         )
         calls.append(call)
         if support.score_only:

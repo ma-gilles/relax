@@ -949,7 +949,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
 
     captured = {}
 
-    def fine_pass(data, grid, batching, kernel, support, diagnostics):
+    def fine_pass(data, grid, kernel, support):
         captured.update(support=support, kernel=kernel)
         raise Scored
 

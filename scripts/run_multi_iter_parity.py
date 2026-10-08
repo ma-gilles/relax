@@ -385,7 +385,6 @@ def _collect_local_profile_rows(save_intermediates_dir):
         "local_stats_finalize_s",
         "selector_time_s",
         "metadata_build_time_s",
-        "translation_prior_time_s",
         "raw_cache_build_time_s",
         "bucket_build_time_s",
         "batch_fetch_time_s",

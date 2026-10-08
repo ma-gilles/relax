@@ -1,7 +1,7 @@
 """Build and execute one exact local-search iteration.
 
-Construct image-specific pose neighborhoods, apply the batch memory budget,
-dispatch the single-class or K-class kernel, and return named statistics to the
+Construct image-specific pose neighborhoods, dispatch the single-class or
+K-class kernel, and return named statistics to the
 refinement controller. Dependencies are imported from their owning modules.
 """
 
@@ -9,16 +9,13 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 import time
 from dataclasses import dataclass
 
 import numpy as np
 
-from relax.helpers.batch_planning import _estimate_relion_em_batch_sizes
 from relax.helpers.types import NoiseStats, RelionStats
 from relax.local.local_layout import (
-    _local_search_engine_rotation_block_size,
     build_local_hypothesis_layout,
     expand_local_layout_classes,
     restrict_local_layout_classes,
@@ -37,7 +34,6 @@ logger = logging.getLogger("relax.local.local_search_iteration")
 
 # Mirror iteration_loop's constant locally so the helper has a stable home.
 EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS = 3_000_000
-EXACT_LOCAL_XHALF_BATCH_GUARD_ENV = "RELAX_LOCAL_XHALF_BATCH_GUARD"
 
 
 def _precompute_exact_local_fine_grid_enabled(healpix_order: int, symmetry: str = "C1") -> bool:
@@ -107,15 +103,6 @@ class LocalSearchGridSpec:
 
 
 @dataclass(frozen=True, kw_only=True)
-class LocalSearchBatchPolicy:
-    """Requested engine tiles and their optional caller-owned planner."""
-
-    image_batch_size: int
-    rotation_block_size: int
-    batch_size_planner: object | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
 class LocalSearchKernelPolicy:
     """Numerical kernel, Fourier window, projector and optics choices."""
 
@@ -127,7 +114,6 @@ class LocalSearchKernelPolicy:
     reconstruction_padding_factor: int = 1
     use_float64_scoring: bool = False
     use_float64_projections: bool = False
-    do_gridding_correction: bool = False
     square_window: bool = False
     half_spectrum_scoring: bool = False
     relion_exact_score_translation: bool = False
@@ -164,44 +150,23 @@ class LocalSearchSupportPolicy:
     apply_max_significants_to_support: bool = False
     stats_use_reconstruction_probs: bool = False
     score_only: bool = False
-
-
-@dataclass(frozen=True, kw_only=True)
-class LocalSearchDiagnosticPolicy:
-    """Profile and debug-dump controls for one local pass."""
-
     return_profile: bool = False
-    debug_iteration: int | None = None
-    debug_pass_label: str | None = None
 
 
 def _run_local_search_iteration(
     data: LocalSearchData,
     grid: LocalSearchGridSpec,
-    batching: LocalSearchBatchPolicy,
     kernel: LocalSearchKernelPolicy,
     support: LocalSearchSupportPolicy,
-    diagnostics: LocalSearchDiagnosticPolicy,
 ) -> _LocalSearchIterationResult:
     """Run local search on the device-resident engine and return named halfset statistics and pose fields.
-
-    The diagnostics' ``debug_iteration`` and ``debug_pass_label`` and the kernel's
-    ``do_gridding_correction`` were read only by the exact local engine, which no
-    pass calls any more.
 
     Optional fields are None when their corresponding return flags are disabled.
     Arrays retain the engine's layouts and identities; profile metadata is copied
     and augmented with this wrapper's timings.
     """
-    # These four values are normalized or reduced by planning below. Stable
-    # values remain visibly owned by their specification group.
-    image_batch_size = batching.image_batch_size
-    rotation_block_size = batching.rotation_block_size
     prior_rotations = grid.prior_rotations
     prior_translations = grid.prior_translations
-    requested_image_batch_size = int(image_batch_size)
-    requested_rotation_block_size = int(rotation_block_size)
-    rotation_block_size = _local_search_engine_rotation_block_size(rotation_block_size)
     # Keep the local-search hypothesis grid (rotations/translations/priors)
     # genuinely double precision end to end when either flag requests it;
     # default stays float32 to match RELION's accelerated-GPU precision.
@@ -275,107 +240,6 @@ def _run_local_search_iteration(
         if grid.image_seed_classes is not None:
             local_layout = restrict_local_layout_classes(local_layout, grid.image_seed_classes)
     local_n_classes = int(getattr(local_layout, "n_classes", 1))
-    local_kernel_classes = local_n_classes
-    local_rotation_count = (
-        int(np.max(np.asarray(local_layout.rotation_counts, dtype=np.int64)))
-        if int(np.asarray(local_layout.rotation_counts).size)
-        else 1
-    )
-    # The RELION x-half pass-2 path projects and backprojects only the active
-    # Fourier window. Budget it against that window by default; keep the older
-    # full-spectrum guard available as an emergency rollback knob for OOM
-    # triage on smaller GPUs.
-    local_batch_planning_current_size = kernel.current_size
-    if kernel.relion_projector_half is not None and support.mstep_relion_x_half and not support.score_only:
-        xhalf_guard_mode = os.environ.get(EXACT_LOCAL_XHALF_BATCH_GUARD_ENV, "windowed").strip().lower()
-        if xhalf_guard_mode in {"", "full", "full_spectrum", "full-spectrum", "conservative"}:
-            local_batch_planning_current_size = None
-        elif xhalf_guard_mode in {"window", "windowed", "compact", "current_size", "current-size"}:
-            local_batch_planning_current_size = kernel.current_size
-        else:
-            raise ValueError(
-                f"{EXACT_LOCAL_XHALF_BATCH_GUARD_ENV} must be 'full' or 'windowed', got {xhalf_guard_mode!r}"
-            )
-    local_n_trans = max(1, int(np.asarray(local_layout.translation_grid).shape[0]))
-    if batching.batch_size_planner is None:
-        local_batch_plan = _estimate_relion_em_batch_sizes(
-            requested_image_batch_size=image_batch_size,
-            requested_rotation_block_size=rotation_block_size,
-            n_rot=max(1, local_rotation_count),
-            n_trans=local_n_trans,
-            image_shape=data.experiment_dataset.image_shape,
-            volume_shape=data.experiment_dataset.volume_shape,
-            padding_factor=max(int(kernel.projection_padding_factor), int(kernel.reconstruction_padding_factor), 1),
-            n_classes=local_kernel_classes,
-            current_size=local_batch_planning_current_size,
-            use_float64_scoring=kernel.use_float64_scoring,
-        )
-        planned_image_batch_size = local_batch_plan.image_batch_size
-        planned_rotation_block_size = local_batch_plan.rotation_block_size
-    else:
-        # The enclosing RELION loop may have qualified a compact K=1
-        # Projector/BPref lifetime and bound that policy into its planner.
-        # Reusing that callable here keeps the actual local rotation count
-        # without silently falling back to the obsolete full-cube estimate.
-        # Never grow beyond the already-approved outer local-search sizes.
-        planned_image_batch_size, planned_rotation_block_size = batching.batch_size_planner(
-            max(1, local_rotation_count),
-            local_n_trans,
-            classes=local_kernel_classes,
-            image_shape_for_batch=data.experiment_dataset.image_shape,
-            current_size_for_batch=local_batch_planning_current_size,
-        )
-        planned_image_batch_size = min(
-            image_batch_size,
-            max(1, int(planned_image_batch_size)),
-        )
-        planned_rotation_block_size = min(
-            rotation_block_size,
-            max(1, int(planned_rotation_block_size)),
-        )
-        local_batch_plan = None
-    if (
-        planned_image_batch_size != image_batch_size or planned_rotation_block_size != rotation_block_size
-    ) and local_batch_plan is not None:
-        logger.info(
-            "Local search memory batch sizing: requested image_batch_size=%d rotation_block_size=%d; "
-            "using image_batch_size=%d rotation_block_size=%d "
-            "(local_rot_max=%d n_trans=%d K=%d effective_kernel_K=%d, score_pixels=%d, "
-            "translation_tile=%.2f/%.2f GB, "
-            "projection_tile=%.2f/%.2f GB, persistent_est=%.2f GB, usable_est=%.2f GB, "
-            "gpu_used_est=%.2f GB)",
-            requested_image_batch_size,
-            requested_rotation_block_size,
-            planned_image_batch_size,
-            planned_rotation_block_size,
-            local_rotation_count,
-            int(np.asarray(local_layout.translation_grid).shape[0]),
-            local_n_classes,
-            local_kernel_classes,
-            local_batch_plan.score_pixel_count,
-            local_batch_plan.translation_tile_gb,
-            local_batch_plan.translation_tile_budget_gb,
-            local_batch_plan.projection_block_gb,
-            local_batch_plan.projection_budget_gb,
-            local_batch_plan.persistent_estimate_gb,
-            local_batch_plan.usable_estimate_gb,
-            local_batch_plan.gpu_used_estimate_gb,
-        )
-    elif planned_image_batch_size != image_batch_size or planned_rotation_block_size != rotation_block_size:
-        logger.info(
-            "Local search caller-qualified batch sizing: requested "
-            "image_batch_size=%d rotation_block_size=%d; using "
-            "image_batch_size=%d rotation_block_size=%d "
-            "(local_rot_max=%d n_trans=%d)",
-            requested_image_batch_size,
-            requested_rotation_block_size,
-            planned_image_batch_size,
-            planned_rotation_block_size,
-            local_rotation_count,
-            local_n_trans,
-        )
-    image_batch_size = planned_image_batch_size
-    rotation_block_size = planned_rotation_block_size
     magnification = dataset_projection_magnification(data.experiment_dataset)
     if kernel.projection_scale != 1.0 or magnification is not None:
         # Images on another grid than the reference (RELION applyScaleDifference) or with an
@@ -397,12 +261,8 @@ def _run_local_search_iteration(
     # M-step); a configuration it does not implement is an error
     # (ResidentConfigurationUnsupported).
     logger.info(
-        "running the device-resident local %s "
-        "(image_batch_size=%d and rotation_block_size=%d are unused by this path; "
-        "its capacity plan is sized from the projection byte budget)",
+        "running the device-resident local %s (its capacity plan is sized from the projection byte budget)",
         "pass-1 parent probe" if support.score_only else "fine pass 2",
-        image_batch_size,
-        rotation_block_size,
     )
     engine_outputs = compute_local_search_resident(
         data.experiment_dataset,
@@ -440,7 +300,7 @@ def _run_local_search_iteration(
         max_significants=support.max_significants if support.apply_max_significants_to_support else -1,
         return_best_pose_details=support.return_best_pose_details,
         return_reconstruction_sample_indices=support.return_reconstruction_sample_indices,
-        return_profile=diagnostics.return_profile,
+        return_profile=support.return_profile,
         stats_use_reconstruction_probs=support.stats_use_reconstruction_probs,
         translation_prior_centers=grid.translation_prior_centers,
         normalization_log_evidence=support.normalization_log_evidence,
@@ -468,7 +328,7 @@ def _run_local_search_iteration(
             hard_assignment=None,
             relion_stats=engine_outputs.stats,
             noise_stats=engine_outputs.noise_stats,
-            profile_summary=engine_outputs.profile if diagnostics.return_profile else None,
+            profile_summary=engine_outputs.profile if support.return_profile else None,
             class_pass=engine_outputs,
         )
     result = _LocalSearchIterationResult(
@@ -477,7 +337,7 @@ def _run_local_search_iteration(
         hard_assignment=engine_outputs.hard_assignments,
         relion_stats=engine_outputs.stats,
         noise_stats=engine_outputs.noise_stats,
-        profile_summary=engine_outputs.profile if diagnostics.return_profile else None,
+        profile_summary=engine_outputs.profile if support.return_profile else None,
         best_pose_rotations=(
             engine_outputs.best_pose_rotations
             if (kernel.projection_scale == 1.0 and magnification is None) or engine_outputs.best_pose_rotations is None
@@ -487,10 +347,9 @@ def _run_local_search_iteration(
         best_pose_eulers_deg=engine_outputs.best_pose_eulers_deg,
     )
 
-    if diagnostics.return_profile and result.profile_summary is not None:
+    if support.return_profile and result.profile_summary is not None:
         result.profile_summary = dict(result.profile_summary)
         result.profile_summary["metadata_build_time_s"] = np.float64(metadata_build_time)
         result.profile_summary["selector_time_s"] = np.float64(selector_time)
-        result.profile_summary["translation_prior_time_s"] = np.float64(0.0)
 
     return result

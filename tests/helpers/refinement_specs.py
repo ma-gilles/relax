@@ -19,14 +19,12 @@ _LOCAL_ITERATION_POSITIONAL = (
     "prior_translations",
     "sigma_offset_angstrom",
     "disc_type",
-    "image_batch_size",
-    "rotation_block_size",
     "current_size",
 )
 
 
 def local_iteration_owners(*args, **values):
-    """Build the six owners of the production local-iteration boundary."""
+    """Build the four owners of the production local-iteration boundary."""
 
     if len(args) > len(_LOCAL_ITERATION_POSITIONAL):
         raise TypeError(f"expected at most {len(_LOCAL_ITERATION_POSITIONAL)} positional values")
@@ -68,11 +66,6 @@ def local_iteration_owners(*args, **values):
             symmetry=values.pop("symmetry", "C1"),
             n_classes=values.pop("n_classes", 1),
         ),
-        local_search_iteration.LocalSearchBatchPolicy(
-            image_batch_size=values.pop("image_batch_size"),
-            rotation_block_size=values.pop("rotation_block_size"),
-            batch_size_planner=values.pop("batch_size_planner", None),
-        ),
         local_search_iteration.LocalSearchKernelPolicy(
             disc_type=values.pop("disc_type"),
             current_size=values.pop("current_size"),
@@ -82,7 +75,6 @@ def local_iteration_owners(*args, **values):
             reconstruction_padding_factor=values.pop("reconstruction_padding_factor", 1),
             use_float64_scoring=values.pop("use_float64_scoring", False),
             use_float64_projections=values.pop("use_float64_projections", False),
-            do_gridding_correction=values.pop("do_gridding_correction", False),
             square_window=values.pop("square_window", False),
             half_spectrum_scoring=values.pop("half_spectrum_scoring", False),
             relion_exact_score_translation=values.pop("relion_exact_score_translation", False),
@@ -110,11 +102,7 @@ def local_iteration_owners(*args, **values):
             apply_max_significants_to_support=values.pop("apply_max_significants_to_support", False),
             stats_use_reconstruction_probs=values.pop("stats_use_reconstruction_probs", False),
             score_only=values.pop("score_only", False),
-        ),
-        local_search_iteration.LocalSearchDiagnosticPolicy(
             return_profile=values.pop("return_profile", False),
-            debug_iteration=values.pop("debug_iteration", None),
-            debug_pass_label=values.pop("debug_pass_label", None),
         ),
     )
     assert not values, f"unmapped local iteration owner values: {sorted(values)}"
@@ -122,7 +110,7 @@ def local_iteration_owners(*args, **values):
 
 
 def local_iteration_keywords(fake):
-    """Adapt a keyword-style fake to the six-owner local-iteration boundary.
+    """Adapt a keyword-style fake to the four-owner local-iteration boundary.
 
     Every owner field carries its former keyword name, so the fake receives the
     same names it read before the owners existed.

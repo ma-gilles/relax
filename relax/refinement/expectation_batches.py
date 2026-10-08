@@ -166,8 +166,8 @@ def prepare_half_batches(
 ) -> HalfBatchPlan:
     """Resolve compact staging and coarse/fine batches before one half scores.
 
-    Grids are inspected only in the branches that need them. Local scoring uses
-    the safe-size callback; dense scoring also uses the coarse/fine sizes.
+    Grids are inspected only in the branches that need them. Dense scoring uses
+    the safe-size callbacks and the coarse/fine sizes; local scoring sizes its own tiles.
     """
     batching = planner.requested
     n_classes = planner.n_classes
@@ -229,12 +229,10 @@ def prepare_half_batches(
                 "Compact firstiter K1 batch planning: model_size=%d deferred=%s coarse_staging=%d",
                 model_size, decision.deferred_firstiter_bpref, projector_half.nbytes,
             )
-    from relax.helpers.batch_planning import local_source_bpref_staging_bytes
-
     if (
-        (use_adaptive or use_local) and not k_class_enabled
+        use_adaptive and not k_class_enabled
         and not relion_firstiter_cc_this_iter and compact_precision
-        and (use_local or single_class_bucketed_pass2_selected(firstiter=False))
+        and single_class_bucketed_pass2_selected(firstiter=False)
         and _host_relion_projector_texture_enabled(
             projector_half, r_max=None if projector is None else projector.r_max,
             padding_factor=PROJECTION_PADDING_FACTOR, allow_float32_cast=True,
@@ -254,24 +252,14 @@ def prepare_half_batches(
             image_size=_largest_image_size(dataset),
             bpref_device_signature_active=bpref_device_signature_active,
         ):
-            local_staging_bytes = 0
-            if use_local:
-                local_recon_shape = relion_backprojector_volume_shape(
-                    volume_shape, RECONSTRUCTION_PADDING_FACTOR, current_size=model_size,
-                )
-                local_staging_bytes = local_source_bpref_staging_bytes(
-                    projector_half.shape,
-                    half_volume_accumulator_shape(local_recon_shape),
-                )
             safe_batch_sizes_for_half = partial(
                 planner, compact_k1_relion_layout=True,
                 compact_k1_relion_score_bpref_overlap=True,
                 model_current_size_for_batch=model_size,
-                score_projector_staging_bytes=local_staging_bytes,
             )
             # Coarse Gaussian backends can retain full-cube staging.
             # Their existing conservative callback remains separate.
-            planner.log.info("Compact soft K1 planning: model_size=%d local=%s extra_staging_bytes=%d", model_size, use_local, local_staging_bytes)
+            planner.log.info("Compact soft K1 planning: model_size=%d", model_size)
     if use_adaptive:
         adaptive_batch_plan = _plan_adaptive_dense_batch_sizes(
             n_rot=rotations.shape[0],
