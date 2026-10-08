@@ -157,8 +157,7 @@ def postprocess_bootstrap_iref(
     ini_high_ang: float,
     particle_diameter_ang: float,
     width_mask_edge_px: float,
-    do_init_blobs: bool = True,
-    is_helical_segment: bool = False,
+    do_init_blobs: bool,
 ) -> np.ndarray:
     """RELION's post-bootstrap low-pass, blobs and soft mask (ml_optimiser.cpp:2940-2980).
 
@@ -166,8 +165,6 @@ def postprocess_bootstrap_iref(
     """
     from recovar.utils.helpers import recovar_volume_to_relion, relion_volume_to_recovar
 
-    if is_helical_segment:
-        raise NotImplementedError("helical InitialModel blobs are not ported")
     arr = np.asarray(Iref, dtype=np.float64)
     if arr.ndim != 4 or arr.shape[1] != arr.shape[2] or arr.shape[2] != arr.shape[3]:
         raise ValueError(f"Iref must have shape (K, N, N, N), got {arr.shape}")
@@ -288,33 +285,34 @@ def _initial_state_from_particles(
 
     # RELAX_INITIAL_IREF_OVERRIDE (parity hook): RELION's iter000 ref replaces the bootstrap below.
     override_path = os.environ.get("RELAX_INITIAL_IREF_OVERRIDE")
-    bootstrap_kwargs = dict(
-        images=images,
-        defU=np.asarray(sorted_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
-        defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
-        defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
-        phase_shift=initial_model_io._phase_shift(sorted_star),
-        voltage=voltage,
-        Cs=Cs,
-        Q0=Q0,
-        pixel_size=pixel_size,
-        ori_size=ori_size,
-        nr_classes=int(opts.nr_classes),
-        particle_diameter_ang=float(opts.particle_diameter),
-        width_mask_edge_px=float(opts.width_mask_edge_px),
-        # Images on several shapes arrive masked and on the model grid.
-        do_zero_mask=bool(opts.do_zero_mask) and group_pixel_sizes is None,
-        do_ctf_correction=bool(opts.do_ctf_correction),
-        random_seed=int(opts.random_seed),
-        padding_factor=int(opts.padding_factor),
-        current_size=-1,
-        minimum_nr_particles=int(bootstrap_positions.size),
-        particle_positions=bootstrap_positions,
-        image_gamma_offsets=None if group_pixel_sizes is not None else _bootstrap_gamma_offsets(
-            dataset, bootstrap_order, ori_size
-        ),
-    )
-    iref, rand_state = (None, None) if override_path else compute_bootstrap_iref(**bootstrap_kwargs)
+    iref = rand_state = None
+    if not override_path:
+        iref, rand_state = compute_bootstrap_iref(
+            images=images,
+            defU=np.asarray(sorted_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
+            defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
+            defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
+            phase_shift=initial_model_io._phase_shift(sorted_star),
+            voltage=voltage,
+            Cs=Cs,
+            Q0=Q0,
+            pixel_size=pixel_size,
+            ori_size=ori_size,
+            nr_classes=int(opts.nr_classes),
+            particle_diameter_ang=float(opts.particle_diameter),
+            width_mask_edge_px=float(opts.width_mask_edge_px),
+            # Images on several shapes arrive masked and on the model grid.
+            do_zero_mask=bool(opts.do_zero_mask) and group_pixel_sizes is None,
+            do_ctf_correction=bool(opts.do_ctf_correction),
+            random_seed=int(opts.random_seed),
+            padding_factor=int(opts.padding_factor),
+            current_size=-1,
+            minimum_nr_particles=int(bootstrap_positions.size),
+            particle_positions=bootstrap_positions,
+            image_gamma_offsets=None if group_pixel_sizes is not None else _bootstrap_gamma_offsets(
+                dataset, bootstrap_order, ori_size
+            ),
+        )
     profile.record("bootstrap")
 
     state = initialise_denovo_state(
@@ -361,14 +359,9 @@ def _initial_state_from_particles(
             particle_diameter_ang=float(opts.particle_diameter),
             width_mask_edge_px=float(opts.width_mask_edge_px),
             do_init_blobs=True,
-            is_helical_segment=False,
         )
     profile.record("initial_reference")
-    state = initialise_data_vs_prior_from_references(
-        state,
-        nr_particles=len(main_star),
-        fix_tau=False,
-    )
+    state = initialise_data_vs_prior_from_references(state, nr_particles=len(main_star))
     profile.record("data_vs_prior")
     profile.report("initial state")
     return state, optics_group_by_particle
@@ -478,7 +471,6 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=float(opts.width_mask_edge_px),
         do_init_blobs=False,
-        is_helical_segment=False,
     )
-    state = initialise_data_vs_prior_from_references(state, nr_particles=int(dataset.n_units), fix_tau=False)
+    state = initialise_data_vs_prior_from_references(state, nr_particles=int(dataset.n_units))
     return state, optics_group_by_particle

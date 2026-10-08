@@ -1514,7 +1514,6 @@ def test_initial_state_applies_relion_bootstrap_postprocess(monkeypatch, capsys)
             "particle_diameter_ang": 16.0,
             "width_mask_edge_px": float(opts.width_mask_edge_px),
             "do_init_blobs": True,
-            "is_helical_segment": False,
         }
     ]
     profile_line = capsys.readouterr().out.strip()

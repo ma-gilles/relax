@@ -138,7 +138,7 @@ def test_production_bootstrap_with_relax_ctf_matches():
     iref, rand_state = bootstrap_iref.compute_bootstrap_iref(**case, **args)
     post = bootstrap_iref.postprocess_bootstrap_iref(
         iref, rand_state=rand_state, pixel_size=pixel, ini_high_ang=4.0 * pixel,
-        particle_diameter_ang=args["particle_diameter_ang"], width_mask_edge_px=5.0,
+        particle_diameter_ang=args["particle_diameter_ang"], width_mask_edge_px=5.0, do_init_blobs=True,
     )
     to_recovar = np.asarray([relion_volume_to_recovar(v) for v in expected])
     post_recovar = np.asarray([relion_volume_to_recovar(v) for v in expected_post])

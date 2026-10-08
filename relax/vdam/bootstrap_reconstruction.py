@@ -93,17 +93,6 @@ def soft_mask_outside_map(volume, radius: float = -1.0, cosine_width: float = 3.
     return np.where(edge, (1 - raised) * vol + raised * background, out)
 
 
-def initial_low_pass_filter(volume, ori_size: int, pixel_size: float, ini_high_ang: float) -> np.ndarray:
-    """``initialLowPassFilterReferences`` for one reference (ml_optimiser.cpp:3556-3586)."""
-
-    vol = np.asarray(volume, dtype=np.float64)
-    if not ini_high_ang > 0.0:
-        return vol
-    return initial_low_pass_filter_references(
-        vol[None], box_size=int(ori_size), pixel_size=float(pixel_size), ini_high_ang=float(ini_high_ang)
-    )[0]
-
-
 @functools.lru_cache(maxsize=4)
 def _reconstruct_geometry(n: int, r_max: int, pf: float):
     """The data-independent indices of :meth:`BackProjector3D.reconstruct` for one size (memoized per class run)."""
@@ -478,12 +467,17 @@ def postprocess_references(
 ) -> np.ndarray:
     """Low-pass, blobs and soft mask of the bootstrap references (ml_optimiser.cpp:2940-2980)."""
 
-    refs = np.asarray(references, dtype=np.float64)
-    ori_size = refs.shape[-1]
+    ori_size = np.shape(references)[-1]
     diameter_px = float(particle_diameter_ang) / float(pixel_size)
+    # ``initialLowPassFilterReferences`` (ml_optimiser.cpp:3556-3586); ini_high_ang = N px / ROUND(0.07 N) > 0.
+    low_pass = functools.partial(
+        initial_low_pass_filter_references,
+        box_size=int(ori_size),
+        pixel_size=float(pixel_size),
+        ini_high_ang=float(ini_high_ang),
+    )
     out = []
-    for vol in refs:
-        vol = initial_low_pass_filter(vol, ori_size, pixel_size, ini_high_ang)
+    for vol in low_pass(np.asarray(references, dtype=np.float64)):
         if do_init_blobs:
             blobs_pos = _make_blobs_3d(vol, 40, diameter_px, generator)
             blobs_neg = _make_blobs_3d(vol, 40, diameter_px, generator)
@@ -492,7 +486,7 @@ def postprocess_references(
             new_std = _std(vol)
             if new_std > 0.0:
                 vol = vol * (old_std / new_std)
-            vol = initial_low_pass_filter(vol, ori_size, pixel_size, ini_high_ang)
+            vol = low_pass(vol[None])[0]
             vol = soft_mask_outside_map(vol, diameter_px / 2.0, float(width_mask_edge_px))
         out.append(vol)
     clear_geometry_caches()
@@ -508,7 +502,6 @@ def clear_geometry_caches() -> None:
 __all__ = [
     "BackProjector3D",
     "bootstrap_references",
-    "initial_low_pass_filter",
     "postprocess_references",
     "soft_mask_outside_map",
 ]

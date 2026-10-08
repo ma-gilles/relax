@@ -11,10 +11,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from relax.relion.reference_initialization import (
-    _relion_data_vs_prior,
-    relion_initial_tau2_and_data_vs_prior,
-)
+from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
 
 # RELION's 0.07 digital-frequency low-pass for do_average_unaligned (ml_optimiser.cpp:2513-2518).
@@ -102,7 +99,6 @@ def initialise_data_vs_prior_from_references(
     state: InitialModelState,
     *,
     nr_particles: int,
-    fix_tau: bool = False,
 ) -> InitialModelState:
     """``MlModel::initialiseDataVersusPrior`` (avoids the 0.001*weight fallback if tau2=0)."""
     if nr_particles <= 0:
@@ -126,20 +122,17 @@ def initialise_data_vs_prior_from_references(
     from recovar.utils.helpers import recovar_volume_to_relion
 
     for k in range(int(state.K)):
-        if not fix_tau:
-            # getSpectrum runs on RELION-frame Iref.  Its half-spectrum shell
-            # traversal is not invariant to swapping RECOVAR's X/Z axes, so
-            # convert at this native boundary just as reconstruction does.
-            iref_relion = recovar_volume_to_relion(np.asarray(state.Iref[k], dtype=np.float64))
-            new_tau2[k], new_data_vs_prior[k] = relion_initial_tau2_and_data_vs_prior(
-                iref_relion,
-                tau2_fudge=float(state.tau2_fudge_factor),
-                avg_sigma2_noise=avg_sigma2_noise,
-                nr_particles=nr_particles,
-                pdf_class=float(pdf_class[k]),
-            )
-        else:
-            new_data_vs_prior[k] = _relion_data_vs_prior(new_tau2[k], avg_sigma2_noise, nr_particles, pdf_class[k])
+        # getSpectrum runs on RELION-frame Iref.  Its half-spectrum shell
+        # traversal is not invariant to swapping RECOVAR's X/Z axes, so
+        # convert at this native boundary just as reconstruction does.
+        iref_relion = recovar_volume_to_relion(np.asarray(state.Iref[k], dtype=np.float64))
+        new_tau2[k], new_data_vs_prior[k] = relion_initial_tau2_and_data_vs_prior(
+            iref_relion,
+            tau2_fudge=float(state.tau2_fudge_factor),
+            avg_sigma2_noise=avg_sigma2_noise,
+            nr_particles=nr_particles,
+            pdf_class=float(pdf_class[k]),
+        )
         if np.any(new_tau2[k] < 0.0):
             raise ValueError("initial tau2_class must be non-negative after reference-spectrum initialisation")
 
