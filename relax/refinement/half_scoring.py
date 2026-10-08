@@ -184,6 +184,20 @@ class DenseSamplingSpec:
     coarse_scoring_rotations: object | None = None
     symmetry: str = "C1"
 
+    def pass2_grids(self, *, adaptive_oversampling: int, symmetry: str) -> AdaptivePass2Grids:
+        """The adaptive pass-1 and pass-2 trial grids of these sampling settings."""
+        return prepare_adaptive_pass2_grids(
+            self.effective_rotations,
+            self.current_translations,
+            self.base_translations,
+            healpix_order=self.current_healpix_order,
+            adaptive_oversampling=adaptive_oversampling,
+            translation_step=self.translation_step,
+            random_perturbation=self.random_perturbation,
+            coarse_rotation_ids=self.coarse_rotation_ids,
+            symmetry=symmetry,
+        )
+
 
 @dataclass(frozen=True, kw_only=True)
 class DensePriorSpec:
@@ -273,17 +287,7 @@ def _score_adaptive_kclass_dense(
             "adaptive engine (current_size=%s)",
             sampling.cs_for_engine,
         )
-    pass2_grids = prepare_adaptive_pass2_grids(
-        sampling.effective_rotations,
-        sampling.current_translations,
-        sampling.base_translations,
-        healpix_order=sampling.current_healpix_order,
-        adaptive_oversampling=adaptive_os,
-        translation_step=sampling.translation_step,
-        random_perturbation=sampling.random_perturbation,
-        coarse_rotation_ids=sampling.coarse_rotation_ids,
-        symmetry=symmetry,
-    )
+    pass2_grids = sampling.pass2_grids(adaptive_oversampling=adaptive_os, symmetry=symmetry)
     adaptive_em_kwargs = dict(em_kwargs)
     n_classes = (
         int(np.asarray(half.reference).shape[0])
@@ -535,17 +539,7 @@ def _score_adaptive_k1_dense(
             "custom CUDA is unsupported for non-C1 symmetry"
         )
     means_single = jnp.asarray(half.reference)[None, :]
-    pass2_grids = prepare_adaptive_pass2_grids(
-        sampling.effective_rotations,
-        sampling.current_translations,
-        sampling.base_translations,
-        healpix_order=sampling.current_healpix_order,
-        adaptive_oversampling=adaptive_os,
-        translation_step=sampling.translation_step,
-        random_perturbation=sampling.random_perturbation,
-        coarse_rotation_ids=sampling.coarse_rotation_ids,
-        symmetry=symmetry,
-    )
+    pass2_grids = sampling.pass2_grids(adaptive_oversampling=adaptive_os, symmetry=symmetry)
     adaptive_em_kwargs = dict(base_em_kwargs)
     adaptive_em_kwargs["sparse_pass2"] = True
     if half.scale_group_ids is not None:
@@ -989,16 +983,8 @@ def _score_half_dense_one_shape(
     else:
         best_rots = best_eulers = best_translations = None
     if fine_rotations_for_pose is None and rot_pmap_for_collapse is not None:
-        fine_rotations_for_pose = prepare_adaptive_pass2_grids(
-            sampling.effective_rotations,
-            sampling.current_translations,
-            sampling.base_translations,
-            healpix_order=sampling.current_healpix_order,
-            adaptive_oversampling=adaptive_os_local,
-            translation_step=sampling.translation_step,
-            random_perturbation=sampling.random_perturbation,
-            coarse_rotation_ids=sampling.coarse_rotation_ids,
-            symmetry=symmetry,
+        fine_rotations_for_pose = sampling.pass2_grids(
+            adaptive_oversampling=adaptive_os_local, symmetry=symmetry
         ).fine_rotations
     fine_rotation_eulers_for_pose = None
     if fine_rotations_for_pose is not None and _parity_dump.is_active():
