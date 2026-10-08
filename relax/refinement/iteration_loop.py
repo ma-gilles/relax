@@ -4,7 +4,7 @@
 ``half_scoring`` owns the per-half dense/local engine calls; ``scoring_policy``
 owns their shared execution defaults and diagnostic selectors. Local chunks
 are implemented in ``local_search_iteration``; state-swap diagnostics belong
-to ``diagnostics.state_swap_runtime``. Pure trial-grid construction belongs to
+to ``parity.state_swap_runtime``. Pure trial-grid construction belongs to
 ``sampling``.
 See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 """
