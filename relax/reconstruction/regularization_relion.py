@@ -17,6 +17,7 @@ from recovar.reconstruction.regularization import (  # noqa: F401  (staying help
     logger,
 )
 
+from relax.helpers.env_flags import parse_env_auto_flag
 from relax.relion.macros import relion_round, relion_round_array
 
 _RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS = 200_000_000
@@ -107,16 +108,9 @@ def _low_resolution_join_flat_indices(volume_shape, half_layout, lowres_r2_max):
 
 
 def _low_resolution_join_host_fallback_enabled_for_size(values_size, join_size):
-    mode = os.environ.get("RELAX_LOWRES_JOIN_HOST_FALLBACK", "auto").strip().lower()
-    if mode in {"0", "false", "no", "off", "never"}:
-        return False
-    if mode in {"1", "true", "yes", "on", "always"}:
-        return True
-    if mode != "auto":
-        logger.warning(
-            "Unrecognised RELAX_LOWRES_JOIN_HOST_FALLBACK=%r; using auto",
-            mode,
-        )
+    forced = parse_env_auto_flag("RELAX_LOWRES_JOIN_HOST_FALLBACK", logger=logger)
+    if forced is not None:
+        return forced
     if int(join_size) >= int(values_size):
         return False
     threshold = int(

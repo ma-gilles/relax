@@ -22,6 +22,7 @@ import numpy as np
 from recovar.core import fourier_transform_utils, mask
 
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
+from relax.helpers.env_flags import parse_env_auto_flag
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
 )
@@ -1910,16 +1911,9 @@ def _large_relion_host_irfft_enabled(volume_shape, *, allocator_limit_bytes: int
     when None): a cuFFT work area that cannot be found aborts the process instead of raising.
     """
 
-    mode = os.environ.get("RELAX_RELION_HOST_IRFFT", "auto").strip().lower()
-    if mode in {"0", "false", "no", "off", "never"}:
-        return False
-    if mode in {"1", "true", "yes", "on", "always"}:
-        return True
-    if mode != "auto":
-        logger.warning(
-            "Unrecognised RELAX_RELION_HOST_IRFFT=%r; using auto",
-            mode,
-        )
+    forced = parse_env_auto_flag("RELAX_RELION_HOST_IRFFT", logger=logger)
+    if forced is not None:
+        return forced
     if _large_irfft_requires_explicit_normalization(volume_shape):
         return True
     limit = _device_allocator_limit_bytes() if allocator_limit_bytes is None else int(allocator_limit_bytes)

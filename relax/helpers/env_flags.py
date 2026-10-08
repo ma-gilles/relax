@@ -46,6 +46,22 @@ def parse_env_strict_flag(name: str, *, default: bool = False) -> bool:
     raise ValueError(f"Unsupported {name}={token!r}")
 
 
+def parse_env_auto_flag(name: str, *, logger: logging.Logger) -> bool | None:
+    """Read an ``auto``/forced switch: None for ``auto`` (also unset), True or False when forced.
+
+    ``never`` and the false tokens force off, ``always`` and the true tokens force on; any other value
+    warns through the caller's logger and is ``auto``. Whitespace and case are ignored.
+    """
+    mode = os.environ.get(name, "auto").strip().lower()
+    if mode in {"0", "false", "no", "off", "never"}:
+        return False
+    if mode in {"1", "true", "yes", "on", "always"}:
+        return True
+    if mode != "auto":
+        logger.warning("Unrecognised %s=%r; using auto", name, mode)
+    return None
+
+
 def parse_env_binary_flag(name: str) -> bool:
     """Read a strict 0/1 flag; unset is false, whitespace is stripped, blank is invalid."""
     token = os.environ.get(name, "0").strip()
