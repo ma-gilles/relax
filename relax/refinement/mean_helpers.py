@@ -1183,20 +1183,25 @@ def _apply_relion_initial_lowpass_filter(
     """Apply RELION's ``initialLowPassFilterReferences`` to a full Fourier volume."""
     if ini_high_angstrom is None or float(ini_high_angstrom) <= 0.0:
         return volume_ft_flat
-    original = jnp.asarray(volume_ft_flat).reshape(volume_shape)
-    volume_real = np.real(np.asarray(fourier_transform_utils.get_idft3(original))).astype(
-        np.float64,
-        copy=False,
-    )
-    filtered_real = initial_low_pass_filter_references(
-        volume_real[None, ...],
-        box_size=int(volume_shape[0]),
-        pixel_size=float(voxel_size),
-        ini_high_ang=float(ini_high_angstrom),
-        filter_edgewidth=float(filter_edgewidth),
-    )[0]
-    filtered_ft = fourier_transform_utils.get_dft3(jnp.asarray(filtered_real))
-    return filtered_ft.astype(original.dtype).reshape(-1)
+    # RELION filters Iref in double on the host. Both transforms run there too, on the CPU backend, and only the
+    # filtered map goes back to the device in its dtype: on the device the inverse transform's copies and the
+    # complex128 forward transform held seven maps, 1.34 GiB requests at box 448, which a 16 GB V100 could not
+    # place in iteration 1 (relax#47).
+    dtype = volume_ft_flat.dtype
+    with jax.default_device("cpu"):
+        original = jnp.asarray(np.asarray(volume_ft_flat)).reshape(volume_shape)
+        volume_real = np.real(np.asarray(fourier_transform_utils.get_idft3(original))).astype(np.float64, copy=False)
+        del original
+        filtered_real = initial_low_pass_filter_references(
+            volume_real[None, ...],
+            box_size=int(volume_shape[0]),
+            pixel_size=float(voxel_size),
+            ini_high_ang=float(ini_high_angstrom),
+            filter_edgewidth=float(filter_edgewidth),
+        )[0]
+        del volume_real
+        filtered_ft = np.asarray(fourier_transform_utils.get_dft3(jnp.asarray(filtered_real)).astype(dtype))
+    return jnp.asarray(filtered_ft.reshape(-1))
 
 
 @functools.partial(jax.jit, static_argnames=("volume_shape",))
