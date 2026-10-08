@@ -20,7 +20,7 @@ gets the outputs below. A table of numbers alone is not a result.
   - VDAM: plot the mean gates and the PC gates separately.
   - Keep common-frame FSC and independently aligned per-state FSC apart.
 - **Downloads and report.** Signed float32 MRC files of the means and PCs, the embeddings, the
-  manifests and ZIP archives. Include partial and failed runs. Put a compact table with plot links on
+  manifests and ZIP archives. Include partial and failed runs. Put a compact table with plot links (a Markdown page with image paths, not HTML) on
   the dataset's results page and link it from the synthetic and real-data index.
 
 ## Interpretation
