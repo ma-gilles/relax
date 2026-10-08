@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+from relax.vdam.state import InitialModelState
 from relax.vdam.tomo_estep import tomo_initial_model_sampling
 
 
@@ -17,7 +18,7 @@ def test_coarse_size_is_the_order_before_the_sampling_update():
     # angular sampling (step D, :3945), so the iteration that moves from HEALPix 1 to 2 still scores its coarse
     # pass at the HEALPix-1 size. etob2l_plain (box 64 at 4.25 A, diameter 240): 12 at order 1, 22 at order 2;
     # stock RELION keeps 25 significant samples per particle there, the order-2 size kept 2.6 (job 14971225).
-    state = SimpleNamespace(ori_size=64, pixel_size=4.25, current_size=38)
+    state = InitialModelState(ori_size=64, pixel_size=4.25, current_size=38, Iref=None, Igrad1=None, Igrad2=None)
     assert tomo_initial_model_sampling(state, _plan(1), particle_diameter_ang=240.0).coarse_size == 12
     assert tomo_initial_model_sampling(state, _plan(2), particle_diameter_ang=240.0).coarse_size == 22
     updated = tomo_initial_model_sampling(state, _plan(2), particle_diameter_ang=240.0, pass1_healpix_order=1)
@@ -27,7 +28,7 @@ def test_coarse_size_is_the_order_before_the_sampling_update():
 def test_coarse_size_equals_the_single_particle_paths_for_the_same_inputs():
     from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size
 
-    state = SimpleNamespace(ori_size=64, pixel_size=4.25, current_size=38)
+    state = InitialModelState(ori_size=64, pixel_size=4.25, current_size=38, Iref=None, Igrad1=None, Igrad2=None)
     for before, after in ((1, 2), (2, 3), (3, 3)):
         spa = _resolve_sparse_pass1_current_size(state, 38, 240.0, before)
         tomo = tomo_initial_model_sampling(state, _plan(after), particle_diameter_ang=240.0, pass1_healpix_order=before)

@@ -407,7 +407,7 @@ def _estimate_native_sampling_accuracy(
         [np.asarray(recovar_volume_to_relion(ref), dtype=np.float64) for ref in np.asarray(state.Iref)],
         axis=0,
     )
-    current_image_size = int(state.current_size if state.current_size > 0 else state.ori_size)
+    current_image_size = int(state.effective_current_size)
     accuracy_estimator = (
         estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs
         if isolate_in_subprocess

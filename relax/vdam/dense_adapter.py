@@ -283,7 +283,7 @@ def prepare_relion_projector_class_inputs_and_power(
     """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator)."""
     half_maps, power, r_max = relion_projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
-        current_size=state.current_size if state.current_size > 0 else state.ori_size,
+        current_size=state.effective_current_size,
         padding_factor=padding_factor,
     )
     return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max), power
@@ -303,7 +303,7 @@ def _finish_relion_projector_class_inputs(
             projector_half=np.asarray(projector_half_by_class),
             projector_r_max=np.int64(projector_r_max),
             current_size=np.int64(
-                state.current_size if state.current_size > 0 else state.ori_size
+                state.effective_current_size
             ),
             padding_factor=np.int64(padding_factor),
             iteration=np.int64(state.iter),

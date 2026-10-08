@@ -196,7 +196,7 @@ def _native_expectation_step(
                 result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
                     [dataset.subset(ids).images],
                     [None],
-                    int(state.current_size) if int(state.current_size) > 0 else int(state.ori_size),
+                    int(state.effective_current_size),
                     int(state.ori_size),
                 )
         else:
@@ -219,7 +219,7 @@ def _native_expectation_step(
                 result.meta["premultiplied_average_ctf2"] = relion_ctf.premultiplied_average_ctf2(
                     [dataset.subset(np.asarray(particle_ids, dtype=np.int64))],
                     [None],
-                    int(state.current_size) if int(state.current_size) > 0 else int(state.ori_size),
+                    int(state.effective_current_size),
                     int(state.ori_size),
                 )
         result.meta.update(
@@ -333,7 +333,7 @@ def _native_expectation_step(
                 groups=np.zeros(ids.size, np.int64) if optics_group_ids is None else np.asarray(optics_group_ids)[ids],
                 n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images["image_offsets"])[ids],
                 ori_size=int(state.ori_size),
-                current_size=int(state.current_size) if int(state.current_size) > 0 else int(state.ori_size),
+                current_size=int(state.effective_current_size),
             )
         estep_meta_updates._update_particle_state_from_estep_meta(
             particle_state,

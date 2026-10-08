@@ -175,7 +175,7 @@ def _add_accumulator_weight_meta(meta: dict[str, Any], accumulators: list[VdamAc
 
 
 def _empty_accumulator(state: InitialModelState, class_idx: int, halfset_idx: int) -> VdamAccumulator:
-    r_max = state.ori_size // 2 if state.current_size <= 0 else state.current_size // 2
+    r_max = state.effective_current_size // 2
     if r_max >= state.ori_size // 2:
         shape = (state.ori_size, state.ori_size, state.ori_size // 2 + 1)
     else:
@@ -211,7 +211,7 @@ def _arrays_to_accumulators(
             "K-class accumulator class axes must each contain exactly "
             f"{int(state.K)} classes, got data={data_class_count} and weight={weight_class_count}",
         )
-    r_max = state.ori_size // 2 if state.current_size <= 0 else state.current_size // 2
+    r_max = state.effective_current_size // 2
     data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
     dump_dir = os.environ.get("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR")
 

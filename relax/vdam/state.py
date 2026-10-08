@@ -74,6 +74,11 @@ class InitialModelState:
     has_converged: bool = False
     grad_has_converged: bool = False
 
+    @property
+    def effective_current_size(self) -> int:
+        """The Fourier box the iteration works at: ``current_size``, or the full box while none is set (<= 0)."""
+        return self.current_size if self.current_size > 0 else self.ori_size
+
 
 def half_slot_count(K: int, pseudo_halfsets: bool) -> int:
     """Per RELION: 2K slots when pseudo-halfsets active, else K."""

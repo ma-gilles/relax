@@ -51,7 +51,7 @@ def tomo_initial_model_sampling(
 
     from relax.refinement.tomo_half import TomoSampling
 
-    fine_size = int(state.current_size) if int(state.current_size) > 0 else int(state.ori_size)
+    fine_size = int(state.effective_current_size)
     order = int(sampling_plan.healpix_order)
     coarse_size = (
         fine_size

@@ -24,6 +24,7 @@ from relax.vdam.estep_common import (
 )
 from relax.vdam.init import initialise_denovo_state
 from relax.vdam.layout import relion_bpref_frame_scales
+from relax.vdam.state import InitialModelState
 
 pytestmark = pytest.mark.unit
 
@@ -543,7 +544,7 @@ def test_sparse_control_split_preserves_input_and_array_identity():
 
 
 def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
-    state = SimpleNamespace(K=4, ori_size=8, current_size=4)
+    state = InitialModelState(K=4, ori_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
     r_max = state.current_size // 2
     compact_size = 2 * (r_max + 1) + 1
     full_center = state.ori_size // 2
@@ -589,7 +590,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
     data_class_count,
     weight_class_count,
 ):
-    state = SimpleNamespace(K=4, ori_size=8, current_size=4)
+    state = InitialModelState(K=4, ori_size=8, current_size=4, Iref=None, Igrad1=None, Igrad2=None)
     compact_voxels = 7**3
     data = [np.zeros(compact_voxels, dtype=np.complex64) for _ in range(data_class_count)]
     weight = [np.zeros(compact_voxels, dtype=np.float32) for _ in range(weight_class_count)]
@@ -613,7 +614,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
 def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
     """Pin the real-data K=4 current-size bridge that failed on 59-cubed outputs."""
 
-    state = SimpleNamespace(K=4, ori_size=256, current_size=56)
+    state = InitialModelState(K=4, ori_size=256, current_size=56, Iref=None, Igrad1=None, Igrad2=None)
     compact_size = 59
     compact_voxels = compact_size**3
     data = np.stack(
