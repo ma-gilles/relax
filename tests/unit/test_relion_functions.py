@@ -2226,6 +2226,42 @@ def test_host_unpadded_tail_matches_existing_fftw_half_finish():
             clear_cache()
 
 
+@pytest.mark.gpu
+def test_host_route_matches_the_device_inverse_fft_on_the_gpu(gpu_device):
+    """The host inverse FFT that a small card takes (relax#40) gives the GPU route's reconstruction within the
+    float32 band, at a 32^3 map padded to 64^3."""
+
+    import jax
+    from recovar.core import fourier_transform_utils as ftu
+
+    from relax.refinement import mean_helpers
+
+    volume_shape = (32, 32, 32)
+    reconstruction_shape = rf._relion_reconstruction_padded_shape(volume_shape, 2)
+    half_shape = ftu.volume_shape_to_half_volume_shape(reconstruction_shape)
+    rng = np.random.default_rng(40)
+    fftw_half = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
+    common = dict(
+        kernel="triangular", use_spherical_mask=True, grid_correct=True, gridding_correct="radial", kernel_width=1,
+        return_real_space=True, gridding_padding_factor=1,
+    )
+    with jax.default_device(gpu_device):
+        device = np.asarray(
+            relion_functions_relion._finish_large_relion_postprocess_from_fftw_half(
+                jnp.asarray(fftw_half), volume_shape, 2, **common
+            )
+        )
+        unpadded_real = mean_helpers._host_irfft_and_center_crop(
+            fftw_half.copy(), reconstruction_shape, volume_shape, workers=1
+        )
+        host = np.asarray(
+            relion_functions_relion._finish_large_relion_postprocess_from_unpadded_real(
+                unpadded_real, volume_shape, 2, **common
+            )
+        )
+    assert_matches(host, device)
+
+
 def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
     """Splitting before a larger iFFT preserves the compact-accumulator result."""
 
@@ -2798,6 +2834,30 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
 
     assert events == ["stage", "finish"]
     assert_matches(np.asarray(result), np.asarray([2.0 / transform_size], dtype=np.complex64))
+
+
+@pytest.mark.parametrize(
+    "card_gb, limit_gib, host",
+    [(80, 76.5, False), (40, 39.6, False), (16, 15.83, True)],  # the allocator limits the cell-15 runs reported
+)
+def test_padded_irfft_goes_to_the_host_when_its_device_working_set_exceeds_a_quarter_of_the_limit(
+    monkeypatch, card_gb, limit_gib, host
+):
+    """At box 380 (a 760^3 padded grid, a 1.76 GB half) the device inverse FFT stays on 40 and 80 GB cards and
+    moves to the host on a 16 GB card, where its cuFFT work area could not be found (relax#40)."""
+
+    from relax.refinement import mean_helpers
+
+    monkeypatch.delenv("RELAX_RELION_HOST_IRFFT", raising=False)
+    limit = int(limit_gib * 2**30)
+    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit) is host
+    # Small grids stay on the device on every card; the int32-overflow grid always goes to the host.
+    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit) is False
+    assert mean_helpers._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit) is True
+    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "0")
+    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit) is False
+    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "1")
+    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit) is True
 
 
 def test_large_host_irfft_is_already_normalized(monkeypatch):
