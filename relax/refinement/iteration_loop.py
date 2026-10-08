@@ -67,7 +67,6 @@ from relax.helpers.resolution import (
 )
 from relax.helpers.timing import Stopwatch
 from relax.reconstruction.regularization_relion import (
-    RELION_MINRES_MAP,
     update_relion_growth_state_from_fsc,
 )
 from relax.refinement import finalization
@@ -104,7 +103,6 @@ from relax.refinement.half_scoring import (
     HalfScoringData,
 )
 from relax.refinement.iteration_planning import (
-    RunOptics,
     build_initial_coarse_grids,
     coarse_pass1_rotations,
     first_iteration_policy,
@@ -129,7 +127,6 @@ from relax.refinement.maximization import (
     k1_maximization,
 )
 from relax.refinement.mean_helpers import (
-    ReconstructionSettings,
     _class_weights_from_posterior,
     _initialize_class_log_priors,
     _normalize_initial_means,
@@ -184,15 +181,15 @@ from relax.refinement.refinement_result import (
     ReplayTelemetry,
 )
 from relax.refinement.setup_checks import (
-    _internal_solvent_mask,
     _optics_group_ids_per_half,
-    _relion_k1_translation_angle_scale,
+    checked_run_optics,
+    reconstruction_settings_for_run,
+    translation_angle_scale_for_run,
 )
 from relax.refinement.tomo_half import TomoHalf, numbered_iteration_tomo_sampling
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
-    REFERENCE_FILTER_EDGE_SHELLS,
 )
 from relax.relion.relion_normalization import (
     NormScaleCorrectionReport,
@@ -357,32 +354,8 @@ def refine_single_volume(
         pixel_size_angstrom=source_pixel_size_angstrom,
     )
     k_class_enabled = options.k_class.n_classes > 1
-    if (options.parity.relion_optics_image_sizes is None) != (options.parity.relion_optics_pixel_sizes is None):
-        raise ValueError(
-            "relion_optics_image_sizes and relion_optics_pixel_sizes must be supplied together",
-        )
-    optics_image_sizes = None
-    optics_pixel_sizes = None
-    if options.parity.relion_optics_image_sizes is not None:
-        optics_image_sizes = np.asarray(options.parity.relion_optics_image_sizes, dtype=np.int64).reshape(-1)
-        optics_pixel_sizes = np.asarray(options.parity.relion_optics_pixel_sizes, dtype=np.float64).reshape(-1)
-        if optics_image_sizes.shape != optics_pixel_sizes.shape or optics_image_sizes.size == 0:
-            raise ValueError("RELION optics image geometry arrays must be non-empty and aligned")
-    model_pixel_size = (
-        image_geometry.pixel_size_angstrom
-        if options.parity.relion_model_pixel_size is None
-        else float(options.parity.relion_model_pixel_size)
-    )
-    if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
-        raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
     multi_shape_halves = isinstance(experiment_datasets[0], MultiShapeHalf)
-    optics = RunOptics(
-        image_geometry=image_geometry,
-        model_pixel_size=model_pixel_size,
-        optics_image_sizes=optics_image_sizes,
-        optics_pixel_sizes=optics_pixel_sizes,
-        multi_shape_halves=multi_shape_halves,
-    )
+    optics = checked_run_optics(options.parity, image_geometry, multi_shape_halves=multi_shape_halves)
     # Subtomogram particles (S4.2): units are particles over their tilt images, offsets are 3D.
     tomo_halves = isinstance(experiment_datasets[0], TomoHalf)
     # Opt-in corrections of RELION's inconsistencies, refused on the routes that keep RELION's rules.
@@ -390,24 +363,9 @@ def refine_single_volume(
         options, subtomograms=tomo_halves, several_image_shapes=multi_shape_halves,
         replays_relion_state=source.replays_relion_state(),
     )
-    relion_translation_angle_scale = (
-        # Shape classes carry their translations in class pixels already; tilt images have their own phases.
-        1.0
-        if multi_shape_halves or tomo_halves
-        else _relion_k1_translation_angle_scale(
-            n_classes=options.k_class.n_classes,
-            model_pixel_size=model_pixel_size,
-            optics_pixel_sizes=optics_pixel_sizes,
-        )
+    relion_translation_angle_scale = translation_angle_scale_for_run(
+        optics, n_classes=options.k_class.n_classes, subtomograms=tomo_halves,
     )
-    if relion_translation_angle_scale != 1.0:
-        logger.info(
-            "RELION K=1 translation phases: model_pixel_size=%.12g "
-            "optics_pixel_size=%.12g angle_scale=%.17g",
-            model_pixel_size,
-            float(optics_pixel_sizes[0]),
-            relion_translation_angle_scale,
-        )
     _validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         n_classes=options.k_class.n_classes,
@@ -428,34 +386,7 @@ def refine_single_volume(
         options.replay.init_direction_prior,
     )
 
-    reconstruction_settings = ReconstructionSettings(
-        box_size=image_geometry.box_size,
-        voxel_size=image_geometry.pixel_size_angstrom,
-        volume_shape=volume_shape,
-        padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-        projection_padding_factor=PROJECTION_PADDING_FACTOR,
-        minres_map=RELION_MINRES_MAP,
-        width_mask_edge=options.schedule.width_mask_edge_px,
-        fmask_edge=REFERENCE_FILTER_EDGE_SHELLS,
-        tau2_fudge=options.parity.tau2_fudge,
-        particle_diameter_angstrom=options.schedule.particle_diameter_ang,
-        first_iteration_lowpass_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
-        gridding_kernel=consistency.gridding_kernel,
-        shell_pair_counting=consistency.shell_pair_counting,
-        solvent_mask=_internal_solvent_mask(
-            options.solvent.mask_path, image_geometry.box_size, image_geometry.pixel_size_angstrom
-        ),
-        solvent_correct_fsc=options.solvent.correct_fsc,
-        programs=options.variants.reconstruction,
-        solvent_fsc_seed=int(
-            (
-                options.parity.perturb_seed
-                if options.parity.optimizer_random_seed is None
-                else options.parity.optimizer_random_seed
-            )
-            or 0
-        ),
-    )
+    reconstruction_settings = reconstruction_settings_for_run(options, image_geometry, volume_shape, consistency)
     snapshot_capture = SnapshotCapture(
         n_classes=options.k_class.n_classes,
         box_size=image_geometry.box_size,
