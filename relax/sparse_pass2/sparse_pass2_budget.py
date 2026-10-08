@@ -465,22 +465,23 @@ def accuracy_slab_resident_bytes(device_memory_bytes: int | None = None) -> int 
     return max(1, int(float(device_memory_bytes) * _AUTO_ACCURACY_SLAB_DEVICE_FRACTION))
 
 
-def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
+def _projection_bytes_for_pass(device_memory_bytes: int | None, device_fraction: float) -> int:
+    """The projection byte budget: the environment override, else ``device_fraction`` of the device, else 3 GiB."""
+
     override = parse_env_nonnegative_int(_PROJECTION_CACHE_MAX_BYTES_ENV)
     if override is not None:
         return override
     if device_memory_bytes is None:
         return _DEFAULT_PROJECTION_CACHE_MAX_BYTES
-    return max(1, int(float(device_memory_bytes) * _AUTO_PROJECTION_CACHE_DEVICE_FRACTION))
+    return max(1, int(float(device_memory_bytes) * device_fraction))
+
+
+def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
+    return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTION_CACHE_DEVICE_FRACTION)
 
 
 def _projection_call_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    override = parse_env_nonnegative_int(_PROJECTION_CACHE_MAX_BYTES_ENV)
-    if override is not None:
-        return override
-    if device_memory_bytes is None:
-        return _DEFAULT_PROJECTION_CACHE_MAX_BYTES
-    return max(1, int(float(device_memory_bytes) * _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION))
+    return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION)
 
 
 def _projection_cache_transient_bytes(
