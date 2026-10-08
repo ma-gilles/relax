@@ -30,6 +30,7 @@ from relax.helpers.deterministic_reduce import (
     static_shell_voxel_lists,
 )
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.helpers.shells import shell_of_radius_sq
 from relax.relion.relion_projector_setup import (
     setup_relion_projector,
     setup_relion_projector_uncorrected,
@@ -149,7 +150,9 @@ def relion_vdam_m_step_device(
     r2 = coord[:, None, None] ** 2 + coord[None, :, None] ** 2 + x[None, None, :] ** 2
     valid = r2 < (padding_factor * radius) ** 2
     n_shells = ori_size // 2 + 1
-    shells = jnp.floor(jnp.sqrt(r2.astype(jnp.float64)) / padding_factor + 0.5).astype(jnp.int32)
+    shells = shell_of_radius_sq(
+        r2, rule="half_up", real_dtype=jnp.float64, padding_factor=padding_factor, index_dtype=jnp.int32, xp=jnp
+    )
     shell_indices = jnp.where(valid, shells, n_shells).reshape(-1)
     shell_lookup = jnp.minimum(shells, n_shells - 1)
 

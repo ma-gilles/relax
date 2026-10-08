@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from relax.helpers.shells import shell_of_radius_sq
 from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 
 
@@ -50,8 +51,7 @@ def _relion_power_spectrum_3d(volume: np.ndarray, n_shells: int) -> np.ndarray:
     fourier = np.fft.rfftn(vol, axes=(0, 1, 2), norm=None) / float(vol.size)
     kz = np.fft.fftfreq(n, d=1.0) * n
     kx = np.arange(n // 2 + 1, dtype=np.float64)
-    radius = np.sqrt(kz[:, None, None] ** 2 + kz[None, :, None] ** 2 + kx[None, None, :] ** 2)
-    shell = np.floor(radius + 0.5).astype(np.int64)
+    shell = shell_of_radius_sq(kz[:, None, None] ** 2 + kz[None, :, None] ** 2 + kx[None, None, :] ** 2, rule="half_up")
     valid = shell < int(n_shells)
     out = np.zeros(int(n_shells), dtype=np.float64)
     count = np.zeros(int(n_shells), dtype=np.float64)
@@ -75,7 +75,7 @@ def _whole_grid_power_spectrum_3d(volume: np.ndarray, n_shells: int) -> np.ndarr
     n = int(vol.shape[0])
     power = np.abs(np.fft.fftn(vol) / float(vol.size)) ** 2
     k = np.fft.fftfreq(n, d=1.0) * n
-    shell = np.floor(np.sqrt(k[:, None, None] ** 2 + k[None, :, None] ** 2 + k[None, None, :] ** 2) + 0.5).astype(np.int64)
+    shell = shell_of_radius_sq(k[:, None, None] ** 2 + k[None, :, None] ** 2 + k[None, None, :] ** 2, rule="half_up")
     valid = shell < int(n_shells)
     total = np.bincount(shell[valid], weights=power[valid], minlength=int(n_shells))
     count = np.bincount(shell[valid], minlength=int(n_shells))

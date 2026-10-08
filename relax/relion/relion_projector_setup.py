@@ -27,6 +27,7 @@ from relax.helpers.deterministic_reduce import (
     static_shell_voxel_lists,
 )
 from relax.helpers.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.helpers.shells import shell_of_radius_sq
 from relax.helpers.xla_memory_reserve import single_working_set_bytes
 from relax.relion.relion_project import gridding_correct_volume_real, gridding_correct_volume_real_separable
 
@@ -436,7 +437,9 @@ def _mask_and_shell_power(
         sums = fixed_order_shell_sums(power.reshape(-1), shell_lists, real_dtype)
         counts = fixed_order_shell_sums(counted.reshape(-1), shell_lists, real_dtype)
     else:
-        shells = jnp.floor(jnp.sqrt(r2.astype(real_dtype)) / padding_factor + 0.5).astype(jnp.int32)
+        shells = shell_of_radius_sq(
+            r2, rule="half_up", real_dtype=real_dtype, padding_factor=padding_factor, index_dtype=jnp.int32, xp=jnp
+        )
         shells = jnp.minimum(shells, box_size // 2).reshape(-1)
         sums = jnp.bincount(shells, weights=power.reshape(-1), length=n_shells)
         counts = jnp.bincount(shells, weights=counted.reshape(-1), length=n_shells)

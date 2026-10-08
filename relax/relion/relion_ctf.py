@@ -20,6 +20,7 @@ import numpy as np
 from recovar.data_io.starfile import star_column
 
 from relax.helpers.batch_fetch import original_image_indices
+from relax.helpers.shells import shell_of_radius_sq
 from relax.relion.tomo_input import fftw_half_freq_sq, relion_tomo_damping
 
 _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}
@@ -249,7 +250,7 @@ def _fftw_shell_labels(size: int, window: int, *, centered_rows: bool) -> np.nda
         ip = np.where(rows <= size // 2, rows, rows - size)
     jp = np.arange(size // 2 + 1)
     ip, jp = np.meshgrid(ip, jp, indexing="ij")
-    ires = np.floor(np.sqrt(ip * ip + jp * jp) + 0.5).astype(np.int64)
+    ires = shell_of_radius_sq(ip * ip + jp * jp, rule="half_up")
     inside = (ip >= window // 2 + 1 - window) & (ip <= window // 2) & (jp <= window // 2)
     keep = inside & (ires < window // 2 + 1) & ~((jp == 0) & (ip < 0))
     return np.where(keep, ires, -1).reshape(-1)

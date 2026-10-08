@@ -9,6 +9,7 @@ import numpy as np
 from recovar.core import fourier_transform_utils
 
 from relax.helpers.orientation_priors import relion_translation_search_base
+from relax.helpers.shells import shell_index
 
 
 def _relion_metadata_translations(
@@ -42,17 +43,11 @@ def _relion_half_plane_shell_counts(image_shape):
     """Count RELION's non-redundant FFTW half-plane shell pixels."""
     height, width = int(image_shape[0]), int(image_shape[1])
     n_shells = height // 2 + 1
-    counts = np.zeros(n_shells, dtype=np.float64)
-    for iy in range(height):
-        ky = iy if iy <= height // 2 else iy - height
-        for ix in range(width // 2 + 1):
-            # RELION excludes redundant jp==0, ip<0 FFTW half-plane entries.
-            if ix == 0 and ky < 0:
-                continue
-            shell = int(np.rint(np.sqrt(float(ky * ky + ix * ix))))
-            if shell < n_shells:
-                counts[shell] += 1.0
-    return counts
+    shells = shell_index((height, width), rows="fftw", half=True, rule="half_even")
+    keep = shells < n_shells
+    # RELION excludes redundant jp==0, ip<0 FFTW half-plane entries.
+    keep[height // 2 + 1 :, 0] = False
+    return np.bincount(shells[keep], minlength=n_shells).astype(np.float64)
 
 
 def _radial_profile_from_noise_variance(noise_variance, image_shape):

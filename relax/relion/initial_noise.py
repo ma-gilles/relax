@@ -18,6 +18,8 @@ from typing import Iterable, Iterator, Tuple
 
 import numpy as np
 
+from relax.helpers.shells import shell_of_radius_sq
+
 
 def _softmask_outside_map(image: np.ndarray, radius: float, cosine_width: float) -> np.ndarray:
     """RELION ``softMaskOutsideMap`` (mask.cpp:43): cosine taper between ``r=radius`` and ``radius+cosine_width``."""
@@ -50,7 +52,7 @@ def _radial_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.ndarray:
     F = np.fft.rfft2(image_real, norm=None) / (H * W)
     ky = np.fft.fftfreq(H, d=1.0) * H
     kx = np.arange(W // 2 + 1, dtype=np.float64)
-    ires = np.round(np.sqrt(ky[:, None] ** 2 + kx[None, :] ** 2)).astype(np.int64)
+    ires = shell_of_radius_sq(ky[:, None] ** 2 + kx[None, :] ** 2, rule="half_even")
     out = np.zeros(n_shells, dtype=np.float64)
     count = np.zeros(n_shells, dtype=np.int64)
     np.add.at(out, ires[ires < n_shells], (F.real**2 + F.imag**2)[ires < n_shells])
