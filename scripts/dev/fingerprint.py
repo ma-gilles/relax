@@ -375,6 +375,9 @@ class StandInGpu:
     def memory_stats(self) -> dict[str, int]:
         return {"bytes_limit": 80 * 2**30, "bytes_in_use": 0, "peak_bytes_in_use": 0, "pool_bytes": 0}
 
+    def __repr__(self) -> str:  # the run logs and the benchmark ledger write it: no memory address
+        return "StandInGpu(platform='gpu', id=0)"
+
 
 # The cases whose run is a refusal: they must end in an error, and every other case must not.
 REFUSED_CASES = frozenset({"k2_frozen", "main_k1_half_sets_off", "main_refused_command", "main_refused_single_half"})
