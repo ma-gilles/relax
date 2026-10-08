@@ -44,6 +44,8 @@ from recovar.cuda_backproject import (
 from recovar.cuda_build import NativeLibrary, include_dir
 from recovar.data_io import image_backends as _image_backends
 
+from relax.helpers.env_flags import parse_env_binary_flag
+
 
 @contextmanager
 def bpref_device_signature_scope(active: bool):
@@ -4074,10 +4076,7 @@ _RELION_PREPROCESS_PENDING_LIMIT = 1024
 def relion_preprocess_deferred_check_requested() -> bool:
     """Strict 0/1 read of ``RELAX_RELION_PREPROCESS_DEFERRED_CHECK`` (unset is off)."""
 
-    token = os.environ.get(RELION_PREPROCESS_DEFERRED_CHECK_ENV, "0").strip()
-    if token not in {"0", "1"}:
-        raise ValueError(f"{RELION_PREPROCESS_DEFERRED_CHECK_ENV} must be 0 or 1")
-    return token == "1"
+    return parse_env_binary_flag(RELION_PREPROCESS_DEFERRED_CHECK_ENV)
 
 
 class DeferredPreprocessChecks:

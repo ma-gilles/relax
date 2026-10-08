@@ -29,6 +29,8 @@ from functools import lru_cache
 
 import numpy as np
 
+from relax.helpers.env_flags import parse_env_true_flag
+
 logger = logging.getLogger(__name__)
 
 FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
@@ -71,20 +73,16 @@ class FiniteCheckError(AssertionError):
     """A pass-2 operand or accumulator held a non-finite value."""
 
 
-def _flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def finite_check_enabled() -> bool:
     """Whether the opt-in finite checks run at all."""
 
-    return _flag(FINITE_CHECK_ENV)
+    return parse_env_true_flag(FINITE_CHECK_ENV)
 
 
 def finite_check_warn_only() -> bool:
     """Whether a non-finite value is logged and survived rather than raised."""
 
-    return _flag(FINITE_CHECK_WARN_ENV)
+    return parse_env_true_flag(FINITE_CHECK_WARN_ENV)
 
 
 def _array_all_finite(array):

@@ -11,18 +11,13 @@ import jax.numpy as jnp
 import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
+from relax.helpers.env_flags import parse_env_flag
+
 _RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS = 200_000_000
 _RELION_X_HALF_FULL_HOST_MIN_VOXELS = 100_000_000
 _RELION_X_HALF_HOST_X0_MIN_VOXELS = 200_000_000
 _RELION_X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
 _RELION_X_HALF_HOST_X0_ENV = "RELAX_RELION_X_HALF_HOST_X0"
-
-
-def _env_enabled(name: str, *, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return bool(default)
-    return raw.strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 def _relion_x_half_mstep_double_enabled() -> bool:
@@ -33,7 +28,7 @@ def _relion_x_half_mstep_double_enabled() -> bool:
     boundary-shell differences, but they are not the default production path.
     """
 
-    return _env_enabled(_RELION_X_HALF_MSTEP_DOUBLE_ENV, default=False)
+    return parse_env_flag(_RELION_X_HALF_MSTEP_DOUBLE_ENV)
 
 
 def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_mstep: bool):

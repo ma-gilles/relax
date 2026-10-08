@@ -42,6 +42,7 @@ from relax.diagnostics.state_swap_probe import (
 from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
+from relax.helpers.env_flags import parse_env_true_flag
 from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
@@ -650,9 +651,7 @@ def main(command=None):
     # projection_complex_dtype's own condition exactly and avoid forcing an
     # unrequested precision/memory cost on the projection path when a
     # caller wants float64 scoring without float64 projections.
-    _init_volume_use_float64 = bool(
-        os.environ.get("RELAX_USE_FLOAT64_PROJECTIONS", "0").strip().lower() in {"1", "true", "yes", "on"}
-    )
+    _init_volume_use_float64 = parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS")
     _init_volume_dtype = np.float64 if _init_volume_use_float64 else np.float32
     _init_volume_complex_dtype = np.complex128 if _init_volume_use_float64 else np.complex64
 

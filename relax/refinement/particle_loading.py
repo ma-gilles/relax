@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from relax.helpers.env_flags import parse_env_true_flag
 from relax.helpers.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.refinement import command_options
 from relax.refinement.optics_shapes import MultiShapeDataset, optics_shape_class_rows
@@ -323,10 +324,7 @@ def load_particle_inputs(
     logger.info("Loading dataset from %s", args.data_dir)
     from recovar.data_io.cryoem_dataset import load_dataset
 
-    _double_image_preprocessing = (
-        os.environ.get("RELAX_USE_FLOAT64_SCORING", "0").strip().lower()
-        in {"1", "true", "yes", "on"}
-    )
+    _double_image_preprocessing = parse_env_true_flag("RELAX_USE_FLOAT64_SCORING")
     particle_read_policy = ParticleReadPolicy.from_args(args)
     tomo_run = is_relion5_2d_stack_star(os.path.join(args.data_dir, "particles.star"))
     # A subtomogram particle STAR names no image stacks; load_tomo_dataset stages from its per-tilt STAR.
