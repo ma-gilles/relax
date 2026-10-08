@@ -112,11 +112,10 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       the lint again: a clean rebase can still leave a dangling name.
 - [ ] `selftest`: `fingerprint.py selftest --jobs 4`, every mutation detected.
 - [ ] `guard`: `bash scripts/run_em_fast_guard.sh` and `python scripts/check_agent_guides.py`.
-- [ ] `tests base <base rev>`, `tests head HEAD`, `compare base head`: the CPU unit list
-      (`scripts/dev/refactor_cpu_unit_list.txt`, 166 files) and every `test_*.py` of the module's test
-      directories, on a snapshot of each revision. The two lists of
-      failed tests (`logs/fail_base.txt`, `logs/fail_head.txt`) must be identical. Some tests fail on both
-      sides on a CPU node; compare the lists, not the counts.
+- [ ] `tests head HEAD`, `clean head`: the CPU unit list (`scripts/dev/refactor_cpu_unit_list.txt`) and every
+      `test_*.py` of the module's test directories, on a detached git worktree of the head (the launcher tests
+      need git and a pixi Python, which the step provides). Every test passes: `logs/fail_head.txt` is empty.
+      `tests base <rev>` and `compare base head` remain for comparing a base by hand.
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.
 - [ ] GPU tiers on the final head, same GPU model for every arm:
