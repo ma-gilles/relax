@@ -78,21 +78,8 @@ def prepare_initial_real_references(init_reference_real, *, volume_shape, n_clas
                 _as_class_real_references(init_reference_real[1]),
             ]
         else:
-            real_array = np.asarray(init_reference_real)
-            per_half_shape = (2, n_classes) + expected_volume_shape
-            if n_classes == 1 and real_array.shape == (2,) + expected_volume_shape:
-                initial_real_references_by_half = [
-                    _as_class_real_references(real_array[0]),
-                    _as_class_real_references(real_array[1]),
-                ]
-            elif real_array.shape == per_half_shape:
-                initial_real_references_by_half = [
-                    _as_class_real_references(real_array[0]),
-                    _as_class_real_references(real_array[1]),
-                ]
-            else:
-                shared_real = _as_class_real_references(real_array)
-                initial_real_references_by_half = [shared_real, shared_real]
+            shared_real = _as_class_real_references(init_reference_real)
+            initial_real_references_by_half = [shared_real, shared_real]
         log.info(
             "RELION initial projector: preserving direct float64 real-reference handoff"
         )

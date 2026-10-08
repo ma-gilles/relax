@@ -19,15 +19,12 @@ SHAPE = (3, 3, 3)
 
 @pytest.mark.parametrize("classes", [1, 2, 4])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
-@pytest.mark.parametrize("layout", ["shared", "stacked", "pair"])
+@pytest.mark.parametrize("layout", ["shared", "pair"])
 def test_real_reference_half_class_layout_and_aliases(classes, dtype, layout):
     source = (np.arange(classes * 27).reshape((classes,) + SHAPE) / 17).astype(dtype)
     if layout == "shared":
         value = source[0] if classes == 1 else source
         expected = [source, source]
-    elif layout == "stacked":
-        value = np.stack([source, -source])
-        expected = [source, -source]
     else:
         value = (source.copy(), -source)
         expected = list(value)
@@ -51,12 +48,13 @@ def test_absent_real_reference_keeps_fourier_fallback(caplog):
     assert not caplog.records
 
 
-def test_single_class_half_stack_without_class_axis():
-    value = np.arange(54, dtype=np.float64).reshape((2,) + SHAPE)
-    result = prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=1, init_relion_iteration=0, log=LOG)
-    assert all(v.shape == (1,) + SHAPE for v in result)
-    assert_matches(result[0][0], value[0])
-    assert_matches(result[1][0], value[1])
+@pytest.mark.parametrize("classes", [1, 2])
+def test_a_half_stacked_array_is_refused(classes):
+    # The producers hand one shared map or stack, or a two-item (half 1, half 2) list; a half axis on an array
+    # is not a layout any of them makes.
+    value = np.zeros((2,) + ((classes,) if classes > 1 else ()) + SHAPE)
+    with pytest.raises(ValueError, match="init_reference_real must be"):
+        prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=classes, init_relion_iteration=0, log=LOG)
 
 
 def test_real_reference_handoff_rejects_resumed_run():
