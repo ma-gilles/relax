@@ -197,39 +197,6 @@ def _significance_dump_half_indices(
     return (target_half - 1,)
 
 
-def _bpref_device_signature_active_for_numbered_half(
-    *,
-    iteration: int,
-    half: int,
-    final_all_data: bool = False,
-    environ=None,
-) -> bool:
-    """Resolve one explicit numbered half boundary for device capture."""
-
-    env = os.environ if environ is None else environ
-    if not str(env.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "")).strip():
-        return False
-    raw_iteration = str(env.get("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "")).strip()
-    raw_half = str(env.get("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "")).strip()
-    if not raw_iteration or not raw_half:
-        raise RuntimeError(
-            "Scoped BPref device capture requires explicit positive "
-            "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION and half 1 or 2"
-        )
-    try:
-        target_iteration = int(raw_iteration)
-        target_half = int(raw_half)
-    except ValueError as exc:
-        raise ValueError("BPref device capture iteration/half targets must be integers") from exc
-    if target_iteration <= 0 or target_half not in {1, 2}:
-        raise ValueError("BPref device capture requires target iteration > 0 and half 1 or 2")
-    if int(iteration) <= 0 or int(half) not in {1, 2}:
-        raise ValueError("BPref device capture context requires numbered iteration > 0 and half 1 or 2")
-    if final_all_data:
-        return False
-    return int(iteration) == target_iteration and int(half) == target_half
-
-
 def _replay_manifest_array(value, dtype=None):
     """Replay manifests use a float64 empty sentinel regardless of field dtype."""
     return np.array([]) if value is None else np.asarray(value, dtype=dtype)

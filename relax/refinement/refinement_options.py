@@ -395,20 +395,53 @@ class FinalPassOptions:
         )
 
 
+def bpref_device_signature_target(environ=None) -> tuple[int, int] | None:
+    """The numbered (iteration, half), both one-based, whose BPref device signature is captured, or None.
+
+    Armed by ``RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR``; the capture then needs an explicit
+    ``RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION`` (> 0) and ``RELAX_BPREF_CONTRIBUTION_DUMP_HALF`` (1 or 2). The
+    final all-data pass is never a target. Read once, with the run's options (``DiagnosticEnvironment``).
+    """
+
+    env = os.environ if environ is None else environ
+    if not str(env.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "")).strip():
+        return None
+    raw_iteration = str(env.get("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "")).strip()
+    raw_half = str(env.get("RELAX_BPREF_CONTRIBUTION_DUMP_HALF", "")).strip()
+    if not raw_iteration or not raw_half:
+        raise RuntimeError(
+            "Scoped BPref device capture requires explicit positive "
+            "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION and half 1 or 2"
+        )
+    try:
+        target_iteration = int(raw_iteration)
+        target_half = int(raw_half)
+    except ValueError as exc:
+        raise ValueError("BPref device capture iteration/half targets must be integers") from exc
+    if target_iteration <= 0 or target_half not in {1, 2}:
+        raise ValueError("BPref device capture requires target iteration > 0 and half 1 or 2")
+    return target_iteration, target_half
+
+
 @dataclass(frozen=True, kw_only=True)
 class DiagnosticEnvironment:
     """The refinement's execution switches from the environment, read once, when the run's options are built.
 
-    ``clear_jax_caches_between_iterations``: clear JAX's caches after every numbered iteration. (The dumps of
-    the run are observers, ``relax.diagnostics.observers``; code rule 15.)
+    ``clear_jax_caches_between_iterations``: clear JAX's caches after every numbered iteration.
+    ``bpref_device_signature_target``: the numbered (iteration, half), one-based, whose BPref device signature
+    a dump captures (``bpref_device_signature_target``), or None; that half plans
+    its compact first-iteration batches for the capture. (The other dumps of the run are observers,
+    ``relax.diagnostics.observers``; code rule 15.)
     """
 
     clear_jax_caches_between_iterations: bool = False
+    bpref_device_signature_target: tuple[int, int] | None = None
 
     @classmethod
     def from_environ(cls) -> DiagnosticEnvironment:
         return cls(
             clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
+            bpref_device_signature_target=bpref_device_signature_target(),
         )
 
 

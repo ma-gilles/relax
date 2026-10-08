@@ -11,8 +11,8 @@ from recovar import cuda_backproject
 from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics import iteration as debug_dumps
 from relax.refinement import finalization, half_scoring
+from relax.refinement.refinement_options import DiagnosticEnvironment, bpref_device_signature_target
 
 pytestmark = pytest.mark.unit
 
@@ -25,32 +25,22 @@ def _capture_environment() -> dict[str, str]:
     }
 
 
-def test_device_signature_scope_activates_only_target_numbered_half():
+def test_device_signature_target_is_the_numbered_half_the_environment_names():
     env = _capture_environment()
+    assert bpref_device_signature_target(environ=env) == (5, 1)
+    env["RELAX_BPREF_CONTRIBUTION_DUMP_HALF"] = "2"
+    assert bpref_device_signature_target(environ=env) == (5, 2)
+    # Without the device-signature directory nothing is captured, whatever the targets say.
+    env.pop("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
+    assert bpref_device_signature_target(environ=env) is None
 
-    for iteration in range(1, 5):
-        for half in (1, 2):
-            assert not debug_dumps._bpref_device_signature_active_for_numbered_half(
-                iteration=iteration,
-                half=half,
-                environ=env,
-            )
-    assert debug_dumps._bpref_device_signature_active_for_numbered_half(
-        iteration=5,
-        half=1,
-        environ=env,
-    )
-    assert not debug_dumps._bpref_device_signature_active_for_numbered_half(
-        iteration=5,
-        half=2,
-        environ=env,
-    )
-    assert not debug_dumps._bpref_device_signature_active_for_numbered_half(
-        iteration=5,
-        half=1,
-        final_all_data=True,
-        environ=env,
-    )
+
+def test_the_run_options_read_the_device_signature_target_once(monkeypatch):
+    for name, value in _capture_environment().items():
+        monkeypatch.setenv(name, value)
+    assert DiagnosticEnvironment.from_environ().bpref_device_signature_target == (5, 1)
+    monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
+    assert DiagnosticEnvironment.from_environ().bpref_device_signature_target is None
 
 
 def test_device_signature_scope_rejects_missing_or_invalid_target():
@@ -62,11 +52,7 @@ def test_device_signature_scope_rejects_missing_or_invalid_target():
         invalid = dict(env)
         invalid.pop(missing)
         with pytest.raises(RuntimeError, match="requires explicit positive"):
-            debug_dumps._bpref_device_signature_active_for_numbered_half(
-                iteration=1,
-                half=1,
-                environ=invalid,
-            )
+            bpref_device_signature_target(environ=invalid)
 
     for name, value in (
         ("RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION", "0"),
@@ -76,11 +62,7 @@ def test_device_signature_scope_rejects_missing_or_invalid_target():
         invalid = dict(env)
         invalid[name] = value
         with pytest.raises((ValueError, RuntimeError)):
-            debug_dumps._bpref_device_signature_active_for_numbered_half(
-                iteration=1,
-                half=1,
-                environ=invalid,
-            )
+            bpref_device_signature_target(environ=invalid)
 
 
 def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
@@ -189,21 +171,7 @@ def test_standalone_diagnostics_keep_legacy_flags_without_device_capture(monkeyp
     assert cuda_backproject.relion_x_half_bp_block_topology_enabled()
 
 
-def test_target_half2_cannot_leak_into_final_all_data_or_local_search(monkeypatch):
-    env = _capture_environment()
-    env["RELAX_BPREF_CONTRIBUTION_DUMP_HALF"] = "2"
-    assert debug_dumps._bpref_device_signature_active_for_numbered_half(
-        iteration=5,
-        half=2,
-        environ=env,
-    )
-    assert not debug_dumps._bpref_device_signature_active_for_numbered_half(
-        iteration=5,
-        half=2,
-        final_all_data=True,
-        environ=env,
-    )
-
+def test_target_half2_cannot_leak_into_local_search(monkeypatch):
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "/tmp/device")
     monkeypatch.setenv("RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY", "1")
 

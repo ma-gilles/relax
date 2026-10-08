@@ -20,7 +20,6 @@ from relax.dense.score_outputs import (
 from relax.dense.scoring_policy import local_precision
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import parity_dump as _parity_dump
-from relax.diagnostics.iteration import _bpref_device_signature_active_for_numbered_half
 from relax.helpers.dtype_policy import _diagnostic_float64_pass2_matches
 from relax.helpers.orientation_priors import (
     DirectionPrior,
@@ -579,10 +578,7 @@ def score_numbered_half(
         half=particle_half.index + 1,
     )
     bpref_device_signature_active = (
-        _bpref_device_signature_active_for_numbered_half(
-            iteration=iteration + 1,
-            half=particle_half.index + 1,
-        )
+        options.debug.environment.bpref_device_signature_target == (iteration + 1, particle_half.index + 1)
     )
     logger.info(
         "BPREF_DEVICE_SIGNATURE_ACTIVATION iteration=%d half=%d "

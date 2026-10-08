@@ -108,7 +108,6 @@ def engine_result(n_units=2):
 
 
 def stub_planning(monkeypatch):
-    monkeypatch.setattr(expectation, '_bpref_device_signature_active_for_numbered_half', lambda **kw: False)
     monkeypatch.setattr(expectation, 'prepare_half_batches', lambda *args, **kw: HalfBatchPlan(
         safe_batch_sizes=object(), significance_safe_batch_sizes=object(), fine_image_batch_size=2,
         fine_rotation_block_size=2, coarse_image_batch_size=1, coarse_rotation_block_size=1,
