@@ -10,6 +10,7 @@ by the ownership boundary.
 import logging
 import os
 from dataclasses import dataclass, field, replace
+from typing import Literal
 
 import jax.numpy as jnp
 import numpy as np
@@ -669,11 +670,6 @@ def _score_half_dense_one_shape(
     ``batching.safe_batch_sizes`` plans against memory available at invocation.
     """
 
-    # These values are refined by route-specific planning below. All other
-    # stable values retain their owning specification object.
-    firstiter_coarse_current_size = variant.firstiter_coarse_current_size
-    firstiter_fine_current_size = variant.firstiter_fine_current_size
-
     from relax.symmetry import canonicalize_rotational_symmetry
 
     symmetry = canonicalize_rotational_symmetry(sampling.symmetry)
@@ -786,8 +782,8 @@ def _score_half_dense_one_shape(
                 em_kwargs=em_kwargs,
                 safe_batch_sizes=batching.safe_batch_sizes,
                 significance_safe_batch_sizes=batching.significance_safe_batch_sizes,
-                coarse_current_size=firstiter_coarse_current_size,
-                fine_current_size=firstiter_fine_current_size,
+                coarse_current_size=variant.firstiter_coarse_current_size,
+                fine_current_size=variant.firstiter_fine_current_size,
         )
         firstiter_execution = FirstIterCCExecution(
                 log_label=variant.firstiter_log_label,
@@ -811,7 +807,6 @@ def _score_half_dense_one_shape(
         rot_pmap_for_collapse = None
         trans_pmap_for_collapse = None
         n_trans_fine_for_collapse = None
-        fine_rotations_for_pose = None
         adaptive_os_local = 0
         # STRICT-PARITY: at iter 1 with --firstiter_cc, route through the
         # adaptive 2-pass engine with normalized-CC scoring. Pass 2 retains the
@@ -915,16 +910,6 @@ def _score_half_dense_one_shape(
     n_trans_fine_for_collapse = None
     fine_rotations_for_pose = None
     if variant.relion_firstiter_cc_this_iter:
-        if adaptive_os_local <= 0:
-            # The sparse engine supplies group statistics and per-particle
-            # BPref launches even for a single pass on the current grid.
-            firstiter_coarse_current_size = sampling.cs_for_engine
-            firstiter_fine_current_size = sampling.cs_for_engine
-            logger.info(
-                "RELION K=1 group statistics or BPref order at oversampling 0: single pass through the "
-                "adaptive engine (current_size=%s)",
-                sampling.cs_for_engine,
-            )
         k1_relion_x_half_mstep = _k1_relion_x_half_mstep_enabled()
         if symmetry != "C1" and not k1_relion_x_half_mstep:
             raise RuntimeError(
@@ -1253,7 +1238,7 @@ class LocalDiagnosticPolicy:
     bpref_device_signature_active: bool = False
     adaptive_pass2_full_parent: bool = False
     adaptive_pass2_rotation_only: bool = False
-    adaptive_pass2_denominator_mode: str | None = None
+    adaptive_pass2_denominator_mode: Literal["full_parent", "rotation_only"] | None = None
     observer: RunObserver = field(default_factory=RunObserver)
 
 
@@ -1369,15 +1354,13 @@ def _prepare_local_adaptive_pass2_support(
             denominator_significant_sample_indices = [None] * len(
                 pruned_parent_significant_sample_indices
             )
-        elif denominator_mode == "rotation_only":
+        else:
             denominator_significant_sample_indices = (
                 _expand_significant_samples_to_full_parent_translations(
                     pruned_parent_significant_sample_indices,
                     int(sampling.translations.shape[0]),
                 )
             )
-        else:  # Defensive only; parser restricts values.
-            raise AssertionError(f"unexpected denominator mode {denominator_mode!r}")
         denominator_layout = build_local_adaptive_pass2_hypothesis_layout(
             parent_layout,
             denominator_significant_sample_indices,

@@ -151,11 +151,8 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
         )
         for field in dataclasses.fields(owner)
     }
-    route_planning_locals = {
-        "firstiter_coarse_current_size",
-        "firstiter_fine_current_size",
-        "symmetry",
-    }
+    # The K=1 oversampling-0 copies of firstiter_*_current_size were dead stores (deep2 H-B6).
+    route_planning_locals = {"symmetry"}
     assert assigned_names & stable_field_names == route_planning_locals
 
 
