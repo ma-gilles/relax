@@ -313,7 +313,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     )
     exact = _assemble_relion_exact_coarse_gaussian_operands(
         dataset, processed, local_indices,
-        batch_scale_np=batch_scale, actual_batch_size=len(local_indices),
+        batch_scale_np=batch_scale,
         batch_size=len(local_indices), score_indices=score_indices,
         score_indices_np=geometry["score_layout"].score_indices_np,
         score_active_mask=geometry["score_mask"],

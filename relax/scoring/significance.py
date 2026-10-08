@@ -1120,7 +1120,6 @@ def _compute_k_class_significance_batched(
                     indices,
                     use_float64_scoring=use_float64_scoring,
                     batch_scale_np=batch_inputs.batch_scale_np,
-                    actual_batch_size=actual_batch_size,
                     batch_size=batch_inputs.batch_size,
                     score_indices=gaussian_plan.score_indices,
                     score_indices_np=gaussian_plan.score_indices_np,
