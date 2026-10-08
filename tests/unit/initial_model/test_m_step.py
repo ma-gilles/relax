@@ -382,7 +382,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            mstep_compute_dtype="float32",
         )
         # Iref updated (and finite)
         assert new_state.Iref.shape == state.Iref.shape
@@ -436,7 +435,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            mstep_compute_dtype="float32",
         )
 
         assert_matches(new_state.Iref, iref_before)
@@ -466,7 +464,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            mstep_compute_dtype="float32",
         )
         assert_matches(state.Iref, iref_before)
         assert_matches(state.Igrad1, igrad1_before)
@@ -493,8 +490,7 @@ class TestMstepSingleClass:
                 grad_current_stepsize=0.5,
                 tau2_fudge_factor=1.0,
                 padding_factor=1,
-                mstep_compute_dtype="float32",
-            )
+                )
 
     def test_pseudo_halfsets_off_without_halfsets(self, bind):
         ori = 16
@@ -515,7 +511,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            mstep_compute_dtype="float32",
         )
         # Igrad1 has K slots, not 2K
         assert new_state.Igrad1.shape == (1, 16, 16, 9)
@@ -533,8 +528,7 @@ class TestMstepSingleClass:
                 grad_current_stepsize=0.5,
                 tau2_fudge_factor=1.0,
                 padding_factor=1,
-                mstep_compute_dtype="float32",
-            )
+                )
 
 
 class TestMstepFull:
@@ -565,7 +559,6 @@ class TestMstepFull:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            mstep_compute_dtype="float32",
         )
         assert new_state.Iref.shape == (K, ori, ori, ori)
         assert np.all(np.isfinite(new_state.Iref))
@@ -591,5 +584,4 @@ class TestMstepFull:
                 grad_current_stepsize=0.5,
                 tau2_fudge_factor=1.0,
                 padding_factor=1,
-                mstep_compute_dtype="float32",
-            )
+                )
