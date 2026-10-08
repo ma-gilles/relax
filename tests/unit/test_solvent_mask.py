@@ -156,7 +156,7 @@ def _settings(**kwargs):
     from relax.refinement.mean_helpers import ReconstructionSettings
 
     base = dict(
-        grid_size=8,
+        box_size=8,
         voxel_size=2.0,
         volume_shape=(8, 8, 8),
         padding_factor=2,

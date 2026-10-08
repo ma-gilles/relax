@@ -178,7 +178,7 @@ def test_refinement_hands_the_noise_update_the_expectations_image_size(monkeypat
     image_sizes = iter([6, 8])  # the 8-pixel mock box itself never plans a window below the box
 
     def plan_below_the_box(*args, **kwargs):
-        return dataclasses.replace(plan(*args, **kwargs), image_size=next(image_sizes))
+        return dataclasses.replace(plan(*args, **kwargs), image_current_size=next(image_sizes))
 
     monkeypatch.setattr(local_sampling, "plan_expectation_windows", plan_below_the_box)
     calls = record_calls(monkeypatch, noise_relion, "normalize_wsum_to_sigma2_noise")
