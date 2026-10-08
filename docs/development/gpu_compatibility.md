@@ -32,6 +32,9 @@ Adapting to every GPU size must not make relax slower, less correct or harder to
   device, so the free memory relax probes matches the small card. `XLA_PYTHON_CLIENT_MEM_FRACTION` is set
   to the pool limit the small card would get, which is recovar's 0.90, or relax's projector-texture
   reserve for `refine` and `class3d`, scaled to the device total.
+  This ballast mode is the required 16 and 40 GB emulation. Setting `XLA_PYTHON_CLIENT_MEM_FRACTION` alone
+  over-provisions at large box: the texture and context stay outside the pool on the large card, so a box-380
+  Class3D got about 6 GB more than a real 16 GB V100 and passed where the V100 ran out of memory (relax#45).
 - `della_cells.sbatch` runs cells on Della (one worker per GPU). `polar_cells.sbatch` runs them on Polar
   through `scripts/polar/submit.py --sbatch-option=--gres=gpu:<model>:1`.
 - `score_cells.py` scores a set of runs against ground truth and against a reference GPU, using the same
