@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from relax.vdam.layout import relion_bpref_frame_scales, relion_x_public_output_to_bpref, run_em_output_to_bpref
+from relax.vdam.layout import relion_bpref_frame_scales, relion_x_public_output_to_bpref
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
 _PARTICLE_RESULT_FIELDS: tuple[tuple[str, type], ...] = (
@@ -39,8 +39,6 @@ class DenseInitialModelEstepConfig:
     coarse_engine: str = "auto"
     padding_factor: int = 1
     class_log_priors: Any | None = None
-    relion_bpref_frame: bool = True
-    relion_projector_frame: bool = False
     relion_projector_half_by_class: Any | None = None
     relion_projector_r_max: int | None = None
     engine_kwargs: dict[str, Any] = field(default_factory=dict)
@@ -199,8 +197,6 @@ def _arrays_to_accumulators(
     *,
     halfset_idx: int | None,
     reconstruction_group_count: int | None = None,
-    relion_bpref_frame: bool,
-    relion_projector_frame: bool,
     padding_factor: int,
 ) -> list[VdamAccumulator]:
     # This adapter used to iterate only ``state.K`` and silently discard a
@@ -217,9 +213,7 @@ def _arrays_to_accumulators(
             f"{int(state.K)} classes, got data={data_class_count} and weight={weight_class_count}",
         )
     r_max = state.ori_size // 2 if state.current_size <= 0 else state.current_size // 2
-    data_scale, weight_scale = (1.0, 1.0)
-    if relion_bpref_frame:
-        data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
+    data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
     dump_dir = os.environ.get("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR")
 
     grouped = halfset_idx is None
@@ -250,17 +244,13 @@ def _arrays_to_accumulators(
         for output_halfset in output_halfsets:
             public_data = class_data[output_halfset] if grouped else class_data
             public_weight = class_weight[output_halfset] if grouped else class_weight
-            converter = relion_x_public_output_to_bpref if relion_bpref_frame else run_em_output_to_bpref
-            bp_data, bp_weight = converter(
+            bp_data, bp_weight = relion_x_public_output_to_bpref(
                 public_data,
                 public_weight,
                 state.ori_size,
                 r_max,
                 padding_factor=padding_factor,
             )
-            if relion_projector_frame and not relion_bpref_frame:
-                bp_data = bp_data[::-1, :, :]
-                bp_weight = bp_weight[::-1, :, :]
             if dump_dir:
                 path = Path(dump_dir)
                 path.mkdir(parents=True, exist_ok=True)
@@ -274,8 +264,6 @@ def _arrays_to_accumulators(
                     bp_weight_scaled=np.asarray(bp_weight * weight_scale),
                     data_scale=np.float64(data_scale),
                     weight_scale=np.float64(weight_scale),
-                    relion_projector_frame=np.bool_(relion_projector_frame),
-                    relion_bpref_frame=np.bool_(relion_bpref_frame),
                     padding_factor=np.int32(padding_factor),
                     ori_size=np.int32(state.ori_size),
                     current_size=np.int32(state.current_size),

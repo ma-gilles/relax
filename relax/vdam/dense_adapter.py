@@ -258,8 +258,6 @@ def _dense_estep_config(
         rotation_block_size=int(opts.rotation_block_size),
         coarse_engine=str(opts.coarse_engine),
         padding_factor=int(opts.padding_factor),
-        relion_bpref_frame=True,
-        relion_projector_frame=True,
         class_log_priors=class_log_priors,
         engine_kwargs=engine_kwargs,
     )
@@ -372,15 +370,10 @@ def _resolve_class_inputs(
             )
         relion_projector_half_by_class = np.asarray(config.relion_projector_half_by_class)
         relion_projector_r_max = int(config.relion_projector_r_max)
-    elif config.relion_projector_frame:
+    else:
         relion_projector_half_by_class, relion_projector_r_max = prepare_relion_projector_class_inputs(
             state,
             padding_factor=config.padding_factor,
-        )
-    else:
-        raise ValueError(
-            "the InitialModel E-step scores with RELION's projector: set relion_projector_frame or pass "
-            "relion_projector_half_by_class (dense class means were removed with the dense E-step)"
         )
     means = np.full((int(state.K), 1), np.nan, dtype=np.complex64)
     mean_variance = np.full((int(state.K), 1), np.nan, dtype=np.float32)

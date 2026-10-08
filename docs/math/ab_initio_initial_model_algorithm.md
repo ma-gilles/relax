@@ -187,9 +187,9 @@ vdam_apply_momenta(Igrad1, Igrad2)
 vdam_reconstruct_grad(Iref, momentum_data, weight, tau2_fudge, step_size)
 ```
 
-The dense-to-RELION BackProjector layout conversion is handled by
-[`layout.py::run_em_output_to_bpref`](../../relax/vdam/layout.py).
-For the default dense InitialModel path, the RELION BPref frame scales are:
+The E-step-to-RELION BackProjector layout conversion is handled by
+[`layout.py::relion_x_public_output_to_bpref`](../../relax/vdam/layout.py).
+The RELION BPref frame scales, applied to every InitialModel E-step's accumulators, are:
 
 ```text
 bp_data   *= -N^2
@@ -443,14 +443,12 @@ retained.
 The dense-to-VDAM bridge is:
 
 ```text
-dense Ft_y[k], Ft_ctf[k]
-  -> layout.py::run_em_output_to_bpref
-  -> optional z flip when relion_projector_frame=True
-  -> optional frame scales from relion_bpref_frame_scales
+E-step Ft_y[k], Ft_ctf[k]
+  -> layout.py::relion_x_public_output_to_bpref
+  -> frame scales from relion_bpref_frame_scales
   -> VdamAccumulator(data, weight, class_idx=k, halfset_idx=h)
 ```
 
-For the default native InitialModel config, `relion_bpref_frame=True`, so
 `relion_bpref_frame_scales(N)` applies:
 
 ```text
@@ -695,12 +693,11 @@ The data-vs-weight part of regularization enters through BPref / reconstruction
 weights. In standard reconstruction, `Ft_ctf` is the data weight and tau2 adds
 `inv_tau` to its denominator. In native InitialModel, dense E-step accumulators
 are converted to RELION BackProjector slabs by
-[`layout.py::run_em_output_to_bpref`](../../relax/vdam/layout.py)
+[`layout.py::relion_x_public_output_to_bpref`](../../relax/vdam/layout.py)
 and then handed to `vdam_reconstruct_grad`; that binding sees the BPref weight
 array, the current reference, `tau2_fudge_factor`, and `mom1_noise_power`. The
 Python-visible dense-to-BPref frame conversion is documented above: dense
-InitialModel uses `bp_data *= -N^2` and `bp_weight *= N^4` when
-`relion_bpref_frame=True`. Adaptive/replay paths that already emit RELION-frame
+InitialModel uses `bp_data *= -N^2` and `bp_weight *= N^4`. Adaptive/replay paths that already emit RELION-frame
 BPref rows must not receive that extra conversion.
 
 ### Current limitations and known differences

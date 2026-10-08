@@ -1,4 +1,4 @@
-"""Layout bridges between dense EM full ``(N, N, N)`` Fourier volumes and
+"""Layout bridge from the shared RELION-x-half M-step's public Fourier cubes to
 RELION BackProjector centered half-complex slabs."""
 
 from __future__ import annotations
@@ -53,9 +53,9 @@ def _as_centered_bpref_source(
 
 
 def _centered_bpref_sources(Ft_y, Ft_ctf, *, ori_size: int, r_max: int, padding_factor: int):
-    """Return ``(data cube, weight cube, center, radius)`` for the dense and RELION-x-half BPref converters.
+    """Return ``(data cube, weight cube, center, radius)`` for the RELION-x-half BPref converter.
 
-    Both accumulators must encode the same centered support; the converters differ only in axis order.
+    Both accumulators must encode the same centered support.
     """
     if padding_factor not in (1, 2):
         raise NotImplementedError(f"padding_factor must be 1 or 2, got {padding_factor}")
@@ -86,24 +86,6 @@ def _bpref_slab_outputs(bp_data: np.ndarray, bp_weight: np.ndarray) -> tuple[np.
     return np.asarray(bp_data, dtype=np.complex128).copy(), bp_weight_f64
 
 
-def run_em_output_to_bpref(
-    Ft_y: np.ndarray,
-    Ft_ctf: np.ndarray,
-    ori_size: int,
-    r_max: int,
-    padding_factor: int = 1,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Convert dense EM accumulators ``(N,N,N)`` to RELION BPref slab (full half-complex or low-freq crop)."""
-    data_cube, weight_cube, center, radius = _centered_bpref_sources(
-        Ft_y,
-        Ft_ctf,
-        ori_size=ori_size,
-        r_max=r_max,
-        padding_factor=padding_factor,
-    )
-    return _bpref_slab_outputs(_bp_slab(data_cube, radius, center), _bp_slab(weight_cube, radius, center))
-
-
 def relion_bpref_frame_scales(ori_size: int) -> tuple[float, float]:
     """``(-N², N⁴)`` — RECOVAR unnormalised-FFT → RELION BPref frame."""
     n = float(ori_size)
@@ -122,8 +104,7 @@ def relion_x_public_output_to_bpref(
     The shared M-step expands native RELION ``(z, y, xhalf)`` storage to a
     full cube and transposes it to RECOVAR's public ``(x, y, z)`` order.
     InitialModel consumes a native BPref again, so undo that transpose before
-    selecting the positive-x slab.  The generic dense converter must remain
-    unchanged because its input is already a centered RECOVAR Fourier cube.
+    selecting the positive-x slab.
     """
 
     data_cube, weight_cube, center, radius = _centered_bpref_sources(

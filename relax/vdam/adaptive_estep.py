@@ -311,8 +311,6 @@ def run_adaptive_initial_model_estep(
     base_kwargs, options = _pop_sparse_pass2_options(engine_kwargs)
     if relion_projector_half_by_class is None:
         raise NotImplementedError("the adaptive InitialModel route requires the exact RELION projector")
-    if not config.relion_bpref_frame:
-        raise NotImplementedError("the adaptive InitialModel route writes RELION BPref accumulators")
     healpix_order = int(options.get("healpix_order", 1))
     oversampling_order = int(options.get("oversampling_order", 1))
     random_perturbation = float(options.get("random_perturbation", 0.0))
@@ -482,8 +480,6 @@ def run_adaptive_initial_model_estep(
         state,
         halfset_idx=None if grouped else 0,
         reconstruction_group_count=2 if grouped else None,
-        relion_bpref_frame=True,
-        relion_projector_frame=config.relion_projector_frame,
         padding_factor=config.padding_factor,
     )
     # vdam_m_step reads the list by position, halfset-major (m_step.py: accumulators[k]

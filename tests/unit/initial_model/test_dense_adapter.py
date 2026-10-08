@@ -23,6 +23,7 @@ from relax.vdam.estep_common import (
     _estep_meta,
 )
 from relax.vdam.init import initialise_denovo_state
+from relax.vdam.layout import relion_bpref_frame_scales
 
 pytestmark = pytest.mark.unit
 
@@ -117,8 +118,6 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         enforce_relion_half_volume_x0_hermitian_host,
         relion_x_half_volume_to_full,
     )
-    from relax.vdam.layout import relion_bpref_frame_scales
-
     state = initialise_denovo_state(
         ori_size=8,
         pixel_size=1.0,
@@ -148,8 +147,6 @@ def test_arrays_to_accumulators_inverts_relion_x_public_layout_without_projector
         [public_weight],
         state,
         halfset_idx=0,
-        relion_bpref_frame=True,
-        relion_projector_frame=True,
         padding_factor=1,
     )[0]
 
@@ -187,8 +184,6 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
         state,
         halfset_idx=None,
         reconstruction_group_count=2,
-        relion_bpref_frame=True,
-        relion_projector_frame=False,
         padding_factor=1,
     )
 
@@ -348,27 +343,6 @@ def test_estep_meta_keeps_each_halfset_profile_summary():
     assert "halfset_1_profile_summary" not in meta
 
 
-def test_initial_model_estep_without_a_projector_is_refused(monkeypatch):
-    calls = _capture_adaptive_route(monkeypatch)
-    state = initialise_denovo_state(
-        ori_size=8,
-        pixel_size=1.0,
-        K=1,
-        nr_iter=1,
-        n_directions=4,
-        pseudo_halfsets=False,
-    )
-    config = DenseInitialModelEstepConfig(
-        noise_variance=np.ones(8 * 8, dtype=np.float32),
-        translations=np.zeros((1, 2), dtype=np.float32),
-        relion_bpref_frame=False,
-    )
-
-    with pytest.raises(ValueError, match="scores with RELION's projector"):
-        run_dense_initial_model_estep(_Dataset(), state, config)
-    assert not calls
-
-
 def test_initial_model_estep_with_a_projector_passes_no_dense_means(monkeypatch):
     calls = _capture_adaptive_route(monkeypatch)
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
@@ -479,7 +453,6 @@ def test_resolve_class_inputs_builds_the_exact_projector_and_no_dense_means(monk
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
-        relion_projector_frame=True,
     )
 
     means, mean_variance, exact_half, exact_rmax = _resolve_class_inputs(state, config)
@@ -500,7 +473,6 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
-        relion_projector_frame=True,
         relion_projector_half_by_class=projector_half,
         relion_projector_r_max=2,
     )
@@ -528,7 +500,6 @@ def test_resolve_class_inputs_can_dump_exact_projector_operand(monkeypatch, tmp_
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
         translations=np.zeros((1, 2), dtype=np.float32),
-        relion_projector_frame=True,
     )
 
     _resolve_class_inputs(state, config)
@@ -601,7 +572,6 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
     state = SimpleNamespace(K=4, ori_size=8, current_size=4)
     r_max = state.current_size // 2
     compact_size = 2 * (r_max + 1) + 1
-    compact_center = compact_size // 2
     full_center = state.ori_size // 2
     coordinates = np.arange(compact_size**3, dtype=np.float32).reshape((compact_size,) * 3)
 
@@ -614,25 +584,15 @@ def test_arrays_to_accumulators_k4_compact_and_full_layouts_match():
         weight_cube = (coordinates + 1 + 100 * class_index).astype(np.float32)
         data_full = np.zeros((state.ori_size,) * 3, dtype=np.complex64)
         weight_full = np.zeros((state.ori_size,) * 3, dtype=np.float32)
-        full_slab = (
-            slice(full_center - (r_max + 1), full_center + (r_max + 1) + 1),
-            slice(full_center - (r_max + 1), full_center + (r_max + 1) + 1),
-            slice(full_center, full_center + (r_max + 1) + 1),
-        )
-        data_full[full_slab] = data_cube[:, :, compact_center:]
-        weight_full[full_slab] = weight_cube[:, :, compact_center:]
+        full_cube = (slice(full_center - (r_max + 1), full_center + (r_max + 1) + 1),) * 3
+        data_full[full_cube] = data_cube
+        weight_full[full_cube] = weight_cube
         compact_data.append(data_cube.reshape(-1))
         compact_weight.append(weight_cube.reshape(-1))
         full_data.append(data_full.reshape(-1))
         full_weight.append(weight_full.reshape(-1))
 
-    common = dict(
-        state=state,
-        halfset_idx=1,
-        relion_bpref_frame=False,
-        relion_projector_frame=False,
-        padding_factor=1,
-    )
+    common = dict(state=state, halfset_idx=1, padding_factor=1)
     compact = _arrays_to_accumulators(compact_data, compact_weight, **common)
     full = _arrays_to_accumulators(full_data, full_weight, **common)
 
@@ -672,9 +632,7 @@ def test_arrays_to_accumulators_rejects_missing_or_duplicated_k4_class_rows(
             weight,
             state,
             halfset_idx=0,
-            relion_bpref_frame=False,
-            relion_projector_frame=False,
-            padding_factor=1,
+                    padding_factor=1,
         )
 
 
@@ -696,8 +654,6 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         weight,
         state,
         halfset_idx=0,
-        relion_bpref_frame=False,
-        relion_projector_frame=False,
         padding_factor=1,
     )
 
@@ -708,8 +664,9 @@ def test_arrays_to_accumulators_accepts_compact_k4_backprojector_cubes():
         (0, 2),
         (0, 3),
     ]
+    data_scale, weight_scale = relion_bpref_frame_scales(state.ori_size)
     for class_index, accumulator in enumerate(accumulators):
         assert accumulator.data.shape == (59, 59, 30)
         assert accumulator.weight.shape == (59, 59, 30)
-        assert_matches(accumulator.data, np.complex128(class_index + 1j))
-        assert_matches(accumulator.weight, np.float64(class_index + 1))
+        assert_matches(accumulator.data, np.complex128(class_index + 1j) * data_scale)
+        assert_matches(accumulator.weight, np.float64(class_index + 1) * weight_scale)

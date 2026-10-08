@@ -1,7 +1,7 @@
-"""Regression tests for `recovar.em.vdam.layout`.
+"""Regression tests for `relax.vdam.layout`.
 
 These pin behavior that's load-bearing for InitialModel/VDAM RELION parity:
-- `run_em_output_to_bpref` clamps near-denormal weight noise to 0 so RELION's
+- the BPref converter clamps near-denormal weight noise to 0 so RELION's
   `BackProjector::updateSSNRarrays` invariant (sigma2 must be either exactly
   0 or > 1e-20) holds.
 - The round-trip with `bpref_to_run_em_output` is lossless on values RELION
@@ -14,14 +14,31 @@ import numpy as np
 import pytest
 from helpers.vdam import bpref_to_run_em_output
 
-from relax.vdam.layout import relion_x_public_output_to_bpref, run_em_output_to_bpref
+from relax.vdam.layout import relion_x_public_output_to_bpref
 from helpers.float_compare import assert_matches
+
+
+def bpref_of_relion_order_cube(Ft_y, Ft_ctf, ori_size, r_max, padding_factor=1):
+    """The BPref slab of a centered RECOVAR-order cube, through the production converter.
+
+    ``relion_x_public_output_to_bpref`` undoes the public layout's ``transpose(2, 1, 0)`` before cutting
+    the slab, so a cube given in RELION axis order is passed transposed. Flat inputs are cubes of the
+    accumulator's edge.
+    """
+
+    def public(values):
+        values = np.asarray(values)
+        edge = round(values.size ** (1.0 / 3.0))
+        cube = values.reshape(edge, edge, edge) if edge**3 == values.size else values
+        return cube.transpose(2, 1, 0) if cube.ndim == 3 else cube
+
+    return relion_x_public_output_to_bpref(public(Ft_y), public(Ft_ctf), ori_size, r_max, padding_factor=padding_factor)
 
 
 def _make_full_with_centered_slab(ori_size: int, r_max: int, slab: np.ndarray) -> np.ndarray:
     """Embed a centered cropped half-slab into a full (N,N,N) Fourier volume.
 
-    Mirrors the inverse of run_em_output_to_bpref's centered-cropped path so
+    Mirrors the inverse of the converter's centered-cropped path so
     we can craft known weight slabs as input.
     """
     full = np.zeros((ori_size, ori_size, ori_size), dtype=np.complex128)
@@ -31,7 +48,7 @@ def _make_full_with_centered_slab(ori_size: int, r_max: int, slab: np.ndarray) -
     return full
 
 
-def test_run_em_output_to_bpref_clamps_denormal_weight_to_zero():
+def test_bpref_converter_clamps_denormal_weight_to_zero():
     """Denormal-range weights (|w| < 1e-15) must become exactly 0.
 
     Without this clamp, RELION's `BackProjector::updateSSNRarrays` aborts
@@ -55,7 +72,7 @@ def test_run_em_output_to_bpref_clamps_denormal_weight_to_zero():
     Fy = np.zeros((ori_size, ori_size, ori_size), dtype=np.complex128)
     Fc = _make_full_with_centered_slab(ori_size, r_max, weight_slab)
 
-    _bp_data, bp_weight = run_em_output_to_bpref(Fy, Fc, ori_size, r_max)
+    _bp_data, bp_weight = bpref_of_relion_order_cube(Fy, Fc, ori_size, r_max)
 
     assert bp_weight.dtype == np.float64
     assert bp_weight.shape == slab_shape
@@ -69,7 +86,7 @@ def test_run_em_output_to_bpref_clamps_denormal_weight_to_zero():
     assert (bp_weight[..., 3] == 0.0).all(), "-1e-30 must clamp to 0"
 
 
-def test_run_em_output_to_bpref_preserves_typical_weights():
+def test_bpref_converter_preserves_typical_weights():
     """Weights of physical magnitude (≥ 1e-12) must pass through unchanged.
 
     Guards against an over-aggressive clamp that would drop real signal.
@@ -85,12 +102,12 @@ def test_run_em_output_to_bpref_preserves_typical_weights():
     Fy = np.zeros((ori_size, ori_size, ori_size), dtype=np.complex128)
     Fc = _make_full_with_centered_slab(ori_size, r_max, weight_slab)
 
-    _bp_data, bp_weight = run_em_output_to_bpref(Fy, Fc, ori_size, r_max)
+    _bp_data, bp_weight = bpref_of_relion_order_cube(Fy, Fc, ori_size, r_max)
 
     assert_matches(bp_weight, raw_real.astype(np.float64))
 
 
-def test_run_em_output_to_bpref_clamp_threshold_boundary():
+def test_bpref_converter_clamp_threshold_boundary():
     """The clamp threshold is 1e-15. Values just above pass; just below clamp."""
     ori_size = 8
     r_max = 2
@@ -105,7 +122,7 @@ def test_run_em_output_to_bpref_clamp_threshold_boundary():
     Fy = np.zeros((ori_size, ori_size, ori_size), dtype=np.complex128)
     Fc = _make_full_with_centered_slab(ori_size, r_max, weight_slab)
 
-    _bp_data, bp_weight = run_em_output_to_bpref(Fy, Fc, ori_size, r_max)
+    _bp_data, bp_weight = bpref_of_relion_order_cube(Fy, Fc, ori_size, r_max)
 
     assert (bp_weight[..., 0] == 1.5e-15).all()
     assert (bp_weight[..., 1] == 0.0).all()
@@ -114,7 +131,7 @@ def test_run_em_output_to_bpref_clamp_threshold_boundary():
     assert (bp_weight[..., 3] == 1e-15).all()
 
 
-def test_run_em_output_to_bpref_relion_invariant_holds():
+def test_bpref_converter_relion_invariant_holds():
     """End-to-end invariant: emitted weight values are either exactly 0 OR
     strictly > 1e-20 — the precondition RELION's BackProjector asserts.
 
@@ -134,7 +151,7 @@ def test_run_em_output_to_bpref_relion_invariant_holds():
     Fy = np.zeros((ori_size, ori_size, ori_size), dtype=np.complex128)
     Fc = _make_full_with_centered_slab(ori_size, r_max, weight_slab)
 
-    _bp_data, bp_weight = run_em_output_to_bpref(Fy, Fc, ori_size, r_max)
+    _bp_data, bp_weight = bpref_of_relion_order_cube(Fy, Fc, ori_size, r_max)
 
     nonzero = bp_weight != 0.0
     if nonzero.any():
@@ -145,7 +162,7 @@ def test_run_em_output_to_bpref_relion_invariant_holds():
         )
 
 
-def test_run_em_output_to_bpref_round_trip_on_realistic_data():
+def test_bpref_converter_round_trip_on_realistic_data():
     """Round-trip via bpref_to_run_em_output must be exact for realistic
     values (everything > 1e-15). This pins the clamp's correctness on
     typical RELION-emitted data — no real RELION dump has denormal weights.
@@ -160,14 +177,14 @@ def test_run_em_output_to_bpref_round_trip_on_realistic_data():
     bp_weight = rng.uniform(1e-3, 100.0, size=slab_shape).astype(np.float64)
 
     Ft_y, Ft_ctf = bpref_to_run_em_output(bp_data, bp_weight, ori_size, r_max)
-    bp_data_rt, bp_weight_rt = run_em_output_to_bpref(Ft_y, Ft_ctf, ori_size, r_max)
+    bp_data_rt, bp_weight_rt = bpref_of_relion_order_cube(Ft_y, Ft_ctf, ori_size, r_max)
 
     assert_matches(bp_data, bp_data_rt, "data round-trip lossy")
     assert_matches(bp_weight, bp_weight_rt, "weight round-trip lossy")
 
 
 @pytest.mark.parametrize(("ori_size", "r_max"), [(128, 19), (256, 28)])
-def test_run_em_output_to_bpref_accepts_shared_compact_backprojector_cube(ori_size, r_max):
+def test_bpref_converter_accepts_shared_compact_backprojector_cube(ori_size, r_max):
     """Shared local EM returns a current-size odd BPref cube, not ori_size³."""
     compact_size = 2 * (r_max + 1) + 1
     rng = np.random.default_rng(17)
@@ -176,7 +193,7 @@ def test_run_em_output_to_bpref_accepts_shared_compact_backprojector_cube(ori_si
     ).astype(np.complex64)
     weight_cube = rng.uniform(1e-3, 2.0, size=(compact_size,) * 3).astype(np.float32)
 
-    bp_data, bp_weight = run_em_output_to_bpref(
+    bp_data, bp_weight = bpref_of_relion_order_cube(
         data_cube.reshape(-1),
         weight_cube.reshape(-1),
         ori_size,
@@ -224,9 +241,9 @@ def test_relion_x_public_output_to_bpref_exactly_inverts_shared_public_layout():
     assert_matches(actual_weight, bp_weight.astype(np.float64))
 
 
-def test_run_em_output_to_bpref_rejects_unknown_compact_accumulator_shape():
+def test_bpref_converter_rejects_unknown_compact_accumulator_shape():
     with np.testing.assert_raises_regex(ValueError, "current-size BackProjector cube"):
-        run_em_output_to_bpref(
+        bpref_of_relion_order_cube(
             np.zeros(123, dtype=np.complex64),
             np.zeros(123, dtype=np.float32),
             ori_size=128,

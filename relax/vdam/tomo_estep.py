@@ -205,8 +205,6 @@ def run_tomo_initial_model_estep(
         state,
         halfset_idx=None,
         reconstruction_group_count=2,
-        relion_bpref_frame=True,
-        relion_projector_frame=True,
         padding_factor=int(padding_factor),
     )
     # vdam_m_step reads the list halfset-major (accumulators[k], accumulators[K + k]).
