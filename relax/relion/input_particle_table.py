@@ -31,67 +31,9 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
+from relax.helpers.relion_random import check_init_random_generator_seeds, glibc_first_rand, glibc_rand_sequence
+
 logger = logging.getLogger(__name__)
-
-_GLIBC_MODULUS = 2147483647
-
-
-def glibc_rand_sequence(seed: int, count: int) -> np.ndarray:
-    """Return the first ``count`` values of glibc ``rand()`` after ``srand(seed)``.
-
-    glibc's default generator (``random_r.c``, TYPE_3): a 31-word state seeded by the
-    Park-Miller recurrence, 310 discarded outputs, then the additive lagged-Fibonacci
-    feedback ``r[i] = r[i-31] + r[i-3]`` (mod 2**32) with output ``r[i] >> 1``.
-    ``srand(0)`` behaves as ``srand(1)``. The seed is taken as the ``unsigned int`` that
-    RELION passes.
-    """
-    count = int(count)
-    if count < 0:
-        raise ValueError(f"count must be non-negative, got {count}")
-    seed = int(seed) & 0xFFFFFFFF
-    if seed == 0:
-        seed = 1
-    word = seed - (1 << 32) if seed >= (1 << 31) else seed  # int32_t in glibc
-    state = [word]
-    for _ in range(1, 31):
-        # C division truncates toward zero; use the magnitude to keep Python's // exact.
-        hi = int(word / 127773)
-        lo = word - hi * 127773
-        word = 16807 * lo - 2836 * hi
-        if word < 0:
-            word += _GLIBC_MODULUS
-        state.append(word)
-    state = [value & 0xFFFFFFFF for value in state]
-    for i in range(31, 34):
-        state.append(state[i - 31])
-    out = np.empty(count, dtype=np.int64)
-    n_discard = 310
-    for i in range(34, 344 + count):
-        value = (state[i - 31] + state[i - 3]) & 0xFFFFFFFF
-        state.append(value)
-        if i >= 34 + n_discard:
-            out[i - 344] = value >> 1
-    return out
-
-
-def glibc_first_rand(seeds) -> np.ndarray:
-    """``rand()``'s first value after ``srand(seed)`` for each seed: :func:`glibc_rand_sequence` over many seeds."""
-    seeds = np.asarray(seeds, dtype=np.int64).reshape(-1) & 0xFFFFFFFF
-    seeds = np.where(seeds == 0, 1, seeds)
-    word = np.where(seeds >= (1 << 31), seeds - (1 << 32), seeds)  # int32_t in glibc
-    state = [word]
-    for _ in range(1, 31):
-        hi = np.trunc(word / 127773).astype(np.int64)  # C division truncates toward zero
-        lo = word - hi * 127773
-        word = 16807 * lo - 2836 * hi
-        word = np.where(word < 0, word + _GLIBC_MODULUS, word)
-        state.append(word)
-    state = [value & 0xFFFFFFFF for value in state]
-    for i in range(31, 34):
-        state.append(state[i - 31])
-    for i in range(34, 345):
-        state.append((state[i - 31] + state[i - 3]) & 0xFFFFFFFF)
-    return state[344] >> 1
 
 
 def relion_class3d_seed_classes(expectation_order, random_seed: int, n_classes: int) -> np.ndarray:
@@ -105,8 +47,10 @@ def relion_class3d_seed_classes(expectation_order, random_seed: int, n_classes: 
     (``relax.helpers.expected_accuracy.relion_class3d_trial_layout``).
     """
     order = np.asarray(expectation_order, dtype=np.int64).reshape(-1)
+    seeds = int(random_seed) + np.arange(order.size, dtype=np.int64)
+    check_init_random_generator_seeds(seeds)
     classes = np.empty(order.size, dtype=np.int64)
-    classes[order] = glibc_first_rand(int(random_seed) + np.arange(order.size, dtype=np.int64)) % int(n_classes)
+    classes[order] = glibc_first_rand(seeds) % int(n_classes)
     return classes
 
 

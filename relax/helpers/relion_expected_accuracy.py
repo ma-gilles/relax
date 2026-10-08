@@ -524,7 +524,7 @@ def expected_angular_errors(
     draws = np.zeros(n_images)
     if np.any(pdf >= 0.01):
         for trial in range(n_trials):
-            generator = relion_random.GlibcRand(int(random_seed) + int(seed_particles[trial]))
+            generator = relion_random.init_random_generator(int(random_seed) + int(seed_particles[trial]))
             for row in range(trial_image_offsets[trial], trial_image_offsets[trial + 1]):
                 draws[row] = float(relion_random.rnd_unif(generator))
 

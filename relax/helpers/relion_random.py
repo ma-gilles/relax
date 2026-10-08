@@ -22,22 +22,40 @@ RAND_MAX = 2147483647
 _MASK32 = 0xFFFFFFFF
 
 
+_GLIBC_MODULUS = 2147483647
+_INT_LIMIT = 2**31
+
+
+def _glibc_srand_table(seeds) -> np.ndarray:
+    """glibc ``srand(seed)``'s 31-word table for each seed, shape ``(n, 31)``, as ``unsigned`` words.
+
+    ``srandom_r`` (``random_r.c``) holds the seed as ``int32_t`` and runs the Park-Miller recurrence with C
+    division, which truncates toward zero; ``srand(0)`` behaves as ``srand(1)``. The seed is taken as the
+    ``unsigned int`` ``srand`` receives, so ``2**31`` and above are negative words.
+    """
+    seeds = np.asarray(seeds, dtype=np.int64).reshape(-1) & _MASK32
+    seeds = np.where(seeds == 0, 1, seeds)
+    word = np.where(seeds >= _INT_LIMIT, seeds - (1 << 32), seeds)
+    table = np.empty((seeds.size, 31), dtype=np.int64)
+    table[:, 0] = word
+    for i in range(1, 31):
+        hi = np.where(word < 0, -(-word // 127773), word // 127773)
+        lo = word - hi * 127773
+        word = 16807 * lo - 2836 * hi
+        word = np.where(word < 0, word + _GLIBC_MODULUS, word)
+        table[:, i] = word
+    return table & _MASK32
+
+
 class GlibcRand:
-    """glibc ``srand(seed)`` then ``rand()`` (stdlib/random_r.c, TYPE_3)."""
+    """glibc ``srand(seed)`` then ``rand()`` (stdlib/random_r.c, TYPE_3).
+
+    ``seed`` is the ``unsigned int`` ``srand`` receives. RELION's ``init_random_generator`` seeds through
+    :func:`init_random_generator`, which refuses the seeds RELION would replace with the clock.
+    """
 
     def __init__(self, seed: int):
-        seed = int(seed) & _MASK32
-        if seed == 0:
-            seed = 1
-        state = [seed]
-        word = seed
-        for _ in range(1, 31):
-            hi, lo = divmod(word, 127773)
-            word = 16807 * lo - 2836 * hi
-            if word < 0:
-                word += 2147483647
-            state.append(word)
-        self._state = [value & _MASK32 for value in state]
+        self._state = [int(value) for value in _glibc_srand_table([seed])[0]]
         self._front = 3
         self._rear = 0
         for _ in range(310):
@@ -55,6 +73,49 @@ class GlibcRand:
         return self._next()
 
 
+def check_init_random_generator_seeds(seeds) -> None:
+    """Refuse seeds RELION's ``init_random_generator(int seed)`` would not pass to ``srand``.
+
+    A negative seed reseeds from the clock (funcs.cpp:570-576), and a sum such as ``random_seed + part_id``
+    at or above ``2**31`` overflows RELION's ``int`` to a negative value, which does the same: neither has a
+    reproducible stream to match.
+    """
+    seeds = np.asarray(seeds, dtype=np.int64)
+    if seeds.size and (seeds.min() < 0 or seeds.max() >= _INT_LIMIT):
+        raise ValueError(
+            "RELION's init_random_generator seeds from the clock outside [0, 2**31) "
+            f"(funcs.cpp:570-576); got seeds in [{int(seeds.min())}, {int(seeds.max())}]"
+        )
+
+
+def init_random_generator(seed: int) -> GlibcRand:
+    """RELION ``init_random_generator(seed)`` (funcs.cpp:570-576) for a seed in ``[0, 2**31)``."""
+
+    check_init_random_generator_seeds(int(seed))
+    return GlibcRand(int(seed))
+
+
+def glibc_rand_sequence(seed: int, count: int) -> np.ndarray:
+    """The first ``count`` values of glibc ``rand()`` after ``srand(seed)``, ``seed`` an ``unsigned int``."""
+
+    count = int(count)
+    if count < 0:
+        raise ValueError(f"count must be non-negative, got {count}")
+    generator = GlibcRand(seed)
+    return np.fromiter((generator.rand() for _ in range(count)), dtype=np.int64, count=count)
+
+
+def glibc_first_rand(seeds) -> np.ndarray:
+    """``rand()``'s first value after ``srand(seed)`` for each seed, vectorised over the seeds."""
+
+    table = _glibc_srand_table(seeds)
+    state = [table[:, i] for i in range(31)]
+    state.extend(state[i] for i in range(3))
+    for i in range(34, 345):
+        state.append((state[i - 31] + state[i - 3]) & _MASK32)
+    return state[344] >> 1
+
+
 def rnd_unif(generator: GlibcRand, low: float = 0.0, high: float = 1.0) -> np.float32:
     """RELION ``rnd_unif(a, b)``: ``a + (float) rand() / (float) (RAND_MAX / (b - a))`` in float."""
 
@@ -69,9 +130,7 @@ def rnd_unif(generator: GlibcRand, low: float = 0.0, high: float = 1.0) -> np.fl
 def rnd_unif_sequence(seed: int, count: int, low: float = 0.0, high: float = 1.0) -> np.ndarray:
     """``init_random_generator(seed)`` then ``count`` draws of ``rnd_unif(low, high)``."""
 
-    if int(seed) < 0:
-        raise ValueError("RELION seeds a negative random_seed from the clock; pass a nonnegative seed")
-    generator = GlibcRand(seed)
+    generator = init_random_generator(seed)
     return np.asarray([rnd_unif(generator, low, high) for _ in range(int(count))], dtype=np.float32)
 
 
@@ -187,4 +246,16 @@ def shuffled_orders(sizes, seed: int) -> list[np.ndarray]:
     return [std_shuffle(np.arange(int(size), dtype=np.int64), generator) for size in sizes]
 
 
-__all__ = ["RAND_MAX", "GlibcRand", "MT19937", "rnd_unif", "rnd_unif_sequence", "shuffled_orders", "std_shuffle"]
+__all__ = [
+    "RAND_MAX",
+    "GlibcRand",
+    "MT19937",
+    "check_init_random_generator_seeds",
+    "glibc_first_rand",
+    "glibc_rand_sequence",
+    "init_random_generator",
+    "rnd_unif",
+    "rnd_unif_sequence",
+    "shuffled_orders",
+    "std_shuffle",
+]
