@@ -823,6 +823,48 @@ def plan_initial_image_size(
     )
 
 
+def _firstiter_cc_resolution_shell(
+    res_shell: int,
+    *,
+    size_name: str,
+    box_size,
+    pixel_size_angstrom,
+    completed_relion_iteration,
+    parity: RelionParityOptions,
+    log: logging.Logger,
+) -> int:
+    """The shell both growth plans schedule from: RELION's firstiter_cc override of ``res_shell``, logged
+    naming ``size_name``."""
+    scheduling_res_shell = _firstiter_cc_scheduling_resolution_shell(
+        res_shell,
+        emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
+        ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
+        relion_iteration=completed_relion_iteration,
+        box_size=box_size,
+        voxel_size=pixel_size_angstrom,
+    )
+    if scheduling_res_shell != res_shell:
+        res_shell = scheduling_res_shell
+        log.info(
+            "RELION firstiter_cc scheduling: using ini_high=%.2f A shell %d for next " + size_name,
+            float(parity.relion_firstiter_ini_high_angstrom),
+            int(res_shell),
+        )
+    return res_shell
+
+
+def _quantized_current_size(res_shell, *, box_size, ave_pmax, has_high_fsc_at_limit, incr_size) -> tuple[int, int]:
+    """RELION's next current size from the scheduling shell: ``(raw, quantized)``."""
+    raw_cs = compute_current_size_relion(
+        res_shell,
+        box_size,
+        ave_Pmax=ave_pmax,
+        has_high_fsc_at_limit=has_high_fsc_at_limit,
+        incr_size=incr_size,
+    )
+    return raw_cs, quantize_current_size(raw_cs, box_size=box_size)
+
+
 def plan_class_image_size(
     data_vs_prior,
     *,
@@ -854,31 +896,18 @@ def plan_class_image_size(
         class_resolution_shells(data_vs_prior_prev, box_size=box_size),
         dtype=np.int32,
     )
-    res_shell = int(np.max(per_class_res_shell))
-    scheduling_res_shell = _firstiter_cc_scheduling_resolution_shell(
-        res_shell,
-        emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
-        ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
-        relion_iteration=completed_relion_iteration,
+    res_shell = _firstiter_cc_resolution_shell(
+        int(np.max(per_class_res_shell)),
+        size_name="K-class current_size",
         box_size=box_size,
-        voxel_size=pixel_size_angstrom,
+        pixel_size_angstrom=pixel_size_angstrom,
+        completed_relion_iteration=completed_relion_iteration,
+        parity=parity,
+        log=log,
     )
-    if scheduling_res_shell != res_shell:
-        res_shell = scheduling_res_shell
-        log.info(
-            "RELION firstiter_cc scheduling: using ini_high=%.2f A shell %d "
-            "for next K-class current_size",
-            float(parity.relion_firstiter_ini_high_angstrom),
-            int(res_shell),
-        )
-    raw_cs = compute_current_size_relion(
-        res_shell,
-        box_size,
-        ave_Pmax=ave_pmax,
-        has_high_fsc_at_limit=False,
-        incr_size=incr_size,
+    raw_cs, computed_cs = _quantized_current_size(
+        res_shell, box_size=box_size, ave_pmax=ave_pmax, has_high_fsc_at_limit=False, incr_size=incr_size
     )
-    computed_cs = quantize_current_size(raw_cs, box_size=box_size)
 
     return ClassImageSize(
         size=computed_cs, resolution_shell=res_shell, raw_size=raw_cs,
@@ -942,30 +971,22 @@ def plan_halfmap_image_size(
         incr_size=incr_size,
         has_high_fsc_at_limit=has_high_fsc_at_limit,
     )
-    scheduling_res_shell = _firstiter_cc_scheduling_resolution_shell(
+    res_shell = _firstiter_cc_resolution_shell(
         res_shell,
-        emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
-        ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
-        relion_iteration=completed_relion_iteration,
+        size_name="current_size",
         box_size=box_size,
-        voxel_size=pixel_size_angstrom,
+        pixel_size_angstrom=pixel_size_angstrom,
+        completed_relion_iteration=completed_relion_iteration,
+        parity=parity,
+        log=log,
     )
-    if scheduling_res_shell != res_shell:
-        res_shell = scheduling_res_shell
-        log.info(
-            "RELION firstiter_cc scheduling: using ini_high=%.2f A shell %d for next current_size",
-            float(parity.relion_firstiter_ini_high_angstrom),
-            int(res_shell),
-        )
-
-    raw_cs = compute_current_size_relion(
+    raw_cs, current_size = _quantized_current_size(
         res_shell,
-        box_size,
-        ave_Pmax=ave_pmax,
+        box_size=box_size,
+        ave_pmax=ave_pmax,
         has_high_fsc_at_limit=has_high_fsc_at_limit,
         incr_size=incr_size,
     )
-    current_size = quantize_current_size(raw_cs, box_size=box_size)
 
     return HalfmapImageSize(
         size=current_size, data_vs_prior=data_vs_prior_iter,
