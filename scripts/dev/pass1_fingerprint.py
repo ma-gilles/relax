@@ -264,7 +264,7 @@ MUTATIONS = (
     ("generic_route_ignored", "relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)",
      "relion_f32_coarse_support_enabled = exact_gaussian",
      "RECOVAR_K1_RELION_F32_COARSE_SUPPORT is ignored", True),
-    ("rotated_radius_disk", "mask_current_image_disk=not coarse_rotated_radius,", "mask_current_image_disk=True,",
+    ("rotated_radius_disk", "mask_current_image_disk=not self.rotated_radius,", "mask_current_image_disk=True,",
      "the rotated-radius clipping is ignored (always the source-pixel disk)", True),
     ("support_audit_ignored", "if _coarse_significance_support_audit_enabled():", "if False:",
      "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT is ignored", True),

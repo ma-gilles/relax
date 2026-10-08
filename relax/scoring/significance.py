@@ -51,6 +51,7 @@ from relax.scoring.coarse_gaussian_gemm import (
     _validate_coarse_gaussian_gemm_projection_cache_request,
 )
 from relax.scoring.coarse_layout import compact_projection_window_positions, plan_coarse_gaussian_square_layout
+from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
@@ -81,9 +82,6 @@ _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
 NVTX_DOMAIN_EM = "recovar_em"
 logger = logging.getLogger(__name__)
 
-# Byte cap on the coarse projections one pass-1 call keeps for reuse across image
-# batches (see ``_project_block_once``).
-_PASS1_PROJECTION_MEMO_MAX_BYTES = 2 * 1024**3
 
 
 def _pad_significance_preprocess_inputs(
@@ -714,9 +712,6 @@ def _compute_k_class_significance_batched(
     from relax.helpers.preprocessing import (
         prepare_batch_preprocess_operands,
     )
-    from relax.helpers.projection import (
-        compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
-    )
 
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
@@ -1137,16 +1132,13 @@ def _compute_k_class_significance_batched(
     # crop into a full image and immediately gathering the same rows again.
     # This is an exact index remapping and avoids a large transient scatter for
     # global rotation blocks.
-    projector_compact_indices_np = None
-    projector_output_size = None
+    projector_compact_rows = None
     if use_relion_projector and coarse_texture_interp:
         if exact_gaussian:
-            projector_compact_indices_np = coarse_gaussian_score_indices_np
-            projector_output_size = coarse_gaussian_projector_output_size
+            projector_compact_rows = CompactRows(coarse_gaussian_score_indices_np, coarse_gaussian_projector_output_size)
         elif use_window:
-            projector_compact_indices_np = window_spec.score_indices_np
-            projector_output_size = score_size
-    projector_returns_compact = projector_compact_indices_np is not None
+            projector_compact_rows = CompactRows(window_spec.score_indices_np, score_size)
+    projector_returns_compact = projector_compact_rows is not None
 
     coarse_rotated_radius = _coarse_rotated_radius_enabled(
         default=bool(use_relion_projector and coarse_texture_interp and projector_returns_compact),
@@ -1156,104 +1148,25 @@ def _compute_k_class_significance_batched(
     ):
         raise ValueError("rotated coarse radius requires the compact RELION texture projector")
 
-    def _project_relion_compact_score_rows(
-        class_index,
-        rots_b,
-        *,
-        return_abs2: bool,
-    ):
-        """Project the exact compact rows shared by direct and GEMM scoring."""
-
-        projected, projected_abs2 = _compute_relion_projector_projections_block(
-            relion_projector_half[class_index],
-            rots_b,
-            image_shape,
-            r_max=int(relion_projector_r_max),
-            padding_factor=int(projection_padding_factor),
-            return_abs2=return_abs2,
-            centered_rows=True,
-            dense_scale=True,
-            projector_output_size=int(projector_output_size),
-            # Keep the already-host-resident table on the host so validation
-            # cannot materialize its JAX mirror once per score block.
-            pixel_indices=projector_compact_indices_np,
-            relion_texture_interp=True,
-            relion_kernel="coarse",
-            # Certificate and exact scorer share the canonical rotated
-            # float32 radius. Explicit legacy diagnostics may retain the
-            # source-pixel disk without changing projection storage.
-            mask_current_image_disk=not coarse_rotated_radius,
-            image_r_max=(
-                jnp.asarray(score_size // 2, dtype=jnp.int32)
-                if coarse_rotated_radius else None
-            ),
-            current_image_mask_size=(
-                jnp.asarray(score_size, dtype=jnp.int32)
-                if stable_fourier_window_shapes
-                else None
-            ),
-        )
-        return projected, projected_abs2
-
-    def _project_block(class_index, rots_b):
-        if projector_returns_compact:
-            return _project_relion_compact_score_rows(class_index, rots_b, return_abs2=True)
-        projector_kwargs = {}
-        if current_size is not None:
-            projector_kwargs["projector_output_size"] = int(current_size)
-        return _compute_relion_projector_projections_block(
-            relion_projector_half[class_index],
-            rots_b,
-            image_shape,
-            r_max=int(relion_projector_r_max),
-            padding_factor=int(projection_padding_factor),
-            centered_rows=True,
-            dense_scale=True,
-            relion_texture_interp=True,
-            relion_kernel="coarse",
-            **projector_kwargs,
-        )
-
-    # The references and rotation blocks are fixed for the whole pass, so a
-    # block's projections are the same for every image batch; they are kept
-    # (up to a byte cap) instead of being recomputed per batch and per scoring
-    # sweep, which at K4 100k/256 was 11 s of the pass per iteration.
-    projection_memo: dict = {}
-    projection_memo_bytes = [0]
-
-    def _project_block_once(class_index, rots_b, *, rotation_start):
-        key = (int(class_index), int(rotation_start), int(rots_b.shape[0]))
-        cached = projection_memo.get(key)
-        if cached is not None:
-            return cached
-        projected = _project_block(class_index, rots_b)
-        block_bytes = sum(int(value.size) * int(value.dtype.itemsize) for value in projected)
-        if projection_memo_bytes[0] + block_bytes <= _PASS1_PROJECTION_MEMO_MAX_BYTES:
-            projection_memo[key] = projected
-            projection_memo_bytes[0] += block_bytes
-        return projected
+    coarse_projector = CoarseProjector(
+        relion_projector_half=relion_projector_half,
+        relion_projector_r_max=relion_projector_r_max,
+        image_shape=image_shape,
+        projection_padding_factor=projection_padding_factor,
+        current_size=current_size,
+        score_size=score_size,
+        stable_fourier_window_shapes=stable_fourier_window_shapes,
+        compact=projector_compact_rows,
+        rotated_radius=coarse_rotated_radius,
+    )
 
     coarse_gaussian_gemm_projection_cache = None
     if coarse_gaussian_gemm_projection_cache_plan is not None:
 
-        def _project_coarse_gemm_cache_build_block(table_index, start, stop):
-            projected_reference, projected_reference_abs2 = (
-                _project_relion_compact_score_rows(
-                    table_index,
-                    rotations[start:stop],
-                    return_abs2=False,
-                )
-            )
-            if projected_reference_abs2 is not None:
-                raise RuntimeError(
-                    "coarse GEMM cache build unexpectedly materialized abs2",
-                )
-            return projected_reference
-
         coarse_gaussian_gemm_projection_cache = (
             build_projection_cache(
                 coarse_gaussian_gemm_projection_cache_plan,
-                _project_coarse_gemm_cache_build_block,
+                partial(coarse_projector.cache_block, rotations),
             )
         )
         logger.warning(
@@ -1615,9 +1528,9 @@ def _compute_k_class_significance_batched(
                 for class_index, r0, rows, block_rows in pass1_blocks:
                     rots_b = rotations_padded[r0 : r0 + block_rows]
                     if exact_cc_enabled:
-                        reference, _ = _project_block_once(class_index, rots_b, rotation_start=r0)
+                        reference, _ = coarse_projector.block_once(class_index, rots_b, rotation_start=r0)
                     else:
-                        reference, _ = _project_relion_compact_score_rows(class_index, rots_b, return_abs2=True)
+                        reference, _ = coarse_projector.compact_rows(class_index, rots_b, return_abs2=True)
                     block_state, block_values, block_dump = _coarse_pass1_block(
                         _class_block_state(pass1_state, class_index),
                         reference,

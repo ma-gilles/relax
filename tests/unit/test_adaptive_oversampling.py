@@ -1281,7 +1281,7 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
     from helpers.exact_pass1_harness import install_exact_pass1_mocks
 
     from relax.helpers import projection
-    from relax.scoring import significance
+    from relax.scoring import coarse_projector, significance
 
     install_exact_pass1_mocks(monkeypatch)
     calls = []
@@ -1305,7 +1305,7 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
     memoized = significance._compute_k_class_significance_batched(*args, **kwargs)
     n_blocks = 3  # 5 rotations in blocks of 2
     assert len(calls) == n_classes * n_blocks
-    monkeypatch.setattr(significance, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
+    monkeypatch.setattr(coarse_projector, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
     calls.clear()
     recomputed = significance._compute_k_class_significance_batched(*args, **kwargs)
     assert len(calls) > n_classes * n_blocks
