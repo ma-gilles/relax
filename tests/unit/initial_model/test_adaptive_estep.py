@@ -153,6 +153,8 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
         "coarse_translations": plan.coarse_translations,
         "coarse_base_translations": plan.coarse_base_translations,
         "translation_step": plan.offset_step_px,
+        "particle_diameter_ang": 200.0,
+        "pass1_healpix_order": 1,
         "max_significants": 200,
         "class_rotation_log_prior": prior_relion,
         "coarse_translation_log_prior": translation_prior,

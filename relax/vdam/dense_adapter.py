@@ -217,7 +217,6 @@ def _dense_estep_config(
         coarse_translations=coarse_translations,
         particle_diameter_ang=float(opts.particle_diameter),
         pass1_healpix_order=int(pass1_healpix_order),
-        return_profile=opts.environment.profile,
     )
     # The adaptive route rebuilds RELION's fine translations from the
     # unperturbed host grid (``prepare_adaptive_pass2_grids``).

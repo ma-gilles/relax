@@ -69,8 +69,6 @@ _SPARSE_PASS2_CONTROL_KEYS = {
     "coarse_translation_log_prior",
     "particle_diameter_ang",
     "pass1_healpix_order",
-    "pass1_current_size",
-    "return_profile",
     "multi_shape_translations",
 }
 
@@ -88,37 +86,23 @@ def _pop_sparse_pass2_options(engine_kwargs: dict[str, Any]) -> tuple[dict[str, 
     return cleaned, options
 
 
-def _translation_step_from_grid(translations: np.ndarray) -> float:
-    unique_vals = np.unique(np.asarray(translations, dtype=np.float32))
-    diffs = np.diff(np.sort(unique_vals))
-    diffs = diffs[diffs > 1.0e-6]
-    return float(diffs.min()) if diffs.size else 1.0
-
-
 def _resolve_sparse_pass1_current_size(
     state: InitialModelState,
-    group_kwargs: dict[str, Any],
-    options: dict[str, Any],
+    current_size: int | None,
+    particle_diameter_ang: float,
+    pass1_healpix_order: int,
 ) -> int | None:
-    """RELION's coarse pass-1 scoring size (``image_coarse_size``) for sparse pass 2."""
-    explicit = options.get("pass1_current_size")
-    if explicit is not None:
-        explicit = int(explicit)
-        return None if explicit <= 0 or explicit >= int(state.ori_size) else explicit
+    """RELION's coarse pass-1 scoring size (``image_coarse_size``) for sparse pass 2.
 
-    current_size = group_kwargs.get("current_size")
-    particle_diameter = options.get("particle_diameter_ang")
-    if particle_diameter is None:
-        return current_size
-
+    ``current_size`` None is the full box; ``pass1_healpix_order`` the order before this iteration's
+    sampling update. Returns None when the coarse size is the full box.
+    """
     coarse_size = int(
         compute_coarse_image_size(
-            healpix_angular_step(
-                int(options.get("pass1_healpix_order", options.get("healpix_order", 0)))
-            ),
+            healpix_angular_step(int(pass1_healpix_order)),
             float(state.pixel_size),
             int(state.ori_size),
-            particle_diameter=float(particle_diameter),
+            particle_diameter=float(particle_diameter_ang),
         )
     )
     current_limit = int(current_size) if current_size is not None else int(state.ori_size)
@@ -311,11 +295,11 @@ def run_adaptive_initial_model_estep(
     base_kwargs, options = _pop_sparse_pass2_options(engine_kwargs)
     if relion_projector_half_by_class is None:
         raise NotImplementedError("the adaptive InitialModel route requires the exact RELION projector")
-    healpix_order = int(options.get("healpix_order", 1))
-    oversampling_order = int(options.get("oversampling_order", 1))
-    random_perturbation = float(options.get("random_perturbation", 0.0))
+    healpix_order = int(options["healpix_order"])
+    oversampling_order = int(options["oversampling_order"])
+    random_perturbation = float(options["random_perturbation"])
     coarse_translations = np.asarray(options["coarse_translations"], dtype=np.float32)
-    translation_step = float(options.get("translation_step", _translation_step_from_grid(coarse_translations)))
+    translation_step = float(options["translation_step"])
     coarse_base_translations = base_kwargs.pop("coarse_base_translations")
     route = adaptive_route_grids(
         healpix_order=healpix_order,
@@ -368,7 +352,11 @@ def run_adaptive_initial_model_estep(
     )
     current_size = group_kwargs.get("current_size")
     pass1_current_size = (
-        current_size if oversampling_order == 0 else _resolve_sparse_pass1_current_size(state, group_kwargs, options)
+        current_size
+        if oversampling_order == 0
+        else _resolve_sparse_pass1_current_size(
+            state, current_size, options["particle_diameter_ang"], options["pass1_healpix_order"]
+        )
     )
     multi_shape = isinstance(group_dataset, optics_shapes.MultiShapeHalf)
     relion_preprocessing = all(
@@ -418,7 +406,7 @@ def run_adaptive_initial_model_estep(
         accumulate_noise=True,
         adaptive_fraction=float(options.get("adaptive_fraction", 0.999)),
         # Difference 3: VDAM's resolved cap, applied to the coarse pass only.
-        max_significants=int(options.get("max_significants", -1)),
+        max_significants=int(options["max_significants"]),
         significance_image_batch_size=significance_image_batch_size,
         significance_rotation_block_size=int(config.rotation_block_size),
         significance_pad_final_image_batch=True,

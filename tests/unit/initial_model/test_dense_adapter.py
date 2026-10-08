@@ -522,11 +522,7 @@ def test_sparse_pass2_pass1_current_size_matches_relion_fixture_coarse_size():
     )
     assert state.current_size == 28
 
-    pass1_current_size = _resolve_sparse_pass1_current_size(
-        state,
-        {"current_size": state.current_size},
-        {"healpix_order": 1, "particle_diameter_ang": 544.0},
-    )
+    pass1_current_size = _resolve_sparse_pass1_current_size(state, state.current_size, 544.0, 1)
 
     assert pass1_current_size == 10
 
@@ -543,15 +539,7 @@ def test_sparse_pass2_pass1_current_size_uses_pre_update_healpix_order():
     )
     state.current_size = 56
 
-    pass1_current_size = _resolve_sparse_pass1_current_size(
-        state,
-        {"current_size": state.current_size},
-        {
-            "healpix_order": 2,
-            "pass1_healpix_order": 1,
-            "particle_diameter_ang": 200.0,
-        },
-    )
+    pass1_current_size = _resolve_sparse_pass1_current_size(state, state.current_size, 200.0, 1)
 
     assert pass1_current_size == 26
 

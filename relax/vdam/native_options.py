@@ -31,7 +31,9 @@ class VdamEnvironment:
     """The InitialModel's switches of the process environment, read once when the options are built.
 
     :meth:`from_environ` reads each as its consumer used to; the default instance has every switch off.
-    ``profile`` (RECOVAR_INITIAL_MODEL_PROFILE, any value) prints stage wall times;
+    ``profile`` (RECOVAR_INITIAL_MODEL_PROFILE, any value) prints the wall times of the start-up stages, of
+    each iteration's stages (the E-step as one stage: its coarse and fine passes are not timed apart) and of
+    the artifact writes;
     ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: 1, true or TRUE) releases JAX's
     buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
     ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and

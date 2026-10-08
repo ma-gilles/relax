@@ -58,12 +58,9 @@ def tomo_initial_model_sampling(
         if int(sampling_plan.oversampling) == 0
         else _resolve_sparse_pass1_current_size(
             state,
-            {"current_size": None if int(state.current_size) <= 0 else int(state.current_size)},
-            {
-                "particle_diameter_ang": float(particle_diameter_ang),
-                "pass1_healpix_order": order if pass1_healpix_order is None else int(pass1_healpix_order),
-                "healpix_order": order,
-            },
+            None if int(state.current_size) <= 0 else int(state.current_size),
+            float(particle_diameter_ang),
+            order if pass1_healpix_order is None else int(pass1_healpix_order),
         )
     )
     return TomoSampling(
