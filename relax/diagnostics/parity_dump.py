@@ -192,7 +192,7 @@ def dump_iteration(
     random_perturbation_instance: int,
     tau2_fudge: float,
     voxel_size: float,
-    grid_size: int,
+    box_size: int,
     volume_shape,
     ave_pmax: float,
     fsc: np.ndarray,
@@ -245,7 +245,7 @@ def dump_iteration(
         "random_perturbation_instance": np.int64(random_perturbation_instance),
         "tau2_fudge": np.float64(tau2_fudge),
         "voxel_size": np.float64(voxel_size),
-        "grid_size": np.int32(grid_size),
+        "grid_size": np.int32(box_size),  # the box size, under the stored key the dump readers use
         "ave_pmax": np.float64(ave_pmax),
         "fsc": np.asarray(fsc, dtype=np.float64),
         "sigma2_noise": np.asarray(sigma2_noise, dtype=np.float64),

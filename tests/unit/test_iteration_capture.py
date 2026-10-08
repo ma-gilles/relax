@@ -140,7 +140,7 @@ def _capture_inputs():
     return dict(
         init_relion_iteration=7, state=SimpleNamespace(translation_step=2., translation_range=9.),
         current_size=12, sigma_offset_angstrom=np.float32(3.5), random_perturbation=.125,
-        settings=SimpleNamespace(tau2_fudge=np.float64(4.), grid_size=16, volume_shape=(8, 8, 8)),
+        settings=SimpleNamespace(tau2_fudge=np.float64(4.), box_size=16, volume_shape=(8, 8, 8)),
         pixel_size_angstrom=np.float32(1.25), ave_pmax=np.float32(.75),
         fsc=np.array([.9, .4, 0.], dtype=np.float32), noise_variance=np.array([2., 3., 4.], dtype=np.float32),
         means=[None, None], unfiltered_means=[None, None], poses=poses, half_inputs=halves,
@@ -160,7 +160,7 @@ def test_capture_adapts_metadata_and_borrows_original_arrays(monkeypatch, pertur
     monkeypatch.setattr(parity_dump, 'dump_iteration', lambda **values: captured.update(values))
     captures.dump_numbered_iteration(2, **inputs)
     assert captured['iteration'] == 2 and captured['init_relion_iteration'] == 7
-    assert captured['current_size'] == 12 and captured['grid_size'] == 16
+    assert captured['current_size'] == 12 and captured['box_size'] == 16
     assert captured['volume_shape'] == (8, 8, 8)
     assert captured['random_perturbation_instance'] == (5 if has_instance else 0)
     assert_matches(captured['random_perturbation'], 0. if perturbation is None else perturbation)

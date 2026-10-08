@@ -31,7 +31,7 @@ def test_dump_round_trip(tmp_path, monkeypatch, stage, loaded_stage, dtype, run_
         iteration=2,
         current_size=56,
         padding_factor=2,
-        grid_size=128,
+        box_size=128,
         voxel_size=4.25,
         volume_shape=(128, 128, 128),
         accumulator_shape=(123, 123, 123),

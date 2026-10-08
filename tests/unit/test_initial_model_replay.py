@@ -50,7 +50,7 @@ def test_noise_frames_override_precedence_and_half1_broadcast(tmp_path, n_classe
     live = np.asarray([5.01, 5.47, 5.89, 6.31, 6.83], dtype=dtype)
     noise = replay.prepare_noise(
         model,
-        grid_size=8,
+        box_size=8,
         image_shape=(8, 8),
         explicit_noise_radial=explicit if "npz" in override else None,
         live_sigma2=live if "live" in override else None,
@@ -82,7 +82,7 @@ def test_noise_frames_override_precedence_and_half1_broadcast(tmp_path, n_classe
 def test_tau2_shell_frame_and_class_layout(tmp_path, n_classes, dtype, column):
     shells = _write_model(tmp_path / "run_it000_model.star", n_classes=n_classes, prior_dtype=dtype, prior_column=column)
     model = replay.read_initial_model(tmp_path, n_classes=n_classes)
-    variance = replay.prepare_prior(model, n_classes=n_classes, grid_size=8, volume_shape=(8, 8, 8))
+    variance = replay.prepare_prior(model, n_classes=n_classes, box_size=8, volume_shape=(8, 8, 8))
     expected = np.stack([_radial_pixels(np.asarray(row, dtype=np.float64) * 8**4, (8, 8, 8)) for row in shells])
     if n_classes == 1:
         expected = expected[0]
@@ -97,7 +97,7 @@ def test_half_specific_prior_uses_the_half1_reference_model(tmp_path):
     _write_model(tmp_path / "run_it000_half2_model.star", prior_dtype=np.float64)
     model = replay.read_initial_model(tmp_path, n_classes=1)
     model.models[1].tables["model_class_1"]["rlnReferenceTau2"] *= 7.0
-    variance = replay.prepare_prior(model, n_classes=1, grid_size=8, volume_shape=(8, 8, 8))
+    variance = replay.prepare_prior(model, n_classes=1, box_size=8, volume_shape=(8, 8, 8))
     assert_matches(variance, _radial_pixels(first[0] * 8**4, (8, 8, 8)))
 
 
@@ -106,7 +106,7 @@ def test_reference_tau2_takes_precedence_over_reference_sigma2(tmp_path):
     shells = _write_model(tmp_path / "run_it000_model.star")
     model = replay.read_initial_model(tmp_path, n_classes=1)
     model.reference.tables["model_class_1"]["rlnReferenceSigma2"] = np.asarray(shells[0]) * 9.0
-    variance = replay.prepare_prior(model, n_classes=1, grid_size=8, volume_shape=(8, 8, 8))
+    variance = replay.prepare_prior(model, n_classes=1, box_size=8, volume_shape=(8, 8, 8))
     assert_matches(variance, _radial_pixels(shells[0] * 8**4, (8, 8, 8)))
 
 
@@ -143,7 +143,7 @@ def test_missing_model_noise_still_refuses_with_an_override(tmp_path, override):
     with pytest.raises(ValueError, match="missing rlnSigma2Noise"):
         replay.prepare_noise(
             model,
-            grid_size=8,
+            box_size=8,
             image_shape=(8, 8),
             explicit_noise_radial=np.ones(5) if override == "npz" else None,
             live_sigma2=np.ones(5) if override == "live" else None,

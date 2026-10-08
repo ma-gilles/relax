@@ -873,7 +873,7 @@ def main(command=None):
         )
         replayed_noise = initial_model_replay.prepare_noise(
             initial_model,
-            grid_size=ds.grid_size,
+            box_size=ds.grid_size,
             image_shape=ds.image_shape,
             explicit_noise_radial=initial_noise_radial,
             live_sigma2=relion_live_initial_sigma2,
@@ -885,7 +885,7 @@ def main(command=None):
         mean_variance = initial_model_replay.prepare_prior(
             initial_model,
             n_classes=args.n_classes,
-            grid_size=ds.grid_size,
+            box_size=ds.grid_size,
             volume_shape=ds.volume_shape,
         )
         if args.n_classes > 1:
@@ -1002,7 +1002,7 @@ def main(command=None):
         half2_rows=particle_layout.half2_rows,
         particle_names=our_names,
         voxel_size=ds.voxel_size,
-        grid_size=ds.grid_size,
+        box_size=ds.grid_size,
         volume_shape=ds.volume_shape,
         noise_dtype=np.float64 if _double_image_preprocessing else np.float32,
     )

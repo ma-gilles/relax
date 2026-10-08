@@ -78,7 +78,7 @@ def read_initial_model(directory, *, n_classes: int) -> InitialModelReplay:
 def prepare_noise(
     model,
     *,
-    grid_size,
+    box_size,
     image_shape,
     explicit_noise_radial,
     live_sigma2,
@@ -91,7 +91,7 @@ def prepare_noise(
     """
     from recovar.reconstruction import noise as recon_noise
 
-    frame_scale = grid_size**4
+    frame_scale = box_size**4
     sigma2_per_model = [
         read_relion_single_optics_sigma2_noise(
             source.tables,
@@ -153,9 +153,9 @@ def log_noise_source(noise, *, log):
         )
 
 
-def prepare_prior(model, *, n_classes: int, grid_size, volume_shape):
+def prepare_prior(model, *, n_classes: int, box_size, volume_shape):
     """Expand the reference model's class tau2 shells in RECOVAR's image frame."""
-    frame_scale = grid_size**4
+    frame_scale = box_size**4
     tables = model.reference.tables
     if n_classes > 1:
         per_class_tau2 = []

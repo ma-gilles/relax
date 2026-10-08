@@ -80,7 +80,7 @@ def test_current_size_schema_and_casts(capture_inputs):
     )
     dumps.write_class_image_size(
         plan, output_dir=values["output_dir"], previous_size=values["prev_cs"],
-        grid_size=values["grid_size"], iteration=values["iteration"],
+        box_size=values["grid_size"], iteration=values["iteration"],
         has_high_fsc_at_limit=values["relion_has_high_fsc_at_limit"],
         incr_size=values["relion_incr_size"], state=values["state"],
     )

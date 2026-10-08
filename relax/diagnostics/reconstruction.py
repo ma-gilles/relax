@@ -58,7 +58,7 @@ def write_bpref_accumulators(
     iteration: int,
     current_size: int,
     padding_factor: int,
-    grid_size: int,
+    box_size: int,
     voxel_size: float,
     volume_shape,
     accumulator_shape,
@@ -84,7 +84,7 @@ def write_bpref_accumulators(
         iteration=np.int32(iteration + 1),
         current_size=np.int32(current_size),
         padding_factor=np.int32(padding_factor),
-        grid_size=np.int32(grid_size),
+        grid_size=np.int32(box_size),  # the box size, under the stored key the dump readers use
         voxel_size=np.float32(voxel_size),
         volume_shape=np.asarray(volume_shape, dtype=np.int32),
         mstep_accumulator_shape=np.asarray(accumulator_shape, dtype=np.int32),
@@ -100,7 +100,7 @@ def write_class_image_size(
     *,
     output_dir,
     previous_size,
-    grid_size,
+    box_size,
     iteration,
     has_high_fsc_at_limit,
     incr_size,
@@ -114,7 +114,7 @@ def write_class_image_size(
         pathlib.Path(output_dir) / f"recovar_kclass_current_size_it{iteration + 1:03d}.npz",
         iteration=np.int32(iteration + 1),
         previous_current_size=np.int32(previous_size),
-        grid_size=np.int32(grid_size),
+        grid_size=np.int32(box_size),  # the box size, under the stored key the dump readers use
         resolution_shell=np.int32(plan.resolution_shell),
         per_class_resolution_shells=np.asarray(plan.resolution_shells_per_class, dtype=np.int32),
         ave_Pmax=np.float64(float(state.ave_Pmax)),
@@ -173,7 +173,7 @@ def write_class_mstep(
         class_index=np.int32(class_index + 1),
         current_size=np.int32(current_size),
         padding_factor=np.int32(settings.padding_factor),
-        grid_size=np.int32(settings.box_size),
+        grid_size=np.int32(settings.box_size),  # the box size, under the stored key the dump readers use
         mstep_accumulator_shape=np.asarray(accumulator_shape, dtype=np.int32),
         mstep_full_half_axis=np.int32(full_half_axis),
         tau2_fudge=np.float64(settings.tau2_fudge),
@@ -221,7 +221,7 @@ def write_class_mstep(
 
 
 def write_premask_mean(
-    mean, *, output_dir, half_index, iteration, current_size, grid_size,
+    mean, *, output_dir, half_index, iteration, current_size, box_size,
     voxel_size, volume_shape, n_classes,
 ):
     """Write pre-mask Fourier/real maps, preserving the diagnostic NPZ schema."""
@@ -247,7 +247,7 @@ def write_premask_mean(
         iteration=np.int32(iteration + 1),
         half=np.int32(half_index + 1),
         current_size=np.int32(current_size),
-        grid_size=np.int32(grid_size),
+        grid_size=np.int32(box_size),  # the box size, under the stored key the dump readers use
         voxel_size=np.float32(voxel_size),
         volume_shape=np.asarray(volume_shape, dtype=np.int32),
         means_premask=fourier if preserve_dtype else np.asarray(fourier, dtype=np.complex64),

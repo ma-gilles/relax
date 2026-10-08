@@ -28,7 +28,7 @@ class ReplayTarget:
     half2_rows: np.ndarray
     particle_names: np.ndarray
     voxel_size: float
-    grid_size: int
+    box_size: int
     volume_shape: tuple
     noise_dtype: type
 
@@ -123,7 +123,7 @@ def numbered_star_replay(
         # extra final-only override.
         int(max_iter),
         ds_voxel=target.voxel_size,
-        ds_grid=target.grid_size,
+        ds_grid=target.box_size,
         include_normcorr=include_normcorr,
         init_relion_iteration=init_relion_iteration,
         particle_names=target.particle_names,
@@ -174,7 +174,7 @@ def final_only_replay(
         target.half2_rows,
         source_iteration,
         ds_voxel=target.voxel_size,
-        ds_grid=target.grid_size,
+        ds_grid=target.box_size,
         include_normcorr=True,
         init_relion_iteration=init_relion_iteration,
         particle_names=target.particle_names,
@@ -229,7 +229,7 @@ def k1_initial_state(init_dir, target: ReplayTarget, *, explicit_noise, live_noi
         target.half2_rows,
         0,
         ds_voxel=target.voxel_size,
-        ds_grid=target.grid_size,
+        ds_grid=target.box_size,
         include_normcorr=True,
         init_relion_iteration=0,
         particle_names=target.particle_names,
@@ -269,7 +269,7 @@ def class3d_initial_translations(init_dir, target: ReplayTarget, *, n_classes: i
         target.half2_rows,
         0,
         ds_voxel=target.voxel_size,
-        ds_grid=target.grid_size,
+        ds_grid=target.box_size,
         include_normcorr=False,
         init_relion_iteration=0,
         particle_names=target.particle_names,

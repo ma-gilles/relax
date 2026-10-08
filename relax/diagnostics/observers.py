@@ -152,7 +152,7 @@ class BpRefAccumulatorObserver(RunObserver):
         write_bpref_accumulators(
             directory, stage=stage, iteration=iteration, current_size=current_size,
             padding_factor=settings.padding_factor if stage == "prejoin" else RECONSTRUCTION_PADDING_FACTOR,
-            grid_size=settings.box_size, voxel_size=pixel_size_angstrom, volume_shape=settings.volume_shape,
+            box_size=settings.box_size, voxel_size=pixel_size_angstrom, volume_shape=settings.volume_shape,
             accumulator_shape=accumulator_shape, Ft_y_0=numerators[0], Ft_y_1=numerators[1],
             Ft_ctf_0=denominators[0], Ft_ctf_1=denominators[1],
         )
@@ -187,7 +187,7 @@ class ClassDumpObserver(RunObserver):
     def class_image_size_planned(self, iteration, plan, *, previous_size, box_size, has_high_fsc_at_limit,
                                  incr_size, state):
         write_class_image_size(
-            plan, output_dir=self.directory, previous_size=previous_size, grid_size=box_size, iteration=iteration,
+            plan, output_dir=self.directory, previous_size=previous_size, box_size=box_size, iteration=iteration,
             has_high_fsc_at_limit=has_high_fsc_at_limit, incr_size=incr_size, state=state,
         )
 
@@ -212,7 +212,7 @@ class PremaskObserver(RunObserver):
     def map_solved(self, iteration, half_index, mean, *, settings, current_size, n_classes):
         write_premask_mean(
             mean, output_dir=self.directory, half_index=half_index, iteration=iteration, current_size=current_size,
-            grid_size=settings.box_size, voxel_size=settings.voxel_size, volume_shape=settings.volume_shape,
+            box_size=settings.box_size, voxel_size=settings.voxel_size, volume_shape=settings.volume_shape,
             n_classes=n_classes,
         )
 
