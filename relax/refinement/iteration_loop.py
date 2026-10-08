@@ -1496,7 +1496,17 @@ def refine_single_volume(
         # exact rotations selected in the previous iteration, not the nearest
         # snapped grid indices.
         adaptive_pass1_rotations = None
-        use_local = state.do_local_search and all(half.rotation_eulers is not None for half in halves)
+        if state.do_local_search:
+            # RELION reads absent angles and origins as 0 (exp_model.cpp:1103-1134) and searches locally around
+            # them (ml_optimiser.cpp:978-983); it never falls back to a global search. A half without poses is
+            # centred at Euler angles (0, 0, 0) with zero offsets.
+            for half in halves:
+                n_particles = int(half.dataset.n_units)
+                if half.rotation_eulers is None:
+                    half.rotation_eulers = np.zeros((n_particles, 3), dtype=np.float64)
+                if half.translations is None:
+                    half.translations = np.zeros((n_particles, 3 if tomo_halves else 2), dtype=np.float64)
+        use_local = state.do_local_search
         if use_local and k_class_enabled and options.local_search.sigma_ang_deg is None:
             # Class3D searches locally only with --sigma_ang: RELION switches from the HEALPix
             # order only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).

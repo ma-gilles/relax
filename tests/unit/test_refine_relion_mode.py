@@ -8455,7 +8455,9 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         ),
     )
 
-    assert reconstruct_flags == [False, False]
+    # Both halves search locally in both iterations: iteration 1's pose-less halves are centred at (0, 0, 0), as
+    # RELION reads absent angles (exp_model.cpp:1103-1134), instead of falling back to a global search.
+    assert reconstruct_flags == [False] * 4
 
 
 def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_when_available(
