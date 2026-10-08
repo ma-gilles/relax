@@ -44,30 +44,18 @@ def resolve_numbered_perturbation(
     options: RefinementOptions,
     *,
     iteration: int,
-    sealed_sampling_meta,
     rng,
     log: logging.Logger,
 ) -> float:
-    """The run's own sampling perturbation of this iteration: a sealed sampling state's, else the native advance.
+    """The run's own sampling perturbation of this iteration: the native advance of the run RNG.
 
-    Only the native advance moves the run RNG. A RELION run's perturbation is an input source's
+    A RELION run's or a sealed sampling state's perturbation is an input source's
     (``InputSource.random_perturbation``). Reads from ``options``: ``schedule.init_relion_iteration``;
     ``parity.perturb_factor`` and ``perturb_seed``. See
     ``docs/math/relion_refinement_algorithm.md#2-sampling-grids-and-units``.
     """
     parity = options.parity
     init_relion_iteration = options.schedule.init_relion_iteration
-    if sealed_sampling_meta is not None:
-        if not sealed_sampling_meta.get("sealed_v3", False):
-            raise RuntimeError("a sampling record from RELION's STAR files needs the replay input source")
-        perturbation = float(sealed_sampling_meta["random_perturbation"])
-        log.info(
-            "Perturbation replay: iter=%d rp=%+.12g pf=%.3f relion_hp_order=%d source=%s",
-            iteration + 1, perturbation,
-            float(sealed_sampling_meta["perturbation_factor"]),
-            int(sealed_sampling_meta["healpix_order"]), "sealed_frozen_boundary_v3",
-        )
-        return perturbation
     if not parity.perturb_factor > 0:
         return previous_perturbation
     relion_iteration = init_relion_iteration + iteration + 1
@@ -594,41 +582,36 @@ def iteration_trial_grid(
     options: RefinementOptions,
     random_perturbation: float,
     *,
-    replay_metadata,
+    perturbation_order: int | None,
     sealed_grid: bool,
     dtype,
 ) -> sampling.TrialGrid:
     """This iteration's trial grid: the coarse grid, under RELION's sampling perturbation where one applies.
 
-    A perturbation applies under replay (``replay_metadata``) or with a positive perturbation factor;
-    otherwise the coarse rotations and the grid's current translations are the trial grid, without exact
-    M-step rotations. The angular sampling that scales the perturbation is the grid's HEALPix order, or
-    the replayed order when ``replay_metadata`` supplies one. Reads from ``grids``: the rotation grid
-    (rotations, Euler rows, order), ``base_translations`` (the unperturbed host translations) and
-    ``translations``; ``state.translation_step``; from ``options``: ``parity.perturb_factor`` and
-    ``symmetry.point_group``. A sealed grid (``sealed_grid``) keeps its own Euler rows.
+    ``perturbation_order`` is the HEALPix order whose angular sampling scales the perturbation, or None when
+    none applies: then the coarse rotations and the grid's current translations are the trial grid, without
+    exact M-step rotations. Reads from ``grids``: the rotation grid (rotations, Euler rows),
+    ``base_translations`` (the unperturbed host translations) and ``translations``; ``state.translation_step``;
+    from ``options``: ``symmetry.point_group``. A sealed grid (``sealed_grid``) keeps its own Euler rows.
     """
     rotation_grid = grids.rotation_grid
     rotation_eulers = np.asarray(
         rotation_grid.rotation_eulers,
         dtype=dtype,
     )
-    if not (replay_metadata is not None or options.parity.perturb_factor > 0):
+    if perturbation_order is None:
         return sampling.TrialGrid(
             rotations=rotation_grid.rotations,
             rotation_eulers=rotation_eulers,
             mstep_rotations=None,
             translations=grids.translations,
         )
-    # Use RELION's actual hp_order when replaying (recovar's current
-    # grid order may be capped at MAX_FULL_GRID_ORDER=4 for memory).
-    _angsamp_order = int(replay_metadata["healpix_order"]) if replay_metadata is not None else rotation_grid.healpix_order
-    angsamp_deg = sampling.relion_angular_sampling_deg(_angsamp_order, adaptive_oversampling=0)
+    angsamp_deg = sampling.relion_angular_sampling_deg(perturbation_order, adaptive_oversampling=0)
     return sampling._perturbed_trial_grid(
         rotation_eulers=rotation_eulers,
         mstep_source_eulers=sampling._relion_mstep_source_eulers(
             rotation_eulers,
-            _angsamp_order,
+            perturbation_order,
             use_grid_eulers=sealed_grid,
             symmetry=options.symmetry.point_group,
         ),
@@ -645,27 +628,22 @@ def coarse_pass1_rotations(
     random_perturbation: float,
     options: RefinementOptions,
     *,
-    replay_metadata,
+    perturbation_order: int | None,
     dtype,
     log: logging.Logger,
 ):
     """RELION's device-built rotations for the pass-1 coarse scorer, or None where the host grid serves.
 
     The source is the unperturbed coarse Euler rows of ``rotation_grid``, in the scoring ``dtype`` and
-    then widened to float64. The perturbation applies only when the trial grid is perturbed: under
-    replay, or with a positive ``options.parity.perturb_factor``.
+    then widened to float64. The perturbation applies only when the trial grid is perturbed
+    (``perturbation_order``, the order whose angular step scales it; None: unperturbed, at the grid's order).
     """
     source_eulers = np.asarray(np.asarray(rotation_grid.rotation_eulers, dtype=dtype), dtype=np.float64)
-    perturb_factor = options.parity.perturb_factor
-    adaptive_pass1_order = (
-        int(replay_metadata["healpix_order"])
-        if replay_metadata is not None
-        else int(rotation_grid.healpix_order)
-    )
+    adaptive_pass1_order = perturbation_order if perturbation_order is not None else int(rotation_grid.healpix_order)
     adaptive_pass1_use_float64 = options.precision.use_float64_scoring
     adaptive_pass1_rotations = _relion_adaptive_pass1_rotations(
         source_eulers,
-        random_perturbation if (replay_metadata is not None or perturb_factor > 0) else 0.0,
+        random_perturbation if perturbation_order is not None else 0.0,
         sampling.relion_angular_sampling_deg(adaptive_pass1_order, adaptive_oversampling=0),
         use_float64=adaptive_pass1_use_float64,
     )

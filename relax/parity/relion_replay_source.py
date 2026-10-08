@@ -182,6 +182,8 @@ class RelionReplaySource(InputSource):
         self._cutoff_announced = False
         self._state_swap_snapshot = None
         self._bound_scoring_state = None
+        # The sampling record (a RELION STAR's or a sealed state's) the last numbered_state installed, or None.
+        self._sampling_meta = None
         # The STAR directory of the last iteration asked about: the one the final pass replays from.
         self._live_directory = replay.perturb_replay_relion_dir
         if replay.perturb_replay_restart_state_iterations:
@@ -505,11 +507,22 @@ class RelionReplaySource(InputSource):
                 logger=logger,
             )
 
-    def random_perturbation(self, iteration, sampling_meta, native):
-        """The perturbation of RELION's sampling STAR (exact from its seed where the precision allows), when the
-        STAR set this iteration's sampling; otherwise the run's own."""
-        if sampling_meta is None or sampling_meta.get("sealed_v3", False):
+    def random_perturbation(self, iteration, native):
+        """The perturbation of the sampling this iteration's ``numbered_state`` installed: a sealed sampling
+        state's as captured, RELION's sampling STAR's (exact from its seed where the precision allows); otherwise
+        the run's own. Only the run's own advances the run's RNG."""
+        sampling_meta = self._sampling_meta
+        if sampling_meta is None:
             return native()
+        if sampling_meta.get("sealed_v3", False):
+            perturbation = float(sampling_meta["random_perturbation"])
+            logger.info(
+                "Perturbation replay: iter=%d rp=%+.12g pf=%.3f relion_hp_order=%d source=%s",
+                iteration + 1, perturbation,
+                float(sampling_meta["perturbation_factor"]),
+                int(sampling_meta["healpix_order"]), "sealed_frozen_boundary_v3",
+            )
+            return perturbation
         parity = self.options.parity
         relion_iteration = self.options.schedule.init_relion_iteration + iteration + 1
         restart_iteration = _perturbation_restart_state_iteration(
@@ -536,19 +549,19 @@ class RelionReplaySource(InputSource):
     def numbered_state(self, iteration, inputs, *, state, halves, direction_priors, image_geometry):
         """RELION's sampling controls, priors, particle state, noise, tau2 and class weights for this iteration.
 
-        A sealed sampling state installs the sampling controls first (and the STAR replay's are not read).
+        A sealed sampling state installs the sampling controls first (and the STAR replay's are not read); the
+        sampling record installed is kept for this iteration's ``random_perturbation``.
         Updates ``state``'s sampling controls, the ``halves``' poses and corrections and the
         ``direction_priors`` list in place, as ``apply_iter_replay_overrides`` does.
         """
         options = self.options
         sealed = self.replay.sealed_sampling_state
+        sealed_meta = None
         if sealed is not None:
-            current_size, prior_translations, sampling_meta = _install_sealed_sampling(
+            current_size, prior_translations, sealed_meta = _install_sealed_sampling(
                 state, sealed, iteration=iteration, image_geometry=image_geometry, dtype=_dense_global_scoring_dtype(),
             )
-            inputs = inputs._replace(
-                current_size=current_size, prior_translations=prior_translations, sampling_meta=sampling_meta,
-            )
+            inputs = inputs._replace(current_size=current_size, prior_translations=prior_translations)
         slot = self._slot(iteration)
         result = apply_iter_replay_overrides(
             iter_replay_override=slot,
@@ -588,6 +601,7 @@ class RelionReplaySource(InputSource):
                 "Replay override: class priors <- direction-prior row sums (%s)",
                 ", ".join(f"class {idx + 1}={weight:.4f}" for idx, weight in enumerate(class_mixture.weights)),
             )
+        self._sampling_meta = sealed_meta if sealed is not None else result.replay_meta
         return NumberedState(
             current_size=result.cs,
             noise_model=result.noise_model,
@@ -596,7 +610,9 @@ class RelionReplaySource(InputSource):
             mean_variance=mean_variance,
             class_mixture=class_mixture,
             prior_translations=inputs.prior_translations if sealed is not None else result.prior_translations,
-            sampling_meta=inputs.sampling_meta if sealed is not None else result.replay_meta,
+            sampling_healpix_order=(
+                None if self._sampling_meta is None else int(self._sampling_meta["healpix_order"])
+            ),
         )
 
 

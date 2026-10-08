@@ -1368,13 +1368,12 @@ def refine_single_volume(
             NumberedState(
                 current_size=current_size, noise_model=noise_model, sigma_offset=sigma_offset,
                 previous_best_rotations=previous_best_rotations, mean_variance=reference_model.tau2,
-                class_mixture=class_mixture, prior_translations=None, sampling_meta=None,
+                class_mixture=class_mixture, prior_translations=None, sampling_healpix_order=None,
             ),
             state=state, halves=halves, direction_priors=direction_priors, image_geometry=image_geometry,
         )
         current_size = numbered.current_size
         _replay_prior_translations = numbered.prior_translations
-        _replay_meta = numbered.sampling_meta
         previous_best_rotations = numbered.previous_best_rotations
         noise_model = numbered.noise_model
         reference_model.tau2 = numbered.mean_variance
@@ -1515,14 +1514,21 @@ def refine_single_volume(
         # AFTER oversampling. At adaptive_oversampling=0 (os0 RELION runs),
         # the coarse grid IS the trial grid so we apply directly here.
         random_perturbation = source.random_perturbation(
-            iteration, _replay_meta,
+            iteration,
             native=partial(
-                resolve_numbered_perturbation, random_perturbation, options, iteration=iteration,
-                sealed_sampling_meta=_replay_meta, rng=perturb_rng, log=logger,
+                resolve_numbered_perturbation, random_perturbation, options, iteration=iteration, rng=perturb_rng,
+                log=logger,
             ),
         )
+        # The HEALPix order whose angular step scales the perturbation: a replayed sampling's (RELION's grid
+        # order; the run's may be capped at the exhaustive-grid order), else the grid's; None: none applies.
+        perturbation_order = (
+            numbered.sampling_healpix_order
+            if numbered.sampling_healpix_order is not None
+            else coarse_grids.rotation_grid.healpix_order if options.parity.perturb_factor > 0 else None
+        )
         trial_grid = iteration_trial_grid(
-            coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta,
+            coarse_grids, state, options, random_perturbation, perturbation_order=perturbation_order,
             sealed_grid=source.sealed_sampling_state is not None, dtype=scoring_dtype,
         )
         coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
@@ -1540,7 +1546,7 @@ def refine_single_volume(
         ):
             adaptive_pass1_rotations = coarse_pass1_rotations(
                 coarse_grids.rotation_grid, random_perturbation, options,
-                replay_metadata=_replay_meta, dtype=scoring_dtype, log=logger,
+                perturbation_order=perturbation_order, dtype=scoring_dtype, log=logger,
             )
         # First-iteration CC scores the full translation grid before choosing
         # its single winning pose (ml_optimiser.cpp:9181-9207).

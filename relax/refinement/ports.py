@@ -134,8 +134,10 @@ class NumberedState(NamedTuple):
     """The inputs of a numbered iteration a source may replace, as the run holds them before its expectation.
 
     ``sigma_offset`` is the run's ``SigmaOffset``; ``mean_variance`` the reference model's tau2;
-    ``class_mixture`` its ``ClassMixture``; ``prior_translations`` and ``sampling_meta`` the translation
-    prior and sampling record a sealed sampling state installed (None otherwise).
+    ``class_mixture`` its ``ClassMixture``; ``prior_translations`` the translation grid a replayed sampling
+    centres the local translation prior on, and ``sampling_healpix_order`` the HEALPix order of the sampling a
+    RELION STAR file or sealed sampling state set this iteration: its angular step scales the perturbation,
+    which then always applies (None natively: the run's own grid and ``parity.perturb_factor`` decide).
     """
 
     current_size: int
@@ -145,7 +147,7 @@ class NumberedState(NamedTuple):
     mean_variance: Any
     class_mixture: Any
     prior_translations: Any
-    sampling_meta: Any
+    sampling_healpix_order: int | None
 
 
 class ClassTau2(NamedTuple):
@@ -237,8 +239,9 @@ class InputSource:
         the run samples natively). ``iteration`` -1 asks before the first iteration."""
         return None
 
-    def random_perturbation(self, iteration: int, sampling_meta, native) -> float:
-        """This iteration's sampling perturbation; ``native()`` computes the run's own (and advances its RNG)."""
+    def random_perturbation(self, iteration: int, native) -> float:
+        """This iteration's sampling perturbation, after its ``numbered_state``; ``native()`` computes the run's own
+        (and advances its RNG)."""
         return native()
 
     def final_state(

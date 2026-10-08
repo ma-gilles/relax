@@ -102,8 +102,7 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
             relion_iteration=11 + iteration, rng=reference_rng,
         )
         current = iteration_planning.resolve_numbered_perturbation(
-            current, _options(parity, 10), iteration=iteration,
-            sealed_sampling_meta=None, rng=rng, log=LOG,
+            current, _options(parity, 10), iteration=iteration, rng=rng, log=LOG,
         )
         assert_matches(current, expected)
     assert_matches(rng.random(), reference_rng.random())
@@ -111,8 +110,8 @@ def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
 
 @pytest.mark.parametrize("sealed", [False, True])
 def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
-    """A sealed sampling state's perturbation (the run's own resolution) and a RELION STAR's (the replay
-    source's) are read, not drawn: the native RNG does not move."""
+    """A sealed sampling state's perturbation and a RELION STAR's, the sampling record the replay source's
+    numbered_state installed, are read, not drawn: the native RNG does not move."""
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 
     rng = np.random.default_rng(23)
@@ -121,24 +120,13 @@ def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
     meta = {"sealed_v3": sealed, "random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3}
 
     def native():
-        return iteration_planning.resolve_numbered_perturbation(
-            0.125, options, iteration=0, sealed_sampling_meta=meta, rng=rng, log=LOG,
-        )
+        return iteration_planning.resolve_numbered_perturbation(0.125, options, iteration=0, rng=rng, log=LOG)
 
-    result = RelionReplaySource(RelionReplay(perturb_replay_relion_dir=str(tmp_path)), options).random_perturbation(
-        0, meta, native,
-    )
+    source = RelionReplaySource(RelionReplay(perturb_replay_relion_dir=str(tmp_path)), options)
+    source._sampling_meta = meta  # as numbered_state installs it
+    result = source.random_perturbation(0, native)
     assert_matches(result, 0.25)
     assert_matches(rng.random(), reference_rng.random())
-
-
-def test_a_star_sampling_record_refuses_the_native_resolution():
-    with pytest.raises(RuntimeError, match="replay input source"):
-        iteration_planning.resolve_numbered_perturbation(
-            0.125, _options(RelionParityOptions(perturb_factor=0.5), 10), iteration=0,
-            sealed_sampling_meta={"random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3},
-            rng=None, log=LOG,
-        )
 
 
 def test_replay_restart_uses_physical_iteration(tmp_path):
@@ -150,19 +138,16 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
         perturb_replay_precision="seed_exact", perturb_replay_restart_state_iterations=(11,),
         perturb_replay_relion_dir=str(tmp_path),
     )
-    result = RelionReplaySource(replay, options).random_perturbation(
-        0, {"random_perturbation": -0.06873, "perturbation_factor": 0.5, "healpix_order": 3},
-        native=lambda: pytest.fail("native perturbation"),
-    )
+    source = RelionReplaySource(replay, options)
+    source._sampling_meta = {"random_perturbation": -0.06873, "perturbation_factor": 0.5, "healpix_order": 3}
+    result = source.random_perturbation(0, native=lambda: pytest.fail("native perturbation"))
     assert_matches(result, -0.06873074173927307)
 
 
 def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
     monkeypatch.setattr(sampling, "_advance_relion_perturbation", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = iteration_planning.resolve_numbered_perturbation(
-        0.25, _options(RelionParityOptions(perturb_factor=0.0), 10), iteration=2,
-        sealed_sampling_meta=None,
-        rng=None, log=LOG,
+        0.25, _options(RelionParityOptions(perturb_factor=0.0), 10), iteration=2, rng=None, log=LOG,
     )
     assert_matches(result, 0.25)
 
