@@ -289,6 +289,13 @@ SETS["symmetry_k1_c4_relion_f2c1a3"] = (
     ["PROVENANCE.json"],
 )
 
+SETS["align_symmetry_relion_c4"] = (
+    f"{FX}/align_symmetry_relion_20261008", RUN, [],
+    "relion_align_symmetry --sym C4 --apply_sym --select_largest_class oracle: two relax InitialModel C1 outputs "
+    "(robustness cell 14 cases C and D) and five time-seeded RELION 5.0.1 reruns on each, with their logged angles",
+    ["PROVENANCE.json"],
+)
+
 # Oracles written by a RELION build with the libc particle order (optimiser header
 # "version 5.0.1" without a commit: the MOLBIO module build or the d476e6f dispatch build).
 # relax implements only RELION 5.0.1 f2c1a3's mt19937 order (docs/development/relion_defaults.md).

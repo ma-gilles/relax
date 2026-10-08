@@ -344,6 +344,11 @@ budget 1,385), E-step 1,884 -> 1,923 and sampling 991 -> 1,008 (within their bud
 [`vdam/shape_class_estep.py`](../../relax/vdam/shape_class_estep.py), the per-shape-class orchestration
 of the adaptive E-step, so the E-step budget does not grow.
 
+RELION's InitialModel GUI final step `relion_align_symmetry --apply_sym --select_largest_class` (October 8,
+2026; before it relax ignored a non-C1 `--sym`) gets its own `symmetry_alignment` budget of 321 lines for
+[`vdam/align_symmetry.py`](../../relax/vdam/align_symmetry.py); the controller (+24: the C1-mode warning and
+the alignment report) and input/output (+16: the aligned `initial_model.mrc`) stay within their slack.
+
 The September 28 architectural review charges the new functionality explicitly.
 Relative to `e2401c4c`, the controller adds 24 lines in the driver for SGD noise
 initialization and wiring, 89 in the loop for optimizer selection, fixed

@@ -9,9 +9,11 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
+from recovar.utils.helpers import recovar_volume_to_relion
 
 from relax.helpers.map_io import write_map
 from relax.relion.initial_model_io import _write_data_star, _write_model_star
+from relax.vdam.align_symmetry import align_symmetry, select_largest_class
 from relax.vdam.state import InitialModelState, NativeParticleState
 
 
@@ -144,7 +146,15 @@ def _json_ready(value):
     return value
 
 
-def _write_final_outputs(output_prefix: str, state: InitialModelState) -> tuple[str, tuple[str, ...]]:
+def _write_final_outputs(
+    output_prefix: str, state: InitialModelState, *, sym_name: str, seed: int
+) -> tuple[str, tuple[str, ...], dict]:
+    """Write the last iteration's class maps and ``initial_model.mrc``.
+
+    ``initial_model.mrc`` is what RELION's InitialModel GUI job writes after relion_refine:
+    ``relion_align_symmetry --select_largest_class --apply_sym --sym S`` (:mod:`relax.vdam.align_symmetry`), so for
+    a non-C1 ``sym_name`` the largest class is aligned to the symmetry axes and symmetrised.
+    """
     iteration = int(state.iter)
     class_mrcs = _class_mrc_paths(output_prefix, iteration, int(state.K))
     out_dir = Path(output_prefix).parent
@@ -153,6 +163,10 @@ def _write_final_outputs(output_prefix: str, state: InitialModelState) -> tuple[
         if not os.path.exists(class_mrc):
             write_map(class_mrc, state.Iref[k], voxel_size=float(state.pixel_size))
     final_mrc = _initial_model_mrc_from_prefix(output_prefix)
-    best_class = int(np.argmax(np.asarray(state.pdf_class)))
-    write_map(final_mrc, state.Iref[best_class], voxel_size=float(state.pixel_size))
-    return final_mrc, class_mrcs
+    best_class = select_largest_class(state.pdf_class)
+    # The alignment reads the map as written (RELION's frame); the frame change is its own inverse.
+    relion_map = recovar_volume_to_relion(np.asarray(state.Iref[best_class]).real)
+    aligned, report = align_symmetry(relion_map, sym_name, seed=seed)
+    write_map(final_mrc, recovar_volume_to_relion(aligned).astype(np.float32), voxel_size=float(state.pixel_size))
+    report["class"] = best_class + 1
+    return final_mrc, class_mrcs, report

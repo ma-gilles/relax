@@ -335,6 +335,10 @@ LOC_BUDGETS = {
     # adaptive E-step (class translation grids, pre-shifts and offset prior in class pixels, merge), its own
     # module so the E-step budget grows only by the call; exact size reviewed at landing (team-lead).
     "shape_class_estep": (152, ("shape_class_estep.py",)),
+    # RELION's InitialModel GUI final step relion_align_symmetry --apply_sym --select_largest_class
+    # (apps/align_symmetry.cpp, 365 C++ lines) ported for a non-C1 --sym (2026-10-08, etvdam): before it relax
+    # ignored --sym. Its own module; exact size reviewed at landing.
+    "symmetry_alignment": (321, ("align_symmetry.py",)),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
     "sgd_optimizer_noise": (309, (

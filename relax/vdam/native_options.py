@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from relax.helpers.particle_io import DEFAULT_KEEP_FREE_SCRATCH_GB
+from relax.symmetry import is_identity_symmetry
 from relax.vdam.schedules import (
     DEFAULT_GRAD_EM_ITERS,
     DEFAULT_GRAD_FIN_FRAC,
@@ -208,3 +209,18 @@ class NativeInitialModelOptions(InitialModelDefaults):
                 "native InitialModel direct refinement currently supports C1 only; "
                 "use the GUI-default do_run_C1 mode until symmetry-restricted sampling is implemented"
             )
+
+    def symmetry_mode_warning(self) -> str | None:
+        """The notice for a non-C1 ``--sym`` refined in C1, or None.
+
+        RELION's InitialModel GUI job refines in C1 and then runs ``relion_align_symmetry --apply_sym
+        --select_largest_class`` (pipeline_jobs.cpp:3572-3587); relax does the same
+        (:mod:`relax.vdam.align_symmetry`), so the requested group reaches only ``initial_model.mrc``.
+        """
+        if not self.do_run_C1 or is_identity_symmetry(self.sym_name):
+            return None
+        return (
+            f"WARNING: --sym {self.sym_name} with --run-in-c1: C1 refinement, then RELION-style symmetry alignment and "
+            f"symmetrization of the final map (initial_model.mrc, as relion_align_symmetry --sym {self.sym_name} "
+            "--apply_sym --select_largest_class); the class maps stay C1, and direct symmetric VDAM is not implemented"
+        )

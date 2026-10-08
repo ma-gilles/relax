@@ -74,7 +74,7 @@ command, which fixes the sampling line (`pipeline_jobs.cpp:3544-3549`).
 | `--nr-iter` | 200 | 200 | 3376 | 200 with `--grad` (`ml_optimiser.cpp:1981-1985`) | no |
 | `--tau2-fudge` | 4 | 4 | 3377, 3549 | 4 | no |
 | `--K` | 1 | 1 | 3382, 3519 | 1 | no |
-| `--sym` / `--run-in-c1` | C1 / on | C1 / on | 3384-3385, 3520-3527 | c1 | no |
+| `--sym` / `--run-in-c1` | C1 / on | C1 / on | 3384-3385, 3520-3527 | c1 | no; the final step `relion_align_symmetry --sym S --apply_sym --select_largest_class` (3572-3587) writes `initial_model.mrc` (`relax/vdam/align_symmetry.py`; before 2026-10-08 relax ignored a non-C1 `--sym` and wrote the largest class as refined) |
 | `--particle-diameter` | 200 | 200 | 3386 | -1 | no |
 | `--solvent` / `--zero-mask` / `--ctf` | on / on / on | on / on / on | 3390, 3530-3531, 3395 | off | no |
 | `--healpix-order` / `--oversampling` | 1 / 1 | 1 / 1 | 3548 | 2 / 1 | no |

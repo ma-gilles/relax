@@ -8,6 +8,7 @@ artifact writing are coordinated here through their implementation owners.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import time
@@ -443,6 +444,9 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     ).strip():
         raise ValueError("float32 M-step is incompatible with iteration reference replay")
     opts.validate_run()
+    symmetry_warning = opts.symmetry_mode_warning()
+    if symmetry_warning is not None:
+        logger.warning(symmetry_warning)
     profile.record("validation")
 
     main_star, optics_star = read_star(opts.fn_img)
@@ -732,7 +736,11 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     profile.record("iterations")
     if opts.pilot_controls is not None:
         opts.pilot_controls.check_completed(final_state.iter, opts.nr_iter)
-    final_mrc, class_mrcs = _write_final_outputs(opts.outputname, final_state)
+    final_mrc, class_mrcs, align_report = _write_final_outputs(
+        opts.outputname, final_state, sym_name=opts.sym_name, seed=int(opts.random_seed)
+    )
+    if "refined_rot_tilt_psi" in align_report:
+        print("InitialModel symmetry alignment: " + json.dumps(align_report, sort_keys=True), flush=True)
     final_model_star = f"{opts.outputname}_it{final_state.iter:03d}_model.star"
     if not os.path.exists(final_model_star):
         _write_model_star(final_model_star, final_state, class_mrcs)

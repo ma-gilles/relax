@@ -236,6 +236,39 @@ _rlnBestResolutionThusFar 0.125
     return optimiser, data, {"reference": reference, **moment_values}
 
 
+@pytest.mark.parametrize(
+    ("sym_name", "warns"),
+    [("C4", True), ("i1", True), ("C1", False), ("c1", False)],
+)
+def test_symmetry_mode_warning_names_the_c1_mode(sym_name, warns):
+    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", sym_name=sym_name)
+
+    warning = opts.symmetry_mode_warning()
+
+    if warns:
+        assert warning.startswith("WARNING: ")
+        assert f"--sym {sym_name} with --run-in-c1" in warning
+        assert "C1 refinement, then RELION-style symmetry alignment and symmetrization of the final map" in warning
+    else:
+        assert warning is None
+
+
+def test_run_logs_the_symmetry_mode_warning_before_reading_particles(monkeypatch, caplog):
+    class StopAfterValidation(Exception):
+        pass
+
+    def stop(_path):
+        raise StopAfterValidation
+
+    monkeypatch.setattr(driver, "read_star", stop)
+    opts = native_options.NativeInitialModelOptions(fn_img="particles.star", sym_name="C4")
+
+    with caplog.at_level("WARNING", logger=driver.logger.name), pytest.raises(StopAfterValidation):
+        driver.run_native_initial_model(opts)
+
+    assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == [opts.symmetry_mode_warning()]
+
+
 def test_native_vdam_diagnostic_continuation_loads_complete_gradient_state(tmp_path):
     optimiser, data, expected = _write_native_vdam_checkpoint(tmp_path)
     opts = native_options.NativeInitialModelOptions(

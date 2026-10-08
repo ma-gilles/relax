@@ -222,7 +222,10 @@ def make_parser() -> argparse.ArgumentParser:
         "--run-in-c1",
         action=argparse.BooleanOptionalAction,
         default=DEFAULTS.do_run_C1,
-        help="Refine in C1 and apply the requested symmetry only to the final output",
+        help=(
+            "Refine in C1 and apply --sym only to initial_model.mrc, aligned and symmetrised as RELION's "
+            "InitialModel GUI job does with relion_align_symmetry"
+        ),
     )
     parser.add_argument(
         "--particle-diameter",
