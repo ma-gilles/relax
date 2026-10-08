@@ -34,8 +34,8 @@ compared. So is one present only in A whose value there was ``None``, ``False`` 
 (recorded with a ``=default`` mark; an option field that was off in the case and is retired, its behaviour now
 chosen through a port: code rule 15), and the length of the
 container that holds only such added or retired members. So is an input moved to another option group with its
-value (``MOVED_INPUTS`` names each move). A removed input that was on, or a changed one, is an output
-difference. Any other difference exits 1.
+value (``MOVED_INPUTS`` names each move), and a leaf of any section whose record field was renamed with its value
+(``RENAMED_FIELDS``). A removed input that was on, or a changed one, is an output difference. Any other difference exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -95,6 +95,13 @@ CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 MOVED_INPUTS = (
     # The expected-accuracy inputs steer sampling: an algorithm group, not debug (code rule 9; main after a4396d82).
     ("/debug<EngineDebugOptions>/expected_accuracy<", "/expected_accuracy<"),
+)
+# Record fields renamed, as (old path piece, new path piece) of a leaf in any section (results, files, checkpoints,
+# controller inputs): a leaf only in A whose renamed path is a leaf only in B with the same value is counted with
+# the moved inputs and accepted. A renamed field whose value changed stays an output difference.
+RENAMED_FIELDS = (
+    # Item D (box_size is the one name of the image box): IterationSnapshot.ori_size -> box_size.
+    ("<IterationSnapshot>/ori_size", "<IterationSnapshot>/box_size"),
 )
 TMP_TOKEN = "<TMP>"
 
@@ -275,8 +282,8 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
             moved_pairs = {
                 key: key.replace(old, new)
                 for key in changed
-                if key not in flat_b and CONTROLLER_INPUT.match(key)
-                for old, new in MOVED_INPUTS
+                if key not in flat_b
+                for old, new in (*(MOVED_INPUTS if CONTROLLER_INPUT.match(key) else ()), *RENAMED_FIELDS)
                 if old in key and key.replace(old, new) not in flat_a
                 and flat_b.get(key.replace(old, new)) == flat_a[key]
             }
@@ -346,7 +353,10 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
     if counts["retired"] and not counts["outputs"] and not counts["trace"]:
         lines.append(f"controller inputs retired ({counts['retired']}); accepted: option fields removed at their off value")
     if counts["moved"] and not counts["outputs"] and not counts["trace"]:
-        lines.append(f"controller inputs moved ({counts['moved']}); accepted: option fields moved (MOVED_INPUTS)")
+        lines.append(
+            f"controller inputs moved ({counts['moved']}); accepted: option fields moved or record fields renamed "
+            "(MOVED_INPUTS, RENAMED_FIELDS)"
+        )
     return counts, lines
 
 

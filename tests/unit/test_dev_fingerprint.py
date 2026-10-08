@@ -181,11 +181,25 @@ def test_a_controller_input_moved_to_another_group_with_its_value_is_listed_and_
     assert counts == {"outputs": 0, "added": 0, "retired": 0, "moved": 1, "trace": 0, "log": 0}
     assert fingerprint.accepted(counts)
     assert f"MOVED k1 result {moved_a} -> {moved_b}" in lines
-    assert lines[-1] == "controller inputs moved (1); accepted: option fields moved (MOVED_INPUTS)"
+    assert lines[-1] == (
+        "controller inputs moved (1); accepted: option fields moved or record fields renamed (MOVED_INPUTS, RENAMED_FIELDS)"
+    )
     # A moved input whose value changed is an output difference.
     b = _fingerprint(k1=_case({moved_b: "numpy int64 (6,) sha256:bb", "/mean": "aa"}))
     counts, _ = fingerprint.diff_fingerprints(a, b)
     assert counts["moved"] == 0 and counts["outputs"] == 1 and not fingerprint.accepted(counts)
+
+
+def test_a_renamed_record_field_with_its_value_is_accepted_in_any_section():
+    old, new = fingerprint.RENAMED_FIELDS[0]
+    a_key, b_key = f"[0]/{old}", f"[0]/{new}"
+    a = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={a_key: "'8'"}))
+    b = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={b_key: "'8'"}))
+    counts, _ = fingerprint.diff_fingerprints(a, b)
+    assert counts["moved"] == 1 and counts["outputs"] == 0 and fingerprint.accepted(counts)
+    b = _fingerprint(k1=dict(_case({"/mean": "aa"}), checkpoints={b_key: "'9'"}))
+    counts, _ = fingerprint.diff_fingerprints(a, b)
+    assert counts["moved"] == 0 and counts["outputs"] == 2 and not fingerprint.accepted(counts)
 
 
 def test_a_dataclass_field_at_its_declared_default_is_marked_and_may_be_retired():
