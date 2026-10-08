@@ -2101,7 +2101,6 @@ def test_score_half_local_parent_layout_ignores_global_rotation_prior_for_adapti
             local_search_translation_prior_mode="coarse",
             replay_prior_translations=None,
             collect_local_search_profile=False,
-            safe_batch_sizes=lambda *args, **kwargs: (1, 1),
             local_profile_history=[],
         ))
 
@@ -2168,7 +2167,6 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
             local_search_translation_prior_mode="current",
             replay_prior_translations=None,
             collect_local_search_profile=False,
-            safe_batch_sizes=lambda *args, **kwargs: (1, 16),
             local_profile_history=[],
         ))
 
@@ -3835,7 +3833,6 @@ def test_local_adaptive_parent_support_probe_is_score_only(monkeypatch, rng):
             local_search_translation_prior_mode="coarse",
             replay_prior_translations=None,
             collect_local_search_profile=False,
-            safe_batch_sizes=lambda *args, **kwargs: (1, 1),
             local_profile_history=[],
         ))
 

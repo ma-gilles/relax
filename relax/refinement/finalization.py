@@ -299,7 +299,6 @@ def run_final_all_data(
             final_local_adaptive_denominator_mode = None
         final_local_batching = LocalBatchPolicy(
             max_significants=options.adaptive.max_significants,
-            safe_batch_sizes=batch_planner,
         )
         final_local_execution = LocalExecutionPolicy(
             disc_type=options.disc_type,

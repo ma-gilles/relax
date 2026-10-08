@@ -765,7 +765,6 @@ def score_numbered_half(
             ),
             batching=LocalBatchPolicy(
                 max_significants=options.adaptive.max_significants,
-                safe_batch_sizes=half_batching.safe_batch_sizes,
             ),
             execution=LocalExecutionPolicy(
                 disc_type=options.disc_type,

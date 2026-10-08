@@ -212,7 +212,7 @@ def _local_one_shape(monkeypatch, *, parent_probe):
         iteration=3, local_search_random_perturbation=0.0,
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=1,
         diagnostic_score_only=False, local_search_translation_prior_mode="coarse", replay_prior_translations=None,
-        collect_local_search_profile=False, safe_batch_sizes=lambda *args, **kwargs: (1, 1),
+        collect_local_search_profile=False,
         local_profile_history=[],
     )
     with pytest.raises(_Stop):

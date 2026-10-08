@@ -980,7 +980,6 @@ def test_non_c1_exact_local_refinement_without_x_half_fails_before_scoring(monke
         replay_prior_translations=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
-        safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
         local_profile_history=[],
         symmetry="C4",
     )

@@ -177,7 +177,6 @@ def local_half_owners(**values):
         ),
         half_scoring.LocalBatchPolicy(
             max_significants=values.pop("max_significants"),
-            safe_batch_sizes=values.pop("safe_batch_sizes"),
         ),
         half_scoring.LocalExecutionPolicy(
             disc_type=values.pop("disc_type"),

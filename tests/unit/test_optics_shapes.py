@@ -410,7 +410,6 @@ def test_local_owner_shape_derivation_preserves_multi_shape_merge(monkeypatch):
         local_search_translation_prior_mode="current",
         replay_prior_translations=None,
         max_significants=-1,
-        safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
         disable_adjoint_y=False,
         disable_adjoint_ctf=False,
         iteration=0,

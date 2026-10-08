@@ -319,7 +319,6 @@ def test_k1_local_search_passes_relion_x_half_mstep(monkeypatch):
         replay_prior_translations=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
-        safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         local_profile_history=[],
     ))
 
@@ -441,7 +440,6 @@ def test_k1_local_search_records_parent_counts_without_changing_fine_mstep(
         replay_prior_translations=None,
         collect_local_search_profile=False,
         diagnostic_score_only=False,
-        safe_batch_sizes=lambda *_args, **_kwargs: (2, 3),
         local_profile_history=[],
         adaptive_pass2_denominator_mode=denominator_mode,
     ))

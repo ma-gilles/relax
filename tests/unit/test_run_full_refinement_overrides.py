@@ -976,7 +976,7 @@ def test_stop_after_local_search_score_only_is_diagnostic_score_only_path(monkey
         local_search_angular_sampling_deg=relion_angular_sampling_deg(1), local_parent_oversampling_order=0,
         diagnostic_score_only=score_only, local_search_translation_prior_mode="coarse",
         replay_prior_translations=None, collect_local_search_profile=False,
-        safe_batch_sizes=lambda *args, **kwargs: (1, 1), local_profile_history=[],
+        local_profile_history=[],
     )
     with pytest.raises(Scored):
         half_scoring._score_half_local(*owners)

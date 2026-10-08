@@ -1230,10 +1230,9 @@ class LocalPriorSpec:
 
 @dataclass(frozen=True, kw_only=True)
 class LocalBatchPolicy:
-    """Exact-local support and batch planning controls."""
+    """Exact-local posterior support control."""
 
     max_significants: int | None
-    safe_batch_sizes: object
 
 
 @dataclass(frozen=True, kw_only=True)
