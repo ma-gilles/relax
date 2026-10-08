@@ -363,7 +363,6 @@ def _select_single_class_accumulator(value, *, label: str):
 
 def _collapse_single_class_stats_to_coarse(stats, *, rot_parent_map, n_rot_coarse: int, dtype=np.float32):
     rot_post = np.asarray(stats.rotation_posterior_sums, dtype=np.float64)
-    n_rot_coarse = int(n_rot_coarse)
     if rot_post.shape == (n_rot_coarse,):
         return stats
     if rot_parent_map is None:

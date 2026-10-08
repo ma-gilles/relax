@@ -312,7 +312,6 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights, _sparse_pass2_window_setup
 
     dataset = state.dataset
-    image_shape = tuple(dataset.image_shape)
     n_images = int(dataset.n_units)
     k = len(state.class_volumes)
     class_batch_scores, cache_scores = _experimental_class_batch_flags()
@@ -339,7 +338,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
             raise ValueError("reconstruction group IDs must be one valid 0-based ID per image")
 
     window = _sparse_pass2_window_setup(
-        dataset, disc_type=state.disc_type, image_shape=image_shape,
+        dataset, disc_type=state.disc_type, image_shape=dataset.image_shape,
         current_size=state.current_size, n_half=state.n_half,
         mstep_current_size=state.mstep_current_size,
         square_window=state.square_window,
@@ -352,32 +351,32 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     recon_indices = window.recon_window_indices
     n_score, n_recon = int(window.n_windowed), int(window.n_recon_windowed)
     _, half_weights_score = _pass2_half_weights(
-        image_shape, window.window_spec, half_spectrum_scoring=True,
+        dataset.image_shape, window.window_spec, half_spectrum_scoring=True,
         relion_firstiter_score_mode=state.relion_firstiter_score_mode, use_float64_scoring=False,
     )
-    noise_half = noise_utils.to_batched_half_pixel_noise(state.noise_variance_half, image_shape).squeeze()
+    noise_half = noise_utils.to_batched_half_pixel_noise(state.noise_variance_half, dataset.image_shape).squeeze()
     n_optics = 1 if noise_half.ndim == 1 else int(noise_half.shape[0])
     optics = None if state.optics_group_ids is None else np.asarray(state.optics_group_ids, np.int32)
     if n_optics > 1 and (optics is None or optics.shape != (n_images,) or np.any(optics < 0) or np.any(optics >= n_optics)):
         raise ValueError("optics-group IDs must match the per-group noise table")
     angles = _relion_cuda_score_translation_angles_if_available(
-        state.fine_translations_source, image_shape, enabled=True, dtype=np.float32,
+        state.fine_translations_source, dataset.image_shape, enabled=True, dtype=np.float32,
         angle_scale=state.relion_translation_angle_scale,
     )
     if angles is None:
         raise NotImplementedError("dense GEMM needs canonical RELION translation angles")
     rect = _make_relion_wavg_rectangle(
-        image_shape, state.current_size, recon_indices,
+        dataset.image_shape, state.current_size, recon_indices,
         reconstruction_current_size=state.mstep_current_size,
     )
     n_rect = int(rect.centered_indices.size)
     shell_half = mask_relion_noise_shell_indices_to_current_window(
-        make_relion_noise_shell_indices_half(image_shape), image_shape,
+        make_relion_noise_shell_indices_half(dataset.image_shape), dataset.image_shape,
         state.current_size, score_indices,
     )
     shell_noise = window.window_spec.recon_values(shell_half)
     noise_recon = window.window_spec.recon_values(noise_half)
-    n_shells = image_shape[0] // 2 + 1
+    n_shells = dataset.image_shape[0] // 2 + 1
     scale_group_ids, n_scale_groups = prepare_scale_correction_groups(
         state.group_ids, state.scale_correction_group_count, n_images=n_images,
     )
@@ -422,8 +421,8 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         n_groups=n_groups, bp_size=bp_size,
         class_batch_scores=class_batch_scores, cache_scores=cache_scores,
     )
-    score_phase = native_phase_table(angles, score_indices, image_shape)
-    rec_phase = native_phase_table(angles, recon_indices, image_shape)
+    score_phase = native_phase_table(angles, score_indices, dataset.image_shape)
+    rec_phase = native_phase_table(angles, recon_indices, dataset.image_shape)
     grid = pad_grid(
         state.fine_rotations, state.fine_mstep_rotations, score_phase, rec_phase,
         rotation_tile=q, translation_tile=u,
@@ -440,14 +439,14 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         )
     source_refs = jnp.stack([jnp.asarray(v, jnp.complex64) for v in state.class_projector_halves])
     native_score_project, backproject = native_relion_callbacks(
-        image_shape=image_shape, score_indices=score_indices,
+        image_shape=dataset.image_shape, score_indices=score_indices,
         rec_indices=window.relion_x_half_recon_indices,
         r_max=state.projector_r_max, projector_output_size=state.current_size,
         volume_shape=bp_shape, padding_factor=state.projection_padding_factor,
         backprojection_r_max=bp_radius,
     )
     project_rec, _ = native_relion_callbacks(
-        image_shape=image_shape, score_indices=recon_indices,
+        image_shape=dataset.image_shape, score_indices=recon_indices,
         rec_indices=window.relion_x_half_recon_indices,
         r_max=state.projector_r_max,
         projector_output_size=max(state.current_size, state.mstep_current_size),
@@ -456,10 +455,10 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     )
     def project(reference, rotations):
         score = native_score_project(reference, rotations)
-        return (_relion_native_fine_units_in_place(score, int(np.prod(image_shape)))
+        return (_relion_native_fine_units_in_place(score, int(np.prod(dataset.image_shape)))
                 if state.relion_native_fine_units else score)
     stat_plan = DenseGemmStatisticsPlan(
-        image_shape=image_shape, image_capacity=b, rotation_tile=q, translation_tile=u,
+        image_shape=dataset.image_shape, image_capacity=b, rotation_tile=q, translation_tile=u,
         rows_per_statistics_block=qs, n_recon_pixels=n_recon, n_rect_pixels=n_rect,
         n_shells=n_shells, n_classes=k, n_coarse_rot=state.n_coarse_rot,
         n_fine_rotations=len(state.fine_rotations),
@@ -505,7 +504,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
             window_indices=score_indices, recon_window_indices=recon_indices,
             wavg_rect_indices=rect.centered_indices,
             noise_shell_indices_half=shell_half, n_noise_shells=n_shells,
-            image_shape=image_shape, current_size=state.current_size,
+            image_shape=dataset.image_shape, current_size=state.current_size,
             n_fine_trans=len(state.fine_translations),
             use_exact_relion_gaussian=state.use_exact_relion_gaussian,
             accumulate_noise=state.accumulate_noise,
