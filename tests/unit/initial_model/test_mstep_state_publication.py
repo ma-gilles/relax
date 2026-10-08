@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.vdam import m_step, mstep_single_class
+from relax.vdam import m_step
 from relax.vdam.state import InitialModelState, half_slot_index
 
 pytestmark = pytest.mark.unit
@@ -51,7 +51,7 @@ def _call(state, k, transaction, monkeypatch):
 
     monkeypatch.setattr(relion_vdam_mstep, "relion_vdam_m_step_host", lambda *args, **options: transaction(*args))
     accum = m_step.VdamAccumulator(np.zeros((4, 4, 3), dtype=np.complex128), np.ones((4, 4, 3)), k, 0)
-    return mstep_single_class._run_m_step_transaction(
+    return m_step._run_m_step_transaction(
         state,
         k,
         accum,

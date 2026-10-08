@@ -3,7 +3,7 @@
 Each step of RELION's gradient M-step (``reweightGrad``, ``getFristMoment``,
 ``getSecondMoment``, ``applyMomenta``, ``updateSSNRarrays``, ``reconstructGrad``)
 is RELION's code through ``relax.relion_bind``. Production never takes this path;
-it runs the transaction (:func:`relax.vdam.mstep_single_class.vdam_m_step_single_class`).
+it runs the transaction (:func:`relax.vdam.m_step.vdam_m_step_single_class`).
 
 ``python -m relax.diagnostics.vdam_native_mstep <relax initial_model arguments>``
 runs an InitialModel whose M-step is this oracle, with the parity hooks
@@ -265,7 +265,7 @@ def vdam_m_step_single_class_native(
 ) -> InitialModelState:
     """Drop-in for ``vdam_m_step_single_class`` running RELION's primitives (float64 only)."""
 
-    from relax.vdam import mstep_single_class as production
+    from relax.vdam import m_step as production
 
     if mstep_compute_dtype != "float64":
         raise ValueError("RELION's step-by-step M-step is double precision; pass --mstep-compute-dtype float64")
@@ -298,10 +298,10 @@ def main(argv=None) -> int:
     """``relax initial_model`` with this oracle as the M-step (replays and dumps enabled)."""
 
     from relax.commands import initial_model
-    from relax.vdam import m_step, mstep_single_class
+    from relax.vdam import m_step
 
     # The oracle reads the replay variables itself; the production guard refuses them.
-    mstep_single_class._validate_mstep_precision_route = lambda dtype: None
+    m_step._validate_mstep_precision_route = lambda dtype: None
     m_step.vdam_m_step_single_class = vdam_m_step_single_class_native
     return initial_model.main(sys.argv[1:] if argv is None else argv)
 

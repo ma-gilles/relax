@@ -89,7 +89,7 @@ their semantics already match:
 The [dense reference formulation](../math/em_dense_reference.md) documents the
 independent algorithmic core under `reference/`.
 
-RELION diagnostic checkpoint restoration lives in [`relion/vdam_checkpoint.py`](../../relax/relion/vdam_checkpoint.py), separate from the VDAM execution driver. Native moment/reference and BPref overrides, including post-M-step reference-map replay, live in [`diagnostics/vdam_mstep_replay.py`](../../relax/diagnostics/vdam_mstep_replay.py); [`vdam/mstep_single_class.py`](../../relax/vdam/mstep_single_class.py) retains the reconstruction transaction and its numerical boundary calls.
+RELION diagnostic checkpoint restoration lives in [`relion/vdam_checkpoint.py`](../../relax/relion/vdam_checkpoint.py), separate from the VDAM execution driver. Native moment/reference and BPref overrides, including post-M-step reference-map replay, live in [`diagnostics/vdam_mstep_replay.py`](../../relax/diagnostics/vdam_mstep_replay.py); [`vdam/m_step.py`](../../relax/vdam/m_step.py) retains the reconstruction transaction and its numerical boundary calls.
 
 InitialModel STAR import/export is owned by
 [`relion/initial_model_io.py`](../../relax/relion/initial_model_io.py).
@@ -370,7 +370,7 @@ Noise failure reports and optional noise-boundary captures now live in
 `vdam/estep_meta_updates.py` owns the numerical update. This move transfers
 110 budget lines from E-step to diagnostics without increasing the 8,850 total.
 Solvent masking now lives with reconstruction in `vdam/m_step.py`; state precision
-preparation lives beside its dtype definitions in `vdam/mstep_single_class.py`.
+preparation lives beside its dtype definitions in `vdam/m_step.py`.
 Their move transfers 90 budget lines from controllers to reconstruction/state,
 again preserving the 8,850 total.
 VDAM translation and class-orientation prior construction now lives beside the

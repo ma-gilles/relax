@@ -33,7 +33,6 @@ from relax.vdam import (
     estep_meta_updates,
     iteration_loop,
     m_step,
-    mstep_single_class,
     native_options,
     native_sampling,
     output,
@@ -350,7 +349,7 @@ LOC_BUDGETS = {
     )),
     # Optics groups on several image shapes (2026-10-05): each particle's pixel size and box in
     # NativeOpticsState: 549 -> 552 lines on main 7d7f3c92 (+3; ceiling +2).
-    "reconstruction_state": (552, ("m_step.py", "mstep_single_class.py", "state.py")),
+    "reconstruction_state": (552, ("m_step.py", "state.py")),
     # relion/initial_noise.py gained 53 lines bringing an optics group on another pixel
     # size or box onto the model grid for the start-up noise (RELION resizeMap and
     # window, ml_optimiser.cpp:2934-2955; S3b multi-optics, 2026-09-24): a real raise.
@@ -498,15 +497,14 @@ assert "relax.vdam.iteration_loop" not in sys.modules
 
 
 def test_mstep_single_class_definition_ownership():
-    src = inspect.getsource(m_step)
-    for name in ("vdam_m_step_single_class", "_run_m_step_transaction", "_validate_mstep_precision_route"):
-        assert inspect.getmodule(getattr(mstep_single_class, name)) is mstep_single_class and f"\ndef {name}(" not in src
+    # The single-class M-step lives with the multi-class driver in m_step (2026-10-08, e3).
+    for name in ("vdam_m_step", "vdam_m_step_single_class", "_run_m_step_transaction", "_validate_mstep_precision_route"):
+        assert inspect.getmodule(getattr(m_step, name)) is m_step
     assert inspect.getmodule(vdam_mstep_replay._maybe_replay_native_bpref_accumulators) is vdam_mstep_replay
-    assert not hasattr(mstep_single_class, "_maybe_replay_native_bpref_accumulators")
-    assert inspect.getmodule(state.VdamAccumulator) is state and "\nclass VdamAccumulator" not in src
-    assert m_step.vdam_m_step_single_class is mstep_single_class.vdam_m_step_single_class
+    assert not hasattr(m_step, "_maybe_replay_native_bpref_accumulators")
+    assert inspect.getmodule(state.VdamAccumulator) is state and "\nclass VdamAccumulator" not in inspect.getsource(m_step)
     assert m_step.VdamAccumulator is state.VdamAccumulator
-    assert "vdam.m_step import" not in inspect.getsource(mstep_single_class)
+    assert not (PACKAGE_DIR / "mstep_single_class.py").exists()
 
 
 def test_initial_model_serialization_owners_and_driver_imports():

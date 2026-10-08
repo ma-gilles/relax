@@ -48,8 +48,7 @@ from relax.vdam.bootstrap_iref import (
 )
 from relax.vdam.dense_adapter import run_dense_initial_model_estep
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
-from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
-from relax.vdam.mstep_single_class import _prepare_mstep_state_precision
+from relax.vdam.m_step import _prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import (
     NativeSamplingState,
@@ -405,7 +404,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
 
     profile = output._StageProfile(opts.environment.profile)
 
-    from relax.vdam.mstep_single_class import _validate_mstep_precision_route
+    from relax.vdam.m_step import _validate_mstep_precision_route
 
     _validate_mstep_precision_route(opts.mstep_compute_dtype)
     if int(opts.random_seed) == -1:

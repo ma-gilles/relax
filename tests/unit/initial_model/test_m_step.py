@@ -23,16 +23,16 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.diagnostics import vdam_mstep_replay
-from relax.vdam import mstep_single_class
+from relax.vdam import m_step as mstep_owner
 from relax.vdam.bootstrap_iref import (
     initialise_data_vs_prior_from_references,
     initialise_denovo_state,
     seed_noise_from_mavg,
 )
-from relax.vdam.m_step import vdam_m_step
-from relax.vdam.mstep_single_class import (
+from relax.vdam.m_step import (
     _grad_min_resol_shell_from_state,
     _has_relion_reconstruction_weight,
+    vdam_m_step,
     vdam_m_step_single_class,
 )
 from relax.vdam.state import VdamAccumulator
@@ -102,10 +102,10 @@ def test_relion_weight_guard_keeps_tiny_nonzero_class_support():
         halfset_idx=0,
     )
 
-    accumulator.weight.flat[0] = 2.0 * mstep_single_class.XMIPP_EQUAL_ACCURACY
+    accumulator.weight.flat[0] = 2.0 * mstep_owner.XMIPP_EQUAL_ACCURACY
     assert _has_relion_reconstruction_weight(state, 0, accumulator)
 
-    accumulator.weight.flat[0] = 0.5 * mstep_single_class.XMIPP_EQUAL_ACCURACY
+    accumulator.weight.flat[0] = 0.5 * mstep_owner.XMIPP_EQUAL_ACCURACY
     assert not _has_relion_reconstruction_weight(state, 0, accumulator)
 
 

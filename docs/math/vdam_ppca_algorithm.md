@@ -149,7 +149,7 @@ preconditioned directions is generally different from preconditioning pooled
 statistics once.
 
 Sources: [device transaction](../../relax/relion/relion_vdam_mstep.py),
-[native transaction wrapper](../../relax/vdam/mstep_single_class.py),
+[native transaction wrapper](../../relax/vdam/m_step.py),
 [subset ordering](../../relax/vdam/subset_schedule.py).
 
 ### 3.3 The gradient-disagreement shrinkage gate

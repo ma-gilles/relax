@@ -12,7 +12,7 @@ from helpers.float_compare import assert_matches
 
 from relax.diagnostics.vdam_native_mstep import vdam_m_step_single_class_native
 from relax.vdam.bootstrap_iref import initialise_denovo_state
-from relax.vdam.mstep_single_class import vdam_m_step_single_class
+from relax.vdam.m_step import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
 
 # These tests pin the M-step against RELION's float64 C++ primitives, so they run

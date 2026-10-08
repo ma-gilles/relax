@@ -39,7 +39,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
    - `bootstrap_iref`: `RELAX_INITIAL_IREF_OVERRIDE` (replaces the start-up reference with RELION's);
    - `driver`: `RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE`, owned and read by
      `relax.diagnostics.vdam_mstep_replay`; the driver only refuses it with a float32 M-step;
-   - `mstep_single_class._validate_mstep_precision_route`: refuses the native parity replay variables,
+   - `m_step._validate_mstep_precision_route`: refuses the native parity replay variables,
      which belong to `relax.diagnostics.vdam_native_mstep`;
    - `output._write_initial_run_metadata`: records the CUDA allocator and JAX cache variables as provenance.
    Moving them into `VdamEnvironment` costs plumbing through the projector context and the accuracy

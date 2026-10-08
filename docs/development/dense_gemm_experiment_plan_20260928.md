@@ -97,7 +97,7 @@ unchanged. The lagged algorithm is an explicitly requested approximation.
 | RELION projector state | `relax/relion/relion_projector_setup.py`, `relax/helpers/projection.py`, CUDA wrappers | Reuse float32 texture projector, coordinate/half-spectrum conventions and texture lifetime |
 | Resident loop and statistics patterns | `relax/sparse_pass2/resident_pass2.py` | Fixed capacities, device loops, donation and persistent accumulators; do not import sparse support machinery just to run dense GEMMs |
 | Native backprojection | `relax/helpers/adjoint.py`, `relax/helpers/half_volume_mstep.py`, pinned RECOVAR CUDA | Existing RELION x-half interpolation/scatter and final accumulator conversion |
-| VDAM map update | `relax/vdam/mstep_single_class.py`, `relax/vdam/m_step.py` | Existing residual and optimizer/moment semantics; do not implement a new VDAM update |
+| VDAM map update | `relax/vdam/m_step.py` | Existing residual and optimizer/moment semantics; do not implement a new VDAM update |
 | Focused reference coverage | `tests/unit/test_coarse_gaussian_gemm_macro.py`, dense/local tests | Independent direct-square reference, translation/phase, tail padding, geometry and dtype checks |
 
 The existing GEMM macro is a useful primitive, not proof the requested resident
