@@ -1004,7 +1004,7 @@ def _compute_k_class_significance_batched(
     # the model sphere only for a window between 2 r_max and about 2 s r_max (an optics group on
     # a coarser grid: its rotations carry 1 / s); the exact coarse operands then shift them there.
     coarse_kernel_window = None
-    if use_relion_projector and relion_projector_r_max is not None and score_size // 2 > int(relion_projector_r_max):
+    if use_relion_projector and score_size // 2 > int(relion_projector_r_max):
         from relax.helpers.optics_scale import coarse_rows_wrap_inside
 
         rotation_scale = 1.0 / float(np.linalg.norm(np.asarray(rotations, dtype=np.float64).reshape(-1, 3, 3)[0, 0]))
@@ -1418,15 +1418,6 @@ def _compute_k_class_significance_batched(
     ):
         """Project the exact compact rows shared by direct and GEMM scoring."""
 
-        if not (
-            use_relion_projector
-            and coarse_texture_interp
-            and projector_returns_compact
-        ):
-            raise RuntimeError(
-                "compact RELION score-row projection requires the texture "
-                "projector and an explicit score-row table",
-            )
         projected, projected_abs2 = _compute_relion_projector_projections_block(
             relion_projector_half[class_index],
             rots_b,
@@ -2174,8 +2165,6 @@ def _compute_k_class_significance_batched(
                     rots_b = rotations_padded[r0 : r0 + block_rows]
                     if exact_cc_enabled:
                         reference, _ = _project_block_once(class_index, rots_b, rotation_start=r0)
-                        if use_window and not projector_returns_compact:
-                            reference = reference[:, window_indices]
                     else:
                         reference, _ = _project_coarse_gemm_block_once(class_index, rots_b)
                     block_state, block_values, block_dump = _coarse_pass1_block(
