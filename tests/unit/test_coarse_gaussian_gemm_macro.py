@@ -145,7 +145,7 @@ def _direct_scores(projected, shifted, weight, initial):
     [
         (
             'RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE',
-            significance._coarse_gaussian_gemm_projection_cache_enabled,
+            coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_enabled,
         ),
     ],
 )
@@ -189,7 +189,7 @@ def test_coarse_gaussian_gemm_projection_cache_rejects_unqualified_contracts(
     message,
 ):
     with pytest.raises((ValueError, TypeError), match=message):
-        significance._validate_coarse_gaussian_gemm_projection_cache_request(
+        coarse_gaussian_gemm._validate_coarse_gaussian_gemm_projection_cache_request(
             **_projection_cache_request_kwargs(**updates),
         )
 
@@ -200,10 +200,10 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
     monkeypatch.delenv(variable, raising=False)
     # Off-GPU the default budget is 4 GB; on a GPU it is a fifth of its memory.
-    budget_bytes = significance._coarse_gaussian_gemm_projection_cache_budget_bytes(
+    budget_bytes = coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes(
         default_gb=4.0,
     )
-    plan = significance._plan_coarse_gaussian_gemm_projection_cache(
+    plan = coarse_gaussian_gemm._plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
         compact_pixel_count=5_100,
         image_shape=(128, 128),
@@ -221,7 +221,7 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert plan.predicted_peak_bytes == 3_502_817_280
     assert not plan.destination_alias_proven
     assert plan.admitted
-    stats = significance._coarse_gaussian_gemm_projection_cache_stats(
+    stats = coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_stats(
         plan,
         enabled=True,
     )
@@ -232,12 +232,12 @@ def test_coarse_gaussian_gemm_projection_cache_plan_is_conservative_for_gf46(
     assert stats["h100_alias_evidence_used_for_admission"] is False
 
     monkeypatch.setenv(variable, "3.0")
-    rejected = significance._plan_coarse_gaussian_gemm_projection_cache(
+    rejected = coarse_gaussian_gemm._plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=36_864,
         compact_pixel_count=5_100,
         image_shape=(128, 128),
         budget_bytes=(
-            significance._coarse_gaussian_gemm_projection_cache_budget_bytes()
+            coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_budget_bytes()
         ),
     )
     assert not rejected.admitted
@@ -252,13 +252,13 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
         rng.normal(size=(n_rotations, n_pixels))
         + 1j * rng.normal(size=(n_rotations, n_pixels))
     ).astype(np.complex64)
-    plan = significance._plan_coarse_gaussian_gemm_projection_cache(
+    plan = coarse_gaussian_gemm._plan_coarse_gaussian_gemm_projection_cache(
         n_rotations=n_rotations,
         compact_pixel_count=n_pixels,
         image_shape=(4, 4),
         budget_bytes=1_000_000,
     )
-    stats = significance._coarse_gaussian_gemm_projection_cache_stats(
+    stats = coarse_gaussian_gemm._coarse_gaussian_gemm_projection_cache_stats(
         plan,
         enabled=True,
     )
@@ -283,7 +283,7 @@ def test_coarse_gaussian_gemm_projection_cache_reuses_c64_blocks():
 
 
 def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync():
-    resources = significance._coarse_gaussian_gemm_resources(
+    resources = coarse_gaussian_gemm._coarse_gaussian_gemm_resources(
         rotation_block_size=17,
         image_shape=(128, 128),
         compact_pixel_count=64 * 33,
@@ -298,7 +298,7 @@ def test_coarse_gaussian_gemm_resource_gate_records_full_transient_and_host_sync
         + resources.compact_projection_abs2_bytes
     )
     with pytest.raises(MemoryError, match="predicted projection transient"):
-        significance._coarse_gaussian_gemm_resources(
+        coarse_gaussian_gemm._coarse_gaussian_gemm_resources(
             rotation_block_size=17,
             image_shape=(128, 128),
             compact_pixel_count=64 * 33,
@@ -1242,11 +1242,11 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
     # 10097 10k K=1 auto-refine, HEALPix 3 global pass (bigbox gate 14474702): a 36,864-row
     # block of 256-px texture projections needs 9.9 GB against the 2 GiB budget.
     budget = 2 * 1024**3
-    rows = significance._coarse_gaussian_gemm_fit_rotation_block_size(
+    rows = coarse_gaussian_gemm._coarse_gaussian_gemm_fit_rotation_block_size(
         36_864, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
     )
     assert 16 <= rows < 36_864 and rows % 16 == 0
-    resources = significance._coarse_gaussian_gemm_resources(
+    resources = coarse_gaussian_gemm._coarse_gaussian_gemm_resources(
         rotation_block_size=rows,
         image_shape=(256, 256),
         compact_pixel_count=420,
@@ -1254,10 +1254,10 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
     )
     assert resources.predicted_peak_projection_bytes <= budget
     # A block that already fits is unchanged, and the split never drops below one row.
-    assert significance._coarse_gaussian_gemm_fit_rotation_block_size(
+    assert coarse_gaussian_gemm._coarse_gaussian_gemm_fit_rotation_block_size(
         64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=budget
     ) == 64
-    assert significance._coarse_gaussian_gemm_fit_rotation_block_size(
+    assert coarse_gaussian_gemm._coarse_gaussian_gemm_fit_rotation_block_size(
         64, image_shape=(256, 256), compact_pixel_count=420, budget_bytes=1
     ) == 1
 
@@ -1265,14 +1265,14 @@ def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget
 def test_coarse_gaussian_gemm_cached_block_rows_fit_and_balance():
     budget = 2 * 1024**3
     # noise1 50k/256 late pass 1: every rotation fits in two balanced blocks or fewer.
-    rows = significance._coarse_gaussian_gemm_cached_block_rows(
+    rows = coarse_gaussian_gemm._coarse_gaussian_gemm_cached_block_rows(
         36_864, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
     )
     assert rows % 16 == 0 and rows * 4 * (6 * 1_512 + 3 * 60 * 45) <= budget
     blocks = -(-36_864 // rows)
     assert blocks * rows - 36_864 < 16 * blocks
     # A small grid is one block.
-    assert significance._coarse_gaussian_gemm_cached_block_rows(
+    assert coarse_gaussian_gemm._coarse_gaussian_gemm_cached_block_rows(
         4_608, image_batch_size=60, n_translations=45, compact_pixel_count=1_512, budget_bytes=budget
     ) == 4_608
 

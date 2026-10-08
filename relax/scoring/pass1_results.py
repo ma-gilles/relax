@@ -7,6 +7,23 @@ import numpy as np
 
 
 @dataclass(frozen=True)
+class PassShape:
+    """The sizes of one pass 1, fixed from the call's arguments: what its stage plans are drawn up over.
+
+    ``n_classes`` classes, ``n_rot`` coarse rotations and ``n_trans`` translations make the pose grid. ``image_shape``
+    is the dataset's image shape, ``n_half`` its half-spectrum pixel count, and ``score_size`` the current size the
+    pass scores at (the image size when the call gives none).
+    """
+
+    n_classes: int
+    n_rot: int
+    n_trans: int
+    n_half: int
+    image_shape: Any
+    score_size: int
+
+
+@dataclass(frozen=True)
 class OutputPlan:
     """What one pass 1 returns and how many rows it has: fixed from the call's arguments before the first batch.
 

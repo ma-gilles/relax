@@ -38,25 +38,15 @@ from relax.relion.relion_coarse_operands import (
     assemble_relion_cc_coarse_operands,
 )
 from relax.scoring.coarse_gaussian_gemm import (
-    _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV,
-    _coarse_gaussian_gemm_cached_block_rows,
-    _coarse_gaussian_gemm_fit_rotation_block_size,
-    _coarse_gaussian_gemm_projected_transient_budget_bytes,
-    _coarse_gaussian_gemm_projection_cache_budget_bytes,
-    _coarse_gaussian_gemm_projection_cache_enabled,
     _coarse_gaussian_gemm_projection_cache_stats,
-    _coarse_gaussian_gemm_projection_row_bytes,
-    _coarse_gaussian_gemm_resources,
-    _plan_coarse_gaussian_gemm_projection_cache,
-    _validate_coarse_gaussian_gemm_projection_cache_request,
 )
-from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
+from relax.scoring.gaussian_plan import plan_coarse_gaussian
 from relax.scoring.pass1_assembly import log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_publish import publish_batch
-from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
+from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, PassShape, ScoreDumpContext
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
     _relion_coarse_gaussian_gemm_scores_jit,
@@ -92,14 +82,6 @@ def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
     if token not in {"0", "1"}:
         raise ValueError("RELAX_K1_COARSE_ROTATED_RADIUS must be 0 or 1")
     return token == "1"
-
-
-def _custom_cuda_ready() -> bool:
-    """Whether JAX runs on a GPU with RECOVAR's custom CUDA library loaded (pass 1's FFI kernels)."""
-
-    from recovar import cuda_backproject
-
-    return jax.default_backend() == "gpu" and cuda_backproject.cuda_available()
 
 
 def _require_exact_pass1_operands(
@@ -786,158 +768,26 @@ def _compute_k_class_significance_batched(
         use_float64_projections=use_float64_projections,
     )
     exact_gaussian = score_mode == "gaussian"
-    coarse_gaussian_gemm_projection_cache_requested = exact_gaussian and (
-        _coarse_gaussian_gemm_projection_cache_enabled(default=True)
+    pass_shape = PassShape(
+        n_classes=n_classes,
+        n_rot=n_rot,
+        n_trans=n_trans,
+        n_half=n_half,
+        image_shape=image_shape,
+        score_size=score_size,
     )
-    # An explicit cache request fails closed; the default cache quietly stands
-    # down wherever its contract or memory budget does not hold.
-    coarse_gaussian_gemm_projection_cache_explicit = (
-        _COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_ENV in os.environ
-    )
-    if coarse_gaussian_gemm_projection_cache_requested:
-        try:
-            _validate_coarse_gaussian_gemm_projection_cache_request(
-                n_rotations=n_rot,
-                # The dtype of the class stack: indexing a device array for it dispatched a slice per pass.
-                relion_projector_dtype=(
-                    relion_projector_half.dtype
-                    if hasattr(relion_projector_half, "dtype")
-                    else relion_projector_half[0].dtype
-                ),
-            )
-        except (ValueError, TypeError) as reason:
-            if coarse_gaussian_gemm_projection_cache_explicit:
-                raise
-            logger.info("coarse GEMM projection cache off: %s", reason)
-            coarse_gaussian_gemm_projection_cache_requested = False
-    relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)
-    # Compact the coarse support mask on the device instead of pulling it
-    # (ticket T13) whenever the ids are collected; every dense-mask
-    # diagnostic keeps the host pull, checked per batch.
-    coarse_gaussian_score_indices = None
-    coarse_gaussian_score_indices_np = None
-    coarse_gaussian_score_active_mask = None
-    coarse_gaussian_powerclass = None
-    coarse_gaussian_gemm_resource_estimate = None
-    coarse_gaussian_gemm_projection_cache_plan = None
-    coarse_gaussian_square_layout = None
+    gaussian_plan = None
     if exact_gaussian:
-        if n_trans > 128:
-            raise ValueError(f"the coarse GEMM scorer supports at most 128 translations, got {n_trans}")
-        from relax.sparse_pass2.sparse_pass2_scoring import (
-            _relion_cuda_powerclass_highres_xi2_half,
+        gaussian_plan = plan_coarse_gaussian(
+            pass_shape,
+            window_spec.score_indices_np,
+            relion_projector_half,
+            rotation_block_size=rotation_block_size,
+            image_batch_size=image_batch_size,
+            stable_fourier_window_shapes=stable_fourier_window_shapes,
         )
-
-        if not _custom_cuda_ready():
-            raise RuntimeError("pass 1 scores RELION's exact coarse operands and needs the custom CUDA backend")
-        active_score_indices_np = (
-            np.arange(n_half, dtype=np.int32)
-            if window_spec.score_indices_np is None
-            else np.asarray(window_spec.score_indices_np, dtype=np.int32)
-        )
-        coarse_gaussian_square_layout = plan_coarse_gaussian_square_layout(
-            image_shape,
-            score_size,
-            active_score_indices_np,
-            stable_fourier_window_shapes=bool(stable_fourier_window_shapes),
-        )
-        square_score_indices_np = coarse_gaussian_square_layout.score_indices_np
-        square_score_count = coarse_gaussian_square_layout.physical_square_count
-        coarse_gaussian_projector_output_size = (
-            coarse_gaussian_square_layout.physical_current_size
-        )
-        coarse_gaussian_score_indices_np = np.asarray(
-            square_score_indices_np,
-            dtype=np.int32,
-        )
-        coarse_gaussian_score_indices = jnp.asarray(
-            coarse_gaussian_score_indices_np,
-            dtype=jnp.int32,
-        )
-        coarse_gaussian_score_active_mask = jnp.asarray(
-            coarse_gaussian_square_layout.score_active_mask_np,
-            dtype=jnp.bool_,
-        )
-        coarse_gaussian_powerclass = _relion_cuda_powerclass_highres_xi2_half
-        coarse_gaussian_gemm_transient_budget = (
-            _coarse_gaussian_gemm_projected_transient_budget_bytes()
-        )
-        # The plain GEMM splits the rotation axis until the projector
-        # transient fits.
-        fitted_block_size = _coarse_gaussian_gemm_fit_rotation_block_size(
-            int(rotation_block_size),
-            image_shape=image_shape,
-            compact_pixel_count=int(square_score_count),
-            budget_bytes=coarse_gaussian_gemm_transient_budget,
-        )
-        if fitted_block_size != int(rotation_block_size):
-            logger.info(
-                "coarse GEMM rotation block %d -> %d rows to fit the %d-byte "
-                "projector transient budget",
-                int(rotation_block_size),
-                fitted_block_size,
-                coarse_gaussian_gemm_transient_budget,
-            )
-            rotation_block_size = fitted_block_size
-        coarse_gaussian_gemm_transient_budget = max(
-            coarse_gaussian_gemm_transient_budget,
-            int(rotation_block_size)
-            * _coarse_gaussian_gemm_projection_row_bytes(
-                image_shape=image_shape,
-                compact_pixel_count=int(square_score_count),
-            ),
-        )
-        coarse_gaussian_gemm_resource_estimate = _coarse_gaussian_gemm_resources(
-            rotation_block_size=int(rotation_block_size),
-            image_shape=image_shape,
-            compact_pixel_count=int(square_score_count),
-            budget_bytes=coarse_gaussian_gemm_transient_budget,
-        )
-        if coarse_gaussian_gemm_projection_cache_requested:
-            coarse_gaussian_gemm_projection_cache_plan = (
-                _plan_coarse_gaussian_gemm_projection_cache(
-                    n_classes=n_classes,
-                    n_rotations=n_rot,
-                    compact_pixel_count=int(square_score_count),
-                    image_shape=image_shape,
-                    budget_bytes=(
-                        _coarse_gaussian_gemm_projection_cache_budget_bytes()
-                    ),
-                )
-            )
-            if not (
-                coarse_gaussian_gemm_projection_cache_plan.admitted
-                or coarse_gaussian_gemm_projection_cache_explicit
-            ):
-                logger.info(
-                    "coarse GEMM projection cache off: %s",
-                    coarse_gaussian_gemm_projection_cache_plan.admission_reason,
-                )
-                coarse_gaussian_gemm_projection_cache_plan = None
-        if coarse_gaussian_gemm_projection_cache_plan is not None:
-            # Cached projections need no per-block projector transient, so the
-            # GEMM block grows to what its own temporaries allow (usually every
-            # rotation): each image batch runs one score, prior and reduction
-            # program per class and block instead of one per 5,000 rows.
-            rotation_block_size = _coarse_gaussian_gemm_cached_block_rows(
-                n_rot,
-                image_batch_size=int(image_batch_size),
-                n_translations=int(n_trans),
-                compact_pixel_count=int(square_score_count),
-                budget_bytes=_coarse_gaussian_gemm_projected_transient_budget_bytes(),
-            )
-        logger.info(
-            "Coarse pass on RELION's exact operands (coarse GEMMs): classes=%d rotations=%d "
-            "current_size=%d physical_size=%d square_pixels=%d image_lanes=%d translations=%d stable_shapes=%s",
-            n_classes,
-            n_rot,
-            score_size,
-            coarse_gaussian_projector_output_size,
-            square_score_count,
-            int(image_batch_size),
-            n_trans,
-            bool(stable_fourier_window_shapes),
-        )
+        rotation_block_size = gaussian_plan.rotation_block_size
+    relion_f32_coarse_support_enabled = exact_gaussian and _k1_relion_f32_coarse_support_enabled(default=True)
     # --firstiter_cc on RELION's exact coarse operands: the tree rescore's per-image
     # FFT, RFLOAT CTF and corr_img operands, translated with RELION's sincosf for
     # every translation and scored by the coarse GEMMs
@@ -1072,7 +922,7 @@ def _compute_k_class_significance_batched(
     projector_compact_rows = None
     if use_relion_projector and coarse_texture_interp:
         if exact_gaussian:
-            projector_compact_rows = CompactRows(coarse_gaussian_score_indices_np, coarse_gaussian_projector_output_size)
+            projector_compact_rows = CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size)
         elif use_window:
             projector_compact_rows = CompactRows(window_spec.score_indices_np, score_size)
     projector_returns_compact = projector_compact_rows is not None
@@ -1098,21 +948,21 @@ def _compute_k_class_significance_batched(
     )
 
     coarse_gaussian_gemm_projection_cache = None
-    if coarse_gaussian_gemm_projection_cache_plan is not None:
+    if exact_gaussian and gaussian_plan.projection_cache_plan is not None:
 
         coarse_gaussian_gemm_projection_cache = (
             build_projection_cache(
-                coarse_gaussian_gemm_projection_cache_plan,
+                gaussian_plan.projection_cache_plan,
                 partial(coarse_projector.cache_block, rotations),
             )
         )
         logger.warning(
             "Coarse GEMM C64 projection cache built: "
             "shape=%s chunks=%d conservative_peak_bytes=%d budget_bytes=%d",
-            coarse_gaussian_gemm_projection_cache_plan.cache_shape,
-            coarse_gaussian_gemm_projection_cache_plan.chunk_count_per_table,
-            coarse_gaussian_gemm_projection_cache_plan.predicted_peak_bytes,
-            coarse_gaussian_gemm_projection_cache_plan.budget_bytes,
+            gaussian_plan.projection_cache_plan.cache_shape,
+            gaussian_plan.projection_cache_plan.chunk_count_per_table,
+            gaussian_plan.projection_cache_plan.predicted_peak_bytes,
+            gaussian_plan.projection_cache_plan.budget_bytes,
         )
 
     # The class and rotation prior terms of the pass-1 program, built at its first batch.
@@ -1160,7 +1010,7 @@ def _compute_k_class_significance_batched(
         projection_padding_factor=projection_padding_factor,
         exact_cc_enabled=exact_cc_enabled,
         exact_cc_score_indices=exact_cc_score_indices,
-        coarse_gaussian_score_indices=coarse_gaussian_score_indices,
+        coarse_gaussian_score_indices=None if gaussian_plan is None else gaussian_plan.score_indices,
     )
     batch_input_plan = BatchInputPlan(
         experiment_dataset=experiment_dataset,
@@ -1272,18 +1122,18 @@ def _compute_k_class_significance_batched(
                     batch_scale_np=batch_inputs.batch_scale_np,
                     actual_batch_size=actual_batch_size,
                     batch_size=batch_inputs.batch_size,
-                    score_indices=coarse_gaussian_score_indices,
-                    score_indices_np=coarse_gaussian_score_indices_np,
-                    score_active_mask=coarse_gaussian_score_active_mask,
+                    score_indices=gaussian_plan.score_indices,
+                    score_indices_np=gaussian_plan.score_indices_np,
+                    score_active_mask=gaussian_plan.score_active_mask,
                     translations_source=translations_source,
                     relion_translation_angle_scale=relion_translation_angle_scale,
                     image_shape=image_shape,
                     noise_variance_half=batch_inputs.batch_noise_half,
                     scale_corrections_enabled=scale_corrections is not None,
                     half_weights=half_weights,
-                    powerclass=coarse_gaussian_powerclass,
+                    powerclass=gaussian_plan.powerclass,
                     current_size=(
-                        coarse_gaussian_square_layout.physical_current_size
+                        gaussian_plan.square_layout.physical_current_size
                         if stable_fourier_window_shapes
                         else current_size
                     ),
@@ -1657,20 +1507,20 @@ def _compute_k_class_significance_batched(
             "exact_cc_gemm" if exact_cc_enabled else "gemm_macro"
         ),
     }
-    if coarse_gaussian_square_layout is not None:
+    if gaussian_plan is not None:
         full_stats["coarse_gaussian_square_layout"] = coarse_square_layout_metadata(
-            coarse_gaussian_square_layout,
+            gaussian_plan.square_layout,
             stable_fourier_window_shapes=stable_fourier_window_shapes,
         )
-    if coarse_gaussian_gemm_resource_estimate is not None:
+    if gaussian_plan is not None:
         full_stats["coarse_gaussian_gemm_resources"] = {
             field: int(value)
-            for field, value in coarse_gaussian_gemm_resource_estimate._asdict().items()
+            for field, value in gaussian_plan.resource_estimate._asdict().items()
         }
-    if coarse_gaussian_gemm_projection_cache_plan is not None:
+    if gaussian_plan is not None and gaussian_plan.projection_cache_plan is not None:
         full_stats["coarse_gaussian_gemm_projection_cache"] = (
             _coarse_gaussian_gemm_projection_cache_stats(
-                coarse_gaussian_gemm_projection_cache_plan,
+                gaussian_plan.projection_cache_plan,
                 enabled=coarse_gaussian_gemm_projection_cache is not None,
             )
         )
