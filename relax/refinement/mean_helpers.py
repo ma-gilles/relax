@@ -187,8 +187,14 @@ def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, ini
 
 
 def _snapshot_and_release_previous_k1_means(means):
-    """Copy both K1 references to host before releasing their active buffers."""
-    previous_means = [np.asarray(mean).copy() if mean is not None else None for mean in means]
+    """Copy both K1 references to host before releasing their active buffers.
+
+    One host copy per map: a device map's transfer is that copy (a read-only array); a host map is copied.
+    """
+    previous_means = [
+        None if mean is None else mean.copy() if isinstance(mean, np.ndarray) else np.asarray(mean)
+        for mean in means
+    ]
     # Dropping the list's references frees the device buffers; there is no
     # cycle for a collection to break (every explicit gc.collect() of the 5k
     # K=1 run found nothing and freed no device memory, job 14503450).

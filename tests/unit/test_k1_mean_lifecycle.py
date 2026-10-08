@@ -2,6 +2,7 @@
 
 import weakref
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.em_arrays import _hermitian_volume
@@ -34,6 +35,20 @@ def test_snapshot_and_release_previous_k1_means_owns_host_copies(complex_dtype):
 
     first[...] = complex_dtype(-9.0 + 4.0j)
     assert not np.array_equal(snapshots[0], first)
+
+
+@pytest.mark.parametrize("complex_dtype", [np.complex64, np.complex128], ids=["production-f32", "diagnostic-f64"])
+def test_snapshot_of_device_k1_means_is_their_host_value(complex_dtype):
+    """A device map's snapshot is its one host transfer: a NumPy array of the same dtype and values."""
+    expected = np.arange(12, dtype=np.float64).astype(complex_dtype)
+    means = [jnp.asarray(expected), None]
+    snapshots = mean_helpers._snapshot_and_release_previous_k1_means(means)
+
+    assert means == [None, None]
+    assert snapshots[1] is None
+    assert type(snapshots[0]) is np.ndarray
+    assert snapshots[0].dtype == jnp.asarray(expected).dtype
+    assert_matches(snapshots[0], np.asarray(jnp.asarray(expected)))
 
 
 def test_k1_mean_release_precedes_tau_and_reconstruction(monkeypatch):
