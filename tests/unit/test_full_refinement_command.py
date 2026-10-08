@@ -20,37 +20,26 @@ from relax.refinement import full_refinement
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize(
-    ("exception", "variable", "message"),
-    [
-        ("SignificanceDumpComplete", "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "pass-2/M-step work"),
-        ("BPrefContributionDumpComplete", "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET", "requested pass-2 boundary"),
-        ("Pass2DumpComplete", "RELAX_PASS2_DUMP_STOP_AFTER_TARGET", "requested fine-score boundary"),
-        ("Pass2DumpComplete", "RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "norm/scale boundary"),
-    ],
-)
 @pytest.mark.parametrize("stop_requested", [False, True])
-def test_a_requested_diagnostic_dump_stop_exits_cleanly(monkeypatch, caplog, exception, variable, message,
-                                                       stop_requested):
-    """A dump that completes its target stops the run with status 0 only when its stop was requested."""
-    completed = type(exception, (RuntimeError,), {})
+def test_a_requested_significance_dump_stop_exits_cleanly(monkeypatch, caplog, stop_requested):
+    """A coarse-significance dump that completes its target stops the run with status 0 only when its stop was
+    requested."""
+    completed = type("SignificanceDumpComplete", (RuntimeError,), {})
 
     def main(command=None):
         raise completed("target written")
 
     monkeypatch.setattr(full_refinement, "main", main)
-    for name in ("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET",
-                 "RELAX_PASS2_DUMP_STOP_AFTER_TARGET", "RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", raising=False)
     if not stop_requested:
         with pytest.raises(completed):
             full_refinement.run_from_command_line("refine")
         return
-    monkeypatch.setenv(variable, "1")
+    monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
     with caplog.at_level(logging.INFO, logger=full_refinement.logger.name), pytest.raises(SystemExit) as stop:
         full_refinement.run_from_command_line("refine")
     assert stop.value.code == 0
-    assert any(message in record.getMessage() for record in caplog.records)
+    assert any("pass-2/M-step work" in record.getMessage() for record in caplog.records)
 
 
 def test_the_controller_gets_the_active_max_significants(monkeypatch, tmp_path):

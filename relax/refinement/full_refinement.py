@@ -221,8 +221,6 @@ def _replay_process_start_noise_broadcast(
     """
     if replay_noise_semantics == "continuation":
         return True
-    if replay_noise_semantics != "uninterrupted":
-        raise ValueError(f"unknown replay noise semantics: {replay_noise_semantics!r}")
     if perturb_replay_relion_dir is None or int(init_relion_iteration) <= 0:
         raise ValueError(
             "--replay-noise-semantics uninterrupted requires --perturb_replay_relion_dir "
@@ -235,8 +233,6 @@ def _validate_replay_saved_healpix_order(
     perturb_replay_relion_dir,
     init_relion_iteration,
     healpix_order,
-    *,
-    replay_prefix="run",
 ):
     """Require a mid-trajectory replay to enter with RELION's saved sampling order.
 
@@ -250,7 +246,7 @@ def _validate_replay_saved_healpix_order(
         return
     sampling_star = (
         Path(perturb_replay_relion_dir)
-        / f"{replay_prefix}_it{int(init_relion_iteration):03d}_sampling.star"
+        / f"run_it{int(init_relion_iteration):03d}_sampling.star"
     )
     saved_order = int(relion_metadata.read_relion_sampling_metadata(sampling_star)["healpix_order"])
     if saved_order != int(healpix_order):
@@ -342,11 +338,9 @@ def _effective_perturb_seed(args):
     ``--perturb_seed`` overrides it; a negative explicit value keeps the legacy
     non-deterministic NumPy perturbation path for diagnostics.
     """
-    explicit = getattr(args, "perturb_seed", None)
-    if explicit is not None:
-        return None if int(explicit) < 0 else int(explicit)
-    seed = getattr(args, "seed", None)
-    return None if seed is None else int(seed)
+    if args.perturb_seed is None:
+        return args.seed
+    return None if args.perturb_seed < 0 else args.perturb_seed
 
 
 def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir) -> Path:
@@ -1442,29 +1436,6 @@ def run_from_command_line(command):
             logger.info(
                 "RECOVAR coarse-significance dump completed; stopping before "
                 "pass-2/M-step work: %s",
-                exc,
-            )
-            sys.exit(0)
-        if (
-            exc.__class__.__name__ == "BPrefContributionDumpComplete"
-            and os.environ.get("RELAX_BPREF_CONTRIBUTION_STOP_AFTER_TARGET") == "1"
-        ):
-            logger.info(
-                "RECOVAR BPref contribution dump completed; stopping at the "
-                "requested pass-2 boundary: %s",
-                exc,
-            )
-            sys.exit(0)
-        if (
-            exc.__class__.__name__ == "Pass2DumpComplete"
-            and (
-                os.environ.get("RELAX_PASS2_DUMP_STOP_AFTER_TARGET") == "1"
-                or os.environ.get("RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET") == "1"
-            )
-        ):
-            logger.info(
-                "RECOVAR pass-2 operand dump completed; stopping at the "
-                "requested fine-score boundary or norm/scale boundary: %s",
                 exc,
             )
             sys.exit(0)
