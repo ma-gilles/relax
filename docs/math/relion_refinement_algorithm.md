@@ -603,7 +603,12 @@ without changing the scoring frame. Its result pairs matrices, Euler degrees,
 relative search shifts and absolute metadata offsets in pixels. Supplied Euler
 rows retain host float64; supported matrix/grid paths retain their existing
 precision. The shared `_relion_metadata_translations` formula adds the rounded
-previous pre-shift to the selected relative shift. The controller installs
+previous pre-shift to the selected relative shift. The previous offset is rounded
+in each image's own pixels (RELION `xoff_A / my_pixel_size`, then `selfROUND`), so
+an optics group whose pixel differs from the model's
+([`image_translation_factors`](../../relax/refinement/optics_shapes.py)) keeps its
+rounded offset in its own pixels while the trial grid stays one Angstrom grid
+(relax#52). The controller installs
 each half's Euler rows/absolute offsets before noise and convergence updates.
 `prepare_particle_pose_update` first snapshots both halves' previous rotations
 and offsets, then resolves both results with that same primitive. Its

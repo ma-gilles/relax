@@ -104,6 +104,18 @@ class MultiShapeHalf:
         raise AttributeError(f"a half with several image shapes has no single {name!r}; use its shape classes")
 
 
+def image_translation_factors(dataset):
+    """Each image's reference-pixel -> own-pixel factor (``ShapeClass.translation_factor``), or None for
+    a dataset on one grid, whose images are all on the reference pixel."""
+
+    if not isinstance(dataset, MultiShapeHalf):
+        return None
+    factors = np.ones(dataset.n_units, dtype=np.float64)
+    for shape_class in dataset.classes:
+        factors[shape_class.image_indices] = shape_class.translation_factor
+    return factors
+
+
 def prepare_optics(
     dataset,
     *,

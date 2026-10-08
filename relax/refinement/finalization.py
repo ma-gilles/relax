@@ -57,6 +57,7 @@ from relax.refinement.mean_helpers import (
     merged_half_map,
     weighted_class_merge,
 )
+from relax.refinement.optics_shapes import image_translation_factors
 from relax.refinement.ports import FinalHalfScored, InputSource, RunObserver
 from relax.refinement.projector_preparation import prepare_scoring_projector
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
@@ -542,6 +543,7 @@ def run_final_all_data(
             final_result.best_pose_translations = _relion_metadata_translations(
                 half.translations,
                 final_result.best_pose_translations,
+                own_pixel_factors=image_translation_factors(half.dataset),
                 dtype=scoring_dtype,
             )
         final_outs.update_from(half.index, final_result, dtype=scoring_dtype)

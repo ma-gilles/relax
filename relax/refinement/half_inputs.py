@@ -136,6 +136,7 @@ def resolve_particle_poses(
     translation_grid,
     *,
     previous_translations,
+    own_pixel_factors,
     best_pose_rotations,
     best_pose_rotation_eulers,
     best_pose_translations,
@@ -146,6 +147,9 @@ def resolve_particle_poses(
     """Resolve explicit engine poses or grid IDs into persistent particle poses.
 
     Supplied Euler metadata stays float64; deferred local matrices stay float32.
+    ``own_pixel_factors`` are the images' reference -> own pixel factors
+    (:func:`relax.refinement.optics_shapes.image_translation_factors`; None on one grid): the
+    previous offset is rounded in each image's own pixels, as RELION does.
     See ``docs/math/relion_refinement_algorithm.md``, section 3.
     """
     from recovar import utils
@@ -193,7 +197,7 @@ def resolve_particle_poses(
         eulers_deg=eulers,
         relative_translations_pixels=translations,
         translations_pixels=_relion_metadata_translations(
-            previous_translations, translations, dtype=dtype,
+            previous_translations, translations, own_pixel_factors=own_pixel_factors, dtype=dtype,
         ),
     )
 
@@ -233,6 +237,8 @@ def prepare_particle_pose_update(
     precision and frames. See ``docs/math/relion_refinement_algorithm.md``,
     section 3. The controller owns publication and diagnostic ordering.
     """
+    from relax.refinement.optics_shapes import image_translation_factors
+
     previous_rotations_snapshot = [
         np.asarray(rot).copy() if rot is not None else None for rot in previous_rotations
     ]
@@ -245,6 +251,7 @@ def prepare_particle_pose_update(
             scores.hard_assignments[k],
             translation_grid,
             previous_translations=previous_translations_snapshot[k],
+            own_pixel_factors=image_translation_factors(halves[k].dataset),
             best_pose_rotations=scores.best_pose_rotations[k],
             best_pose_rotation_eulers=scores.best_pose_rotation_eulers[k],
             best_pose_translations=scores.best_pose_translations[k],

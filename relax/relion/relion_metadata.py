@@ -13,7 +13,11 @@ from relax.helpers.shells import shell_index
 
 
 def _relion_metadata_translations(
-    previous_best_translations, selected_relative_translations, *, dtype: np.dtype = np.float32
+    previous_best_translations,
+    selected_relative_translations,
+    *,
+    own_pixel_factors,
+    dtype: np.dtype = np.float32,
 ):
     """Return RELION-style metadata offsets after selecting relative shifts.
 
@@ -22,6 +26,12 @@ def _relion_metadata_translations(
     ``rounded_old_offset + sampled_translation`` back to metadata. Keeping
     that absolute value is required for the next iteration's pre-shift and
     sigma-offset sufficient statistic.
+
+    Offsets are in reference pixels. RELION rounds the old offset in the image's own pixels
+    (``xoff_A / my_pixel_size``, ml_optimiser.cpp:12357, then ``my_old_offset.selfROUND()``, :7259), so
+    for an image whose pixel differs from the reference's, ``own_pixel_factors`` (per image, reference
+    pixels -> own pixels, ``ShapeClass.translation_factor``) moves the offset to its own pixels for the
+    rounding and the rounded offset back. None means every image is on the reference pixel.
 
     ``dtype`` defaults to float32 (RELION's accelerated-GPU precision);
     callers running a genuine double-precision comparison should pass
@@ -33,9 +43,10 @@ def _relion_metadata_translations(
     ``src/ml_optimiser.h``, ``src/metadata_label.h``, ``src/metadata_container.h``).
     """
     selected = np.asarray(selected_relative_translations, dtype=dtype)
-    base = relion_translation_search_base(previous_best_translations, dtype=dtype)
-    if base is None:
+    if previous_best_translations is None:
         return selected
+    factors = 1.0 if own_pixel_factors is None else np.asarray(own_pixel_factors, dtype=np.float64)[:, None]
+    base = relion_translation_search_base(np.asarray(previous_best_translations) * factors, dtype=np.float64) / factors
     return (np.asarray(base, dtype=dtype).reshape(selected.shape) + selected).astype(dtype)
 
 
