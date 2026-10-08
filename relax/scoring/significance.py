@@ -53,6 +53,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
+from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_publish import publish_batch
 from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
 from relax.scoring.scoring import (
@@ -82,43 +83,6 @@ _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
 NVTX_DOMAIN_EM = "recovar_em"
 logger = logging.getLogger(__name__)
 
-
-
-def _pad_significance_preprocess_inputs(
-    batch_data,
-    integer_pre_shifts,
-    batch_scale,
-    relion_preprocess_kwargs,
-    *,
-    target_size: int,
-):
-    """Give a tail significance batch the same compiled image shape as full batches."""
-
-    actual_size = int(batch_data.shape[0])
-    target_size = max(actual_size, int(target_size))
-    if actual_size == target_size:
-        return (
-            batch_data,
-            integer_pre_shifts,
-            batch_scale,
-            relion_preprocess_kwargs,
-        )
-    padded_kwargs = None
-    if relion_preprocess_kwargs is not None:
-        padded_kwargs = {
-            key: jnp.asarray(_repeat_pad_batch_axis(value, target_size))
-            for key, value in relion_preprocess_kwargs.items()
-        }
-    return (
-        _repeat_pad_batch_axis(batch_data, target_size),
-        (
-            None
-            if integer_pre_shifts is None
-            else _repeat_pad_batch_axis(integer_pre_shifts, target_size)
-        ),
-        _repeat_pad_batch_axis(batch_scale, target_size),
-        padded_kwargs,
-    )
 
 
 def _coarse_rotated_radius_enabled(*, default: bool = False) -> bool:
@@ -701,11 +665,8 @@ def _compute_k_class_significance_batched(
 
     from relax.helpers.fourier_window import make_fourier_window_spec
     from relax.helpers.half_spectrum import make_scoring_half_image_weights, redundant_nyquist_column_pixels
-    from relax.helpers.image_shifts import apply_relion_integer_pre_shifts, tiled_half_image_phase_factors
+    from relax.helpers.image_shifts import tiled_half_image_phase_factors
     from relax.helpers.oversampling import find_significant_rotations as _find_sig
-    from relax.helpers.preprocessing import (
-        prepare_batch_preprocess_operands,
-    )
 
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
@@ -1200,6 +1161,19 @@ def _compute_k_class_significance_batched(
         exact_cc_score_indices=exact_cc_score_indices,
         coarse_gaussian_score_indices=coarse_gaussian_score_indices,
     )
+    batch_input_plan = BatchInputPlan(
+        experiment_dataset=experiment_dataset,
+        image_corrections=image_corrections,
+        scale_corrections=scale_corrections,
+        image_pre_shifts=image_pre_shifts,
+        score_real_dtype=score_real_dtype,
+        pad_final_image_batch=pad_final_image_batch,
+        image_batch_size=image_batch_size,
+        noise_variance_half=noise_variance_half,
+        noise_table_host=noise_table_host,
+        image_groups_host=image_groups_host,
+        translation_log_prior=translation_log_prior,
+    )
     pending_batch = None
     from relax.cuda.kernels import deferred_relion_preprocess_checks
 
@@ -1220,77 +1194,29 @@ def _compute_k_class_significance_batched(
             batch_pmax = batch_weights = batch_sig_mask = batch_sig_rot_mask = batch_n_sig = batch_cutoff_count = None
             _batch_sum_weight = _batch_significant_weight = None
             exact_cc_operands = exact_cc_pixel_weight = exact_cc_shifted = None
-            (
-                relion_cuda_preprocess,
-                integer_pre_shifts,
-                _,
-                batch_scale_np,
-                relion_preprocess_kwargs,
-            ) = prepare_batch_preprocess_operands(
-                experiment_dataset,
+            batch_inputs = prepare_batch_inputs(
+                batch_input_plan,
                 batch_data,
                 indices,
-                image_corrections=image_corrections,
-                scale_corrections=scale_corrections,
-                image_pre_shifts=image_pre_shifts,
-                dtype=score_real_dtype,
+                start_idx=start_idx,
+                end_idx=end_idx,
             )
-            if pad_final_image_batch and actual_batch_size < int(image_batch_size):
-                (
-                    batch_data,
-                    integer_pre_shifts,
-                    batch_scale_np,
-                    relion_preprocess_kwargs,
-                ) = _pad_significance_preprocess_inputs(
-                    batch_data,
-                    integer_pre_shifts,
-                    batch_scale_np,
-                    relion_preprocess_kwargs,
-                    target_size=int(image_batch_size),
-                )
-            batch_size = int(batch_data.shape[0])
-            # The batch's dataset images, repeat-padded as batch_data is.
-            batch_image_indices = _repeat_pad_batch_axis(np.asarray(indices), batch_size)
-            # Each image's own optics-group spectrum; the one shared spectrum otherwise.
-            batch_noise_half = noise_variance_half
-            if noise_table_host is not None:
-                batch_groups = image_groups_host[np.asarray(indices, dtype=np.int64)]
-                batch_noise_half = jnp.asarray(_repeat_pad_batch_axis(noise_table_host[batch_groups], batch_size))
-            real_space_pre_shift_applied = integer_pre_shifts is not None
-            if real_space_pre_shift_applied and not relion_cuda_preprocess:
-                batch_data = apply_relion_integer_pre_shifts(batch_data, integer_pre_shifts)
-            batch_data = jnp.asarray(batch_data)
-            if translation_log_prior is None:
-                batch_translation_log_prior = None
-            elif translation_log_prior.ndim == 1:
-                batch_translation_log_prior = jnp.asarray(translation_log_prior)
-            else:
-                batch_translation_log_prior_np = np.asarray(translation_log_prior[start_idx:end_idx])
-                if batch_size > actual_batch_size:
-                    batch_translation_log_prior_np = _repeat_pad_batch_axis(
-                        batch_translation_log_prior_np,
-                        batch_size,
-                    )
-                batch_translation_log_prior = jnp.asarray(batch_translation_log_prior_np)
-
-            if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
-                raise ValueError("pass 1 scores RELION's exact coarse operands and needs RELION's CUDA image preprocessing")
             if exact_cc_enabled:
                 from relax.cuda import kernels as em_cuda_kernels
 
                 exact_cc_processed = _process_relion_exact_coarse_half_image(
                     experiment_dataset,
-                    batch_data,
+                    batch_inputs.batch_data,
                     score_with_masked_images,
-                    relion_preprocess_kwargs=relion_preprocess_kwargs,
-                    image_indices=batch_image_indices,
+                    relion_preprocess_kwargs=batch_inputs.relion_preprocess_kwargs,
+                    image_indices=batch_inputs.batch_image_indices,
                 )
                 exact_cc_phase_factors = None
-                if image_pre_shifts is not None and not real_space_pre_shift_applied:
+                if image_pre_shifts is not None and not batch_inputs.real_space_pre_shift_applied:
                     exact_cc_shifts = np.asarray(image_pre_shifts)[np.asarray(indices)]
                     exact_cc_phase_factors = tiled_half_image_phase_factors(
                         image_shape,
-                        jnp.asarray(_repeat_pad_batch_axis(exact_cc_shifts, batch_size)),
+                        jnp.asarray(_repeat_pad_batch_axis(exact_cc_shifts, batch_inputs.batch_size)),
                         1,
                     )
                 # The padded rows of a short last batch repeat its first image's CTF row.
@@ -1298,7 +1224,7 @@ def _compute_k_class_significance_batched(
                     exact_cc_processed,
                     _relion_exact_ctf_half_from_source_star(
                         experiment_dataset,
-                        _repeat_pad_batch_axis(np.asarray(indices), batch_size),
+                        _repeat_pad_batch_axis(np.asarray(indices), batch_inputs.batch_size),
                         image_shape,
                     ),
                     _relion_cc_inverse_power_from_processed(
@@ -1306,7 +1232,7 @@ def _compute_k_class_significance_batched(
                         window_indices if use_window else None,
                         (half_weights_windowed if use_window else half_weights) if cc_gaussian_support else None,
                     ),
-                    jnp.asarray(batch_scale_np, dtype=jnp.float32),
+                    jnp.asarray(batch_inputs.batch_scale_np, dtype=jnp.float32),
                     phase_factors=exact_cc_phase_factors,
                     window_indices=window_indices if use_window else None,
                     scale_corrections_enabled=scale_corrections is not None,
@@ -1316,7 +1242,7 @@ def _compute_k_class_significance_batched(
                     exact_cc_translation_angles,
                     exact_cc_score_indices,
                     image_shape,
-                ).reshape(batch_size, n_trans, -1)
+                ).reshape(batch_inputs.batch_size, n_trans, -1)
                 exact_cc_pixel_weight = exact_cc_operands.windowed_corr_img * (
                     half_weights_windowed if use_window else half_weights
                 )
@@ -1324,10 +1250,10 @@ def _compute_k_class_significance_batched(
             if exact_gaussian:
                 processed_direct = _process_relion_exact_coarse_half_image(
                     experiment_dataset,
-                    batch_data,
+                    batch_inputs.batch_data,
                     score_with_masked_images,
-                    relion_preprocess_kwargs=relion_preprocess_kwargs,
-                    image_indices=batch_image_indices,
+                    relion_preprocess_kwargs=batch_inputs.relion_preprocess_kwargs,
+                    image_indices=batch_inputs.batch_image_indices,
                 )
                 if nyquist_column_counting != "relion":
                     # The score weights are zero on these pixels; zeroing them here also takes them
@@ -1342,16 +1268,16 @@ def _compute_k_class_significance_batched(
                     processed_direct,
                     indices,
                     use_float64_scoring=use_float64_scoring,
-                    batch_scale_np=batch_scale_np,
+                    batch_scale_np=batch_inputs.batch_scale_np,
                     actual_batch_size=actual_batch_size,
-                    batch_size=batch_size,
+                    batch_size=batch_inputs.batch_size,
                     score_indices=coarse_gaussian_score_indices,
                     score_indices_np=coarse_gaussian_score_indices_np,
                     score_active_mask=coarse_gaussian_score_active_mask,
                     translations_source=translations_source,
                     relion_translation_angle_scale=relion_translation_angle_scale,
                     image_shape=image_shape,
-                    noise_variance_half=batch_noise_half,
+                    noise_variance_half=batch_inputs.batch_noise_half,
                     scale_corrections_enabled=scale_corrections is not None,
                     half_weights=half_weights,
                     powerclass=coarse_gaussian_powerclass,
@@ -1396,7 +1322,7 @@ def _compute_k_class_significance_batched(
             dump_target_with_prior_blocks_per_class = (
                 [[] for _ in range(n_classes)] if dump_target_local_positions is not None else None
             )
-            neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_size, bool(jax.config.jax_enable_x64))
+            neg_inf_f, zeros_f64, zeros_i32 = _pass1_batch_constants(batch_inputs.batch_size, bool(jax.config.jax_enable_x64))
             global_max = neg_inf_f
             global_sum = zeros_f64
             class_max_values = []
@@ -1418,7 +1344,7 @@ def _compute_k_class_significance_batched(
                 relion_raw_score_max = None
             else:
                 relion_raw_score_max = jnp.full(
-                    batch_size,
+                    batch_inputs.batch_size,
                     -jnp.inf,
                     dtype=jnp.float32,
                 )
@@ -1487,7 +1413,7 @@ def _compute_k_class_significance_batched(
                         pass1_prior_terms[class_index][r0 // rotation_block_size]
                         for class_index, r0, _, _ in pass1_blocks
                     ),
-                    batch_translation_log_prior,
+                    batch_inputs.translation_log_prior,
                     pass1_dump_rows,
                     blocks=pass1_blocks,
                     **pass1_static,
@@ -1507,7 +1433,7 @@ def _compute_k_class_significance_batched(
                         *pass1_operands,
                         actual_batch_size,
                         pass1_prior_terms[class_index][r0 // rotation_block_size],
-                        batch_translation_log_prior,
+                        batch_inputs.translation_log_prior,
                         jnp.int32(class_index),
                         jnp.int32(r0),
                         pass1_dump_rows,
@@ -1563,7 +1489,7 @@ def _compute_k_class_significance_batched(
                     indices=indices,
                     debug_iteration=debug_iteration,
                 )
-                tree_rescore_examined += int(batch_size)
+                tree_rescore_examined += int(batch_inputs.batch_size)
                 tree_rescore_ambiguous += rescored.ambiguous_images
                 tree_rescore_exact_ties += rescored.exact_ties
                 tree_rescore_winner_changes += rescored.winner_changes
@@ -1607,8 +1533,8 @@ def _compute_k_class_significance_batched(
                             None
                             if not relion_exact_coarse_weight_order
                             else np.zeros(n_trans, dtype=np.float32)
-                            if batch_translation_log_prior is None
-                            else batch_translation_log_prior
+                            if batch_inputs.translation_log_prior is None
+                            else batch_inputs.translation_log_prior
                         ),
                         exact_weight_order=relion_exact_coarse_weight_order,
                         n_trans=int(n_trans),
@@ -1671,7 +1597,7 @@ def _compute_k_class_significance_batched(
                 start_idx=start_idx,
                 end_idx=end_idx,
                 actual_batch_size=actual_batch_size,
-                batch_size=batch_size,
+                batch_size=batch_inputs.batch_size,
                 indices=indices,
                 pmax=batch_pmax,
                 weights=None if defer_publish else batch_weights,
@@ -1694,7 +1620,7 @@ def _compute_k_class_significance_batched(
                 dump_target_local_positions=dump_target_local_positions,
                 dump_target_pre_prior_blocks_per_class=None if defer_publish else dump_target_pre_prior_blocks_per_class,
                 dump_target_with_prior_blocks_per_class=None if defer_publish else dump_target_with_prior_blocks_per_class,
-                translation_log_prior=None if defer_publish else batch_translation_log_prior,
+                translation_log_prior=None if defer_publish else batch_inputs.translation_log_prior,
                 coarse_gaussian_shifted_corrected=None if defer_publish else coarse_gaussian_shifted_corrected,
                 coarse_gaussian_unshifted_corrected=None if defer_publish else coarse_gaussian_unshifted_corrected,
                 coarse_gaussian_pixel_weight=None if defer_publish else coarse_gaussian_pixel_weight,

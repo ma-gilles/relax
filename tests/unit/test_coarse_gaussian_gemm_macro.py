@@ -15,7 +15,7 @@ from helpers.pass1_programs import clear_pass1_programs
 
 from relax.helpers.projection_cache import build_projection_cache
 from relax.relion import relion_ctf
-from relax.scoring import coarse_gaussian_gemm, scoring, significance
+from relax.scoring import coarse_gaussian_gemm, pass1_batch, scoring, significance
 from relax.scoring.significant_samples import significant_sample_ids
 
 
@@ -945,7 +945,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     monkeypatch.setattr(significance, "_relion_coarse_gaussian_gemm_scores_jit", traced_designed_scores)
     jax.clear_caches()
 
-    original_pad = significance._pad_significance_preprocess_inputs
+    original_pad = pass1_batch._pad_significance_preprocess_inputs
     poison_tail = {"enabled": False}
 
     def maybe_poison_tail(*args, **kwargs):
@@ -957,7 +957,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         return tuple(result)
 
     monkeypatch.setattr(
-        significance,
+        pass1_batch,
         "_pad_significance_preprocess_inputs",
         maybe_poison_tail,
     )

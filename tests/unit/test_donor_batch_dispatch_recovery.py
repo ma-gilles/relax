@@ -1,5 +1,5 @@
 """Donor memory policy and metadata-only batch shape regressions."""
-from relax.scoring.significance import _pad_significance_preprocess_inputs
+from relax.scoring.pass1_batch import _pad_significance_preprocess_inputs
 
 
 class ShapeOnlyBatch:
