@@ -2110,15 +2110,19 @@ def refine_single_volume(
             k_class_enabled=k_class_enabled,
             firstiter_cc=first_iteration.relion_firstiter_cc,
             ctf_premultiplied=datasets_store_premultiplied_ctf(experiment_datasets),
-            dump_debug=partial(observer.noise_updated, iteration, current_size=current_size),
             summed_current_size=sampling_plan.windows.image_window_size if consistency.noise_shell_count == "summed" else None,
             nyquist_column_counting=consistency.nyquist_column_counting,
         )
+        if not first_iteration.relion_firstiter_cc:
+            observer.noise_updated(
+                iteration, current_size=current_size, image_shape=image_geometry.image_shape,
+                noise_stats_per_half=per_half.noise_stats, previous_noise_radial_per_half=noise_model.radial_per_half,
+                noise_from_res_per_half=noise_update.noise_from_res_per_half, noise_from_res=noise_update.noise_from_res,
+            )
+            observer.stage_finished(iteration, "noise_update")
         noise_from_res = noise_update.noise_from_res
         noise_from_res_per_half = noise_update.noise_from_res_per_half
         noise_model = noise_update.model
-        if not first_iteration.relion_firstiter_cc:
-            observer.stage_finished(iteration, "noise_update")
 
         correction_report = NormScaleCorrectionReport()
         norm_scale_update = numbered_norm_scale_update(

@@ -545,16 +545,14 @@ def _one_group_sigma2_noise(stats, image_shape, *, ctf_premultiplied, summed_cur
     return np.asarray(sigma2_noise, dtype=np.float64), _shell_profile_pixel_row(sigma2_noise, image_shape)
 
 
-def _report_noise_update(
-    noise_stats_per_half,
+def _noise_update_result(
     model: NoiseModel,
-    image_shape,
     noise_variance_per_half,
     noise_from_res_per_half,
     noise_from_res,
-    dump_debug,
 ) -> NoiseUpdateResult:
-    """Log and dump the new spectra against ``model``'s, then build the updated model."""
+    """Log the new spectra against ``model``'s and build the updated model. The controller hands the update's
+    terms to its observer (``RunObserver.noise_updated``)."""
     # Log per-shell noise comparison (first 10 shells) for convergence diagnostics.
     old_noise_radial = np.asarray(model.average_radial).reshape(
         -1, np.shape(noise_from_res)[-1]
@@ -567,15 +565,6 @@ def _report_noise_update(
         ", ".join(f"{float(x):.3e}" for x in old_noise_radial[:n_log]),
         ", ".join(f"{float(x):.3e}" for x in new_noise_radial[:n_log]),
     )
-    if dump_debug is not None:
-        dump_debug(
-            image_shape=image_shape,
-            noise_stats_per_half=noise_stats_per_half,
-            previous_noise_radial_per_half=model.radial_per_half,
-            noise_from_res_per_half=noise_from_res_per_half,
-            noise_from_res=noise_from_res,
-        )
-
     new_previous_noise_radial = jnp.asarray(noise_from_res)
     noise_variance = _mean_noise_variance(noise_variance_per_half)
     return NoiseUpdateResult(
@@ -597,7 +586,6 @@ def update_k1_posterior_noise_variance(
     *,
     firstiter_cc: bool,
     ctf_premultiplied: bool = False,
-    dump_debug=None,
     summed_current_size=None,
     nyquist_column_counting="relion",
 ) -> NoiseUpdateResult:
@@ -650,10 +638,7 @@ def update_k1_posterior_noise_variance(
         noise_from_res_per_half.append(noise_k)
         noise_variance_per_half[k_noise] = noise_rows_k
     noise_from_res = np.mean(np.stack(noise_from_res_per_half, axis=0), axis=0)
-    return _report_noise_update(
-        noise_stats_per_half, model, image_shape,
-        noise_variance_per_half, noise_from_res_per_half, noise_from_res, dump_debug,
-    )
+    return _noise_update_result(model, noise_variance_per_half, noise_from_res_per_half, noise_from_res)
 
 
 def update_class_posterior_noise_variance(
@@ -663,7 +648,6 @@ def update_class_posterior_noise_variance(
     *,
     firstiter_cc: bool,
     ctf_premultiplied: bool = False,
-    dump_debug=None,
     summed_current_size=None,
     nyquist_column_counting="relion",
 ) -> NoiseUpdateResult:
@@ -710,10 +694,7 @@ def update_class_posterior_noise_variance(
         )
     noise_from_res_per_half = [noise_from_res.copy(), noise_from_res.copy()]
     noise_variance_per_half = [noise_rows, noise_rows]
-    return _report_noise_update(
-        noise_stats_per_half, model, image_shape,
-        noise_variance_per_half, noise_from_res_per_half, noise_from_res, dump_debug,
-    )
+    return _noise_update_result(model, noise_variance_per_half, noise_from_res_per_half, noise_from_res)
 
 
 def update_posterior_noise_variance(
@@ -724,7 +705,6 @@ def update_posterior_noise_variance(
     k_class_enabled: bool,
     firstiter_cc: bool,
     ctf_premultiplied: bool = False,
-    dump_debug=None,
     summed_current_size=None,
     nyquist_column_counting="relion",
 ) -> NoiseUpdateResult:
@@ -739,6 +719,6 @@ def update_posterior_noise_variance(
     update = update_class_posterior_noise_variance if k_class_enabled else update_k1_posterior_noise_variance
     return update(
         noise_stats_per_half, model, image_shape,
-        firstiter_cc=firstiter_cc, ctf_premultiplied=ctf_premultiplied, dump_debug=dump_debug,
+        firstiter_cc=firstiter_cc, ctf_premultiplied=ctf_premultiplied,
         summed_current_size=summed_current_size, nyquist_column_counting=nyquist_column_counting,
     )
