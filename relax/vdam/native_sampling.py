@@ -479,7 +479,7 @@ def _estimate_native_sampling_accuracy(
             class_weights=np.asarray(state.pdf_class, dtype=np.float64),
             sigma2_noise_relion=np.asarray(sigma2_noise_relion, dtype=np.float64),
             **optics_kwargs,
-            ori_size=int(state.ori_size),
+            model_box_size=int(state.ori_size),
             **grid_kwargs,
             padding_factor=int(padding_factor),
             sigma2_fudge=float(sigma2_fudge),

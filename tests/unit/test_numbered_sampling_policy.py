@@ -174,7 +174,7 @@ def test_particle_remap_retains_independent_model_cutoff(
     model_size, optics_boxes, optics_pixels, image_size, model_window, image_window,
 ):
     result = iteration_planning.plan_expectation_windows(model_size, _optics(optics_boxes, optics_pixels), log=LOG)
-    assert result.image_size == image_size
+    assert result.image_current_size == image_size
     assert result.model_window_size == model_window
     assert result.image_window_size == image_window
 
@@ -189,4 +189,4 @@ def test_shape_classes_are_not_remapped_by_the_single_shape_plan():
     result = iteration_planning.plan_expectation_windows(
         64, _optics([128], [0.5], multi_shape_halves=True), log=LOG,
     )
-    assert result.image_size == 64
+    assert result.image_current_size == 64

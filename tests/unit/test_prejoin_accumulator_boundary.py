@@ -41,7 +41,7 @@ def test_prejoin_capture_routing(iteration, target, k_class_enabled, captured, s
         assert kwargs['stage'] == 'prejoin'
         assert kwargs['iteration'] == iteration
         assert kwargs['current_size'] == 6
-        assert kwargs['grid_size'] == settings.box_size
+        assert kwargs['box_size'] == settings.box_size
         assert kwargs['volume_shape'] == settings.volume_shape
         assert kwargs['padding_factor'] == settings.padding_factor
         assert kwargs['accumulator_shape'] == (16, 16, 16)
