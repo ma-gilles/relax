@@ -4,7 +4,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from relax.vdam import dense_adapter as adapter
+from relax.vdam import estep_setup as adapter
 from relax.vdam import iteration_loop as loop
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment

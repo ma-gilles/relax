@@ -286,7 +286,7 @@ production scoring remains float32. Each oversampled translation inherits its
 coarse parent's prior, rather than evaluating the prior at the child coordinate.
 Image pre-shifts and offset-variance statistics retain their separate conventions.
 See [`_translation_log_prior`](../../relax/vdam/native_sampling.py) and
-[`_dense_estep_config`](../../relax/vdam/dense_adapter.py).
+[`_dense_estep_config`](../../relax/vdam/estep_setup.py).
 
 ### E-step pass 1
 

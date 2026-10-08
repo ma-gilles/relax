@@ -25,9 +25,9 @@ from relax.sgd_initial_model.noise import (
 )
 from relax.sgd_initial_model.optimizer import _bandlimit_real_map, _class_step, sgd_m_step
 from relax.vdam.bootstrap_iref import initialise_denovo_state
-from relax.vdam.dense_adapter import _noise_variance_from_sigma2
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_probabilities_from_estep
+from relax.vdam.estep_setup import _noise_variance_from_sigma2
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 from relax.vdam.native_sampling import _build_sampling_plan

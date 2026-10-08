@@ -33,7 +33,7 @@ def test_adaptive_vdam_route_passes_window_at_box():
 
 
 def test_dense_vdam_engine_kwargs_keep_window_at_box():
-    from relax.vdam import dense_adapter
+    from relax.vdam import estep_setup
 
-    source = inspect.getsource(dense_adapter._dense_engine_kwargs)
+    source = inspect.getsource(estep_setup._dense_engine_kwargs)
     assert '"window_at_box": True' in source

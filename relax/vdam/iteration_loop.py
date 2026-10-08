@@ -244,7 +244,7 @@ def run_vdam_iterations(
     ``update`` is the optimizer's model update (:class:`VdamUpdate` or :class:`MomentumSgdUpdate`), chosen
     once by the caller. ``projector_refresh_fn(state, padding_factor=...)`` runs before every E-step:
     RELION's ``MlModel::setFourierTransformMaps(!fix_tau)``, the projector and tau2 from its power
-    spectrum (:meth:`relax.vdam.dense_adapter._IterationProjectorContext.refresh`). ``record_iteration`` updates the caller's own run state from the completed
+    spectrum (:meth:`relax.vdam.estep_setup._IterationProjectorContext.refresh`). ``record_iteration`` updates the caller's own run state from the completed
     iteration (the sampling controller's counters) before ``iter_artifact_sink`` writes its outputs.
     """
     phase_lengths = _resolve_phase_lengths(

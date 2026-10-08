@@ -210,7 +210,7 @@ resolution estimates; current-size selection includes frequency headroom.
 Neither quantity can simply be reused as a PPCA loading variance.
 
 Sources: the projector refresh `_IterationProjectorContext.refresh` in
-[dense_adapter.py](../../relax/vdam/dense_adapter.py), the scheduling in
+[estep_setup.py](../../relax/vdam/estep_setup.py), the scheduling in
 [iteration_loop.py](../../relax/vdam/iteration_loop.py), and
 `relion_vdam_m_step_device` in the transaction linked above.
 

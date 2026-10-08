@@ -40,13 +40,13 @@ from relax.relion.relion_metadata import (
     refuse_unsupported_optics,
 )
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
-from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
+from relax.vdam import estep_meta_updates, estep_setup, native_sampling, output, schedules
 from relax.vdam.bootstrap_iref import (
     _initial_state_from_particles,
     _initial_state_from_tomo_particles,
     _load_raw_images,
 )
-from relax.vdam.dense_adapter import run_dense_initial_model_estep
+from relax.vdam.estep_setup import run_dense_initial_model_estep
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import _prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -89,7 +89,7 @@ def _native_expectation_step(
     sampling_state: NativeSamplingState,
     optics_state: NativeOpticsState | None = None,
     *,
-    projector_context: dense_adapter._IterationProjectorContext,
+    projector_context: estep_setup._IterationProjectorContext,
     tilt_images: dict | None = None,
     optics_group_ids: np.ndarray | None = None,
     premultiplied_ctf: bool = False,
@@ -153,7 +153,7 @@ def _native_expectation_step(
             **sampling_kwargs,
         )
         sigma_offset_angstrom = float(np.sqrt(max(float(state.sigma2_offset), 0.0)))
-        current_noise_variance = dense_adapter._noise_variance_from_sigma2(state.sigma2_noise, int(state.ori_size))
+        current_noise_variance = estep_setup._noise_variance_from_sigma2(state.sigma2_noise, int(state.ori_size))
         previous_translations = np.asarray(particle_state.translation_offsets, dtype=np.float64).copy()
         previous_rotations = (
             None
@@ -262,7 +262,7 @@ def _native_expectation_step(
         do_grad,
         iteration,
     ):
-        config = dense_adapter._dense_estep_config(
+        config = estep_setup._dense_estep_config(
             dataset,
             opts,
             noise_variance,
@@ -486,7 +486,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         n_particles = int(dataset.n_images)
     for class_dataset in getattr(image_dataset, "datasets", (image_dataset,)):
         assert_reads_from_scratch(class_dataset, particle_scratch)
-        dense_adapter._configure_relion_image_mask(class_dataset, opts)
+        estep_setup._configure_relion_image_mask(class_dataset, opts)
     profile.record("dataset_load")
 
     optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
@@ -583,7 +583,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
             ),
         )
     profile.record("state_setup")
-    projector_context = dense_adapter._IterationProjectorContext()
+    projector_context = estep_setup._IterationProjectorContext()
     expectation_step = _native_expectation_step(
         dataset,
         opts,

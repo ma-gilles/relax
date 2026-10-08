@@ -281,7 +281,7 @@ Shared RELION projector construction lives in
 `reference_to_relion_projector_half_maps_and_power` selects native/JAX setup and
 performs the established frame and dtype conversion; the maps-only wrapper
 releases the unused power spectrum. EM projector caching and VDAM both use this
-owner directly. VDAM's `dense_adapter` retains state-specific preparation and
+owner directly. VDAM's `estep_setup` retains state-specific preparation and
 accumulator conversion, so EM no longer imports the VDAM execution adapter to
 construct projectors. The same shared owner normalizes local projector slab
 shapes without changing dtype. Shared host/device x=0 Hermitian enforcement
@@ -380,7 +380,7 @@ added 55 shared lines to the counted input/output owner, reaching 1,269; 20 more
 lines of controller headroom now cover that responsibility (1,270 allowance).
 The combined allowance remains 8,850.
 Projector refresh/consume lifecycle now lives beside its builders in
-`vdam/dense_adapter.py`; its unchanged stale-state checks and single-use handoff
+`vdam/estep_setup.py`; its unchanged stale-state checks and single-use handoff
 transfer 40 budget lines from controllers to E-step, preserving the total.
 Image-mask setup and normalized-spectrum conversion also live in the E-step
 adapter; this transfers another 35 budget lines from controllers to E-step.

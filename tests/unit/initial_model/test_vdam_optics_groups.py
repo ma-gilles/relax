@@ -12,7 +12,7 @@ from relax.helpers.expected_accuracy import ExpectedAccuracy
 from relax.relion import initial_model_io
 from relax.relion.initial_noise import relion_startup_positions
 from relax.vdam import bootstrap_reconstruction as br
-from relax.vdam import dense_adapter, native_sampling
+from relax.vdam import estep_setup, native_sampling
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_noise_from_estep
@@ -86,10 +86,10 @@ def test_particle_optics_follow_each_particles_group():
 
 def test_noise_rows_per_group():
     spectra = np.abs(np.random.default_rng(1).standard_normal((2, 9))) + 0.1
-    rows = dense_adapter._noise_variance_from_sigma2(spectra, 16)
+    rows = estep_setup._noise_variance_from_sigma2(spectra, 16)
     assert rows.shape == (2, 256)
-    np.testing.assert_allclose(rows[1], dense_adapter._noise_variance_from_sigma2(spectra[1:], 16), rtol=1e-12)
-    assert dense_adapter._noise_variance_from_sigma2(spectra[:1], 16).shape == (256,)
+    np.testing.assert_allclose(rows[1], estep_setup._noise_variance_from_sigma2(spectra[1:], 16), rtol=1e-12)
+    assert estep_setup._noise_variance_from_sigma2(spectra[:1], 16).shape == (256,)
 
 
 def _state(n_groups, size=16):

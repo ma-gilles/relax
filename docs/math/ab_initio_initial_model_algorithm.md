@@ -61,7 +61,7 @@ The same posterior algebra is used by:
   (the single-grid dense engine `run_em` / `run_dense_k_class_em` was removed on 2026-10-03);
 - native InitialModel, through
   [`driver.py::_native_expectation_step`](../../relax/vdam/driver.py)
-  and [`dense_adapter.py::run_dense_initial_model_estep`](../../relax/vdam/dense_adapter.py).
+  and [`estep_setup.py::run_dense_initial_model_estep`](../../relax/vdam/estep_setup.py).
 
 The debugging rule is: equal per-hypothesis scores are not enough for map
 parity. The map also depends on the support being normalized over, the class
@@ -170,7 +170,7 @@ This state is created by
 and bootstrapped by
 [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py).
 The dense E-step bridge in
-[`dense_adapter.py`](../../relax/vdam/dense_adapter.py)
+[`estep_setup.py`](../../relax/vdam/estep_setup.py)
 passes RELION's projector of `Iref` to the adaptive K-class E-step, packs
 selected particles by pseudo-halfset, and emits VDAM accumulators.
 
@@ -235,7 +235,7 @@ Use this index only after reading the algorithm sections above.
   [`schedules.py`](../../relax/vdam/schedules.py),
   [`subset_schedule.py::select_vdam_subset`](../../relax/vdam/subset_schedule.py)
 - InitialModel dense bridge and M-step:
-  [`dense_adapter.py`](../../relax/vdam/dense_adapter.py),
+  [`estep_setup.py`](../../relax/vdam/estep_setup.py),
   [`estep_common.py`](../../relax/vdam/estep_common.py),
   [`m_step.py`](../../relax/vdam/m_step.py)
 - Standard EM / K-class:
@@ -400,7 +400,7 @@ but its support and M-step differ from standard reconstruction EM.
 
 ## Detail: Dense Adapter, Sparse Pass 2, and BPref Conversion
 
-`dense_adapter.py` is the bridge between native dense K-class EM and RELION
+`estep_setup.py` is the bridge between native dense K-class EM and RELION
 VDAM. Its responsibilities are:
 
 - Build RELION's projector from `InitialModelState.Iref` once per iteration
@@ -461,7 +461,7 @@ RELION BPref arrays. Frame/sign mistakes usually show up as good score parity
 but bad `BPref` or `Iref` parity.
 
 The dense E-step entry point lives in
-[`vdam/dense_adapter.py`](../../relax/vdam/dense_adapter.py);
+[`vdam/estep_setup.py`](../../relax/vdam/estep_setup.py);
 [`vdam/estep_common.py`](../../relax/vdam/estep_common.py) owns its configuration
 and result records. The old `gpu_pipeline.py` compatibility shim is removed.
 
@@ -659,7 +659,7 @@ diagnostic variants through `_reconstruct_volume_eager`, and compares class
 maps after the best permutation.
 
 Native InitialModel is also K-aware in state layout and in
-[`dense_adapter.py::class_log_priors_from_state`](../../relax/vdam/dense_adapter.py):
+[`estep_setup.py::class_log_priors_from_state`](../../relax/vdam/estep_setup.py):
 `pdf_class` becomes class log priors, sparse pass 2 unions significant support
 across classes per image, and `vdam_m_step` loops per class. However, because
 native InitialModel delegates the gradient reconstruction to `vdam_reconstruct_grad`
@@ -673,7 +673,7 @@ RELION GUI InitialModel command construction in
 [`tests/helpers/relion_initial_model_command.py::build_command`](../../tests/helpers/relion_initial_model_command.py)
 adds `--flatten_solvent` by default when `InitialModelJobOptions.do_solvent` is
 true, and also adds `--zero_mask`. In native RECOVAR InitialModel, image masking
-is configured in `dense_adapter.py::_configure_relion_image_mask`, but the final
+is configured in `estep_setup.py::_configure_relion_image_mask`, but the final
 native `initial_model.mrc` is written directly from `state.Iref[best_class]`;
 there is no separate native `relion_align_symmetry` postprocess or documented
 Python-side solvent-flattening pass for the final selected InitialModel map in
@@ -772,7 +772,7 @@ The native path intentionally encodes these RELION GUI InitialModel assumptions:
 - The current scoring path uses masked images for scores but unmasked images
   for reconstruction accumulation, matching the dense-engine contract.
 - The dense scoring noise uses `sigma2_noise * N^4` via
-  `dense_adapter.py::_noise_variance_from_sigma2`.
+  `estep_setup.py::_noise_variance_from_sigma2`.
 - The independent `minvsigma2_with_dc_zero` reference in
   [the VDAM test helpers](../../tests/helpers/vdam.py) documents the RELION
   DC-exclusion convention. It is not part of production E-step execution.

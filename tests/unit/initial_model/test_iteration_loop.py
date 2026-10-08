@@ -212,7 +212,7 @@ def test_projector_refresh_updates_tau2_of_all_classes(bind):
     state.tau2_class.fill(123.0)
     state.current_size = 6
 
-    from relax.vdam.dense_adapter import _IterationProjectorContext
+    from relax.vdam.estep_setup import _IterationProjectorContext
 
     out = _IterationProjectorContext().refresh(state, padding_factor=1)
 

@@ -177,7 +177,7 @@ def test_cs_scaling_preserves_serialized_pixel_value(tmp_path):
 def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch):
     from relax.helpers.resolution import shell_index_to_resolution_angstrom
     from relax.relion import initial_model_io
-    from relax.vdam import bootstrap_iref, dense_adapter, native_options, native_sampling
+    from relax.vdam import bootstrap_iref, estep_setup, native_options, native_sampling
 
     path = _star(tmp_path)
     sf = StarFile.load(path)
@@ -186,7 +186,7 @@ def test_initial_model_consumers_receive_one_loaded_scalar(tmp_path, monkeypatch
     seen = {}
     backend = ds.image_source.backend
     monkeypatch.setattr(backend, "set_relion_image_mask", lambda **kwargs: seen.update(mask=kwargs))
-    dense_adapter._configure_relion_image_mask(ds, opts)
+    estep_setup._configure_relion_image_mask(ds, opts)
     assert seen["mask"]["pixel_size"] == PIXEL
     assert initial_model_io._particle_optics(sf.df, sf.data_optics, ds)[-1] == pytest.approx(PIXEL, rel=1e-12)
     sampling = native_sampling._initial_sampling_state(opts, pixel_size=ds.voxel_size)

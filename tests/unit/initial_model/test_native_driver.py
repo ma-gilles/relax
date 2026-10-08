@@ -23,8 +23,8 @@ from relax.helpers.particle_io import ParticleReadPolicy
 from relax.relion import initial_model_io, vdam_checkpoint
 from relax.vdam import (
     bootstrap_iref,
-    dense_adapter,
     estep_meta_updates,
+    estep_setup,
     native_options,
     native_sampling,
     output,
@@ -40,7 +40,7 @@ pytestmark = pytest.mark.unit
 def test_noise_variance_preserves_relion_rfloat_shell_values():
     sigma2 = np.asarray([[1.00000006e-5, 2.00000012e-5, 3.00000018e-5]], dtype=np.float64)
 
-    noise = dense_adapter._noise_variance_from_sigma2(sigma2, 4)
+    noise = estep_setup._noise_variance_from_sigma2(sigma2, 4)
 
     assert noise.dtype == np.float64
     assert np.any(noise != noise.astype(np.float32).astype(np.float64))
@@ -59,7 +59,7 @@ def test_noise_variance_preserves_relion_rfloat_shell_values():
 )
 def test_effective_initial_model_image_batch_size(requested, grid_size, gpu_memory_gb, expected):
     assert (
-        dense_adapter._effective_initial_model_image_batch_size(
+        estep_setup._effective_initial_model_image_batch_size(
             requested,
             grid_size=grid_size,
             gpu_memory_gb=gpu_memory_gb,
@@ -959,7 +959,7 @@ def test_configure_relion_image_mask_forwards_image_backend():
         image_fourier_backend="relion_cuda",
     )
 
-    dense_adapter._configure_relion_image_mask(dataset, opts)
+    estep_setup._configure_relion_image_mask(dataset, opts)
 
     assert calls["mask"] == {
         "pixel_size": 2.125,
@@ -2200,7 +2200,7 @@ def test_dense_estep_config_splits_fine_and_coarse_translation_priors():
         translation_parent=np.asarray([0, 0], dtype=np.int64),
     )
 
-    config = dense_adapter._dense_estep_config(
+    config = estep_setup._dense_estep_config(
         dataset,
         opts,
         np.ones(5, dtype=np.float32),
@@ -2230,7 +2230,7 @@ def test_dense_estep_config_keeps_zero_oversampling_on_exact_adaptive_route():
         coarse_base_translations=np.asarray([[0.0, 0.0], [2.0, 0.0]], dtype=np.float64),
     )
 
-    config = dense_adapter._dense_estep_config(
+    config = estep_setup._dense_estep_config(
         dataset,
         opts,
         np.ones(5, dtype=np.float32),

@@ -31,7 +31,7 @@ exceptions below; rules 10 and 11 are partly met.** Each exception names its rea
 
 1. **Environment reads that stay where they are used (rule 5).** Each is a diagnostic dump or a parity
    hook owned below the controller:
-   - `dense_adapter._finish_relion_projector_class_inputs`: `RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`
+   - `estep_setup._finish_relion_projector_class_inputs`: `RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR`
      (called through the projector context, which has no options);
    - `estep_common._arrays_to_accumulators`: `RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR`;
    - `native_sampling._estimate_native_sampling_accuracy`: the expected-accuracy dump directory and

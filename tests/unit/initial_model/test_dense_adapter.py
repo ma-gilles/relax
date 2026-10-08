@@ -12,17 +12,17 @@ from helpers.float_compare import assert_matches
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.vdam.adaptive_estep import _resolve_sparse_pass1_current_size, _safe_coarse_significance_image_batch_size
 from relax.vdam.bootstrap_iref import initialise_denovo_state
-from relax.vdam.dense_adapter import (
-    _resolve_class_inputs,
-    prepare_relion_projector_class_inputs_and_power,
-    run_dense_initial_model_estep,
-)
 from relax.vdam.estep_common import (
     DenseInitialModelEstepConfig,
     DenseInitialModelEstepResult,
     _arrays_to_accumulators,
     _estep_meta,
     relion_bpref_frame_scales,
+)
+from relax.vdam.estep_setup import (
+    _resolve_class_inputs,
+    prepare_relion_projector_class_inputs_and_power,
+    run_dense_initial_model_estep,
 )
 from relax.vdam.state import InitialModelState
 
@@ -202,7 +202,7 @@ def _capture_adaptive_route(monkeypatch):
         calls.append(kwargs)
         return DenseInitialModelEstepResult(accumulators=[], meta={})
 
-    monkeypatch.setattr("relax.vdam.dense_adapter.run_adaptive_initial_model_estep", fake_route)
+    monkeypatch.setattr("relax.vdam.estep_setup.run_adaptive_initial_model_estep", fake_route)
     return calls
 
 

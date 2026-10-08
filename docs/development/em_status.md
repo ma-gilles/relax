@@ -1097,7 +1097,7 @@ the binding in `tests/unit/test_*_vs_relion_bind.py` (and `tests/unit/initial_mo
 | `helpers/expected_accuracy.py` | `estimate_relion_expected_accuracy_from_prepared_inputs` | `vdam_expected_angular_errors` | auto-refine, Class3D, InitialModel, tomo | `MlOptimiser::calculateExpectedAngularErrors` | ported (`helpers/relion_expected_accuracy.py`, CTF from `relion_ctf.relion_ctf_fftw_half`) |
 | `helpers/expected_accuracy.py` | `relion_auto_refine_half_orders`, `relion_half1_trial_order`, `relion_class3d_trial_layout` | `auto_refine_randomise_half_orders_mt19937` | auto-refine, Class3D | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
 | `vdam/subset_schedule.py` | subset shuffle | `vdam_randomise_particles_order` | InitialModel | `std::shuffle` with `mt19937(seed + iter)` | ported (`relion_random.shuffled_orders`) |
-| `vdam/dense_adapter.py` | `_IterationProjectorContext.refresh` | `vdam_projector_power_spectrum` | InitialModel | `MlModel::setFourierTransformMaps` tau2 | ported (device projector power) |
+| `vdam/estep_setup.py` | `_IterationProjectorContext.refresh` | `vdam_projector_power_spectrum` | InitialModel | `MlModel::setFourierTransformMaps` tau2 | ported (device projector power) |
 | `vdam/bootstrap_iref.py` | `compute_bootstrap_iref_via_cpp` | `vdam_bootstrap_iref` | InitialModel | random-angle bootstrap reconstruction (ml_optimiser.cpp:3127-3205) | ported (`vdam/bootstrap_reconstruction.py`, now `compute_bootstrap_iref` / `postprocess_bootstrap_iref`) |
 | `vdam/bootstrap_iref.py` | `postprocess_bootstrap_iref_via_cpp` | `vdam_postprocess_initial_iref` | InitialModel | blobs, low-pass and soft mask with the C `rand()` stream | ported (`vdam/bootstrap_reconstruction.py`, now `compute_bootstrap_iref` / `postprocess_bootstrap_iref`) |
 | `vdam/m_step.py` (single-class M-step) | `_get_bindings` and the step-by-step path | `vdam_reweight_grad`, `vdam_first_moment`, `vdam_second_moment`, `vdam_apply_momenta`, `vdam_update_ssnr_arrays_from_bpref`, `vdam_reconstruct_grad` | InitialModel (module required by the default JAX transaction; step path only with dumps/replay or `use_native_transaction=False`) | VDAM M-step | done: production runs the transaction; RELION's steps are `diagnostics/vdam_native_mstep.py` |
@@ -1531,7 +1531,7 @@ spread (0.3161-0.3381). EMPIAR-10097 0.2248 / 0.3565 (unmasked / masked) inside 
 VDAM on the resident engine (2026-09-25; K>1 default 2026-09-26, K=1 default 2026-09-26): the adaptive
 route runs the InitialModel E-step on auto-refine's adaptive route (`relax/vdam/adaptive_estep.py`) with
 the device-resident pass 2. `--pass2_engine auto` (the default) selects it for every K
-(`relax.vdam.dense_adapter.vdam_pass2_route`); a configuration the adaptive route
+(`relax.vdam.estep_setup.vdam_pass2_route`); a configuration the adaptive route
 refuses before device work runs exact-local with a logged reason, `adaptive` makes the refusal an
 error, and each iteration's `run_itNNN_recovar_meta.json` records `pass2_engine` and `pass2_engines`.
 Gate (200 iterations, relax 47103e5, one H100 + 8 CPUs per arm, uncapped; GT FSC-AUC against the

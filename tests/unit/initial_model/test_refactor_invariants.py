@@ -27,10 +27,10 @@ from relax.helpers.expected_accuracy import estimate_relion_expected_accuracy_fr
 from relax.relion import initial_model_io, reference_initialization, relion_projector_setup
 from relax.vdam import (
     adaptive_estep,
-    dense_adapter,
     driver,
     estep_common,
     estep_meta_updates,
+    estep_setup,
     iteration_loop,
     m_step,
     native_options,
@@ -330,7 +330,7 @@ LOC_BUDGETS = {
     # Several optics groups (2026-10-01): per-group noise rows, ids and the per-group noise update (+47).
     # +139: layout.py's allowance, with the file merged into estep_common.py (2026-10-08, e3).
     "estep": (2287, (
-        "dense_adapter.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
+        "estep_setup.py", "estep_common.py", "estep_meta_updates.py", "adaptive_estep.py",
         "tomo_estep.py",
     )),
     # Optics groups on several image shapes (RELION S3b, 2026-10-05): the per-shape-class orchestration of the
@@ -550,12 +550,12 @@ def test_native_sampling_definition_ownership():
 
 
 def test_adaptive_estep_definition_ownership():
-    adapter_src = inspect.getsource(dense_adapter)
+    adapter_src = inspect.getsource(estep_setup)
     for name in ("run_adaptive_initial_model_estep", "_sparse_pass2_estep_meta", "_pop_sparse_pass2_options"):
         assert inspect.getmodule(getattr(adaptive_estep, name)) is adaptive_estep and f"\ndef {name}(" not in adapter_src
     for name in ("DenseInitialModelEstepConfig", "DenseInitialModelEstepResult", "_estep_meta", "_select_image_rows"):
         assert inspect.getmodule(getattr(estep_common, name)) is estep_common
-    assert dense_adapter.run_adaptive_initial_model_estep is adaptive_estep.run_adaptive_initial_model_estep
-    assert dense_adapter.DenseInitialModelEstepConfig is estep_common.DenseInitialModelEstepConfig
+    assert estep_setup.run_adaptive_initial_model_estep is adaptive_estep.run_adaptive_initial_model_estep
+    assert estep_setup.DenseInitialModelEstepConfig is estep_common.DenseInitialModelEstepConfig
     for mod in (adaptive_estep, estep_common):
-        assert "vdam.dense_adapter import" not in inspect.getsource(mod)
+        assert "vdam.estep_setup import" not in inspect.getsource(mod)

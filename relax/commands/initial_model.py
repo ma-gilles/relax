@@ -41,7 +41,7 @@ _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax.vdam.schedules",
     "relax.vdam.driver",
     "relax.vdam.iteration_loop",
-    "relax.vdam.dense_adapter",
+    "relax.vdam.estep_setup",
 )
 
 
