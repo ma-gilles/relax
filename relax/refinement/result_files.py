@@ -22,9 +22,9 @@ import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 
 from relax.diagnostics import parity_dump
-from relax.diagnostics.parity_provenance import git_head_or_none, git_worktree_provenance
 from relax.helpers import iteration_history
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
+from relax.parity.parity_provenance import git_head_or_none, git_worktree_provenance
 from relax.refinement.refinement_result import FinalPassResult, ModelMaps, RefinementResult
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
 

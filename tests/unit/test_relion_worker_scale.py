@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics.relion_replay import _apply_replay_correction_overrides
 from relax.helpers.types import NoiseStats
+from relax.parity.relion_replay import _apply_replay_correction_overrides
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.relion.relion_normalization import (
     update_relion_norm_scale_corrections,

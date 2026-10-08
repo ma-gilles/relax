@@ -1,6 +1,6 @@
 """CLI admission and source binding for sealed diagnostic refinement inputs.
 
-Bundle schemas and array validation remain in :mod:`relax.diagnostics.frozen_boundary`.
+Bundle schemas and array validation remain in :mod:`relax.parity.frozen_boundary`.
 Runtime adaptation follows ``docs/math/relion_refinement_algorithm.md``.
 """
 
@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 from recovar.utils.file_hash import sha256_file as _sha256_file
 
-from relax.diagnostics.frozen_boundary import (
+from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_FIXED_DIAGNOSTIC_ARM,
     FROZEN_BOUNDARY_FIXED_MATH_ENVIRONMENT_CONTRACT,
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -25,7 +25,7 @@ from relax.diagnostics.frozen_boundary import (
     validate_fixed_diagnostic_boundary_runtime_config,
     verify_fixed_diagnostic_boundary_sources,
 )
-from relax.diagnostics.parity_provenance import git_head_or_none, git_worktree_provenance
+from relax.parity.parity_provenance import git_head_or_none, git_worktree_provenance
 
 logger = logging.getLogger('relax.refinement.full_refinement')
 

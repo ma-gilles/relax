@@ -190,7 +190,7 @@ The order of individual updates within these stages matters for trajectory
 comparisons. Replay/oracle inputs can replace selected state boundaries;
 results from those modes must remain distinguishable from autonomous refinement.
 Their implementation belongs to
-[`relion_replay.py`](../../relax/diagnostics/relion_replay.py).
+[`relion_replay.py`](../../relax/parity/relion_replay.py).
 
 [`score_outputs.py`](../../relax/dense/score_outputs.py)
 defines the controller's scoring payloads:
@@ -388,7 +388,7 @@ option retain their legacy input precision. A float32 score array alone does
 not establish float32 projection arithmetic.
 
 Numbered replay retains the source sampling order of a learned direction prior
-in [`apply_iter_replay_overrides`](../../relax/diagnostics/relion_replay.py).
+in [`apply_iter_replay_overrides`](../../relax/parity/relion_replay.py).
 `DirectionPrior` keeps that order with its probability array through replay,
 learning and checkpoint restoration; each half-model holds one, a vector for
 K=1 and one row per class for Class3D. Their initialization and learning operations live in
@@ -904,7 +904,7 @@ future engine design questions. They would change search support, state and
 memory requirements and need their own scientific validation after this cleanup.
 
 Sealed diagnostic restarts use
-[`load_cli_boundary`](../../relax/diagnostics/frozen_boundary_cli.py) for invocation
+[`load_cli_boundary`](../../relax/parity/frozen_boundary_cli.py) for invocation
 admission and live source binding before seed resolution and experiment loading.
 The bundle loader retains schema, identity and array validation. Once the command
 has resolved the experiment geometry, tau2 and perturbation seed,
@@ -940,7 +940,7 @@ array allocation, transfer, JIT boundary, RNG call or buffer release is introduc
 
 ### Sealed restart runtime adaptation
 
-[`empty_replay_slots`](../../relax/diagnostics/frozen_boundary_cli.py)
+[`empty_replay_slots`](../../relax/parity/frozen_boundary_cli.py)
 allocates only empty numbered/final slot dictionaries for a sealed restart. Its
 local slot zero must not reapply fresh-process half-1 noise broadcast. The
 boundary supplies the complete scoring state. `validate_empty_replay_slots`
@@ -1123,7 +1123,7 @@ retention across new copies.
 
 ### Iteration-zero model replay
 
-[`read_initial_model`](../../relax/diagnostics/initial_model_replay.py) prefers
+[`read_initial_model`](../../relax/parity/initial_model_replay.py) prefers
 `run_it000_model.star`. K1 alone can load the ordered half-specific pair when the
 shared file is absent. The first model supplies startup priors and model
 controls. Noise requires each model's sole optics-group spectrum before applying
@@ -1131,7 +1131,7 @@ an explicit NPZ override or live sigma2; the MPI startup policy then broadcasts
 half 1's resolved spectrum to half 2. Later uninterrupted iterations retain
 independent half updates.
 
-[`prepare_noise` and `prepare_prior`](../../relax/diagnostics/initial_model_replay.py)
+[`prepare_noise` and `prepare_prior`](../../relax/parity/initial_model_replay.py)
 preserve the image-frame factor `original_image_size**4` for RELION noise/tau2
 shells. Explicit NPZ radial noise already uses RECOVAR's frame; live sigma2 uses
 RELION's frame. Pixel/volume expansion uses the pinned RECOVAR radial-image

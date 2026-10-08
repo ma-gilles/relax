@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import initial_model_replay as replay
+from relax.parity import initial_model_replay as replay
 
 
 def _write_model(path, *, n_classes=1, sigma2=None, prior_dtype=np.float64, prior_column="rlnReferenceTau2", fudge="_rlnTau2FudgeFactor 1.75"):
@@ -156,7 +156,7 @@ def _relion_init_run(monkeypatch, tmp_path, n_classes, trace=None, **stand_ins):
     reads are stood in for (a model with a 256-pixel noise image and a 4096-voxel prior)."""
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
 
-    from relax.diagnostics import relion_replay
+    from relax.parity import relion_replay
 
     data = write_tiny_data_dir(tmp_path / "data", n_classes=n_classes,
                                extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})

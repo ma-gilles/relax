@@ -12,7 +12,7 @@ are historical, not instructions for the current tip. Current contract sections
 below are retained unchanged; archival does not waive any gate.
 
 The serialized-versus-runtime scale section at the end remains here because
-[replay overrides](../../relax/diagnostics/relion_replay.py) reference it.
+[replay overrides](../../relax/parity/relion_replay.py) reference it.
 Detailed investigation notes live in [the parity notes](relion_parity_agent_notes.md),
 and completion records in [best metrics](em_parity_best_metrics.md).
 

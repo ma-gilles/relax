@@ -51,7 +51,7 @@ assert str(pathlib.Path(__import__("relax").__file__).resolve()).startswith(str(
 assert str(jax_file).startswith(str(pixi_env) + "/"), (jax_file, pixi_env)
 for helper in (
     "helpers.oversampling", "helpers.half_volume_mstep", "relion.relion_projector_setup",
-    "diagnostics.relion_replay", "relion.relion_normalization", "refinement.projector_preparation",
+    "parity.relion_replay", "relion.relion_normalization", "refinement.projector_preparation",
     "dense.score_outputs", "classification.k_class_results", "classification.k_class_inputs", "dense.scoring_policy", "helpers.resolution", "diagnostics.bpref_diagnostics",
     "helpers.expected_accuracy", "scoring.significant_samples", "diagnostics.coarse_score_diagnostics", "scoring.sparse_bucket_arrays", "scoring.compact_candidates", "relion.relion_ctf", "helpers.scale_groups",
     "relion.vdam_checkpoint", "local.local_layout", "diagnostics.local_debug",

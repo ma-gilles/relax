@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 from relax.classification.k_class import _apply_bpref_particle_order_policy
-from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.batch_planning import _plan_consecutive_padded_batches
 from relax.helpers.env_flags import parse_env_flag
+from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from relax.scoring.sparse_bucket_arrays import _bucket_pass2_inputs
 from relax.sparse_pass2.sparse_pass2_policy import _BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE_ENV
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 from recovar.utils.file_hash import sha256_file
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("relax.diagnostics.frozen_boundary")  # the name before the move to relax.parity: log rows keep it
 
 FROZEN_BOUNDARY_SCHEMA_V2 = "recovar.em.frozen_boundary.v2"
 FROZEN_BOUNDARY_SCHEMA_V3 = "recovar.em.frozen_boundary.v3"

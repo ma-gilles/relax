@@ -74,7 +74,7 @@ def _require_fixture(*paths: Path) -> None:
 
 
 def _assert_parity_ancestors_or_skip() -> None:
-    from relax.diagnostics.parity_provenance import (
+    from relax.parity.parity_provenance import (
         ParityAncestryError,
         assert_parity_ancestors,
         print_provenance_banner,

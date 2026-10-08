@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.diagnostics import relion_replay
+from relax.parity import relion_replay
 from relax.relion import input_poses
 
 

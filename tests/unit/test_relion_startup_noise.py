@@ -154,7 +154,7 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch, t
     from helpers.tiny_main import controller_inputs, run_tiny_main, write_tiny_data_dir
     from helpers.tiny_refinement import CallTrace, write_replay_dir
 
-    from relax.diagnostics import initial_model_replay, relion_replay
+    from relax.parity import initial_model_replay, relion_replay
 
     # The consistency option is refused with RELION-seeded or replayed state: only a fresh start sets it.
     pair_counting = "once" if source == "fresh" else "relion"

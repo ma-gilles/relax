@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
-from relax.diagnostics import frozen_boundary_cli
-from relax.diagnostics.frozen_boundary import (
+from relax.parity import frozen_boundary_cli
+from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_FILENAME,
     FROZEN_BOUNDARY_MANIFEST,
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
@@ -24,7 +24,7 @@ from relax.diagnostics.frozen_boundary import (
 )
 
 
-# Moved from relax/diagnostics/frozen_boundary.py (PLAN e1): no relax module uses it, only this test file.
+# Moved from relax/parity/frozen_boundary.py (PLAN e1): no relax module uses it, only this test file.
 def validate_fixed_diagnostic_boundary_sampling_state(
     boundary: FrozenRefinementBoundary,
     observed_sampling: dict[str, np.ndarray | float | int | bool],

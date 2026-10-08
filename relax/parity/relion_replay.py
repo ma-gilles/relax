@@ -61,7 +61,7 @@ if TYPE_CHECKING:
     from relax.helpers.resolution import ImageGeometry
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("relax.diagnostics.relion_replay")  # the name before the move to relax.parity: log rows keep it
 
 _KCLASS_REPLAY_TAU2_ENV = "RELAX_KCLASS_REPLAY_TAU2"
 
@@ -636,7 +636,7 @@ def _install_final_replay_particle_state(
     The translation prior width, the previous poses and corrections of ``halves`` (written in place) and the
     noise model. An absent field keeps the argument's value.
     """
-    from relax.diagnostics.state_swap_runtime import _copy_half_pair
+    from relax.parity.state_swap_runtime import _copy_half_pair
 
     _final_replay_fields = []
     _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")

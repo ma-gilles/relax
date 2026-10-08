@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics import relion_replay
+from relax.parity import relion_replay
 from relax.refinement import command_options
 from relax.refinement import full_refinement as run_full_refinement
 
@@ -118,7 +118,7 @@ def test_cli_passes_selected_noise_semantics_to_replay_overrides(monkeypatch, tm
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
     from helpers.tiny_refinement import write_replay_dir
 
-    from relax.diagnostics import relion_replay
+    from relax.parity import relion_replay
 
     broadcasts = []
 

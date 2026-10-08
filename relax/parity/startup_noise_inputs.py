@@ -14,7 +14,7 @@ from relax.refinement.startup_noise import StartupNoise, estimate_startup_sigma2
 
 def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:
     """A frozen boundary's noise: each half's scoring pixel variance (a list), their mean radial curve."""
-    from relax.diagnostics import frozen_boundary_cli
+    from relax.parity import frozen_boundary_cli
 
     return StartupNoise(
         radial=np.mean(np.stack(frozen_boundary.noise_radial_per_half, axis=0), axis=0),

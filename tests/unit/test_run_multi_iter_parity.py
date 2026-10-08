@@ -8,8 +8,8 @@ import pytest
 import starfile
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.iteration_history import add_significant_count_artifacts
+from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from scripts import diff_relion_recovar_per_iter as parity_diff
 from scripts.postprocess_multi_iter_gt import resolve_intermediates_dir
 from scripts.run_multi_iter_parity import (

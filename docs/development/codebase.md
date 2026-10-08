@@ -100,7 +100,7 @@ adapter. Optics and particle records live in
 serialization. Column lookup is shared in `data_io.starfile.star_column`, while
 strict list-style checkpoint scalars live in `relion.relion_metadata`.
 The refinement CLI also reads RELION initialization metadata there; captured
-iteration overrides and final-reference readers belong to `diagnostics.relion_replay`.
+iteration overrides and final-reference readers belong to `parity.relion_replay`.
 `helpers.iteration_history` owns class/pose/history artifact formatting and
 restart readers; `diagnostics.parity_dump` owns timing artifact readers and
 summaries. The CLI retains argument declarations, input/option precedence,
@@ -153,16 +153,16 @@ for detailed module contracts. Start with the boundary being changed:
 | Boundary | Main owner |
 | --- | --- |
 | Command oracle admission and resolved controls | [`command_options.py`](../../relax/refinement/command_options.py); portable dispatch manifest/particle/file admission and CLI/optimiser cap, CTF and initial-filter precedence. `full_refinement.py` retains source choice, strict replay decision, follower preparation and visible option installation. |
-| Sealed restart CLI admission and runtime adaptation | [`diagnostics/frozen_boundary_cli.py`](../../relax/diagnostics/frozen_boundary_cli.py); invocation/source binding, effective-config checks, projector-only replay slots, capture attachment with source identity and float32 scoring-noise expansion. Schema/file loaders keep their existing owners. Command retains modes, state installation and provenance publication. |
+| Sealed restart CLI admission and runtime adaptation | [`parity/frozen_boundary_cli.py`](../../relax/parity/frozen_boundary_cli.py); invocation/source binding, effective-config checks, projector-only replay slots, capture attachment with source identity and float32 scoring-noise expansion. Schema/file loaders keep their existing owners. Command retains modes, state installation and provenance publication. |
 | Prejoin capture and finite auditing | [`diagnostics/reconstruction.py`](../../relax/diagnostics/reconstruction.py); target selection and native-half audit before cross-half mixing, plus pre/postjoin BPref serialization. Numerical join and state writes remain in the controller. |
 | Iteration scheduling and state mutation | [`iteration_loop.py`](../../relax/refinement/iteration_loop.py) |
 | Refinement scoring projector preparation | [`projector_preparation.py`](../../relax/refinement/projector_preparation.py); accuracy-produced `ProjectorReuse` binds reference identity and image/window support; `prepare_scoring_projector` owns reuse, transform, disk cache and dumps. Controller retains captured admission, half order and release/install boundaries. |
 | Checkpoint capture and saved iteration schema | [`refinement/iteration_snapshot.py`](../../relax/refinement/iteration_snapshot.py); header replacement preserves retained-map lifetime, then complete array/schema capture returns `IterationSnapshot`. The controller owns scheduling/growth; `run_files.py` owns disk formats. |
-| Iteration-zero model-file replay | [`diagnostics/initial_model_replay.py`](../../relax/diagnostics/initial_model_replay.py); ordered file/table identity, NPZ/live/STAR noise precedence, MPI broadcast, prior expansion and optimiser controls. Command retains admission and explicit installation/reporting. Shared formulas remain in RECOVAR and `relion/initial_noise.py`. |
+| Iteration-zero model-file replay | [`parity/initial_model_replay.py`](../../relax/parity/initial_model_replay.py); ordered file/table identity, NPZ/live/STAR noise precedence, MPI broadcast, prior expansion and optimiser controls. Command retains admission and explicit installation/reporting. Shared formulas remain in RECOVAR and `relion/initial_noise.py`. |
 | Global E/M execution | [`k_class.py`](../../relax/classification/k_class.py) `run_dense_k_class_em_adaptive`: coarse pass 1 in [`significance.py`](../../relax/scoring/significance.py), fine pass 2 and M-step sums in [`resident_pass2.py`](../../relax/sparse_pass2/resident_pass2.py) |
 | Local search orchestration and kernels | [`local_search_iteration.py`](../../relax/refinement/local_search_iteration.py), [`resident_local_pass2.py`](../../relax/sparse_pass2/resident_local_pass2.py) |
 | Class routing and joint result assembly | [`k_class.py`](../../relax/classification/k_class.py), [`k_class_results.py`](../../relax/classification/k_class_results.py) |
-| Replay selection and final all-data admission/execution | [`relion_replay.py`](../../relax/diagnostics/relion_replay.py), [`finalization.py`](../../relax/refinement/finalization.py) |
+| Replay selection and final all-data admission/execution | [`relion_replay.py`](../../relax/parity/relion_replay.py), [`finalization.py`](../../relax/refinement/finalization.py) |
 | Final native/replay sampling and prepared grids | [`final_sampling.py`](../../relax/refinement/final_sampling.py) |
 | Numbered prior/reconstruction and first-CC reporting | [`mean_helpers.py`](../../relax/refinement/mean_helpers.py): ordered Class3D replay/CTF/diagnostic aggregation, K1 split-half estimation, the K1 half-map and Class3D class-map regularized solve/capture/filter/flatten operations and reporting tapers. Controller installs maps/tau2 and publishes class scheduling/history before detail taper. Final retains distinct policies over shared primitives. |
 | Final reconstruction and half-map/class priors | [`final_reconstruction.py`](../../relax/refinement/final_reconstruction.py) |
@@ -174,7 +174,7 @@ for detailed module contracts. Start with the boundary being changed:
 | Particle pose interpretation and persistent half state | [`refinement/half_inputs.py`](../../relax/refinement/half_inputs.py); resolves explicit or grid poses into computed matrices/Euler rows and relative/absolute pixel shifts. The controller installs state and records history. |
 | Strict RELION follower topology preparation | [`relion/relion_worker_scale.py`](../../relax/relion/relion_worker_scale.py); validates MPI admission, replay and numbered particle ownership before execution |
 | Particle-table source and group identity | [`relion/input_particle_table.py`](../../relax/relion/input_particle_table.py); admits half-set STAR schema/optics geometry and produces authoritative group source plus matching physical/optics axes in half image order |
-| Input geometry and replay units | `ImageGeometry` in [`helpers/resolution.py`](../../relax/helpers/resolution.py); fixed shape and validated physical pixel size. [`diagnostics/relion_replay.py`](../../relax/diagnostics/relion_replay.py) consumes geometry directly. Controller retains the borrowed source pixel scalar where host promotion requires its original type; changing windows/model support have separate owners. |
+| Input geometry and replay units | `ImageGeometry` in [`helpers/resolution.py`](../../relax/helpers/resolution.py); fixed shape and validated physical pixel size. [`parity/relion_replay.py`](../../relax/parity/relion_replay.py) consumes geometry directly. Controller retains the borrowed source pixel scalar where host promotion requires its original type; changing windows/model support have separate owners. |
 | Refinement memory planning | [`helpers/batch_planning.py`](../../relax/helpers/batch_planning.py) and [`refinement/expectation_batches.py`](../../relax/refinement/expectation_batches.py); live dense/local/compact budgets and half adaptation. The disconnected future whole-local descriptor/fingerprint family is retired; supported batch decisions are unchanged. |
 | Numbered half expectation preparation, execution and recording | [`refinement/expectation.py`](../../relax/refinement/expectation.py); `NumberedExpectation` and `prepare_numbered_expectation` bind the shared canonical grid, dense/local support and diagnostic policy. The same owner prepares per-half priors/batches/optics, dispatches, and records profiles/captures and ordered counts. Controller retains modes, tomography adaptation, publication, offloading, serial/overlap choice and release. |
 | Final SPA half prior/optics preparation | `prepare_final_half` in the same expectation owner; local/dense scoring and manifest export consume its prepared operands |
@@ -230,10 +230,10 @@ historical NPZ schema from the prior result and reconstruction settings. The
 per-class gate and numerical class loop remain in the refinement controller.
 
 Sealed diagnostic CLI admission lives in
-[`frozen_boundary_cli.py`](../../relax/diagnostics/frozen_boundary_cli.py): flags,
+[`frozen_boundary_cli.py`](../../relax/parity/frozen_boundary_cli.py): flags,
 source/arm checks, manifest binding and effective-runtime adaptation. Bundle
 schemas and array validation remain in
-[`frozen_boundary.py`](../../relax/diagnostics/frozen_boundary.py). The refinement
+[`frozen_boundary.py`](../../relax/parity/frozen_boundary.py). The refinement
 command owns when admission and the resolved-runtime check run.
 
 The optional iteration, reconstruction, pass-2 operand and normalization capture

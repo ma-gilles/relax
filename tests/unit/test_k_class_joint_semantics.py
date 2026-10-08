@@ -1307,8 +1307,8 @@ def test_class3d_replay_loads_shared_model_direction_prior(tmp_path, monkeypatch
     """Class3D replay uses run_itNNN_model.star when half-model files are absent."""
 
     from relax import sampling
-    from relax.diagnostics import relion_replay
-    from relax.diagnostics.relion_replay import apply_iter_replay_overrides
+    from relax.parity import relion_replay
+    from relax.parity.relion_replay import apply_iter_replay_overrides
 
     (tmp_path / "run_it001_model.star").touch()
     (tmp_path / "run_it002_model.star").touch()

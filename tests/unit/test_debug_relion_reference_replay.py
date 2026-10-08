@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.core import fourier_transform_utils
-from relax.diagnostics.relion_replay import replay_class_relion_references, replay_k1_relion_references
 from recovar.utils.helpers import write_relion_mrc
+
+from relax.parity.relion_replay import replay_class_relion_references, replay_k1_relion_references
 from relax.refinement.refinement_options import KClassOptions, RefinementOptions
 
 

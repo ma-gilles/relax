@@ -1,4 +1,4 @@
-"""Unit tests for ``recovar.em.diagnostics.relion_replay._build_replay_iteration_overrides``.
+"""Unit tests for ``recovar.em.parity.relion_replay._build_replay_iteration_overrides``.
 
 Locks down the parity-critical contract that the per-iter replay override
 dict always carries ``translation_sigma_angstrom`` sourced from RELION's
@@ -19,14 +19,19 @@ from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 from recovar.utils.file_hash import sha256_file
 
-from relax.diagnostics import frozen_boundary_cli
-from relax.diagnostics.frozen_boundary import (
+from relax.helpers.iteration_history import (
+    _load_init_noise_radial_npz,
+    _load_init_previous_best_poses_npz,
+)
+from relax.helpers.orientation_priors import DirectionPrior
+from relax.parity import frozen_boundary_cli
+from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
     FROZEN_BOUNDARY_PROVENANCE_VERIFICATION_SCOPE,
     _assert_frozen_scoring_state_unchanged,
     _frozen_scoring_state_arrays,
 )
-from relax.diagnostics.frozen_boundary_cli import (
+from relax.parity.frozen_boundary_cli import (
     _fixed_diagnostic_source_paths,
     _validate_fixed_diagnostic_arm_cli,
     _validate_fixed_diagnostic_math_environment,
@@ -36,16 +41,11 @@ from relax.diagnostics.frozen_boundary_cli import (
     expand_boundary_noise,
     validate_empty_replay_slots,
 )
-from relax.diagnostics.initial_model_replay import read_initial_model
-from relax.diagnostics.relion_replay import (
+from relax.parity.initial_model_replay import read_initial_model
+from relax.parity.relion_replay import (
     _build_replay_iteration_overrides,
     _format_replay_mean_for_log,
 )
-from relax.helpers.iteration_history import (
-    _load_init_noise_radial_npz,
-    _load_init_previous_best_poses_npz,
-)
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement import command_options
 from relax.refinement import full_refinement as run_full_refinement
 from relax.refinement.full_refinement import (
@@ -656,7 +656,7 @@ def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeyp
     start takes the size from --ini_high and RELION's increment of 10."""
     from helpers.tiny_main import controller_inputs
 
-    from relax.diagnostics import frozen_boundary_cli
+    from relax.parity import frozen_boundary_cli
 
     fresh = controller_inputs(monkeypatch, tmp_path / "fresh", "refine")["options"].schedule
     assert (fresh.init_relion_incr_size, fresh.init_fsc, fresh.init_ave_Pmax) == (10, None, None)
@@ -1866,7 +1866,7 @@ def test_full_refinement_requests_max_iter_replay_state_for_final_all_data(monke
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
     from helpers.tiny_refinement import write_replay_dir
 
-    from relax.diagnostics import relion_replay
+    from relax.parity import relion_replay
 
     requested = []
 

@@ -102,7 +102,7 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   The frozen boundary (`--frozen-boundary-dir`: its sealed sampling state and scoring context, its
   `RefinementState` fields and the check that the scoring state is unchanged before the first iteration) and
   the state-swap probe (`--state-swap-*`: its snapshot, RELION references and swap) are `RelionReplay` fields;
-  only the source calls `relax.diagnostics.frozen_boundary` and `state_swap_runtime`
+  only the source calls `relax.parity.frozen_boundary` and `state_swap_runtime`
   (`tests/unit/test_refinement_port_imports.py`). The follower topology of an MPI RELION run
   (`--relion-scale-followers`, the captured dispatch schedule `--relion-dispatch-schedule` and the follower-scale
   replay) is `RelionReplay.follower_topology`; the controller reads it as `source.follower_topology`. It is a
@@ -191,7 +191,7 @@ accepted, with the reason:
   is listed with the result types (rule 8).
 - **Rule 11: met, with exceptions.** Fixed: the controller no longer imports the command
   (`configure_half_image_preprocessing` moved to `half_inputs`); `InitialSampling` and `RestartProvenance`
-  moved to `refinement_options`; `relax.diagnostics.relion_replay` imports two now-public `half_inputs`
+  moved to `refinement_options`; `relax.parity.relion_replay` imports two now-public `half_inputs`
   helpers. Accepted until those packages are refactored: `relax/refinement/tomo_particles.py` (numpy only)
   is imported by two engines and three other workflows, and its home moves with them; 62 imports of
   private names from `relax.helpers`, `relax.diagnostics` and `relax.relion` stay until those modules make

@@ -143,14 +143,14 @@ only from tests.
 | Choice | Producers | Consumers | Kind | Verdict |
 | --- | --- | --- | --- | --- |
 | Split-half maps versus combined class stack | `k_class_enabled = n_classes > 1`, `iteration_loop.py:452`, never reassigned; accumulators combined at `:1953-1955` (class) or joined at `:1957` (K1) | The one dispatch `iteration_loop.py:2103`; `_reconstruct_k1_maps` `mean_helpers.py:1332`, `_reconstruct_class_maps` `:1387`; premask writer layout `diagnostics/reconstruction.py:353` | scientific | live: both modes are production |
-| Prior as shell curves versus full volume, numbered operations | K1: `estimate_split_half_prior` returns `details["prior_shells"]` for both halves (`mean_helpers.py:1318-1325`, always present, `regularization_relion.py:731`). Class3D: `estimate_class_prior` returns shells from the Iref power spectrum (`:481`) or from the diagnostic replay spectrum (`:472`, admitted and shape-checked as `(n_classes, n_shells)` at `diagnostics/relion_replay.py:68-103`), stacked at `:646`. No reassignment between `iteration_loop.py:2019`/`:2074` and the call. K1 replay `mean_variance` (`:1140-1155`) installs a full volume into `reference_model.tau2`, the scoring state, which is overwritten at `:2086` and is never the solve operand. Continuation restores the model state, not this operand | `tau_is_1d` and the `shells if not None else volume` fallback at `iteration_loop.py:2107-2115`, `:2122-2129`; forwarded by both operations and both private solves (`mean_helpers.py:1369`, `:1423`) | input validation | constant in production (always shells); the full-volume arm is reached only through the test builder (`tests/helpers/refinement_specs.py:70,80`) |
+| Prior as shell curves versus full volume, numbered operations | K1: `estimate_split_half_prior` returns `details["prior_shells"]` for both halves (`mean_helpers.py:1318-1325`, always present, `regularization_relion.py:731`). Class3D: `estimate_class_prior` returns shells from the Iref power spectrum (`:481`) or from the diagnostic replay spectrum (`:472`, admitted and shape-checked as `(n_classes, n_shells)` at `parity/relion_replay.py:68-103`), stacked at `:646`. No reassignment between `iteration_loop.py:2019`/`:2074` and the call. K1 replay `mean_variance` (`:1140-1155`) installs a full volume into `reference_model.tau2`, the scoring state, which is overwritten at `:2086` and is never the solve operand. Continuation restores the model state, not this operand | `tau_is_1d` and the `shells if not None else volume` fallback at `iteration_loop.py:2107-2115`, `:2122-2129`; forwarded by both operations and both private solves (`mean_helpers.py:1369`, `:1423`) | input validation | constant in production (always shells); the full-volume arm is reached only through the test builder (`tests/helpers/refinement_specs.py:70,80`) |
 | Prior as shell curves versus full volume, eager solve | Numbered solves (shells); final Class3D (`final_reconstruction.py:177`, shells); final K1 half maps pass the full-volume prior with the default flag (`final_reconstruction.py:210-216`, from `compute_final_halfmap_prior`); unregularized and unfiltered solves pass no prior (`mean_helpers.py:1229`, `:1720`, `:1747`, `final_reconstruction.py:49`); four scripts | `_reconstruct_volume_eager` `mean_helpers.py:729`, stable reconstruction class `:686`, Stage A `:887`, `relion_functions_relion.py:234` | scientific operand layout | live: final K1 is a production full-volume caller, so the eager solve keeps the parameter |
 | First-CC initial low-pass of the new references | `relion_firstiter_cc_this_iter`, `iteration_loop.py:963-965` (first numbered iteration of a fresh run with CC emulation); resolution from `parity.relion_firstiter_ini_high_angstrom` (`:524`) | Filter before flatten in both operations (`mean_helpers.py:1486`, `:1567`); closing log (`:1513`, `:1602`); reporting taper after the solve stays in the controller (`iteration_loop.py:2145-2202`) | scientific | live: iteration-dependent |
 | Solvent flatten | `schedule.particle_diameter_ang`, a Python float or `None` (`full_refinement.py:591`, `scripts/run_multi_iter_parity.py:1617`); voxel size from `ImageGeometry`, a Python float (`helpers/resolution.py:36-39`, `iteration_loop.py:515`) | Radius and mask in both operations (`mean_helpers.py:1494-1507`, `:1581-1592`) | scientific | live. The K1 `float()` wrapping versus the bare class expression is not a case: the two differ only for `np.float32` scalars, which no production producer supplies |
 | Flatten implementation | Mode | K1 `_apply_relion_solvent_flatten_k1` (`mean_helpers.py:2182`); Class3D inline iDFT, multiply, DFT (`:1594-1601`) | execution-storage | live and not interchangeable: at box scale the K1 implementation moves the result to the host and deletes the mask, which the class loop reuses for the next class |
 | Host staging and large-box behaviour | Accumulator and box size: `_should_host_stage_large_relion_ifft` `mean_helpers.py:1897`; `_large_relion_solvent_mask_uses_compiled_builder` `:2118`; retained half-0 numerator from the low-resolution join (`iteration_loop.py:1957`) | Eager solve `:777-`; K1 host completion `:1379` and retained numerator `:1372-1383`; mask builder `:2150`; K1 flatten `:2193`; K1 mask handle release `:1511` | execution-storage | live: size-dependent, K1 only for completion, retained numerator and flatten staging |
 | Premask capture | `RELAX_PREMASK_DUMP_DIR` read per slot (`mean_helpers.py:1472`, `:1553`) | `write_premask_mean` `diagnostics/reconstruction.py:341`, once per slot after all solves | diagnostic | live; the class operation writes the same stack for both slots |
-| Class prior replay | `RELAX_KCLASS_REPLAY_TAU2` and the replay override (`diagnostics/relion_replay.py:68`) | `estimate_class_priors` `mean_helpers.py:568`, `:613` | diagnostic | live; changes the prior values, not their representation |
+| Class prior replay | `RELAX_KCLASS_REPLAY_TAU2` and the replay override (`parity/relion_replay.py:68`) | `estimate_class_priors` `mean_helpers.py:568`, `:613` | diagnostic | live; changes the prior values, not their representation |
 | Class operation returns two execution slots | `means = [shared_classes, shared_classes]` `mean_helpers.py:1548` | Both slots captured, filtered and flattened; the controller later re-aliases slot 1 to slot 0 | execution-storage | live; removal is deferred to the ownership package |
 | Final versus numbered reconstruction | `finalization.py:606`, `:654`, `:678`, `:736`, `:757` | `final_reconstruction.py:38`, `:152`, `:190` call the eager solve directly | scientific | live and separate: finalization never calls the numbered operations |
 
@@ -1392,7 +1392,7 @@ def prepare_relion_halfset_inputs(
 
 ### Complete frozen half-identity/shell admission
 
-[relax/diagnostics/frozen_boundary_cli.py](../../relax/diagnostics/frozen_boundary_cli.py) (line 294):
+[relax/parity/frozen_boundary_cli.py](../../relax/parity/frozen_boundary_cli.py) (line 294):
 
 ```python
 def validate_particle_half_inputs(
@@ -1883,7 +1883,7 @@ its existing range/grid calculation. Noise overrides retain their float32/device
 adaptation and use `image_geometry.image_shape`. Conditions, mutation order,
 exception scope and the rest of the replay implementation are unchanged.
 
-[relax/diagnostics/relion_replay.py](../../relax/diagnostics/relion_replay.py) (line 1085):
+[relax/parity/relion_replay.py](../../relax/parity/relion_replay.py) (line 1085):
 
 ```python
 if sealed_sampling_state is not None:
@@ -1930,7 +1930,7 @@ if sealed_sampling_state is not None:
     )
 ```
 
-[relax/diagnostics/relion_replay.py](../../relax/diagnostics/relion_replay.py) (line 1442):
+[relax/parity/relion_replay.py](../../relax/parity/relion_replay.py) (line 1442):
 
 ```python
 _replay_noise = iter_replay_override.get("noise_variance")
@@ -2091,7 +2091,7 @@ if frozen_boundary is not None:
 
 ### Existing operations with their diagnostic owner
 
-[relax/diagnostics/frozen_boundary_cli.py](../../relax/diagnostics/frozen_boundary_cli.py) (line 280):
+[relax/parity/frozen_boundary_cli.py](../../relax/parity/frozen_boundary_cli.py) (line 280):
 
 ```python
 def projector_only_replay_slots(max_iter: int) -> list[dict]:
@@ -2110,7 +2110,7 @@ def projector_only_replay_slots(max_iter: int) -> list[dict]:
     return [{} for _ in range(count)]
 ```
 
-[relax/diagnostics/frozen_boundary_cli.py](../../relax/diagnostics/frozen_boundary_cli.py) (line 296):
+[relax/parity/frozen_boundary_cli.py](../../relax/parity/frozen_boundary_cli.py) (line 296):
 
 ```python
 def validate_projector_only_replay_slots(
@@ -2153,7 +2153,7 @@ def validate_projector_only_replay_slots(
             )
 ```
 
-[relax/diagnostics/frozen_boundary_cli.py](../../relax/diagnostics/frozen_boundary_cli.py) (line 336):
+[relax/parity/frozen_boundary_cli.py](../../relax/parity/frozen_boundary_cli.py) (line 336):
 
 ```python
 def attach_projector_capture(
@@ -2246,7 +2246,7 @@ def attach_projector_capture(
     return replay_slot, projector_state
 ```
 
-[relax/diagnostics/frozen_boundary_cli.py](../../relax/diagnostics/frozen_boundary_cli.py) (line 426):
+[relax/parity/frozen_boundary_cli.py](../../relax/parity/frozen_boundary_cli.py) (line 426):
 
 ```python
 def expand_boundary_noise(noise_radial_per_half, image_shape):
@@ -8458,7 +8458,7 @@ remain unqualified. The large controllers remain unfinished.
 
 The command previously mixed model-file selection, NPZ/live/STAR noise
 precedence, MPI startup broadcast, class prior expansion and optimiser overrides.
-Those operations now belong together in `diagnostics/initial_model_replay.py`.
+Those operations now belong together in `parity/initial_model_replay.py`.
 The former metadata reader is retired; its source selection and numerical tests
 were migrated. Noise broadcast uses the existing `initial_noise` implementation;
 radial expansion and noise construction keep their RECOVAR owner.

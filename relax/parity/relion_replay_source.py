@@ -3,11 +3,11 @@
 Each numbered iteration takes from RELION what the run supplies: its override slot (the numbered STAR
 replay's per-iteration state, ``--relion_init_dir``'s run_it000 state, captured projectors) and, while the
 STAR replay is live (``--perturb_replay_relion_dir`` up to ``perturb_replay_max_iter``), the sampling
-controls and direction priors of its numbered STAR files. ``relax.diagnostics.relion_replay`` reads and
+controls and direction priors of its numbered STAR files. ``relax.parity.relion_replay`` reads and
 installs them. A frozen boundary (``--frozen-boundary-dir``) supplies a sealed sampling state, its
 ``RefinementState`` fields and the scoring state it checks before the first iteration
-(``relax.diagnostics.frozen_boundary``); a state-swap probe (``--state-swap-*``) swaps components of the
-replayed state back to the run's own (``relax.diagnostics.state_swap_runtime``).
+(``relax.parity.frozen_boundary``); a state-swap probe (``--state-swap-*``) swaps components of the
+replayed state back to the run's own (``relax.parity.state_swap_runtime``).
 
 The command resolves what to replay into a ``RelionReplay`` and builds the source
 (``RelionReplaySource.for_run``); the run's options hold none of it.
@@ -25,12 +25,13 @@ import numpy as np
 
 from relax import sampling
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.diagnostics.frozen_boundary import (
+from relax.helpers.env_flags import parse_env_true_flag
+from relax.parity.frozen_boundary import (
     _assert_frozen_scoring_state_unchanged,
     _frozen_scoring_state_arrays,
     _restore_diagnostic_frozen_boundary_state,
 )
-from relax.diagnostics.relion_replay import (
+from relax.parity.relion_replay import (
     _class_tau2_replay,
     _has_numbered_replay_iteration_overrides,
     _install_sealed_sampling,
@@ -50,8 +51,7 @@ from relax.diagnostics.relion_replay import (
     sealed_rotation_ids_for_scoring,
     select_final_sampling_star,
 )
-from relax.diagnostics.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
-from relax.helpers.env_flags import parse_env_true_flag
+from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
 from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
 from relax.refinement.iteration_planning import CoarseGrids, CoarseImageSize
@@ -85,7 +85,7 @@ class RelionReplay:
     A frozen boundary (``--frozen-boundary-dir``): its ``sealed_sampling_state`` and ``sealed_scoring_context``,
     and its ``frozen_refinement_state_fields`` (with them, the source checks, right before the first iteration
     scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
-    state-swap probe's settings (``relax.diagnostics.state_swap_probe.build_state_swap_probe``).
+    state-swap probe's settings (``relax.parity.state_swap_probe.build_state_swap_probe``).
     ``preserve_initial_direction_prior``: the run keeps its start-up direction priors (a frozen boundary's) instead
     of reloading them from the STAR replay's model files.
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored

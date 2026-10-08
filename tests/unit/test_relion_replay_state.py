@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-import relax.diagnostics.relion_replay as relion_replay_module
 import relax.helpers.orientation_priors as orientation_priors_module
+import relax.parity.relion_replay as relion_replay_module
 from relax.helpers.orientation_priors import DirectionPrior
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets

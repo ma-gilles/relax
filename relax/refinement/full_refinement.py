@@ -34,16 +34,24 @@ import numpy as np
 
 import relax
 from relax.dense import scoring_policy
-from relax.diagnostics import frozen_boundary_cli, initial_model_replay, observers, replay_inputs
-from relax.diagnostics.state_swap_probe import (
+from relax.diagnostics import observers
+from relax.helpers import xla_memory_reserve
+from relax.helpers.compilation_cache import activate_recovar_compilation_cache
+from relax.helpers.dtype_policy import use_float32_matmuls
+from relax.parity import (
+    archive_provenance,
+    frozen_boundary_cli,
+    initial_model_replay,
+    oracle_admission,
+    relion_replay_source,
+    replay_inputs,
+    startup_noise_inputs,
+)
+from relax.parity.state_swap_probe import (
     build_state_swap_probe,
     state_swap_probe_loop_index,
     validate_state_swap_probe_application,
 )
-from relax.helpers import xla_memory_reserve
-from relax.helpers.compilation_cache import activate_recovar_compilation_cache
-from relax.helpers.dtype_policy import use_float32_matmuls
-from relax.parity import archive_provenance, oracle_admission, relion_replay_source, startup_noise_inputs
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
 from relax.refinement.result_files import (

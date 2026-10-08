@@ -8,13 +8,13 @@ import pandas as pd
 import pytest
 import starfile
 
-from relax.diagnostics.frozen_boundary import (
+from relax.parity.frozen_boundary import (
     _V3_SCALAR_DTYPES,
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
     FROZEN_BOUNDARY_PROVENANCE_VERIFICATION_SCOPE,
     V3_REQUIRED_FIXED_SOURCE_NAMES,
 )
-from relax.diagnostics.frozen_boundary_cli import _particle_stack_paths_from_star
+from relax.parity.frozen_boundary_cli import _particle_stack_paths_from_star
 from scripts.finalize_frozen_boundary_v3 import (
     _runtime_payload,
     _validate_capture_manifest,

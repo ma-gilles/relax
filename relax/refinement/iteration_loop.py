@@ -20,18 +20,17 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.data_io import cryoem_dataset
 
+import relax.parity.relion_replay as replay_policy
 from relax.dense.score_outputs import (
     PerHalfOutputs,
     _resolve_mstep_accumulator_shape,
     _resolve_mstep_full_half_axis,
 )
 from relax.diagnostics import bpref_diagnostics
-from relax.diagnostics import relion_replay as replay_policy
 from relax.diagnostics.iteration import (
     _significance_dump_half_indices,
 )
 from relax.diagnostics.reconstruction import check_half_accumulators_before_join
-from relax.diagnostics.relion_replay import _validate_bpref_particle_order_scope
 from relax.helpers.convergence import (
     _direction_prior_healpix_order_for_scoring,
     _exhaustive_grid_order_for_state,
@@ -59,6 +58,7 @@ from relax.helpers.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.helpers.timing import Stopwatch
+from relax.parity.relion_replay import _validate_bpref_particle_order_scope
 from relax.reconstruction.regularization_relion import (
     update_relion_growth_state_from_fsc,
 )

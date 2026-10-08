@@ -22,10 +22,12 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 import starfile
-
 from recovar import utils
 from recovar.core import fourier_transform_utils as ftu
-from relax.diagnostics.frozen_boundary import (
+from recovar.utils import helpers
+from recovar.utils.file_hash import sha256_file
+
+from relax.parity.frozen_boundary import (
     _V3_MAP_TRANSFORM_ID,
     _V3_SCALAR_DTYPES,
     FROZEN_BOUNDARY_FILENAME,
@@ -38,8 +40,6 @@ from relax.diagnostics.frozen_boundary import (
     load_frozen_refinement_boundary,
     v3_source_role,
 )
-from recovar.utils import helpers
-from recovar.utils.file_hash import sha256_file
 
 
 def _array_sha256(value) -> str:

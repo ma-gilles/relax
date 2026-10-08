@@ -74,7 +74,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
   the whole command. No test reads its text; a test that needs a run fact the tiny data cannot produce
   (a frozen boundary, a follower topology) stands in for the one callee that provides it.
 - RELION replay inputs the command reads (numbered STAR replay, final-only replay, K=1 initial state, Class3D
-  initial translations) live in `relax/diagnostics/replay_inputs.py`, not in the command.
+  initial translations) live in `relax/parity/replay_inputs.py`, not in the command.
 - A diagnostic environment variable of the controller is a field of `DiagnosticEnvironment`
   (`refinement_options`), read once when the options are built (`options.debug.environment`); do not add an
   `os.environ` read below the command.

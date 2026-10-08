@@ -44,10 +44,10 @@ from helpers.refinement_specs import (
 )
 from recovar import utils as recovar_utils
 
-import relax.diagnostics.relion_replay as relion_replay_module
 import relax.helpers.expected_accuracy as expected_accuracy_module
 import relax.helpers.orientation_priors as orientation_priors_module
 import relax.local.local_layout as local_layout_module
+import relax.parity.relion_replay as relion_replay_module
 import relax.refinement.convergence as convergence_policy
 import relax.refinement.expectation as expectation_module
 import relax.refinement.iteration_loop as iteration_loop_module
@@ -61,7 +61,6 @@ from relax.classification.k_class_results import (
 )
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics.observers import IntermediatesObserver
-from relax.diagnostics.relion_replay import _replay_control_model_iteration
 from relax.healpix_sampling import euler_angles_to_matrix
 from relax.helpers import dtype_policy as dtype_policy_module
 from relax.helpers import resolution as resolution_helpers
@@ -100,6 +99,7 @@ from relax.local.local_layout import (
     build_local_hypothesis_layout,
     build_pass2_hypothesis_layout,
 )
+from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization_relion
 from relax.refinement import finalization, half_scoring, local_sampling, local_search_iteration

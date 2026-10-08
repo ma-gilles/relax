@@ -20,8 +20,8 @@ import relax.refinement.iteration_loop as iteration_loop
 import relax.refinement.iteration_planning as iteration_planning
 import relax.sampling as sampling_module
 from relax.dense.scoring_policy import _dense_global_scoring_dtype
-from relax.diagnostics.relion_replay import _sealed_sampling_base_grids
 from relax.parity import relion_replay_source
+from relax.parity.relion_replay import _sealed_sampling_base_grids
 from relax.sampling import _translation_grid_for_class_count
 
 pytestmark = pytest.mark.unit

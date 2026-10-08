@@ -666,7 +666,7 @@ archive layouts/compression, profile conversion and final maps. The command
 retains source metadata and the archive/ledger/map/summary sequence. Its small
 `ArchiveReport` contains computed values reused by the archive and ledger;
 caller-owned serialized arrays retain their lifetime. Diagnostic admission now
-has a coherent CLI owner in `diagnostics/frozen_boundary_cli.py`: flag registration,
+has a coherent CLI owner in `parity/frozen_boundary_cli.py`: flag registration,
 source/arm validation, resolved-config binding and sealed runtime adaptation stay
 with their private helpers.
 The command retains seed and experiment setup order and both validation timings.

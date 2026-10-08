@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.diagnostics.state_swap_probe import (
+from relax.helpers.orientation_priors import DirectionPrior
+from relax.parity.state_swap_probe import (
     _STATE_SWAP_VARIANT_COMPONENTS,
     REQUIRED_STATE_SWAP_REPLAY_KEYS,
     build_state_swap_probe,
@@ -13,12 +14,11 @@ from relax.diagnostics.state_swap_probe import (
     state_swap_variant_choices,
     validate_state_swap_probe_application,
 )
-from relax.diagnostics.state_swap_runtime import (
+from relax.parity.state_swap_runtime import (
     _apply_state_swap_probe,
     _scale_state_swap_reference_maps,
     _snapshot_state_swap_inputs,
 )
-from relax.helpers.orientation_priors import DirectionPrior
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.mean_helpers import ReferenceModel
 from relax.refinement.noise_updates import NoiseModel
@@ -225,8 +225,8 @@ def test_full_runner_propagates_and_serializes_state_swap_probe(monkeypatch, tmp
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
     from helpers.tiny_refinement import CallTrace, write_replay_dir
 
-    from relax.diagnostics import relion_replay
-    from relax.diagnostics.state_swap_probe import REQUIRED_STATE_SWAP_REPLAY_KEYS
+    from relax.parity import relion_replay
+    from relax.parity.state_swap_probe import REQUIRED_STATE_SWAP_REPLAY_KEYS
     from relax.refinement import full_refinement
 
     def overrides(relion_dir, half1_rows, half2_rows, max_iter, **kwargs):
