@@ -102,7 +102,8 @@ Map correlation is a diagnostic only.
 
 **GPU model.** Pinned outputs are kept per GPU model and a run is compared only with the entry of its own
 model. Anything that compares a control with a candidate numerically pins the same model on both
-(`--gpu-model a100|h100`).
+(`--gpu-model a100|h100`). A100 pinned outputs are not kept (user decision 2026-10-08); an A100 run reads
+`pinned: not_configured`.
 
 **GPU noise envelope.** Two runs of the same code on the same GPU model differ: racing reductions move the
 printed metrics by about 1e-13 to 1e-6. `tests/tiers/gpu_noise_envelope.json` records, per fast-tier case and
