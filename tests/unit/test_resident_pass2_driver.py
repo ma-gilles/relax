@@ -2029,7 +2029,6 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
     import json
     import os
     import subprocess
-    import sys
 
     probe = (
         "import json, jax, jax.numpy as jnp; from relax.sparse_pass2 import resident_pass2 as rp; "
@@ -2038,8 +2037,18 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
         "print(json.dumps({'available': rp._allocator_available_bytes(), 'physical': rp._device_free_memory_bytes(), "
         "'limit': s['bytes_limit']}))"
     )
-    env = dict(os.environ, XLA_PYTHON_CLIENT_MEM_FRACTION="0.1", XLA_PYTHON_CLIENT_PREALLOCATE="false")
-    out = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, check=True)
+    from conftest import repo_python_command, repo_subprocess_env
+
+    env = repo_subprocess_env(
+        dict(os.environ, XLA_PYTHON_CLIENT_MEM_FRACTION="0.1", XLA_PYTHON_CLIENT_PREALLOCATE="false")
+    )
+    out = subprocess.run(repo_python_command("-c", probe), env=env, capture_output=True, text=True, check=True)
     reading = json.loads(out.stdout.strip().splitlines()[-1])
+    if reading["physical"] <= reading["limit"]:
+        # The emulation needs a device with more free memory than the emulated pool; a shared card that another
+        # process fills (a local GPU in use) cannot hold it, and the comparison below would test nothing.
+        pytest.skip(
+            f"the device has {reading['physical'] / 2**30:.1f} GiB free, not more than the emulated "
+            f"{reading['limit'] / 2**30:.1f} GiB pool"
+        )
     assert reading["available"] <= reading["limit"]
-    assert reading["physical"] > reading["limit"]  # the emulated pool is smaller than the free device
