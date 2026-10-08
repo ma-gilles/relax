@@ -304,6 +304,9 @@ def run_final_all_data(
             disc_type=options.disc_type,
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
+            # As the numbered local pass and the final dense pass: RELION's high-shell norm and sigma2 terms are
+            # the same powerClass sums in the final iteration (ml_optimiser.cpp:10848-10856).
+            source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
             relion_translation_angle_scale=relion_translation_angle_scale,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
