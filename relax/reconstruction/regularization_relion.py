@@ -126,12 +126,15 @@ def _low_resolution_join_host_fallback_enabled(values_0, flat_indices):
     return _low_resolution_join_host_fallback_enabled_for_size(np.size(values_0), np.size(flat_indices))
 
 
-def _delete_if_jax_array(value):
+def delete_device_array(value):
+    """Release a completed JAX buffer even when another dead handle survives."""
+
     delete = getattr(value, "delete", None)
     if callable(delete):
         try:
             delete()
         except RuntimeError:
+            # Donation invalidates the input handle when the output aliases it.
             pass
 
 
@@ -206,8 +209,8 @@ def _join_half_pair_at_indices_host(
                 jnp.asarray(average_at_join),
             )
     else:
-        _delete_if_jax_array(values_0)
-    _delete_if_jax_array(values_1)
+        delete_device_array(values_0)
+    delete_device_array(values_1)
     return values_0_np, values_1_np, retained_first_device
 
 

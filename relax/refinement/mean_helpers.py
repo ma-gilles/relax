@@ -961,11 +961,11 @@ def _reconstruct_volume_eager(
         regularized_filter_device.block_until_ready()
         filter_input_donated = _device_array_is_deleted(stage_a_filter)
         if filter_input_donated is not True:
-            _delete_device_array(regularized_filter_device)
-            _delete_device_array(stage_a_filter)
+            regularization_relion.delete_device_array(regularized_filter_device)
+            regularization_relion.delete_device_array(stage_a_filter)
             raise RuntimeError("Large RELION Stage-A regularization did not donate its float32 filter input")
         if np.dtype(regularized_filter_device.dtype) != np.dtype(np.float32):
-            _delete_device_array(regularized_filter_device)
+            regularization_relion.delete_device_array(regularized_filter_device)
             raise TypeError(
                 f"Large RELION Stage-A regularization must return float32, got {regularized_filter_device.dtype}"
             )
@@ -1016,10 +1016,10 @@ def _reconstruct_volume_eager(
         wiener_half_host = np.asarray(jax.device_get(wiener_half_device)).reshape(
             fourier_transform_utils.volume_shape_to_half_volume_shape(accumulator_shape),
         )
-        _delete_device_array(wiener_half_device)
-        _delete_device_array(stage_a_numerator)
-        _delete_device_array(regularized_filter_device)
-        _delete_device_array(stage_a_filter)
+        regularization_relion.delete_device_array(wiener_half_device)
+        regularization_relion.delete_device_array(stage_a_numerator)
+        regularization_relion.delete_device_array(regularized_filter_device)
+        regularization_relion.delete_device_array(stage_a_filter)
         del wiener_half_device
         del stage_a_numerator
         del regularized_filter_device
@@ -1058,7 +1058,7 @@ def _reconstruct_volume_eager(
             )
             wiener_half_device.block_until_ready()
             wiener_half_host = np.asarray(jax.device_get(wiener_half_device))
-            _delete_device_array(wiener_half_device)
+            regularization_relion.delete_device_array(wiener_half_device)
             del wiener_half_device
             gc.collect()
             logger.info(
@@ -2191,18 +2191,6 @@ def _pad_relion_wiener_half_to_fftw_host(
     return out
 
 
-def _delete_device_array(value):
-    """Release a completed JAX buffer even when another dead handle survives."""
-
-    delete = getattr(value, "delete", None)
-    if callable(delete):
-        try:
-            delete()
-        except RuntimeError:
-            # Donation invalidates the input handle when the output aliases it.
-            pass
-
-
 def _device_array_is_deleted(value):
     """Return JAX's deletion state when the device-array API exposes it."""
 
@@ -2316,8 +2304,8 @@ def _apply_relion_solvent_flatten_k1(
     # unchanged; only the storage owner crosses the device/host boundary.
     flattened.block_until_ready()
     flattened_host = np.array(jax.device_get(flattened), copy=True, order="C")
-    _delete_device_array(flattened)
-    _delete_device_array(vol_real)
-    _delete_device_array(solvent_mask)
+    regularization_relion.delete_device_array(flattened)
+    regularization_relion.delete_device_array(vol_real)
+    regularization_relion.delete_device_array(solvent_mask)
     gc.collect()
     return flattened_host
