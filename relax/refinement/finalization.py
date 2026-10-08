@@ -150,16 +150,6 @@ def run_final_all_data(
     scoring_dtype = options.precision.rotation_real_dtype
     n_classes = int(options.k_class.n_classes)
     class_weights = class_mixture.weights
-    class_log_priors = class_mixture.log_priors
-    parity = options.parity
-    adaptive = options.adaptive
-    batching = options.batching
-    debug = options.debug
-    local_search = options.local_search
-    symmetry = options.symmetry.point_group
-    init_relion_iteration = options.schedule.init_relion_iteration
-    particle_diameter_ang = options.schedule.particle_diameter_ang
-    sealed_sampling_state = source.sealed_sampling_state
     k_class_enabled = n_classes > 1
     grid_size = image_geometry.box_size
     volume_shape = reconstruction_settings.volume_shape
@@ -225,7 +215,7 @@ def run_final_all_data(
             oversampling_order=state.adaptive_oversampling,
             sigma_rot=final_sigma_rot,
             sigma_psi=final_sigma_psi,
-            symmetry=symmetry,
+            symmetry=options.symmetry.point_group,
         )
         final_local_sampling = prepare_final_local_sampling(
             final_search,
@@ -233,7 +223,7 @@ def run_final_all_data(
             translations=final_sampling.grid.translations,
             base_translations=final_sampling.base_translations,
             image_window_size=final_current_size,
-            particle_diameter_angstrom=particle_diameter_ang,
+            particle_diameter_angstrom=options.schedule.particle_diameter_ang,
             perturbation=final_sampling.settings.perturbation,
             rotation_dtype=final_precision.rotation_real_dtype,
         )
@@ -258,7 +248,7 @@ def run_final_all_data(
                 healpix_angular_step(final_sampling.settings.grid_order),
                 image_geometry.pixel_size_angstrom,
                 image_geometry.box_size,
-                particle_diameter=particle_diameter_ang,
+                particle_diameter=options.schedule.particle_diameter_ang,
             )
             final_adaptive_pass1_current_size = clamp_relion_coarse_image_size(
                 final_coarse_size,
@@ -309,13 +299,13 @@ def run_final_all_data(
             final_local_adaptive_rotation_only = False
             final_local_adaptive_denominator_mode = None
         final_local_batching = LocalBatchPolicy(
-            max_significants=adaptive.max_significants,
+            max_significants=options.adaptive.max_significants,
             safe_batch_sizes=batch_planner,
         )
         final_local_execution = LocalExecutionPolicy(
             disc_type=options.disc_type,
-            disable_adjoint_y=debug.disable_adjoint_y,
-            disable_adjoint_ctf=debug.disable_adjoint_ctf,
+            disable_adjoint_y=options.debug.disable_adjoint_y,
+            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             relion_translation_angle_scale=relion_translation_angle_scale,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
@@ -338,15 +328,15 @@ def run_final_all_data(
             current_healpix_order=final_sampling.settings.grid_order,
             oversampling_order=state.adaptive_oversampling,
             translation_step=state.translation_step,
-            coarse_engine=adaptive.coarse_engine,
+            coarse_engine=options.adaptive.coarse_engine,
             random_perturbation=final_sampling.settings.random_perturbation,
             cs_for_engine=final_current_size,
-            symmetry=symmetry,
+            symmetry=options.symmetry.point_group,
         )
         final_dense_batching = DenseBatchPolicy(
-            image_batch_size=batching.image_batch_size,
+            image_batch_size=options.batching.image_batch_size,
             safe_batch_sizes=batch_planner,
-            max_significants=adaptive.max_significants,
+            max_significants=options.adaptive.max_significants,
         )
         final_dense_variant = DenseVariantPolicy(
             firstiter_score_mode_this_iter="gaussian",
@@ -361,18 +351,18 @@ def run_final_all_data(
         )
         final_dense_execution = DenseExecutionPolicy(
             disc_type=options.disc_type,
-            disable_adjoint_y=debug.disable_adjoint_y,
-            disable_adjoint_ctf=debug.disable_adjoint_ctf,
+            disable_adjoint_y=options.debug.disable_adjoint_y,
+            disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=not k_class_enabled,
             debug_iteration=final_sampling.settings.relion_iteration,
             diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
                 final_sampling.settings.relion_iteration
             ),
-            preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
+            preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
-            source_faithful_spectrum_norm=parity.preserve_bpref_particle_order,
+            source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
             relion_translation_angle_scale=relion_translation_angle_scale,
-            firstiter_cc_tree_rescore_max_margin=parity.firstiter_cc_tree_rescore_max_margin,
+            firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
             nyquist_column_counting=options.consistency.nyquist_column_counting,
         )
     final_outs = PerHalfOutputs()
@@ -443,9 +433,9 @@ def run_final_all_data(
                 ),
                 rotation_log_prior=None,
                 sigma_offset_angst=final_sigma_offset_k,
-                max_significants=adaptive.max_significants,
+                max_significants=options.adaptive.max_significants,
                 reconstruction_current_size=final_current_size,
-                symmetry=symmetry,
+                symmetry=options.symmetry.point_group,
             )
         else:
             # The final pass scores each half with its own priors on the grid rows it
@@ -460,11 +450,11 @@ def run_final_all_data(
                 n_classes=n_classes,
                 use_local=final_use_local,
                 coarse_angular_step_deg=final_local_sampling.coarse_angular_step_deg if final_use_local else None,
-                particle_diameter_angstrom=particle_diameter_ang,
+                particle_diameter_angstrom=options.schedule.particle_diameter_ang,
                 sealed_sampling_state=(
-                    sealed_sampling_state if final_sampling.base_rotations is rotation_grid.rotations else None
+                    source.sealed_sampling_state if final_sampling.base_rotations is rotation_grid.rotations else None
                 ),
-                symmetry=symmetry,
+                symmetry=options.symmetry.point_group,
                 dtype=scoring_dtype,
             )
             scoring_half = HalfScoringData(
@@ -486,7 +476,7 @@ def run_final_all_data(
                         trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
                         current_sigma_offset_angstrom=final_sigma_offset_k,
                         translation_search_base=translation_search_base,
-                        local_search_translation_prior_mode=local_search.local_search_translation_prior_mode,
+                        local_search_translation_prior_mode=options.local_search.local_search_translation_prior_mode,
                     ),
                     batching=final_local_batching,
                     execution=final_local_execution,
@@ -503,7 +493,7 @@ def run_final_all_data(
                         translation_log_prior=final_inputs.translation_log_prior,
                         translation_search_base=translation_search_base,
                         trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
-                        class_log_priors=class_log_priors,
+                        class_log_priors=class_mixture.log_priors,
                     ),
                     batching=final_dense_batching,
                     variant=final_dense_variant,
@@ -659,7 +649,10 @@ def run_final_all_data(
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
         )
-        if parity.low_resol_join_halves_angstrom is not None and parity.low_resol_join_halves_angstrom > 0:
+        if (
+            options.parity.low_resol_join_halves_angstrom is not None
+            and options.parity.low_resol_join_halves_angstrom > 0
+        ):
             final_Ft_y_0, final_Ft_y_1, final_Ft_ctf_0, final_Ft_ctf_1 = join_half_accumulators_at_low_resolution(
                 (final_Ft_y_0, final_Ft_y_1),
                 (final_Ft_ctf_0, final_Ft_ctf_1),
@@ -667,7 +660,7 @@ def run_final_all_data(
                 grid_size=grid_size,
                 voxel_size=image_geometry.pixel_size_angstrom,
                 padding_factor=RECONSTRUCTION_PADDING_FACTOR,
-                low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
+                low_resolution_angstrom=options.parity.low_resol_join_halves_angstrom,
                 pixel_resolutions=history.pixel_resolutions,
                 current_resolution=state.current_resolution,
                 preserve_inputs=False,

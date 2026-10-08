@@ -783,23 +783,6 @@ def refine_single_volume(
     require_process_precision(options)
     # The dtype of the controller's float64-sensitive host operands (rotation grids, priors), from the precision.
     scoring_dtype = options.precision.rotation_real_dtype
-    symmetry = options.symmetry.point_group
-    schedule = options.schedule
-    adaptive = options.adaptive
-    parity = options.parity
-    local_search = options.local_search
-    k_class = options.k_class
-    replay = options.replay
-    debug = options.debug
-    batching = options.batching
-    expected_accuracy = options.expected_accuracy
-
-    particle_diameter_ang = schedule.particle_diameter_ang
-    tau2_fudge = parity.tau2_fudge
-    init_relion_iteration = schedule.init_relion_iteration
-    n_classes = k_class.n_classes
-    sealed_sampling_state = source.sealed_sampling_state
-
 
     setup_t0 = time.time()
     setup_phase_seconds = {}
@@ -815,23 +798,23 @@ def refine_single_volume(
         pixel_size_angstrom=source_pixel_size_angstrom,
     )
     grid_size = image_geometry.box_size
-    n_classes = int(n_classes)
+    n_classes = int(options.k_class.n_classes)
     k_class_enabled = n_classes > 1
-    if (parity.relion_optics_image_sizes is None) != (parity.relion_optics_pixel_sizes is None):
+    if (options.parity.relion_optics_image_sizes is None) != (options.parity.relion_optics_pixel_sizes is None):
         raise ValueError(
             "relion_optics_image_sizes and relion_optics_pixel_sizes must be supplied together",
         )
     optics_image_sizes = None
     optics_pixel_sizes = None
-    if parity.relion_optics_image_sizes is not None:
-        optics_image_sizes = np.asarray(parity.relion_optics_image_sizes, dtype=np.int64).reshape(-1)
-        optics_pixel_sizes = np.asarray(parity.relion_optics_pixel_sizes, dtype=np.float64).reshape(-1)
+    if options.parity.relion_optics_image_sizes is not None:
+        optics_image_sizes = np.asarray(options.parity.relion_optics_image_sizes, dtype=np.int64).reshape(-1)
+        optics_pixel_sizes = np.asarray(options.parity.relion_optics_pixel_sizes, dtype=np.float64).reshape(-1)
         if optics_image_sizes.shape != optics_pixel_sizes.shape or optics_image_sizes.size == 0:
             raise ValueError("RELION optics image geometry arrays must be non-empty and aligned")
     model_pixel_size = (
         image_geometry.pixel_size_angstrom
-        if parity.relion_model_pixel_size is None
-        else float(parity.relion_model_pixel_size)
+        if options.parity.relion_model_pixel_size is None
+        else float(options.parity.relion_model_pixel_size)
     )
     if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
         raise ValueError(f"RELION model pixel size must be positive, got {model_pixel_size}")
@@ -869,23 +852,23 @@ def refine_single_volume(
             relion_translation_angle_scale,
         )
     _validate_bpref_particle_order_scope(
-        preserve_bpref_particle_order=parity.preserve_bpref_particle_order,
+        preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         n_classes=n_classes,
-        init_relion_iteration=init_relion_iteration,
+        init_relion_iteration=options.schedule.init_relion_iteration,
         perturb_replay_relion_dir=None if source.relion_replay is None else source.relion_replay.perturb_replay_relion_dir,
         replay_iteration_overrides=(
             None if source.relion_replay is None else source.relion_replay.replay_iteration_overrides
         ),
-        sealed_sampling_state=sealed_sampling_state,
+        sealed_sampling_state=source.sealed_sampling_state,
         sealed_scoring_context=source.sealed_scoring_context,
-        allow_replayed_bpref_particle_order=parity.allow_replayed_bpref_particle_order,
+        allow_replayed_bpref_particle_order=options.parity.allow_replayed_bpref_particle_order,
         allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
     class_mixture = _initialize_class_log_priors(
         n_classes,
-        k_class.init_class_log_priors,
-        replay.init_direction_prior,
+        options.k_class.init_class_log_priors,
+        options.replay.init_direction_prior,
     )
 
     reconstruction_settings = ReconstructionSettings(
@@ -897,32 +880,37 @@ def refine_single_volume(
         minres_map=RELION_MINRES_MAP,
         width_mask_edge=IMAGE_MASK_EDGE_PIXELS,
         fmask_edge=REFERENCE_FILTER_EDGE_SHELLS,
-        tau2_fudge=parity.tau2_fudge,
-        particle_diameter_angstrom=schedule.particle_diameter_ang,
-        first_iteration_lowpass_angstrom=parity.relion_firstiter_ini_high_angstrom,
+        tau2_fudge=options.parity.tau2_fudge,
+        particle_diameter_angstrom=options.schedule.particle_diameter_ang,
+        first_iteration_lowpass_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
         gridding_kernel=consistency.gridding_kernel,
         shell_pair_counting=consistency.shell_pair_counting,
         solvent_mask=_internal_solvent_mask(options.solvent.mask_path, grid_size, image_geometry.pixel_size_angstrom),
         solvent_correct_fsc=options.solvent.correct_fsc,
         solvent_fsc_seed=int(
-            (parity.perturb_seed if parity.optimizer_random_seed is None else parity.optimizer_random_seed) or 0
+            (
+                options.parity.perturb_seed
+                if options.parity.optimizer_random_seed is None
+                else options.parity.optimizer_random_seed
+            )
+            or 0
         ),
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,
         grid_size=grid_size,
         voxel_size=image_geometry.pixel_size_angstrom,
-        tau2_fudge=tau2_fudge,
+        tau2_fudge=options.parity.tau2_fudge,
         consistency=consistency.non_default(),
     )
 
     configure_half_image_preprocessing(
         experiment_datasets,
         pixel_size_angstrom=source_pixel_size_angstrom,
-        particle_diameter_angstrom=particle_diameter_ang,
-        fourier_backend=parity.image_fourier_backend,
+        particle_diameter_angstrom=options.schedule.particle_diameter_ang,
+        fourier_backend=options.parity.image_fourier_backend,
         # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
-        source_faithful_spectrum_norm=parity.preserve_bpref_particle_order,
+        source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
         log=logger,
     )
 
@@ -941,25 +929,25 @@ def refine_single_volume(
     # The refinement schedule owns the initial coarse HEALPix grid; a continuation
     # rebuilds the grid of its restored sampling state.
     initial_grid_order = (
-        int(schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
+        int(options.schedule.init_healpix_order) if resume is None else _exhaustive_grid_order_for_state(state)
     )
     coarse_grids = source.initial_coarse_grids(
-        initialized_healpix_order=schedule.init_healpix_order if resume is None else state.healpix_order,
+        initialized_healpix_order=options.schedule.init_healpix_order if resume is None else state.healpix_order,
         voxel_size=source_pixel_size_angstrom,
-        symmetry=symmetry,
+        symmetry=options.symmetry.point_group,
         native=partial(
             build_initial_coarse_grids,
             initial_grid_order,
             translations if resume is None else None,
             translation_range=(
-                schedule.init_translation_range if resume is None else state.translation_range
+                options.schedule.init_translation_range if resume is None else state.translation_range
             ),
             translation_step=(
-                schedule.init_translation_step if resume is None else state.translation_step
+                options.schedule.init_translation_step if resume is None else state.translation_step
             ),
             n_classes=n_classes,
             voxel_size=source_pixel_size_angstrom,
-            symmetry=symmetry,
+            symmetry=options.symmetry.point_group,
         ),
     )
     # Unperturbed base grid — `coarse_grids.translations` may be replaced per-iter by
@@ -970,17 +958,17 @@ def refine_single_volume(
     # also RFLOAT; explicit CUDA-f32 helpers cast only at their ABI boundary.
     collect_local_search_profile = (
         observer.collects_local_search_profiles
-        if local_search.local_search_profile_mode == "auto"
-        else local_search.local_search_profile_mode == "on"
+        if options.local_search.local_search_profile_mode == "auto"
+        else options.local_search.local_search_profile_mode == "on"
     )
-    if local_search.stop_after_local_search_profile:
+    if options.local_search.stop_after_local_search_profile:
         collect_local_search_profile = True
     _mark_setup_phase("sampling_grid")
 
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
 
     batch_planner = BatchPlanner(
-        requested=batching,
+        requested=options.batching,
         image_shape=image_geometry.image_shape,
         volume_shape=volume_shape,
         n_classes=n_classes,
@@ -988,10 +976,10 @@ def refine_single_volume(
     )
 
     initial_real_references_by_half = prepare_initial_real_references(
-        replay.init_reference_real,
+        options.replay.init_reference_real,
         volume_shape=volume_shape,
         n_classes=n_classes,
-        init_relion_iteration=init_relion_iteration,
+        init_relion_iteration=options.schedule.init_relion_iteration,
         log=logger,
     )
     initial_noise_variance_per_half = _normalize_noise_variance_per_half(
@@ -999,7 +987,7 @@ def refine_single_volume(
         n_halves=2,
     )
     optics_group_ids_per_half = _optics_group_ids_per_half(
-        parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
+        options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )
     _mark_setup_phase("initial_arrays")
 
@@ -1012,16 +1000,16 @@ def refine_single_volume(
     halves = initialize_halfsets(
         experiment_datasets,
         optics_group_ids=optics_group_ids_per_half,
-        previous_best_translations=replay.init_previous_best_translations,
-        previous_best_rotation_eulers=replay.init_previous_best_rotation_eulers,
-        image_corrections=replay.init_image_corrections,
-        scale_corrections=replay.init_scale_corrections,
-        group_ids=replay.init_group_ids,
-        group_count=replay.init_group_count,
+        previous_best_translations=options.replay.init_previous_best_translations,
+        previous_best_rotation_eulers=options.replay.init_previous_best_rotation_eulers,
+        image_corrections=options.replay.init_image_corrections,
+        scale_corrections=options.replay.init_scale_corrections,
+        group_ids=options.replay.init_group_ids,
+        group_count=options.replay.init_group_count,
     )
     tau2_update_details = None
     tau2_update_details_per_half = None
-    if int(schedule.init_relion_incr_size) <= 0:
+    if int(options.schedule.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
 
     # RELION randomises each half once at the first iteration and then uses
@@ -1030,13 +1018,15 @@ def refine_single_volume(
     # helper binding is handled fail-closed below: acc_rot stays infinite and
     # cannot trigger convergence.
     effective_optimizer_random_seed = (
-        parity.perturb_seed if parity.optimizer_random_seed is None else parity.optimizer_random_seed
+        options.parity.perturb_seed
+        if options.parity.optimizer_random_seed is None
+        else options.parity.optimizer_random_seed
     )
     expected_accuracy_trial_order = prepare_relion_half1_trial_order(
-        expected_accuracy=expected_accuracy,
+        expected_accuracy=options.expected_accuracy,
         half1_dataset=experiment_datasets[0],
         optimizer_random_seed=effective_optimizer_random_seed,
-        init_relion_iteration=init_relion_iteration,
+        init_relion_iteration=options.schedule.init_relion_iteration,
         log=logger,
     )
     expected_accuracy_inputs = Half1AccuracyInputs(
@@ -1046,7 +1036,7 @@ def refine_single_volume(
         padding_factor=PROJECTION_PADDING_FACTOR,
         sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
         optimizer_random_seed=effective_optimizer_random_seed,
-        expected_accuracy=expected_accuracy,
+        expected_accuracy=options.expected_accuracy,
         optics_group_ids=optics_group_ids_per_half[0],
         gridding_kernel=consistency.gridding_kernel,
     )
@@ -1072,7 +1062,7 @@ def refine_single_volume(
         reference_model = initialize_reference_model(
             _normalize_initial_means(init_volume, n_classes),
             jnp.asarray(init_mean_variance),
-            use_per_half_mean_variance=parity.use_per_half_mean_variance,
+            use_per_half_mean_variance=options.parity.use_per_half_mean_variance,
             k_class_enabled=k_class_enabled,
             log=logger,
         )
@@ -1091,23 +1081,29 @@ def refine_single_volume(
         previous_class_assignments = [None, None]
         previous_data_vs_prior_for_scheduling = (
             None
-            if schedule.init_data_vs_prior is None
-            else np.asarray(schedule.init_data_vs_prior, dtype=scoring_dtype)
+            if options.schedule.init_data_vs_prior is None
+            else np.asarray(options.schedule.init_data_vs_prior, dtype=scoring_dtype)
         )
         # C1 (RELION-parity): per-iter sigma2_offset update from data. Initialized
         # from `init_translation_sigma_angstrom`; updated from RELION's
         # posterior-weighted offset moment when the E-step path propagates it.
         # RELION stores and updates this quantity in Angstrom², and its default
         # lower bound is min_sigma2_offset=2 Å² (ml_optimiser.cpp).
-        sigma_offset = sigma_offset_from_halves(as_sigma_offset_half_pair(schedule.init_translation_sigma_angstrom))
-        relion_incr_size = int(schedule.init_relion_incr_size)
-        relion_has_high_fsc_at_limit = bool(schedule.init_has_high_fsc_at_limit) if schedule.init_has_high_fsc_at_limit is not None else False
+        sigma_offset = sigma_offset_from_halves(
+            as_sigma_offset_half_pair(options.schedule.init_translation_sigma_angstrom)
+        )
+        relion_incr_size = int(options.schedule.init_relion_incr_size)
+        relion_has_high_fsc_at_limit = (
+            bool(options.schedule.init_has_high_fsc_at_limit)
+            if options.schedule.init_has_high_fsc_at_limit is not None
+            else False
+        )
         direction_priors = initial_direction_priors_from_snapshot(
-            replay.init_direction_prior,
+            options.replay.init_direction_prior,
             n_classes=n_classes,
             dtype=scoring_dtype,
             log=logger,
-            symmetry=symmetry, expected_order=coarse_grids.rotation_grid.healpix_order,
+            symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
         )
         # --- RELION SamplingPerturbation state (healpix_sampling.cpp:167-174) ---
         # RELION applies a random rigid rotation of the entire SO(3) trial grid at
@@ -1116,16 +1112,16 @@ def refine_single_volume(
         # is advanced per iter via realWRAP(prev + rnd_unif(0.5*pf, pf), -pf, +pf).
         # For exact parity replay, read _rlnSamplingPerturbInstance from RELION's
         # per-iter sampling.star.
-        if parity.perturb_factor > 0 and parity.perturb_seed is not None:
+        if options.parity.perturb_factor > 0 and options.parity.perturb_seed is not None:
             random_perturbation = relion_sampling_perturbation_for_iteration(
-                parity.perturb_factor,
-                parity.perturb_seed,
-                init_relion_iteration,
+                options.parity.perturb_factor,
+                options.parity.perturb_seed,
+                options.schedule.init_relion_iteration,
             )
             logger.info(
                 "Perturbation init: relion_iter=%d random_seed=%d rp=%+.5f",
-                int(init_relion_iteration),
-                int(parity.perturb_seed),
+                int(options.schedule.init_relion_iteration),
+                int(options.parity.perturb_seed),
                 random_perturbation,
             )
         else:
@@ -1162,11 +1158,11 @@ def refine_single_volume(
         relion_has_high_fsc_at_limit = bool(resume.has_high_fsc_at_limit)
         if resume.direction_prior is None:
             direction_priors = initial_direction_priors_from_snapshot(
-                replay.init_direction_prior,
+                options.replay.init_direction_prior,
                 n_classes=n_classes,
                 dtype=scoring_dtype,
                 log=logger,
-                symmetry=symmetry, expected_order=coarse_grids.rotation_grid.healpix_order,
+                symmetry=options.symmetry.point_group, expected_order=coarse_grids.rotation_grid.healpix_order,
             )
         else:
             # The saved order resolves a prior length that is ambiguous under symmetry.
@@ -1177,7 +1173,7 @@ def refine_single_volume(
                 n_classes=n_classes,
                 dtype=scoring_dtype,
                 log=logger,
-                symmetry=symmetry, expected_order=saved_orders[0],
+                symmetry=options.symmetry.point_group, expected_order=saved_orders[0],
             )
             direction_priors = [
                 DirectionPrior(prior.values, order)
@@ -1210,7 +1206,7 @@ def refine_single_volume(
         else np.asarray(utils.R_from_relion(np.asarray(half.rotation_eulers), degrees=True), dtype=scoring_dtype)
         for half in halves
     ]
-    perturb_rng = None if parity.perturb_seed is not None else np.random.default_rng()
+    perturb_rng = None if options.parity.perturb_seed is not None else np.random.default_rng()
     iteration = 0
     _mark_setup_phase("before_iterations")
     logger.info(
@@ -1219,7 +1215,7 @@ def refine_single_volume(
     )
     # The RELION run whose numbered STAR files supply the sampling (an input source's; None natively).
     star_directory = source.relion_run_directory(iteration - 1)
-    native_sampling_boundary = source.relion_run_directory(iteration) is None and sealed_sampling_state is None
+    native_sampling_boundary = source.relion_run_directory(iteration) is None and source.sealed_sampling_state is None
     # A numbered RELION sampling STAR is the state *after* the expectation
     # transition that produced it.  The next expectation computes
     # image_coarse_size from that saved state before updateAngularSampling.
@@ -1251,7 +1247,7 @@ def refine_single_volume(
             means=reference_model.maps,
             mean_variance=reference_model.tau2,
             mean_variance_per_half=(
-                reference_model.tau2_per_half if parity.use_per_half_mean_variance else None
+                reference_model.tau2_per_half if options.parity.use_per_half_mean_variance else None
             ),
             relion_half_inputs=halves,
             noise_variance_per_half=noise_model.variance_per_half,
@@ -1265,7 +1261,9 @@ def refine_single_volume(
     # (--max_iter 0 --force-final-after-zero-iterations) runs no numbered
     # iteration and reports none.
     hard_assignments = [None, None]
-    while (schedule.force_max_iter_after_convergence or not state.has_converged) and iteration < schedule.max_iter:
+    while (
+        options.schedule.force_max_iter_after_convergence or not state.has_converged
+    ) and iteration < options.schedule.max_iter:
         # A continued run's first iteration follows the snapshot's iteration.
         has_previous_iteration = iteration > 0 or resume is not None
         # RELION's Class3D from one reference scores each particle against one random class in its first
@@ -1273,13 +1271,15 @@ def refine_single_volume(
         # first iteration scores class 0 alone (CC), its model is then copied to every class, and the random
         # classes are seeded in the second iteration.
         seeded_start = (
-            k_class.first_iteration_seed_classes is not None and resume is None and int(init_relion_iteration) == 0
+            options.k_class.first_iteration_seed_classes is not None
+            and resume is None
+            and int(options.schedule.init_relion_iteration) == 0
         )
-        seed_after_cc = seeded_start and bool(parity.emulate_relion_firstiter_cc)
+        seed_after_cc = seeded_start and bool(options.parity.emulate_relion_firstiter_cc)
         single_class_iteration = seed_after_cc and iteration == 0
         seed_iteration = seeded_start and iteration == (1 if seed_after_cc else 0)
         star_directory = source.relion_run_directory(iteration)
-        native_sampling_boundary = star_directory is None and sealed_sampling_state is None
+        native_sampling_boundary = star_directory is None and source.sealed_sampling_state is None
         if native_sampling_boundary:
             replay_saved_healpix_order = None
         # RELION checks convergence at the top of iteration n from the
@@ -1291,7 +1291,7 @@ def refine_single_volume(
                 native_sampling_boundary=native_sampling_boundary,
                 n_classes=n_classes,
             )
-            and not schedule.force_max_iter_after_convergence
+            and not options.schedule.force_max_iter_after_convergence
             and has_previous_iteration
             and check_convergence(state)
         ):
@@ -1305,7 +1305,9 @@ def refine_single_volume(
         t0 = time.time()
         observer.iteration_started(iteration)
         first_iteration = first_iteration_policy(options, iteration=iteration)
-        numbered_relion_iteration = replay_policy._numbered_relion_iteration(init_relion_iteration, iteration)
+        numbered_relion_iteration = replay_policy._numbered_relion_iteration(
+            options.schedule.init_relion_iteration, iteration
+        )
 
         if follower_setup.follower_scale_state is not None:
             _dispatch_relion_follower_scale_for_numbered_iteration(
@@ -1342,8 +1344,8 @@ def refine_single_volume(
                     pixel_size_angstrom=source_pixel_size_angstrom,
                     incr_size=relion_incr_size,
                     ave_pmax=state.ave_Pmax,
-                    completed_relion_iteration=int(init_relion_iteration) + int(iteration),
-                    parity=parity,
+                    completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
+                    parity=options.parity,
                     dtype=scoring_dtype,
                     log=logger,
                 )
@@ -1363,8 +1365,8 @@ def refine_single_volume(
                     incr_size=relion_incr_size,
                     has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
                     ave_pmax=state.ave_Pmax,
-                    completed_relion_iteration=int(init_relion_iteration) + int(iteration),
-                    parity=parity,
+                    completed_relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration),
+                    parity=options.parity,
                     dtype=scoring_dtype,
                     log=logger,
                 )
@@ -1431,8 +1433,10 @@ def refine_single_volume(
                 direction_priors,
             ) = swapped
             sigma_offset = SigmaOffset(swapped_sigma_offset_angstrom, swapped_sigma_offset_angstrom_per_half)
-            history.state_swap_probe_applied_relion_iterations.append(int(init_relion_iteration) + int(iteration) + 1)
-        if not parity.use_per_half_mean_variance:
+            history.state_swap_probe_applied_relion_iterations.append(
+                int(options.schedule.init_relion_iteration) + int(iteration) + 1
+            )
+        if not options.parity.use_per_half_mean_variance:
             # State-swap diagnostics historically replace the one shared tau2.
             # Do not leave the scorer pointing at pre-swap aliases.
             reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
@@ -1475,7 +1479,7 @@ def refine_single_volume(
         # expectation's grid; completed-iteration updates remain after M-step.
         state = advance_expectation_sampling(
             state,
-            adaptive,
+            options.adaptive,
             iteration=iteration,
             has_previous_iteration=has_previous_iteration,
             native_sampling_boundary=native_sampling_boundary,
@@ -1494,7 +1498,7 @@ def refine_single_volume(
         logger.info(
             "=== RELION Iteration %d/%d: current_size=%d, healpix_order=%d, local_search=%s ===",
             iteration + 1,
-            schedule.max_iter,
+            options.schedule.max_iter,
             scoring_current_size,
             state.healpix_order,
             state.do_local_search,
@@ -1509,7 +1513,7 @@ def refine_single_volume(
         # The order is still tracked for sigma calculation.
         coarse_grids = refresh_coarse_grids(
             coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
-            star_sampling=star_directory is not None and sealed_sampling_state is None, log=logger,
+            star_sampling=star_directory is not None and source.sealed_sampling_state is None, log=logger,
         )
 
         # --- Local angular search bookkeeping ---
@@ -1537,7 +1541,7 @@ def refine_single_volume(
         )
         trial_grid = iteration_trial_grid(
             coarse_grids, state, options, random_perturbation, replay_metadata=_replay_meta,
-            sealed_grid=sealed_sampling_state is not None, dtype=scoring_dtype,
+            sealed_grid=source.sealed_sampling_state is not None, dtype=scoring_dtype,
         )
         coarse_grids = replace(coarse_grids, translations=trial_grid.translations)
         # RELION's coarse device geometry also applies at OS0. Keep this
@@ -1570,7 +1574,7 @@ def refine_single_volume(
 
         direction_log_priors = relion_direction_log_priors(
             direction_priors, options, use_local=use_local, scoring_healpix_order=direction_prior_healpix_order,
-            sealed_sampling_state=sealed_sampling_state, dtype=scoring_dtype, log=logger,
+            sealed_sampling_state=source.sealed_sampling_state, dtype=scoring_dtype, log=logger,
         )
 
         # --- Run E+M on each half-set ---
@@ -1598,7 +1602,7 @@ def refine_single_volume(
 
             coarse_image_plan = plan_adaptive_image_size(
                 coarse_size_healpix_order, sampling_plan.windows, optics, options,
-                sealed_sampling_state=sealed_sampling_state, log=logger,
+                sealed_sampling_state=source.sealed_sampling_state, log=logger,
             )
             coarse_size = coarse_image_plan.size
             coarse_cs = coarse_size if coarse_size < grid_size else None
@@ -1609,7 +1613,11 @@ def refine_single_volume(
                 coarse_cs,
                 sampling_plan.windows.image_window_size,
                 state.adaptive_oversampling,
-                (f"{float(particle_diameter_ang):.1f} A" if particle_diameter_ang is not None else "box_size"),
+                (
+                    f"{float(options.schedule.particle_diameter_ang):.1f} A"
+                    if options.schedule.particle_diameter_ang is not None
+                    else "box_size"
+                ),
             )
 
         # The previous iteration's slabs are released before this iteration's are built.
@@ -1643,7 +1651,7 @@ def refine_single_volume(
         # order; it makes the two callable independently, which is what the
         # overlap option uses. Serial dispatch stays the default.
         numbered_variant = _numbered_dense_variant(
-            first_iteration, k_class, use_adaptive=use_adaptive,
+            first_iteration, options.k_class, use_adaptive=use_adaptive,
             coarse_cs=coarse_cs if use_adaptive else None,  # bound only on the adaptive route
             fine_window_size=sampling_plan.windows.score_window_size,
         )
@@ -1682,7 +1690,7 @@ def refine_single_volume(
             numbered_tomo_sampling = None
 
         def _run_half_estep(k):
-            particle_half = local_search_centre_half(halves[k], (replay.init_angle_priors or (None, None))[k], state)
+            particle_half = local_search_centre_half(halves[k], (options.replay.init_angle_priors or (None, None))[k], state)
             score_result = score_numbered_half(
                 HalfScoringData(
                     particles=particle_half,
@@ -1708,7 +1716,7 @@ def refine_single_volume(
                 multi_shape_halves=multi_shape_halves,
                 options=options,
                 replay_prior_translations=_replay_prior_translations,
-                initial_class_assignments=k_class.first_iteration_seed_classes if seed_iteration else None,
+                initial_class_assignments=options.k_class.first_iteration_seed_classes if seed_iteration else None,
                 single_class_iteration=single_class_iteration,
                 scoring_dtype=scoring_dtype,
                 relion_translation_angle_scale=relion_translation_angle_scale,
@@ -1753,13 +1761,13 @@ def refine_single_volume(
         Ft_y_0, Ft_y_1 = per_half.Ft_y
         Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf
 
-        if local_search.stops_after_local_search and use_local:
+        if options.local_search.stops_after_local_search and use_local:
             elapsed = time.time() - t0
             logger.info(
                 "Stopping after local-search diagnostic at iteration %d: profiles=%d score_only=%s wall=%.1fs",
                 iteration + 1,
                 len(history.local_profile_history),
-                bool(local_search.stop_after_local_search_score_only),
+                bool(options.local_search.stop_after_local_search_score_only),
                 elapsed,
             )
             # Local search is K=1 (Class3D was rejected above), so there are no class products.
@@ -1778,7 +1786,7 @@ def refine_single_volume(
                 ),
                 history=history,
                 profile_stop=ProfileStop(
-                    score_only=bool(local_search.stop_after_local_search_score_only),
+                    score_only=bool(options.local_search.stop_after_local_search_score_only),
                     wall_seconds=elapsed,
                     significant_count=significance.recorded,
                 ),
@@ -1821,7 +1829,7 @@ def refine_single_volume(
         )
         check_half_accumulators_before_join(
             (Ft_y_0, Ft_y_1), (Ft_ctf_0, Ft_ctf_1), iteration=iteration,
-            init_relion_iteration=init_relion_iteration, log=logger,
+            init_relion_iteration=options.schedule.init_relion_iteration, log=logger,
         )
 
         # --- RELION-exact M-step ordering ---
@@ -1880,7 +1888,7 @@ def refine_single_volume(
                 (Ft_y_0, Ft_y_1),
                 (Ft_ctf_0, Ft_ctf_1),
                 reconstruction_settings,
-                parity=parity,
+                parity=options.parity,
                 pixel_resolutions=history.pixel_resolutions,
                 current_resolution=getattr(state, "current_resolution", float("inf")),
                 iteration=iteration,
@@ -1904,11 +1912,11 @@ def refine_single_volume(
                     direction_prior_order=direction_prior_healpix_order,
                     expected_rotation_count=rotation_grid_size(
                         direction_prior_healpix_order,
-                        symmetry=symmetry,
+                        symmetry=options.symmetry.point_group,
                     ),
                     dtype=scoring_dtype,
                     log=logger,
-                    symmetry=symmetry,
+                    symmetry=options.symmetry.point_group,
                 )
                 for half_index, learned in enumerate(learned_priors):
                     if learned is not None:
@@ -1916,7 +1924,7 @@ def refine_single_volume(
             else:
                 exhaustive_grid_size = rotation_grid_size(
                     direction_prior_healpix_order,  # a local search's posterior grid (pdf_direction still accumulates)
-                    symmetry=symmetry,
+                    symmetry=options.symmetry.point_group,
                 )
                 if (
                     (use_local or trial_grid.rotations.shape[0] == exhaustive_grid_size)
@@ -1930,7 +1938,7 @@ def refine_single_volume(
                         n_classes=n_classes,
                         healpix_order=direction_prior_healpix_order,
                         dtype=scoring_dtype,
-                        symmetry=symmetry,
+                        symmetry=options.symmetry.point_group,
                     )
                     for half_index, learned in enumerate(learned_priors):
                         direction_priors[half_index] = learned
@@ -2058,9 +2066,9 @@ def refine_single_volume(
                 current_size=current_size,
                 grid_size=grid_size,
                 voxel_size=source_pixel_size_angstrom,
-                emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
-                ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
-                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
+                emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
+                ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
+                relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration) + 1,
                 dtype=scoring_dtype,
             )
         else:
@@ -2072,16 +2080,16 @@ def refine_single_volume(
                 current_size=current_size,
                 grid_size=grid_size,
                 voxel_size=source_pixel_size_angstrom,
-                emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
-                ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
-                relion_iteration=int(init_relion_iteration) + int(iteration) + 1,
+                emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
+                ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
+                relion_iteration=int(options.schedule.init_relion_iteration) + int(iteration) + 1,
                 dtype=scoring_dtype,
             )
         if int(resolution_estimate.scheduling_shell) != int(resolution_estimate.observed_shell):
             logger.info(
                 "RELION firstiter_cc resolution state: using ini_high=%.2f A shell %d "
                 "instead of live data-vs-prior shell %d",
-                float(parity.relion_firstiter_ini_high_angstrom),
+                float(options.parity.relion_firstiter_ini_high_angstrom),
                 int(resolution_estimate.scheduling_shell),
                 int(resolution_estimate.observed_shell),
             )
@@ -2300,7 +2308,7 @@ def refine_single_volume(
             checkpoint_writer(snapshot)
 
         observer.iteration_finished(FinishedIteration(
-            iteration, iteration_start=t0, init_relion_iteration=init_relion_iteration, state=state,
+            iteration, iteration_start=t0, init_relion_iteration=options.schedule.init_relion_iteration, state=state,
             current_size=current_size, sigma_offset_angstrom=sigma_offset.shared_angstrom,
             random_perturbation=random_perturbation, settings=reconstruction_settings,
             pixel_size_angstrom=source_pixel_size_angstrom, ave_pmax=statistics.ave_pmax, fsc=fsc,
@@ -2344,10 +2352,10 @@ def refine_single_volume(
         tau2_update_details_per_half = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None
-        if debug.environment.clear_jax_caches_between_iterations:
+        if options.debug.environment.clear_jax_caches_between_iterations:
             jax.clear_caches()
 
-        if state.has_converged and not schedule.force_max_iter_after_convergence:
+        if state.has_converged and not options.schedule.force_max_iter_after_convergence:
             logger.info(
                 "Convergence reached at iteration %d. Final resolution: %.2f A (pixel_res=%.1f)",
                 iteration + 1,
@@ -2355,7 +2363,7 @@ def refine_single_volume(
                 resolution_estimate.scheduling_shell,
             )
             break
-        if state.has_converged and schedule.force_max_iter_after_convergence:
+        if state.has_converged and options.schedule.force_max_iter_after_convergence:
             logger.info(
                 "Convergence reached at iteration %d, continuing because force_max_iter_after_convergence=True",
                 iteration + 1,
@@ -2383,20 +2391,20 @@ def refine_single_volume(
         logger=logger,
         has_converged=state.has_converged,
         iteration=iteration,
-        max_iter=schedule.max_iter,
-        force_max_iter_after_convergence=schedule.force_max_iter_after_convergence,
+        max_iter=options.schedule.max_iter,
+        force_max_iter_after_convergence=options.schedule.force_max_iter_after_convergence,
         after_max_iter=options.final_pass.after_max_iter,
         k_class_enabled=k_class_enabled,
     )
-    if schedule.skip_final_iteration or not should_run_final_iteration:
-        if not schedule.skip_final_iteration and not should_run_final_iteration:
+    if options.schedule.skip_final_iteration or not should_run_final_iteration:
+        if not options.schedule.skip_final_iteration and not should_run_final_iteration:
             logger.info(
                 "Skipping RELION final all-data iteration: has_converged=%s, "
                 "iteration=%d, max_iter=%d, force_max_iter_after_convergence=%s",
                 state.has_converged,
                 iteration,
-                schedule.max_iter,
-                schedule.force_max_iter_after_convergence,
+                options.schedule.max_iter,
+                options.schedule.force_max_iter_after_convergence,
             )
         merged_mean, merged_class_means = _merged_mean_from_halves(
             reference_model.maps,
@@ -2422,7 +2430,7 @@ def refine_single_volume(
             "(iteration=%d, max_iter=%d)",
             FINAL_ALL_DATA_AFTER_MAX_ITER_ENV,
             iteration,
-            schedule.max_iter,
+            options.schedule.max_iter,
         )
     # --- RELION's final iteration: do_join_random_halves + do_use_all_data ---
     # After convergence, RELION runs ONE more iter with:
@@ -2452,7 +2460,7 @@ def refine_single_volume(
     if follower_setup.follower_scale_state is not None:
         _dispatch_relion_follower_scale_for_final_all_data(
             follower_setup,
-            init_relion_iteration=init_relion_iteration,
+            init_relion_iteration=options.schedule.init_relion_iteration,
             numbered_iteration_count=len(history.current_sizes),
             relion_half_inputs=halves,
             dtype=scoring_dtype,
