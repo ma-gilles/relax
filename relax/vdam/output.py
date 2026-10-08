@@ -16,9 +16,14 @@ from relax.vdam.state import InitialModelState, NativeParticleState
 
 
 def _initial_model_mrc_from_prefix(outputname: str) -> str:
-    """Mirror RELION's GUI ``outputname.rstrip("run") + initial_model.mrc``."""
+    """RELION's job directory plus ``initial_model.mrc``.
 
-    return outputname.rstrip("run") + "initial_model.mrc"
+    RELION's pipeliner runs ``relion_refine --o <outputname>run`` and writes
+    ``<outputname>initial_model.mrc`` (``pipeline_jobs.cpp:3466, 3577``), so the
+    ``run`` suffix is removed once, not every trailing r/u/n character.
+    """
+
+    return outputname.removesuffix("run") + "initial_model.mrc"
 
 
 def _class_mrc_paths(output_prefix: str, iteration: int, K: int) -> tuple[str, ...]:

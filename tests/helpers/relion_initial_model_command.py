@@ -137,7 +137,7 @@ def build_align_symmetry_command(outputname: str, nr_iter: int, sym_name: str, d
     (pipeline_jobs.cpp:3573-3588).
     """
     fn_model = f"{outputname}_it{nr_iter:03d}_model.star"
-    out_mrc = outputname.rstrip("run") + "initial_model.mrc"
+    out_mrc = outputname.removesuffix("run") + "initial_model.mrc"
     tokens = [
         "relion_align_symmetry",
         "--i",

@@ -2240,6 +2240,21 @@ def test_driver_output_mrc_path_matches_relion_snapshot():
     assert output._initial_model_mrc_from_prefix("ab_initio/run") == "ab_initio/initial_model.mrc"
 
 
+@pytest.mark.parametrize(
+    ("prefix", "expected"),
+    [
+        ("ab_initio/turnrun", "ab_initio/turninitial_model.mrc"),
+        ("out/version", "out/versioninitial_model.mrc"),
+        ("out/sun", "out/suninitial_model.mrc"),
+        ("out/nr", "out/nrinitial_model.mrc"),
+    ],
+)
+def test_driver_output_mrc_path_removes_only_the_run_suffix(prefix, expected):
+    # RELION runs `--o <job dir>run` and writes `<job dir>initial_model.mrc` (pipeline_jobs.cpp:3466,
+    # 3577): only the literal "run" suffix is RELION's, other trailing r/u/n characters are the user's.
+    assert output._initial_model_mrc_from_prefix(prefix) == expected
+
+
 def test_model_star_uses_relion_model_blocks(tmp_path):
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=12)
     state.pdf_class = np.asarray([0.25, 0.75], dtype=np.float64)
