@@ -54,28 +54,26 @@ def parse_env_binary_flag(name: str) -> bool:
     return token == "1"
 
 
-def parse_env_float_or_default(name: str, default: float, *, logger: logging.Logger) -> float:
-    """Read a float override, warning through the caller's logger if invalid."""
+def _parse_env_number_or_default(name, default, cast, default_format: str, *, logger: logging.Logger):
+    """Read a numeric override with ``cast``; unset or blank uses ``default``, an invalid value warns and uses it."""
     value = os.environ.get(name)
     if value is None or value.strip() == "":
         return default
     try:
-        return float(value)
+        return cast(value)
     except ValueError:
-        logger.warning("Ignoring invalid %s=%r; using %.3f", name, value, default)
+        logger.warning("Ignoring invalid %s=%r; using " + default_format, name, value, default)
         return default
+
+
+def parse_env_float_or_default(name: str, default: float, *, logger: logging.Logger) -> float:
+    """Read a float override, warning through the caller's logger if invalid."""
+    return _parse_env_number_or_default(name, default, float, "%.3f", logger=logger)
 
 
 def parse_env_int_or_default(name: str, default: int, *, logger: logging.Logger) -> int:
     """Read an integer override, warning through the caller's logger if invalid."""
-    value = os.environ.get(name)
-    if value is None or value.strip() == "":
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        logger.warning("Ignoring invalid %s=%r; using %d", name, value, default)
-        return default
+    return _parse_env_number_or_default(name, default, int, "%d", logger=logger)
 
 
 def parse_int_set(value: str | None) -> set[int] | None:
