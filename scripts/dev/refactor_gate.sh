@@ -62,6 +62,10 @@ step_tests() {
     | while read -r f; do [ -f "$f" ] && echo "$f"; done | sort -u)
   # shellcheck disable=SC2086
   # The robustness-matrix and completion launchers need an installed pixi Python as their base environment.
+  # XLA's CPU contractions run on one Eigen thread: the multithreaded split depends on the node's cores and
+  # changes float32 sums, so float32-vs-float64 accuracy tests passed on one CPU and failed on another
+  # (ppca_initial_model/test_full_fine_streaming on Xeon 8462Y+ / EPYC 9654 nodes, 2026-10-08).
+  XLA_FLAGS="${XLA_FLAGS:+$XLA_FLAGS }--xla_cpu_multi_thread_eigen=false" \
   EM_COMPLETION_PIXI_PY=$PY EM_K1_MATRIX_PIXI_PY=$PY EM_KCLASS_MATRIX_PIXI_PY=$PY \
     PYTHONPATH=$src JAX_COMPILATION_CACHE_DIR=$S/jax_cache_tests_$label RECOVAR_JAX_CACHE_DIR=$S/recovar_jax_cache_tests_$label \
     "$PY" -m pytest $files -p no:cacheprovider --basetemp="$S/pytest_tmp_$label" -rfEs -v > "$S/logs/tests_$label.log" 2>&1; rc=$?
