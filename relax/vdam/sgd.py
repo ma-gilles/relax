@@ -40,36 +40,36 @@ from relax.vdam.state import InitialModelState, VdamAccumulator
 MOMENTUM = 0.9
 
 
-def _inverse_bpref_fourier(volume_half, *, ori_size, padding_factor):
+def _inverse_bpref_fourier(volume_half, *, box_size, padding_factor):
     """Inverse the shared RELION centered half-volume to a real map."""
-    fft_size = int(ori_size) * int(padding_factor)
+    fft_size = int(box_size) * int(padding_factor)
     capacity = fft_size + 3
     fft_half = relion_window_centered_half_fourier(volume_half, (capacity,) * 3, (fft_size,) * 3)
     dc = (fft_size // 2, fft_size // 2, 0)
     fft_half = fft_half.at[dc].set(jnp.real(fft_half[dc]) + 0.0j)
     real = ftu.get_idft3_real(fft_half, (fft_size,) * 3, norm="forward")
-    start = (fft_size - int(ori_size)) // 2
-    return real[start : start + ori_size, start : start + ori_size, start : start + ori_size] / float(
-        padding_factor**3 * ori_size
+    start = (fft_size - int(box_size)) // 2
+    return real[start : start + box_size, start : start + box_size, start : start + box_size] / float(
+        padding_factor**3 * box_size
     )
 
 
-def _bandlimit_real_map(volume_relion, radius, *, ori_size, padding_factor):
+def _bandlimit_real_map(volume_relion, radius, *, box_size, padding_factor):
     """Project a map onto the same Fourier support used by its BPref."""
     projector, _ = setup_relion_projector_uncorrected(
         volume_relion,
         radius,
-        box_size=ori_size,
+        box_size=box_size,
         padding_factor=padding_factor,
         compute_dtype=jnp.float32,
     )
-    return _inverse_bpref_fourier(projector, ori_size=ori_size, padding_factor=padding_factor)
+    return _inverse_bpref_fourier(projector, box_size=box_size, padding_factor=padding_factor)
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor"))
-def _class_step(reference, previous_update, residual, curvature, radius, learning_rate, *, ori_size, padding_factor):
+@partial(jax.jit, static_argnames=("box_size", "padding_factor"))
+def _class_step(reference, previous_update, residual, curvature, radius, learning_rate, *, box_size, padding_factor):
     """Return one float32 map step in RECOVAR axes and its scalar diagnostics."""
-    fft_size = int(ori_size) * int(padding_factor)
+    fft_size = int(box_size) * int(padding_factor)
     capacity = fft_size + 3
     coord = jnp.arange(capacity, dtype=jnp.int32) - capacity // 2
     x = jnp.arange(capacity // 2 + 1, dtype=jnp.int32)
@@ -78,24 +78,24 @@ def _class_step(reference, previous_update, residual, curvature, radius, learnin
     maximum = jnp.max(jnp.where(valid, curvature, 0.0))
     safe_maximum = jnp.where(maximum > 0.0, maximum, 1.0)
     scaled = jnp.where(valid, residual / safe_maximum, 0.0 + 0.0j)
-    gradient_relion = _inverse_bpref_fourier(scaled, ori_size=ori_size, padding_factor=padding_factor)
+    gradient_relion = _inverse_bpref_fourier(scaled, box_size=box_size, padding_factor=padding_factor)
     # The shared E-step projects sinc^-2 corrected maps. Its map-space adjoint
     # applies the same self-adjoint real-space correction to the raw BPref gradient.
-    gradient_relion = gridding_correct_volume_real(gradient_relion, ori_size, padding_factor)
+    gradient_relion = gridding_correct_volume_real(gradient_relion, box_size, padding_factor)
     gradient_relion = _bandlimit_real_map(
         gradient_relion,
         radius,
-        ori_size=ori_size,
+        box_size=box_size,
         padding_factor=padding_factor,
     )
     gradient = swap_relion_volume_layout(gradient_relion, jnp.float32)
     previous_relion = swap_relion_volume_layout(previous_update, jnp.float32)
     previous_band = swap_relion_volume_layout(
-        _bandlimit_real_map(previous_relion, radius, ori_size=ori_size, padding_factor=padding_factor), jnp.float32
+        _bandlimit_real_map(previous_relion, radius, box_size=box_size, padding_factor=padding_factor), jnp.float32
     )
     reference_relion = swap_relion_volume_layout(reference, jnp.float32)
     reference_band = swap_relion_volume_layout(
-        _bandlimit_real_map(reference_relion, radius, ori_size=ori_size, padding_factor=padding_factor), jnp.float32
+        _bandlimit_real_map(reference_relion, radius, box_size=box_size, padding_factor=padding_factor), jnp.float32
     )
     update = MOMENTUM * previous_band + (1.0 - MOMENTUM) * learning_rate * gradient
     update = jnp.where(maximum > 0.0, update, jnp.zeros_like(update))
@@ -164,7 +164,7 @@ def sgd_m_step(
             curvature,
             np.int32(radius),
             np.float32(learning_rate),
-            ori_size=int(state.box_size),
+            box_size=int(state.box_size),
             padding_factor=int(padding_factor),
         )
         if not bool(jnp.all(jnp.isfinite(reference))) or not bool(jnp.all(jnp.isfinite(update))):

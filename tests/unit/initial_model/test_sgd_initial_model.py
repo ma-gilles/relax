@@ -47,7 +47,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
     map_relion = _bandlimit_real_map(
         jnp.asarray(rng.normal(size=(n,) * 3), jnp.float32),
         radius,
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
     )
     source = jnp.asarray(rng.normal(size=(n,) * 3), jnp.float32)
@@ -75,7 +75,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
         return jnp.real(jnp.sum(hermitian_weight[None, None, :] * jnp.conj(residual) * projected * active))
 
     exact_gradient = jax.grad(forward_linear_form)(map_relion)
-    expected = _bandlimit_real_map(exact_gradient, radius, ori_size=n, padding_factor=1) * n
+    expected = _bandlimit_real_map(exact_gradient, radius, box_size=n, padding_factor=1) * n
     reference = swap_relion_volume_layout(map_relion, jnp.float32)
     _, update, maximum, _, _ = _class_step(
         reference,
@@ -84,7 +84,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
         active.astype(jnp.float32),
         jnp.int32(radius),
         jnp.float32(10.0),
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
     )
     actual = swap_relion_volume_layout(update, jnp.float32)
@@ -96,7 +96,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
     direction = _bandlimit_real_map(
         jnp.asarray(rng.normal(size=(n,) * 3), jnp.float32),
         radius,
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
     )
     epsilon = 0.01
@@ -123,7 +123,7 @@ def test_scalar_step_is_duplicate_batch_invariant_and_empty_class_stable():
             weight,
             jnp.int32(radius),
             jnp.float32(0.4),
-            ori_size=n,
+            box_size=n,
             padding_factor=1,
         )
 
@@ -161,7 +161,7 @@ def test_known_target_residual_step_reduces_projected_quadratic():
         active.astype(jnp.float32),
         jnp.int32(radius),
         jnp.float32(0.05),
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
     )
     updated_fourier, _ = setup_relion_projector(
