@@ -303,8 +303,7 @@ class RelionReplaySource(InputSource):
         RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE does not forbid it). Installs the particle state
         in the ``halves`` and the priors in ``direction_priors`` in place, as apply_final_replay_state does."""
         options, replay = self.options, self.replay
-        n_classes = int(options.k_class.n_classes)
-        k_class_enabled = n_classes > 1
+        k_class_enabled = options.k_class.n_classes > 1
         final_replay_override = self.replay.final_replay_override
         sigma_offset, noise_model = inputs.sigma_offset, inputs.noise_model
         disabled = self.replay.final_all_data_disable_replay_last_numbered_state
@@ -340,7 +339,7 @@ class RelionReplaySource(InputSource):
                     direction_priors,
                     sigma_offset=sigma_offset,
                     noise_model=noise_model,
-                    n_classes=n_classes,
+                    n_classes=options.k_class.n_classes,
                     healpix_order=healpix_order,
                     image_shape=image_geometry.image_shape,
                     symmetry=options.symmetry.point_group,
@@ -359,7 +358,6 @@ class RelionReplaySource(InputSource):
         """RELION's final (or last numbered) sampling STAR of the final-pass replay directory, else of the live
         STAR replay; with neither, the run's own. A replay without the STAR leaves the final grid unperturbed."""
         options, parity = self.options, self.options.parity
-        n_classes = int(options.k_class.n_classes)
         last_numbered_iteration = relion_iteration - 1
         active_replay_dir = self._live_directory
         replay_dir = (
@@ -405,7 +403,7 @@ class RelionReplaySource(InputSource):
             )
             _log_replayed_translation_grid_change(
                 settings, replay_dir=replay_dir,
-                replay_prefix=self.replay.perturb_replay_relion_prefix, n_classes=n_classes,
+                replay_prefix=self.replay.perturb_replay_relion_prefix, n_classes=options.k_class.n_classes,
             )
             logger.info(
                 "Perturbation replay: final all-data relion_iter=%d rp=%+.12g pf=%.3f "
