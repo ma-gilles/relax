@@ -56,9 +56,12 @@ from relax.scoring.scoring import (
 from relax.scoring.tree_rescore import (
     TreeRescoreGeometry,
     TreeRescoreState,
+    TreeRescoreTotals,
+    log_tree_rescore_totals,
     plan_tree_rescore,
     require_tree_rescore_call,
     rescore_ambiguous_images,
+    tree_rescore_report,
 )
 
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
@@ -666,10 +669,7 @@ def _compute_k_class_significance_batched(
     )
     outputs = Pass1Outputs.allocate(output_plan)
 
-    tree_rescore_examined = 0
-    tree_rescore_ambiguous = 0
-    tree_rescore_winner_changes = 0
-    tree_rescore_exact_ties = 0
+    tree_rescore_totals = TreeRescoreTotals()
 
     start_idx = 0
     image_indices = np.arange(n_images)
@@ -784,10 +784,7 @@ def _compute_k_class_significance_batched(
                     indices=indices,
                     debug_iteration=debug_iteration,
                 )
-                tree_rescore_examined += int(batch_inputs.batch_size)
-                tree_rescore_ambiguous += rescored.ambiguous_images
-                tree_rescore_exact_ties += rescored.exact_ties
-                tree_rescore_winner_changes += rescored.winner_changes
+                tree_rescore_totals = tree_rescore_totals.after_batch(batch_inputs.batch_size, rescored)
                 scores = scores._replace(
                     best_argmax=rescored.state.best_argmax,
                     best_score=rescored.state.best_score,
@@ -923,21 +920,8 @@ def _compute_k_class_significance_batched(
         full_stats["class_second_hard_assignments"] = outputs.class_second_hard_assignment
         full_stats["class_second_best_offset_free_log_score_per_image"] = outputs.class_second_best_offset_free_log_score
     if tree_rescore_enabled:
-        full_stats["firstiter_cc_tree_top2_rescore"] = {
-            "max_margin": float(tree_rescore_max_margin),
-            "examined_images": int(tree_rescore_examined),
-            "ambiguous_images": int(tree_rescore_ambiguous),
-            "exact_score_ties": int(tree_rescore_exact_ties),
-            "winner_changes": int(tree_rescore_winner_changes),
-        }
-        logger.warning(
-            "RELION coarse-tree top-2 rescore complete: "
-            "examined=%d ambiguous=%d exact_ties=%d winner_changes=%d",
-            tree_rescore_examined,
-            tree_rescore_ambiguous,
-            tree_rescore_exact_ties,
-            tree_rescore_winner_changes,
-        )
+        full_stats["firstiter_cc_tree_top2_rescore"] = tree_rescore_report(tree_rescore_totals, tree_rescore_max_margin)
+        log_tree_rescore_totals(tree_rescore_totals)
     return (
         outputs.sig_rot_any,
         outputs.n_sig_all,

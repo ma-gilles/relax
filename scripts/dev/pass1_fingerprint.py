@@ -286,7 +286,7 @@ MUTATIONS = (
     ("tree_winner_changes", "np.count_nonzero(rescored_winner_pose != best_pose_np)",
      "np.count_nonzero(rescored_winner_pose == best_pose_np)",
      "the winner-change count counts the unchanged", True),
-    ("tree_exact_ties", "tree_rescore_exact_ties += rescored.exact_ties", "tree_rescore_exact_ties += 0",
+    ("tree_exact_ties", "exact_ties=self.exact_ties + rescored.exact_ties,", "exact_ties=self.exact_ties + 0,",
      "the exact-tie count is dropped", True),
     ("tree_runner_score_installed", "class_second_score=state.class_second_score.at[rows_jax].set(rescored_runner_score[applied_rows]),",
      "class_second_score=state.class_second_score.at[rows_jax].set(rescored_winner_score[applied_rows]),",

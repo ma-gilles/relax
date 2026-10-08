@@ -100,6 +100,52 @@ class TreeRescoreBatch(NamedTuple):
     winner_changes: int
 
 
+@dataclass(frozen=True)
+class TreeRescoreTotals:
+    """What the rescore has counted over the batches of a pass so far: images examined, ambiguous, exact score ties
+    among the candidates, and winners changed."""
+
+    examined: int = 0
+    ambiguous: int = 0
+    exact_ties: int = 0
+    winner_changes: int = 0
+
+    def after_batch(self, batch_size: int, rescored: TreeRescoreBatch) -> "TreeRescoreTotals":
+        """The totals with one more batch of ``batch_size`` rows, whose rescore returned ``rescored``."""
+
+        return TreeRescoreTotals(
+            examined=self.examined + int(batch_size),
+            ambiguous=self.ambiguous + rescored.ambiguous_images,
+            exact_ties=self.exact_ties + rescored.exact_ties,
+            winner_changes=self.winner_changes + rescored.winner_changes,
+        )
+
+
+def tree_rescore_report(totals: TreeRescoreTotals, max_margin: float) -> dict:
+    """The pass's report of the rescore (the ``firstiter_cc_tree_top2_rescore`` entry of ``full_stats``)."""
+
+    return {
+        "max_margin": float(max_margin),
+        "examined_images": int(totals.examined),
+        "ambiguous_images": int(totals.ambiguous),
+        "exact_score_ties": int(totals.exact_ties),
+        "winner_changes": int(totals.winner_changes),
+    }
+
+
+def log_tree_rescore_totals(totals: TreeRescoreTotals) -> None:
+    """Log the totals of a pass's rescore."""
+
+    logger.warning(
+        "RELION coarse-tree top-2 rescore complete: "
+        "examined=%d ambiguous=%d exact_ties=%d winner_changes=%d",
+        totals.examined,
+        totals.ambiguous,
+        totals.exact_ties,
+        totals.winner_changes,
+    )
+
+
 def require_tree_rescore_call(
     *,
     n_classes: int,
