@@ -3,10 +3,10 @@
 import logging
 
 import pytest
+from helpers.run_options import stand_in
 
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_adaptive_image_size
-from relax.refinement.refinement_options import RefinementOptions, RefinementSchedule
 
 pytestmark = pytest.mark.unit
 
@@ -16,7 +16,7 @@ def _global_window(incoming, *, current=172, sealed=None):
     sealed sampling state (the replay source's), its width."""
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 
-    options = RefinementOptions(schedule=RefinementSchedule(particle_diameter_ang=250.0))
+    options = stand_in.options(schedule=stand_in.schedule(particle_diameter_ang=250.0))
     plan = plan_adaptive_image_size(
         incoming,
         ExpectationWindows(model_size=current, image_current_size=current, image_box_size=380),

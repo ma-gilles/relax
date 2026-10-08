@@ -11,14 +11,11 @@ import logging
 import threading
 
 import pytest
+from helpers.run_options import cli, stand_in
 
 from relax.refinement.expectation import (
     _half_overlap_active,
     _run_halves_overlapped,
-)
-from relax.refinement.refinement_options import (
-    ExecutionOptions,
-    RefinementOptions,
 )
 
 LOG = logging.getLogger(__name__)
@@ -26,8 +23,8 @@ LOG = logging.getLogger(__name__)
 
 def test_overlap_is_off_by_default():
     """The option is a performance experiment, so it must not arm itself."""
-    assert RefinementOptions().execution.overlap_halves is False
-    assert ExecutionOptions().overlap_halves is False
+    assert cli.options(schedule=cli.schedule(init_current_size=32)).execution.overlap_halves is False
+    assert cli.execution().overlap_halves is False
 
 
 def test_overlap_requires_the_request():
@@ -154,11 +151,11 @@ def test_runner_registers_the_overlap_flag():
 
 def test_overlap_option_threads_into_refinement_options():
     """Setting the group must reach the field the iteration loop reads."""
-    on = RefinementOptions(execution=ExecutionOptions(overlap_halves=True))
-    off = RefinementOptions(execution=ExecutionOptions(overlap_halves=False))
+    on = stand_in.options(execution=stand_in.execution(overlap_halves=True))
+    off = stand_in.options(execution=stand_in.execution(overlap_halves=False))
     assert on.execution.overlap_halves is True
     assert off.execution.overlap_halves is False
-    assert RefinementOptions().execution.overlap_halves is False
+    assert stand_in.options().execution.overlap_halves is False
 
 
 @pytest.mark.parametrize("flag", [False, True])

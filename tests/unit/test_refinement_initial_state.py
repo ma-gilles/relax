@@ -7,6 +7,7 @@ import dataclasses
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax.helpers.convergence import RefinementState
 from relax.helpers.resolution import ImageGeometry
@@ -16,9 +17,6 @@ from relax.refinement.iteration_snapshot import IterationSnapshot, refinement_st
 from relax.refinement.refinement_options import (
     CheckpointOptions,
     KClassOptions,
-    RefinementOptions,
-    RefinementSchedule,
-    RelionParityOptions,
 )
 
 pytestmark = pytest.mark.unit
@@ -42,8 +40,8 @@ def _initialize(options, *, subtomogram=False, pixel_size=2.25, dtype=np.float32
 @pytest.mark.parametrize('subtomogram', [False, True])
 @pytest.mark.parametrize('pixel_type', [float, np.float32, np.float64])
 def test_startup_keeps_class_mode_grid_units_and_unknown_accuracy(n_classes, subtomogram, pixel_type):
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_healpix_order=2, init_translation_range=4.0,
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_healpix_order=2, init_translation_range=4.0,
                                     init_translation_step=1.25, particle_diameter_ang=90.0),
         k_class=KClassOptions(n_classes=n_classes),
     )
@@ -68,9 +66,9 @@ def test_initial_fsc_wins_over_both_lowpass_sources_and_respects_available_shell
     fsc = np.full(33, 0.2, dtype=dtype)
     fsc[:7] = 0.9
     original = fsc.copy()
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_fsc=fsc, init_current_size=current_size, ini_high_angstrom=80.0),
-        parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=20.0),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_fsc=fsc, init_current_size=current_size, ini_high_angstrom=80.0),
+        parity=stand_in.parity(relion_firstiter_ini_high_angstrom=20.0),
     )
     state = _initialize(options, dtype=dtype)
     # Truncation crosses at shell 4, then the existing RELION minres_map=5 applies.
@@ -86,9 +84,9 @@ def test_initial_fsc_wins_over_both_lowpass_sources_and_respects_available_shell
     (2, 30.0, 80.0, np.inf),
 ])
 def test_lowpass_priority_and_fresh_run_admission(restart_iteration, firstiter_high, ordinary_high, expected):
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_relion_iteration=restart_iteration, ini_high_angstrom=ordinary_high),
-        parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=firstiter_high),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_relion_iteration=restart_iteration, ini_high_angstrom=ordinary_high),
+        parity=stand_in.parity(relion_firstiter_ini_high_angstrom=firstiter_high),
     )
     state = _initialize(options)
     assert_matches(state.current_resolution, expected)
@@ -106,9 +104,9 @@ def test_replay_restart_uses_recorded_resolution_accuracy_and_stalls_before_fres
         '_rlnSmallestChangesOrientations 0.5\n_rlnSmallestChangesOffsets 0.125\n'
         '_rlnHasConverged 0\n'
     )
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
-        parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=30.0),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
+        parity=stand_in.parity(relion_firstiter_ini_high_angstrom=30.0),
     )
     state = _initialize(options, relion_replay=RelionReplay(perturb_replay_relion_dir=str(tmp_path)))
     assert_matches(state.current_resolution, 8.0)
@@ -123,8 +121,8 @@ def test_replay_restart_uses_recorded_resolution_accuracy_and_stalls_before_fres
 def test_sealed_state_suppresses_restart_read_and_frozen_fields_override_resolution(tmp_path):
     # If restart were read, the deliberately malformed model would fail.
     (tmp_path / 'run_it002_half1_model.star').write_text('data_model_general\n')
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_relion_iteration=2, init_fsc=np.full(33, 0.9)),
     )
     state = _initialize(options, relion_replay=RelionReplay(
         perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={},
@@ -149,8 +147,8 @@ def _snapshot():
 
 
 def test_valid_continuation_restores_recorded_state_and_keeps_configured_run_limit():
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_relion_iteration=7, max_healpix_order=12),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_relion_iteration=7, max_healpix_order=12),
         checkpoint=CheckpointOptions(resume=_snapshot()),
     )
     state = _initialize(options)
@@ -164,7 +162,7 @@ def test_valid_continuation_restores_recorded_state_and_keeps_configured_run_lim
 @pytest.mark.parametrize('field,value', [('relion_iteration', 6), ('n_classes', 4), ('box_size', 128)])
 def test_continuation_refuses_mismatched_iteration_class_or_box(field, value):
     snapshot = dataclasses.replace(_snapshot(), **{field: value})
-    options = RefinementOptions(schedule=RefinementSchedule(init_relion_iteration=7),
+    options = stand_in.options(schedule=stand_in.schedule(init_relion_iteration=7),
                                 checkpoint=CheckpointOptions(resume=snapshot))
     with pytest.raises(ValueError, match='cannot continue from the run files'):
         _initialize(options)
@@ -172,7 +170,7 @@ def test_continuation_refuses_mismatched_iteration_class_or_box(field, value):
 
 def test_frozen_numbered_restart_refuses_already_converged_state():
     with pytest.raises(ValueError, match='cannot already be converged'):
-        _initialize(RefinementOptions(), relion_replay=RelionReplay(frozen_refinement_state_fields={'has_converged': True}))
+        _initialize(stand_in.options(), relion_replay=RelionReplay(frozen_refinement_state_fields={'has_converged': True}))
 
 
 def test_k1_options_refuse_class3d_seed_classes():

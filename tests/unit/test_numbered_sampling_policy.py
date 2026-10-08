@@ -5,17 +5,12 @@ import logging
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax import sampling
 from relax.helpers.convergence import RefinementState
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import convergence, iteration_planning
-from relax.refinement.refinement_options import (
-    AdaptiveOptions,
-    RefinementOptions,
-    RefinementSchedule,
-    RelionParityOptions,
-)
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
@@ -29,8 +24,8 @@ def _optics(image_sizes, pixel_sizes, *, multi_shape_halves=False):
 
 
 def _options(parity, init_relion_iteration):
-    return RefinementOptions(
-        parity=parity, schedule=RefinementSchedule(init_relion_iteration=init_relion_iteration),
+    return stand_in.options(
+        parity=parity, schedule=stand_in.schedule(init_relion_iteration=init_relion_iteration),
     )
 
 
@@ -51,7 +46,7 @@ def _stalled_state():
 def test_k1_native_sampling_uses_completed_iteration_counters(previous, native, advance):
     state = _stalled_state()
     result = convergence.advance_expectation_sampling(
-        state, AdaptiveOptions(), iteration=0,
+        state, stand_in.adaptive(), iteration=0,
         may_advance_natively=previous and convergence.uses_native_auto_refine(native_sampling_boundary=native, n_classes=1),
         log=LOG,
     )
@@ -64,7 +59,7 @@ def test_class3d_sampling_ignores_completed_iteration_counters():
     state = _stalled_state()
     may_advance = convergence.uses_native_auto_refine(native_sampling_boundary=True, n_classes=4)
     result = convergence.advance_expectation_sampling(
-        state, AdaptiveOptions(), iteration=0, may_advance_natively=may_advance, log=LOG,
+        state, stand_in.adaptive(), iteration=0, may_advance_natively=may_advance, log=LOG,
     )
     assert result.healpix_order == 2
     assert result is state
@@ -75,7 +70,7 @@ def test_explicit_schedule_precedes_k1_native_advance(previous, native, monkeypa
     state = RefinementState(healpix_order=2, max_healpix_order=5)
     monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
     result = convergence.advance_expectation_sampling(
-        state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1,
+        state, stand_in.adaptive(relion_healpix_orders=(2, 3)), iteration=1,
         may_advance_natively=previous and native, log=LOG,
     )
     assert result.healpix_order == 3
@@ -85,14 +80,14 @@ def test_explicit_schedule_sets_the_class3d_order(monkeypatch):
     state = RefinementState(healpix_order=2, max_healpix_order=5)
     monkeypatch.setattr(convergence, "update_angular_sampling", lambda *_: pytest.fail("native transition"))
     result = convergence.advance_expectation_sampling(
-        state, AdaptiveOptions(relion_healpix_orders=(2, 3)), iteration=1, may_advance_natively=False, log=LOG,
+        state, stand_in.adaptive(relion_healpix_orders=(2, 3)), iteration=1, may_advance_natively=False, log=LOG,
     )
     assert result.healpix_order == 3
 
 
 @pytest.mark.parametrize("seed", [None, 17])
 def test_native_perturbation_preserves_physical_iteration_and_rng(seed):
-    parity = RelionParityOptions(perturb_factor=0.5, perturb_seed=seed)
+    parity = stand_in.parity(perturb_factor=0.5, perturb_seed=seed)
     rng = np.random.default_rng(23)
     reference_rng = np.random.default_rng(23)
     current = expected = 0.125
@@ -116,7 +111,7 @@ def test_replayed_perturbation_does_not_advance_native_rng(sealed, tmp_path):
 
     rng = np.random.default_rng(23)
     reference_rng = np.random.default_rng(23)
-    options = _options(RelionParityOptions(perturb_factor=0.5), 10)
+    options = _options(stand_in.parity(perturb_factor=0.5), 10)
     meta = {"sealed_v3": sealed, "random_perturbation": 0.25, "perturbation_factor": 0.5, "healpix_order": 3}
 
     def native():
@@ -133,7 +128,7 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 
     (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
-    options = _options(RelionParityOptions(perturb_factor=0.5), 11)
+    options = _options(stand_in.parity(perturb_factor=0.5), 11)
     replay = RelionReplay(
         perturb_replay_precision="seed_exact", perturb_replay_restart_state_iterations=(11,),
         perturb_replay_relion_dir=str(tmp_path),
@@ -147,7 +142,7 @@ def test_replay_restart_uses_physical_iteration(tmp_path):
 def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
     monkeypatch.setattr(sampling, "_advance_relion_perturbation", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = iteration_planning.resolve_numbered_perturbation(
-        0.25, _options(RelionParityOptions(perturb_factor=0.0), 10), iteration=2, rng=None, log=LOG,
+        0.25, _options(stand_in.parity(perturb_factor=0.0), 10), iteration=2, rng=None, log=LOG,
     )
     assert_matches(result, 0.25)
 

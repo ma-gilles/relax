@@ -33,6 +33,9 @@ from relax.symmetry import canonicalize_rotational_symmetry
 if TYPE_CHECKING:
     from relax.helpers.dtype_policy import DensePrecisionPolicy
 
+# Every option field's default is the value ``relax refine`` (K=1) uses when its flag is not given; a field
+# whose value the command computes from the data (init_current_size) has none (code rule 5).
+
 # RELION's --incr_size (ml_optimiser.cpp:1001): Fourier shells beyond the current resolution in the first iteration.
 RELION_INCR_SIZE = 10
 # The --low_resol_join_halves the RELION GUI passes to auto-refine (pipeline_jobs.cpp:4509); the binary's is -1.
@@ -47,12 +50,15 @@ RELION_WIDTH_MASK_EDGE_PX = 5.0
 class RefinementSchedule:
     """How long the refinement runs and what grid it starts at."""
 
-    max_iter: int = 10
-    init_current_size: int = 32
+    # --max_iter: relax refine runs to convergence, nr_iter = RELION's --auto_iter_max (relax class3d: 25).
+    max_iter: int = 999
+    # The command computes it from the data (the start-up resolution and the box).
+    init_current_size: int
     init_healpix_order: int = 2
     # None: RELION's auto-refine has no HEALPix cap; an int is an explicit opt-in cap.
     max_healpix_order: int | None = None
-    init_translation_range: float = 10.0
+    # --offset_range and --offset_step, in pixels.
+    init_translation_range: float = 5.0
     init_translation_step: float = 2.0
     init_translation_sigma_angstrom: float = 10.0
     particle_diameter_ang: float | None = None
@@ -78,8 +84,9 @@ class RefinementSchedule:
 class AdaptiveOptions:
     """Pose-search resolution + adaptive-oversampling knobs."""
 
-    adaptive_oversampling: int = 0
-    max_significants: int = 500
+    adaptive_oversampling: int = 1
+    # The active cap: RELION's --maxsig -1 (uncapped) without gradient refinement (relion_active_max_significants).
+    max_significants: int = -1
     # gemm_dense is an experimental, no-pruning global route; auto remains the production default.
     coarse_engine: Literal["auto", "gemm_hybrid", "gemm_dense"] = "auto"
     relion_current_sizes: tuple[int, ...] | None = None
@@ -110,8 +117,9 @@ class RelionParityOptions:
     """Knobs that pin RELION numerical behavior."""
 
     low_resol_join_halves_angstrom: float = RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM
+    # RELION auto-refine's (relax class3d: 4.0).
     tau2_fudge: float = 1.0
-    perturb_factor: float = 0.0
+    perturb_factor: float = 0.5
     perturb_seed: int | None = None
     relion_optics_image_sizes: Any | None = None
     relion_optics_pixel_sizes: Any | None = None
@@ -119,19 +127,20 @@ class RelionParityOptions:
     # (relax.helpers.optics_noise); required when the initial noise has G > 1 rows.
     optics_group_ids_per_half: Any | None = None
     relion_model_pixel_size: float | None = None
-    emulate_relion_firstiter_cc: bool = False
+    # --firstiter_cc (on by default, as the RELION GUI).
+    emulate_relion_firstiter_cc: bool = True
     relion_firstiter_ini_high_angstrom: float | None = None
     first_iteration_score_mode: str = "gaussian"
     first_iteration_reconstruction_mode: str = "soft"
-    image_fourier_backend: Literal["host_numpy", "jax_gpu", "relion_cuda"] = "host_numpy"
+    # --image-fourier-backend auto: RELION's CUDA image preprocessing.
+    image_fourier_backend: Literal["host_numpy", "jax_gpu", "relion_cuda"] = "relion_cuda"
     optimizer_random_seed: int | None = None
     use_per_half_mean_variance: bool = False
     preserve_bpref_particle_order: bool = False
     allow_replayed_bpref_particle_order: bool = False
-    # K=1 --firstiter_cc: rescore an image's top two coarse CC poses on RELION's
-    # coarse tree when their margin is at most this (the CLI's auto: FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN);
-    # None is off.
-    firstiter_cc_tree_rescore_max_margin: float | None = None
+    # K=1 --firstiter_cc: rescore an image's top two coarse CC poses on RELION's coarse tree when their margin is
+    # at most this; None is off (the CLI's auto: this margin for K=1 with --firstiter_cc, else off).
+    firstiter_cc_tree_rescore_max_margin: float | None = FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN
 
     def __post_init__(self):
         if self.image_fourier_backend not in {
@@ -627,7 +636,7 @@ class ExecutionOptions:
     """
 
     image_batch_size: int = 500
-    rotation_block_size: int = 5000
+    rotation_block_size: int = 40000
     overlap_halves: bool = False
     clear_jax_caches_between_iterations: bool = False
     bpref_device_signature_target: tuple[int, int] | None = None
@@ -664,7 +673,7 @@ class RefinementOptions:
     Passed as the ``options`` argument of ``refine_single_volume``.
     """
 
-    schedule: RefinementSchedule = field(default_factory=RefinementSchedule)
+    schedule: RefinementSchedule
     adaptive: AdaptiveOptions = field(default_factory=AdaptiveOptions)
     parity: RelionParityOptions = field(default_factory=RelionParityOptions)
     local_search: LocalSearchOptions = field(default_factory=LocalSearchOptions)

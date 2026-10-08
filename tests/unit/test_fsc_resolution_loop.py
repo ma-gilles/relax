@@ -16,15 +16,10 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 from helpers.em_arrays import _hermitian_volume
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
+from helpers.run_options import stand_in
 
 from relax.refinement import iteration_loop as iteration_loop_module
 from relax.refinement.iteration_loop import refine_single_volume
-from relax.refinement.refinement_options import (
-    AdaptiveOptions,
-    ExecutionOptions,
-    RefinementOptions,
-    RefinementSchedule,
-)
 
 pytestmark = pytest.mark.unit
 
@@ -245,10 +240,10 @@ class TestOracleMode:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=3),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=3),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
         )
 
@@ -265,10 +260,10 @@ class TestOracleMode:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=3, init_current_size=32),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=3, init_current_size=32),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
         )
 
@@ -287,10 +282,10 @@ class TestOracleMode:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=2),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=2),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(relion_current_sizes=oracle_sizes, adaptive_oversampling=1),
             ),
         )
 
@@ -319,10 +314,10 @@ class TestResolutionProgression:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=3, init_current_size=32),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=3, init_current_size=32),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
         )
 
@@ -340,10 +335,10 @@ class TestResolutionProgression:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=3, init_current_size=32),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=3, init_current_size=32),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
         )
 
@@ -366,10 +361,10 @@ class TestResolutionProgression:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=2, init_current_size=32),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=2, init_current_size=32),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(adaptive_oversampling=1),
             ),
         )
 
@@ -394,10 +389,10 @@ class TestOneIterationWithWindowing:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=1),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=[4], adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=1),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(relion_current_sizes=[4], adaptive_oversampling=1),
             ),
         )
 
@@ -413,10 +408,10 @@ class TestOneIterationWithWindowing:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=1),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=[128], adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=1),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(relion_current_sizes=[128], adaptive_oversampling=1),
             ),
         )
 
@@ -432,10 +427,10 @@ class TestOneIterationWithWindowing:
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0,
             translations,
-            options=RefinementOptions(
-                schedule=RefinementSchedule(max_iter=1),
-                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
-                adaptive=AdaptiveOptions(relion_current_sizes=[32], adaptive_oversampling=1),
+            options=stand_in.options(
+                schedule=stand_in.schedule(max_iter=1),
+                execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                adaptive=stand_in.adaptive(relion_current_sizes=[32], adaptive_oversampling=1),
             ),
         )
 

@@ -1016,16 +1016,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
                 **({"first_iteration_seed_classes": np.arange(fixtures.N_IMAGES)[::-1] % n_classes} if seed else {}),
             )
-        adaptive_fields = {}
-        if oversampling:
-            adaptive_fields["adaptive_oversampling"] = oversampling
+        # Every option value a case runs with is named here, not taken from a record default (PLAN d1 aligned the
+        # defaults with the command line): the values below were the records' defaults before it.
+        adaptive_fields = {"adaptive_oversampling": oversampling, "max_significants": 500}
         if orders is not None:
             adaptive_fields["relion_healpix_orders"] = tuple(orders)
             init_order = int(orders[0])
         if current_sizes is not None:
             adaptive_fields["relion_current_sizes"] = tuple(current_sizes)
-        if adaptive_fields:
-            extra["adaptive"] = refinement_options.AdaptiveOptions(**adaptive_fields)
+        extra["adaptive"] = refinement_options.AdaptiveOptions(**adaptive_fields)
         # The execution knobs: one ExecutionOptions, or (a source before PLAN d1) RefinementBatching and
         # HalfOverlapOptions.
         execution_fields = dict(image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS)
@@ -1050,7 +1049,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         writer_object = Writer() if writer else None
         if writer or resume is not None:
             extra["checkpoint"] = refinement_options.CheckpointOptions(writer=writer_object, resume=resume)
-        parity = dict(low_resol_join_halves_angstrom=join, perturb_seed=17, optimizer_random_seed=17)
+        parity = dict(
+            low_resol_join_halves_angstrom=join, perturb_seed=17, optimizer_random_seed=17, perturb_factor=0.0,
+            emulate_relion_firstiter_cc=False, firstiter_cc_tree_rescore_max_margin=None,
+            image_fourier_backend="host_numpy",
+        )
         replay_fields = {}
         if init_prior is not None:
             replay_fields["init_direction_prior"] = prior_pair(n_classes, init_prior, 100)
@@ -1151,6 +1154,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             options = refinement_options.RefinementOptions(
                 schedule=refinement_options.RefinementSchedule(
                     max_iter=max_iter, init_current_size=4, init_healpix_order=init_order, max_healpix_order=2,
+                    init_translation_range=10.0,
                     **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
                     **({"skip_final_iteration": True} if skip_final else {}),
                 ),

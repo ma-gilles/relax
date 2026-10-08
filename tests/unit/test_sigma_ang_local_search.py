@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 import starfile
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax.helpers.convergence import RefinementState, healpix_angular_step, refine_angular_sampling
 from relax.helpers.resolution import ImageGeometry
@@ -21,8 +22,6 @@ from relax.refinement.ports import InputSource
 from relax.refinement.refinement_options import (
     KClassOptions,
     LocalSearchOptions,
-    RefinementOptions,
-    RefinementSchedule,
 )
 from relax.relion.input_poses import _load_input_star_previous_best_poses, prepare_initial_poses
 
@@ -39,8 +38,8 @@ def test_sigma_ang_must_be_positive_for_refine3d_and_class3d():
 
 @pytest.mark.parametrize("healpix_order", [2, 4])
 def test_sigma_ang_turns_the_prior_on_at_iteration_one_with_its_width(healpix_order):
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_healpix_order=healpix_order),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_healpix_order=healpix_order),
         local_search=LocalSearchOptions(sigma_ang_deg=2.0),
     )
     state = initialize_refinement_state(
@@ -54,7 +53,7 @@ def test_sigma_ang_turns_the_prior_on_at_iteration_one_with_its_width(healpix_or
 
 def test_without_sigma_ang_only_the_local_order_starts_local():
     for order, local in ((3, False), (4, True)):
-        options = RefinementOptions(schedule=RefinementSchedule(init_healpix_order=order), k_class=KClassOptions())
+        options = stand_in.options(schedule=stand_in.schedule(init_healpix_order=order), k_class=KClassOptions())
         state = initialize_refinement_state(
             options, ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=2.0), subtomogram=False, dtype=np.float32,
             source=InputSource(),

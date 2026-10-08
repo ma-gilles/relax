@@ -5,6 +5,7 @@ import logging
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax.helpers.convergence import ExpectationStatistics, RefinementState, hard_class_change_fraction
 from relax.helpers.resolution import ImageGeometry
@@ -14,8 +15,6 @@ from relax.refinement.half_inputs import PoseComparison
 from relax.refinement.refinement_options import (
     CheckpointOptions,
     KClassOptions,
-    RefinementOptions,
-    RefinementSchedule,
     SymmetryOptions,
 )
 
@@ -61,7 +60,7 @@ def _with_statistics(kwargs):
 
 
 def _update_k1(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **overrides):
-    options = RefinementOptions() if options is None else options
+    options = stand_in.options() if options is None else options
     native_sampling_boundary = overrides.pop('native_sampling_boundary', True)
     state, poses, kwargs = _operands(options, state, dtype, pixel_size, overrides)
     # As the controller calls it for K=1.
@@ -73,7 +72,7 @@ def _update_k1(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **
 
 
 def _update_class(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **overrides):
-    options = RefinementOptions(k_class=KClassOptions(n_classes=4)) if options is None else options
+    options = stand_in.options(k_class=KClassOptions(n_classes=4)) if options is None else options
     overrides.setdefault('current_classes', np.zeros(3, dtype=np.int32))
     overrides.setdefault('previous_classes', np.zeros(3, dtype=np.int32))
     state, poses, kwargs = _operands(options, state, dtype, pixel_size, overrides)
@@ -132,8 +131,8 @@ def test_class3d_does_not_make_an_end_of_iteration_sampling_decision():
     (0, 0, True, False),
 ])
 def test_follower_counter_reset_is_only_for_fresh_auto_refine(iteration, initial_iteration, continued, reset):
-    options = RefinementOptions(
-        schedule=RefinementSchedule(init_relion_iteration=initial_iteration),
+    options = stand_in.options(
+        schedule=stand_in.schedule(init_relion_iteration=initial_iteration),
         checkpoint=CheckpointOptions(resume=object() if continued else None),
     )
     result = _update_k1(options=options, iteration=iteration)
@@ -171,7 +170,7 @@ def test_class_identity_changes_and_symmetry_are_measured_in_the_same_particle_f
     previous = np.tile(np.eye(3), (3, 1, 1))
     shifts = np.zeros((3, 2))
     poses = PoseComparison(rotations, previous, shifts, shifts)
-    options = RefinementOptions(k_class=KClassOptions(n_classes=4), symmetry=SymmetryOptions(point_group='C4'))
+    options = stand_in.options(k_class=KClassOptions(n_classes=4), symmetry=SymmetryOptions(point_group='C4'))
     result = _update_class(
         options=options, pose_comparison=poses,
         current_classes=np.asarray([0, 1, 2]), previous_classes=np.asarray([0, 1, 3]),
@@ -191,7 +190,7 @@ def test_numbered_replay_accuracy_precedes_state_update_and_controls_follow_it(t
         '_rlnChangesOptimalOffsets 0.625\n'
         '_rlnHasConverged 1\n'
     )
-    options = RefinementOptions(schedule=RefinementSchedule(init_relion_iteration=3))
+    options = stand_in.options(schedule=stand_in.schedule(init_relion_iteration=3))
     result = _update_k1(options=options, relion_replay=RelionReplay(
         perturb_replay_relion_dir=str(tmp_path), sealed_sampling_state={} if sealed else None,
     ))

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.helpers.dtype_policy import DensePrecisionPolicy
@@ -23,7 +24,6 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import RunObserver
-from relax.refinement.refinement_options import ExecutionOptions, RefinementOptions, RefinementSchedule
 from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid
 
@@ -71,13 +71,13 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         sampling=sampling, tomo_sampling=None,
         direction_priors=HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None),
         class_log_priors=None, sigma_offset_angstrom=2.,
-        batch_planner=BatchPlanner(requested=ExecutionOptions(image_batch_size=2, rotation_block_size=2),
+        batch_planner=BatchPlanner(requested=stand_in.execution(image_batch_size=2, rotation_block_size=2),
                                    image_shape=(4, 4), volume_shape=(4, 4, 4), n_classes=n_classes,
                                    precision=DensePrecisionPolicy(), log=logging.getLogger(__name__)),
         image_geometry=ImageGeometry(image_shape=(4, 4), pixel_size_angstrom=1.25),
         padded_volume_shape=(8, 8, 8),
         use_adaptive=adaptive, multi_shape_halves=False, variant=variant,
-        options=RefinementOptions(schedule=RefinementSchedule(particle_diameter_ang=3.)),
+        options=stand_in.options(schedule=stand_in.schedule(particle_diameter_ang=3.)),
         local_diagnostics=LocalDiagnosticPolicy(iteration=0, debug_iteration=1,
                                                 collect_local_search_profile=False,
                                                 local_profile_history=[]) if local else None,
@@ -127,7 +127,7 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
     half = replace(half, noise_radial=radial)
     phase = replace(phase, sampling=replace(phase.sampling, coarse_angular_step_deg=coarse_step))
     diameter = np.float64(3.75)
-    kwargs['options'] = replace(kwargs['options'], schedule=RefinementSchedule(particle_diameter_ang=diameter))
+    kwargs['options'] = replace(kwargs['options'], schedule=stand_in.schedule(particle_diameter_ang=diameter))
     kwargs['multi_shape_halves'] = True
     captured = {}
     planning = expectation.prepare_half_batches

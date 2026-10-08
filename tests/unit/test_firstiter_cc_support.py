@@ -12,11 +12,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 from helpers.tiny_refinement import MockHalfSet, engine_stage_kwargs, run_tiny_refinement
 
 from relax.helpers import half_spectrum
 from relax.helpers.fourier_window import make_fourier_window_spec
-from relax.refinement.refinement_options import RefinementOptions, RelionConsistencyOptions, RelionParityOptions
+from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.sparse_pass2.sparse_pass2_window import _pass2_half_weights
 
 pytestmark = pytest.mark.unit
@@ -200,8 +201,8 @@ def test_a_run_without_the_cc_iteration_refuses_the_option():
 
     gaussian = RelionConsistencyOptions(firstiter_cc_support="gaussian")
     with pytest.raises(NotImplementedError, match="no CC iteration"):
-        require_consistency_route(RefinementOptions(consistency=gaussian), subtomograms=False, several_image_shapes=False)
-    with_cc = RefinementOptions(consistency=gaussian, parity=RelionParityOptions(emulate_relion_firstiter_cc=True))
+        require_consistency_route(stand_in.options(consistency=gaussian), subtomograms=False, several_image_shapes=False)
+    with_cc = stand_in.options(consistency=gaussian, parity=stand_in.parity(emulate_relion_firstiter_cc=True))
     assert require_consistency_route(with_cc, subtomograms=False, several_image_shapes=False) is gaussian
     base = ["--data_dir", "data", "--output", "out", "--firstiter_cc_support", "gaussian"]
     assert command_options.resolve_consistency_options(command_options.parse_refinement_args(base)) == gaussian

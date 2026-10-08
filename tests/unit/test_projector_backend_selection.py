@@ -9,8 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-
-from relax.refinement.refinement_options import RefinementOptions
+from helpers.run_options import stand_in
 
 
 def _build(**kwargs):
@@ -24,7 +23,7 @@ def _build(**kwargs):
 
 
 def test_refinement_has_no_projector_backend_option():
-    assert not hasattr(RefinementOptions(), "projector_setup_backend")
+    assert not hasattr(stand_in.options(), "projector_setup_backend")
 
 
 def test_setup_keeps_its_complex64_default():

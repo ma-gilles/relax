@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
+from helpers.run_options import stand_in
 
 from relax.dense import scoring_policy
 from relax.refinement import optics_shapes
@@ -756,7 +757,7 @@ def _write_iteration_debug_metadata(
     from relax.helpers import map_io
 
     monkeypatch.setattr(map_io, "write_map_from_ft", lambda *_args, **_kwargs: None)
-    from relax.refinement.refinement_options import RefinementOptions, SymmetryOptions
+    from relax.refinement.refinement_options import SymmetryOptions
 
     _save_iteration_intermediates(
         str(output_dir),
@@ -772,7 +773,7 @@ def _write_iteration_debug_metadata(
         SimpleNamespace(hard_assignments=[None, None], coarse_ha=[None, None]),
         SimpleNamespace(rotations=np.empty((0, 3, 3), dtype=np.float32), translations=np.zeros((1, 2), dtype=np.float32)),
         SimpleNamespace(local=SimpleNamespace(search=SimpleNamespace(healpix_order=3))),
-        RefinementOptions() if symmetry is None else RefinementOptions(symmetry=SymmetryOptions(point_group=symmetry)),
+        stand_in.options() if symmetry is None else stand_in.options(symmetry=SymmetryOptions(point_group=symmetry)),
         iteration=0,
         unreg_means=[None, None],
         fsc=np.ones(2, dtype=np.float32),

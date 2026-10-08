@@ -10,15 +10,13 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+from helpers.run_options import stand_in
 
 from relax.refinement import command_options, iteration_snapshot, refinement_options
 from relax.refinement.refinement_options import (
     RELAX_MODE_CONSISTENCY,
-    AdaptiveOptions,
     KClassOptions,
-    RefinementOptions,
     RelionConsistencyOptions,
-    RelionParityOptions,
     relax_mode_consistency,
     require_consistency_route,
 )
@@ -102,11 +100,11 @@ def test_mode_relax_skips_what_the_route_does_not_honour_and_says_why(monkeypatc
     # The loop's guard accepts what the mode resolved for this route.
     args = command_options.parse_refinement_args([*RELAX, *flags])
     require_consistency_route(
-        RefinementOptions(
+        stand_in.options(
             consistency=options,
             k_class=KClassOptions(n_classes=int(args.n_classes)),
-            adaptive=AdaptiveOptions(coarse_engine=args.coarse_engine),
-            parity=RelionParityOptions(emulate_relion_firstiter_cc=bool(args.firstiter_cc)),
+            adaptive=stand_in.adaptive(coarse_engine=args.coarse_engine),
+            parity=stand_in.parity(emulate_relion_firstiter_cc=bool(args.firstiter_cc)),
         ),
         subtomograms=False,
         several_image_shapes=False,
@@ -138,7 +136,7 @@ def test_an_explicit_option_the_route_refuses_is_not_skipped():
     }
     with pytest.raises(NotImplementedError, match="gemm_dense"):
         require_consistency_route(
-            RefinementOptions(consistency=options, adaptive=AdaptiveOptions(coarse_engine="gemm_dense")),
+            stand_in.options(consistency=options, adaptive=stand_in.adaptive(coarse_engine="gemm_dense")),
             subtomograms=False,
             several_image_shapes=False,
         )
@@ -182,7 +180,7 @@ def test_a_continuation_must_resolve_to_the_recorded_options():
             extra={f"consistency_{name}": value for name, value in recorded.non_default().items()},
         )
         iteration_snapshot.validate_resume_snapshot(
-            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=RefinementOptions(consistency=consistency)
+            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency)
         )
 
     relax = _resolve(RELAX)

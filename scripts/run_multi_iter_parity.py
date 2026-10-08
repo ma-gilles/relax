@@ -2489,6 +2489,8 @@ def main():
                 args.diagnostic_native_relion_particle_order_seed is not None
             ),
             optimizer_random_seed=optimizer_random_seed,
+            # The comparison runs without the K=1 coarse-tree top-2 rescore (the command's --firstiter_cc default).
+            firstiter_cc_tree_rescore_max_margin=None,
         ),
         replay=ReplayState(
             init_reference_real=initial_reference_real_for_projector,

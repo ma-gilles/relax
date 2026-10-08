@@ -1,12 +1,9 @@
 import pytest
+from helpers.run_options import stand_in
 
 from relax.helpers.convergence import RefinementState, _apply_relion_healpix_order_oracle
 from relax.refinement.refinement_options import (
-    AdaptiveOptions,
     KClassOptions,
-    RefinementOptions,
-    RefinementSchedule,
-    RelionParityOptions,
     ReplayState,
     _validate_relion_healpix_orders,
     with_validated_sampling_schedule,
@@ -66,10 +63,10 @@ def test_relion_healpix_order_oracle_holds_then_advances_sampling_state():
 @pytest.mark.parametrize("orders", [None, [3, 3, 4], (3, 3, 4)])
 def test_sampling_validation_preserves_payloads_and_input_options(orders):
     current_sizes = [32, 40, 48]
-    options = RefinementOptions(
-        schedule=RefinementSchedule(max_iter=3, init_healpix_order=3, max_healpix_order=4),
-        adaptive=AdaptiveOptions(relion_current_sizes=current_sizes, relion_healpix_orders=orders),
-        parity=RelionParityOptions(
+    options = stand_in.options(
+        schedule=stand_in.schedule(max_iter=3, init_healpix_order=3, max_healpix_order=4),
+        adaptive=stand_in.adaptive(relion_current_sizes=current_sizes, relion_healpix_orders=orders),
+        parity=stand_in.parity(
             tau2_fudge=4.0,
             perturb_factor=0.25,
             emulate_relion_firstiter_cc=True,
@@ -101,9 +98,9 @@ def test_sampling_validation_preserves_payloads_and_input_options(orders):
     ],
 )
 def test_sampling_validation_runs_at_entry_and_preserves_error_precedence(sizes, orders, message):
-    options = RefinementOptions(
-        schedule=RefinementSchedule(max_iter=3, init_healpix_order=3, max_healpix_order=7),
-        adaptive=AdaptiveOptions(relion_current_sizes=sizes, relion_healpix_orders=orders),
+    options = stand_in.options(
+        schedule=stand_in.schedule(max_iter=3, init_healpix_order=3, max_healpix_order=7),
+        adaptive=stand_in.adaptive(relion_current_sizes=sizes, relion_healpix_orders=orders),
     )
     # Invalid schedules can still be constructed for later configuration/replay.
     with pytest.raises(ValueError, match=message):
@@ -130,9 +127,9 @@ def test_refinement_entry_validates_options_before_reading_data(monkeypatch, use
 
     monkeypatch.setattr(iteration_loop, "with_validated_sampling_schedule", validate)
     # The command always passes options; use_defaults is the all-default record.
-    options = RefinementOptions() if use_defaults else RefinementOptions(
-        schedule=RefinementSchedule(max_iter=3, init_healpix_order=3),
-        adaptive=AdaptiveOptions(relion_healpix_orders=[3, 3, 4]),
+    options = stand_in.options() if use_defaults else stand_in.options(
+        schedule=stand_in.schedule(max_iter=3, init_healpix_order=3),
+        adaptive=stand_in.adaptive(relion_healpix_orders=[3, 3, 4]),
     )
     with pytest.raises(RuntimeError, match="dataset boundary reached"):
         iteration_loop.refine_single_volume(StopAtDataset(), None, None, None, None, options=options)
@@ -142,6 +139,6 @@ def test_refinement_entry_validates_options_before_reading_data(monkeypatch, use
 def test_invalid_sampling_schedule_never_starts_refinement():
     from relax.refinement import iteration_loop
 
-    options = RefinementOptions(adaptive=AdaptiveOptions(relion_current_sizes=[]))
+    options = stand_in.options(adaptive=stand_in.adaptive(relion_current_sizes=[]))
     with pytest.raises(ValueError, match="relion_current_sizes must be non-empty"):
         iteration_loop.refine_single_volume(*([None] * 5), options=options)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from helpers.run_options import stand_in
 
 pytest.importorskip("jax")
 import jax
@@ -675,7 +676,6 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
     from types import SimpleNamespace
 
     from relax.refinement import iteration_loop
-    from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
 
     # No backend setter or image arrays are needed: admission must reject this
     # combination before refinement state, projection or pass-2 preparation.
@@ -691,7 +691,7 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
     with pytest.raises(ValueError, match="require RELION CUDA image preprocessing"):
         iteration_loop.refine_single_volume(
             [dataset, dataset], None, None, None, None,
-            options=RefinementOptions(parity=RelionParityOptions(
+            options=stand_in.options(parity=stand_in.parity(
                 preserve_bpref_particle_order=True, image_fourier_backend=backend_name,
             )),
         )

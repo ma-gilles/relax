@@ -10,10 +10,10 @@ on the current grid.
 from __future__ import annotations
 
 import pytest
+from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.refinement import half_scoring
-from relax.refinement.refinement_options import AdaptiveOptions
 
 pytestmark = pytest.mark.unit
 
@@ -28,7 +28,7 @@ def _dense_route(monkeypatch, *, n_classes, oversampling):
         trace.wrap(half_scoring, name)
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False,
-        adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
+        adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
     return trace
 
@@ -52,7 +52,7 @@ def _engine_sizes(monkeypatch, *, n_classes, oversampling):
     trace = CallTrace(monkeypatch).wrap(half_scoring, "_score_half_dense_one_shape", "dense")
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False, engine_calls=engine_calls,
-        adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
+        adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
     dense = trace.calls("dense")
     assert len(engine_calls) == len(dense) == 4

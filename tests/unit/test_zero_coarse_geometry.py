@@ -11,11 +11,11 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.dense import scoring_policy
 from relax.refinement import expectation, finalization, half_scoring, iteration_loop
-from relax.refinement.refinement_options import AdaptiveOptions
 
 pytestmark = pytest.mark.unit
 
@@ -103,7 +103,7 @@ def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, hard, float64):
     trace.wrap(iteration_loop, "coarse_pass1_rotations", "coarse_rotations")
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False, parity=parity,
-        adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
+        adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
 
 
@@ -135,7 +135,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, sc
     trace.wrap(half_scoring, "engine_projection_inputs", "projection")
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False, parity=dict(first_iteration_score_mode=score_mode),
-        adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
+        adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
     scorers, grids, projections = trace.calls("scorer"), trace.calls("grids"), trace.calls("projection")
     assert len(scorers) == len(grids) == len(projections) == 4
@@ -259,7 +259,7 @@ def test_loop_transports_geometry_separately_from_effective_rotations(monkeypatc
     trace.wrap(iteration_loop, "coarse_pass1_rotations", "coarse_rotations")
     trace.wrap(expectation, "DenseSamplingSpec", "sampling")
     run_tiny_refinement(
-        monkeypatch, final_after_max_iter=False, adaptive=AdaptiveOptions(adaptive_oversampling=oversampling),
+        monkeypatch, final_after_max_iter=False, adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
     )
     generated, samplings = trace.calls("coarse_rotations"), trace.calls("sampling")
     assert len(generated) == len(samplings) == 2

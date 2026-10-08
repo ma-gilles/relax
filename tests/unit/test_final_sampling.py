@@ -7,15 +7,11 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax.parity import relion_replay_source
 from relax.refinement import final_sampling
 from relax.refinement.ports import InputSource
-from relax.refinement.refinement_options import (
-    RefinementOptions,
-    RefinementSchedule,
-    RelionParityOptions,
-)
 
 pytestmark = pytest.mark.unit
 
@@ -68,7 +64,7 @@ def preparation(monkeypatch):
         previous_rotation_grid=final_sampling.sampling.RotationGrid(
             rotations=rotations, rotation_eulers=eulers, healpix_order=3, symmetry="C1",
         ),
-        options=RefinementOptions(schedule=RefinementSchedule(init_relion_iteration=10)),
+        options=stand_in.options(schedule=stand_in.schedule(init_relion_iteration=10)),
         numbered_iteration_count=2,
         source=InputSource(),
         previous_perturbation=0.25,
@@ -93,7 +89,7 @@ def test_final_grids_are_ready_for_scoring_at_the_existing_rounding_boundary(pre
     inputs, events, host_grid = preparation
     inputs.update(
         dtype=dtype,
-        options=replace(inputs["options"], parity=RelionParityOptions(perturb_factor=perturb_factor, perturb_seed=7)),
+        options=replace(inputs["options"], parity=stand_in.parity(perturb_factor=perturb_factor, perturb_seed=7)),
     )
     result = final_sampling.prepare_final_sampling(**inputs)
     assert result.base_rotations is inputs["previous_rotation_grid"].rotations
@@ -177,7 +173,7 @@ def test_replay_uses_its_sampling_iteration_without_advancing_native_rng(prepara
 @pytest.mark.parametrize("active_replay, factor, applied", [(True, 0.5, False), (False, 0.5, True), (False, 0.0, False)])
 def test_missing_final_star_preserves_zero_application_and_rng_semantics(preparation, monkeypatch, tmp_path, active_replay, factor, applied):
     inputs, events, _ = preparation
-    inputs["options"] = replace(inputs["options"], parity=RelionParityOptions(perturb_factor=factor))
+    inputs["options"] = replace(inputs["options"], parity=stand_in.parity(perturb_factor=factor))
     _replay_source(
         inputs, star_directory=str(tmp_path) if active_replay else None,
         final_sampling_replay_relion_dir=str(tmp_path),

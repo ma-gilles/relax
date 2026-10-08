@@ -9,13 +9,13 @@ own sites and oracles are tested in its own file.
 from types import SimpleNamespace
 
 import pytest
+from helpers.run_options import stand_in
 from helpers.tiny_refinement import run_tiny_refinement
 
 from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement import command_options, iteration_loop, iteration_snapshot
 from relax.refinement.refinement_options import (
     CheckpointOptions,
-    RefinementOptions,
     RelionConsistencyOptions,
 )
 
@@ -35,7 +35,7 @@ BASE_ARGS = ["--data_dir", "data", "--output", "out"]
 
 
 def test_every_default_is_relions_rule():
-    options = RefinementOptions().consistency
+    options = stand_in.options().consistency
     assert {name: getattr(options, name) for name, _, _ in OPTIONS} == {name: default for name, default, _ in OPTIONS}
     assert options.non_default() == {}
     parsed = command_options.resolve_consistency_options(command_options.parse_refinement_args(BASE_ARGS))
@@ -79,7 +79,7 @@ def _stub_half(owner=None):
 def _refine_stubs(halves, name, value, relion_replay=None, **groups):
     from relax.parity.relion_replay_source import RelionReplaySource
 
-    options = RefinementOptions(consistency=RelionConsistencyOptions(**{name: value}), **groups)
+    options = stand_in.options(consistency=RelionConsistencyOptions(**{name: value}), **groups)
     return iteration_loop.refine_single_volume(
         halves, None, None, None, None, options=options, source=RelionReplaySource.for_run(relion_replay, options),
     )
@@ -126,7 +126,7 @@ def test_a_continuation_must_repeat_the_option(name, value):
     def validate(extra, consistency):
         snapshot = SimpleNamespace(relion_iteration=2, n_classes=1, box_size=8, extra=extra)
         iteration_snapshot.validate_resume_snapshot(
-            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=RefinementOptions(consistency=consistency)
+            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency)
         )
 
     chosen = RelionConsistencyOptions(**{name: value})

@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
 from relax.helpers import expected_accuracy
@@ -27,7 +28,6 @@ from relax.refinement import (
 from relax.refinement.refinement_options import (
     KClassOptions,
     ReconstructionPrograms,
-    RefinementOptions,
     RelionConsistencyOptions,
 )
 from relax.relion import relion_projector_setup as setup
@@ -411,7 +411,7 @@ def _refine_stubs(halves, **options):
         None,
         None,
         None,
-        options=RefinementOptions(consistency=RelionConsistencyOptions(gridding_kernel="separable"), **options),
+        options=stand_in.options(consistency=RelionConsistencyOptions(gridding_kernel="separable"), **options),
     )
 
 

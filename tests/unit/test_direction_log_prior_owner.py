@@ -14,6 +14,7 @@ import logging
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 
 from relax.helpers import orientation_priors as op
 from relax.sampling import rotation_grid_n_in_planes, rotation_grid_size
@@ -118,11 +119,10 @@ def test_half_index_only_labels_the_log(caplog):
 
 
 def test_both_halves_are_expanded_in_half_order_with_their_own_prior():
-    from relax.refinement.refinement_options import RefinementOptions
 
     first, second = _prior(1), _prior(2)
     pair = op.relion_direction_log_priors(
-        [op.DirectionPrior(first, ORDER), op.DirectionPrior(second, ORDER)], RefinementOptions(),
+        [op.DirectionPrior(first, ORDER), op.DirectionPrior(second, ORDER)], stand_in.options(),
         use_local=False, scoring_healpix_order=ORDER, sealed_sampling_state=None, dtype=np.float32,
         log=logging.getLogger(__name__),
     )

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.run_options import stand_in
 from test_numbered_expectation import numbered_inputs
 
 from relax.refinement import expectation
@@ -111,7 +112,6 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     from relax.refinement import iteration_loop
-    from relax.refinement.refinement_options import AdaptiveOptions
 
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, 'iteration_trial_grid', 'grid')
@@ -119,7 +119,7 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
     trace.wrap(iteration_loop, 'DenseVariantPolicy', 'variant')
     trace.wrap(iteration_loop, 'prepare_numbered_expectation', 'phase')
     run_tiny_refinement(
-        monkeypatch, final_after_max_iter=False, adaptive=AdaptiveOptions(adaptive_oversampling=int(adaptive)),
+        monkeypatch, final_after_max_iter=False, adaptive=stand_in.adaptive(adaptive_oversampling=int(adaptive)),
     )
     grids, variants, phases = trace.calls('grid'), trace.calls('variant'), trace.calls('phase')
     assert len(grids) == len(variants) == len(phases) == 2

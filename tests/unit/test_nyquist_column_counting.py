@@ -10,11 +10,12 @@ scale sums and ``Npix_per_shell``. ``"once"`` drops the ``ip < 0`` members, as R
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import stand_in
 from helpers.tiny_refinement import MockHalfSet, engine_stage_kwargs, record_calls, run_tiny_refinement
 
 from relax.helpers import half_spectrum
 from relax.reconstruction import noise_relion
-from relax.refinement.refinement_options import RefinementOptions, RelionConsistencyOptions
+from relax.refinement.refinement_options import RelionConsistencyOptions
 
 pytestmark = pytest.mark.unit
 
@@ -244,11 +245,11 @@ def test_resident_pass_refuses_the_rule_for_subtomograms_and_the_full_grid_gemm_
 
 
 def test_gemm_dense_coarse_engine_refuses_the_rule():
-    from relax.refinement.refinement_options import AdaptiveOptions, require_consistency_route
+    from relax.refinement.refinement_options import require_consistency_route
 
-    options = RefinementOptions(
+    options = stand_in.options(
         consistency=RelionConsistencyOptions(nyquist_column_counting="once"),
-        adaptive=AdaptiveOptions(coarse_engine="gemm_dense"),
+        adaptive=stand_in.adaptive(coarse_engine="gemm_dense"),
     )
     with pytest.raises(NotImplementedError, match="gemm_dense"):
         require_consistency_route(options, subtomograms=False, several_image_shapes=False)

@@ -6,6 +6,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+from helpers.run_options import stand_in
 
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement import iteration_planning
@@ -80,7 +81,6 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     from relax.refinement import iteration_loop
-    from relax.refinement.refinement_options import AdaptiveOptions
 
     trace = CallTrace(monkeypatch)
     trace.wrap(iteration_loop, "prepare_numbered_expectation", "phase")
@@ -90,7 +90,7 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
     engine_calls = []
     run_tiny_refinement(
         monkeypatch, n_classes=2, final_after_max_iter=False, schedule={"init_current_size": 8},
-        adaptive=AdaptiveOptions(adaptive_oversampling=1, strict_highres_exp_angstrom=4.0), engine_calls=engine_calls,
+        adaptive=stand_in.adaptive(adaptive_oversampling=1, strict_highres_exp_angstrom=4.0), engine_calls=engine_calls,
     )
     phases, coarse, msteps = trace.calls("phase"), trace.calls("coarse"), trace.calls("mstep")
     assert phases and len(phases) == len(coarse) == len(msteps)

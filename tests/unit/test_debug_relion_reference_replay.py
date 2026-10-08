@@ -2,11 +2,12 @@ from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
+from helpers.run_options import stand_in
 from recovar.core import fourier_transform_utils
 from recovar.utils.helpers import write_relion_mrc
 
 from relax.parity.relion_replay import replay_class_relion_references, replay_k1_relion_references
-from relax.refinement.refinement_options import KClassOptions, RefinementOptions
+from relax.refinement.refinement_options import KClassOptions
 
 
 def _probe(iteration):
@@ -18,7 +19,7 @@ def test_references_stay_the_models_own_off_the_probe_target(tmp_path):
     model = SimpleNamespace(maps=original)
     for probe in (None, _probe(3), {"iteration": 4}):
         assert replay_k1_relion_references(
-            model, RefinementOptions(), probe=probe, iteration=4, replay_dir=tmp_path, replay_prefix="run", volume_shape=(4, 4, 4),
+            model, stand_in.options(), probe=probe, iteration=4, replay_dir=tmp_path, replay_prefix="run", volume_shape=(4, 4, 4),
         ) is original
 
 
@@ -43,7 +44,7 @@ def test_state_swap_force_loads_shared_kclass_maps(tmp_path):
         jnp.ones((4, np.prod(shape)), dtype=jnp.complex64),
     ]
     replayed = replay_class_relion_references(
-        SimpleNamespace(maps=original), RefinementOptions(k_class=KClassOptions(n_classes=4)), probe=_probe(2),
+        SimpleNamespace(maps=original), stand_in.options(k_class=KClassOptions(n_classes=4)), probe=_probe(2),
         iteration=2, replay_dir=tmp_path, replay_prefix="run", volume_shape=shape,
     )
 
@@ -72,7 +73,7 @@ def test_state_swap_force_replays_target_references_without_environment(tmp_path
     ]
 
     replayed = replay_k1_relion_references(
-        SimpleNamespace(maps=original), RefinementOptions(), probe=_probe(4), iteration=4, replay_dir=tmp_path, replay_prefix="run", volume_shape=shape,
+        SimpleNamespace(maps=original), stand_in.options(), probe=_probe(4), iteration=4, replay_dir=tmp_path, replay_prefix="run", volume_shape=shape,
     )
 
     np.testing.assert_allclose(_real_from_ft(replayed[0], shape), half1, rtol=0, atol=5e-6)

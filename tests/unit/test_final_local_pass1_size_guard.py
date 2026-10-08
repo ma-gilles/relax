@@ -3,6 +3,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from helpers.run_options import stand_in
 
 from relax.refinement import local_sampling
 
@@ -12,10 +13,9 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("pixel_size", [0.0, -1.0, float("nan"), float("inf")])
 def test_invalid_particle_spacing_rejected_even_with_model_override(pixel_size):
     from relax.refinement.iteration_loop import refine_single_volume
-    from relax.refinement.refinement_options import RefinementOptions, RelionParityOptions
 
     half = SimpleNamespace(voxel_size=pixel_size, image_shape=(32, 32), volume_shape=(32, 32, 32))
-    options = RefinementOptions(parity=RelionParityOptions(relion_model_pixel_size=1.5))
+    options = stand_in.options(parity=stand_in.parity(relion_model_pixel_size=1.5))
     with pytest.raises(ValueError, match="Particle pixel size must be finite and positive"):
         refine_single_volume([half, half], None, None, None, None, options=options)
 

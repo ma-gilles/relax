@@ -16,6 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 from helpers.em_arrays import _hermitian_volume
 from helpers.fake_adaptive_engine import install_fake_adaptive_engine
+from helpers.run_options import stand_in
 
 IMAGE_SHAPE = (8, 8)
 IMAGE_SIZE = 64
@@ -262,13 +263,8 @@ def run_tiny_refinement(
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
     from relax.refinement import iteration_loop
     from relax.refinement.refinement_options import (
-        AdaptiveOptions,
-        ExecutionOptions,
         FinalPassOptions,
         KClassOptions,
-        RefinementOptions,
-        RefinementSchedule,
-        RelionParityOptions,
     )
 
     calls = [] if engine_calls is None else engine_calls
@@ -313,8 +309,8 @@ def run_tiny_refinement(
     option_groups["final_pass"] = replace(FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter)
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
-    option_groups.setdefault("adaptive", AdaptiveOptions(adaptive_oversampling=1))
-    option_groups.setdefault("execution", ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS))
+    option_groups.setdefault("adaptive", stand_in.adaptive(adaptive_oversampling=1))
+    option_groups.setdefault("execution", stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS))
     if n_classes > 1:
         option_groups.setdefault(
             "k_class",
@@ -324,12 +320,12 @@ def run_tiny_refinement(
     replay_fields = {name: parity.pop(name) for name in list(parity) if name.startswith("perturb_replay_")}
     if replay_fields:
         relion_replay = replace(relion_replay or RelionReplay(), **replay_fields)
-    options = RefinementOptions(
-        schedule=RefinementSchedule(
+    options = stand_in.options(
+        schedule=stand_in.schedule(
             **{"max_iter": max_iter, "init_current_size": 4, "init_healpix_order": 2, "max_healpix_order": 2,
                **(schedule or {})}
         ),
-        parity=RelionParityOptions(**(parity or {})),
+        parity=stand_in.parity(**(parity or {})),
         **option_groups,
     )
     return iteration_loop.refine_single_volume(
