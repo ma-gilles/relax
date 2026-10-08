@@ -12,7 +12,7 @@ Pass criteria:
   * The iteration-200 map's masked FSC-AUC against the class-1 ground truth (the row's metric:
     scripts/score_initialmodel_maps.py, registered with fit_rigid_both_hands, frozen mask
     multioptics_k2_c1) is at or above the floor of case ``vdam_multishape_200it`` in
-    tests/tiers/fsc_thresholds.json, once that case is approved. The floor is a regression and
+    tests/tiers/fsc_thresholds.json (approved by the user 2026-10-08). The floor is a regression and
     crash guard derived from relax and GPU RELION (the row's reference) seed runs.
 """
 
