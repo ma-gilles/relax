@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 
@@ -17,8 +18,6 @@ from relax.refinement import expectation
 from relax.refinement.expectation_batches import BatchPlanner, HalfBatchPlan
 from relax.refinement.half_inputs import HalfSet
 from relax.refinement.half_scoring import (
-    DenseSamplingSpec,
-    DenseVariantPolicy,
     HalfScoringData,
     LocalDiagnosticPolicy,
 )
@@ -54,13 +53,13 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
             coarse_angular_step_deg=15.,
         )
     else:
-        sampling = DenseSamplingSpec(
+        sampling = refinement_specs.dense_sampling_spec(
             effective_rotations=rotations, current_translations=translations, base_translations=translations,
             current_healpix_order=0, oversampling_order=int(adaptive), translation_step=1.,
             random_perturbation=.125, cs_for_engine=4,
             coarse_angular_step_deg=15.,
         )
-    variant = DenseVariantPolicy(
+    variant = refinement_specs.dense_variant_policy(
         firstiter_score_mode_this_iter='gaussian', firstiter_winner_take_all_this_iter=False,
         k_class_enabled=n_classes > 1, relion_firstiter_cc_this_iter=False,
         firstiter_coarse_current_size=2 if adaptive else None,
@@ -80,7 +79,8 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         options=stand_in.options(schedule=stand_in.schedule(particle_diameter_ang=3.)),
         local_diagnostics=LocalDiagnosticPolicy(iteration=0, debug_iteration=1,
                                                 collect_local_search_profile=False,
-                                                local_profile_history=[]) if local else None,
+                                                local_profile_history=[], bpref_device_signature_active=False,
+                                                observer=RunObserver()) if local else None,
         replay_prior_translations=None, initial_class_assignments=None, single_class_iteration=False,
         scoring_dtype=np.float32, relion_translation_angle_scale=1.,
         iteration=0, numbered_relion_iteration=1, observer=RunObserver(),

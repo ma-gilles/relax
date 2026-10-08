@@ -357,10 +357,12 @@ def run_final_all_data(
             precision=options.precision,
             fine_precision=final_precision,
             score_only=False,
+            firstiter_cc=False,
         )
         final_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration + 1,
             debug_iteration=final_sampling.settings.relion_iteration,
+            bpref_device_signature_active=False,
             observer=observer,
             collect_local_search_profile=collect_local_search_profile,
             local_profile_history=history.local_profile_history,
@@ -382,6 +384,12 @@ def run_final_all_data(
             image_batch_size=options.execution.image_batch_size,
             safe_batch_sizes=batch_planner,
             max_significants=options.adaptive.max_significants,
+            significance_safe_batch_sizes=None,
+            k_class_image_batch_size_override=None,
+            k_class_rotation_block_size_override=None,
+            significance_image_batch_size_override=None,
+            significance_rotation_block_size_override=None,
+            class_batch_overrides=None,
         )
         final_dense_variant = DenseVariantPolicy(
             firstiter_score_mode_this_iter="gaussian",
@@ -398,6 +406,9 @@ def run_final_all_data(
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             return_best_pose_details=not k_class_enabled,
+            # Unlike the numbered pass, the final pass keeps the BPREF signature off and RELION's CC support
+            # (REVIEW_DEEP #2: builder drift, a separate parity-checked item).
+            bpref_device_signature_active=False,
             debug_iteration=final_sampling.settings.relion_iteration,
             diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
                 final_sampling.settings.relion_iteration
@@ -407,6 +418,7 @@ def run_final_all_data(
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
+            firstiter_cc_support="relion",
             nyquist_column_counting=options.consistency.nyquist_column_counting,
             relion_x_half_mstep=options.variants.relion_x_half_mstep(k_class=k_class_enabled),
             precision=options.precision,

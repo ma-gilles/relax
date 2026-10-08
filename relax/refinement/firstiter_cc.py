@@ -72,19 +72,19 @@ class FirstIterCCBatching:
 
     image_batch_size: int
     em_kwargs: dict
-    safe_batch_sizes: object | None = None
-    significance_safe_batch_sizes: object | None = None
-    coarse_current_size: int | None = None
-    fine_current_size: int | None = None
+    safe_batch_sizes: object | None
+    significance_safe_batch_sizes: object | None
+    coarse_current_size: int | None
+    fine_current_size: int | None
 
 
 @dataclass(frozen=True, kw_only=True)
 class FirstIterCCExecution:
     """Routing, mutation and diagnostic controls."""
 
-    log_label: str = ""
-    bpref_device_signature_active: bool = False
-    debug_iteration: int | None = None
+    log_label: str
+    bpref_device_signature_active: bool
+    debug_iteration: int | None
 
 
 def _score_kclass_firstiter_cc_pass2(

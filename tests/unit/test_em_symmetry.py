@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers import refinement_specs
 from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
 from helpers.run_options import stand_in
@@ -876,7 +877,7 @@ def _symmetric_dense_owners(half_scoring, values):
             mean_variance=values.pop("mean_variance"),
             noise_variance=values.pop("noise_variance_k"),
         ),
-        half_scoring.DenseSamplingSpec(
+        refinement_specs.dense_sampling_spec(
             effective_rotations=values.pop("effective_rotations"),
             current_translations=values.pop("current_translations"),
             base_translations=values.pop("base_translations"),
@@ -895,18 +896,18 @@ def _symmetric_dense_owners(half_scoring, values):
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             class_log_priors=values.pop("class_log_priors"),
         ),
-        half_scoring.DenseBatchPolicy(
+        refinement_specs.dense_batch_policy(
             image_batch_size=values.pop("image_batch_size"),
             safe_batch_sizes=values.pop("safe_batch_sizes"),
             max_significants=values.pop("max_significants"),
         ),
-        half_scoring.DenseVariantPolicy(
+        refinement_specs.dense_variant_policy(
             firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
             firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
             k_class_enabled=(k_class_enabled := values.pop("k_class_enabled")),
             relion_firstiter_cc_this_iter=values.pop("relion_firstiter_cc_this_iter"),
         ),
-        half_scoring.DenseExecutionPolicy(
+        refinement_specs.dense_execution_policy(
             disc_type=values.pop("disc_type"),
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),

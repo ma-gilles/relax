@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
@@ -46,7 +47,7 @@ def _dense_owners(**values):
             mean_variance=values.pop("mean_variance"),
             noise_variance=values.pop("noise_variance_k"),
         ),
-        half_scoring.DenseSamplingSpec(
+        refinement_specs.dense_sampling_spec(
             effective_rotations=values.pop("effective_rotations"),
             current_translations=values.pop("current_translations"),
             base_translations=values.pop("base_translations"),
@@ -65,7 +66,7 @@ def _dense_owners(**values):
             trans_prior_center_for_engine=values.pop("trans_prior_center_for_engine"),
             class_log_priors=values.pop("class_log_priors"),
         ),
-        half_scoring.DenseBatchPolicy(
+        refinement_specs.dense_batch_policy(
             image_batch_size=values.pop("image_batch_size"),
             safe_batch_sizes=values.pop("safe_batch_sizes"),
             max_significants=values.pop("max_significants"),
@@ -73,7 +74,7 @@ def _dense_owners(**values):
             k_class_image_batch_size_override=values.pop("k_class_image_batch_size_override", None),
             k_class_rotation_block_size_override=values.pop("k_class_rotation_block_size_override", None),
         ),
-        half_scoring.DenseVariantPolicy(
+        refinement_specs.dense_variant_policy(
             firstiter_score_mode_this_iter=values.pop("firstiter_score_mode_this_iter"),
             firstiter_winner_take_all_this_iter=values.pop("firstiter_winner_take_all_this_iter"),
             k_class_enabled=(k_class_enabled := values.pop("k_class_enabled")),
@@ -82,7 +83,7 @@ def _dense_owners(**values):
             firstiter_fine_current_size=values.pop("firstiter_fine_current_size", None),
             firstiter_log_label=values.pop("firstiter_log_label", "(non-adaptive site) "),
         ),
-        half_scoring.DenseExecutionPolicy(
+        refinement_specs.dense_execution_policy(
             disc_type=values.pop("disc_type"),
             disable_adjoint_y=values.pop("disable_adjoint_y"),
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
@@ -365,10 +366,11 @@ def test_firstiter_cc_adaptive_dispatch_clamps_against_fine_translation_grid(mon
             image_batch_size=200,
             em_kwargs={"image_batch_size": 88, "rotation_block_size": 576},
             safe_batch_sizes=fake_safe_batch_sizes,
+            significance_safe_batch_sizes=None,
             coarse_current_size=40,
             fine_current_size=90,
     )
-    execution = firstiter_cc.FirstIterCCExecution()
+    execution = firstiter_cc.FirstIterCCExecution(log_label="", bpref_device_signature_active=False, debug_iteration=None)
     result, _rot_parent, _trans_parent, n_trans_fine = (
         firstiter_cc._score_kclass_firstiter_cc_pass2(data, grid, policy, batching, execution)
     )
@@ -766,9 +768,10 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
         ),
         firstiter_cc.FirstIterCCPolicy(disc_type="linear_interp", class_log_priors=None),
         firstiter_cc.FirstIterCCBatching(
-            image_batch_size=20, em_kwargs={"image_batch_size": 20, "rotation_block_size": 96}
+            image_batch_size=20, em_kwargs={"image_batch_size": 20, "rotation_block_size": 96},
+            safe_batch_sizes=None, significance_safe_batch_sizes=None, coarse_current_size=None, fine_current_size=None,
         ),
-        firstiter_cc.FirstIterCCExecution(),
+        firstiter_cc.FirstIterCCExecution(log_label="", bpref_device_signature_active=False, debug_iteration=None),
     )
 
     assert np.all(captured["coarse_rot"] == 1.0)

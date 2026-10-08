@@ -1,6 +1,7 @@
 """The K=1 and K-class dense routes share one adaptive engine call owner."""
 
 import numpy as np
+from helpers import refinement_specs
 
 from relax.classification import k_class
 from relax.dense import scoring_policy
@@ -48,12 +49,12 @@ def test_common_engine_keywords_are_the_sparse_pass2_keywords():
                 trans_prior_center_for_engine=None,
                 class_log_priors="priors",
             ),
-            half_scoring.DenseBatchPolicy(
+            refinement_specs.dense_batch_policy(
                 image_batch_size=1,
                 safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
                 max_significants=max_significants,
             ),
-            half_scoring.DenseSamplingSpec(
+            refinement_specs.dense_sampling_spec(
                 effective_rotations=None,
                 current_translations=None,
                 base_translations=None,
@@ -63,7 +64,7 @@ def test_common_engine_keywords_are_the_sparse_pass2_keywords():
                 random_perturbation=0.0,
                 cs_for_engine=None,
             ),
-            half_scoring.DenseExecutionPolicy(
+            refinement_specs.dense_execution_policy(
                 disc_type="linear_interp",
                 disable_adjoint_y=False,
                 disable_adjoint_ctf=False,

@@ -5,6 +5,7 @@ import dataclasses
 from relax.dense import scoring_policy
 from relax.refinement import half_scoring, local_sampling, local_search_iteration, optics_shapes
 from relax.refinement.half_inputs import HalfSet
+from relax.refinement.ports import RunObserver
 from relax.refinement.projector_preparation import PreparedProjector
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
 
@@ -90,6 +91,8 @@ def local_iteration_owners(*args, **values):
             projection_scale=values.pop("projection_scale", 1.0),
             reconstruction_volume_current_size=values.pop("reconstruction_volume_current_size", None),
             reconstruction_image_radius=values.pop("reconstruction_image_radius", None),
+            nyquist_column_counting=values.pop("nyquist_column_counting", "relion"),
+            wsum_current_size=values.pop("wsum_current_size", None),
             firstiter_cc=values.pop("firstiter_cc", False),
         ),
         local_search_iteration.LocalSearchSupportPolicy(
@@ -187,6 +190,7 @@ def local_half_owners(**values):
             disable_adjoint_ctf=values.pop("disable_adjoint_ctf"),
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
+            nyquist_column_counting=values.pop("nyquist_column_counting", "relion"),
             # The run's ScoringVariants, read from the environment as the options would be, unless given.
             relion_x_half_mstep=values.pop("relion_x_half_mstep", None)
             if "relion_x_half_mstep" in values
@@ -204,6 +208,7 @@ def local_half_owners(**values):
                 pass_index=2,
             ),
             score_only=values.pop("diagnostic_score_only"),
+            firstiter_cc=values.pop("firstiter_cc", False),
         ),
         half_scoring.LocalDiagnosticPolicy(
             iteration=values.pop("iteration"),
@@ -211,6 +216,7 @@ def local_half_owners(**values):
             collect_local_search_profile=values.pop("collect_local_search_profile"),
             local_profile_history=values.pop("local_profile_history"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
+            observer=values.pop("observer", RunObserver()),
         ),
         optics_shapes.OpticsSpec(
             noise_radial_k=values.pop("noise_radial_k", None),
@@ -222,3 +228,53 @@ def local_half_owners(**values):
     )
     assert not values, f"unmapped local owner values: {sorted(values)}"
     return owners
+
+
+# RELION's values of the dense policy fields a test does not set: the production builders
+# (expectation.score_numbered_half, finalization.run_final_all_data) pass every field.
+def dense_sampling_spec(**fields):
+    return half_scoring.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
+
+
+def dense_batch_policy(**fields):
+    unset = dict.fromkeys(
+        (
+            "significance_safe_batch_sizes",
+            "k_class_image_batch_size_override",
+            "k_class_rotation_block_size_override",
+            "significance_image_batch_size_override",
+            "significance_rotation_block_size_override",
+            "class_batch_overrides",
+        )
+    )
+    return half_scoring.DenseBatchPolicy(**{**unset, **fields})
+
+
+def dense_variant_policy(**fields):
+    return half_scoring.DenseVariantPolicy(
+        **{
+            "firstiter_coarse_current_size": None,
+            "firstiter_fine_current_size": None,
+            "firstiter_log_label": "(non-adaptive site) ",
+            "skip_align": False,
+            **fields,
+        }
+    )
+
+
+def dense_execution_policy(**fields):
+    return half_scoring.DenseExecutionPolicy(
+        **{
+            "return_best_pose_details": True,
+            "bpref_device_signature_active": False,
+            "debug_iteration": None,
+            "diagnostic_float64_pass2": False,
+            "preserve_bpref_particle_order": False,
+            "source_faithful_spectrum_norm": False,
+            "relion_translation_angle_scale": 1.0,
+            "firstiter_cc_tree_rescore_max_margin": None,
+            "firstiter_cc_support": "relion",
+            "nyquist_column_counting": "relion",
+            **fields,
+        }
+    )

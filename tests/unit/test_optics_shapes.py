@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
@@ -151,7 +152,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             mean_variance=np.ones(4),
             noise_variance=None,
         ),
-        half_scoring.DenseSamplingSpec(
+        refinement_specs.dense_sampling_spec(
             effective_rotations=np.eye(3)[None],
             current_translations=np.zeros((1, 2)),
             base_translations=np.zeros((1, 2)),
@@ -169,19 +170,19 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             trans_prior_center_for_engine=np.zeros((half.n_units, 2)),
             class_log_priors=None,
         ),
-        half_scoring.DenseBatchPolicy(
+        refinement_specs.dense_batch_policy(
             image_batch_size=1,
             safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
             max_significants=-1,
             class_batch_overrides=class_batch_overrides,
         ),
-        half_scoring.DenseVariantPolicy(
+        refinement_specs.dense_variant_policy(
             firstiter_score_mode_this_iter="gaussian",
             firstiter_winner_take_all_this_iter=False,
             k_class_enabled=False,
             relion_firstiter_cc_this_iter=False,
         ),
-        half_scoring.DenseExecutionPolicy(
+        refinement_specs.dense_execution_policy(
             disc_type="linear_interp",
             disable_adjoint_y=False,
             disable_adjoint_ctf=False,

@@ -486,6 +486,8 @@ def prepare_numbered_expectation(
         numbered_local_diagnostics = LocalDiagnosticPolicy(
             iteration=iteration,
             debug_iteration=numbered_relion_iteration,
+            # The half's activation is known only when it is scored (score_numbered_half sets it).
+            bpref_device_signature_active=False,
             observer=observer,
             collect_local_search_profile=collect_local_search_profile,
             local_profile_history=local_profile_history,
@@ -802,6 +804,7 @@ def score_numbered_half(
             disc_type="linear_interp",
             disable_adjoint_y=options.debug.disable_adjoint_y,
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
+            return_best_pose_details=True,
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,
             diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(

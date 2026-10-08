@@ -216,17 +216,15 @@ def test_refinement_hands_the_engine_and_the_noise_update_the_rule(monkeypatch, 
 
 
 def test_local_search_policies_carry_the_rule():
-    from relax.helpers.dtype_policy import DensePrecisionPolicy
-    from relax.refinement.half_scoring import LocalExecutionPolicy
-    from relax.refinement.local_search_iteration import LocalSearchKernelPolicy
-    from relax.refinement.refinement_options import LocalAdaptivePass2Support
+    """Every builder of the local policies names the rule: neither record defaults it."""
+    import dataclasses
 
-    pruned = LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None)
-    assert LocalExecutionPolicy(
-        disc_type="x", disable_adjoint_y=False, disable_adjoint_ctf=False, relion_x_half_mstep=False, adaptive_pass2=pruned,
-        precision=DensePrecisionPolicy(), fine_precision=DensePrecisionPolicy(), score_only=False,
-    ).nyquist_column_counting == "relion"
-    assert LocalSearchKernelPolicy(disc_type="x", current_size=8).nyquist_column_counting == "relion"
+    from relax.refinement.half_scoring import DenseExecutionPolicy, LocalExecutionPolicy
+    from relax.refinement.local_search_iteration import LocalSearchKernelPolicy
+
+    for policy in (DenseExecutionPolicy, LocalExecutionPolicy, LocalSearchKernelPolicy):
+        rule = {field.name: field for field in dataclasses.fields(policy)}["nyquist_column_counting"]
+        assert rule.default is dataclasses.MISSING and rule.default_factory is dataclasses.MISSING, policy
 
 
 def test_resident_pass_refuses_the_rule_for_subtomograms_and_the_full_grid_gemm_engine():

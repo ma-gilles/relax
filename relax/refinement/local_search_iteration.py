@@ -97,33 +97,33 @@ class LocalSearchKernelPolicy:
 
     disc_type: str
     current_size: int | None
-    reconstruction_current_size: int | None = None
+    reconstruction_current_size: int | None
     accumulate_noise: bool = False
-    projection_padding_factor: int = 1
-    reconstruction_padding_factor: int = 1
+    projection_padding_factor: int
+    reconstruction_padding_factor: int
     use_float64_scoring: bool = False
     use_float64_projections: bool = False
-    square_window: bool = False
-    half_spectrum_scoring: bool = False
+    square_window: bool
+    half_spectrum_scoring: bool
     relion_exact_score_translation: bool = False
     projection_relion_texture_interp: bool | None = False
     projection_relion_acc_double_floorf_quirk: bool = False
     projection_relion_kernel: str = "fine"
-    relion_projector_half: object | None = None
-    relion_projector_r_max: int | None = None
-    source_faithful_spectrum_norm: bool = False
-    relion_translation_angle_scale: float = 1.0
-    projection_scale: float = 1.0
-    reconstruction_volume_current_size: int | None = None
-    reconstruction_image_radius: float | None = None
+    relion_projector_half: object | None
+    relion_projector_r_max: int | None
+    source_faithful_spectrum_norm: bool
+    relion_translation_angle_scale: float
+    projection_scale: float
+    reconstruction_volume_current_size: int | None
+    reconstruction_image_radius: float | None
     # RelionConsistencyOptions.nyquist_column_counting: how the per-image sums count the Hermitian
     # pairs of the full-size Nyquist column.
-    nyquist_column_counting: str = "relion"
+    nyquist_column_counting: str
     # --strict_highres_exp: the fine pass's weighted-sum image size (None: current_size).
-    wsum_current_size: int | None = None
+    wsum_current_size: int | None
     # RELION's --firstiter_cc iteration of a search local from its first iteration (--sigma_ang):
     # normalized CC and winner-take-all in the parent probe and the fine pass.
-    firstiter_cc: bool = False
+    firstiter_cc: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -131,10 +131,10 @@ class LocalSearchSupportPolicy:
     """Posterior support, accumulation and returned-detail choices."""
 
     mstep_relion_x_half: bool = False
-    disable_adjoint_y: bool = False
-    disable_adjoint_ctf: bool = False
-    adaptive_fraction: float = 0.999
-    max_significants: int | None = -1
+    disable_adjoint_y: bool
+    disable_adjoint_ctf: bool
+    adaptive_fraction: float
+    max_significants: int | None
     reconstruct_significant_only: bool = True
     return_best_pose_details: bool = False
     normalization_log_evidence: object | None = None
@@ -142,7 +142,7 @@ class LocalSearchSupportPolicy:
     apply_max_significants_to_support: bool = False
     stats_use_reconstruction_probs: bool = False
     score_only: bool = False
-    return_profile: bool = False
+    return_profile: bool
 
 
 def _run_local_search_iteration(

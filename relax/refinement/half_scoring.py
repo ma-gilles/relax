@@ -8,7 +8,7 @@ by the ownership boundary.
 """
 
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 import jax.numpy as jnp
 import numpy as np
@@ -172,14 +172,14 @@ class DenseSamplingSpec:
     translation_step: float
     random_perturbation: float
     cs_for_engine: int | None
-    coarse_engine: str = "auto"
+    coarse_engine: str
     model_current_size_for_engine: int | None = None
     # --strict_highres_exp: the weighted sums' image size, above cs_for_engine (None: cs_for_engine).
     wsum_current_size_for_engine: int | None = None
     coarse_angular_step_deg: float | None = None
     coarse_rotation_ids: object | None = None
     coarse_scoring_rotations: object | None = None
-    symmetry: str = "C1"
+    symmetry: str
     # RELION's device-built pass-1 source of ``effective_rotations`` / ``coarse_scoring_rotations``
     # (None: host-built rows); images on another grid or magnified rebuild their rows from it.
     effective_device_source: object | None = None
@@ -234,12 +234,12 @@ class DenseBatchPolicy:
     image_batch_size: int
     safe_batch_sizes: object
     max_significants: int | None
-    significance_safe_batch_sizes: object | None = None
-    k_class_image_batch_size_override: int | None = None
-    k_class_rotation_block_size_override: int | None = None
-    significance_image_batch_size_override: int | None = None
-    significance_rotation_block_size_override: int | None = None
-    class_batch_overrides: tuple[dict, ...] | None = None
+    significance_safe_batch_sizes: object | None
+    k_class_image_batch_size_override: int | None
+    k_class_rotation_block_size_override: int | None
+    significance_image_batch_size_override: int | None
+    significance_rotation_block_size_override: int | None
+    class_batch_overrides: tuple[dict, ...] | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -250,11 +250,11 @@ class DenseVariantPolicy:
     firstiter_winner_take_all_this_iter: bool
     k_class_enabled: bool
     relion_firstiter_cc_this_iter: bool
-    firstiter_coarse_current_size: int | None = None
-    firstiter_fine_current_size: int | None = None
-    firstiter_log_label: str = "(non-adaptive site) "
+    firstiter_coarse_current_size: int | None
+    firstiter_fine_current_size: int | None
+    firstiter_log_label: str
     # RELION --skip_align: classify at each particle's stored pose (relax.classification.given_poses).
-    skip_align: bool = False
+    skip_align: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -264,19 +264,19 @@ class DenseExecutionPolicy:
     disc_type: str
     disable_adjoint_y: bool
     disable_adjoint_ctf: bool
-    return_best_pose_details: bool = True
-    bpref_device_signature_active: bool = False
-    debug_iteration: int | None = None
-    diagnostic_float64_pass2: bool = False
-    preserve_bpref_particle_order: bool = False
-    source_faithful_spectrum_norm: bool = False
-    relion_translation_angle_scale: float = 1.0
+    return_best_pose_details: bool
+    bpref_device_signature_active: bool
+    debug_iteration: int | None
+    diagnostic_float64_pass2: bool
+    preserve_bpref_particle_order: bool
+    source_faithful_spectrum_norm: bool
+    relion_translation_angle_scale: float
     # The K=1 --firstiter_cc coarse-tree top-2 rescore margin (RelionParityOptions); None is off.
-    firstiter_cc_tree_rescore_max_margin: float | None = None
+    firstiter_cc_tree_rescore_max_margin: float | None
     # RelionConsistencyOptions: the support of the first-iteration normalized CC, and how the
     # per-image sums count the Hermitian pairs of the full-size Nyquist column.
-    firstiter_cc_support: str = "relion"
-    nyquist_column_counting: str = "relion"
+    firstiter_cc_support: str
+    nyquist_column_counting: str
     # ScoringVariants.relion_x_half_mstep for this half's class count: RELION's x-half M-step accumulators.
     relion_x_half_mstep: bool
     # The run's dense precision (RefinementOptions.precision): engine precision and the pose dtype.
@@ -1227,10 +1227,10 @@ class LocalExecutionPolicy:
     disc_type: str
     disable_adjoint_y: bool
     disable_adjoint_ctf: bool
-    source_faithful_spectrum_norm: bool = False
-    relion_translation_angle_scale: float = 1.0
+    source_faithful_spectrum_norm: bool
+    relion_translation_angle_scale: float
     # RelionConsistencyOptions.nyquist_column_counting (see DenseExecutionPolicy).
-    nyquist_column_counting: str = "relion"
+    nyquist_column_counting: str
     # ScoringVariants: the K=1 x-half M-step, and adaptive pass 2's support (off without oversampling).
     relion_x_half_mstep: bool
     adaptive_pass2: LocalAdaptivePass2Support
@@ -1241,7 +1241,7 @@ class LocalExecutionPolicy:
     # --stop_after_local_search_score_only: score without backprojection, noise accumulation or x-half M-step.
     score_only: bool
     # RELION's --firstiter_cc iteration when the search is local from iteration 1 (--sigma_ang).
-    firstiter_cc: bool = False
+    firstiter_cc: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1251,9 +1251,9 @@ class LocalDiagnosticPolicy:
     iteration: int
     collect_local_search_profile: bool
     local_profile_history: object
-    debug_iteration: int | None = None
-    bpref_device_signature_active: bool = False
-    observer: RunObserver = field(default_factory=RunObserver)
+    debug_iteration: int | None
+    bpref_device_signature_active: bool
+    observer: RunObserver
 
 
 def _score_half_dense_in_bpref_scope(
