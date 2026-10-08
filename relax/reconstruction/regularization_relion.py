@@ -85,7 +85,6 @@ def _low_resolution_join_flat_indices(volume_shape, half_layout, lowres_r2_max):
     y_coords = _unscaled_fft_frequency_grid_np(volume_shape[1])
     y2 = y_coords * y_coords
     x2 = x_coords * x_coords
-    lowres_r2_max = int(lowres_r2_max)
     ny = int(layout_shape[1])
     nx = int(layout_shape[2])
 
@@ -331,7 +330,6 @@ def compute_relion_tau2_from_iref_power_spectrum(
 def _centered_full_half_axis_mask(shape, axis, dtype):
     """1 on the stored half-complex axis of a centered full volume (RELION iterates only it)."""
 
-    axis = int(axis)
     size = int(shape[axis])
     idx = jnp.arange(size)
     keep = idx >= size // 2
@@ -358,7 +356,6 @@ def _relion_x_half_multiplicity_in_native_half(volume_shape, axis):
     Returns int8 counts (0, 1 or 2) that broadcast over the packed half of ``volume_shape``.
     """
 
-    axis = int(axis)
     n_axis = int(volume_shape[axis])
     n_last = int(volume_shape[-1])
     coords = np.arange(-(n_axis // 2), n_axis - n_axis // 2, dtype=np.int64)
@@ -394,7 +391,6 @@ def _own_mate_planes(size, *, half_axis):
     axis, 0 and ``size // 2`` on the non-negative half of an rfft axis (``half_axis``).
     """
 
-    size = int(size)
     zero = 0 if half_axis else size // 2
     if size % 2:
         return (zero,)
@@ -608,7 +604,6 @@ def _compute_relion_weight_shell_stats(
 
     if shell_rounding not in {"round", "floor"}:
         raise ValueError(f"shell_rounding must be 'round' or 'floor', got {shell_rounding!r}")
-    full_half_axis = int(full_half_axis)
     if full_half_axis < 0:
         full_half_axis += 3
     if full_half_axis not in {0, 1, 2}:
@@ -620,7 +615,6 @@ def _compute_relion_weight_shell_stats(
     shell_count_np = None
 
     def _centered_full_half_axis_mask_np(shape, axis):
-        axis = int(axis)
         size = int(shape[axis])
         coords = np.arange(-(size // 2), size - size // 2, dtype=np.int64)
         keep = coords >= 0
@@ -696,9 +690,7 @@ def _compute_relion_weight_shell_stats(
                 # The entries that stand for two of RELION's lie on a few planes; count those once more.
                 other_axes = tuple(a for a in range(3) if a != full_half_axis)
                 for plane in np.flatnonzero(np.any(multiplicity_np == 2, axis=other_axes)):
-                    plane_index = [slice(None)] * 3
-                    plane_index[full_half_axis] = int(plane)
-                    plane_index = tuple(plane_index)
+                    plane_index = tuple(int(plane) if a == full_half_axis else slice(None) for a in range(3))
                     twice = np.broadcast_to(multiplicity_np == 2, radial_shape)[plane_index]
                     plane_sum, plane_count = _numpy_bincount_shell_stats(
                         shell_index_np[plane_index],
@@ -711,9 +703,7 @@ def _compute_relion_weight_shell_stats(
                 # Both mates of the stored axis' own-mirror planes were counted; take half of each back.
                 stored_axis = 2 if is_half_layout else full_half_axis
                 for plane in _own_mate_planes(radial_volume_shape[stored_axis], half_axis=is_half_layout):
-                    plane_index = [slice(None)] * 3
-                    plane_index[stored_axis] = int(plane)
-                    plane_index = tuple(plane_index)
+                    plane_index = tuple(int(plane) if a == stored_axis else slice(None) for a in range(3))
                     plane_sum, plane_count = _numpy_bincount_shell_stats(
                         shell_index_np[plane_index],
                         weight_grid_np[plane_index],

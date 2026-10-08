@@ -249,7 +249,6 @@ def _regularize_large_relion_half_filter_impl(
     """
 
     og_volume_shape = tuple(int(s) for s in og_volume_shape)
-    volume_upsampling_factor = int(volume_upsampling_factor)
     upsampled_volume_shape = (
         tuple(3 * [og_volume_shape[0] * volume_upsampling_factor])
         if accumulator_volume_shape is None
