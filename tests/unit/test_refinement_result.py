@@ -176,8 +176,6 @@ def test_final_pass_return(with_numbered):
         "final_all_data_acc_rot_per_class": None,
         "final_all_data_acc_trans_per_class": None,
         "final_all_data_expected_accuracy_class_counts": None,
-        "final_all_data_noise_source_half": -1,
-        "final_all_data_noise_source_halves": (0, 1),
         "final_all_data_fsc": final_pass.fsc,
         "tau2_radial_final_all_data": final_pass.tau2_radial,
         "tau2_fsc_used_final_all_data": None,
@@ -200,8 +198,7 @@ def test_final_pass_return(with_numbered):
         **({} if numbered is None else _numbered(numbered)),
     }
     fields = result.archive_fields()
-    for key in ("final_all_data_noise_source_half", "final_all_data_noise_source_halves",
-                "final_all_data_grid_correct", "final_all_data_ran", "final_all_data_sampling_perturbation_applied"):
+    for key in ("final_all_data_grid_correct", "final_all_data_ran", "final_all_data_sampling_perturbation_applied"):
         assert fields[key] == expected[key]
         expected[key] = fields[key]
     _assert_same_mapping(fields, expected)

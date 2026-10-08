@@ -5527,8 +5527,6 @@ class TestRelionModeSmokeTest:
         assert len(run_em_noise) == 4
         assert_matches(run_em_noise[-2], replay_noise_h1)
         assert_matches(run_em_noise[-1], replay_noise_h2)
-        assert result.final_pass.noise_source_half == -1
-        assert result.final_pass.noise_source_halves == (0, 1)
 
     def test_relion_final_iteration_uses_local_search_when_converged_state_is_local(
         self,

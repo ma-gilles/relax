@@ -97,12 +97,10 @@ class FinalPassResult:
     """The final all-data pass's outputs and diagnostics (``final_all_data_*`` in the archive).
 
     Host casts and None sentinels are applied when the record is built (``result_files.final_pass_result``).
-    ``noise_source_half`` (-1: a per-half source), ``noise_source_halves`` and ``grid_correct`` are the
-    archive's legacy constants.
+    ``grid_correct`` is the archive's legacy constant (scripts/masked_fsc.py and run_multi_iter_parity.py
+    read it).
     """
 
-    noise_source_half: ClassVar[int] = -1
-    noise_source_halves: ClassVar[tuple] = (0, 1)
     grid_correct: ClassVar[bool] = True
 
     pass2_engines: Any
@@ -142,8 +140,6 @@ class FinalPassResult:
             "final_all_data_acc_rot_per_class": self.acc_rot_per_class,
             "final_all_data_acc_trans_per_class": self.acc_trans_per_class,
             "final_all_data_expected_accuracy_class_counts": self.expected_accuracy_class_counts,
-            "final_all_data_noise_source_half": self.noise_source_half,
-            "final_all_data_noise_source_halves": self.noise_source_halves,
             "final_all_data_fsc": self.fsc,
             "tau2_radial_final_all_data": self.tau2_radial,
             "tau2_fsc_used_final_all_data": self.tau2_fsc_used,
