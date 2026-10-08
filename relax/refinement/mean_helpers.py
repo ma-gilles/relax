@@ -1795,9 +1795,9 @@ def taper_first_cc_k1_prior(
     )
     for half_idx in range(2):
         variance_per_half[half_idx] = variance_per_half[half_idx] * tau2_taper_volume
-        for field in ("prior_shells", "ssnr_shells"):
-            field_values = details_per_half[half_idx][field]
-            details_per_half[half_idx][field] = field_values * jnp.asarray(
+        for key in ("prior_shells", "ssnr_shells"):
+            field_values = details_per_half[half_idx][key]
+            details_per_half[half_idx][key] = field_values * jnp.asarray(
                 tau2_taper,
                 dtype=field_values.dtype,
             )
@@ -1837,8 +1837,8 @@ def taper_first_cc_class_prior(
         )
 
     shells = jnp.asarray(taper_shells(np.asarray(shells)))
-    for field in ("prior_shells", "ssnr_shells"):
-        details[field] = taper_shells(np.asarray(details[field]))
+    for key in ("prior_shells", "ssnr_shells"):
+        details[key] = taper_shells(np.asarray(details[key]))
     return ClassReportingPrior(shells, details)
 
 
