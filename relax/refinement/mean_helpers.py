@@ -1551,32 +1551,49 @@ def _numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):
     )
 
 
+@functools.partial(jax.jit, donate_argnums=0)
+def _set_class_row(class_maps, row, class_idx):
+    """``class_maps`` with row ``class_idx`` replaced by ``row``, in place (the stack is donated)."""
+    return class_maps.at[class_idx].set(row)
+
+
 def _lowpass_class_stack(class_maps, settings: ReconstructionSettings, n_classes):
-    """Apply the first-CC initial low-pass to every class and restack."""
-    return jnp.stack(
-        [
-            _apply_relion_initial_lowpass_filter(
-                class_maps[class_idx],
-                settings.volume_shape,
-                settings.voxel_size,
-                settings.first_iteration_lowpass_angstrom,
-                filter_edgewidth=settings.fmask_edge,
-            )
-            for class_idx in range(n_classes)
-        ],
-        axis=0,
-    )
+    """Apply the first-CC initial low-pass to every class, in place (``class_maps`` is consumed).
+
+    One class is filtered at a time and written back into the stack, so the stack and one class's temporaries
+    are live. Building the classes in a list and stacking them held the input, the classes and the new stack
+    together: 1.23 GiB each for Class3D K=3 at box 380 (relax#45).
+    """
+    for class_idx in range(n_classes):
+        row = _apply_relion_initial_lowpass_filter(
+            class_maps[class_idx],
+            settings.volume_shape,
+            settings.voxel_size,
+            settings.first_iteration_lowpass_angstrom,
+            filter_edgewidth=settings.fmask_edge,
+        )
+        class_maps = _set_class_row(class_maps, row, class_idx)
+        del row
+    return class_maps
+
+
+@functools.partial(jax.jit, static_argnames=("volume_shape",), donate_argnums=0)
+def _flatten_class_row(class_maps, solvent_mask, class_idx, *, volume_shape):
+    """``class_maps`` with class ``class_idx`` solvent-flattened, in place (the stack is donated)."""
+    vol_real = fourier_transform_utils.get_idft3(class_maps[class_idx].reshape(volume_shape))
+    return class_maps.at[class_idx].set(fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1))
 
 
 def _flatten_class_stack(class_maps, solvent_mask, volume_shape, n_classes):
-    """Solvent-flatten every class on the device with one mask and restack."""
-    flattened_classes = []
+    """Solvent-flatten every class on the device with one mask, in place (``class_maps`` is consumed).
+
+    One program per class keeps the stack plus about two class maps of transforms live (measured at box 256:
+    2.0 maps; the eager statements held 5.0, and collecting the classes in a list then stacking them 11.8).
+    """
+    volume_shape = tuple(int(n) for n in volume_shape)
     for class_idx in range(n_classes):
-        vol_real = fourier_transform_utils.get_idft3(class_maps[class_idx].reshape(volume_shape))
-        flattened_classes.append(
-            fourier_transform_utils.get_dft3(vol_real * solvent_mask).reshape(-1),
-        )
-    return jnp.stack(flattened_classes, axis=0)
+        class_maps = _flatten_class_row(class_maps, solvent_mask, class_idx, volume_shape=volume_shape)
+    return class_maps
 
 
 def _log_first_cc_lowpass(settings: ReconstructionSettings) -> None:
@@ -1668,9 +1685,10 @@ def reconstruct_numbered_class_maps(
     curve. All class solves finish before premask capture, initial filtering
     and solvent flattening.
     Return a two-entry list of particle-execution slots, not scientific
-    halves. Each slot is captured, then every class is first-CC filtered, then
-    every class is flattened on the device with one mask; the entries alias
-    the shared stack when neither filtering nor flattening applies.
+    halves; both entries alias one stack. Each slot is captured, then every
+    class is first-CC filtered, then every class is flattened on the device
+    with one mask. Both slots hold the same stack and the steps are the same,
+    so they run once, in place.
     """
     observer = RunObserver() if observer is None else observer
     shared_classes = _reconstruct_class_maps(
@@ -1683,19 +1701,19 @@ def reconstruct_numbered_class_maps(
         current_size=current_size,
         accumulator_volume_shape=accumulator_volume_shape,
     )
-    means = [shared_classes, shared_classes]
-    del shared_classes
     for k in range(2):
-        observer.map_solved(iteration, k, means[k], settings=settings, current_size=current_size, n_classes=n_classes)
-        # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
-        if relion_firstiter_cc_this_iter:
-            means[k] = _lowpass_class_stack(means[k], settings, n_classes)
-        if _solvent_flatten_requested(settings):
-            solvent_mask = _numbered_solvent_mask(settings, dtype=means[k][0].real.dtype)
-            means[k] = _flatten_class_stack(means[k], solvent_mask, settings.volume_shape, n_classes)
+        observer.map_solved(
+            iteration, k, shared_classes, settings=settings, current_size=current_size, n_classes=n_classes
+        )
+    # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
+    if relion_firstiter_cc_this_iter:
+        shared_classes = _lowpass_class_stack(shared_classes, settings, n_classes)
+    if _solvent_flatten_requested(settings):
+        solvent_mask = _numbered_solvent_mask(settings, dtype=jnp.finfo(shared_classes.dtype).dtype)
+        shared_classes = _flatten_class_stack(shared_classes, solvent_mask, settings.volume_shape, n_classes)
     if relion_firstiter_cc_this_iter:
         _log_first_cc_lowpass(settings)
-    return means
+    return [shared_classes, shared_classes]
 
 
 @dataclass(frozen=True)

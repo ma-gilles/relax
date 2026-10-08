@@ -81,12 +81,14 @@ class _Recorder:
         monkeypatch.setattr(mean_helpers, "_apply_relion_solvent_flatten_k1", flatten)
         monkeypatch.setattr(mean_helpers, "_large_relion_solvent_mask_uses_compiled_builder", lambda _shape: False)
         monkeypatch.setattr(mean_helpers.gc, "collect", lambda: None)
-        monkeypatch.setattr(
-            mean_helpers.fourier_transform_utils, "get_idft3", lambda value: self.events.append("ifft") or value
-        )
-        monkeypatch.setattr(
-            mean_helpers.fourier_transform_utils, "get_dft3", lambda value: self.events.append("fft") or value
-        )
+
+        def flatten_class(class_maps, _mask, class_idx, *, volume_shape):
+            self.events.append("flatten_class")
+            assert class_idx == self.events.count("flatten_class") - 1
+            assert volume_shape == (2, 2, 2)
+            return class_maps
+
+        monkeypatch.setattr(mean_helpers, "_flatten_class_row", flatten_class)
 
     def solved(self, numerator, kwargs):
         """Record one solve and return its map at the complex dtype of the run."""
@@ -104,10 +106,10 @@ def _assert_solve_operands(kwargs, denominator, numerator, expected_denominator,
     assert_matches(np.asarray(kwargs["tau"]), prior)
 
 
-def _assert_results_and_mask_radius(result, expected, settings, masks, *, first_cc, flatten_solvent):
+def _assert_results_and_mask_radius(result, expected, settings, masks, *, first_cc, flatten_solvent, mask_count=2):
     for value, original in zip(result, expected, strict=True):
         assert_matches(np.asarray(value), np.asarray(original) * (2 if first_cc else 1))
-    assert len(masks) == (2 if flatten_solvent else 0)
+    assert len(masks) == (mask_count if flatten_solvent else 0)
     assert type(settings.voxel_size) is float
     if flatten_solvent:
         assert type(settings.particle_diameter_angstrom) is float
@@ -167,11 +169,12 @@ def test_numbered_class_maps_preserve_operands_and_operation_order(monkeypatch, 
         numerators, denominators, priors, settings, n_classes=n_classes,
         relion_firstiter_cc_this_iter=first_cc, observer=record.observer, **COMMON,
     )
-    slot_events = (["capture"] + ["filter"] * n_classes * first_cc
-                   + (["mask"] + ["ifft", "fft"] * n_classes) * flatten_solvent)
+    # Both slots hold one stack: each is captured, then the stack is filtered and flattened once, in place.
+    postprocess_events = ["filter"] * n_classes * first_cc + (["mask"] + ["flatten_class"] * n_classes) * flatten_solvent
     assert record.captures[0] is record.captures[1]
-    assert (result[0] is result[1]) is (not (first_cc or flatten_solvent))
-    assert record.events == ["solve"] * n_classes + slot_events * 2
+    assert result[0] is result[1]
+    assert record.events == ["solve"] * n_classes + ["capture"] * 2 + postprocess_events
     _assert_results_and_mask_radius(
         result, [np.stack(numerators)] * 2, settings, record.masks, first_cc=first_cc, flatten_solvent=flatten_solvent,
+        mask_count=1,
     )

@@ -58,7 +58,8 @@ _NUMBERED_SEQUENCES = {
 @pytest.mark.parametrize("n_classes", [1, 2])
 def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp_path):
     """One run-level ReconstructionSettings reaches every M-step; each mode's operation solves, then per slot
-    captures, low-pass filters (CC iteration only), masks and flattens, and reports the CC low-pass once."""
+    captures, low-pass filters (CC iteration only), masks and flattens (Class3D: captures both slots, then
+    filters and flattens their one shared stack once), and reports the CC low-pass once."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     from relax.diagnostics import observers
@@ -88,10 +89,18 @@ def test_numbered_reconstruction_sequence_and_owners(n_classes, monkeypatch, tmp
     (settings,) = trace.calls("settings")
     assert [call.args[3] for call in trace.calls("maximization")] == [settings.result] * 2
     assert all(call.inside == ("maximization",) for call in trace.calls("operation"))
-    slot = ["capture", "dump", "mask", "mask_builder", "flatten"]
-    cc_slot = ["capture", "dump", "lowpass", "mask", "mask_builder", "flatten"]
     in_operation = [call.label for call in trace.calls_seen if "operation" in call.inside]
-    assert in_operation == ["solve", *cc_slot, *cc_slot, "log", "solve", *slot, *slot]
+    flatten_steps = ["mask", "mask_builder", "flatten"]
+    if n_classes == 1:
+        slot = ["capture", "dump", *flatten_steps]
+        cc_slot = ["capture", "dump", "lowpass", *flatten_steps]
+        assert in_operation == ["solve", *cc_slot, *cc_slot, "log", "solve", *slot, *slot]
+    else:
+        # Both Class3D slots hold one stack: both are captured, then it is filtered and flattened once.
+        captures = ["capture", "dump"] * 2
+        assert in_operation == [
+            "solve", *captures, "lowpass", *flatten_steps, "log", "solve", *captures, *flatten_steps,
+        ]
     assert all(call.inside[-1] == "capture" for call in trace.calls("dump"))
     assert [call.kwargs["half_index"] for call in trace.calls("dump")] == [0, 1, 0, 1]
     # The particle-diameter mask: radius in pixels, with the soft edge outside it.
