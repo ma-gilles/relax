@@ -48,7 +48,8 @@ from fingerprint import (  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOT_COVERED = (
-    "the tree rescore (tree_rescore_max_margin) runs only on a CUDA backend: its CPU refusal is a case, its arithmetic is not",
+    "the tree rescore's kernel (relax.scoring.scoring._relion_coarse_normalized_cc_rescore) and its CUDA gates: the "
+    "cases replace them by a deterministic stand-in, so the selection around the kernel is covered and its arithmetic is not",
     "RELION's CUDA image preprocessing, translation kernel and texture projector (stand-ins replace them: unit CTFs, "
     "a coded projector, translation as repetition, no high-resolution image power)",
     "real noise weighting and CTFs: the cases use unit noise and unit CTFs",
@@ -66,7 +67,11 @@ def _cases() -> dict[str, tuple[str, dict]]:
     """``{name: (description, spec)}``; the spec is what the worker builds one call from.
 
     Spec keys: ``n_classes`` (2), ``n_images`` (7), ``n_rot`` (5), ``rotation_codes`` (the ``[0, 1]`` entry of each
-    rotation; ``n_rot`` of them, evenly spaced by default), ``box`` (4), ``rotation_block_size`` (2), ``rotation_prior`` ("shared" | "per_class" | None), ``translation_prior``
+    rotation; ``n_rot`` of them, evenly spaced by default), ``box`` (4), ``n_trans`` (3), ``rotation_block_size`` (2), ``projection`` ("coded" | "phased": the harness's projector scales one phase ramp by rotation, which leaves the
+    normalized CC of every rotation equal; "phased" also changes the ramp's slope with the rotation),
+    ``tree`` (None | "distinct" | "tied": the CUDA gates and the rescore
+    kernel of the tree rescore are replaced, scoring the two candidates distinctly or alike),
+    ``rotation_prior`` ("shared" | "per_class" | None), ``translation_prior``
     ("per_image" | "shared" | None), ``noise`` ("flat" | "per_group"), ``corrections`` (a tuple of "image",
     "scale", "shift"), ``env`` (variables set for the call; ``@DUMP`` is the case's dump directory) and
     ``kwargs`` (keyword arguments of the call that replace the defaults).
@@ -146,6 +151,29 @@ def _cases() -> dict[str, tuple[str, dict]]:
         kwargs={"score_mode": "normalized_cc", "return_class_second": True})
     add("cc_k1_dump", "normalized CC dumping the score blocks of two images", n_classes=1,
         kwargs={"score_mode": "normalized_cc"},
+        env={"RELAX_SIGNIFICANCE_DUMP_DIR": "@DUMP", "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,4"})
+    add("cc_k1_phased", "normalized CC on poses whose scores differ", n_classes=1, projection="phased",
+        kwargs={"score_mode": "normalized_cc"})
+    add("cc_k2_phased", "normalized CC, K=2, on poses whose scores differ", projection="phased",
+        kwargs={"score_mode": "normalized_cc"})
+    tree = {"score_mode": "normalized_cc", "tree_rescore_max_margin": 0.5, "collect_significance": False}
+    add("cc_k1_tree_rescore", "normalized CC with the tree top-two rescore, candidates scored distinctly", n_classes=1,
+        tree="distinct", kwargs=tree)
+    add("cc_k1_tree_rescore_tied", "normalized CC with the tree rescore, candidates tied exactly", n_classes=1,
+        tree="tied", kwargs=tree)
+    add("cc_k1_tree_rescore_none_ambiguous", "the tree rescore on poses with distinct CC, 6 images and a zero margin: none is ambiguous",
+        n_classes=1, n_images=6, n_trans=1, projection="phased", tree="distinct", translation_prior=None,
+        kwargs=dict(tree, tree_rescore_max_margin=0.0))
+    add("cc_k1_tree_rescore_tail_ambiguous", "the tree rescore on poses with distinct CC and a zero margin: only the padded tail is",
+        n_classes=1, n_trans=1, projection="phased", tree="distinct", translation_prior=None,
+        kwargs=dict(tree, tree_rescore_max_margin=0.0))
+    add("cc_k1_tree_rescore_pad", "the tree rescore on a padded tail batch", n_classes=1, tree="distinct",
+        kwargs=dict(tree, pad_final_image_batch=True))
+    add("cc_k1_tree_rescore_second", "the tree rescore returning the class runner-up", n_classes=1, tree="distinct",
+        kwargs=dict(tree, return_class_second=True))
+    add("cc_k1_tree_rescore_dump", "the tree rescore dumping its candidates for two images (6 images: no tail batch)",
+        n_classes=1, n_images=6, tree="distinct",
+        kwargs=dict(tree, debug_iteration=3),
         env={"RELAX_SIGNIFICANCE_DUMP_DIR": "@DUMP", "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,4"})
     add("refused_tree_rescore_cpu", "the tree rescore is refused without a CUDA backend", n_classes=1,
         kwargs={"score_mode": "normalized_cc", "tree_rescore_max_margin": 0.5, "return_class_second": True})
@@ -246,6 +274,23 @@ MUTATIONS = (
     ("f32_normalization_sum_weight", "relion_f32_sum_weight[start_idx:end_idx] = np.asarray(\n                        _batch_sum_weight,",
      "relion_f32_sum_weight[start_idx:end_idx] = 2.0 * np.asarray(\n                        _batch_sum_weight,",
      "the float32 sum weight is doubled", True),
+    ("tree_margin_bound", "np.isfinite(score_margins) & (score_margins <= tree_rescore_max_margin)",
+     "np.isfinite(score_margins) & (score_margins < tree_rescore_max_margin)",
+     "an image whose margin equals the bound is no longer ambiguous", True),
+    ("tree_translation_ids", "candidate_translation_ids = candidate_pose_ids % n_trans",
+     "candidate_translation_ids = candidate_pose_ids // n_trans",
+     "the tree rescore takes each candidate's translation from its rotation index", True),
+    ("tree_winner_installed", "rescored_winner_pose = candidate_pose_ids[row_ids, rescored_winner_slot]",
+     "rescored_winner_pose = candidate_pose_ids[row_ids, rescored_runner_slot]",
+     "the rescored runner-up is installed as the winner", True),
+    ("tree_winner_changes", "np.count_nonzero(rescored_winner_pose != best_pose_np)",
+     "np.count_nonzero(rescored_winner_pose == best_pose_np)",
+     "the winner-change count counts the unchanged", True),
+    ("tree_exact_ties", "tree_rescore_exact_ties += exact_ties", "tree_rescore_exact_ties += 0",
+     "the exact-tie count is dropped", True),
+    ("tree_runner_score_installed", "class_second_best_scores[0] = class_second_best_scores[0].at[\n rows_jax\n ].set(rescored_runner_score[applied_rows])",
+     "class_second_best_scores[0] = class_second_best_scores[0].at[\n rows_jax\n ].set(rescored_winner_score[applied_rows])",
+     "the class runner-up score takes the winner's rescored score", True),
     ("prefetch_order", "iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)",
      "iter_indexed_batches(experiment_dataset, image_indices[::-1], image_batch_size)",
      "the image batches arrive in reverse order", True),
@@ -331,6 +376,53 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                      lambda _dataset, indices, *_, **kw: (f"images={len(indices)}",)),
         )
 
+    def install_phased_projection(patch):
+        """A projector whose phase ramp depends on the rotation, so the normalized CC differs between poses."""
+        from relax.helpers import projection as projection_helpers
+
+        def phased_projection(projector_half, rotations_block, image_shape, **kwargs):
+            class_value = float(np.asarray(projector_half)[0, 0, 0].real)
+            offsets = np.asarray(rotations_block)[:, 0, 1].astype(np.float64)
+            pixel_indices = kwargs.get("pixel_indices")
+            n_pixels = (
+                int(image_shape[0]) * (int(image_shape[1]) // 2 + 1) if pixel_indices is None else len(pixel_indices)
+            )
+            ramp = np.exp(1j * (0.3 + 2.0 * offsets)[:, None] * np.arange(n_pixels)[None, :])
+            projected = jnp.asarray((class_value + 1.0 + offsets)[:, None] * ramp, dtype=jnp.complex64)
+            return projected, (jnp.abs(projected) ** 2 if kwargs.get("return_abs2", True) else None)
+
+        patch.setattr(projection_helpers, "compute_relion_projector_projections_block", phased_projection)
+
+    def install_tree_stand_in(patch, tied):
+        """The tree rescore's CUDA gates, and its rescore kernel by a score taken from the candidates' operands.
+
+        ``tests/unit/test_refine_relion_mode.py`` replaces the same things: the kernel runs only on a GPU.
+        """
+        import jax
+        import recovar.cuda_backproject as cuda_backproject
+
+        from relax.cuda import kernels as em_cuda_kernels
+        from relax.scoring import scoring as scoring_module
+
+        patch.setattr(jax, "default_backend", lambda: "gpu")
+        patch.setattr(cuda_backproject, "custom_cuda_requested", lambda: True)
+        patch.setattr(em_cuda_kernels, "custom_cuda_requested", lambda: True)
+        patch.setattr(cuda_backproject, "cuda_available", lambda: True)
+
+        def rescore(shifted_candidates, score_weight_candidates, projection_candidates, half_weights, fftw_order, **kw):
+            assert kw["projector_full"] is not None and kw["rotation_matrices"].shape[-2:] == (3, 3)
+            # Scores of the size of a normalized CC (below 1.25), so the posterior built from them stays finite.
+            base = jnp.tanh(jnp.real(jnp.sum(shifted_candidates, axis=-1)) / 100.0).astype(jnp.float32)
+            if tied:
+                return jnp.broadcast_to(base[:, :1], base.shape)
+            return base * jnp.asarray([1.0, 1.25], dtype=jnp.float32)[None, :] - 0.5 * kw["rotation_matrices"][..., 0, 1]
+
+        patch.setattr(
+            scoring_module, "_relion_coarse_normalized_cc_rescore",
+            recorded("tree_rescore", rescore, lambda shifted, *_, **kw: (f"candidates={shifted.shape[0]}",
+                                                                          f"projector={tuple(kw['projector_full'].shape)}")),
+        )
+
     def build(spec):
         n_classes = spec.get("n_classes", 2)
         n_images = spec.get("n_images", 7)
@@ -341,6 +433,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         rotations = np.tile(np.eye(3, dtype=np.float32), (n_rot, 1, 1))
         rotations[:, 0, 1] = np.linspace(0.0, 0.4, n_rot, dtype=np.float32) if codes is None else np.asarray(codes, dtype=np.float32)
         n_half = box * (box // 2 + 1)
+        n_trans = spec.get("n_trans", 3)
         noise = jnp.ones(dataset.image_size, dtype=jnp.float32)
         optics_group_ids = None
         if spec.get("noise") in ("per_group", "per_group_without_ids"):
@@ -351,7 +444,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             dataset,
             noise,
             rotations,
-            jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),
+            jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]][:n_trans], dtype=jnp.float32),
         )
         rotation_prior = spec.get("rotation_prior", "shared")
         rotation_prior = {
@@ -363,8 +456,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         }[rotation_prior]
         translation_prior = spec.get("translation_prior", "per_image")
         translation_prior = {
-            "per_image": np.linspace(0.0, -0.3, n_images * 3, dtype=np.float32).reshape(n_images, 3),
-            "shared": np.array([0.0, -0.1, -0.25], dtype=np.float32),
+            "per_image": np.linspace(0.0, -0.3, n_images * n_trans, dtype=np.float32).reshape(n_images, n_trans),
+            "shared": np.array([0.0, -0.1, -0.25][:n_trans], dtype=np.float32),
             None: None,
         }[translation_prior]
         kwargs = dict(
@@ -447,7 +540,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         status, fields = "ok", None
         try:
             install_exact_pass1_mocks(patch)
+            if spec.get("projection") == "phased":
+                install_phased_projection(patch)
             install_recorders(patch)
+            if spec.get("tree"):
+                install_tree_stand_in(patch, spec["tree"] == "tied")
             for key, value in env.items():
                 patch.setenv(key, value)
             args, kwargs, n_classes = build(spec)

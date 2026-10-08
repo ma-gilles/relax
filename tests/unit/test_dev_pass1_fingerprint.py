@@ -9,8 +9,8 @@ from scripts.dev import fingerprint, fingerprint_cli, pass1_fingerprint
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_KEYS = {
-    "n_classes", "n_images", "n_rot", "rotation_codes", "box", "rotation_block_size", "rotation_prior",
-    "translation_prior", "noise", "corrections", "env", "kwargs",
+    "n_classes", "n_images", "n_rot", "rotation_codes", "box", "n_trans", "rotation_block_size", "projection", "tree",
+    "rotation_prior", "translation_prior", "noise", "corrections", "env", "kwargs",
 }
 # A pass-1 call on the stand-in is a second or two; these three reach both scores, the K=1 route and a refusal.
 SHORT_RUN = ("k1_default", "cc_k1", "refused_float64_scoring")

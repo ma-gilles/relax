@@ -20,16 +20,17 @@ here in the commit that closes it; record a decision in the "Decided" section. N
 ## Coverage
 
 `scripts/dev/pass1_fingerprint.py` calls `_compute_k_class_significance_batched` itself, on the CPU exact-operand
-harness (`tests/helpers/exact_pass1_harness.py`), for 60 cases: K=1 and K=2, every prior shape, windows (radial,
+harness (`tests/helpers/exact_pass1_harness.py`), for 69 cases: K=1 and K=2, every prior shape, windows (radial,
 square, at the box, quantized physical), the padded tail batch, an optics-group noise table, corrections and
 pre-shifts, the cached and uncached projection program, the generic and the float32 support route, the support
-audit, the score dump (the host-mask route), the first-iteration normalized CC and 13 refusals. Each case records
+audit, the score dump (the host-mask route), the first-iteration normalized CC (with the tree rescore, and with poses whose scores differ) and 13 refusals. Each case records
 the six results, the files a dump wrote, and an ordered trace of log records and of the calls into the stand-in
-kernels. 27 deliberate mutations of pass 1 are each detected (`selftest`), and `check_mutation_anchors.py`
+kernels. 33 deliberate mutations of pass 1 are each detected (`selftest`), and `check_mutation_anchors.py`
 verifies their anchors. The refinement fingerprint cannot see inside pass 1: it replaces the function by a recorder.
 
-Not covered by it (the GPU tiers cover them): the tree rescore (CUDA only: its CPU refusal is a case); RELION's CUDA
-preprocessing, translation kernel and texture projector (stand-ins); real CTFs and noise weighting (unit values);
+Not covered by it (the GPU tiers cover them): the tree rescore's kernel and its CUDA gates (the cases replace them by a
+deterministic stand-in, as `tests/unit/test_refine_relion_mode.py` does, so the selection around the kernel is covered);
+RELION's CUDA preprocessing, translation kernel and texture projector (stand-ins); real CTFs and noise weighting (unit values);
 GPU operation order, peak memory and lifetimes; the overlap of a batch's host read-back with the next batch's
 device scoring (`defer_publish`).
 
@@ -56,6 +57,12 @@ device scoring (`defer_publish`).
    `_relion_cuda_fine_full_to_compact_lookup`).
 8. **A source-reading test pins the function (rule 13).** `tests/unit/test_adaptive_oversampling.py`
    (`_production_batch_size`).
+
+## Noticed, not changed (a refactor does not fix behaviour)
+
+- With the tail-batch padding on (the default), `_maybe_dump_tree_rescore_batch` indexes the padded ambiguous rows into
+  the unpadded batch indices and raises an `IndexError` when a tree-rescore dump is requested for a half whose last
+  batch is short. A diagnostic only; the fingerprint's dump case uses a half without a tail.
 
 ## Waiting for the owner
 
