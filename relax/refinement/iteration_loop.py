@@ -370,9 +370,7 @@ def refine_single_volume(
         allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
-    class_mixture = _initialize_class_log_priors(
-        options.k_class.n_classes, options.k_class.init_class_log_priors, options.replay.init_direction_prior,
-    )
+    class_mixture = _initialize_class_log_priors(options.k_class.n_classes, options.replay.init_direction_prior)
 
     reconstruction_settings = reconstruction_settings_for_run(options, image_geometry, volume_shape, consistency)
     snapshot_capture = SnapshotCapture(

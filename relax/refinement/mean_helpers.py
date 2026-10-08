@@ -141,23 +141,6 @@ def _updated_mean_variance_per_half(
     return shared_tau2_per_half(shared_mean_variance)
 
 
-def _normalize_class_log_priors(n_classes: int, class_log_priors=None) -> np.ndarray:
-    """Return normalized log priors for the class axis."""
-
-    if n_classes < 1:
-        raise ValueError(f"n_classes must be >= 1, got {n_classes}")
-    if class_log_priors is None:
-        return np.full(n_classes, -np.log(float(n_classes)), dtype=np.float64)
-    log_priors = np.asarray(class_log_priors, dtype=np.float64)
-    if log_priors.shape != (n_classes,):
-        raise ValueError(f"class_log_priors must have shape ({n_classes},), got {log_priors.shape}")
-    if not np.all(np.isfinite(log_priors)):
-        raise ValueError("class_log_priors must be finite")
-    max_log_prior = float(np.max(log_priors))
-    log_norm = max_log_prior + float(np.log(np.sum(np.exp(log_priors - max_log_prior))))
-    return log_priors - log_norm
-
-
 class ClassMixture(NamedTuple):
     """The class log priors scored against and the class weights they come from, both ``[K]`` float64."""
 
@@ -171,11 +154,14 @@ def class_mixture_from_weights(weights: np.ndarray) -> ClassMixture:
     return ClassMixture(np.log(weights), weights)
 
 
-def _initialize_class_log_priors(n_classes: int, init_class_log_priors=None, init_direction_prior=None) -> ClassMixture:
-    """Return normalized log priors for the class axis and class weights, defaulting to uniform."""
-    class_log_priors = _normalize_class_log_priors(n_classes, init_class_log_priors)
+def _initialize_class_log_priors(n_classes: int, init_direction_prior=None) -> ClassMixture:
+    """Return normalized log priors for the class axis and class weights: uniform, or (K > 1) the class weights
+    a RELION direction prior's row sums imply."""
+    if n_classes < 1:
+        raise ValueError(f"n_classes must be >= 1, got {n_classes}")
+    class_log_priors = np.full(n_classes, -np.log(float(n_classes)), dtype=np.float64)
     class_weights = np.exp(class_log_priors)
-    if n_classes > 1 and init_class_log_priors is None and init_direction_prior is not None:
+    if n_classes > 1 and init_direction_prior is not None:
         inferred_class_weights = class_weights_from_direction_prior(init_direction_prior, n_classes)
         if inferred_class_weights is not None:
             if np.any(inferred_class_weights <= 0.0):

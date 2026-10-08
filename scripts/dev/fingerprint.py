@@ -1011,9 +1011,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         root.setLevel(logging.DEBUG)
         extra = {}
         if n_classes > 1:
+            k_class_fields = {f.name for f in dataclasses.fields(refinement_options.KClassOptions)}
             extra["k_class"] = refinement_options.KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
+                # Uniform class priors, on a source that still has the field (before PLAN a7 O D11 retired it):
+                # the class weights a start-up direction prior implies are then not inferred.
+                **(
+                    {"init_class_log_priors": np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64))}
+                    if "init_class_log_priors" in k_class_fields else {}
+                ),
                 **({"first_iteration_seed_classes": np.arange(fixtures.N_IMAGES)[::-1] % n_classes} if seed else {}),
             )
         # Every option value a case runs with is named here, not taken from a record default (PLAN d1 aligned the

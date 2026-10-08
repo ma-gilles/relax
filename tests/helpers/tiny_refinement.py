@@ -314,7 +314,7 @@ def run_tiny_refinement(
     if n_classes > 1:
         option_groups.setdefault(
             "k_class",
-            KClassOptions(n_classes=n_classes, init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes))),
+            KClassOptions(n_classes=n_classes),
         )
     parity = dict(parity or {})
     replay_fields = {name: parity.pop(name) for name in list(parity) if name.startswith("perturb_replay_")}

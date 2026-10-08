@@ -5283,7 +5283,6 @@ class TestRelionModeSmokeTest:
         if n_classes > 1:
             k_class["k_class"] = KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
             )
         result = refine_single_volume(
             half_datasets,
@@ -5769,7 +5768,6 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=2,
-                    init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
                 ),
             ),
         )
@@ -5828,7 +5826,6 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=n_classes,
-                    init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
                 ),
             ),
         )
@@ -5880,7 +5877,6 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=n_classes,
-                    init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
                 ),
                 final_pass=FinalPassOptions(after_max_iter=True),
             ),
@@ -6011,7 +6007,6 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=2,
-                    init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
                 ),
             ),
         )
@@ -6084,7 +6079,6 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 k_class=KClassOptions(
                     n_classes=2,
-                    init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
                 ),
             ),
         )
@@ -7190,7 +7184,6 @@ class TestRelionModeSmokeTest:
             if n_classes == 1
             else KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
             )
         )
         refine_single_volume(
@@ -7758,7 +7751,6 @@ class TestRelionModeSmokeTest:
                 parity=stand_in.parity(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=2,
-                    init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
                 ),
             ),
         )
@@ -8911,7 +8903,6 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
         ),
         relion_replay=RelionReplay(replay_iteration_overrides=[{"class_tau2": class_tau2}]),
@@ -8940,7 +8931,6 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
         ),
         observer=ClassDumpObserver(tmp_path) if capture_dump else None,
@@ -8969,7 +8959,6 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
         ),
         relion_replay=RelionReplay(
@@ -9000,7 +8989,6 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
-                init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
             ),
         ),
         relion_replay=RelionReplay(
@@ -9123,7 +9111,7 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
             execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=stand_in.adaptive(adaptive_oversampling=0),
             replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
-            k_class=KClassOptions(n_classes=2, init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64))),
+            k_class=KClassOptions(n_classes=2),
         ),
     )
 
