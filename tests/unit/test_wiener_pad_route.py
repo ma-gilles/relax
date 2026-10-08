@@ -74,3 +74,31 @@ def test_cpu_route_matches_the_device_route(monkeypatch):
     assert len(calls) == 2  # both routes reach the staged pad, not another path
     assert results[True].dtype == results[False].dtype == np.complex64
     assert_matches(results[True], results[False])
+
+
+@pytest.mark.parametrize("negate", [False, True])
+def test_sign_overlap_cpu_route_matches_the_device_route(monkeypatch, negate):
+    shape = (12, 12, 12)
+    rng = np.random.default_rng(31)
+    reference = jnp.asarray((rng.standard_normal(1728) + 1j * rng.standard_normal(1728)).astype(np.complex64))
+    volume = reference * (-0.7 if negate else 0.7) + 0.1 * jnp.asarray(rng.standard_normal(1728).astype(np.complex64))
+    results = {}
+    for route in (False, True):
+        monkeypatch.setattr(mean_helpers, "_sign_overlap_exceeds_device_headroom", lambda *_a, route=route: route)
+        results[route] = mean_helpers._align_fourier_volume_sign_to_reference(volume, reference, shape)
+    assert results[True][1] is results[False][1] is negate
+    assert_matches(np.asarray(results[True][0]), np.asarray(results[False][0]))
+
+
+def test_sign_overlap_moves_to_the_cpu_when_twice_its_working_set_exceeds_the_headroom(monkeypatch):
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    monkeypatch.setattr(mean_helpers, "_device_allocator_limit_bytes", lambda: int(10.14 * GIB))
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: None)
+    # Box 448: 3 maps of 0.67 GiB; at the end of a 16 GB K=1 M-step 1.8 GiB was free.
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(1.8 * GIB))
+    assert mean_helpers._sign_overlap_exceeds_device_headroom((448,) * 3) is True
+    # EMPIAR-10202 (box 800) on an 80 GB H100 with 30 GiB free stays on the device route: twice 11.4 GiB is 22.9 GiB.
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(30 * GIB))
+    assert mean_helpers._sign_overlap_exceeds_device_headroom((800,) * 3) is False

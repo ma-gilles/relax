@@ -1230,6 +1230,32 @@ def _centered_real_overlap(volume_ft_flat, reference_ft_flat, *, volume_shape):
     return jnp.sum((ref_real - jnp.mean(ref_real)) * (vol_real - jnp.mean(vol_real)))
 
 
+# The sign overlap program holds about three complex64 maps (the two inverse transforms and a temporary): one 2.01
+# GiB request at box 448 (relax#49).
+_SIGN_OVERLAP_MAPS = 3.0
+
+
+def _sign_overlap_exceeds_device_headroom(volume_shape) -> bool:
+    """Whether twice the sign overlap's working set exceeds what the device can hand out now (a fragmentation margin
+    of two, read at the call). Off GPU, or when nothing is known, it is False."""
+
+    from relax.sparse_pass2.sparse_pass2_budget import (
+        _device_free_memory_bytes,
+        _jax_allocator_free_memory_bytes,
+        _jax_allocator_pool_free_bytes,
+        device_available_bytes,
+    )
+
+    if _device_allocator_limit_bytes() is None:
+        return False
+    available = device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+    if available is None:
+        return False
+    return 2.0 * _SIGN_OVERLAP_MAPS * int(np.prod(volume_shape)) * 8 > available
+
+
 def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, volume_shape):
     """Keep reconstructed volumes on the same real-space sign branch as the reference.
 
@@ -1239,7 +1265,20 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
     if reference_ft_flat is None:
         return volume_ft_flat, False
     shape = tuple(int(n) for n in volume_shape)
-    overlap = float(_centered_real_overlap(jnp.asarray(volume_ft_flat), jnp.asarray(reference_ft_flat), volume_shape=shape))
+    if _sign_overlap_exceeds_device_headroom(shape):
+        # The same program on the CPU backend: at the end of a box-448 K=1 M-step on a 16 GB card the device held
+        # both halves' accumulators and unregularized maps, and the program's 2.01 GiB could not be placed (relax#49).
+        cpu = jax.devices("cpu")[0]
+        with jax.default_device(cpu):
+            overlap = float(
+                _centered_real_overlap(
+                    jax.device_put(volume_ft_flat, cpu), jax.device_put(reference_ft_flat, cpu), volume_shape=shape
+                )
+            )
+    else:
+        overlap = float(
+            _centered_real_overlap(jnp.asarray(volume_ft_flat), jnp.asarray(reference_ft_flat), volume_shape=shape)
+        )
     if overlap < 0.0:
         return -volume_ft_flat, True
     return volume_ft_flat, False
