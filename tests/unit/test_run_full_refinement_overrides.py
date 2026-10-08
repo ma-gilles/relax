@@ -918,9 +918,9 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     archive = {}
 
     def build_archive_metadata(result, **kw):
-        archive.update(kw)
         raise _Stop
 
+    monkeypatch.setattr(full_refinement, "replay_archive_metadata", lambda **kw: archive.update(kw) or {})
     monkeypatch.setattr(full_refinement, "build_archive_metadata", build_archive_metadata)
     _stand_in_device(monkeypatch)
     with pytest.raises(_Stop):

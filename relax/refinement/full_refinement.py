@@ -44,6 +44,7 @@ from relax.helpers import xla_memory_reserve
 from relax.helpers.compilation_cache import activate_recovar_compilation_cache
 from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.parity import oracle_admission, startup_noise_inputs
+from relax.parity.archive_provenance import replay_archive_metadata
 from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
 from relax.refinement import command_options, particle_loading, startup_noise, startup_references
 from relax.refinement.refinement_options import apply_k1_refine3d_env_defaults
@@ -1364,8 +1365,6 @@ def main(command=None):
         args=args,
         dataset=ds,
         effective_tau2_fudge=effective_tau2_fudge,
-        follower_replay=follower_topology.replay,
-        frozen_boundary=frozen_boundary,
         initial_sampling=initial_sampling,
         initial_pose_source=initial_poses.provenance,
         max_significants_resolution=runtime_controls.max_significants_resolution,
@@ -1375,9 +1374,14 @@ def main(command=None):
         optimizer_seed_source=optimizer_seed_source,
         particle_diameter_ang=particle_diameter_ang,
         particle_layout=particle_layout,
-        restart=restart_provenance,
-        relion_dispatch_schedule=relion_dispatch_schedule,
-        state_swap_probe=state_swap_probe,
+        replay_provenance=replay_archive_metadata(
+            restart=restart_provenance,
+            frozen_boundary=frozen_boundary,
+            state_swap_probe=state_swap_probe,
+            state_swap_probe_applied_relion_iterations=result.history.state_swap_probe_applied_relion_iterations,
+            follower_replay=follower_topology.replay,
+            relion_dispatch_schedule=relion_dispatch_schedule,
+        ),
         symmetry_provenance=symmetry_provenance,
         tau2_fudge_source=tau2_fudge_source,
         total_time=total_time,

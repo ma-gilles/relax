@@ -9,6 +9,7 @@ from helpers.float_compare import assert_matches
 from helpers.refinement_results import refinement_result
 
 from relax.helpers.iteration_history import RefinementHistory
+from relax.parity.archive_provenance import replay_archive_metadata
 from relax.refinement.command_options import resolve_initial_sampling
 from relax.refinement.refinement_options import RestartProvenance
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
@@ -88,7 +89,18 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
         current_sizes=[16, 24], pixel_resolutions=[12.0, 8.0], wall_times=[2.5, 3.5],
         state_swap_probe_applied_relion_iterations=[2] if diagnostics else [],
     ))
-    metadata = build_archive_metadata(result, **inputs)
+    replay = {
+        name: inputs.pop(name)
+        for name in ("restart", "frozen_boundary", "state_swap_probe", "follower_replay", "relion_dispatch_schedule")
+    }
+    metadata = build_archive_metadata(
+        result,
+        **inputs,
+        replay_provenance=replay_archive_metadata(
+            **replay,
+            state_swap_probe_applied_relion_iterations=result.history.state_swap_probe_applied_relion_iterations,
+        ),
+    )
     assert metadata["half1_indices"] is inputs["particle_layout"].half1_rows
     assert metadata["half2_indices"] is inputs["particle_layout"].half2_rows
     path = tmp_path / "startup.npz"
