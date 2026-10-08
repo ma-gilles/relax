@@ -39,3 +39,21 @@ def test_fresh_class3d_class_distribution_is_uniform():
     log_priors, weights = _initialize_class_log_priors(4)
     np.testing.assert_allclose(weights, np.full(4, 0.25))
     np.testing.assert_allclose(log_priors, np.full(4, -np.log(4.0)))
+
+
+@pytest.mark.parametrize(
+    ("diameter_token", "width_token", "expected"),
+    [("200.000000", "5", (200.0, 5.0)), ("2.500000e+05", "10", (250000.0, 10.0)), ("-1.00000", "5", (-1.0, 5.0))],
+)
+def test_mask_params_read_the_whole_token_relion_wrote(tmp_path, diameter_token, width_token, expected):
+    # MetaDataTable writes doubles as %12.6f, %12.5f when negative, and in e notation outside [1e-3, 1e5]
+    # (metadata_table.cpp:257-277); a digits-only pattern read 2.500000e+05 as 2.5 and missed -1.00000.
+    from relax.relion.relion_metadata import _load_relion_mask_params
+
+    star = tmp_path / "run_it001_optimiser.star"
+    star.write_text(
+        "data_optimiser_general\n\n"
+        f"_rlnParticleDiameter {diameter_token:>12}\n"
+        f"_rlnWidthMaskEdge {width_token:>12}\n"
+    )
+    assert _load_relion_mask_params(star) == expected

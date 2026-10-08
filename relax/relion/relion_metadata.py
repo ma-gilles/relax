@@ -255,16 +255,20 @@ def _relion_star_list_value(text: str, label: str, cast=str):
 
 
 def _load_relion_mask_params(optimiser_star_path):
-    """Extract RELION image-mask parameters from an optimiser STAR file."""
+    """Extract RELION image-mask parameters from an optimiser STAR file.
+
+    Each value is the whole token RELION wrote: ``%12.6f``, ``%12.5f`` for a negative value and ``e``
+    notation outside [1e-3, 1e5] (metadata_table.cpp:257-277).
+    """
     text = Path(optimiser_star_path).read_text(errors="ignore")
 
-    particle_match = re.search(r"rlnParticleDiameter\s+([0-9]+(?:\.[0-9]+)?)", text)
+    particle_match = re.search(r"rlnParticleDiameter\s+(\S+)", text)
     if particle_match is None:
-        particle_match = re.search(r"particle_diameter\s+([0-9]+(?:\.[0-9]+)?)", text)
+        particle_match = re.search(r"particle_diameter\s+(\S+)", text)
 
-    width_match = re.search(r"rlnWidthMaskEdge\s+([0-9]+(?:\.[0-9]+)?)", text)
+    width_match = re.search(r"rlnWidthMaskEdge\s+(\S+)", text)
     if width_match is None:
-        width_match = re.search(r"width_mask_edge\s+([0-9]+(?:\.[0-9]+)?)", text)
+        width_match = re.search(r"width_mask_edge\s+(\S+)", text)
 
     if particle_match is None or width_match is None:
         return None
