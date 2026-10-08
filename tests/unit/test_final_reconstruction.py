@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 
 def reconstruction_settings(*, tau2_fudge=1.0):
     return ReconstructionSettings(
-        grid_size=4,
+        box_size=4,
         voxel_size=1.5,
         volume_shape=(4, 4, 4),
         padding_factor=RECONSTRUCTION_PADDING_FACTOR,

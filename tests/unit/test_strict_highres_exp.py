@@ -36,7 +36,7 @@ def test_windows_cap_only_the_e_step(current_size, score):
         current_size, _optics(), log=LOG, strict_highres_exp_angstrom=12.0
     )
     # M-step consumers (class_maximization's image_current_size, the summed noise shells) keep the current size.
-    assert windows.image_size == current_size and windows.model_size == current_size
+    assert windows.image_current_size == current_size and windows.model_size == current_size
     assert windows.score_window_size == score
     if score < current_size:
         assert windows.engine_model_window_size == current_size
@@ -60,7 +60,7 @@ def test_cap_uses_the_image_pixel_size_without_optics_pixel_sizes():
 
 
 def test_off_windows_are_unchanged():
-    windows = ExpectationWindows(model_size=64, image_size=64, image_box_size=128)
+    windows = ExpectationWindows(model_size=64, image_current_size=64, image_box_size=128)
     assert windows.score_window_size == windows.image_window_size == 64
     assert windows.engine_model_window_size == windows.model_window_size
 
@@ -100,7 +100,7 @@ def test_controller_hands_the_cap_to_the_e_step_and_the_current_size_to_the_m_st
         assert phase.result.sampling.cs_for_engine == 4
         assert phase.result.sampling.model_current_size_for_engine == windows.model_size
         assert plan.result.size == 4
-        assert mstep.kwargs["image_current_size"] == windows.image_size > 4
+        assert mstep.kwargs["image_current_size"] == windows.image_current_size > 4
     # The engine scores at the cap and sums the noise, Wavg and powerClass terms at the full current size.
     assert engine_calls
     for call in engine_calls:

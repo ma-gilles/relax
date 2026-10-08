@@ -140,7 +140,7 @@ def compute_final_class_priors(
     full_half_axis: int,
 ) -> ClassPriors:
     """Estimate each class prior from its reference and merged backprojection."""
-    frame_scale = float(settings.grid_size) ** 4
+    frame_scale = float(settings.box_size) ** 4
     variances = []
     shells = []
     data_vs_prior = []

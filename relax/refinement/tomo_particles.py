@@ -96,20 +96,20 @@ def relion_offset_log_prior_3d(translations_angst, old_offsets_px, *, pixel_size
     ).reshape(centers.shape[0], -1)
 
 
-def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_particle, image_size):
+def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_particle, box_size):
     """Each image's scoring phase operand for every 3D trial shift: float32 ``[I, T, 2]`` radians.
 
     RELION's GPU path adds the particle's old offset (:func:`relion_gpu_old_offsets`, rounded)
     to the trial shift, projects it with the image's ``Aproj`` and stores
     ``-2 pi shift / image_full_size`` as float (acc_ml_optimiser_impl.h:1214-1240;
     :func:`tilt_image_shifts`). Shifts and offsets are in pixels of the image's optics group;
-    ``image_size`` is its full image size (a scalar, or one value per image).
+    ``box_size`` is its image box (a scalar, or one value per image).
     """
 
     image_particle = np.asarray(image_particle, dtype=np.int64)
     image_projections = np.asarray(image_projections, dtype=np.float64)
     n_images = int(image_particle.shape[0])
-    size = np.broadcast_to(np.asarray(image_size, dtype=np.float64), (n_images,))
+    size = np.broadcast_to(np.asarray(box_size, dtype=np.float64), (n_images,))
 
     def phases(rows):
         shifts = tilt_image_shifts(shifts_3d, old_offsets_3d, image_projections[rows], image_particle[rows])

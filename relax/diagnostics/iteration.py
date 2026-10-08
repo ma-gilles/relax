@@ -82,7 +82,7 @@ def dump_numbered_iteration(
             else 0,
             tau2_fudge=float(settings.tau2_fudge),
             voxel_size=pixel_size_angstrom,
-            grid_size=int(settings.grid_size),
+            grid_size=int(settings.box_size),
             volume_shape=tuple(settings.volume_shape),
             ave_pmax=float(ave_pmax),
             fsc=np.asarray(fsc, dtype=np.float64),

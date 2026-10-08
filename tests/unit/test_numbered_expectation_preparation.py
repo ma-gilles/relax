@@ -29,7 +29,7 @@ def preparation_inputs(*, local=False, adaptive=False):
         iteration=5, numbered_relion_iteration=17,
         collect_local_search_profile=True, local_profile_history=[], observer=scoring['observer'],
     )
-    return phase.grid, ExpectationWindows(model_size=4, image_size=2, image_box_size=4), inputs
+    return phase.grid, ExpectationWindows(model_size=4, image_current_size=2, image_box_size=4), inputs
 
 
 @pytest.mark.parametrize('adaptive', [False, True])
@@ -73,7 +73,7 @@ def test_dense_phase_preserves_full_grid_sentinels_and_distinct_support(
 ):
     grid, _, inputs = preparation_inputs()
     phase = expectation.prepare_numbered_expectation(
-        grid, ExpectationWindows(model_size=model_size, image_size=image_size, image_box_size=box_size),
+        grid, ExpectationWindows(model_size=model_size, image_current_size=image_size, image_box_size=box_size),
         **inputs,
     )
     assert phase.sampling.model_current_size_for_engine == model_window

@@ -178,11 +178,11 @@ def test_mode_relax_is_refused_where_no_option_is_available(route, reason):
 def test_a_continuation_must_resolve_to_the_recorded_options():
     def validate(recorded, consistency):
         snapshot = SimpleNamespace(
-            relion_iteration=2, n_classes=1, ori_size=8,
+            relion_iteration=2, n_classes=1, box_size=8,
             extra={f"consistency_{name}": value for name, value in recorded.non_default().items()},
         )
         iteration_snapshot.validate_resume_snapshot(
-            snapshot, init_relion_iteration=2, n_classes=1, grid_size=8, options=RefinementOptions(consistency=consistency)
+            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=RefinementOptions(consistency=consistency)
         )
 
     relax = _resolve(RELAX)

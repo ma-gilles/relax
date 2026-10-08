@@ -77,7 +77,7 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     mean_variance, dvp = startup_references.relion_start_tau2_and_data_vs_prior(
         reference,
         sigma2 * float(n) ** 4,
-        grid_size=n,
+        box_size=n,
         volume_shape=(n, n, n),
         tau2_fudge=1.0,
         nr_particles=n_half_particles,
@@ -119,7 +119,7 @@ def test_class3d_start_data_vs_prior_matches_relion_run_it000_model_per_class():
         _, dvp = startup_references.relion_start_tau2_and_data_vs_prior(
             reference,
             sigma2 * float(n) ** 4,
-            grid_size=n,
+            box_size=n,
             volume_shape=(n, n, n),
             tau2_fudge=4.0,
             nr_particles=n_particles,

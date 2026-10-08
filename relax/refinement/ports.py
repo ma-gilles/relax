@@ -314,7 +314,7 @@ class RunObserver:
         """A numbered iteration's noise spectra are estimated (the new ones beside the previous model's)."""
 
     def class_image_size_planned(
-        self, iteration: int, plan, *, previous_size: int, grid_size: int, has_high_fsc_at_limit: bool,
+        self, iteration: int, plan, *, previous_size: int, box_size: int, has_high_fsc_at_limit: bool,
         incr_size: int, state,
     ) -> None:
         """A Class3D iteration's image size is planned (``plan``, its ``ClassImageSize``)."""

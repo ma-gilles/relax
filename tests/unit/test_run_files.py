@@ -41,7 +41,7 @@ N_SHELLS = BOX // 2 + 1
 
 def test_snapshot_capture_has_a_staged_run_lifecycle():
     assert tuple(field.name for field in dataclasses.fields(SnapshotCapture)) == (
-        "n_classes", "grid_size", "voxel_size", "tau2_fudge", "consistency",
+        "n_classes", "box_size", "voxel_size", "tau2_fudge", "consistency",
     )
     assert tuple(inspect.signature(SnapshotCapture.begin).parameters) == (
         "self", "relion_iteration", "state", "sigma_offset_angstrom_per_half",
@@ -93,7 +93,7 @@ def test_controller_publishes_each_checkpoint_from_one_run_capture(monkeypatch, 
 def test_staged_snapshot_capture_copies_complete_k1_state():
     capture = SnapshotCapture(
         n_classes=1,
-        grid_size=BOX,
+        box_size=BOX,
         voxel_size=2.5,
         tau2_fudge=1.25,
     )
@@ -227,7 +227,7 @@ def _k1_snapshot(half_sizes, rng):
     return IterationSnapshot(
         relion_iteration=5,
         n_classes=1,
-        ori_size=BOX,
+        box_size=BOX,
         pixel_size=2.5,
         tau2_fudge=1.0,
         means=[_fourier(reals[0]), _fourier(reals[1])],
@@ -275,7 +275,7 @@ def _assert_snapshots_match(read, written):
     for name in (
         "relion_iteration",
         "n_classes",
-        "ori_size",
+        "box_size",
         "current_size",
         "incr_size",
         "has_high_fsc_at_limit",
@@ -517,7 +517,7 @@ def test_class3d_run_files_round_trip(tmp_path):
     snapshot = IterationSnapshot(
         relion_iteration=3,
         n_classes=k,
-        ori_size=BOX,
+        box_size=BOX,
         pixel_size=2.5,
         tau2_fudge=4.0,
         means=[stack, stack],
@@ -698,7 +698,7 @@ def test_estimated_resolution_is_the_last_shell_before_data_vs_prior_drops_below
 
     from relax.refinement.run_files import _estimated_resolution_angstrom as estimate
 
-    snapshot = SimpleNamespace(pixel_size=2.0, ori_size=64)
+    snapshot = SimpleNamespace(pixel_size=2.0, box_size=64)
     # Shells 0-3 are at or above 1, shell 4 is the first below: maxres 3, 128 A / 3. A later shell above 1 is ignored.
     assert estimate(np.array([999.0, 8.0, 2.0, 1.0, 0.5, 3.0]), snapshot) == pytest.approx(128.0 / 3.0)
     assert estimate(np.array([999.0, 8.0, 2.0]), snapshot) == pytest.approx(64.0)

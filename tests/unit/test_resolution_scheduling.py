@@ -419,7 +419,7 @@ def test_iteration1_half_join_is_capped_by_the_ini_high_resolution(ini_high, las
         (ft_y_0.reshape(-1), ft_y_1.reshape(-1)),
         (ft_ctf.copy(), ft_ctf.copy()),
         accumulator_volume_shape=volume_shape,
-        grid_size=grid_size,
+        box_size=grid_size,
         voxel_size=voxel_size,
         padding_factor=1,
         low_resolution_angstrom=40.0,

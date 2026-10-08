@@ -124,9 +124,9 @@ def test_replayed_or_frozen_relion_state_refuses_the_option(name, value, group):
 @NON_DEFAULT
 def test_a_continuation_must_repeat_the_option(name, value):
     def validate(extra, consistency):
-        snapshot = SimpleNamespace(relion_iteration=2, n_classes=1, ori_size=8, extra=extra)
+        snapshot = SimpleNamespace(relion_iteration=2, n_classes=1, box_size=8, extra=extra)
         iteration_snapshot.validate_resume_snapshot(
-            snapshot, init_relion_iteration=2, n_classes=1, grid_size=8, options=RefinementOptions(consistency=consistency)
+            snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=RefinementOptions(consistency=consistency)
         )
 
     chosen = RelionConsistencyOptions(**{name: value})

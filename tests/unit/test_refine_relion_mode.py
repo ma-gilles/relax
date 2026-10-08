@@ -6977,7 +6977,7 @@ class TestRelionModeSmokeTest:
         )
 
         settings = mean_helpers_module.ReconstructionSettings(
-            grid_size=8,
+            box_size=8,
             voxel_size=np.float32(2.125),
             volume_shape=VOLUME_SHAPE,
             padding_factor=1,
@@ -7035,7 +7035,7 @@ class TestRelionModeSmokeTest:
             axis=0,
         )
         settings = mean_helpers_module.ReconstructionSettings(
-            grid_size=8,
+            box_size=8,
             voxel_size=1.0,
             volume_shape=VOLUME_SHAPE,
             padding_factor=1,
@@ -9686,7 +9686,7 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
             jnp.asarray(unregularized),
             jnp.ones_like(jnp.asarray(unregularized).real),
             mean_helpers_module.ReconstructionSettings(
-                grid_size=2, voxel_size=1.0, volume_shape=(2, 1, 1),
+                box_size=2, voxel_size=1.0, volume_shape=(2, 1, 1),
                 padding_factor=1, projection_padding_factor=1, minres_map=1,
                 width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0,
                 particle_diameter_angstrom=None, first_iteration_lowpass_angstrom=None,

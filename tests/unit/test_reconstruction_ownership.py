@@ -32,7 +32,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
         "relion_firstiter_cc_this_iter", "observer",
     )
     assert tuple(field.name for field in dataclasses.fields(mean_helpers_module.ReconstructionSettings)) == (
-        "grid_size", "voxel_size", "volume_shape", "padding_factor",
+        "box_size", "voxel_size", "volume_shape", "padding_factor",
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
         "gridding_kernel", "shell_pair_counting",
@@ -151,7 +151,7 @@ class TestReconstructionOwnership:
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
         settings = mean_helpers_module.ReconstructionSettings(
-            grid_size=8,
+            box_size=8,
             voxel_size=1.0,
             volume_shape=VOLUME_SHAPE,
             padding_factor=1,
@@ -454,7 +454,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         mean_helpers_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     settings = mean_helpers_module.ReconstructionSettings(
-        grid_size=4,
+        box_size=4,
         voxel_size=1.0,
         volume_shape=(4, 4, 4),
         padding_factor=2,

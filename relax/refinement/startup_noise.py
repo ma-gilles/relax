@@ -310,7 +310,7 @@ def prepare_startup_noise(
     radial = sigma2 * float(dataset.grid_size) ** 4
     noise = np.stack([
         scoring_noise_from_sigma2(
-            sigma2_group, grid_size=int(dataset.grid_size), output_dtype=output_dtype,
+            sigma2_group, box_size=int(dataset.grid_size), output_dtype=output_dtype,
         )
         for sigma2_group in sigma2
     ])
@@ -336,7 +336,7 @@ def live_initial_noise(dataset, half_sets, *, mask_params, log):
             "fresh K=1 live-noise scoring currently requires one optics group",
         )
     sigma2 = sigma2_per_group[0]
-    variance = scoring_noise_from_sigma2(sigma2, grid_size=int(dataset.grid_size), output_dtype=np.float64)
+    variance = scoring_noise_from_sigma2(sigma2, box_size=int(dataset.grid_size), output_dtype=np.float64)
     log.warning(
         "STRICT-PARITY: fresh K=1 RELION live initial noise enabled: particles=%d "
         "source_rows_head=%s sigma2_head=%s",
@@ -350,16 +350,16 @@ def live_initial_noise(dataset, half_sets, *, mask_params, log):
 def scoring_noise_from_sigma2(
     sigma2,
     *,
-    grid_size: int,
+    box_size: int,
     output_dtype=np.float32,
 ) -> np.ndarray:
     """Expand a RELION-unit radial sigma2 spectrum into RECOVAR FFT units."""
 
-    radial_native = np.asarray(sigma2, dtype=np.float64) * float(grid_size) ** 4
+    radial_native = np.asarray(sigma2, dtype=np.float64) * float(box_size) ** 4
     return np.asarray(
         utils.make_radial_image(
             jnp.asarray(radial_native),
-            (int(grid_size), int(grid_size)),
+            (int(box_size), int(box_size)),
             extend_last_frequency=True,
         ),
         dtype=output_dtype,

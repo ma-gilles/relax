@@ -140,7 +140,7 @@ def _snapshot():
     state = RefinementState(iteration=7, healpix_order=3, current_resolution=9.0,
                             previous_resolution=10.0, nr_iter_wo_resol_gain=2, max_healpix_order=7)
     return IterationSnapshot(
-        relion_iteration=7, n_classes=1, ori_size=64, pixel_size=2.25, tau2_fudge=1.0,
+        relion_iteration=7, n_classes=1, box_size=64, pixel_size=2.25, tau2_fudge=1.0,
         means=[], tau2_shells=np.empty(0), data_vs_prior=np.empty(0), noise_shells=[],
         sigma_offset_angstrom=(2.0, 2.0), current_size=32, incr_size=10,
         has_high_fsc_at_limit=False, random_perturbation=0.0, state_fields=refinement_state_fields(state),
@@ -161,7 +161,7 @@ def test_valid_continuation_restores_recorded_state_and_keeps_configured_run_lim
     assert_matches(state.current_resolution, 9.0)
 
 
-@pytest.mark.parametrize('field,value', [('relion_iteration', 6), ('n_classes', 4), ('ori_size', 128)])
+@pytest.mark.parametrize('field,value', [('relion_iteration', 6), ('n_classes', 4), ('box_size', 128)])
 def test_continuation_refuses_mismatched_iteration_class_or_box(field, value):
     snapshot = dataclasses.replace(_snapshot(), **{field: value})
     options = RefinementOptions(schedule=RefinementSchedule(init_relion_iteration=7),

@@ -72,7 +72,7 @@ def test_startup_noise_preserves_order_and_float32_boundary(monkeypatch):
     assert radial.dtype == np.float64 and noise.dtype == np.float32
     assert_matches(radial, sigma[0] * 8**4)
     assert_matches(noise, startup_noise.scoring_noise_from_sigma2(
-        sigma[0], grid_size=8, output_dtype=np.float32))
+        sigma[0], box_size=8, output_dtype=np.float32))
 
 
 def test_startup_noise_float64_output_for_double_scoring(monkeypatch):

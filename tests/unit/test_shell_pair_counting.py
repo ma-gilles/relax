@@ -514,7 +514,7 @@ def test_start_up_tau2_and_data_vs_prior_take_the_counting(monkeypatch):
     # The command's start-up helper forwards the option.
     recorded = record_calls(monkeypatch, reference_initialization, "relion_initial_tau2_and_data_vs_prior")
     startup_references.relion_start_tau2_and_data_vs_prior(
-        volume, sigma2 * 8.0**4, grid_size=8, volume_shape=(8, 8, 8), tau2_fudge=1.0, nr_particles=10,
+        volume, sigma2 * 8.0**4, box_size=8, volume_shape=(8, 8, 8), tau2_fudge=1.0, nr_particles=10,
         shell_pair_counting="once",
     )
     assert recorded[0][1]["shell_pair_counting"] == "once"
@@ -570,7 +570,7 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
 
     monkeypatch.setattr(mean_helpers, "estimate_class_prior", estimate)
     settings = mean_helpers.ReconstructionSettings(
-        grid_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
+        box_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None, shell_pair_counting=counting,
     )

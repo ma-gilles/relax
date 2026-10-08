@@ -395,7 +395,7 @@ def _class_map_paths(root: Path, snapshot: IterationSnapshot, half: int | None):
 
 
 def _volume_shape(snapshot):
-    n = int(snapshot.ori_size)
+    n = int(snapshot.box_size)
     return (n, n, n)
 
 
@@ -421,7 +421,7 @@ def _write_maps(root: Path, snapshot: IterationSnapshot) -> None:
 
 def _resolution_columns(snapshot, n_shells):
     shells = np.arange(n_shells)
-    box = float(snapshot.pixel_size) * float(snapshot.ori_size)
+    box = float(snapshot.pixel_size) * float(snapshot.box_size)
     resolution = shells / box
     with np.errstate(divide="ignore"):
         angstrom = np.where(shells > 0, box / np.maximum(shells, 1), 999.0)
@@ -438,7 +438,7 @@ def _estimated_resolution_angstrom(data_vs_prior, snapshot) -> float:
     maxres = int(below[0]) - 1 if below.size else len(data_vs_prior) - 1
     if maxres <= 0:
         return float("inf")
-    return float(snapshot.pixel_size) * float(snapshot.ori_size) / maxres
+    return float(snapshot.pixel_size) * float(snapshot.box_size) / maxres
 
 
 def _past_current_size(n_shells: int, current_size: int) -> np.ndarray:
@@ -484,8 +484,8 @@ def _relax_spectra_past_current_size(tau2, data_vs_prior, current_size, tau2_fud
 
 
 def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSettings, group_rows):
-    frame = float(snapshot.ori_size) ** 4
-    norm_frame = float(snapshot.ori_size) ** 2
+    frame = float(snapshot.box_size) ** 4
+    norm_frame = float(snapshot.box_size) ** 2
     state = snapshot.state_fields
     # RELION writes Angstrom here (MlModel::write, ml_model.cpp:633 writes 1./current_resolution of its
     # reciprocal-Angstrom member); the state already holds Angstrom. 999 A marks no estimate yet.
@@ -504,7 +504,7 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
         general = [
             ("rlnReferenceDimensionality", 3),
             ("rlnDataDimensionality", 2),
-            ("rlnOriginalImageSize", int(snapshot.ori_size)),
+            ("rlnOriginalImageSize", int(snapshot.box_size)),
             ("rlnCurrentResolution", resolution_angstrom),
             ("rlnCurrentImageSize", int(snapshot.current_size)),
             ("rlnPaddingFactor", float(settings.padding_factor)),
@@ -688,7 +688,7 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
         if rows.size and snapshot.image_corrections[h] is not None:
             image = np.asarray(snapshot.image_corrections[h], dtype=np.float64)
             scale = np.asarray(snapshot.scale_corrections[h], dtype=np.float64)
-            norm[rows] = float(snapshot.avg_norm_correction[h]) / float(snapshot.ori_size) ** 2 * scale / image
+            norm[rows] = float(snapshot.avg_norm_correction[h]) / float(snapshot.box_size) ** 2 * scale / image
     table = dict(particles)
     columns = {
         "rlnAngleRot": eulers[:, 0],
@@ -811,7 +811,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
         *([("relax_mode", settings.mode)] if settings.mode != "relion" else []),
         ("relax_relion_iteration", int(snapshot.relion_iteration)),
         ("relax_n_classes", int(snapshot.n_classes)),
-        ("relax_ori_size", int(snapshot.ori_size)),
+        ("relax_ori_size", int(snapshot.box_size)),
         ("relax_pixel_size", pixel),
         ("relax_current_size", int(snapshot.current_size)),
         ("relax_random_perturbation", float(snapshot.random_perturbation)),
@@ -895,9 +895,9 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     relion_iteration = int(general["rlnCurrentIteration"])
     n_classes = int(relax_state["relax_n_classes"])
     k_class = n_classes > 1
-    ori_size = int(relax_state["relax_ori_size"])
+    box_size = int(relax_state["relax_ori_size"])
     pixel_size = float(relax_state["relax_pixel_size"])
-    frame = float(ori_size) ** 4
+    frame = float(box_size) ** 4
     state_fields = {
         name: _state_value(name, _state_text(relax_state, name)) for name in REFINEMENT_STATE_SCALAR_FIELDS
     }
@@ -930,7 +930,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     def _general(model, label):
         return model["model_general"][label]
 
-    volume_shape = (ori_size, ori_size, ori_size)
+    volume_shape = (box_size, box_size, box_size)
     means = []
     for model in models:
         paths = [directory / name for name in model["model_classes"]["rlnReferenceImage"]]
@@ -963,7 +963,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     noise_shells = []
     for model in halves:
         n_optics = int(_general(model, "rlnNrOpticsGroups"))
-        n_shells = ori_size // 2 + 1
+        n_shells = box_size // 2 + 1
         rows = np.zeros((n_optics, n_shells), dtype=np.float64)
         for g in range(n_optics):
             table = model[f"model_optics_group_{g + 1}"]
@@ -987,7 +987,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     if all(p is None for p in direction_prior):
         direction_prior = None
 
-    avg_norm = tuple(float(_general(m, "rlnNormCorrectionAverage")) * float(ori_size) ** 2 for m in halves)
+    avg_norm = tuple(float(_general(m, "rlnNormCorrectionAverage")) * float(box_size) ** 2 for m in halves)
     classes_table = models[0]["model_classes"]
     acc_rot = _floats(classes_table["rlnAccuracyRotations"])
     acc_trans = _floats(classes_table["rlnAccuracyTranslationsAngst"])
@@ -1004,7 +1004,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     # A subtomogram run's data.star carries rlnOriginZAngst (3D offsets).
     offset_labels = ("rlnOriginXAngst", "rlnOriginYAngst") + (("rlnOriginZAngst",) if "rlnOriginZAngst" in data else ())
     offsets = np.stack([_floats(data[c]) for c in offset_labels], axis=1) / pixel_size
-    norm = _floats(data["rlnNormCorrection"]) * float(ori_size) ** 2
+    norm = _floats(data["rlnNormCorrection"]) * float(box_size) ** 2
     group_number = _ints(data["rlnGroupNumber"])
     class_number = _ints(data["rlnClassNumber"]) if k_class else None
     pmax = _floats(data["rlnMaxValueProbDistribution"]) if "rlnMaxValueProbDistribution" in data else None
@@ -1033,7 +1033,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
     return IterationSnapshot(
         relion_iteration=relion_iteration,
         n_classes=n_classes,
-        ori_size=ori_size,
+        box_size=box_size,
         pixel_size=pixel_size,
         tau2_fudge=float(general["rlnTau2FudgeArg"]),
         means=means,

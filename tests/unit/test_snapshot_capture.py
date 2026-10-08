@@ -92,7 +92,7 @@ def _assert_capture_owns_its_copies(result, inputs):
 @pytest.mark.parametrize('empty_second_half', [False, True])
 def test_k1_capture_copies_the_half_maps_and_particle_frame(dtype, offset_dimension, empty_second_half):
     inputs = _k1_inputs(dtype, offset_dimension, empty_second_half)
-    capture = SnapshotCapture(n_classes=1, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
+    capture = SnapshotCapture(n_classes=1, box_size=16, voxel_size=1.5, tau2_fudge=1.0)
     result = capture.finish_k1(_begin(capture), **inputs)
     _assert_shared_capture(result, dtype, offset_dimension, empty_second_half)
     assert result.means[0] is not result.means[1]
@@ -109,7 +109,7 @@ def test_k1_capture_copies_the_half_maps_and_particle_frame(dtype, offset_dimens
 @pytest.mark.parametrize('empty_second_half', [False, True])
 def test_class_capture_copies_the_class_stack_and_particle_frame(dtype, offset_dimension, empty_second_half):
     inputs = _class_inputs(4, dtype, offset_dimension, empty_second_half)
-    capture = SnapshotCapture(n_classes=4, grid_size=16, voxel_size=1.5, tau2_fudge=1.0)
+    capture = SnapshotCapture(n_classes=4, box_size=16, voxel_size=1.5, tau2_fudge=1.0)
     result = capture.finish_class(_begin(capture), **inputs)
     _assert_shared_capture(result, dtype, offset_dimension, empty_second_half)
     assert result.means[0] is result.means[1]

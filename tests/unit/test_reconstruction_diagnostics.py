@@ -124,7 +124,7 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         weight_shells=values["shell_stats_k"],
     )
     settings = ReconstructionSettings(
-        grid_size=values["grid_size"], voxel_size=values["voxel_size"],
+        box_size=values["grid_size"], voxel_size=values["voxel_size"],
         volume_shape=(16, 16, 16), padding_factor=values["PADDING_FACTOR"],
         projection_padding_factor=2, minres_map=5, width_mask_edge=5, fmask_edge=2,
         tau2_fudge=values["tau2_fudge"], particle_diameter_angstrom=None,

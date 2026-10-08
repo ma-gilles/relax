@@ -15,7 +15,7 @@ def _global_window(incoming, *, current=172, sealed=None):
     """The adaptive pass-1 window of a box-380 run at ``current`` for the incoming order ``incoming``."""
     return plan_adaptive_image_size(
         incoming,
-        ExpectationWindows(model_size=current, image_size=current, image_box_size=380),
+        ExpectationWindows(model_size=current, image_current_size=current, image_box_size=380),
         RunOptics(
             image_geometry=ImageGeometry(image_shape=(380, 380), pixel_size_angstrom=1.400011),
             model_pixel_size=1.400011, optics_image_sizes=[380], optics_pixel_sizes=[1.400011],

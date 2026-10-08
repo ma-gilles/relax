@@ -26,7 +26,7 @@ def _settings(first_cc, flatten_solvent):
     # settings turn float32 scalars into Python floats, so both operations
     # compute the mask radius in double precision.
     return mean_helpers.ReconstructionSettings(
-        grid_size=2, voxel_size=np.float32(1.3), volume_shape=(2, 2, 2),
+        box_size=2, voxel_size=np.float32(1.3), volume_shape=(2, 2, 2),
         padding_factor=2, projection_padding_factor=1, minres_map=0,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1,
         particle_diameter_angstrom=np.float32(3.7) if flatten_solvent else None,

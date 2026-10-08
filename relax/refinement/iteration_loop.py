@@ -462,7 +462,7 @@ def class_maximization(
         # iteration, so only the shell curves carry the taper.
         tapered_data_vs_prior = _firstiter_cc_ini_high_tapered(
             class_priors.data_vs_prior,
-            reconstruction_settings.grid_size,
+            reconstruction_settings.box_size,
             source_pixel_size_angstrom,
             parity.relion_firstiter_ini_high_angstrom,
             filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
@@ -561,7 +561,7 @@ def k1_maximization(
             (Ft_y_0, Ft_y_1),
             (Ft_ctf_0, Ft_ctf_1),
             accumulator_volume_shape=mstep_accumulator_shape,
-            grid_size=reconstruction_settings.grid_size,
+            box_size=reconstruction_settings.box_size,
             voxel_size=source_pixel_size_angstrom,
             padding_factor=RECONSTRUCTION_PADDING_FACTOR,
             low_resolution_angstrom=parity.low_resol_join_halves_angstrom,
@@ -693,7 +693,7 @@ def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coa
     )
 
 
-def _internal_solvent_mask(path, grid_size, pixel_size_angstrom):
+def _internal_solvent_mask(path, box_size, pixel_size_angstrom):
     """RELION --solvent_mask on the model grid in relax's internal (z, y, x) frame, or None.
 
     Map files hold RELION's axis order, the transpose of the internal frame (relax.helpers.map_io);
@@ -703,7 +703,7 @@ def _internal_solvent_mask(path, grid_size, pixel_size_angstrom):
         return None
     from relax.reconstruction.solvent_mask import read_solvent_mask
 
-    mask = read_solvent_mask(path, box=int(grid_size), pixel_size=float(pixel_size_angstrom))
+    mask = read_solvent_mask(path, box=int(box_size), pixel_size=float(pixel_size_angstrom))
     return np.ascontiguousarray(np.transpose(mask, (2, 1, 0)))
 
 
@@ -776,7 +776,6 @@ def refine_single_volume(
         image_shape=experiment_datasets[0].image_shape,
         pixel_size_angstrom=source_pixel_size_angstrom,
     )
-    grid_size = image_geometry.box_size
     n_classes = int(options.k_class.n_classes)
     k_class_enabled = n_classes > 1
     if (options.parity.relion_optics_image_sizes is None) != (options.parity.relion_optics_pixel_sizes is None):
@@ -851,7 +850,7 @@ def refine_single_volume(
     )
 
     reconstruction_settings = ReconstructionSettings(
-        grid_size=grid_size,
+        box_size=image_geometry.box_size,
         voxel_size=image_geometry.pixel_size_angstrom,
         volume_shape=volume_shape,
         padding_factor=RECONSTRUCTION_PADDING_FACTOR,
@@ -864,7 +863,9 @@ def refine_single_volume(
         first_iteration_lowpass_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
         gridding_kernel=consistency.gridding_kernel,
         shell_pair_counting=consistency.shell_pair_counting,
-        solvent_mask=_internal_solvent_mask(options.solvent.mask_path, grid_size, image_geometry.pixel_size_angstrom),
+        solvent_mask=_internal_solvent_mask(
+            options.solvent.mask_path, image_geometry.box_size, image_geometry.pixel_size_angstrom
+        ),
         solvent_correct_fsc=options.solvent.correct_fsc,
         solvent_fsc_seed=int(
             (
@@ -877,7 +878,7 @@ def refine_single_volume(
     )
     snapshot_capture = SnapshotCapture(
         n_classes=n_classes,
-        grid_size=grid_size,
+        box_size=image_geometry.box_size,
         voxel_size=image_geometry.pixel_size_angstrom,
         tau2_fudge=options.parity.tau2_fudge,
         consistency=consistency.non_default(),
@@ -1302,7 +1303,7 @@ def refine_single_volume(
         # and angular sampling select this expectation's grid.
         if not has_previous_iteration:
             image_size_plan = plan_initial_image_size(
-                options, grid_size=grid_size, pixel_size_angstrom=source_pixel_size_angstrom,
+                options, box_size=image_geometry.box_size, pixel_size_angstrom=source_pixel_size_angstrom,
                 incr_size=relion_incr_size, has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
                 dtype=scoring_dtype, log=logger,
             )
@@ -1316,7 +1317,7 @@ def refine_single_volume(
                 image_size_plan = plan_class_image_size(
                     previous_data_vs_prior_for_scheduling,
                     previous_size=prev_cs,
-                    grid_size=grid_size,
+                    box_size=image_geometry.box_size,
                     pixel_size_angstrom=source_pixel_size_angstrom,
                     incr_size=relion_incr_size,
                     ave_pmax=state.ave_Pmax,
@@ -1326,7 +1327,7 @@ def refine_single_volume(
                     log=logger,
                 )
                 observer.class_image_size_planned(
-                    iteration, image_size_plan, previous_size=prev_cs, grid_size=grid_size,
+                    iteration, image_size_plan, previous_size=prev_cs, box_size=image_geometry.box_size,
                     has_high_fsc_at_limit=relion_has_high_fsc_at_limit, incr_size=relion_incr_size, state=state,
                 )
             else:
@@ -1336,7 +1337,7 @@ def refine_single_volume(
                     restart=resume,
                     data_vs_prior=previous_data_vs_prior_for_scheduling,
                     previous_size=prev_cs,
-                    grid_size=grid_size,
+                    box_size=image_geometry.box_size,
                     pixel_size_angstrom=source_pixel_size_angstrom,
                     incr_size=relion_incr_size,
                     has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
@@ -1353,7 +1354,7 @@ def refine_single_volume(
         current_size = resolve_current_size(
             image_size_plan, options, previous_size=prev_cs if has_previous_iteration else None,
             incr_size=relion_incr_size, has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
-            ave_pmax=state.ave_Pmax, iteration=iteration, grid_size=grid_size, log=logger,
+            ave_pmax=state.ave_Pmax, iteration=iteration, box_size=image_geometry.box_size, log=logger,
         )
 
         # RELION updates image_coarse_size before updateAngularSampling at the
@@ -1431,7 +1432,7 @@ def refine_single_volume(
             class_weights=class_mixture.weights,
             sigma2_noise_native=noise_model.radial_per_half[0],
             current_size=current_size, accuracy_image_size=strict_e_step_size(current_size, optics, options),
-            image_box_size=grid_size,
+            image_box_size=image_geometry.box_size,
             n_classes=n_classes,
             iteration=iteration,
             native_sampling_boundary=native_sampling_boundary,
@@ -1583,7 +1584,7 @@ def refine_single_volume(
         )
         coarse_cs = (
             coarse_image_plan.size
-            if coarse_image_plan is not None and coarse_image_plan.size < grid_size
+            if coarse_image_plan is not None and coarse_image_plan.size < image_geometry.box_size
             else None
         )
         if use_adaptive:
@@ -1837,7 +1838,7 @@ def refine_single_volume(
                 halves=halves,
                 iteration=iteration,
                 current_size=current_size,
-                image_current_size=sampling_plan.windows.image_size,
+                image_current_size=sampling_plan.windows.image_current_size,
                 mstep_accumulator_shape=mstep_accumulator_shape,
                 mstep_full_half_axis=mstep_full_half_axis,
                 projector_power_spectrum=(
@@ -2027,7 +2028,7 @@ def refine_single_volume(
             resolution_estimate = estimate_class_iteration_resolution(
                 history.data_vs_prior_trajectory[-1],
                 current_size=current_size,
-                grid_size=grid_size,
+                grid_size=image_geometry.box_size,
                 voxel_size=source_pixel_size_angstrom,
                 emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
                 ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
@@ -2041,7 +2042,7 @@ def refine_single_volume(
             resolution_estimate = estimate_k1_iteration_resolution(
                 mstep.tau2_update_details["ssnr_shells"],
                 current_size=current_size,
-                grid_size=grid_size,
+                grid_size=image_geometry.box_size,
                 voxel_size=source_pixel_size_angstrom,
                 emulate_relion_firstiter_cc=options.parity.emulate_relion_firstiter_cc,
                 ini_high_angstrom=options.parity.relion_firstiter_ini_high_angstrom,
@@ -2229,7 +2230,7 @@ def refine_single_volume(
                     _zero_shells_past_current_size(
                         fsc,
                         current_size=current_size,
-                        grid_size=grid_size,
+                        grid_size=image_geometry.box_size,
                         dtype=scoring_dtype,
                     ),
                     current_size,

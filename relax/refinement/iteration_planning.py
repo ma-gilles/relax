@@ -113,14 +113,14 @@ class ExpectationWindows:
     """Model and particle Fourier widths for one numbered expectation."""
 
     model_size: int
-    image_size: int
+    image_current_size: int
     image_box_size: int
-    # --strict_highres_exp: the E-step's image size, below image_size; None scores at image_size.
+    # --strict_highres_exp: the E-step's image size, below image_current_size; None scores at image_current_size.
     score_size: int | None = None
 
     @property
     def image_window_size(self) -> int | None:
-        return self.image_size if self.image_size < self.image_box_size else None
+        return self.image_current_size if self.image_current_size < self.image_box_size else None
 
     @property
     def score_window_size(self) -> int | None:
@@ -132,21 +132,21 @@ class ExpectationWindows:
     @property
     def wsum_size_for_engine(self) -> int | None:
         """The weighted sums' image size an engine needs when the E-step scores below it, else None."""
-        if self.score_size is not None and self.score_size < self.image_size:
-            return int(self.image_size)
+        if self.score_size is not None and self.score_size < self.image_current_size:
+            return int(self.image_current_size)
         return None
 
     @property
     def engine_model_window_size(self) -> int | None:
         """The M-step window an engine reconstructs at; explicit whenever the E-step scores below it."""
-        if self.score_size is not None and self.score_size < self.image_size:
+        if self.score_size is not None and self.score_size < self.image_current_size:
             return self.model_size
         return self.model_window_size
 
     @property
     def model_window_size(self) -> int | None:
         # Engines otherwise reuse the image cutoff for a None model window.
-        if self.model_size < self.image_box_size or self.model_size != self.image_size:
+        if self.model_size < self.image_box_size or self.model_size != self.image_current_size:
             return self.model_size
         return None
 
@@ -165,7 +165,7 @@ def plan_expectation_windows(
     model_pixel_size = optics.model_pixel_size
     optics_image_sizes = None if optics.multi_shape_halves else optics.optics_image_sizes
     optics_pixel_sizes = optics.optics_pixel_sizes
-    image_size = current_size
+    image_current_size = current_size
     if optics_image_sizes is not None:
         remapped = relion_optics_image_current_sizes(
             current_size,
@@ -180,12 +180,12 @@ def plan_expectation_windows(
                 "K=1 parity currently requires all optics groups to share one remapped "
                 f"image current size; got {remapped.tolist()}",
             )
-        image_size = int(unique_sizes[0])
-    if image_size != current_size:
+        image_current_size = int(unique_sizes[0])
+    if image_current_size != current_size:
         log.info(
             "RELION optics current-size remap: model_current_size=%d "
             "image_current_size=%d model_pixel_size=%.9g",
-            current_size, image_size, model_pixel_size,
+            current_size, image_current_size, model_pixel_size,
         )
     score_size = None
     if strict_highres_exp_angstrom is not None:
@@ -198,14 +198,14 @@ def plan_expectation_windows(
             int(optics.optics_image_sizes[0]) if optics.optics_image_sizes is not None else image_geometry.box_size,
             strict_highres_exp_angstrom,
         )
-        score_size = min(limit, image_size)
+        score_size = min(limit, image_current_size)
         log.info(
             "RELION --strict_highres_exp %.3f A: E-step size %d (limit %d, image current size %d)",
-            strict_highres_exp_angstrom, score_size, limit, image_size,
+            strict_highres_exp_angstrom, score_size, limit, image_current_size,
         )
     return ExpectationWindows(
         model_size=current_size,
-        image_size=image_size,
+        image_current_size=image_current_size,
         image_box_size=image_geometry.box_size,
         score_size=score_size,
     )
@@ -274,7 +274,7 @@ def plan_adaptive_image_size(
         )
         coarse_size = clamp_relion_coarse_image_size(
             coarse_size,
-            windows.image_size if windows.image_window_size is not None else None,
+            windows.image_current_size if windows.image_window_size is not None else None,
             image_geometry.box_size,
         )
     if sealed_sampling_state is not None:
@@ -309,7 +309,6 @@ def initialize_refinement_state(
     parity = options.parity
     init_relion_iteration = schedule.init_relion_iteration
     n_classes = int(options.k_class.n_classes)
-    grid_size = image_geometry.box_size
     # RELION --sigma_ang turns the orientational prior on from iteration 1 at any HEALPix order, with that
     # width for rot, tilt and psi (ml_optimiser.cpp parseInitial); without it a local start uses 2 x step.
     sigma_ang_deg = options.local_search.sigma_ang_deg
@@ -339,14 +338,17 @@ def initialize_refinement_state(
         pass
     elif schedule.init_fsc is not None:
         initialize_resolution_from_fsc(
-            state, options, grid_size=grid_size, voxel_size=image_geometry.pixel_size_angstrom,
+            state, options, grid_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom,
             dtype=dtype,
         )
     elif init_relion_iteration == 0 and parity.relion_firstiter_ini_high_angstrom is not None:
-        initialize_resolution_from_firstiter_ini_high(state, options, grid_size=grid_size, voxel_size=image_geometry.pixel_size_angstrom)
+        initialize_resolution_from_firstiter_ini_high(
+            state, options, grid_size=image_geometry.box_size, voxel_size=image_geometry.pixel_size_angstrom
+        )
     elif init_relion_iteration == 0 and schedule.ini_high_angstrom is not None:
         initialize_resolution_from_ini_high(
-            state, schedule.ini_high_angstrom, grid_size=grid_size, voxel_size=image_geometry.pixel_size_angstrom
+            state, schedule.ini_high_angstrom, grid_size=image_geometry.box_size,
+            voxel_size=image_geometry.pixel_size_angstrom,
         )
     source.restore_boundary_state(state)
     # A continuation (RELION --continue) starts from the run files' sampling state; the
@@ -357,7 +359,7 @@ def initialize_refinement_state(
             resume,
             init_relion_iteration=init_relion_iteration,
             n_classes=n_classes,
-            grid_size=grid_size,
+            box_size=image_geometry.box_size,
             options=options,
             replays_relion_trajectory=source.relion_replay is not None and (
                 source.relion_replay.perturb_replay_relion_dir is not None
@@ -382,7 +384,7 @@ def resolve_current_size(
     has_high_fsc_at_limit,
     ave_pmax,
     iteration: int,
-    grid_size,
+    box_size,
     log: logging.Logger,
 ) -> int:
     """This iteration's current size: the planned size quantised, or the size an oracle schedule gives.
@@ -393,7 +395,7 @@ def resolve_current_size(
     entry means.
     """
     oracle_sizes = options.adaptive.relion_current_sizes
-    current_size = quantize_current_size(image_size_plan.size, ori_size=grid_size)
+    current_size = quantize_current_size(image_size_plan.size, ori_size=box_size)
     if previous_size is not None:
         log.info(
             "RELION current-size decision: iter=%d prev=%d res_shell=%d "
@@ -414,7 +416,7 @@ def resolve_current_size(
             oracle_cs = int(oracle_sizes[-1])
         if oracle_cs <= 0:
             oracle_cs = int(options.schedule.init_current_size)
-        current_size = quantize_current_size(oracle_cs, ori_size=grid_size)
+        current_size = quantize_current_size(oracle_cs, ori_size=box_size)
         log.info(
             "Current-size oracle: iteration %d using current_size=%d",
             iteration + 1,
@@ -750,7 +752,7 @@ class ClassImageSize:
 def plan_initial_image_size(
     options: RefinementOptions,
     *,
-    grid_size,
+    box_size,
     pixel_size_angstrom,
     incr_size,
     has_high_fsc_at_limit,
@@ -767,7 +769,7 @@ def plan_initial_image_size(
     parity = options.parity
     if schedule.init_relion_iteration == 0:
         seeded_cs = bootstrap_current_size_from_ini_high_relion(
-            grid_size,
+            box_size,
             pixel_size_angstrom,
             parity.relion_firstiter_ini_high_angstrom,
             incr_size=incr_size,
@@ -787,7 +789,7 @@ def plan_initial_image_size(
         fsc_prev = _zero_shells_past_current_size(
             schedule.init_fsc,
             current_size=prev_cs,
-            grid_size=grid_size,
+            grid_size=box_size,
             dtype=dtype,
         )
         data_vs_prior_iter = np.asarray(
@@ -795,7 +797,7 @@ def plan_initial_image_size(
         )
         res_shell = resolution_from_data_vs_prior(
             data_vs_prior_iter,
-            ori_size=grid_size,
+            ori_size=box_size,
             allow_high_res_recovery=True,
         )
         incr_size, has_high_fsc_at_limit = update_relion_growth_state_from_fsc(
@@ -807,14 +809,14 @@ def plan_initial_image_size(
         _init_pmax = float(schedule.init_ave_Pmax) if schedule.init_ave_Pmax is not None else 0.0
         raw_cs = compute_current_size_relion(
             res_shell,
-            grid_size,
+            box_size,
             ave_Pmax=_init_pmax,
             has_high_fsc_at_limit=has_high_fsc_at_limit,
             incr_size=incr_size,
         )
-        current_size = quantize_current_size(raw_cs, ori_size=grid_size)
+        current_size = quantize_current_size(raw_cs, ori_size=box_size)
     else:
-        current_size = _bootstrap_current_size_relion(schedule.init_current_size, grid_size)
+        current_size = _bootstrap_current_size_relion(schedule.init_current_size, box_size)
         data_vs_prior_iter = None
 
     return ImageSizeUpdate(
@@ -827,7 +829,7 @@ def plan_class_image_size(
     data_vs_prior,
     *,
     previous_size,
-    grid_size,
+    box_size,
     pixel_size_angstrom,
     incr_size,
     ave_pmax,
@@ -847,11 +849,11 @@ def plan_class_image_size(
     data_vs_prior_prev = _zero_shells_past_current_size(
         data_vs_prior_prev_raw,
         current_size=previous_size,
-        grid_size=grid_size,
+        grid_size=box_size,
         dtype=dtype,
     )
     per_class_res_shell = np.asarray(
-        class_resolution_shells(data_vs_prior_prev, grid_size=grid_size),
+        class_resolution_shells(data_vs_prior_prev, grid_size=box_size),
         dtype=np.int32,
     )
     res_shell = int(np.max(per_class_res_shell))
@@ -860,7 +862,7 @@ def plan_class_image_size(
         emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
         ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
         relion_iteration=completed_relion_iteration,
-        grid_size=grid_size,
+        grid_size=box_size,
         voxel_size=pixel_size_angstrom,
     )
     if scheduling_res_shell != res_shell:
@@ -873,12 +875,12 @@ def plan_class_image_size(
         )
     raw_cs = compute_current_size_relion(
         res_shell,
-        grid_size,
+        box_size,
         ave_Pmax=ave_pmax,
         has_high_fsc_at_limit=False,
         incr_size=incr_size,
     )
-    computed_cs = quantize_current_size(raw_cs, ori_size=grid_size)
+    computed_cs = quantize_current_size(raw_cs, ori_size=box_size)
 
     return ClassImageSize(
         size=computed_cs, resolution_shell=res_shell, raw_size=raw_cs,
@@ -894,7 +896,7 @@ def plan_halfmap_image_size(
     restart,
     data_vs_prior,
     previous_size,
-    grid_size,
+    box_size,
     pixel_size_angstrom,
     incr_size,
     has_high_fsc_at_limit,
@@ -920,19 +922,19 @@ def plan_halfmap_image_size(
         if growth_fsc_history
         else (fsc_prev_raw if restart is None or restart.fsc_for_growth is None else restart.fsc_for_growth),
         current_size=previous_size,
-        grid_size=grid_size,
+        grid_size=box_size,
         dtype=dtype,
     )
 
     data_vs_prior_iter = _zero_shells_past_current_size(
         data_vs_prior,
         current_size=previous_size,
-        grid_size=grid_size,
+        grid_size=box_size,
         dtype=dtype,
     )
     res_shell = resolution_from_data_vs_prior(
         data_vs_prior_iter,
-        ori_size=grid_size,
+        ori_size=box_size,
         allow_high_res_recovery=True,
     )
     incr_size, has_high_fsc_at_limit = update_relion_growth_state_from_fsc(
@@ -946,7 +948,7 @@ def plan_halfmap_image_size(
         emulate_relion_firstiter_cc=parity.emulate_relion_firstiter_cc,
         ini_high_angstrom=parity.relion_firstiter_ini_high_angstrom,
         relion_iteration=completed_relion_iteration,
-        grid_size=grid_size,
+        grid_size=box_size,
         voxel_size=pixel_size_angstrom,
     )
     if scheduling_res_shell != res_shell:
@@ -959,12 +961,12 @@ def plan_halfmap_image_size(
 
     raw_cs = compute_current_size_relion(
         res_shell,
-        grid_size,
+        box_size,
         ave_Pmax=ave_pmax,
         has_high_fsc_at_limit=has_high_fsc_at_limit,
         incr_size=incr_size,
     )
-    current_size = quantize_current_size(raw_cs, ori_size=grid_size)
+    current_size = quantize_current_size(raw_cs, ori_size=box_size)
 
     return HalfmapImageSize(
         size=current_size, data_vs_prior=data_vs_prior_iter,

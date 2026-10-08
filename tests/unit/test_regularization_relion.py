@@ -830,7 +830,7 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     before = [array.copy() for array in numerators + denominators]
     monkeypatch.setattr(regularization_relion, "_shell_stats_on_host", lambda n_voxels: True)
     settings = ReconstructionSettings(
-        grid_size=8, voxel_size=2.0, volume_shape=shape, padding_factor=2, projection_padding_factor=2,
+        box_size=8, voxel_size=2.0, volume_shape=shape, padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=2, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None,
     )

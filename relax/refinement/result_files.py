@@ -752,14 +752,14 @@ def write_benchmark_ledger(path, result: RefinementResult, report: RunReport, ar
     logger.info("Benchmark ledger saved to %s", path)
 
 
-def _shell_resolution_angstrom(shell_index, grid_size, voxel_size):
+def _shell_resolution_angstrom(shell_index, box_size, voxel_size):
     """The resolution of a Fourier shell in Angstrom (infinite for shell 0, the shell index without a pixel size)."""
     if voxel_size <= 0:
         return float(shell_index)
     shell_index = float(shell_index)
     if shell_index <= 0:
         return float("inf")
-    return float(grid_size) * float(voxel_size) / shell_index
+    return float(box_size) * float(voxel_size) / shell_index
 
 
 def print_refinement_summary(result: RefinementResult, *, total_time_s: float, box_size: int, pixel_size: float) -> None:

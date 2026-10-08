@@ -69,7 +69,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
     result = mean_helpers.estimate_split_half_prior(
         numerators, denominators,
         mean_helpers.ReconstructionSettings(
-            grid_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
+            box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
             padding_factor=2, projection_padding_factor=2, minres_map=5,
             width_mask_edge=5, fmask_edge=2,
             tau2_fudge=1.0, particle_diameter_angstrom=diameter,
@@ -129,7 +129,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
     monkeypatch.setattr(regularization_relion, "_compute_relion_weight_shell_stats", weights)
     monkeypatch.setattr(mean_helpers, "_class_tau2_update_details", normalize)
     settings = mean_helpers.ReconstructionSettings(
-        grid_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
+        box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
         padding_factor=PADDING_FACTOR, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2,
         tau2_fudge=4.0, particle_diameter_angstrom=None,
@@ -169,20 +169,20 @@ class TestPreviousResolutionForHalfJoin:
     def test_last_positive_recorded_shell_wins(self):
         expected = shell_index_to_resolution_angstrom(3, GRID_SIZE, 1.5)
         result = mean_helpers._previous_resolution_angstrom_for_half_join(
-            [7, 3], 20.0, grid_size=GRID_SIZE, voxel_size=1.5
+            [7, 3], 20.0, box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result == expected
 
     def test_nonpositive_recorded_shell_leaves_join_uncapped(self):
         # The history takes precedence over a finite state resolution.
         result = mean_helpers._previous_resolution_angstrom_for_half_join(
-            [0], 20.0, grid_size=GRID_SIZE, voxel_size=1.5
+            [0], 20.0, box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result is None
 
     def test_without_history_uses_finite_state_resolution(self):
         result = mean_helpers._previous_resolution_angstrom_for_half_join(
-            [], np.float32(12.5), grid_size=GRID_SIZE, voxel_size=1.5
+            [], np.float32(12.5), box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result == 12.5
         assert type(result) is float
@@ -190,7 +190,7 @@ class TestPreviousResolutionForHalfJoin:
     @pytest.mark.parametrize("current_resolution", [float("inf"), float("nan")])
     def test_without_history_or_finite_state_is_none(self, current_resolution):
         result = mean_helpers._previous_resolution_angstrom_for_half_join(
-            [], current_resolution, grid_size=GRID_SIZE, voxel_size=1.5
+            [], current_resolution, box_size=GRID_SIZE, voxel_size=1.5
         )
         assert result is None
 
@@ -202,7 +202,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             "numerators_by_half",
             "denominators_by_half",
             "accumulator_volume_shape",
-            "grid_size",
+            "box_size",
             "voxel_size",
             "padding_factor",
             "low_resolution_angstrom",
@@ -229,7 +229,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             ft_y,
             ft_ctf,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
-            grid_size=GRID_SIZE,
+            box_size=GRID_SIZE,
             voxel_size=1.5,
             padding_factor=PADDING_FACTOR,
             low_resolution_angstrom=40.0,
@@ -254,7 +254,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
     def test_matches_direct_regularization_call(self, pixel_resolutions, current_resolution):
         ft_y, ft_ctf = _random_accumulators(1)
         expected_cap = mean_helpers._previous_resolution_angstrom_for_half_join(
-            pixel_resolutions, current_resolution, grid_size=GRID_SIZE, voxel_size=1.5
+            pixel_resolutions, current_resolution, box_size=GRID_SIZE, voxel_size=1.5
         )
         expected = regularization_relion.join_halves_at_low_resolution(
             ft_y[0],
@@ -272,7 +272,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             ft_y,
             ft_ctf,
             accumulator_volume_shape=ACCUMULATOR_SHAPE,
-            grid_size=GRID_SIZE,
+            box_size=GRID_SIZE,
             voxel_size=1.5,
             padding_factor=PADDING_FACTOR,
             low_resolution_angstrom=40.0,
@@ -328,7 +328,7 @@ class TestClassTau2UpdateDetails:
     @staticmethod
     def _settings(tau2_fudge):
         return mean_helpers.ReconstructionSettings(
-            grid_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
+            box_size=GRID_SIZE, voxel_size=1.5, volume_shape=VOLUME_SHAPE,
             padding_factor=PADDING_FACTOR, projection_padding_factor=2,
             minres_map=5, width_mask_edge=5, fmask_edge=2,
             tau2_fudge=tau2_fudge, particle_diameter_angstrom=None,

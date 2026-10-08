@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def settings():
     return ReconstructionSettings(
-        grid_size=8, voxel_size=1.5, volume_shape=(8, 8, 8),
+        box_size=8, voxel_size=1.5, volume_shape=(8, 8, 8),
         padding_factor=2, projection_padding_factor=1, minres_map=5,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0,
         particle_diameter_angstrom=None, first_iteration_lowpass_angstrom=None,
@@ -41,7 +41,7 @@ def test_prejoin_capture_routing(iteration, target, k_class_enabled, captured, s
         assert kwargs['stage'] == 'prejoin'
         assert kwargs['iteration'] == iteration
         assert kwargs['current_size'] == 6
-        assert kwargs['grid_size'] == settings.grid_size
+        assert kwargs['grid_size'] == settings.box_size
         assert kwargs['volume_shape'] == settings.volume_shape
         assert kwargs['padding_factor'] == settings.padding_factor
         assert kwargs['accumulator_shape'] == (16, 16, 16)

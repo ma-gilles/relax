@@ -58,7 +58,7 @@ class IterationSnapshot:
 
     relion_iteration: int
     n_classes: int
-    ori_size: int
+    box_size: int
     pixel_size: float
     tau2_fudge: float
 
@@ -181,7 +181,7 @@ def host_half_pair(values, dtype=None):
 
 
 def validate_resume_snapshot(
-    snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, grid_size, options, replays_relion_trajectory=False,
+    snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, box_size, options, replays_relion_trajectory=False,
     starts_from_frozen_boundary=False, swaps_state=False,
 ):
     """Refuse a continuation the loop cannot start exactly from ``snapshot``.
@@ -197,8 +197,8 @@ def validate_resume_snapshot(
         )
     if int(snapshot.n_classes) != int(n_classes):
         problems.append(f"snapshot has {snapshot.n_classes} classes, the run {n_classes}")
-    if int(snapshot.ori_size) != int(grid_size):
-        problems.append(f"snapshot box {snapshot.ori_size} != image box {grid_size}")
+    if int(snapshot.box_size) != int(box_size):
+        problems.append(f"snapshot box {snapshot.box_size} != image box {box_size}")
     if replays_relion_trajectory:
         problems.append("a continuation cannot replay a RELION trajectory")
     if starts_from_frozen_boundary:
@@ -250,7 +250,7 @@ def _host_direction_prior(direction_priors):
 
 
 def _host_particle_state(
-    half_inputs, max_posterior, significant_counts, avg_norm_correction, *, direction_priors, grid_size, consistency
+    half_inputs, max_posterior, significant_counts, avg_norm_correction, *, direction_priors, box_size, consistency
 ) -> dict:
     """Per-particle arrays of both halves, the norm corrections, and the dtype, prior-order and consistency tags.
 
@@ -281,7 +281,7 @@ def _host_particle_state(
         significant_counts=host_half_pair(significant_counts),
         # No norm correction (a subtomogram run, --no_norm): RELION's 1.0 in relax's frame.
         avg_norm_correction=tuple(
-            float(grid_size) ** 2 if value is None else float(value) for value in avg_norm_correction
+            float(box_size) ** 2 if value is None else float(value) for value in avg_norm_correction
         ),
         extra={
             "euler_dtype": dtype_name(eulers),
@@ -310,7 +310,7 @@ class SnapshotCapture:
     """Run-level snapshot settings reused for every numbered checkpoint."""
 
     n_classes: int
-    grid_size: int
+    box_size: int
     voxel_size: float
     tau2_fudge: float
     # The run's non-default RELION-consistency options (RelionConsistencyOptions.non_default),
@@ -336,7 +336,7 @@ class SnapshotCapture:
             values={
                 "relion_iteration": int(relion_iteration),
                 "n_classes": int(self.n_classes),
-                "ori_size": int(self.grid_size),
+                "box_size": int(self.box_size),
                 "pixel_size": float(self.voxel_size),
                 "tau2_fudge": float(self.tau2_fudge),
                 "sigma_offset_angstrom": tuple(
@@ -464,7 +464,7 @@ class SnapshotCapture:
                 significant_counts,
                 avg_norm_correction,
                 direction_priors=direction_priors,
-                grid_size=self.grid_size,
+                box_size=self.box_size,
                 consistency=self.consistency,
             ),
             class_assignments=None,
@@ -518,7 +518,7 @@ class SnapshotCapture:
                 significant_counts,
                 avg_norm_correction,
                 direction_priors=direction_priors,
-                grid_size=self.grid_size,
+                box_size=self.box_size,
                 consistency=self.consistency,
             ),
             class_assignments=host_half_pair(class_assignments),

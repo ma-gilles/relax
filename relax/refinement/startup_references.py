@@ -183,7 +183,7 @@ def relion_start_tau2_and_data_vs_prior(
     reference_real,
     initial_noise_radial,
     *,
-    grid_size: int,
+    box_size: int,
     volume_shape,
     tau2_fudge: float,
     nr_particles: int,
@@ -204,13 +204,13 @@ def relion_start_tau2_and_data_vs_prior(
 
     from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 
-    n4 = float(grid_size) ** 4
+    n4 = float(box_size) ** 4
     sigma2 = np.asarray(initial_noise_radial, dtype=np.float64)
     if sigma2.ndim == 2:
         # The unweighted mean over optics groups that have noise (ml_model.cpp:1560-1573).
         sigma2 = np.mean(sigma2[np.sum(sigma2, axis=1) > 0.0], axis=0)
     sigma2 = sigma2.reshape(-1) / n4
-    n_shells = int(grid_size) // 2 + 1
+    n_shells = int(box_size) // 2 + 1
     if sigma2.size < n_shells:
         raise ValueError(f"initial noise spectrum has {sigma2.size} shells, need {n_shells}")
     tau2, data_vs_prior = relion_initial_tau2_and_data_vs_prior(
@@ -228,7 +228,7 @@ def relion_start_tau2_and_data_vs_prior(
 
 
 def class_start_data_vs_prior(
-    class_references_real, initial_noise_radial, *, grid_size, volume_shape, tau2_fudge, nr_particles,
+    class_references_real, initial_noise_radial, *, box_size, volume_shape, tau2_fudge, nr_particles,
     shell_pair_counting,
 ):
     """Class3D's start-up data_vs_prior, ``(K, shells)``: each class over all particles at pdf_class 1/K.
@@ -242,7 +242,7 @@ def class_start_data_vs_prior(
             relion_start_tau2_and_data_vs_prior(
                 reference,
                 initial_noise_radial,
-                grid_size=grid_size,
+                box_size=box_size,
                 volume_shape=volume_shape,
                 tau2_fudge=tau2_fudge,
                 nr_particles=nr_particles,

@@ -262,7 +262,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
     )
 
     settings = mean_helpers.ReconstructionSettings(
-        grid_size=4,
+        box_size=4,
         voxel_size=np.float32(1.0),
         volume_shape=volume_shape,
         padding_factor=1,

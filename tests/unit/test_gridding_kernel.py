@@ -288,7 +288,7 @@ def test_forward_and_reconstruction_use_the_same_window(kernel):
 
 def _settings(**fields):
     return mean_helpers.ReconstructionSettings(
-        grid_size=8,
+        box_size=8,
         voxel_size=1.0,
         volume_shape=(8, 8, 8),
         padding_factor=PF,

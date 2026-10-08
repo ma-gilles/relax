@@ -243,7 +243,7 @@ def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, prev
 
 
 def _previous_resolution_angstrom_for_half_join(
-    pixel_resolutions, current_resolution, *, grid_size: int, voxel_size: float
+    pixel_resolutions, current_resolution, *, box_size: int, voxel_size: float
 ):
     """Previous-iteration resolution in Å that caps the low-resolution half join.
 
@@ -256,7 +256,7 @@ def _previous_resolution_angstrom_for_half_join(
     if pixel_resolutions:
         previous_shell = pixel_resolutions[-1]
         if previous_shell > 0:
-            return shell_index_to_resolution_angstrom(previous_shell, grid_size, voxel_size)
+            return shell_index_to_resolution_angstrom(previous_shell, box_size, voxel_size)
         return None
     if np.isfinite(float(current_resolution)):
         return float(current_resolution)
@@ -268,7 +268,7 @@ def join_half_accumulators_at_low_resolution(
     denominators_by_half,
     *,
     accumulator_volume_shape,
-    grid_size,
+    box_size,
     voxel_size,
     padding_factor,
     low_resolution_angstrom,
@@ -292,7 +292,7 @@ def join_half_accumulators_at_low_resolution(
     previous_resolution_angstrom = _previous_resolution_angstrom_for_half_join(
         pixel_resolutions,
         current_resolution,
-        grid_size=grid_size,
+        box_size=box_size,
         voxel_size=voxel_size,
     )
     return regularization_relion.join_halves_at_low_resolution(
@@ -302,7 +302,7 @@ def join_half_accumulators_at_low_resolution(
         denominators_by_half[1],
         accumulator_volume_shape,
         voxel_size,
-        grid_size,
+        box_size,
         low_resolution_angstrom,
         current_resolution_angstrom=previous_resolution_angstrom,
         padding_factor=padding_factor,
@@ -583,7 +583,7 @@ def estimate_class_priors(
     # keep Ft_y/Ft_ctf in RECOVAR frame and scale RELION tau2 by N^4
     # before the Wiener solve. The same frame conversion is documented
     # in docs/math/ab_initio_initial_model_algorithm.md.
-    kclass_tau2_frame_scale = float(settings.grid_size) ** 4
+    kclass_tau2_frame_scale = float(settings.box_size) ** 4
     # The prior shells an input source supplies (``ports.ClassTau2``), or None: the previous references'.
     kclass_tau2_source = class_tau2.source
     observer = RunObserver() if observer is None else observer
@@ -609,7 +609,7 @@ def estimate_class_priors(
         ]
         ctf2_datasets = [dataset.images for dataset in ctf2_datasets]
     average_ctf2 = relion_ctf.premultiplied_average_ctf2(
-        ctf2_datasets, ctf2_scales, image_current_size, settings.grid_size
+        ctf2_datasets, ctf2_scales, image_current_size, settings.box_size
     )
     for class_idx in range(n_classes):
         log.info(
@@ -1227,7 +1227,7 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
 class ReconstructionSettings:
     """Run-level geometry, regularization, mask and initial-filter settings."""
 
-    grid_size: int
+    box_size: int
     voxel_size: float
     volume_shape: tuple
     padding_factor: int
@@ -1415,7 +1415,7 @@ def _solvent_corrected_fsc(
         "iter-%d solvent-corrected FSC: randomize phases beyond shell %d (%.2f A): %.1fs",
         iteration + 1,
         details["randomize_at"],
-        settings.grid_size * settings.voxel_size / max(details["randomize_at"], 1),
+        settings.box_size * settings.voxel_size / max(details["randomize_at"], 1),
         time.time() - started,
     )
     return jnp.asarray(fsc, dtype=like.dtype)
@@ -1723,7 +1723,7 @@ def taper_first_cc_k1_prior(
     """
     tau2_taper = _firstiter_cc_ini_high_tau2_taper(
         len(details_per_half[0]["prior_shells"]),
-        settings.grid_size,
+        settings.box_size,
         pixel_size_angstrom,
         settings.first_iteration_lowpass_angstrom,
         filter_edgewidth=settings.fmask_edge,
@@ -1778,7 +1778,7 @@ def taper_first_cc_class_prior(
     def taper_shells(values):
         return _firstiter_cc_ini_high_tapered(
             values,
-            settings.grid_size,
+            settings.box_size,
             pixel_size_angstrom,
             settings.first_iteration_lowpass_angstrom,
             filter_edgewidth=settings.fmask_edge,

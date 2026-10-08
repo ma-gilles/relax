@@ -150,7 +150,6 @@ def run_final_all_data(
     n_classes = int(options.k_class.n_classes)
     class_weights = class_mixture.weights
     k_class_enabled = n_classes > 1
-    grid_size = image_geometry.box_size
     volume_shape = reconstruction_settings.volume_shape
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
     final_expected_accuracy = None
@@ -580,7 +579,8 @@ def run_final_all_data(
             time.time() - _t_final_tau2,
         )
         final_res_shell = class_current_resolution_shell(
-            final_data_vs_prior, current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
+            final_data_vs_prior, current_size=final_current_size, grid_size=image_geometry.box_size,
+            dtype=scoring_dtype,
         )
         state.previous_resolution = state.current_resolution
         state.current_resolution = shell_index_to_resolution_angstrom(
@@ -652,7 +652,7 @@ def run_final_all_data(
                 (final_Ft_y_0, final_Ft_y_1),
                 (final_Ft_ctf_0, final_Ft_ctf_1),
                 accumulator_volume_shape=final_mstep_accumulator_shape,
-                grid_size=grid_size,
+                box_size=image_geometry.box_size,
                 voxel_size=image_geometry.pixel_size_angstrom,
                 padding_factor=RECONSTRUCTION_PADDING_FACTOR,
                 low_resolution_angstrom=options.parity.low_resol_join_halves_angstrom,
@@ -684,7 +684,7 @@ def run_final_all_data(
         )
         final_res_shell = k1_current_resolution_shell(
             np.asarray(final_tau2_update_details["ssnr_shells"], dtype=scoring_dtype),
-            current_size=final_current_size, grid_size=grid_size, dtype=scoring_dtype,
+            current_size=final_current_size, grid_size=image_geometry.box_size, dtype=scoring_dtype,
         )
         state.previous_resolution = state.current_resolution
         state.current_resolution = shell_index_to_resolution_angstrom(

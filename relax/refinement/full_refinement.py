@@ -361,14 +361,14 @@ def _write_relion_start_particle_table(our_star, input_star, *, seed, output_dir
     return path
 
 
-def _initial_current_size(voxel_size: float, grid_size: int, init_resolution: float) -> int:
+def _initial_current_size(voxel_size: float, box_size: int, init_resolution: float) -> int:
     """Twice RELION's --ini_high pixel, ``getPixelFromResolution(1 / ini_high)`` (ml_model.h:441,
     ml_optimiser.cpp:2801): ``2 ROUND(ori_size pixel_size / ini_high)``. The first E-step then adds
     ``incr_size`` shells (``_bootstrap_current_size_relion``). No floor: RELION has none, and the GUI
     default ini_high of 60 A lands below the former 32-pixel floor on small boxes.
     """
 
-    return 2 * int(np.floor(float(grid_size) * float(voxel_size) / float(init_resolution) + 0.5))
+    return 2 * int(np.floor(float(box_size) * float(voxel_size) / float(init_resolution) + 0.5))
 
 
 def _require_relion_convention_reference(path, option: str) -> None:
@@ -912,7 +912,7 @@ def main(command=None):
         mean_variance, relion_start_data_vs_prior = startup_references.relion_start_tau2_and_data_vs_prior(
             references.reference_real,
             initial_noise_radial,
-            grid_size=int(ds.grid_size),
+            box_size=int(ds.grid_size),
             volume_shape=ds.volume_shape,
             tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
             nr_particles=int(ds_half1.n_units),
@@ -928,7 +928,7 @@ def main(command=None):
         relion_start_data_vs_prior = startup_references.class_start_data_vs_prior(
             references.class_references_real,
             initial_noise_radial,
-            grid_size=int(ds.grid_size),
+            box_size=int(ds.grid_size),
             volume_shape=ds.volume_shape,
             tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
             nr_particles=int(ds.n_units),

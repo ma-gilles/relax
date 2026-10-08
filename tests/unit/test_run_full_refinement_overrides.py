@@ -263,7 +263,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
 
 def test_relion_sigma2_to_native_noise_variance_keeps_float32_scoring_dtype():
     radial = np.asarray([0.0, 0.5, 0.25, 0.125, 0.0625], dtype=np.float64)
-    got = scoring_noise_from_sigma2(radial, grid_size=8)
+    got = scoring_noise_from_sigma2(radial, box_size=8)
     assert got.shape == (64,)
     assert got.dtype == np.float32
     assert np.all(np.isfinite(got))
@@ -273,7 +273,7 @@ def test_relion_sigma2_to_native_noise_variance_can_preserve_float64_reciprocal_
     radial = np.asarray([0.125, 0.3, 0.7, 1.1, 2.3], dtype=np.float64)
     got = scoring_noise_from_sigma2(
         radial,
-        grid_size=8,
+        box_size=8,
         output_dtype=np.float64,
     )
 

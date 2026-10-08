@@ -173,7 +173,7 @@ def write_class_mstep(
         class_index=np.int32(class_index + 1),
         current_size=np.int32(current_size),
         padding_factor=np.int32(settings.padding_factor),
-        grid_size=np.int32(settings.grid_size),
+        grid_size=np.int32(settings.box_size),
         mstep_accumulator_shape=np.asarray(accumulator_shape, dtype=np.int32),
         mstep_full_half_axis=np.int32(full_half_axis),
         tau2_fudge=np.float64(settings.tau2_fudge),

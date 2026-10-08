@@ -23,7 +23,7 @@ def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
             schedule=RefinementSchedule(init_current_size=32, init_fsc=np.zeros(65, dtype=dtype)),
             parity=RelionParityOptions(relion_firstiter_ini_high_angstrom=30.),
         ),
-        grid_size=128, pixel_size_angstrom=4.25, incr_size=16,
+        box_size=128, pixel_size_angstrom=4.25, incr_size=16,
         has_high_fsc_at_limit=True, dtype=dtype, log=Mock(),
     )
     # ini_high sets shell 18; this startup path adds the configured 16 shells.
@@ -36,7 +36,7 @@ def test_initial_ini_high_precedes_fsc_and_retains_growth(dtype):
 def test_initial_fallback_retains_its_distinct_default_growth(restart_iteration):
     plan = plan_initial_image_size(
         RefinementOptions(schedule=RefinementSchedule(init_current_size=32, init_relion_iteration=restart_iteration)),
-        grid_size=128, pixel_size_angstrom=4.25,
+        box_size=128, pixel_size_angstrom=4.25,
         incr_size=16, has_high_fsc_at_limit=True, dtype=np.float32, log=Mock(),
     )
     # Without ini_high/FSC, the existing bootstrap uses its own ten-shell default.
@@ -52,7 +52,7 @@ def test_initial_fsc_updates_growth_and_scheduling_curve(dtype):
     original = fsc.tobytes()
     plan = plan_initial_image_size(
         RefinementOptions(schedule=RefinementSchedule(init_current_size=40, init_fsc=fsc, init_ave_Pmax=.2)),
-        grid_size=128, pixel_size_angstrom=4.25,
+        box_size=128, pixel_size_angstrom=4.25,
         incr_size=6, has_high_fsc_at_limit=False, dtype=dtype, log=Mock(),
     )
     # Truncation at shell 20 makes incr_size 21 - 10 + 5 = 16.
@@ -75,7 +75,7 @@ def test_halfmap_resolution_and_growth_use_their_separate_signals(dtype):
     originals = [a.tobytes() for a in (raw_fsc, growth_fsc, corrected_prior)]
     plan = plan_halfmap_image_size(
         [raw_fsc], growth_fsc_history=[growth_fsc], restart=None, data_vs_prior=corrected_prior,
-        previous_size=40, grid_size=128, pixel_size_angstrom=4.25,
+        previous_size=40, box_size=128, pixel_size_angstrom=4.25,
         incr_size=3, has_high_fsc_at_limit=False, ave_pmax=.9,
         completed_relion_iteration=2, parity=RelionParityOptions(), dtype=dtype, log=Mock(),
     )
@@ -96,7 +96,7 @@ def test_class_image_size_uses_best_class_without_high_resolution_recovery(dtype
     curves[-1, 19] = 2  # A separated high-shell spike must not trigger K1 recovery.
     original = curves.tobytes()
     plan = plan_class_image_size(
-        curves, previous_size=40, grid_size=128, pixel_size_angstrom=4.25,
+        curves, previous_size=40, box_size=128, pixel_size_angstrom=4.25,
         incr_size=6, ave_pmax=.9, completed_relion_iteration=2,
         parity=RelionParityOptions(), dtype=dtype, log=Mock(),
     )
@@ -115,7 +115,7 @@ def test_firstiter_cc_override_uses_the_completed_iteration(completed_iteration)
     curves = np.full((4, 65), .5, dtype=np.float32)
     curves[:, :13] = 2
     plan = plan_class_image_size(
-        curves, previous_size=40, grid_size=128, pixel_size_angstrom=4.25,
+        curves, previous_size=40, box_size=128, pixel_size_angstrom=4.25,
         incr_size=6, ave_pmax=.9, completed_relion_iteration=completed_iteration,
         parity=RelionParityOptions(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=30.),
         dtype=np.float32, log=Mock(),
