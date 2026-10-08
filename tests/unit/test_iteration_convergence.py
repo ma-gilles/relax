@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.helpers.convergence import ExpectationStatistics, RefinementState
+from relax.helpers.convergence import ExpectationStatistics, RefinementState, hard_class_change_fraction
 from relax.helpers.resolution import ImageGeometry
 from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
-from relax.refinement.convergence import update_class_iteration_convergence, update_k1_iteration_convergence
+from relax.refinement.convergence import reset_follower_counter_once, update_iteration_convergence
 from relax.refinement.half_inputs import PoseComparison
 from relax.refinement.refinement_options import (
     CheckpointOptions,
@@ -62,9 +62,14 @@ def _with_statistics(kwargs):
 
 def _update_k1(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **overrides):
     options = RefinementOptions() if options is None else options
-    overrides.setdefault('native_sampling_boundary', True)
+    native_sampling_boundary = overrides.pop('native_sampling_boundary', True)
     state, poses, kwargs = _operands(options, state, dtype, pixel_size, overrides)
-    return update_k1_iteration_convergence(state, poses, options, **_with_statistics(kwargs))
+    # As the controller calls it for K=1.
+    result = update_iteration_convergence(
+        state, poses, options, sampling_decision_now=not native_sampling_boundary, class_change_fraction=0.0,
+        **_with_statistics(kwargs),
+    )
+    return result._replace(state=reset_follower_counter_once(result.state, options, iteration=kwargs['iteration']))
 
 
 def _update_class(*, options=None, state=None, dtype=np.float32, pixel_size=1.5, **overrides):
@@ -72,7 +77,11 @@ def _update_class(*, options=None, state=None, dtype=np.float32, pixel_size=1.5,
     overrides.setdefault('current_classes', np.zeros(3, dtype=np.int32))
     overrides.setdefault('previous_classes', np.zeros(3, dtype=np.int32))
     state, poses, kwargs = _operands(options, state, dtype, pixel_size, overrides)
-    return update_class_iteration_convergence(state, poses, options, **_with_statistics(kwargs))
+    # As the controller calls it for Class3D.
+    fraction = hard_class_change_fraction(kwargs.pop('current_classes'), kwargs.pop('previous_classes'))
+    return update_iteration_convergence(
+        state, poses, options, sampling_decision_now=False, class_change_fraction=fraction, **_with_statistics(kwargs),
+    )
 
 
 @pytest.mark.parametrize('dtype', [np.float32, np.float64])

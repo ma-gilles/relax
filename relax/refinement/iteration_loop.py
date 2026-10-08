@@ -43,6 +43,7 @@ from relax.helpers.convergence import (
     concatenate_assignments,
     concatenate_assignments_or_none,
     expectation_statistics,
+    hard_class_change_fraction,
 )
 from relax.helpers.expected_accuracy import (
     RELION_DEFAULT_SIGMA2_FUDGE,
@@ -74,6 +75,7 @@ from relax.reconstruction.regularization_relion import (
 from relax.refinement import finalization
 from relax.refinement.convergence import (
     advance_expectation_sampling,
+    reset_follower_counter_once,
     update_iteration_convergence,
     uses_native_auto_refine,
 )
@@ -2173,18 +2175,23 @@ def refine_single_volume(
             options,
             image_geometry=image_geometry,
             iteration=iteration,
-            native_sampling_boundary=native_sampling_boundary,
+            sampling_decision_now=not k_class_enabled and not native_sampling_boundary,
+            class_change_fraction=(
+                hard_class_change_fraction(current_combined_classes, previous_combined_classes)
+                if k_class_enabled
+                else 0.0
+            ),
             scheduling_resolution_shell=resolution_estimate.scheduling_shell,
             source=source,
             translations=coarse_grids.translations,
             statistics=statistics,
-            current_classes=current_combined_classes,
-            previous_classes=previous_combined_classes,
             significant_counts=significance.convergence,
             exact_acc_rot=iteration_accuracy.acc_rot,
             exact_acc_trans=iteration_accuracy.acc_trans_angstrom,
             log=logger,
         )
+        if not k_class_enabled:
+            state = reset_follower_counter_once(state, options, iteration=iteration)
 
         # Reuse the assignment statistic computed by update_refinement_state.
         # Sampling transitions and optimiser replay preserve this field.
