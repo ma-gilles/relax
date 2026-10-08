@@ -735,7 +735,6 @@ def main(command=None):
         references = startup_references.load_class_references(
             class_paths,
             volume_shape=ds.volume_shape,
-            voxel_size=ds.voxel_size,
             ini_high=_ini_high_for_lowpass,
             real_for_projector=_use_initial_projector_real,
             real_dtype=_init_volume_dtype,

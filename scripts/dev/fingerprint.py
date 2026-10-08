@@ -650,7 +650,7 @@ MUTATIONS = (
      "the controller is handed the default tau2 fudge instead of --tau2_fudge", True),
     ("startup_k1_lowpass_skipped", "filtered_real = _initial_lowpass_real(init_vol_real, volume_shape, model_pixel_size, ini_high)",
      "filtered_real = np.asarray(init_vol_real, dtype=np.float64)", "the K=1 start-up reference is not low-pass filtered", True),
-    ("startup_class_lowpass_skipped", "filtered_real = _initial_lowpass_real(vol_real, volume_shape, voxel_size, ini_high)",
+    ("startup_class_lowpass_skipped", "filtered_real = _initial_lowpass_real(vol_real, volume_shape, model_pixel_size, ini_high)",
      "filtered_real = np.asarray(vol_real, dtype=np.float64)", "the Class3D start-up references are not low-pass filtered", True),
     ("startup_class_prior_last_class", "prior_source=per_class_ft[0],", "prior_source=per_class_ft[-1],",
      "the Class3D start-up tau2 is bootstrapped from the last class", True),

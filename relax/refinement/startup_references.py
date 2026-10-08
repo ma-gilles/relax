@@ -123,15 +123,31 @@ def load_class_references(
     paths,
     *,
     volume_shape,
-    voxel_size,
     ini_high: float | None,
     real_for_projector: bool,
     real_dtype,
     complex_dtype,
     log: logging.Logger,
 ) -> StartupReferences:
-    """Load one map per class, low-pass filtered at ``ini_high`` in the particles' pixel size ``voxel_size``."""
+    """Load one map per class, low-pass filtered at ``ini_high`` in the maps' header pixel size.
+
+    RELION's model pixel size is the first reference's header value, and references whose headers differ by
+    more than 0.001 A are refused (``MlModel::initialiseFromImages``, ml_model.cpp:899-918); the start-up
+    low-pass uses it (``radius = ori_size * mymodel.pixel_size / ini_high``, ml_optimiser.cpp:3563), as
+    :func:`load_k1_reference` does.
+    """
     from recovar.utils.helpers import load_relion_volume
+
+    model_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(paths[0])
+    if not np.isfinite(model_pixel_size) or model_pixel_size <= 0.0:
+        raise SystemExit(f"Initial RELION reference has invalid voxel size {model_pixel_size}: {paths[0]}")
+    for p in paths[1:]:
+        header_pixel_size = relion_metadata._read_relion_mrc_model_pixel_size(p)
+        if abs(header_pixel_size - model_pixel_size) > 0.001:
+            raise SystemExit(
+                f"Class references have different pixel sizes in their headers: {model_pixel_size} A "
+                f"({paths[0]}) and {header_pixel_size} A ({p}); RELION refuses this (ml_model.cpp:912-915)"
+            )
 
     per_class_ft = []
     per_class_real_for_projector = []
@@ -142,7 +158,7 @@ def load_class_references(
             f"Class {k + 1} volume shape mismatch at {p}: {vol_real.shape} vs {volume_shape}"
         )
         if ini_high is not None:
-            filtered_real = _initial_lowpass_real(vol_real, volume_shape, voxel_size, ini_high)
+            filtered_real = _initial_lowpass_real(vol_real, volume_shape, model_pixel_size, ini_high)
             if real_for_projector:
                 per_class_real_for_projector.append(filtered_real)
             class_references_real.append(np.asarray(filtered_real, dtype=np.float64))

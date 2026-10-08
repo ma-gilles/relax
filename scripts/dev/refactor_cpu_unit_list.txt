@@ -32,6 +32,7 @@ tests/unit/test_bpref_device_signature_validator.py
 tests/unit/test_bucket_io_lattice_cache.py
 tests/unit/test_check_agent_guides.py
 tests/unit/test_class3d_auto_refine_transitions.py
+tests/unit/test_class_reference_pixel_size.py
 tests/unit/test_class_tau2_lowres_join_owner.py
 tests/unit/test_command_admission.py
 tests/unit/test_convergence_input_owners.py
