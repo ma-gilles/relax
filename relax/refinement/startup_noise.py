@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import utils
 
+from relax.helpers.shells import shell_of_radius_sq
 from relax.refinement.optics_shapes import MultiShapeDataset
 from relax.refinement.tomo_half import TomoDataset
 from relax.relion import relion_metadata
@@ -141,7 +142,7 @@ def whole_transform_power_spectrum(image_real: np.ndarray, n_shells: int) -> np.
     power = np.abs(np.fft.fft2(image_real) / (height * width)) ** 2
     ky = np.fft.fftfreq(height, d=1.0) * height
     kx = np.fft.fftfreq(width, d=1.0) * width
-    shell = np.round(np.sqrt(ky[:, None] ** 2 + kx[None, :] ** 2)).astype(np.int64)
+    shell = shell_of_radius_sq(ky[:, None] ** 2 + kx[None, :] ** 2, rule="half_even")
     keep = shell < n_shells
     total = np.bincount(shell[keep], weights=power[keep], minlength=n_shells)
     return total / np.maximum(np.bincount(shell[keep], minlength=n_shells), 1)

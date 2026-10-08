@@ -18,7 +18,8 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.relion.macros import relion_round, relion_round_array
+from relax.helpers.shells import shell_of_radius_sq
+from relax.relion.macros import relion_round
 
 # randomize_at is the first shell whose unmasked FSC falls below this; the corrected formula starts
 # two shells above it (RELION: "small artefacts near the resolution of randomisation").
@@ -77,7 +78,7 @@ def _fftw_shells(size: int):
     z = np.fft.fftfreq(size) * size
     x = np.arange(size // 2 + 1)
     radius_sq = z[:, None, None] ** 2 + z[None, :, None] ** 2 + x[None, None, :] ** 2
-    return relion_round_array(np.asarray(np.sqrt(radius_sq), dtype=np.float64)).astype(np.int64), radius_sq
+    return shell_of_radius_sq(radius_sq, rule="half_up"), radius_sq
 
 
 def real_space_fsc(map1, map2) -> np.ndarray:

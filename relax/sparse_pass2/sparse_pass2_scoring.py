@@ -16,6 +16,7 @@ import numpy as np
 
 from relax.helpers.env_flags import parse_env_flag
 from relax.helpers.half_spectrum import bin_shell_values_jax, make_shell_indices_half
+from relax.helpers.shells import shell_of_radius_sq
 
 _RELION_FINE_DIFF2_FUSED_FFI_ENV = "RELAX_RELION_FINE_DIFF2_FUSED_FFI"
 
@@ -645,7 +646,7 @@ def _relion_powerclass_operands(processed_score_half, *, image_shape, current_si
     signed_rows = np.where(rows < half_width, rows, rows - image_height)
     radius_squared = columns * columns + signed_rows * signed_rows
     shell_real_dtype = np.float64 if real_dtype == jnp.float64 else np.float32
-    shell = np.rint(np.sqrt(radius_squared.astype(shell_real_dtype))).astype(np.int32)
+    shell = shell_of_radius_sq(radius_squared, rule="half_even", real_dtype=shell_real_dtype, index_dtype=np.int32)
     valid = (
         (shell > 0)
         & (shell < half_width)
