@@ -140,11 +140,17 @@ def _image_origin_offsets_pixels_from_star(main_star, dataset) -> np.ndarray:
 
 
 def _star_source_poses(main_star, n: int) -> dict:
-    """The STAR's input orientations as particle-state fields (none without ``rlnAngle*`` columns): RELION's
-    expected accuracy and change monitor use them until a particle's first visit (ml_optimiser.cpp:9505-9507)."""
+    """The STAR's input orientations as particle-state fields: RELION's expected accuracy and change monitor use
+    them until a particle's first visit (ml_optimiser.cpp:9505-9507). A STAR without ``rlnAngle*`` columns
+    gives every particle the angles (0, 0, 0), as RELION's ``Experiment::read`` sets them (exp_model.cpp:1103-1134)."""
     columns = [star_column(main_star, f"_rlnAngle{name}") for name in ("Rot", "Tilt", "Psi")]
     if all(column is None for column in columns):
-        return {}
+        eulers = np.zeros((n, 3), dtype=np.float64)
+        return dict(
+            best_pose_rotations=np.asarray(R_from_relion(eulers, degrees=True), dtype=np.float32),
+            best_pose_eulers_deg=eulers,
+            best_pose_eulers_valid=np.ones(n, dtype=bool),
+        )
     if any(column is None for column in columns):
         raise ValueError("STAR file must provide all Euler-angle columns (_rlnAngleRot, _rlnAngleTilt, _rlnAnglePsi)")
     eulers = np.stack([np.asarray(column.astype(float).to_numpy(), dtype=np.float64) for column in columns], axis=1)

@@ -564,7 +564,8 @@ def test_particle_state_from_star_preserves_class_and_pmax_columns():
     assert_matches(state.class_assignments, [1, 0])
     np.testing.assert_allclose(state.max_posterior, [0.9, 0.25])
     assert_matches(state.pose_assignments, [-1, -1])
-    assert state.best_pose_rotations is None
+    # No rlnAngle* columns: RELION's (0, 0, 0) (exp_model.cpp:1103-1134).
+    assert_matches(state.best_pose_eulers_deg, np.zeros((2, 3)))
 
 
 def test_particle_state_from_star_keeps_class_zero_strict_for_fresh_inputs():
@@ -771,6 +772,44 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         main[["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"]].to_numpy(dtype=np.float64)[[2, 0]],
     )
     assert_matches(particle_state.visited, np.zeros(3, dtype=bool))
+
+
+def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(monkeypatch):
+    """RELION fills absent rlnAngleRot/Tilt/Psi with 0 when it reads the STAR (exp_model.cpp:1103-1134)
+    and estimates the accuracy at iteration 1 from those angles (ml_optimiser.cpp:3541-3549, 9505-9507)."""
+    from relax.helpers import relion_expected_accuracy
+
+    captured = {}
+
+    def fake_expected_accuracy(**kwargs):
+        captured["eulers"] = np.asarray(kwargs["eulers_deg"]).copy()
+        return relion_expected_accuracy.ExpectedErrors(2.5, 1.25, np.asarray([2.5]), np.asarray([1.25]), np.asarray([2]))
+
+    monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
+    main = pd.DataFrame({"_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]})
+    particle_state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
+    assert_matches(particle_state.best_pose_eulers_deg, np.zeros((3, 3)))
+    state = initialise_denovo_state(ori_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
+    state.Iref[:] = 1.0
+    optics_state = NativeOpticsState(
+        voltage=300.0, Cs=2.7, Q0=0.07, pixel_size=2.0,
+        defU=np.full(3, 10000.0), defV=np.full(3, 10000.0), defAngle=np.zeros(3), phase_shift=np.zeros(3),
+    )
+
+    meta = native_sampling._estimate_native_sampling_accuracy(
+        native_sampling._initial_sampling_state(native_options.NativeInitialModelOptions(fn_img="particles.star"), pixel_size=2.0),
+        state,
+        particle_state,
+        optics_state,
+        particle_order=np.asarray([2, 0], dtype=np.int64),
+        random_seed=0,
+        padding_factor=1,
+        sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+    )
+
+    assert meta is not None
+    assert meta["estimated_acc_rot"] == 2.5
+    assert_matches(captured["eulers"], np.zeros((2, 3)))
 
 
 @pytest.mark.parametrize("missing_name", ["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"])
