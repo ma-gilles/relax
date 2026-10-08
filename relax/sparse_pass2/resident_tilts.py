@@ -274,9 +274,7 @@ def run_tilt_chunk(
     from relax.sparse_pass2.resident_candidates import expand_chunk_mask_jnp
     from relax.sparse_pass2.resident_scoring import tilt_image_rows_raw_diff2, tilt_rows_scores_from_raw
 
-    row_capacity = chunk.row_capacity
     unit_capacity = int(chunk.image_capacity)
-    n_valid_rows = chunk.n_valid_rows
     n_slots = int(tilt.slot_capacity)
     image_capacity = tilt_chunk_image_capacity(unit_capacity, n_slots)
 
@@ -290,7 +288,7 @@ def run_tilt_chunk(
         unit_start=int(chunk.image_start),
         n_valid_units=int(chunk.n_valid_images),
         row_unit_local=np.asarray(host["row_image_local"]),
-        n_valid_rows=n_valid_rows,
+        n_valid_rows=chunk.n_valid_rows,
         image_capacity=image_capacity,
         slot_capacity=n_slots,
     )
@@ -309,15 +307,15 @@ def run_tilt_chunk(
     slot_matrices = tilt_slot_rotations(
         layout, row_eulers, tilt.image_left, row_spa_matrices=np.asarray(tilt.fine_rotations)[row_fine_rot]
     )
-    row_class = np.zeros(row_capacity, dtype=np.int64)
+    row_class = np.zeros(chunk.row_capacity, dtype=np.int64)
     if tables.n_classes > 1:
-        row_class[:n_valid_rows] = np.asarray(host["row_class"], dtype=np.int64)[:n_valid_rows]
+        row_class[:chunk.n_valid_rows] = np.asarray(host["row_class"], dtype=np.int64)[:chunk.n_valid_rows]
     entry_class = np.tile(row_class, n_slots)
     slot_block = n_slots if slot_block is None else max(1, min(int(slot_block), n_slots))
     slot_blocks = [(start, min(start + slot_block, n_slots)) for start in range(0, n_slots, slot_block)]
 
     def project_block(start, stop):
-        entries = slice(start * row_capacity, stop * row_capacity)
+        entries = slice(start * chunk.row_capacity, stop * chunk.row_capacity)
         return project_slot_rows(project_rotations, slot_matrices[entries], entry_class[entries], n_classes=tables.n_classes)
 
     # One block: the chunk's projections are made once, for the scores and the M-step.
@@ -364,7 +362,8 @@ def run_tilt_chunk(
             projection_recon_cache=caches[1],
             projection_recon_abs2_cache=caches[2],
             mstep_grid=jnp.asarray(
-                slot_matrices[start * row_capacity : stop * row_capacity], dtype=base_tables.mstep_grid.dtype
+                slot_matrices[start * chunk.row_capacity : stop * chunk.row_capacity],
+                dtype=base_tables.mstep_grid.dtype,
             ),
             translation_angles=image_angles,
             cache_slot_fine_rot=None,
@@ -372,11 +371,11 @@ def run_tilt_chunk(
 
     stage_tables = block_tables(0, n_slots, (score_cache, recon_cache, recon_abs2_cache))
     spec = rp._make_chunk_program_spec(
-        row_capacity=row_capacity, image_capacity=image_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
+        row_capacity=chunk.row_capacity, image_capacity=image_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
     )
 
     # --- scoring and the per-particle posterior -----------------------------
-    row_is_valid = jnp.arange(row_capacity, dtype=jnp.int32) < rows.n_valid_rows
+    row_is_valid = jnp.arange(chunk.row_capacity, dtype=jnp.int32) < rows.n_valid_rows
     slot_image_ids = jnp.asarray(layout.slot_image_ids)
     unit_ids = np.asarray(host["image_ids"], dtype=np.int64)
     unit_prior = np.zeros((unit_capacity, n_fine_trans), dtype=np.float32)
@@ -402,7 +401,7 @@ def run_tilt_chunk(
             full_to_compact=base_tables.full_to_compact,
             score_pixel_indices=score_pixel_indices,
             image_shape=image_shape,
-            row_capacity=row_capacity,
+            row_capacity=chunk.row_capacity,
             unit_capacity=unit_capacity,
             block_rows=int(spec.mstep_block_rows),
             tile_budget_bytes=int(tile_budget_bytes),
@@ -454,7 +453,7 @@ def run_tilt_chunk(
             rows,
             stage_tables,
             spec=rp._make_chunk_program_spec(
-                row_capacity=row_capacity, image_capacity=unit_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
+                row_capacity=chunk.row_capacity, image_capacity=unit_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
             ),
             cuda_backproject=em_cuda_kernels,
             row_is_valid=row_is_valid,
@@ -478,18 +477,18 @@ def run_tilt_chunk(
     # [images, T, P_rect] (gathered per row, [rows, T, P_rect]). Dropped translations carry exactly
     # zero posterior.
     block_rows = int(spec.mstep_block_rows)
-    host_posterior = np.asarray(row_posterior)[:n_valid_rows]  # sliced on the host: no program per row count
+    host_posterior = np.asarray(row_posterior)[:chunk.n_valid_rows]  # sliced on the host: no program per row count
     # Rows without posterior mass (RELION's non-significant samples) add exact zeros; the M-step
     # blocks visit only the rows with mass (row_has_mass), gathered to the front of each slot's order.
     row_has_mass = np.any(host_posterior > 0.0, axis=1)
     host_row_unit = np.asarray(host["row_image_local"], dtype=np.int64)
     unit_translations = unit_mstep_translations(
-        host_posterior, host_row_unit[:n_valid_rows], unit_capacity=unit_capacity, n_fine_trans=n_fine_trans
+        host_posterior, host_row_unit[:chunk.n_valid_rows], unit_capacity=unit_capacity, n_fine_trans=n_fine_trans
     )
     n_unit_trans = int(unit_translations.index.shape[1])
     # The rows' posterior at their particle's translations, [C_R, k]; padded entries are zero.
-    row_unit_device = np.zeros(row_capacity, dtype=np.int64)
-    row_unit_device[:n_valid_rows] = host_row_unit[:n_valid_rows]
+    row_unit_device = np.zeros(chunk.row_capacity, dtype=np.int64)
+    row_unit_device[:chunk.n_valid_rows] = host_row_unit[:chunk.n_valid_rows]
     unit_posterior = jnp.where(
         jnp.asarray(unit_translations.valid[row_unit_device]),
         jnp.take_along_axis(row_posterior, jnp.asarray(unit_translations.index[row_unit_device], dtype=jnp.int32), axis=1),
@@ -507,7 +506,7 @@ def run_tilt_chunk(
     merge_row_partials = len(translation_blocks) > 1
     if merge_row_partials:
         row_sum_bytes = (
-            row_capacity
+            chunk.row_capacity
             * int(spec.n_recon_pixels)
             * (np.dtype(Ft_y_total[0].dtype).itemsize + np.dtype(Ft_ctf_total[0].dtype).itemsize)
         )
@@ -519,7 +518,7 @@ def run_tilt_chunk(
     if mstep_census is not None:
         mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))
     slot_spec = rp._make_chunk_program_spec(
-        row_capacity=row_capacity,
+        row_capacity=chunk.row_capacity,
         image_capacity=unit_capacity,
         n_fine_trans=int(translation_blocks[0].index.size),
         presum_adjoint=merge_row_partials,
@@ -531,9 +530,9 @@ def run_tilt_chunk(
     # Each accumulator slot (class + K * group) backprojects its own rows into its BPref pair; the
     # per-image partials add over the slots (_place_slot_partials), the scale sums under each class's
     # mask (RELION keeps XA/AA per class, acc_ml_optimiser_impl.h:4893-4912).
-    row_accumulator = np.zeros(row_capacity, dtype=np.int64)
+    row_accumulator = np.zeros(chunk.row_capacity, dtype=np.int64)
     if n_accumulators > 1:
-        row_accumulator[:n_valid_rows] = np.asarray(host["row_slot"], dtype=np.int64)[:n_valid_rows]
+        row_accumulator[:chunk.n_valid_rows] = np.asarray(host["row_slot"], dtype=np.int64)[:chunk.n_valid_rows]
     accumulator_slots, accumulator_posteriors = [], []
     for accumulator in range(n_accumulators):
         in_accumulator = row_accumulator == accumulator
@@ -541,9 +540,9 @@ def run_tilt_chunk(
             _slot_mstep_tables(
                 unit_slot_images,
                 row_unit=host_row_unit,
-                row_has_mass=row_has_mass & in_accumulator[:n_valid_rows],
-                n_valid_rows=n_valid_rows,
-                row_capacity=row_capacity,
+                row_has_mass=row_has_mass & in_accumulator[:chunk.n_valid_rows],
+                n_valid_rows=chunk.n_valid_rows,
+                row_capacity=chunk.row_capacity,
                 block_rows=block_rows,
                 image_angles=np.asarray(tilt.image_angles, dtype=np.float32),
                 layout_image_ids=np.asarray(layout.image_ids),
@@ -595,7 +594,7 @@ def run_tilt_chunk(
             base_tables.coarse_parent_grid[rows.row_fine_rot],
             jnp.int32(int(spec.stats_config.n_coarse_rot)),
         ),
-        row_fine_rot=jnp.asarray(row_fine_rot_device(host, row_capacity)),
+        row_fine_rot=jnp.asarray(row_fine_rot_device(host, chunk.row_capacity)),
         unit_ids=jnp.asarray(unit_ids, dtype=jnp.int32),
         unit_optics_groups=None
         if tilt.unit_optics_groups is None

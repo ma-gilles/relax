@@ -710,10 +710,7 @@ def build_resident_candidate_tables_from_csr(
     concatenated CSR.
     """
 
-    n_images = csr.n_images
-    n_coarse_rot = csr.n_coarse_rot
-    n_coarse_trans = csr.n_coarse_trans
-    n_words = n_mask_words(n_coarse_trans)
+    n_words = n_mask_words(csr.n_coarse_trans)
     fine_translation_parent = np.asarray(fine_translation_parent)
     if fine_translation_parent.shape != (n_fine_trans,):
         raise ValueError(
@@ -738,7 +735,7 @@ def build_resident_candidate_tables_from_csr(
     )
 
     child_offsets, child_ids = children if children is not None else fine_rotation_children(
-        n_coarse_rot=n_coarse_rot,
+        n_coarse_rot=csr.n_coarse_rot,
         nside_level=nside_level,
         oversampling_order=oversampling_order,
         random_perturbation=random_perturbation,
@@ -747,9 +744,9 @@ def build_resident_candidate_tables_from_csr(
     )
 
     ids = csr.ids.astype(np.int64, copy=False)
-    all_cell_image = np.repeat(np.arange(n_images, dtype=np.int64), counts)
-    all_cell_rot = ids // n_coarse_trans
-    all_cell_trans = ids % n_coarse_trans
+    all_cell_image = np.repeat(np.arange(csr.n_images, dtype=np.int64), counts)
+    all_cell_rot = ids // csr.n_coarse_trans
+    all_cell_trans = ids % csr.n_coarse_trans
     sparse_cell = np.isin(all_cell_image, sparse_images)
     cell_image = all_cell_image[sparse_cell]
     cell_rot = all_cell_rot[sparse_cell]
@@ -789,9 +786,9 @@ def build_resident_candidate_tables_from_csr(
     # rotation grid as their parents, ascending, exactly as the host path's
     # full-rotation-support branch does.
     grid_images = np.sort(np.concatenate([full_images, complement_images]))
-    grid_rot = np.tile(np.arange(n_coarse_rot, dtype=np.int64), grid_images.size)
-    grid_image = np.repeat(grid_images, n_coarse_rot)
-    grid_bits = np.tile(all_translations_words(n_coarse_trans), (grid_rot.size, 1))
+    grid_rot = np.tile(np.arange(csr.n_coarse_rot, dtype=np.int64), grid_images.size)
+    grid_image = np.repeat(grid_images, csr.n_coarse_rot)
+    grid_bits = np.tile(all_translations_words(csr.n_coarse_trans), (grid_rot.size, 1))
     if complement_images.size:
         complement_cell = np.isin(all_cell_image, complement_images)
         if bool(complement_cell.any()):
@@ -799,14 +796,14 @@ def build_resident_candidate_tables_from_csr(
             clear_word, clear_bit = translation_word_and_bit(all_cell_trans[complement_cell])
             np.bitwise_and.at(
                 grid_bits,
-                (slot * n_coarse_rot + all_cell_rot[complement_cell], clear_word),
+                (slot * csr.n_coarse_rot + all_cell_rot[complement_cell], clear_word),
                 ~clear_bit,
             )
 
     # An image with no significant sample still carries one parent, coarse
     # rotation 0, and an all-false candidate mask, matching
     # ``_prepare_per_image_pass2_inputs``' ``unique_rot = [0]`` branch.
-    mask_mode = np.full(n_images, _MASK_MODE_BITSET, dtype=np.int8)
+    mask_mode = np.full(csr.n_images, _MASK_MODE_BITSET, dtype=np.int8)
     mask_mode[full_images] = _MASK_MODE_FULL
     mask_mode[empty_images] = _MASK_MODE_EMPTY
 
@@ -824,8 +821,8 @@ def build_resident_candidate_tables_from_csr(
     parent_rot = parent_rot[order]
     parent_bits = parent_bits[order]
 
-    parents_per_image = np.bincount(parent_image, minlength=n_images).astype(np.int64)
-    parent_row_offsets = np.zeros(n_images + 1, dtype=np.int64)
+    parents_per_image = np.bincount(parent_image, minlength=csr.n_images).astype(np.int64)
+    parent_row_offsets = np.zeros(csr.n_images + 1, dtype=np.int64)
     parent_row_offsets[1:] = np.cumsum(parents_per_image)
     parent_local = np.arange(parent_rot.size, dtype=np.int64) - parent_row_offsets[
         parent_image
@@ -835,18 +832,18 @@ def build_resident_candidate_tables_from_csr(
     is_bitset = mask_mode == _MASK_MODE_BITSET
     support_parent_bits = parent_bits[is_bitset[parent_image]]
     bits_per_image = np.where(is_bitset, parents_per_image, 0)
-    parent_offsets = np.zeros(n_images + 1, dtype=np.int32)
+    parent_offsets = np.zeros(csr.n_images + 1, dtype=np.int32)
     parent_offsets[1:] = np.cumsum(bits_per_image).astype(np.int32)
 
     # Row order: image-major, then RELION's parent execution key when the fine
     # posterior requires it, then the host path's within-parent child order.
     if relion_parent_execution_order:
         key = relion_parent_execution_key(
-            parent_rot, n_coarse_rot=n_coarse_rot, nside_level=nside_level
+            parent_rot, n_coarse_rot=csr.n_coarse_rot, nside_level=nside_level
         )
         # The key permutes [0, n_coarse_rot), so (image, key) is one unique
         # integer and a single argsort gives lexsort's order.
-        parent_order = np.argsort(parent_image * np.int64(n_coarse_rot) + key)
+        parent_order = np.argsort(parent_image * np.int64(csr.n_coarse_rot) + key)
     else:
         parent_order = np.arange(parent_rot.size, dtype=np.int64)
 
@@ -857,9 +854,9 @@ def build_resident_candidate_tables_from_csr(
         np.int64,
     )
 
-    rows_per_image = np.zeros(n_images, dtype=np.int64)
+    rows_per_image = np.zeros(csr.n_images, dtype=np.int64)
     np.add.at(rows_per_image, ordered_image, child_counts)
-    row_offsets = np.zeros(n_images + 1, dtype=np.int32)
+    row_offsets = np.zeros(csr.n_images + 1, dtype=np.int32)
     row_offsets[1:] = np.cumsum(rows_per_image).astype(np.int32)
     n_rows = int(row_offsets[-1])
 
@@ -884,17 +881,17 @@ def build_resident_candidate_tables_from_csr(
         row_log_prior = np.zeros(n_rows, dtype=dtype)
     else:
         prior = np.asarray(rotation_log_prior, dtype=dtype)
-        if prior.shape != (n_coarse_rot,):
+        if prior.shape != (csr.n_coarse_rot,):
             raise ValueError(
-                f"rotation_log_prior must have shape ({n_coarse_rot},), got {prior.shape}",
+                f"rotation_log_prior must have shape ({csr.n_coarse_rot},), got {prior.shape}",
             )
         row_log_prior = prior[row_parent_rot].astype(dtype, copy=False)
 
     return ResidentCandidateTables(
-        n_images=n_images,
+        n_images=csr.n_images,
         n_rows=n_rows,
         n_fine_trans=n_fine_trans,
-        n_coarse_trans=n_coarse_trans,
+        n_coarse_trans=csr.n_coarse_trans,
         row_offsets=row_offsets,
         row_unit=row_image.astype(np.int32, copy=False),
         row_fine_rot=row_fine_rot.astype(np.int32, copy=False),

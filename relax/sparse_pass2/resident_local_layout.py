@@ -354,48 +354,44 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
     ``row_is_valid`` mask.
     """
 
-    row_capacity = chunk.row_capacity
-    image_capacity = chunk.image_capacity
-    n_valid_rows = chunk.n_valid_rows
-    n_valid_images = chunk.n_valid_images
-    if n_valid_rows > row_capacity:
-        raise ValueError(f"chunk has {n_valid_rows} valid rows but capacity {row_capacity}")
-    if n_valid_images > image_capacity:
-        raise ValueError(f"chunk has {n_valid_images} valid images but capacity {image_capacity}")
+    if chunk.n_valid_rows > chunk.row_capacity:
+        raise ValueError(f"chunk has {chunk.n_valid_rows} valid rows but capacity {chunk.row_capacity}")
+    if chunk.n_valid_images > chunk.image_capacity:
+        raise ValueError(f"chunk has {chunk.n_valid_images} valid images but capacity {chunk.image_capacity}")
 
     rs, re = int(chunk.row_start), int(chunk.row_stop)
 
-    row_image_local = np.full(row_capacity, image_capacity - 1, dtype=np.int32)
-    row_log_prior = np.full(row_capacity, _ROW_LOG_PRIOR_PAD, dtype=np.float32)
-    row_posterior_id = np.full(row_capacity, tables.n_posterior_bins, dtype=np.int32)
-    row_rotation_id = np.zeros(row_capacity, dtype=np.int64)
+    row_image_local = np.full(chunk.row_capacity, chunk.image_capacity - 1, dtype=np.int32)
+    row_log_prior = np.full(chunk.row_capacity, _ROW_LOG_PRIOR_PAD, dtype=np.float32)
+    row_posterior_id = np.full(chunk.row_capacity, tables.n_posterior_bins, dtype=np.int32)
+    row_rotation_id = np.zeros(chunk.row_capacity, dtype=np.int64)
     rotations = np.broadcast_to(
-        np.eye(3, dtype=tables.rotations.dtype), (row_capacity, 3, 3)
+        np.eye(3, dtype=tables.rotations.dtype), (chunk.row_capacity, 3, 3)
     ).copy()
     mstep_rotations = np.broadcast_to(
-        np.eye(3, dtype=tables.mstep_rotations.dtype), (row_capacity, 3, 3)
+        np.eye(3, dtype=tables.mstep_rotations.dtype), (chunk.row_capacity, 3, 3)
     ).copy()
-    image_ids = np.full(image_capacity, -1, dtype=np.int32)
-    row_class = None if tables.row_class is None else np.zeros(row_capacity, dtype=np.int32)
+    image_ids = np.full(chunk.image_capacity, -1, dtype=np.int32)
+    row_class = None if tables.row_class is None else np.zeros(chunk.row_capacity, dtype=np.int32)
 
     row_mask_bits = None
     if tables.row_mask_bits is not None:
-        row_mask_bits = np.zeros((row_capacity, tables.n_mask_bytes), dtype=np.uint8)
+        row_mask_bits = np.zeros((chunk.row_capacity, tables.n_mask_bytes), dtype=np.uint8)
 
-    if n_valid_rows:
-        row_image_local[:n_valid_rows] = tables.row_image[rs:re] - int(chunk.image_start)
-        row_log_prior[:n_valid_rows] = tables.row_log_prior[rs:re]
-        row_posterior_id[:n_valid_rows] = tables.row_posterior_id[rs:re]
-        row_rotation_id[:n_valid_rows] = tables.row_rotation_id[rs:re]
-        rotations[:n_valid_rows] = tables.rotations[rs:re]
-        mstep_rotations[:n_valid_rows] = tables.mstep_rotations[rs:re]
+    if chunk.n_valid_rows:
+        row_image_local[:chunk.n_valid_rows] = tables.row_image[rs:re] - int(chunk.image_start)
+        row_log_prior[:chunk.n_valid_rows] = tables.row_log_prior[rs:re]
+        row_posterior_id[:chunk.n_valid_rows] = tables.row_posterior_id[rs:re]
+        row_rotation_id[:chunk.n_valid_rows] = tables.row_rotation_id[rs:re]
+        rotations[:chunk.n_valid_rows] = tables.rotations[rs:re]
+        mstep_rotations[:chunk.n_valid_rows] = tables.mstep_rotations[rs:re]
         if row_mask_bits is not None:
-            row_mask_bits[:n_valid_rows] = tables.row_mask_bits[rs:re]
+            row_mask_bits[:chunk.n_valid_rows] = tables.row_mask_bits[rs:re]
         if row_class is not None:
-            row_class[:n_valid_rows] = tables.row_class[rs:re]
+            row_class[:chunk.n_valid_rows] = tables.row_class[rs:re]
 
-    if n_valid_images:
-        image_ids[:n_valid_images] = np.arange(
+    if chunk.n_valid_images:
+        image_ids[:chunk.n_valid_images] = np.arange(
             chunk.image_start, chunk.image_stop, dtype=np.int32
         )
 
@@ -407,8 +403,8 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
         "row_mask_bits": row_mask_bits,
         "rotations": rotations,
         "mstep_rotations": mstep_rotations,
-        "n_valid_rows": np.int32(n_valid_rows),
-        "n_valid_images": np.int32(n_valid_images),
+        "n_valid_rows": np.int32(chunk.n_valid_rows),
+        "n_valid_images": np.int32(chunk.n_valid_images),
         "image_ids": image_ids,
         "row_class": row_class,
     }

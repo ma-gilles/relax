@@ -450,9 +450,8 @@ def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> Reside
             first.n_coarse_trans,
         ):
             raise ValueError("class tables must cover the same images and translation grids")
-    n_images = first.n_images
     n_words = n_mask_words(first.n_coarse_trans)
-    image_ids = np.arange(n_images, dtype=np.int64)
+    image_ids = np.arange(first.n_images, dtype=np.int64)
 
     # Each class table is image-major (CSR row_offsets), so the merged order
     # (image, then class, then the class table's own order) is a placement,
@@ -462,7 +461,7 @@ def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> Reside
     class_row_counts = np.stack(
         [np.diff(np.asarray(tables.row_offsets, dtype=np.int64)) for tables in tables_by_class]
     )  # [K, n_images]
-    class_parent_counts = np.zeros((n_classes, n_images), dtype=np.int64)
+    class_parent_counts = np.zeros((n_classes, first.n_images), dtype=np.int64)
 
     def class_part(class_index):
         tables = tables_by_class[class_index]
@@ -471,7 +470,7 @@ def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> Reside
         parent_local = np.asarray(tables.row_parent_local, dtype=np.int64)
         # Parents an image's rows reference in this class (bitset images store
         # exactly these; full and empty images store none).
-        n_parents = np.zeros(n_images, dtype=np.int64)
+        n_parents = np.zeros(first.n_images, dtype=np.int64)
         has_rows = class_row_counts[class_index] > 0
         if np.any(has_rows):
             n_parents[has_rows] = np.maximum.reduceat(parent_local + 1, row_offsets_k[:-1][has_rows])
@@ -504,9 +503,9 @@ def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> Reside
     # Each class writes only its own row of class_parent_counts.
     class_parts = map_over_classes(class_part, range(n_classes))
 
-    row_offsets = np.zeros(n_images + 1, dtype=np.int64)
+    row_offsets = np.zeros(first.n_images + 1, dtype=np.int64)
     row_offsets[1:] = np.cumsum(class_row_counts.sum(axis=0))
-    parent_offsets = np.zeros(n_images + 1, dtype=np.int64)
+    parent_offsets = np.zeros(first.n_images + 1, dtype=np.int64)
     parent_offsets[1:] = np.cumsum(class_parent_counts.sum(axis=0))
     # Rows (and parents) of an image's earlier classes come first.
     row_class_shift = np.cumsum(class_row_counts, axis=0) - class_row_counts
@@ -537,7 +536,7 @@ def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> Reside
     map_over_classes(place_class, range(n_classes))
 
     return ResidentCandidateTables(
-        n_images=n_images,
+        n_images=first.n_images,
         n_rows=n_rows,
         n_fine_trans=int(first.n_fine_trans),
         n_coarse_trans=int(first.n_coarse_trans),
@@ -546,7 +545,7 @@ def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> Reside
         row_fine_rot=merged_fine_rot,
         row_parent_local=merged_parent_local,
         row_log_prior=merged_log_prior,
-        mask_mode=np.full(n_images, _MASK_MODE_BITSET, dtype=np.int8),
+        mask_mode=np.full(first.n_images, _MASK_MODE_BITSET, dtype=np.int8),
         parent_offsets=parent_offsets.astype(np.int32),
         parent_trans_bits=merged_bits,
         row_class=merged_class,
@@ -1029,53 +1028,49 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     fields to 0 is a safety margin, not a correctness requirement.
     """
 
-    row_capacity = chunk.row_capacity
-    image_capacity = chunk.image_capacity
-    n_valid_rows = chunk.n_valid_rows
-    n_valid_images = chunk.n_valid_images
-    if n_valid_rows > row_capacity:
-        raise ValueError(f"chunk has {n_valid_rows} valid rows but capacity {row_capacity}")
-    if n_valid_images > image_capacity:
-        raise ValueError(f"chunk has {n_valid_images} valid images but capacity {image_capacity}")
+    if chunk.n_valid_rows > chunk.row_capacity:
+        raise ValueError(f"chunk has {chunk.n_valid_rows} valid rows but capacity {chunk.row_capacity}")
+    if chunk.n_valid_images > chunk.image_capacity:
+        raise ValueError(f"chunk has {chunk.n_valid_images} valid images but capacity {chunk.image_capacity}")
 
     rs, re = chunk.row_start, chunk.row_stop
 
-    row_image_local = np.full(row_capacity, image_capacity - 1, dtype=np.int32)
-    row_fine_rot = np.full(row_capacity, _ROW_FINE_ROT_PAD, dtype=np.int32)
-    row_parent_local = np.full(row_capacity, _ROW_PARENT_LOCAL_PAD, dtype=np.int32)
-    row_log_prior = np.full(row_capacity, _ROW_LOG_PRIOR_PAD, dtype=np.float32)
+    row_image_local = np.full(chunk.row_capacity, chunk.image_capacity - 1, dtype=np.int32)
+    row_fine_rot = np.full(chunk.row_capacity, _ROW_FINE_ROT_PAD, dtype=np.int32)
+    row_parent_local = np.full(chunk.row_capacity, _ROW_PARENT_LOCAL_PAD, dtype=np.int32)
+    row_log_prior = np.full(chunk.row_capacity, _ROW_LOG_PRIOR_PAD, dtype=np.float32)
     n_words = n_mask_words(tables.n_coarse_trans)
-    row_mask_bits = np.full((row_capacity, n_words), _ROW_MASK_BITS_PAD, dtype=np.uint32)
-    row_mask_mode = np.full(row_capacity, _MASK_MODE_EMPTY, dtype=np.int8)
-    row_class = np.zeros(row_capacity, dtype=np.int32)
-    row_slot = np.zeros(row_capacity, dtype=np.int32)
-    image_ids = np.full(image_capacity, -1, dtype=np.int32)
+    row_mask_bits = np.full((chunk.row_capacity, n_words), _ROW_MASK_BITS_PAD, dtype=np.uint32)
+    row_mask_mode = np.full(chunk.row_capacity, _MASK_MODE_EMPTY, dtype=np.int8)
+    row_class = np.zeros(chunk.row_capacity, dtype=np.int32)
+    row_slot = np.zeros(chunk.row_capacity, dtype=np.int32)
+    image_ids = np.full(chunk.image_capacity, -1, dtype=np.int32)
 
-    if n_valid_rows:
+    if chunk.n_valid_rows:
         row_image_global = tables.row_unit[rs:re]
-        row_image_local[:n_valid_rows] = row_image_global - chunk.image_start
-        row_fine_rot[:n_valid_rows] = tables.row_fine_rot[rs:re]
+        row_image_local[:chunk.n_valid_rows] = row_image_global - chunk.image_start
+        row_fine_rot[:chunk.n_valid_rows] = tables.row_fine_rot[rs:re]
         row_parent_local_valid = tables.row_parent_local[rs:re]
-        row_parent_local[:n_valid_rows] = row_parent_local_valid
-        row_log_prior[:n_valid_rows] = tables.row_log_prior[rs:re]
+        row_parent_local[:chunk.n_valid_rows] = row_parent_local_valid
+        row_log_prior[:chunk.n_valid_rows] = tables.row_log_prior[rs:re]
         if tables.row_class is not None:
-            row_class[:n_valid_rows] = tables.row_class[rs:re]
-        row_slot[:n_valid_rows] = row_class[:n_valid_rows]
+            row_class[:chunk.n_valid_rows] = tables.row_class[rs:re]
+        row_slot[:chunk.n_valid_rows] = row_class[:chunk.n_valid_rows]
         if tables.unit_slot_offset is not None:
-            row_slot[:n_valid_rows] += int(tables.n_classes) * tables.unit_slot_offset[row_image_global]
+            row_slot[:chunk.n_valid_rows] += int(tables.n_classes) * tables.unit_slot_offset[row_image_global]
 
         row_mode_valid = tables.mask_mode[row_image_global]
-        row_mask_mode[:n_valid_rows] = row_mode_valid
+        row_mask_mode[:chunk.n_valid_rows] = row_mode_valid
 
-        bits_out = np.zeros((n_valid_rows, n_words), dtype=np.uint32)
+        bits_out = np.zeros((chunk.n_valid_rows, n_words), dtype=np.uint32)
         bitset_rows = row_mode_valid == _MASK_MODE_BITSET
         if np.any(bitset_rows):
             flat_idx = tables.parent_offsets[row_image_global[bitset_rows]] + row_parent_local_valid[bitset_rows]
             bits_out[bitset_rows] = tables.parent_trans_bits[flat_idx]
-        row_mask_bits[:n_valid_rows] = bits_out
+        row_mask_bits[:chunk.n_valid_rows] = bits_out
 
-    if n_valid_images:
-        image_ids[:n_valid_images] = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int32)
+    if chunk.n_valid_images:
+        image_ids[:chunk.n_valid_images] = np.arange(chunk.image_start, chunk.image_stop, dtype=np.int32)
 
     return {
         "row_image_local": row_image_local,
@@ -1086,7 +1081,7 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
         "row_mask_mode": row_mask_mode,
         "row_class": row_class,
         "row_slot": row_slot,
-        "n_valid_rows": np.int32(n_valid_rows),
-        "n_valid_images": np.int32(n_valid_images),
+        "n_valid_rows": np.int32(chunk.n_valid_rows),
+        "n_valid_images": np.int32(chunk.n_valid_images),
         "image_ids": image_ids,
     }

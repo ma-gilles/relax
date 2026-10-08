@@ -366,7 +366,6 @@ def make_resident_statistics(
     """
 
     capacity = int(config.image_capacity)
-    n_classes = config.n_classes
     zeros_images = jnp.zeros(capacity, dtype=jnp.float64)
     groups = () if int(config.n_optics_groups) == 1 else (int(config.n_optics_groups),)
     return ResidentStatistics(
@@ -385,11 +384,11 @@ def make_resident_statistics(
         score_log_z=jnp.full(capacity, -jnp.inf, dtype=jnp.float64),
         best_local_rot=jnp.full(capacity, -1, dtype=jnp.int32),
         invalid_best_rows=jnp.zeros((), dtype=jnp.int64),
-        classes=None if n_classes == 1 else ResidentClassStatistics(
-            log_evidence=jnp.full((capacity, n_classes), -jnp.inf, dtype=jnp.float64),
-            best_log_score=jnp.full((capacity, n_classes), -jnp.inf, dtype=jnp.float64),
-            best_cell=jnp.full((capacity, n_classes), -1, dtype=jnp.int64),
-            posterior_sums=jnp.zeros(n_classes, dtype=jnp.float64),
+        classes=None if config.n_classes == 1 else ResidentClassStatistics(
+            log_evidence=jnp.full((capacity, config.n_classes), -jnp.inf, dtype=jnp.float64),
+            best_log_score=jnp.full((capacity, config.n_classes), -jnp.inf, dtype=jnp.float64),
+            best_cell=jnp.full((capacity, config.n_classes), -1, dtype=jnp.int64),
+            posterior_sums=jnp.zeros(config.n_classes, dtype=jnp.float64),
         ),
     )
 
@@ -832,7 +831,6 @@ def finalize_statistics(
             f"Resident pass-2 statistics: {invalid} image(s) selected a candidate row outside "
             "their own row range; the chunk's best-row operand points into padding"
         )
-    n_fine_trans = config.n_fine_trans
     (
         wsum_sigma2_noise,
         wsum_img_power,
@@ -867,12 +865,12 @@ def finalize_statistics(
         raise RuntimeError(
             f"Resident pass-2 statistics: {missing} image(s) were never written by a chunk"
         )
-    best_translation_indices = np.where(best_cell < 0, -1, best_cell % n_fine_trans)
-    best_fine_rotation_indices = np.where(best_cell < 0, -1, best_cell // n_fine_trans)
+    best_translation_indices = np.where(best_cell < 0, -1, best_cell % config.n_fine_trans)
+    best_fine_rotation_indices = np.where(best_cell < 0, -1, best_cell // config.n_fine_trans)
     hard_assignment = np.where(
         best_local_rot < 0,
         -1,
-        best_local_rot * n_fine_trans + best_translation_indices,
+        best_local_rot * config.n_fine_trans + best_translation_indices,
     ).astype(np.int32)
 
     rotation_posterior_sums = np.asarray(rotation_posterior_sums, dtype=np.float64)
@@ -883,8 +881,8 @@ def finalize_statistics(
         finalized_classes = FinalizedClassStatistics(
             log_evidence=np.asarray(classes.log_evidence, dtype=np.float64)[:n_images].T,
             best_log_score=np.asarray(classes.best_log_score, dtype=np.float64)[:n_images].T,
-            best_fine_rotation_indices=np.where(class_best_cell < 0, -1, class_best_cell // n_fine_trans),
-            best_translation_indices=np.where(class_best_cell < 0, -1, class_best_cell % n_fine_trans),
+            best_fine_rotation_indices=np.where(class_best_cell < 0, -1, class_best_cell // config.n_fine_trans),
+            best_translation_indices=np.where(class_best_cell < 0, -1, class_best_cell % config.n_fine_trans),
             posterior_sums=np.asarray(classes.posterior_sums, dtype=np.float64),
         )
 
