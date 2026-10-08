@@ -537,7 +537,12 @@ def _fixed_diagnostic_runtime_config(
 ) -> dict[str, str | float | int | bool]:
     """Materialize every v3 runtime control with stable Python scalar types."""
 
-    mask_edge = 5.0 if args._relion_mask_params is None else float(args._relion_mask_params[1])
+    from relax.refinement.refinement_options import (
+        RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM,
+        RELION_WIDTH_MASK_EDGE_PX,
+    )
+
+    mask_edge = RELION_WIDTH_MASK_EDGE_PX if args._relion_mask_params is None else float(args._relion_mask_params[1])
     particle_diameter = 0.0 if args._relion_mask_params is None else float(args._relion_mask_params[0])
     return {
         "adaptive_oversampling": int(args.adaptive_oversampling),
@@ -558,7 +563,7 @@ def _fixed_diagnostic_runtime_config(
         "particle_diameter_angstrom": float(particle_diameter),
         "width_mask_edge_px": float(mask_edge),
         "tau2_fudge": float(effective_tau2_fudge),
-        "low_resol_join_halves_angstrom": 40.0,
+        "low_resol_join_halves_angstrom": RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM,
         "image_batch_size": int(args.image_batch_size),
         "rotation_block_size": int(args.rotation_block_size),
         "random_seed": int(args.seed),

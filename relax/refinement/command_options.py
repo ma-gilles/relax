@@ -13,11 +13,15 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import NamedTuple
 
+from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.particle_io import add_particle_read_arguments
 from relax.parity import frozen_boundary_cli
 from relax.parity.state_swap_probe import add_state_swap_probe_arguments
 from relax.refinement.refinement_options import (
+    FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN,
     RELAX_MODE_CONSISTENCY,
+    RELION_INCR_SIZE,
+    RELION_WIDTH_MASK_EDGE_PX,
     AdaptiveOptions,
     HalfOverlapOptions,
     InitialSampling,
@@ -38,7 +42,6 @@ RELION_GUI_PARTICLE_DIAMETER_ANG = 200.0
 
 
 _INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV = "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE"
-_FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN = 4e-6
 
 
 def resolve_firstiter_controls(
@@ -55,7 +58,8 @@ def resolve_firstiter_controls(
     RELION Class3D also uses first-iteration CC, but the exact coarse-tree
     replay currently supports only K=1.  Keep K>1 and non-firstiter callers
     unchanged. ``tree_rescore_max_margin`` (``--firstiter_cc_tree_rescore_max_margin``)
-    is ``auto`` (4e-6 for K=1 with --firstiter_cc, else off), ``off`` or a margin.
+    is ``auto`` (``FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN`` for K=1 with --firstiter_cc, else off), ``off``
+    or a margin.
     """
 
     environment = os.environ if environ is None else environ
@@ -77,7 +81,7 @@ def resolve_firstiter_controls(
 
     token = str(tree_rescore_max_margin).strip().lower()
     if token == "auto":
-        margin = _FIRSTITER_CC_TREE_TOP2_RESCORE_DEFAULT_MAX_MARGIN if use_k1_defaults else None
+        margin = FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN if use_k1_defaults else None
     elif token == "off":
         margin = None
     else:
@@ -379,7 +383,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--auto_local_healpix_order",
         type=int,
-        default=4,
+        default=LOCAL_SEARCH_HEALPIX_ORDER,
         help="RELION --auto_local_healpix_order threshold for switching from "
         "global to local angular searches. RELION's binary default is 4; "
         "set to 3 when comparing against runs launched with "
@@ -780,7 +784,7 @@ def parse_refinement_args(argv=None):
     parser.add_argument(
         "--width_mask_edge_px",
         type=float,
-        default=5.0,
+        default=RELION_WIDTH_MASK_EDGE_PX,
         help="RELION softMaskOutsideMap edge width in pixels when --particle_diameter_ang is provided.",
     )
     parser.add_argument(
@@ -819,7 +823,7 @@ def parse_refinement_args(argv=None):
         "--firstiter_cc_tree_rescore_max_margin",
         default="auto",
         help="--firstiter_cc K=1: rescore an image's top two coarse CC poses on RELION's coarse tree "
-        "when their scores differ by at most this margin. auto (default) is 4e-6 for K=1 and off for "
+        f"when their scores differ by at most this margin. auto (default) is {FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN:g} for K=1 and off for "
         "K>1; off disables it.",
     )
     parser.add_argument(
@@ -1484,7 +1488,7 @@ def resolve_schedule(
         init_data_vs_prior=init_data_vs_prior,
         init_ave_Pmax=None if frozen_boundary is None else frozen_boundary.ave_pmax,
         init_has_high_fsc_at_limit=None if frozen_boundary is None else frozen_boundary.has_high_fsc_at_limit,
-        init_relion_incr_size=10 if frozen_boundary is None else frozen_boundary.relion_incr_size,
+        init_relion_incr_size=RELION_INCR_SIZE if frozen_boundary is None else frozen_boundary.relion_incr_size,
         init_healpix_order=initial_sampling.coarse_order,
         max_healpix_order=initial_sampling.max_order,
         init_translation_range=args.offset_range,

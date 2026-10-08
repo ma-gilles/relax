@@ -33,6 +33,15 @@ from relax.symmetry import canonicalize_rotational_symmetry
 if TYPE_CHECKING:
     from relax.helpers.dtype_policy import DensePrecisionPolicy
 
+# RELION's --incr_size (ml_optimiser.cpp:1001): Fourier shells beyond the current resolution in the first iteration.
+RELION_INCR_SIZE = 10
+# The --low_resol_join_halves the RELION GUI passes to auto-refine (pipeline_jobs.cpp:4509); the binary's is -1.
+RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM = 40.0
+# The --firstiter_cc_tree_rescore_max_margin "auto" margin of K=1 with --firstiter_cc.
+FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN = 4e-6
+# RELION's --maskedge (ml_optimiser.cpp:996): the soft edge of the particle mask, in pixels.
+RELION_WIDTH_MASK_EDGE_PX = 5.0
+
 
 @dataclass(frozen=True, kw_only=True)
 class RefinementSchedule:
@@ -62,7 +71,7 @@ class RefinementSchedule:
     init_has_high_fsc_at_limit: bool | None = None
     force_max_iter_after_convergence: bool = False
     skip_final_iteration: bool = False
-    init_relion_incr_size: int = 10
+    init_relion_incr_size: int = RELION_INCR_SIZE
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,7 +109,7 @@ class SolventOptions:
 class RelionParityOptions:
     """Knobs that pin RELION numerical behavior."""
 
-    low_resol_join_halves_angstrom: float = 40.0
+    low_resol_join_halves_angstrom: float = RELION_GUI_LOW_RESOL_JOIN_HALVES_ANGSTROM
     tau2_fudge: float = 1.0
     perturb_factor: float = 0.0
     perturb_seed: int | None = None
@@ -120,7 +129,8 @@ class RelionParityOptions:
     preserve_bpref_particle_order: bool = False
     allow_replayed_bpref_particle_order: bool = False
     # K=1 --firstiter_cc: rescore an image's top two coarse CC poses on RELION's
-    # coarse tree when their margin is at most this (the CLI default is 4e-6); None is off.
+    # coarse tree when their margin is at most this (the CLI's auto: FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN);
+    # None is off.
     firstiter_cc_tree_rescore_max_margin: float | None = None
 
     def __post_init__(self):
