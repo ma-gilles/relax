@@ -1699,15 +1699,14 @@ def resolve_k_class(args, *, trial_order, resumed: bool) -> KClassOptions:
 
 
 def frozen_boundary_replay(frozen_boundary) -> dict:
-    """What a frozen boundary replays, as ``RelionReplay`` fields: its ``RefinementState`` fields, the check
-    that the scoring state is unchanged before the first iteration, and (its fixed diagnostic arm only) its
-    sealed sampling state and scoring context. Nothing without a boundary."""
+    """What a frozen boundary replays, as ``RelionReplay`` fields: its ``RefinementState`` fields (whose
+    presence also makes the source check that the scoring state is unchanged before the first iteration), and
+    (its fixed diagnostic arm only) its sealed sampling state and scoring context. Nothing without a boundary."""
     if frozen_boundary is None:
         return {}
     sealed = frozen_boundary.fixed_diagnostic_arm
     return dict(
         frozen_refinement_state_fields=frozen_boundary.refinement_state_fields,
-        assert_scoring_state_unchanged=True,
         sealed_sampling_state=frozen_boundary.sampling_state if sealed else None,
         sealed_scoring_context=(
             {

@@ -1043,10 +1043,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         source_fields = {}
         if replay_class is not None and "sealed_sampling_state" in {f.name for f in dataclasses.fields(replay_class)}:
             # A source whose frozen boundary and state-swap probe enter through the input source (code rule 15).
-            renamed = {"assert_initial_scoring_state_immutable": "assert_scoring_state_unchanged"}
-            for name in ("state_swap_probe", "assert_initial_scoring_state_immutable", "sealed_sampling_state"):
+            for name in ("state_swap_probe", "sealed_sampling_state"):
                 if name in debug_fields:
-                    source_fields[renamed.get(name, name)] = debug_fields.pop(name)
+                    source_fields[name] = debug_fields.pop(name)
+            if debug_fields.pop("assert_initial_scoring_state_immutable", False):
+                # A frozen boundary's (empty) RefinementState fields: with them the source checks the scoring
+                # state; a source older than deep2 O-D5 also takes its separate assert_scoring_state_unchanged.
+                source_fields["frozen_refinement_state_fields"] = {}
+                if "assert_scoring_state_unchanged" in {f.name for f in dataclasses.fields(replay_class)}:
+                    source_fields["assert_scoring_state_unchanged"] = True
         if debug_fields:
             extra["debug"] = refinement_options.EngineDebugOptions(**debug_fields)
         if perturb is not None:

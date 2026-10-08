@@ -82,8 +82,8 @@ class RelionReplay:
     or forbid (``RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE``) replaying the last numbered state in
     the final pass; their defaults read the environment when the record is built.
     A frozen boundary (``--frozen-boundary-dir``): its ``sealed_sampling_state`` and ``sealed_scoring_context``,
-    its ``frozen_refinement_state_fields`` and ``assert_scoring_state_unchanged`` (check, right before the
-    first iteration scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
+    and its ``frozen_refinement_state_fields`` (with them, the source checks, right before the first iteration
+    scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
     state-swap probe's settings (``relax.diagnostics.state_swap_probe.build_state_swap_probe``).
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
     which particle in each iteration, ``--relion-dispatch-schedule``) and follower-scale replay
@@ -109,7 +109,6 @@ class RelionReplay:
     sealed_sampling_state: Any | None = None
     sealed_scoring_context: Any | None = None
     frozen_refinement_state_fields: Any | None = None
-    assert_scoring_state_unchanged: bool = False
     state_swap_probe: dict | None = None
     follower_topology: Any | None = None
 
@@ -135,7 +134,7 @@ class RelionReplay:
                 self.final_replay_reference_maps, self.final_sampling_replay_relion_dir, self.sealed_sampling_state,
                 self.sealed_scoring_context, self.frozen_refinement_state_fields, self.state_swap_probe,
             )
-        ) or self.final_all_data_replay_last_numbered_state or self.assert_scoring_state_unchanged or (
+        ) or self.final_all_data_replay_last_numbered_state or (
             self.follower_topology is not None
             and (int(self.follower_topology.n_followers or 0) > 0 or self.follower_topology.replay is not None)
         )
@@ -257,7 +256,7 @@ class RelionReplaySource(InputSource):
 
     def scoring_state_bound(self, scoring_arrays):
         """A frozen boundary binds the scoring state it checks before the first iteration (K=1 only)."""
-        if not self.replay.assert_scoring_state_unchanged:
+        if self.replay.frozen_refinement_state_fields is None:
             return
         if int(self.options.k_class.n_classes) > 1:
             raise RuntimeError("Frozen scoring-state immutability assertion currently supports K=1 only")

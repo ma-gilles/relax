@@ -107,12 +107,13 @@ def test_a_frozen_boundary_replays_its_state_and_its_sealed_sampling_on_the_fixe
                                consumer_relion_iteration=4, source_sha256="h", source_roles={}, runtime_config={},
                                map_lineage=[], refinement_state_fields={"healpix_order": 2})
     sealed = command_options.frozen_boundary_replay(boundary)
-    assert sealed["assert_scoring_state_unchanged"] and sealed["sealed_sampling_state"] == "sampling"
+    assert sealed["sealed_sampling_state"] == "sampling"
     assert sealed["sealed_scoring_context"]["consumer_relion_iteration"] == 4
     assert sealed["frozen_refinement_state_fields"] == {"healpix_order": 2}
     boundary.fixed_diagnostic_arm = False
     unsealed = command_options.frozen_boundary_replay(boundary)
-    assert unsealed["assert_scoring_state_unchanged"] and unsealed["sealed_scoring_context"] is None
+    assert unsealed["frozen_refinement_state_fields"] == {"healpix_order": 2}
+    assert unsealed["sealed_scoring_context"] is None
     assert unsealed["sealed_sampling_state"] is None
 
 
