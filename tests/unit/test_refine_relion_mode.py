@@ -683,7 +683,9 @@ def test_replay_translation_grid_preserves_state_grid_for_subtolerance_star_roun
     np.testing.assert_allclose(replay_grid, state_grid, rtol=0.0, atol=1e-6)
 
 
-def test_k1_translation_grid_matches_relion_ceil_boundary_without_changing_k4(monkeypatch):
+def test_translation_grid_matches_relion_ceil_boundary_for_every_class_count(monkeypatch):
+    # HealpixSampling::setTranslations (healpix_sampling.cpp:344, 413-454) enumerates CEIL(range/step) for
+    # every K; floor division dropped the four axial points of 4.25 / 1.416667 A for K>1 too.
     rounded_range = 4.25 / 1.4166666666666667
     rounded_step = 1.416667 / 1.4166666666666667
 
@@ -705,7 +707,7 @@ def test_k1_translation_grid_matches_relion_ceil_boundary_without_changing_k4(mo
     )
 
     assert k1_grid.shape == (29, 2)
-    assert k4_grid.shape == (25, 2)
+    assert k4_grid.shape == (29, 2)
     assert diagnostic_control_grid.shape == (25, 2)
     np.testing.assert_allclose(
         k1_grid[[0, 14, -1]],
@@ -713,6 +715,26 @@ def test_k1_translation_grid_matches_relion_ceil_boundary_without_changing_k4(mo
         rtol=0.0,
         atol=1e-12,
     )
+    np.testing.assert_allclose(k4_grid, k1_grid, rtol=0.0, atol=0.0)
+
+
+def test_k4_translation_grid_matches_relions_recorded_count():
+    # RELION's K=4 Class3D reference run (fixture k4_5k128_relion_os0) samples offsets with range 25.5 A and
+    # step 8.5 A (run_it001_sampling.star) and logs "TranslationalSampling= 8.5 NrTranslations= 29".
+    import re
+
+    from helpers.em_fixtures import fixture_file
+
+    sampling_star = fixture_file("k4_5k128_relion_os0", "run_it001_sampling.star").read_text()
+    offset_range = float(re.search(r"_rlnOffsetRange\s+(\S+)", sampling_star).group(1))
+    offset_step = float(re.search(r"_rlnOffsetStep\s+(\S+)", sampling_star).group(1))
+    log = fixture_file("k4_5k128_relion_os0", "relion_run.log").read_text()
+    recorded = {int(n) for step, n in re.findall(r"TranslationalSampling= (\S+) NrTranslations= (\d+)", log)
+                if float(step) == offset_step}
+    grid = sampling_module._translation_grid_for_class_count(
+        offset_range / offset_step, 1.0, n_classes=4, source_units_per_pixel=offset_step
+    )
+    assert recorded == {grid.shape[0]} == {29}
 
 
 def test_k1_translation_grid_rejects_invalid_diagnostic_switch(monkeypatch):

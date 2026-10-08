@@ -150,3 +150,21 @@ def test_half_image_preprocessing_masks_with_the_resolved_edge():
         fourier_backend="jax", source_faithful_spectrum_norm=False, log=LOG,
     )
     assert calls == [dict(pixel_size=1.5, particle_diameter_ang=60.0, width_mask_edge_px=7.0)] * 2
+
+
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_iteration_one_translations_are_relions_grid(monkeypatch, tmp_path, n_classes):
+    # Iteration 1 used floor(range / step): 5.5 / 1.1 px gave 77 translations where RELION's
+    # setTranslations (healpix_sampling.cpp:344, 413-454: CEIL, x^2 + y^2 < range^2 + 0.001 in A^2) gives 81.
+    from relax.sampling import get_relion_translation_grid
+
+    command = ["refine"] if n_classes == 1 else ["class3d", "--n_classes", str(n_classes)]
+    kwargs = controller_inputs(
+        monkeypatch, tmp_path, *command, "--offset_range", "5.5", "--offset_step", "1.1", n_classes=n_classes,
+    )
+    voxel = float(kwargs["experiment_datasets"][0].voxel_size)
+    expected = get_relion_translation_grid(5.5, 1.1, source_units_per_pixel=voxel)
+    translations = np.asarray(kwargs["translations"])
+    assert expected.shape == (81, 2)
+    assert translations.dtype == np.float64
+    np.testing.assert_allclose(translations, expected, rtol=0.0, atol=0.0)

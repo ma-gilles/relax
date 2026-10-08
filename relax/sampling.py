@@ -397,12 +397,14 @@ def _k1_relion_exact_translation_grid_enabled(environ=None):
 
 
 def _translation_grid_for_class_count(max_pixel, pixel_offset, *, n_classes, source_units_per_pixel=1.0):
-    """Use source-exact RELION translation enumeration for K=1 only."""
-    if int(n_classes) == 1 and _k1_relion_exact_translation_grid_enabled():
-        return get_relion_translation_grid(
-            max_pixel, pixel_offset, source_units_per_pixel=source_units_per_pixel
-        )
-    return get_translation_grid(max_pixel, pixel_offset)
+    """RELION's translation grid (``HealpixSampling::setTranslations``) for every class count.
+
+    ``RELAX_K1_RELION_EXACT_TRANSLATION_GRID=0`` keeps the floor-division grid for K=1 as a diagnostic
+    control arm.
+    """
+    if int(n_classes) == 1 and not _k1_relion_exact_translation_grid_enabled():
+        return get_translation_grid(max_pixel, pixel_offset)
+    return get_relion_translation_grid(max_pixel, pixel_offset, source_units_per_pixel=source_units_per_pixel)
 
 
 def rotation_indices_to_relion_eulers(

@@ -744,7 +744,7 @@ def main(command=None):
         )
 
     # ---- Set up rotation and translation grids ----
-    from relax.sampling import get_translation_grid, rotation_grid_size
+    from relax.sampling import _relion_base_translation_grid, rotation_grid_size
 
     initial_sampling = command_options.resolve_initial_sampling(
         args.healpix_order,
@@ -785,7 +785,11 @@ def main(command=None):
     }
     n_rotations = rotation_grid_size(rotation_grid_order, symmetry=symmetry)
     logger.info("Symmetry provenance: %s", symmetry_provenance)
-    translations = get_translation_grid(args.offset_range, args.offset_step).astype(np.float32)
+    # Iteration 1 starts from the grid every later iteration rebuilds: RELION's (ceil, Angstrom tolerance),
+    # in host float64 (HealpixSampling::setTranslations, healpix_sampling.cpp:344, 413-454).
+    translations = _relion_base_translation_grid(
+        args.offset_range, args.offset_step, n_classes=args.n_classes, voxel_size=ds.voxel_size
+    )
     logger.info("Rotation grid: %d rotations (healpix_order=%d)", n_rotations, rotation_grid_order)
     logger.info(
         "Translation grid: %d translations (range=%.1f, step=%.1f)",
