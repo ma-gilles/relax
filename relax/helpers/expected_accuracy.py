@@ -401,7 +401,7 @@ def _projector_data(
     data = None
     for k, reference in enumerate(references_relion):
         slab = setup_relion_projector_on_host(
-            reference, int(current_size) // 2, ori_size=model_box_size, padding_factor=int(padding_factor),
+            reference, int(current_size) // 2, box_size=model_box_size, padding_factor=int(padding_factor),
             gridding_kernel=gridding_kernel,
         )[0]
         if data is None:

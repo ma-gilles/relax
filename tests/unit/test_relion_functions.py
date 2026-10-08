@@ -961,7 +961,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         jnp.array(ft_ctf_1_full),
         volume_shape,
         voxel_size=1.2,
-        grid_size=volume_shape[0],
+        box_size=volume_shape[0],
         low_resol_join_halves_angstrom=12.0,
         current_resolution_angstrom=18.0,
     )
@@ -972,7 +972,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         jnp.array(ft_ctf_1_half),
         volume_shape,
         voxel_size=1.2,
-        grid_size=volume_shape[0],
+        box_size=volume_shape[0],
         low_resol_join_halves_angstrom=12.0,
         current_resolution_angstrom=18.0,
     )
@@ -1004,7 +1004,7 @@ def test_join_halves_at_low_resolution_uses_relion_squared_radius_boundary():
         jnp.array(ft_ctf_1.reshape(-1)),
         volume_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
     )
 
@@ -1035,7 +1035,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
     kwargs = dict(
         volume_shape=volume_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
     )
     monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
@@ -3135,7 +3135,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
         jnp.asarray(ft_ctf_1).reshape(-1),
         volume_shape=volume_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
         padding_factor=1,
         preserve_inputs=False,
@@ -3156,7 +3156,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
         jnp.asarray(ft_ctf_1).reshape(-1),
         volume_shape=volume_shape,
         voxel_size=10.0,
-        grid_size=16,
+        box_size=16,
         low_resol_join_halves_angstrom=40.0,
         padding_factor=1,
         preserve_inputs=False,
@@ -3192,7 +3192,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
         ft_ctf_1,
         volume_shape=volume_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
         preserve_inputs=False,
@@ -3245,7 +3245,7 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
         ft_ctf_1,
         volume_shape=volume_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
         preserve_inputs=False,
     )

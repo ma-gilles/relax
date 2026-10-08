@@ -62,7 +62,7 @@ def test_projector_setup_divides_by_the_selected_window(kernel, n, r_max):
     """Full and cropped radius, two box sizes: the slab is the transform of reference / window."""
     reference = _reference(n)
     slab, power = setup.setup_relion_projector_on_host(
-        reference, r_max, ori_size=n, padding_factor=PF, gridding_kernel=kernel
+        reference, r_max, box_size=n, padding_factor=PF, gridding_kernel=kernel
     )
     corrected = jnp.asarray(reference / WINDOWS[kernel](n))
     expected_slab, expected_power = setup._build_projector_window(
@@ -74,10 +74,10 @@ def test_projector_setup_divides_by_the_selected_window(kernel, n, r_max):
 
 def test_projector_setup_default_is_relions_radial_window():
     reference = _reference(8)
-    default = setup.setup_relion_projector_on_host(reference, 3, ori_size=8, padding_factor=PF)
-    radial = setup.setup_relion_projector_on_host(reference, 3, ori_size=8, padding_factor=PF, gridding_kernel="radial")
+    default = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF)
+    radial = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF, gridding_kernel="radial")
     separable = setup.setup_relion_projector_on_host(
-        reference, 3, ori_size=8, padding_factor=PF, gridding_kernel="separable"
+        reference, 3, box_size=8, padding_factor=PF, gridding_kernel="separable"
     )
     assert_matches(default[0], radial[0])
     assert_matches(default[1], radial[1])
@@ -94,7 +94,7 @@ def test_separable_window_is_larger_off_axis_and_equal_on_axis():
 
 def test_projector_setup_rejects_an_unknown_kernel():
     with pytest.raises(ValueError, match="gridding_kernel"):
-        setup.setup_relion_projector_on_host(_reference(8), 3, ori_size=8, padding_factor=PF, gridding_kernel="x")
+        setup.setup_relion_projector_on_host(_reference(8), 3, box_size=8, padding_factor=PF, gridding_kernel="x")
 
 
 def _scoring_projector(reference_real, r_max=3, **kwargs):
@@ -281,7 +281,7 @@ def test_reconstruction_rejects_an_unknown_kernel():
 def test_forward_and_reconstruction_use_the_same_window(kernel):
     ones = jnp.ones((8, 8, 8), dtype=jnp.float64)
     correct = setup._gridding_corrected if kernel == "radial" else setup._gridding_corrected_separable
-    forward_window = 1.0 / np.asarray(correct(ones, ori_size=8, padding_factor=PF))
+    forward_window = 1.0 / np.asarray(correct(ones, box_size=8, padding_factor=PF))
     reconstruction_window = _reconstruct(grid_correct=False) / _reconstruct(gridding_kernel=kernel)
     assert_matches(reconstruction_window, forward_window.astype(reconstruction_window.dtype), rtol=1e-4)
 

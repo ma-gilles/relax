@@ -260,7 +260,7 @@ def _initial_state_from_particles(
                 for row, image in dataset.iter_images(noise_order, batch_size=batch_size)
             )
         ),
-        ori_size=ori_size,
+        box_size=ori_size,
         pixel_size=pixel_size,
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=int(opts.width_mask_edge_px),
@@ -404,7 +404,7 @@ def _initial_state_from_tomo_particles(dataset, particles_table, opts: NativeIni
     image_groups = np.repeat(optics_group_by_particle[units], [block.shape[0] for block in unit_images])
     Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
         zip(image_groups.tolist(), images),
-        ori_size=ori_size,
+        box_size=ori_size,
         pixel_size=pixel_size,
         particle_diameter_ang=float(opts.particle_diameter),
         width_mask_edge_px=int(opts.width_mask_edge_px),

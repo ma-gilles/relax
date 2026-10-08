@@ -176,7 +176,7 @@ def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang, *, n_
     # Existing estimator deliberately uses host float64 accumulation/metadata.
     _, sigma = compute_avg_unaligned_and_sigma2(
         iter(images_for_noise),
-        ori_size=image_shape[0],
+        box_size=image_shape[0],
         pixel_size=voxel_size,
         particle_diameter_ang=diameter_ang,
         width_mask_edge_px=5,

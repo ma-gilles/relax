@@ -50,7 +50,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
     residual, _ = setup_relion_projector(
         source,
         jnp.int32(radius),
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
         compute_dtype=jnp.float32,
     )
@@ -64,7 +64,7 @@ def test_scalar_curvature_step_is_corrected_forward_adjoint_on_active_band():
         projected, _ = setup_relion_projector(
             volume,
             jnp.int32(radius),
-            ori_size=n,
+            box_size=n,
             padding_factor=1,
             compute_dtype=jnp.float32,
         )
@@ -140,7 +140,7 @@ def test_known_target_residual_step_reduces_projected_quadratic():
     target_fourier, _ = setup_relion_projector(
         target,
         jnp.int32(radius),
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
         compute_dtype=jnp.float32,
     )
@@ -163,7 +163,7 @@ def test_known_target_residual_step_reduces_projected_quadratic():
     updated_fourier, _ = setup_relion_projector(
         swap_relion_volume_layout(updated, jnp.float32),
         jnp.int32(radius),
-        ori_size=n,
+        box_size=n,
         padding_factor=1,
         compute_dtype=jnp.float32,
     )

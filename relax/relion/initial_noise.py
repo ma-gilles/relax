@@ -100,7 +100,7 @@ def _relion_resize_map(image: np.ndarray, new_size: int) -> np.ndarray:
     return np.fft.irfft2(out, s=(new_size, new_size)) * (new_size * new_size)
 
 
-def _rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_size: float, ori_size: int) -> np.ndarray:
+def _rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_size: float, box_size: int) -> np.ndarray:
     """Bring one optics group's image onto the model grid (ml_optimiser.cpp:2934-2955).
 
     Resize to the model pixel size when the pixel sizes differ by more than 1e-4 A
@@ -112,13 +112,13 @@ def _rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_siz
         new_size += new_size % 2
         image = _relion_resize_map(image, new_size)
     size = image.shape[-1]
-    if size == ori_size:
+    if size == box_size:
         return image
-    out = np.zeros((ori_size, ori_size), dtype=image.dtype)
+    out = np.zeros((box_size, box_size), dtype=image.dtype)
     # Physical index p of the new box is logical p - ori_size//2, i.e. p - ori_size//2 + size//2 here.
-    lo = max(0, ori_size // 2 - size // 2)
-    hi = min(ori_size, ori_size // 2 - size // 2 + size)
-    src = slice(lo - ori_size // 2 + size // 2, hi - ori_size // 2 + size // 2)
+    lo = max(0, box_size // 2 - size // 2)
+    hi = min(box_size, box_size // 2 - size // 2 + size)
+    src = slice(lo - box_size // 2 + size // 2, hi - box_size // 2 + size // 2)
     out[lo:hi, lo:hi] = image[src, src]
     return out
 
@@ -152,7 +152,7 @@ def relion_startup_positions(unit_groups, unit_sizes, minimum_nr_particles: int)
 def compute_avg_unaligned_and_sigma2(
     image_iter: Iterator[Tuple[int, np.ndarray]],
     *,
-    ori_size: int,
+    box_size: int,
     pixel_size: float,
     particle_diameter_ang: float,
     width_mask_edge_px: int,
@@ -169,9 +169,9 @@ def compute_avg_unaligned_and_sigma2(
     with its own group's pixel size and brought onto the model grid (``_rescale_to_model_grid``) before it enters
     the sums, as RELION does. ``power_spectrum(image, n_shells)`` is an image's shell-mean power (RELION's by default).
     """
-    n_shells = ori_size // 2 + 1
+    n_shells = box_size // 2 + 1
 
-    Mavg = np.zeros((ori_size, ori_size), dtype=np.float64)
+    Mavg = np.zeros((box_size, box_size), dtype=np.float64)
     sum_sigma2 = np.zeros((nr_optics_groups, n_shells), dtype=np.float64)
     sumw = np.zeros(nr_optics_groups, dtype=np.float64)
     radius_px = particle_diameter_ang / (2.0 * pixel_size)
@@ -191,9 +191,9 @@ def compute_avg_unaligned_and_sigma2(
             my_pixel_size = float(group_pixel_sizes[opt_grp])
             if do_zero_mask:
                 img = _softmask_outside_map(img, particle_diameter_ang / (2.0 * my_pixel_size), float(width_mask_edge_px))
-            img = _rescale_to_model_grid(img, my_pixel_size, model_pixel_size, ori_size)
-        elif img.shape != (ori_size, ori_size):
-            raise ValueError(f"image shape {img.shape} != expected {(ori_size, ori_size)}")
+            img = _rescale_to_model_grid(img, my_pixel_size, model_pixel_size, box_size)
+        elif img.shape != (box_size, box_size):
+            raise ValueError(f"image shape {img.shape} != expected {(box_size, box_size)}")
         elif do_zero_mask:
             img = _softmask_outside_map(img, radius_px, float(width_mask_edge_px))
 

@@ -69,7 +69,7 @@ def test_group_on_another_grid_follows_relion_resize_then_window():
     other_pixel = 2.3  # ROUND(14 * 2.3 / 2.0) = 16, already even
     _avg, got = initial_noise.compute_avg_unaligned_and_sigma2(
         iter([(0, same), (1, other)]),
-        ori_size=ori,
+        box_size=ori,
         pixel_size=model_pixel,
         particle_diameter_ang=20.0,
         width_mask_edge_px=2,
@@ -91,7 +91,7 @@ def test_group_on_another_grid_follows_relion_resize_then_window():
                 ),
             ]
         ),
-        ori_size=ori,
+        box_size=ori,
         pixel_size=model_pixel,
         particle_diameter_ang=20.0,
         width_mask_edge_px=2,
@@ -116,7 +116,7 @@ def test_group_on_another_grid_follows_relion_resize_then_window():
                 ),
             ]
         ),
-        ori_size=ori,
+        box_size=ori,
         pixel_size=model_pixel,
         particle_diameter_ang=20.0,
         width_mask_edge_px=2,

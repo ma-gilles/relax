@@ -797,7 +797,7 @@ def plan_initial_image_size(
         )
         res_shell = resolution_from_data_vs_prior(
             data_vs_prior_iter,
-            ori_size=box_size,
+            box_size=box_size,
             allow_high_res_recovery=True,
         )
         incr_size, has_high_fsc_at_limit = update_relion_growth_state_from_fsc(
@@ -934,7 +934,7 @@ def plan_halfmap_image_size(
     )
     res_shell = resolution_from_data_vs_prior(
         data_vs_prior_iter,
-        ori_size=box_size,
+        box_size=box_size,
         allow_high_res_recovery=True,
     )
     incr_size, has_high_fsc_at_limit = update_relion_growth_state_from_fsc(

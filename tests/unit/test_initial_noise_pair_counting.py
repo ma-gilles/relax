@@ -60,7 +60,7 @@ def test_default_spectrum_is_relions():
     assert startup_noise._POWER_SPECTRUM["relion"] is initial_noise._radial_power_spectrum
     images = [_image(8, seed) for seed in range(3)]
     kwargs = dict(
-        ori_size=8, pixel_size=1.0, particle_diameter_ang=8.0, width_mask_edge_px=2, do_zero_mask=False,
+        box_size=8, pixel_size=1.0, particle_diameter_ang=8.0, width_mask_edge_px=2, do_zero_mask=False,
         nr_optics_groups=1,
     )
     _, default = initial_noise.compute_avg_unaligned_and_sigma2(iter((0, image) for image in images), **kwargs)
@@ -91,7 +91,7 @@ def test_start_up_sigma2_follows_the_counting_rule(counting, size):
     n_shells = size // 2 + 1
     average, sigma2 = initial_noise.compute_avg_unaligned_and_sigma2(
         iter((0, image) for image in images),
-        ori_size=size,
+        box_size=size,
         pixel_size=1.0,
         particle_diameter_ang=float(size),
         width_mask_edge_px=2,

@@ -49,7 +49,7 @@ def _bandlimit_real_map(volume_relion, radius, *, ori_size, padding_factor):
     projector, _ = setup_relion_projector_uncorrected(
         volume_relion,
         radius,
-        ori_size=ori_size,
+        box_size=ori_size,
         padding_factor=padding_factor,
         compute_dtype=jnp.float32,
     )

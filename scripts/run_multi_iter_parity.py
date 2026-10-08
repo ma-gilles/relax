@@ -655,7 +655,7 @@ def filter_fresh_initial_reference(
     return np.asarray(
         initial_low_pass_filter_references(
             volume_real[None, ...],
-            ori_size=int(volume_real.shape[0]),
+            box_size=int(volume_real.shape[0]),
             pixel_size=float(pixel_size),
             ini_high_ang=float(ini_high_angstrom),
             filter_edgewidth=2.0,

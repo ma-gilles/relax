@@ -1587,7 +1587,7 @@ RELION_MINRES_MAP = 5
 def resolution_from_data_vs_prior(
     data_vs_prior,
     *,
-    ori_size=None,
+    box_size=None,
     allow_high_res_recovery=False,
     recovery_margin_shells=3,
     minres_map=RELION_MINRES_MAP,
@@ -1613,7 +1613,7 @@ def resolution_from_data_vs_prior(
     ----------
     data_vs_prior : array-like, shape (n_shells,)
         Per-shell data_vs_prior ratio from :func:`compute_data_vs_prior`.
-    ori_size : int, optional
+    box_size : int, optional
         Box size. Defaults to ``2 * (n_shells - 1)``, RELION's
         ``ori_size / 2 + 1`` shell layout.
     allow_high_res_recovery : bool, optional
@@ -1630,7 +1630,7 @@ def resolution_from_data_vs_prior(
         Shell index of the resolution limit.
     """
     dvp = np.asarray(data_vs_prior)
-    limit = len(dvp) - 1 if ori_size is None else min(int(ori_size) // 2, len(dvp))
+    limit = len(dvp) - 1 if box_size is None else min(int(box_size) // 2, len(dvp))
     ires = 1
     while ires < limit and not dvp[ires] < 1.0:
         ires += 1
@@ -1714,7 +1714,7 @@ def update_relion_growth_state_from_fsc(
     return next_incr_size, bool(has_high_fsc_at_limit or high_fsc_now)
 
 
-def compute_current_size_relion(resolution_shell, ori_size, ave_Pmax=0.0, has_high_fsc_at_limit=False, incr_size=10):
+def compute_current_size_relion(resolution_shell, box_size, ave_Pmax=0.0, has_high_fsc_at_limit=False, incr_size=10):
     """Compute the next current_size using RELION's growth logic.
 
     RELION grows current_size beyond the current resolution limit.  If
@@ -1730,7 +1730,7 @@ def compute_current_size_relion(resolution_shell, ori_size, ave_Pmax=0.0, has_hi
     resolution_shell : int
         Current resolution shell index (e.g. from
         :func:`resolution_from_data_vs_prior` or FSC-based estimate).
-    ori_size : int
+    box_size : int
         Original image size in pixels (diameter, e.g. 128).
     ave_Pmax : float
         Average of the per-image maximum posterior probability.
@@ -1749,10 +1749,10 @@ def compute_current_size_relion(resolution_shell, ori_size, ave_Pmax=0.0, has_hi
     """
     maxres = resolution_shell
     if ave_Pmax > 0.1 and has_high_fsc_at_limit:
-        maxres += round(0.25 * ori_size / 2)
+        maxres += round(0.25 * box_size / 2)
     else:
         maxres += incr_size
-    return min(2 * maxres, ori_size)
+    return min(2 * maxres, box_size)
 
 
 def join_halves_at_low_resolution(
@@ -1762,7 +1762,7 @@ def join_halves_at_low_resolution(
     Ft_ctf_1,
     volume_shape,
     voxel_size,
-    grid_size,
+    box_size,
     low_resol_join_halves_angstrom,
     current_resolution_angstrom=None,
     padding_factor=None,
@@ -1812,7 +1812,7 @@ def join_halves_at_low_resolution(
         Shape of the centered Fourier volume.
     voxel_size : float
         Voxel size in Angstroms (image pixel size in real space).
-    grid_size : int
+    box_size : int
         Real-space grid edge length, ``ori_size`` in RELION terms.
     low_resol_join_halves_angstrom : float
         The user-set joining resolution (RELION's ``--low_resol_join_halves``).
@@ -1867,7 +1867,7 @@ def join_halves_at_low_resolution(
     if current_resolution_angstrom is not None and np.isfinite(current_resolution_angstrom):
         myres = max(myres, float(current_resolution_angstrom))
 
-    lowres_r_max = int(np.ceil(grid_size * voxel_size / myres))
+    lowres_r_max = int(np.ceil(box_size * voxel_size / myres))
     if lowres_r_max <= 0:
         return _format_result((Ft_y_0, Ft_y_1, Ft_ctf_0, Ft_ctf_1))
 
@@ -1878,7 +1878,7 @@ def join_halves_at_low_resolution(
     # Using rounded radial shells joins extra boundary voxels and changes the
     # downsampled half-map FSC near the 40 A join cutoff.
     if padding_factor is None:
-        pf = volume_shape[0] // grid_size if volume_shape[0] > grid_size else 1
+        pf = volume_shape[0] // box_size if volume_shape[0] > box_size else 1
     else:
         pf = int(padding_factor)
         if pf <= 0:
@@ -1925,7 +1925,7 @@ def join_halves_at_low_resolution(
             return_retained_first_numerator
             and not preserve_inputs
             and padding_factor is not None
-            and int(volume_shape[0]) > int(grid_size) * int(padding_factor)
+            and int(volume_shape[0]) > int(box_size) * int(padding_factor)
         )
         logger.info(
             "Low-resolution half join using host fallback: size=%d join_voxels=%d "

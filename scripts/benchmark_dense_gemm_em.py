@@ -188,7 +188,7 @@ def _make_case(args):
     projector, _ = setup_relion_projector(
         jnp.asarray(real_reference),
         jnp.int32(r_max),
-        ori_size=n,
+        box_size=n,
         padding_factor=padding_factor,
         do_gridding=False,
         compute_dtype=jnp.float32,

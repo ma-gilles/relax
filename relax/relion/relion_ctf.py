@@ -285,7 +285,7 @@ def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape
     return sums
 
 
-def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: int, ori_size: int):
+def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: int, box_size: int):
     """RELION's ``setAverageCTF2`` (ml_optimiser.cpp:5697-5740), or ``None`` without premultiplied images.
 
     ``avgctf2[ires] = sum_images max(0.001, scale) * sum_{shell} Fctf / (N * Npix_per_shell[ires])``
@@ -299,7 +299,7 @@ def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: i
     (backprojector.cpp:1277-1279), which scales ``data_vs_prior`` by ``avgctf2``.
     """
 
-    n_shells = int(ori_size) // 2 + 1
+    n_shells = int(box_size) // 2 + 1
     numerator = np.zeros(n_shells, dtype=np.float64)
     n_images = 0
     found = False
@@ -319,7 +319,7 @@ def premultiplied_average_ctf2(experiment_datasets, scale_corrections, window: i
     if not found:
         return None
     npix = np.bincount(
-        (labels := _fftw_shell_labels(int(ori_size), int(ori_size), centered_rows=False))[labels >= 0],
+        (labels := _fftw_shell_labels(int(box_size), int(box_size), centered_rows=False))[labels >= 0],
         minlength=n_shells,
     )[:n_shells].astype(np.float64)
     denominator = n_images * npix
@@ -458,7 +458,7 @@ def _relion_ctf_coefficients(params):
     return axx, 2.0 * axy, ayy, k1, k2, k5, k3
 
 
-def _relion_ctf_chunks(params, image_size: int, pixel_size: float, gamma_offset, mag_matrix, *, out=None, finish=None):
+def _relion_ctf_chunks(params, box_size: int, pixel_size: float, gamma_offset, mag_matrix, *, out=None, finish=None):
     """Evaluate ``CTF::getFftwImage`` rows in chunks over host threads.
 
     A chunk of rows ``start:stop`` is computed into ``out[start:stop]`` (``(N, size * (size // 2 + 1))``
@@ -469,7 +469,7 @@ def _relion_ctf_chunks(params, image_size: int, pixel_size: float, gamma_offset,
     """
 
     params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
-    size = int(image_size)
+    size = int(box_size)
     x, y, u2, u4 = _relion_ctf_grid(size, float(size) * float(pixel_size), mag_matrix)
     offset = None if gamma_offset is None else np.asarray(gamma_offset, dtype=np.float64).reshape(1, -1)
     axx, axy2, ayy, k1, k2, k5, k3 = (c[:, None] for c in _relion_ctf_coefficients(params))
@@ -519,7 +519,7 @@ def _relion_ctf_chunks(params, image_size: int, pixel_size: float, gamma_offset,
         list(pool.map(fill, range(0, n, _CTF_ROW_CHUNK)))
 
 
-def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None, finish=None):
+def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None, finish=None):
     """RELION's ``CTF::getFftwImage`` for particles of one optics group, ``(N, size, size // 2 + 1)`` float64.
 
     relax's own host implementation of the CTF relion_refine evaluates per particle
@@ -538,7 +538,7 @@ def relion_ctf_fftw_half(params, image_size: int, pixel_size: float, *, gamma_of
     """
 
     params = np.ascontiguousarray(params, dtype=np.float64).reshape(-1, 9)
-    size = int(image_size)
+    size = int(box_size)
     mag = None if mag_matrix is None else np.asarray(mag_matrix, dtype=np.float64)
     if finish is not None:
         _relion_ctf_chunks(params, size, pixel_size, gamma_offset, mag, finish=finish)

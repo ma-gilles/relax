@@ -43,12 +43,12 @@ def swap_relion_volume_layout(volume, dtype=jnp.float64):
     return -jnp.transpose(jnp.asarray(volume, dtype), (2, 1, 0))
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype", "window_radius"))
+@partial(jax.jit, static_argnames=("box_size", "padding_factor", "compute_dtype", "window_radius"))
 def setup_relion_projector(
     reference_relion,
     r_max,
     *,
-    ori_size: int,
+    box_size: int,
     padding_factor: int = 1,
     do_gridding=True,
     compute_dtype=jnp.float64,
@@ -69,23 +69,23 @@ def setup_relion_projector(
     The global RECOVAR x64 policy is required. No Python callbacks, host
     materialization, persistent mutable cache, or per-class batching is used.
     """
-    reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
+    reference = _checked_reference(reference_relion, box_size, padding_factor, compute_dtype)
     reference = jax.lax.cond(
         jnp.asarray(do_gridding, dtype=jnp.bool_),
-        lambda volume: gridding_correct_volume_real(volume, ori_size, padding_factor),
+        lambda volume: gridding_correct_volume_real(volume, box_size, padding_factor),
         lambda volume: volume,
         reference,
     )
-    window = ori_size // 2 if window_radius is None else window_radius
-    return _build_projector_window(reference, r_max, ori_size, padding_factor, window)
+    window = box_size // 2 if window_radius is None else window_radius
+    return _build_projector_window(reference, r_max, box_size, padding_factor, window)
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "compute_dtype"))
+@partial(jax.jit, static_argnames=("box_size", "padding_factor", "compute_dtype"))
 def setup_relion_projector_uncorrected(
     reference_relion,
     r_max,
     *,
-    ori_size: int,
+    box_size: int,
     padding_factor: int = 1,
     compute_dtype=jnp.float64,
 ):
@@ -96,15 +96,15 @@ def setup_relion_projector_uncorrected(
     does not trace the double-precision gridding-correction branch used by
     the existing E-step wrapper. Radius and Nyquist ownership are shared.
     """
-    reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
-    return _build_projector_window(reference, r_max, ori_size, padding_factor, ori_size // 2)
+    reference = _checked_reference(reference_relion, box_size, padding_factor, compute_dtype)
+    return _build_projector_window(reference, r_max, box_size, padding_factor, box_size // 2)
 
 
 def setup_relion_projector_on_host(
     reference_relion,
     r_max: int,
     *,
-    ori_size: int,
+    box_size: int,
     padding_factor: int = 1,
     compute_dtype=jnp.float64,
     chunk_bytes: int | None = None,
@@ -133,24 +133,24 @@ def setup_relion_projector_on_host(
         raise ValueError(f"gridding_kernel must be one of {GRIDDING_KERNELS}, got {gridding_kernel!r}")
     if shell_pair_counting not in ("relion", "once"):
         raise ValueError(f"shell_pair_counting must be 'relion' or 'once', got {shell_pair_counting!r}")
-    reference = _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype)
-    radius = ori_size // 2 if int(r_max) < 0 else min(int(r_max), ori_size // 2)
+    reference = _checked_reference(reference_relion, box_size, padding_factor, compute_dtype)
+    radius = box_size // 2 if int(r_max) < 0 else min(int(r_max), box_size // 2)
     window = radius
-    if 0 < radius < ori_size // 2:
+    if 0 < radius < box_size // 2:
         quantum = stable_fourier_window_quantum()
-        window = stable_fourier_window_current_size(2 * radius, ori_size, quantum=quantum) // 2
+        window = stable_fourier_window_current_size(2 * radius, box_size, quantum=quantum) // 2
     if gridding_kernel == "radial":
-        reference = _gridding_corrected(reference, ori_size=ori_size, padding_factor=padding_factor)
+        reference = _gridding_corrected(reference, box_size=box_size, padding_factor=padding_factor)
     else:
-        reference = _gridding_corrected_separable(reference, ori_size=ori_size, padding_factor=padding_factor)
+        reference = _gridding_corrected_separable(reference, box_size=box_size, padding_factor=padding_factor)
     return _build_projector_window(
-        reference, radius, ori_size, padding_factor, window,
+        reference, radius, box_size, padding_factor, window,
         chunk_bytes=chunk_bytes, to_host=True, output_radius=radius, pair_once=shell_pair_counting == "once",
     )
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor"))
-def _gridding_corrected(reference, *, ori_size: int, padding_factor: int):
+@partial(jax.jit, static_argnames=("box_size", "padding_factor"))
+def _gridding_corrected(reference, *, box_size: int, padding_factor: int):
     """:func:`gridding_correct_volume_real` as one fused program.
 
     Called eagerly it materializes its coordinate grids, radius and sinc as
@@ -158,23 +158,23 @@ def _gridding_corrected(reference, *, ori_size: int, padding_factor: int):
     the whole host build (bigbox 14575379).
     """
 
-    return gridding_correct_volume_real(reference, ori_size, padding_factor)
+    return gridding_correct_volume_real(reference, box_size, padding_factor)
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor"))
-def _gridding_corrected_separable(reference, *, ori_size: int, padding_factor: int):
+@partial(jax.jit, static_argnames=("box_size", "padding_factor"))
+def _gridding_corrected_separable(reference, *, box_size: int, padding_factor: int):
     """:func:`gridding_correct_volume_real_separable` as one fused program."""
 
-    return gridding_correct_volume_real_separable(reference, ori_size, padding_factor)
+    return gridding_correct_volume_real_separable(reference, box_size, padding_factor)
 
 
-def _checked_reference(reference_relion, ori_size, padding_factor, compute_dtype):
-    if ori_size <= 0 or ori_size % 2:
-        raise ValueError("ori_size must be positive and even")
+def _checked_reference(reference_relion, box_size, padding_factor, compute_dtype):
+    if box_size <= 0 or box_size % 2:
+        raise ValueError("box_size must be positive and even")
     if padding_factor not in (1, 2):
         raise ValueError("projector setup supports padding_factor 1 or 2")
-    if reference_relion.shape != (ori_size,) * 3:
-        raise ValueError("reference_relion must have shape (ori_size,)*3")
+    if reference_relion.shape != (box_size,) * 3:
+        raise ValueError("reference_relion must have shape (box_size,)*3")
     dtype = jnp.dtype(compute_dtype)
     if dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
         raise ValueError("Projector computation dtype must be float32 or float64")
@@ -188,7 +188,7 @@ _CHUNK_BYTES = 2 * 1024**3
 
 
 def _build_projector_window(
-    reference, r_max, ori_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None,
+    reference, r_max, box_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None,
     pair_once=False,
 ):
     """RELION's computeFourierTransformMap evaluated inside a static window, one axis at a time.
@@ -209,7 +209,7 @@ def _build_projector_window(
     ``pair_once`` counts each Hermitian pair once in the shell power
     (:func:`_mask_and_shell_power`); the projector data does not depend on it.
     """
-    n, pf = int(ori_size), int(padding_factor)
+    n, pf = int(box_size), int(padding_factor)
     m = pf * n
     size = 2 * (pf * int(window_radius) + 1) + 1
     n_x = size // 2 + 1
@@ -230,12 +230,12 @@ def _build_projector_window(
         stages = [
             (0,)
             + _window_in_one_program(
-                reference, yz_index, r_max, ori_size=n, padding_factor=pf, size=size, n_x=n_x, pair_once=pair_once
+                reference, yz_index, r_max, box_size=n, padding_factor=pf, size=size, n_x=n_x, pair_once=pair_once
             )
         ]
     else:
         stages = _window_in_chunks(
-            reference, yz_index, r_max, ori_size=n, padding_factor=pf, size=size, n_x=n_x,
+            reference, yz_index, r_max, box_size=n, padding_factor=pf, size=size, n_x=n_x,
             cz=cz, cy=cy, to_host=to_host, pair_once=pair_once,
         )
     blocks, slab, sums, counts = [], None, None, None
@@ -265,22 +265,22 @@ def _build_projector_window(
     return (projector, np.asarray(jax.device_get(spectrum))) if to_host else (projector, spectrum)
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "size", "n_x", "pair_once"))
-def _window_in_one_program(reference, yz_index, r_max, *, ori_size, padding_factor, size, n_x, pair_once):
+@partial(jax.jit, static_argnames=("box_size", "padding_factor", "size", "n_x", "pair_once"))
+def _window_in_one_program(reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, pair_once):
     """The window of a reference that fits one chunk on both axes: ``(block, sums, counts)``."""
 
-    fft_size = padding_factor * ori_size
+    fft_size = padding_factor * box_size
     xy = _transform_xy(reference, yz_index, fft_size=fft_size, n_x=n_x)
     block = _transform_z(xy, yz_index, fft_size=fft_size)
     return _mask_and_shell_power(
-        block, r_max, ori_size=ori_size, padding_factor=padding_factor, size=size, y_start=0, pair_once=pair_once
+        block, r_max, box_size=box_size, padding_factor=padding_factor, size=size, y_start=0, pair_once=pair_once
     )
 
 
-def _window_in_chunks(reference, yz_index, r_max, *, ori_size, padding_factor, size, n_x, cz, cy, to_host, pair_once):
+def _window_in_chunks(reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, cz, cy, to_host, pair_once):
     """The window in z-slabs, then y-slabs: yields ``(y_start, block, sums, counts)`` per y-slab."""
 
-    n, m = int(ori_size), int(padding_factor) * int(ori_size)
+    n, m = int(box_size), int(padding_factor) * int(box_size)
     if to_host and cz < n:
         # Eager chunks are written into one preallocated array in place, so the
         # xy stage never holds its chunks and their concatenation together (2 x
@@ -298,7 +298,7 @@ def _window_in_chunks(reference, yz_index, r_max, *, ori_size, padding_factor, s
     for y0 in range(0, size, cy):
         block = _transform_z(xy[:, y0 : y0 + cy], yz_index, fft_size=m)
         yield (y0,) + _mask_and_shell_power(
-            block, r_max, ori_size=n, padding_factor=padding_factor, size=size, y_start=y0, pair_once=pair_once
+            block, r_max, box_size=n, padding_factor=padding_factor, size=size, y_start=y0, pair_once=pair_once
         )
         del block
 
@@ -345,9 +345,9 @@ def _transform_z(block, yz_index, *, fft_size: int):
     return jnp.take(fz, yz_index, axis=0)
 
 
-@partial(jax.jit, static_argnames=("ori_size", "padding_factor", "size", "y_start", "pair_once"))
+@partial(jax.jit, static_argnames=("box_size", "padding_factor", "size", "y_start", "pair_once"))
 def _mask_and_shell_power(
-    block, r_max, *, ori_size: int, padding_factor: int, size: int, y_start: int, pair_once: bool = False
+    block, r_max, *, box_size: int, padding_factor: int, size: int, y_start: int, pair_once: bool = False
 ):
     """Scale, mask and shell-sum window rows ``y_start:`` (``block`` is ``[L, cy, n_x]``).
 
@@ -357,11 +357,11 @@ def _mask_and_shell_power(
     ``x``) by 1/2 in the sums and the counts, so every pair counts once.
     """
 
-    fft_size = padding_factor * ori_size
+    fft_size = padding_factor * box_size
     real_dtype = block.real.dtype
     # Native FourierTransformer divides by M^3, then projector.cpp multiplies
     # by pf^3*N for 3-D references projected into 2-D images. Keep that order.
-    block = block * float(padding_factor**3 * ori_size)
+    block = block * float(padding_factor**3 * box_size)
     rows = block.shape[1]
     coord = jnp.arange(size, dtype=jnp.int32) - size // 2
     z = coord[:, None, None]
@@ -369,7 +369,7 @@ def _mask_and_shell_power(
     x = jnp.arange(block.shape[2], dtype=jnp.int32)[None, None, :]
     r2 = z * z + y * y + x * x
     radius = jnp.asarray(r_max, dtype=jnp.int32)
-    radius = jnp.where(radius < 0, ori_size // 2, jnp.minimum(radius, ori_size // 2))
+    radius = jnp.where(radius < 0, box_size // 2, jnp.minimum(radius, box_size // 2))
     valid = (
         (z > -fft_size // 2)
         & (z <= fft_size // 2)
@@ -386,7 +386,7 @@ def _mask_and_shell_power(
         pair_weight = jnp.where((x == 0) | (x == fft_size // 2), 0.5, 1.0).astype(real_dtype)
         power = power * pair_weight
         counted = counted * pair_weight
-    n_shells = ori_size // 2 + 1
+    n_shells = box_size // 2 + 1
     if deterministic_reductions_enabled():
         # ``bincount`` lowers to a scatter-add with duplicate shells (float
         # atomics); use static per-shell gathers with fixed-order reductions.
@@ -397,7 +397,7 @@ def _mask_and_shell_power(
         counts = fixed_order_shell_sums(counted.reshape(-1), shell_lists, real_dtype)
     else:
         shells = jnp.floor(jnp.sqrt(r2.astype(real_dtype)) / padding_factor + 0.5).astype(jnp.int32)
-        shells = jnp.minimum(shells, ori_size // 2).reshape(-1)
+        shells = jnp.minimum(shells, box_size // 2).reshape(-1)
         sums = jnp.bincount(shells, weights=power.reshape(-1), length=n_shells)
         counts = jnp.bincount(shells, weights=counted.reshape(-1), length=n_shells)
     return projector, sums, counts
@@ -470,7 +470,7 @@ def reference_to_relion_projector_half_maps_and_power(
     r_max = n // 2 if int(current_size) < 0 else min(int(current_size) // 2, n // 2)
     for ref in refs:
         projector_data, power = setup_relion_projector_on_host(
-            swap_relion_volume_layout(ref), r_max, ori_size=n,
+            swap_relion_volume_layout(ref), r_max, box_size=n,
             padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
             gridding_kernel=gridding_kernel, shell_pair_counting=shell_pair_counting,
         )

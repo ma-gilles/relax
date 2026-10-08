@@ -433,7 +433,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         ft_ctf_1,
         volume_shape=accumulator_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
         preserve_inputs=False,
@@ -504,7 +504,7 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
     kwargs = dict(
         volume_shape=accumulator_shape,
         voxel_size=10.0,
-        grid_size=4,
+        box_size=4,
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
     )

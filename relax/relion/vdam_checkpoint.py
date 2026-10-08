@@ -193,20 +193,20 @@ def _load_native_vdam_continuation(
             raise ValueError(f"{model_path} lacks {name}")
         return cast(general[name])
 
-    ori_size = _general("rlnOriginalImageSize", int)
+    box_size = _general("rlnOriginalImageSize", int)
     current_size = _general("rlnCurrentImageSize", int)
     pixel_size = _general("rlnPixelSize", float)
     nr_classes = _general("rlnNrClasses", int)
     padding_factor = _general("rlnPaddingFactor", float)
     if nr_classes != int(opts.nr_classes):
         raise ValueError(f"checkpoint K={nr_classes} differs from requested K={opts.nr_classes}")
-    if ori_size != int(dataset.grid_size) or not np.isclose(pixel_size, float(dataset.voxel_size)):
+    if box_size != int(dataset.grid_size) or not np.isclose(pixel_size, float(dataset.voxel_size)):
         raise ValueError("checkpoint model geometry differs from the input particle stack")
     if not np.isclose(padding_factor, float(opts.padding_factor)):
         raise ValueError("checkpoint padding factor differs from requested value")
-    n_shells = ori_size // 2 + 1
-    moment_shape = (ori_size * int(opts.padding_factor),) * 2 + (
-        (ori_size * int(opts.padding_factor)) // 2 + 1,
+    n_shells = box_size // 2 + 1
+    moment_shape = (box_size * int(opts.padding_factor),) * 2 + (
+        (box_size * int(opts.padding_factor)) // 2 + 1,
     )
 
     references = []
@@ -259,7 +259,7 @@ def _load_native_vdam_continuation(
         iter=iteration,
         nr_iter=nr_iter,
         K=nr_classes,
-        ori_size=ori_size,
+        ori_size=box_size,
         pixel_size=pixel_size,
         pseudo_halfsets=True,
         Iref=np.stack(references, axis=0),
@@ -278,7 +278,7 @@ def _load_native_vdam_continuation(
         pdf_direction=np.stack(direction_priors, axis=0),
         sigma2_offset=_general("rlnSigmaOffsetsAngst", float) ** 2,
         current_resolution=current_resolution,
-        current_resolution_shell=int(np.floor(current_resolution * pixel_size * ori_size + 0.5)),
+        current_resolution_shell=int(np.floor(current_resolution * pixel_size * box_size + 0.5)),
         current_size=current_size,
         incr_size=_relion_star_list_value(optimiser_text, "rlnIncrementImageSize", int),
         ave_Pmax=_general("rlnAveragePmax", float),

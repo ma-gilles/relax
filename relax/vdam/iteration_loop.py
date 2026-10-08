@@ -150,7 +150,7 @@ def update_current_resolution_from_data_vs_prior(
     maxres = max(
         resolution_from_data_vs_prior(
             np.asarray(state.data_vs_prior_class[k], dtype=np.float64),
-            ori_size=state.ori_size,
+            box_size=state.ori_size,
             minres_map=minres_map,
         )
         for k in range(int(state.K))

@@ -29,7 +29,7 @@ def _analytic_volume(n, angpix):
 
 
 def _project(volume, n, rotation, image_size, padding=2):
-    projector, _ = setup_relion_projector(jnp.asarray(volume), n // 2 - 1, ori_size=n, padding_factor=padding)
+    projector, _ = setup_relion_projector(jnp.asarray(volume), n // 2 - 1, box_size=n, padding_factor=padding)
     out = project_relion_projector_half_spectrum(
         projector, jnp.asarray(rotation)[None], (image_size, image_size), n // 2 - 1, padding
     )

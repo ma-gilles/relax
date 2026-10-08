@@ -10,14 +10,14 @@ from relax.relion.geometry import REFERENCE_FILTER_EDGE_SHELLS
 def initial_low_pass_filter_references(
     Iref: np.ndarray,
     *,
-    ori_size: int,
+    box_size: int,
     pixel_size: float,
     ini_high_ang: float,
     filter_edgewidth: float = REFERENCE_FILTER_EDGE_SHELLS,
 ) -> np.ndarray:
     """``initialLowPassFilterReferences`` (ml_optimiser.cpp:3336): cosine-taper from r=radius outward to r=radius_p."""
     edge_width = float(filter_edgewidth)
-    radius = ori_size * pixel_size / ini_high_ang - edge_width / 2.0
+    radius = box_size * pixel_size / ini_high_ang - edge_width / 2.0
     radius_p = radius + edge_width
     N = Iref.shape[1]
     kz = np.fft.fftfreq(N, d=1.0) * N
@@ -100,12 +100,12 @@ def relion_initial_tau2_and_data_vs_prior(
     Return RELION-unit tau2 and data/prior spectra, each with ``ori_size // 2 + 1`` shells.
     """
     iref = np.asarray(iref_relion, dtype=np.float64)
-    ori_size = int(iref.shape[0])
+    box_size = int(iref.shape[0])
     avg_sigma2_noise = np.asarray(avg_sigma2_noise, dtype=np.float64).reshape(-1)
-    if avg_sigma2_noise.shape != (ori_size // 2 + 1,) or np.any(avg_sigma2_noise <= 0.0) or nr_particles <= 0:
+    if avg_sigma2_noise.shape != (box_size // 2 + 1,) or np.any(avg_sigma2_noise <= 0.0) or nr_particles <= 0:
         raise ValueError("need a positive noise spectrum of ori_size // 2 + 1 shells and nr_particles > 0")
-    spectrum = _POWER_SPECTRUM_3D[shell_pair_counting](iref, ori_size // 2 + 1)
-    spectrum *= float(ori_size * ori_size) / 2.0
+    spectrum = _POWER_SPECTRUM_3D[shell_pair_counting](iref, box_size // 2 + 1)
+    spectrum *= float(box_size * box_size) / 2.0
     tau2 = float(tau2_fudge) * spectrum
     return tau2, _relion_data_vs_prior(tau2, avg_sigma2_noise, nr_particles, pdf_class)
 

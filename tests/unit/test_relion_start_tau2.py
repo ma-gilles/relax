@@ -68,7 +68,7 @@ def test_k1_start_matches_relion_run_it000_model(fixture):
     reference = np.asarray(helpers.load_relion_volume(str(reference_path)), dtype=np.float64)
     n = reference.shape[0]
     reference = initial_low_pass_filter_references(
-        reference[None], ori_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
+        reference[None], box_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
     )[0]
     model = starfile.read(model_path)
     sigma2 = np.asarray(model["model_optics_group_1"]["rlnSigma2Noise"], dtype=np.float64)
@@ -114,7 +114,7 @@ def test_class3d_start_data_vs_prior_matches_relion_run_it000_model_per_class():
         reference = np.asarray(helpers.load_relion_volume(str(reference_path)), dtype=np.float64)
         n = reference.shape[0]
         reference = initial_low_pass_filter_references(
-            reference[None], ori_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
+            reference[None], box_size=n, pixel_size=pixel_size, ini_high_ang=30.0, filter_edgewidth=2.0
         )[0]
         _, dvp = startup_references.relion_start_tau2_and_data_vs_prior(
             reference,

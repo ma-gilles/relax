@@ -188,7 +188,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_preserves_source_order():
     )
     _average, expected = compute_avg_unaligned_and_sigma2(
         iter([(0, images[4]), (0, images[1])]),
-        ori_size=8,
+        box_size=8,
         pixel_size=2.0,
         particle_diameter_ang=8.0,
         width_mask_edge_px=2,
@@ -239,7 +239,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
     )
     _average, expected = compute_avg_unaligned_and_sigma2(
         iter((0, image) for image in images),
-        ori_size=16,
+        box_size=16,
         pixel_size=2.0,
         particle_diameter_ang=12.0,
         width_mask_edge_px=2,
@@ -250,7 +250,7 @@ def test_compute_relion_fresh_k1_initial_sigma2_uses_optics_pixel_size():
     assert_matches(got, expected)
     _average, model_pixel_result = compute_avg_unaligned_and_sigma2(
         iter((0, image) for image in images),
-        ori_size=16,
+        box_size=16,
         pixel_size=dataset.voxel_size,
         particle_diameter_ang=12.0,
         width_mask_edge_px=2,

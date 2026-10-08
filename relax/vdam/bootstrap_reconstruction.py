@@ -100,7 +100,7 @@ def initial_low_pass_filter(volume, ori_size: int, pixel_size: float, ini_high_a
     if not ini_high_ang > 0.0:
         return vol
     return initial_low_pass_filter_references(
-        vol[None], ori_size=int(ori_size), pixel_size=float(pixel_size), ini_high_ang=float(ini_high_ang)
+        vol[None], box_size=int(ori_size), pixel_size=float(pixel_size), ini_high_ang=float(ini_high_ang)
     )[0]
 
 

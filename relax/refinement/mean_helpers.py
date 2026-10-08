@@ -1190,7 +1190,7 @@ def _apply_relion_initial_lowpass_filter(
     )
     filtered_real = initial_low_pass_filter_references(
         volume_real[None, ...],
-        ori_size=int(volume_shape[0]),
+        box_size=int(volume_shape[0]),
         pixel_size=float(voxel_size),
         ini_high_ang=float(ini_high_angstrom),
         filter_edgewidth=float(filter_edgewidth),

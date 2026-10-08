@@ -237,7 +237,7 @@ def estimate_startup_sigma2(
 
     _average_image, sigma2_per_group = compute_avg_unaligned_and_sigma2(
         image_iter(),
-        ori_size=int(dataset.grid_size),
+        box_size=int(dataset.grid_size),
         # RELION masks each source image using its optics-group pixel size.
         # The model/MRC pixel size can differ in the last serialized digits;
         # at this float64 startup-noise boundary that is enough to change the

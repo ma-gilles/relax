@@ -69,7 +69,7 @@ import jax.numpy as jnp
 def relion_project_half(
     volume_relion_half: jnp.ndarray,
     R_relion: jnp.ndarray,
-    image_size: int,
+    box_size: int,
     r_max: int,
     padding_factor: int = 1,
     relion_acc_double_floorf_quirk: bool = False,
@@ -82,7 +82,7 @@ def relion_project_half(
         RELION's Projector internal data layout (FFTW-natural y/z, half-complex x).
         ``pad_size = ori_size * padding_factor``.
     R_relion : (3, 3) rotation matrix in RELION convention.
-    image_size : 2D output image size (assumed square).
+    box_size : 2D output image size (assumed square).
     r_max : RELION's `r_max` field on the projector (= ori_size//2 - 1 typically).
     padding_factor : projector padding (1 or 2 typically).
     relion_acc_double_floorf_quirk : reproduce RELION's GPU-accelerated
@@ -92,7 +92,7 @@ def relion_project_half(
 
     Returns
     -------
-    f2d : complex (image_size, image_size//2+1) half-image. Pixels outside the
+    f2d : complex (box_size, box_size//2+1) half-image. Pixels outside the
           radial mask return 0.
     """
     pad_z, pad_y, half_x = volume_relion_half.shape
@@ -100,8 +100,8 @@ def relion_project_half(
     starting_y = -(pad_y // 2)
     starting_z = -(pad_z // 2)
 
-    out_h = image_size
-    out_w = image_size // 2 + 1
+    out_h = box_size
+    out_w = box_size // 2 + 1
     r_max_out = out_w - 1
     # AccProjectorKernel::makeKernel: maxR = min(model r_max, image xdim - 1).
     r_max_ref = min(r_max, r_max_out) * padding_factor
@@ -208,7 +208,7 @@ def relion_project_half(
     return val
 
 
-def gridding_correct_volume_real(volume_real: jnp.ndarray, ori_size: int, padding_factor: int = 1) -> jnp.ndarray:
+def gridding_correct_volume_real(volume_real: jnp.ndarray, box_size: int, padding_factor: int = 1) -> jnp.ndarray:
     """RELION's gridding correction (relion/src/projector.cpp:595-628).
 
     Divide each real-space voxel by ``sinc²(r / (ori * padding_factor))`` where
@@ -224,14 +224,14 @@ def gridding_correct_volume_real(volume_real: jnp.ndarray, ori_size: int, paddin
     K, I, J = jnp.meshgrid(coord, coord, coord, indexing="ij")
     r = jnp.sqrt(K * K + I * I + J * J)
     # Avoid /0 at center: sinc(0) = 1 → divide by 1 there.
-    rval = r / (ori_size * padding_factor)
+    rval = r / (box_size * padding_factor)
     pirval = jnp.pi * rval
     sinc = jnp.where(r > 0.0, jnp.sin(pirval) / pirval, jnp.ones_like(r))
     return volume_real / (sinc * sinc)
 
 
 def gridding_correct_volume_real_separable(
-    volume_real: jnp.ndarray, ori_size: int, padding_factor: int = 1
+    volume_real: jnp.ndarray, box_size: int, padding_factor: int = 1
 ) -> jnp.ndarray:
     """:func:`gridding_correct_volume_real` with the per-axis window ``prod_i sinc²(x_i / (ori * padding_factor))``.
 
@@ -241,5 +241,5 @@ def gridding_correct_volume_real_separable(
     """
     from recovar.reconstruction.relion_functions import griddingCorrect_square
 
-    corrected, _ = griddingCorrect_square(volume_real, ori_size, padding_factor, order=1)
+    corrected, _ = griddingCorrect_square(volume_real, box_size, padding_factor, order=1)
     return corrected.astype(volume_real.dtype)

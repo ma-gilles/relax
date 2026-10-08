@@ -262,7 +262,7 @@ def class_resolution_shells(data_vs_prior, *, box_size):
     high-resolution recheck; RELION's current resolution is the maximum.
     """
     return [
-        resolution_from_data_vs_prior(dvp_class, ori_size=box_size, allow_high_res_recovery=False)
+        resolution_from_data_vs_prior(dvp_class, box_size=box_size, allow_high_res_recovery=False)
         for dvp_class in np.asarray(data_vs_prior)
     ]
 
@@ -278,7 +278,7 @@ def k1_current_resolution_shell(data_vs_prior, *, current_size, box_size, dtype=
     section 7 for the split-half and final all-data curves.
     """
     dvp = _zero_shells_past_current_size(data_vs_prior, current_size=current_size, box_size=box_size, dtype=dtype)
-    return resolution_from_data_vs_prior(dvp, ori_size=box_size, allow_high_res_recovery=True)
+    return resolution_from_data_vs_prior(dvp, box_size=box_size, allow_high_res_recovery=True)
 
 
 def class_current_resolution_shell(data_vs_prior, *, current_size, box_size, dtype=np.float32):
@@ -302,7 +302,7 @@ def initialize_resolution_from_fsc(
     if previous_current_size < box_size:
         fsc[min(len(fsc), previous_current_size // 2) :] = 0.0
     data_vs_prior = np.asarray(fsc_to_relion_ssnr(fsc, tau2_fudge=options.parity.tau2_fudge))
-    resolution_shell = resolution_from_data_vs_prior(data_vs_prior, ori_size=box_size, allow_high_res_recovery=True)
+    resolution_shell = resolution_from_data_vs_prior(data_vs_prior, box_size=box_size, allow_high_res_recovery=True)
     resolution_angstrom = shell_index_to_resolution_angstrom(resolution_shell, box_size, voxel_size)
     if np.isfinite(resolution_angstrom) and resolution_angstrom > 0.0:
         state.current_resolution = float(resolution_angstrom)
@@ -410,7 +410,7 @@ def estimate_k1_iteration_resolution(
         box_size=box_size,
         dtype=dtype,
     )
-    observed_shell = resolution_from_data_vs_prior(data_vs_prior, ori_size=box_size, allow_high_res_recovery=True)
+    observed_shell = resolution_from_data_vs_prior(data_vs_prior, box_size=box_size, allow_high_res_recovery=True)
     scheduling_shell = float(
         _firstiter_cc_scheduling_resolution_shell(
             observed_shell,

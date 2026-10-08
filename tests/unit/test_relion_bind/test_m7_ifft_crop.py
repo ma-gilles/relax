@@ -160,7 +160,7 @@ class TestIFFTCropParity:
         # Convert projector -> standard centered (N^3)
         std_centered = relion_projector_to_recovar_centered(
             proj,
-            ori_size=N,
+            box_size=N,
             padding_factor=pf,
         )
 
@@ -197,7 +197,7 @@ class TestIFFTCropParity:
         proj = fftw_half_to_relion_projector(fftw_half, padding_factor=pf)
         std_centered = relion_projector_to_recovar_centered(
             proj,
-            ori_size=N,
+            box_size=N,
             padding_factor=pf,
         )
         recovar_from_proj = _standard_to_recovar_centered(std_centered)

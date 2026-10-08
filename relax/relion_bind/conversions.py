@@ -34,7 +34,7 @@ from numpy.typing import NDArray
 # ---------------------------------------------------------------------------
 
 
-def compute_relion_pad_size(ori_size: int, padding_factor: int = 1) -> int:
+def compute_relion_pad_size(box_size: int, padding_factor: int = 1) -> int:
     """Compute RELION's ``pad_size`` for a given ``ori_size`` and padding factor.
 
     .. code-block:: text
@@ -44,7 +44,7 @@ def compute_relion_pad_size(ori_size: int, padding_factor: int = 1) -> int:
 
     Parameters
     ----------
-    ori_size : int
+    box_size : int
         Original (unpadded) box size.
     padding_factor : int
         RELION padding factor (typically 1 or 2).
@@ -54,7 +54,7 @@ def compute_relion_pad_size(ori_size: int, padding_factor: int = 1) -> int:
     int
         The padded box size used by RELION's Projector.
     """
-    r_max = ori_size // 2
+    r_max = box_size // 2
     return 2 * (round(padding_factor * r_max) + 1) + 1
 
 
@@ -133,7 +133,7 @@ def fftw_half_to_relion_projector(
 
 def relion_projector_to_fftw_half(
     proj_data: NDArray[np.complexfloating],
-    ori_size: int,
+    box_size: int,
     padding_factor: int = 1,
 ) -> NDArray[np.complexfloating]:
     """Inverse of :func:`fftw_half_to_relion_projector`.
@@ -147,7 +147,7 @@ def relion_projector_to_fftw_half(
     ----------
     proj_data : complex array, shape ``(pad_size, pad_size, pad_size//2+1)``
         RELION ``Projector::data`` layout.
-    ori_size : int
+    box_size : int
         Original box size *N*.
     padding_factor : int
         RELION padding factor used when the projector was built.
@@ -157,7 +157,7 @@ def relion_projector_to_fftw_half(
     fftw_half : complex array, shape ``(ori_size, ori_size, ori_size//2+1)``
         Raw ``np.fft.rfftn``-compatible output.
     """
-    N = ori_size
+    N = box_size
     pad_size = compute_relion_pad_size(N, padding_factor)
     assert proj_data.shape == (pad_size, pad_size, pad_size // 2 + 1), (
         f"Expected shape ({pad_size}, {pad_size}, {pad_size // 2 + 1}), got {proj_data.shape}"
@@ -263,7 +263,7 @@ def recovar_centered_to_fftw_half(
 
 def relion_projector_to_recovar_centered(
     proj_data: NDArray[np.complexfloating],
-    ori_size: int,
+    box_size: int,
     padding_factor: int = 1,
 ) -> NDArray[np.complexfloating]:
     """Composite: RELION Projector-centered --> recovar centered full-complex.
@@ -271,7 +271,7 @@ def relion_projector_to_recovar_centered(
     Parameters
     ----------
     proj_data : complex array, shape ``(pad_size, pad_size, pad_size//2+1)``
-    ori_size : int
+    box_size : int
         Original box size *N*.
     padding_factor : int
         RELION padding factor.
@@ -280,7 +280,7 @@ def relion_projector_to_recovar_centered(
     -------
     centered : complex array, shape ``(ori_size, ori_size, ori_size)``
     """
-    fftw_half = relion_projector_to_fftw_half(proj_data, ori_size, padding_factor)
+    fftw_half = relion_projector_to_fftw_half(proj_data, box_size, padding_factor)
     return fftw_half_to_recovar_centered(fftw_half)
 
 

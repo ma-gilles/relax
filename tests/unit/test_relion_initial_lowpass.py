@@ -50,7 +50,7 @@ def test_centered_fft_wrapper_matches_relion_lowpass():
     actual = np.asarray(ftu.get_idft3(jnp.asarray(actual_ft).reshape(8, 8, 8))).real
     expected = initial_low_pass_filter_references(
         volume.astype(np.float64),
-        ori_size=8,
+        box_size=8,
         pixel_size=1.25,
         ini_high_ang=4.0,
         filter_edgewidth=2.0,

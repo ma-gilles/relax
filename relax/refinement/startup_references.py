@@ -50,7 +50,7 @@ def _initial_lowpass_real(volume_real, volume_shape, voxel_size, ini_high):
 
     filtered = initial_low_pass_filter_references(
         np.asarray(volume_real, dtype=np.float64)[None, ...],
-        ori_size=int(volume_shape[0]),
+        box_size=int(volume_shape[0]),
         pixel_size=float(voxel_size),
         ini_high_ang=float(ini_high),
         filter_edgewidth=float(REFERENCE_FILTER_EDGE_SHELLS),

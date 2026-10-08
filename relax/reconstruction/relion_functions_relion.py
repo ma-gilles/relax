@@ -32,7 +32,7 @@ from recovar.reconstruction.relion_functions import (
 _RELION_PROJECTION_PAD_HOST_FFT_MIN_VOXELS = 200_000_000
 
 
-def _gridding_correct_trilinear(vol_real, ori_size, padding_factor):
+def _gridding_correct_trilinear(vol_real, box_size, padding_factor):
     """Apply RELION-style gridding correction for trilinear interpolation.
 
     Divides each real-space voxel by sinc²(r / (N·pf)) where
@@ -46,7 +46,7 @@ def _gridding_correct_trilinear(vol_real, ori_size, padding_factor):
     ----------
     vol_real : jnp.ndarray, shape (N, N, N)
         Real-space volume with origin at array center.
-    ori_size : int
+    box_size : int
         Original box size (N).
     padding_factor : int
         Padding factor (1 or 2).
@@ -60,20 +60,20 @@ def _gridding_correct_trilinear(vol_real, ori_size, padding_factor):
     coords = jnp.arange(N, dtype=jnp.float64) - N // 2
     # 3D radial distance
     r = jnp.sqrt(coords[:, None, None] ** 2 + coords[None, :, None] ** 2 + coords[None, None, :] ** 2)
-    arg = r / (ori_size * padding_factor)
+    arg = r / (box_size * padding_factor)
     # sinc(x) = sin(πx)/(πx), sinc(0) = 1
     sinc_r = jnp.where(arg < 1e-15, 1.0, jnp.sin(jnp.pi * arg) / (jnp.pi * arg))
     sinc2_r = sinc_r**2
     return vol_real / sinc2_r
 
 
-def _gridding_correct_trilinear_np(vol_real, ori_size, padding_factor):
+def _gridding_correct_trilinear_np(vol_real, box_size, padding_factor):
     """NumPy equivalent of ``_gridding_correct_trilinear`` for host padding."""
 
     N = vol_real.shape[0]
     coords = np.arange(N, dtype=np.float64) - N // 2
     r = np.sqrt(coords[:, None, None] ** 2 + coords[None, :, None] ** 2 + coords[None, None, :] ** 2)
-    arg = r / (ori_size * padding_factor)
+    arg = r / (box_size * padding_factor)
     sinc_r = np.ones_like(arg)
     nz = arg >= 1e-15
     sinc_r[nz] = np.sin(np.pi * arg[nz]) / (np.pi * arg[nz])

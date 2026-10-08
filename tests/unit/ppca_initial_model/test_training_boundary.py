@@ -22,7 +22,7 @@ def test_noise_only_initial_estimator():
     images = np.random.default_rng(93).normal(0, np.sqrt(variance), (count, n, n)).astype(np.float32)
     _, sigma = compute_avg_unaligned_and_sigma2(
         ((0, image) for image in images),
-        ori_size=n,
+        box_size=n,
         pixel_size=1,
         particle_diameter_ang=n,
         width_mask_edge_px=0,

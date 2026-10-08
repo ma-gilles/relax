@@ -355,14 +355,14 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
                 saturated, allow_high_res_recovery=recovery
             ) == 31
             assert regularization_relion.resolution_from_data_vs_prior(
-                saturated, ori_size=64, allow_high_res_recovery=recovery
+                saturated, box_size=64, allow_high_res_recovery=recovery
             ) == 31
         # Only Nyquist above 1 after an early dip: the recheck starts at 31.
         dip_then_nyquist = np.full(33, 0.5, dtype=np.float32)
         dip_then_nyquist[:10] = 5.0
         dip_then_nyquist[32] = 5.0
         assert regularization_relion.resolution_from_data_vs_prior(
-            dip_then_nyquist, ori_size=64, allow_high_res_recovery=True
+            dip_then_nyquist, box_size=64, allow_high_res_recovery=True
         ) == 9
 
     def test_current_resolution_is_floored_at_minres_map(self):
@@ -373,8 +373,8 @@ def test_initial_lowpass_seeding_preserves_pixel_fallback_and_shell_clamps(pixel
         early = np.full(33, 0.5, dtype=np.float32)
         early[:3] = 5.0
         assert regularization_relion.RELION_MINRES_MAP == 5
-        assert regularization_relion.resolution_from_data_vs_prior(early, ori_size=64) == 5
-        assert regularization_relion.resolution_from_data_vs_prior(early, ori_size=64, minres_map=0) == 2
+        assert regularization_relion.resolution_from_data_vs_prior(early, box_size=64) == 5
+        assert regularization_relion.resolution_from_data_vs_prior(early, box_size=64, minres_map=0) == 2
         assert resolution_helpers.class_current_resolution_shell(
             np.stack([early, early]), current_size=64, box_size=64
         ) == 5
