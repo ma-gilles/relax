@@ -560,11 +560,6 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
             else None
         ),
         "perturb_replay_restart_provenance_sha256": report.restart.sha256,
-        # Retired with the captured RELION projector (git tag retired/captured-projector-20261006).
-        "relion_projector_replay_slot": None,
-        "relion_projector_source_manifest_sha256": None,
-        "relion_projector_capture_dir": None,
-        "relion_projector_capture_manifest": None,
     }
 
 

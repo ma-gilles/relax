@@ -1,9 +1,9 @@
 """What a run replayed from RELION, as keys of its refinement archive (code rule 15).
 
 The command adds them to the archive metadata (``relax.refinement.result_files.build_archive_metadata``,
-``replay_provenance``): a perturbation replay's restart provenance, the retired captured projector's keys, a
-frozen boundary, a state-swap probe and the follower-scale replay and dispatch capture of an MPI RELION run. A run
-that replays nothing writes the same keys with their empty values (the last two groups only when present).
+``replay_provenance``): a perturbation replay's restart provenance, a frozen boundary, a state-swap probe and
+the follower-scale replay and dispatch capture of an MPI RELION run. A run that replays nothing writes the
+same keys with their empty values (the last two groups only when present).
 """
 
 import numpy as np
@@ -27,12 +27,6 @@ def replay_archive_metadata(
         "perturb_replay_restart_provenance_sha256": np.asarray(
             restart.sha256 or ""
         ),
-        # The captured RELION projector is retired (git tag retired/captured-projector-20261006); its keys
-        # keep the values a run without one wrote.
-        "relion_projector_replay_slot": np.int64(-1),
-        "relion_projector_source_manifest_sha256": np.asarray(""),
-        "relion_projector_capture_dir": np.asarray(""),
-        "relion_projector_capture_manifest": np.asarray(""),
         "frozen_boundary_dir": np.asarray(
             "" if frozen_boundary is None else str(frozen_boundary.source_dir)
         ),

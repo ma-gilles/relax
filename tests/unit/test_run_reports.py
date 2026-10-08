@@ -22,8 +22,7 @@ SHARED = {
     "image_shape", "volume_shape", "voxel_size", "healpix_order", "auto_local_healpix_order", "sigma_ang",
     "adaptive_oversampling", "max_significants", "max_significants_resolution", "timing_rows", "timing_summary",
     "perturb_replay_restart_state_iterations", "perturb_replay_restart_provenance_path",
-    "perturb_replay_restart_provenance_sha256", "relion_projector_replay_slot",
-    "relion_projector_source_manifest_sha256", "relion_projector_capture_dir", "relion_projector_capture_manifest",
+    "perturb_replay_restart_provenance_sha256",
 }
 
 
@@ -63,8 +62,8 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
         "local_profile_rows", "global_profile_rows", "state_swap_probe", "state_swap_probe_applied_relion_iterations",
     }
     assert summary["profile_only"] is True and summary["diagnostic_single_half"] is True
-    # The captured projector is retired; its ledger keys keep the values of a run without one.
-    assert summary["relion_projector_replay_slot"] is None and summary["perturb_replay_restart_state_iterations"] == [3]
+    # The captured projector is retired, and its ledger keys with it.
+    assert "relion_projector_replay_slot" not in summary and summary["perturb_replay_restart_state_iterations"] == [3]
     assert summary["state_swap_probe_applied_relion_iterations"] == [5]
     assert summary["stop_after_local_search_score_only"] is True
     assert summary["setup_phase_seconds"] == {"state_init": 0.5}
