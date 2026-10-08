@@ -1978,3 +1978,65 @@ def test_weighted_sums_keep_the_current_size_when_the_e_step_scores_below_it(_re
     same = rp.compute_pass2_stats_resident(**dict(args, wsum_current_size=args["current_size"]))
     assert_matches(np.asarray(same.noise_stats.wsum_sigma2_noise), noise_full)
     assert_matches(same.hard_assignment, full.hard_assignment)
+
+
+def test_the_projection_sums_choice_reads_the_allocator_not_the_physical_free_memory(monkeypatch):
+    """relax#41: at a 16 GB pool on an 80 GB card the physical reading (62 GiB free) chose 3.76 GiB of
+    per-projection sums that the pool could not hold. The choice reads what the allocator can hand out."""
+
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1024**3
+    monkeypatch.setattr(rp, "_device_free_memory_bytes", lambda: 62 * gib)
+    monkeypatch.setattr(rp, "_jax_allocator_free_memory_bytes", lambda: 10 * gib)
+    monkeypatch.setattr(rp, "_jax_allocator_pool_free_bytes", lambda: 1 * gib)
+    assert rp._allocator_available_bytes() == pytest.approx(10 * gib)
+    sums = 3.76 * gib
+    assert sums > rp._PRESUM_ADJOINT_FREE_FRACTION * rp._allocator_available_bytes()
+    assert sums <= rp._PRESUM_ADJOINT_FREE_FRACTION * 62 * gib  # the old physical reading would have taken them
+    # On a small physical card the device bounds the allocator's headroom.
+    monkeypatch.setattr(rp, "_device_free_memory_bytes", lambda: 2 * gib)
+    assert rp._allocator_available_bytes() == pytest.approx(3 * gib)
+    assert budget.device_available_bytes(None, None, None) is None
+
+
+def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
+    """relax#41 audit: with physical free memory far above the pool (an 80 GB card at a 16 GB pool), every
+    budget that reads free memory stays inside what the allocator can hand out."""
+
+    from relax.relion import relion_ctf
+    from relax.sparse_pass2 import sparse_pass2_budget as budget
+
+    gib = 1024**3
+    readings = dict(physical=62 * gib, allocator=10 * gib, pool=1 * gib)
+    for module in (rp, budget):
+        monkeypatch.setattr(module, "_device_free_memory_bytes", lambda: readings["physical"], raising=False)
+        monkeypatch.setattr(module, "_jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
+        monkeypatch.setattr(module, "_jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)
+    monkeypatch.delenv(relion_ctf._EXACT_CTF_DEVICE_GB_ENV, raising=False)
+    assert rp._allocator_available_bytes() <= 10 * gib  # the K-class projection-sums choice
+    assert relion_ctf._exact_ctf_device_budget_bytes(0) <= 10 * gib  # the exact-CTF device row cache
+
+
+@requires_resident_gpu
+def test_the_allocator_reading_stays_inside_an_emulated_pool():
+    """On the GPU, under XLA_PYTHON_CLIENT_MEM_FRACTION=0.1 (an emulated small card), the reading the
+    projection-sums choice uses is bounded by the pool, not by the device's physical free memory (relax#41)."""
+
+    import json
+    import os
+    import subprocess
+    import sys
+
+    probe = (
+        "import json, jax, jax.numpy as jnp; from relax.sparse_pass2 import resident_pass2 as rp; "
+        "x = jnp.zeros((1 << 20,), jnp.float32).block_until_ready(); "
+        "s = jax.devices()[0].memory_stats(); "
+        "print(json.dumps({'available': rp._allocator_available_bytes(), 'physical': rp._device_free_memory_bytes(), "
+        "'limit': s['bytes_limit']}))"
+    )
+    env = dict(os.environ, XLA_PYTHON_CLIENT_MEM_FRACTION="0.1", XLA_PYTHON_CLIENT_PREALLOCATE="false")
+    out = subprocess.run([sys.executable, "-c", probe], env=env, capture_output=True, text=True, check=True)
+    reading = json.loads(out.stdout.strip().splitlines()[-1])
+    assert reading["available"] <= reading["limit"]
+    assert reading["physical"] > reading["limit"]  # the emulated pool is smaller than the free device

@@ -3267,7 +3267,11 @@ def _resident_pass2(
         y_dtype=recon_y_accum_dtype,
         ctf_dtype=recon_ctf_accum_dtype,
     )
-    free_bytes = _device_free_memory_bytes()
+    # What the JAX allocator can still hand out, not the device's physical free memory: under a pool
+    # limit (XLA_PYTHON_CLIENT_MEM_FRACTION, or a smaller card's pool) the physical reading counted an
+    # 80 GB card's 62 GiB and chose 3.76 GiB of sums at a 16 GB pool, which then ran out preparing the
+    # half's operands (relax#41, EMPIAR-10073 box 380 Class3D K3).
+    free_bytes = _allocator_available_bytes()
     # A tilt chunk backprojects each (image, row) with its own matrix (resident_tilts), never per projection.
     presum_adjoint = (
         n_classes > 1
@@ -3306,7 +3310,7 @@ def _resident_pass2(
     Ft_ctf_total = tuple(zero_accumulators[n_slots:])
     del zero_accumulators
     logger.info(
-        "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB free)",
+        "Resident pass-2 M-step adjoint: %s (per-projection sums %.2f GiB, %s GiB available to the allocator)",
         "per-projection sums, one backprojection per pass" if presum_adjoint else "per-row backprojection",
         sums_bytes / float(1024**3),
         "unknown" if free_bytes is None else f"{float(free_bytes) / float(1024**3):.2f}",
@@ -4657,6 +4661,14 @@ def _resident_pass2(
 
 # Per-projection M-step row sums replace the per-slot BPref volumes of a pass
 # while they take at most this share of the free device memory.
+def _allocator_available_bytes() -> float | None:
+    """Bytes the JAX allocator can still hand out now (:func:`device_available_bytes` of the three readings)."""
+
+    return device_available_bytes(
+        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+    )
+
+
 _PRESUM_ADJOINT_FREE_FRACTION = 0.2
 
 
