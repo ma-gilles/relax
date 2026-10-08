@@ -1233,6 +1233,8 @@ def refine_single_volume(
     # (--max_iter 0 --force-final-after-zero-iterations) runs no numbered
     # iteration and reports none.
     hard_assignments = [None, None]
+    # Set when a local-search diagnostic stops the run after its first local search.
+    profile_stop = None
     while (
         options.schedule.force_max_iter_after_convergence or not state.has_converged
     ) and iteration < options.schedule.max_iter:
@@ -1758,26 +1760,12 @@ def refine_single_volume(
                 bool(options.local_search.stop_after_local_search_score_only),
                 elapsed,
             )
-            # Local search is K=1 (Class3D was rejected above), so there are no class products.
-            return RefinementResult(
-                maps=ModelMaps(mean=merged_half_map(reference_model.maps), means=reference_model.maps, class_means=None),
-                replay=_follower_replay_telemetry(follower_scale_replay, history),
-                follower_scale=None,
-                convergence_state=state,
-                numbered=NumberedMetadata(
-                    hard_assignments=hard_assignments,
-                    frozen_initial_scoring_state_sha256=frozen_initial_scoring_state_sha256,
-                    expected_accuracy_trial_local_indices=published_accuracy.trial_local_indices,
-                    expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
-                    setup_phase_seconds=setup_phase_seconds,
-                ),
-                history=history,
-                profile_stop=ProfileStop(
-                    score_only=bool(options.local_search.stop_after_local_search_score_only),
-                    wall_seconds=elapsed,
-                    significant_count=significance.recorded,
-                ),
+            profile_stop = ProfileStop(
+                score_only=bool(options.local_search.stop_after_local_search_score_only),
+                wall_seconds=elapsed,
+                significant_count=significance.recorded,
             )
+            break
         if k_class_enabled:
             class_mixture = class_mixture_from_weights(
                 _class_weights_from_posterior(
@@ -2361,6 +2349,17 @@ def refine_single_volume(
         expected_accuracy_trial_particle_ids=published_accuracy.trial_particle_ids,
         setup_phase_seconds=setup_phase_seconds,
     )
+    if profile_stop is not None:
+        # Local search is K=1 (Class3D was rejected above), so there are no class products.
+        return RefinementResult(
+            maps=ModelMaps(mean=merged_half_map(reference_model.maps), means=reference_model.maps, class_means=None),
+            replay=_follower_replay_telemetry(follower_scale_replay, history),
+            follower_scale=None,
+            convergence_state=state,
+            numbered=numbered,
+            history=history,
+            profile_stop=profile_stop,
+        )
     should_run_final_iteration = finalization._should_run_final_all_data_iteration(
         logger=logger,
         has_converged=state.has_converged,
