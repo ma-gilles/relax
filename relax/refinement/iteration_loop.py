@@ -124,6 +124,7 @@ from relax.refinement.iteration_snapshot import (
 )
 from relax.refinement.local_sampling import local_search_centre_half, plan_expectation_sampling
 from relax.refinement.mean_helpers import (
+    ClassMixture,
     ReconstructionSettings,
     _class_weights_from_posterior,
     _host_tau2_volumes,
@@ -301,45 +302,6 @@ def _copy_first_class(stacked):
     return jnp.broadcast_to(stacked[:1], stacked.shape)
 
 
-def copy_first_class_to_every_class(
-    reference_model,
-    direction_priors,
-    *,
-    mean_signal_variance_shells,
-    data_vs_prior_iter,
-    tau2_update_details,
-    class_mixture,
-    n_classes: int,
-):
-    """Give every class the first class's model after the CC iteration of a one-reference Class3D start.
-
-    Writes ``reference_model``'s maps and tau2 and the entries of ``direction_priors`` in place; returns
-    the copied tau2 shells, data-vs-prior curve and tau2 details, and the class mixture with the first
-    class's weight shared equally. The caller records the returned curve as the iteration's.
-    """
-    # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
-    # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
-    # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
-    reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
-    reference_model.tau2 = _copy_first_class(reference_model.tau2)
-    reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
-    mean_signal_variance_shells = _copy_first_class(mean_signal_variance_shells)
-    data_vs_prior_iter = _copy_first_class(data_vs_prior_iter)
-    tau2_update_details = {
-        key: None if value is None else _copy_first_class(value) for key, value in tau2_update_details.items()
-    }
-    for half_index, prior in enumerate(direction_priors):
-        if prior.values is not None:
-            direction_priors[half_index] = DirectionPrior(
-                _copy_first_class(prior.values), prior.healpix_order,
-            )
-    class_mixture = class_mixture_from_weights(
-        np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)
-    )
-    logger.info("Class3D one-reference start: copied class 1 to every class after the CC iteration")
-    return mean_signal_variance_shells, data_vs_prior_iter, tau2_update_details, class_mixture
-
-
 class ClassMaximization(NamedTuple):
     """What a Class3D M-step leaves for the rest of its iteration (the model is written in place)."""
 
@@ -350,6 +312,47 @@ class ClassMaximization(NamedTuple):
     tau2_shells: object
     data_vs_prior: object
     tau2_update_details: dict
+
+
+def copy_first_class_to_every_class(
+    reference_model,
+    direction_priors,
+    mstep: ClassMaximization,
+    class_mixture,
+    *,
+    n_classes: int,
+) -> tuple[ClassMaximization, ClassMixture]:
+    """Give every class the first class's model after the CC iteration of a one-reference Class3D start.
+
+    Writes ``reference_model``'s maps and tau2 and the entries of ``direction_priors`` in place; returns
+    ``mstep`` with its tau2 shells, data-vs-prior curve and tau2 details copied from the first class, and the
+    class mixture with the first class's weight shared equally. The caller records the returned curve as the
+    iteration's.
+    """
+    # After the CC iteration RELION copies class 0's model to every class for the seed iteration:
+    # Iref, tau2_class, data_vs_prior_class and pdf_direction, each class taking pdf_class[0] / K
+    # (maximizationOtherParameters, ml_optimiser.cpp:6423-6437).
+    reference_model.maps = [None if mean is None else _copy_first_class(mean) for mean in reference_model.maps]
+    reference_model.tau2 = _copy_first_class(reference_model.tau2)
+    reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
+    copied = mstep._replace(
+        tau2_shells=_copy_first_class(mstep.tau2_shells),
+        data_vs_prior=_copy_first_class(mstep.data_vs_prior),
+        tau2_update_details={
+            key: None if value is None else _copy_first_class(value)
+            for key, value in mstep.tau2_update_details.items()
+        },
+    )
+    for half_index, prior in enumerate(direction_priors):
+        if prior.values is not None:
+            direction_priors[half_index] = DirectionPrior(
+                _copy_first_class(prior.values), prior.healpix_order,
+            )
+    class_mixture = class_mixture_from_weights(
+        np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)
+    )
+    logger.info("Class3D one-reference start: copied class 1 to every class after the CC iteration")
+    return copied, class_mixture
 
 
 def class_maximization(
@@ -983,8 +986,6 @@ def refine_single_volume(
         group_ids=options.replay.init_group_ids,
         group_count=options.replay.init_group_count,
     )
-    tau2_update_details = None
-    tau2_update_details_per_half = None
     if int(options.schedule.init_relion_incr_size) <= 0:
         raise ValueError("init_relion_incr_size must be positive")
 
@@ -1305,9 +1306,8 @@ def refine_single_volume(
                 incr_size=relion_incr_size, has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
                 dtype=scoring_dtype, log=logger,
             )
-            data_vs_prior_iter = image_size_plan.data_vs_prior
-            if data_vs_prior_iter is not None:
-                previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+            if image_size_plan.data_vs_prior is not None:
+                previous_data_vs_prior_for_scheduling = image_size_plan.data_vs_prior
             relion_incr_size = image_size_plan.incr_size
             relion_has_high_fsc_at_limit = image_size_plan.has_high_fsc_at_limit
         else:
@@ -1346,8 +1346,7 @@ def refine_single_volume(
                     dtype=scoring_dtype,
                     log=logger,
                 )
-                data_vs_prior_iter = image_size_plan.data_vs_prior
-                previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+                previous_data_vs_prior_for_scheduling = image_size_plan.data_vs_prior
                 relion_incr_size = image_size_plan.incr_size
                 relion_has_high_fsc_at_limit = image_size_plan.has_high_fsc_at_limit
 
@@ -1826,15 +1825,10 @@ def refine_single_volume(
         #
         # Snapshot the previous-iter means BEFORE the reconstruction so sign
         # alignment has a reference at iter 1.
+        # mstep is the mode's record (ClassMaximization or K1Maximization); both carry previous_means and
+        # tau2_update_details, and the rest is read under the same mode test.
         if k_class_enabled:
-            (
-                Ft_y_combined,
-                Ft_ctf_combined,
-                previous_means,
-                mean_signal_variance_shells,
-                data_vs_prior_iter,
-                tau2_update_details,
-            ) = class_maximization(
+            mstep = class_maximization(
                 reference_model,
                 (Ft_y_0, Ft_y_1),
                 (Ft_ctf_0, Ft_ctf_1),
@@ -1857,17 +1851,10 @@ def refine_single_volume(
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
                 observer=observer,
             )
-            history.data_vs_prior_trajectory.append(data_vs_prior_iter)
-            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+            history.data_vs_prior_trajectory.append(mstep.data_vs_prior)
+            previous_data_vs_prior_for_scheduling = mstep.data_vs_prior
         else:
-            (
-                (Ft_y_0, Ft_y_1),
-                (Ft_ctf_0, Ft_ctf_1),
-                previous_means,
-                current_iter_fsc,
-                tau2_update_details,
-                tau2_update_details_per_half,
-            ) = k1_maximization(
+            mstep = k1_maximization(
                 reference_model,
                 (Ft_y_0, Ft_y_1),
                 (Ft_ctf_0, Ft_ctf_1),
@@ -1884,6 +1871,9 @@ def refine_single_volume(
                 source_pixel_size_angstrom=source_pixel_size_angstrom,
                 observer=observer,
             )
+            # The accumulators the solve used (joined at low resolution when that is on) replace the scored ones.
+            Ft_y_0, Ft_y_1 = mstep.Ft_y_per_half
+            Ft_ctf_0, Ft_ctf_1 = mstep.Ft_ctf_per_half
         observer.stage_finished(iteration, "recon")
 
         history.significant_counts.append(significance.recorded)
@@ -1927,22 +1917,11 @@ def refine_single_volume(
                     for half_index, learned in enumerate(learned_priors):
                         direction_priors[half_index] = learned
         if single_class_iteration:
-            (
-                mean_signal_variance_shells,
-                data_vs_prior_iter,
-                tau2_update_details,
-                class_mixture,
-            ) = copy_first_class_to_every_class(
-                reference_model,
-                direction_priors,
-                mean_signal_variance_shells=mean_signal_variance_shells,
-                data_vs_prior_iter=data_vs_prior_iter,
-                tau2_update_details=tau2_update_details,
-                class_mixture=class_mixture,
-                n_classes=n_classes,
+            mstep, class_mixture = copy_first_class_to_every_class(
+                reference_model, direction_priors, mstep, class_mixture, n_classes=n_classes,
             )
-            history.data_vs_prior_trajectory[-1] = data_vs_prior_iter
-            previous_data_vs_prior_for_scheduling = data_vs_prior_iter
+            history.data_vs_prior_trajectory[-1] = mstep.data_vs_prior
+            previous_data_vs_prior_for_scheduling = mstep.data_vs_prior
         history.record_direction_prior(
             direction_priors,
             k_class_enabled=k_class_enabled,
@@ -1950,7 +1929,7 @@ def refine_single_volume(
 
         # --- Compute unregularized half-maps only when diagnostics need them ---
         # K=1 FSC was already computed above directly from the BackProjector
-        # accumulators (current_iter_fsc), matching RELION ordering. For K>1
+        # accumulators (mstep.fsc), matching RELION ordering. For K>1
         # the shared class3D prior is from the previous Iref power spectrum.
         # Reconstructing unreg here is only needed for saved intermediates /
         # parity dumps.
@@ -1965,8 +1944,8 @@ def refine_single_volume(
         if k_class_enabled:
             unreg_means = (
                 reconstruct_unregularized_class_means(
-                    Ft_y_combined,
-                    Ft_ctf_combined,
+                    mstep.Ft_y_combined,
+                    mstep.Ft_ctf_combined,
                     reconstruction_settings,
                     n_classes,
                     accumulator_volume_shape=mstep_accumulator_shape,
@@ -1986,7 +1965,7 @@ def refine_single_volume(
                 if need_unreg_means
                 else [None, None]
             )
-            align_k1_volume_signs(reference_model.maps, previous_means, unreg_means, volume_shape)
+            align_k1_volume_signs(reference_model.maps, mstep.previous_means, unreg_means, volume_shape)
         logger.info(
             "Unregularized reconstruction (2 halves): %.1fs%s",
             time.time() - _t_unreg,
@@ -2001,10 +1980,10 @@ def refine_single_volume(
             observer.stage_finished(iteration, "fsc")
         else:
             # FSC was already computed above in the RELION-exact ordering block
-            # (current_iter_fsc) and used to derive tau2 BEFORE the Wiener solve.
+            # (mstep.fsc) and used to derive tau2 BEFORE the Wiener solve.
             # Reuse it here — recomputing would give the same value (same
             # underlying unreg accumulators).
-            fsc = current_iter_fsc
+            fsc = mstep.fsc
             # The FSC also drives size growth; the history and the run files keep it as that curve too.
             history.record_fsc(fsc, fsc)
             observer.stage_finished(iteration, "fsc")
@@ -2060,7 +2039,7 @@ def refine_single_volume(
             previous_combined_classes = None
             # K=1: data_vs_prior comes from the half-map FSC.
             resolution_estimate = estimate_k1_iteration_resolution(
-                tau2_update_details["ssnr_shells"],
+                mstep.tau2_update_details["ssnr_shells"],
                 current_size=current_size,
                 grid_size=grid_size,
                 voxel_size=source_pixel_size_angstrom,
@@ -2181,7 +2160,7 @@ def refine_single_volume(
 
         # Save per-iter per-shell sigma2 (after this iter's noise update) and
         # the exact shell-wise tau2 ingredients used in the Wiener update.
-        history.record_noise_and_tau2(noise_from_res, noise_from_res_per_half, tau2_update_details)
+        history.record_noise_and_tau2(noise_from_res, noise_from_res_per_half, mstep.tau2_update_details)
 
         # --- Update convergence state ---
         # This checks assignment changes, resolution stalls, and may trigger
@@ -2273,9 +2252,9 @@ def refine_single_volume(
                 reference_model.maps,
                 unreg_means,
                 (
-                    mean_signal_variance_shells
+                    mstep.tau2_shells
                     if k_class_enabled
-                    else [details["prior_shells"] for details in tau2_update_details_per_half]
+                    else [details["prior_shells"] for details in mstep.tau2_update_details_per_half]
                 ),
                 previous_data_vs_prior_for_scheduling,
                 noise_model.radial_per_half,
@@ -2331,9 +2310,7 @@ def refine_single_volume(
         jax.block_until_ready(reference_model.maps)
         Ft_y_0 = Ft_y_1 = None
         Ft_ctf_0 = Ft_ctf_1 = None
-        Ft_y_combined = Ft_ctf_combined = None
-        unreg_means = previous_means = per_half = snapshot = None
-        tau2_update_details_per_half = None
+        unreg_means = mstep = per_half = snapshot = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None
         if options.debug.environment.clear_jax_caches_between_iterations:

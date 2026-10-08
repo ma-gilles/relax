@@ -585,7 +585,7 @@ MUTATIONS = (
      "resolution caps the join radius in these cases)", False),
     ("k1_mstep_details_from_half2", "split_prior.details_per_half[0],\nsplit_prior.details_per_half,", "split_prior.details_per_half[1],\nsplit_prior.details_per_half,",
      "the K=1 M-step reports half 2's tau2 details", True),
-    ("class_mstep_curve_doubled", "data_vs_prior_trajectory.append(data_vs_prior_iter)", "data_vs_prior_trajectory.append(2 * data_vs_prior_iter)",
+    ("class_mstep_curve_doubled", "data_vs_prior_trajectory.append(mstep.data_vs_prior)", "data_vs_prior_trajectory.append(2 * mstep.data_vs_prior)",
      "the Class3D M-step publishes a doubled data-vs-prior curve to the history", True),
     ("class_mstep_keeps_old_tau2", "reference_model.tau2 = class_priors.variance\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)", "pass\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)",
      "the Class3D M-step does not install its new tau2", True),
