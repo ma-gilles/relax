@@ -14,11 +14,14 @@ import math
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.helpers.convergence import LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.env_flags import parse_env_flag_or_false, parse_env_true_flag
 from relax.symmetry import canonicalize_rotational_symmetry
+
+if TYPE_CHECKING:
+    from relax.helpers.dtype_policy import DensePrecisionPolicy
 
 
 @dataclass(frozen=True)
@@ -523,6 +526,31 @@ class RefinementOptions:
     # Read from the environment when the options are built; nothing below reads it again.
     final_pass: FinalPassOptions = field(default_factory=FinalPassOptions.from_environ)
     solvent: SolventOptions = field(default_factory=SolventOptions)
+    # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
+    precision: DensePrecisionPolicy = field(default_factory=lambda: _process_dense_precision())
+
+
+def _process_dense_precision() -> DensePrecisionPolicy:
+    """The process's dense precision, ``relax.dense.scoring_policy.DENSE_PRECISION``.
+
+    That policy owns the default: ``RELAX_USE_FLOAT64_SCORING`` and ``RELAX_USE_FLOAT64_PROJECTIONS``, read once
+    when ``relax.dense.scoring_policy`` is imported. The scoring engines still read it there, so the
+    refinement refuses options whose precision differs (``require_process_precision``).
+    """
+    from relax.dense import scoring_policy
+
+    return scoring_policy.DENSE_PRECISION
+
+
+def require_process_precision(options: RefinementOptions) -> None:
+    """Refuse options whose ``precision`` is not the process's dense precision, which the engines read."""
+    process = _process_dense_precision()
+    if options.precision != process:
+        raise ValueError(
+            f"options.precision={options.precision!r} differs from the process's dense precision {process!r} "
+            "(relax.dense.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
+            "after setting RELAX_USE_FLOAT64_SCORING / RELAX_USE_FLOAT64_PROJECTIONS"
+        )
 
 
 def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max_healpix_order):
@@ -610,4 +638,5 @@ __all__ = [
     "CheckpointOptions",
     "RefinementOptions",
     "with_validated_sampling_schedule",
+    "require_process_precision",
 ]

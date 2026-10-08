@@ -74,6 +74,7 @@ tests/unit/test_half_overlap_dispatch.py
 tests/unit/test_half_translation_prior_inputs.py
 tests/unit/test_half_volume_mstep.py
 tests/unit/test_healpix_order_oracle.py
+tests/unit/test_refinement_precision_option.py
 tests/unit/test_host_tau2_volumes.py
 tests/unit/test_image_size_planning.py
 tests/unit/test_initial_coarse_grid_owner.py

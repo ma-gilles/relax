@@ -22,16 +22,12 @@ import numpy as np
 from recovar import utils
 from recovar.data_io import cryoem_dataset
 
-from relax.dense import scoring_policy
 from relax.dense.score_outputs import (
     PerHalfOutputs,
     _combine_optional_half_accumulators,
     _maybe_host_offload_half0_local_accumulators,
     _resolve_mstep_accumulator_shape,
     _resolve_mstep_full_half_axis,
-)
-from relax.dense.scoring_policy import (
-    _dense_global_scoring_dtype,
 )
 from relax.diagnostics import bpref_diagnostics
 from relax.diagnostics import relion_replay as replay_policy
@@ -180,6 +176,7 @@ from relax.refinement.refinement_options import (
     FINAL_ALL_DATA_USE_MERGED_REFERENCE_ENV,
     RefinementOptions,
     require_consistency_route,
+    require_process_precision,
     with_validated_sampling_schedule,
 )
 from relax.refinement.refinement_result import (
@@ -783,8 +780,9 @@ def refine_single_volume(
         source = InputSource()
 
     options = with_validated_sampling_schedule(options)
-
-    scoring_dtype = _dense_global_scoring_dtype()
+    require_process_precision(options)
+    # The dtype of the controller's float64-sensitive host operands (rotation grids, priors), from the precision.
+    scoring_dtype = options.precision.rotation_real_dtype
     symmetry = options.symmetry.point_group
     schedule = options.schedule
     adaptive = options.adaptive
@@ -1551,7 +1549,7 @@ def refine_single_volume(
                 and n_classes == 1
                 and first_iteration.score_mode == "gaussian"
                 and not first_iteration.winner_take_all
-                and not scoring_policy.DENSE_PRECISION.use_float64_scoring
+                and not options.precision.use_float64_scoring
             )
         ):
             adaptive_pass1_rotations = coarse_pass1_rotations(

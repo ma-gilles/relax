@@ -19,7 +19,6 @@ from relax.dense.score_outputs import (
     _resolve_mstep_full_half_axis,
 )
 from relax.dense.scoring_policy import (
-    _dense_global_scoring_dtype,
     _local_adaptive_pass2_denominator_support_mode,
     _local_adaptive_pass2_full_parent_enabled,
     _local_adaptive_pass2_rotation_only_enabled,
@@ -145,10 +144,10 @@ def run_final_all_data(
     the set-up and numbered-iteration metadata and the follower-scale replay's accounting after execution.
     ``sigma_offset`` is the run's ``SigmaOffset`` (shared and per-half translation prior widths) and
     ``class_mixture`` its ``ClassMixture`` (class weights and their log priors; one class for K=1). The
-    class count is ``options.k_class.n_classes``; arrays are in the global scoring dtype.
+    class count is ``options.k_class.n_classes``; arrays are in ``options.precision``'s dtype.
     See ``docs/math/relion_refinement_algorithm.md``, section 7.
     """
-    scoring_dtype = _dense_global_scoring_dtype()
+    scoring_dtype = options.precision.rotation_real_dtype
     n_classes = int(options.k_class.n_classes)
     class_weights = class_mixture.weights
     class_log_priors = class_mixture.log_priors
