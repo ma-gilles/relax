@@ -9,6 +9,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import mean_helpers
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -60,6 +61,7 @@ def test_lowpass_class_stack_matches_each_class_filtered_alone():
         tau2_fudge=1,
         particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=8.0,
+        programs=ReconstructionPrograms.from_environ(),
     )
     expected = np.stack(
         [
