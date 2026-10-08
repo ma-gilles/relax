@@ -936,9 +936,8 @@ def _compute_k_class_significance_batched(
                     batch_sig_rot_mask = support["rotation_mask"]
                     batch_pmax = support["pmax"]
                     if relion_exact_coarse_weight_order:
-                        # RELION publishes the coarse winner from these weights.
+                        # RELION publishes the coarse winner from these weights (class 0: one class).
                         best_argmax_batch = support["winner"]
-                        best_class_batch = zeros_i32
                 else:
                     batch_weights = batch_values
                     if return_relion_f32_normalization:
