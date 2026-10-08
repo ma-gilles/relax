@@ -379,7 +379,7 @@ def run_final_all_data(
             symmetry=options.symmetry.point_group,
         )
         final_dense_batching = DenseBatchPolicy(
-            image_batch_size=options.batching.image_batch_size,
+            image_batch_size=options.execution.image_batch_size,
             safe_batch_sizes=batch_planner,
             max_significants=options.adaptive.max_significants,
         )

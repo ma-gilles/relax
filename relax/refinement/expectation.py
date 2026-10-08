@@ -578,7 +578,7 @@ def score_numbered_half(
         half=particle_half.index + 1,
     )
     bpref_device_signature_active = (
-        options.debug.environment.bpref_device_signature_target == (iteration + 1, particle_half.index + 1)
+        options.execution.bpref_device_signature_target == (iteration + 1, particle_half.index + 1)
     )
     logger.info(
         "BPREF_DEVICE_SIGNATURE_ACTIVATION iteration=%d half=%d "
@@ -787,7 +787,7 @@ def score_numbered_half(
             class_log_priors=class_log_priors,
         )
         dense_batching = DenseBatchPolicy(
-            image_batch_size=options.batching.image_batch_size,
+            image_batch_size=options.execution.image_batch_size,
             max_significants=options.adaptive.max_significants,
             safe_batch_sizes=half_batching.safe_batch_sizes,
             significance_safe_batch_sizes=half_batching.significance_safe_batch_sizes,

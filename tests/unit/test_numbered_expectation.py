@@ -23,7 +23,7 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings
 from relax.refinement.ports import RunObserver
-from relax.refinement.refinement_options import RefinementBatching, RefinementOptions, RefinementSchedule
+from relax.refinement.refinement_options import ExecutionOptions, RefinementOptions, RefinementSchedule
 from relax.refinement.tomo_half import TomoSampling
 from relax.sampling import TrialGrid
 
@@ -71,7 +71,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
         sampling=sampling, tomo_sampling=None,
         direction_priors=HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None),
         class_log_priors=None, sigma_offset_angstrom=2.,
-        batch_planner=BatchPlanner(requested=RefinementBatching(image_batch_size=2, rotation_block_size=2),
+        batch_planner=BatchPlanner(requested=ExecutionOptions(image_batch_size=2, rotation_block_size=2),
                                    image_shape=(4, 4), volume_shape=(4, 4, 4), n_classes=n_classes,
                                    precision=DensePrecisionPolicy(), log=logging.getLogger(__name__)),
         image_geometry=ImageGeometry(image_shape=(4, 4), pixel_size_angstrom=1.25),

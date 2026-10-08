@@ -9,7 +9,7 @@ from helpers.float_compare import assert_matches
 
 from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.refinement import expectation_batches as batches
-from relax.refinement.refinement_options import RefinementBatching
+from relax.refinement.refinement_options import ExecutionOptions
 
 pytestmark = pytest.mark.unit
 
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.unit
 def planner(monkeypatch):
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
     return batches.BatchPlanner(
-        requested=RefinementBatching(image_batch_size=200, rotation_block_size=1000),
+        requested=ExecutionOptions(image_batch_size=200, rotation_block_size=1000),
         image_shape=(16, 16), volume_shape=(16, 16, 16), n_classes=1, precision=DensePrecisionPolicy(),
         log=SimpleNamespace(info=lambda *args: None),
     )

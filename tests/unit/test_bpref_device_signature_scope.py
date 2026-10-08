@@ -12,7 +12,7 @@ from relax.classification import k_class
 from relax.cuda import kernels as em_cuda_kernels
 from relax.diagnostics import bpref_diagnostics
 from relax.refinement import finalization, half_scoring
-from relax.refinement.refinement_options import DiagnosticEnvironment, bpref_device_signature_target
+from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
 
 pytestmark = pytest.mark.unit
 
@@ -38,9 +38,9 @@ def test_device_signature_target_is_the_numbered_half_the_environment_names():
 def test_the_run_options_read_the_device_signature_target_once(monkeypatch):
     for name, value in _capture_environment().items():
         monkeypatch.setenv(name, value)
-    assert DiagnosticEnvironment.from_environ().bpref_device_signature_target == (5, 1)
+    assert ExecutionOptions.from_environ().bpref_device_signature_target == (5, 1)
     monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
-    assert DiagnosticEnvironment.from_environ().bpref_device_signature_target is None
+    assert ExecutionOptions.from_environ().bpref_device_signature_target is None
 
 
 def test_device_signature_scope_rejects_missing_or_invalid_target():

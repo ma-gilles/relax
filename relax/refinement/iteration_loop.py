@@ -423,7 +423,7 @@ def refine_single_volume(
     padded_volume_shape = tuple(d * RECONSTRUCTION_PADDING_FACTOR for d in volume_shape)
 
     batch_planner = BatchPlanner(
-        requested=options.batching, image_shape=image_geometry.image_shape, volume_shape=volume_shape,
+        requested=options.execution, image_shape=image_geometry.image_shape, volume_shape=volume_shape,
         n_classes=options.k_class.n_classes, precision=options.precision, log=logger,
     )
 
@@ -977,7 +977,7 @@ def refine_single_volume(
                 ),
                 use_local=use_local, dtype=scoring_dtype,
             ),
-            half_inputs, diagnostic_half_indices, significance, overlap_halves=options.overlap.overlap_halves,
+            half_inputs, diagnostic_half_indices, significance, overlap_halves=options.execution.overlap_halves,
             iteration=iteration, observer=observer, log=logger,
         )
         # Drop the inputs' references to this iteration's projectors and maps, which the M-step and the next
@@ -1418,7 +1418,7 @@ def refine_single_volume(
         unreg_means = mstep = per_half = snapshot = None
         # Pass containers must not retain the previous grids while the next projector is built.
         numbered_expectation = numbered_tomo_sampling = numbered_variant = None
-        if options.debug.environment.clear_jax_caches_between_iterations:
+        if options.execution.clear_jax_caches_between_iterations:
             jax.clear_caches()
 
         if state.has_converged and not options.schedule.force_max_iter_after_convergence:

@@ -117,9 +117,10 @@ from relax.refinement.noise_updates import (
 )
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
+    ExecutionOptions,
+    FinalPassOptions,
     KClassOptions,
     LocalSearchOptions,
-    RefinementBatching,
     RefinementOptions,
     RefinementSchedule,
     RelionParityOptions,
@@ -1090,7 +1091,6 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
 ):
     import weakref
 
-    monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
     initial_model_refs = []
     initialize = iteration_loop_module.initialize_noise_model
 
@@ -1140,6 +1140,7 @@ def test_final_controller_receives_replayed_state_without_retaining_old_noise(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=0, init_current_size=16, init_healpix_order=2),
+            final_pass=FinalPassOptions(after_max_iter=True),
         ),
         relion_replay=RelionReplay(final_replay_override={
             "noise_variance": replayed_noise,
@@ -1198,7 +1199,7 @@ def test_final_all_data_runs_with_cold_start_only_override(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
         ),
         relion_replay=RelionReplay(replay_iteration_overrides=[{}, None]),
@@ -1256,7 +1257,7 @@ def test_last_numbered_state_does_not_trigger_post_cap_final_all_data(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
         ),
     )
@@ -3217,7 +3218,7 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
                     max_healpix_order=2, skip_final_iteration=True,
                 ),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0, coarse_engine="gemm_dense"),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0, optimizer_random_seed=17),
                 replay=ReplayState(
                     init_previous_best_rotation_eulers=[np.zeros((dataset.n_units, 3)) for dataset in half_datasets],
@@ -4498,7 +4499,7 @@ class TestRelionModeSmokeTest:
                         max_iter=1, init_current_size=4, init_healpix_order=2,
                         max_healpix_order=2, init_translation_sigma_angstrom=10.0,
                     ),
-                    batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                    execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                     adaptive=AdaptiveOptions(adaptive_oversampling=1),
                     parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 ),
@@ -4581,7 +4582,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=2,
                     skip_final_iteration=True,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(
                     low_resol_join_halves_angstrom=0.0,
                     emulate_relion_firstiter_cc=True,
@@ -4953,7 +4954,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             ),
         )
 
@@ -4990,7 +4991,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
             ),
         )
@@ -5036,7 +5037,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(
                     low_resol_join_halves_angstrom=40.0,
                     relion_firstiter_ini_high_angstrom=30.0,
@@ -5114,7 +5115,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(
                     low_resol_join_halves_angstrom=0.0,
                     perturb_seed=17,
@@ -5205,7 +5206,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
             ),
         )
@@ -5296,7 +5297,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=join_angstrom),
                 **k_class,
             ),
@@ -5410,7 +5411,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
             ),
         )
@@ -5461,7 +5462,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
             ),
         )
@@ -5515,7 +5516,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
             ),
             relion_replay=RelionReplay(
@@ -5708,7 +5709,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=4),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 local_search=LocalSearchOptions(auto_local_healpix_order=4),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
             ),
@@ -5768,7 +5769,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=2,
@@ -5827,7 +5828,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=n_classes,
@@ -5864,7 +5865,6 @@ class TestRelionModeSmokeTest:
             final_all_data_pass_count += 1
             return original_run_final_all_data(*args, **kwargs)
 
-        monkeypatch.setenv("RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER", "1")
         monkeypatch.setattr(
             iteration_loop_module.finalization,
             "run_final_all_data",
@@ -5880,12 +5880,13 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=1, init_current_size=4, init_healpix_order=2, max_healpix_order=2),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
                     n_classes=n_classes,
                     init_class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes, dtype=np.float64)),
                 ),
+                final_pass=FinalPassOptions(after_max_iter=True),
             ),
         )
 
@@ -6009,7 +6010,7 @@ class TestRelionModeSmokeTest:
             translations,
             options=RefinementOptions(
                 schedule=RefinementSchedule(max_iter=2, init_current_size=4, init_healpix_order=1, max_healpix_order=1),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=1),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
@@ -6049,7 +6050,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             ),
         )
 
@@ -6084,7 +6085,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 k_class=KClassOptions(
                     n_classes=2,
                     init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64)),
@@ -6149,7 +6150,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=1),
             ),
         )
@@ -6201,7 +6202,7 @@ class TestRelionModeSmokeTest:
                         max_healpix_order=2,
                         particle_diameter_ang=200.0,
                     ),
-                    batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=20),
+                    execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=20),
                     adaptive=AdaptiveOptions(adaptive_oversampling=1),
                 ),
             )
@@ -6792,7 +6793,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 local_search=LocalSearchOptions(auto_local_healpix_order=3),
             ),
         )
@@ -6875,7 +6876,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=3,
                     init_fsc=np.ones(grid_size // 2),
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
                 parity=RelionParityOptions(use_per_half_mean_variance=per_half),
             ),
@@ -6942,7 +6943,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=3,
                     particle_diameter_ang=200.0,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
             ),
         )
@@ -7106,7 +7107,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
             ),
             observer=IntermediatesObserver(out_dir),
@@ -7167,7 +7168,7 @@ class TestRelionModeSmokeTest:
                         init_healpix_order=2,
                         max_healpix_order=3,
                     ),
-                    batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                    execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                     adaptive=AdaptiveOptions(adaptive_oversampling=0),
                     parity=parity,
                 ),
@@ -7209,7 +7210,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
                 k_class=k_class,
             ),
@@ -7254,7 +7255,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
             ),
             observer=IntermediatesObserver(out_dir, skip_unregularized=True),
@@ -7293,7 +7294,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
             ),
         )
@@ -7321,7 +7322,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=2,
                     max_healpix_order=3,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
             ),
         )
 
@@ -7369,7 +7370,7 @@ class TestRelionModeSmokeTest:
                     init_healpix_order=1,
                     max_healpix_order=2,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=len(rotations_many)),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=len(rotations_many)),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
             ),
         )
@@ -7417,7 +7418,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=2,
                     skip_final_iteration=True,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=len(rotations_many)),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=len(rotations_many)),
                 adaptive=AdaptiveOptions(adaptive_oversampling=0),
             ),
         )
@@ -7561,7 +7562,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=1,
                     skip_final_iteration=True,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=20),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=20),
                 adaptive=AdaptiveOptions(relion_current_sizes=[8], adaptive_oversampling=oversampling),
                 parity=RelionParityOptions(preserve_bpref_particle_order=preserve_order),
             ),
@@ -7612,7 +7613,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=1,
                     skip_final_iteration=True,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=20),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=20),
                 adaptive=AdaptiveOptions(relion_current_sizes=[8], adaptive_oversampling=0),
             ),
         )
@@ -7756,7 +7757,7 @@ class TestRelionModeSmokeTest:
                     max_healpix_order=1,
                     skip_final_iteration=True,
                 ),
-                batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=20),
+                execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=20),
                 adaptive=AdaptiveOptions(relion_current_sizes=[8], adaptive_oversampling=1),
                 parity=RelionParityOptions(low_resol_join_halves_angstrom=0.0),
                 k_class=KClassOptions(
@@ -7912,7 +7913,7 @@ def test_local_search_uses_lazy_parent_expanded_fine_rotation_grid_when_oversamp
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
         ),
@@ -8086,7 +8087,7 @@ def test_local_search_applies_perturbation_to_generated_fine_rotation_grid(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             parity=RelionParityOptions(perturb_factor=0.5),
             replay=ReplayState(init_previous_best_rotation_eulers=[prev_h1, prev_h2]),
@@ -8213,7 +8214,7 @@ def test_local_search_uses_negative_previous_offsets_for_translation_prior(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
@@ -8337,7 +8338,7 @@ def test_local_search_coarse_translation_prior_mode_uses_unperturbed_base_grid(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
@@ -8425,7 +8426,7 @@ def test_local_search_os0_keeps_full_local_support_for_mstep(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=2, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
         ),
     )
@@ -8562,7 +8563,7 @@ def test_local_search_coarse_translation_prior_mode_uses_replay_sampling_grid_wh
                 max_healpix_order=4,
                 init_relion_iteration=13,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(
                 init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2],
@@ -8707,7 +8708,7 @@ def test_previous_best_rotations_skip_first_local_dense_bootstrap(
                 max_healpix_order=4,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=512),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=512),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             replay=replay,
         ),
@@ -8765,7 +8766,7 @@ def test_relion_mode_writes_absolute_translations_from_previous_offset(
                 max_healpix_order=1,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
         ),
@@ -8910,7 +8911,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 max_healpix_order=1,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
@@ -8939,7 +8940,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 max_healpix_order=1,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
@@ -8968,7 +8969,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 max_healpix_order=1,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
@@ -8999,7 +9000,7 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
                 max_healpix_order=1,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             k_class=KClassOptions(
                 n_classes=n_classes,
@@ -9123,7 +9124,7 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
                 max_healpix_order=1,
                 skip_final_iteration=True,
             ),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=1),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=1),
             adaptive=AdaptiveOptions(adaptive_oversampling=0),
             replay=ReplayState(init_previous_best_translations=[prev_h1.copy(), prev_h2.copy()]),
             k_class=KClassOptions(n_classes=2, init_class_log_priors=np.log(np.array([0.5, 0.5], dtype=np.float64))),
@@ -9285,7 +9286,7 @@ def test_local_search_decodes_hard_assignments_on_fine_grid(
         translations,
         options=RefinementOptions(
             schedule=RefinementSchedule(max_iter=1, init_current_size=16, init_healpix_order=4, max_healpix_order=4),
-            batching=RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
+            execution=ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=order_sizes[4]),
             adaptive=AdaptiveOptions(adaptive_oversampling=1),
             replay=ReplayState(init_previous_best_rotation_eulers=[prev_eulers_h1, prev_eulers_h2]),
             parity=RelionParityOptions(perturb_factor=0.0),

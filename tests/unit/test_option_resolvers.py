@@ -13,9 +13,8 @@ from helpers.tiny_main import controller_inputs
 from relax.refinement import command_options
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
-    HalfOverlapOptions,
+    ExecutionOptions,
     LocalSearchOptions,
-    RefinementBatching,
 )
 
 pytestmark = pytest.mark.unit
@@ -38,11 +37,15 @@ def test_adaptive_options_parse_the_oracle_lists_and_keep_the_sampling_flags():
     assert defaults.relion_current_sizes is None and defaults.relion_healpix_orders is None
 
 
-def test_batching_overlap_and_local_search_come_from_their_flags():
+def test_execution_and_local_search_come_from_their_flags_and_the_environment(monkeypatch):
     args = _args("--image_batch_size", "64", "--rotation_block_size", "128", "--overlap_halves",
                  "--auto_local_healpix_order", "3", "--sigma_ang", "2.5", "--local_search_profile", "on")
-    assert command_options.resolve_batching(args) == RefinementBatching(image_batch_size=64, rotation_block_size=128)
-    assert command_options.resolve_overlap(args) == HalfOverlapOptions(overlap_halves=True)
+    monkeypatch.delenv("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS", raising=False)
+    assert command_options.resolve_execution(args) == ExecutionOptions(
+        image_batch_size=64, rotation_block_size=128, overlap_halves=True, clear_jax_caches_between_iterations=False,
+    )
+    monkeypatch.setenv("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS", "1")
+    assert command_options.resolve_execution(args).clear_jax_caches_between_iterations is True
     assert command_options.resolve_local_search(args) == LocalSearchOptions(
         auto_local_healpix_order=3, sigma_ang_deg=2.5, local_search_profile_mode="on",
     )
@@ -52,7 +55,7 @@ def test_the_command_hands_the_resolved_groups_to_the_controller(monkeypatch, tm
     options = controller_inputs(monkeypatch, tmp_path, "refine", "--relion_current_sizes", "12,14,16",
                                 "--image_batch_size", "8")["options"]
     assert options.adaptive.relion_current_sizes == [12, 14, 16]
-    assert options.batching.image_batch_size == 8
+    assert options.execution.image_batch_size == 8
 
 
 def _schedule(args, frozen_boundary=None, continued_iterations=None, sigma_offset=None):

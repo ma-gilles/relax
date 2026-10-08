@@ -1463,8 +1463,9 @@ def main():
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
         EngineDebugOptions,
+        ExecutionOptions,
+        FinalPassOptions,
         LocalSearchOptions,
-        RefinementBatching,
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
@@ -2458,10 +2459,11 @@ def main():
             skip_final_iteration=args.skip_final_iteration,
             force_max_iter_after_convergence=args.force_max_iter_after_convergence,
         ),
-        batching=RefinementBatching(
+        execution=ExecutionOptions.from_environ(
             image_batch_size=args.image_batch_size,
             rotation_block_size=args.rotation_block_size,
         ),
+        final_pass=FinalPassOptions.from_environ(),
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,
@@ -2524,7 +2526,7 @@ def main():
                 + observers.observers_from_environment()
             ),
             source=RelionReplaySource.for_run(
-                RelionReplay(
+                RelionReplay.from_environ(
                     perturb_replay_relion_dir=str(relion_dir),
                     perturb_replay_relion_prefix=run_prefix,
                     perturb_replay_max_iter=args.replay_override_max_iter,

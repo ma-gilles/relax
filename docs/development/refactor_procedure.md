@@ -80,10 +80,10 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       - set by nothing and reaching nothing: retire it. Add it to the `retired` table of
         `relax/renamed_environment.json` (importing relax then refuses it), naming the replacement flag if
         there is one;
-      - a diagnostic or engine-variant switch: a field of the module's environment record
-        (`refinement_options.DiagnosticEnvironment`, `vdam.native_options.VdamEnvironment`), whose default
-        factory reads it once when the options are built; tests that set the variable before building the
-        options keep working;
+      - a diagnostic or engine-variant switch: a field of the module's option record
+        (`refinement_options.ExecutionOptions`, `vdam.native_options.VdamEnvironment`), read once by a named
+        constructor (`from_environ`) that the command calls, not by a `default_factory`; a test that sets the
+        variable calls that constructor too;
       - a dump destination owned by `relax/diagnostics` that changes no computed value: it may stay where
         the dump is written; list it in the status document;
       - a switch that forks production scoring or reconstruction: ask the owner before changing it.

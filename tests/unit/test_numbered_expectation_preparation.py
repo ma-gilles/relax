@@ -142,9 +142,10 @@ def test_actual_controller_binds_current_grid_windows_and_guarded_coarse_metadat
 
 def test_actual_end_boundary_drops_phase_before_cache_policy(monkeypatch):
     """The iteration's phase and variant are released before the between-iterations cache policy runs."""
-    from helpers.tiny_refinement import CallTrace, run_tiny_refinement
+    from helpers.tiny_refinement import N_IMAGES, N_ROTATIONS, CallTrace, run_tiny_refinement
 
     from relax.refinement import iteration_loop
+    from relax.refinement.refinement_options import ExecutionOptions
 
     held = []
     checked = []
@@ -158,7 +159,9 @@ def test_actual_end_boundary_drops_phase_before_cache_policy(monkeypatch):
     for name in ('DenseVariantPolicy', 'prepare_numbered_expectation'):
         trace.wrap(iteration_loop, name, after=lambda call: held.append(weakref.ref(call.result)), keep_operands=False)
     # The cache policy clears JAX's caches between iterations (RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS).
-    monkeypatch.setenv('RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS', '1')
     monkeypatch.setattr(iteration_loop.jax, 'clear_caches', clear_caches)
-    run_tiny_refinement(monkeypatch, final_after_max_iter=False)
+    execution = ExecutionOptions(
+        image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS, clear_jax_caches_between_iterations=True,
+    )
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False, execution=execution)
     assert checked == [2, 4]

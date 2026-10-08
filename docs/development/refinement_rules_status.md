@@ -15,7 +15,7 @@ reason; the sections after this one hold the detail.
 | 1 numbers, 2 interfaces | Met: every move was fingerprint-identical (results, files, checkpoints, trace) and passed the GPU tiers; only logger names and accepted new option leaves differ. Archive keys are unchanged (`RefinementResult.archive_fields`). |
 | 3 lifetimes | Met: the controller tests check required lifetimes (`frame_holds`, `keep_operands=False`). Releases that freed nothing are gone (2026-10-08); the M-step records are dropped in the end-of-iteration block, where their fields were. `RefinementResult` keeps the run's `RefinementHistory` (host curves, kilobytes). |
 | 4 JAX | Met (audit below). Exceptions: the donating normalisation executable, the box-scale host staging and the end-of-iteration sync. |
-| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, `DiagnosticEnvironment`). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
+| 5 decide once | Met for flags and the controller's diagnostics (`command_options` resolvers, the `from_environ` constructors the command calls). The controller takes the command's options (no `RefinementOptions()` default inside) and its scoring precision is `options.precision` (owner review, 2026-10-07). Exceptions: the parity, replay and checkpoint records are built from start-up results; some environment reads stay where they are used (item 2), among them the engines' reads of the dense precision. |
 | 6 contracts | Met: the controller's 24 mode tests select contract functions, mode-only steps or refusals (owner, 2026-10-04 and 2026-10-05); the final scoring loop and `DenseVariantPolicy.k_class_enabled` are variants. |
 | 7 one owner | Met; no known duplicate. Exception: the pixel size is kept as the input scalar and as `ReconstructionSettings.voxel_size` (a float) on purpose (rule 1). |
 | 8 config/state/results | Met: option records are frozen; the controller and the final pass return `RefinementResult`. Exception: the prior's per-shell outputs come from `relax.reconstruction.regularization_relion` as a dict (`return_details=True`); that module owns the type. |
@@ -45,9 +45,10 @@ reason; the sections after this one hold the detail.
    and checkpoint records stay in `full_refinement.main`: their fields are start-up results (half sets,
    references, noise, poses, replay inputs, follower topology, the frozen boundary), not flags, so a
    resolver would be a function of ten or more of them. `main` is 1,020 lines.
-2. **Environment reads below the boundary (rule 5).** The controller's remaining diagnostic switches and
-   dump directories are one `DiagnosticEnvironment` (`EngineDebugOptions.environment`), read when the options
-   are built; the final pass's two run variants are `FinalPassOptions`, read the same way. Dumps that watch
+2. **Environment reads below the boundary (rule 5).** The controller's remaining execution switches (the JAX
+   cache clear, the BPref device-signature capture target) are fields of `ExecutionOptions` and the final
+   pass's two run variants are `FinalPassOptions`; the command reads both with their `from_environ`
+   constructors. Dumps that watch
    the run are observers (`relax.refinement.ports.RunObserver`, rule 15), built at the command from flags
    and the environment (`relax.diagnostics.observers`): the intermediates, the parity capture and timings,
    the BPref accumulator captures and the noise-update terms. Still read where used, each with its reason:

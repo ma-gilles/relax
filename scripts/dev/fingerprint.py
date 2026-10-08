@@ -98,6 +98,10 @@ CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
 MOVED_INPUTS = (
     # The expected-accuracy inputs steer sampling: an algorithm group, not debug (code rule 9; main after a4396d82).
     ("/debug<EngineDebugOptions>/expected_accuracy<", "/expected_accuracy<"),
+    # The execution knobs are one record (PLAN d1, O D4).
+    ("/batching<RefinementBatching>/", "/execution<ExecutionOptions>/"),
+    ("/overlap<HalfOverlapOptions>/", "/execution<ExecutionOptions>/"),
+    ("/debug<EngineDebugOptions>/environment<DiagnosticEnvironment>/", "/execution<ExecutionOptions>/"),
 )
 # Record fields renamed, as (old path piece, new path piece) of a leaf in any section (results, files, checkpoints,
 # controller inputs): a leaf only in A whose renamed path is a leaf only in B with the same value is counted with
@@ -1022,8 +1026,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             adaptive_fields["relion_current_sizes"] = tuple(current_sizes)
         if adaptive_fields:
             extra["adaptive"] = refinement_options.AdaptiveOptions(**adaptive_fields)
-        if overlap:
-            extra["overlap"] = refinement_options.HalfOverlapOptions(overlap_halves=True)
+        # The execution knobs: one ExecutionOptions, or (a source before PLAN d1) RefinementBatching and
+        # HalfOverlapOptions.
+        execution_fields = dict(image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS)
+        if hasattr(refinement_options, "ExecutionOptions"):
+            extra["execution"] = refinement_options.ExecutionOptions(**execution_fields, overlap_halves=overlap)
+        else:
+            extra["batching"] = refinement_options.RefinementBatching(**execution_fields)
+            if overlap:
+                extra["overlap"] = refinement_options.HalfOverlapOptions(overlap_halves=True)
         if consistency == "mode_relax":
             if hasattr(refinement_options, "relax_mode_consistency"):
                 extra["consistency"], _ = refinement_options.relax_mode_consistency(
@@ -1143,15 +1154,15 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                     **({} if resume is None else {"init_relion_iteration": int(resume.relion_iteration)}),
                     **({"skip_final_iteration": True} if skip_final else {}),
                 ),
-                batching=refinement_options.RefinementBatching(
-                    image_batch_size=fixtures.N_IMAGES, rotation_block_size=fixtures.N_ROTATIONS,
-                ),
                 parity=refinement_options.RelionParityOptions(**parity),
+                # The environment the case set (env=), read as the command reads it.
+                final_pass=refinement_options.FinalPassOptions.from_environ(),
                 **extra,
             )
             if replay_module is not None and hasattr(replay_module, "RelionReplay"):
+                replay = replay_module.RelionReplay
                 source["source"] = replay_module.RelionReplaySource.for_run(
-                    replay_module.RelionReplay(**replay_settings), options,
+                    getattr(replay, "from_environ", replay)(**replay_settings), options,
                 )
             elif replay_module is not None:
                 # A source whose replay source still read the replay settings from the options.

@@ -263,9 +263,9 @@ def run_tiny_refinement(
     from relax.refinement import iteration_loop
     from relax.refinement.refinement_options import (
         AdaptiveOptions,
+        ExecutionOptions,
         FinalPassOptions,
         KClassOptions,
-        RefinementBatching,
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
@@ -314,7 +314,7 @@ def run_tiny_refinement(
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     option_groups.setdefault("adaptive", AdaptiveOptions(adaptive_oversampling=1))
-    option_groups.setdefault("batching", RefinementBatching(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS))
+    option_groups.setdefault("execution", ExecutionOptions(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS))
     if n_classes > 1:
         option_groups.setdefault(
             "k_class",

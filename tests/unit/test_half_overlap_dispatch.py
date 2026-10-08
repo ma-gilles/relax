@@ -17,7 +17,7 @@ from relax.refinement.expectation import (
     _run_halves_overlapped,
 )
 from relax.refinement.refinement_options import (
-    HalfOverlapOptions,
+    ExecutionOptions,
     RefinementOptions,
 )
 
@@ -26,8 +26,8 @@ LOG = logging.getLogger(__name__)
 
 def test_overlap_is_off_by_default():
     """The option is a performance experiment, so it must not arm itself."""
-    assert RefinementOptions().overlap.overlap_halves is False
-    assert HalfOverlapOptions().overlap_halves is False
+    assert RefinementOptions().execution.overlap_halves is False
+    assert ExecutionOptions().overlap_halves is False
 
 
 def test_overlap_requires_the_request():
@@ -154,20 +154,20 @@ def test_runner_registers_the_overlap_flag():
 
 def test_overlap_option_threads_into_refinement_options():
     """Setting the group must reach the field the iteration loop reads."""
-    on = RefinementOptions(overlap=HalfOverlapOptions(overlap_halves=True))
-    off = RefinementOptions(overlap=HalfOverlapOptions(overlap_halves=False))
-    assert on.overlap.overlap_halves is True
-    assert off.overlap.overlap_halves is False
-    assert RefinementOptions().overlap.overlap_halves is False
+    on = RefinementOptions(execution=ExecutionOptions(overlap_halves=True))
+    off = RefinementOptions(execution=ExecutionOptions(overlap_halves=False))
+    assert on.execution.overlap_halves is True
+    assert off.execution.overlap_halves is False
+    assert RefinementOptions().execution.overlap_halves is False
 
 
 @pytest.mark.parametrize("flag", [False, True])
 def test_runner_wires_the_flag_into_the_option_group(monkeypatch, tmp_path, flag):
-    """The parser flag must be handed to HalfOverlapOptions, not just parsed."""
+    """The parser flag must be handed to ExecutionOptions, not just parsed."""
     from helpers.tiny_main import controller_inputs
 
     inputs = controller_inputs(monkeypatch, tmp_path, "refine", *(["--overlap_halves"] if flag else []))
-    assert inputs["options"].overlap.overlap_halves is flag
+    assert inputs["options"].execution.overlap_halves is flag
 
 
 def test_device_share_defaults_to_the_whole_device():

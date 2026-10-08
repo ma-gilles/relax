@@ -85,7 +85,7 @@ def test_sampling_validation_preserves_payloads_and_input_options(orders):
     assert options.adaptive.relion_healpix_orders is orders
     assert validated.adaptive.relion_healpix_orders == (None if orders is None else (3, 3, 4))
     assert validated.adaptive.relion_current_sizes is current_sizes
-    for group in ("schedule", "parity", "local_search", "k_class", "replay", "debug", "batching"):
+    for group in ("schedule", "parity", "local_search", "k_class", "replay", "debug", "execution"):
         assert getattr(validated, group) is getattr(options, group)
 
 

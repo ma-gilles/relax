@@ -75,9 +75,10 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
   (a frozen boundary, a follower topology) stands in for the one callee that provides it.
 - RELION replay inputs the command reads (numbered STAR replay, final-only replay, K=1 initial state, Class3D
   initial translations) live in `relax/parity/replay_inputs.py`, not in the command.
-- A diagnostic environment variable of the controller is a field of `DiagnosticEnvironment`
-  (`refinement_options`), read once when the options are built (`options.debug.environment`); do not add an
-  `os.environ` read below the command.
+- An execution or diagnostic environment variable of the controller is a field of an option record
+  (`ExecutionOptions`, `FinalPassOptions`), read by its `from_environ` constructor, which the command calls; do
+  not add a `default_factory` that reads the environment (`RefinementOptions.variants`, `ScoringVariants`, is
+  the one left) or an `os.environ` read below the command.
 - Buffer lifetimes follow code rule 3, not old release points. Releasing earlier is allowed; extending a
   lifetime is not; state any change and its peak-memory effect. A test holding a traced call's operands keeps
   them alive: trace with `keep_operands=False` or hold weak references.

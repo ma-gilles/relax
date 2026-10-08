@@ -21,7 +21,7 @@ from relax.helpers.dtype_policy import DensePrecisionPolicy
 from relax.helpers.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
 from relax.helpers.projection import _host_relion_projector_texture_enabled
 from relax.refinement import optics_shapes
-from relax.refinement.refinement_options import RefinementBatching
+from relax.refinement.refinement_options import ExecutionOptions
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
 
@@ -30,7 +30,7 @@ from relax.sparse_pass2 import firstiter_bpref, sparse_pass2_budget
 class BatchPlanner:
     """Run requests and fixed grids; query available memory when a pass is planned."""
 
-    requested: RefinementBatching
+    requested: ExecutionOptions
     image_shape: tuple
     volume_shape: tuple
     n_classes: int

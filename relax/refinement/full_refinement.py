@@ -967,6 +967,7 @@ def main(command=None):
     from relax.refinement.refinement_options import (
         CheckpointOptions,
         ExpectedAccuracyOptions,
+        FinalPassOptions,
         RefinementOptions,
         RelionParityOptions,
         ReplayState,
@@ -1224,8 +1225,8 @@ def main(command=None):
             frozen_boundary=frozen_boundary,
             continued_iterations=None if resume_snapshot is None else continued_iterations,
         ),
-        batching=command_options.resolve_batching(args),
-        overlap=command_options.resolve_overlap(args),
+        execution=command_options.resolve_execution(args),
+        final_pass=FinalPassOptions.from_environ(),
         adaptive=adaptive_options,
         parity=RelionParityOptions(
             tau2_fudge=effective_tau2_fudge,
@@ -1304,7 +1305,7 @@ def main(command=None):
             options=run_options,
             observer=observers.command_observer(args),
             source=relion_replay_source.RelionReplaySource.for_run(
-                relion_replay_source.RelionReplay.from_frozen_boundary(
+                relion_replay_source.RelionReplay.from_environ(
                     frozen_boundary,
                     perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                     perturb_replay_restart_state_iterations=restart_provenance.iterations,

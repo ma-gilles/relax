@@ -394,8 +394,8 @@ FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DI
 
 @dataclass(frozen=True, kw_only=True)
 class FinalPassOptions:
-    """Two departures of the final all-data pass from RELION, set by environment variable and read once, when
-    the run's options are built. They change what the run does, so they are run options (code rule 9).
+    """Two departures of the final all-data pass from RELION, set by environment variable and read once, by
+    ``from_environ``, which the command calls. They change what the run does, so they are run options (code rule 9).
 
     ``after_max_iter`` (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``): K=1 runs the final pass after the last
     numbered iteration even without convergence. ``merged_reference``
@@ -418,7 +418,7 @@ def bpref_device_signature_target(environ=None) -> tuple[int, int] | None:
 
     Armed by ``RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR``; the capture then needs an explicit
     ``RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION`` (> 0) and ``RELAX_BPREF_CONTRIBUTION_DUMP_HALF`` (1 or 2). The
-    final all-data pass is never a target. Read once, with the run's options (``DiagnosticEnvironment``).
+    final all-data pass is never a target. Read once, by ``ExecutionOptions.from_environ``, which the command calls.
     """
 
     env = os.environ if environ is None else environ
@@ -439,28 +439,6 @@ def bpref_device_signature_target(environ=None) -> tuple[int, int] | None:
     if target_iteration <= 0 or target_half not in {1, 2}:
         raise ValueError("BPref device capture requires target iteration > 0 and half 1 or 2")
     return target_iteration, target_half
-
-
-@dataclass(frozen=True, kw_only=True)
-class DiagnosticEnvironment:
-    """The refinement's execution switches from the environment, read once, when the run's options are built.
-
-    ``clear_jax_caches_between_iterations``: clear JAX's caches after every numbered iteration.
-    ``bpref_device_signature_target``: the numbered (iteration, half), one-based, whose BPref device signature
-    a dump captures (``bpref_device_signature_target``), or None; that half plans
-    its compact first-iteration batches for the capture. (The other dumps of the run are observers,
-    ``relax.diagnostics.observers``; code rule 15.)
-    """
-
-    clear_jax_caches_between_iterations: bool = False
-    bpref_device_signature_target: tuple[int, int] | None = None
-
-    @classmethod
-    def from_environ(cls) -> DiagnosticEnvironment:
-        return cls(
-            clear_jax_caches_between_iterations=parse_env_true_flag("RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"),
-            bpref_device_signature_target=bpref_device_signature_target(),
-        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -565,12 +543,10 @@ class ScoringVariants:
 
 @dataclass(frozen=True, kw_only=True)
 class EngineDebugOptions:
-    """Adjoint ablation, intermediate-dump, and test-harness controls."""
+    """Adjoint ablation controls."""
 
     disable_adjoint_y: bool = False
     disable_adjoint_ctf: bool = False
-    # Read from the environment when the options are built; nothing below reads it again.
-    environment: DiagnosticEnvironment = field(default_factory=DiagnosticEnvironment.from_environ)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -630,27 +606,40 @@ class ReplayState:
     init_relion_optics_group_count: Any | None = None
 
 
+CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV = "RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS"
+
+
 @dataclass(frozen=True, kw_only=True)
-class RefinementBatching:
-    """Batch sizes the iteration loop hands down to the engines."""
+class ExecutionOptions:
+    """How the run executes, not what it computes: the batch sizes the iteration loop hands down to the
+    engines, whether the two half-sets' host work may overlap, whether JAX's caches are cleared after every
+    numbered iteration, and which numbered half a BPref device-signature dump captures.
+
+    ``overlap_halves``: the halves are independent inside the E-step, so one half's host work can be issued
+    while the other's kernels run. Kernels still serialise on JAX's single compute stream, so this trades no
+    device order; it only stops the host from idling. It is a performance experiment, engaged only when every
+    guard in ``iteration_loop`` holds. ``clear_jax_caches_between_iterations``
+    (``RELAX_RELION_CLEAR_JAX_CACHES_BETWEEN_ITERS``) and ``bpref_device_signature_target`` (the numbered
+    (iteration, half), one-based, whose BPref device signature a dump captures, or None; that half plans its
+    compact first-iteration batches for the capture; see ``bpref_device_signature_target``) come from the
+    environment, read by ``from_environ``, which the command calls. (The other dumps of the run are observers,
+    ``relax.diagnostics.observers``; code rule 15.)
+    """
 
     image_batch_size: int = 500
     rotation_block_size: int = 5000
-
-
-@dataclass(frozen=True, kw_only=True)
-class HalfOverlapOptions:
-    """Whether the two half-sets' E-steps may run concurrently.
-
-    The halves are independent inside the E-step, so one half's host work can
-    be issued while the other's kernels run. Kernels still serialise on JAX's
-    single compute stream, so this trades no device order; it only stops the
-    host from idling. Off by default: it is a performance experiment, not a
-    scientific choice, and it is only engaged when every guard in
-    ``iteration_loop`` holds.
-    """
-
     overlap_halves: bool = False
+    clear_jax_caches_between_iterations: bool = False
+    bpref_device_signature_target: tuple[int, int] | None = None
+
+    @classmethod
+    def from_environ(cls, **fields) -> ExecutionOptions:
+        """``fields`` with the cache switch and the BPref capture target read from the environment."""
+        return cls(
+            **fields,
+            clear_jax_caches_between_iterations=parse_env_true_flag(CLEAR_JAX_CACHES_BETWEEN_ITERATIONS_ENV),
+            bpref_device_signature_target=bpref_device_signature_target(),
+        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -682,13 +671,12 @@ class RefinementOptions:
     k_class: KClassOptions = field(default_factory=KClassOptions)
     replay: ReplayState = field(default_factory=ReplayState)
     debug: EngineDebugOptions = field(default_factory=EngineDebugOptions)
-    batching: RefinementBatching = field(default_factory=RefinementBatching)
-    overlap: HalfOverlapOptions = field(default_factory=HalfOverlapOptions)
+    execution: ExecutionOptions = field(default_factory=ExecutionOptions)
     symmetry: SymmetryOptions = field(default_factory=SymmetryOptions)
     checkpoint: CheckpointOptions = field(default_factory=CheckpointOptions)
     consistency: RelionConsistencyOptions = field(default_factory=RelionConsistencyOptions)
-    # Read from the environment when the options are built; nothing below reads it again.
-    final_pass: FinalPassOptions = field(default_factory=FinalPassOptions.from_environ)
+    # The command reads it from the environment (FinalPassOptions.from_environ); nothing below reads it again.
+    final_pass: FinalPassOptions = field(default_factory=FinalPassOptions)
     solvent: SolventOptions = field(default_factory=SolventOptions)
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.

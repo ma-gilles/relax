@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import jax.numpy as jnp
@@ -81,7 +81,7 @@ class RelionReplay:
     ``final_replay_*`` and ``final_sampling_replay_relion_dir``: a final-only replay
     (``--final-replay-relion-dir``). The last two switches force (``RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE``)
     or forbid (``RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE``) replaying the last numbered state in
-    the final pass; their defaults read the environment when the record is built.
+    the final pass; ``from_environ``, which the command calls, reads them.
     A frozen boundary (``--frozen-boundary-dir``): its ``sealed_sampling_state`` and ``sealed_scoring_context``,
     and its ``frozen_refinement_state_fields`` (with them, the source checks, right before the first iteration
     scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
@@ -103,12 +103,9 @@ class RelionReplay:
     final_replay_reference_maps: Any | None = None
     final_replay_source_iteration: int | None = None
     final_sampling_replay_relion_dir: str | None = None
-    final_all_data_replay_last_numbered_state: bool = field(
-        default_factory=lambda: parse_env_true_flag(FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV)
-    )
-    final_all_data_disable_replay_last_numbered_state: bool = field(
-        default_factory=lambda: parse_env_true_flag(FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV)
-    )
+    # From the environment, by from_environ (the command calls it).
+    final_all_data_replay_last_numbered_state: bool = False
+    final_all_data_disable_replay_last_numbered_state: bool = False
     sealed_sampling_state: Any | None = None
     sealed_scoring_context: Any | None = None
     frozen_refinement_state_fields: Any | None = None
@@ -151,6 +148,20 @@ class RelionReplay:
                 }
                 if frozen_boundary.fixed_diagnostic_arm
                 else None
+            ),
+        )
+
+    @classmethod
+    def from_environ(cls, frozen_boundary=None, **fields) -> RelionReplay:
+        """``from_frozen_boundary(frozen_boundary, **fields)`` with the final pass's last-numbered-state replay
+        switches read from the environment (``RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE``,
+        ``..._DISABLE_REPLAY_LAST_NUMBERED_STATE``)."""
+        return cls.from_frozen_boundary(
+            frozen_boundary,
+            **fields,
+            final_all_data_replay_last_numbered_state=parse_env_true_flag(FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV),
+            final_all_data_disable_replay_last_numbered_state=parse_env_true_flag(
+                FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV
             ),
         )
 

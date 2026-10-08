@@ -23,11 +23,10 @@ from relax.refinement.refinement_options import (
     RELION_INCR_SIZE,
     RELION_WIDTH_MASK_EDGE_PX,
     AdaptiveOptions,
-    HalfOverlapOptions,
+    ExecutionOptions,
     InitialSampling,
     KClassOptions,
     LocalSearchOptions,
-    RefinementBatching,
     RefinementSchedule,
     RelionConsistencyOptions,
     relax_mode_consistency,
@@ -1437,14 +1436,14 @@ def resolve_adaptive_options(args, *, log) -> AdaptiveOptions:
     )
 
 
-def resolve_batching(args) -> RefinementBatching:
-    """The E-step's image and rotation block sizes."""
-    return RefinementBatching(image_batch_size=args.image_batch_size, rotation_block_size=args.rotation_block_size)
-
-
-def resolve_overlap(args) -> HalfOverlapOptions:
-    """Whether the halves' host work may overlap (``--overlap_halves``)."""
-    return HalfOverlapOptions(overlap_halves=bool(args.overlap_halves))
+def resolve_execution(args) -> ExecutionOptions:
+    """The E-step's image and rotation block sizes, whether the halves' host work may overlap
+    (``--overlap_halves``), and the environment's JAX cache switch."""
+    return ExecutionOptions.from_environ(
+        image_batch_size=args.image_batch_size,
+        rotation_block_size=args.rotation_block_size,
+        overlap_halves=bool(args.overlap_halves),
+    )
 
 
 def resolve_local_search(args) -> LocalSearchOptions:
