@@ -32,17 +32,6 @@ from relax.sparse_pass2.resident_local_pass2 import compute_local_search_residen
 logger = logging.getLogger("relax.local.local_search_iteration")
 
 
-# Mirror iteration_loop's constant locally so the helper has a stable home.
-EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS = 3_000_000
-
-
-def _precompute_exact_local_fine_grid_enabled(healpix_order: int, symmetry: str = "C1") -> bool:
-    """Return whether exact local search should materialize the fine grid once."""
-    from relax.sampling import rotation_grid_size
-
-    return rotation_grid_size(int(healpix_order), symmetry) <= EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS
-
-
 @dataclass
 class _LocalSearchIterationResult:
     Ft_y: object
@@ -200,13 +189,6 @@ def _run_local_search_iteration(
         metadata_build_time = time.time() - metadata_t0
 
         layout_t0 = time.time()
-        layout_kwargs = {}
-        if int(grid.local_parent_oversampling_order) > 0:
-            layout_kwargs["local_parent_oversampling_order"] = int(grid.local_parent_oversampling_order)
-        if grid.rotation_grid_mstep_rotations is not None:
-            layout_kwargs["rotation_grid_mstep_rotations"] = grid.rotation_grid_mstep_rotations
-        if bool(grid.generate_relion_mstep_rotations):
-            layout_kwargs["generate_relion_mstep_rotations"] = True
         local_layout = build_local_hypothesis_layout(
             prior_rotations,
             grid.rotation_grid_rotations,
@@ -225,8 +207,10 @@ def _run_local_search_iteration(
             rotation_log_prior=None,
             rotation_grid_random_perturbation=grid.rotation_grid_random_perturbation,
             rotation_grid_angular_sampling_deg=grid.rotation_grid_angular_sampling_deg,
+            local_parent_oversampling_order=grid.local_parent_oversampling_order,
+            rotation_grid_mstep_rotations=grid.rotation_grid_mstep_rotations,
+            generate_relion_mstep_rotations=grid.generate_relion_mstep_rotations,
             dtype=local_layout_dtype,
-            **layout_kwargs,
         )
         selector_time = time.time() - layout_t0
     else:
@@ -235,11 +219,11 @@ def _run_local_search_iteration(
         selector_time = 0.0
 
     # Class3D local searches (--sigma_ang) score each image's rows against every class.
-    if int(grid.n_classes) > 1 and int(getattr(local_layout, "n_classes", 1)) == 1:
+    if int(grid.n_classes) > 1 and local_layout.n_classes == 1:
         local_layout = expand_local_layout_classes(local_layout, int(grid.n_classes))
         if grid.image_seed_classes is not None:
             local_layout = restrict_local_layout_classes(local_layout, grid.image_seed_classes)
-    local_n_classes = int(getattr(local_layout, "n_classes", 1))
+    local_n_classes = local_layout.n_classes
     magnification = dataset_projection_magnification(data.experiment_dataset)
     if kernel.projection_scale != 1.0 or magnification is not None:
         # Images on another grid than the reference (RELION applyScaleDifference) or with an

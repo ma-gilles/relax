@@ -2446,10 +2446,10 @@ def test_relion_mstep_generation_keeps_source_eulers_float64_until_host_inverse(
 
 
 def test_exact_local_fine_grid_precompute_auto_policy():
-    from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
+    from relax.refinement.local_sampling import _precompute_exact_local_fine_grid_enabled
 
-    assert _precompute_exact_local_fine_grid_enabled(5)
-    assert not _precompute_exact_local_fine_grid_enabled(6)
+    assert _precompute_exact_local_fine_grid_enabled(5, "C1")
+    assert not _precompute_exact_local_fine_grid_enabled(6, "C1")
 
 
 def test_exact_local_bucket_radix_can_collapse_adjacent_power_two_shapes(monkeypatch):
@@ -3323,6 +3323,9 @@ def test_run_local_search_iteration_fine_pass_uses_model_sigma_for_translation_p
         rotation_log_prior=None,
         rotation_grid_random_perturbation=0.0,
         rotation_grid_angular_sampling_deg=None,
+        local_parent_oversampling_order=0,
+        rotation_grid_mstep_rotations=None,
+        generate_relion_mstep_rotations=False,
         dtype=np.float32,
     ):
         captured["offset_range_pixels"] = offset_range_pixels
@@ -3638,6 +3641,9 @@ def test_run_local_search_iteration_fine_pass_uses_factorized_prior_metadata_for
         rotation_log_prior=None,
         rotation_grid_random_perturbation=0.0,
         rotation_grid_angular_sampling_deg=None,
+        local_parent_oversampling_order=0,
+        rotation_grid_mstep_rotations=None,
+        generate_relion_mstep_rotations=False,
         dtype=np.float32,
     ):
         captured["grid_metadata_mode"] = grid_metadata["mode"]

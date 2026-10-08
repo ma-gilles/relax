@@ -41,7 +41,9 @@ def test_local_sample_capture_preserves_profile_visibility(monkeypatch, return_p
         sigma_offset_angstrom=1.0,
         disc_type="linear_interp",
         current_size=2,
-        pass2_layout=SimpleNamespace(rotation_counts=np.ones(2, dtype=np.int32), translation_grid=translations[:1]),
+        pass2_layout=SimpleNamespace(
+            rotation_counts=np.ones(2, dtype=np.int32), translation_grid=translations[:1], n_classes=1
+        ),
         return_reconstruction_sample_indices=True,
         return_profile=return_profile,
     ))

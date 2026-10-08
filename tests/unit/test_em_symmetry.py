@@ -734,7 +734,7 @@ def test_kclass_healpix_order_inference_uses_symmetry_reduced_grid(label):
 
 
 def test_exact_local_precompute_policy_counts_the_symmetry_asu():
-    from relax.refinement.local_search_iteration import (
+    from relax.refinement.local_sampling import (
         _precompute_exact_local_fine_grid_enabled,
     )
 

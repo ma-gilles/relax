@@ -10,10 +10,17 @@ from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.orientation_priors import relion_local_search_sigmas
 from relax.helpers.resolution import relion_local_pass1_current_size
 from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_expectation_windows
-from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
 
 # The numbered controller's log: its operations log under its name wherever they live.
 logger = logging.getLogger("relax.refinement.iteration_loop")
+
+EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS = 3_000_000
+
+
+def _precompute_exact_local_fine_grid_enabled(healpix_order: int, symmetry: str) -> bool:
+    """Return whether exact local search should materialize the fine grid once."""
+
+    return sampling.rotation_grid_size(healpix_order, symmetry) <= EXACT_LOCAL_PRECOMPUTE_FINE_GRID_MAX_ROTATIONS
 
 
 @dataclass(frozen=True, kw_only=True)
