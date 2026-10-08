@@ -142,7 +142,7 @@ def _score_kclass_firstiter_cc_pass2(
         float(grid.random_perturbation),
         float(grid.translation_step),
     )
-    n_classes = int(np.asarray(data.mean).shape[0]) if np.asarray(data.mean).ndim >= 2 else 1
+    n_classes = int(np.shape(data.mean)[0]) if np.ndim(data.mean) >= 2 else 1
     firstiter_significance_image_batch_size = None
     firstiter_significance_rotation_block_size = None
     if grid.symmetry != "C1" and batching.em_kwargs.get("coarse_engine") != "gemm_dense":
