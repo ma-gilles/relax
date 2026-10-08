@@ -25,18 +25,17 @@ _PARTICLE_RESULT_FIELDS: tuple[tuple[str, type], ...] = (
     ("best_pose_rotation_ids", np.int32),
     ("significant_counts", np.int32),
 )
+# The engine's interpolation for every InitialModel E-step call.
+ENGINE_DISC_TYPE = "linear_interp"
 
 @dataclass(frozen=True, kw_only=True)
 class DenseInitialModelEstepConfig:
     """Configuration for one InitialModel dense K-class E-step."""
 
     noise_variance: Any
-    rotations: Any
     translations: Any
-    disc_type: str = "linear_interp"
     image_batch_size: int = 500
     rotation_block_size: int = 5000
-    pass2_engine: str = "auto"
     coarse_engine: str = "auto"
     padding_factor: int = 1
     class_log_priors: Any | None = None
@@ -53,7 +52,6 @@ class DenseInitialModelEstepResult:
 
     accumulators: list[VdamAccumulator]
     meta: dict[str, Any]
-    halfset_results: dict[int, Any]
 
 
 @dataclass(frozen=True)

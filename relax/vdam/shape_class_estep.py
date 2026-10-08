@@ -20,7 +20,7 @@ from relax.helpers.orientation_priors import relion_round_away_from_zero, relion
 from relax.refinement import optics_shapes
 from relax.relion.optics_aberrations import reported_rotations
 from relax.vdam import native_sampling
-from relax.vdam.estep_common import DenseInitialModelEstepConfig
+from relax.vdam.estep_common import ENGINE_DISC_TYPE, DenseInitialModelEstepConfig
 from relax.vdam.state import InitialModelState
 
 
@@ -123,7 +123,7 @@ def run_by_shape_class(
             grids.fine_translations,
             route.grids.rotation_parent_map,
             grids.translation_parent_map,
-            config.disc_type,
+            ENGINE_DISC_TYPE,
             **{
                 **engine_call,
                 "fill_fine_rows": None,

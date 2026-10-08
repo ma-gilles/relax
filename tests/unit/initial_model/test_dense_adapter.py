@@ -218,7 +218,7 @@ def _capture_adaptive_route(monkeypatch):
 
     def fake_route(dataset, state, config, **kwargs):
         calls.append(kwargs)
-        return DenseInitialModelEstepResult(accumulators=[], meta={}, halfset_results={})
+        return DenseInitialModelEstepResult(accumulators=[], meta={})
 
     monkeypatch.setattr("relax.vdam.dense_adapter.run_adaptive_initial_model_estep", fake_route)
     return calls
@@ -227,7 +227,6 @@ def _capture_adaptive_route(monkeypatch):
 def _projector_config(n_classes, **overrides):
     values = dict(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
-        rotations=None,
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_half_by_class=np.zeros((n_classes, 4), dtype=np.complex64),
         relion_projector_r_max=3,
@@ -256,9 +255,7 @@ def test_initial_model_estep_hands_the_subset_halves_and_class_priors_to_the_ada
     assert_matches(calls[0]["joint_halfset_ids"], [1, 0, 1])
     np.testing.assert_allclose(calls[0]["class_log_priors"], np.log([0.75, 0.25]))
     assert calls[0]["engine_kwargs"]["current_size"] == 8
-    assert calls[0]["engine_kwargs"]["sparse_pass2"] is True
     assert calls[0]["relion_projector_r_max"] == 3
-    assert result.meta["pass2_engine"] == "adaptive"
     assert "pass2_engines" in result.meta and "coarse_engine_calls" in result.meta
 
 
@@ -272,14 +269,6 @@ def test_initial_model_estep_defaults_to_every_particle_in_alternating_halves(mo
     single = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4, pseudo_halfsets=False)
     run_dense_initial_model_estep(_Dataset(), single, _projector_config(1))
     assert calls[1]["joint_halfset_ids"] is None
-
-
-def test_initial_model_estep_refuses_the_removed_dense_pass2(monkeypatch):
-    calls = _capture_adaptive_route(monkeypatch)
-    state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    with pytest.raises(RuntimeError, match="dense VDAM E-step was removed"):
-        run_dense_initial_model_estep(_Dataset(), state, _projector_config(1, engine_kwargs={"sparse_pass2": False}))
-    assert calls == []
 
 
 def test_estep_meta_aggregates_noise_stats_for_model_updates():
@@ -371,7 +360,6 @@ def test_initial_model_estep_without_a_projector_is_refused(monkeypatch):
     )
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
-        rotations=np.eye(3, dtype=np.float32)[None],
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_bpref_frame=False,
     )
@@ -490,7 +478,6 @@ def test_resolve_class_inputs_builds_the_exact_projector_and_no_dense_means(monk
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
-        rotations=np.eye(3, dtype=np.float32)[None],
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_frame=True,
     )
@@ -512,7 +499,6 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=2, nr_iter=1, n_directions=4)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
-        rotations=np.eye(3, dtype=np.float32)[None],
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_frame=True,
         relion_projector_half_by_class=projector_half,
@@ -541,7 +527,6 @@ def test_resolve_class_inputs_can_dump_exact_projector_operand(monkeypatch, tmp_
     state.current_size = 4
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
-        rotations=np.eye(3, dtype=np.float32)[None],
         translations=np.zeros((1, 2), dtype=np.float32),
         relion_projector_frame=True,
     )
@@ -604,9 +589,9 @@ def test_sparse_control_split_preserves_input_and_array_identity():
     from relax.vdam.adaptive_estep import _pop_sparse_pass2_options
 
     metadata = np.array([[0.125, 0.25]], dtype=np.float64)
-    supplied = {"sparse_pass2": True, "coarse_translations": metadata, "image_pre_shifts": metadata}
+    supplied = {"coarse_translations": metadata, "image_pre_shifts": metadata}
     cleaned, options = _pop_sparse_pass2_options(supplied)
-    assert set(supplied) == {"sparse_pass2", "coarse_translations", "image_pre_shifts"}
+    assert set(supplied) == {"coarse_translations", "image_pre_shifts"}
     assert set(cleaned) == {"image_pre_shifts"}
     assert set(options) == {"coarse_translations"}
     assert cleaned["image_pre_shifts"] is options["coarse_translations"] is metadata

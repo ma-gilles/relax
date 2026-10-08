@@ -174,17 +174,16 @@ def _dense_estep_config(
         else coarse_translations,
         dtype=np.float32,
     )
-    sigma_angstrom = float(sigma_offset_angstrom)
     # InitialModel's accelerated pdf_offset uses the rounded absolute old
     # offset, independently of the same integer shift being pre-applied to the
     # image. RELION computes this prior on the coarse translation grid and
     # reuses each parent value for all oversampled children.
-    _prior_kwargs = dict(
+    coarse_translation_log_prior = native_sampling._translation_log_prior(
+        coarse_prior_translations,
         voxel_size=float(dataset.voxel_size),
-        sigma_angstrom=sigma_angstrom,
+        sigma_angstrom=float(sigma_offset_angstrom),
         old_offsets=image_pre_shifts,
     )
-    coarse_translation_log_prior = native_sampling._translation_log_prior(coarse_prior_translations, **_prior_kwargs)
     if sampling_plan.translation_parent is None:
         if int(np.asarray(sampling_plan.translations).shape[0]) != int(coarse_translation_log_prior.shape[1]):
             raise ValueError(
@@ -209,10 +208,6 @@ def _dense_estep_config(
         "relion_firstiter_score_mode": "gaussian",
         "image_pre_shifts": image_pre_shifts,
         "translation_prior_centers": relion_sigma_offset_prior_center(translation_offsets),
-        # Oversampling zero is still RELION's adaptive two-pass algorithm: its
-        # fine children are the coarse samples themselves, on the same exact
-        # significance route as positive oversampling.
-        "sparse_pass2": True,
     }
     engine_kwargs.update(
         healpix_order=int(sampling_plan.healpix_order),
@@ -240,12 +235,10 @@ def _dense_estep_config(
         engine_kwargs["multi_shape_translations"] = dict(
             offsets_px=np.asarray(translation_offsets, dtype=np.float64),
             coarse_prior_translations=coarse_prior_translations,
-            sigma_angstrom=sigma_angstrom,
+            sigma_angstrom=float(sigma_offset_angstrom),
         )
-    if translation_log_prior is not None:
-        engine_kwargs["translation_log_prior"] = translation_log_prior
-    if coarse_translation_log_prior is not None:
-        engine_kwargs["coarse_translation_log_prior"] = coarse_translation_log_prior
+    engine_kwargs["translation_log_prior"] = translation_log_prior
+    engine_kwargs["coarse_translation_log_prior"] = coarse_translation_log_prior
 
     grid_size = int(dataset.image_shape[0])
     gpu_memory_gb = (
@@ -260,11 +253,9 @@ def _dense_estep_config(
     )
     return DenseInitialModelEstepConfig(
         noise_variance=noise_variance,
-        rotations=sampling_plan.rotations,
         translations=sampling_plan.translations,
         image_batch_size=effective_image_batch_size,
         rotation_block_size=int(opts.rotation_block_size),
-        pass2_engine=str(opts.pass2_engine),
         coarse_engine=str(opts.coarse_engine),
         padding_factor=int(opts.padding_factor),
         relion_bpref_frame=True,
@@ -298,26 +289,15 @@ def _dense_engine_kwargs(state: InitialModelState, config: DenseInitialModelEste
         "projection_padding_factor": config.padding_factor,
         "reconstruction_padding_factor": config.padding_factor,
         "half_spectrum_scoring": True,
-        "score_with_masked_images": True,
-        "reconstruct_with_masked_images": True,
-        "sparse_pass2": True,
         # RELION InitialModel BPref uses the rounded radial reconstruction support
         # encoded by Minvsigma2, not the full square Fourier crop.
         "recon_square_window": False,
         "recon_exact_radius": False,
-        "reconstruction_subtract_projected_reference": True,
         # RELION InitialModel scores the full rounded Fourier crop emitted by its
         # CUDA projector, including the few crop-corner pixels outside r_max.
         "projection_mask_current_image_disk": False,
     }
     engine_kwargs.update(config.engine_kwargs)
-
-    controlled = ("image_indices", "reconstruction_group_ids", "reconstruction_group_count")
-    present = sorted(name for name in controlled if name in config.engine_kwargs)
-    if present:
-        raise ValueError(f"InitialModel dense E-step controls these dense-engine arguments: {', '.join(present)}")
-    if engine_kwargs["projection_padding_factor"] != engine_kwargs["reconstruction_padding_factor"]:
-        raise ValueError("InitialModel dense E-step requires matching projection/reconstruction padding factors")
     return engine_kwargs
 
 
@@ -424,12 +404,6 @@ def run_dense_initial_model_estep(
         class_log_priors_from_state(state) if config.class_log_priors is None else np.asarray(config.class_log_priors)
     )
     engine_kwargs = _dense_engine_kwargs(state, config)
-    if not bool(engine_kwargs["sparse_pass2"]):
-        raise RuntimeError(
-            "the dense VDAM E-step was removed on 2026-10-03 (with RELAX_DISABLE_SPARSE_PASS2): "
-            "the InitialModel E-step runs only on the adaptive route over the device-resident pass 2; "
-            "do not set sparse_pass2=False in the E-step engine kwargs"
-        )
     selected_particle_ids = (
         np.arange(int(experiment_dataset.n_images), dtype=np.int64)
         if particle_ids is None
@@ -457,7 +431,6 @@ def run_dense_initial_model_estep(
         relion_projector_r_max=relion_projector_r_max,
         engine_kwargs=engine_kwargs,
     )
-    result.meta["pass2_engine"] = "adaptive"
     result.meta["pass2_engines"] = take_pass_engines()
     result.meta["coarse_engine_calls"] = take_coarse_engine_calls()
     return result

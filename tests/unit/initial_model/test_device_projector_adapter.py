@@ -112,7 +112,6 @@ def test_vdam_config_uses_the_device_projector_state_default_size_and_dump(monke
     state.current_size = 0
     config = adapter.DenseInitialModelEstepConfig(
         noise_variance=np.ones(5),
-        rotations=np.eye(3)[None],
         translations=np.zeros((1, 2)),
         relion_projector_frame=True,
     )

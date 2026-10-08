@@ -115,7 +115,7 @@ def run_tomo_initial_model_estep(
     K = int(state.K)
     if particle_ids.size == 0:
         empty = [_empty_accumulator(state, k, h) for h in (0, 1) for k in range(K)]
-        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "tomo"}, halfset_results={})
+        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "tomo"})
     if not state.pseudo_halfsets:
         raise NotImplementedError("subtomogram InitialModel backprojects into RELION's two pseudo-halfsets")
     group_ids = np.asarray(halfset_ids, dtype=np.int32).reshape(-1)
@@ -225,4 +225,4 @@ def run_tomo_initial_model_estep(
     meta["pass2_engine"] = "tomo"
     meta["halfset_ids"] = (0, 1)
     meta["joint_halfset_particle_stream"] = True
-    return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta, halfset_results={0: result})
+    return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta)

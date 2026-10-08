@@ -43,6 +43,7 @@ from relax.refinement import optics_shapes
 from relax.scoring.sparse_bucket_arrays import relion_parent_execution_key
 from relax.vdam.estep_common import (
     _PARTICLE_RESULT_FIELDS,
+    ENGINE_DISC_TYPE,
     DenseInitialModelEstepConfig,
     DenseInitialModelEstepResult,
     _add_accumulator_weight_meta,
@@ -84,7 +85,6 @@ def _pop_sparse_pass2_options(engine_kwargs: dict[str, Any]) -> tuple[dict[str, 
 
     cleaned = dict(engine_kwargs)
     options = {name: cleaned.pop(name) for name in list(cleaned) if name in _SPARSE_PASS2_CONTROL_KEYS}
-    cleaned.pop("sparse_pass2", None)
     return cleaned, options
 
 
@@ -350,7 +350,7 @@ def run_adaptive_initial_model_estep(
     grouped = bool(state.pseudo_halfsets)
     if image_indices.size == 0:
         empty = [_empty_accumulator(state, k, h) for h in ((0, 1) if grouped else (0,)) for k in range(state.K)]
-        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "adaptive"}, halfset_results={})
+        return DenseInitialModelEstepResult(accumulators=empty, meta={"pass2_engine": "adaptive"})
     group_ids = None
     if grouped:
         # Difference 2: one reference per class and two pseudo-halfset BPref slots,
@@ -466,7 +466,7 @@ def run_adaptive_initial_model_estep(
             grids.fine_translations,
             grids.rotation_parent_map,
             grids.translation_parent_map,
-            config.disc_type,
+            ENGINE_DISC_TYPE,
             **engine_call,
             **route_kwargs,
         )
@@ -503,4 +503,4 @@ def run_adaptive_initial_model_estep(
     if grouped:
         meta["halfset_ids"] = (0, 1)
         meta["joint_halfset_particle_stream"] = True
-    return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta, halfset_results=halfset_results)
+    return DenseInitialModelEstepResult(accumulators=accumulators, meta=meta)

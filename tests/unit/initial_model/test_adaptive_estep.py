@@ -142,7 +142,6 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     state = initialise_denovo_state(ori_size=8, pixel_size=1.0, K=n_classes, nr_iter=4, n_directions=4, pseudo_halfsets=True)
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),
-        rotations=None,
         translations=plan.translations,
         relion_bpref_frame=True,
         coarse_engine=coarse_engine,
@@ -212,7 +211,6 @@ def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(mon
     )
     config = DenseInitialModelEstepConfig(
         noise_variance=np.ones(64, dtype=np.float32),
-        rotations=None,
         translations=plan.translations,
         relion_bpref_frame=True,
         engine_kwargs={},

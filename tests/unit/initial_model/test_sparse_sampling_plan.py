@@ -56,9 +56,7 @@ def test_expectation_deferred_plan_routing_and_metadata(monkeypatch):
 
     def fake_run(dataset, state, config, *, particle_ids, halfset_ids):
         calls.append(config)
-        assert config.rotations is None
         assert_matches(config.translations, dense.translations)
-        assert config.engine_kwargs["sparse_pass2"]
         return SimpleNamespace(accumulators=[], meta={})
 
     monkeypatch.setattr(driver, "run_dense_initial_model_estep", fake_run)
