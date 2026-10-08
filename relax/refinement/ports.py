@@ -179,6 +179,10 @@ class InputSource:
     sealed_scoring_context = None
     # Whether a state-swap probe swaps state in some iteration (it then admits a fresh BPref particle order).
     swaps_state = False
+    # Whether the run follows a RELION run's numbered STAR files or override slots, and whether it starts from a
+    # frozen boundary (a sealed sampling state or its RefinementState fields); a continuation refuses both.
+    replays_relion_trajectory = False
+    starts_from_frozen_boundary = False
     # A replayed MPI RELION run's follower topology and captured dispatch schedule (a
     # ``relax.relion.relion_worker_scale.PreparedFollowerTopology``); None natively: no followers.
     follower_topology = None
@@ -196,6 +200,16 @@ class InputSource:
     def initial_coarse_grids(self, *, initialized_healpix_order: int, voxel_size, symmetry: str, native):
         """The first iteration's coarse grids (a ``CoarseGrids``); ``native()`` builds the run's own."""
         return native()
+
+    def coarse_grids(self, iteration: int, grids, state, *, voxel_size, dtype):
+        """Iteration ``iteration``'s coarse grids (a ``CoarseGrids``) before they are refreshed for ``state``'s
+        sampling (the native source: ``grids``)."""
+        return grids
+
+    def adaptive_coarse_size(self, plan, *, model_size: int):
+        """The adaptive pass-1 width (a ``CoarseImageSize``; the native source: the run's ``plan``), at most the
+        model's ``model_size``."""
+        return plan
 
     def numbered_state(
         self, iteration: int, inputs: NumberedState, *, state, halves, direction_priors, image_geometry,

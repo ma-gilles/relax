@@ -12,8 +12,12 @@ pytestmark = pytest.mark.unit
 
 
 def _global_window(incoming, *, current=172, sealed=None):
-    """The adaptive pass-1 window of a box-380 run at ``current`` for the incoming order ``incoming``."""
-    return plan_adaptive_image_size(
+    """The adaptive pass-1 window of a box-380 run at ``current`` for the incoming order ``incoming``; with a
+    sealed sampling state (the replay source's), its width."""
+    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
+
+    options = RefinementOptions(schedule=RefinementSchedule(particle_diameter_ang=250.0))
+    plan = plan_adaptive_image_size(
         incoming,
         ExpectationWindows(model_size=current, image_current_size=current, image_box_size=380),
         RunOptics(
@@ -21,10 +25,14 @@ def _global_window(incoming, *, current=172, sealed=None):
             model_pixel_size=1.400011, optics_image_sizes=[380], optics_pixel_sizes=[1.400011],
             multi_shape_halves=False,
         ),
-        RefinementOptions(schedule=RefinementSchedule(particle_diameter_ang=250.0)),
-        sealed_sampling_state=sealed,
+        options,
         log=logging.getLogger(__name__),
-    ).size
+    )
+    if sealed is not None:
+        plan = RelionReplaySource(RelionReplay(sealed_sampling_state=sealed), options).adaptive_coarse_size(
+            plan, model_size=current,
+        )
+    return plan.size
 
 
 @pytest.mark.parametrize("incoming,expected", [(2, 40), (3, 80), (4, 158)])

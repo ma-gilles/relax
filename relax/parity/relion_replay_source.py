@@ -54,7 +54,7 @@ from relax.diagnostics.state_swap_runtime import _apply_state_swap_probe, _snaps
 from relax.helpers.env_flags import parse_env_true_flag
 from relax.refinement.final_sampling import FinalSamplingSettings, native_final_sampling_settings
 from relax.refinement.half_inputs import SigmaOffset
-from relax.refinement.iteration_planning import CoarseGrids
+from relax.refinement.iteration_planning import CoarseGrids, CoarseImageSize
 from relax.refinement.mean_helpers import class_mixture_from_weights
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState
 from relax.refinement.refinement_options import (
@@ -215,6 +215,16 @@ class RelionReplaySource(InputSource):
         return self.replay.state_swap_probe is not None
 
     @property
+    def replays_relion_trajectory(self):
+        return self.replay.perturb_replay_relion_dir is not None or self.replay.replay_iteration_overrides is not None
+
+    @property
+    def starts_from_frozen_boundary(self):
+        return (
+            self.replay.sealed_sampling_state is not None or self.replay.frozen_refinement_state_fields is not None
+        )
+
+    @property
     def follower_topology(self):
         return self.replay.follower_topology
 
@@ -245,6 +255,53 @@ class RelionReplaySource(InputSource):
             symmetry=symmetry,
             log=logger,
         )
+
+    def coarse_grids(self, iteration, grids, state, *, voxel_size, dtype):
+        """When RELION's numbered sampling STAR set this iteration's sampling (not a sealed state's) at the grid's
+        HEALPix order, the translation grid of its replayed range and step, rebuilt where it changed."""
+        if (
+            self._star_directory(iteration) is None
+            or self.replay.sealed_sampling_state is not None
+            or state.healpix_order != grids.rotation_grid.healpix_order
+        ):
+            return grids
+        base_translations = grids.base_translations
+        current_translations = grids.translations
+        # Translation params may have changed under replay without an
+        # hp_order bump. Regenerate the translation grid to match RELION.
+        _new_t_source = sampling._relion_base_translation_grid(
+            state.translation_range,
+            state.translation_step,
+            n_classes=self.options.k_class.n_classes,
+            voxel_size=voxel_size,
+        )
+        _new_t = jnp.asarray(_new_t_source, dtype=dtype)
+        if _new_t.shape != base_translations.shape or not jnp.allclose(
+            _new_t,
+            np.asarray(base_translations, dtype=dtype),
+        ):
+            current_translations = _new_t
+            base_translations = _new_t_source
+            logger.info(
+                "Replay: regenerated translation grid: %d translations (range=%.2f px, step=%.2f px)",
+                current_translations.shape[0],
+                state.translation_range,
+                state.translation_step,
+            )
+        return CoarseGrids(grids.rotation_grid, base_translations, current_translations)
+
+    def adaptive_coarse_size(self, plan, *, model_size):
+        """A sealed sampling state's exact pass-1 width, at most the model's current size."""
+        if self.replay.sealed_sampling_state is None:
+            return plan
+        coarse_size = int(self.replay.sealed_sampling_state["coarse_size"])
+        if coarse_size > model_size:
+            raise ValueError(
+                "sealed sampling coarse_size exceeds active current_size: "
+                f"coarse={coarse_size} current={model_size}"
+            )
+        logger.info("Frozen-boundary v3 directly owns adaptive pass-1 coarse_size=%d", coarse_size)
+        return CoarseImageSize(size=coarse_size, angular_step_deg=plan.angular_step_deg)
 
     def scoring_rotation_ids(self, trial_grid, *, use_local):
         """A sealed global grid's captured rotation ids."""

@@ -242,11 +242,10 @@ def plan_adaptive_image_size(
     optics: RunOptics,
     options: RefinementOptions,
     *,
-    sealed_sampling_state,
     log: logging.Logger,
 ) -> CoarseImageSize:
-    """Size pass 1 from incoming sampling, then admit an exact sealed width (``sealed_sampling_state``, the
-    input source's, or None).
+    """Size pass 1 from incoming sampling (a sealed sampling state's exact width is the input source's,
+    ``InputSource.adaptive_coarse_size``).
 
     The fine grid can already have advanced to another order. Reads from ``optics``: the image geometry
     and the first optics group's box and pixel size; from ``options``: ``schedule.particle_diameter_ang``.
@@ -265,14 +264,6 @@ def plan_adaptive_image_size(
             current_size=windows.image_current_size if windows.image_window_size is not None else None,
             clamp_box_size=image_geometry.box_size,
         )
-    if sealed_sampling_state is not None:
-        coarse_size = int(sealed_sampling_state["coarse_size"])
-        if coarse_size > windows.model_size:
-            raise ValueError(
-                "sealed sampling coarse_size exceeds active current_size: "
-                f"coarse={coarse_size} current={windows.model_size}"
-            )
-        log.info("Frozen-boundary v3 directly owns adaptive pass-1 coarse_size=%d", coarse_size)
     return CoarseImageSize(size=coarse_size, angular_step_deg=angular_step_deg)
 
 
@@ -345,14 +336,8 @@ def initialize_refinement_state(
             n_classes=options.k_class.n_classes,
             box_size=image_geometry.box_size,
             options=options,
-            replays_relion_trajectory=source.relion_replay is not None and (
-                source.relion_replay.perturb_replay_relion_dir is not None
-                or source.relion_replay.replay_iteration_overrides is not None
-            ),
-            starts_from_frozen_boundary=source.relion_replay is not None and (
-                source.relion_replay.sealed_sampling_state is not None
-                or source.relion_replay.frozen_refinement_state_fields is not None
-            ),
+            replays_relion_trajectory=source.replays_relion_trajectory,
+            starts_from_frozen_boundary=source.starts_from_frozen_boundary,
             swaps_state=source.swaps_state,
         )
         state = resume.refinement_state(state)
@@ -500,20 +485,17 @@ def refresh_coarse_grids(
     *,
     voxel_size,
     dtype,
-    star_sampling: bool,
     log: logging.Logger,
 ) -> CoarseGrids:
     """The exhaustive coarse grids of ``state``'s sampling, rebuilt where they changed.
 
     A new HEALPix order rebuilds the rotation grid (up to the exhaustive-grid cap) and the translation
-    grid. When RELION's numbered sampling STAR set this iteration's sampling (``star_sampling``; a sealed
-    sampling state's is not the STAR's), a replayed translation range or step rebuilds the translation grid alone. ``grids.translations`` may be a perturbed copy; a rebuild
-    replaces it with the base grid. Reads from ``state``: ``healpix_order`` (and the fields the
+    grid (a replayed range or step at the same order is the input source's, ``InputSource.coarse_grids``).
+    ``grids.translations`` may be a perturbed copy; a rebuild replaces it with the base grid. Reads from ``state``: ``healpix_order`` (and the fields the
     exhaustive-grid cap reads), ``translation_range`` and ``translation_step``; from ``options``:
     ``k_class.n_classes`` and ``symmetry.point_group``.
     """
     symmetry = options.symmetry.point_group
-    replay_translations = star_sampling
     current_rotation_grid = grids.rotation_grid
     base_translations = grids.base_translations
     current_translations = grids.translations
@@ -551,28 +533,6 @@ def refresh_coarse_grids(
             state.translation_range,
             state.translation_step,
         )
-    elif replay_translations:
-        # Translation params may have changed under replay without an
-        # hp_order bump. Regenerate the translation grid to match RELION.
-        _new_t_source = sampling._relion_base_translation_grid(
-            state.translation_range,
-            state.translation_step,
-            n_classes=options.k_class.n_classes,
-            voxel_size=voxel_size,
-        )
-        _new_t = jnp.asarray(_new_t_source, dtype=dtype)
-        if _new_t.shape != base_translations.shape or not jnp.allclose(
-            _new_t,
-            np.asarray(base_translations, dtype=dtype),
-        ):
-            current_translations = _new_t
-            base_translations = _new_t_source
-            log.info(
-                "Replay: regenerated translation grid: %d translations (range=%.2f px, step=%.2f px)",
-                current_translations.shape[0],
-                state.translation_range,
-                state.translation_step,
-            )
     return CoarseGrids(current_rotation_grid, base_translations, current_translations)
 
 

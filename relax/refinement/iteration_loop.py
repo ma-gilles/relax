@@ -1482,9 +1482,11 @@ def refine_single_volume(
         # OOMs the GPU.  Instead, keep the order-4 grid as the "base" and
         # rely on local search + oversampling to achieve finer angular steps.
         # The order is still tracked for sigma calculation.
+        coarse_grids = source.coarse_grids(
+            iteration, coarse_grids, state, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
+        )
         coarse_grids = refresh_coarse_grids(
-            coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype,
-            star_sampling=star_directory is not None and source.sealed_sampling_state is None, log=logger,
+            coarse_grids, state, options, voxel_size=source_pixel_size_angstrom, dtype=scoring_dtype, log=logger,
         )
 
         # --- Local angular search bookkeeping ---
@@ -1587,9 +1589,9 @@ def refine_single_volume(
         # Off the adaptive route there is no pass-1 plan, and pass 1 (where a scorer has one) takes the full
         # window: coarse_cs is None.
         coarse_image_plan = (
-            plan_adaptive_image_size(
-                coarse_size_healpix_order, sampling_plan.windows, optics, options,
-                sealed_sampling_state=source.sealed_sampling_state, log=logger,
+            source.adaptive_coarse_size(
+                plan_adaptive_image_size(coarse_size_healpix_order, sampling_plan.windows, optics, options, log=logger),
+                model_size=sampling_plan.windows.model_size,
             )
             if use_adaptive
             else None
