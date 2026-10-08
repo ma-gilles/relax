@@ -264,25 +264,6 @@ def _local_grid(rot: float, tilt: float, psi: float) -> np.ndarray:
     )
 
 
-def search_diff2(volume: np.ndarray, sym_name: str, eulers) -> np.ndarray:
-    """align_symmetry's search objective for (rot, tilt, psi) rows: re-centre, crop, rotate, symmetrise, diff2."""
-
-    volume = recentre_on_centre_of_mass(volume)
-    box = min(WORKING_BOX, volume.shape[0])
-    _, right = relion_symmetry_operators(sym_name)
-    matrices = jnp.asarray(euler_angles_to_matrix(np.asarray(eulers, dtype=np.float64)))
-    return np.asarray(_diff2_batch(_projector_data(resize_map(volume, box)), matrices, jnp.asarray(right[1:]), n=box))
-
-
-def rotate_and_symmetrise(volume: np.ndarray, sym_name: str, eulers) -> np.ndarray:
-    """align_symmetry's output for a given (rot, tilt, psi): the re-centred full map rotated and symmetrised."""
-
-    _, right = relion_symmetry_operators(sym_name)
-    volume = recentre_on_centre_of_mass(volume)
-    matrix = jnp.asarray(euler_angles_to_matrix([eulers])[0])
-    return np.asarray(_symmetrise(_rotate(_projector_data(volume), matrix, n=volume.shape[0]), jnp.asarray(right[1:])))
-
-
 def align_symmetry(volume: np.ndarray, sym_name: str, *, seed: int) -> tuple[np.ndarray, dict]:
     """``relion_align_symmetry --sym S --apply_sym`` on one map in RELION's MRC layout.
 

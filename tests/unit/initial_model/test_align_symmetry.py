@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
+import jax.numpy as jnp
 import mrcfile
 import numpy as np
 import pytest
@@ -18,6 +19,7 @@ import starfile
 from helpers.em_fixtures import fixture_dir
 
 from relax.healpix_sampling import euler_angles_to_matrix
+from relax.symmetry import relion_symmetry_operators
 from relax.vdam import align_symmetry as align
 
 pytestmark = pytest.mark.unit
@@ -31,6 +33,27 @@ MAP_REL_L2 = 5e-4
 # RELION's refined DIFF2 over 5 reruns spans 5.957-5.972 (k1) and 20.179-20.328 (k4); relax's seeded searches
 # (seeds 1-3, 29) gave 5.956-6.009 and 20.269-20.302.
 SEARCH_DIFF2_SLACK = 0.01
+
+
+def _search_diff2(volume, sym_name, eulers):
+    """align_symmetry's search objective for (rot, tilt, psi) rows: re-centre, crop, rotate, symmetrise, diff2."""
+
+    volume = align.recentre_on_centre_of_mass(volume)
+    box = min(align.WORKING_BOX, volume.shape[0])
+    _, right = relion_symmetry_operators(sym_name)
+    matrices = jnp.asarray(euler_angles_to_matrix(np.asarray(eulers, dtype=np.float64)))
+    data = align._projector_data(align.resize_map(volume, box))
+    return np.asarray(align._diff2_batch(data, matrices, jnp.asarray(right[1:]), n=box))
+
+
+def _rotate_and_symmetrise(volume, sym_name, eulers):
+    """align_symmetry's output for a given (rot, tilt, psi): the re-centred full map rotated and symmetrised."""
+
+    _, right = relion_symmetry_operators(sym_name)
+    volume = align.recentre_on_centre_of_mass(volume)
+    matrix = jnp.asarray(euler_angles_to_matrix([eulers])[0])
+    rotated = align._rotate(align._projector_data(volume), matrix, n=volume.shape[0])
+    return np.asarray(align._symmetrise(rotated, jnp.asarray(right[1:])))
 
 
 def _largest_class_map(case_dir):
@@ -53,11 +76,11 @@ def test_objective_and_output_match_relion_at_its_logged_orientation(case):
     volume = _largest_class_map(case_dir)
     runs = [_relion_run(case_dir, run) for run in RUNS]
 
-    diff2 = align.search_diff2(volume, "C4", [eulers for eulers, _, _ in runs])
+    diff2 = _search_diff2(volume, "C4", [eulers for eulers, _, _ in runs])
 
     for (eulers, relion_diff2, relion_output), ours in zip(runs, diff2):
         assert abs(ours / relion_diff2 - 1.0) <= DIFF2_RTOL
-        output = align.rotate_and_symmetrise(volume, "C4", eulers)
+        output = _rotate_and_symmetrise(volume, "C4", eulers)
         assert np.linalg.norm(output - relion_output) / np.linalg.norm(relion_output) <= MAP_REL_L2
 
 
@@ -72,7 +95,7 @@ def test_seeded_search_reaches_relion_runs_objective(case):
     assert report["refined_diff2"] <= max(relion_diff2) * (1.0 + SEARCH_DIFF2_SLACK)
     assert report["refined_diff2"] <= report["global_diff2"]
     # The output is the map at the reported orientation.
-    expected = align.rotate_and_symmetrise(volume, "C4", report["refined_rot_tilt_psi"])
+    expected = _rotate_and_symmetrise(volume, "C4", report["refined_rot_tilt_psi"])
     assert np.linalg.norm(output - expected) / np.linalg.norm(expected) <= 1e-9
 
 
