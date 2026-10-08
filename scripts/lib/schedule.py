@@ -1,4 +1,7 @@
-"""PPCA-specific resolution gating around the K-class refinement schedule."""
+"""PPCA-specific resolution gating around the K-class refinement schedule.
+
+Script library: moved unchanged from relax/ppca_refinement/schedule.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 

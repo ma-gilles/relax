@@ -134,8 +134,8 @@ def test_prepare_clis_default_on_with_opt_out(monkeypatch, tmp_path, module_name
 def test_cryobench_manifest_points_fixture_validation_at_simulated_truth(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from relax.ppca_refinement import fixture_validation
     from scripts import prepare_cryobench_pdb_multiclass_relion_parity_benchmark as prep
+    from scripts.lib import fixture_validation
 
     shape = (4, 4, 4)
     fourier = np.stack([np.asarray(prep.ftu.get_dft3(np.full(shape, k + 1.0))).reshape(-1) for k in range(2)])

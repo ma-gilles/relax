@@ -2,10 +2,9 @@ import json
 
 import numpy as np
 import pytest
-
-from relax.ppca_refinement.fixture_validation import validate_kclass_to_ppca_initialization
 from recovar.utils import helpers as utils
 
+from scripts.lib.fixture_validation import validate_kclass_to_ppca_initialization
 
 pytestmark = pytest.mark.unit
 

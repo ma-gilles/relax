@@ -1,4 +1,7 @@
-"""Exact-local PPCA refinement over ``LocalHypothesisLayout`` supports."""
+"""Exact-local PPCA refinement over ``LocalHypothesisLayout`` supports.
+
+Script library: moved unchanged from relax/ppca_refinement/local_dataset.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 

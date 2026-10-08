@@ -12,16 +12,16 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from recovar.core import fourier_transform_utils as ftu
+
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,
 )
 from relax.ppca_refinement.dense_dataset import run_dense_ppca_halfset_fused_em_iteration
-from relax.ppca_refinement.local_dataset import run_local_ppca_halfset_fused_em_iteration
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from scripts.lib.local_dataset import run_local_ppca_halfset_fused_em_iteration
 
 pytestmark = pytest.mark.unit
 

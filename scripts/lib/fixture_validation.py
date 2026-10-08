@@ -1,4 +1,7 @@
-"""Real-fixture validation for K-class-to-PPCA initialization."""
+"""Real-fixture validation for K-class-to-PPCA initialization.
+
+Script library: moved unchanged from relax/ppca_refinement/fixture_validation.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +18,7 @@ from relax.ppca_refinement.initialization import (
     initialize_ppca_from_kclass_volumes,
     load_volume_stack,
 )
-from relax.ppca_refinement.schedule import loading_subspace_agreement
+from scripts.lib.schedule import loading_subspace_agreement
 
 
 @dataclass(frozen=True)

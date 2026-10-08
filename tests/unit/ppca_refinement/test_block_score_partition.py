@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from relax.ppca_refinement.dense_dataset import _centered_score_partition
-from relax.ppca_refinement.local_dataset import _centered_cached_pose_weights
+from scripts.lib.local_dataset import _centered_cached_pose_weights
 
 pytestmark = pytest.mark.unit
 

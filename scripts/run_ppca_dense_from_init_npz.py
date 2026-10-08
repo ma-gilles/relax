@@ -17,9 +17,11 @@ os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 import jax
 import jax.numpy as jnp
-
 from recovar.core import fourier_transform_utils as ftu
 from recovar.data_io.cryoem_dataset import load_dataset
+from recovar.reconstruction import noise as recon_noise
+from recovar.utils.json_utils import to_jsonable
+
 from relax.helpers.map_io import write_map_from_ft
 from relax.ppca_refinement.config import (
     GeometryConfig,
@@ -27,22 +29,20 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
     SparsePass2Config,
 )
-from relax.ppca_refinement.postprocess import PostprocessConfig
 from relax.ppca_refinement.dense_dataset import coerce_augmented_half_volumes, run_dense_ppca_fused_em_iteration
 from relax.ppca_refinement.initialization import (
     loading_row_norm_variance_prior,
     volume_power_variance_prior,
 )
 from relax.ppca_refinement.mean_regularization import (
-    MeanRegularizationConfig,
     KCLASS_RELION_MINRES_MAP,
+    MeanRegularizationConfig,
     relion_style_mean_precision_from_stats,
 )
-from relax.ppca_refinement.refinement_loop import run_dense_ppca_refinement_loop
+from relax.ppca_refinement.postprocess import PostprocessConfig
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 from relax.sampling import get_rotation_grid_at_order, get_translation_grid
-from recovar.reconstruction import noise as recon_noise
-from recovar.utils.json_utils import to_jsonable
+from scripts.lib.refinement_loop import run_dense_ppca_refinement_loop
 
 
 def _load_noise_variance(simulation_info: str | Path | None, image_shape) -> np.ndarray:
@@ -310,11 +310,12 @@ def _run_with_halfset_fsc_schedule(
     # checks at the proposed shell, which is outside the trained band by
     # definition (the M-step zeros shells beyond current_size), so FSC there is
     # always 0 and the gate would never fire.
-    from relax.ppca_refinement.refinement_loop import (
+    from recovar.reconstruction import regularization
+
+    from scripts.lib.refinement_loop import (
         HalfsetMeanComparison,
         _half_volume_to_full_flat,
     )
-    from recovar.reconstruction import regularization
 
     def _current_cs_fsc_comparator(state, proposed_current_size: int) -> HalfsetMeanComparison:
         full0 = _half_volume_to_full_flat(state.mu_half[0], dataset.volume_shape)

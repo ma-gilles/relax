@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
-from relax.diagnostics.bpref_contribution_replay import (
+from scripts.lib.bpref_contribution_replay import (
     load_bpref_contribution_bundle,
     summarize_bpref_contribution_bundle,
 )

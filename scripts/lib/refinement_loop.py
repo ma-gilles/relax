@@ -1,4 +1,7 @@
-"""Dense PPCA refinement loop and schedule handoff helpers."""
+"""Dense PPCA refinement loop and schedule handoff helpers.
+
+Script library: moved unchanged from relax/ppca_refinement/refinement_loop.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 
@@ -17,13 +20,13 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
 )
 from relax.ppca_refinement.dense_dataset import run_dense_ppca_halfset_fused_em_iteration
-from relax.ppca_refinement.schedule import (
+from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from scripts.lib.schedule import (
     HalfsetResolutionGateDecision,
     PPCARefinementScheduleState,
     evaluate_halfset_resolution_gate,
     loading_subspace_agreement,
 )
-from relax.ppca_refinement.state import PoseMarginalPPCAEMState
 
 
 @dataclass(frozen=True)

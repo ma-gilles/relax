@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.ppca_refinement.fixture_validation import validate_kclass_to_ppca_initialization
+from scripts.lib.fixture_validation import validate_kclass_to_ppca_initialization
 
 
 def _parse_args() -> argparse.Namespace:

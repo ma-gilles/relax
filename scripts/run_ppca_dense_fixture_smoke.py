@@ -5,17 +5,18 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import starfile
-
 from recovar.data_io.cryoem_dataset import load_dataset
+from recovar.reconstruction import noise as recon_noise
+
 from relax.ppca_refinement.dense_dataset import run_dense_ppca_fused_em_iteration
-from relax.ppca_refinement.fixture_validation import validate_kclass_to_ppca_initialization
+from relax.relion.relion_metadata import read_relion_sampling_metadata
 from relax.sampling import (
     apply_relion_rotation_perturbation_to_eulers,
     apply_relion_translation_perturbation,
@@ -24,8 +25,7 @@ from relax.sampling import (
     get_translation_grid,
     relion_angular_sampling_deg,
 )
-from relax.relion.relion_metadata import read_relion_sampling_metadata
-from recovar.reconstruction import noise as recon_noise
+from scripts.lib.fixture_validation import validate_kclass_to_ppca_initialization
 
 
 def _scalar(table_or_dict, name: str, default=None):

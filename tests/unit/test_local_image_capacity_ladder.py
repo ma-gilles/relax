@@ -148,7 +148,7 @@ def test_snapping_never_raises_the_planner_memory_bound(max_images):
 
 
 def test_planners_ignore_the_environment_unless_the_caller_opts_in(monkeypatch):
-    """`relax/ppca_refinement/local_dataset.py` also plans local buckets.
+    """`scripts/lib/local_dataset.py` also plans local buckets.
 
     It passes no ladder, so an EM-scoped environment variable must not
     re-bucket a pipeline with its own validation. Only `run_local_em_exact`

@@ -1,4 +1,7 @@
-"""Strict loading and deterministic row ordering for BPref contribution captures."""
+"""Strict loading and deterministic row ordering for BPref contribution captures.
+
+Script library: moved unchanged from relax/diagnostics/bpref_contribution_replay.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 

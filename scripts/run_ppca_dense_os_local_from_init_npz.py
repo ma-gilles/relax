@@ -21,8 +21,9 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.data_io.cryoem_dataset import load_dataset
+from recovar.utils.json_utils import to_jsonable
+
 from relax.local.local_layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import (
     GeometryConfig,
@@ -32,15 +33,10 @@ from relax.ppca_refinement.config import (
     SparsePass2Config,
 )
 from relax.ppca_refinement.dense_dataset import compute_dense_ppca_adaptive_significance
-from relax.ppca_refinement.highres_refinement import build_top_p_local_hypothesis_layout
 from relax.ppca_refinement.initialization import (
     loading_row_norm_variance_prior,
     pipeline_variance_W_prior,
     volume_power_variance_prior,
-)
-from relax.ppca_refinement.local_dataset import (
-    run_local_ppca_fused_em_iteration,
-    run_local_ppca_pose_scoring_iteration,
 )
 from relax.ppca_refinement.mean_regularization import (
     KCLASS_RELION_MINRES_MAP,
@@ -49,7 +45,11 @@ from relax.ppca_refinement.mean_regularization import (
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig
 from relax.sampling import get_relion_rotation_grid, get_translation_grid
-from recovar.utils.json_utils import to_jsonable
+from scripts.lib.highres_refinement import build_top_p_local_hypothesis_layout
+from scripts.lib.local_dataset import (
+    run_local_ppca_fused_em_iteration,
+    run_local_ppca_pose_scoring_iteration,
+)
 from scripts.run_ppca_dense_from_init_npz import (
     _half_size,
     _load_init,

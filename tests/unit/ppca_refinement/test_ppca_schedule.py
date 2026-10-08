@@ -1,12 +1,11 @@
 import numpy as np
 import pytest
 
-from relax.ppca_refinement.schedule import (
+from scripts.lib.schedule import (
     PPCARefinementScheduleState,
     evaluate_halfset_resolution_gate,
     loading_subspace_agreement,
 )
-
 
 pytestmark = pytest.mark.unit
 

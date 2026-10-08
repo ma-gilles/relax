@@ -420,7 +420,7 @@ def test_projector_conversion_uses_relion_frame(monkeypatch):
     )
 
     refs = np.zeros((1, 4, 4, 4), dtype=np.float32)
-    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
+    from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
     projector_maps, _ = native_reference_to_relion_projector_half_maps(
         refs, current_size=2, padding_factor=1, projector_data_dtype=np.complex64

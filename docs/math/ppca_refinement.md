@@ -10,11 +10,11 @@ entry points and data flow. Historical experiments do not qualify this source.
 - [engine.py](../../relax/ppca_refinement/engine.py) owns shared dense/local
   scoring and accumulation. The independent score/moment formulation and
   augmented solve live in `recovar/ppca/`; preserve the `q=0` and `W=0` limits.
-- [refinement_loop.py](../../relax/ppca_refinement/refinement_loop.py) owns
+- [refinement_loop.py](../../scripts/lib/refinement_loop.py) owns
   the maintained dense halfset resolution gate. The dense-to-local workflow
   calls the single-iteration owners directly. K-class execution lives in
   [classification/k_class.py](../../relax/classification/k_class.py).
-- [local_dataset.py](../../relax/ppca_refinement/local_dataset.py) consumes
+- [local_dataset.py](../../scripts/lib/local_dataset.py) consumes
   `LocalHypothesisLayout`; local priors and pruning constrain support without
   changing the PPCA score. Do not introduce a parallel local-search layout.
 - The model is `[mu, W_1, ..., W_q]`, with real latent `z ~ N(0, I)`.
@@ -130,8 +130,8 @@ the augmented solve.
 ## Halfset resolution gate
 
 Dense and local iteration publication share
-[`_finish_refinement_iteration`](../../relax/ppca_refinement/refinement_loop.py);
-the gate itself remains in [`evaluate_halfset_resolution_gate`](../../relax/ppca_refinement/schedule.py).
+[`_finish_refinement_iteration`](../../scripts/lib/refinement_loop.py);
+the gate itself remains in [`evaluate_halfset_resolution_gate`](../../scripts/lib/schedule.py).
 
 Resolution/current-size growth is allowed only when all first-pass checks pass:
 

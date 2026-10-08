@@ -12,7 +12,7 @@ the fixed capacity w = N / 2, ``(M + 3, M + 3, M // 2 + 2)`` for
 ``M = padding_factor * ori_size``, so the logical radius remains a device scalar;
 the host wrapper uses w = r_max and runs large boxes in chunks. RELION's own
 transform (through the binding) is the test oracle, in
-``relax.diagnostics.native_projector_setup``.
+``scripts.lib.native_projector_setup``.
 """
 
 from functools import partial
@@ -441,7 +441,7 @@ def reference_to_relion_projector_half_maps_and_power(
     ``compute_dtype`` for gridding correction, FFT and power. It reproduces
     ``Projector::computeFourierTransformMap`` for even boxes, padding 1 or 2 and
     trilinear interpolation, and refuses other geometry; RELION's own transform is
-    the oracle in :mod:`relax.diagnostics.native_projector_setup`.
+    the oracle in :mod:`scripts.lib.native_projector_setup`.
 
     ``projector_data_dtype`` is what the caller wants the slab in; ``None`` keeps
     complex64, whose consumer is the InitialModel engine. Refinement asks for

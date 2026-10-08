@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.ppca_refinement.local_dataset import (
+from scripts.lib.local_dataset import (
     _score_local_pose_ppca_bucket_rotation_chunked,
     score_local_pose_ppca_bucket,
 )

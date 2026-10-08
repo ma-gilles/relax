@@ -1293,7 +1293,6 @@ def main() -> None:
     from recovar.reconstruction import noise as recon_noise
     from recovar.utils import helpers
 
-    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
     from relax.helpers.map_io import write_map
     from relax.helpers.orientation_priors import (
         make_relion_direction_log_prior,
@@ -1316,6 +1315,7 @@ def main() -> None:
     )
     from relax.scoring.significance import _compute_k_class_significance_batched
     from relax.sparse_pass2.dispatch import compute_pass2_stats_sparse
+    from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
     relion_dir = args.relion_dir
     prev_prefix = relion_dir / f"run_it{args.prev_iter:03d}"

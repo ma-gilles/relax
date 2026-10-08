@@ -2,8 +2,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 import recovar.core.fourier_transform_utils as ftu
+from helpers.dense_block_scores import _e_step_block_scores
+from helpers.float_compare import assert_matches
+
 from relax.helpers.half_spectrum import make_half_image_weights
 from relax.local.local_layout import LocalHypothesisLayout
 from relax.ppca_refinement.config import (
@@ -18,14 +20,12 @@ from relax.ppca_refinement.dense_dataset import (
     run_dense_ppca_halfset_fused_em_iteration,
 )
 from relax.ppca_refinement.engine import dense_pose_ppca_score_stats_blocked
-from relax.ppca_refinement.local_dataset import run_local_ppca_fused_em_iteration
-from relax.ppca_refinement.refinement_loop import (
+from relax.ppca_refinement.state import PoseMarginalPPCAEMState
+from scripts.lib.local_dataset import run_local_ppca_fused_em_iteration
+from scripts.lib.refinement_loop import (
     HalfsetMeanComparison,
     run_dense_ppca_refinement_loop,
 )
-from relax.ppca_refinement.state import PoseMarginalPPCAEMState
-from helpers.dense_block_scores import _e_step_block_scores
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 

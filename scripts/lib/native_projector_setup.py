@@ -1,5 +1,7 @@
 """RELION's own ``Projector::computeFourierTransformMap`` through the binding, as an oracle.
 
+Script library: moved unchanged from relax/diagnostics/native_projector_setup.py, which no relax command imports.
+
 Production builds the projector with
 :func:`relax.relion.relion_projector_setup.reference_to_relion_projector_half_maps_and_power`;
 tests and parity tools compare it with this.

@@ -3,17 +3,17 @@
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
+from recovar.utils.helpers import recovar_volume_to_relion
 
-from relax.diagnostics.native_projector_setup import (
-    native_reference_to_relion_projector_half_maps,
-    native_reference_to_relion_projector_half_maps_and_power,
-)
 from relax.relion import relion_projector_setup
 from relax.vdam import dense_adapter as adapter
 from relax.vdam.init import initialise_denovo_state
-from recovar.utils.helpers import recovar_volume_to_relion
-from helpers.float_compare import assert_matches
+from scripts.lib.native_projector_setup import (
+    native_reference_to_relion_projector_half_maps,
+    native_reference_to_relion_projector_half_maps_and_power,
+)
 
 pytestmark = pytest.mark.unit
 

@@ -1,4 +1,7 @@
-"""Fail-closed parsing and exact joins for aggregate K=4 winner summaries."""
+"""Fail-closed parsing and exact joins for aggregate K=4 winner summaries.
+
+Script library: moved unchanged from relax/diagnostics/global_winner_analysis.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 

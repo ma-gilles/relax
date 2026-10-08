@@ -52,7 +52,7 @@ Both feed the **same** M-step + postprocess.
 A **halfset wrapper** runs the iteration twice (halfset 0 + halfset 1) and
 FSC-combines for gold-standard scoring.
 
-A **multi-iteration loop** (`refinement_loop.py`) stitches several iterations
+A **multi-iteration loop** (`scripts/lib/refinement_loop.py`) stitches several iterations
 together with schedule decisions (`current_size`, HEALPix order, when to
 switch from single-set to halfset).
 
@@ -66,8 +66,8 @@ switch from single-set to halfset).
 | 2 | `config.py` | Geometry, batching, scoring and pose-selection options. | 3 min |
 | 3 | `state.py` | `PoseMarginalPPCAEMState` — what the loop carries between iterations. | 2 min |
 | 4 | `engine.py` | The JIT-compiled E+M kernel. The hard math is in `fused_dense_pose_ppca_block` and (in `recovar/ppca/pose_marginal.py`) `compute_ppca_pose_scores_and_moments_no_contrast`. | 10 min |
-| 5 | `dense_dataset.py` (or `local_dataset.py`) | Turns a `CryoEMDataset` into the blocks `engine.py` consumes, then loops over them and assembles the M-step input. | 5 min |
-| 6 | `refinement_loop.py` | Multi-iteration driver: schedule, halfset gating, FSC checkpoints. | 5 min |
+| 5 | `dense_dataset.py` (or `scripts/lib/local_dataset.py`) | Turns a `CryoEMDataset` into the blocks `engine.py` consumes, then loops over them and assembles the M-step input. | 5 min |
+| 6 | `scripts/lib/refinement_loop.py` | Multi-iteration driver: schedule, halfset gating, FSC checkpoints. | 5 min |
 
 ---
 
@@ -78,17 +78,17 @@ switch from single-set to halfset).
 | `__init__.py` | Package docstring only; it re-exports nothing, so imports name their owner. |
 | `config.py` | `GeometryConfig`, `ScheduleConfig`, `ScoringConfig`, `PoseSelectionConfig` and `SparsePass2Config`. Regularization and postprocessing configs live in their respective modules. |
 | `state.py` | `PoseMarginalPPCAEMState` — pytree carried between iterations (μ, W, priors, schedule state). |
-| `schedule.py` | `PPCARefinementScheduleState` and the halfset-resolution gating decision. |
+| `scripts/lib/schedule.py` (a script library; no relax command imports it) | `PPCARefinementScheduleState` and the halfset-resolution gating decision. |
 | `mean_regularization.py` | `MeanRegularizationConfig`, `resolve_mean_precision`, RELION/K-class tau filter helpers. The mean row of the augmented system gets RELION-style tau regularization; the W rows keep the variance-style prior. |
 | `postprocess.py` | `PostprocessConfig` + `postprocess_ppca_half_volumes`. RELION-style soft mask + grid correction applied after the M-step. Marked clearly as a heuristic; the long-term target is masked-PCG. |
 | `diagnostics.py` | `build_iteration_diagnostics`, `resolve_image_scale_range`. Single home for the diagnostic-dict contract. |
 | `initialization.py` | `initialize_ppca_from_gt_volumes`, `loading_row_norm_variance_prior`, `volume_power_variance_prior` etc. |
 | `engine.py` | JIT-compiled E+M kernel: `fused_dense_pose_ppca_block` and `dense_pose_ppca_score_stats_blocked`. Shared by both flavors. |
 | `dense_dataset.py` | Dataset-facing dense-flavor iteration (`run_dense_ppca_fused_em_iteration`) + halfset wrapper + the dense block iterator. |
-| `local_dataset.py` | Dataset-facing exact-local-flavor iteration (`run_local_ppca_fused_em_iteration`) + halfset wrapper + the per-image bucket iterator. |
-| `refinement_loop.py` | `run_dense_ppca_refinement_loop` — the maintained dense multi-iteration driver and shared resolution gate. |
-| `fixture_validation.py` | Test fixtures shared with `tests/unit/ppca_refinement/`. |
-| `highres_refinement.py` | Top-p local hypothesis layout construction used by the dense-to-local workflow. |
+| `scripts/lib/local_dataset.py` (a script library; no relax command imports it) | Dataset-facing exact-local-flavor iteration (`run_local_ppca_fused_em_iteration`) + halfset wrapper + the per-image bucket iterator. |
+| `scripts/lib/refinement_loop.py` (a script library; no relax command imports it) | `run_dense_ppca_refinement_loop` — the maintained dense multi-iteration driver and shared resolution gate. |
+| `scripts/lib/fixture_validation.py` (a script library; no relax command imports it) | Test fixtures shared with `tests/unit/ppca_refinement/`. |
+| `scripts/lib/highres_refinement.py` (a script library; no relax command imports it) | Top-p local hypothesis layout construction used by the dense-to-local workflow. |
 | `pose_selection.py` | Top-p pose diagnostics: `TopPoseSelection`, pose-id packing, distinct top-pose selection, per-block top-p scores. |
 
 ---
@@ -104,15 +104,15 @@ from relax.ppca_refinement.dense_dataset import (
     run_dense_ppca_fused_em_iteration,         # dense flavor
     run_dense_ppca_halfset_fused_em_iteration, # gold-standard halfsets
 )
-from relax.ppca_refinement.local_dataset import (
+from scripts.lib.local_dataset import (
     run_local_ppca_fused_em_iteration,         # exact-local flavor
     run_local_ppca_halfset_fused_em_iteration,
 )
 # Multi-iteration loops
-from relax.ppca_refinement.refinement_loop import run_dense_ppca_refinement_loop
+from scripts.lib.refinement_loop import run_dense_ppca_refinement_loop
 # State + schedule
 from relax.ppca_refinement.state import PoseMarginalPPCAEMState
-from relax.ppca_refinement.schedule import PPCARefinementScheduleState
+from scripts.lib.schedule import PPCARefinementScheduleState
 # Configs
 from relax.ppca_refinement.config import (
     GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config,

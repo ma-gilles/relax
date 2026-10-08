@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from relax.diagnostics.global_winner_analysis import (
+from scripts.lib.global_winner_analysis import (
     analyze_summaries,
     load_recovar_summary,
     load_relion_summary,

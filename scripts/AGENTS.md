@@ -12,6 +12,7 @@ The root guide applies. Slurm requests in a script follow the owner's global ins
 | `render_benchmark_table.py`, `summarize_*_scorecard.py`, `summarize_em_k1_realdata_science_equivalence.py`, `masked_fsc.py`, `report_em_parity_progress.py`, `extract_em_parity_tables.py` | renderers of the tracked ledgers and scorecards |
 | `build_em_fixture_manifest.py` | writes `tests/fixtures/em_fixture_manifest.json`; the owner's instruction only |
 | `run_em_*_slurm.sh`, `run_em_*_slurm.py`, `run_vdam_*.sbatch`, `gpu_matrix/`, `polar/` | Slurm launchers |
+| `lib/` | library modules that only scripts and tests import (moved out of `relax/`, which no command of it reaches); imported as `scripts.lib.<module>` |
 | `run_*`, `analyze_*`, `audit_*`, `validate_*`, `compare_*`, `prepare_*` (about 180 files) | one-off experiment drivers and analyses; most are records of a past question |
 
 ## Rules

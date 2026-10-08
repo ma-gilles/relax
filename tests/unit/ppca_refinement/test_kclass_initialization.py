@@ -2,8 +2,11 @@ import pickle
 
 import numpy as np
 import pytest
-
 import recovar.core.fourier_transform_utils as ftu
+from helpers.float_compare import assert_matches
+from recovar.simulation import synthetic_dataset
+from recovar.utils import helpers as utils
+
 from relax.ppca_refinement.initialization import (
     initialize_ppca_from_gt_volumes,
     initialize_ppca_from_kclass_volumes,
@@ -14,11 +17,8 @@ from relax.ppca_refinement.initialization import (
     real_volume_to_centered_fourier_half,
     volume_power_variance_prior,
 )
-from relax.ppca_refinement.schedule import loading_subspace_agreement
-from recovar.simulation import synthetic_dataset
-from recovar.utils import helpers as utils
+from scripts.lib.schedule import loading_subspace_agreement
 from scripts.prepare_gt_weighted_ppca_init import prepare_gt_weighted_ppca_init
-from helpers.float_compare import assert_matches
 
 pytestmark = pytest.mark.unit
 

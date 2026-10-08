@@ -7,19 +7,19 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
-from relax.diagnostics.global_winner_analysis import (
+from relax.diagnostics.global_winner_summary import (
+    MAX_SUPPORTED_BYTES,
+    maybe_dump_global_winner_summary,
+)
+from scripts.analyze_k4_global_winner_summary import _dispatch_schedules_by_label
+from scripts.lib.global_winner_analysis import (
     RELION_DISPATCH_CAPTURE_PENDING,
     analyze_summaries,
     load_recovar_summary,
     load_relion_summary,
 )
-from scripts.analyze_k4_global_winner_summary import _dispatch_schedules_by_label
-from relax.diagnostics.global_winner_summary import (
-    MAX_SUPPORTED_BYTES,
-    maybe_dump_global_winner_summary,
-)
-from helpers.float_compare import assert_matches
 
 
 def _sha256(path: Path) -> str:
@@ -368,11 +368,11 @@ def test_relion_summary_binds_pending_capture_to_verified_schedule(monkeypatch, 
     shard.write_text(text)
     verified = []
     monkeypatch.setattr(
-        "relax.diagnostics.global_winner_analysis.load_relion_dispatch_schedule",
+        "scripts.lib.global_winner_analysis.load_relion_dispatch_schedule",
         lambda path: ("schedule", Path(path)),
     )
     monkeypatch.setattr(
-        "relax.diagnostics.global_winner_analysis.verify_relion_dispatch_schedule_oracle",
+        "scripts.lib.global_winner_analysis.verify_relion_dispatch_schedule_oracle",
         lambda loaded, oracle_dir: verified.append((loaded, oracle_dir)),
     )
 

@@ -18,8 +18,9 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.data_io.cryoem_dataset import load_dataset
+from recovar.utils.json_utils import to_jsonable
+
 from relax.ppca_refinement.config import (
     GeometryConfig,
     ScheduleConfig,
@@ -31,10 +32,6 @@ from relax.ppca_refinement.initialization import (
     pipeline_variance_W_prior,
     volume_power_variance_prior,
 )
-from relax.ppca_refinement.local_dataset import (
-    run_local_ppca_fused_em_iteration,
-    run_local_ppca_pose_scoring_iteration,
-)
 from relax.ppca_refinement.mean_regularization import (
     KCLASS_RELION_MINRES_MAP,
     MeanRegularizationConfig,
@@ -42,7 +39,17 @@ from relax.ppca_refinement.mean_regularization import (
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig
 from relax.sampling import get_relion_rotation_grid
-from recovar.utils.json_utils import to_jsonable
+from scripts.lib.local_dataset import (
+    run_local_ppca_fused_em_iteration,
+    run_local_ppca_pose_scoring_iteration,
+)
+from scripts.run_ppca_dense_from_init_npz import (
+    _half_size,
+    _load_init,
+    _load_noise_variance,
+    _load_simulation_info,
+    _regularization_penalty,
+)
 
 # Resume the same pipeline with its unchanged pose-layout and summary helpers.
 from scripts.run_ppca_dense_os_local_from_init_npz import (
@@ -52,13 +59,6 @@ from scripts.run_ppca_dense_os_local_from_init_npz import (
     _save_pose_npz,
     _top_p_subset_summary,
     _translations_from_source,
-)
-from scripts.run_ppca_dense_from_init_npz import (
-    _half_size,
-    _load_init,
-    _load_noise_variance,
-    _load_simulation_info,
-    _regularization_penalty,
 )
 
 

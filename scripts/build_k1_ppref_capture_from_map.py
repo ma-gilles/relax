@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 from recovar.utils import helpers
 
-from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
+from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
 MAGIC = b"RLNPPREFV1".ljust(16, b"\0")
 HEADER_WORDS = 16

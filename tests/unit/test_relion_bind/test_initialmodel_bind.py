@@ -410,7 +410,7 @@ class TestAutoRefineExpectedAccuracyBinding:
         }
         direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs)
         recovar_frame = np.stack([relion_volume_to_recovar(volume) for volume in references])
-        from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps_and_power
+        from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps_and_power
 
         builders = {
             "native": native_reference_to_relion_projector_half_maps_and_power,

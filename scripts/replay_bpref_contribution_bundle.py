@@ -12,15 +12,15 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from recovar.utils.file_hash import sha256_file
 
-from relax.diagnostics.bpref_contribution_replay import (
+from scripts.lib.bpref_contribution_replay import (
     BPrefAccumulatorReplay,
     accumulator_replay_metrics,
     load_bpref_contribution_bundle,
     replay_relion_double,
     summarize_bpref_contribution_bundle,
 )
-from recovar.utils.file_hash import sha256_file
 
 
 def parse_args(argv=None):
@@ -42,7 +42,6 @@ def _replay_gpu(
 ) -> BPrefAccumulatorReplay:
     import jax
     import jax.numpy as jnp
-
     from recovar import cuda_backproject
 
     if jax.default_backend() != "gpu":
@@ -132,8 +131,10 @@ def _comparison(replays, left_key, right_key):
 def _reconstruct_unregularized_map(replay, boundary):
     """Transfer one replay through the shared no-prior reconstruction path."""
 
-    from relax.helpers.half_volume_mstep import relion_x_half_volume_to_native_half
-    from relax.helpers.half_volume_mstep import enforce_relion_half_volume_x0_hermitian_host
+    from relax.helpers.half_volume_mstep import (
+        enforce_relion_half_volume_x0_hermitian_host,
+        relion_x_half_volume_to_native_half,
+    )
     from relax.refinement.mean_helpers import _reconstruct_volume_eager
 
     accumulator_shape = tuple(int(value) for value in np.asarray(boundary["volume_shape"]))

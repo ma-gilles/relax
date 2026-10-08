@@ -1,14 +1,15 @@
 import numpy as np
 import pytest
+from helpers.float_compare import assert_matches
 
-from relax.diagnostics.bpref_contribution_replay import (
+from scripts.lib.bpref_contribution_replay import (
     BPrefAccumulatorReplay,
     accumulator_replay_metrics,
     dense_fftw_half_rows,
-    native_current_fft_rows,
     exact_array_metrics,
     load_bpref_contribution_bundle,
     load_bpref_contribution_shard,
+    native_current_fft_rows,
     replay_relion_double,
     summarize_bpref_contribution_bundle,
 )
@@ -16,7 +17,6 @@ from scripts.replay_bpref_contribution_bundle import (
     _classify_replay_difference,
     _map_fsc_metrics,
 )
-from helpers.float_compare import assert_matches
 
 
 def _write_shard(

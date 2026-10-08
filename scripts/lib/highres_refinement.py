@@ -1,4 +1,7 @@
-"""High-resolution PPCA pose refinement over the K-class pose hierarchy."""
+"""High-resolution PPCA pose refinement over the K-class pose hierarchy.
+
+Script library: moved unchanged from relax/ppca_refinement/highres_refinement.py, which no relax command imports.
+"""
 
 from __future__ import annotations
 

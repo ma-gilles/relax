@@ -52,7 +52,7 @@ def test_unsupported_geometry_is_refused(kwargs, match):
 def test_setup_agrees_with_relion_to_double_precision(padding_factor):
     """Not bitwise across FFT implementations, but within a few ulp (RELION through the binding)."""
     pytest.importorskip("relax.relion_bind._relion_bind_core")
-    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps_and_power
+    from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps_and_power
 
     rng = np.random.default_rng(0)
     reference = rng.standard_normal((1, 32, 32, 32)).astype(np.float64)

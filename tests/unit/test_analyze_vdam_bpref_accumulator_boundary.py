@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics.bpref_contribution_replay import BPrefAccumulatorReplay
 from scripts.analyze_vdam_bpref_accumulator_boundary import (
     _geometry,
     _inline_projector_replays,
@@ -13,6 +12,7 @@ from scripts.analyze_vdam_bpref_accumulator_boundary import (
     _rank_particle_sources,
     _to_relion_bpref_frame,
 )
+from scripts.lib.bpref_contribution_replay import BPrefAccumulatorReplay
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

@@ -69,11 +69,11 @@ def analyze(
     from recovar.utils.helpers import load_relion_volume
 
     from relax.cuda import kernels as em_cuda_kernels
-    from relax.diagnostics.native_projector_setup import native_reference_to_relion_projector_half_maps
     from relax.helpers.fourier_window import make_fourier_window_indices_np
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
     from relax.helpers.projection import compute_relion_projector_projections_block
     from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
+    from scripts.lib.native_projector_setup import native_reference_to_relion_projector_half_maps
 
     with np.load(live_score_path, allow_pickle=False) as archive:
         live = {name: np.asarray(archive[name]) for name in archive.files}
