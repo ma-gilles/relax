@@ -608,7 +608,6 @@ class ReplayState:
     init_previous_best_rotation_eulers: Any | None = None
     # Per half, [N, 3] degrees: the input STAR's rlnAngle{Rot,Tilt,Psi}Prior, NaN where absent (None: no column).
     init_angle_priors: Any | None = None
-    preserve_initial_direction_prior: bool = False
     init_reference_real: Any | None = None
     init_relion_optics_group_count: Any | None = None
 

@@ -1,9 +1,9 @@
 """Admission of a run's RELION oracle inputs at the command (code rule 15).
 
 A captured follower dispatch schedule is admitted against its verified oracle directories and the particle
-order, the followers' topology is built from it, a perturbation replay's restart provenance is checked, and a
-frozen boundary is turned into what the replay source replays. The command (``relax.refinement.full_refinement``)
-calls these; the algorithm's modules never import them.
+order, the followers' topology is built from it, and a perturbation replay's restart provenance is checked. The
+command (``relax.refinement.full_refinement``) calls these; the algorithm's modules never import them. What a
+frozen boundary replays is ``RelionReplay.from_frozen_boundary``.
 """
 
 from pathlib import Path
@@ -186,30 +186,3 @@ def resolve_restart_provenance(args, *, log) -> RestartProvenance:
             "--perturb-replay-restart-state-iterations"
         )
     return RestartProvenance(iterations, path, sha256)
-
-
-def frozen_boundary_replay(frozen_boundary) -> dict:
-    """What a frozen boundary replays, as ``RelionReplay`` fields: its ``RefinementState`` fields (whose
-    presence also makes the source check that the scoring state is unchanged before the first iteration), and
-    (its fixed diagnostic arm only) its sealed sampling state and scoring context. Nothing without a boundary."""
-    if frozen_boundary is None:
-        return {}
-    sealed = frozen_boundary.fixed_diagnostic_arm
-    return dict(
-        frozen_refinement_state_fields=frozen_boundary.refinement_state_fields,
-        sealed_sampling_state=frozen_boundary.sampling_state if sealed else None,
-        sealed_scoring_context=(
-            {
-                "schema": frozen_boundary.schema,
-                "completed_relion_iteration": frozen_boundary.completed_relion_iteration,
-                "consumer_relion_iteration": frozen_boundary.consumer_relion_iteration,
-                "source_sha256": frozen_boundary.source_sha256,
-                "source_roles": frozen_boundary.source_roles,
-                "runtime_config": frozen_boundary.runtime_config,
-                "map_lineage": frozen_boundary.map_lineage,
-            }
-            if sealed
-            else None
-        ),
-    )
-

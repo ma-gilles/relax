@@ -1271,7 +1271,6 @@ def main(command=None):
             init_direction_prior=(
                 None if frozen_boundary is None else frozen_boundary.direction_prior_per_half
             ),
-            preserve_initial_direction_prior=frozen_boundary is not None,
         ),
         expected_accuracy=ExpectedAccuracyOptions(
             half1_base_order_local=particle_layout.accuracy_base_order_local,
@@ -1297,7 +1296,8 @@ def main(command=None):
             options=run_options,
             observer=observers.command_observer(args),
             source=RelionReplaySource.for_run(
-                RelionReplay(
+                RelionReplay.from_frozen_boundary(
+                    frozen_boundary,
                     perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                     perturb_replay_restart_state_iterations=restart_provenance.iterations,
                     replay_iteration_overrides=replay_iteration_overrides,
@@ -1307,7 +1307,6 @@ def main(command=None):
                     final_sampling_replay_relion_dir=final_replay.sampling_dir,
                     state_swap_probe=state_swap_probe,
                     follower_topology=follower_topology,
-                    **oracle_admission.frozen_boundary_replay(frozen_boundary),
                 ),
                 run_options,
             ),

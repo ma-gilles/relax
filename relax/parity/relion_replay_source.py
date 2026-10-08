@@ -86,6 +86,8 @@ class RelionReplay:
     and its ``frozen_refinement_state_fields`` (with them, the source checks, right before the first iteration
     scores, that the scoring state is the one bound before it). ``state_swap_probe``: the
     state-swap probe's settings (``relax.diagnostics.state_swap_probe.build_state_swap_probe``).
+    ``preserve_initial_direction_prior``: the run keeps its start-up direction priors (a frozen boundary's) instead
+    of reloading them from the STAR replay's model files.
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
     which particle in each iteration, ``--relion-dispatch-schedule``) and follower-scale replay
     (``relax.relion.relion_worker_scale.PreparedFollowerTopology``; None or no followers: none).
@@ -111,6 +113,7 @@ class RelionReplay:
     sealed_scoring_context: Any | None = None
     frozen_refinement_state_fields: Any | None = None
     state_swap_probe: dict | None = None
+    preserve_initial_direction_prior: bool = False
     follower_topology: Any | None = None
 
     def __post_init__(self):
@@ -122,6 +125,34 @@ class RelionReplay:
         if iterations and self.perturb_replay_relion_dir is None:
             raise ValueError("perturbation replay restart-state iterations require perturb_replay_relion_dir")
         object.__setattr__(self, "perturb_replay_restart_state_iterations", iterations)
+
+    @classmethod
+    def from_frozen_boundary(cls, frozen_boundary, **fields) -> RelionReplay:
+        """``fields`` and what a frozen boundary (``--frozen-boundary-dir``; None: none) replays: its
+        ``RefinementState`` fields (whose presence also makes the source check that the scoring state is
+        unchanged before the first iteration), its start-up direction priors, kept, and (its fixed diagnostic arm
+        only) its sealed sampling state and scoring context."""
+        if frozen_boundary is None:
+            return cls(**fields)
+        return cls(
+            **fields,
+            preserve_initial_direction_prior=True,
+            frozen_refinement_state_fields=frozen_boundary.refinement_state_fields,
+            sealed_sampling_state=frozen_boundary.sampling_state if frozen_boundary.fixed_diagnostic_arm else None,
+            sealed_scoring_context=(
+                {
+                    "schema": frozen_boundary.schema,
+                    "completed_relion_iteration": frozen_boundary.completed_relion_iteration,
+                    "consumer_relion_iteration": frozen_boundary.consumer_relion_iteration,
+                    "source_sha256": frozen_boundary.source_sha256,
+                    "source_roles": frozen_boundary.source_roles,
+                    "runtime_config": frozen_boundary.runtime_config,
+                    "map_lineage": frozen_boundary.map_lineage,
+                }
+                if frozen_boundary.fixed_diagnostic_arm
+                else None
+            ),
+        )
 
     @property
     def replays(self) -> bool:
@@ -535,7 +566,7 @@ class RelionReplaySource(InputSource):
             current_sigma_offset_angstrom=inputs.sigma_offset.shared_angstrom,
             current_sigma_offset_angstrom_per_half=inputs.sigma_offset.per_half_angstrom,
             direction_priors=direction_priors,
-            preserve_existing_direction_prior=options.replay.preserve_initial_direction_prior,
+            preserve_existing_direction_prior=self.replay.preserve_initial_direction_prior,
             dtype=_dense_global_scoring_dtype(),
             symmetry=options.symmetry.point_group,
         )
