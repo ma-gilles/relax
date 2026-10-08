@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.scoring import significance
+from relax.scoring import pass1_publish, significance
 
 pytestmark = pytest.mark.unit
 
@@ -32,7 +32,7 @@ def test_physical_pmax_preserves_active_bytes(active, tail):
 def test_any_over_leading_rows_matches_the_trimmed_reduction(active):
     mask = np.random.default_rng(31).uniform(size=(8, 6, 3)) < 0.2
     expected = np.any(mask[:active], axis=0)
-    actual = np.asarray(significance._any_over_leading_rows(jnp.asarray(mask), active))
+    actual = np.asarray(pass1_publish._any_over_leading_rows(jnp.asarray(mask), active))
     assert actual.dtype == np.bool_ and actual.shape == expected.shape
     assert_matches(actual, expected, strict=True)
 

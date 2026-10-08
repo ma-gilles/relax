@@ -17,7 +17,6 @@ import numpy as np
 from recovar.utils.nvtx_shim import nvtx
 
 from relax.diagnostics.coarse_gaussian_diagnostics import (
-    _maybe_dump_k_class_significance_batch,
     _maybe_dump_tree_rescore_batch,
     _significance_debug_dump_matches,
 )
@@ -55,14 +54,14 @@ from relax.scoring.coarse_gaussian_gemm import (
 )
 from relax.scoring.coarse_layout import compact_projection_window_positions, plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
-from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs
+from relax.scoring.pass1_publish import publish_batch
+from relax.scoring.pass1_results import BatchOutputs, OutputPlan, Pass1Outputs, ScoreDumpContext
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
     _relion_coarse_gaussian_gemm_scores_jit,
     _relion_coarse_normalized_cc_gemm_scores_jit,
     _update_logsumexp,
 )
-from relax.scoring.significant_samples import compact_significant_sample_indices_from_mask
 
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
 _COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = (
@@ -181,16 +180,6 @@ def _coarse_max_posterior_for_host(batch_weights, actual_batch_size):
     ]
 
 
-@jax.jit
-def _any_over_leading_rows(mask, n_rows):
-    """``jnp.any(mask[:n_rows], axis=0)`` with a runtime row count.
-
-    The count is an operand, so one program serves every batch tail.
-    """
-    active = jnp.arange(mask.shape[0]) < n_rows
-    return jnp.any(mask & active.reshape((-1,) + (1,) * (mask.ndim - 1)), axis=0)
-
-
 def _coarse_significance_support_audit_enabled(
     *,
     default: bool = False,
@@ -228,16 +217,6 @@ def _coarse_significance_support_audit_ids_enabled() -> bool:
     return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV)
 
 
-
-
-def _capture_offset_free_and_absolute_float32_scores(scores, log_score_offset):
-    """Capture native score margins before adding a large common offset."""
-
-    offset_free = np.asarray(scores, dtype=np.float32)
-    absolute = (
-        np.asarray(scores, dtype=np.float64) + np.asarray(log_score_offset, dtype=np.float64)
-    ).astype(np.float32)
-    return offset_free, absolute
 
 
 def _global_pass1_relion_projector_texture_enabled() -> bool:
@@ -893,10 +872,6 @@ def _compute_k_class_significance_batched(
     # Compact the coarse support mask on the device instead of pulling it
     # (ticket T13) whenever the ids are collected; every dense-mask
     # diagnostic keeps the host pull, checked per batch.
-    if collect_significance:
-        from relax.sparse_pass2.resident_significance import (
-            compact_batch_significance_classes,
-        )
     coarse_gaussian_full_to_compact = None
     coarse_gaussian_full_to_compact_np = None
     coarse_gaussian_score_indices = None
@@ -1369,231 +1344,24 @@ def _compute_k_class_significance_batched(
 
     _coarse_batch_starts = []
     _coarse_loop_t0 = time.time()
-    def _publish_batch(batch):
-        """Read one batch's pass-1 outputs back and store them in the per-image results.
-
-        The batch loop calls this for a batch once the next batch's operands are on the device, before
-        that batch's score program: the device scores this batch while the host prepares the next (a
-        dump batch publishes at once). ``batch`` holds the batch's device outputs and its place in the
-        image order.
-        """
-
-        if collect_significance:
-            if relion_f32_coarse_support_enabled:
-                outputs.relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(
-                    batch.sum_weight,
-                    dtype=np.float32,
-                )[:batch.actual_batch_size]
-                batch_pmax_host = np.asarray(batch.pmax, dtype=np.float32)[:batch.actual_batch_size]
-                if return_relion_f32_normalization:
-                    outputs.relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
-            device_significance_batch = not batch.debug_dump_enabled
-            if device_significance_batch:
-                # The mask stays on the device; only the per-image ids cross
-                # the bus.  ``sig_rot_any`` below is already a device
-                # reduction, so it is unaffected.
-                if not np.array_equal(
-                    np.asarray(batch.indices, dtype=np.int64),
-                    np.arange(batch.start_idx, batch.end_idx, dtype=np.int64),
-                ):
-                    raise RuntimeError(
-                        "the device significance compaction needs image batches in "
-                        "dataset order",
-                    )
-                batch_sig_mask_np = None
-                class_results = compact_batch_significance_classes(
-                    batch.sig_mask,
-                    n_classes=n_classes,
-                    actual_batch_size=batch.actual_batch_size,
-                    n_coarse_rot=n_rot,
-                    n_coarse_trans=n_trans,
-                    batch_n_sig=batch.n_sig if n_classes == 1 else None,
-                )
-                for class_index, (
-                    batch_device_counts,
-                    batch_device_polarity,
-                    batch_device_ids,
-                    _batch_device_rot_any,
-                ) in enumerate(class_results):
-                    outputs.device_significance_counts[class_index].append(batch_device_counts)
-                    outputs.device_significance_polarity[class_index].append(batch_device_polarity)
-                    outputs.device_significance_ids[class_index].append(batch_device_ids)
-                    outputs.device_significance_starts[class_index].append(int(batch.start_idx))
-            else:
-                batch_sig_mask_np = np.array(batch.sig_mask, dtype=bool, copy=True)
-            outputs.sig_rot_any |= np.asarray(
-                _any_over_leading_rows(batch.sig_rot_mask, batch.actual_batch_size),
-                dtype=bool,
-            ).reshape(n_classes, n_rot)
-            outputs.n_sig_all[batch.start_idx:batch.end_idx] = np.asarray(batch.n_sig, dtype=np.int32)[:batch.actual_batch_size]
-            outputs.cutoff_count_all[batch.start_idx:batch.end_idx] = np.asarray(
-                batch.cutoff_count,
-                dtype=np.int32,
-            )[:batch.actual_batch_size]
-        else:
-            batch_sig_mask_np = None
-            outputs.n_sig_all[batch.start_idx:batch.end_idx] = 0
-            outputs.cutoff_count_all[batch.start_idx:batch.end_idx] = 0
-
-        outputs.hard_assignment[batch.start_idx:batch.end_idx] = np.asarray(
-            batch.best_argmax,
-            dtype=np.int32,
-        )[:batch.actual_batch_size]
-        outputs.class_assignment[batch.start_idx:batch.end_idx] = np.asarray(
-            batch.best_class,
-            dtype=np.int32,
-        )[:batch.actual_batch_size]
-
-        # The exact scorers score without an image-energy offset.
-        log_score_offset = np.zeros(batch.batch_size, dtype=np.float64)
-        global_log_z_np = np.asarray(batch.global_log_z, dtype=np.float64)
-        best_score_np = np.asarray(batch.best_score, dtype=np.float64)
-        output_slice = slice(0, batch.actual_batch_size)
-        outputs.normalization_log_z[batch.start_idx:batch.end_idx] = global_log_z_np[output_slice]
-        outputs.normalization_log_evidence[batch.start_idx:batch.end_idx] = (
-            global_log_z_np[output_slice] + log_score_offset[output_slice]
-        )
-        outputs.log_evidence[batch.start_idx:batch.end_idx] = outputs.normalization_log_evidence[batch.start_idx:batch.end_idx].astype(score_real_dtype)
-        outputs.best_log_score[batch.start_idx:batch.end_idx] = (
-            best_score_np[output_slice] + log_score_offset[output_slice]
-        ).astype(score_real_dtype)
-        if relion_f32_coarse_support_enabled and collect_significance:
-            outputs.max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
-        else:
-            outputs.max_posterior[batch.start_idx:batch.end_idx] = np.exp(
-                best_score_np[output_slice] - global_log_z_np[output_slice]
-            ).astype(score_real_dtype)
-        for class_index, class_log_z in enumerate(batch.class_log_z_values):
-            outputs.class_log_evidence[class_index, batch.start_idx:batch.end_idx] = (
-                np.asarray(class_log_z, dtype=np.float64)[output_slice]
-                + log_score_offset[output_slice]
-            )
-        if return_class_best:
-            for class_index in range(n_classes):
-                offset_free, absolute = _capture_offset_free_and_absolute_float32_scores(
-                    batch.class_best_scores[class_index],
-                    log_score_offset,
-                )
-                outputs.class_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
-                outputs.class_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
-                outputs.class_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
-                    batch.class_best_argmaxes[class_index][output_slice],
-                    dtype=np.int32,
-                )
-        if return_class_second:
-            for class_index in range(n_classes):
-                offset_free, absolute = _capture_offset_free_and_absolute_float32_scores(
-                    batch.class_second_best_scores[class_index],
-                    log_score_offset,
-                )
-                outputs.class_second_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
-                outputs.class_second_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
-                outputs.class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
-                    batch.class_second_best_argmaxes[class_index][output_slice],
-                    dtype=np.int32,
-                )
-
-        if batch.debug_dump_enabled:
-            # Concatenate per-class per-block raw scores for the dump targets
-            # into per-class arrays of shape (n_targets, n_rot, n_trans).
-            target_scores_pre_prior_per_class = None
-            target_scores_with_prior_per_class = None
-            target_local_positions_for_dump = None
-            # The pass-1 program returns the target rows' scores; the loop pulls
-            # them from each block.
-            score_capture_mode = "pass1_program_target_rows"
-            if batch.dump_target_pre_prior_blocks_per_class is not None:
-                target_scores_pre_prior_per_class = [
-                    np.concatenate(blocks, axis=1) if blocks else None
-                    for blocks in batch.dump_target_pre_prior_blocks_per_class
-                ]
-                target_scores_with_prior_per_class = [
-                    np.concatenate(blocks, axis=1) if blocks else None
-                    for blocks in batch.dump_target_with_prior_blocks_per_class
-                ]
-                target_local_positions_for_dump = batch.dump_target_local_positions
-            _maybe_dump_k_class_significance_batch(
-                experiment_dataset=experiment_dataset,
-                indices=batch.indices,
-                n_classes=n_classes,
-                rotations=rotations,
-                translations=translations,
-                # ``batch_weights`` is the class-major concatenation of each class's
-                # weights on every route.
-                class_weight_mats=[
-                    np.asarray(
-                        batch.weights.reshape(
-                            batch.batch_size,
-                            n_classes,
-                            n_rot * n_trans,
-                        )[:, class_index, :],
-                        dtype=np.float64,
-                    )
-                    for class_index in range(n_classes)
-                ],
-                batch_sig_mask=batch_sig_mask_np,
-                batch_n_sig=np.asarray(batch.n_sig, dtype=np.int64),
-                hard_assignment_batch=np.asarray(batch.best_argmax, dtype=np.int64),
-                class_assignment_batch=np.asarray(batch.best_class, dtype=np.int64),
-                global_log_z=global_log_z_np,
-                class_log_z_values=batch.class_log_z_values,
-                best_score=best_score_np,
-                max_posterior=outputs.max_posterior[batch.start_idx:batch.end_idx],
-                rotation_log_prior_padded=rotation_log_prior_padded,
-                batch_translation_log_prior=batch.translation_log_prior,
-                class_log_priors=class_log_priors_np,
-                current_size=current_size,
-                adaptive_fraction=adaptive_fraction,
-                max_significants=max_significants,
-                target_local_positions=target_local_positions_for_dump,
-                target_scores_pre_prior_per_class=target_scores_pre_prior_per_class,
-                target_scores_with_prior_per_class=target_scores_with_prior_per_class,
-                # RELION's exact coarse operands: the Gaussian GEMM's, or the CC pass's.
-                coarse_gaussian_shifted_corrected=(
-                    batch.exact_cc_shifted if exact_cc_enabled else batch.coarse_gaussian_shifted_corrected
-                ),
-                coarse_gaussian_unshifted_corrected=(
-                    batch.exact_cc_operands.windowed_unshifted
-                    if exact_cc_enabled
-                    else batch.coarse_gaussian_unshifted_corrected
-                ),
-                coarse_gaussian_pixel_weight=(
-                    batch.exact_cc_pixel_weight if exact_cc_enabled else batch.coarse_gaussian_pixel_weight
-                ),
-                coarse_gaussian_initial_diff2=None if exact_cc_enabled else batch.coarse_gaussian_initial_diff2,
-                coarse_gaussian_score_indices=(
-                    exact_cc_score_indices if exact_cc_enabled else coarse_gaussian_score_indices
-                ),
-                translation_phase_source=translations_source,
-                relion_projector_half=relion_projector_half,
-                relion_projector_r_max=relion_projector_r_max,
-                projection_padding_factor=projection_padding_factor,
-                relion_f32_sum_weight=(
-                    batch.sum_weight if relion_f32_coarse_support_enabled else None
-                ),
-                relion_f32_significant_weight=(
-                    batch.significant_weight
-                    if relion_f32_coarse_support_enabled
-                    else None
-                ),
-                relion_f32_cutoff_count=(
-                    batch.cutoff_count if relion_f32_coarse_support_enabled else None
-                ),
-                score_capture_mode=score_capture_mode,
-                debug_iteration=debug_iteration,
-            )
-
-        if collect_significance and not device_significance_batch:
-            samples_per_class = n_rot * n_trans
-            for local_idx, global_idx in enumerate(batch.indices):
-                for class_index in range(n_classes):
-                    c0 = class_index * samples_per_class
-                    c1 = c0 + samples_per_class
-                    mask = batch_sig_mask_np[local_idx, c0:c1]
-                    outputs.significant_sample_indices[class_index][global_idx] = compact_significant_sample_indices_from_mask(
-                        mask,
-                    )
-
+    dump_context = ScoreDumpContext(
+        experiment_dataset=experiment_dataset,
+        rotations=rotations,
+        translations=translations,
+        translations_source=translations_source,
+        class_log_priors=class_log_priors_np,
+        rotation_log_prior_padded=rotation_log_prior_padded,
+        current_size=current_size,
+        adaptive_fraction=adaptive_fraction,
+        max_significants=max_significants,
+        debug_iteration=debug_iteration,
+        relion_projector_half=relion_projector_half,
+        relion_projector_r_max=relion_projector_r_max,
+        projection_padding_factor=projection_padding_factor,
+        exact_cc_enabled=exact_cc_enabled,
+        exact_cc_score_indices=exact_cc_score_indices,
+        coarse_gaussian_score_indices=coarse_gaussian_score_indices,
+    )
     pending_batch = None
     from relax.cuda.kernels import deferred_relion_preprocess_checks
 
@@ -1610,7 +1378,7 @@ def _compute_k_class_significance_batched(
                 f"batch {len(_coarse_batch_starts) - 1} (images {start_idx}-{end_idx - 1} of the pass, "
                 f"dataset images {int(indices[0])}-{int(indices[-1])})"
             )
-            # The outputs a batch has only on some routes; _publish_batch receives every name.
+            # The outputs a batch has only on some routes; publish_batch receives every name.
             batch_pmax = batch_weights = batch_sig_mask = batch_sig_rot_mask = batch_n_sig = batch_cutoff_count = None
             _batch_sum_weight = _batch_significant_weight = None
             exact_cc_operands = exact_cc_pixel_weight = exact_cc_shifted = None
@@ -1879,7 +1647,7 @@ def _compute_k_class_significance_batched(
                 else jnp.asarray(dump_target_local_positions, dtype=jnp.int32)
             )
             if pending_batch is not None:
-                _publish_batch(pending_batch)
+                publish_batch(pending_batch, outputs, output_plan, dump_context)
                 pending_batch = None
             pass1_state = _pass1_initial_state((neg_inf_f, zeros_f64, zeros_i32), n_classes)
             if coarse_gaussian_gemm_projection_cache is not None and not exact_cc_enabled:
@@ -2213,10 +1981,10 @@ def _compute_k_class_significance_batched(
             if defer_publish:
                 pending_batch = batch_outputs
             else:
-                _publish_batch(batch_outputs)
+                publish_batch(batch_outputs, outputs, output_plan, dump_context)
             start_idx = end_idx
         if pending_batch is not None:
-            _publish_batch(pending_batch)
+            publish_batch(pending_batch, outputs, output_plan, dump_context)
 
     if _coarse_batch_starts:
         _loop_end = time.time()

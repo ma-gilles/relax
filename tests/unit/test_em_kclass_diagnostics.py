@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
+import relax.diagnostics.coarse_gaussian_diagnostics as coarse_diagnostics
 import relax.helpers.oversampling as oversampling_mod
-import relax.scoring.significance as sig_mod
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics import coarse_gaussian_diagnostics
 from relax.diagnostics import iteration as debug_dumps
@@ -149,7 +149,7 @@ def test_significance_dump_work_is_gated_before_scoring(monkeypatch, tmp_path):
     ):
         monkeypatch.delenv(name, raising=False)
 
-    matches = sig_mod._significance_debug_dump_matches
+    matches = coarse_diagnostics._significance_debug_dump_matches
     assert not matches(current_size=32, debug_iteration=1)
 
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(tmp_path))
@@ -216,7 +216,7 @@ def test_kclass_dump_writes_operand_arrays_to_npz(monkeypatch, tmp_path):
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "2")
-    sig_mod._maybe_dump_k_class_significance_batch(
+    coarse_diagnostics._maybe_dump_k_class_significance_batch(
         experiment_dataset=experiment_dataset,
         indices=indices,
         n_classes=n_classes,
@@ -282,7 +282,7 @@ def test_kclass_significance_dump_iteration_gate_suppresses_other_iterations(mon
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "2")
 
-    sig_mod._maybe_dump_k_class_significance_batch(
+    coarse_diagnostics._maybe_dump_k_class_significance_batch(
         experiment_dataset=None,
         indices=None,
         n_classes=1,
@@ -318,7 +318,7 @@ def test_kclass_significance_dump_can_stop_after_durable_target(monkeypatch, tmp
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
 
     with pytest.raises(coarse_gaussian_diagnostics.SignificanceDumpComplete) as exc_info:
-        sig_mod._maybe_dump_k_class_significance_batch(
+        coarse_diagnostics._maybe_dump_k_class_significance_batch(
             experiment_dataset=SimpleNamespace(
                 dataset_indices=np.asarray([42], dtype=np.int64),
             ),
@@ -376,7 +376,7 @@ def test_kclass_significance_stop_respects_iteration_gate(monkeypatch, tmp_path)
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ITERATION", "3")
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "1")
 
-    sig_mod._maybe_dump_k_class_significance_batch(
+    coarse_diagnostics._maybe_dump_k_class_significance_batch(
         experiment_dataset=None,
         indices=None,
         n_classes=1,
@@ -602,7 +602,7 @@ def test_kclass_significance_dump_uses_original_index_mapper(monkeypatch, tmp_pa
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
     monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "42")
 
-    sig_mod._maybe_dump_k_class_significance_batch(
+    coarse_diagnostics._maybe_dump_k_class_significance_batch(
         experiment_dataset=experiment_dataset,
         indices=np.asarray([local_index], dtype=np.int64),
         n_classes=n_classes,

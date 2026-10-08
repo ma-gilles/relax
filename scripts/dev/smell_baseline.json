@@ -887,7 +887,7 @@
   "self-cast:relax.scoring.compact_candidates:build_compact_pair_index_arrays:pair_bucket_size",
   "self-cast:relax.scoring.compact_candidates:compact_pair_index_arrays_device:pair_bucket_size",
   "self-cast:relax.scoring.compact_candidates:compact_pair_index_arrays_device:parent_map",
-  "self-cast:relax.scoring.significance:_compute_k_class_significance_batched._publish_batch:global_idx",
+  "self-cast:relax.scoring.pass1_publish:publish_batch:global_idx",
   "self-cast:relax.scoring.significance:_compute_k_class_significance_batched:score_mode",
   "self-cast:relax.scoring.significance:_compute_k_class_significance_batched:translation_log_prior",
   "self-cast:relax.scoring.sparse_bucket_arrays:_bucket_pass2_inputs:bucket_size",

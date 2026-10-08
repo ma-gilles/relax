@@ -139,10 +139,8 @@ from relax.sampling import (
     rotation_grid_n_in_planes,
     rotation_grid_size,
 )
-from relax.scoring.significance import (
-    _capture_offset_free_and_absolute_float32_scores,
-    _compute_k_class_significance_batched,
-)
+from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
+from relax.scoring.significance import _compute_k_class_significance_batched
 
 pytestmark = pytest.mark.unit
 

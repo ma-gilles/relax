@@ -1223,8 +1223,8 @@ cost +7% on plain 10k K=1 (208 -> 223 s) and +26% on ribosome K4 100k (1552 -> 1
 Pass-1 batch loop (2026-10-04, speedw; relax 0ae37fd, 54cbb65, 4efac62, 3636596): after the score program, one
 program per batch (`coarse_publication.coarse_support_posterior`) forms the K=1 RELION-order log weights, the float32
 posterior, the winner, Pmax and the rotation mask; the device CTF row gather is one program
-(`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`_publish_batch` in
-`significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
+(`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`publish_batch` in
+`relax/scoring/pass1_publish.py`, called by `significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
 before that batch's score program, and the image preprocess kernel's finite check is read at the end of the loop
 (`kernels.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
 check's queue belongs to the loop: a failure names pass 1 and each batch with an invalid image (batch number, positions

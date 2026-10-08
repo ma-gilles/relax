@@ -40,22 +40,20 @@ device scoring (`defer_publish`).
    output buffers, operand preparation, the score-program driver, the tree rescore, the posterior and support
    stage, publishing, and the post-loop assembly are one body. Mode (Gaussian or normalized CC) is a flag tested about
    ten times, with `coarse_gaussian_*` and `exact_cc_*` locals set on one route only.
-2. **A 34-field tuple and a closure instead of records (rule 10).** Twelve of the fields are filled only for a dump
-   batch; the `None`s are how a waiting batch avoids holding the large score and operand arrays (rule 3).
-3. **The environment steers pass 1 below the boundary (rule 5).** `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the
+2. **The environment steers pass 1 below the boundary (rule 5).** `RECOVAR_K1_RELION_F32_COARSE_SUPPORT` (selects the
    generic support route), `RELAX_K1_COARSE_ROTATED_RADIUS`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH` (also the parameter
    `pad_final_image_batch`: two owners), `RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP` (its only effect is a
    refusal), `RELAX_DENSE_MEANS_SCALE`, the projection-cache variables (they change `rotation_block_size`), and the
    support-audit and dump variables.
-4. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing;
+3. **A diagnostic steers execution (rule 9).** A dump batch switches off device compaction and deferred publishing;
    `significance.py` imports `relax.diagnostics` directly.
-5. **Dead inputs and arms (rule 7).** `disc_type`, `do_gridding_correction`, `means`; the arms that
+4. **Dead inputs and arms (rule 7).** `disc_type`, `do_gridding_correction`, `means`; the arms that
    `_require_exact_pass1_operands` makes unreachable.
-6. **Results as a dict and a positional 6-tuple (rules 8, 10).**
-7. **Layer leak (rule 11).** Pass 1 imports four `relax/sparse_pass2` modules (private names among them:
+5. **Results as a dict and a positional 6-tuple (rules 8, 10).**
+6. **Layer leak (rule 11).** Pass 1 imports four `relax/sparse_pass2` modules (private names among them:
    `_relion_cuda_powerclass_highres_xi2_half`, `_relion_translation_angles_f32`, `_relion_f32_fine_posterior`,
    `_relion_cuda_fine_full_to_compact_lookup`).
-8. **A source-reading test pins the function (rule 13).** `tests/unit/test_adaptive_oversampling.py`
+7. **A source-reading test pins the function (rule 13).** `tests/unit/test_adaptive_oversampling.py`
    (`_production_batch_size`).
 
 ## Noticed, not changed (a refactor does not fix behaviour)

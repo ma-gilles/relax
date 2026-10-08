@@ -31,8 +31,37 @@ class OutputPlan:
 
 
 @dataclass(frozen=True)
+class ScoreDumpContext:
+    """What the score dump of a pass reads besides the batch: the call's own inputs, fixed for the pass.
+
+    ``RELAX_SIGNIFICANCE_DUMP_*`` writes the scores and operands of chosen images
+    (:func:`relax.diagnostics.coarse_gaussian_diagnostics._maybe_dump_k_class_significance_batch`). The dump only
+    observes; nothing here steers the pass. ``exact_cc_enabled`` says which operand set the dump records: the
+    normalized CC's (``exact_cc_score_indices``) or the Gaussian GEMM's (``coarse_gaussian_score_indices``, ``None``
+    off the Gaussian route).
+    """
+
+    experiment_dataset: Any
+    rotations: Any
+    translations: Any
+    translations_source: Any
+    class_log_priors: np.ndarray  # float64 [K]
+    rotation_log_prior_padded: Any
+    current_size: int | None
+    adaptive_fraction: float
+    max_significants: int
+    debug_iteration: int | None
+    relion_projector_half: Any
+    relion_projector_r_max: int | None
+    projection_padding_factor: int
+    exact_cc_enabled: bool
+    exact_cc_score_indices: Any
+    coarse_gaussian_score_indices: Any
+
+
+@dataclass(frozen=True)
 class BatchOutputs:
-    """One image batch's outputs of pass 1, from the end of its score program until its host read-back.
+    """One image batch's outputs of pass 1, from the end of its score program until ``publish_batch`` reads it back.
 
     ``batch_size`` rows were scored (``actual_batch_size`` of them are images of the pass: a short last batch is
     repeat-padded); the pass's images ``start_idx:end_idx`` are ``indices``. Arrays stay on the device; a field
@@ -86,7 +115,7 @@ class BatchOutputs:
 class Pass1Outputs:
     """The per-image results of one pass 1: arrays allocated once for the pass and filled batch by batch.
 
-    ``_publish_batch`` writes rows ``start_idx:end_idx`` of every array in place; nothing else writes them. Rows are
+    ``publish_batch`` writes rows ``start_idx:end_idx`` of every array in place; nothing else writes them. Rows are
     images in the order of the pass; ``K`` is the number of classes, ``R`` the number of coarse rotations. Arrays are
     ``np.empty`` until their rows are published. The class arrays and the float32 arrays exist only on the routes
     that return them (the other fields are ``None``).
