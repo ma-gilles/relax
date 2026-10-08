@@ -2634,7 +2634,7 @@ def _resident_pass2(
             "the K-class resident pass has no zero-oversampling coarse reuse",
         )
 
-    n_images = experiment_dataset.n_units
+    n_images = int(experiment_dataset.n_units)
     # Subtomogram particles (S4.2, resident_tilts): the posterior unit is the particle; the dataset's
     # rows are its tilt images. The candidate tables and the statistics are per particle.
     n_units = n_images if tilt is None else int(np.asarray(tilt.unit_image_offsets).size - 1)

@@ -327,7 +327,6 @@ def expand_local_chunk_mask_jnp(row_mask_bits, *, n_trans: int):
     row_mask_bits = jnp.asarray(row_mask_bits, dtype=jnp.uint8)
     if row_mask_bits.ndim != 2:
         raise ValueError(f"row_mask_bits must be 2-D, got {row_mask_bits.shape}")
-    n_trans = int(n_trans)
     trans = jnp.arange(n_trans, dtype=jnp.int32)
     byte_index = trans // jnp.int32(8)
     bit_index = (trans % jnp.int32(8)).astype(jnp.uint8)
@@ -355,10 +354,10 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
     ``row_is_valid`` mask.
     """
 
-    row_capacity = int(chunk.row_capacity)
-    image_capacity = int(chunk.image_capacity)
-    n_valid_rows = int(chunk.n_valid_rows)
-    n_valid_images = int(chunk.n_valid_images)
+    row_capacity = chunk.row_capacity
+    image_capacity = chunk.image_capacity
+    n_valid_rows = chunk.n_valid_rows
+    n_valid_images = chunk.n_valid_images
     if n_valid_rows > row_capacity:
         raise ValueError(f"chunk has {n_valid_rows} valid rows but capacity {row_capacity}")
     if n_valid_images > image_capacity:

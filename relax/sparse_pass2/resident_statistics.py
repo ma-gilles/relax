@@ -225,7 +225,6 @@ def resident_image_capacity(n_images: int) -> int:
     chunk addresses: chunk image slots are real image ids or negative.
     """
 
-    n_images = int(n_images)
     if n_images <= 0:
         raise ValueError(f"n_images must be positive, got {n_images}")
     octave = pow2_floor(n_images)
@@ -328,7 +327,6 @@ def resolve_statistics_config(
     norm reduction.
     """
 
-    source_faithful_spectrum_norm = bool(source_faithful_spectrum_norm)
     deterministic_norm_reduction = source_faithful_spectrum_norm or parse_env_flag(
         "RELAX_K1_RELION_DETERMINISTIC_NORM_REDUCTION",
         default=False,
@@ -368,7 +366,7 @@ def make_resident_statistics(
     """
 
     capacity = int(config.image_capacity)
-    n_classes = int(config.n_classes)
+    n_classes = config.n_classes
     zeros_images = jnp.zeros(capacity, dtype=jnp.float64)
     groups = () if int(config.n_optics_groups) == 1 else (int(config.n_optics_groups),)
     return ResidentStatistics(
@@ -413,7 +411,6 @@ def segment_sum_by_image(
 
     values = jnp.asarray(values)
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
-    image_capacity = int(image_capacity)
     if deterministic_reductions_enabled():
         moved = jnp.moveaxis(values, 0, -1)
         return jnp.moveaxis(fixed_order_segment_sum(moved, row_image_local, image_capacity), -1, 0)
@@ -512,8 +509,6 @@ def _accumulate_chunk_statistics_jit(
 ) -> ResidentStatistics:
     """The single traced program; see :func:`accumulate_chunk_statistics`."""
 
-    n_fine_trans = int(config.n_fine_trans)
-    n_shells = int(config.n_shells)
     image_capacity = int(operands.image_ids.shape[0])
 
     probs = operands.row_posterior
@@ -576,7 +571,7 @@ def _accumulate_chunk_statistics_jit(
         operands.ctf_probs,
         tables.noise_variance,
         tables.shell_indices_noise,
-        n_shells,
+        config.n_shells,
         return_split=False,
     )
 
@@ -591,7 +586,7 @@ def _accumulate_chunk_statistics_jit(
                 operands.wavg_triplet_pixels[:, :, 2],
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
-                shell_count=n_shells,
+                shell_count=config.n_shells,
             )
         )
     else:
@@ -719,7 +714,7 @@ def _accumulate_chunk_statistics_jit(
 
     safe_row = jnp.clip(best_row_local, 0, max(int(operands.row_fine_rot.shape[0]) - 1, 0))
     best_fine_rot = jnp.asarray(operands.row_fine_rot, dtype=jnp.int64)[safe_row]
-    best_cell_values = best_fine_rot * jnp.int64(n_fine_trans) + best_translation.astype(jnp.int64)
+    best_cell_values = best_fine_rot * jnp.int64(config.n_fine_trans) + best_translation.astype(jnp.int64)
     best_cell = stats.best_cell.at[image_slot].set(best_cell_values, mode="drop")
     best_local_rot = stats.best_local_rot.at[image_slot].set(local_rot, mode="drop")
 
@@ -837,7 +832,7 @@ def finalize_statistics(
             f"Resident pass-2 statistics: {invalid} image(s) selected a candidate row outside "
             "their own row range; the chunk's best-row operand points into padding"
         )
-    n_fine_trans = int(config.n_fine_trans)
+    n_fine_trans = config.n_fine_trans
     (
         wsum_sigma2_noise,
         wsum_img_power,
@@ -856,7 +851,6 @@ def finalize_statistics(
         _,
         classes,
     ) = jax.device_get(tuple(stats))
-    n_images = int(n_images)
     if not 0 < n_images <= int(config.image_capacity):
         raise ValueError(f"n_images {n_images} outside the accumulators' capacity {config.image_capacity}")
     norm_correction, log_evidence, best_log_score, max_posterior, best_cell, score_log_z, best_local_rot = (
@@ -881,11 +875,10 @@ def finalize_statistics(
         best_local_rot * n_fine_trans + best_translation_indices,
     ).astype(np.int32)
 
-    n_classes = int(config.n_classes)
     rotation_posterior_sums = np.asarray(rotation_posterior_sums, dtype=np.float64)
     finalized_classes = None
-    if n_classes > 1:
-        rotation_posterior_sums = rotation_posterior_sums.reshape(n_classes, -1)
+    if config.n_classes > 1:
+        rotation_posterior_sums = rotation_posterior_sums.reshape(config.n_classes, -1)
         class_best_cell = np.asarray(classes.best_cell, dtype=np.int64)[:n_images].T
         finalized_classes = FinalizedClassStatistics(
             log_evidence=np.asarray(classes.log_evidence, dtype=np.float64)[:n_images].T,

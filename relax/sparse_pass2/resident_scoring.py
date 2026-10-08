@@ -187,9 +187,6 @@ def resident_operand_bytes(
     rounding error next to them.
     """
 
-    n_images = int(n_images)
-    n_score_pixels = int(n_score_pixels)
-    n_fine_trans = int(n_fine_trans)
     parts = {
         "score_input": n_images * n_score_pixels * int(score_complex_bytes),
         "corr_img_score": n_images * n_score_pixels * int(real_bytes),
@@ -248,7 +245,6 @@ def prepare_resident_image_operands(
     n_images = int(image_indices.shape[0])
     if n_images == 0:
         raise ValueError("prepare_resident_image_operands needs at least one image")
-    image_batch_size = int(image_batch_size)
     if image_batch_size <= 0:
         raise ValueError(f"image_batch_size must be positive, got {image_batch_size}")
     if "return_direct_scoring_io" in bucket_io_kwargs:
@@ -1190,7 +1186,6 @@ def live_projection_block_rows(row_capacity: int, max_projected_rotations: int) 
     call (bigbox 14684083).
     """
 
-    row_capacity = int(row_capacity)
     max_rows = max(int(max_projected_rotations), 1)
     if row_capacity <= 0:
         return 1
@@ -1350,12 +1345,12 @@ def materialize_chunk_device(tables: ResidentCandidateTables, chunk: CapacityChu
 
 def score_all_chunks(
     tables: ResidentCandidateTables,
-    chunks,
+    chunks: list[CapacityChunk],
     operands: ResidentImageOperands,
     projection_score_cache,
     fine_translation_parent,
     *,
-    chunk_arrays=None,
+    chunk_arrays: list | None = None,
 ):
     """Score every chunk of one half, one device program per chunk.
 
@@ -1365,10 +1360,8 @@ def score_all_chunks(
     :class:`ResidentChunkScores` per chunk, in chunk order.
     """
 
-    chunks = list(chunks)
     if chunk_arrays is None:
         chunk_arrays = [materialize_chunk_device(tables, chunk) for chunk in chunks]
-    chunk_arrays = list(chunk_arrays)
     if len(chunk_arrays) != len(chunks):
         raise ValueError("chunk_arrays must have one entry per chunk")
 

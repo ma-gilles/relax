@@ -421,7 +421,6 @@ def resident_half_operand_avals(
     Nothing here allocates or touches a device buffer.
     """
 
-    n_images = int(n_images)
     capacity = resident_image_capacity(n_images)
     score_shape = (capacity, int(n_score_pixels))
     recon_shape = (capacity, int(n_recon_pixels))

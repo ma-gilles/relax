@@ -85,7 +85,6 @@ _MASK_WORD_BITS = 32
 def n_mask_words(n_coarse_trans: int) -> int:
     """uint32 words per coarse-translation bitset (at least one)."""
 
-    n_coarse_trans = int(n_coarse_trans)
     if n_coarse_trans <= 0:
         raise ValueError(f"n_coarse_trans must be positive, got {n_coarse_trans}")
     return -(-n_coarse_trans // _MASK_WORD_BITS)
@@ -226,17 +225,15 @@ class CapacityChunk:
 
 def chunk_segment_offsets(tables, chunk, *, n_fine_trans: int) -> np.ndarray:
     """Cell offsets by image slot; padded slots repeat the valid end offset."""
-    image_capacity = int(chunk.image_capacity)
-    n_valid_images = int(chunk.n_valid_images)
-    offsets = np.full(image_capacity + 1, chunk.n_valid_rows * int(n_fine_trans), dtype=np.int64)
+    offsets = np.full(chunk.image_capacity + 1, chunk.n_valid_rows * int(n_fine_trans), dtype=np.int64)
     starts = (
         np.asarray(
-            tables.row_offsets[chunk.image_start : chunk.image_start + n_valid_images + 1],
+            tables.row_offsets[chunk.image_start : chunk.image_start + chunk.n_valid_images + 1],
             dtype=np.int64,
         )
         - int(chunk.row_start)
     ) * int(n_fine_trans)
-    offsets[: n_valid_images + 1] = starts
+    offsets[: chunk.n_valid_images + 1] = starts
     if int(offsets[-1]) > int(chunk.row_capacity) * int(n_fine_trans):
         raise ValueError("chunk segment offsets exceed the chunk's cell capacity")
     return offsets.astype(np.int32)
@@ -313,9 +310,7 @@ def build_resident_candidate_tables(
     mask expands against the same array.
     """
 
-    n_coarse_trans = int(n_coarse_trans)
     n_words = n_mask_words(n_coarse_trans)
-    n_fine_trans = int(n_fine_trans)
     fine_translation_parent = np.asarray(fine_translation_parent)
     if fine_translation_parent.shape != (n_fine_trans,):
         raise ValueError(
@@ -429,7 +424,7 @@ def map_over_classes(function, items) -> list:
         return list(pool.map(function, items))
 
 
-def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
+def merge_class_tables(tables_by_class: list[ResidentCandidateTables]) -> ResidentCandidateTables:
     """One K-class candidate table from K single-class tables of the same images.
 
     Each class's table holds that class's rows (its own significant coarse
@@ -444,7 +439,6 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
     all-clear ones, so a row's mask never depends on another class's mode.
     """
 
-    tables_by_class = list(tables_by_class)
     n_classes = len(tables_by_class)
     if n_classes == 0:
         raise ValueError("merge_class_tables needs at least one class table")
@@ -456,7 +450,7 @@ def merge_class_tables(tables_by_class) -> ResidentCandidateTables:
             first.n_coarse_trans,
         ):
             raise ValueError("class tables must cover the same images and translation grids")
-    n_images = int(first.n_images)
+    n_images = first.n_images
     n_words = n_mask_words(first.n_coarse_trans)
     image_ids = np.arange(n_images, dtype=np.int64)
 
@@ -577,19 +571,18 @@ def coarse_winner_cells(
     refuses a winner that is not a unique, selected candidate.
     """
 
-    n_coarse_trans = int(tables.n_coarse_trans)
     poses = np.asarray(coarse_pose_ids)
     if poses.shape != (tables.n_images,) or not np.all(np.isfinite(poses)):
         raise ValueError("coarse winners must be one finite pose ID per image")
     if np.any(poses < 0) or not np.array_equal(poses, poses.astype(np.int64)):
         raise ValueError("coarse winners must be nonnegative integer pose IDs")
-    winner_rot, winner_trans = np.divmod(poses.astype(np.int64), n_coarse_trans)
+    winner_rot, winner_trans = np.divmod(poses.astype(np.int64), tables.n_coarse_trans)
 
     fine_translation_parent = np.asarray(fine_translation_parent, dtype=np.int64)
-    trans_children = np.bincount(fine_translation_parent, minlength=n_coarse_trans)
-    if trans_children.size != n_coarse_trans or np.any(trans_children != 1):
+    trans_children = np.bincount(fine_translation_parent, minlength=tables.n_coarse_trans)
+    if trans_children.size != tables.n_coarse_trans or np.any(trans_children != 1):
         raise ValueError("zero-oversampling coarse winners need exactly one fine child per coarse translation")
-    fine_of_coarse_trans = np.empty(n_coarse_trans, dtype=np.int64)
+    fine_of_coarse_trans = np.empty(tables.n_coarse_trans, dtype=np.int64)
     fine_of_coarse_trans[fine_translation_parent] = np.arange(fine_translation_parent.size, dtype=np.int64)
 
     row_image = np.asarray(tables.row_unit, dtype=np.int64)
@@ -624,7 +617,6 @@ def expand_mask_rows(tables: ResidentCandidateTables, image: int, fine_translati
     kernel must reproduce.
     """
 
-    image = int(image)
     start, stop = int(tables.row_offsets[image]), int(tables.row_offsets[image + 1])
     n_rows_i = stop - start
     fine_translation_parent = np.asarray(fine_translation_parent)
@@ -658,7 +650,6 @@ def expand_mask_jnp(tables: ResidentCandidateTables, image: int, fine_translatio
 
     import jax.numpy as jnp
 
-    image = int(image)
     start, stop = int(tables.row_offsets[image]), int(tables.row_offsets[image + 1])
     n_rows_i = stop - start
     fine_translation_parent = jnp.asarray(fine_translation_parent, dtype=jnp.uint32)
@@ -993,7 +984,6 @@ class CandidateTableBlocks:
     def block_tables(self, block: int) -> ResidentCandidateTables:
         """Block ``block``'s tables (block-local numbering), built on first use."""
 
-        block = int(block)
         if block not in self._built:
             start, stop = int(self.block_starts[block]), int(self.block_starts[block + 1])
             tables = self.build_block(start, stop)
@@ -1039,8 +1029,8 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     fields to 0 is a safety margin, not a correctness requirement.
     """
 
-    row_capacity = int(chunk.row_capacity)
-    image_capacity = int(chunk.image_capacity)
+    row_capacity = chunk.row_capacity
+    image_capacity = chunk.image_capacity
     n_valid_rows = chunk.n_valid_rows
     n_valid_images = chunk.n_valid_images
     if n_valid_rows > row_capacity:

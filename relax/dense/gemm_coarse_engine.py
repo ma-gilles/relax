@@ -636,7 +636,7 @@ def _finalize_dense_result(state, numerator, denominator, stats, stats_config, b
             y, w = relion_x_half_accumulators_to_public_layout(y, w, bp_shape)
             final_y.append(y)
             final_w.append(w)
-    finalized = finalize_statistics(stats, config=stats_config, n_images=state.dataset.n_units)
+    finalized = finalize_statistics(stats, config=stats_config, n_images=int(state.dataset.n_units))
     noise = make_noise_stats(
         wsum_sigma2_noise=finalized.wsum_sigma2_noise,
         wsum_img_power=finalized.wsum_img_power,

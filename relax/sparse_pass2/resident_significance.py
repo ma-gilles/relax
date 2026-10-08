@@ -93,7 +93,6 @@ _compact_jitted = None
 def csr_capacity_for_total(total: int) -> int:
     """Smallest power-of-two id capacity that holds ``total`` compact ids."""
 
-    total = int(total)
     if total < 0:
         raise ValueError("compact id total must be non-negative")
     return max(_MIN_CSR_CAPACITY, pow2_ceil(total))
@@ -223,7 +222,6 @@ class CoarseSignificanceCSR:
         return np.diff(self.offsets).astype(np.int32, copy=False)
 
     def image_ids(self, image: int) -> np.ndarray:
-        image = int(image)
         return self.ids[int(self.offsets[image]) : int(self.offsets[image + 1])]
 
     def image_block(self, start: int, stop: int) -> "CoarseSignificanceCSR":
@@ -320,10 +318,6 @@ def compact_batch_significance_classes(
     import jax
     import jax.numpy as jnp
 
-    n_classes = int(n_classes)
-    n_coarse_rot = int(n_coarse_rot)
-    n_coarse_trans = int(n_coarse_trans)
-    actual_batch_size = int(actual_batch_size)
     mask = jnp.asarray(batch_sig_mask)
     if mask.ndim != 2:
         raise ValueError(f"coarse significance mask must be rank 2, got {mask.shape}")
@@ -400,16 +394,12 @@ def build_coarse_significance_csr(
     n_images: int,
     n_coarse_rot: int,
     n_coarse_trans: int,
-    n_significant_per_batch,
-    store_excluded_per_batch,
-    ids_per_batch,
+    n_significant_per_batch: list[np.ndarray],
+    store_excluded_per_batch: list[np.ndarray],
+    ids_per_batch: list[np.ndarray],
 ) -> CoarseSignificanceCSR:
     """Assemble one half's CSR from the per-batch compaction results."""
 
-    n_images = int(n_images)
-    n_significant_per_batch = list(n_significant_per_batch)
-    store_excluded_per_batch = list(store_excluded_per_batch)
-    ids_per_batch = list(ids_per_batch)
     n_significant = (
         np.concatenate([np.asarray(c, dtype=np.int32) for c in n_significant_per_batch])
         if n_significant_per_batch
@@ -595,7 +585,6 @@ def fine_rotation_children(
     alone, which is why one table serves every image.
     """
 
-    n_coarse_rot = int(n_coarse_rot)
     if fine_rotation_parent_override is not None:
         parent = np.asarray(fine_rotation_parent_override, dtype=np.int64).reshape(-1)
         if parent.size and (int(parent.min()) < 0 or int(parent.max()) >= n_coarse_rot):
@@ -643,7 +632,6 @@ def csr_candidate_rows_per_image(
     temporaries stay bounded however dense the support is.
     """
 
-    n_images = int(csr.n_images)
     child_counts = np.diff(np.asarray(child_offsets, dtype=np.int64))
     if child_counts.shape != (int(csr.n_coarse_rot),):
         raise ValueError("child_offsets must cover every coarse rotation")
@@ -722,11 +710,10 @@ def build_resident_candidate_tables_from_csr(
     concatenated CSR.
     """
 
-    n_images = int(csr.n_images)
-    n_coarse_rot = int(csr.n_coarse_rot)
-    n_coarse_trans = int(csr.n_coarse_trans)
+    n_images = csr.n_images
+    n_coarse_rot = csr.n_coarse_rot
+    n_coarse_trans = csr.n_coarse_trans
     n_words = n_mask_words(n_coarse_trans)
-    n_fine_trans = int(n_fine_trans)
     fine_translation_parent = np.asarray(fine_translation_parent)
     if fine_translation_parent.shape != (n_fine_trans,):
         raise ValueError(
