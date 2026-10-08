@@ -452,7 +452,6 @@ def relion_fftw_order_for_square_score_window(image_shape, current_size, score_i
     """
 
     height, width = (int(image_shape[0]), int(image_shape[1]))
-    current_size = int(current_size)
     if height != width:
         raise ValueError(f"RELION square score order requires a square image, got {image_shape}")
     if current_size <= 0 or current_size > height or current_size % 2:
@@ -618,9 +617,6 @@ def stable_fourier_window_current_size(
     reconstruction support decisions.
     """
 
-    current_size = int(current_size)
-    box_size = int(box_size)
-    quantum = int(quantum)
     if box_size < 4 or box_size % 2:
         raise ValueError(f"box_size must be an even integer >= 4, got {box_size}")
     if current_size <= 0 or current_size > box_size or current_size % 2:
@@ -687,7 +683,6 @@ def make_stable_fourier_window_shape_plan(
     )
     if enabled and physical_current_size is not None:
         quantized = stable_fourier_window_current_size(logical_current_size, image_shape[0], quantum=quantum)
-        physical_current_size = int(physical_current_size)
         if (
             logical_reconstruction_current_size != logical_current_size
             or physical_current_size % 2

@@ -365,7 +365,6 @@ def relion_coarse_relabel(box_size: int, window: int, r_max: int, pixel_indices=
     """
 
     n = int(box_size)
-    window = int(window)
     max_r = min(int(r_max), window // 2)
     if window // 2 <= max_r:
         return None
@@ -507,7 +506,6 @@ def _texture_centered_crop_to_full_jit(
     projector_output_size: int,
     mask_current_image_disk: bool,
 ):
-    box_size = int(box_size)
     crop_size = int(projector_output_size)
     crop = projection_crop.reshape((projection_crop.shape[0], crop_size, crop_size // 2 + 1))
     crop_rows = jnp.arange(crop_size, dtype=jnp.int32)
@@ -1343,8 +1341,6 @@ def compact_relion_projector_half_for_centered_indices(
             "RELION projector compaction expects one (z, y, x-half) slab, "
             f"got {projector_half.shape}",
         )
-    r_max = int(r_max)
-    padding_factor = int(padding_factor)
     if r_max <= 0 or padding_factor <= 0:
         raise ValueError(
             f"r_max and padding_factor must be positive, got {r_max} and {padding_factor}",

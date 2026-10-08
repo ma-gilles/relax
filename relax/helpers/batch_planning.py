@@ -350,11 +350,6 @@ def _plan_consecutive_padded_batches(
     if not np.array_equal(np.sort(processing_order), np.arange(n_items, dtype=np.int64)):
         raise ValueError("processing_order must be a permutation of item indices")
 
-    target_items_per_batch = int(target_items_per_batch)
-    max_items_per_batch = int(max_items_per_batch)
-    max_padded_values_per_batch = int(max_padded_values_per_batch)
-    values_per_padded_size = int(values_per_padded_size)
-    item_alignment = int(item_alignment)
     if target_items_per_batch <= 0 or max_items_per_batch <= 0:
         raise ValueError("batch item limits must be positive")
     if max_padded_values_per_batch <= 0 or values_per_padded_size <= 0:
@@ -532,7 +527,6 @@ def _estimate_relion_em_batch_sizes(
 
     supplied_runtime_free_memory = runtime_free_memory_gb is not None
     if supplied_runtime_free_memory:
-        runtime_free_memory_gb = float(runtime_free_memory_gb)
         if not np.isfinite(runtime_free_memory_gb) or runtime_free_memory_gb <= 0:
             raise ValueError(
                 "runtime_free_memory_gb must be a positive finite live-memory "
@@ -549,7 +543,6 @@ def _estimate_relion_em_batch_sizes(
         or score_projector_staging_bytes < 0
     ):
         raise ValueError("score_projector_staging_bytes must be a non-negative integer")
-    score_projector_staging_bytes = int(score_projector_staging_bytes)
     if score_projector_staging_bytes and not compact_k1_relion_layout:
         raise ValueError("score_projector_staging_bytes requires compact_k1_relion_layout=True")
     if compact_k1_relion_score_bpref_overlap and not compact_k1_relion_layout:
@@ -573,7 +566,6 @@ def _estimate_relion_em_batch_sizes(
                 "compact_k1_relion_layout requires explicit model_current_size; "
                 "score current_size is not a reconstruction-size substitute"
             )
-        model_current_size = int(model_current_size)
         if model_current_size <= 0:
             raise ValueError(
                 f"model_current_size must be positive, got {model_current_size}"

@@ -56,14 +56,12 @@ def make_relion_translation_log_prior(
         raise ValueError(
             f"translations must have shape (n_trans, dim), got {translations.shape}",
         )
-    sigma_offset_angstrom = float(sigma_offset_angstrom)
     voxel_size = float(voxel_size if voxel_size > 0 else 1.0)
-    sigma2_offset = sigma_offset_angstrom**2
+    sigma2_offset = float(sigma_offset_angstrom) ** 2
     if offset_range_pixels is not None and float(offset_range_pixels) > 0.0:
         # RELION's score path uses sigma = offset_range / 3 while an explicit
         # translational search range is active.
-        sigma_offset_angstrom = float(offset_range_pixels) * voxel_size / 3.0
-        sigma2_offset = sigma_offset_angstrom**2
+        sigma2_offset = (float(offset_range_pixels) * voxel_size / 3.0) ** 2
     n_trans = translations.shape[0]
 
     if prior_centers is None:
@@ -424,7 +422,6 @@ def infer_direction_prior_healpix_order(
                 return None
 
         if expected_order is not None:
-            expected_order = int(expected_order)
             if _direction_count(expected_order) == n_pixels:
                 return expected_order
         maximum_order = max(10, 0 if expected_order is None else expected_order + 3)
@@ -516,7 +513,6 @@ def normalize_class_direction_prior(direction_prior, n_classes, *, dtype: np.dty
 def normalize_class_direction_prior_per_half(direction_prior, n_classes, *, dtype: np.dtype = np.float32):
     """Return two per-half arrays with shape ``(n_classes, n_dirs)``."""
 
-    n_classes = int(n_classes)
     if n_classes < 1:
         raise ValueError(f"n_classes must be >= 1, got {n_classes}")
     if direction_prior is None:

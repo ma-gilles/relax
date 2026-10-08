@@ -35,7 +35,6 @@ def fixed_order_segment_sum(values, segment_ids, n_segments: int):
     depend on GPU scheduling.  Output shape is ``(..., n_segments)`` in the value dtype.
     """
 
-    n_segments = int(n_segments)
     values = jnp.asarray(values)
     segment_ids = jnp.asarray(segment_ids, dtype=jnp.int32)
     if segment_ids.ndim != 1 or values.shape[-1:] != segment_ids.shape:

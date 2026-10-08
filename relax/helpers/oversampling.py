@@ -373,7 +373,6 @@ def relion_cuda_f32_coarse_posterior(
     production InitialModel keeps the exact threshold comparison.
     """
 
-    tie_score_ulps = int(tie_score_ulps)
     if tie_score_ulps < 0:
         raise ValueError("tie_score_ulps must be non-negative")
 

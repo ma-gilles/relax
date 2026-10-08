@@ -11,8 +11,6 @@ from __future__ import annotations
 def round_up_to_multiple(value: int, multiple: int) -> int:
     """Round ``value`` up to a positive multiple."""
 
-    value = int(value)
-    multiple = int(multiple)
     if value < 0:
         raise ValueError(f"value must be non-negative, got {value}")
     if multiple <= 0:
@@ -43,9 +41,6 @@ def power_bucket(
 ) -> int:
     """Return a power-of-``base`` padded bucket for low-cardinality shapes."""
 
-    value = int(value)
-    minimum = int(minimum)
-    base = int(base)
     if base < 2:
         raise ValueError(f"base must be at least 2, got {base}")
     if value <= 0:
@@ -68,7 +63,6 @@ def power_of_two_bucket(value: int, *, minimum: int = 1, maximum: int | None = N
 def coarse_bucket(value: int, *, small_power2_max: int, large_multiple: int, minimum: int = 1) -> int:
     """Bucket small values by power-of-two and large values by coarse multiples."""
 
-    value = int(value)
     if value <= int(small_power2_max):
         return power_of_two_bucket(value, minimum=minimum, maximum=small_power2_max)
     return round_up_to_multiple(value, large_multiple)

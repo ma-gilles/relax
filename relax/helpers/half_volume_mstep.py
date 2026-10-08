@@ -118,7 +118,6 @@ def _relion_backprojector_r_max(volume_shape, current_size=None):
 def relion_backprojector_volume_shape(volume_shape, padding_factor, current_size=None):
     """Return RELION's odd BPref accumulator grid for ``BackProjector::initZeros``."""
 
-    padding_factor = float(padding_factor)
     if padding_factor <= 0:
         raise ValueError(f"padding_factor must be positive, got {padding_factor!r}")
     r_max = _relion_backprojector_r_max(volume_shape, current_size=current_size)

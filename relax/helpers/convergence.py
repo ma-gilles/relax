@@ -1275,7 +1275,6 @@ def refine_angular_sampling(state: RefinementState) -> RefinementState:
 
 
 def _apply_relion_healpix_order_oracle(state, target_order, *, iteration_number):
-    target_order = int(target_order)
     if target_order < int(state.healpix_order):
         raise ValueError(
             "relion_healpix_orders cannot coarsen the active state: "

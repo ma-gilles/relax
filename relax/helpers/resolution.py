@@ -94,7 +94,6 @@ def shell_index_to_resolution_angstrom(shell_index, box_size, voxel_size):
     """Convert a Fourier shell index into a real-space resolution in Angstrom."""
     if voxel_size <= 0:
         return float(shell_index)
-    shell_index = float(shell_index)
     if shell_index <= 0:
         return float("inf")
     return float(box_size) * float(voxel_size) / shell_index
@@ -124,9 +123,6 @@ def relion_optics_image_current_sizes(
     Projector and BackProjector retain radius 28 from the 56-pixel model size.
     """
 
-    model_current_size = int(model_current_size)
-    model_box_size = int(model_box_size)
-    model_pixel_size = float(model_pixel_size)
     image_sizes = np.asarray(optics_image_sizes, dtype=np.int64).reshape(-1)
     pixel_sizes = np.asarray(optics_pixel_sizes, dtype=np.float64).reshape(-1)
     if image_sizes.shape != pixel_sizes.shape or image_sizes.size == 0:
@@ -140,7 +136,7 @@ def relion_optics_image_current_sizes(
 
     remap_sizes = (
         pixel_sizes * image_sizes.astype(np.float64)
-    ) / (model_pixel_size * float(model_box_size))
+    ) / (float(model_pixel_size) * float(model_box_size))
     current_sizes = 2 * np.ceil(0.5 * remap_sizes * float(model_current_size))
     return np.minimum(current_sizes.astype(np.int64), image_sizes)
 
