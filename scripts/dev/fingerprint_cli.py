@@ -36,6 +36,7 @@ class Harness:
     worker: Callable[[str, str, str, list[str]], None]  # (source, out, tmp_root, case names)
     diff_fingerprints: Callable  # (a, b) -> (counts, lines)
     accepted: Callable  # counts -> bool
+    case_errors: Callable  # fingerprint -> lines for cases whose error status is not the case's (refusal or run)
     differing_cases: Callable  # (a, b) -> case names
     mutated_tree: Callable  # (source, target, old, new) -> {file: places replaced}
     file_prefix: str  # prefix of the scratch names under --work-dir (``tmp_``, ``fp_``, ``mutant_``)
@@ -136,8 +137,13 @@ def command_diff(harness: Harness, args) -> int:
     counts, lines = harness.diff_fingerprints(a, b)
     print(f"A: {args.a} ({a['source']})\nB: {args.b} ({b['source']})")
     print("\n".join(lines))
+    errors = [f"ERROR {side} {line}" for side, fp in (("A", a), ("B", b)) for line in harness.case_errors(fp)]
+    if errors:
+        print("\n".join(errors))
+        print(f"FAILED: {len(errors)} case runs ended in an error that is not the case's; their status, not the run, "
+              "was compared")
     _print_not_covered(harness)
-    return 0 if harness.accepted(counts) else 1
+    return 0 if harness.accepted(counts) and not errors else 1
 
 
 def command_check(harness: Harness, args) -> int:

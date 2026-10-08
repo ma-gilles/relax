@@ -45,6 +45,7 @@ import fingerprint_cli  # noqa: E402
 from fingerprint import (  # noqa: E402
     TMP_TOKEN,
     accepted,
+    case_errors,
     diff_fingerprints,
     differing_cases,
     digest_operands,
@@ -52,6 +53,9 @@ from fingerprint import (  # noqa: E402
     log_row,
     mutated_tree,
 )
+
+# The cases whose run is a refusal (fingerprint.case_errors).
+REFUSED_CASES = frozenset({"k1_refused_float64_scoring", "k1_refused_nan_tau2_fudge", "k1_refused_sgd_oversampling"})
 
 NOT_COVERED = (
     "the real E-step engine and its numbers (a stand-in seeded by its operands replaces run_dense_k_class_em_adaptive)",
@@ -454,6 +458,7 @@ HARNESS = fingerprint_cli.Harness(
     worker=_worker,
     diff_fingerprints=diff_fingerprints,
     accepted=accepted,
+    case_errors=lambda fingerprint: case_errors(fingerprint, REFUSED_CASES),
     differing_cases=differing_cases,
     mutated_tree=mutated_tree,
     file_prefix="v",

@@ -45,6 +45,7 @@ lifetimes.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import difflib
 import hashlib
@@ -360,6 +361,42 @@ def diff_fingerprints(a: dict, b: dict, *, shown_per_section: int = 12) -> tuple
     return counts, lines
 
 
+class StandInGpu:
+    """The one GPU the command-entry cases see: an H100 with an 80 GiB allocator limit and nothing in use.
+
+    The command takes its GPU-only routes on it. Its ``memory_stats`` gives the keys the memory planners read
+    (``bytes_limit``, ``bytes_in_use``, ``peak_bytes_in_use``, ``pool_bytes``); at 80 GiB every planner keeps
+    the large-GPU route these 16-pixel cases took before the planners read the limit (3c7b591d, 7c008045).
+    """
+
+    platform = "gpu"
+    id = 0
+
+    def memory_stats(self) -> dict[str, int]:
+        return {"bytes_limit": 80 * 2**30, "bytes_in_use": 0, "peak_bytes_in_use": 0, "pool_bytes": 0}
+
+
+# The cases whose run is a refusal: they must end in an error, and every other case must not.
+REFUSED_CASES = frozenset({"k2_frozen", "main_k1_half_sets_off", "main_refused_command", "main_refused_single_half"})
+
+
+def case_errors(fingerprint: dict, refused: frozenset[str] = REFUSED_CASES) -> list[str]:
+    """``"<case>: <status>"`` for each case of ``fingerprint`` that ended in an error but is not a refusal, or is
+    a refusal that ran; such a case compares an error status, not the run, so the check fails on it."""
+    lines = []
+    for name, case in fingerprint["cases"].items():
+        status = case["status"]
+        if "runs" in status:
+            failed = any(run != "ok" for run in ast.literal_eval(status["runs"]))
+        elif "error" in status:
+            failed = status["error"] != "None"
+        else:
+            failed = not str(status.get("", "")).startswith("ok")
+        if failed != (name.split("/")[0] in refused and "/" not in name):
+            lines.append(f"{name}: {json.dumps(status)}")
+    return lines
+
+
 def accepted(counts: dict[str, int]) -> bool:
     """Whether a difference of ``counts`` passes: nothing but log rows differs."""
     return not counts["outputs"] and not counts["trace"]
@@ -665,7 +702,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     import importlib.util
     import logging
     import threading
-    import types
 
     sys.dont_write_bytecode = True
     sys.path[:0] = [source, os.path.join(source, "tests"), os.path.join(source, "tests", "unit")]
@@ -1253,7 +1289,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             return out
 
         patch(iteration_loop, "refine_single_volume", refine_spy)
-        patch(jax, "devices", lambda *args, **kwargs: [types.SimpleNamespace(platform="gpu", id=0)])
+        patch(jax, "devices", lambda *args, **kwargs: [StandInGpu()])
         handler = Capture(level=logging.DEBUG)
         root = logging.getLogger("relax")
         old_level = root.level
@@ -1369,6 +1405,7 @@ HARNESS = fingerprint_cli.Harness(
     worker=_worker,
     diff_fingerprints=diff_fingerprints,
     accepted=accepted,
+    case_errors=case_errors,
     differing_cases=differing_cases,
     mutated_tree=mutated_tree,
     file_prefix="",
