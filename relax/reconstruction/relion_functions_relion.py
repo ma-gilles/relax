@@ -56,7 +56,8 @@ def _gridding_correct_trilinear(vol_real, ori_size, padding_factor):
     vol_corrected : jnp.ndarray, shape (N, N, N)
     """
     N = vol_real.shape[0]
-    coords = jnp.arange(N, dtype=jnp.float64) - N / 2.0
+    # RELION's origin is setXmippOrigin's -(N/2) in integer arithmetic (macros.h:398), the fftshift centre N // 2.
+    coords = jnp.arange(N, dtype=jnp.float64) - N // 2
     # 3D radial distance
     r = jnp.sqrt(coords[:, None, None] ** 2 + coords[None, :, None] ** 2 + coords[None, None, :] ** 2)
     arg = r / (ori_size * padding_factor)
@@ -70,7 +71,7 @@ def _gridding_correct_trilinear_np(vol_real, ori_size, padding_factor):
     """NumPy equivalent of ``_gridding_correct_trilinear`` for host padding."""
 
     N = vol_real.shape[0]
-    coords = np.arange(N, dtype=np.float64) - N / 2.0
+    coords = np.arange(N, dtype=np.float64) - N // 2
     r = np.sqrt(coords[:, None, None] ** 2 + coords[None, :, None] ** 2 + coords[None, None, :] ** 2)
     arg = r / (ori_size * padding_factor)
     sinc_r = np.ones_like(arg)
@@ -201,7 +202,9 @@ def pad_volume_for_projection(
         )
 
     N = volume_shape[0]
-    vol_real = fourier_transform_utils.get_idft3(jnp.asarray(vol_ft_flat).reshape(volume_shape))
+    vol_ft = jnp.asarray(vol_ft_flat)
+    input_dtype = vol_ft.dtype
+    vol_real = fourier_transform_utils.get_idft3(vol_ft.reshape(volume_shape))
     if do_gridding_correction:
         vol_real = _gridding_correct_trilinear(vol_real, N, padding_factor)
     pad_amount = N * (padding_factor - 1)
@@ -219,7 +222,8 @@ def pad_volume_for_projection(
         vol_ft_padded = vol_ft_padded.reshape(padded_shape) * sphere_mask
         vol_ft_padded = vol_ft_padded.reshape(-1)
 
-    return vol_ft_padded.reshape(-1), padded_shape
+    # The gridding correction divides in double; the padded map keeps the input's precision, as the host path does.
+    return vol_ft_padded.reshape(-1).astype(input_dtype), padded_shape
 
 
 def _regularize_large_relion_half_filter_impl(

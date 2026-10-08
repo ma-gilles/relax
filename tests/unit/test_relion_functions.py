@@ -3307,3 +3307,30 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
 
     assert not np.allclose(corrected, saved_map(False), rtol=1e-3, atol=0)
     np.testing.assert_allclose(post_hoc, corrected, rtol=2e-5, atol=2e-6 * np.abs(corrected).max())
+
+
+@pytest.mark.parametrize("n", [8, 9])
+def test_gridding_correction_is_centred_where_relion_puts_the_origin(n):
+    # Projector::griddingCorrect (projector.cpp:595-615) divides by sinc^2(r / (ori_size * pf)) with r measured
+    # from setXmippOrigin's origin, -(N/2) in integer arithmetic (macros.h:398): index N // 2, as fftshift.
+    rng = np.random.default_rng(n)
+    vol = rng.standard_normal((n, n, n))
+    k = np.arange(n) - n // 2
+    r = np.sqrt(k[:, None, None] ** 2 + k[None, :, None] ** 2 + k[None, None, :] ** 2)
+    rval = r / (n * 2)
+    sinc = np.where(r > 0, np.sin(np.pi * rval) / np.where(r > 0, np.pi * rval, 1.0), 1.0)
+    expected = vol / (sinc * sinc)
+    assert_matches(relion_functions_relion._gridding_correct_trilinear_np(vol, n, 2), expected)
+    assert_matches(np.asarray(relion_functions_relion._gridding_correct_trilinear(jnp.asarray(vol), n, 2)), expected)
+
+
+def test_device_projection_padding_keeps_the_input_precision_with_gridding():
+    # RELION's GPU projector holds Projector::data as XFLOAT; a complex64 map stays complex64 after the double
+    # gridding division, as the host path returns it.
+    import recovar.core.fourier_transform_utils as ftu
+
+    real = np.random.default_rng(3).standard_normal((8, 8, 8)).astype(np.float32)
+    ft = ftu.get_dft3(jnp.asarray(real)).reshape(-1).astype(jnp.complex64)
+    padded, _ = relion_functions_relion.pad_volume_for_projection(ft, (8, 8, 8), 2, do_gridding_correction=True)
+    host, _ = relion_functions_relion._pad_volume_for_projection_host(np.asarray(ft), (8, 8, 8), 2, do_gridding_correction=True)
+    assert padded.dtype == jnp.complex64 == np.asarray(host).dtype
