@@ -952,11 +952,8 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         result = list(original_pad(*args, **kwargs))
         if poison_tail["enabled"] and np.asarray(result[0]).shape[0] > np.asarray(args[0]).shape[0]:
             batch = np.asarray(result[0]).copy()
-            ctf = np.asarray(result[1]).copy()
             batch[-1] = np.nan
-            ctf[-1] = np.nan
             result[0] = batch
-            result[1] = ctf
         return tuple(result)
 
     monkeypatch.setattr(

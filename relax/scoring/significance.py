@@ -86,9 +86,7 @@ logger = logging.getLogger(__name__)
 
 def _pad_significance_preprocess_inputs(
     batch_data,
-    ctf_params,
     integer_pre_shifts,
-    batch_corr,
     batch_scale,
     relion_preprocess_kwargs,
     *,
@@ -101,9 +99,7 @@ def _pad_significance_preprocess_inputs(
     if actual_size == target_size:
         return (
             batch_data,
-            ctf_params,
             integer_pre_shifts,
-            batch_corr,
             batch_scale,
             relion_preprocess_kwargs,
         )
@@ -115,13 +111,11 @@ def _pad_significance_preprocess_inputs(
         }
     return (
         _repeat_pad_batch_axis(batch_data, target_size),
-        _repeat_pad_batch_axis(ctf_params, target_size),
         (
             None
             if integer_pre_shifts is None
             else _repeat_pad_batch_axis(integer_pre_shifts, target_size)
         ),
-        None if batch_corr is None else _repeat_pad_batch_axis(batch_corr, target_size),
         _repeat_pad_batch_axis(batch_scale, target_size),
         padded_kwargs,
     )
@@ -1214,7 +1208,7 @@ def _compute_k_class_significance_batched(
     with deferred_relion_preprocess_checks("pass 1") as preprocess_checks, prefetched_batches(
         iter_indexed_batches(experiment_dataset, image_indices, image_batch_size)
     ) as batches:
-        for batch_data, _, _, ctf_params, _, _, indices in batches:
+        for batch_data, _, _, _, _, _, indices in batches:
             _coarse_batch_starts.append(time.time())
             actual_batch_size = len(indices)
             end_idx = start_idx + actual_batch_size
@@ -1229,7 +1223,7 @@ def _compute_k_class_significance_batched(
             (
                 relion_cuda_preprocess,
                 integer_pre_shifts,
-                batch_corr_np,
+                _,
                 batch_scale_np,
                 relion_preprocess_kwargs,
             ) = prepare_batch_preprocess_operands(
@@ -1244,16 +1238,12 @@ def _compute_k_class_significance_batched(
             if pad_final_image_batch and actual_batch_size < int(image_batch_size):
                 (
                     batch_data,
-                    ctf_params,
                     integer_pre_shifts,
-                    batch_corr_np,
                     batch_scale_np,
                     relion_preprocess_kwargs,
                 ) = _pad_significance_preprocess_inputs(
                     batch_data,
-                    ctf_params,
                     integer_pre_shifts,
-                    batch_corr_np,
                     batch_scale_np,
                     relion_preprocess_kwargs,
                     target_size=int(image_batch_size),
