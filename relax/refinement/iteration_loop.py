@@ -959,10 +959,7 @@ def refine_single_volume(
         init_relion_iteration=options.schedule.init_relion_iteration,
         log=logger,
     )
-    initial_noise_variance_per_half = _normalize_noise_variance_per_half(
-        init_noise_variance,
-        n_halves=2,
-    )
+    initial_noise_variance_per_half = _normalize_noise_variance_per_half(init_noise_variance)
     optics_group_ids_per_half = _optics_group_ids_per_half(
         options.parity.optics_group_ids_per_half, initial_noise_variance_per_half, experiment_datasets
     )

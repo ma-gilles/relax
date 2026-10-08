@@ -4848,7 +4848,7 @@ class TestRelionModeSmokeTest:
     def test_normalize_noise_variance_per_half_keeps_shared_noise(self):
         shared = jnp.arange(IMAGE_SIZE, dtype=jnp.float32) + 1.0
 
-        got = _normalize_noise_variance_per_half(shared, n_halves=2)
+        got = _normalize_noise_variance_per_half(shared)
 
         assert len(got) == 2
         np.testing.assert_allclose(np.asarray(got[0]), np.asarray(shared))
@@ -4858,7 +4858,7 @@ class TestRelionModeSmokeTest:
         half1 = np.arange(IMAGE_SIZE, dtype=np.float32) + 1.0
         half2 = half1 * 2.0
 
-        got = _normalize_noise_variance_per_half(np.stack([half1, half2]), n_halves=2)
+        got = _normalize_noise_variance_per_half(np.stack([half1, half2]))
 
         np.testing.assert_allclose(np.asarray(got[0]), half1)
         np.testing.assert_allclose(np.asarray(got[1]), half2)

@@ -7,7 +7,7 @@ The controller and replay diagnostics import this owner directly.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass as _dataclass
+from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
@@ -17,7 +17,7 @@ from relax.helpers.types import make_noise_stats, total_sumw
 logger = logging.getLogger(__name__)
 
 
-@_dataclass
+@dataclass
 class SigmaOffsetUpdateResult:
     """Posterior-weighted ``sigma_offset`` update result.
 
@@ -184,13 +184,12 @@ def update_class_sigma_offset_from_posterior(
         offset_dims=offset_dims,
     )
     per_half_sigma_offset = np.full(len(noise_stats_per_half), shared_sigma_offset, dtype=np.float64)
-    current_sigma_offset_angstrom = float(np.mean(per_half_sigma_offset))
     per_class_sigma_offset = _per_class_sigma_offset_report(
-        noise_stats_per_half_per_class, n_classes, current_sigma_offset_angstrom, offset_dims,
+        noise_stats_per_half_per_class, n_classes, shared_sigma_offset, offset_dims,
     )
-    _log_sigma_offset_update(per_half_sigma_offset, current_sigma_offset_angstrom)
+    _log_sigma_offset_update(per_half_sigma_offset, shared_sigma_offset)
     return SigmaOffsetUpdateResult(
-        current_sigma_offset_angstrom=current_sigma_offset_angstrom,
+        current_sigma_offset_angstrom=shared_sigma_offset,
         current_sigma_offset_angstrom_per_half=per_half_sigma_offset.tolist(),
         per_class_sigma_offset_angstrom=per_class_sigma_offset,
     )
@@ -232,16 +231,14 @@ def update_c1_sigma_offset_from_posterior(
     )
 
 
-def _normalize_noise_variance_per_half(init_noise_variance, n_halves=2):
-    """Return a list of per-half flattened noise-variance arrays.
+def _normalize_noise_variance_per_half(init_noise_variance):
+    """Return a list of the two halves' flattened noise-variance arrays.
 
     RELION stores and updates ``sigma2_noise`` separately for each half-model.
     Legacy RECOVAR callers pass one shared image-shaped array; keep that path
     by duplicating the shared vector.
     """
-    if n_halves <= 0:
-        raise ValueError(f"n_halves must be positive, got {n_halves}")
-
+    n_halves = 2
     if isinstance(init_noise_variance, (list, tuple)):
         if len(init_noise_variance) != n_halves:
             raise ValueError(
@@ -313,14 +310,13 @@ def _noise_radial_history(noise_variance_per_half, image_shape, *, dtype):
 def _combined_noise_stats(noise_stats_per_half):
     """Sum half-set noise sufficient statistics before RELION Class3D normalization.
 
-    Class3D's second accumulator holds no particles; a half without mass adds exact zeros, and with
-    several optics groups its placeholder sums need not have the scored half's ``[G, n]`` layout, so
-    it is left out. ``sumw`` keeps the per-group ``[G]`` layout when the sums have one.
+    Both halves carry statistics (the caller runs ``_require_noise_stats_of_both_halves`` first). A
+    half without mass adds exact zeros, and with several optics groups its placeholder sums need not
+    have the scored half's ``[G, n]`` layout, so it is left out. ``sumw`` keeps the per-group ``[G]``
+    layout when the sums have one.
     """
 
-    stats = [stats_k for stats_k in noise_stats_per_half if stats_k is not None]
-    if not stats:
-        return None
+    stats = list(noise_stats_per_half)
     with_mass = [stats_k for stats_k in stats if total_sumw(stats_k.sumw) > 0.0]
     if with_mass:
         stats = with_mass
@@ -413,7 +409,7 @@ def _per_optics_group_sigma2_noise(
     return radial, jnp.stack(rows)
 
 
-@_dataclass(frozen=True)
+@dataclass(frozen=True)
 class NoiseModel:
     """Two half-model spectra and their pixel expansions.
 
@@ -440,7 +436,7 @@ def initialize_noise_model(variance_per_half, *, average_variance, image_shape, 
 
 def noise_model_from_pixels(noise_variance, image_shape, *, dtype):
     """Normalize input/replay pixel noise and derive its diagnostic shell profiles."""
-    variance_per_half = _normalize_noise_variance_per_half(noise_variance, n_halves=2)
+    variance_per_half = _normalize_noise_variance_per_half(noise_variance)
     average_variance = _mean_noise_variance(variance_per_half)
     return initialize_noise_model(
         variance_per_half, average_variance=average_variance, image_shape=image_shape, dtype=dtype,
@@ -471,7 +467,7 @@ def noise_model_from_shells(noise_shells, image_shape):
     return NoiseModel(variance_per_half, radial_per_half, average_variance, average_radial)
 
 
-@_dataclass
+@dataclass
 class NoiseUpdateResult:
     """Updated model and float64 shell estimates for iteration history.
 
