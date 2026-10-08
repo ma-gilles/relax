@@ -20,6 +20,16 @@ def test_invalid_particle_spacing_rejected_even_with_model_override(pixel_size):
         refine_single_volume([half, half], None, None, None, None, options=options)
 
 
+def _optics(optics_pixel_sizes=None, optics_image_sizes=None, model_pixel_size=1.5):
+    from relax.helpers.resolution import ImageGeometry
+    from relax.refinement.iteration_planning import RunOptics
+
+    return RunOptics(
+        image_geometry=ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5), model_pixel_size=model_pixel_size,
+        optics_image_sizes=optics_image_sizes, optics_pixel_sizes=optics_pixel_sizes, multi_shape_halves=False,
+    )
+
+
 @pytest.fixture
 def preparation(monkeypatch):
     calls = []
@@ -34,7 +44,7 @@ def preparation(monkeypatch):
     monkeypatch.setattr(local_sampling, "_precompute_exact_local_fine_grid_enabled", lambda *a, **kw: False)
     inputs = dict(
         search=local_sampling.LocalSearchSettings(healpix_order=2, oversampling_order=0, sigma_rot=0.1, sigma_psi=0.2),
-        image_geometry=local_sampling.ImageGeometry(image_shape=(128, 128), pixel_size_angstrom=1.5),
+        optics=_optics(),
         translations=object(), base_translations=object(), image_window_size=64,
         particle_diameter_angstrom=100.0,
         perturbation=None, rotation_dtype=object(),
@@ -100,3 +110,23 @@ def test_final_sampling_uses_resolved_parent_order(preparation, parent_order):
     result = local_sampling.prepare_final_local_sampling(**inputs)
     assert result.search.healpix_order == parent_order + 1
     assert calls[0]["pre_update_healpix_order"] == parent_order
+
+
+@pytest.mark.parametrize(
+    ("optics_pixel_sizes", "optics_image_sizes", "model_pixel_size", "expected"),
+    [(None, None, 1.2, (1.5, 128)), ([1.4999999], [128], 1.5, (1.4999999, 128))],
+)
+def test_final_and_numbered_pass1_windows_use_the_first_optics_groups_image_geometry(
+    preparation, optics_pixel_sizes, optics_image_sizes, model_pixel_size, expected
+):
+    # RELION sizes pass 1 from remap_sizes * ori_size * mymodel.pixel_size = the optics group's box times its
+    # STAR pixel size (ml_optimiser.cpp:6941), in the numbered and the final iteration alike. The final pass
+    # used the image geometry instead of the optics group's STAR values, and the numbered fallback without
+    # optics sizes used the model pixel size.
+    inputs, calls = preparation
+    optics = _optics(optics_pixel_sizes, optics_image_sizes, model_pixel_size)
+    assert optics.first_optics_group_geometry() == expected
+    inputs["optics"] = optics
+    inputs["search"] = replace(inputs["search"], healpix_order=3, oversampling_order=1)
+    local_sampling.prepare_final_local_sampling(**inputs)
+    assert (calls[-1]["pixel_size"], calls[-1]["box_size"]) == expected

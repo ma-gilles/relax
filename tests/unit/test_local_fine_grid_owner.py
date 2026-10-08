@@ -137,7 +137,7 @@ def _final_local_inputs(*, oversampling=0, symmetry="C1"):
         search=local_sampling.LocalSearchSettings(
             healpix_order=ORDER, oversampling_order=oversampling, sigma_rot=0.1, sigma_psi=0.2, symmetry=symmetry,
         ),
-        image_geometry=ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=1.5),
+        optics=_optics(None, None),
         translations=np.zeros((1, 2), dtype=np.float32), base_translations=np.zeros((1, 2), dtype=np.float32),
         image_window_size=32, particle_diameter_angstrom=100.0, perturbation=0.125, rotation_dtype=np.float32,
     )

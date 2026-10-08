@@ -107,6 +107,19 @@ class RunOptics:
     optics_pixel_sizes: np.ndarray | None
     multi_shape_halves: bool
 
+    def first_optics_group_geometry(self) -> tuple[float, int]:
+        """The first optics group's (STAR pixel size, box): the image geometry when groups give none.
+
+        RELION sizes its E-step windows from ``remap_sizes * ori_size * mymodel.pixel_size``, the optics
+        group's box times its image pixel size, never the model pixel size (ml_optimiser.cpp:6917-6941).
+        """
+        return (
+            float(self.optics_pixel_sizes[0])
+            if self.optics_pixel_sizes is not None
+            else self.image_geometry.pixel_size_angstrom,
+            int(self.optics_image_sizes[0]) if self.optics_image_sizes is not None else self.image_geometry.box_size,
+        )
+
 
 @dataclass(frozen=True, kw_only=True)
 class ExpectationWindows:
@@ -191,13 +204,7 @@ def plan_expectation_windows(
     if strict_highres_exp_angstrom is not None:
         if optics.multi_shape_halves:
             raise NotImplementedError("--strict_highres_exp with optics groups on several image shapes")
-        # The image pixel size, as for the coarse size (plan_adaptive_image_size): RELION's
-        # remap_sizes * ori_size * model pixel size is the optics group's box times its pixel size.
-        limit = relion_strict_highres_image_size(
-            float(optics.optics_pixel_sizes[0]) if optics.optics_pixel_sizes is not None else image_geometry.pixel_size_angstrom,
-            int(optics.optics_image_sizes[0]) if optics.optics_image_sizes is not None else image_geometry.box_size,
-            strict_highres_exp_angstrom,
-        )
+        limit = relion_strict_highres_image_size(*optics.first_optics_group_geometry(), strict_highres_exp_angstrom)
         score_size = min(limit, image_current_size)
         log.info(
             "RELION --strict_highres_exp %.3f A: E-step size %d (limit %d, image current size %d)",
@@ -259,8 +266,6 @@ def plan_adaptive_image_size(
     See ``docs/math/relion_refinement_algorithm.md#5-accumulation-reconstruction-and-parameter-updates``.
     """
     image_geometry = optics.image_geometry
-    optics_image_sizes = optics.optics_image_sizes
-    optics_pixel_sizes = optics.optics_pixel_sizes
     angular_step_deg = healpix_angular_step(pre_update_healpix_order)
     if windows.score_size is not None:
         # --strict_highres_exp replaces the angular rule: pass 1 scores at the E-step cap as well.
@@ -268,8 +273,7 @@ def plan_adaptive_image_size(
     else:
         coarse_size = compute_coarse_image_size(
             angular_step_deg,
-            float(optics_pixel_sizes[0]) if optics_pixel_sizes is not None else image_geometry.pixel_size_angstrom,
-            int(optics_image_sizes[0]) if optics_image_sizes is not None else image_geometry.box_size,
+            *optics.first_optics_group_geometry(),
             particle_diameter=options.schedule.particle_diameter_ang,
         )
         coarse_size = clamp_relion_coarse_image_size(

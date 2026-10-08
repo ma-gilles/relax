@@ -53,6 +53,7 @@ from relax.refinement.half_scoring import (
     _score_half_dense_in_bpref_scope,
     _score_half_local_in_bpref_scope,
 )
+from relax.refinement.iteration_planning import RunOptics
 from relax.refinement.local_sampling import LocalSearchSettings, local_search_centre_half, prepare_final_local_sampling
 from relax.refinement.mean_helpers import _class_weights_from_posterior, join_half_accumulators_at_low_resolution
 from relax.refinement.ports import FinalHalfScored, InputSource, RunObserver
@@ -114,7 +115,7 @@ def run_final_all_data(
     state,
     history,
     options,
-    image_geometry,
+    optics: RunOptics,
     reconstruction_settings,
     batch_planner,
     follower_setup,
@@ -146,6 +147,7 @@ def run_final_all_data(
     class count is ``options.k_class.n_classes``; arrays are in ``options.precision``'s dtype.
     See ``docs/math/relion_refinement_algorithm.md``, section 7.
     """
+    image_geometry = optics.image_geometry
     scoring_dtype = options.precision.rotation_real_dtype
     class_weights = class_mixture.weights
     k_class_enabled = options.k_class.n_classes > 1
@@ -216,7 +218,7 @@ def run_final_all_data(
         )
         final_local_sampling = prepare_final_local_sampling(
             final_search,
-            image_geometry,
+            optics,
             translations=final_sampling.grid.translations,
             base_translations=final_sampling.base_translations,
             image_window_size=final_current_size,

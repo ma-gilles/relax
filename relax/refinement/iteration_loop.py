@@ -2450,7 +2450,7 @@ def refine_single_volume(
         state=state,
         history=history,
         options=options,
-        image_geometry=image_geometry,
+        optics=optics,
         reconstruction_settings=reconstruction_settings,
         batch_planner=batch_planner,
         follower_setup=follower_setup,

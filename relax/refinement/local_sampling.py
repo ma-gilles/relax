@@ -8,8 +8,8 @@ import numpy as np
 from relax import sampling
 from relax.helpers.convergence import healpix_angular_step
 from relax.helpers.orientation_priors import relion_local_search_sigmas
-from relax.helpers.resolution import ImageGeometry, relion_local_pass1_current_size
-from relax.refinement.iteration_planning import ExpectationWindows, plan_expectation_windows
+from relax.helpers.resolution import relion_local_pass1_current_size
+from relax.refinement.iteration_planning import ExpectationWindows, RunOptics, plan_expectation_windows
 from relax.refinement.local_search_iteration import _precompute_exact_local_fine_grid_enabled
 
 # The numbered controller's log: its operations log under its name wherever they live.
@@ -105,18 +105,11 @@ def prepare_numbered_local_sampling(
                 parent_order = search.healpix_order - int(search.oversampling_order)
                 coarse_angular_step_deg = healpix_angular_step(coarse_size_healpix_order)
                 # --strict_highres_exp: pass 1 scores at the E-step cap, as pass 2 does.
+                first_pixel_size, first_box = optics.first_optics_group_geometry()
                 coarse_image_window_size = image_window_size if strict_pass1 else relion_local_pass1_current_size(
                     pre_update_healpix_order=coarse_size_healpix_order,
-                    pixel_size=(
-                        float(optics.optics_pixel_sizes[0])
-                        if optics.optics_pixel_sizes is not None
-                        else optics.model_pixel_size
-                    ),
-                    box_size=(
-                        int(optics.optics_image_sizes[0])
-                        if optics.optics_image_sizes is not None
-                        else optics.image_geometry.box_size
-                    ),
+                    pixel_size=first_pixel_size,
+                    box_size=first_box,
                     particle_diameter=particle_diameter_angstrom,
                     current_size=image_window_size,
                 )
@@ -163,7 +156,7 @@ def prepare_numbered_local_sampling(
 
 def prepare_final_local_sampling(
     search: LocalSearchSettings,
-    image_geometry: ImageGeometry,
+    optics: RunOptics,
     *,
     translations,
     base_translations,
@@ -177,10 +170,11 @@ def prepare_final_local_sampling(
 
     if search.oversampling_order > 0:
         coarse_angular_step_deg = healpix_angular_step(search.parent_order)
+        first_pixel_size, first_box = optics.first_optics_group_geometry()
         coarse_image_window_size = relion_local_pass1_current_size(
             pre_update_healpix_order=search.parent_order,
-            pixel_size=image_geometry.pixel_size_angstrom,
-            box_size=image_geometry.box_size,
+            pixel_size=first_pixel_size,
+            box_size=first_box,
             particle_diameter=particle_diameter_angstrom,
             current_size=image_window_size,
         )
