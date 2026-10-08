@@ -129,7 +129,8 @@ def test_refinement_entry_validates_options_before_reading_data(monkeypatch, use
             raise RuntimeError("dataset boundary reached")
 
     monkeypatch.setattr(iteration_loop, "with_validated_sampling_schedule", validate)
-    options = None if use_defaults else RefinementOptions(
+    # The command always passes options; use_defaults is the all-default record.
+    options = RefinementOptions() if use_defaults else RefinementOptions(
         schedule=RefinementSchedule(max_iter=3, init_healpix_order=3),
         adaptive=AdaptiveOptions(relion_healpix_orders=[3, 3, 4]),
     )

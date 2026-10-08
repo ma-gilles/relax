@@ -741,7 +741,7 @@ def refine_single_volume(
     init_noise_variance: jnp.ndarray,
     init_mean_variance: jnp.ndarray,
     translations: jnp.ndarray | None,
-    options: RefinementOptions | None = None,
+    options: RefinementOptions,
     observer: RunObserver | None = None,
     source: InputSource | None = None,
 ) -> RefinementResult:
@@ -762,8 +762,7 @@ def refine_single_volume(
     translations : jnp.ndarray, shape (n_trans, 2)
         Translation grid.
     options : `RefinementOptions` struct that bundles the schedule / adaptive / parity
-        / local-search / K-class / replay / debug / batching kwarg groups.
-        Defaults to ``RefinementOptions()`` when omitted.
+        / local-search / K-class / replay / debug / batching kwarg groups, built by the command.
     observer : the run's ``RunObserver`` (``relax.refinement.ports``): dumps and captures that watch the run
         and never change it. Defaults to one that does nothing.
     source : the run's ``InputSource`` (``relax.refinement.ports``): what a comparison run takes from
@@ -778,8 +777,6 @@ def refine_single_volume(
     not run) and ``profile_stop`` for a local-search diagnostic stop. ``archive_fields()`` is the flat
     mapping the archive and reports read.
     """
-    if options is None:
-        options = RefinementOptions()
     if observer is None:
         observer = RunObserver()
     if source is None:
