@@ -257,7 +257,7 @@ def relion_image_geometry(
 
     from ast import literal_eval
 
-    from relax.sampling import _relion_euler_angles_to_matrix
+    from relax.healpix_sampling import euler_angles_to_matrix
 
     particles_star, tomograms_star = Path(particles_star), Path(tomograms_star)
     particles, _ = read_star(str(particles_star))
@@ -268,7 +268,7 @@ def relion_image_geometry(
     tomo_names = np.asarray(star_column(particles, "rlnTomoName", required=True))
     visible = np.asarray(star_column(particles, "rlnTomoVisibleFrames", required=True))
     if star_column(particles, "rlnTomoSubtomogramRot") is not None:
-        subtomogram = _relion_euler_angles_to_matrix(
+        subtomogram = euler_angles_to_matrix(
             np.stack(
                 [
                     np.asarray(star_column(particles, label, required=True), dtype=np.float64)

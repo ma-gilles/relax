@@ -79,7 +79,7 @@ def test_chunk_tilt_layout_refuses_overflow_and_bad_offsets():
 
 @pytest.mark.unit
 def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
-    from relax.sampling import _relion_euler_angles_to_matrix
+    from relax.healpix_sampling import euler_angles_to_matrix
 
     rng = np.random.default_rng(3)
     offsets = validate_unit_image_offsets([0, 2, 3], 2)
@@ -95,7 +95,7 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
     eulers = rng.uniform(-180, 180, size=(4, 3))
     left = np.stack([np.linalg.qr(rng.normal(size=(3, 3)))[0] * s for s in (1.0, 1.1, 0.9)])
     got = resident_tilts.tilt_slot_rotations(layout, eulers, left, dtype=np.float64)
-    a = _relion_euler_angles_to_matrix(eulers)
+    a = euler_angles_to_matrix(eulers)
     for slot in range(2):
         for row in range(4):
             image = layout.slot_image_ids[slot, row]

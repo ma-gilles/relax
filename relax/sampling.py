@@ -557,20 +557,6 @@ def relion_sampling_perturbation_for_iteration(
     return float(current)
 
 
-def _relion_euler_angles_to_matrix(eulers_deg: np.ndarray) -> np.ndarray:
-    """RELION ``Euler_angles2matrix`` (:func:`relax.healpix_sampling.euler_angles_to_matrix`).
-
-    This returns RELION's projector matrix ``A``. The pinned RECOVAR
-    ``utils.R_from_relion`` returns the same matrix for these Euler angles.
-    """
-    return healpix_sampling.euler_angles_to_matrix(eulers_deg)
-
-
-def _relion_matrix_to_euler_angles(A: np.ndarray) -> np.ndarray:
-    """RELION ``Euler_matrix2angles`` (:func:`relax.healpix_sampling.euler_matrix_to_angles`)."""
-    return healpix_sampling.euler_matrix_to_angles(A)
-
-
 def _relion_mstep_rotations_from_eulers(
     eulers_deg: np.ndarray,
     *,
@@ -608,7 +594,7 @@ def _relion_mstep_rotations_from_eulers(
         left_matrices = np.asarray(left_matrices, dtype=np.float64)
         if left_matrices.shape != (eulers.shape[0], 3, 3):
             raise ValueError(f"left_matrices must have shape {(eulers.shape[0], 3, 3)}, got {left_matrices.shape}")
-    matrix = _relion_euler_angles_to_matrix(eulers)
+    matrix = healpix_sampling.euler_angles_to_matrix(eulers)
     if left_matrices is not None:
         # Matrix2D operator*: each entry sums over k in order.
         matrix = sum(left_matrices[:, :, k, None] * matrix[:, None, k, :] for k in range(3))
@@ -706,7 +692,7 @@ def _relion_device_scoring_rotations_f64(
         )
         return np.asarray(jax.device_get(rotations), dtype=np.float64)
 
-    a = _relion_euler_angles_to_matrix(eulers_f64)
+    a = healpix_sampling.euler_angles_to_matrix(eulers_f64)
     return a @ right_f64 if do_right else a
 
 
@@ -736,7 +722,7 @@ def _relion_adaptive_pass1_rotations(
     right_matrix = None
     if abs(float(random_perturbation)) >= 1e-12:
         perturbation_deg = float(random_perturbation) * float(angular_sampling_deg)
-        right_matrix = _relion_euler_angles_to_matrix(
+        right_matrix = healpix_sampling.euler_angles_to_matrix(
             np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
         )[0]
     if left_matrices is not None:
@@ -809,10 +795,10 @@ def apply_relion_rotation_perturbation_to_eulers(
         return rotations, eulers.astype(dtype)
 
     myperturb = float(random_perturbation) * float(angular_sampling_deg)
-    A = _relion_euler_angles_to_matrix(eulers)
-    R_perturb = _relion_euler_angles_to_matrix(np.array([[myperturb, myperturb, myperturb]], dtype=np.float64))[0]
+    A = healpix_sampling.euler_angles_to_matrix(eulers)
+    R_perturb = healpix_sampling.euler_angles_to_matrix(np.array([[myperturb, myperturb, myperturb]], dtype=np.float64))[0]
     perturbed_A = healpix_sampling.matmul3(A, R_perturb)
-    perturbed_eulers = _relion_matrix_to_euler_angles(perturbed_A)
+    perturbed_eulers = healpix_sampling.euler_matrix_to_angles(perturbed_A)
     perturbed_rotations = _relion_mstep_rotations_from_eulers(perturbed_eulers, dtype=dtype)
     return perturbed_rotations, perturbed_eulers.astype(dtype)
 

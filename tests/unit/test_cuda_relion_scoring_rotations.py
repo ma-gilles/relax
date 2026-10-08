@@ -257,7 +257,7 @@ def test_relion_scoring_rotations_with_left_matrices_invert_l_a_r(monkeypatch, c
 
     from scipy.spatial.transform import Rotation
 
-    from relax import sampling
+    from relax import healpix_sampling
     from relax.cuda import kernels as em_cuda_kernels
 
     monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
@@ -272,7 +272,7 @@ def test_relion_scoring_rotations_with_left_matrices_invert_l_a_r(monkeypatch, c
                 jnp.asarray(eulers), jnp.asarray(right_matrix), jnp.asarray(left)
             )
         )
-    relion_a = sampling._relion_euler_angles_to_matrix(eulers.astype(np.float64))
+    relion_a = healpix_sampling.euler_angles_to_matrix(eulers.astype(np.float64))
     for b in range(3):
         expected = np.linalg.inv(left[b].astype(np.float64) @ relion_a @ right_matrix.astype(np.float64))
         assert_matches(actual[b], expected.swapaxes(1, 2).astype(np.float32))

@@ -277,7 +277,7 @@ def test_image_geometry_is_relion_frame_order(project):
 def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
     from recovar.data_io import starfile
 
-    from relax.sampling import _relion_euler_angles_to_matrix
+    from relax.healpix_sampling import euler_angles_to_matrix
 
     out, _ = project
     particles, optics = read_star(str(out / "particles.star"))
@@ -291,7 +291,7 @@ def test_image_geometry_applies_the_subtomogram_matrix(project, tmp_path):
     names = list(star_column(particles, "rlnTomoParticleName"))
     for p, name in enumerate(index.particle_names):
         start, stop = index.image_offsets[p], index.image_offsets[p + 1]
-        a = _relion_euler_angles_to_matrix(angles[names.index(name)])[0]
+        a = euler_angles_to_matrix(angles[names.index(name)])[0]
         assert_matches(rotated.projections[start:stop], plain.projections[start:stop] @ a)
 
 

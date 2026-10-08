@@ -14,7 +14,7 @@ from recovar.data_io.starfile import read_star
 from recovar.utils.helpers import R_from_relion, write_relion_mrc
 
 import relax.vdam.driver as driver
-from relax import sampling
+from relax import healpix_sampling, sampling
 from relax.commands import initial_model
 from relax.diagnostics import vdam_mstep_replay
 from relax.helpers.orientation_priors import relion_round_away_from_zero
@@ -1742,7 +1742,7 @@ def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
     grid_eulers = sampling.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
     grid_rotations = sampling.get_relion_rotation_grid(1, rotation_index_order="relion")
     perturbed_euler = np.asarray([[33.0, 44.0, 55.0]], dtype=np.float64)
-    perturbed_rotation = sampling._relion_euler_angles_to_matrix(perturbed_euler)[0].astype(np.float32)
+    perturbed_rotation = healpix_sampling.euler_angles_to_matrix(perturbed_euler)[0].astype(np.float32)
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((2, 2), dtype=np.float32),
         class_assignments=np.zeros(2, dtype=np.int32),
@@ -1760,7 +1760,7 @@ def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
     assert eulers is not None
     assert not np.allclose(eulers[0], grid_eulers[5])
     np.testing.assert_allclose(
-        sampling._relion_euler_angles_to_matrix(eulers),
+        healpix_sampling.euler_angles_to_matrix(eulers),
         np.stack([perturbed_rotation, grid_rotations[7]], axis=0),
         atol=1e-5,
     )
@@ -2056,7 +2056,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
     state.tau2_fudge_factor = 3.995253
     state.sorted_particle_ids = np.asarray([1, 0], dtype=np.int64)
     state.sorted_particle_part_ids = np.asarray([9, 4], dtype=np.int64)
-    best_rotations = sampling._relion_euler_angles_to_matrix(
+    best_rotations = healpix_sampling.euler_angles_to_matrix(
         np.asarray([[10.0, 30.0, 20.0], [40.0, 60.0, 50.0]])
     )
     particle_state = NativeParticleState(

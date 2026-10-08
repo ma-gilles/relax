@@ -60,6 +60,7 @@ from relax.classification.k_class_results import (
 from relax.dense import score_outputs, scoring_policy
 from relax.diagnostics.observers import IntermediatesObserver
 from relax.diagnostics.relion_replay import _replay_control_model_iteration
+from relax.healpix_sampling import euler_angles_to_matrix
 from relax.helpers import dtype_policy as dtype_policy_module
 from relax.helpers import resolution as resolution_helpers
 from relax.helpers.convergence import RefinementState, _relion_optimizer_average_pmax, healpix_angular_step
@@ -6831,7 +6832,7 @@ class TestRelionModeSmokeTest:
         scoring_grids = []
         monkeypatch.setattr(
             iteration_planning_module, "_relion_adaptive_pass1_rotations",
-            lambda eulers, *args, **kwargs: sampling_module._relion_euler_angles_to_matrix(eulers).astype(np.float32),
+            lambda eulers, *args, **kwargs: euler_angles_to_matrix(eulers).astype(np.float32),
         )
         score_half = finalization._score_half_dense_in_bpref_scope
 

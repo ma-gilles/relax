@@ -61,12 +61,6 @@ class ExpectedErrors:
     class_counts: np.ndarray
 
 
-def _euler_matrices(eulers_deg):
-    from relax.healpix_sampling import euler_angles_to_matrix
-
-    return euler_angles_to_matrix(eulers_deg)
-
-
 def _matmul3(left, right):
     """``Matrix2D::operator*`` for ``[..., 3, 3]`` stacks."""
 
@@ -540,7 +534,9 @@ def expected_angular_errors(
     image_eulers = eulers[image_trial]
 
     def matrices(rows_eulers, rows):
-        a = _euler_matrices(rows_eulers)
+        from relax.healpix_sampling import euler_angles_to_matrix
+
+        a = euler_angles_to_matrix(rows_eulers)
         if tomo:
             a = _matmul3(aproj[rows], a)
         if left is not None:

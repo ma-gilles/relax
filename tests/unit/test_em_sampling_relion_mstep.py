@@ -6,6 +6,7 @@ import numpy as np
 from helpers.float_compare import assert_matches
 
 import relax.sampling as sampling_module
+from relax.healpix_sampling import euler_angles_to_matrix
 from relax.sampling import (
     _relion_adaptive_pass1_rotations,
     _relion_mstep_rotations_from_eulers,
@@ -45,7 +46,7 @@ def test_adaptive_pass1_routes_source_eulers_and_host_right_matrix_to_cuda_build
             dtype=np.float64,
         )
     except (ImportError, OSError):
-        expected_right = sampling_module._relion_euler_angles_to_matrix(
+        expected_right = euler_angles_to_matrix(
             np.asarray([[perturbation_deg] * 3], dtype=np.float64)
         )[0]
     assert_matches(calls[0][1], expected_right)
@@ -99,16 +100,13 @@ def test_adaptive_pass1_float64_routes_to_double_precision_builder(monkeypatch):
 
 
 def test_relion_device_scoring_rotations_f64_cpu_fallback_matches_euler_matrix_port(monkeypatch):
-    """No perturbation: f64 builder must reduce to ``_relion_euler_angles_to_matrix``."""
-    from relax.sampling import (
-        _relion_device_scoring_rotations_f64,
-        _relion_euler_angles_to_matrix,
-    )
+    """No perturbation: f64 builder must reduce to ``euler_angles_to_matrix``."""
+    from relax.sampling import _relion_device_scoring_rotations_f64
 
     monkeypatch.setattr("relax.sampling.jax.default_backend", lambda: "cpu")
     source_eulers = _UNPERTURBED_FINE_EULERS_F64
     result = _relion_device_scoring_rotations_f64(source_eulers, right_matrix=None)
-    expected = _relion_euler_angles_to_matrix(source_eulers)
+    expected = euler_angles_to_matrix(source_eulers)
 
     assert result.dtype == np.float64
     assert_matches(result, expected)
@@ -117,17 +115,14 @@ def test_relion_device_scoring_rotations_f64_cpu_fallback_matches_euler_matrix_p
 def test_relion_device_scoring_rotations_f64_cpu_fallback_right_multiplies_perturbation_matrix(monkeypatch):
     """With a perturbation: f64 builder must right-multiply, matching ``B = A @ right_matrix``
     from ``cuda_kernel_make_eulers_3D`` (``recovar/cuda/cuda_backproject.cu``)."""
-    from relax.sampling import (
-        _relion_device_scoring_rotations_f64,
-        _relion_euler_angles_to_matrix,
-    )
+    from relax.sampling import _relion_device_scoring_rotations_f64
 
     monkeypatch.setattr("relax.sampling.jax.default_backend", lambda: "cpu")
     source_eulers = _UNPERTURBED_FINE_EULERS_F64[:2]
-    right_matrix = _relion_euler_angles_to_matrix(np.asarray([[1.5, 1.5, 1.5]], dtype=np.float64))[0]
+    right_matrix = euler_angles_to_matrix(np.asarray([[1.5, 1.5, 1.5]], dtype=np.float64))[0]
 
     result = _relion_device_scoring_rotations_f64(source_eulers, right_matrix=right_matrix)
-    expected = _relion_euler_angles_to_matrix(source_eulers) @ right_matrix
+    expected = euler_angles_to_matrix(source_eulers) @ right_matrix
 
     assert result.dtype == np.float64
     assert_matches(result, expected)

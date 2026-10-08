@@ -131,13 +131,13 @@ def test_image_slots_visit_each_particles_images_in_order():
 def test_tilt_row_matrices_are_relions_host_inverse_of_aproj_times_euler():
     """generateEulerMatrices with L = Aproj: inv(L A) (acc_helper_functions_impl.h:248-255), from the native binding
     when it is built and from the NumPy fallback otherwise; with L = I both equal the SPA matrices."""
-    from relax import sampling
+    from relax import healpix_sampling, sampling
 
     rng = np.random.default_rng(5)
     eulers = rng.uniform([-180, 0, -180], [180, 180, 180], size=(6, 3))
     left = Rotation.random(6, random_state=rng).as_matrix()
     got = sampling._relion_mstep_rotations_from_eulers(eulers, dtype=np.float64, left_matrices=left)
-    relion = np.stack([sampling._relion_euler_angles_to_matrix(e[None])[0] for e in eulers])
+    relion = np.stack([healpix_sampling.euler_angles_to_matrix(e[None])[0] for e in eulers])
     # RECOVAR frame: the transpose of RELION's inverse.
     expected = np.swapaxes(np.linalg.inv(left @ relion), 1, 2)
     assert_matches(got, expected)
