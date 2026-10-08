@@ -219,16 +219,26 @@ def _exact_bucket_rotation_size(
     )
 
 
+def _nonnegative_count_override(raw: str, env_name: str, default: int) -> int:
+    """``raw`` (an environment value) as a non-negative count; blank is ``default``, a non-integer raises."""
+
+    token = raw.strip()
+    if not token:
+        return int(default)
+    value = int(token)
+    if value < 0:
+        raise ValueError(f"{env_name} must be non-negative")
+    return value
+
+
 def _exact_local_max_bucket_size_classes() -> int:
     """Cap on distinct bucket sizes when unification is dropped; 0 means uncapped."""
 
-    raw = os.environ.get(EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, "").strip()
-    if not raw:
-        return int(EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES)
-    value = int(raw)
-    if value < 0:
-        raise ValueError(f"{EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV} must be non-negative")
-    return value
+    return _nonnegative_count_override(
+        os.environ.get(EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV, ""),
+        EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES_ENV,
+        EXACT_LOCAL_MAX_BUCKET_SIZE_CLASSES,
+    )
 
 
 def _cap_bucket_size_classes(sizes: np.ndarray) -> np.ndarray:
@@ -252,13 +262,11 @@ def _exact_local_unify_max_padded_rows() -> int:
     See ``EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS`` for the measurement behind the default.
     """
 
-    raw = os.environ.get(EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, "").strip()
-    if not raw:
-        return int(EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS)
-    value = int(raw)
-    if value < 0:
-        raise ValueError(f"{EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV} must be non-negative")
-    return value
+    return _nonnegative_count_override(
+        os.environ.get(EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV, ""),
+        EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS_ENV,
+        EXACT_LOCAL_UNIFY_MAX_PADDED_ROWS,
+    )
 
 
 def _exact_local_large_bucket_quantum(rotation_block_size: int, explicit: int | None = None) -> int:
