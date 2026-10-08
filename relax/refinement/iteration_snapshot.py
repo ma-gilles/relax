@@ -35,7 +35,7 @@ See ``docs/math/relion_refinement_algorithm.md`` section 8.
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
@@ -81,18 +81,19 @@ class IterationSnapshot:
     scale_corrections: list
     group_ids: list
 
-    fsc: np.ndarray | None = None
-    fsc_for_growth: np.ndarray | None = None
-    class_weights: np.ndarray | None = None
-    direction_prior: list | None = None
-    class_assignments: list | None = None
-    max_posterior: list | None = None
-    significant_counts: list | None = None
-    avg_norm_correction: tuple = (1.0, 1.0)
-    unfiltered_means: list | None = None
-    acc_rot_per_class: np.ndarray | None = None
-    acc_trans_per_class_angstrom: np.ndarray | None = None
-    extra: dict = field(default_factory=dict)
+    fsc: np.ndarray | None
+    fsc_for_growth: np.ndarray | None
+    class_weights: np.ndarray | None
+    direction_prior: list | None
+    class_assignments: list | None
+    max_posterior: list | None
+    significant_counts: list | None
+    # Per half, in relax's frame (RELION's times ori_size**2; see the module docstring).
+    avg_norm_correction: tuple
+    unfiltered_means: list | None
+    acc_rot_per_class: np.ndarray | None
+    acc_trans_per_class_angstrom: np.ndarray | None
+    extra: dict
 
     @property
     def k_class(self) -> bool:
@@ -353,7 +354,7 @@ class SnapshotCapture:
     tau2_fudge: float
     # The run's non-default RELION-consistency options (RelionConsistencyOptions.non_default),
     # recorded so a continuation cannot silently mix two rules.
-    consistency: dict = field(default_factory=dict)
+    consistency: dict
 
     def begin(
         self,

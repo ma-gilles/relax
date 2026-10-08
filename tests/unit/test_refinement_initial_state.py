@@ -143,6 +143,9 @@ def _snapshot():
         sigma_offset_angstrom=(2.0, 2.0), current_size=32, incr_size=10,
         has_high_fsc_at_limit=False, random_perturbation=0.0, state_fields=refinement_state_fields(state),
         rotation_eulers=[], translations=[], image_corrections=[], scale_corrections=[], group_ids=[],
+        fsc=None, fsc_for_growth=None, class_weights=None, direction_prior=None, class_assignments=None,
+        max_posterior=None, significant_counts=None, avg_norm_correction=(64.0**2, 64.0**2), unfiltered_means=None,
+        acc_rot_per_class=None, acc_trans_per_class_angstrom=None, extra={},
     )
 
 
