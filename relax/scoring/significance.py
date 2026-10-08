@@ -1487,26 +1487,12 @@ def _compute_k_class_significance_batched(
             projection_memo_bytes[0] += block_bytes
         return projected
 
-    def _project_coarse_gemm_rows(class_index, rots_b, *, return_abs2: bool):
-        return _project_relion_compact_score_rows(
-            class_index,
-            rots_b,
-            return_abs2=return_abs2,
-        )
-
-    def _project_coarse_gemm_block_once(class_index, rots_b):
-        return _project_coarse_gemm_rows(
-            class_index,
-            rots_b,
-            return_abs2=True,
-        )
-
     coarse_gaussian_gemm_projection_cache = None
     if coarse_gaussian_gemm_projection_cache_plan is not None:
 
         def _project_coarse_gemm_cache_build_block(table_index, start, stop):
             projected_reference, projected_reference_abs2 = (
-                _project_coarse_gemm_rows(
+                _project_relion_compact_score_rows(
                     table_index,
                     rotations[start:stop],
                     return_abs2=False,
@@ -2166,7 +2152,7 @@ def _compute_k_class_significance_batched(
                     if exact_cc_enabled:
                         reference, _ = _project_block_once(class_index, rots_b, rotation_start=r0)
                     else:
-                        reference, _ = _project_coarse_gemm_block_once(class_index, rots_b)
+                        reference, _ = _project_relion_compact_score_rows(class_index, rots_b, return_abs2=True)
                     block_state, block_values, block_dump = _coarse_pass1_block(
                         _class_block_state(pass1_state, class_index),
                         reference,
