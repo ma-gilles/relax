@@ -89,6 +89,14 @@ _RESIDENT_OPERAND_AVAILABLE_FRACTION = 0.5
 _DEFAULT_RESIDENT_OPERAND_MAX_BYTES = 6 * 1024**3
 _PREPARE_IMAGE_BATCH_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH"
 _DEFAULT_PREPARE_IMAGE_BATCH = 256
+# Device bytes one image holds while a preparation call processes it, per pixel of its packed half image
+# (H x (W // 2 + 1)): the processed image, its CTF and the operands before the window gather. Measured at box 380
+# (Class3D K3, robustness cell 15, A100 under 16 GB ballast): the preparation's high-water rose 2.35 GiB from 64 to
+# 256 images per call, 12.5 MiB per image or 181 B per half pixel; 192 B leaves a margin. Uncounted, 256 images took
+# 2.7 GiB that a 16 GB card's pool no longer had next to the projection cache (relax#49).
+_PREPARE_BYTES_PER_HALF_PIXEL = 192
+# The fewest images one preparation call takes; below that the half keeps the per-chunk preparation.
+_MIN_PREPARE_IMAGE_BATCH = 16
 
 __all__ = [
     "RESIDENT_OPERANDS_ENV",
@@ -484,6 +492,29 @@ def resident_operands_max_bytes(available_bytes: float | None = None) -> int:
     if available_bytes is None:
         return _DEFAULT_RESIDENT_OPERAND_MAX_BYTES
     return max(1, int(float(available_bytes) * _RESIDENT_OPERAND_AVAILABLE_FRACTION))
+
+
+def resident_prepare_image_bytes(image_shape) -> int:
+    """Device bytes one image holds while a preparation call processes it."""
+
+    return _PREPARE_BYTES_PER_HALF_PIXEL * int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)
+
+
+def resident_prepare_reserved_bytes(image_shape) -> int:
+    """The working set of the smallest preparation batch, which the operand admission counts."""
+
+    return _MIN_PREPARE_IMAGE_BATCH * resident_prepare_image_bytes(image_shape)
+
+
+def resident_prepare_batch_size(free_bytes: float, image_shape) -> int:
+    """Images per preparation call: the configured batch, lowered until its working set fits ``free_bytes``.
+
+    Never below ``_MIN_PREPARE_IMAGE_BATCH``, whose working set the operand admission already counts. The batch
+    does not change any value (:func:`prepare_resident_half_operands`).
+    """
+
+    fitting = int(max(0.0, float(free_bytes)) // resident_prepare_image_bytes(image_shape))
+    return max(_MIN_PREPARE_IMAGE_BATCH, min(_prepare_image_batch_size(), fitting))
 
 
 def _prepare_image_batch_size() -> int:

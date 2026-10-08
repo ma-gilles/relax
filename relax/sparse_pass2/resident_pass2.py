@@ -146,6 +146,8 @@ from relax.sparse_pass2.resident_operands import (
     resident_half_operand_bytes,
     resident_half_operand_presence,
     resident_operands_max_bytes,
+    resident_prepare_batch_size,
+    resident_prepare_reserved_bytes,
 )
 from relax.sparse_pass2.resident_scoring import (
     cache_dtype,
@@ -3278,6 +3280,7 @@ def _resident_pass2(
             precision_policy=precision_policy,
             resolved_spectrum_norm=resolved_spectrum_norm,
             premultiplied_ctf=ctf_premultiplied_pass,
+            image_shape=image_shape,
         )
     )
     accumulator_shape = (n_fine_rot, int(n_recon_windowed)) if presum_adjoint else (program_recon_volume_size,)
@@ -3563,6 +3566,7 @@ def _resident_pass2(
             precision_policy=precision_policy,
             resolved_spectrum_norm=resolved_spectrum_norm,
             premultiplied_ctf=ctf_premultiplied_pass,
+            image_shape=image_shape,
         )
         if _resident_operands_fit(
             operand_peak_bytes,
@@ -4109,6 +4113,7 @@ def _resident_pass2(
             precision_policy=precision_policy,
             resolved_spectrum_norm=resolved_spectrum_norm,
             premultiplied_ctf=ctf_premultiplied_pass,
+            image_shape=image_shape,
         )
         _, _norm_high_shell_dtype = relion_powerclass_noise_dtypes(
             real_dtype=precision_policy.score_real_dtype,
@@ -4267,9 +4272,14 @@ def _resident_pass2(
                         warm_predicted = None
                         warmup = None
                 operands_t0 = time.time()
+                # The admission counted the smallest batch's working set; the batch takes what the budget leaves.
+                prepare_batch = resident_prepare_batch_size(
+                    budget_bytes - operand_peak_bytes + resident_prepare_reserved_bytes(image_shape), image_shape
+                )
                 try:
                     resident_operands = prepare_resident_half_operands(
-                        experiment_dataset, np.arange(n_images, dtype=np.int64), **resident_operand_kwargs
+                        experiment_dataset, np.arange(n_images, dtype=np.int64), image_batch_size=prepare_batch,
+                        **resident_operand_kwargs,
                     )
                 except ResidentOperandsUnsupported as reason:
                     logger.info(
@@ -5133,11 +5143,14 @@ def _resident_half_operand_sizes(
     precision_policy,
     resolved_spectrum_norm,
     premultiplied_ctf=False,
+    image_shape,
 ):
     """``(bytes, peak bytes)`` of one half's resident operands.
 
     The preparation holds the operands plus one reordered copy of its largest
-    array (resident_operands.stack), hence the peak.
+    array (resident_operands.stack) and the working set of its smallest image
+    batch (``image_shape``; :func:`resident_prepare_batch_size` sizes the batch
+    to what is left), hence the peak.
     """
 
     _, norm_high_shell_dtype = relion_powerclass_noise_dtypes(
@@ -5159,6 +5172,7 @@ def _resident_half_operand_sizes(
     peak_bytes = operand_bytes + resident_image_capacity(int(n_images)) * max(
         int(n_windowed), int(n_recon_windowed), int(n_rect)
     ) * np.dtype(precision_policy.score_complex_dtype).itemsize
+    peak_bytes += resident_prepare_reserved_bytes(image_shape)
     return operand_bytes, peak_bytes
 
 

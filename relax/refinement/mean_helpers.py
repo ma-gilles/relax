@@ -1063,6 +1063,12 @@ def _reconstruct_volume_eager(
             )
             del wiener_half_host
         else:
+            # The device CTF row caches yield if the device cannot hand out the pad's working set now: the zero
+            # FFTW half and its scattered copy (relax#49: at box 380 on a 16 GB card the 1.64 GiB FFTW half could
+            # not be placed beside 0.8 GiB of cached CTF rows in a fragmented pool), as before the device inverse
+            # FFT (relax#40).
+            fftw_half_bytes = int(np.prod(fourier_transform_utils.volume_shape_to_half_volume_shape(reconstruction_shape))) * 8
+            relion_ctf.ensure_device_headroom(int(_DEVICE_PAD_HALVES * fftw_half_bytes))
             fftw_half_device = relion_functions.post_process_from_filter_v2(
                 *postprocess_args,
                 **postprocess_kwargs,
@@ -1860,6 +1866,10 @@ def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
 
     return math.prod(int(size) for size in volume_shape) > _LARGE_IRFFT_TRANSFORM_SIZE_LIMIT
 
+
+# Padding the Wiener half into the FFTW half on the device holds the zero FFTW half and its scattered copy side by
+# side (bigbox 14468686): two halves.
+_DEVICE_PAD_HALVES = 2.0
 
 # The device inverse FFT's working set over its packed half: the half itself, the real output (twice the half's
 # float32 count, about one more half in bytes) and the cuFFT work area, measured at 1.63 GiB for the 760^3 half of

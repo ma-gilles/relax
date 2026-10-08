@@ -764,3 +764,42 @@ def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
     assert resident_operands_max_bytes(None) == 6 * gib
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", str(3 * gib))
     assert resident_operands_max_bytes(available) == 3 * gib
+
+
+def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
+    """At box 380 (72580 half pixels, 192 B each) 256 images per call took 2.7 GiB that a 16 GB pool no longer
+    had beside the projection cache (relax#49); the batch now takes what the operand budget leaves."""
+    from relax.sparse_pass2.resident_operands import (
+        resident_prepare_batch_size,
+        resident_prepare_image_bytes,
+        resident_prepare_reserved_bytes,
+    )
+
+    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", raising=False)
+    box = (380, 380)
+    per_image = resident_prepare_image_bytes(box)
+    assert per_image == 192 * 380 * 191
+    assert resident_prepare_reserved_bytes(box) == 16 * per_image
+    assert resident_prepare_batch_size(100 * per_image + 1, box) == 100
+    assert resident_prepare_batch_size(10_000 * per_image, box) == 256
+    # The admission already counted the smallest batch, so the batch never drops below it.
+    assert resident_prepare_batch_size(0, box) == 16
+    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", "64")
+    assert resident_prepare_batch_size(10_000 * per_image, box) == 64
+
+
+def test_operand_peak_counts_the_smallest_preparation_batch():
+    from relax.helpers.dtype_policy import DensePrecisionPolicy
+    from relax.sparse_pass2.resident_operands import resident_prepare_reserved_bytes
+    from relax.sparse_pass2.resident_pass2 import _resident_half_operand_sizes
+
+    common = dict(
+        n_images=1000, n_windowed=600, n_recon_windowed=580, n_rect=800, n_shells=40, n_fine_trans=9,
+        precision_policy=DensePrecisionPolicy(use_float64_scoring=False), resolved_spectrum_norm=False,
+    )
+    small_bytes, small_peak = _resident_half_operand_sizes(**common, image_shape=(64, 64))
+    large_bytes, large_peak = _resident_half_operand_sizes(**common, image_shape=(380, 380))
+    assert small_bytes == large_bytes
+    assert large_peak - small_peak == resident_prepare_reserved_bytes((380, 380)) - resident_prepare_reserved_bytes(
+        (64, 64)
+    )
