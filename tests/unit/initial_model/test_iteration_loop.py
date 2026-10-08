@@ -1177,6 +1177,9 @@ class TestRunVdamIterations:
                 grad_ini_subset_size=4,
                 grad_fin_subset_size=5,
                 random_seed=7,
+                grad_ini_frac=0.3,
+                grad_fin_frac=0.2,
+                grad_em_iters=0,
             )
 
     def test_5_iter_smoke(self, bind):

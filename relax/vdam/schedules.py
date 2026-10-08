@@ -27,7 +27,6 @@ GUI_DEFAULT_NR_CLASSES: int = 1
 GUI_DEFAULT_TAU2_FUDGE: float = 4.0
 DEFAULT_SIGMA2_FUDGE: float = 1.0
 DEFAULT_STEPSIZE_3D_INITIAL_MODEL: float = 0.5
-DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL: float = 4.0
 RELION_INITIALMODEL_3D_GRADIENT_MAX_SIGNIFICANTS_PER_CLASS = 100
 
 
@@ -35,7 +34,7 @@ def _native_initialmodel_do_grad(
     state: InitialModelState,
     iteration: int,
     *,
-    grad_em_iters: int = DEFAULT_GRAD_EM_ITERS,
+    grad_em_iters: int,
 ) -> bool:
     return ((int(state.nr_iter) - int(iteration)) >= int(grad_em_iters)) and not bool(state.has_converged)
 
@@ -48,14 +47,10 @@ def _active_relion_initialmodel_max_significants(state: InitialModelState, *, do
     return int(RELION_INITIALMODEL_3D_GRADIENT_MAX_SIGNIFICANTS_PER_CLASS) * int(state.K)
 
 
-def _should_estimate_native_sampling_accuracy(*, iteration: int, nr_iter: int, do_grad: bool) -> bool:
-    """RELION's ``calculateExpectedAngularErrors`` cadence."""
+def _should_estimate_native_sampling_accuracy(*, iteration: int, do_grad: bool) -> bool:
+    """RELION's ``calculateExpectedAngularErrors`` cadence; its ``iter <= nr_iter`` term always holds in the loop."""
     iteration = int(iteration)
-    if iteration <= 1:
-        return True
-    if bool(do_grad) and iteration % 10 != 0:
-        return False
-    return iteration <= int(nr_iter)
+    return iteration <= 1 or not bool(do_grad) or iteration % 10 == 0
 
 
 @dataclass(frozen=True)
@@ -142,8 +137,6 @@ def compute_subset_size(
     has_converged: bool = False,
     grad_has_converged: bool = False,
     nr_classes: int = 1,
-    do_split_random_halves: bool = False,
-    grad_suspended_local_searches_iter: int = 0,
 ) -> int:
     """``updateSubsetSize`` for ``gradient_refine && !do_auto_refine``
     (ml_optimiser.cpp:10238-10271). ``-1`` means all particles."""
@@ -158,13 +151,11 @@ def compute_subset_size(
     else:
         subset_size = grad_fin_subset_size
 
-    effective_nr_particles = nr_particles // 2 if do_split_random_halves else nr_particles
     if (
         not do_grad
         or (nr_iter - iter) < grad_em_iters
         or (nr_iter == iter and nr_classes > 1)
-        or subset_size >= effective_nr_particles
-        or grad_suspended_local_searches_iter > 0
+        or subset_size >= nr_particles
         or has_converged
         or grad_has_converged
     ):
@@ -193,7 +184,7 @@ def compute_stepsize(
     _scheme = grad_stepsize_scheme if grad_stepsize_scheme is not None else ""
 
     if _stepsize <= 0:
-        _stepsize = 0.5 if (ref_dim == 3 and is_3d_model) else 0.3
+        _stepsize = DEFAULT_STEPSIZE_3D_INITIAL_MODEL if (ref_dim == 3 and is_3d_model) else 0.3
     if _scheme == "":
         _scheme = "plain" if (ref_dim == 3 and not is_3d_model) else f"{0.9 / _stepsize:f}-step"
 
@@ -237,7 +228,7 @@ def compute_tau2_fudge(
     _scheme = tau2_fudge_scheme if tau2_fudge_scheme is not None else ""
 
     if _fudge <= 0:
-        _fudge = 1.0 if do_auto_refine else 4.0
+        _fudge = 1.0 if do_auto_refine else GUI_DEFAULT_TAU2_FUDGE
     if _scheme == "":
         _scheme = "plain" if (ref_dim == 3 and not is_3d_model) else f"{_fudge / 1.0:f}-step"
 

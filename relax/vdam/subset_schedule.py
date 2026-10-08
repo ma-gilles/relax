@@ -14,7 +14,6 @@ import numpy as np
 
 from relax.helpers import relion_random
 from relax.vdam.schedules import (
-    DEFAULT_GRAD_EM_ITERS,
     VdamPhaseLengths,
     compute_phase_lengths,
     compute_subset_size,
@@ -31,8 +30,6 @@ def _resolve_phase_lengths(
 ) -> VdamPhaseLengths:
     if phase_lengths is None:
         return compute_phase_lengths(nr_iter, grad_ini_frac, grad_fin_frac)
-    if not isinstance(phase_lengths, VdamPhaseLengths):
-        raise TypeError("phase_lengths must be a VdamPhaseLengths instance")
     values = (
         int(phase_lengths.grad_ini_iter),
         int(phase_lengths.grad_inbetween_iter),
@@ -136,9 +133,9 @@ def restore_subset_order_for_continuation(
     grad_fin_subset_size: int,
     random_seed: int,
     particle_order: Sequence[int] | None = None,
-    grad_ini_frac: float = 0.3,
-    grad_fin_frac: float = 0.2,
-    grad_em_iters: int = DEFAULT_GRAD_EM_ITERS,
+    grad_ini_frac: float,
+    grad_fin_frac: float,
+    grad_em_iters: int,
     phase_lengths: VdamPhaseLengths | None = None,
 ) -> InitialModelState:
     """Rebuild RELION's transient ``sorted_idx`` at a restart boundary.

@@ -22,7 +22,7 @@ from relax.relion.macros import relion_round
 from relax.vdam.native_options import InitialModelDefaults
 from relax.vdam.schedules import (
     DEFAULT_STEPSIZE_3D_INITIAL_MODEL,
-    DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL,
+    GUI_DEFAULT_TAU2_FUDGE,
     _step_sigmoid_value,
     compute_phase_lengths,
     compute_stepsize,
@@ -443,7 +443,7 @@ class TestStepSizeSchedule:
 
 class TestTau2FudgeSchedule:
     def test_default_3d_initial_model_fudge(self):
-        assert DEFAULT_TAU2_FUDGE_3D_INITIAL_MODEL == 4.0
+        assert GUI_DEFAULT_TAU2_FUDGE == 4.0
 
     def test_3d_initial_model_default_scheme_grows_1_to_4(self):
         """Default scheme = "4-step" -> deflate=4.

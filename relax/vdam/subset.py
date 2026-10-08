@@ -23,44 +23,29 @@ class SubsetPlan:
     halfset_ids: np.ndarray
 
 
-def assign_pseudo_halfsets_for_particle_ids(particle_ids: np.ndarray) -> np.ndarray:
-    """RELION BPref pseudo-halfset ids: ``global part_id % 2``."""
-    return (np.asarray(particle_ids, dtype=np.int64) % 2).astype(np.int8, copy=False)
-
-
 def select_vdam_subset(
     shuffled_particle_ids: np.ndarray,
     subset_size: int,
     optics_group_by_particle: Sequence[int],
     pseudo_halfsets: bool,
-    halfset_particle_ids: np.ndarray | None = None,
+    halfset_particle_ids: np.ndarray,
 ) -> SubsetPlan:
     """Per-iteration plan: prefix-N of shuffle, stable-sort by optics group, BPref halfset assignment.
 
-    Caller must resolve ``subset_size=-1`` to ``nr_particles`` first.
+    ``halfset_particle_ids`` are RELION's part ids of the shuffled rows (same order); a pseudo-halfset
+    is ``part_id % 2``. Caller must resolve ``subset_size=-1`` to ``nr_particles`` first.
     """
     if subset_size < 0 or subset_size > shuffled_particle_ids.size:
         raise ValueError(
             f"subset_size={subset_size} out of range for nr_particles={shuffled_particle_ids.size}; resolve -1 first"
         )
     prefix = np.asarray(shuffled_particle_ids[:subset_size], dtype=np.int64)
-    if prefix.size == 0:
-        sorted_prefix = prefix
-        sorted_halfset_source = prefix
-    else:
-        keys = np.asarray([optics_group_by_particle[int(p)] for p in prefix], dtype=np.int64)
-        stable_order = np.argsort(keys, kind="stable")
-        sorted_prefix = prefix[stable_order]
-        if halfset_particle_ids is None:
-            halfset_source = prefix
-        else:
-            halfset_source = np.asarray(halfset_particle_ids, dtype=np.int64)
-            if halfset_source.shape != np.asarray(shuffled_particle_ids).shape:
-                raise ValueError("halfset_particle_ids must match shuffled_particle_ids shape")
-            halfset_source = halfset_source[:subset_size]
-        sorted_halfset_source = halfset_source[stable_order]
+    keys = np.asarray([optics_group_by_particle[int(p)] for p in prefix], dtype=np.int64)
+    stable_order = np.argsort(keys, kind="stable")
+    sorted_prefix = prefix[stable_order]
+    sorted_halfset_source = np.asarray(halfset_particle_ids, dtype=np.int64)[:subset_size][stable_order]
     halfsets = (
-        assign_pseudo_halfsets_for_particle_ids(sorted_halfset_source)
+        (sorted_halfset_source % 2).astype(np.int8, copy=False)
         if pseudo_halfsets
         else np.zeros(sorted_prefix.size, dtype=np.int8)
     )

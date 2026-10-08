@@ -119,11 +119,7 @@ def _native_expectation_step(
         if (
             (optics_state is not None or tilt_images is not None)
             and not skip_expected_accuracy
-            and schedules._should_estimate_native_sampling_accuracy(
-                iteration=iteration,
-                nr_iter=int(state.nr_iter),
-                do_grad=do_grad,
-            )
+            and schedules._should_estimate_native_sampling_accuracy(iteration=iteration, do_grad=do_grad)
         ):
             # RELION expectationSetup constructs the production PPref
             # before calculateExpectedAngularErrors and reuses that PPref

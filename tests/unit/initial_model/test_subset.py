@@ -6,8 +6,7 @@ Production shuffling uses the native binding, tested separately. Here we cover:
     Fisher-Yates semantics against a deterministic `rnd_unif` stream.
   - `select_vdam_subset` stable-sorts the prefix by optics group and emits
     RELION BPref pseudo-halfset ids of length `subset_size`.
-  - `assign_pseudo_halfsets_for_particle_ids` produces `part_id % 2` ids.
-    (ml_optimiser.cpp:1920).
+  - the pseudo-halfset of a selected row is its `part_id % 2` (ml_optimiser.cpp:1920).
 """
 
 from __future__ import annotations
@@ -17,10 +16,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import numpy_rnd_unif_factory, randomise_particles_order
 
-from relax.vdam.subset import (
-    assign_pseudo_halfsets_for_particle_ids,
-    select_vdam_subset,
-)
+from relax.vdam.subset import select_vdam_subset
 
 pytestmark = pytest.mark.unit
 
@@ -101,7 +97,7 @@ class TestSelectVdamSubset:
         shuffled = np.array([3, 1, 4, 1, 5, 9, 2, 6], dtype=np.int64)
         # All same optics group
         og = [0] * 10
-        plan = select_vdam_subset(shuffled, subset_size=4, optics_group_by_particle=og, pseudo_halfsets=True)
+        plan = select_vdam_subset(shuffled, subset_size=4, optics_group_by_particle=og, pseudo_halfsets=True, halfset_particle_ids=shuffled)
         assert plan.particle_ids.shape == (4,)
         assert plan.halfset_ids.shape == (4,)
 
@@ -110,7 +106,7 @@ class TestSelectVdamSubset:
         # Particle 0, 2, 4 are in group 0; particle 1, 3, 5 in group 1
         shuffled = np.array([5, 0, 3, 4, 1, 2], dtype=np.int64)
         og = [0, 1, 0, 1, 0, 1]  # particle i -> optics group
-        plan = select_vdam_subset(shuffled, subset_size=6, optics_group_by_particle=og, pseudo_halfsets=True)
+        plan = select_vdam_subset(shuffled, subset_size=6, optics_group_by_particle=og, pseudo_halfsets=True, halfset_particle_ids=shuffled)
         # After stable-sort by optics group, group 0 particles come first in
         # their original (shuffled) relative order, then group 1:
         #   group 0 (in shuffled order): 0, 4, 2  -> [0, 4, 2]
@@ -120,7 +116,7 @@ class TestSelectVdamSubset:
     def test_halfsets_follow_global_particle_id_parity(self):
         shuffled = np.array([5, 0, 3, 4, 1, 2], dtype=np.int64)
         og = [0] * 6
-        plan = select_vdam_subset(shuffled, subset_size=6, optics_group_by_particle=og, pseudo_halfsets=True)
+        plan = select_vdam_subset(shuffled, subset_size=6, optics_group_by_particle=og, pseudo_halfsets=True, halfset_particle_ids=shuffled)
         assert plan.particle_ids.tolist() == [5, 0, 3, 4, 1, 2]
         assert plan.halfset_ids.tolist() == [1, 0, 1, 0, 1, 0]
 
@@ -141,16 +137,16 @@ class TestSelectVdamSubset:
     def test_halfsets_all_zero_when_not_pseudo(self):
         shuffled = np.array([0, 1, 2, 3], dtype=np.int64)
         og = [0] * 4
-        plan = select_vdam_subset(shuffled, subset_size=4, optics_group_by_particle=og, pseudo_halfsets=False)
+        plan = select_vdam_subset(shuffled, subset_size=4, optics_group_by_particle=og, pseudo_halfsets=False, halfset_particle_ids=shuffled)
         assert plan.halfset_ids.tolist() == [0, 0, 0, 0]
 
     def test_subset_size_out_of_range(self):
         shuffled = np.arange(10, dtype=np.int64)
         og = [0] * 10
         with pytest.raises(ValueError):
-            select_vdam_subset(shuffled, subset_size=-1, optics_group_by_particle=og, pseudo_halfsets=True)
+            select_vdam_subset(shuffled, subset_size=-1, optics_group_by_particle=og, pseudo_halfsets=True, halfset_particle_ids=shuffled)
         with pytest.raises(ValueError):
-            select_vdam_subset(shuffled, subset_size=11, optics_group_by_particle=og, pseudo_halfsets=True)
+            select_vdam_subset(shuffled, subset_size=11, optics_group_by_particle=og, pseudo_halfsets=True, halfset_particle_ids=shuffled)
 
     def test_full_pipeline_on_fixture_size_500(self):
         """Integration-ish: shuffle 500 particles, take a 200-prefix, sort,
@@ -160,7 +156,7 @@ class TestSelectVdamSubset:
         order = randomise_particles_order(500, rnd)
         # Mock optics groups: first 300 particles in group 0, rest in group 1
         og = [0 if i < 300 else 1 for i in range(500)]
-        plan = select_vdam_subset(order, subset_size=200, optics_group_by_particle=og, pseudo_halfsets=True)
+        plan = select_vdam_subset(order, subset_size=200, optics_group_by_particle=og, pseudo_halfsets=True, halfset_particle_ids=order)
 
         assert plan.particle_ids.shape == (200,)
         assert plan.halfset_ids.shape == (200,)
@@ -180,18 +176,29 @@ class TestSelectVdamSubset:
         assert_matches(plan.halfset_ids, plan.particle_ids % 2)
 
 
-class TestAssignPseudoHalfsetsForParticleIds:
+class TestPseudoHalfsetsFollowPartIds:
+    @staticmethod
+    def _halfsets(part_ids):
+        part_ids = np.asarray(part_ids, dtype=np.int64)
+        return select_vdam_subset(
+            part_ids,
+            subset_size=part_ids.size,
+            optics_group_by_particle=[0] * max(int(part_ids.max(initial=-1)) + 1, 1),
+            pseudo_halfsets=True,
+            halfset_particle_ids=part_ids,
+        ).halfset_ids
+
     @pytest.mark.parametrize("count, expected", ((3, [0, 1, 0]), (4, [0, 1, 0, 1]), (5, [0, 1, 0, 1, 0])))
     def test_sequential_ids(self, count, expected):
-        out = assign_pseudo_halfsets_for_particle_ids(np.arange(count, dtype=np.int64))
+        out = self._halfsets(np.arange(count, dtype=np.int64))
         assert out.tolist() == expected
         assert out.dtype == np.int8
 
     def test_global_particle_id_parity(self):
         ids = np.asarray([5, 0, 3, 4, 1, 2], dtype=np.int64)
-        assert assign_pseudo_halfsets_for_particle_ids(ids).tolist() == [1, 0, 1, 0, 1, 0]
+        assert self._halfsets(ids).tolist() == [1, 0, 1, 0, 1, 0]
 
     def test_empty(self):
-        out = assign_pseudo_halfsets_for_particle_ids(np.asarray([], dtype=np.int64))
+        out = self._halfsets(np.asarray([], dtype=np.int64))
         assert out.tolist() == []
         assert out.dtype == np.int8
