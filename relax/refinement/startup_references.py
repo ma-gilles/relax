@@ -207,6 +207,42 @@ def bootstrap_prior(prior_source, volume_shape):
     return jnp.asarray(prior * 0.5 + jnp.max(prior) * 1e-4)
 
 
+def _relion_start_shells(
+    reference_real,
+    initial_noise_radial,
+    *,
+    box_size: int,
+    tau2_fudge: float,
+    nr_particles: int,
+    pdf_class: float,
+    shell_pair_counting: str,
+):
+    """RELION's start-up tau2 and data_vs_prior shell curves (RELION units) of one class
+    (:func:`relion_start_tau2_and_data_vs_prior`)."""
+
+    from recovar.utils.helpers import recovar_volume_to_relion
+
+    from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
+
+    n4 = float(box_size) ** 4
+    sigma2 = np.asarray(initial_noise_radial, dtype=np.float64)
+    if sigma2.ndim == 2:
+        # The unweighted mean over optics groups that have noise (ml_model.cpp:1560-1573).
+        sigma2 = np.mean(sigma2[np.sum(sigma2, axis=1) > 0.0], axis=0)
+    sigma2 = sigma2.reshape(-1) / n4
+    n_shells = int(box_size) // 2 + 1
+    if sigma2.size < n_shells:
+        raise ValueError(f"initial noise spectrum has {sigma2.size} shells, need {n_shells}")
+    return relion_initial_tau2_and_data_vs_prior(
+        recovar_volume_to_relion(np.asarray(reference_real, dtype=np.float64)),
+        tau2_fudge=float(tau2_fudge),
+        avg_sigma2_noise=sigma2[:n_shells],
+        nr_particles=int(nr_particles),
+        pdf_class=float(pdf_class),
+        shell_pair_counting=shell_pair_counting,
+    )
+
+
 def relion_start_tau2_and_data_vs_prior(
     reference_real,
     initial_noise_radial,
@@ -228,50 +264,37 @@ def relion_start_tau2_and_data_vs_prior(
     ``initial_noise_radial`` is RELION sigma2 times ``grid_size**4``.
     """
 
-    from recovar.utils.helpers import recovar_volume_to_relion
-
-    from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
-
-    n4 = float(box_size) ** 4
-    sigma2 = np.asarray(initial_noise_radial, dtype=np.float64)
-    if sigma2.ndim == 2:
-        # The unweighted mean over optics groups that have noise (ml_model.cpp:1560-1573).
-        sigma2 = np.mean(sigma2[np.sum(sigma2, axis=1) > 0.0], axis=0)
-    sigma2 = sigma2.reshape(-1) / n4
-    n_shells = int(box_size) // 2 + 1
-    if sigma2.size < n_shells:
-        raise ValueError(f"initial noise spectrum has {sigma2.size} shells, need {n_shells}")
-    tau2, data_vs_prior = relion_initial_tau2_and_data_vs_prior(
-        recovar_volume_to_relion(np.asarray(reference_real, dtype=np.float64)),
-        tau2_fudge=float(tau2_fudge),
-        avg_sigma2_noise=sigma2[:n_shells],
-        nr_particles=int(nr_particles),
-        pdf_class=float(pdf_class),
+    tau2, data_vs_prior = _relion_start_shells(
+        reference_real,
+        initial_noise_radial,
+        box_size=box_size,
+        tau2_fudge=tau2_fudge,
+        nr_particles=nr_particles,
+        pdf_class=pdf_class,
         shell_pair_counting=shell_pair_counting,
     )
     mean_variance = jnp.asarray(
-        recovar_utils.make_radial_image(tau2 * n4, volume_shape, extend_last_frequency=True)
+        recovar_utils.make_radial_image(tau2 * float(box_size) ** 4, volume_shape, extend_last_frequency=True)
     ).reshape(-1)
     return mean_variance, data_vs_prior
 
 
 def class_start_data_vs_prior(
-    class_references_real, initial_noise_radial, *, box_size, volume_shape, tau2_fudge, nr_particles,
-    shell_pair_counting,
+    class_references_real, initial_noise_radial, *, box_size, tau2_fudge, nr_particles, shell_pair_counting,
 ):
     """Class3D's start-up data_vs_prior, ``(K, shells)``: each class over all particles at pdf_class 1/K.
 
     The first iteration's scale-correction sums take only the shells where it exceeds 3
-    (ml_optimiser.cpp:10473). The class tau2 volumes stay the loop's own; only that gate reads this curve.
+    (ml_optimiser.cpp:10473). The class tau2 volumes stay the loop's own; only that gate reads this curve,
+    so no tau2 volume is built.
     """
     n_classes = len(class_references_real)
     return np.stack(
         [
-            relion_start_tau2_and_data_vs_prior(
+            _relion_start_shells(
                 reference,
                 initial_noise_radial,
                 box_size=box_size,
-                volume_shape=volume_shape,
                 tau2_fudge=tau2_fudge,
                 nr_particles=nr_particles,
                 pdf_class=1.0 / n_classes,

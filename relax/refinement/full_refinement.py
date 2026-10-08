@@ -915,7 +915,6 @@ def main(command=None):
             references.class_references_real,
             initial_noise_radial,
             box_size=box_size,
-            volume_shape=ds.volume_shape,
             tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
             nr_particles=int(ds.n_units),
             shell_pair_counting=consistency_options.shell_pair_counting,
