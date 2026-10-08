@@ -71,6 +71,30 @@ def test_available_memory_is_read_each_time_a_compact_pass_is_planned(planner, m
     assert all(c["volume_shape"] == (16, 16, 16) for c in calls)
 
 
+@pytest.mark.parametrize(
+    ("physical", "allocator", "pool", "expected_gb"),
+    [
+        # A real card: the pool holds what it preallocated; the physical reading is the smaller bound.
+        (19 * 2**30, 55 * 2**30, 50 * 2**30, 19 * 2**30 / 1e9),
+        # A pool limit (16 GB emulation on an 80 GB card): the allocator's headroom bounds the textures.
+        (62 * 2**30, 10 * 2**30, 1 * 2**30, 10 * 2**30 / 1e9),
+        # No allocator reading (CPU, or a backend without memory_stats): the physical reading alone.
+        (8 * 2**30, None, None, 8 * 2**30 / 1e9),
+    ],
+)
+def test_compact_texture_budget_stays_inside_the_allocator_pool(
+    planner, monkeypatch, physical, allocator, pool, expected_gb
+):
+    """relax#44: the compact K1 budget is min(physical free, allocator available)."""
+    calls = capture_estimates(monkeypatch)
+    budget = batches.sparse_pass2_budget
+    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: physical)
+    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: allocator)
+    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: pool)
+    planner(10, 3, compact_k1_relion_layout=True)
+    assert_matches(calls[0]["runtime_free_memory_gb"], expected_gb)
+
+
 def test_local_deferred_grids_are_not_inspected_by_batch_preparation(planner, monkeypatch):
     monkeypatch.setattr(batches, "_host_relion_projector_texture_enabled", lambda *a, **k: False)
     policy = prepare(planner, use_local=True, rotations=None, translations=None)

@@ -53,10 +53,25 @@ class BatchPlanner:
         )
         runtime_free_memory_gb = None
         if compact_k1_relion_layout:
-            # CUDA textures allocate outside XLA's reusable pool.
-            free_bytes = sparse_pass2_budget._device_free_memory_bytes()
-            if free_bytes is not None and int(free_bytes) > 0:
-                runtime_free_memory_gb = int(free_bytes) / 1e9
+            # CUDA textures allocate outside XLA's reusable pool, so the physical reading bounds them; under a
+            # pool limit (XLA_PYTHON_CLIENT_MEM_FRACTION, or a pool holding most of the card) the run may only
+            # use what the allocator can still hand out, which is the smaller reading there (relax#44).
+            physical = sparse_pass2_budget._device_free_memory_bytes()
+            in_pool = sparse_pass2_budget.device_available_bytes(
+                physical,
+                sparse_pass2_budget._jax_allocator_free_memory_bytes(),
+                sparse_pass2_budget._jax_allocator_pool_free_bytes(),
+            )
+            readings = [float(value) for value in (physical, in_pool) if value is not None]
+            free_bytes = min(readings) if readings else None
+            self.log.info(
+                "Compact K1 texture budget: physical free %s GB, allocator available %s GB, used %s GB",
+                "n/a" if physical is None else f"{physical / 1e9:.2f}",
+                "n/a" if in_pool is None else f"{in_pool / 1e9:.2f}",
+                "n/a" if free_bytes is None else f"{free_bytes / 1e9:.2f}",
+            )
+            if free_bytes is not None and free_bytes > 0:
+                runtime_free_memory_gb = free_bytes / 1e9
         plan = _estimate_relion_em_batch_sizes(
             requested_image_batch_size=self.requested.image_batch_size,
             requested_rotation_block_size=self.requested.rotation_block_size,
