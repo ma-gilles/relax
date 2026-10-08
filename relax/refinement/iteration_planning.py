@@ -459,6 +459,34 @@ def first_iteration_policy(options: RefinementOptions, *, iteration) -> FirstIte
     )
 
 
+class ClassSeeding(NamedTuple):
+    """Whether a numbered iteration of a Class3D start from one reference scores one class or seeds classes."""
+
+    # The first-iteration CC of a seeded start scores class 0 alone; its model is then copied to every class.
+    single_class_iteration: bool
+    # The random class of each particle this iteration scores against (None: no seeding this iteration).
+    seed_classes: object | None
+
+
+def class_seeding(options: RefinementOptions, *, continued: bool, iteration: int) -> ClassSeeding:
+    """RELION's Class3D from one reference scores each particle against one random class in its first
+    iteration (do_generate_seeds, ml_optimiser.cpp:4626-4633, :4880-4898). With --firstiter_cc the first
+    iteration scores class 0 alone (CC), its model is then copied to every class, and the random classes are
+    seeded in the second iteration. A continued run (``continued``) or one past RELION iteration 0 seeds none.
+    """
+    seeded_start = (
+        options.k_class.first_iteration_seed_classes is not None
+        and not continued
+        and int(options.schedule.init_relion_iteration) == 0
+    )
+    seed_after_cc = seeded_start and bool(options.parity.emulate_relion_firstiter_cc)
+    seed_iteration = seeded_start and iteration == (1 if seed_after_cc else 0)
+    return ClassSeeding(
+        single_class_iteration=seed_after_cc and iteration == 0,
+        seed_classes=options.k_class.first_iteration_seed_classes if seed_iteration else None,
+    )
+
+
 @dataclass(frozen=True)
 class CoarseGrids:
     """The exhaustive coarse trial grid: built at start-up, rebuilt by ``refresh_coarse_grids``.

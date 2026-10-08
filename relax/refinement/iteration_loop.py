@@ -98,6 +98,7 @@ from relax.refinement.half_scoring import (
 )
 from relax.refinement.iteration_planning import (
     build_initial_coarse_grids,
+    class_seeding,
     coarse_pass1_rotations,
     first_iteration_policy,
     initial_random_perturbation,
@@ -649,18 +650,7 @@ def refine_single_volume(
     ) and iteration < options.schedule.max_iter:
         # A continued run's first iteration follows the snapshot's iteration.
         has_previous_iteration = iteration > 0 or resume is not None
-        # RELION's Class3D from one reference scores each particle against one random class in its first
-        # iteration (do_generate_seeds, ml_optimiser.cpp:4626-4633, :4880-4898). With --firstiter_cc the
-        # first iteration scores class 0 alone (CC), its model is then copied to every class, and the random
-        # classes are seeded in the second iteration.
-        seeded_start = (
-            options.k_class.first_iteration_seed_classes is not None
-            and resume is None
-            and int(options.schedule.init_relion_iteration) == 0
-        )
-        seed_after_cc = seeded_start and bool(options.parity.emulate_relion_firstiter_cc)
-        single_class_iteration = seed_after_cc and iteration == 0
-        seed_iteration = seeded_start and iteration == (1 if seed_after_cc else 0)
+        seeding = class_seeding(options, continued=resume is not None, iteration=iteration)
         star_directory = source.relion_run_directory(iteration)
         native_sampling_boundary = star_directory is None and source.sealed_sampling_state is None
         if native_sampling_boundary:
@@ -1147,8 +1137,8 @@ def refine_single_volume(
                 multi_shape_halves=multi_shape_halves,
                 options=options,
                 replay_prior_translations=_replay_prior_translations,
-                initial_class_assignments=options.k_class.first_iteration_seed_classes if seed_iteration else None,
-                single_class_iteration=single_class_iteration,
+                initial_class_assignments=seeding.seed_classes,
+                single_class_iteration=seeding.single_class_iteration,
                 scoring_dtype=scoring_dtype,
                 relion_translation_angle_scale=relion_translation_angle_scale,
                 iteration=iteration,
@@ -1341,7 +1331,7 @@ def refine_single_volume(
                     )
                     for half_index, learned in enumerate(learned_priors):
                         direction_priors[half_index] = learned
-        if single_class_iteration:
+        if seeding.single_class_iteration:
             mstep, class_mixture = copy_first_class_to_every_class(
                 reference_model, direction_priors, mstep, class_mixture, n_classes=options.k_class.n_classes,
             )
