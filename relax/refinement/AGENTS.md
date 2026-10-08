@@ -61,7 +61,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 
 ## Pitfalls
 
-- `refine_single_volume` is 1,707 lines; its ceiling is in `docs/development/refinement_structure_metrics.json`.
+- `refine_single_volume` is 1,229 lines; its ceiling is in `docs/development/refinement_structure_metrics.json`.
   Up to the slack (5%) `report_refinement_structure.py --check` warns; beyond it
   `test_refinement_structure_metrics.py` fails. A warning is for the reviewer: extract or delete before you
   add, or say why the growth is needed.
