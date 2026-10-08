@@ -45,11 +45,13 @@ def make_relion_translation_log_prior(
     pixels, so explicit prior centers intentionally use the source-equivalent
     ``pixel_size**4 / sigma_offset_A**2`` scale.
 
-    ``dtype`` defaults to float32 (RELION's accelerated-GPU precision);
-    callers running a genuine double-precision comparison should pass
-    ``np.float64`` explicitly.
+    RELION computes ``pdf_offset`` in double and stores it as XFLOAT
+    (acc_ml_optimiser_impl.h:3060-3094), so the prior is computed in float64
+    and cast once to ``dtype``, which defaults to float32 (RELION's
+    accelerated-GPU precision); callers running a genuine double-precision
+    comparison should pass ``np.float64`` explicitly.
     """
-    translations = np.asarray(translations, dtype=dtype)
+    translations = np.asarray(translations, dtype=np.float64)
     if translations.ndim != 2:
         raise ValueError(
             f"translations must have shape (n_trans, dim), got {translations.shape}",
@@ -67,7 +69,7 @@ def make_relion_translation_log_prior(
     if prior_centers is None:
         return np.zeros(n_trans, dtype=dtype)
 
-    prior_centers = np.asarray(prior_centers, dtype=dtype)
+    prior_centers = np.asarray(prior_centers, dtype=np.float64)
     shared = prior_centers.ndim == 1
     centers = prior_centers.reshape(-1, translations.shape[1])
 

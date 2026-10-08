@@ -127,6 +127,7 @@ tests/unit/test_relion_gui_defaults.py
 tests/unit/test_relion_initial_lowpass.py
 tests/unit/test_relion_input_particle_table.py
 tests/unit/test_relion_random_glibc.py
+tests/unit/test_translation_log_prior_precision.py
 tests/unit/test_relion_particle_shuffle.py
 tests/unit/test_relion_perturbation_precision.py
 tests/unit/test_relion_reference_star.py
