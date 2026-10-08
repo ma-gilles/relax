@@ -419,7 +419,6 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     ``residual_shells`` must already have that length.
     """
 
-    shell_count = int(shell_count)
     residual = jnp.asarray(residual_shells, dtype=jnp.float64)
     image_power = jnp.asarray(image_power_shells, dtype=jnp.float64)
     atomic_diff2 = jnp.asarray(atomic_diff2_per_pixel, dtype=jnp.float32)

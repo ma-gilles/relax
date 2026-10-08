@@ -411,7 +411,6 @@ def class_call_length(n_rows: int) -> int:
     of the main thread in the streamed projections, e2e job 14881673).
     """
 
-    n_rows = int(n_rows)
     quantum = max(256, pow2_ceil(n_rows) // 8)
     return -(-n_rows // quantum) * quantum
 

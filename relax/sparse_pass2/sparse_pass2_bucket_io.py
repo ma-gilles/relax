@@ -85,7 +85,7 @@ def _translation_phase_table_for_indices(
     return translation_phases_half[:, pixel_indices]
 
 
-def _relion_translation_angles_f64(translations, image_shape, *, angle_scale=1.0):
+def _relion_translation_angles_f64(translations, image_shape, *, angle_scale: float = 1.0):
     """Return RELION double-ACC ``(tx, ty)`` translation radians.
 
     RELION stores sampling translations in Angstrom and converts them with the
@@ -104,7 +104,6 @@ def _relion_translation_angles_f64(translations, image_shape, *, angle_scale=1.0
             "RELION score translations must have shape (T, 2), got "
             f"{translations_f64.shape}"
         )
-    angle_scale = float(angle_scale)
     if not np.isfinite(angle_scale) or angle_scale <= 0.0:
         raise ValueError("RELION translation angle scale must be positive and finite")
     return -2.0 * np.pi * (translations_f64 * angle_scale) / float(box_size)

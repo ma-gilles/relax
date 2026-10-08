@@ -141,7 +141,6 @@ def set_concurrent_device_shares(shares: int) -> int:
     """
 
     global _CONCURRENT_DEVICE_SHARES
-    shares = int(shares)
     if shares < 1:
         raise ValueError(f"concurrent device shares must be at least 1, got {shares}")
     previous, _CONCURRENT_DEVICE_SHARES = _CONCURRENT_DEVICE_SHARES, shares
