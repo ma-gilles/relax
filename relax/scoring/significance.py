@@ -2079,7 +2079,6 @@ def _compute_k_class_significance_batched(
             # one call per class and rotation block on its projection when the
             # cache does not fit and for --firstiter_cc. The program also returns
             # the RELAX_SIGNIFICANCE_DUMP_* targets' scores and the class runner-up.
-            # The loop below remains for the generic scorer.
             batched_support_values = None
             if pass1_prior_terms is None:
                 pass1_prior_terms = tuple(
