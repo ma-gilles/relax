@@ -144,8 +144,7 @@ def tables_from_local_layout(layout, *, rotation_dtype=np.float32) -> ResidentLo
 
     Only the fields the resident stages read are touched:
     ``rotation_offsets``, ``rotations_flat``, ``mstep_rotations_flat`` (falling
-    back to ``rotations_flat`` exactly as
-    ``local_layout._local_mstep_rotations`` does), ``rotation_log_priors_flat``,
+    back to ``rotations_flat`` when absent), ``rotation_log_priors_flat``,
     ``rotation_ids_flat``, ``rotation_posterior_ids_flat``, ``source_eulers_flat``,
     ``translation_grid``, ``translation_log_priors`` and ``sample_mask_bits``.
 

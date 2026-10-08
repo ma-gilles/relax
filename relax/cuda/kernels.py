@@ -19,9 +19,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar import cuda_backproject
-from recovar.cuda_backproject import (  # noqa: F401  (staying helpers and shared loader state)
-    TARGET_PROJECT_INDEXED as _TARGET_PROJECT_INDEXED,
-)
 from recovar.cuda_backproject import (
     bpref_device_signature_scope_var as _bpref_device_signature_scope,
 )
@@ -43,9 +40,6 @@ from recovar.cuda_backproject import (
 )
 from recovar.cuda_backproject import (
     validate_inputs as _validate_inputs,
-)
-from recovar.cuda_backproject import (
-    volume_real_dtype as _volume_real_dtype,
 )
 from recovar.cuda_build import NativeLibrary, include_dir
 from recovar.data_io import image_backends as _image_backends
@@ -1208,88 +1202,6 @@ def relion_coarse_diff2_rectangular_f32(
         out_type,
         vmap_method="sequential",
     )(reference, shifted_image, weight, initial_diff2, full_to_compact)
-
-
-def _pack_runtime_logical_prefix_rows(
-    values: jax.Array,
-    logical_count: jax.Array,
-) -> jax.Array:
-    """Pack fixed-capacity rows at their dynamic logical stride.
-
-    The coarse CUDA kernel's native atomic admission order depends on operand
-    memory timing.  Leaving capacity padding between logical rows can move a
-    legal atomic sum by a few float32 ULPs.  Pack each logical row contiguously
-    at the front of the same fixed-size buffer so the runtime kernel observes
-    the exact compact strides of the unpadded scorer without changing its XLA
-    shape.
-    """
-
-    physical_count = values.shape[-1]
-    flat = values.reshape(-1)
-    flat_index = jnp.arange(flat.size, dtype=jnp.int32)
-    safe_count = jnp.maximum(logical_count, jnp.int32(1))
-    logical_total = jnp.int32(flat.size // physical_count) * logical_count
-    logical_row = flat_index // safe_count
-    logical_column = flat_index - logical_row * safe_count
-    source = logical_row * jnp.int32(physical_count) + logical_column
-    source = jnp.minimum(source, jnp.int32(flat.size - 1))
-    packed = jnp.where(
-        flat_index < logical_total,
-        flat[source],
-        jnp.zeros((), dtype=values.dtype),
-    )
-    return packed.reshape(values.shape)
-
-
-def _validate_coarse_rectangular_runtime_inputs(
-    reference: jax.Array,
-    shifted_image: jax.Array,
-    weight: jax.Array,
-    initial_diff2: jax.Array,
-    full_to_compact: jax.Array,
-    logical_full_pixel_count: jax.Array,
-) -> jax.Array:
-    """Shared operand contract for packed and physical-stride coarse scoring."""
-
-    logical_full_pixel_count = jnp.asarray(
-        logical_full_pixel_count,
-        dtype=jnp.int32,
-    )
-    _validate_relion_fine_diff2_inputs(
-        reference,
-        shifted_image,
-        weight,
-        full_to_compact,
-    )
-    if initial_diff2.dtype != jnp.float32:
-        raise TypeError(
-            f"initial_diff2 must be float32, got {initial_diff2.dtype}"
-        )
-    if logical_full_pixel_count.shape != ():
-        raise ValueError("logical_full_pixel_count must be an int32 scalar")
-    if reference.ndim != 2 or shifted_image.ndim != 3 or weight.ndim != 2:
-        raise ValueError(
-            "runtime rectangular coarse diff2 expects reference rank 2, "
-            f"shifted rank 3, and weight rank 2, got {reference.shape}, "
-            f"{shifted_image.shape}, {weight.shape}"
-        )
-    if (
-        shifted_image.shape[0] != weight.shape[0]
-        or reference.shape[1] != shifted_image.shape[2]
-        or reference.shape[1] != weight.shape[1]
-        or reference.shape[0] <= 0
-        or reference.shape[1] <= 0
-        or shifted_image.shape[0] <= 0
-        or shifted_image.shape[1] <= 0
-        or shifted_image.shape[1] > 128
-        or initial_diff2.shape != (shifted_image.shape[0],)
-    ):
-        raise ValueError(
-            "runtime rectangular coarse diff2 operands have inconsistent "
-            f"shapes or more than 128 translations: {reference.shape}, "
-            f"{shifted_image.shape}, {weight.shape}"
-        )
-    return logical_full_pixel_count
 
 
 @jax.jit
@@ -3310,39 +3222,6 @@ def relion_translate_sum_flat_rows_f32(
     # The unused fourth buffer is a 1x1 placeholder; the three-output form
     # never exposes it.
     return tuple(results) if write_ctf_probs else tuple(results[:3])
-
-
-@functools.partial(jax.jit, static_argnums=(3, 4, 5, 6, 7, 8))
-def project_indexed(
-    volume: jax.Array,
-    pixel_indices: jax.Array,
-    rotation_matrices: jax.Array,
-    image_shape: Tuple[int, int] = (0, 0),
-    volume_shape: Tuple[int, int, int] = (0, 0, 0),
-    order: int = 1,
-    half_volume: bool = False,
-    half_image: bool = False,
-    max_r: float | None = None,
-) -> jax.Array:
-    """Project only the requested flattened image pixels.
-
-    ``pixel_indices`` contains flattened pixel positions in the original full
-    image grid, or the packed half-image grid when ``half_image=True``. The
-    output stores those pixels compactly as ``(n_images, len(pixel_indices))``.
-    """
-    _ensure_ffi()
-    _validate_inputs(volume_shape, image_shape, order, half_volume, half_image, max_r=max_r)
-    kw, _, _ = _ffi_kwargs(image_shape, volume_shape, order, half_volume, half_image, max_r)
-    pixel_indices = jnp.asarray(pixel_indices, dtype=jnp.int32).reshape(-1)
-    n_images = rotation_matrices.shape[0]
-    rot6 = _rot_to_compact(rotation_matrices, _volume_real_dtype(volume))
-    out_type = jax.ShapeDtypeStruct((n_images, pixel_indices.shape[0]), volume.dtype)
-
-    return jax.ffi.ffi_call(
-        _TARGET_PROJECT_INDEXED,
-        out_type,
-        vmap_method="sequential",
-    )(volume, pixel_indices, rot6, **kw)
 
 
 def relion_firstiter_bpref_fused_x_half(

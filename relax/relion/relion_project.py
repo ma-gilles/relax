@@ -243,22 +243,3 @@ def gridding_correct_volume_real_separable(
 
     corrected, _ = griddingCorrect_square(volume_real, ori_size, padding_factor, order=1)
     return corrected.astype(volume_real.dtype)
-
-
-def centered_full_to_relion_half(volume_centered_full: jnp.ndarray) -> jnp.ndarray:
-    """Convert recovar's centered full Fourier volume (N, N, N) to RELION's
-    Projector half-complex layout (N, N, N//2+1).
-
-    Recovar stores the FFT centered (DC at [N/2, N/2, N/2]). RELION's Projector
-    stores `vol[z, y, x]` with the y/z axes in centered storage (so raw index 0
-    corresponds to k = -N/2, matching Xmipp setXmippOrigin), and the x axis in
-    half-complex non-negative-frequency layout (raw index 0 = DC, raw index
-    N//2 = Nyquist).
-
-    The x conversion is `ifftshift on axis 2 then take [:N//2+1]` which produces
-    the correct ordering [DC, k=1, ..., k=N//2-1, k=N//2 (Nyquist)] from the
-    centered layout, with the Nyquist bin coming from the centered index 0
-    (which equals k=-N/2 = +N/2 modulo N for real-input FFTs).
-    """
-    N = volume_centered_full.shape[0]
-    return jnp.fft.ifftshift(volume_centered_full, axes=2)[:, :, : N // 2 + 1]

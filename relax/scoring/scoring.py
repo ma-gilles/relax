@@ -2,7 +2,6 @@
 
 import os
 from functools import partial
-from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -287,28 +286,6 @@ def _e_step_block_scores_windowed(
     )
     residuals = cross + norms[..., None]
     return -0.5 * residuals
-
-
-class RelionCoarseGaussianGemmCertificateBlock(NamedTuple):
-    """Promoted macro scores and direct-FP32 enclosures for one block."""
-
-    macro_scores: jax.Array
-    raw_lower: jax.Array
-    raw_upper: jax.Array
-
-
-class RelionCoarseGaussianGemmF64ImageBatch(NamedTuple):
-    """Image-only FP64 operands prepared once for every reference block."""
-
-    weighted_shifted: jax.Array
-    pixel_weight: jax.Array
-    image_energy: jax.Array
-    initial_diff2: jax.Array
-    image_component_abs_max: jax.Array
-    weight_max: jax.Array
-    active: jax.Array
-    stored_inputs_valid: jax.Array
-    actual_image_count: jax.Array
 
 
 def _coarse_gemm_float64_requested() -> bool:
@@ -610,5 +587,3 @@ def _update_logsumexp(max_s, sum_exp, scores_block):
     )
     sum_exp = old_term + exp_terms
     return new_max, sum_exp
-
-

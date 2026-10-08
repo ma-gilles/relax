@@ -260,11 +260,6 @@ def weighted_slices(q, rec_image, rec_weight, rec_phase, *, translation_side: st
     return numerator, denominator
 
 
-def tile_logsumexp(scores):
-    """Stable per-image log-sum-exp over one fixed candidate tile."""
-    return jax.nn.logsumexp(scores.reshape(scores.shape[0], -1), axis=1)
-
-
 def empty_normalizer_table(count):
     """Float32 [particle, (maximum score, log shifted sum)] with empty rows."""
     return jnp.full((count, 2), -jnp.inf, dtype=jnp.float32)

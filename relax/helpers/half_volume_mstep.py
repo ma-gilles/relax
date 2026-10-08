@@ -297,15 +297,6 @@ def finalize_half_volume_bpref(
     )
 
 
-# The Hermitian expansions below are pure data movement (placement, gathers and
-# a conjugate). Eager, each is about fifteen single-primitive programs that
-# compile again at every new reconstruction size; one program per shape
-# compiles once and gives the same values.
-@partial(jax.jit, static_argnames=("recon_volume_shape",))
-def _half_volume_to_full_flat(half_volume, recon_volume_shape):
-    return fourier_transform_utils.half_volume_to_full_volume(half_volume, recon_volume_shape).reshape(-1)
-
-
 @partial(jax.jit, static_argnames=("recon_volume_shape",))
 def _relion_x_half_volume_to_full_device(volume_flat, recon_volume_shape):
     relion_full = fourier_transform_utils.half_volume_to_full_volume(
@@ -615,5 +606,3 @@ def enforce_relion_half_volume_x0_hermitian_host(volume_flat, full_volume_shape)
     self_partner = (p0[:, None] == i0[:, None]) & (p1[None, :] == i1[None, :])
     vol[:, :, 0] = np.where(self_partner, plane, summed)
     return vol.reshape(-1)
-
-

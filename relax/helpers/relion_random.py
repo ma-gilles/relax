@@ -54,9 +54,6 @@ class GlibcRand:
     def rand(self) -> int:
         return self._next()
 
-    def rand_array(self, count: int) -> np.ndarray:
-        return np.fromiter((self._next() for _ in range(int(count))), dtype=np.int64, count=int(count))
-
 
 def rnd_unif(generator: GlibcRand, low: float = 0.0, high: float = 1.0) -> np.float32:
     """RELION ``rnd_unif(a, b)``: ``a + (float) rand() / (float) (RAND_MAX / (b - a))`` in float."""

@@ -1129,17 +1129,6 @@ def _slot_view_translate(window, valid, angles, rect_indices, exact_positions, *
     return translated, translated[:, :, exact_positions]
 
 
-@partial(jax.jit, static_argnames=("image_shape",))
-def _slot_view_arrays(fields, wavg_window, safe, valid, angles, rect_indices, exact_positions, *, image_shape):
-    """One image slot's chunk operands and its translated Wavg rectangle (:func:`_slot_view_gather`, :func:`_slot_view_translate`)."""
-
-    gathered, window = _slot_view_gather(fields, wavg_window, safe, valid)
-    translated, translated_atomic = _slot_view_translate(
-        window, valid, angles, rect_indices, exact_positions, image_shape=image_shape
-    )
-    return gathered, translated, translated_atomic
-
-
 _SLOT_PARTIAL_FIELDS = ("wavg_triplet_pixels", "a2_per_image", "xa_per_image")
 
 

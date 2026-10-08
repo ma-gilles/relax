@@ -154,12 +154,6 @@ class FourierWindowSpec:
     def recon_values(self, values):
         return values if self.recon_indices is None else _window_values(values, self.recon_indices)
 
-    def score_or_full_indices(self, n_half: int, *, dtype=jnp.int32):
-        return self.score_indices if self.score_indices is not None else jnp.arange(int(n_half), dtype=dtype)
-
-    def recon_or_full_indices(self, n_half: int, *, dtype=jnp.int32):
-        return self.recon_indices if self.recon_indices is not None else jnp.arange(int(n_half), dtype=dtype)
-
 
 @jax.jit
 def _take_last_axis(values, indices):

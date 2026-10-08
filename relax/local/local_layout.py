@@ -335,21 +335,6 @@ class LocalBucketSpec:
     local_source_eulers: np.ndarray | None = None
 
 
-def _local_mstep_rotations(bucket: LocalBucketSpec) -> np.ndarray:
-    """Return the adjoint-only rotations, falling back to scoring rotations.
-
-    Preserves the source array's own dtype rather than forcing float32:
-    ``bucket.local_mstep_rotations``/``local_rotations`` are already built by
-    ``bucket_local_hypothesis_layout`` at whatever precision the caller's
-    ``LocalHypothesisLayout`` chose (float64 under double-precision scoring).
-    """
-
-    rotations = bucket.local_mstep_rotations
-    if rotations is None:
-        rotations = bucket.local_rotations
-    return np.asarray(rotations)
-
-
 def _resolve_prior_rotations(prior_rotations: np.ndarray, healpix_order: int, grid_metadata):
     """Return RELION eulers and rotation matrices for local-support construction."""
 

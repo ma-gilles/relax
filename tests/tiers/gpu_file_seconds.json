@@ -132,7 +132,6 @@
 "tests/unit/test_core_slicing.py": 56,
 "tests/unit/test_cuda_backproject_relion_padding.py": 0,
 "tests/unit/test_cuda_bpref_point_group_symmetry.py": 2,
-"tests/unit/test_cuda_jax_equivalence_em.py": 4,
 "tests/unit/test_cuda_lib_symbol_check_em.py": 0,
 "tests/unit/test_cuda_relion_coarse_projector_padding.py": 0,
 "tests/unit/test_cuda_relion_fine_diff2_masked.py": 2,

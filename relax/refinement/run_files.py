@@ -1091,7 +1091,3 @@ def _fourier_from_map(volume_real, volume_shape) -> np.ndarray:
     real = np.asarray(volume_real, dtype=np.float32).reshape(volume_shape)
     volume = scipy.fft.fftn(scipy.fft.fftshift(real), workers=_fft_workers())
     return np.asarray(scipy.fft.fftshift(volume), dtype=np.complex64).reshape(-1)
-
-
-def output_root_for(output_dir, prefix: str = "run") -> str:
-    return os.path.join(str(output_dir), prefix)
