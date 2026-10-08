@@ -16,9 +16,9 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import keep_tau2, projector_power_refresh
 
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_noise_from_estep, update_probabilities_from_estep
-from relax.vdam.init import initialise_denovo_state
 from relax.vdam.iteration_loop import (
     VdamUpdate,
     _ave_pmax,

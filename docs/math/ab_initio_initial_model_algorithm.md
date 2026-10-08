@@ -166,7 +166,7 @@ pdf_direction[k, r] = direction prior
 ```
 
 This state is created by
-[`init.py::initialise_denovo_state`](../../relax/vdam/init.py)
+[`bootstrap_iref.py::initialise_denovo_state`](../../relax/vdam/bootstrap_iref.py)
 and bootstrapped by
 [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py).
 The dense E-step bridge in
@@ -226,7 +226,7 @@ Use this index only after reading the algorithm sections above.
   [`driver.py::run_native_initial_model`](../../relax/vdam/driver.py)
 - Denovo state:
   [`state.py::InitialModelState`](../../relax/vdam/state.py),
-  [`init.py::initialise_denovo_state`](../../relax/vdam/init.py)
+  [`bootstrap_iref.py::initialise_denovo_state`](../../relax/vdam/bootstrap_iref.py)
 - Bootstrap and noise:
   [`initial_noise.py::compute_avg_unaligned_and_sigma2`](../../relax/relion/initial_noise.py),
   [`bootstrap_iref.py::compute_bootstrap_iref`](../../relax/vdam/bootstrap_iref.py)
@@ -563,7 +563,7 @@ difference from mature RELION model output, not an inferred RELION rule.
 ### InitialModel startup vs later iterations
 
 Native InitialModel starts cold. In
-[`init.py::initialise_denovo_state`](../../relax/vdam/init.py),
+[`bootstrap_iref.py::initialise_denovo_state`](../../relax/vdam/bootstrap_iref.py),
 `tau2_class`, `fsc_halves_class`, and `data_vs_prior_class` are allocated as
 zeros for every class. The initial class prior is uniform (`pdf_class[k]=1/K`),
 and the initial direction prior is uniform over class x direction. The first

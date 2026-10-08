@@ -30,7 +30,7 @@ from relax.vdam import (
     output,
     schedules,
 )
-from relax.vdam.init import initialise_denovo_state
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.state import NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import select_subset_for_iter
 

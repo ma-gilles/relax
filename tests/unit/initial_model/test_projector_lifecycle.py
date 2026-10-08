@@ -6,7 +6,7 @@ import pytest
 
 from relax.vdam import dense_adapter as adapter
 from relax.vdam import iteration_loop as loop
-from relax.vdam.init import initialise_denovo_state
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 from recovar.utils.helpers import recovar_volume_to_relion

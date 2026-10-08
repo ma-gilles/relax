@@ -26,7 +26,7 @@ from relax.helpers.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
-from relax.vdam.init import compute_ini_high_shell
+from relax.vdam.bootstrap_iref import compute_ini_high_shell
 
 
 @dataclasses.dataclass(frozen=True)

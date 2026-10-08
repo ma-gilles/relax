@@ -11,7 +11,7 @@ from helpers import natives
 from helpers.float_compare import assert_matches
 
 from relax.diagnostics.vdam_native_mstep import vdam_m_step_single_class_native
-from relax.vdam.init import initialise_denovo_state
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.mstep_single_class import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
 

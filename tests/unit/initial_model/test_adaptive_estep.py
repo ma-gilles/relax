@@ -102,8 +102,8 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
     to the resident engine as ``reconstruction_group_ids``.
     """
 
+    from relax.vdam.bootstrap_iref import initialise_denovo_state
     from relax.vdam.estep_common import DenseInitialModelEstepConfig
-    from relax.vdam.init import initialise_denovo_state
 
     calls = []
     opts = native_options.NativeInitialModelOptions(fn_img="particles.star", healpix_order=1, oversampling=1)
@@ -198,8 +198,8 @@ def test_pseudo_halfsets_are_one_pass_with_accumulator_slots(monkeypatch, n_clas
 
 @pytest.mark.parametrize("pseudo_halfsets", [False, True])
 def test_an_empty_subset_returns_zero_accumulators_without_running_the_route(monkeypatch, pseudo_halfsets):
+    from relax.vdam.bootstrap_iref import initialise_denovo_state
     from relax.vdam.estep_common import DenseInitialModelEstepConfig
-    from relax.vdam.init import initialise_denovo_state
 
     def forbidden(*args, **kwargs):
         raise AssertionError("the adaptive route ran on an empty subset")

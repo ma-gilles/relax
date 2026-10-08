@@ -14,7 +14,7 @@ from scipy.spatial.transform import Rotation
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
-from relax.vdam.init import compute_ini_high_shell
+from relax.vdam.bootstrap_iref import compute_ini_high_shell
 
 
 def seed_maps_to_model(volumes, *, compute_dtype=jnp.float32):

@@ -13,9 +13,9 @@ from relax.relion import initial_model_io
 from relax.relion.initial_noise import relion_startup_positions
 from relax.vdam import bootstrap_reconstruction as br
 from relax.vdam import dense_adapter, native_sampling
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_meta_updates import update_noise_from_estep
-from relax.vdam.init import initialise_denovo_state
 
 
 def test_startup_positions_fill_each_group_then_stop():

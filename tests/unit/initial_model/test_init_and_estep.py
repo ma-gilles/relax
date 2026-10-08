@@ -27,7 +27,7 @@ from helpers.vdam import (
     minvsigma2_with_dc_zero,
 )
 
-from relax.vdam.init import (
+from relax.vdam.bootstrap_iref import (
     compute_current_size_for_denovo,
     compute_ini_high_angstrom,
     compute_ini_high_shell,

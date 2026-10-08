@@ -14,7 +14,7 @@ from relax.commands import initial_model as initial_model_command
 from relax.diagnostics import vdam_mstep_replay
 from relax.relion import initial_model_io
 from relax.vdam import dense_adapter, driver, iteration_loop, m_step, mstep_single_class, native_options
-from relax.vdam.init import initialise_denovo_state
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.schedules import DEFAULT_GRAD_MU
 

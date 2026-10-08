@@ -24,7 +24,11 @@ from helpers.float_compare import assert_matches
 
 from relax.diagnostics import vdam_mstep_replay
 from relax.vdam import mstep_single_class
-from relax.vdam.init import initialise_data_vs_prior_from_references, initialise_denovo_state, seed_noise_from_mavg
+from relax.vdam.bootstrap_iref import (
+    initialise_data_vs_prior_from_references,
+    initialise_denovo_state,
+    seed_noise_from_mavg,
+)
 from relax.vdam.m_step import vdam_m_step
 from relax.vdam.mstep_single_class import (
     _grad_min_resol_shell_from_state,

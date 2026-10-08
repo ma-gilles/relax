@@ -11,7 +11,7 @@ from recovar.utils.helpers import recovar_volume_to_relion
 
 from relax.relion import relion_projector_setup
 from relax.vdam import dense_adapter as adapter
-from relax.vdam.init import initialise_denovo_state
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from scripts.lib.native_projector_setup import (
     native_reference_to_relion_projector_half_maps,
     native_reference_to_relion_projector_half_maps_and_power,

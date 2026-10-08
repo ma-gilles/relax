@@ -10,7 +10,7 @@ from helpers.vdam import PreparedProjector
 
 from relax import sampling
 from relax.vdam import driver, native_options, native_sampling
-from relax.vdam.init import initialise_denovo_state
+from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.state import NativeParticleState
 
 pytestmark = pytest.mark.unit

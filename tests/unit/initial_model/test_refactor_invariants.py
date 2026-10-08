@@ -40,8 +40,8 @@ from relax.vdam import (
     state,
     subset_schedule,
 )
+from relax.vdam.bootstrap_iref import compute_current_size_for_denovo, compute_ini_high_angstrom, compute_ini_high_shell
 from relax.vdam.estep_common import relion_bpref_frame_scales
-from relax.vdam.init import compute_current_size_for_denovo, compute_ini_high_angstrom, compute_ini_high_shell
 from relax.vdam.schedules import (
     compute_phase_lengths,
     compute_stepsize,
@@ -314,7 +314,7 @@ LOC_BUDGETS = {
     # Optics groups on several image shapes (2026-10-05): each group's pixel size, start-up images soft-masked
     # at their own pixel and resized and windowed to the model grid before the noise and the bootstrap
     # (ml_optimiser.cpp:2905-2955): 1141 -> 1185 lines on main 7d7f3c92 (+44).
-    "initialization": (1185, ("bootstrap_iref.py", "bootstrap_reconstruction.py", "init.py")),
+    "initialization": (1185, ("bootstrap_iref.py", "bootstrap_reconstruction.py")),
     # Subtomogram InitialModel: tilt-image expected accuracy and the 3D-offset step rule (+24).
     # Several optics groups (2026-10-01): the expected accuracy once per group, recombined (+29).
     # Optics features (2026-10-02): the trials' optics-table CTFs in the expected accuracy (+6).
