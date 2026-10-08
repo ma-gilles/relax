@@ -137,6 +137,7 @@ tests/unit/test_relion_startup_noise.py
 tests/unit/test_relion_worker_scale.py
 tests/unit/test_replay_noise_semantics_cli.py
 tests/unit/test_replay_saved_healpix_order_cli.py
+tests/unit/test_local_prior_precision.py
 tests/unit/test_resident_local_layout.py
 tests/unit/test_resident_local_pass2.py
 tests/unit/test_resident_operand_avals.py

@@ -10,6 +10,7 @@ from typing import NamedTuple
 import numpy as np
 from recovar import utils
 
+from relax.healpix_sampling import euler_angles_to_matrix
 from relax.helpers.batch_planning import (
     _plan_consecutive_padded_batches,
 )
@@ -336,7 +337,12 @@ class LocalBucketSpec:
 
 
 def _resolve_prior_rotations(prior_rotations: np.ndarray, healpix_order: int, grid_metadata):
-    """Return RELION eulers and rotation matrices for local-support construction."""
+    """Return float64 RELION eulers and rotation matrices for local-support construction.
+
+    RELION selects local supports from the priors in double (RFLOAT, ``selectOrientationsWithNonZeroPriorProbability``,
+    healpix_sampling.cpp:710-790, via ``Euler_angles2direction``), also in its GPU build
+    (acc_ml_optimiser_impl.h:611), so the eulers stay float64 and the matrices are ``Euler_angles2matrix``.
+    """
 
     prior_rotations = np.asarray(prior_rotations)
     if prior_rotations.ndim == 0:
@@ -344,21 +350,20 @@ def _resolve_prior_rotations(prior_rotations: np.ndarray, healpix_order: int, gr
 
     if prior_rotations.ndim == 1:
         if "eulers_full" in grid_metadata:
-            prior_eulers = np.asarray(grid_metadata["eulers_full"], dtype=np.float32)[prior_rotations.astype(np.int64)]
+            prior_eulers = np.asarray(grid_metadata["eulers_full"], dtype=np.float64)[prior_rotations.astype(np.int64)]
         else:
             prior_eulers = rotation_indices_to_relion_eulers(
                 prior_rotations.astype(np.int64),
                 healpix_order,
                 symmetry=str(grid_metadata.get("symmetry", "C1")),
             )
-        prior_rotation_mats = utils.R_from_relion(prior_eulers, degrees=True)
-        return np.asarray(prior_eulers, dtype=np.float32), np.asarray(prior_rotation_mats, dtype=np.float64)
+        prior_eulers = np.asarray(prior_eulers, dtype=np.float64).reshape(-1, 3)
+        return prior_eulers, euler_angles_to_matrix(prior_eulers)
     if prior_rotations.ndim == 2 and prior_rotations.shape[-1] == 3:
-        prior_eulers = np.asarray(prior_rotations, dtype=np.float32).reshape(-1, 3)
-        prior_rotation_mats = utils.R_from_relion(prior_eulers, degrees=True)
-        return prior_eulers, np.asarray(prior_rotation_mats, dtype=np.float64)
+        prior_eulers = np.asarray(prior_rotations, dtype=np.float64).reshape(-1, 3)
+        return prior_eulers, euler_angles_to_matrix(prior_eulers)
     prior_rotation_mats = np.asarray(prior_rotations, dtype=np.float64).reshape(-1, 3, 3)
-    prior_eulers = utils.R_to_relion(prior_rotation_mats, degrees=True).astype(np.float32)
+    prior_eulers = np.asarray(utils.R_to_relion(prior_rotation_mats, degrees=True), dtype=np.float64)
     return prior_eulers, prior_rotation_mats
 
 
@@ -940,7 +945,8 @@ def build_local_hypothesis_layout(
     ``use_float64_projections`` so the default stays unchanged.
     """
 
-    prior_rotations = np.asarray(prior_rotations, dtype=dtype)
+    # The priors keep their own precision: local supports are selected in double (_resolve_prior_rotations).
+    prior_rotations = np.asarray(prior_rotations)
     symmetry = canonicalize_rotational_symmetry(str(grid_metadata.get("symmetry", "C1")))
     if rotation_grid_rotations is not None:
         rotation_grid_rotations = np.asarray(rotation_grid_rotations, dtype=dtype).reshape(-1, 3, 3)

@@ -206,7 +206,8 @@ def _run_local_search_iteration(
     # genuinely double precision end to end when either flag requests it;
     # default stays float32 to match RELION's accelerated-GPU precision.
     local_layout_dtype = np.float64 if (kernel.use_float64_scoring or kernel.use_float64_projections) else np.float32
-    prior_rotations = np.asarray(prior_rotations, dtype=local_layout_dtype)
+    # The prior angles stay as given (float64): RELION selects local supports from them in double.
+    prior_rotations = np.asarray(prior_rotations)
     if prior_rotations.ndim == 3:
         n_prior = prior_rotations.shape[0]
     elif prior_rotations.ndim == 2 and prior_rotations.shape[1] == 3:
