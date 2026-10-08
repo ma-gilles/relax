@@ -114,9 +114,9 @@ def prepare_optics(
     current_translations,
     with_log_prior: bool,
     zero_cold_center: bool,
-    coarse_step_deg=None,
-    particle_diameter_ang=None,
-    dtype=np.float32,
+    coarse_step_deg,
+    particle_diameter_ang,
+    dtype,
 ) -> OpticsSpec:
     """Prepare half scoring operands for its image shape classes.
 

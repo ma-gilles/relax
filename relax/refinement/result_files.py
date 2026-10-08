@@ -571,16 +571,15 @@ def write_final_maps(
             # K-class: maps.means[k] has shape (K, V); maps.class_means
             # has shape (K, V) for the merged final iter; maps.mean is the
             # class-weighted merged volume.
-            if maps.class_means is not None:
-                class_means_arr = np.asarray(maps.class_means)
-                for c in range(n_classes):
-                    vol_real = _ft_to_real_volume(class_means_arr[c])
-                    write_map(
-                        os.path.join(output_dir, f"final_class{c + 1:03d}.mrc"),
-                        vol_real,
-                        voxel_size=pixel_size_angstrom,
-                    )
-                logger.info("Saved %d per-class merged final volumes", n_classes)
+            class_means_arr = np.asarray(maps.class_means)
+            for c in range(n_classes):
+                vol_real = _ft_to_real_volume(class_means_arr[c])
+                write_map(
+                    os.path.join(output_dir, f"final_class{c + 1:03d}.mrc"),
+                    vol_real,
+                    voxel_size=pixel_size_angstrom,
+                )
+            logger.info("Saved %d per-class merged final volumes", n_classes)
 
 
 @dataclass(frozen=True)

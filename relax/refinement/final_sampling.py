@@ -114,7 +114,7 @@ def prepare_final_sampling(
     source: InputSource,
     previous_perturbation: float,
     rng,
-    dtype=np.float32,
+    dtype,
 ) -> FinalSampling:
     """Resolve the final pass's sampling (the input source's, or the run's own) and return arrays in scoring
     precision.

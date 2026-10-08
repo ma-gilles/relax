@@ -73,6 +73,7 @@ def preparation(monkeypatch):
         source=InputSource(),
         previous_perturbation=0.25,
         rng=object(),
+        dtype=np.float32,
     )
     return inputs, events, host_grid
 
