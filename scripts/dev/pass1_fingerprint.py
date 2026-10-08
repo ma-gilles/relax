@@ -257,6 +257,7 @@ MUTATIONS = (
 
 def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None:
     """Run the cases against ``source`` in this process; the caller has set the CPU-only environment."""
+    import inspect
     import logging
     import threading
     import traceback
@@ -352,7 +353,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             noise,
             rotations,
             jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),
-            "linear_interp",
         )
         rotation_prior = spec.get("rotation_prior", "shared")
         rotation_prior = {
@@ -394,6 +394,16 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             kwargs["image_pre_shifts"] = np.stack([np.arange(n_images) % 3 - 1, np.arange(n_images) % 2]).T.astype(np.float32)
         kwargs.update(spec.get("kwargs", {}))
         return args, kwargs
+
+    def call_pass1(args, kwargs):
+        """The call in the signature of the tree under test, so a base and a head with different signatures compare.
+
+        A base from before ``disc_type`` was removed (it was never read) takes it as the sixth positional.
+        """
+        function = significance._compute_k_class_significance_batched
+        if "disc_type" in inspect.signature(function).parameters:
+            args = (*args, "linear_interp")
+        return function(*args, **kwargs)
 
     def result_fields(result):
         """The six results as named leaves (``significant_samples`` also with its device CSR)."""
@@ -437,7 +447,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             for key, value in env.items():
                 patch.setenv(key, value)
             args, kwargs = build(spec)
-            result = significance._compute_k_class_significance_batched(*args, **kwargs)
+            result = call_pass1(args, kwargs)
             fields = result_fields(result)
             if name not in REFUSED_CASES:
                 require_finite(fields)

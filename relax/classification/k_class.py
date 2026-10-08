@@ -716,7 +716,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     noise_variance,
     rotations,
     translations,
-    disc_type: str,
     *,
     engine_kwargs: dict,
 ) -> _DenseKClassScoreProbeResult:
@@ -796,7 +795,6 @@ def _run_dense_k_class_joint_firstiter_score_probe(
         noise_variance,
         rotations,
         translations,
-        disc_type,
         class_log_priors=firstiter_class_log_priors,
         adaptive_fraction=1.0,
         max_significants=1,
@@ -1768,7 +1766,6 @@ def run_dense_k_class_em_adaptive(
                     noise_variance,
                     coarse_rotations_np,
                     coarse_translations_np,
-                    disc_type,
                     engine_kwargs=coarse_probe_kwargs,
                 )
         coarse_actual_backend = coarse_result.coarse_score_backend
@@ -1855,7 +1852,6 @@ def run_dense_k_class_em_adaptive(
                 noise_variance,
                 coarse_rotations_np,
                 coarse_translations_np,
-                disc_type,
                 class_log_priors=significance_log_priors,
                 **sig_kwargs,
                 **({"symmetry_label": engine_kwargs["symmetry_label"]} if engine_kwargs.get("symmetry_label", "C1") != "C1" else {}),

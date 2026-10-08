@@ -45,7 +45,6 @@ def _significance_call(monkeypatch, n_classes=2):
         jnp.ones(dataset.image_size, dtype=jnp.float32),
         rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0], [-1.0, 0.0]], dtype=jnp.float32),
-        "linear_interp",
     )
     kwargs = dict(
         class_log_priors=np.log(np.arange(1, n_classes + 1) / sum(range(1, n_classes + 1))),

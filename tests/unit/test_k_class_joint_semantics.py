@@ -758,7 +758,6 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
         jnp.ones(1, dtype=jnp.float32),
         np.zeros((5, 3, 3), dtype=np.float32),
         np.zeros((3, 2), dtype=np.float32),
-        "linear_interp",
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,
@@ -1571,7 +1570,6 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
         jnp.ones(1, dtype=jnp.float32),
         np.zeros((1, 3, 3), dtype=np.float32),
         np.zeros((1, 2), dtype=np.float32),
-        "linear_interp",
         engine_kwargs=dict(
             relion_firstiter_score_mode="normalized_cc",
             relion_firstiter_winner_take_all=True,

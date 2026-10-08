@@ -769,7 +769,6 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
             jnp.ones(dataset.image_size, dtype=jnp.float32),
             rotations,
             translations,
-            "linear_interp",
             **common,
         )
 
@@ -1019,7 +1018,6 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
             jnp.ones(selected_dataset.image_size, dtype=jnp.float32),
             rotations,
             translations,
-            "linear_interp",
             class_log_priors=class_prior,
             rotation_log_prior=rotation_prior,
             translation_log_prior=selected_translation_prior,

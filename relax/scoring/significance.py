@@ -845,7 +845,6 @@ def _compute_k_class_significance_batched(
     noise_variance,
     rotations,
     translations,
-    disc_type,
     *,
     class_log_priors,
     adaptive_fraction,

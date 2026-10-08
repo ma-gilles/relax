@@ -127,7 +127,6 @@ def _exact_pass1_call(n_classes, n_images=3):
         jnp.ones(dataset.image_size, dtype=jnp.float32),
         rotations,
         jnp.array([[0.0, 0.0], [1.0, -1.0]], dtype=jnp.float32),
-        "linear_interp",
     )
     projector = dict(
         relion_projector_half=coded_class_projectors(n_classes),
@@ -307,7 +306,6 @@ def test_coarse_numeric_normalization_rejects_incompatible_modes(kwargs):
             None,
             None,
             None,
-            "linear_interp",
             class_log_priors=None,
             adaptive_fraction=0.999,
             max_significants=-1,
