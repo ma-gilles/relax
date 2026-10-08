@@ -55,6 +55,7 @@ from relax.scoring.coarse_gaussian_gemm import (
 )
 from relax.scoring.coarse_layout import compact_projection_window_positions, plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
+from relax.scoring.pass1_results import BatchOutputs
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
     _relion_coarse_gaussian_gemm_scores_jit,
@@ -1412,62 +1413,26 @@ def _compute_k_class_significance_batched(
         """
 
         nonlocal sig_rot_any
-        (
-            start_idx,
-            end_idx,
-            actual_batch_size,
-            batch_size,
-            indices,
-            batch_pmax,
-            batch_weights,
-            batch_sig_mask,
-            batch_sig_rot_mask,
-            batch_n_sig,
-            batch_cutoff_count,
-            _batch_sum_weight,
-            _batch_significant_weight,
-            best_argmax_batch,
-            best_class_batch,
-            best_score_batch,
-            global_log_z,
-            class_log_z_values,
-            class_best_scores,
-            class_best_argmaxes,
-            class_second_best_scores,
-            class_second_best_argmaxes,
-            debug_dump_enabled,
-            dump_target_local_positions,
-            dump_target_pre_prior_blocks_per_class,
-            dump_target_with_prior_blocks_per_class,
-            batch_translation_log_prior,
-            coarse_gaussian_shifted_corrected,
-            coarse_gaussian_unshifted_corrected,
-            coarse_gaussian_pixel_weight,
-            coarse_gaussian_initial_diff2,
-            exact_cc_operands,
-            exact_cc_pixel_weight,
-            exact_cc_shifted,
-        ) = batch
         if collect_significance:
             if relion_f32_coarse_support_enabled:
-                relion_f32_sum_weight[start_idx:end_idx] = np.asarray(
-                    _batch_sum_weight,
+                relion_f32_sum_weight[batch.start_idx:batch.end_idx] = np.asarray(
+                    batch.sum_weight,
                     dtype=np.float32,
-                )[:actual_batch_size]
-                batch_pmax_host = np.asarray(batch_pmax, dtype=np.float32)[:actual_batch_size]
+                )[:batch.actual_batch_size]
+                batch_pmax_host = np.asarray(batch.pmax, dtype=np.float32)[:batch.actual_batch_size]
                 if return_relion_f32_normalization:
-                    relion_f32_max_posterior[start_idx:end_idx] = batch_pmax_host
+                    relion_f32_max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
             device_significance_batch = (
                 coarse_significance_device_enabled
-                and not debug_dump_enabled
+                and not batch.debug_dump_enabled
             )
             if device_significance_batch:
                 # The mask stays on the device; only the per-image ids cross
                 # the bus.  ``sig_rot_any`` below is already a device
                 # reduction, so it is unaffected.
                 if not np.array_equal(
-                    np.asarray(indices, dtype=np.int64),
-                    np.arange(start_idx, end_idx, dtype=np.int64),
+                    np.asarray(batch.indices, dtype=np.int64),
+                    np.arange(batch.start_idx, batch.end_idx, dtype=np.int64),
                 ):
                     raise RuntimeError(
                         "the device significance compaction needs image batches in "
@@ -1475,12 +1440,12 @@ def _compute_k_class_significance_batched(
                     )
                 batch_sig_mask_np = None
                 class_results = compact_batch_significance_classes(
-                    batch_sig_mask,
+                    batch.sig_mask,
                     n_classes=n_classes,
-                    actual_batch_size=actual_batch_size,
+                    actual_batch_size=batch.actual_batch_size,
                     n_coarse_rot=n_rot,
                     n_coarse_trans=n_trans,
-                    batch_n_sig=batch_n_sig if n_classes == 1 else None,
+                    batch_n_sig=batch.n_sig if n_classes == 1 else None,
                 )
                 for class_index, (
                     batch_device_counts,
@@ -1491,82 +1456,82 @@ def _compute_k_class_significance_batched(
                     device_significance_counts[class_index].append(batch_device_counts)
                     device_significance_polarity[class_index].append(batch_device_polarity)
                     device_significance_ids[class_index].append(batch_device_ids)
-                    device_significance_starts[class_index].append(int(start_idx))
+                    device_significance_starts[class_index].append(int(batch.start_idx))
             else:
-                batch_sig_mask_np = np.array(batch_sig_mask, dtype=bool, copy=True)
+                batch_sig_mask_np = np.array(batch.sig_mask, dtype=bool, copy=True)
             sig_rot_any |= np.asarray(
-                _any_over_leading_rows(batch_sig_rot_mask, actual_batch_size),
+                _any_over_leading_rows(batch.sig_rot_mask, batch.actual_batch_size),
                 dtype=bool,
             ).reshape(n_classes, n_rot)
-            n_sig_all[start_idx:end_idx] = np.asarray(batch_n_sig, dtype=np.int32)[:actual_batch_size]
-            cutoff_count_all[start_idx:end_idx] = np.asarray(
-                batch_cutoff_count,
+            n_sig_all[batch.start_idx:batch.end_idx] = np.asarray(batch.n_sig, dtype=np.int32)[:batch.actual_batch_size]
+            cutoff_count_all[batch.start_idx:batch.end_idx] = np.asarray(
+                batch.cutoff_count,
                 dtype=np.int32,
-            )[:actual_batch_size]
+            )[:batch.actual_batch_size]
         else:
             batch_sig_mask_np = None
-            n_sig_all[start_idx:end_idx] = 0
-            cutoff_count_all[start_idx:end_idx] = 0
+            n_sig_all[batch.start_idx:batch.end_idx] = 0
+            cutoff_count_all[batch.start_idx:batch.end_idx] = 0
 
-        hard_assignment[start_idx:end_idx] = np.asarray(
-            best_argmax_batch,
+        hard_assignment[batch.start_idx:batch.end_idx] = np.asarray(
+            batch.best_argmax,
             dtype=np.int32,
-        )[:actual_batch_size]
-        class_assignment[start_idx:end_idx] = np.asarray(
-            best_class_batch,
+        )[:batch.actual_batch_size]
+        class_assignment[batch.start_idx:batch.end_idx] = np.asarray(
+            batch.best_class,
             dtype=np.int32,
-        )[:actual_batch_size]
+        )[:batch.actual_batch_size]
 
         # The exact scorers score without an image-energy offset.
-        log_score_offset = np.zeros(batch_size, dtype=np.float64)
-        global_log_z_np = np.asarray(global_log_z, dtype=np.float64)
-        best_score_np = np.asarray(best_score_batch, dtype=np.float64)
-        output_slice = slice(0, actual_batch_size)
-        normalization_log_z[start_idx:end_idx] = global_log_z_np[output_slice]
-        normalization_log_evidence[start_idx:end_idx] = (
+        log_score_offset = np.zeros(batch.batch_size, dtype=np.float64)
+        global_log_z_np = np.asarray(batch.global_log_z, dtype=np.float64)
+        best_score_np = np.asarray(batch.best_score, dtype=np.float64)
+        output_slice = slice(0, batch.actual_batch_size)
+        normalization_log_z[batch.start_idx:batch.end_idx] = global_log_z_np[output_slice]
+        normalization_log_evidence[batch.start_idx:batch.end_idx] = (
             global_log_z_np[output_slice] + log_score_offset[output_slice]
         )
-        log_evidence[start_idx:end_idx] = normalization_log_evidence[start_idx:end_idx].astype(score_real_dtype)
-        best_log_score[start_idx:end_idx] = (
+        log_evidence[batch.start_idx:batch.end_idx] = normalization_log_evidence[batch.start_idx:batch.end_idx].astype(score_real_dtype)
+        best_log_score[batch.start_idx:batch.end_idx] = (
             best_score_np[output_slice] + log_score_offset[output_slice]
         ).astype(score_real_dtype)
         if relion_f32_coarse_support_enabled and collect_significance:
-            max_posterior[start_idx:end_idx] = batch_pmax_host
+            max_posterior[batch.start_idx:batch.end_idx] = batch_pmax_host
         else:
-            max_posterior[start_idx:end_idx] = np.exp(
+            max_posterior[batch.start_idx:batch.end_idx] = np.exp(
                 best_score_np[output_slice] - global_log_z_np[output_slice]
             ).astype(score_real_dtype)
-        for class_index, class_log_z in enumerate(class_log_z_values):
-            class_log_evidence[class_index, start_idx:end_idx] = (
+        for class_index, class_log_z in enumerate(batch.class_log_z_values):
+            class_log_evidence[class_index, batch.start_idx:batch.end_idx] = (
                 np.asarray(class_log_z, dtype=np.float64)[output_slice]
                 + log_score_offset[output_slice]
             )
         if return_class_best:
             for class_index in range(n_classes):
                 offset_free, absolute = _capture_offset_free_and_absolute_float32_scores(
-                    class_best_scores[class_index],
+                    batch.class_best_scores[class_index],
                     log_score_offset,
                 )
-                class_best_offset_free_log_score[class_index, start_idx:end_idx] = offset_free[output_slice]
-                class_best_log_score[class_index, start_idx:end_idx] = absolute[output_slice]
-                class_hard_assignment[class_index, start_idx:end_idx] = np.asarray(
-                    class_best_argmaxes[class_index][output_slice],
+                class_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
+                class_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
+                class_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
+                    batch.class_best_argmaxes[class_index][output_slice],
                     dtype=np.int32,
                 )
         if return_class_second:
             for class_index in range(n_classes):
                 offset_free, absolute = _capture_offset_free_and_absolute_float32_scores(
-                    class_second_best_scores[class_index],
+                    batch.class_second_best_scores[class_index],
                     log_score_offset,
                 )
-                class_second_best_offset_free_log_score[class_index, start_idx:end_idx] = offset_free[output_slice]
-                class_second_best_log_score[class_index, start_idx:end_idx] = absolute[output_slice]
-                class_second_hard_assignment[class_index, start_idx:end_idx] = np.asarray(
-                    class_second_best_argmaxes[class_index][output_slice],
+                class_second_best_offset_free_log_score[class_index, batch.start_idx:batch.end_idx] = offset_free[output_slice]
+                class_second_best_log_score[class_index, batch.start_idx:batch.end_idx] = absolute[output_slice]
+                class_second_hard_assignment[class_index, batch.start_idx:batch.end_idx] = np.asarray(
+                    batch.class_second_best_argmaxes[class_index][output_slice],
                     dtype=np.int32,
                 )
 
-        if debug_dump_enabled:
+        if batch.debug_dump_enabled:
             # Concatenate per-class per-block raw scores for the dump targets
             # into per-class arrays of shape (n_targets, n_rot, n_trans).
             target_scores_pre_prior_per_class = None
@@ -1575,19 +1540,19 @@ def _compute_k_class_significance_batched(
             # The pass-1 program returns the target rows' scores; the loop pulls
             # them from each block.
             score_capture_mode = "pass1_program_target_rows"
-            if dump_target_pre_prior_blocks_per_class is not None:
+            if batch.dump_target_pre_prior_blocks_per_class is not None:
                 target_scores_pre_prior_per_class = [
                     np.concatenate(blocks, axis=1) if blocks else None
-                    for blocks in dump_target_pre_prior_blocks_per_class
+                    for blocks in batch.dump_target_pre_prior_blocks_per_class
                 ]
                 target_scores_with_prior_per_class = [
                     np.concatenate(blocks, axis=1) if blocks else None
-                    for blocks in dump_target_with_prior_blocks_per_class
+                    for blocks in batch.dump_target_with_prior_blocks_per_class
                 ]
-                target_local_positions_for_dump = dump_target_local_positions
+                target_local_positions_for_dump = batch.dump_target_local_positions
             _maybe_dump_k_class_significance_batch(
                 experiment_dataset=experiment_dataset,
-                indices=indices,
+                indices=batch.indices,
                 n_classes=n_classes,
                 rotations=rotations,
                 translations=translations,
@@ -1595,8 +1560,8 @@ def _compute_k_class_significance_batched(
                 # weights on every route.
                 class_weight_mats=[
                     np.asarray(
-                        batch_weights.reshape(
-                            batch_size,
+                        batch.weights.reshape(
+                            batch.batch_size,
                             n_classes,
                             n_rot * n_trans,
                         )[:, class_index, :],
@@ -1605,15 +1570,15 @@ def _compute_k_class_significance_batched(
                     for class_index in range(n_classes)
                 ],
                 batch_sig_mask=batch_sig_mask_np,
-                batch_n_sig=np.asarray(batch_n_sig, dtype=np.int64),
-                hard_assignment_batch=np.asarray(best_argmax_batch, dtype=np.int64),
-                class_assignment_batch=np.asarray(best_class_batch, dtype=np.int64),
+                batch_n_sig=np.asarray(batch.n_sig, dtype=np.int64),
+                hard_assignment_batch=np.asarray(batch.best_argmax, dtype=np.int64),
+                class_assignment_batch=np.asarray(batch.best_class, dtype=np.int64),
                 global_log_z=global_log_z_np,
-                class_log_z_values=class_log_z_values,
+                class_log_z_values=batch.class_log_z_values,
                 best_score=best_score_np,
-                max_posterior=max_posterior[start_idx:end_idx],
+                max_posterior=max_posterior[batch.start_idx:batch.end_idx],
                 rotation_log_prior_padded=rotation_log_prior_padded,
-                batch_translation_log_prior=batch_translation_log_prior,
+                batch_translation_log_prior=batch.translation_log_prior,
                 class_log_priors=class_log_priors_np,
                 current_size=current_size,
                 adaptive_fraction=adaptive_fraction,
@@ -1623,17 +1588,17 @@ def _compute_k_class_significance_batched(
                 target_scores_with_prior_per_class=target_scores_with_prior_per_class,
                 # RELION's exact coarse operands: the Gaussian GEMM's, or the CC pass's.
                 coarse_gaussian_shifted_corrected=(
-                    exact_cc_shifted if exact_cc_enabled else coarse_gaussian_shifted_corrected
+                    batch.exact_cc_shifted if exact_cc_enabled else batch.coarse_gaussian_shifted_corrected
                 ),
                 coarse_gaussian_unshifted_corrected=(
-                    exact_cc_operands.windowed_unshifted
+                    batch.exact_cc_operands.windowed_unshifted
                     if exact_cc_enabled
-                    else coarse_gaussian_unshifted_corrected
+                    else batch.coarse_gaussian_unshifted_corrected
                 ),
                 coarse_gaussian_pixel_weight=(
-                    exact_cc_pixel_weight if exact_cc_enabled else coarse_gaussian_pixel_weight
+                    batch.exact_cc_pixel_weight if exact_cc_enabled else batch.coarse_gaussian_pixel_weight
                 ),
-                coarse_gaussian_initial_diff2=None if exact_cc_enabled else coarse_gaussian_initial_diff2,
+                coarse_gaussian_initial_diff2=None if exact_cc_enabled else batch.coarse_gaussian_initial_diff2,
                 coarse_gaussian_score_indices=(
                     exact_cc_score_indices if exact_cc_enabled else coarse_gaussian_score_indices
                 ),
@@ -1642,15 +1607,15 @@ def _compute_k_class_significance_batched(
                 relion_projector_r_max=relion_projector_r_max,
                 projection_padding_factor=projection_padding_factor,
                 relion_f32_sum_weight=(
-                    _batch_sum_weight if relion_f32_coarse_support_enabled else None
+                    batch.sum_weight if relion_f32_coarse_support_enabled else None
                 ),
                 relion_f32_significant_weight=(
-                    _batch_significant_weight
+                    batch.significant_weight
                     if relion_f32_coarse_support_enabled
                     else None
                 ),
                 relion_f32_cutoff_count=(
-                    batch_cutoff_count if relion_f32_coarse_support_enabled else None
+                    batch.cutoff_count if relion_f32_coarse_support_enabled else None
                 ),
                 score_capture_mode=score_capture_mode,
                 debug_iteration=debug_iteration,
@@ -1658,7 +1623,7 @@ def _compute_k_class_significance_batched(
 
         if collect_significance and not device_significance_batch:
             samples_per_class = n_rot * n_trans
-            for local_idx, global_idx in enumerate(indices):
+            for local_idx, global_idx in enumerate(batch.indices):
                 for class_index in range(n_classes):
                     c0 = class_index * samples_per_class
                     c1 = c0 + samples_per_class
@@ -2247,41 +2212,41 @@ def _compute_k_class_significance_batched(
             # scores this batch while the host prepares the next. Only a dump reads the large score and
             # operand arrays, and a dump batch publishes at once, so a waiting batch does not hold them.
             defer_publish = collect_significance and relion_f32_coarse_support_enabled and not debug_dump_enabled
-            batch_outputs = (
-                start_idx,
-                end_idx,
-                actual_batch_size,
-                batch_size,
-                indices,
-                batch_pmax,
-                None if defer_publish else batch_weights,
-                batch_sig_mask,
-                batch_sig_rot_mask,
-                batch_n_sig,
-                batch_cutoff_count,
-                _batch_sum_weight,
-                None if defer_publish else _batch_significant_weight,
-                best_argmax_batch,
-                best_class_batch,
-                best_score_batch,
-                global_log_z,
-                class_log_z_values,
-                class_best_scores,
-                class_best_argmaxes,
-                class_second_best_scores,
-                class_second_best_argmaxes,
-                debug_dump_enabled,
-                dump_target_local_positions,
-                None if defer_publish else dump_target_pre_prior_blocks_per_class,
-                None if defer_publish else dump_target_with_prior_blocks_per_class,
-                None if defer_publish else batch_translation_log_prior,
-                None if defer_publish else coarse_gaussian_shifted_corrected,
-                None if defer_publish else coarse_gaussian_unshifted_corrected,
-                None if defer_publish else coarse_gaussian_pixel_weight,
-                None if defer_publish else coarse_gaussian_initial_diff2,
-                None if defer_publish else exact_cc_operands,
-                None if defer_publish else exact_cc_pixel_weight,
-                None if defer_publish else exact_cc_shifted,
+            batch_outputs = BatchOutputs(
+                start_idx=start_idx,
+                end_idx=end_idx,
+                actual_batch_size=actual_batch_size,
+                batch_size=batch_size,
+                indices=indices,
+                pmax=batch_pmax,
+                weights=None if defer_publish else batch_weights,
+                sig_mask=batch_sig_mask,
+                sig_rot_mask=batch_sig_rot_mask,
+                n_sig=batch_n_sig,
+                cutoff_count=batch_cutoff_count,
+                sum_weight=_batch_sum_weight,
+                significant_weight=None if defer_publish else _batch_significant_weight,
+                best_argmax=best_argmax_batch,
+                best_class=best_class_batch,
+                best_score=best_score_batch,
+                global_log_z=global_log_z,
+                class_log_z_values=class_log_z_values,
+                class_best_scores=class_best_scores,
+                class_best_argmaxes=class_best_argmaxes,
+                class_second_best_scores=class_second_best_scores,
+                class_second_best_argmaxes=class_second_best_argmaxes,
+                debug_dump_enabled=debug_dump_enabled,
+                dump_target_local_positions=dump_target_local_positions,
+                dump_target_pre_prior_blocks_per_class=None if defer_publish else dump_target_pre_prior_blocks_per_class,
+                dump_target_with_prior_blocks_per_class=None if defer_publish else dump_target_with_prior_blocks_per_class,
+                translation_log_prior=None if defer_publish else batch_translation_log_prior,
+                coarse_gaussian_shifted_corrected=None if defer_publish else coarse_gaussian_shifted_corrected,
+                coarse_gaussian_unshifted_corrected=None if defer_publish else coarse_gaussian_unshifted_corrected,
+                coarse_gaussian_pixel_weight=None if defer_publish else coarse_gaussian_pixel_weight,
+                coarse_gaussian_initial_diff2=None if defer_publish else coarse_gaussian_initial_diff2,
+                exact_cc_operands=None if defer_publish else exact_cc_operands,
+                exact_cc_pixel_weight=None if defer_publish else exact_cc_pixel_weight,
+                exact_cc_shifted=None if defer_publish else exact_cc_shifted,
             )
             if defer_publish:
                 pending_batch = batch_outputs
