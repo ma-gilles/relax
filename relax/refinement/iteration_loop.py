@@ -25,7 +25,6 @@ from recovar.data_io import cryoem_dataset
 from relax.dense.score_outputs import (
     PerHalfOutputs,
     _combine_optional_half_accumulators,
-    _maybe_host_offload_half0_local_accumulators,
     _resolve_mstep_accumulator_shape,
     _resolve_mstep_full_half_axis,
 )
@@ -79,9 +78,11 @@ from relax.refinement.convergence import (
     uses_native_auto_refine,
 )
 from relax.refinement.expectation import (
+    NumberedHalfInputs,
+    NumberedHalfRecording,
     SignificanceStatistics,
+    finish_numbered_half,
     prepare_numbered_expectation,
-    record_numbered_half,
     run_numbered_halves,
     score_numbered_half,
 )
@@ -1689,27 +1690,38 @@ def refine_single_volume(
         else:
             numbered_tomo_sampling = None
 
-        def _run_half_estep(k):
-            particle_half = local_search_centre_half(halves[k], (options.replay.init_angle_priors or (None, None))[k], state)
-            score_result = score_numbered_half(
-                HalfScoringData(
-                    particles=particle_half,
+        half_inputs = [
+            NumberedHalfInputs(
+                data=HalfScoringData(
+                    particles=local_search_centre_half(
+                        halves[k], (options.replay.init_angle_priors or (None, None))[k], state
+                    ),
                     reference=reference_model.maps[k],
                     mean_variance=reference_model.tau2_per_half[k],
                     noise_variance=noise_model.variance_per_half[k],
-                    noise_radial=noise_model.radial_per_half[k] if not tomo_halves and particle_half.dataset.n_units else None,
+                    noise_radial=(
+                        noise_model.radial_per_half[k] if not tomo_halves and halves[k].dataset.n_units else None
+                    ),
                     projector=projectors[k],
                     scale_group_ids=follower_setup.scale_stats_group_ids_per_half[k],
                     scale_group_count=follower_setup.scale_stats_group_count_per_half[k],
                     scale_correction_data_vs_prior=scale_correction_data_vs_prior_this_iter,
                 ),
-                numbered_expectation,
-                tomo_sampling=numbered_tomo_sampling,
                 direction_priors=direction_log_priors[k],
-                class_log_priors=class_mixture.log_priors,
                 sigma_offset_angstrom=_sigma_offset_for_half(
                     sigma_offset.shared_angstrom, sigma_offset.per_half_angstrom, k,
                 ),
+            )
+            for k in (0, 1)
+        ]
+        # Each half is scored, then at once published into per_half and recorded (half 0's local accumulators
+        # leave the device before half 1 is scored); overlap_halves may run the two on two threads.
+        run_numbered_halves(
+            partial(
+                score_numbered_half,
+                phase=numbered_expectation,
+                tomo_sampling=numbered_tomo_sampling,
+                class_log_priors=class_mixture.log_priors,
                 batch_planner=batch_planner,
                 image_geometry=image_geometry,
                 padded_volume_shape=padded_volume_shape,
@@ -1723,33 +1735,22 @@ def refine_single_volume(
                 iteration=iteration,
                 numbered_relion_iteration=numbered_relion_iteration,
                 observer=observer,
-            )
-            per_half.translation_search_bases[k] = score_result.translation_search_base
-            per_half.pose_rotations[k] = score_result.pose_rotations
-            per_half.pose_rotation_eulers[k] = score_result.pose_rotation_eulers
-            per_half.coarse_ha[k] = score_result.coarse_ha
-            if particle_half.dataset.n_units != 0:
-                score_result = _maybe_host_offload_half0_local_accumulators(
-                    half_index=k,
-                    use_local=use_local,
-                    score_result=score_result,
-                    log=logger,
-                )
-            per_half.update_from(k, score_result, dtype=scoring_dtype)
-            record_numbered_half(
-                score_result,
-                particle_half,
-                per_half,
-                significance,
-                profile_history=history.global_profile_history,
-                iteration=iteration,
-                image_window_size=sampling_plan.windows.image_window_size,
-                healpix_order=coarse_grids.rotation_grid.healpix_order,
-                k_class_enabled=k_class_enabled,
-            )
-
-        run_numbered_halves(
-            _run_half_estep,
+            ),
+            partial(
+                finish_numbered_half,
+                recording=NumberedHalfRecording(
+                    per_half,
+                    significance,
+                    profile_history=history.global_profile_history,
+                    iteration=iteration,
+                    image_window_size=sampling_plan.windows.image_window_size,
+                    healpix_order=coarse_grids.rotation_grid.healpix_order,
+                    k_class_enabled=k_class_enabled,
+                ),
+                use_local=use_local,
+                dtype=scoring_dtype,
+            ),
+            half_inputs,
             diagnostic_half_indices,
             significance,
             overlap_halves=options.overlap.overlap_halves,
@@ -1757,6 +1758,9 @@ def refine_single_volume(
             observer=observer,
             log=logger,
         )
+        # Drop the inputs' references to this iteration's projectors and maps, which the M-step and the next
+        # iteration release (code rule 3).
+        half_inputs = None
 
         Ft_y_0, Ft_y_1 = per_half.Ft_y
         Ft_ctf_0, Ft_ctf_1 = per_half.Ft_ctf

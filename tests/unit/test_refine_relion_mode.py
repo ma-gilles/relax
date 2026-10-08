@@ -3101,7 +3101,8 @@ def test_numbered_projector_reuse_preserves_previous_projector_release(
             trial_particle_ids=np.arange(count),
         )
 
-    def score(data, phase, **kwargs):
+    def score(half, phase, **kwargs):
+        data = half.data
         if built:
             assert data.projector is built[f"iter000_half{data.particles.index}"]
         grid = phase.grid
@@ -3186,10 +3187,10 @@ def test_numbered_projector_preparation_skips_empty_half(
         built.append(kwargs["dump_label"])
         return projector_preparation.PreparedProjector(data=np.ones((1, 3, 3, 2), dtype=np.complex128), r_max=2)
 
-    def score(data, *args, **kwargs):
-        assert data.particles.index == 0
+    def score(half, *args, **kwargs):
+        assert half.data.particles.index == 0
         assert built == ["iter000_half0"]
-        assert data.projector.r_max == 2
+        assert half.data.projector.r_max == 2
         raise PreparationChecked
 
     monkeypatch.setattr(projector_preparation, "prepare_scoring_projector", prepare)

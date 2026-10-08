@@ -256,3 +256,41 @@ def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
     assert budget._device_memory_limit_bytes() == 40 * gib
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
     assert budget._device_memory_limit_bytes() == total
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_each_half_is_finished_by_its_own_thread_right_after_it_is_scored(overlap):
+    """run_numbered_halves scores a half, then finishes it with that half's inputs and result.
+
+    Serially the order is score 0, finish 0, score 1, finish 1, so half 0's accumulators can leave the device
+    before half 1 is scored (code rule 3). Overlapped, each half's finish runs on the thread that scored it.
+    """
+    from types import SimpleNamespace
+
+    from relax.refinement.expectation import run_numbered_halves
+    from relax.refinement.ports import RunObserver
+
+    events = []
+
+    def score(inputs):
+        events.append(("score", inputs, threading.current_thread().name))
+        return f"result {inputs}"
+
+    def finish(inputs, result):
+        events.append(("finish", inputs, result, threading.current_thread().name))
+
+    combined = []
+    run_numbered_halves(
+        score, finish, ("half 0", "half 1"), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
+        overlap_halves=overlap, iteration=0, observer=RunObserver(), log=LOG,
+    )
+    assert combined == [1]
+    for k in (0, 1):
+        (scored,) = [event for event in events if event[:2] == ("score", f"half {k}")]
+        (finished,) = [event for event in events if event[:2] == ("finish", f"half {k}")]
+        assert finished[2] == f"result half {k}" and finished[3] == scored[2]
+        assert events.index(finished) > events.index(scored)
+    if not overlap:
+        assert [event[:2] for event in events] == [
+            ("score", "half 0"), ("finish", "half 0"), ("score", "half 1"), ("finish", "half 1"),
+        ]

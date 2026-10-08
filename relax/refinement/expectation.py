@@ -6,10 +6,17 @@ See docs/math/relion_refinement_algorithm.md, section 3.
 import logging
 import os
 from dataclasses import dataclass, field, replace
+from functools import partial
 
 import numpy as np
 
-from relax.dense.score_outputs import HalfScoreResult, PerHalfOutputs, _record_score_profile, empty_half_result
+from relax.dense.score_outputs import (
+    HalfScoreResult,
+    PerHalfOutputs,
+    _maybe_host_offload_half0_local_accumulators,
+    _record_score_profile,
+    empty_half_result,
+)
 from relax.dense.scoring_policy import (
     _k1_relion_x_half_mstep_enabled,
     _local_adaptive_pass2_denominator_support_mode,
@@ -171,6 +178,82 @@ _BPREF_DUMP_ENV_VARS = (
 )
 
 
+@dataclass(frozen=True)
+class NumberedHalfInputs:
+    """What scoring one half of a numbered iteration reads that differs between the halves.
+
+    ``data`` holds the half's particles (centred for this iteration's local search), its reference, tau2,
+    noise, projector and scale groups. The controller builds one per half before the halves are scored; every
+    array is one the controller holds for the whole expectation, so the record extends no lifetime.
+    """
+
+    data: HalfScoringData
+    direction_priors: HalfDirectionLogPriors
+    sigma_offset_angstrom: object
+
+
+@dataclass(frozen=True)
+class NumberedHalfRecording:
+    """Where a numbered iteration's scored halves go: the iteration's half slots and significance counts, the
+    run's profile history, and the labels its profile rows carry. One per iteration; ``per_half``,
+    ``significance`` and ``profile_history`` are written in place."""
+
+    per_half: PerHalfOutputs
+    significance: SignificanceStatistics
+    profile_history: list
+    iteration: int
+    image_window_size: int | None
+    healpix_order: int
+    k_class_enabled: bool
+
+
+def finish_numbered_half(
+    half: NumberedHalfInputs,
+    score_result: HalfScoreResult,
+    recording: NumberedHalfRecording,
+    *,
+    use_local: bool,
+    dtype,
+) -> None:
+    """Publish one scored half into ``recording.per_half`` and record it, right after the half is scored.
+
+    Writes half ``k``'s slots of ``per_half`` (``k = half.data.particles.index``), then its profile and
+    significance counts (``record_numbered_half``). Before that, half 0's local-search M-step accumulators move to
+    host (``_maybe_host_offload_half0_local_accumulators``, which edits ``score_result`` in place), so that when
+    the halves run one after another they are off the device while half 1 scores (code rule 3).
+    """
+    particle_half = half.data.particles
+    k = particle_half.index
+    recording.per_half.translation_search_bases[k] = score_result.translation_search_base
+    recording.per_half.pose_rotations[k] = score_result.pose_rotations
+    recording.per_half.pose_rotation_eulers[k] = score_result.pose_rotation_eulers
+    recording.per_half.coarse_ha[k] = score_result.coarse_ha
+    if particle_half.dataset.n_units != 0:
+        score_result = _maybe_host_offload_half0_local_accumulators(
+            half_index=k,
+            use_local=use_local,
+            score_result=score_result,
+            log=logger,
+        )
+    recording.per_half.update_from(k, score_result, dtype=dtype)
+    record_numbered_half(
+        score_result,
+        particle_half,
+        recording.per_half,
+        recording.significance,
+        profile_history=recording.profile_history,
+        iteration=recording.iteration,
+        image_window_size=recording.image_window_size,
+        healpix_order=recording.healpix_order,
+        k_class_enabled=recording.k_class_enabled,
+    )
+
+
+def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
+    """Score half ``k`` and finish it before anything else runs on that half's thread."""
+    finish_half(half_inputs[k], score_half(half_inputs[k]))
+
+
 def _half_overlap_active(requested: bool, *, diagnostic_half_indices, log) -> bool:
     """Decide whether the two halves' E-steps may run concurrently.
 
@@ -252,7 +335,9 @@ def _run_halves_overlapped(run_half, diagnostic_half_indices) -> None:
 
 
 def run_numbered_halves(
-    run_half,
+    score_half,
+    finish_half,
+    half_inputs,
     diagnostic_half_indices,
     significance: SignificanceStatistics,
     *,
@@ -263,8 +348,10 @@ def run_numbered_halves(
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
 
-    ``run_half(k)`` scores half ``k`` and records its outputs; the halves run one after another, or one
-    thread each when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
+    For each half ``k`` of ``diagnostic_half_indices``: ``score_half(half_inputs[k])`` returns its score result
+    and ``finish_half(half_inputs[k], result)`` publishes it at once, before the next half is scored (so half 0's
+    finished accumulators can leave the device first). The halves run one after another, or one thread each
+    (score then finish) when ``overlap_halves`` is requested and allowed. A run that scored a subset of the
     halves for a diagnostic stops here. Then the ``observer`` sees the end of the expectation, the deferred
     preprocess checks are drained (dropped when the halves raise,
     :func:`relax.cuda.kernels.expectation_relion_preprocess_checks`) and the halves' significant-sample
@@ -277,6 +364,7 @@ def run_numbered_halves(
         diagnostic_half_indices=diagnostic_half_indices,
         log=log,
     )
+    run_half = partial(_score_and_finish_half, score_half, finish_half, half_inputs)
     # The deferred preprocess checks are read when the halves are done, and dropped if they raise.
     with expectation_relion_preprocess_checks():
         if _overlap_active:
@@ -474,13 +562,11 @@ def empty_half_rotation_count(sampling, grid_rotation_count: int, *, use_local: 
 
 
 def score_numbered_half(
-    half: HalfScoringData,
+    half: NumberedHalfInputs,
     phase: NumberedExpectation,
     *,
     tomo_sampling: TomoSampling | None,
-    direction_priors: HalfDirectionLogPriors,
     class_log_priors,
-    sigma_offset_angstrom,
     batch_planner: BatchPlanner,
     image_geometry: ImageGeometry,
     padded_volume_shape,
@@ -500,10 +586,10 @@ def score_numbered_half(
     Canonical pose grids and the applied translation base accompany the result. RELION's source-faithful
     powerClass normalisation (and with it the exact BPref operands) is on wherever RELION's particle order is
     preserved (``options.parity.preserve_bpref_particle_order``).
-    The controller owns publication, accumulator offloading and post-score capture.
+    Publication, accumulator offloading and post-score capture are ``finish_numbered_half``'s.
     """
     sampling = phase.sampling
-    particle_half = half.particles
+    particle_half = half.data.particles
     k = particle_half.index
     use_local = isinstance(sampling, LocalSampling)
     tomo_halves = tomo_sampling is not None
@@ -537,7 +623,7 @@ def score_numbered_half(
     )
     half_batching = prepare_half_batches(
         particle_half.dataset,
-        half.projector,
+        half.data.projector,
         planner=batch_planner,
         rotations=phase.grid.rotations if phase.use_adaptive or k_class_enabled else None,
         translations=phase.grid.translations,
@@ -584,7 +670,7 @@ def score_numbered_half(
         translation_log_prior = make_relion_translation_log_prior(
             translation_prior_inputs.prior_translations,
             image_geometry.pixel_size_angstrom,
-            sigma_offset_angstrom,
+            half.sigma_offset_angstrom,
             trans_prior_center,
             offset_range_pixels=None,
             dtype=scoring_dtype,
@@ -629,7 +715,7 @@ def score_numbered_half(
     )
     if tomo_halves:
         score_result = _score_tomo_half_in_loop(
-            half,
+            half.data,
             use_local=use_local,
             use_adaptive=phase.use_adaptive,
             sampling=tomo_sampling,
@@ -642,24 +728,24 @@ def score_numbered_half(
                 if use_local
                 else None
             ),
-            rotation_log_prior=direction_priors.rotation_log_prior,
-            sigma_offset_angst=sigma_offset_angstrom,
+            rotation_log_prior=half.direction_priors.rotation_log_prior,
+            sigma_offset_angst=half.sigma_offset_angstrom,
             max_significants=options.adaptive.max_significants,
             reconstruction_current_size=model_support_size,
             symmetry=symmetry,
             class_log_priors=class_log_priors if k_class_enabled else None,
-            class_rotation_log_prior=direction_priors.class_rotation_log_prior,
+            class_rotation_log_prior=half.direction_priors.class_rotation_log_prior,
             unit_seed_classes=seed_classes_k,
             normalized_cc=phase.variant.firstiter_score_mode_this_iter == "normalized_cc",
         )
     elif use_local:
         local_optics = optics_shapes.prepare_optics(
             particle_half.dataset,
-            noise_radial=half.noise_radial,
+            noise_radial=half.data.noise_radial,
             coarse_step_deg=coarse_size_step_deg,
             particle_diameter_ang=particle_diameter_ang,
             previous_translations=previous_translations_k,
-            sigma_offset_angstrom=sigma_offset_angstrom,
+            sigma_offset_angstrom=half.sigma_offset_angstrom,
             base_translations=sampling.base_translations,
             current_translations=phase.grid.translations,
             with_log_prior=False,
@@ -667,12 +753,12 @@ def score_numbered_half(
             dtype=scoring_dtype,
         )
         local_result = _score_half_local_in_bpref_scope(
-            half=replace(half, mean_variance=None, image_seed_classes=seed_classes_k),
+            half=replace(half.data, mean_variance=None, image_seed_classes=seed_classes_k),
             sampling=sampling,
             priors=LocalPriorSpec(
                 trans_prior_center=local_trans_prior_center,
                 trans_prior_center_for_engine=trans_prior_center_for_engine,
-                current_sigma_offset_angstrom=sigma_offset_angstrom,
+                current_sigma_offset_angstrom=half.sigma_offset_angstrom,
                 translation_search_base=translation_search_base,
                 local_search_translation_prior_mode=(options.local_search.local_search_translation_prior_mode),
                 replay_prior_translations=replay_prior_translations,
@@ -703,22 +789,22 @@ def score_numbered_half(
         # pass-1 grid and batch/size overrides.
         dense_optics = optics_shapes.prepare_optics(
             particle_half.dataset,
-            noise_radial=half.noise_radial,
+            noise_radial=half.data.noise_radial,
             coarse_step_deg=coarse_size_step_deg,
             particle_diameter_ang=particle_diameter_ang,
             previous_translations=previous_translations_k,
-            sigma_offset_angstrom=sigma_offset_angstrom,
+            sigma_offset_angstrom=half.sigma_offset_angstrom,
             base_translations=sampling.base_translations,
             current_translations=phase.grid.translations,
             with_log_prior=True,
             zero_cold_center=not k_class_enabled,
             dtype=scoring_dtype,
         )
-        dense_half = replace(half, image_seed_classes=seed_classes_k)
+        dense_half = replace(half.data, image_seed_classes=seed_classes_k)
         dense_sampling = sampling
         dense_priors = DensePriorSpec(
-            rotation_log_prior_k=direction_priors.rotation_log_prior,
-            class_rotation_log_prior_k=direction_priors.class_rotation_log_prior,
+            rotation_log_prior_k=half.direction_priors.rotation_log_prior,
+            class_rotation_log_prior_k=half.direction_priors.class_rotation_log_prior,
             translation_log_prior=translation_log_prior,
             translation_search_base=translation_search_base,
             trans_prior_center_for_engine=trans_prior_center_for_engine,
@@ -772,10 +858,10 @@ def score_numbered_half(
 
         if not phase.use_adaptive:
             observer.dense_half_scored(DenseHalfScored(
-                iteration, k, grid=phase.grid, sampling=dense_sampling, direction_priors=direction_priors,
+                iteration, k, grid=phase.grid, sampling=dense_sampling, direction_priors=half.direction_priors,
                 translation_log_prior=translation_log_prior, particles=particle_half,
                 translation_search_base=translation_search_base, previous_translations=previous_translations_k,
-                half=half, image_window_size=image_window_size, perturb_factor=options.parity.perturb_factor,
+                half=half.data, image_window_size=image_window_size, perturb_factor=options.parity.perturb_factor,
                 result=dense_result,
             ))
 

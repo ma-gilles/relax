@@ -92,6 +92,12 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
     return half, phase, kwargs
 
 
+def score_flat(half, phase, *, direction_priors, sigma_offset_angstrom, **kwargs):
+    """``score_numbered_half`` on this file's flat inputs: the per-half ones go in a ``NumberedHalfInputs``."""
+    inputs = expectation.NumberedHalfInputs(half, direction_priors, sigma_offset_angstrom)
+    return expectation.score_numbered_half(inputs, phase, **kwargs)
+
+
 def engine_result(n_units=2):
     return HalfScoreResult(
         ha=np.arange(n_units, dtype=np.int32), Ft_y=np.ones(64, dtype=np.complex64),
@@ -139,7 +145,7 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
     monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', optics)
     monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', lambda *args: engine_result())
     monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', lambda **inputs: engine_result())
-    expectation.score_numbered_half(half, phase, **kwargs)
+    score_flat(half, phase, **kwargs)
     assert captured['sizing'][0] is coarse_step
     assert captured['sizing'][1] is diameter
     assert captured['optics']['coarse_step_deg'] is coarse_step
@@ -177,7 +183,7 @@ def test_preserved_particle_order_selects_production_arithmetic_in_replays_too(m
     monkeypatch.setattr(expectation, 'prepare_half_batches', plan)
     monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', dense)
     monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', local_scorer)
-    expectation.score_numbered_half(half, phase, **kwargs)
+    score_flat(half, phase, **kwargs)
     assert captured == {'batches': preserve_order, 'execution': preserve_order}
 
 
@@ -326,7 +332,7 @@ def test_dense_pose_grid_preserves_canonical_metadata_and_engine_overrides(
     result.pose_rotations = matrices if explicit_matrices else None
     result.pose_rotation_eulers = eulers if explicit_eulers else None
     monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', lambda *args: result)
-    actual = expectation.score_numbered_half(half, phase, **kwargs)
+    actual = score_flat(half, phase, **kwargs)
     assert actual.pose_rotations is (matrices if explicit_matrices else phase.grid.rotations)
     expected_eulers = eulers if explicit_eulers else None if adaptive and explicit_matrices else phase.grid.rotation_eulers
     assert actual.pose_rotation_eulers is expected_eulers
@@ -344,7 +350,7 @@ def test_cold_dense_translation_prior_uses_k1_gaussian_and_k4_flat_policy(monkey
         return engine_result()
 
     monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', score)
-    actual = expectation.score_numbered_half(half, phase, **kwargs)
+    actual = score_flat(half, phase, **kwargs)
     if n_classes == 1:
         # RELION ACC multiplies the angstrom-grid squared offset by another pixel_size^2.
         assert_matches(captured['prior'], [0., -(2 * 1.25**4) / (2 * 2.**2)])
@@ -366,7 +372,7 @@ def test_local_result_keeps_explicit_coarse_assignments_and_rounded_offset_frame
         return result
 
     monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', score)
-    actual = expectation.score_numbered_half(half, phase, **kwargs)
+    actual = score_flat(half, phase, **kwargs)
     assert_matches(actual.translation_search_base, [[1, -2], [1, 0]])
     assert actual.coarse_ha is result.coarse_ha
     assert captured['priors'].translation_search_base is actual.translation_search_base
@@ -398,7 +404,7 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
     monkeypatch.setattr(expectation, '_score_tomo_half_in_loop', score)
     monkeypatch.setattr(expectation.optics_shapes, 'prepare_optics', reject)
     monkeypatch.setattr(expectation, 'relion_half_translation_prior_inputs', reject)
-    expectation.score_numbered_half(half, phase, **kwargs)
+    score_flat(half, phase, **kwargs)
     assert_matches(captured['unit_seed_classes'], [0, 2])
     assert captured['sampling'] is kwargs['tomo_sampling']
     assert (captured['local_search'] is not None) == local
@@ -418,7 +424,7 @@ def test_empty_full_layout_does_not_read_unused_volume_geometry(monkeypatch, n_c
             raise AssertionError('full/K4 empty layout does not need volume geometry')
 
     half = replace(half, particles=replace(half.particles, dataset=Empty()))
-    actual = expectation.score_numbered_half(half, phase, **kwargs)
+    actual = score_flat(half, phase, **kwargs)
     assert actual.ha.shape == (0,)
     assert actual.best_pose_translations.shape == (0, 2)
     assert actual.coarse_ha is actual.ha
