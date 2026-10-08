@@ -92,10 +92,6 @@ def _fine_support_stats(
     n_rot_fine: int,
     n_trans_fine: int,
 ) -> dict[str, float]:
-    n_rot_coarse = int(n_rot_coarse)
-    n_trans_coarse = int(n_trans_coarse)
-    n_rot_fine = int(n_rot_fine)
-    n_trans_fine = int(n_trans_fine)
     if n_rot_coarse <= 0 or n_trans_coarse <= 0 or n_rot_fine <= 0 or n_trans_fine <= 0:
         raise ValueError("rotation and translation grid sizes must be positive")
     rot_parent_map_np = np.asarray(rot_parent_map, dtype=np.int64)
@@ -212,7 +208,6 @@ def _infer_healpix_order_from_rotation_count(
 ) -> int:
     from relax.sampling import rotation_grid_size
 
-    n_rot = int(n_rot)
     for order in range(16):
         try:
             grid_size = rotation_grid_size(order, symmetry_label)

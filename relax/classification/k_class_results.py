@@ -557,7 +557,6 @@ def _expand_subset_noise_stats(
     """Expand subset-only optional noise fields to the parent image/group axes."""
 
     image_indices = np.asarray(image_indices, dtype=np.int64).reshape(-1)
-    n_images = int(n_images)
     if image_indices.size:
         if int(np.min(image_indices)) < 0 or int(np.max(image_indices)) >= n_images:
             raise ValueError("subset image indices are out of bounds")
