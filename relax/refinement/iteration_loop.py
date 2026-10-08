@@ -416,21 +416,14 @@ def class_maximization(
         log=logger,
         observer=observer,
     )
-    mean_signal_variance = class_priors.variance
-    mean_signal_variance_shells = class_priors.shells
-    data_vs_prior_iter = class_priors.data_vs_prior
-    tau2_update_details_per_class = class_priors.details_per_class
-    kclass_tau2_source = class_priors.source
-    del class_priors
-    tau2_update_details = _stack_class_tau2_update_details(tau2_update_details_per_class)
-    del tau2_update_details_per_class
+    tau2_update_details = _stack_class_tau2_update_details(class_priors.details_per_class)
     logger.info(
         "Computed iter-%d Class3D tau2 from %s: %.1fs",
         iteration + 1,
-        kclass_tau2_source,
+        class_priors.source,
         time.time() - _t_unreg_first,
     )
-    reference_model.tau2 = mean_signal_variance
+    reference_model.tau2 = class_priors.variance
     reference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)
 
     # --- Free previous-iteration means to reclaim GPU memory ---
@@ -443,7 +436,7 @@ def class_maximization(
     reference_model.maps[:] = reconstruct_numbered_class_maps(
         Ft_y_combined,
         Ft_ctf_combined,
-        mean_signal_variance_shells,
+        class_priors.shells,
         reconstruction_settings,
         n_classes=n_classes,
         iteration=iteration,
@@ -464,32 +457,29 @@ def class_maximization(
         # shells past ini_high into iteration 2's scale correction. The
         # class tau2 volumes are recomputed from the Iref power next
         # iteration, so only the shell curves carry the taper.
-        data_vs_prior_iter = _firstiter_cc_ini_high_tapered(
-            data_vs_prior_iter,
+        tapered_data_vs_prior = _firstiter_cc_ini_high_tapered(
+            class_priors.data_vs_prior,
             reconstruction_settings.grid_size,
             source_pixel_size_angstrom,
             parity.relion_firstiter_ini_high_angstrom,
             filter_edgewidth=REFERENCE_FILTER_EDGE_SHELLS,
         )
         tapered_prior = taper_first_cc_class_prior(
-            mean_signal_variance_shells,
+            class_priors.shells,
             tau2_update_details,
             reconstruction_settings,
             pixel_size_angstrom=source_pixel_size_angstrom,
         )
-        mean_signal_variance_shells = tapered_prior.shells
-        tau2_update_details = tapered_prior.details
-        del tapered_prior
         logger.info(
             "RELION iter-1 CC emulation: tapered Class3D tau2/data-vs-prior with ini_high=%.2f A",
             float(parity.relion_firstiter_ini_high_angstrom),
         )
+        return ClassMaximization(
+            Ft_y_combined, Ft_ctf_combined, previous_means, tapered_prior.shells, tapered_data_vs_prior,
+            tapered_prior.details,
+        )
     return ClassMaximization(
-        Ft_y_combined,
-        Ft_ctf_combined,
-        previous_means,
-        mean_signal_variance_shells,
-        data_vs_prior_iter,
+        Ft_y_combined, Ft_ctf_combined, previous_means, class_priors.shells, class_priors.data_vs_prior,
         tau2_update_details,
     )
 
@@ -1060,8 +1050,8 @@ def refine_single_volume(
             image_shape=image_geometry.image_shape,
             dtype=scoring_dtype,
         )
-        # The models alone retain the start-up references, tau2 and noise, so the first
-        # updates release them from the device.
+        # Drop the start-up arrays: where the caller passed temporaries (the parity script), the models
+        # are then their only holders and the first updates free them; relax refine keeps its own copies.
         del init_volume, init_mean_variance, initial_noise_variance_per_half
         class_assignments = [None, None]
         previous_class_assignments = [None, None]
@@ -1366,7 +1356,6 @@ def refine_single_volume(
             incr_size=relion_incr_size, has_high_fsc_at_limit=relion_has_high_fsc_at_limit,
             ave_pmax=state.ave_Pmax, iteration=iteration, grid_size=grid_size, log=logger,
         )
-        del image_size_plan
 
         # RELION updates image_coarse_size before updateAngularSampling at the
         # start of expectation(). Preserve that incoming sampling order even
@@ -1433,6 +1422,7 @@ def refine_single_volume(
         # Half 1's projector of this iteration's references, built for the
         # expected-accuracy estimate and reused by the scoring projector setup
         # below: RELION computes each class's projector once per iteration.
+        # Release the previous iteration's projector before the estimate builds this one.
         shared_projector_half1 = None
         iteration_accuracy, shared_projector_half1 = estimate_iteration_accuracy(
             expected_accuracy_inputs,

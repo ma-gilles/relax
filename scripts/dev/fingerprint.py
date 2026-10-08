@@ -587,7 +587,7 @@ MUTATIONS = (
      "the K=1 M-step reports half 2's tau2 details", True),
     ("class_mstep_curve_doubled", "data_vs_prior_trajectory.append(data_vs_prior_iter)", "data_vs_prior_trajectory.append(2 * data_vs_prior_iter)",
      "the Class3D M-step publishes a doubled data-vs-prior curve to the history", True),
-    ("class_mstep_keeps_old_tau2", "reference_model.tau2 = mean_signal_variance\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)", "pass\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)",
+    ("class_mstep_keeps_old_tau2", "reference_model.tau2 = class_priors.variance\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)", "pass\nreference_model.tau2_per_half = shared_tau2_per_half(reference_model.tau2)",
      "the Class3D M-step does not install its new tau2", True),
     ("class_copy_keeps_class_weights", "np.full(n_classes, float(class_mixture.weights[0]) / n_classes, dtype=np.float64)", "np.asarray(class_mixture.weights, dtype=np.float64)",
      "the one-reference class copy leaves the class weights as they were", True),
