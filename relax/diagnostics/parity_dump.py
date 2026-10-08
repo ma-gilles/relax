@@ -80,22 +80,22 @@ def _reset_iteration_timer(iteration: int) -> None:
     _ITER_TIMERS.pop(int(iteration), None)
 
 
-def dump_dir() -> Path | None:
-    raw = os.environ.get("RELAX_PARITY_DUMP_DIR")
+def _created_dir(raw: str | None) -> Path | None:
+    """``raw`` as a directory, created if missing; None when ``raw`` is unset or empty."""
+
     if not raw:
         return None
     p = Path(raw)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def dump_dir() -> Path | None:
+    return _created_dir(os.environ.get("RELAX_PARITY_DUMP_DIR"))
 
 
 def timing_dir() -> Path | None:
-    raw = os.environ.get("RELAX_PARITY_TIMING_DIR")
-    if not raw:
-        return None
-    p = Path(raw)
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    return _created_dir(os.environ.get("RELAX_PARITY_TIMING_DIR"))
 
 
 def collect_e_step(
