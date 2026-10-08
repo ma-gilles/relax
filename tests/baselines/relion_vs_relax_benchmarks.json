@@ -9219,7 +9219,7 @@
     "relax": 0.057842,
     "relion": 0.057896,
     "relion_band": [
-     0.034816,
+     0.034669,
      0.062079
     ],
     "relax_per_seed": {
@@ -9237,10 +9237,14 @@
       0.057913
      ],
      "41": [
-      0.034816
+      0.034816,
+      0.034758,
+      0.034669
      ],
      "53": [
-      0.062079
+      0.062079,
+      0.062078,
+      0.062074
      ]
     },
     "relax_seed_provenance": {
@@ -9271,6 +9275,18 @@
     "same_seed_map_fsc_auc": {
      "41": 0.998836,
      "53": 0.999987
+    },
+    "relax_runs_per_seed": {
+     "41": [
+      0.03479,
+      0.034807,
+      0.034706
+     ],
+     "53": [
+      0.062078,
+      0.062078,
+      0.062078
+     ]
     }
    },
    "cross_engine": null,
@@ -9286,7 +9302,8 @@
     "timing_controlled": false
    },
    "notes": [
-    "Re-judged 2026-10-08 by majority of seeds (team-lead; page rule as on the other VDAM rows): s29 relax 0.057842 vs RELION 0.057896/0.057907/0.057908/0.057907/0.057911/0.057913; s41 relax 0.034790 vs RELION 0.034816; s53 relax 0.062078 vs RELION 0.062079; verdict miss (worst s29 −5.4e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; s41 below across-seed RELION band 0.034816-0.062079). Seeds 41 and 53: etvdam job 15211368, both programs on one H100 node, the row command with only --random_seed changed, relax on the b61b1916 freeze snapshot (cand_b61b191 with cand_d046c0a's env and natives), RELION the row's build_patched relion_refine. Seed 29: relax keeps the 073740f0 freeze run; RELION adds etvdam's two same-build repeats. Relax repeats at a4396d8 (seed 29, not pooled: different commit) score 0.057843/0.057845/0.057842.",
+    "Repeats 2026-10-08 (scorew, team-lead red-row re-judge): two more same-command runs of both programs at s41 and s53 (b61b1916 / build_patched, job 15241689): s41 relax 0.034790/0.034807/0.034706 vs RELION 0.034816/0.034758/0.034669; s53 relax 0.062078/0.062078/0.062078 vs RELION 0.062079/0.062078/0.062074; run ranges overlap at both seeds; verdict hit (worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band).",
+    "Re-judged 2026-10-08 by majority of seeds (team-lead; page rule as on the other VDAM rows): s29 relax 0.057842 vs RELION 0.057896/0.057907/0.057908/0.057907/0.057911/0.057913; s41 relax 0.034790 vs RELION 0.034816/0.034758/0.034669; s53 relax 0.062078 vs RELION 0.062079/0.062078/0.062074; verdict hit (worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band). Seeds 41 and 53: etvdam job 15211368, both programs on one H100 node, the row command with only --random_seed changed, relax on the b61b1916 freeze snapshot (cand_b61b191 with cand_d046c0a's env and natives), RELION the row's build_patched relion_refine. Seed 29: relax keeps the 073740f0 freeze run; RELION adds etvdam's two same-build repeats. Relax repeats at a4396d8 (seed 29, not pooled: different commit) score 0.057843/0.057845/0.057842.",
     "Same-seed map FSC-AUC for the reproduced-map tie: the minimum over matched classes of the masked class-map FSC-AUC (definition of the existing K>1 tie rows, cryoet et13/et16 Class3D): s41 0.998836, s53 0.999987. s41 is not reproduced by that definition because one class with 0.1% of the particles scores 0.998836; the population-weighted masked values are s41 0.999999, s53 0.999999 (not used, for consistency with the existing rows; team-lead 2026-10-08).",
     "s29 gap (5e-5) is chaotic divergence from a 1e-6 numerical difference starting at it006, smaller than relax's own float-noise bifurcation spread (1.6e-4); no commit introduced it (etvdam bisect 2026-10-08); judged by majority of seeds. Bisect at seed 29 (etvdam jobs 15207786/15209815, every iteration written): RELION 0.057910; relax f6c8299 0.057667 (end state B), 880483a 0.057842 (A), a033431 0.057681 (B), 1c57fb7 0.057842 (A), a4396d8 0.057681 (B) and three a4396d8 repeats 0.057840-0.057844 (A). Relax-vs-relax class maps agree to 1-3e-7 (relative L2) through it015; at it016 class 2 jumps to 1.3e-3 and the runs split into A and B (6e-3 apart at it020, 1.6e-4 in the score). Relax-vs-RELION agree to 1-2e-6 for it001-005, first diverge at it006 (class 1, 2e-5) and the difference roughly doubles each iteration to 3e-2 at it020, with class populations equal to 3 decimals until it019. RELION GPU reruns differ by 4.8e-5, so a RELION-only band does not span this spread.",
     "Benchmark freeze 2026-10-09 (relax main 073740f0: relax#36 fix 8127e437, VDAM bootstrap geometry memo 40879afa, single-row-class pass chunks 073740f0; job 15199524): seed 29 cold, 93 s against the row's RELION 218.0 s (0.43x; b61b1916: 105 s, 0.48x); RELION wall reused from the row's earlier separate job (build_patched RELION 5.0.1, H100), not a same-node pair. Quality: seed 29 relax 0.057842 vs RELION 0.057896/0.057907/0.057908/0.057907 (page verdict miss: worst s29 −5.4e-5 vs same-seed RELION; s29 below across-seed RELION band 0.057896-0.057908); earlier runs on the same scorer: b61b1916 0.057825, d046c0a2 0.057840. etvdam's bisect (2026-10-08) finds the seed-29 gap chaotic, not a code regression: relax reaches two end states about 1.6e-4 apart through float-noise bifurcations with no culprit commit, while the RELION band (2.6e-5) is RELION's run-to-run jitter only. Re-judged by majority of seeds on 2026-10-08 (note above).",
@@ -9344,7 +9361,8 @@
      "bisect": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryoet_vdam_20261001/e10076_k4_miss/bisect",
      "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/e10076_k4_seeds_20261008/e10076_10k_k4_seeds.json",
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/scoring/e10076_k4_seeds_20261008/out/e10076_10k_k4_seeds.json",
-     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/e10076_k4_seeds_row_v2.py"
+     "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/e10076_k4_seeds_row_v3.py",
+     "repeats_20261008": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/redrows/e10076"
     }
    },
    "mask": {
@@ -9358,8 +9376,8 @@
     "c": "Both: arm-script wall (WALL.json) around the whole process, start-up, compilation and final writes included",
     "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
    },
-   "quality_pass": false,
-   "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; s41 below across-seed RELION band 0.034816-0.062079",
+   "quality_pass": true,
+   "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; run ranges compared at s41/s53 (both engines repeated); same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; inside across-seed band",
    "benchmark": false,
    "benchmark_note": "debug fixture: single-particle/VDAM rows with at most 10k particles are for testing and debugging, not the benchmark page (user, 2026-09-27)",
    "history": [
@@ -9553,6 +9571,71 @@
       "d": "H100 80GB HBM3 on both GPUs (GPU.csv per arm); same node, same time"
      },
      "note": "values before the 2026-10-09 freeze on relax main 073740f0"
+    },
+    {
+     "date": "2026-10-09",
+     "gt": {
+      "metric": "population-weighted masked FSC-AUC against the reference (relax scripts/score_initialmodel_maps.py at relax main d046c0a2, every kept arm rescored)",
+      "relax": 0.057842,
+      "relion": 0.057896,
+      "relion_band": [
+       0.034816,
+       0.062079
+      ],
+      "relax_per_seed": {
+       "29": 0.057842,
+       "41": 0.03479,
+       "53": 0.062078
+      },
+      "relion_per_seed": {
+       "29": [
+        0.057896,
+        0.057907,
+        0.057908,
+        0.057907,
+        0.057911,
+        0.057913
+       ],
+       "41": [
+        0.034816
+       ],
+       "53": [
+        0.062079
+       ]
+      },
+      "relax_seed_provenance": {
+       "29": "073740f0ea23989c46c72797c39a83c4b26a6772",
+       "41": "b61b1916 (etvdam job 15211368)",
+       "53": "b61b1916 (etvdam job 15211368)"
+      },
+      "all_arms_rescored": {
+       "rf_relion_s29": 0.057896,
+       "relion_s29_pair": 0.057907,
+       "relion_s29_a": 0.057908,
+       "relion_s29_b": 0.057907,
+       "fz_relax_s29_d046c0a": 0.05784,
+       "fz3_relax_s29_b61b191": 0.057825,
+       "fz4_relax_s29_073740f": 0.057842
+      },
+      "seeds_rescored_20261008": {
+       "ev_relax_s41_b61b191": 0.03479,
+       "ev_relax_s53_b61b191": 0.062078,
+       "ev_relion_s41": 0.034816,
+       "ev_relion_s53": 0.062079,
+       "ev_relion_s29_r1": 0.057911,
+       "ev_relion_s29_r2": 0.057913,
+       "ev_relax_s29_a4396d8_r1": 0.057843,
+       "ev_relax_s29_a4396d8_r2": 0.057845,
+       "ev_relax_s29_a4396d8_r3": 0.057842
+      },
+      "same_seed_map_fsc_auc": {
+       "41": 0.998836,
+       "53": 0.999987
+      }
+     },
+     "quality_pass": false,
+     "quality_reason": "worst s29 −5.4e-5 vs same-seed RELION; same-seed maps reproduced (map FSC-AUC ≥ 0.999987) at 1 of 3 seeds, GT differences under 1e-4 are ties; s41 below across-seed RELION band 0.034816-0.062079",
+     "note": "2026-10-08 three-seed verdict pushed in dede8942 (miss, per-class-min map tie), before the s41/s53 repeats"
     },
     {
      "date": "2026-10-09",
