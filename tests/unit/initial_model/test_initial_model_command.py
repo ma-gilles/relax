@@ -140,8 +140,6 @@ def test_parser_accepts_important_overrides():
             "1.5",
             "--padding-factor",
             "2",
-            "--pass2-engine",
-            "adaptive",
             "--image-fourier-backend",
             "host_numpy",
             "--gpu",
@@ -172,7 +170,7 @@ def test_parser_accepts_important_overrides():
     assert options["offset_range_px"] == 4.5
     assert options["offset_step_px"] == 1.5
     assert options["padding_factor"] == 2
-    assert options["pass2_engine"] == "adaptive"
+    assert "pass2_engine" not in options
     assert options["image_fourier_backend"] == "host_numpy"
     assert "deterministic_cuda" not in options
     assert args.deterministic_cuda is True
@@ -367,3 +365,11 @@ def test_initial_model_allocator_bootstrap_is_scoped_to_initial_model():
         is None
     )
     assert environ == {}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("flag", ["--pass2-engine", "--pass2_engine"])
+def test_the_retired_pass2_engine_flag_refuses_and_names_the_route(flag, capsys):
+    with pytest.raises(SystemExit):
+        initial_model.make_parser().parse_args(["--i", "particles.star", flag, "auto"])
+    assert f"{flag} was retired with the choice of VDAM E-step route" in capsys.readouterr().err

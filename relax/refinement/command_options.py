@@ -309,15 +309,17 @@ def validate_tomo_args(args, frozen_boundary, double_image_preprocessing):
 CAPTURED_PROJECTOR_TAG = "retired/captured-projector-20261006"
 
 
-class _RetiredFlag(argparse.Action):
-    """A flag whose feature was deleted: giving it is an error that names the git tag keeping the code."""
+class RetiredFlag(argparse.Action):
+    """A flag whose feature was deleted: giving it is an error that names the feature and, when the code was
+    kept, the git tag that keeps it (``tag``; None: nothing to keep)."""
 
-    def __init__(self, option_strings, dest, *, feature, tag, **kwargs):
+    def __init__(self, option_strings, dest, *, feature, tag=None, **kwargs):
         super().__init__(option_strings, dest, nargs="?", default=argparse.SUPPRESS, help=argparse.SUPPRESS, **kwargs)
         self.feature, self.tag = feature, tag
 
     def __call__(self, parser, namespace, values, option_string=None):
-        parser.error(f"{option_string} was retired with {self.feature}; its code is at git tag {self.tag}")
+        where = "" if self.tag is None else f"; its code is at git tag {self.tag}"
+        parser.error(f"{option_string} was retired with {self.feature}{where}")
 
 
 def parse_refinement_args(argv=None):
@@ -605,7 +607,7 @@ def parse_refinement_args(argv=None):
     )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):
-        parser.add_argument(flag, action=_RetiredFlag, feature="the captured RELION projector",
+        parser.add_argument(flag, action=RetiredFlag, feature="the captured RELION projector",
                             tag=CAPTURED_PROJECTOR_TAG)
     parser.add_argument(
         "--perturb-replay-restart-provenance",

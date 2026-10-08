@@ -20,6 +20,7 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 from relax.helpers.dtype_policy import use_float32_matmuls
 from relax.helpers.particle_io import add_particle_read_arguments
 from relax.ppca_initial_model.vdam_controls import VdamPilotControls
+from relax.refinement.command_options import RetiredFlag
 from relax.vdam.native_options import InitialModelDefaults
 
 
@@ -309,19 +310,9 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-fourier-radius", type=_positive_int, help="Optional pilot current-size radius cap")
     parser.add_argument("--max-healpix-order", type=_nonnegative_int, help="Optional pilot angular-order cap")
     parser.add_argument("--stop-file", help="Stop between iterations after writing an iteration artifact")
-    parser.add_argument(
-        "--pass2-engine",
-        "--pass2_engine",
-        dest="pass2_engine",
-        choices=("auto", "adaptive"),
-        default=DEFAULTS.pass2_engine,
-        help=(
-            "E-step route. VDAM has one: auto-refine's adaptive route on the device-resident "
-            "pass 2 (both pseudo-halfsets in one pass); auto and adaptive both select it. "
-            "The exact-local route (local, local_segmented) was removed; a configuration the "
-            "resident pass 2 does not implement is an error"
-        ),
-    )
+    for flag in ("--pass2-engine", "--pass2_engine"):
+        # VDAM has one E-step route (auto-refine's adaptive route on the resident pass 2); both values chose it.
+        parser.add_argument(flag, action=RetiredFlag, feature="the choice of VDAM E-step route (there is one)")
     parser.add_argument(
         "--coarse-engine", "--coarse_engine",
         choices=("auto", "gemm_hybrid", "gemm_dense"),
@@ -558,7 +549,6 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "pilot_controls": VdamPilotControls.from_values(
             args.stochastic_batch_size, args.max_fourier_radius, args.max_healpix_order, args.stop_file
         ),
-        "pass2_engine": args.pass2_engine,
         "coarse_engine": args.coarse_engine,
         "bootstrap_min_particles": args.bootstrap_min_particles,
         "sigma2_min_particles": args.sigma2_min_particles,
