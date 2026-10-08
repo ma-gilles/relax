@@ -748,10 +748,8 @@ def _merge_noise_stats(stats, classes, n_half, ref_box):
     )
 
 
-def merge_class_results(results, classes, n_half, ref_box):
-    """One ``HalfScoreResult`` for the half from its shape classes' results."""
-
-    from relax.dense.score_outputs import HalfScoreResult
+def _require_one_backprojector_layout(results) -> None:
+    """Refuse shape-class results whose M-step accumulators differ in half axis or shape: they cannot be summed."""
 
     first = results[0]
     for result in results[1:]:
@@ -760,6 +758,15 @@ def merge_class_results(results, classes, n_half, ref_box):
             or result.mstep_accumulator_shape != first.mstep_accumulator_shape
         ):
             raise ValueError("shape classes returned different backprojector layouts")
+
+
+def merge_class_results(results, classes, n_half, ref_box):
+    """One ``HalfScoreResult`` for the half from its shape classes' results."""
+
+    from relax.dense.score_outputs import HalfScoreResult
+
+    first = results[0]
+    _require_one_backprojector_layout(results)
 
     def per_image(name):
         return place_by_index([getattr(result, name) for result in results], classes, n_half)
@@ -853,12 +860,7 @@ def merge_k_class_engine_results(results, classes, n_half, ref_box):
     """
 
     first = results[0]
-    for result in results[1:]:
-        if (
-            result.mstep_full_half_axis != first.mstep_full_half_axis
-            or result.mstep_accumulator_shape != first.mstep_accumulator_shape
-        ):
-            raise ValueError("shape classes returned different backprojector layouts")
+    _require_one_backprojector_layout(results)
     if any(result.new_means is not None for result in results):
         raise NotImplementedError("closed-form class means are not merged across shape classes")
 
