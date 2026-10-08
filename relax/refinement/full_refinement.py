@@ -480,6 +480,8 @@ def main(command=None):
         fixed_diagnostic_source_paths=fixed_diagnostic_source_paths,
     )
     ds = particle_inputs.dataset
+    # The image box in pixels, read once from the dataset (RECOVAR calls it grid_size).
+    box_size = int(ds.grid_size)
     tomo_run = particle_inputs.tomographic
     shape_class_rows = particle_inputs.shape_class_rows
     # The one place --mode is read: after it the run carries the options only.
@@ -873,7 +875,7 @@ def main(command=None):
         )
         replayed_noise = initial_model_replay.prepare_noise(
             initial_model,
-            box_size=ds.grid_size,
+            box_size=box_size,
             image_shape=ds.image_shape,
             explicit_noise_radial=initial_noise_radial,
             live_sigma2=relion_live_initial_sigma2,
@@ -885,7 +887,7 @@ def main(command=None):
         mean_variance = initial_model_replay.prepare_prior(
             initial_model,
             n_classes=args.n_classes,
-            box_size=ds.grid_size,
+            box_size=box_size,
             volume_shape=ds.volume_shape,
         )
         if args.n_classes > 1:
@@ -912,7 +914,7 @@ def main(command=None):
         mean_variance, relion_start_data_vs_prior = startup_references.relion_start_tau2_and_data_vs_prior(
             references.reference_real,
             initial_noise_radial,
-            box_size=int(ds.grid_size),
+            box_size=box_size,
             volume_shape=ds.volume_shape,
             tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
             nr_particles=int(ds_half1.n_units),
@@ -928,7 +930,7 @@ def main(command=None):
         relion_start_data_vs_prior = startup_references.class_start_data_vs_prior(
             references.class_references_real,
             initial_noise_radial,
-            box_size=int(ds.grid_size),
+            box_size=box_size,
             volume_shape=ds.volume_shape,
             tau2_fudge=_resolve_tau2_fudge(args.n_classes, args.tau2_fudge, None)[0],
             nr_particles=int(ds.n_units),
@@ -960,7 +962,7 @@ def main(command=None):
     init_current_size = (
         int(frozen_boundary.current_size)
         if frozen_boundary is not None
-        else _initial_current_size(ds.voxel_size, ds.grid_size, args.init_resolution)
+        else _initial_current_size(ds.voxel_size, box_size, args.init_resolution)
     )
     logger.info("Initial current_size from resolution %.1f A: %d pixels", args.init_resolution, init_current_size)
 
@@ -1002,7 +1004,7 @@ def main(command=None):
         half2_rows=particle_layout.half2_rows,
         particle_names=our_names,
         voxel_size=ds.voxel_size,
-        box_size=ds.grid_size,
+        box_size=box_size,
         volume_shape=ds.volume_shape,
         noise_dtype=np.float64 if _double_image_preprocessing else np.float32,
     )
