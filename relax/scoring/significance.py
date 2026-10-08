@@ -50,7 +50,7 @@ from relax.scoring.coarse_gaussian_gemm import (
     _plan_coarse_gaussian_gemm_projection_cache,
     _validate_coarse_gaussian_gemm_projection_cache_request,
 )
-from relax.scoring.coarse_layout import compact_projection_window_positions, plan_coarse_gaussian_square_layout
+from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
 from relax.scoring.coarse_publication import coarse_square_layout_metadata, coarse_support_posterior
 from relax.scoring.pass1_publish import publish_batch
@@ -858,12 +858,9 @@ def _compute_k_class_significance_batched(
     # Compact the coarse support mask on the device instead of pulling it
     # (ticket T13) whenever the ids are collected; every dense-mask
     # diagnostic keeps the host pull, checked per batch.
-    coarse_gaussian_full_to_compact = None
-    coarse_gaussian_full_to_compact_np = None
     coarse_gaussian_score_indices = None
     coarse_gaussian_score_indices_np = None
     coarse_gaussian_score_active_mask = None
-    coarse_gaussian_window_positions = None
     coarse_gaussian_powerclass = None
     coarse_gaussian_gemm_resource_estimate = None
     coarse_gaussian_gemm_projection_cache_plan = None
@@ -904,21 +901,6 @@ def _compute_k_class_significance_batched(
         coarse_gaussian_score_active_mask = jnp.asarray(
             coarse_gaussian_square_layout.score_active_mask_np,
             dtype=jnp.bool_,
-        )
-        coarse_gaussian_window_positions = jnp.asarray(
-            compact_projection_window_positions(
-                square_score_indices_np,
-                active_score_indices_np,
-            ),
-            dtype=jnp.int32,
-        )
-        coarse_gaussian_full_to_compact_np = np.asarray(
-            coarse_gaussian_square_layout.full_to_compact_np,
-            dtype=np.int32,
-        )
-        coarse_gaussian_full_to_compact = jnp.asarray(
-            coarse_gaussian_full_to_compact_np,
-            dtype=jnp.int32,
         )
         coarse_gaussian_powerclass = _relion_cuda_powerclass_highres_xi2_half
         coarse_gaussian_gemm_transient_budget = (
@@ -1123,7 +1105,6 @@ def _compute_k_class_significance_batched(
     image_groups_host = None if noise_table_host is None else np.asarray(optics_group_ids, dtype=np.int32)
     coarse_gaussian_shifted_corrected = None
     coarse_gaussian_unshifted_corrected = None
-    coarse_gaussian_translation_angles = None
     coarse_gaussian_pixel_weight = None
     coarse_gaussian_initial_diff2 = None
 
@@ -1399,7 +1380,6 @@ def _compute_k_class_significance_batched(
                 coarse_gaussian_pixel_weight = exact_operands.pixel_weight
                 coarse_gaussian_unshifted_corrected = exact_operands.unshifted_corrected
                 coarse_gaussian_initial_diff2 = exact_operands.initial_diff2
-                coarse_gaussian_translation_angles = exact_operands.translation_angles
 
             # Identify per-batch dump target rows so we can record raw scores
             # (pre-prior) for each target image inside the per-class block loop.

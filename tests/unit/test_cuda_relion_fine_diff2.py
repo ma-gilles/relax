@@ -533,20 +533,6 @@ def test_relion_coarse_single_lane_canonical_requires_canonical_reduction():
         )
 
 
-def test_compact_projection_window_positions_map_full_indices_to_compact_rows():
-    from relax.scoring.coarse_layout import compact_projection_window_positions
-
-    compact = np.asarray([20, 21, 25, 26, 10, 11], dtype=np.int32)
-    window = np.asarray([10, 20, 26, 11], dtype=np.int32)
-
-    assert_matches(
-        compact_projection_window_positions(compact, window),
-        [4, 0, 3, 5],
-    )
-    with pytest.raises(ValueError, match="absent from the compact projection"):
-        compact_projection_window_positions(compact, [10, 99])
-
-
 def test_exact_relion_ctf_source_defaults_to_dataset_star(monkeypatch, tmp_path):
     from types import SimpleNamespace
 

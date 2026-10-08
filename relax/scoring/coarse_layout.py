@@ -12,23 +12,6 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def compact_projection_window_positions(compact_indices, window_indices) -> np.ndarray:
-    """Map full-image Fourier indices to positions in a compact projection."""
-
-    compact = np.asarray(compact_indices, dtype=np.int64).reshape(-1)
-    window = np.asarray(window_indices, dtype=np.int64).reshape(-1)
-    if np.unique(compact).size != compact.size:
-        raise ValueError("compact projection indices must be unique")
-    position_by_index = {int(index): position for position, index in enumerate(compact)}
-    missing = [int(index) for index in window if int(index) not in position_by_index]
-    if missing:
-        raise ValueError(
-            "projection window contains indices absent from the compact projection: "
-            f"{missing[:8]}"
-        )
-    return np.asarray([position_by_index[int(index)] for index in window], dtype=np.int32)
-
-
 class CoarseGaussianSquareLayout(NamedTuple):
     """Logical RELION square issue stream inside a stable physical capacity."""
 
