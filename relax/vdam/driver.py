@@ -471,6 +471,8 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
                 datadir=None if compact else opts.datadir,
                 strip_prefix=None if compact else opts.strip_prefix,
                 ind=rows,
+                # Each missing rlnAngleRot/Tilt/Psi label reads as 0 (exp_model.cpp:1104-1106, 1131-1136).
+                absent_angles_zero=True,
             )
             for rows in (shape_class_rows or [None])
         ]

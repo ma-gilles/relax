@@ -861,19 +861,23 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
         estimate(mixed)
 
 
-@pytest.mark.parametrize("missing_name", ["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"])
-def test_particle_state_from_star_rejects_partial_euler_triplet(missing_name):
-    main = pd.DataFrame(
-        {
-            "_rlnImageName": ["1@stack.mrcs"],
-            "_rlnAngleRot": [10.0],
-            "_rlnAngleTilt": [35.0],
-            "_rlnAnglePsi": [-20.0],
-        }
-    ).drop(columns=missing_name)
+@pytest.mark.parametrize("missing_names", [("_rlnAngleRot",), ("_rlnAngleTilt",), ("_rlnAnglePsi",), ("_rlnAngleRot", "_rlnAnglePsi")])
+def test_particle_state_from_star_fills_each_missing_euler_column_with_relions_zero(missing_names):
+    """RELION's Experiment::read sets each missing rlnAngleRot/Tilt/Psi label to 0 and keeps the others
+    (exp_model.cpp:1104-1106, 1131-1136), so a partial triplet is valid input."""
+    given = {"_rlnAngleRot": [10.0, -75.0], "_rlnAngleTilt": [35.0, 120.0], "_rlnAnglePsi": [-20.0, 179.0]}
+    main = pd.DataFrame({"_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs"], **given}).drop(columns=list(missing_names))
 
-    with pytest.raises(ValueError, match="all Euler-angle columns"):
-        initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=1))
+    state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=2))
+
+    expected = np.stack(
+        [np.zeros(2) if name in missing_names else np.asarray(values) for name, values in given.items()], axis=1
+    )
+    np.testing.assert_array_equal(state.best_pose_eulers_deg, expected)
+    np.testing.assert_array_equal(state.best_pose_eulers_valid, [True, True])
+    np.testing.assert_allclose(
+        state.best_pose_rotations, np.asarray(R_from_relion(expected, degrees=True), dtype=np.float32), atol=0
+    )
 
 
 @pytest.mark.parametrize("angle_name", ["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"])
@@ -1010,9 +1014,61 @@ def test_native_driver_prepares_particle_reads_before_loading(monkeypatch, prere
         (
             "load",
             ("particles.star",),
-            {"lazy": not preread_images, "datadir": "particles", "strip_prefix": "old/", "ind": None},
+            {
+                "lazy": not preread_images,
+                "datadir": "particles",
+                "strip_prefix": "old/",
+                "ind": None,
+                "absent_angles_zero": True,
+            },
         ),
     ]
+
+
+@pytest.mark.parametrize("missing_names", [("_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"), ("_rlnAngleTilt",)])
+def test_native_driver_loads_a_star_missing_angle_columns(monkeypatch, tmp_path, missing_names):
+    """The image dataset of a STAR without some or all rlnAngleRot/Tilt/Psi columns loads, each missing label
+    read as 0, as RELION's Experiment::read sets it (exp_model.cpp:1104-1106, 1131-1136)."""
+    import mrcfile
+    from recovar.data_io import cryoem_dataset
+
+    with mrcfile.new(tmp_path / "stack.mrcs", overwrite=True) as mrc:
+        mrc.set_data(np.zeros((2, 8, 8), dtype=np.float32))
+    angles = {"_rlnAngleRot": "10.0", "_rlnAngleTilt": "35.0", "_rlnAnglePsi": "-20.0"}
+    columns = ["_rlnImageName", "_rlnOpticsGroup", "_rlnDefocusU", "_rlnDefocusV", "_rlnDefocusAngle"]
+    columns += [name for name in angles if name not in missing_names]
+    rows = [
+        " ".join([f"{i}@stack.mrcs", "1", "10000", "10000", "0"] + [angles[c] for c in columns[5:]]) for i in (1, 2)
+    ]
+    star = tmp_path / "particles.star"
+    star.write_text(
+        "data_optics\nloop_\n_rlnOpticsGroup #1\n_rlnImagePixelSize #2\n_rlnImageSize #3\n"
+        "_rlnImageDimensionality #4\n_rlnVoltage #5\n_rlnSphericalAberration #6\n_rlnAmplitudeContrast #7\n"
+        "1 2.0 8 2 300.0 2.7 0.1\n\ndata_particles\nloop_\n"
+        + "".join(f"{c} #{i + 1}\n" for i, c in enumerate(columns))
+        + "\n".join(rows)
+        + "\n"
+    )
+    loaded = []
+
+    class LoadBoundaryReached(RuntimeError):
+        pass
+
+    def load_then_stop(*args, **kwargs):
+        loaded.append(cryoem_dataset.load_dataset(*args, **kwargs))
+        raise LoadBoundaryReached
+
+    monkeypatch.setattr(driver, "read_star", lambda path: (pd.DataFrame(index=[0, 1]), None))
+    monkeypatch.setattr(driver, "prepare_particle_reads", lambda *args, **kwargs: None)
+    monkeypatch.setattr(driver, "optics_shape_class_rows", lambda path: None)
+    monkeypatch.setattr(driver, "load_dataset", load_then_stop)
+
+    with pytest.raises(LoadBoundaryReached):
+        driver.run_native_initial_model(
+            native_options.NativeInitialModelOptions(fn_img=str(star), datadir=str(tmp_path))
+        )
+
+    assert len(loaded) == 1 and loaded[0].n_images == 2
 
 
 def test_native_driver_rejects_tilt_series(monkeypatch):
