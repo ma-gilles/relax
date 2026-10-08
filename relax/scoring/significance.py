@@ -47,6 +47,7 @@ from relax.scoring.pass1_support import (
     float32_support,
     generic_support,
 )
+from relax.scoring.pass1_window import coarse_kernel_window, plan_scoring_window
 from relax.scoring.scoring import (
     _coarse_gemm_float64_requested,
 )
@@ -245,8 +246,6 @@ def _compute_k_class_significance_batched(
         raise ValueError("RELION float32 normalization requires Gaussian float32 significance")
 
 
-    from relax.helpers.fourier_window import make_fourier_window_spec
-    from relax.helpers.half_spectrum import make_scoring_half_image_weights
 
     if score_mode not in {"gaussian", "normalized_cc"}:
         raise ValueError(f"score_mode must be 'gaussian' or 'normalized_cc', got {score_mode!r}")
@@ -299,46 +298,22 @@ def _compute_k_class_significance_batched(
             use_float64_projections=use_float64_projections,
         )
 
-    cc_gaussian_support = score_mode == "normalized_cc" and firstiter_cc_support == "gaussian"
-    half_weights = make_scoring_half_image_weights(
+    window = plan_scoring_window(
         image_shape,
-        relion_half_sum=half_spectrum_scoring,
-        exclude_relion_redundant_x0=score_mode != "normalized_cc",
-        nyquist_column_counting=nyquist_column_counting,
-        firstiter_cc_support_size=(
-            (image_shape[0] if current_size is None else current_size) if cc_gaussian_support else None
-        ),
-    )
-    window_spec_kwargs = {}
-    if score_mode == "normalized_cc":
-        window_spec_kwargs = {
-            "score_square": True,
-            "score_include_dc": True,
-        }
-    window_spec = make_fourier_window_spec(
-        image_shape,
-        current_size,
         n_half,
-        square=square_window,
-        include_recon_window=False,
-        # RELION's radial window at the box too (Gaussian scoring; the normalized-CC score
-        # keeps its rectangular window).
-        window_at_box=bool(window_at_box) and score_mode != "normalized_cc",
-        **window_spec_kwargs,
+        current_size,
+        score_mode=score_mode,
+        half_spectrum_scoring=half_spectrum_scoring,
+        square_window=square_window,
+        window_at_box=window_at_box,
+        nyquist_column_counting=nyquist_column_counting,
+        firstiter_cc_support=firstiter_cc_support,
     )
-    use_window = window_spec.use_window
-    score_size = int(image_shape[0]) if current_size is None else int(current_size)
-    # RELION's coarse kernel projects and shifts the rows beyond maxR at ``i - window`` inside
-    # the model sphere only for a window between 2 r_max and about 2 s r_max (an optics group on
-    # a coarser grid: its rotations carry 1 / s); the exact coarse operands then shift them there.
-    coarse_kernel_window = None
-    if use_relion_projector and score_size // 2 > int(relion_projector_r_max):
-        from relax.helpers.optics_scale import coarse_rows_wrap_inside
-
-        rotation_scale = 1.0 / float(np.linalg.norm(np.asarray(rotations, dtype=np.float64).reshape(-1, 3, 3)[0, 0]))
-        if coarse_rows_wrap_inside(score_size, int(relion_projector_r_max), rotation_scale):
-            coarse_kernel_window = score_size
-    window_indices = window_spec.score_indices
+    score_size = window.score_size
+    window_spec = window.window_spec
+    kernel_window = (
+        coarse_kernel_window(score_size, relion_projector_r_max, rotations) if use_relion_projector else None
+    )
     coarse_texture_interp = (
         _global_pass1_relion_projector_texture_enabled()
         if relion_projector_texture_interp is None
@@ -416,7 +391,6 @@ def _compute_k_class_significance_batched(
             n_trans,
         )
     track_class_second = return_class_second or tree_rescore_enabled
-    score_half_weights = window_spec.score_values(half_weights) if use_window else half_weights
     tree_rescore_plan = None
     if tree_rescore_enabled:
         require_tree_rescore_call(
@@ -435,7 +409,7 @@ def _compute_k_class_significance_batched(
             translations_source=translations_source,
             relion_translation_angle_scale=relion_translation_angle_scale,
             geometry=TreeRescoreGeometry(
-                half_weights=score_half_weights,
+                half_weights=window.score_half_weights,
                 rotations=rotations,
                 n_trans=n_trans,
                 score_size=score_size,
@@ -452,10 +426,10 @@ def _compute_k_class_significance_batched(
             experiment_dataset=experiment_dataset,
             image_shape=image_shape,
             image_pre_shifts=image_pre_shifts,
-            window_indices=window_indices if use_window else None,
+            window_indices=window.window_indices,
             score_indices=exact_cc_score_indices,
-            score_half_weights=score_half_weights,
-            support_power_weights=score_half_weights if cc_gaussian_support else None,
+            score_half_weights=window.score_half_weights,
+            support_power_weights=window.score_half_weights if window.cc_gaussian_support else None,
             translation_angles=exact_cc_translation_angles,
             n_trans=n_trans,
             score_with_masked_images=score_with_masked_images,
@@ -466,7 +440,7 @@ def _compute_k_class_significance_batched(
             experiment_dataset=experiment_dataset,
             gaussian_plan=gaussian_plan,
             image_shape=image_shape,
-            half_weights=half_weights,
+            half_weights=window.half_weights,
             translations_source=translations_source,
             relion_translation_angle_scale=relion_translation_angle_scale,
             score_with_masked_images=score_with_masked_images,
@@ -476,8 +450,8 @@ def _compute_k_class_significance_batched(
             stable_fourier_window_shapes=stable_fourier_window_shapes,
             score_size=score_size,
             current_size=current_size,
-            coarse_kernel_window=coarse_kernel_window,
-            coarse_kernel_r_max=None if coarse_kernel_window is None else int(relion_projector_r_max),
+            coarse_kernel_window=kernel_window,
+            coarse_kernel_r_max=None if kernel_window is None else int(relion_projector_r_max),
         )
 
     rotation_blocks = plan_rotation_blocks(
@@ -507,7 +481,7 @@ def _compute_k_class_significance_batched(
     if use_relion_projector and coarse_texture_interp:
         if exact_gaussian:
             projector_compact_rows = CompactRows(gaussian_plan.score_indices_np, gaussian_plan.projector_output_size)
-        elif use_window:
+        elif window.use_window:
             projector_compact_rows = CompactRows(window_spec.score_indices_np, score_size)
     projector_returns_compact = projector_compact_rows is not None
 
