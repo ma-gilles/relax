@@ -18,9 +18,6 @@ from recovar.utils.nvtx_shim import nvtx
 from relax.diagnostics.coarse_gaussian_diagnostics import (
     _significance_debug_dump_matches,
 )
-from relax.diagnostics.coarse_score_diagnostics import (
-    _build_coarse_significance_support_audit,
-)
 from relax.helpers.batch_fetch import original_image_indices
 from relax.helpers.env_flags import (
     parse_env_int_set,
@@ -31,13 +28,9 @@ from relax.relion.relion_coarse_operands import (
     _infer_relion_coarse_healpix_order,
     _k1_relion_f32_coarse_support_enabled,
 )
-from relax.scoring.coarse_gaussian_gemm import (
-    _coarse_gaussian_gemm_projection_cache_stats,
-)
 from relax.scoring.coarse_projector import CoarseProjector, CompactRows
-from relax.scoring.coarse_publication import coarse_square_layout_metadata
-from relax.scoring.gaussian_plan import plan_coarse_gaussian
-from relax.scoring.pass1_assembly import log_batch_timing, significant_samples_after_loop
+from relax.scoring.gaussian_plan import coarse_gaussian_report, plan_coarse_gaussian
+from relax.scoring.pass1_assembly import build_full_stats, log_batch_timing, significant_samples_after_loop
 from relax.scoring.pass1_batch import BatchInputPlan, prepare_batch_inputs
 from relax.scoring.pass1_operands import CcOperandPlan, GaussianOperandPlan
 from relax.scoring.pass1_publish import publish_batch
@@ -65,12 +58,6 @@ from relax.scoring.tree_rescore import (
 )
 
 _GLOBAL_PASS1_RELION_PROJECTOR_TEXTURE_ENV = "RELAX_RELION_GLOBAL_PASS1_PROJECTOR_TEXTURE_INTERP"
-_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV = (
-    "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT"
-)
-_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV = (
-    "RECOVAR_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS"
-)
 _COARSE_PAD_FINAL_IMAGE_BATCH_ENV = (
     "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH"
 )
@@ -116,15 +103,6 @@ def _require_exact_pass1_operands(
         raise ValueError("pass 1 scores RELION's exact coarse operands and needs " + ", ".join(missing))
 
 
-def _coarse_significance_support_audit_enabled(
-    *,
-    default: bool = False,
-) -> bool:
-    """Resolve exact, diagnostic-only coarse-support hashing."""
-
-    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV, default=default)
-
-
 def _coarse_pad_final_image_batch_enabled(*, default: bool = True) -> bool:
     """Whether every coarse image batch is padded to the requested batch size.
 
@@ -146,13 +124,6 @@ def _coarse_pad_final_image_batch_enabled(*, default: bool = True) -> bool:
         _COARSE_PAD_FINAL_IMAGE_BATCH_ENV,
         default=default,
     )
-
-
-def _coarse_significance_support_audit_ids_enabled() -> bool:
-    """Whether a support audit also retains its exact selected IDs."""
-    return parse_env_strict_flag(_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_IDS_ENV)
-
-
 
 
 def _global_pass1_relion_projector_texture_enabled() -> bool:
@@ -858,69 +829,23 @@ def _compute_k_class_significance_batched(
 
     significant_sample_indices = significant_samples_after_loop(outputs, output_plan)
 
-    full_stats = {
-        "normalization_log_z": outputs.normalization_log_z,
-        "normalization_log_evidence": outputs.normalization_log_evidence,
-        "log_evidence_per_image": outputs.log_evidence,
-        "best_log_score_per_image": outputs.best_log_score,
-        "max_posterior_per_image": outputs.max_posterior,
-        "class_log_evidence_per_image": outputs.class_log_evidence,
-        "class_assignments": outputs.class_assignment,
-        # RELION serializes the cutoff rank before inclusive threshold ties
-        # expand the pass-2/M-step support represented by ``n_sig_all``.
-        "significant_cutoff_counts": outputs.cutoff_count_all,
-        "executed_coarse_backend": (
-            "exact_cc_gemm" if exact_cc_enabled else "gemm_macro"
+    full_stats = build_full_stats(
+        outputs,
+        significant_sample_indices,
+        output_plan,
+        executed_backend="exact_cc_gemm" if exact_cc_enabled else "gemm_macro",
+        gaussian_report=(
+            coarse_gaussian_report(gaussian_plan, stable_fourier_window_shapes=stable_fourier_window_shapes)
+            if exact_gaussian
+            else {}
         ),
-    }
-    if gaussian_plan is not None:
-        full_stats["coarse_gaussian_square_layout"] = coarse_square_layout_metadata(
-            gaussian_plan.square_layout,
-            stable_fourier_window_shapes=stable_fourier_window_shapes,
-        )
-    if gaussian_plan is not None:
-        full_stats["coarse_gaussian_gemm_resources"] = {
-            field: int(value)
-            for field, value in gaussian_plan.resource_estimate._asdict().items()
-        }
-    if gaussian_plan is not None and gaussian_plan.projection_cache_plan is not None:
-        full_stats["coarse_gaussian_gemm_projection_cache"] = (
-            _coarse_gaussian_gemm_projection_cache_stats(
-                gaussian_plan.projection_cache_plan,
-                enabled=coarse_gaussian_gemm_projection_cache is not None,
-            )
-        )
-    if _coarse_significance_support_audit_enabled():
-        if significant_sample_indices is None:
-            raise RuntimeError(
-                f"{_COARSE_SIGNIFICANCE_SUPPORT_AUDIT_ENV}=1 requires "
-                "collect_significance=True",
-            )
-        full_stats["coarse_significance_support_audit"] = (
-            _build_coarse_significance_support_audit(
-                significant_sample_indices,
-                samples_per_class=n_rot * n_trans,
-                include_ids=_coarse_significance_support_audit_ids_enabled(),
-            )
-        )
-    if outputs.relion_f32_sum_weight is not None:
-        # RELION's oversampling-zero second pass deliberately reuses this
-        # coarse, maximum-shifted float32 denominator numerically.  It is not
-        # interchangeable with a log-evidence value because the fine pass
-        # independently shifts its own maximum to 50 before division.
-        full_stats["relion_f32_sum_weight"] = outputs.relion_f32_sum_weight
-    if outputs.relion_f32_max_posterior is not None:
-        full_stats["relion_f32_max_posterior"] = outputs.relion_f32_max_posterior
-    if return_class_best:
-        full_stats["class_best_log_score_per_image"] = outputs.class_best_log_score
-        full_stats["class_best_offset_free_log_score_per_image"] = outputs.class_best_offset_free_log_score
-        full_stats["class_hard_assignments"] = outputs.class_hard_assignment
-    if return_class_second:
-        full_stats["class_second_best_log_score_per_image"] = outputs.class_second_best_log_score
-        full_stats["class_second_hard_assignments"] = outputs.class_second_hard_assignment
-        full_stats["class_second_best_offset_free_log_score_per_image"] = outputs.class_second_best_offset_free_log_score
+        tree_report=(
+            {"firstiter_cc_tree_top2_rescore": tree_rescore_report(tree_rescore_totals, tree_rescore_max_margin)}
+            if tree_rescore_enabled
+            else {}
+        ),
+    )
     if tree_rescore_enabled:
-        full_stats["firstiter_cc_tree_top2_rescore"] = tree_rescore_report(tree_rescore_totals, tree_rescore_max_margin)
         log_tree_rescore_totals(tree_rescore_totals)
     return (
         outputs.sig_rot_any,
