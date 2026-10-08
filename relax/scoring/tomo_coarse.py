@@ -67,7 +67,7 @@ def coarse_score_layout(
 
     from relax.helpers.fourier_window import make_fourier_window_spec
     from relax.helpers.half_spectrum import make_scoring_half_image_weights
-    from relax.scoring.significance import _coarse_gaussian_fused_logical_lookup, _plan_coarse_gaussian_square_layout
+    from relax.scoring.coarse_layout import coarse_gaussian_fused_logical_lookup, plan_coarse_gaussian_square_layout
 
     image_shape = tuple(int(size) for size in image_shape)
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -79,7 +79,7 @@ def coarse_score_layout(
         if window.score_indices_np is None
         else np.asarray(window.score_indices_np, dtype=np.int32)
     )
-    layout = _plan_coarse_gaussian_square_layout(
+    layout = plan_coarse_gaussian_square_layout(
         image_shape, int(current_size), active, stable_fourier_window_shapes=False
     )
     return CoarseScoreLayout(
@@ -87,7 +87,7 @@ def coarse_score_layout(
         current_size=int(current_size),
         score_indices_np=np.asarray(layout.score_indices_np, dtype=np.int32),
         score_active_mask=jnp.asarray(layout.score_active_mask_np, dtype=jnp.bool_),
-        full_to_compact=_coarse_gaussian_fused_logical_lookup(
+        full_to_compact=coarse_gaussian_fused_logical_lookup(
             jnp.asarray(layout.full_to_compact_np, dtype=jnp.int32), layout, current_size=int(current_size)
         ),
         half_weights=make_scoring_half_image_weights(

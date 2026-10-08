@@ -16,7 +16,7 @@ from relax.helpers.fourier_window import (
 )
 from relax.helpers.half_volume_mstep import crop_relion_x_half_accumulator
 from relax.helpers.projection import _texture_centered_crop_at_indices
-from relax.scoring.significance import _coarse_gaussian_fused_logical_lookup, _plan_coarse_gaussian_square_layout
+from relax.scoring.coarse_layout import coarse_gaussian_fused_logical_lookup, plan_coarse_gaussian_square_layout
 from relax.sparse_pass2.sparse_pass2_scoring import _relion_cuda_fine_full_to_compact_lookup
 from relax.sparse_pass2.sparse_pass2_wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
 
@@ -144,7 +144,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         "32",
     )
     logical_size = 70
-    layout = _plan_coarse_gaussian_square_layout(
+    layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
         logical_size,
         _active_coarse_score_indices(logical_size),
@@ -177,7 +177,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         layout.full_to_compact_np[logical_count:],
         np.arange(logical_count, layout.physical_square_count, dtype=np.int32),
     )
-    fused_lookup = _coarse_gaussian_fused_logical_lookup(
+    fused_lookup = coarse_gaussian_fused_logical_lookup(
         layout.full_to_compact_np,
         layout,
         current_size=logical_size,
@@ -185,7 +185,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
     assert fused_lookup.shape == (logical_count,)
     assert_matches(np.asarray(fused_lookup), logical_lookup)
     with pytest.raises(ValueError, match="does not match current_size"):
-        _coarse_gaussian_fused_logical_lookup(
+        coarse_gaussian_fused_logical_lookup(
             layout.full_to_compact_np,
             layout,
             current_size=logical_size + 2,
@@ -212,7 +212,7 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
         "32",
     )
     logical_size = 26
-    layout = _plan_coarse_gaussian_square_layout(
+    layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
         logical_size,
         _active_coarse_score_indices(logical_size),
@@ -223,7 +223,7 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
     assert layout.physical_current_size == 32
     assert layout.physical_square_count == 32 * 17
     assert layout.full_to_compact_np.shape == (32 * 17,)
-    fused_lookup = _coarse_gaussian_fused_logical_lookup(
+    fused_lookup = coarse_gaussian_fused_logical_lookup(
         layout.full_to_compact_np,
         layout,
         current_size=logical_size,
@@ -243,7 +243,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
         "32",
     )
     logical_size = 86
-    layout = _plan_coarse_gaussian_square_layout(
+    layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
         logical_size,
         _active_coarse_score_indices(logical_size),
@@ -327,7 +327,7 @@ def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
         "32",
     )
     layouts = [
-        _plan_coarse_gaussian_square_layout(
+        plan_coarse_gaussian_square_layout(
             _IMAGE_SHAPE,
             current_size,
             _active_coarse_score_indices(current_size),
@@ -349,7 +349,7 @@ def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
     )
     current_size = 70
     active = _active_coarse_score_indices(current_size)
-    layout = _plan_coarse_gaussian_square_layout(
+    layout = plan_coarse_gaussian_square_layout(
         _IMAGE_SHAPE,
         current_size,
         active,

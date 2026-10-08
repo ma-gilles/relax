@@ -51,8 +51,9 @@ device scoring (`defer_publish`).
 5. **Dead inputs and arms (rule 7).** `disc_type`, `do_gridding_correction`, `means`; the arms that
    `_require_exact_pass1_operands` makes unreachable.
 6. **Results as a dict and a positional 6-tuple (rules 8, 10).**
-7. **Layer leak (rule 11).** `tomo_coarse.py` imports `_plan_coarse_gaussian_square_layout` and
-   `_coarse_gaussian_fused_logical_lookup` from `significance.py`; pass 1 imports four `relax/sparse_pass2` modules.
+7. **Layer leak (rule 11).** Pass 1 imports four `relax/sparse_pass2` modules (private names among them:
+   `_relion_cuda_powerclass_highres_xi2_half`, `_relion_translation_angles_f32`, `_relion_f32_fine_posterior`,
+   `_relion_cuda_fine_full_to_compact_lookup`).
 8. **A source-reading test pins the function (rule 13).** `tests/unit/test_adaptive_oversampling.py`
    (`_production_batch_size`).
 

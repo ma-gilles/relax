@@ -6384,7 +6384,7 @@ class TestRelionModeSmokeTest:
         """Windowed texture scoring must not materialize full projection rows."""
         from relax.helpers import projection as projection_helpers
         from relax.helpers.fourier_window import make_fourier_window_spec
-        from relax.scoring import significance as significance_module
+        from relax.scoring import coarse_layout
 
         dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
         window = make_fourier_window_spec(
@@ -6396,7 +6396,7 @@ class TestRelionModeSmokeTest:
         )
         if score_mode == "gaussian":
             # The coarse GEMMs read the square layout planned over the window's rows.
-            layout = significance_module._plan_coarse_gaussian_square_layout(
+            layout = coarse_layout.plan_coarse_gaussian_square_layout(
                 IMAGE_SHAPE,
                 current_size,
                 np.asarray(window.score_indices_np, dtype=np.int32),
