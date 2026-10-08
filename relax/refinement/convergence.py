@@ -118,7 +118,7 @@ class ConvergenceUpdate(NamedTuple):
 
 
 def _iteration_accuracy_for_convergence(
-    state: RefinementState,
+    healpix_order: int,
     *,
     iteration: int,
     source: InputSource,
@@ -129,14 +129,11 @@ def _iteration_accuracy_for_convergence(
     log: logging.Logger,
 ) -> OptimiserAccuracyReplay:
     """Admit this iteration's accuracy: the exact estimate, the support width when opted in, then the input
-    source's (a replayed optimiser's)."""
-    iter_acc_rot = exact_acc_rot
-    iter_acc_trans = exact_acc_trans
+    source's (a replayed optimiser's); natively nothing admits a translation accuracy for convergence."""
     convergence_acc_rot = None
-    convergence_acc_trans = None
     if significant_counts is not None and len(significant_counts) > 0:
         approx_acc_rot, _ = calculate_expected_angular_errors(
-            state.healpix_order,
+            healpix_order,
             significant_counts,
             n_translations=n_translations,
         )
@@ -157,10 +154,10 @@ def _iteration_accuracy_for_convergence(
             metadata=None,
             optimiser_star=None,
             optimiser_iteration=None,
-            acc_rot=iter_acc_rot,
-            acc_trans=iter_acc_trans,
+            acc_rot=exact_acc_rot,
+            acc_trans=exact_acc_trans,
             convergence_acc_rot=convergence_acc_rot,
-            convergence_acc_trans=convergence_acc_trans,
+            convergence_acc_trans=None,
         ),
     )
 
@@ -199,7 +196,7 @@ def update_k1_iteration_convergence(
         image_geometry.pixel_size_angstrom,
     )
     accuracy_replay = _iteration_accuracy_for_convergence(
-        state,
+        state.healpix_order,
         iteration=iteration,
         source=source,
         n_translations=n_trans_current,
@@ -275,7 +272,7 @@ def update_class_iteration_convergence(
         image_geometry.pixel_size_angstrom,
     )
     accuracy_replay = _iteration_accuracy_for_convergence(
-        state,
+        state.healpix_order,
         iteration=iteration,
         source=source,
         n_translations=n_trans_current,
