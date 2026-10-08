@@ -13,7 +13,7 @@ See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 import logging
 import time
 from dataclasses import replace
-from functools import partial, wraps
+from functools import partial
 from typing import NamedTuple
 
 import jax
@@ -212,7 +212,6 @@ from relax.sampling import (
     rotation_grid_size,
 )
 from relax.sparse_pass2.engine_record import take_coarse_engine_calls, take_pass_engines
-from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 
 logger = logging.getLogger(__name__)
 
@@ -687,18 +686,6 @@ def _follower_replay_telemetry(source, history) -> ReplayTelemetry:
     return ReplayTelemetry(requested_iterations=requested, applied_iterations=applied)
 
 
-def _with_stable_window_class_history(refine):
-    """Run a refinement inside one stable-window class history (resident_pass2)."""
-
-    @wraps(refine)
-    def run(*args, **kwargs):
-        with stable_window_class_history():
-            return refine(*args, **kwargs)
-
-    return run
-
-
-@_with_stable_window_class_history
 def _numbered_dense_variant(first_iteration, k_class, *, use_adaptive: bool, coarse_cs, fine_window_size):
     """A numbered iteration's dense route: its first-iteration mode, the adaptive sizes and the class options.
 
@@ -744,6 +731,10 @@ def refine_single_volume(
     source: InputSource | None = None,
 ) -> RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
+
+    Run it inside ``relax.sparse_pass2.resident_pass2.stable_window_class_history()``, as the commands do, so a
+    refinement's resident passes reuse the window classes they already ran (about 5 s of recompiles saved per
+    current-size crossing on the 5k K=1 run); outside one, every pass picks its class afresh.
 
     Implements the loop described in ``docs/math/relion_refinement_algorithm.md``.
 

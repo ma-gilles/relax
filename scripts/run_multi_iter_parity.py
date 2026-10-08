@@ -2509,28 +2509,32 @@ def main():
         ),
         symmetry=SymmetryOptions(point_group=point_group),
     )
-    result = refine_single_volume(
-        experiment_datasets=[ds_half1, ds_half2],
-        init_volume=[jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)],
-        init_noise_variance=noise_variance,
-        init_mean_variance=mean_variance.reshape(-1),
-        translations=None,
-        options=run_options,
-        observer=observers.combine(
-            ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
-            + observers.observers_from_environment()
-        ),
-        source=RelionReplaySource.for_run(
-            RelionReplay(
-                perturb_replay_relion_dir=str(relion_dir),
-                perturb_replay_relion_prefix=run_prefix,
-                perturb_replay_max_iter=args.replay_override_max_iter,
-                replay_iteration_overrides=replay_iteration_overrides,
-                final_replay_override=explicit_final_replay_override,
+    # One stable-window class history for the refinement (see refine_single_volume).
+    from relax.sparse_pass2.resident_pass2 import stable_window_class_history
+
+    with stable_window_class_history():
+        result = refine_single_volume(
+            experiment_datasets=[ds_half1, ds_half2],
+            init_volume=[jnp.asarray(vol_ft_h1), jnp.asarray(vol_ft_h2)],
+            init_noise_variance=noise_variance,
+            init_mean_variance=mean_variance.reshape(-1),
+            translations=None,
+            options=run_options,
+            observer=observers.combine(
+                ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
+                + observers.observers_from_environment()
             ),
-            run_options,
-        ),
-    )
+            source=RelionReplaySource.for_run(
+                RelionReplay(
+                    perturb_replay_relion_dir=str(relion_dir),
+                    perturb_replay_relion_prefix=run_prefix,
+                    perturb_replay_max_iter=args.replay_override_max_iter,
+                    replay_iteration_overrides=replay_iteration_overrides,
+                    final_replay_override=explicit_final_replay_override,
+                ),
+                run_options,
+            ),
+        )
     del run_options
     elapsed = time.time() - t0
     history = result.history

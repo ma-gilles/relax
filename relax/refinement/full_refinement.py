@@ -1286,32 +1286,36 @@ def main(command=None):
             do_ctf_correction=expected_accuracy_do_ctf_correction,
         ),
     )
-    result = refine_single_volume(
-        experiment_datasets=experiment_datasets,
-        init_volume=references.fourier,
-        init_noise_variance=(
-            noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
-        ),
-        init_mean_variance=initial_mean_variance_host,
-        translations=translations_jnp,
-        options=run_options,
-        observer=observers.command_observer(args),
-        source=RelionReplaySource.for_run(
-            RelionReplay(
-                perturb_replay_relion_dir=args.perturb_replay_relion_dir,
-                perturb_replay_restart_state_iterations=restart_provenance.iterations,
-                replay_iteration_overrides=replay_iteration_overrides,
-                final_replay_override=final_replay.override,
-                final_replay_reference_maps=final_replay.reference_maps,
-                final_replay_source_iteration=final_replay.source_iteration,
-                final_sampling_replay_relion_dir=final_replay.sampling_dir,
-                state_swap_probe=state_swap_probe,
-                follower_topology=follower_topology,
-                **command_options.frozen_boundary_replay(frozen_boundary),
+    # One stable-window class history for the refinement (see refine_single_volume).
+    from relax.sparse_pass2.resident_pass2 import stable_window_class_history
+
+    with stable_window_class_history():
+        result = refine_single_volume(
+            experiment_datasets=experiment_datasets,
+            init_volume=references.fourier,
+            init_noise_variance=(
+                noise_variance if optics_group_ids_per_half is None else [noise_variance, noise_variance]
             ),
-            run_options,
-        ),
-    )
+            init_mean_variance=initial_mean_variance_host,
+            translations=translations_jnp,
+            options=run_options,
+            observer=observers.command_observer(args),
+            source=RelionReplaySource.for_run(
+                RelionReplay(
+                    perturb_replay_relion_dir=args.perturb_replay_relion_dir,
+                    perturb_replay_restart_state_iterations=restart_provenance.iterations,
+                    replay_iteration_overrides=replay_iteration_overrides,
+                    final_replay_override=final_replay.override,
+                    final_replay_reference_maps=final_replay.reference_maps,
+                    final_replay_source_iteration=final_replay.source_iteration,
+                    final_sampling_replay_relion_dir=final_replay.sampling_dir,
+                    state_swap_probe=state_swap_probe,
+                    follower_topology=follower_topology,
+                    **command_options.frozen_boundary_replay(frozen_boundary),
+                ),
+                run_options,
+            ),
+        )
     # The options (with their replay slots and start-up arrays) live no longer than the refinement, as before.
     del run_options
 
