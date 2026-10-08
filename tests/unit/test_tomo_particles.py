@@ -169,3 +169,41 @@ def test_offset_prior_3d_adds_the_rounded_pixel_offset_to_angstrom_translations(
     rounded = np.array([[1.0, 0.0, 0.0], [-2.0, 3.0, 0.0]])
     expected = -np.sum((rounded[:, None, :] + grid[None]) ** 2, axis=2) * pix * pix / (2 * sigma * sigma)
     assert_matches(got, expected.astype(np.float32))
+
+
+def test_tomo_half_pass_cuts_at_relions_float_adaptive_fraction(monkeypatch):
+    # RELION parses --adaptive_fraction 0.999 with textToFloat (strings.h:144), so the cut uses
+    # float(0.999); the tomo pass takes the one constant the SPA routes use.
+    from types import SimpleNamespace
+
+    from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
+    from relax.refinement import tomo_half
+    from relax.sampling import rotation_grid_size
+
+    captured = {}
+
+    class Stop(Exception):
+        pass
+
+    def score(*args, **kwargs):
+        captured.update(kwargs)
+        raise Stop
+
+    monkeypatch.setattr(tomo_half, "score_tomo_half", score)
+    particles = SimpleNamespace(
+        dataset=SimpleNamespace(n_units=2, voxel_size=1.0), translations=None, optics_group_ids=None,
+        scale_corrections=None,
+    )
+    data = SimpleNamespace(
+        particles=particles, reference=np.zeros(8), noise_variance=np.ones(4),
+        projector=SimpleNamespace(data=np.zeros((4, 4, 3), dtype=np.complex64), r_max=2),
+        scale_group_ids=None, scale_group_count=1, scale_correction_data_vs_prior=None,
+    )
+    sampling = SimpleNamespace(oversampling_order=1, healpix_order=0)
+    with pytest.raises(Stop):
+        tomo_half.score_tomo_half_in_loop(
+            data, use_local=False, use_adaptive=True, sampling=sampling,
+            rotation_log_prior=np.zeros(rotation_grid_size(0, "C1"), dtype=np.float32), sigma_offset_angst=1.0,
+            max_significants=None, reconstruction_current_size=4,
+        )
+    assert captured["adaptive_fraction"] == RELION_ADAPTIVE_FRACTION == float(np.float32(0.999))

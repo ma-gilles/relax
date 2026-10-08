@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from relax.dense.scoring_policy import RELION_ADAPTIVE_FRACTION
 from relax.refinement import tomo_particles
 from relax.refinement.optics_shapes import _RowLayout
 from relax.relion.geometry import (
@@ -945,7 +946,7 @@ def score_tomo_half_in_loop(
         rotation_log_prior=prior,
         old_offsets_px=old,
         sigma_offset_angst=sigma_offset_angst,
-        adaptive_fraction=0.999,
+        adaptive_fraction=RELION_ADAPTIVE_FRACTION,
         max_significants=max_significants,
         unit_groups=groups,
         padding_factor=PROJECTION_PADDING_FACTOR,
