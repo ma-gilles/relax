@@ -77,8 +77,9 @@ def test_iteration_artifact_cadence_matches_relion(iteration, nr_iter, grad_writ
 
 
 def test_iteration_artifact_cadence_rejects_nonpositive_interval():
+    # The run's options refuse it once, before the cadence is ever asked.
     with pytest.raises(ValueError, match="grad_write_iter must be >= 1"):
-        driver._should_write_iteration_artifacts(1, 10, 0)
+        native_options.NativeInitialModelOptions(fn_img="particles.star", grad_write_iter=0).validate_run()
 
 
 def _write_test_mrc(path: Path, values: np.ndarray) -> None:

@@ -199,7 +199,6 @@ def _relion_update_native_sampling_state(
     sampling_state: NativeSamplingState,
     *,
     do_grad: bool,
-    do_auto_refine: bool = False,
 ) -> bool:
     """RELION InitialModel autosampling update (``--auto_sampling --grad`` mode).
 
@@ -238,7 +237,6 @@ def _relion_update_native_sampling_state(
     requested_healpix_order = new_healpix_order + 1
     gradient_ceiling_reached = (
         bool(do_grad)
-        and not bool(do_auto_refine)
         and requested_healpix_order >= int(sampling_state.auto_local_healpix_order)
     )
     if not gradient_ceiling_reached and (
@@ -776,10 +774,9 @@ def _translation_log_prior(
     translations: np.ndarray,
     *,
     voxel_size: float,
-    sigma_angstrom: float | None,
+    sigma_angstrom: float,
     old_offsets: np.ndarray,
-    prior_offsets: np.ndarray | None = None,
-) -> np.ndarray | None:
+) -> np.ndarray:
     """Mirror InitialModel's accelerated coarse ``pdf_offset`` arithmetic.
 
     RELION stores the sampling translations in Angstroms, but its accelerated
@@ -790,8 +787,6 @@ def _translation_log_prior(
     ``docs/math/relion_initial_model_em_parity_conventions.md#prior-preparation``.
     """
 
-    if sigma_angstrom is None:
-        return None
     sigma_angstrom = float(sigma_angstrom)
     if sigma_angstrom <= 0.0:
         raise ValueError("translation_sigma_angstrom must be positive when provided")
@@ -801,17 +796,10 @@ def _translation_log_prior(
     old_offsets_arr = np.asarray(old_offsets, dtype=np.float64)
     if old_offsets_arr.ndim != 2 or old_offsets_arr.shape[1] != 2:
         raise ValueError(f"old_offsets must have shape (N, 2), got {old_offsets_arr.shape}")
-    if prior_offsets is None:
-        prior_offsets_arr = np.zeros_like(old_offsets_arr)
-    else:
-        prior_offsets_arr = np.asarray(prior_offsets, dtype=np.float64)
-        if prior_offsets_arr.shape != old_offsets_arr.shape:
-            raise ValueError(
-                f"prior_offsets must match old_offsets shape; got {prior_offsets_arr.shape} and {old_offsets_arr.shape}"
-            )
 
     sampled_translations_angstrom = translations_arr[None, :, :] * float(voxel_size)
-    source_differences = old_offsets_arr[:, None, :] + sampled_translations_angstrom - prior_offsets_arr[:, None, :]
+    # The prior centre is zero (no particle-offset priors in InitialModel).
+    source_differences = old_offsets_arr[:, None, :] + sampled_translations_angstrom
     log_prior = -0.5 * np.sum(source_differences**2, axis=-1) * float(voxel_size) ** 2 / sigma_angstrom**2
     return log_prior.astype(np.float32, copy=False)
 

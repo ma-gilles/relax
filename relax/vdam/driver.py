@@ -41,7 +41,11 @@ from relax.relion.relion_metadata import (
 )
 from relax.sparse_pass2.resident_pass2 import stable_window_class_history
 from relax.vdam import dense_adapter, estep_meta_updates, native_sampling, output, schedules
-from relax.vdam.bootstrap_iref import _initial_state_from_particles, _initial_state_from_tomo_particles
+from relax.vdam.bootstrap_iref import (
+    _initial_state_from_particles,
+    _initial_state_from_tomo_particles,
+    _load_raw_images,
+)
 from relax.vdam.dense_adapter import run_dense_initial_model_estep
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import relion_solvent_flatten_state, relion_solvent_mask
@@ -201,7 +205,6 @@ def _native_expectation_step(
                 particle_ids,
                 halfset_ids,
                 sampling_plan=sampling_plan,
-                sampling_state=sampling_state,
                 prepared_projector_inputs=prepared_projector_inputs,
                 noise_variance=current_noise_variance,
                 sigma_offset_angstrom=sigma_offset_angstrom,
@@ -209,8 +212,7 @@ def _native_expectation_step(
                 do_grad=do_grad,
                 iteration=iteration,
             )
-            effective_image_batch_size = int(result.meta.pop("_effective_image_batch_size"))
-            max_significants = int(result.meta.pop("_max_significants"))
+            result, effective_image_batch_size, max_significants = result
             if premultiplied_ctf:
                 # The subset's average CTF^2 corrects the M-step's SSNR (setAverageCTF2 over
                 # this iteration's images, ml_optimiser.cpp:5697-5740).
@@ -241,7 +243,6 @@ def _native_expectation_step(
             result,
             sampling_plan=sampling_plan,
             accuracy_meta=accuracy_meta,
-            skip_expected_accuracy=skip_expected_accuracy,
             sampling_updated=sampling_updated,
             iteration=iteration,
             previous_translations=previous_translations,
@@ -255,7 +256,6 @@ def _native_expectation_step(
         halfset_ids,
         *,
         sampling_plan,
-        sampling_state,
         prepared_projector_inputs,
         noise_variance,
         sigma_offset_angstrom,
@@ -263,11 +263,10 @@ def _native_expectation_step(
         do_grad,
         iteration,
     ):
-        current_noise_variance = noise_variance
         config = dense_adapter._dense_estep_config(
             dataset,
             opts,
-            current_noise_variance,
+            noise_variance,
             sampling_plan,
             particle_state.translation_offsets,
             sigma_offset_angstrom=sigma_offset_angstrom,
@@ -297,9 +296,7 @@ def _native_expectation_step(
         result = run_dense_initial_model_estep(
             dataset, state, config, particle_ids=particle_ids, halfset_ids=halfset_ids
         )
-        result.meta["_effective_image_batch_size"] = int(config.image_batch_size)
-        result.meta["_max_significants"] = int(config.engine_kwargs.get("max_significants", -1))
-        return result
+        return result, int(config.image_batch_size), int(config.engine_kwargs["max_significants"])
 
     def _after_estep(
         state,
@@ -307,7 +304,6 @@ def _native_expectation_step(
         *,
         sampling_plan,
         accuracy_meta,
-        skip_expected_accuracy,
         sampling_updated,
         iteration,
         previous_translations,
@@ -315,7 +311,7 @@ def _native_expectation_step(
         previous_classes,
     ):
         result.meta["sampling_accuracy_estimated"] = accuracy_meta is not None
-        result.meta["sampling_accuracy_skipped_by_diagnostic"] = bool(skip_expected_accuracy)
+        result.meta["sampling_accuracy_skipped_by_diagnostic"] = bool(opts.environment.skip_expected_accuracy)
         result.meta["sampling_accuracy_isolated_by_diagnostic"] = bool(opts.environment.isolate_expected_accuracy)
         if accuracy_meta is not None:
             result.meta.update(accuracy_meta)
@@ -385,10 +381,9 @@ def _native_expectation_step(
 
 
 def _should_write_iteration_artifacts(iteration: int, nr_iter: int, grad_write_iter: int) -> bool:
-    """Match RELION's gradient-output cadence, including the final iteration."""
+    """Match RELION's gradient-output cadence, including the final iteration (``validate_run`` refuses
+    ``grad_write_iter < 1``)."""
 
-    if grad_write_iter < 1:
-        raise ValueError("grad_write_iter must be >= 1")
     return (iteration % grad_write_iter) == 0 or iteration == nr_iter
 
 
@@ -575,7 +570,6 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
         raise NotImplementedError("the momentum-SGD InitialModel takes one optics group")
     if opts.optimizer == "momentum_sgd":
         from relax.sgd_initial_model.noise import corner_white_sigma2, initialize_sgd_noise
-        from relax.vdam.bootstrap_iref import _load_raw_images
 
         corner_count = min(int(opts.sigma2_min_particles), int(dataset.n_images))
         corner_images = _load_raw_images(
@@ -658,10 +652,7 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
     if opts.do_solvent or os.environ.get(INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, "").strip():
 
         def post_mstep_update(current, _iteration, _meta):
-            if opts.mstep_compute_dtype == "float32" and os.environ.get(
-                INITIAL_MODEL_IREF_REPLAY_TEMPLATE_ENV, ""
-            ).strip():
-                raise ValueError("float32 M-step is incompatible with iteration reference replay")
+            # run_native_initial_model refused a float32 M-step with reference replay before the run.
             if solvent_mask is not None:
                 current = relion_solvent_flatten_state(
                     current,
@@ -734,7 +725,6 @@ def run_native_initial_model(opts: NativeInitialModelOptions) -> NativeInitialMo
 
 
 __all__ = [
-    "NativeInitialModelOptions",
     "NativeInitialModelResult",
     "run_native_initial_model",
 ]

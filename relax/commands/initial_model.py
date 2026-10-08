@@ -601,7 +601,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.require_custom_cuda:
         _require_custom_cuda_runtime()
 
-    from relax.vdam.driver import NativeInitialModelOptions, run_native_initial_model
+    from relax.vdam.driver import run_native_initial_model
+    from relax.vdam.native_options import NativeInitialModelOptions
 
     result = run_native_initial_model(NativeInitialModelOptions(**options_dict))
     print(f"recovar InitialModel complete: {result.final_mrc}")
