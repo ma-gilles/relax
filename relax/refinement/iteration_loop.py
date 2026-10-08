@@ -1579,20 +1579,25 @@ def refine_single_volume(
         # The assignments outlive the iteration: the result, the next accuracy estimate and the final pass read them.
         hard_assignments = per_half.hard_assignments
         class_assignments = per_half.class_assignments
-        if use_adaptive:
-            # --- TWO-PASS ADAPTIVE OVERSAMPLING (RELION parity) ---
-            # Pass 1: coarse E-step at reduced resolution to find
-            #         significant orientations.
-            # Pass 2: oversampled E+M at full current_size for significant
-            #         orientations only.
-
-            coarse_image_plan = plan_adaptive_image_size(
+        # --- TWO-PASS ADAPTIVE OVERSAMPLING (RELION parity) ---
+        # Pass 1: coarse E-step at reduced resolution to find significant orientations.
+        # Pass 2: oversampled E+M at full current_size for significant orientations only.
+        # Off the adaptive route there is no pass-1 plan, and pass 1 (where a scorer has one) takes the full
+        # window: coarse_cs is None.
+        coarse_image_plan = (
+            plan_adaptive_image_size(
                 coarse_size_healpix_order, sampling_plan.windows, optics, options,
                 sealed_sampling_state=source.sealed_sampling_state, log=logger,
             )
-            coarse_size = coarse_image_plan.size
-            coarse_cs = coarse_size if coarse_size < grid_size else None
-
+            if use_adaptive
+            else None
+        )
+        coarse_cs = (
+            coarse_image_plan.size
+            if coarse_image_plan is not None and coarse_image_plan.size < grid_size
+            else None
+        )
+        if use_adaptive:
             logger.info(
                 "Adaptive oversampling: pass 1 at coarse_size=%s, "
                 "pass 2 at current_size=%s (oversampling=%d, particle_diameter=%s)",
@@ -1638,7 +1643,7 @@ def refine_single_volume(
         # overlap option uses. Serial dispatch stays the default.
         numbered_variant = _numbered_dense_variant(
             first_iteration, options.k_class, use_adaptive=use_adaptive,
-            coarse_cs=coarse_cs if use_adaptive else None,  # bound only on the adaptive route
+            coarse_cs=coarse_cs,
             fine_window_size=sampling_plan.windows.score_window_size,
         )
         numbered_expectation = prepare_numbered_expectation(
@@ -1654,7 +1659,7 @@ def refine_single_volume(
             random_perturbation=random_perturbation,
             adaptive_pass1_rotations=adaptive_pass1_rotations,
             coarse_rotation_ids=coarse_rotation_ids_for_scoring,
-            coarse_angular_step_deg=coarse_image_plan.angular_step_deg if use_adaptive else None,
+            coarse_angular_step_deg=None if coarse_image_plan is None else coarse_image_plan.angular_step_deg,
             options=options,
             iteration=iteration,
             numbered_relion_iteration=numbered_relion_iteration,
