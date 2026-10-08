@@ -1479,7 +1479,10 @@ def test_streamed_projections_match_the_cached_pass(_resident_production_env, mo
     # Derived from the float32 BPref atomics (user approval 2026-09-27): a run
     # measured 1.058e-7 against the former 1e-7 (bigbox 14558037).
     assert rel_l2(cached.Ft_y, streamed.Ft_y) < _float32_atomic_order_bound(args)
-    assert rel_l2(cached.Ft_ctf, streamed.Ft_ctf) < 1e-7
+    # Ft_ctf goes through the same float32 BPref atomics (user approval 2026-10-08,
+    # relax#22): medium tier 15040620 (A100) measured 1.11e-7 against the former
+    # 1e-7; 30 A100 repeats measured 4.2e-8 to 9.2e-8. The bound is 4.1e-7 here.
+    assert rel_l2(cached.Ft_ctf, streamed.Ft_ctf) < _float32_atomic_order_bound(args)
     assert rel_l2(cached.noise_stats.wsum_img_power, streamed.noise_stats.wsum_img_power) < 1e-7
 
 
