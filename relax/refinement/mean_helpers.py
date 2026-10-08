@@ -11,7 +11,6 @@ import functools
 import gc
 import logging
 import math
-import os
 import time
 from dataclasses import dataclass, field
 from typing import NamedTuple
@@ -21,7 +20,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils, mask
 
-from relax.helpers.env_flags import parse_env_auto_flag
 from relax.helpers.orientation_priors import (
     class_weights_from_direction_prior,
 )
@@ -33,6 +31,7 @@ from relax.helpers.resolution import (
 from relax.helpers.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, single_working_set_bytes
 from relax.reconstruction import regularization_relion
 from relax.refinement.ports import ClassPriorEstimated, RunObserver
+from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.refinement.tomo_half import TomoHalf
 from relax.relion import relion_ctf
 from relax.relion.reference_initialization import initial_low_pass_filter_references
@@ -692,11 +691,8 @@ def _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumu
     """
 
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
 
     if current_size is None or accumulator_volume_shape is None or not tau_is_1d:
-        return None
-    if not _resident_stable_windows_requested():
         return None
     box = int(vol_shape[0])
     logical = int(current_size)
@@ -725,11 +721,8 @@ def _stable_unregularized_class(vol_shape, padding_factor, accumulator_volume_sh
     """
 
     from relax.helpers.half_volume_mstep import relion_backprojector_volume_shape
-    from relax.sparse_pass2.resident_pass2 import _resident_stable_windows_requested
 
     if tau is not None or current_size is not None or accumulator_volume_shape is None:
-        return None
-    if not _resident_stable_windows_requested():
         return None
     logical_shape = tuple(int(v) for v in accumulator_volume_shape)
     physical_shape = tuple(int(v) for v in relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=int(vol_shape[0])))
@@ -786,8 +779,13 @@ def _reconstruct_volume_eager(
     relion_filter_scale=None,
     retained_device_numerator=None,
     gridding_kernel="radial",
+    *,
+    programs: ReconstructionPrograms,
 ):
     """Eager RELION-style reconstruction from full or half Fourier accumulators.
+
+    ``programs`` (the run's ``ScoringVariants.reconstruction``) chooses the stable full-box class and where the
+    padded inverse FFT runs; it changes no value.
 
     This keeps the reconstruction boundary out of a single monolithic JIT while
     letting the local exact path keep its accumulators in packed half-volume
@@ -832,11 +830,15 @@ def _reconstruct_volume_eager(
             accumulator_volume_shape,
             relion_functions,
         )
-    stable_class = _stable_reconstruction_class(
-        current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d
+    stable_class = (
+        _stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_volume_shape, tau_is_1d)
+        if programs.stable_windows
+        else None
     )
-    unregularized_class = _stable_unregularized_class(
-        vol_shape, padding_factor, accumulator_volume_shape, tau, current_size
+    unregularized_class = (
+        _stable_unregularized_class(vol_shape, padding_factor, accumulator_volume_shape, tau, current_size)
+        if programs.stable_windows
+        else None
     )
     postprocess_args = (Ft_ctf, Ft_y, vol_shape, padding_factor)
     postprocess_kwargs = dict(
@@ -1128,9 +1130,9 @@ def _reconstruct_volume_eager(
     explicit_irfft_normalization = _large_irfft_requires_explicit_normalization(
         reconstruction_shape,
     )
-    host_irfft = _large_relion_host_irfft_enabled(reconstruction_shape)
+    host_irfft = _large_relion_host_irfft_enabled(reconstruction_shape, forced=programs.host_irfft)
     if host_irfft:
-        workers = _relion_host_fft_workers()
+        workers = programs.host_fft_workers
         logger.info(
             "RELION padded inverse FFT using host scipy.fft: reconstruction_shape=%s "
             "output_shape=%s input_bytes=%d workers=%d",
@@ -1271,6 +1273,8 @@ class ReconstructionSettings:
     solvent_correct_fsc: bool = False
     # Seed of the corrected FSC's random phases, drawn per iteration.
     solvent_fsc_seed: int = 0
+    # The run's reconstruction programs (ScoringVariants.reconstruction): no effect on values.
+    programs: ReconstructionPrograms
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.
@@ -1303,6 +1307,7 @@ class ReconstructionSettings:
             current_size=current_size,
             accumulator_volume_shape=accumulator_volume_shape,
             gridding_kernel=self.gridding_kernel,
+            programs=self.programs,
             **solve_options,
         )
 
@@ -1958,16 +1963,18 @@ def _relion_pad_exceeds_device_working_set(reconstruction_shape, *, allocator_li
     return _DEVICE_PAD_HALVES * half_bytes > single_working_set_bytes(limit)
 
 
-def _large_relion_host_irfft_enabled(volume_shape, *, allocator_limit_bytes: int | None = None) -> bool:
+def _large_relion_host_irfft_enabled(
+    volume_shape, *, forced: bool | None, allocator_limit_bytes: int | None = None
+) -> bool:
     """Return whether a padded RELION inverse FFT should execute on the host.
 
-    Automatically when the transform's int32 size product overflows, or when its device working set
-    (``_DEVICE_IRFFT_HALVES`` packed complex64 halves) exceeds the single working set the allocator's limit allows
+    ``forced`` (``ReconstructionPrograms.host_irfft``) decides when not None. Otherwise automatically when the
+    transform's int32 size product overflows, or when its device working set (``_DEVICE_IRFFT_HALVES`` packed
+    complex64 halves) exceeds the single working set the allocator's limit allows
     (``xla_memory_reserve.single_working_set_bytes``; the limit is ``allocator_limit_bytes``, read from the device
     when None): a cuFFT work area that cannot be found aborts the process instead of raising.
     """
 
-    forced = parse_env_auto_flag("RELAX_RELION_HOST_IRFFT", logger=logger)
     if forced is not None:
         return forced
     if _large_irfft_requires_explicit_normalization(volume_shape):
@@ -1985,21 +1992,6 @@ def _large_relion_host_irfft_enabled(volume_shape, *, allocator_limit_bytes: int
         working_set / 2**30, 100 * SINGLE_WORKING_SET_LIMIT_SHARE, limit / 2**30,
     )
     return True
-
-
-def _relion_host_fft_workers() -> int:
-    configured = os.environ.get("RELAX_RELION_HOST_FFT_WORKERS")
-    if configured is None:
-        configured = os.environ.get("SLURM_CPUS_PER_TASK", "1")
-    try:
-        workers = int(configured)
-    except (TypeError, ValueError):
-        logger.warning(
-            "Invalid RELION host FFT worker count %r; using one worker",
-            configured,
-        )
-        return 1
-    return max(1, workers)
 
 
 def _host_irfft_and_center_crop(

@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.refinement.refinement_options import ReconstructionPrograms
+
 jnp = pytest.importorskip("jax.numpy")
 mask = pytest.importorskip("recovar.core.mask")
 mean_helpers = pytest.importorskip("relax.refinement.mean_helpers")
@@ -252,7 +254,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         fmask_edge=2,
         tau2_fudge=1.0,
         particle_diameter_angstrom=2.0,
-        first_iteration_lowpass_angstrom=None,
+        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
     means = mean_helpers.reconstruct_numbered_k1_halfmaps(
         (jnp.ones(volume_size, dtype=jnp.complex64), jnp.ones(volume_size, dtype=jnp.complex64)),

@@ -10,6 +10,7 @@ import recovar.core.fourier_transform_utils as fourier_transform_utils
 from recovar.reconstruction import regularization
 
 from relax.reconstruction import regularization_relion
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -832,7 +833,7 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     settings = ReconstructionSettings(
         box_size=8, voxel_size=2.0, volume_shape=shape, padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=2, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None,
+        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
     final_reconstruction.compute_final_halfmap_prior(
         numerators, denominators, settings=settings, current_size=8, accumulator_shape=padded,

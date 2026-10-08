@@ -9,6 +9,7 @@ from helpers.float_compare import assert_matches
 from relax.diagnostics import reconstruction as dumps
 from relax.refinement.iteration_planning import ClassImageSize
 from relax.refinement.mean_helpers import ClassPriorEstimate, ReconstructionSettings
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -128,7 +129,7 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         volume_shape=(16, 16, 16), padding_factor=values["PADDING_FACTOR"],
         projection_padding_factor=2, minres_map=5, width_mask_edge=5, fmask_edge=2,
         tau2_fudge=values["tau2_fudge"], particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None,
+        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
 
     def floor_statistics(denominator, shape, **kwargs):

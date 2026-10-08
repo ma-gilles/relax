@@ -18,7 +18,7 @@ from helpers.tiny_refinement import record_calls, run_tiny_refinement
 from relax.helpers import half_volume_mstep
 from relax.reconstruction import regularization_relion as rr
 from relax.refinement import final_reconstruction, mean_helpers, startup_references
-from relax.refinement.refinement_options import RelionConsistencyOptions
+from relax.refinement.refinement_options import ReconstructionPrograms, RelionConsistencyOptions
 from relax.relion import reference_initialization
 from relax.relion import relion_projector_setup as setup
 
@@ -572,7 +572,7 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
     settings = mean_helpers.ReconstructionSettings(
         box_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, shell_pair_counting=counting,
+        first_iteration_lowpass_angstrom=None, shell_pair_counting=counting, programs=ReconstructionPrograms.from_environ(),
     )
     final_reconstruction.compute_final_class_priors(
         None, None, projector=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,

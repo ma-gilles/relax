@@ -11,6 +11,7 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import regularization_relion
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -36,7 +37,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
         "gridding_kernel", "shell_pair_counting",
-        "solvent_mask", "solvent_correct_fsc", "solvent_fsc_seed",
+        "solvent_mask", "solvent_correct_fsc", "solvent_fsc_seed", "programs",
     )
     for name in (
         "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",
@@ -170,7 +171,7 @@ class TestReconstructionOwnership:
             fmask_edge=2,
             tau2_fudge=1.0,
             particle_diameter_angstrom=None,
-            first_iteration_lowpass_angstrom=None,
+            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
         )
         means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
             (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
@@ -283,7 +284,7 @@ class TestReconstructionOwnership:
             tau2_fudge=1.0,
             projection_padding_factor=1,
             accumulator_volume_shape=accumulator_shape,
-            retained_device_numerator=retained_numerator,
+            retained_device_numerator=retained_numerator, programs=ReconstructionPrograms.from_environ(),
         )
         assert returned is host_boundary
         assert events == ["regularize", "divide", "block", "device_get", "release", "collect", "collect", "finish"]
@@ -350,7 +351,7 @@ class TestReconstructionOwnership:
             tau2_fudge=1.0,
             projection_padding_factor=1,
             accumulator_volume_shape=accumulator_shape,
-            retained_device_numerator=retained_numerator,
+            retained_device_numerator=retained_numerator, programs=ReconstructionPrograms.from_environ(),
         )
         half1 = mean_helpers_module._reconstruct_volume_eager(
             host_ctf,
@@ -360,7 +361,7 @@ class TestReconstructionOwnership:
             tau=np.ones(np.prod(volume_shape), dtype=np.float32),
             tau2_fudge=1.0,
             projection_padding_factor=1,
-            accumulator_volume_shape=accumulator_shape,
+            accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
         )
         assert half0 is sentinel
         assert half1 is sentinel
@@ -472,7 +473,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         fmask_edge=2,
         tau2_fudge=1.0,
         particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None,
+        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
     means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
         (joined[0], joined[1]),

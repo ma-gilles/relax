@@ -1,4 +1,5 @@
 """Explicit transform precision, with independent analytic DC checks."""
+from relax.refinement.refinement_options import ReconstructionPrograms
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -54,7 +55,7 @@ def test_em_reconstruction_keeps_fft_precision_with_double_tau_and_gridding(dtyp
     tau = jnp.linspace(0.1, 2.0, 512, dtype=jnp.float64)
     def compute(w, y, t):
         return _reconstruct_volume_eager(w, y, (8, 8, 8), 2, t, 1.0, 2,
-                                        preserve_output_precision=True, relion_filter_scale=8**4)
+                                        preserve_output_precision=True, relion_filter_scale=8**4, programs=ReconstructionPrograms.from_environ())
     result = compute(weight, numerator, tau)
     assert result.dtype == dtype
     assert np.all(np.isfinite(np.asarray(result)))

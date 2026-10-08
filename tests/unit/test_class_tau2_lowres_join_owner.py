@@ -20,6 +20,7 @@ from helpers.float_compare import assert_matches
 from relax.helpers.resolution import shell_index_to_resolution_angstrom
 from relax.reconstruction import regularization_relion
 from relax.refinement import mean_helpers
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -73,7 +74,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
             padding_factor=2, projection_padding_factor=2, minres_map=5,
             width_mask_edge=5, fmask_edge=2,
             tau2_fudge=1.0, particle_diameter_angstrom=diameter,
-            first_iteration_lowpass_angstrom=None,
+            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
         ),
         current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
         full_half_axes=[None, 2],
@@ -133,7 +134,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         padding_factor=PADDING_FACTOR, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2,
         tau2_fudge=4.0, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None,
+        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
     result = mean_helpers.estimate_class_prior(
         Stack("reference"), Stack("denominator"), class_index=2, settings=settings,
@@ -332,7 +333,7 @@ class TestClassTau2UpdateDetails:
             padding_factor=PADDING_FACTOR, projection_padding_factor=2,
             minres_map=5, width_mask_edge=5, fmask_edge=2,
             tau2_fudge=tau2_fudge, particle_diameter_angstrom=None,
-            first_iteration_lowpass_angstrom=None,
+            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
         )
 
     @staticmethod

@@ -27,6 +27,7 @@ from relax.helpers.orientation_priors import (
 from relax.helpers.resolution import ImageGeometry
 from relax.refinement.half_inputs import initialize_halfsets
 from relax.refinement.noise_updates import NoiseModel
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytest.importorskip("jax")
 import healpy as hp
@@ -7000,7 +7001,7 @@ class TestRelionModeSmokeTest:
             fmask_edge=2,
             tau2_fudge=1.0,
             particle_diameter_angstrom=200.0,
-            first_iteration_lowpass_angstrom=30.0,
+            first_iteration_lowpass_angstrom=30.0, programs=ReconstructionPrograms.from_environ(),
         )
         means = mean_helpers_module.reconstruct_numbered_k1_halfmaps(
             (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
@@ -7058,7 +7059,7 @@ class TestRelionModeSmokeTest:
             fmask_edge=2,
             tau2_fudge=4.0,
             particle_diameter_angstrom=None,
-            first_iteration_lowpass_angstrom=None,
+            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
         )
         means = mean_helpers_module.reconstruct_numbered_class_maps(
             jnp.ones((n_classes, VOLUME_SIZE), dtype=jnp.complex64),
@@ -9647,7 +9648,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
         tau=np.ones(np.prod(volume_shape), dtype=np.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
 
     assert returned is host_boundary
@@ -9677,7 +9678,7 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
                 box_size=2, voxel_size=1.0, volume_shape=(2, 1, 1),
                 padding_factor=1, projection_padding_factor=1, minres_map=1,
                 width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0,
-                particle_diameter_angstrom=None, first_iteration_lowpass_angstrom=None,
+                particle_diameter_angstrom=None, first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
             ),
             n_classes,
         )

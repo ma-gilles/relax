@@ -498,6 +498,7 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
         relion_x_half_accumulators_to_public_layout,
     )
     from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.refinement_options import ReconstructionPrograms
 
     numerator, denominator = finalize_half_volume_bpref(
         result.numerator, result.denominator, bp_shape, logger=log,
@@ -511,7 +512,7 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
         tau=checkpoint.tau_radial[half], tau2_fudge=checkpoint.tau2_fudge,
         projection_padding_factor=2, current_size=checkpoint.current_size,
         accumulator_volume_shape=bp_shape, tau_is_1d=True,
-        preserve_output_precision=True, relion_filter_scale=float(volume_shape[0] ** 4),
+        preserve_output_precision=True, relion_filter_scale=float(volume_shape[0] ** 4), programs=ReconstructionPrograms.from_environ(),
     ).reshape(-1)
     if new_map.dtype != jnp.complex64 or new_map.size != int(np.prod(volume_shape)):
         raise ValueError("map reconstruction changed Fourier dtype or volume geometry")

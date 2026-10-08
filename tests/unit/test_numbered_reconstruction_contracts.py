@@ -8,6 +8,7 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement import mean_helpers
 from relax.refinement.ports import RunObserver
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -30,7 +31,7 @@ def _settings(first_cc, flatten_solvent):
         padding_factor=2, projection_padding_factor=1, minres_map=0,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1,
         particle_diameter_angstrom=np.float32(3.7) if flatten_solvent else None,
-        first_iteration_lowpass_angstrom=20 if first_cc or flatten_solvent else None,
+        first_iteration_lowpass_angstrom=20 if first_cc or flatten_solvent else None, programs=ReconstructionPrograms.from_environ(),
     )
 
 

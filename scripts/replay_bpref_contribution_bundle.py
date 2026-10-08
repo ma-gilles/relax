@@ -136,6 +136,7 @@ def _reconstruct_unregularized_map(replay, boundary):
         relion_x_half_volume_to_native_half,
     )
     from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.refinement_options import ReconstructionPrograms
 
     accumulator_shape = tuple(int(value) for value in np.asarray(boundary["volume_shape"]))
     image_shape = tuple(int(value) for value in np.asarray(boundary["image_shape"]))
@@ -163,7 +164,7 @@ def _reconstruct_unregularized_map(replay, boundary):
         minres_map=0,
         current_size=int(np.asarray(boundary["current_size"]).item()),
         return_real_space=True,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
     reconstructed = np.asarray(reconstructed).real.reshape(volume_shape)
     if not np.all(np.isfinite(reconstructed)):

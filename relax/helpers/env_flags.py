@@ -63,6 +63,19 @@ def parse_env_choice(name: str, choices: dict, *, logger: logging.Logger, expect
     return None
 
 
+def parse_env_worker_count(name: str, fallback_name: str, *, logger: logging.Logger) -> int:
+    """A worker count from ``name``, else ``fallback_name``, else 1; an invalid value warns and is 1; at least 1."""
+    configured = os.environ.get(name)
+    if configured is None:
+        configured = os.environ.get(fallback_name, "1")
+    try:
+        workers = int(configured)
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s worker count %r; using one worker", name, configured)
+        return 1
+    return max(1, workers)
+
+
 def parse_env_strict_flag(name: str, *, default: bool = False) -> bool:
     """Read a recognized boolean token, failing closed on anything else.
 

@@ -9,6 +9,7 @@ from helpers.float_compare import assert_matches
 
 from relax.refinement import final_reconstruction
 from relax.refinement.mean_helpers import ReconstructionSettings
+from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.relion.geometry import (
     IMAGE_MASK_EDGE_PIXELS,
     PROJECTION_PADDING_FACTOR,
@@ -30,7 +31,7 @@ def reconstruction_settings(*, tau2_fudge=1.0):
         width_mask_edge=IMAGE_MASK_EDGE_PIXELS,
         fmask_edge=REFERENCE_FILTER_EDGE_SHELLS,
         tau2_fudge=tau2_fudge, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None,
+        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
     )
 
 

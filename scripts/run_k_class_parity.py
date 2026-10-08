@@ -1302,6 +1302,7 @@ def main() -> None:
     )
     from relax.reconstruction.regularization_relion import RELION_MINRES_MAP
     from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.refinement_options import ReconstructionPrograms
     from relax.relion.relion_metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
@@ -1943,7 +1944,7 @@ def main() -> None:
                 # residual high-shell content from the regularization floor that
                 # RELION omits. Passing current_size matches RELION's max_r2 skip.
                 current_size=current_size,
-                accumulator_volume_shape=result.mstep_accumulator_shape,
+                accumulator_volume_shape=result.mstep_accumulator_shape, programs=ReconstructionPrograms.from_environ(),
             ).reshape(-1)
             if apply_firstiter_lowpass:
                 from relax.refinement.mean_helpers import _apply_relion_initial_lowpass_filter

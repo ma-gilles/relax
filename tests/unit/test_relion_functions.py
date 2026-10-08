@@ -9,6 +9,7 @@ import jax.numpy as jnp
 from recovar import jax_config
 from recovar import core
 from recovar.reconstruction import regularization
+from relax.refinement.refinement_options import ReconstructionPrograms
 from relax.reconstruction import regularization_relion
 from recovar.reconstruction import relion_functions as rf
 from relax.reconstruction import relion_functions_relion
@@ -2083,7 +2084,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
             projection_padding_factor=1,
             use_spherical_mask=True,
             grid_correct=True,
-            **common,
+            **common, programs=ReconstructionPrograms.from_environ(),
         )
     )
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "always")
@@ -2097,7 +2098,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
             use_spherical_mask=True,
             grid_correct=True,
             retained_device_numerator=jnp.asarray(f_ty),
-            **common,
+            **common, programs=ReconstructionPrograms.from_environ(),
         )
     )
 
@@ -2314,7 +2315,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
             projection_padding_factor=1,
             use_spherical_mask=True,
             grid_correct=True,
-            **common,
+            **common, programs=ReconstructionPrograms.from_environ(),
         )
     )
 
@@ -2438,7 +2439,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
 
     assert events == ["stage", "finish"]
@@ -2526,7 +2527,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
             projection_padding_factor=1,
             use_spherical_mask=True,
             grid_correct=True,
-            **common,
+            **common, programs=ReconstructionPrograms.from_environ(),
         )
     )
 
@@ -2605,7 +2606,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
 
     assert events == ["stage", "finish"]
@@ -2670,7 +2671,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
 
     assert returned is sentinel
@@ -2739,7 +2740,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
 
     expected = np.asarray(
@@ -2835,7 +2836,7 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
         tau=np.ones(8, dtype=np.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=(3, 3, 3),
+        accumulator_volume_shape=(3, 3, 3), programs=ReconstructionPrograms.from_environ(),
     )
 
     assert events == ["stage", "finish"]
@@ -2856,14 +2857,18 @@ def test_padded_irfft_goes_to_the_host_when_its_device_working_set_exceeds_a_qua
 
     monkeypatch.delenv("RELAX_RELION_HOST_IRFFT", raising=False)
     limit = int(limit_gib * 2**30)
-    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit) is host
+
+    def forced():
+        return ReconstructionPrograms.from_environ().host_irfft
+
+    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is host
     # Small grids stay on the device on every card; the int32-overflow grid always goes to the host.
-    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit) is False
-    assert mean_helpers._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit) is True
+    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is False
+    assert mean_helpers._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit, forced=forced()) is True
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "0")
-    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit) is False
+    assert mean_helpers._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is False
     monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "1")
-    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit) is True
+    assert mean_helpers._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is True
 
 
 def test_large_host_irfft_is_already_normalized(monkeypatch):
@@ -2936,7 +2941,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
         tau=np.ones(8, dtype=np.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=(3, 3, 3),
+        accumulator_volume_shape=(3, 3, 3), programs=ReconstructionPrograms.from_environ(),
     )
 
     assert events == ["stage", "host_irfft", "finish"]
@@ -3302,7 +3307,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
 
     def saved_map(grid_correct):
         ft = mean_helpers._reconstruct_volume_eager(
-            ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common
+            ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common, programs=ReconstructionPrograms.from_environ()
         )
         return np.real(np.asarray(ftu.get_idft3(jnp.asarray(ft).reshape(volume_shape)))).astype(np.float32)
 

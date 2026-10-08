@@ -19,10 +19,13 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.helpers.convergence import _APPROX_ACC_ROT_CONVERGENCE_ENV, LOCAL_SEARCH_HEALPIX_ORDER
 from relax.helpers.env_flags import (
+    parse_env_auto_flag,
     parse_env_choice,
+    parse_env_flag,
     parse_env_flag_or_false,
     parse_env_optional_flag,
     parse_env_true_flag,
+    parse_env_worker_count,
 )
 from relax.relion.geometry import IMAGE_MASK_EDGE_PIXELS
 from relax.symmetry import canonicalize_rotational_symmetry
@@ -427,6 +430,35 @@ class LocalAdaptivePass2Support:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ReconstructionPrograms:
+    """Which programs run a RELION reconstruction; no effect on its values.
+
+    ``stable_windows`` (``RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS``, default on, the resident engine's switch
+    too): reconstruct in the full-box class so one compiled program serves every size. ``host_irfft``
+    (``RELAX_RELION_HOST_IRFFT``): the padded inverse FFT on the host when True, on the device when False, by
+    size and allocator limit when None (``auto``). ``host_fft_workers`` (``RELAX_RELION_HOST_FFT_WORKERS``, else
+    ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads.
+    """
+
+    stable_windows: bool
+    host_irfft: bool | None
+    host_fft_workers: int
+
+    @classmethod
+    def from_environ(cls) -> ReconstructionPrograms:
+        from relax.sparse_pass2.resident_pass2 import _RESIDENT_STABLE_WINDOWS_ENV
+
+        log = logging.getLogger(__name__)
+        return cls(
+            stable_windows=parse_env_flag(_RESIDENT_STABLE_WINDOWS_ENV, default=True),
+            host_irfft=parse_env_auto_flag("RELAX_RELION_HOST_IRFFT", logger=log),
+            host_fft_workers=parse_env_worker_count(
+                "RELAX_RELION_HOST_FFT_WORKERS", "SLURM_CPUS_PER_TASK", logger=log
+            ),
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
 class ScoringVariants:
     """Scoring and M-step route variants chosen by environment variable, read once when the run's options are
     built (``from_environ``, code rule 5); nothing below reads the variables again. They change what the run
@@ -437,12 +469,14 @@ class ScoringVariants:
     custom CUDA runs on a GPU, K-class's is on. ``local_adaptive_pass2`` (``RELAX_LOCAL_ADAPTIVE_PASS2_FULL_PARENT``,
     ``_ROTATION_ONLY``, ``_DENOMINATOR_SUPPORT``; default RELION's pruned parent). ``approx_acc_rot_for_convergence``
     (``RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE``): the support-width angular accuracy gates convergence.
+    ``reconstruction``: the M-step reconstruction's programs (ReconstructionPrograms).
     """
 
     k1_relion_x_half_mstep: bool
     k_class_relion_x_half_mstep: bool
     local_adaptive_pass2: LocalAdaptivePass2Support
     approx_acc_rot_for_convergence: bool
+    reconstruction: ReconstructionPrograms
 
     def relion_x_half_mstep(self, *, k_class: bool) -> bool:
         """Whether this run's K=1 (or, with ``k_class``, K-class) M-step uses RELION's x-half accumulators."""
@@ -474,6 +508,7 @@ class ScoringVariants:
                 ),
             ),
             approx_acc_rot_for_convergence=parse_env_true_flag(_APPROX_ACC_ROT_CONVERGENCE_ENV),
+            reconstruction=ReconstructionPrograms.from_environ(),
         )
 
 

@@ -54,9 +54,6 @@ reason; the sections after this one hold the detail.
    - `projector_preparation.prepare_scoring_projector`: `RELAX_RELION_PROJECTOR_CACHE_DIR` and
      `RELAX_RELION_PROJECTOR_DUMP_DIR`; `relax/helpers/expected_accuracy.py` calls it too, outside this
      package.
-   - `mean_helpers`: `RELAX_RELION_HOST_IRFFT`, `RELAX_RELION_HOST_FFT_WORKERS` and `SLURM_CPUS_PER_TASK`,
-     execution-resource knobs of the host inverse FFT inside `_reconstruct_volume_eager` (18 parameters,
-     several callers); threading them means a host-FFT policy record in `ReconstructionSettings`.
    - `local_search_iteration`: the x-half batch guard; `half_scoring`: hides the local engine's dump
      variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
      variables belong to the engine packages, which read them.
@@ -64,12 +61,16 @@ reason; the sections after this one hold the detail.
      `relax.helpers.dtype_policy`); `particle_loading`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
      `relax.dense.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
-   - The dense precision below the controller: `half_scoring`, `expectation_batches`, `iteration_planning`,
-     `relax/parity/relion_replay_source.py` and `relax/diagnostics/iteration.py` read `DENSE_PRECISION`
-     (or `_dense_global_scoring_dtype()`) where they use it. The controller and the final pass read
-     `options.precision`, whose default is that policy when the options are built, and
-     `require_process_precision` refuses options whose precision differs, so the two cannot disagree.
-     Threading `options.precision` into the engines is its own slice.
+   - The scoring and reconstruction route variants (x-half M-step, local adaptive pass-2 support, the
+     support-width convergence gate, the reconstruction's stable windows and host inverse FFT) are one
+     `ScoringVariants` (`RefinementOptions.variants`), read when the options are built; the engines below
+     receive its values in their execution policies and `ReconstructionSettings.programs` (deep2 c1). The
+     resident engine (`relax/sparse_pass2`) and the K-class engine still read the stable-windows switch
+     themselves.
+   - The dense precision: the engines receive `options.precision` (`DenseExecutionPolicy`,
+     `LocalExecutionPolicy`, `BatchPlanner`, dtype arguments). `relax/parity/relion_replay_source.py` and
+     `relax/diagnostics/iteration.py` still read `DENSE_PRECISION`, and `require_process_precision` refuses
+     options whose precision differs, so the two cannot disagree.
 3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,782 lines (2026-10-07). Its mode
    decisions, read by the rules (2026-10-05): 24 tests of `k_class_enabled`. None makes a step take a
    mode flag; each either selects one of two contract functions (image size: `plan_class_image_size` or

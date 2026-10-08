@@ -24,7 +24,12 @@ from relax.refinement import (
     mean_helpers,
     projector_preparation,
 )
-from relax.refinement.refinement_options import KClassOptions, RefinementOptions, RelionConsistencyOptions
+from relax.refinement.refinement_options import (
+    KClassOptions,
+    ReconstructionPrograms,
+    RefinementOptions,
+    RelionConsistencyOptions,
+)
 from relax.relion import relion_projector_setup as setup
 
 pytestmark = pytest.mark.unit
@@ -239,7 +244,7 @@ def _reconstruct(n=8, **kwargs):
             projection_padding_factor=PF,
             use_spherical_mask=False,
             return_real_space=True,
-            **kwargs,
+            **kwargs, programs=ReconstructionPrograms.from_environ(),
         )
     ).reshape(n, n, n)
 
@@ -299,7 +304,7 @@ def _settings(**fields):
         tau2_fudge=1.0,
         particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None,
-        **fields,
+        **fields, programs=ReconstructionPrograms.from_environ(),
     )
 
 

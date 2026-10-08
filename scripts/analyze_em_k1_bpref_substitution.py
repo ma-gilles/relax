@@ -118,6 +118,7 @@ def _reconstruct_and_flatten(
 ) -> np.ndarray:
     from recovar.core import fourier_transform_utils, mask
     from relax.refinement.mean_helpers import _reconstruct_volume_eager
+    from relax.refinement.refinement_options import ReconstructionPrograms
 
     reconstructed = _reconstruct_volume_eager(
         weight,
@@ -129,7 +130,7 @@ def _reconstruct_and_flatten(
         projection_padding_factor=projection_padding_factor,
         minres_map=minres_map,
         current_size=current_size,
-        accumulator_volume_shape=accumulator_shape,
+        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
     )
     real = np.asarray(
         fourier_transform_utils.get_idft3(

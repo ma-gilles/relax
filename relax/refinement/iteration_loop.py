@@ -865,6 +865,7 @@ def refine_single_volume(
             options.solvent.mask_path, image_geometry.box_size, image_geometry.pixel_size_angstrom
         ),
         solvent_correct_fsc=options.solvent.correct_fsc,
+        programs=options.variants.reconstruction,
         solvent_fsc_seed=int(
             (
                 options.parity.perturb_seed

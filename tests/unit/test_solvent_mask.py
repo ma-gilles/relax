@@ -15,6 +15,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.reconstruction import solvent_mask
+from relax.refinement.refinement_options import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -168,7 +169,7 @@ def _settings(**kwargs):
         particle_diameter_angstrom=12.0,
         first_iteration_lowpass_angstrom=None,
     )
-    return ReconstructionSettings(**{**base, **kwargs})
+    return ReconstructionSettings(**{**base, **kwargs}, programs=ReconstructionPrograms.from_environ())
 
 
 def test_user_mask_replaces_the_diameter_sphere():
